@@ -1,0 +1,4 @@
+interface:
+  display_name: "太吾敌人设计"
+  short_description: "设计太吾卡牌游戏的普通敌人与精英敌人、战斗定位、组合方式和遭遇梯度"
+  default_prompt: "Use $taiwu-enemy-design to design normal or elite enemy encounters."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "太吾总体流程"
+  short_description: "设计太吾卡牌游戏的单局流程、成长解锁、奖励节奏、构筑阶段与长期收藏"
+  default_prompt: "Use $taiwu-run-design to continue designing the Taiwu game run flow and progression."

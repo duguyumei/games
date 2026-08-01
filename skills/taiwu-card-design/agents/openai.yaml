@@ -1,0 +1,4 @@
+interface:
+  display_name: "太吾功法卡牌设计"
+  short_description: "设计人物思绪战斗的功法卡面、卡池、事件窗口与原作术语转译"
+  default_prompt: "Use $taiwu-card-design to design or refine current Taiwu technique cards and persist confirmed rules."

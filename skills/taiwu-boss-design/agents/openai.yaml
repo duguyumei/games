@@ -1,0 +1,4 @@
+interface:
+  display_name: "太吾Boss设计"
+  short_description: "设计太吾卡牌游戏的剑冢Boss机制、阶段转换、招牌能力、预告与专属奖励"
+  default_prompt: "Use $taiwu-boss-design to design a Sword Tomb boss encounter."
