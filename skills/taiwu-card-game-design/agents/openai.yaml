@@ -1,4 +1,0 @@
-interface:
-  display_name: "太吾设计路由"
-  short_description: "仅处理跨多个太吾设计域的规则冲突、归属判断、总览与全局审计"
-  default_prompt: "使用 $taiwu-card-game-design 路由并处理一个跨多个设计域的问题。"
