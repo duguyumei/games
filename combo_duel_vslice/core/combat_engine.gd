@@ -8,6 +8,7 @@ const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
 const InnerSkillRepositoryScript = preload("res://core/inner_skill_repository.gd")
+const ConsumableRepositoryScript = preload("res://core/consumable_repository.gd")
 const SequenceBookScript = preload("res://core/sequence_book.gd")
 const BattleSideScript = preload("res://core/battle_side.gd")
 const TriggerQueueScript = preload("res://core/trigger_queue.gd")
@@ -18,6 +19,7 @@ const EnemyCombatAIScript = preload("res://core/enemy_combat_ai.gd")
 var rng := RandomNumberGenerator.new()
 var repository := TechniqueRepositoryScript.new()
 var inner_skill_repository := InnerSkillRepositoryScript.new()
+var consumable_repository := ConsumableRepositoryScript.new()
 var sequence_book := SequenceBookScript.new()
 var enemy_sequence_book := SequenceBookScript.new()
 var trigger_queue := TriggerQueueScript.new()
@@ -59,6 +61,7 @@ var _recycle_after_play: Dictionary = {}
 func _init() -> void:
     repository.load_from_file()
     inner_skill_repository.load_from_file()
+    consumable_repository.load_from_file()
     sequence_book.load_from_file()
     enemy_sequence_book.load_from_file()
     effect_executor = EffectExecutorScript.new(rng)
@@ -70,6 +73,8 @@ func setup(seed_value: int = 2308, shuffle_cards: bool = true) -> void:
     enemy.reset(DeckFactoryScript.create_standard_deck(), rng, shuffle_cards)
     sequence_book.reset()
     enemy_sequence_book.reset()
+    _seed_owned_techniques(player, sequence_book)
+    _seed_owned_techniques(enemy, enemy_sequence_book)
     trigger_queue.clear()
     delayed_effects.clear()
     power_modifiers.clear()
@@ -115,6 +120,7 @@ func setup_scripted_battle(
     player.configure_inner_skills(
         player_definition.get("inner_skills", []),
         int(player_definition.get("technique_slot_index", 0)))
+    player.configure_consumables(player_definition.get("consumables", []))
     enemy.configure_inner_skills(
         enemy_definition.get("inner_skills", []),
         int(enemy_definition.get("technique_slot_index", 0)))
@@ -127,6 +133,7 @@ func setup_scripted_battle(
     var enemy_sequences := scenario.enemy_sequences()
     if not enemy_sequences.is_empty():
         enemy_sequence_book.configure(enemy_sequences)
+        _seed_owned_techniques(enemy, enemy_sequence_book)
     trigger_queue.add_history(
         "battle_setup", enemy.name, "纵切场景", "成功",
         "调试 AI 已载入；不代表正式敌方策略" if enemy_ai_enabled else "固定脚本场景已载入")
@@ -187,7 +194,10 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
     var hand_result := HandEvaluatorScript.evaluate(cards)
     if hand_result.is_empty():
         return {"valid": false, "reason": "无法识别牌型"}
-    var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {})
+    var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {}).duplicate(true)
+    modifiers["insight_multiplier"] = (
+        int(modifiers.get("insight_multiplier", 0))
+        + int(side.insight_multipliers.get(hand_result["id"], 0)))
     var values := PowerCalculatorScript.calculate(hand_result, modifiers)
     var technique_id: String = book.current_id(hand_result["id"])
     var technique := repository.get_technique(technique_id)
@@ -238,6 +248,107 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
         "next_technique_id": book.next_id(hand_result["id"]),
         "next_technique": repository.get_technique(book.next_id(hand_result["id"])),
     }
+
+func grant_consumable(side, consumable_id: String, source: String = "效果") -> bool:
+    if consumable_repository.get_consumable(consumable_id).is_empty():
+        return false
+    var granted: bool = side.grant_consumable(consumable_id)
+    trigger_queue.add_history(
+        "consumable_gain",
+        "获得%s" % consumable_repository.get_consumable(consumable_id).get("name", consumable_id),
+        source,
+        "成功" if granted else "失败",
+        "进入共享消耗品栏" if granted else "共享消耗品栏已满，不生成")
+    if granted:
+        state_changed.emit()
+    return granted
+
+func use_player_consumable(slot_index: int, card_ids: Array = []) -> Dictionary:
+    if battle_state != "active":
+        return {"success": false, "reason": "战斗已经结束"}
+    if slot_index < 0 or slot_index >= player.consumable_ids.size():
+        return {"success": false, "reason": "消耗品槽位无效"}
+    var consumable_id: String = player.consumable_ids[slot_index]
+    var definition := consumable_repository.get_consumable(consumable_id)
+    if definition.is_empty():
+        return {"success": false, "reason": "消耗品数据不存在"}
+    var cards: Array = []
+    for card_id_value in card_ids:
+        var card = player.find_hand_card(str(card_id_value))
+        if card == null or cards.has(card):
+            return {"success": false, "reason": "目标包含不在当前手牌中的真气"}
+        cards.append(card)
+    var target_check := consumable_repository.validate_targets(consumable_id, cards)
+    if not target_check["ok"]:
+        return {"success": false, "reason": target_check["reason"]}
+    var details: Array[String] = []
+    var acquired_technique_id := ""
+    for effect in definition.get("effects", []):
+        var op: String = effect.get("op", "")
+        match op:
+            "gain_insight":
+                var hand_id: String = effect.get("hand", "")
+                var amount: int = int(effect.get("multiplier", 0))
+                var total: int = player.add_insight(hand_id, amount)
+                details.append("%s心得倍率 +%d（累计 +%d）" % [hand_id, amount, total])
+                acquired_technique_id = _learn_random_technique(player, effect.get("pools", []))
+                if acquired_technique_id != "":
+                    details.append("获得功法：%s" % _technique_name(acquired_technique_id))
+                else:
+                    details.append("合格池暂无未获得功法")
+            "apply_enhancement":
+                var enhancement_id: String = effect.get("enhancement", "")
+                for card in cards:
+                    card.set_enhancement(enhancement_id)
+                details.append("%d 张真气获得%s强化" % [cards.size(), _enhancement_name(enhancement_id)])
+            "apply_random_edition":
+                var editions: Array = effect.get("editions", [])
+                if editions.is_empty():
+                    return {"success": false, "reason": "版本候选为空"}
+                for card in cards:
+                    var edition_id: String = str(editions[rng.randi_range(0, editions.size() - 1)])
+                    card.set_edition(edition_id)
+                    details.append("%s获得%s版本" % [card.display_name(), _edition_name(edition_id)])
+            _:
+                return {"success": false, "reason": "不支持的消耗品效果：%s" % op}
+    player.consume_at(slot_index)
+    trigger_queue.add_history(
+        "consumable_use", definition.get("name", consumable_id), "纵切调试构筑台", "成功",
+        "；".join(details))
+    state_changed.emit()
+    return {
+        "success": true,
+        "consumable_id": consumable_id,
+        "cards": cards,
+        "acquired_technique_id": acquired_technique_id,
+        "detail": "；".join(details),
+    }
+
+func _learn_random_technique(side, pools: Array) -> String:
+    var candidates: Array[String] = []
+    for technique_id_value in repository.techniques.keys():
+        var technique_id := str(technique_id_value)
+        var technique: Dictionary = repository.get_technique(technique_id)
+        if pools.has(technique.get("pool", "")) and not side.owned_technique_ids.has(technique_id):
+            candidates.append(technique_id)
+    candidates.sort()
+    if candidates.is_empty():
+        return ""
+    var chosen: String = candidates[rng.randi_range(0, candidates.size() - 1)]
+    side.learn_technique(chosen)
+    return chosen
+
+func _seed_owned_techniques(side, book) -> void:
+    side.owned_technique_ids.clear()
+    for hand_id in book.sequences:
+        for technique_id_value in book.sequences[hand_id]:
+            side.learn_technique(str(technique_id_value))
+
+func _enhancement_name(enhancement_id: String) -> String:
+    return {"bonus": "奖励牌", "multiplier": "倍率牌"}.get(enhancement_id, enhancement_id)
+
+func _edition_name(edition_id: String) -> String:
+    return {"foil": "箔面", "holographic": "镭射", "polychrome": "多彩"}.get(edition_id, edition_id)
 
 func confirm_play(card_ids: Array) -> Dictionary:
     if battle_state != "active":

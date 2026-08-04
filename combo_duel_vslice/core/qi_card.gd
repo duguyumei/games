@@ -7,6 +7,8 @@ var rank_order: int
 var qi_value: int
 var attribute: String
 var attribute_name: String
+var enhancement: String = ""
+var edition: String = ""
 var combat_statuses: Dictionary = {}
 
 func _init(
@@ -25,6 +27,12 @@ func _init(
 
 func display_name() -> String:
     return "%s·%s" % [attribute_name, rank_name]
+
+func set_enhancement(enhancement_id: String) -> void:
+    enhancement = enhancement_id
+
+func set_edition(edition_id: String) -> void:
+    edition = edition_id
 
 func has_combat_status(slot: String, status_id: String = "") -> bool:
     if not combat_statuses.has(slot):
@@ -47,5 +55,7 @@ func to_dict() -> Dictionary:
         "qi_value": qi_value,
         "attribute": attribute,
         "attribute_name": attribute_name,
+        "enhancement": enhancement,
+        "edition": edition,
         "combat_statuses": combat_statuses.duplicate(true),
     }

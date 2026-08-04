@@ -44,6 +44,10 @@ var inner_count_label: Label
 var inner_slots_row: HBoxContainer
 var technique_slot_left_button: Button
 var technique_slot_right_button: Button
+var consumable_count_label: Label
+var consumable_slots_row: HBoxContainer
+var use_consumable_button: Button
+var active_consumable_slot: int = -1
 
 var round_badge: Label
 var hand_name_label: Label
@@ -468,7 +472,7 @@ func _build_loadout_strip() -> Control:
     row.add_child(inner_panel)
 
     var consumable_panel := PanelContainer.new()
-    consumable_panel.custom_minimum_size.x = 244
+    consumable_panel.custom_minimum_size.x = 296
     consumable_panel.add_theme_stylebox_override("panel", _box(Color(0.08, 0.12, 0.13, 0.78), 10, Color("4b3e59"), 1, 3))
     var consumable_box := VBoxContainer.new()
     consumable_box.add_theme_constant_override("separation", 4)
@@ -479,17 +483,24 @@ func _build_loadout_strip() -> Control:
     consumable_title.add_theme_color_override("font_color", COLORS["cream"])
     consumable_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     consumable_header.add_child(consumable_title)
-    var consumable_count := Label.new()
-    consumable_count.text = "0 / 3"
-    consumable_count.add_theme_color_override("font_color", COLORS["muted"])
-    consumable_header.add_child(consumable_count)
+    consumable_count_label = Label.new()
+    consumable_count_label.text = "0 / 3"
+    consumable_count_label.add_theme_color_override("font_color", COLORS["muted"])
+    consumable_header.add_child(consumable_count_label)
     consumable_box.add_child(consumable_header)
-    var consumable_slots := HBoxContainer.new()
-    consumable_slots.alignment = BoxContainer.ALIGNMENT_CENTER
-    consumable_slots.add_theme_constant_override("separation", 7)
+    consumable_slots_row = HBoxContainer.new()
+    consumable_slots_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    consumable_slots_row.add_theme_constant_override("separation", 6)
     for index in range(3):
-        consumable_slots.add_child(_loadout_slot("物", index + 1, COLORS["purple"], Vector2(58, 58)))
-    consumable_box.add_child(consumable_slots)
+        consumable_slots_row.add_child(_loadout_slot("物", index + 1, COLORS["purple"], Vector2(58, 58)))
+    use_consumable_button = Button.new()
+    use_consumable_button.text = "使用"
+    use_consumable_button.custom_minimum_size = Vector2(62, 58)
+    use_consumable_button.tooltip_text = "使用当前选中的消耗品"
+    use_consumable_button.pressed.connect(_use_active_consumable)
+    _style_small_button(use_consumable_button)
+    consumable_slots_row.add_child(use_consumable_button)
+    consumable_box.add_child(consumable_slots_row)
     consumable_panel.add_child(consumable_box)
     row.add_child(consumable_panel)
     return row
@@ -530,6 +541,27 @@ func _equipped_inner_slot(definition: Dictionary, number: int) -> Control:
     box.add_child(name)
     panel.add_child(box)
     return panel
+
+func _consumable_slot(definition: Dictionary, index: int) -> Button:
+    var button := Button.new()
+    var kind_name: String = {
+        "insight": "心得",
+        "pill": "丹药",
+        "treasure": "天材",
+    }.get(definition.get("kind", ""), "物品")
+    button.text = "%s\n%s" % [kind_name, definition.get("name", "未命名")]
+    button.custom_minimum_size = Vector2(66, 58)
+    button.add_theme_font_size_override("font_size", 10)
+    button.tooltip_text = "%s\n%s\n点击后选择使用目标；纵切调试入口" % [
+        definition.get("name", "消耗品"), definition.get("description", "")]
+    var active := index == active_consumable_slot
+    var border := COLORS["gold"] if active else COLORS["purple"]
+    var fill := Color("3b3120") if active else Color("29243a")
+    button.add_theme_stylebox_override("normal", _box(fill, 8, border, 2 if not active else 3, 3))
+    button.add_theme_stylebox_override("hover", _box(fill.lightened(0.1), 8, COLORS["gold"], 2, 5))
+    button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.08), 8, Color("ffe3a0"), 2, 1))
+    button.pressed.connect(_select_consumable_slot.bind(index))
+    return button
 
 func _build_technique_strip() -> Control:
     var panel := PanelContainer.new()
@@ -743,6 +775,7 @@ func _toggle_log_overlay() -> void:
 
 func _reset_battle() -> void:
     selected_ids.clear()
+    active_consumable_slot = -1
     engine.setup_scripted_battle(int(seed_input.value), "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     _refresh()
@@ -772,9 +805,45 @@ func _confirm_play() -> void:
     selected_ids.clear()
     _refresh()
 
+func _select_consumable_slot(slot_index: int) -> void:
+    if slot_index < 0 or slot_index >= engine.player.consumable_ids.size():
+        return
+    if active_consumable_slot == slot_index:
+        active_consumable_slot = -1
+    else:
+        active_consumable_slot = slot_index
+        selected_ids.clear()
+    _refresh()
+
+func _use_active_consumable() -> void:
+    if active_consumable_slot < 0:
+        return
+    var result: Dictionary = engine.use_player_consumable(active_consumable_slot, selected_ids)
+    if not result.get("success", false):
+        engine.trigger_queue.add_history(
+            "ui", "无法使用消耗品", "界面", "失败", result.get("reason", "未知原因"))
+    else:
+        var retained: Array[String] = []
+        for card_id in selected_ids:
+            if engine.player.find_hand_card(card_id) != null:
+                retained.append(card_id)
+        selected_ids = retained
+        active_consumable_slot = -1
+    _refresh()
+
 func _on_card_pressed(card_id: String) -> void:
     if selected_ids.has(card_id):
         selected_ids.erase(card_id)
+    elif active_consumable_slot >= 0:
+        var consumable_id: String = engine.player.consumable_ids[active_consumable_slot]
+        var limits: Dictionary = engine.consumable_repository.target_limits(consumable_id)
+        if limits["zone"] == "none":
+            board_message.text = "该消耗品不需要选择真气"
+            return
+        if selected_ids.size() >= int(limits["maximum"]):
+            board_message.text = "该消耗品至多选择 %d 张真气" % int(limits["maximum"])
+            return
+        selected_ids.append(card_id)
     elif selected_ids.size() < 5:
         selected_ids.append(card_id)
     else:
@@ -823,12 +892,49 @@ func _refresh() -> void:
     _refresh_hand_fan()
     _refresh_enemy_hand()
     _refresh_inner_slots()
+    _refresh_consumable_slots()
     _refresh_preview_and_staging()
     _refresh_log()
     confirm_button.disabled = (
         selected_ids.is_empty()
+        or active_consumable_slot >= 0
         or engine.actions_available <= 0
         or engine.battle_state != "active")
+
+func _refresh_consumable_slots() -> void:
+    if consumable_slots_row == null:
+        return
+    if active_consumable_slot >= engine.player.consumable_ids.size():
+        active_consumable_slot = -1
+    for child in consumable_slots_row.get_children():
+        child.queue_free()
+    consumable_count_label.text = "%d / %d" % [
+        engine.player.consumable_ids.size(), engine.player.consumable_limit]
+    for index in range(engine.player.consumable_limit):
+        if index < engine.player.consumable_ids.size():
+            var definition: Dictionary = engine.consumable_repository.get_consumable(engine.player.consumable_ids[index])
+            consumable_slots_row.add_child(_consumable_slot(definition, index))
+        else:
+            consumable_slots_row.add_child(_loadout_slot("消耗品", index + 1, COLORS["purple"], Vector2(58, 58)))
+    use_consumable_button = Button.new()
+    use_consumable_button.text = "使用"
+    use_consumable_button.custom_minimum_size = Vector2(62, 58)
+    use_consumable_button.tooltip_text = "使用当前选中的消耗品"
+    use_consumable_button.pressed.connect(_use_active_consumable)
+    _style_small_button(use_consumable_button)
+    use_consumable_button.disabled = not _active_consumable_targets_valid()
+    consumable_slots_row.add_child(use_consumable_button)
+
+func _active_consumable_targets_valid() -> bool:
+    if active_consumable_slot < 0 or active_consumable_slot >= engine.player.consumable_ids.size():
+        return false
+    var cards: Array = []
+    for card_id in selected_ids:
+        var card = engine.player.find_hand_card(card_id)
+        if card != null:
+            cards.append(card)
+    var consumable_id: String = engine.player.consumable_ids[active_consumable_slot]
+    return bool(engine.consumable_repository.validate_targets(consumable_id, cards).get("ok", false))
 
 func _refresh_enemy_hand() -> void:
     for child in enemy_hand_row.get_children():
@@ -874,8 +980,18 @@ func _refresh_hand_fan() -> void:
         var view = QiCardViewScript.new()
         view.setup(card, selected_ids.has(card.id), false, true)
         view.qi_card_pressed.connect(_on_card_pressed)
-        view.tooltip_text = "%s｜牌阶 %s｜真气值 %d｜%s属性%s" % [
+        var enhancement_text: String = {
+            "bonus": "｜奖励牌：有效真气值 +2",
+            "multiplier": "｜倍率牌：功法倍率 +2",
+        }.get(card.enhancement, "")
+        var edition_text: String = {
+            "foil": "｜箔面：自身贡献 +3",
+            "holographic": "｜镭射：功法倍率 +1",
+            "polychrome": "｜多彩：功法值增幅 +20%",
+        }.get(card.edition, "")
+        view.tooltip_text = "%s｜牌阶 %s｜真气值 %d｜%s属性%s%s%s" % [
             card.id, card.rank_name, card.qi_value, card.attribute_name,
+            enhancement_text, edition_text,
             "｜烈毒：打出时受到当前有效真气值伤害" if card.has_combat_status("outplay", "lethal_poison") else ""]
         hand_fan.add_child(view)
         hand_card_nodes.append(view)
@@ -911,6 +1027,9 @@ func _layout_hand_fan() -> void:
 func _refresh_preview_and_staging() -> void:
     for child in staging_row.get_children():
         child.queue_free()
+    if active_consumable_slot >= 0 and active_consumable_slot < engine.player.consumable_ids.size():
+        _refresh_consumable_targeting()
+        return
     if selected_ids.is_empty():
         hand_name_label.text = "等待选牌"
         base_value_label.text = "0"
@@ -971,6 +1090,39 @@ func _refresh_preview_and_staging() -> void:
     var contributing_count: int = hand["contributing"].size()
     board_message.text = "%s · %d 张参与数值计算 · P = %d · 内功防御 +%d · 对手计划已锁定" % [
         hand["name"], contributing_count, values["technique_value"], inner_defense]
+
+func _refresh_consumable_targeting() -> void:
+    var consumable_id: String = engine.player.consumable_ids[active_consumable_slot]
+    var definition: Dictionary = engine.consumable_repository.get_consumable(consumable_id)
+    var limits: Dictionary = engine.consumable_repository.target_limits(consumable_id)
+    for card_id in selected_ids:
+        var card = engine.player.find_hand_card(card_id)
+        if card == null:
+            continue
+        var compact_view = QiCardViewScript.new()
+        compact_view.setup(card, true, true, false)
+        staging_row.add_child(compact_view)
+    hand_name_label.text = "使用 · %s" % definition.get("name", "消耗品")
+    base_value_label.text = "—"
+    multiplier_label.text = "—"
+    power_value_label.text = "—"
+    baseline_label.text = "构筑改造 · 使用后立即刷新预览"
+    left_technique_name.text = "%s · %s" % [
+        {"insight": "心得", "pill": "丹药", "treasure": "天材地宝"}.get(definition.get("kind", ""), "消耗品"),
+        definition.get("name", "")]
+    left_technique_description.text = definition.get("description", "")
+    current_technique_name.text = definition.get("name", "消耗品")
+    current_technique_description.text = "纵切调试构筑入口"
+    next_technique_name.text = "使用后释放槽位"
+    sequence_pips.text = "◆"
+    staging_hint.visible = selected_ids.is_empty() and limits["zone"] != "none"
+    if limits["zone"] == "none":
+        staging_hint.text = "无需选择真气，直接点击使用"
+    else:
+        staging_hint.text = "选择 %d～%d 张当前手牌" % [limits["minimum"], limits["maximum"]]
+    board_message.text = "%s · 已选 %d / %d 张%s" % [
+        definition.get("description", ""), selected_ids.size(), limits["maximum"],
+        " · 可以使用" if _active_consumable_targets_valid() else ""]
 
 func _show_last_synchronized_reveal() -> void:
     if not engine.last_player_action_cards.is_empty():

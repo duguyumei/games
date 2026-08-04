@@ -13,6 +13,10 @@ var discard_pile: Array = []
 var stacks: Dictionary = {}
 var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
+var consumable_ids: Array[String] = []
+var consumable_limit: int = 3
+var insight_multipliers: Dictionary = {}
+var owned_technique_ids: Array[String] = []
 
 func _init(side_name: String = "") -> void:
     name = side_name
@@ -24,6 +28,10 @@ func reset(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true)
     stacks.clear()
     equipped_inner_skill_ids.clear()
     technique_slot_index = 0
+    consumable_ids.clear()
+    consumable_limit = 3
+    insight_multipliers.clear()
+    owned_technique_ids.clear()
     hand.clear()
     staging.clear()
     discard_pile.clear()
@@ -138,6 +146,32 @@ func configure_inner_skills(inner_skill_ids: Array, dynamic_technique_slot: int 
     for inner_skill_id in inner_skill_ids.slice(0, 6):
         equipped_inner_skill_ids.append(str(inner_skill_id))
     technique_slot_index = clampi(dynamic_technique_slot, 0, equipped_inner_skill_ids.size())
+
+func configure_consumables(ids: Array) -> void:
+    consumable_ids.clear()
+    for consumable_id in ids.slice(0, consumable_limit):
+        consumable_ids.append(str(consumable_id))
+
+func grant_consumable(consumable_id: String) -> bool:
+    if consumable_ids.size() >= consumable_limit:
+        return false
+    consumable_ids.append(consumable_id)
+    return true
+
+func consume_at(slot_index: int) -> String:
+    if slot_index < 0 or slot_index >= consumable_ids.size():
+        return ""
+    return consumable_ids.pop_at(slot_index)
+
+func add_insight(hand_id: String, amount: int) -> int:
+    insight_multipliers[hand_id] = int(insight_multipliers.get(hand_id, 0)) + maxi(0, amount)
+    return int(insight_multipliers[hand_id])
+
+func learn_technique(technique_id: String) -> bool:
+    if technique_id == "" or owned_technique_ids.has(technique_id):
+        return false
+    owned_technique_ids.append(technique_id)
+    return true
 
 func combat_source_order(inner_skill_index: int) -> int:
     return inner_skill_index if inner_skill_index < technique_slot_index else inner_skill_index + 1

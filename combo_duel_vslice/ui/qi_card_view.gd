@@ -130,19 +130,32 @@ func _rebuild_visuals() -> void:
     _add_selected_badge(width)
 
 func _add_status_badges(width: float) -> void:
-    if not card_data.has_combat_status("outplay", "lethal_poison"):
-        return
-    var poison_badge := Label.new()
-    poison_badge.text = "烈毒"
-    poison_badge.position = Vector2((width - 42) * 0.5, 6)
-    poison_badge.size = Vector2(42, 20)
-    poison_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    poison_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    poison_badge.add_theme_font_size_override("font_size", 10)
-    poison_badge.add_theme_color_override("font_color", Color("fff1dc"))
-    poison_badge.add_theme_stylebox_override("normal", _status_style(Color("9b3139")))
-    poison_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    add_child(poison_badge)
+    var badges: Array = []
+    if card_data.enhancement != "":
+        badges.append({
+            "text": {"bonus": "奖励", "multiplier": "倍率"}.get(card_data.enhancement, "强化"),
+            "color": Color("a56d27"),
+        })
+    if card_data.edition != "":
+        badges.append({
+            "text": {"foil": "箔面", "holographic": "镭射", "polychrome": "多彩"}.get(card_data.edition, "版本"),
+            "color": {"foil": Color("897d62"), "holographic": Color("3477a8"), "polychrome": Color("7546a0")}.get(card_data.edition, Color("59616a")),
+        })
+    if card_data.has_combat_status("outplay", "lethal_poison"):
+        badges.append({"text": "烈毒", "color": Color("9b3139")})
+    for index in range(badges.size()):
+        var badge_data: Dictionary = badges[index]
+        var badge := Label.new()
+        badge.text = badge_data["text"]
+        badge.position = Vector2(6, 6 + index * 20)
+        badge.size = Vector2(38 if compact else 44, 18)
+        badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        badge.add_theme_font_size_override("font_size", 9 if compact else 10)
+        badge.add_theme_color_override("font_color", Color("fff1dc"))
+        badge.add_theme_stylebox_override("normal", _status_style(badge_data["color"]))
+        badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        add_child(badge)
 
 func _status_style(color: Color) -> StyleBoxFlat:
     var style := StyleBoxFlat.new()
