@@ -1,0 +1,24 @@
+{
+  "attributes": [
+    {"id": "wind", "name": "风"},
+    {"id": "forest", "name": "林"},
+    {"id": "fire", "name": "火"},
+    {"id": "mountain", "name": "山"}
+  ],
+  "ranks": [
+    {"id": "2", "order": 2, "qi": 2},
+    {"id": "3", "order": 3, "qi": 3},
+    {"id": "4", "order": 4, "qi": 4},
+    {"id": "5", "order": 5, "qi": 5},
+    {"id": "6", "order": 6, "qi": 6},
+    {"id": "7", "order": 7, "qi": 7},
+    {"id": "8", "order": 8, "qi": 8},
+    {"id": "9", "order": 9, "qi": 9},
+    {"id": "10", "order": 10, "qi": 10},
+    {"id": "J", "order": 11, "qi": 11},
+    {"id": "Q", "order": 12, "qi": 11},
+    {"id": "K", "order": 13, "qi": 11},
+    {"id": "A", "order": 14, "qi": 12}
+  ]
+}
+

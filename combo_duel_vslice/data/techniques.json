@@ -1,0 +1,106 @@
+{
+  "pool_membership": {
+    "high_card": ["high"],
+    "pair": ["pair_two_pair"],
+    "two_pair": ["pair_two_pair"],
+    "three_kind": ["three_full_house"],
+    "full_house": ["three_full_house"],
+    "four_kind": ["four_five"],
+    "straight": ["straight"],
+    "flush": ["flush"],
+    "straight_flush": ["straight", "flush"]
+  },
+  "techniques": [
+    {
+      "id": "fire_sparks",
+      "name": "火星连点",
+      "pool": "high",
+      "special": false,
+      "description": "造成 3 次 max(1,floor(P/4)) 点伤害；每个攻击段后获得 1 层连势。",
+      "effects": [
+        {"op": "multi_damage", "segments": 3, "amount": {"kind": "power_fraction", "numerator": 1, "denominator": 4, "minimum": 1}, "after_each_stack": {"stack": "momentum", "amount": 1}}
+      ]
+    },
+    {
+      "id": "clear_wind_gap",
+      "name": "清风过隙",
+      "pool": "high",
+      "special": false,
+      "description": "造成 P 点伤害；抽 1 张，再随机弃 1 张；首次抽到风时额外抽 1 张。",
+      "effects": [
+        {"op": "damage", "amount": {"kind": "power"}},
+        {"op": "draw", "count": {"kind": "constant", "value": 1}, "capture": "first_draw"},
+        {"op": "discard_random", "count": {"kind": "constant", "value": 1}},
+        {"op": "draw_if_captured_attribute", "capture": "first_draw", "attribute": "wind", "count": 1}
+      ]
+    },
+    {
+      "id": "suspended_gu",
+      "name": "一线悬蛊",
+      "pool": "high",
+      "special": false,
+      "description": "获得 P 点防御，敌方获得 1 层蛊印；纯风高牌改为 2 层。",
+      "effects": [
+        {"op": "defense", "amount": {"kind": "power"}},
+        {"op": "add_target_stack", "stack": "gu_mark", "amount": {"kind": "constant", "value": 1}},
+        {"op": "add_target_stack", "stack": "gu_mark", "amount": {"kind": "constant", "value": 1}, "when": {"pure_attribute": "wind"}}
+      ]
+    },
+    {
+      "id": "double_gu_bind",
+      "name": "双蛊缠脉",
+      "pool": "pair_two_pair",
+      "special": false,
+      "description": "获得 floor(P/2) 点防御；一对施加 1 层蛊印，两对施加 2 层。",
+      "effects": [
+        {"op": "defense", "amount": {"kind": "power_fraction", "numerator": 1, "denominator": 2, "minimum": 1}},
+        {"op": "add_target_stack", "stack": "gu_mark", "amount": {"kind": "hand_map", "values": {"pair": 1, "two_pair": 2}}}
+      ]
+    },
+    {
+      "id": "three_corpses_gu",
+      "name": "三尸种蛊",
+      "pool": "three_full_house",
+      "special": false,
+      "description": "获得 floor(P/3) 点防御；三条施加 3 层蛊印，葫芦施加 4 层；纯风再加 1 层。",
+      "effects": [
+        {"op": "defense", "amount": {"kind": "power_fraction", "numerator": 1, "denominator": 3, "minimum": 1}},
+        {"op": "add_target_stack", "stack": "gu_mark", "amount": {"kind": "hand_map", "values": {"three_kind": 3, "full_house": 4}}},
+        {"op": "add_target_stack", "stack": "gu_mark", "amount": {"kind": "constant", "value": 1}, "when": {"pure_attribute": "wind"}}
+      ]
+    },
+    {
+      "id": "discard_fuel_open_furnace",
+      "name": "弃薪开炉",
+      "pool": "four_five",
+      "special": true,
+      "description": "弃掉全部剩余手牌；每张获得 2 层连势，火牌改为 4 层；抽 max(2,N) 张并获得 1 次连击。",
+      "effects": [
+        {"op": "discard_all_hand", "capture": "fuel_cards"},
+        {"op": "add_stack_per_captured_card", "capture": "fuel_cards", "stack": "momentum", "default": 2, "attribute_values": {"fire": 4}},
+        {"op": "draw", "count": {"kind": "max", "values": [{"kind": "constant", "value": 2}, {"kind": "n60"}]}},
+        {"op": "gain_extra_action", "amount": {"kind": "constant", "value": 1}}
+      ]
+    },
+    {
+      "id": "five_yang_chase",
+      "name": "五阳逐影",
+      "pool": "straight",
+      "special": false,
+      "description": "造成 5 次 floor(P/7) 点伤害；每段后获得 1 层连势；连续两段伤及生命时追加 50% 追击。",
+      "effects": [
+        {"op": "multi_damage", "segments": 5, "amount": {"kind": "power_fraction", "numerator": 1, "denominator": 7, "minimum": 1}, "after_each_stack": {"stack": "momentum", "amount": 1}, "chase_on_consecutive_life_hits_percent": 50, "chase_stack": 1}
+      ]
+    },
+    {
+      "id": "hundred_strikes_ashes",
+      "name": "百击归烬",
+      "pool": "flush",
+      "special": true,
+      "description": "记录 P 两个玩家回合及攻击段数，第二回合结束时按记录 P 造成等段追击。",
+      "effects": [
+        {"op": "register_attack_counter_delay", "turn_ends": 2, "damage": {"kind": "power_fraction", "numerator": 1, "denominator": 20, "minimum": 1}}
+      ]
+    }
+  ]
+}

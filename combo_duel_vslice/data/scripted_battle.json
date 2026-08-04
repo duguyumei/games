@@ -1,0 +1,29 @@
+{
+  "id": "trial_sync_01",
+  "name": "试炼对手",
+  "enemy": {
+    "life": 100,
+    "opening_hand": [
+      "fire_2", "forest_4", "mountain_6", "wind_8",
+      "fire_9", "forest_J", "mountain_Q", "wind_K"
+    ],
+    "draw_order": ["forest_2", "mountain_3", "fire_5", "wind_7"],
+    "sequences": {
+      "high_card": ["fire_sparks"],
+      "pair": ["double_gu_bind"],
+      "two_pair": ["double_gu_bind"],
+      "three_kind": ["three_corpses_gu"],
+      "full_house": ["three_corpses_gu"],
+      "four_kind": ["discard_fuel_open_furnace"],
+      "straight": ["five_yang_chase"],
+      "flush": ["hundred_strikes_ashes"],
+      "straight_flush": ["five_yang_chase"]
+    }
+  },
+  "rounds": [
+    {"actions": [["fire_2", "forest_4"]]},
+    {"actions": [["mountain_6", "wind_8"]]},
+    {"actions": [["fire_9", "forest_J"]]},
+    {"actions": [["mountain_Q", "wind_K"]]}
+  ]
+}

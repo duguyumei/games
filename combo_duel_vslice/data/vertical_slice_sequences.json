@@ -1,0 +1,11 @@
+{
+  "high_card": ["clear_wind_gap", "suspended_gu"],
+  "pair": ["double_gu_bind"],
+  "two_pair": ["double_gu_bind"],
+  "three_kind": ["three_corpses_gu"],
+  "straight": ["five_yang_chase"],
+  "flush": ["hundred_strikes_ashes"],
+  "full_house": ["three_corpses_gu"],
+  "four_kind": ["discard_fuel_open_furnace"],
+  "straight_flush": ["five_yang_chase", "hundred_strikes_ashes"]
+}
