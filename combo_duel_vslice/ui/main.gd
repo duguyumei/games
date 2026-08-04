@@ -33,6 +33,7 @@ var enemy_hp_text: Label
 var enemy_defense_text: Label
 var enemy_gu_text: Label
 var enemy_momentum_text: Label
+var enemy_poison_text: Label
 var enemy_name_label: Label
 var enemy_hand_row: HBoxContainer
 var enemy_hand_count_label: Label
@@ -356,6 +357,8 @@ func _build_enemy_strip() -> Control:
     status_row.add_child(enemy_gu_text)
     enemy_momentum_text = _status_chip("连势 0", COLORS["orange"])
     status_row.add_child(enemy_momentum_text)
+    enemy_poison_text = _status_chip("烈毒 0", COLORS["red"])
+    status_row.add_child(enemy_poison_text)
     box.add_child(status_row)
     panel.add_child(box)
     return panel
@@ -734,6 +737,7 @@ func _refresh() -> void:
     enemy_defense_text.text = "盾 %d" % engine.enemy.defense
     enemy_gu_text.text = "蛊印 %d" % int(engine.enemy.stacks.get("gu_mark", 0))
     enemy_momentum_text.text = "连势 %d" % int(engine.enemy.stacks.get("momentum", 0))
+    enemy_poison_text.text = "烈毒 %d" % engine.enemy.count_status_in_zone("hand", "outplay", "lethal_poison")
     enemy_hand_count_label.text = "%d / %d%s" % [
         engine.enemy.hand.size(),
         engine.enemy.hand_limit,
@@ -782,7 +786,9 @@ func _refresh_hand_fan() -> void:
         var view = QiCardViewScript.new()
         view.setup(card, selected_ids.has(card.id), false, true)
         view.qi_card_pressed.connect(_on_card_pressed)
-        view.tooltip_text = "%s｜牌阶 %s｜真气值 %d｜%s属性" % [card.id, card.rank_name, card.qi_value, card.attribute_name]
+        view.tooltip_text = "%s｜牌阶 %s｜真气值 %d｜%s属性%s" % [
+            card.id, card.rank_name, card.qi_value, card.attribute_name,
+            "｜烈毒：打出时受到当前有效真气值伤害" if card.has_combat_status("outplay", "lethal_poison") else ""]
         hand_fan.add_child(view)
         hand_card_nodes.append(view)
     _layout_hand_fan.call_deferred()

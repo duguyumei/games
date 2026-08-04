@@ -7,6 +7,7 @@ var rank_order: int
 var qi_value: int
 var attribute: String
 var attribute_name: String
+var combat_statuses: Dictionary = {}
 
 func _init(
         card_id: String = "",
@@ -25,6 +26,19 @@ func _init(
 func display_name() -> String:
     return "%s·%s" % [attribute_name, rank_name]
 
+func has_combat_status(slot: String, status_id: String = "") -> bool:
+    if not combat_statuses.has(slot):
+        return false
+    return status_id == "" or str(combat_statuses[slot]) == status_id
+
+func set_combat_status(slot: String, status_id: String) -> void:
+    combat_statuses[slot] = status_id
+
+func remove_combat_status(slot: String) -> String:
+    var previous := str(combat_statuses.get(slot, ""))
+    combat_statuses.erase(slot)
+    return previous
+
 func to_dict() -> Dictionary:
     return {
         "id": id,
@@ -33,5 +47,5 @@ func to_dict() -> Dictionary:
         "qi_value": qi_value,
         "attribute": attribute,
         "attribute_name": attribute_name,
+        "combat_statuses": combat_statuses.duplicate(true),
     }
-

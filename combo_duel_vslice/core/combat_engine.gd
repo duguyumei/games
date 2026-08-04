@@ -47,6 +47,7 @@ var _damage_buffer_active: bool = false
 var _damage_buffer: Array = []
 var _damage_shadows: Dictionary = {}
 var _damage_actor_start_alive: Dictionary = {}
+var _recycle_after_play: Dictionary = {}
 
 func _init() -> void:
     repository.load_from_file()
@@ -80,6 +81,7 @@ func setup(seed_value: int = 2308, shuffle_cards: bool = true) -> void:
     battle_state = "active"
     battle_state_detail = ""
     _clear_damage_buffer()
+    _recycle_after_play.clear()
     state_changed.emit()
 
 func setup_scripted_battle(
@@ -198,8 +200,9 @@ func _confirm_solo_player(card_ids: Array) -> Dictionary:
     _log_calculation(player, action_preview)
     var record := _make_action_record(player, enemy, action_preview, sequence_book, 100)
     _resolve_action_records([record], false)
-    var played_cards := player.commit_staging()
-    _log_cards_leave(player, played_cards)
+    var player_commit := _commit_staging_for(player)
+    var played_cards: Array = player_commit["committed"]
+    _log_cards_leave(player, played_cards, player_commit["recycled"])
     _finish_action_record(record)
     last_player_action_cards = played_cards
     last_enemy_action_cards.clear()
@@ -250,11 +253,13 @@ func _confirm_synchronized_play(card_ids: Array) -> Dictionary:
         records.append(_make_action_record(enemy, player, enemy_preview, enemy_sequence_book, 200))
     _resolve_action_records(records, true)
 
-    var player_cards := player.commit_staging()
-    var enemy_cards: Array = enemy.commit_staging() if enemy_will_act else []
-    _log_cards_leave(player, player_cards)
+    var player_commit := _commit_staging_for(player)
+    var enemy_commit: Dictionary = _commit_staging_for(enemy) if enemy_will_act else {"committed": [], "recycled": []}
+    var player_cards: Array = player_commit["committed"]
+    var enemy_cards: Array = enemy_commit["committed"]
+    _log_cards_leave(player, player_cards, player_commit["recycled"])
     if enemy_will_act:
-        _log_cards_leave(enemy, enemy_cards)
+        _log_cards_leave(enemy, enemy_cards, enemy_commit["recycled"])
     for record in records:
         _finish_action_record(record)
     last_player_action_cards = player_cards
@@ -339,11 +344,11 @@ func _resolve_action_records(records: Array, synchronized: bool) -> void:
             trigger_queue.enqueue(
                 timing, technique["name"], "%s功法" % record["actor"].name,
                 record["order"], effects, context)
-        if not phase_has_entries:
+        if not phase_has_entries and phase != "damage":
             continue
         if phase == "damage" and synchronized:
             _begin_damage_buffer(records)
-        var results := trigger_queue.process_timing(timing, effect_executor)
+        var results: Array = trigger_queue.process_timing(timing, effect_executor) if phase_has_entries else []
         for resolution in results:
             if resolution["result"].get("success", false):
                 continue
@@ -352,6 +357,8 @@ func _resolve_action_records(records: Array, synchronized: bool) -> void:
                 if record["token"] == token:
                     record["failed"] = true
                     record["triggered"] = false
+        if phase == "damage":
+            _resolve_played_card_statuses(records)
         if phase == "damage" and synchronized:
             _flush_damage_buffer()
 
@@ -360,6 +367,11 @@ func _effects_for_phase(effects: Array, phase: String) -> Array:
     var prepare_ops := ["defense", "add_stack", "add_target_stack", "register_attack_counter_delay"]
     var damage_ops := ["damage", "multi_damage"]
     for effect in effects:
+        var explicit_phase: String = effect.get("phase", "")
+        if explicit_phase != "":
+            if explicit_phase == phase:
+                result.append(effect)
+            continue
         var op: String = effect.get("op", "")
         if phase == "prepare" and op in prepare_ops:
             result.append(effect)
@@ -390,10 +402,41 @@ func _log_calculation(side, action_preview: Dictionary) -> void:
         "基础值 %d｜牌型基准值 %d｜功法值 %d（不自动造成伤害）" % [
             values["base_value"], values["baseline_value"], values["technique_value"]])
 
-func _log_cards_leave(side, cards: Array) -> void:
+func _log_cards_leave(side, cards: Array, recycled: Array = []) -> void:
     trigger_queue.add_history(
-        "cards_leave_play", "%s打出真气进入弃牌堆" % side.name, "规则", "成功",
-        "%d 张；这不视为弃掉" % cards.size())
+        "cards_leave_play", "%s打出真气离开待出区" % side.name, "规则", "成功",
+        "%d 张；其中 %d 张因蛊印洗回牌库；这不视为弃掉" % [cards.size(), recycled.size()])
+
+func _resolve_played_card_statuses(records: Array) -> void:
+    for record in records:
+        var holder = record["actor"]
+        for card in holder.staging:
+            if not card.has_combat_status("outplay", "lethal_poison"):
+                continue
+            card.remove_combat_status("outplay")
+            var poison_damage := maxi(0, card.qi_value)
+            deal_damage(holder, holder, poison_damage, "烈毒")
+            trigger_queue.add_history(
+                "card_status_damage", "%s·%s触发烈毒" % [holder.name, card.display_name()],
+                "真气异状", "结算", "%d 点伤害" % poison_damage)
+            if int(holder.stacks.get("gu_mark", 0)) > 0:
+                holder.stacks["gu_mark"] = int(holder.stacks["gu_mark"]) - 1
+                var side_id: int = holder.get_instance_id()
+                if not _recycle_after_play.has(side_id):
+                    _recycle_after_play[side_id] = {}
+                _recycle_after_play[side_id][card.id] = {
+                    "slot": "outplay",
+                    "status": "lethal_poison",
+                }
+                trigger_queue.add_history(
+                    "gu_mark_consume", "%s消耗 1 层蛊印" % holder.name,
+                    "蛊印", "成功", "%s续上烈毒，结算后洗回牌库" % card.display_name())
+
+func _commit_staging_for(side) -> Dictionary:
+    var side_recycles: Dictionary = _recycle_after_play.get(side.get_instance_id(), {})
+    var result: Dictionary = side.commit_staging_with_recycles(side_recycles, rng)
+    _recycle_after_play.erase(side.get_instance_id())
+    return result
 
 func _reveal_detail(player_preview: Dictionary, enemy_preview: Dictionary) -> String:
     var player_name: String = player_preview["hand"]["name"]
@@ -426,7 +469,7 @@ func gain_extra_actions_for(side, amount: int, source: String) -> void:
 
 func deal_damage(actor, target, base_amount: int, source_kind: String, true_damage: bool = false) -> Dictionary:
     var final_amount := maxi(0, base_amount)
-    if not true_damage:
+    if not true_damage and source_kind in ["technique", "chase", "counter", "delayed_chase"]:
         final_amount = int(floor(final_amount * (1.0 + int(actor.stacks.get("momentum", 0)) / 100.0)))
     var result: Dictionary
     if _damage_buffer_active:

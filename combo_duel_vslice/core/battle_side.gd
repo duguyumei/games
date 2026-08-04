@@ -73,6 +73,35 @@ func commit_staging() -> Array:
     staging.clear()
     return committed
 
+func commit_staging_with_recycles(recycle_statuses: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+    var committed := staging.duplicate()
+    var recycled: Array = []
+    for card in staging:
+        if recycle_statuses.has(card.id):
+            var status_data: Dictionary = recycle_statuses[card.id]
+            card.set_combat_status(str(status_data["slot"]), str(status_data["status"]))
+            draw_pile.append(card)
+            recycled.append(card)
+        else:
+            discard_pile.append(card)
+    staging.clear()
+    if not recycled.is_empty():
+        _shuffle(draw_pile, rng)
+    return {"committed": committed, "recycled": recycled}
+
+func count_status_in_zone(zone: String, slot: String, status_id: String) -> int:
+    var cards: Array = []
+    match zone:
+        "hand": cards = hand
+        "draw_pile": cards = draw_pile
+        "staging": cards = staging
+        "discard_pile": cards = discard_pile
+    var count := 0
+    for card in cards:
+        if card.has_combat_status(slot, status_id):
+            count += 1
+    return count
+
 func random_discard(count: int, rng: RandomNumberGenerator) -> Array:
     var discarded: Array = []
     for _index in range(maxi(0, count)):
@@ -119,4 +148,3 @@ func receive_damage(amount: int, true_damage: bool = false) -> Dictionary:
         "life_lost": life_lost,
         "true_damage": true_damage,
     }
-

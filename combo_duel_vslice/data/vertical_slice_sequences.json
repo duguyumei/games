@@ -1,5 +1,5 @@
 {
-  "high_card": ["clear_wind_gap", "suspended_gu"],
+  "high_card": ["suspended_gu", "lethal_gu_needle", "clear_wind_gap"],
   "pair": ["double_gu_bind"],
   "two_pair": ["double_gu_bind"],
   "three_kind": ["three_corpses_gu"],

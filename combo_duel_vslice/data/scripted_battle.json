@@ -23,7 +23,7 @@
   "rounds": [
     {"actions": [["fire_2", "forest_4"]]},
     {"actions": [["mountain_6", "wind_8"]]},
-    {"actions": [["fire_9", "forest_J"]]},
-    {"actions": [["mountain_Q", "wind_K"]]}
+    {"actions": [["mountain_3", "fire_9"]]},
+    {"actions": [["forest_J", "mountain_Q"]]}
   ]
 }

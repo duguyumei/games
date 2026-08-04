@@ -54,6 +54,29 @@ func _execute_effect(effect: Dictionary, context: Dictionary) -> Dictionary:
             var all_discarded: Array = actor.discard_all()
             context["captures"][effect.get("capture", "discarded")] = all_discarded
             return {"success": true, "detail": "弃掉全部剩余手牌 %d 张" % all_discarded.size()}
+        "apply_random_card_status":
+            var zone: String = effect.get("zone", "hand")
+            var slot: String = effect.get("slot", "outplay")
+            var status_id: String = effect.get("status", "")
+            var source_cards: Array = []
+            match zone:
+                "hand": source_cards = target.hand
+                "draw_pile": source_cards = target.draw_pile
+                "discard_pile": source_cards = target.discard_pile
+            var candidates: Array = []
+            for card in source_cards:
+                if not card.has_combat_status(slot):
+                    candidates.append(card)
+            var applied: Array = []
+            var wanted := mini(_resolve_amount(effect.get("count", 1), context), candidates.size())
+            for _index in range(wanted):
+                var chosen_index := rng.randi_range(0, candidates.size() - 1)
+                var chosen = candidates.pop_at(chosen_index)
+                chosen.set_combat_status(slot, status_id)
+                applied.append(chosen)
+            if effect.has("capture"):
+                context["captures"][effect["capture"]] = applied
+            return {"success": true, "detail": "%s获得%s：%d 张" % [zone, status_id, applied.size()]}
         "add_stack":
             var stack_amount: int = actor.add_stack(effect["stack"], _resolve_amount(effect.get("amount", {}), context))
             return {"success": true, "detail": "%s +%d" % [effect["stack"], stack_amount]}
@@ -151,4 +174,8 @@ func _effect_condition_met(condition: Dictionary, context: Dictionary) -> bool:
         for card in contributing:
             if card.attribute != attribute:
                 return false
+    if condition.has("capture_nonempty"):
+        var captured: Array = context.get("captures", {}).get(condition["capture_nonempty"], [])
+        if captured.is_empty():
+            return false
     return true

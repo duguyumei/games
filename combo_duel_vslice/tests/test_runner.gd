@@ -26,6 +26,9 @@ func _initialize() -> void:
     _test_scripted_enemy_is_deterministic_and_locked()
     _test_synchronized_defense_before_damage()
     _test_synchronized_lethal_and_battle_results()
+    _test_data_driven_lethal_gu_needle()
+    _test_lethal_poison_and_gu_recycle_chain()
+    _test_scripted_poison_demo_reaches_recycle()
     if failures.is_empty():
         print("TEST PASS: %d assertions" % assertions)
         quit(0)
@@ -195,6 +198,7 @@ func _test_representative_damage_draw_discard() -> void:
     var remaining := [_card("3", "forest"), _card("4", "fire")]
     var draw_cards := [_card("6", "forest"), _card("2", "wind")]
     var engine = _engine_with_hand(selected + remaining, draw_cards, 4242)
+    engine.sequence_book.configure({"high_card": ["clear_wind_gap"]})
     var result := engine.confirm_play(_ids(selected))
     _assert_true(result["technique_triggered"], "清风过隙触发")
     _assert_equal(engine.enemy.life, 91, "清风过隙造成 P 点伤害")
@@ -341,3 +345,77 @@ func _test_synchronized_lethal_and_battle_results() -> void:
     exhausted.player.draw_pile.clear()
     exhausted.confirm_play([exhausted.player.hand[0].id])
     _assert_equal(exhausted.battle_state, "player_defeat", "无手牌无牌库且敌人存活判负")
+
+func _test_data_driven_lethal_gu_needle() -> void:
+    var selected := [_card("9", "wind")]
+    var engine = _engine_with_hand(selected + [_card("3", "forest")])
+    var poison_target = _card("7", "fire")
+    engine.enemy.hand = [poison_target]
+    engine.sequence_book.configure({"high_card": ["lethal_gu_needle"]})
+    var result := engine.confirm_play(_ids(selected))
+    _assert_true(result["technique_triggered"], "烈蛊飞针由数据效果接口触发")
+    _assert_equal(engine.enemy.life, 96, "烈蛊飞针造成 floor(P/2) 伤害")
+    _assert_true(poison_target.has_combat_status("outplay", "lethal_poison"), "烈蛊飞针为对手手牌附烈毒")
+    _assert_equal(engine.enemy.stacks.get("gu_mark", 0), 1, "纯风且实际附毒后获得蛊印")
+
+func _poison_chain_engine(with_gu: bool):
+    var engine = CombatEngineScript.new()
+    engine.setup(5150, false)
+    engine.scripted_mode = true
+    engine.actions_available = 1
+    engine.enemy_actions_available = 1
+    engine.sequence_book.configure({"high_card": []})
+    engine.enemy_sequence_book.configure({"high_card": []})
+    engine.player.hand = [_card("2", "mountain"), _card("3", "forest")]
+    engine.player.draw_pile.clear()
+    var poisoned = _card("7", "fire")
+    poisoned.set_combat_status("outplay", "lethal_poison")
+    var companion = _card("4", "forest")
+    engine.enemy.hand = [poisoned, companion]
+    engine.enemy.draw_pile.clear()
+    engine.locked_enemy_card_ids = [poisoned.id, companion.id]
+    if with_gu:
+        engine.enemy.stacks["gu_mark"] = 1
+    return {"engine": engine, "poisoned": poisoned, "player_card": engine.player.hand[0]}
+
+func _test_lethal_poison_and_gu_recycle_chain() -> void:
+    var without_gu: Dictionary = _poison_chain_engine(false)
+    var plain_engine = without_gu["engine"]
+    plain_engine.confirm_play([without_gu["player_card"].id])
+    _assert_equal(plain_engine.enemy.life, 93, "烈毒按真气值造成普通伤害")
+    _assert_true(plain_engine.enemy.discard_pile.has(without_gu["poisoned"]), "没有蛊印时毒牌正常进入弃牌堆")
+    _assert_true(not without_gu["poisoned"].has_combat_status("outplay"), "烈毒触发后移除")
+
+    var with_gu: Dictionary = _poison_chain_engine(true)
+    var gu_engine = with_gu["engine"]
+    gu_engine.confirm_play([with_gu["player_card"].id])
+    _assert_equal(gu_engine.enemy.life, 93, "蛊印不取消本次烈毒伤害")
+    _assert_equal(gu_engine.enemy.stacks.get("gu_mark", 0), 0, "烈毒结算后消耗一层蛊印")
+    _assert_true(gu_engine.enemy.draw_pile.has(with_gu["poisoned"]), "蛊印使毒牌洗回对手牌库")
+    _assert_true(not gu_engine.enemy.discard_pile.has(with_gu["poisoned"]), "洗回牌不留在弃牌堆")
+    _assert_true(with_gu["poisoned"].has_combat_status("outplay", "lethal_poison"), "洗回牌重新获得同种烈毒")
+
+func _test_scripted_poison_demo_reaches_recycle() -> void:
+    var engine = CombatEngineScript.new()
+    engine.setup_scripted_battle(2308)
+    engine.start_player_turn()
+    var first_wind = null
+    for card in engine.player.hand:
+        if card.attribute == "wind":
+            first_wind = card
+            break
+    _assert_true(first_wind != null, "固定种子起手存在风牌用于一线悬蛊")
+    engine.confirm_play([first_wind.id])
+    engine.end_player_turn()
+    engine.start_player_turn()
+    engine.confirm_play([engine.player.hand[0].id])
+    var poisoned = engine.enemy.find_hand_card("mountain_3")
+    _assert_true(poisoned != null and poisoned.has_combat_status("outplay", "lethal_poison"), "固定场景第二回合将山3附烈毒")
+    var gu_before := int(engine.enemy.stacks.get("gu_mark", 0))
+    engine.end_player_turn()
+    engine.start_player_turn()
+    _assert_true(engine.locked_enemy_card_ids.has("mountain_3"), "第三回合脚本锁定带毒山3")
+    engine.confirm_play([engine.player.hand[0].id])
+    _assert_equal(engine.enemy.stacks.get("gu_mark", 0), gu_before - 1, "场景实战链消耗一层蛊印")
+    _assert_true(engine.enemy.draw_pile.has(poisoned), "场景实战链将山3洗回牌库")
+    _assert_true(poisoned.has_combat_status("outplay", "lethal_poison"), "场景洗回山3继续携带烈毒")

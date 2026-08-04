@@ -62,6 +62,7 @@ func _rebuild_visuals() -> void:
         artwork.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
         artwork.mouse_filter = Control.MOUSE_FILTER_IGNORE
         add_child(artwork)
+        _add_status_badges(width)
         _add_selected_badge(width)
         return
 
@@ -125,7 +126,31 @@ func _rebuild_visuals() -> void:
     corner_rank.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(corner_rank)
 
+    _add_status_badges(width)
     _add_selected_badge(width)
+
+func _add_status_badges(width: float) -> void:
+    if not card_data.has_combat_status("outplay", "lethal_poison"):
+        return
+    var poison_badge := Label.new()
+    poison_badge.text = "烈毒"
+    poison_badge.position = Vector2((width - 42) * 0.5, 6)
+    poison_badge.size = Vector2(42, 20)
+    poison_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    poison_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    poison_badge.add_theme_font_size_override("font_size", 10)
+    poison_badge.add_theme_color_override("font_color", Color("fff1dc"))
+    poison_badge.add_theme_stylebox_override("normal", _status_style(Color("9b3139")))
+    poison_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    add_child(poison_badge)
+
+func _status_style(color: Color) -> StyleBoxFlat:
+    var style := StyleBoxFlat.new()
+    style.bg_color = color
+    style.border_color = color.lightened(0.24)
+    style.set_border_width_all(1)
+    style.set_corner_radius_all(6)
+    return style
 
 func _add_selected_badge(width: float) -> void:
     var selected_badge := Label.new()
