@@ -7,6 +7,7 @@ const DeckFactoryScript = preload("res://core/deck_factory.gd")
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
+const InnerSkillRepositoryScript = preload("res://core/inner_skill_repository.gd")
 const SequenceBookScript = preload("res://core/sequence_book.gd")
 const BattleSideScript = preload("res://core/battle_side.gd")
 const TriggerQueueScript = preload("res://core/trigger_queue.gd")
@@ -16,6 +17,7 @@ const EnemyCombatAIScript = preload("res://core/enemy_combat_ai.gd")
 
 var rng := RandomNumberGenerator.new()
 var repository := TechniqueRepositoryScript.new()
+var inner_skill_repository := InnerSkillRepositoryScript.new()
 var sequence_book := SequenceBookScript.new()
 var enemy_sequence_book := SequenceBookScript.new()
 var trigger_queue := TriggerQueueScript.new()
@@ -56,6 +58,7 @@ var _recycle_after_play: Dictionary = {}
 
 func _init() -> void:
     repository.load_from_file()
+    inner_skill_repository.load_from_file()
     sequence_book.load_from_file()
     enemy_sequence_book.load_from_file()
     effect_executor = EffectExecutorScript.new(rng)
@@ -107,7 +110,14 @@ func setup_scripted_battle(
     enemy_ai_enabled = use_enemy_ai
     enemy_ai_policy = scenario.enemy_ai_policy()
     enemy.name = scenario.scenario_name()
+    var player_definition := scenario.player_definition()
     var enemy_definition := scenario.enemy_definition()
+    player.configure_inner_skills(
+        player_definition.get("inner_skills", []),
+        int(player_definition.get("technique_slot_index", 0)))
+    enemy.configure_inner_skills(
+        enemy_definition.get("inner_skills", []),
+        int(enemy_definition.get("technique_slot_index", 0)))
     enemy.max_life = int(enemy_definition.get("life", 100))
     enemy.life = enemy.max_life
     enemy.draw_pile = scenario.arrange_enemy_deck(DeckFactoryScript.create_standard_deck())
@@ -184,12 +194,32 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
     var condition := {"ok": true, "reason": "空序列"}
     if not technique.is_empty():
         condition = repository.conditions_met(technique, hand_result)
-    var intent := {"damage": 0, "defense": 0, "segments": 0, "technique_combo": false}
+    var intent := {
+        "damage": 0,
+        "defense": 0,
+        "segments": 0,
+        "technique_combo": false,
+        "inner_skill_defense": 0,
+    }
+    var intent_context := {
+        "hand_result": hand_result,
+        "played_cards": cards,
+        "power": values["technique_value"],
+        "captures": {},
+    }
     if not technique.is_empty() and condition["ok"]:
-        intent = effect_executor.summarize_intent(
+        _merge_intent(intent, effect_executor.summarize_intent(
             technique.get("effects", []),
-            {"hand_result": hand_result, "power": values["technique_value"], "captures": {}},
-            int(side.stacks.get("momentum", 0)))
+            intent_context,
+            int(side.stacks.get("momentum", 0))))
+    for inner_skill_id in side.equipped_inner_skill_ids:
+        var inner_skill := inner_skill_repository.get_inner_skill(inner_skill_id)
+        if inner_skill.get("timing", "") != "on_play_resolve":
+            continue
+        var inner_intent: Dictionary = effect_executor.summarize_intent(
+            inner_skill.get("effects", []), intent_context, int(side.stacks.get("momentum", 0)))
+        intent["inner_skill_defense"] = int(intent["inner_skill_defense"]) + int(inner_intent.get("defense", 0))
+        _merge_intent(intent, inner_intent)
     var natural_combo_available := (
         _is_same_attribute_action(cards)
         and not (natural_combo_used if side == player else enemy_natural_combo_used))
@@ -204,6 +234,7 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
         "technique": technique,
         "condition": condition,
         "intent": intent,
+        "inner_skills": _inner_skill_definitions_for(side),
         "next_technique_id": book.next_id(hand_result["id"]),
         "next_technique": repository.get_technique(book.next_id(hand_result["id"])),
     }
@@ -333,6 +364,7 @@ func _make_action_record(actor, target, action_preview: Dictionary, book, order:
         "triggered": false,
         "failed": false,
         "token": "%s-%d-%d" % [actor.name, turn_number, order],
+        "captures_by_source": {},
     }
 
 func _resolve_action_records(records: Array, synchronized: bool) -> void:
@@ -352,28 +384,35 @@ func _resolve_action_records(records: Array, synchronized: bool) -> void:
         var timing: String = ("sync_" if synchronized else "solo_") + phase
         var phase_has_entries := false
         for record in records:
-            if not record["triggered"]:
-                continue
-            var technique: Dictionary = record["preview"]["technique"]
-            var effects := _effects_for_phase(technique.get("effects", []), phase)
-            if effects.is_empty():
-                continue
-            phase_has_entries = true
-            var context := {
-                "engine": self,
-                "actor": record["actor"],
-                "target": record["target"],
-                "hand_result": record["preview"]["hand"],
-                "power": record["preview"]["values"]["technique_value"],
-                "technique_id": technique["id"],
-                "technique_name": technique["name"],
-                "action_token": record["token"],
-                "captures": record.get("captures", {}),
-            }
-            record["captures"] = context["captures"]
-            trigger_queue.enqueue(
-                timing, technique["name"], "%s功法" % record["actor"].name,
-                record["order"], effects, context)
+            for source_spec in _action_trigger_sources(record):
+                var effects := _effects_for_phase(source_spec["definition"].get("effects", []), phase)
+                if effects.is_empty():
+                    continue
+                phase_has_entries = true
+                var capture_key: String = source_spec["capture_key"]
+                var captures_by_source: Dictionary = record["captures_by_source"]
+                if not captures_by_source.has(capture_key):
+                    captures_by_source[capture_key] = {}
+                var context := {
+                    "engine": self,
+                    "actor": record["actor"],
+                    "target": record["target"],
+                    "hand_result": record["preview"]["hand"],
+                    "played_cards": record["preview"]["cards"],
+                    "power": record["preview"]["values"]["technique_value"],
+                    "technique_id": source_spec["definition"].get("id", ""),
+                    "technique_name": source_spec["definition"].get("name", ""),
+                    "action_token": record["token"],
+                    "source_kind": source_spec["kind"],
+                    "captures": captures_by_source[capture_key],
+                }
+                trigger_queue.enqueue(
+                    timing,
+                    source_spec["definition"].get("name", "未命名效果"),
+                    "%s%s" % [record["actor"].name, "功法" if source_spec["kind"] == "technique" else "内功"],
+                    int(record["order"]) + int(source_spec["local_order"]),
+                    effects,
+                    context)
         if not phase_has_entries and phase != "damage":
             continue
         if phase == "damage" and synchronized:
@@ -382,7 +421,10 @@ func _resolve_action_records(records: Array, synchronized: bool) -> void:
         for resolution in results:
             if resolution["result"].get("success", false):
                 continue
-            var token: String = resolution["entry"]["context"].get("action_token", "")
+            var failed_context: Dictionary = resolution["entry"]["context"]
+            if failed_context.get("source_kind", "") != "technique":
+                continue
+            var token: String = failed_context.get("action_token", "")
             for record in records:
                 if record["token"] == token:
                     record["failed"] = true
@@ -394,7 +436,9 @@ func _resolve_action_records(records: Array, synchronized: bool) -> void:
 
 func _effects_for_phase(effects: Array, phase: String) -> Array:
     var result: Array = []
-    var prepare_ops := ["defense", "add_stack", "add_target_stack", "register_attack_counter_delay"]
+    var prepare_ops := [
+        "defense", "defense_from_noncontributing_qi", "add_stack", "add_target_stack",
+        "register_attack_counter_delay"]
     var damage_ops := ["damage", "multi_damage"]
     for effect in effects:
         var explicit_phase: String = effect.get("phase", "")
@@ -410,6 +454,60 @@ func _effects_for_phase(effects: Array, phase: String) -> Array:
         elif phase == "zones" and not op in prepare_ops and not op in damage_ops:
             result.append(effect)
     return result
+
+func _action_trigger_sources(record: Dictionary) -> Array:
+    var sources: Array = []
+    var actor = record["actor"]
+    var technique: Dictionary = record["preview"]["technique"]
+    if record["triggered"] and not technique.is_empty():
+        sources.append({
+            "kind": "technique",
+            "definition": technique,
+            "local_order": actor.technique_slot_index,
+            "capture_key": "technique",
+        })
+    for index in range(actor.equipped_inner_skill_ids.size()):
+        var inner_skill_id: String = actor.equipped_inner_skill_ids[index]
+        var inner_skill := inner_skill_repository.get_inner_skill(inner_skill_id)
+        if inner_skill.is_empty() or inner_skill.get("timing", "") != "on_play_resolve":
+            continue
+        sources.append({
+            "kind": "inner_skill",
+            "definition": inner_skill,
+            "local_order": actor.combat_source_order(index),
+            "capture_key": "inner:%d:%s" % [index, inner_skill_id],
+        })
+    sources.sort_custom(func(left, right): return int(left["local_order"]) < int(right["local_order"]))
+    return sources
+
+func _merge_intent(target_intent: Dictionary, addition: Dictionary) -> void:
+    for key in ["damage", "defense", "segments"]:
+        target_intent[key] = int(target_intent.get(key, 0)) + int(addition.get(key, 0))
+    target_intent["technique_combo"] = (
+        bool(target_intent.get("technique_combo", false))
+        or bool(addition.get("technique_combo", false)))
+
+func _inner_skill_definitions_for(side) -> Array:
+    var definitions: Array = []
+    for inner_skill_id in side.equipped_inner_skill_ids:
+        var definition := inner_skill_repository.get_inner_skill(inner_skill_id)
+        if not definition.is_empty():
+            definitions.append(definition)
+    return definitions
+
+func combat_order_labels(side, technique_name: String = "当前功法") -> Array[String]:
+    var entries: Array = [{"order": side.technique_slot_index, "label": technique_name}]
+    for index in range(side.equipped_inner_skill_ids.size()):
+        var definition := inner_skill_repository.get_inner_skill(side.equipped_inner_skill_ids[index])
+        entries.append({
+            "order": side.combat_source_order(index),
+            "label": definition.get("name", "未知内功"),
+        })
+    entries.sort_custom(func(left, right): return int(left["order"]) < int(right["order"]))
+    var labels: Array[String] = []
+    for entry in entries:
+        labels.append(str(entry["label"]))
+    return labels
 
 func _finish_action_record(record: Dictionary) -> void:
     var action_preview: Dictionary = record["preview"]

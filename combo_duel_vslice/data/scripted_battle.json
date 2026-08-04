@@ -1,8 +1,15 @@
 {
   "id": "trial_sync_01",
   "name": "试炼对手",
+  "player": {
+    "inner_skills": ["extra_qi_to_defense"],
+    "technique_slot_index": 1,
+    "loadout_status": "vertical_slice_debug"
+  },
   "enemy": {
     "life": 100,
+    "inner_skills": [],
+    "technique_slot_index": 0,
     "opening_hand": [
       "fire_2", "forest_4", "mountain_6", "wind_8",
       "fire_9", "forest_J", "mountain_Q", "wind_K"

@@ -46,6 +46,8 @@ func summarize_intent(effects: Array, context: Dictionary, initial_momentum: int
                         momentum += maxi(0, int(after_stack.get("amount", 0)))
             "defense":
                 defense += maxi(0, _resolve_amount(effect.get("amount", {}), context))
+            "defense_from_noncontributing_qi":
+                defense += _noncontributing_qi_total(context)
             "gain_extra_action":
                 technique_combo = _resolve_amount(effect.get("amount", {}), context) > 0
     return {
@@ -68,6 +70,9 @@ func _execute_effect(effect: Dictionary, context: Dictionary) -> Dictionary:
         "defense":
             var defense: int = actor.add_defense(_resolve_amount(effect.get("amount", {}), context))
             return {"success": true, "detail": "获得 %d 防御" % defense}
+        "defense_from_noncontributing_qi":
+            var extra_defense: int = actor.add_defense(_noncontributing_qi_total(context))
+            return {"success": true, "detail": "额外真气转化 %d 防御" % extra_defense}
         "draw":
             var drawn: Array = actor.draw(_resolve_amount(effect.get("count", {}), context))
             if effect.has("capture"):
@@ -197,6 +202,14 @@ func _resolve_amount(spec, context: Dictionary) -> int:
                 maximum = maxi(maximum, _resolve_amount(child, context))
             return maximum
     return 0
+
+func _noncontributing_qi_total(context: Dictionary) -> int:
+    var contributing: Array = context.get("hand_result", {}).get("contributing", [])
+    var total := 0
+    for card in context.get("played_cards", []):
+        if not contributing.has(card):
+            total += int(card.qi_value)
+    return maxi(0, total)
 
 func _effect_condition_met(condition: Dictionary, context: Dictionary) -> bool:
     if condition.is_empty():

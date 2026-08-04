@@ -23,6 +23,9 @@ func _initialize() -> void:
     _test_representative_special_technique()
     _test_delayed_power_snapshot()
     _test_visible_queue_left_to_right()
+    _test_inner_skill_equipment_and_extra_qi_defense()
+    _test_inner_skill_preview_and_enemy_plan()
+    _test_inner_skill_and_technique_left_to_right()
     _test_scripted_enemy_is_deterministic_and_locked()
     _test_enemy_ai_plan_is_deterministic_and_hidden()
     _test_enemy_ai_uses_natural_combo()
@@ -264,6 +267,68 @@ func _test_visible_queue_left_to_right() -> void:
     var size: int = engine.trigger_queue.history.size()
     _assert_equal(engine.trigger_queue.history[size - 2]["label"], "左侧", "触发队列先结算左侧")
     _assert_equal(engine.trigger_queue.history[size - 1]["label"], "右侧", "触发队列后结算右侧")
+
+func _test_inner_skill_equipment_and_extra_qi_defense() -> void:
+    var cards := [_card("4", "wind"), _card("4", "forest"), _card("2", "fire"), _card("3", "mountain")]
+    var unequipped = _engine_with_hand(cards)
+    unequipped.sequence_book.configure({"pair": []})
+    unequipped.confirm_play(_ids(cards))
+    _assert_equal(unequipped.player.defense, 0, "未装备初始内功时额外真气不提供防御")
+
+    var equipped_cards := [_card("4", "wind"), _card("4", "forest"), _card("2", "fire"), _card("3", "mountain")]
+    var equipped = _engine_with_hand(equipped_cards)
+    equipped.sequence_book.configure({"pair": []})
+    equipped.player.configure_inner_skills(["extra_qi_to_defense"], 1)
+    equipped.confirm_play(_ids(equipped_cards))
+    _assert_equal(equipped.player.defense, 5, "未参与一对的 2 与 3 转化为 5 点防御")
+    _assert_equal(equipped.player.equipped_inner_skill_ids.size(), 1, "玩家独立记录已装备内功")
+    _assert_equal(equipped.enemy.equipped_inner_skill_ids.size(), 0, "敌方装备状态与玩家独立")
+    equipped.player.configure_inner_skills([
+        "extra_qi_to_defense", "extra_qi_to_defense", "extra_qi_to_defense",
+        "extra_qi_to_defense", "extra_qi_to_defense", "extra_qi_to_defense",
+        "extra_qi_to_defense"], 7)
+    _assert_equal(equipped.player.equipped_inner_skill_ids.size(), 6, "基础内功装备栏上限为六")
+    _assert_equal(equipped.player.technique_slot_index, 6, "动态功法位限制在当前装备顺序内")
+
+func _test_inner_skill_preview_and_enemy_plan() -> void:
+    var cards := [_card("7", "wind"), _card("7", "forest"), _card("2", "fire"), _card("3", "mountain")]
+    var engine = _engine_with_hand(cards)
+    engine.sequence_book.configure({"pair": []})
+    engine.player.configure_inner_skills(["extra_qi_to_defense"], 1)
+    var preview: Dictionary = engine.preview(_ids(cards))
+    _assert_equal(preview["intent"]["inner_skill_defense"], 5, "玩家预览单独显示内功预计防御")
+    _assert_equal(preview["intent"]["defense"], 5, "玩家总行动预览计入内功防御")
+
+    engine.enemy.hand = cards.duplicate()
+    engine.enemy_sequence_book.configure({"pair": [], "high_card": []})
+    engine.enemy.configure_inner_skills(["extra_qi_to_defense"], 1)
+    var enemy_preview: Dictionary = engine._preview_for_side(engine.enemy, _ids(cards), engine.enemy_sequence_book)
+    var public_plan: Dictionary = engine._public_enemy_plan(enemy_preview["intent"])
+    _assert_equal(public_plan["defense"], 5, "敌方行动计划计入已装备内功防御")
+    _assert_true(not public_plan.has("inner_skills"), "敌方公开计划不泄露具体内功来源")
+
+func _prepare_history_order(engine, cards: Array) -> Array[String]:
+    engine.sequence_book.configure({"pair": ["double_gu_bind"]})
+    engine.player.configure_inner_skills(["extra_qi_to_defense"], engine.player.technique_slot_index)
+    engine.confirm_play(_ids(cards))
+    var labels: Array[String] = []
+    for entry in engine.trigger_queue.history:
+        if entry["timing"] == "solo_prepare":
+            labels.append(entry["label"])
+    return labels
+
+func _test_inner_skill_and_technique_left_to_right() -> void:
+    var before_cards := [_card("6", "wind"), _card("6", "forest"), _card("2", "fire")]
+    var technique_before = _engine_with_hand(before_cards)
+    technique_before.player.technique_slot_index = 0
+    var first_order := _prepare_history_order(technique_before, before_cards)
+    _assert_equal(first_order, ["双蛊缠脉", "初始内功候选"], "功法位在左时先于内功结算")
+
+    var after_cards := [_card("6", "wind"), _card("6", "forest"), _card("2", "fire")]
+    var technique_after = _engine_with_hand(after_cards)
+    technique_after.player.technique_slot_index = 1
+    var second_order := _prepare_history_order(technique_after, after_cards)
+    _assert_equal(second_order, ["初始内功候选", "双蛊缠脉"], "内功在左时先于功法结算")
 
 func _hand_ids(cards: Array) -> Array:
     var ids: Array = []

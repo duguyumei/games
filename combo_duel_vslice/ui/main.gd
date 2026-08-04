@@ -40,6 +40,10 @@ var enemy_hand_count_label: Label
 var enemy_plan_damage_text: Label
 var enemy_plan_defense_text: Label
 var enemy_plan_combo_text: Label
+var inner_count_label: Label
+var inner_slots_row: HBoxContainer
+var technique_slot_left_button: Button
+var technique_slot_right_button: Button
 
 var round_badge: Label
 var hand_name_label: Label
@@ -437,17 +441,29 @@ func _build_loadout_strip() -> Control:
     inner_title.add_theme_color_override("font_color", COLORS["cream"])
     inner_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     inner_header.add_child(inner_title)
-    var inner_count := Label.new()
-    inner_count.text = "0 / 6"
-    inner_count.add_theme_color_override("font_color", COLORS["muted"])
-    inner_header.add_child(inner_count)
+    technique_slot_left_button = Button.new()
+    technique_slot_left_button.text = "◀ 功法位"
+    technique_slot_left_button.tooltip_text = "将动态功法结算位向左移动"
+    technique_slot_left_button.pressed.connect(_move_technique_slot.bind(-1))
+    _style_small_button(technique_slot_left_button)
+    inner_header.add_child(technique_slot_left_button)
+    technique_slot_right_button = Button.new()
+    technique_slot_right_button.text = "功法位 ▶"
+    technique_slot_right_button.tooltip_text = "将动态功法结算位向右移动"
+    technique_slot_right_button.pressed.connect(_move_technique_slot.bind(1))
+    _style_small_button(technique_slot_right_button)
+    inner_header.add_child(technique_slot_right_button)
+    inner_count_label = Label.new()
+    inner_count_label.text = "0 / 6"
+    inner_count_label.add_theme_color_override("font_color", COLORS["muted"])
+    inner_header.add_child(inner_count_label)
     inner_box.add_child(inner_header)
-    var inner_slots := HBoxContainer.new()
-    inner_slots.alignment = BoxContainer.ALIGNMENT_CENTER
-    inner_slots.add_theme_constant_override("separation", 6)
+    inner_slots_row = HBoxContainer.new()
+    inner_slots_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    inner_slots_row.add_theme_constant_override("separation", 6)
     for index in range(6):
-        inner_slots.add_child(_loadout_slot("内功", index + 1, Color("485461"), Vector2(62, 58)))
-    inner_box.add_child(inner_slots)
+        inner_slots_row.add_child(_loadout_slot("内功", index + 1, Color("485461"), Vector2(84, 58)))
+    inner_box.add_child(inner_slots_row)
     inner_panel.add_child(inner_box)
     row.add_child(inner_panel)
 
@@ -490,6 +506,29 @@ func _loadout_slot(kind: String, number: int, color: Color, slot_size: Vector2) 
     label.add_theme_font_size_override("font_size", 23)
     label.add_theme_color_override("font_color", Color(0.62, 0.67, 0.7, 0.48))
     panel.add_child(label)
+    return panel
+
+func _equipped_inner_slot(definition: Dictionary, number: int) -> Control:
+    var panel := PanelContainer.new()
+    panel.custom_minimum_size = Vector2(118, 58)
+    panel.tooltip_text = "%s\n%s\n纵切调试装备；正式名称与开局配置尚未确认" % [
+        definition.get("name", "内功"), definition.get("description", "")]
+    panel.add_theme_stylebox_override("panel", _box(Color("253b42"), 8, COLORS["blue"], 2, 3))
+    var box := VBoxContainer.new()
+    box.alignment = BoxContainer.ALIGNMENT_CENTER
+    var slot_caption := Label.new()
+    slot_caption.text = "槽 %d · 已装备" % number
+    slot_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    slot_caption.add_theme_font_size_override("font_size", 9)
+    slot_caption.add_theme_color_override("font_color", Color("8fb9ce"))
+    box.add_child(slot_caption)
+    var name := Label.new()
+    name.text = definition.get("name", "内功")
+    name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    name.add_theme_font_size_override("font_size", 12)
+    name.add_theme_color_override("font_color", COLORS["cream"])
+    box.add_child(name)
+    panel.add_child(box)
     return panel
 
 func _build_technique_strip() -> Control:
@@ -783,6 +822,7 @@ func _refresh() -> void:
     discard_count_label.text = "%d" % engine.player.discard_pile.size()
     _refresh_hand_fan()
     _refresh_enemy_hand()
+    _refresh_inner_slots()
     _refresh_preview_and_staging()
     _refresh_log()
     confirm_button.disabled = (
@@ -796,6 +836,29 @@ func _refresh_enemy_hand() -> void:
     var visible_cards := mini(engine.enemy.hand.size(), 10)
     for _index in range(visible_cards):
         enemy_hand_row.add_child(_enemy_hand_back())
+
+func _refresh_inner_slots() -> void:
+    if inner_slots_row == null:
+        return
+    for child in inner_slots_row.get_children():
+        child.queue_free()
+    var equipped: Array = engine.player.equipped_inner_skill_ids
+    inner_count_label.text = "%d / 6" % equipped.size()
+    technique_slot_left_button.disabled = engine.player.technique_slot_index <= 0
+    technique_slot_right_button.disabled = engine.player.technique_slot_index >= equipped.size()
+    for index in range(6):
+        if index < equipped.size():
+            var definition: Dictionary = engine.inner_skill_repository.get_inner_skill(equipped[index])
+            inner_slots_row.add_child(_equipped_inner_slot(definition, index + 1))
+        else:
+            inner_slots_row.add_child(_loadout_slot("内功", index + 1, Color("485461"), Vector2(84, 58)))
+
+func _move_technique_slot(direction: int) -> void:
+    engine.player.technique_slot_index = clampi(
+        engine.player.technique_slot_index + direction,
+        0,
+        engine.player.equipped_inner_skill_ids.size())
+    _refresh()
 
 func _refresh_hand_fan() -> void:
     for child in hand_card_nodes:
@@ -857,7 +920,7 @@ func _refresh_preview_and_staging() -> void:
         left_technique_name.text = "当前功法：—"
         left_technique_description.text = "选择真气后显示功法效果。"
         current_technique_name.text = "等待选牌"
-        current_technique_description.text = "从下方手牌选择 1～5 张真气"
+        current_technique_description.text = "结算顺序：%s" % " → ".join(engine.combat_order_labels(engine.player))
         next_technique_name.text = "—"
         sequence_pips.text = "○ ○"
         if not engine.last_player_action_cards.is_empty() or not engine.last_enemy_action_cards.is_empty():
@@ -895,14 +958,19 @@ func _refresh_preview_and_staging() -> void:
     var technique_name: String = technique.get("name", "空序列")
     left_technique_name.text = "当前功法：%s" % technique_name
     left_technique_description.text = technique.get("description", "该精确牌型当前没有功法。")
+    var inner_defense: int = int(preview.get("intent", {}).get("inner_skill_defense", 0))
+    if inner_defense > 0:
+        left_technique_description.text += "\n内功预计获得 %d 防御。" % inner_defense
     current_technique_name.text = technique_name
-    current_technique_description.text = "条件满足" if condition_ok else "条件失败：%s" % preview["condition"]["reason"]
+    var condition_text := "条件满足" if condition_ok else "条件失败：%s" % preview["condition"]["reason"]
+    current_technique_description.text = "%s · 顺序：%s" % [
+        condition_text, " → ".join(engine.combat_order_labels(engine.player, technique_name))]
     var next_name: String = next_technique.get("name", "空序列")
     next_technique_name.text = next_name
     sequence_pips.text = "●  ○" if technique_name != next_name else "●"
     var contributing_count: int = hand["contributing"].size()
-    board_message.text = "%s · %d 张参与数值计算 · P = %d · 对手计划已锁定" % [
-        hand["name"], contributing_count, values["technique_value"]]
+    board_message.text = "%s · %d 张参与数值计算 · P = %d · 内功防御 +%d · 对手计划已锁定" % [
+        hand["name"], contributing_count, values["technique_value"], inner_defense]
 
 func _show_last_synchronized_reveal() -> void:
     if not engine.last_player_action_cards.is_empty():

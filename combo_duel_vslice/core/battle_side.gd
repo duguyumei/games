@@ -11,6 +11,8 @@ var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
 var stacks: Dictionary = {}
+var equipped_inner_skill_ids: Array[String] = []
+var technique_slot_index: int = 0
 
 func _init(side_name: String = "") -> void:
     name = side_name
@@ -20,6 +22,8 @@ func reset(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true)
     defense = 0
     hand_limit = 8
     stacks.clear()
+    equipped_inner_skill_ids.clear()
+    technique_slot_index = 0
     hand.clear()
     staging.clear()
     discard_pile.clear()
@@ -128,6 +132,15 @@ func add_stack(stack_id: String, amount: int) -> int:
     var gained := maxi(0, amount)
     stacks[stack_id] = int(stacks.get(stack_id, 0)) + gained
     return gained
+
+func configure_inner_skills(inner_skill_ids: Array, dynamic_technique_slot: int = 0) -> void:
+    equipped_inner_skill_ids.clear()
+    for inner_skill_id in inner_skill_ids.slice(0, 6):
+        equipped_inner_skill_ids.append(str(inner_skill_id))
+    technique_slot_index = clampi(dynamic_technique_slot, 0, equipped_inner_skill_ids.size())
+
+func combat_source_order(inner_skill_index: int) -> int:
+    return inner_skill_index if inner_skill_index < technique_slot_index else inner_skill_index + 1
 
 func receive_damage(amount: int, true_damage: bool = false) -> Dictionary:
     var incoming := maxi(0, amount)

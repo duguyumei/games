@@ -16,6 +16,9 @@ func load_from_file(path: String = DEFAULT_PATH) -> bool:
 func scenario_name() -> String:
     return str(definition.get("name", "脚本化试炼"))
 
+func player_definition() -> Dictionary:
+    return definition.get("player", {})
+
 func enemy_definition() -> Dictionary:
     return definition.get("enemy", {})
 
