@@ -37,6 +37,9 @@ var enemy_poison_text: Label
 var enemy_name_label: Label
 var enemy_hand_row: HBoxContainer
 var enemy_hand_count_label: Label
+var enemy_plan_damage_text: Label
+var enemy_plan_defense_text: Label
+var enemy_plan_combo_text: Label
 
 var round_badge: Label
 var hand_name_label: Label
@@ -317,7 +320,7 @@ func _build_table() -> Control:
 
 func _build_enemy_strip() -> Control:
     var panel := PanelContainer.new()
-    panel.custom_minimum_size.y = 66
+    panel.custom_minimum_size.y = 92
     panel.add_theme_stylebox_override("panel", _box(Color(0.08, 0.12, 0.13, 0.88), 10, Color("25383d"), 1, 3))
     var box := VBoxContainer.new()
     box.add_theme_constant_override("separation", 4)
@@ -360,6 +363,24 @@ func _build_enemy_strip() -> Control:
     enemy_poison_text = _status_chip("烈毒 0", COLORS["red"])
     status_row.add_child(enemy_poison_text)
     box.add_child(status_row)
+    var plan_row := HBoxContainer.new()
+    plan_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    plan_row.add_theme_constant_override("separation", 6)
+    var plan_caption := Label.new()
+    plan_caption.text = "本击计划"
+    plan_caption.add_theme_font_size_override("font_size", 11)
+    plan_caption.add_theme_color_override("font_color", COLORS["gold"])
+    plan_row.add_child(plan_caption)
+    enemy_plan_damage_text = _status_chip("伤害 —", COLORS["red"])
+    enemy_plan_damage_text.tooltip_text = "对手当前锁定行动预计造成的原始伤害；条件追击会在结算时动态变化"
+    plan_row.add_child(enemy_plan_damage_text)
+    enemy_plan_defense_text = _status_chip("防御 —", COLORS["blue"])
+    enemy_plan_defense_text.tooltip_text = "对手当前锁定行动预计获得的防御"
+    plan_row.add_child(enemy_plan_defense_text)
+    enemy_plan_combo_text = _status_chip("连击 —", COLORS["orange"])
+    enemy_plan_combo_text.tooltip_text = "本击是否已经满足自然连击或功法额外行动条件"
+    plan_row.add_child(enemy_plan_combo_text)
+    box.add_child(plan_row)
     panel.add_child(box)
     return panel
 
@@ -683,7 +704,7 @@ func _toggle_log_overlay() -> void:
 
 func _reset_battle() -> void:
     selected_ids.clear()
-    engine.setup_scripted_battle(int(seed_input.value))
+    engine.setup_scripted_battle(int(seed_input.value), "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     _refresh()
 
@@ -738,10 +759,14 @@ func _refresh() -> void:
     enemy_gu_text.text = "蛊印 %d" % int(engine.enemy.stacks.get("gu_mark", 0))
     enemy_momentum_text.text = "连势 %d" % int(engine.enemy.stacks.get("momentum", 0))
     enemy_poison_text.text = "烈毒 %d" % engine.enemy.count_status_in_zone("hand", "outplay", "lethal_poison")
+    var has_plan: bool = not engine.enemy_plan.is_empty()
+    enemy_plan_damage_text.text = "伤害 %s" % str(engine.enemy_plan.get("damage", 0) if has_plan else "—")
+    enemy_plan_defense_text.text = "防御 %s" % str(engine.enemy_plan.get("defense", 0) if has_plan else "—")
+    enemy_plan_combo_text.text = "连击 %s" % ("是" if engine.enemy_plan.get("combo", false) else ("否" if has_plan else "—"))
     enemy_hand_count_label.text = "%d / %d%s" % [
         engine.enemy.hand.size(),
         engine.enemy.hand_limit,
-        " · 已锁定" if not engine.locked_enemy_card_ids.is_empty() else "",
+        " · 已计划" if not engine.locked_enemy_card_ids.is_empty() else "",
     ]
     round_badge.text = "第 %d 回合 · 我方 %d / 对手 %d 次" % [
         engine.turn_number, engine.actions_available, engine.enemy_actions_available]
@@ -843,7 +868,7 @@ func _refresh_preview_and_staging() -> void:
             board_message.text = (
                 engine.battle_state_detail
                 if engine.battle_state != "active"
-                else "对手已锁定背面出牌 · 选牌后同步揭示")
+                else "对手计划已公开 · 牌型与真气保持隐藏")
         return
 
     var preview: Dictionary = engine.preview(selected_ids)
@@ -876,7 +901,7 @@ func _refresh_preview_and_staging() -> void:
     next_technique_name.text = next_name
     sequence_pips.text = "●  ○" if technique_name != next_name else "●"
     var contributing_count: int = hand["contributing"].size()
-    board_message.text = "%s · %d 张参与数值计算 · P = %d · 对手已锁定" % [
+    board_message.text = "%s · %d 张参与数值计算 · P = %d · 对手计划已锁定" % [
         hand["name"], contributing_count, values["technique_value"]]
 
 func _show_last_synchronized_reveal() -> void:
@@ -900,8 +925,7 @@ func _show_last_synchronized_reveal() -> void:
             enemy_view.setup(card, enemy_contributing.has(card), true, false)
             staging_row.add_child(enemy_view)
     var player_hand_name: String = engine.last_preview.get("hand", {}).get("name", "未出牌")
-    var enemy_hand_name: String = engine.last_enemy_preview.get("hand", {}).get("name", "未出牌")
-    board_message.text = "同步揭示 · 我方 %s / 对手 %s" % [player_hand_name, enemy_hand_name]
+    board_message.text = "同步结算 · 我方 %s / 对手已出招" % player_hand_name
     if engine.battle_state != "active":
         board_message.text += " · %s" % engine.battle_state_detail
 

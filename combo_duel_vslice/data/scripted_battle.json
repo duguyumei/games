@@ -8,8 +8,16 @@
       "fire_9", "forest_J", "mountain_Q", "wind_K"
     ],
     "draw_order": ["forest_2", "mountain_3", "fire_5", "wind_7"],
+    "ai": {
+      "damage_weight": 1.0,
+      "defense_weight": 0.7,
+      "power_weight": 0.02,
+      "combo_bonus": 8.0,
+      "card_cost": 0.5,
+      "failed_condition_penalty": 1000.0
+    },
     "sequences": {
-      "high_card": ["fire_sparks"],
+      "high_card": ["fire_sparks", "suspended_gu", "clear_wind_gap"],
       "pair": ["double_gu_bind"],
       "two_pair": ["double_gu_bind"],
       "three_kind": ["three_corpses_gu"],

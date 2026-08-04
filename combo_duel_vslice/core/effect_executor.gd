@@ -20,6 +20,41 @@ func execute_all(effects: Array, context: Dictionary) -> Dictionary:
             details.append(result["detail"])
     return {"success": true, "detail": "；".join(details)}
 
+func summarize_intent(effects: Array, context: Dictionary, initial_momentum: int = 0) -> Dictionary:
+    var damage := 0
+    var defense := 0
+    var segments := 0
+    var momentum := maxi(0, initial_momentum)
+    var technique_combo := false
+    for effect in effects:
+        if not _effect_condition_met(effect.get("when", {}), context):
+            continue
+        var op: String = effect.get("op", "")
+        match op:
+            "damage":
+                var amount := _resolve_amount(effect.get("amount", {}), context)
+                damage += int(floor(amount * (1.0 + momentum / 100.0)))
+                segments += 1
+            "multi_damage":
+                var count := maxi(0, int(effect.get("segments", 1)))
+                for _index in range(count):
+                    var amount := _resolve_amount(effect.get("amount", {}), context)
+                    damage += int(floor(amount * (1.0 + momentum / 100.0)))
+                    segments += 1
+                    var after_stack: Dictionary = effect.get("after_each_stack", {})
+                    if after_stack.get("stack", "") == "momentum":
+                        momentum += maxi(0, int(after_stack.get("amount", 0)))
+            "defense":
+                defense += maxi(0, _resolve_amount(effect.get("amount", {}), context))
+            "gain_extra_action":
+                technique_combo = _resolve_amount(effect.get("amount", {}), context) > 0
+    return {
+        "damage": damage,
+        "defense": defense,
+        "segments": segments,
+        "technique_combo": technique_combo,
+    }
+
 func _execute_effect(effect: Dictionary, context: Dictionary) -> Dictionary:
     var op: String = effect.get("op", "")
     var actor = context["actor"]

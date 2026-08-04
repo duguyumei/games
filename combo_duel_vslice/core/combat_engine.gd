@@ -12,6 +12,7 @@ const BattleSideScript = preload("res://core/battle_side.gd")
 const TriggerQueueScript = preload("res://core/trigger_queue.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const ScriptedScenarioScript = preload("res://core/scripted_battle_scenario.gd")
+const EnemyCombatAIScript = preload("res://core/enemy_combat_ai.gd")
 
 var rng := RandomNumberGenerator.new()
 var repository := TechniqueRepositoryScript.new()
@@ -19,6 +20,7 @@ var sequence_book := SequenceBookScript.new()
 var enemy_sequence_book := SequenceBookScript.new()
 var trigger_queue := TriggerQueueScript.new()
 var effect_executor
+var enemy_ai
 var player := BattleSideScript.new("玩家")
 var enemy := BattleSideScript.new("敌人")
 var scenario := ScriptedScenarioScript.new()
@@ -31,6 +33,9 @@ var enemy_natural_combo_used: bool = false
 var enemy_action_index: int = 0
 var locked_enemy_card_ids: Array = []
 var scripted_mode: bool = false
+var enemy_ai_enabled: bool = false
+var enemy_ai_policy: Dictionary = {}
+var enemy_plan: Dictionary = {}
 var round_ended: bool = false
 var battle_state: String = "active"
 var battle_state_detail: String = ""
@@ -54,6 +59,7 @@ func _init() -> void:
     sequence_book.load_from_file()
     enemy_sequence_book.load_from_file()
     effect_executor = EffectExecutorScript.new(rng)
+    enemy_ai = EnemyCombatAIScript.new(rng)
 
 func setup(seed_value: int = 2308, shuffle_cards: bool = true) -> void:
     rng.seed = seed_value
@@ -77,6 +83,9 @@ func setup(seed_value: int = 2308, shuffle_cards: bool = true) -> void:
     enemy_action_index = 0
     locked_enemy_card_ids.clear()
     scripted_mode = false
+    enemy_ai_enabled = false
+    enemy_ai_policy.clear()
+    enemy_plan.clear()
     round_ended = false
     battle_state = "active"
     battle_state_detail = ""
@@ -86,7 +95,8 @@ func setup(seed_value: int = 2308, shuffle_cards: bool = true) -> void:
 
 func setup_scripted_battle(
         seed_value: int = 2308,
-        scenario_path: String = ScriptedScenarioScript.DEFAULT_PATH) -> bool:
+        scenario_path: String = ScriptedScenarioScript.DEFAULT_PATH,
+        use_enemy_ai: bool = false) -> bool:
     setup(seed_value, true)
     if not scenario.load_from_file(scenario_path):
         battle_state = "scenario_error"
@@ -94,6 +104,8 @@ func setup_scripted_battle(
         state_changed.emit()
         return false
     scripted_mode = true
+    enemy_ai_enabled = use_enemy_ai
+    enemy_ai_policy = scenario.enemy_ai_policy()
     enemy.name = scenario.scenario_name()
     var enemy_definition := scenario.enemy_definition()
     enemy.max_life = int(enemy_definition.get("life", 100))
@@ -105,7 +117,9 @@ func setup_scripted_battle(
     var enemy_sequences := scenario.enemy_sequences()
     if not enemy_sequences.is_empty():
         enemy_sequence_book.configure(enemy_sequences)
-    trigger_queue.add_history("battle_setup", enemy.name, "脚本场景", "成功", "固定场景已载入；不代表正式敌方 AI")
+    trigger_queue.add_history(
+        "battle_setup", enemy.name, "纵切场景", "成功",
+        "调试 AI 已载入；不代表正式敌方策略" if enemy_ai_enabled else "固定脚本场景已载入")
     state_changed.emit()
     return true
 
@@ -121,6 +135,7 @@ func start_player_turn() -> Array:
     last_enemy_preview.clear()
     last_player_action_cards.clear()
     last_enemy_action_cards.clear()
+    enemy_plan.clear()
     actions_available = 1
     enemy_actions_available = 1 if scripted_mode else 0
     var drawn := player.draw_to_limit()
@@ -169,6 +184,17 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
     var condition := {"ok": true, "reason": "空序列"}
     if not technique.is_empty():
         condition = repository.conditions_met(technique, hand_result)
+    var intent := {"damage": 0, "defense": 0, "segments": 0, "technique_combo": false}
+    if not technique.is_empty() and condition["ok"]:
+        intent = effect_executor.summarize_intent(
+            technique.get("effects", []),
+            {"hand_result": hand_result, "power": values["technique_value"], "captures": {}},
+            int(side.stacks.get("momentum", 0)))
+    var natural_combo_available := (
+        _is_same_attribute_action(cards)
+        and not (natural_combo_used if side == player else enemy_natural_combo_used))
+    intent["natural_combo"] = natural_combo_available
+    intent["combo"] = natural_combo_available or bool(intent.get("technique_combo", false))
     return {
         "valid": true,
         "cards": cards,
@@ -177,6 +203,7 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
         "technique_id": technique_id,
         "technique": technique,
         "condition": condition,
+        "intent": intent,
         "next_technique_id": book.next_id(hand_result["id"]),
         "next_technique": repository.get_technique(book.next_id(hand_result["id"])),
     }
@@ -279,6 +306,9 @@ func _confirm_synchronized_play(card_ids: Array) -> Dictionary:
         _lock_enemy_action()
     else:
         locked_enemy_card_ids.clear()
+        enemy_plan.clear()
+    if battle_state == "active" and actions_available <= 0 and enemy_actions_available > 0:
+        _resolve_enemy_only_actions()
     state_changed.emit()
     return {
         "success": true,
@@ -397,6 +427,11 @@ func _finish_action_record(record: Dictionary) -> void:
 func _log_calculation(side, action_preview: Dictionary) -> void:
     var hand_result: Dictionary = action_preview["hand"]
     var values: Dictionary = action_preview["values"]
+    if side == enemy and enemy_ai_enabled:
+        trigger_queue.add_history(
+            "calculate", "%s·隐藏出招" % side.name, "牌型", "成功",
+            "敌方牌型、牌张与功法值不公开")
+        return
     trigger_queue.add_history(
         "calculate", "%s·%s" % [side.name, hand_result["name"]], "牌型", "成功",
         "基础值 %d｜牌型基准值 %d｜功法值 %d（不自动造成伤害）" % [
@@ -442,19 +477,77 @@ func _reveal_detail(player_preview: Dictionary, enemy_preview: Dictionary) -> St
     var player_name: String = player_preview["hand"]["name"]
     if enemy_preview.is_empty():
         return "我方 %s｜对手本击不出牌" % player_name
+    if enemy_ai_enabled:
+        return "我方 %s｜对手按公开计划出招" % player_name
     return "我方 %s｜对手 %s" % [player_name, enemy_preview["hand"]["name"]]
 
 func _lock_enemy_action() -> void:
-    locked_enemy_card_ids = scenario.enemy_action_ids(turn_number, enemy_action_index)
+    enemy_plan.clear()
+    if enemy_ai_enabled:
+        var choice: Dictionary = enemy_ai.choose_action(
+            enemy.hand,
+            func(card_ids: Array): return _preview_for_side(enemy, card_ids, enemy_sequence_book),
+            enemy_ai_policy)
+        locked_enemy_card_ids = choice.get("card_ids", [])
+        if not choice.is_empty():
+            enemy_plan = _public_enemy_plan(choice["preview"].get("intent", {}))
+    else:
+        locked_enemy_card_ids = scenario.enemy_action_ids(turn_number, enemy_action_index)
     if locked_enemy_card_ids.is_empty():
         enemy_actions_available = 0
-        trigger_queue.add_history("enemy_lock", "对手没有后续脚本动作", "脚本场景", "成功", "不定义临时 AI 选牌")
+        trigger_queue.add_history("enemy_lock", "对手本击无法行动", "纵切对手", "成功", "没有可用真气或脚本动作")
         return
     for card_id in locked_enemy_card_ids:
         if enemy.find_hand_card(str(card_id)) == null:
             _set_scenario_error("第 %d 回合对手脚本要求的真气不在手牌：%s" % [turn_number, card_id])
             return
-    trigger_queue.add_history("enemy_lock", "对手已锁定出牌", "脚本场景", "成功", "%d 张背面真气" % locked_enemy_card_ids.size())
+    var detail := "%d 张背面真气" % locked_enemy_card_ids.size()
+    if enemy_ai_enabled:
+        detail = "预计伤害 %d｜预计防御 %d%s" % [
+            enemy_plan.get("damage", 0), enemy_plan.get("defense", 0),
+            "｜将获得连击" if enemy_plan.get("combo", false) else ""]
+    trigger_queue.add_history("enemy_lock", "对手已确定本击计划", "纵切对手", "成功", detail)
+
+func _public_enemy_plan(intent: Dictionary) -> Dictionary:
+    return {
+        "damage": maxi(0, int(intent.get("damage", 0))),
+        "defense": maxi(0, int(intent.get("defense", 0))),
+        "segments": maxi(0, int(intent.get("segments", 0))),
+        "combo": bool(intent.get("combo", false)),
+    }
+
+func _resolve_enemy_only_actions() -> void:
+    while battle_state == "active" and actions_available <= 0 and enemy_actions_available > 0:
+        if locked_enemy_card_ids.is_empty():
+            _lock_enemy_action()
+        if locked_enemy_card_ids.is_empty():
+            break
+        var action_preview := _preview_for_side(enemy, locked_enemy_card_ids, enemy_sequence_book)
+        if not action_preview.get("valid", false) or not enemy.stage_cards(locked_enemy_card_ids):
+            _set_scenario_error("对手连击计划无法执行")
+            return
+        enemy_actions_available -= 1
+        last_preview.clear()
+        last_enemy_preview = action_preview
+        trigger_queue.add_history("enemy_combo_reveal", "对手发动单方连击", "连击", "成功", "计划已转为实际出招")
+        _log_calculation(enemy, action_preview)
+        var record := _make_action_record(enemy, player, action_preview, enemy_sequence_book, 200)
+        _resolve_action_records([record], false)
+        var enemy_commit := _commit_staging_for(enemy)
+        var enemy_cards: Array = enemy_commit["committed"]
+        _log_cards_leave(enemy, enemy_cards, enemy_commit["recycled"])
+        _finish_action_record(record)
+        last_player_action_cards.clear()
+        last_enemy_action_cards = enemy_cards
+        enemy_action_index += 1
+        if _is_same_attribute_action(enemy_cards) and not enemy_natural_combo_used:
+            enemy_natural_combo_used = true
+            gain_extra_actions_for(enemy, 1, "通用同属性连击")
+        _update_battle_state()
+        locked_enemy_card_ids.clear()
+        enemy_plan.clear()
+        if battle_state == "active" and enemy_actions_available > 0:
+            _lock_enemy_action()
 
 func gain_extra_actions(amount: int, source: String) -> void:
     gain_extra_actions_for(player, amount, source)

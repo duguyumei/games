@@ -22,6 +22,9 @@ func enemy_definition() -> Dictionary:
 func enemy_sequences() -> Dictionary:
     return enemy_definition().get("sequences", {})
 
+func enemy_ai_policy() -> Dictionary:
+    return enemy_definition().get("ai", {})
+
 func enemy_action_ids(round_number: int, action_index: int) -> Array:
     var rounds: Array = definition.get("rounds", [])
     var round_offset := round_number - 1

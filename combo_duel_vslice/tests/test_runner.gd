@@ -24,6 +24,10 @@ func _initialize() -> void:
     _test_delayed_power_snapshot()
     _test_visible_queue_left_to_right()
     _test_scripted_enemy_is_deterministic_and_locked()
+    _test_enemy_ai_plan_is_deterministic_and_hidden()
+    _test_enemy_ai_uses_natural_combo()
+    _test_both_sides_use_synchronized_combo()
+    _test_ai_battle_reaches_terminal_state()
     _test_synchronized_defense_before_damage()
     _test_synchronized_lethal_and_battle_results()
     _test_data_driven_lethal_gu_needle()
@@ -277,6 +281,72 @@ func _test_scripted_enemy_is_deterministic_and_locked() -> void:
     _assert_equal(_hand_ids(first.enemy.hand), _hand_ids(second.enemy.hand), "相同种子敌方起手一致")
     _assert_equal(first.locked_enemy_card_ids, ["fire_2", "forest_4"], "第一回合敌方按 JSON 预先锁定")
     _assert_equal(first.locked_enemy_card_ids, second.locked_enemy_card_ids, "敌方锁定不依赖玩家选牌")
+
+func _test_enemy_ai_plan_is_deterministic_and_hidden() -> void:
+    var first = CombatEngineScript.new()
+    var second = CombatEngineScript.new()
+    _assert_true(first.setup_scripted_battle(2308, "res://data/scripted_battle.json", true), "第一个调试 AI 场景载入")
+    _assert_true(second.setup_scripted_battle(2308, "res://data/scripted_battle.json", true), "第二个调试 AI 场景载入")
+    first.start_player_turn()
+    second.start_player_turn()
+    _assert_equal(first.locked_enemy_card_ids, second.locked_enemy_card_ids, "相同种子与局面产生相同 AI 选牌")
+    _assert_equal(first.enemy_plan, second.enemy_plan, "相同种子与局面产生相同公开计划")
+    _assert_true(first.enemy_plan.has("damage"), "公开计划包含预计伤害")
+    _assert_true(first.enemy_plan.has("defense"), "公开计划包含预计防御")
+    _assert_true(first.enemy_plan.has("combo"), "公开计划包含连击提示")
+    _assert_equal(first.enemy_plan["damage"], 6, "首击公开计划正确汇总三段预计伤害")
+    _assert_equal(first.enemy_plan["defense"], 0, "首击公开计划正确显示零防御")
+    _assert_true(not first.enemy_plan.has("hand"), "公开计划不包含具体牌型")
+    _assert_true(not first.enemy_plan.has("cards"), "公开计划不包含具体真气")
+    _assert_true(not first.enemy_plan.has("technique"), "公开计划不包含具体功法")
+
+func _test_enemy_ai_uses_natural_combo() -> void:
+    var engine = CombatEngineScript.new()
+    engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
+    engine.start_player_turn()
+    engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
+    engine.player.draw_pile.clear()
+    _assert_true(engine.enemy_plan.get("combo", false), "AI 首击计划提示自然连击")
+    var result := engine.confirm_play(_ids(engine.player.hand.slice(0, 2)))
+    _assert_true(result["success"], "玩家混属性出牌后同步行动成功")
+    _assert_true(engine.enemy_natural_combo_used, "敌方实际触发自然连击")
+    _assert_equal(engine.enemy.discard_pile.size(), 2, "玩家无连击时敌方自动使用单方连击")
+    _assert_equal(engine.enemy_actions_available, 0, "敌方单方连击已经消耗")
+
+func _test_both_sides_use_synchronized_combo() -> void:
+    var engine = CombatEngineScript.new()
+    engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
+    engine.start_player_turn()
+    engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
+    engine.player.draw_pile.clear()
+    engine.confirm_play([engine.player.hand[0].id])
+    _assert_equal(engine.actions_available, 1, "玩家单属性首击获得一次连击")
+    _assert_equal(engine.enemy_actions_available, 1, "敌方单属性首击获得一次连击")
+    _assert_equal(engine.enemy.discard_pile.size(), 1, "双方连击时敌方等待下一次同步出牌")
+    _assert_equal(engine.enemy_plan["damage"], 0, "敌方第二击计划随功法序列更新为零伤害")
+    _assert_equal(engine.enemy_plan["defense"], 11, "敌方第二击计划公开预计获得防御")
+    engine.confirm_play([engine.player.hand[0].id])
+    _assert_equal(engine.enemy.discard_pile.size(), 2, "双方第二击完成同步连击")
+    _assert_equal(engine.enemy_actions_available, 0, "敌方自然连击不会重复触发")
+
+func _test_ai_battle_reaches_terminal_state() -> void:
+    var engine = CombatEngineScript.new()
+    engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
+    engine.start_player_turn()
+    var steps := 0
+    var all_actions_succeeded := true
+    while engine.battle_state == "active" and steps < 200:
+        if engine.actions_available > 0 and not engine.player.hand.is_empty():
+            var result: Dictionary = engine.confirm_play([engine.player.hand[0].id])
+            all_actions_succeeded = all_actions_succeeded and result.get("success", false)
+        else:
+            engine.end_player_turn()
+            if engine.battle_state == "active":
+                engine.start_player_turn()
+        steps += 1
+    _assert_true(all_actions_succeeded, "完整调试 AI 战斗中玩家动作均能结算")
+    _assert_true(engine.battle_state != "active", "完整调试 AI 战斗在安全步数内结束")
+    _assert_true(engine.battle_state != "scenario_error", "完整调试 AI 战斗不发生场景错误")
 
 func _install_sync_guard(engine) -> void:
     engine.repository.techniques["sync_guard"] = {
