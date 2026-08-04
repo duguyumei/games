@@ -4,7 +4,7 @@ config_version=5
 [application]
 
 config/name="组合出招：第一阶段纵切"
-run/main_scene="res://ui/main.tscn"
+run/main_scene="res://ui/run_main.tscn"
 
 [display]
 
@@ -18,4 +18,3 @@ window/stretch/mode="canvas_items"
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-

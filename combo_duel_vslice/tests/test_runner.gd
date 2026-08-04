@@ -5,6 +5,9 @@ const DeckFactoryScript = preload("res://core/deck_factory.gd")
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const CombatEngineScript = preload("res://core/combat_engine.gd")
+const MapGeneratorScript = preload("res://core/map_generator.gd")
+const RunStateScript = preload("res://core/run_state.gd")
+const RunScene = preload("res://ui/run_main.tscn")
 
 var failures: Array[String] = []
 var assertions: int = 0
@@ -30,6 +33,11 @@ func _initialize() -> void:
     _test_insight_growth_and_technique_acquisition()
     _test_hierophant_bonus_enhancement_and_preview()
     _test_aura_seeded_edition_and_preview()
+    _test_map_generation_is_deterministic_and_constrained()
+    _test_map_routes_reach_boss_without_crossing()
+    _test_run_state_node_and_practice_gate()
+    _test_run_state_battle_growth_persistence()
+    _test_map_practice_and_battle_scene_integration()
     _test_scripted_enemy_is_deterministic_and_locked()
     _test_enemy_ai_plan_is_deterministic_and_hidden()
     _test_enemy_ai_uses_natural_combo()
@@ -426,6 +434,147 @@ func _test_aura_seeded_edition_and_preview() -> void:
     var polychrome_values := PowerCalculatorScript.calculate(HandEvaluatorScript.evaluate([polychrome]))
     _assert_equal(polychrome_values["power_amp_percent"], 20, "多彩版本提供百分之二十功法值增幅")
     _assert_equal(polychrome_values["technique_value"], 9, "多彩版本统一乘算并向下取整")
+
+func _test_map_generation_is_deterministic_and_constrained() -> void:
+    var generator = MapGeneratorScript.new()
+    var first: Dictionary = generator.generate(2308, 1)
+    var second: Dictionary = generator.generate(2308, 1)
+    _assert_equal(first, second, "相同种子生成完全相同的地图与连线")
+    _assert_equal(first["width"], 7, "地图横向宽度为七列")
+    _assert_equal(first["route_rows"], 15, "Boss 前有十五行路线节点")
+    var row_counts: Dictionary = {}
+    for node in first["nodes"]:
+        var row: int = int(node["row"])
+        row_counts[row] = int(row_counts.get(row, 0)) + 1
+        _assert_true(node["type"] != "shop", "地图不生成商店节点")
+        if row == 0:
+            _assert_equal(node["type"], "combat", "第一行固定普通战斗")
+        elif row == 7:
+            _assert_equal(node["type"], "treasure", "第八行固定宝箱特殊奖励")
+        elif row == 14:
+            _assert_equal(node["type"], "rest", "第十五行固定休息")
+        elif row == 15:
+            _assert_equal(node["type"], "boss", "第十六行固定单一 Boss")
+        elif row < 5:
+            _assert_true(node["type"] not in ["elite", "rest"], "前五行不随机生成精英或休息")
+    _assert_equal(row_counts.get(0, 0), 6, "六条初始路径使用六个不同起点")
+    _assert_equal(row_counts.get(15, 0), 1, "地图只有一个层末 Boss")
+    _assert_equal(generator.rules["weights"]["event"], 27, "商店比例并入后事件权重为百分之二十七")
+    for edge in first["edges"]:
+        var from_type: String = _map_node_type(first, edge["from"])
+        var to_type: String = _map_node_type(first, edge["to"])
+        if from_type in ["elite", "rest"]:
+            _assert_true(from_type != to_type, "精英与休息不沿路径直接同类相连")
+
+func _test_map_routes_reach_boss_without_crossing() -> void:
+    var graph: Dictionary = MapGeneratorScript.new().generate(98173, 2)
+    var starts: Array = []
+    for node in graph["nodes"]:
+        if int(node["row"]) == 0:
+            starts.append(node["id"])
+    for start_id in starts:
+        _assert_true(_map_can_reach(graph, start_id, graph["boss_id"]), "每个起点都存在到 Boss 的完整路径")
+    for left_index in range(graph["edges"].size()):
+        var left: Dictionary = graph["edges"][left_index]
+        for right_index in range(left_index + 1, graph["edges"].size()):
+            var right: Dictionary = graph["edges"][right_index]
+            if int(left["from_row"]) != int(right["from_row"]):
+                continue
+            var crossing := (
+                int(left["from_column"]) < int(right["from_column"])
+                and int(left["to_column"]) > int(right["to_column"])) or (
+                int(left["from_column"]) > int(right["from_column"])
+                and int(left["to_column"]) < int(right["to_column"]))
+            _assert_true(not crossing, "同一行相邻路线不交叉")
+
+func _test_run_state_node_and_practice_gate() -> void:
+    var state = RunStateScript.new()
+    state.setup(2308)
+    _assert_true(state.can_open_practice(), "初次进入地图等待选路时可以修习")
+    _assert_equal(state.available_node_ids().size(), 6, "初始可以从六个路线起点选择")
+    var first_node_id: String = state.available_node_ids()[0]
+    var begin := state.begin_node(first_node_id)
+    _assert_true(begin["success"], "可以进入当前可达节点")
+    _assert_true(not state.can_open_practice(), "节点进行中锁定修习入口")
+    _assert_equal(state.purchase_consumable("hierophant", 3)["success"], false, "节点未完成时不能购买修习内容")
+    var completion := state.complete_current_node()
+    _assert_true(completion["success"], "节点可以完成并返回地图")
+    _assert_equal(completion["reward"], 3, "普通战斗节点奖励三点历练")
+    _assert_equal(state.experience, 3, "节点奖励进入本局历练")
+    _assert_true(state.can_open_practice(), "节点完成到选择下一节点前重新开放修习")
+    _assert_true(not state.available_node_ids().is_empty(), "返回地图后只开放相连下一节点")
+    var purchase := state.purchase_consumable("hierophant", 3)
+    _assert_true(purchase["success"], "待选节点期间可以消耗历练修习")
+    _assert_equal(state.experience, 0, "修习购买扣除对应历练")
+    _assert_equal(state.consumable_ids, ["hierophant"], "修习所得进入共享消耗品栏")
+    _assert_equal(state.purchase_consumable("hierophant", 3)["success"], false, "同一地图待选阶段固定选项不能重复购买")
+
+func _test_run_state_battle_growth_persistence() -> void:
+    var state = RunStateScript.new()
+    state.setup(420)
+    state.consumable_ids.append("aura")
+    state.insight_multipliers = {"high_card": 2}
+    state.deck_modifiers = {"wind_8": {"enhancement": "bonus", "edition": "foil"}}
+    var engine = CombatEngineScript.new()
+    engine.setup(420, false)
+    state.apply_to_battle_side(engine.player)
+    var modified = null
+    for card in engine.player.draw_pile:
+        if card.id == "wind_8":
+            modified = card
+            break
+    _assert_true(modified != null, "本局牌组改造能应用到下一场战斗")
+    _assert_equal(modified.enhancement, "bonus", "跨战斗保留真气强化")
+    _assert_equal(modified.edition, "foil", "跨战斗保留真气版本")
+    _assert_equal(engine.player.insight_multipliers.get("high_card", 0), 2, "跨战斗保留精确牌型心得倍率")
+    _assert_equal(engine.player.consumable_ids, ["aura"], "跨战斗保留共享消耗品")
+    modified.set_edition("polychrome")
+    engine.player.consume_at(0)
+    state.sync_from_battle_side(engine.player)
+    _assert_equal(state.deck_modifiers["wind_8"]["edition"], "polychrome", "战斗中的版本替换同步回本局状态")
+    _assert_equal(state.consumable_ids.size(), 0, "战斗中使用消耗品后同步释放本局槽位")
+
+func _test_map_practice_and_battle_scene_integration() -> void:
+    var run_ui = RunScene.instantiate()
+    run_ui.initialize_interface()
+    root.add_child(run_ui)
+    _assert_true(run_ui.practice_button != null, "地图场景建立右下角修习按钮")
+    _assert_true(not run_ui.practice_button.disabled, "初始待选节点状态修习按钮可用")
+    run_ui._open_practice()
+    _assert_true(run_ui.practice_overlay.visible, "点击修习按钮打开卡片式修习页面")
+    run_ui._close_practice()
+    var first_node_id: String = run_ui.run_state.available_node_ids()[0]
+    run_ui._on_node_selected(first_node_id)
+    _assert_equal(run_ui.run_state.phase, "node_in_progress", "地图选择战斗节点后进入未完成状态")
+    _assert_true(run_ui.battle_layer.visible and run_ui.current_battle != null, "战斗节点接入现有战斗场景")
+    _assert_true(run_ui.practice_button.disabled, "战斗节点进行中修习按钮锁定")
+    run_ui._on_battle_finished("player_victory")
+    _assert_equal(run_ui.run_state.phase, "awaiting_node", "战斗胜利后直接返回地图待选状态")
+    _assert_equal(run_ui.run_state.experience, 3, "战斗胜利奖励显示为当前历练")
+    _assert_true(not run_ui.battle_layer.visible, "战斗胜利后关闭战斗层而不自动打开修习")
+    _assert_true(not run_ui.practice_overlay.visible, "战斗胜利不会强制弹出修习页面")
+    run_ui.queue_free()
+
+func _map_node_type(graph: Dictionary, node_id: String) -> String:
+    for node in graph["nodes"]:
+        if node["id"] == node_id:
+            return str(node["type"])
+    return ""
+
+func _map_can_reach(graph: Dictionary, start_id: String, target_id: String) -> bool:
+    var pending: Array = [start_id]
+    var visited: Dictionary = {}
+    while not pending.is_empty():
+        var current: String = pending.pop_front()
+        if current == target_id:
+            return true
+        if visited.has(current):
+            continue
+        visited[current] = true
+        for edge in graph["edges"]:
+            if edge["from"] == current:
+                pending.append(str(edge["to"]))
+    return false
 
 func _hand_ids(cards: Array) -> Array:
     var ids: Array = []

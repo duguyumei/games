@@ -1,0 +1,23 @@
+{
+  "width": 7,
+  "route_rows": 15,
+  "path_count": 6,
+  "boss_column": 3,
+  "fixed_rows": {
+    "0": "combat",
+    "7": "treasure",
+    "14": "rest"
+  },
+  "weights": {
+    "combat": 53,
+    "event": 27,
+    "elite": 8,
+    "rest": 12
+  },
+  "minimum_random_row": {
+    "elite": 5,
+    "rest": 5
+  },
+  "no_direct_repeat": ["elite", "rest"],
+  "acts": 3
+}

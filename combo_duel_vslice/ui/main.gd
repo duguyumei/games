@@ -1,5 +1,7 @@
 extends Control
 
+signal battle_finished(outcome: String)
+
 const CombatEngineScript = preload("res://core/combat_engine.gd")
 const FeltBackgroundScript = preload("res://ui/felt_background.gd")
 const QiCardViewScript = preload("res://ui/qi_card_view.gd")
@@ -20,8 +22,10 @@ const COLORS := {
 }
 
 var engine = CombatEngineScript.new()
+var run_state
 var selected_ids: Array[String] = []
 var hand_card_nodes: Array = []
+var _battle_finish_emitted: bool = false
 
 var seed_input: SpinBox
 var player_hp_bar: ProgressBar
@@ -776,7 +780,10 @@ func _toggle_log_overlay() -> void:
 func _reset_battle() -> void:
     selected_ids.clear()
     active_consumable_slot = -1
+    _battle_finish_emitted = false
     engine.setup_scripted_battle(int(seed_input.value), "res://data/scripted_battle.json", true)
+    if run_state != null:
+        run_state.apply_to_battle_side(engine.player)
     engine.start_player_turn()
     _refresh()
 
@@ -829,6 +836,8 @@ func _use_active_consumable() -> void:
                 retained.append(card_id)
         selected_ids = retained
         active_consumable_slot = -1
+        if run_state != null:
+            run_state.sync_from_battle_side(engine.player)
     _refresh()
 
 func _on_card_pressed(card_id: String) -> void:
@@ -900,6 +909,11 @@ func _refresh() -> void:
         or active_consumable_slot >= 0
         or engine.actions_available <= 0
         or engine.battle_state != "active")
+    if engine.battle_state != "active" and not _battle_finish_emitted:
+        _battle_finish_emitted = true
+        if run_state != null:
+            run_state.sync_from_battle_side(engine.player)
+        battle_finished.emit.call_deferred(engine.battle_state)
 
 func _refresh_consumable_slots() -> void:
     if consumable_slots_row == null:
