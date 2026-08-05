@@ -1,0 +1,71 @@
+class_name AiHistoryProjector
+extends RefCounted
+
+const HistoryEventScript = preload("res://core/ai/ai_history_event.gd")
+const HIDDEN_ID_KEYS := [
+    "card_id",
+    "card_ids",
+    "target_card_id",
+    "target_card_ids",
+    "drawn_card_ids",
+]
+
+func project(raw_event: Dictionary) -> Dictionary:
+    var values := raw_event.duplicate(true)
+    var visibility := str(values.get("visibility", "public"))
+    if visibility == "private":
+        return {}
+    var payload: Dictionary = values.get("payload", {}).duplicate(true)
+    if visibility == "hidden_random_target":
+        var hidden_count := [int(payload.get("count", 0))]
+        payload = _redact_hidden_targets(payload, hidden_count)
+        payload["hidden_target_count"] = int(hidden_count[0])
+    values["payload"] = payload
+    values["visibility"] = "public_redacted" if visibility == "hidden_random_target" else "public"
+    return HistoryEventScript.new().configure(values).snapshot()
+
+func project_many(raw_events: Array) -> Array:
+    var projected: Array = []
+    for raw_event_value in raw_events:
+        if not raw_event_value is Dictionary:
+            continue
+        var event: Dictionary = project(raw_event_value)
+        if not event.is_empty():
+            projected.append(event)
+    projected.sort_custom(func(left, right):
+        return int(left.get("sequence", -1)) < int(right.get("sequence", -1)))
+    return projected
+
+func from_game_log_entry(entry: Dictionary, round_number: int, action_index: int = 0) -> Dictionary:
+    return project({
+        "sequence": int(entry.get("serial", -1)),
+        "round_number": round_number,
+        "action_index": action_index,
+        "event_type": str(entry.get("category", "log")),
+        "actor_id": str(entry.get("context", {}).get("actor_id", "")),
+        "visibility": str(entry.get("context", {}).get("ai_visibility", "public")),
+        "payload": {
+            "message": str(entry.get("message", "")),
+            "detail": str(entry.get("detail", "")),
+            "context": entry.get("context", {}).duplicate(true),
+        },
+    })
+
+func _redact_hidden_targets(value, hidden_count: Array):
+    if value is Dictionary:
+        var redacted: Dictionary = {}
+        for key in value:
+            if HIDDEN_ID_KEYS.has(str(key)):
+                if value[key] is Array:
+                    hidden_count[0] = maxi(int(hidden_count[0]), value[key].size())
+                elif value[key] != null and str(value[key]) != "":
+                    hidden_count[0] = maxi(int(hidden_count[0]), 1)
+                continue
+            redacted[key] = _redact_hidden_targets(value[key], hidden_count)
+        return redacted
+    if value is Array:
+        var redacted: Array = []
+        for item in value:
+            redacted.append(_redact_hidden_targets(item, hidden_count))
+        return redacted
+    return value

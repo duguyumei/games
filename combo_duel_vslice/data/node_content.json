@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "node_types": {
+    "combat": {
+      "route": "battle",
+      "content_id": "representative_combat",
+      "content_status": "representative",
+      "title": "普通战斗",
+      "message": "进入普通战斗",
+      "seed_offset": 101,
+      "battle": {
+        "scenario_path": "res://data/scripted_battle.json",
+        "use_enemy_ai": true
+      }
+    },
+    "elite": {
+      "route": "battle",
+      "content_id": "representative_elite",
+      "content_status": "representative",
+      "title": "精英战斗",
+      "message": "进入精英战斗",
+      "seed_offset": 211,
+      "battle": {
+        "scenario_path": "res://data/scripted_battle.json",
+        "use_enemy_ai": true
+      }
+    },
+    "boss": {
+      "route": "battle",
+      "content_id": "representative_boss",
+      "content_status": "representative",
+      "title": "层末 Boss",
+      "message": "进入层末 Boss",
+      "seed_offset": 307,
+      "battle": {
+        "scenario_path": "res://data/scripted_battle.json",
+        "use_enemy_ai": true
+      }
+    },
+    "event": {
+      "route": "placeholder",
+      "content_id": "unconfirmed_event",
+      "content_status": "unconfirmed",
+      "title": "事件",
+      "message": "进入事件",
+      "description": "事件内容池尚未录入；当前纵切用于验证路线、节点锁定与返回地图。",
+      "seed_offset": 401
+    },
+    "rest": {
+      "route": "placeholder",
+      "content_id": "unconfirmed_rest",
+      "content_status": "unconfirmed",
+      "title": "休息",
+      "message": "进入休息节点",
+      "description": "休息的正式恢复与升级选项尚未确认；当前纵切只完成节点流程。",
+      "seed_offset": 503
+    },
+    "treasure": {
+      "route": "placeholder",
+      "content_id": "unconfirmed_treasure",
+      "content_status": "unconfirmed",
+      "title": "宝箱／特殊奖励",
+      "message": "进入宝箱／特殊奖励节点",
+      "description": "奖励内容尚未确认；当前纵切保留固定宝箱行与节点完成流程。",
+      "seed_offset": 601
+    }
+  }
+}

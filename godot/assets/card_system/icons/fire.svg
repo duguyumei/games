@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">火属性红桃</title>
+  <desc id="desc">完整红桃剪影，内部留白形成向上火舌。</desc>
+  <path fill="currentColor" fill-rule="evenodd" d="M512 894C470 854 246 677 168 570C84 455 107 300 217 228C323 159 451 202 512 310C573 202 701 159 807 228C917 300 940 455 856 570C778 677 554 854 512 894ZM512 704C447 643 424 579 444 516C459 469 495 437 517 374C543 430 580 468 586 522C591 568 570 601 544 624C553 581 538 552 516 528C522 591 493 626 512 704Z"/>
+</svg>

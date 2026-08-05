@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "high_card": ["suspended_gu", "lethal_gu_needle", "clear_wind_gap"],
   "pair": ["double_gu_bind"],
   "two_pair": ["double_gu_bind"],

@@ -10,6 +10,10 @@ func load_from_file(path: String = DATA_PATH) -> bool:
     if not parsed is Dictionary:
         push_error("内功数据无法解析：%s" % path)
         return false
+    return configure(parsed)
+
+func configure(value: Dictionary) -> bool:
+    var parsed := value.duplicate(true)
     inner_skills.clear()
     for definition in parsed.get("inner_skills", []):
         if not definition is Dictionary or str(definition.get("id", "")) == "":

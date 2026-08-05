@@ -9,15 +9,15 @@ static func calculate(hand_result: Dictionary, modifiers: Dictionary = {}) -> Di
     var card_amp_percent := 0
     for card in hand_result["contributing"]:
         var contribution: int = card.qi_value
-        if card.enhancement == "bonus":
+        if card.reshape_enhancement == "bonus":
             contribution += 2
-        if card.edition == "foil":
+        if card.reshape_finish == "foil":
             contribution += 3
-        if card.enhancement == "multiplier":
+        if card.reshape_enhancement == "multiplier":
             card_multiplier_bonus += 2
-        if card.edition == "holographic":
+        if card.reshape_finish == "holographic":
             card_multiplier_bonus += 1
-        if card.edition == "polychrome":
+        if card.reshape_finish == "polychrome":
             card_amp_percent += 20
         card_total += contribution
     var base_value: int = card_total + int(modifiers.get("base_fixed", 0))

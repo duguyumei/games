@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "pool_membership": {
     "high_card": ["high"],
     "pair": ["pair_two_pair"],
@@ -29,7 +30,7 @@
       "description": "造成 max(1,floor(P/2)) 点伤害；随机给对手当前手牌 1 张合格真气附烈毒；纯风且实际附毒时获得 1 层蛊印。",
       "effects": [
         {"op": "damage", "amount": {"kind": "power_fraction", "numerator": 1, "denominator": 2, "minimum": 1}},
-        {"op": "apply_random_card_status", "zone": "hand", "slot": "outplay", "status": "lethal_poison", "count": 1, "capture": "poisoned_cards", "phase": "zones"},
+        {"op": "apply_random_card_anomaly", "zone": "hand", "category": "poison", "anomaly": "lethal_poison", "count": 1, "capture": "poisoned_cards", "phase": "zones"},
         {"op": "add_target_stack", "stack": "gu_mark", "amount": {"kind": "constant", "value": 1}, "when": {"pure_attribute": "wind", "capture_nonempty": "poisoned_cards"}, "phase": "zones"}
       ]
     },

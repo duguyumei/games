@@ -6,17 +6,21 @@ const DATA_PATH := "res://data/consumables.json"
 var consumables: Dictionary = {}
 
 func load_from_file(path: String = DATA_PATH) -> bool:
-    consumables.clear()
     var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
     if not parsed is Dictionary:
         push_error("消耗品数据无法解析：%s" % path)
         return false
+    return configure(parsed)
+
+func configure(value: Dictionary) -> bool:
+    consumables.clear()
+    var parsed := value.duplicate(true)
     for definition in parsed.get("consumables", []):
         consumables[str(definition["id"])] = definition.duplicate(true)
     return not consumables.is_empty()
 
 func get_consumable(consumable_id: String) -> Dictionary:
-    return consumables.get(consumable_id, {})
+    return consumables.get(consumable_id, {}).duplicate(true)
 
 func target_limits(consumable_id: String) -> Dictionary:
     var definition := get_consumable(consumable_id)

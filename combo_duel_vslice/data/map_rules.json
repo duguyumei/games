@@ -1,16 +1,18 @@
 {
+  "version": 1,
   "width": 7,
   "route_rows": 15,
   "path_count": 6,
   "boss_column": 3,
   "fixed_rows": {
     "0": "combat",
-    "7": "treasure",
+    "8": "treasure",
     "14": "rest"
   },
   "weights": {
     "combat": 53,
-    "event": 27,
+    "event": 22,
+    "event_shop": 5,
     "elite": 8,
     "rest": 12
   },
@@ -18,6 +20,22 @@
     "elite": 5,
     "rest": 5
   },
-  "no_direct_repeat": ["elite", "rest"],
+  "maximum_random_row": {
+    "rest": 12
+  },
+  "no_direct_repeat": ["event_shop", "elite", "rest"],
+  "pool_order": ["event_shop", "rest", "elite", "event"],
+  "display_types": {
+    "event_shop": "event"
+  },
+  "sibling_types_must_differ": true,
+  "minimum_remerge_gap": 3,
+  "common_ancestor_search_depth": 5,
+  "legacy_common_ancestor_comparison": true,
+  "visual_jitter_x": 22,
+  "visual_jitter_y": 10,
+  "boss_variant_count": 3,
+  "act_seed_offsets": [1, 200, 600],
+  "boss_chest_acts": [1, 2],
   "acts": 3
 }

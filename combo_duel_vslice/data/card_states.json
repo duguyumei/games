@@ -1,0 +1,124 @@
+{
+  "version": 3,
+  "reshape_categories": [
+    {"id": "enhancement", "capacity": 1},
+    {"id": "finish", "capacity": 1},
+    {"id": "imprint", "capacity": 1},
+    {"id": "other", "capacity": -1}
+  ],
+  "anomaly_categories": [
+    {"id": "mark", "capacity": -1, "lifecycle": "definition"},
+    {"id": "poison", "capacity": 1, "remove_on_enter_discard": true},
+    {"id": "state", "capacity": 1, "remove_on_enter_discard": true},
+    {"id": "other", "capacity": -1, "lifecycle": "definition"}
+  ],
+  "enhancements": [
+    {"id": "bonus", "name": "奖励牌"},
+    {"id": "multiplier", "name": "倍率牌"},
+    {"id": "wild", "name": "万能牌"},
+    {"id": "glass", "name": "玻璃牌"},
+    {"id": "steel", "name": "钢铁牌"},
+    {"id": "stone", "name": "石头牌"},
+    {"id": "gold", "name": "黄金牌"},
+    {"id": "lucky", "name": "幸运牌"}
+  ],
+  "finishes": [
+    {"id": "foil", "name": "箔面", "allowed_carriers": ["card", "inner_skill"]},
+    {"id": "holographic", "name": "镭射", "allowed_carriers": ["card", "inner_skill"]},
+    {"id": "polychrome", "name": "多彩", "allowed_carriers": ["card", "inner_skill"]},
+    {"id": "negative", "name": "负片", "allowed_carriers": ["inner_skill"]}
+  ],
+  "imprints": [
+    {"id": "gold", "name": "金印"},
+    {"id": "red", "name": "赤印"},
+    {"id": "blue", "name": "蓝印"},
+    {"id": "purple", "name": "紫印"}
+  ],
+  "other_reshapes": [],
+  "anomalies": [
+    {
+      "id": "lethal_poison",
+      "name": "烈毒",
+      "category": "poison",
+      "remove_on_enter_discard": true,
+      "remove_on_battle_end": true
+    },
+    {
+      "id": "stagnant_poison",
+      "name": "郁毒",
+      "category": "poison",
+      "remove_on_enter_discard": true,
+      "remove_on_battle_end": true
+    },
+    {
+      "id": "qi_dissipation",
+      "name": "散气",
+      "category": "state",
+      "remove_on_enter_discard": true,
+      "remove_on_battle_end": true
+    },
+    {
+      "id": "vulnerability",
+      "name": "破绽",
+      "category": "state",
+      "remove_on_enter_discard": true,
+      "remove_on_battle_end": true
+    },
+    {
+      "id": "acupoint_block",
+      "name": "封穴",
+      "category": "state",
+      "remove_on_enter_discard": true,
+      "remove_on_battle_end": true
+    },
+    {
+      "id": "forbidden",
+      "name": "封禁",
+      "category": "state",
+      "remove_on_enter_discard": true,
+      "remove_on_battle_end": true,
+      "lifecycle": ["turn_end"]
+    },
+    {
+      "id": "wind_lure",
+      "name": "风引",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["draw"]
+    },
+    {
+      "id": "returning_wind",
+      "name": "回风",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["explicit_discard"]
+    },
+    {
+      "id": "turbulence",
+      "name": "乱流",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["draw"]
+    },
+    {
+      "id": "qi_severance",
+      "name": "绝气标记",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["enter_discard"]
+    },
+    {
+      "id": "purification",
+      "name": "净化",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["battle_end"],
+      "on_apply": "suppress_existing_effects"
+    }
+  ]
+}

@@ -10,8 +10,11 @@ func load_from_file(path: String = DEFAULT_PATH) -> bool:
     if not parsed is Dictionary:
         push_error("脚本化战斗场景无法解析：%s" % path)
         return false
-    definition = parsed.duplicate(true)
-    return true
+    return configure(parsed)
+
+func configure(value: Dictionary) -> bool:
+    definition = value.duplicate(true)
+    return not definition.is_empty()
 
 func scenario_name() -> String:
     return str(definition.get("name", "脚本化试炼"))
@@ -44,7 +47,7 @@ func arrange_enemy_deck(cards: Array) -> Array:
     wanted_ids.append_array(enemy_definition().get("draw_order", []))
     var by_id: Dictionary = {}
     for card in cards:
-        by_id[card.id] = card
+        by_id[card.definition_id] = card
     var wanted_cards: Array = []
     var used: Dictionary = {}
     for card_id_value in wanted_ids:
@@ -55,7 +58,7 @@ func arrange_enemy_deck(cards: Array) -> Array:
         wanted_cards.append(by_id[card_id])
     var arranged: Array = []
     for card in cards:
-        if not used.has(card.id):
+        if not used.has(card.definition_id):
             arranged.append(card)
     for index in range(wanted_cards.size() - 1, -1, -1):
         arranged.append(wanted_cards[index])

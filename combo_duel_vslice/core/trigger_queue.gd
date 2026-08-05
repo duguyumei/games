@@ -4,11 +4,17 @@ extends RefCounted
 var pending: Array = []
 var history: Array = []
 var _serial: int = 0
+var _game_log
+
+func _init(game_log_override = null) -> void:
+    _game_log = game_log_override
 
 func clear() -> void:
     pending.clear()
     history.clear()
     _serial = 0
+    if _game_log != null:
+        _game_log.clear("battle")
 
 func enqueue(timing: String, label: String, source: String, order: int, effects: Array, context: Dictionary) -> void:
     pending.append({
@@ -31,6 +37,8 @@ func add_history(timing: String, label: String, source: String, status: String, 
         "status": status,
         "detail": detail,
     })
+    if _game_log != null:
+        _game_log.record_battle(timing, label, source, status, detail)
 
 func process_timing(timing: String, executor) -> Array:
     var matching: Array = []
