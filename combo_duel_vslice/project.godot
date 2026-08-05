@@ -1,0 +1,20 @@
+; 第一阶段可玩纵切：全新工程，不复用原 godot/ 项目文件。
+config_version=5
+
+[application]
+
+config/name="组合出招：第一阶段纵切"
+run/main_scene="res://ui/run_main.tscn"
+
+[display]
+
+window/size/viewport_width=1440
+window/size/viewport_height=900
+window/size/window_width_override=1440
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
