@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "consumables": [
     {
       "id": "high_card_insight",
@@ -27,10 +28,10 @@
       "name": "光环",
       "kind": "treasure",
       "price": 4,
-      "description": "选择 1 张真气，为其随机施加箔面、镭射或多彩版本。",
+      "description": "选择 1 张真气，为其随机施加箔面、镭射或多彩品相。",
       "targeting": {"zone": "hand", "minimum": 1, "maximum": 1},
       "effects": [
-        {"op": "apply_random_edition", "editions": ["foil", "holographic", "polychrome"]}
+        {"op": "apply_random_finish", "finishes": ["foil", "holographic", "polychrome"]}
       ]
     }
   ]

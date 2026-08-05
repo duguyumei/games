@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "id": "trial_sync_01",
   "name": "试炼对手",
   "player": {
@@ -22,7 +23,14 @@
       "power_weight": 0.02,
       "combo_bonus": 8.0,
       "card_cost": 0.5,
-      "failed_condition_penalty": 1000.0
+      "failed_condition_penalty": 1000.0,
+      "danger_life_ratio": 0.3,
+      "overkill_penalty": 0.35,
+      "retained_card_weight": 0.15,
+      "sequence_progress_weight": 1.0,
+      "combo_follow_up_weight": 0.25,
+      "combo_without_follow_up_penalty": 10.0,
+      "next_technique_bias": {}
     },
     "sequences": {
       "high_card": ["fire_sparks", "suspended_gu", "clear_wind_gap"],

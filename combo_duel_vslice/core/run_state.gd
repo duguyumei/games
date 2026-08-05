@@ -3,136 +3,134 @@ extends RefCounted
 
 signal changed
 
-const MapGeneratorScript = preload("res://core/map_generator.gd")
+const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd")
+const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 
-var map_generator = MapGeneratorScript.new()
-var seed: int = 2308
-var act: int = 1
-var experience: int = 0
-var phase: String = "awaiting_node"
-var graph: Dictionary = {}
-var current_node_id: String = ""
-var completed_node_ids: Dictionary = {}
-var consumable_ids: Array[String] = []
-var insight_multipliers: Dictionary = {}
-var learned_technique_ids: Array[String] = []
-var deck_modifiers: Dictionary = {}
-var practice_purchases: Dictionary = {}
+var navigation = MapNavigationServiceScript.new()
+var growth = GrowthInventoryScript.new()
+
+func _init(navigation_override = null, growth_override = null) -> void:
+    if navigation_override != null:
+        navigation = navigation_override
+    if growth_override != null:
+        growth = growth_override
+
+# Compatibility facade for existing domain tests and callers. New code should
+# use RunSession commands and snapshots instead of mutating these properties.
+var map_generator:
+    get:
+        return navigation.map_generator
+var seed: int:
+    get:
+        return navigation.seed
+    set(value):
+        navigation.seed = value
+var act: int:
+    get:
+        return navigation.act
+    set(value):
+        navigation.act = value
+var phase: String:
+    get:
+        return navigation.phase
+    set(value):
+        navigation.phase = value
+var graph: Dictionary:
+    get:
+        return navigation.graph
+    set(value):
+        navigation.graph = value
+var current_node_id: String:
+    get:
+        return navigation.current_node_id
+    set(value):
+        navigation.current_node_id = value
+var completed_node_ids: Dictionary:
+    get:
+        return navigation.completed_node_ids
+    set(value):
+        navigation.completed_node_ids = value
+var experience: int:
+    get:
+        return growth.experience
+    set(value):
+        growth.experience = value
+var consumable_ids: Array[String]:
+    get:
+        return growth.consumable_ids
+    set(value):
+        growth.consumable_ids = value
+var insight_multipliers: Dictionary:
+    get:
+        return growth.insight_multipliers
+    set(value):
+        growth.insight_multipliers = value
+var learned_technique_ids: Array[String]:
+    get:
+        return growth.learned_technique_ids
+    set(value):
+        growth.learned_technique_ids = value
+var run_deck:
+    get:
+        return growth.run_deck
+    set(value):
+        growth.run_deck = value
+var practice_purchases: Dictionary:
+    get:
+        return growth.practice_purchases
+    set(value):
+        growth.practice_purchases = value
 
 func setup(seed_value: int = 2308) -> void:
-    seed = seed_value
-    act = 1
-    experience = 0
-    phase = "awaiting_node"
-    current_node_id = ""
-    completed_node_ids.clear()
-    consumable_ids.clear()
-    insight_multipliers.clear()
-    learned_technique_ids.clear()
-    deck_modifiers.clear()
-    practice_purchases.clear()
-    graph = map_generator.generate(_act_seed(), act)
+    growth.reset("run-%d" % seed_value)
+    navigation.setup(seed_value)
     changed.emit()
 
 func available_node_ids() -> Array[String]:
-    var result: Array[String] = []
-    if phase != "awaiting_node":
-        return result
-    if current_node_id == "":
-        for node in graph.get("nodes", []):
-            if int(node["row"]) == 0:
-                result.append(str(node["id"]))
-        return result
-    for edge in graph.get("edges", []):
-        if str(edge["from"]) == current_node_id:
-            result.append(str(edge["to"]))
-    return result
+    return navigation.available_node_ids()
 
 func begin_node(node_id: String) -> Dictionary:
-    if phase != "awaiting_node" or not available_node_ids().has(node_id):
-        return {"success": false, "reason": "该节点当前不可选择"}
-    current_node_id = node_id
-    phase = "node_in_progress"
-    changed.emit()
-    return {"success": true, "node": node_definition(node_id)}
+    var result: Dictionary = navigation.begin_node(node_id)
+    if result.get("success", false):
+        changed.emit()
+    return result
 
 func complete_current_node() -> Dictionary:
-    if phase != "node_in_progress" or current_node_id == "":
-        return {"success": false, "reason": "当前没有进行中的节点"}
-    var node := node_definition(current_node_id)
-    var reward := _reward_for_type(str(node.get("type", "")))
-    experience += reward
-    completed_node_ids[current_node_id] = true
-    practice_purchases.clear()
-    if str(node.get("type", "")) == "boss":
-        if act >= int(map_generator.rules.get("acts", 3)):
-            phase = "run_complete"
-        else:
-            act += 1
-            current_node_id = ""
-            completed_node_ids.clear()
-            graph = map_generator.generate(_act_seed(), act)
-            phase = "awaiting_node"
-    else:
-        phase = "awaiting_node"
+    var result: Dictionary = navigation.complete_current_node()
+    if not result.get("success", false):
+        return result
+    growth.experience += int(result.get("reward", 0))
+    growth.clear_practice_purchases()
     changed.emit()
-    return {"success": true, "reward": reward, "node": node, "phase": phase}
+    return result
+
+func complete_boss_chest() -> Dictionary:
+    var result: Dictionary = navigation.complete_boss_chest()
+    if result.get("success", false):
+        changed.emit()
+    return result
 
 func node_definition(node_id: String) -> Dictionary:
-    for node in graph.get("nodes", []):
-        if str(node["id"]) == node_id:
-            return node
-    return {}
+    return navigation.node_definition(node_id)
+
+func node_dispatch_context() -> Dictionary:
+    return navigation.node_dispatch_context()
 
 func can_open_practice() -> bool:
-    return phase == "awaiting_node"
+    return navigation.can_open_practice()
 
 func purchase_consumable(consumable_id: String, price: int) -> Dictionary:
-    if not can_open_practice():
-        return {"success": false, "reason": "节点进行中不能修习"}
-    if practice_purchases.has(consumable_id):
-        return {"success": false, "reason": "本次修习已购买"}
-    if consumable_ids.size() >= 3:
-        return {"success": false, "reason": "共享消耗品栏已满"}
-    if experience < price:
-        return {"success": false, "reason": "历练不足"}
-    experience -= price
-    consumable_ids.append(consumable_id)
-    practice_purchases[consumable_id] = true
-    changed.emit()
-    return {"success": true, "remaining_experience": experience}
+    var result: Dictionary = growth.purchase_consumable(
+        consumable_id,
+        price,
+        navigation.can_open_practice())
+    if result.get("success", false):
+        changed.emit()
+    return result
 
 func apply_to_battle_side(side) -> void:
-    side.configure_consumables(consumable_ids)
-    side.insight_multipliers = insight_multipliers.duplicate(true)
-    for technique_id in learned_technique_ids:
-        side.learn_technique(technique_id)
-    for zone in [side.draw_pile, side.hand, side.staging, side.discard_pile]:
-        for card in zone:
-            var modifier: Dictionary = deck_modifiers.get(card.id, {})
-            if modifier.has("enhancement"):
-                card.enhancement = str(modifier["enhancement"])
-            if modifier.has("edition"):
-                card.edition = str(modifier["edition"])
+    growth.apply_to_battle_side(side)
 
 func sync_from_battle_side(side) -> void:
-    consumable_ids.clear()
-    for consumable_id in side.consumable_ids:
-        consumable_ids.append(str(consumable_id))
-    insight_multipliers = side.insight_multipliers.duplicate(true)
-    learned_technique_ids.clear()
-    for technique_id in side.owned_technique_ids:
-        learned_technique_ids.append(str(technique_id))
-    for zone in [side.draw_pile, side.hand, side.staging, side.discard_pile]:
-        for card in zone:
-            if card.enhancement != "" or card.edition != "":
-                deck_modifiers[card.id] = {
-                    "enhancement": card.enhancement,
-                    "edition": card.edition,
-                }
-
-func _reward_for_type(type_id: String) -> int:
-    return {"combat": 3, "elite": 4, "boss": 5}.get(type_id, 0)
-
-func _act_seed() -> int:
-    return seed + (act - 1) * 104729
+    growth.sync_from_battle_side(side)
+    changed.emit()

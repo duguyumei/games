@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "actor_statuses": [
+    {
+      "id": "gu_mark",
+      "name": "蛊印",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["battle_end"]
+    },
+    {
+      "id": "momentum",
+      "name": "连势",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["battle_end"]
+    }
+  ]
+}

@@ -13,7 +13,9 @@ static func load_definition(path: String = DATA_PATH) -> Dictionary:
     return parsed
 
 static func create_standard_deck(path: String = DATA_PATH) -> Array:
-    var definition := load_definition(path)
+    return create_standard_deck_from_definition(load_definition(path))
+
+static func create_standard_deck_from_definition(definition: Dictionary) -> Array:
     var cards: Array = []
     for attribute in definition.get("attributes", []):
         for rank in definition.get("ranks", []):
@@ -24,6 +26,25 @@ static func create_standard_deck(path: String = DATA_PATH) -> Array:
                 int(rank["order"]),
                 int(rank["qi"]),
                 str(attribute["id"]),
-                str(attribute["name"])))
+                str(attribute["name"]),
+                card_id))
     return cards
 
+static func namespace_instance_ids(cards: Array, instance_namespace: String) -> Array:
+    if instance_namespace == "":
+        return cards
+    for card in cards:
+        card.id = "%s:%s" % [instance_namespace, card.definition_id]
+    return cards
+
+static func create_card_instance(card_definition: Dictionary, instance_id: String = ""):
+    var definition_id := str(card_definition.get("id", ""))
+    var resolved_instance_id := instance_id if instance_id != "" else definition_id
+    return QiCardScript.new(
+        resolved_instance_id,
+        str(card_definition.get("rank", card_definition.get("rank_name", ""))),
+        int(card_definition.get("order", card_definition.get("rank_order", 0))),
+        int(card_definition.get("qi", card_definition.get("qi_value", 0))),
+        str(card_definition.get("attribute", "")),
+        str(card_definition.get("attribute_name", "")),
+        definition_id)

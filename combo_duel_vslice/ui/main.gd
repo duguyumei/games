@@ -3,6 +3,7 @@ extends Control
 signal battle_finished(outcome: String)
 
 const CombatEngineScript = preload("res://core/combat_engine.gd")
+const BattleSessionScript = preload("res://core/battle_session.gd")
 const FeltBackgroundScript = preload("res://ui/felt_background.gd")
 const QiCardViewScript = preload("res://ui/qi_card_view.gd")
 
@@ -21,8 +22,9 @@ const COLORS := {
     "purple": Color("835bb4"),
 }
 
-var engine = CombatEngineScript.new()
-var run_state
+var battle_session = BattleSessionScript.new(CombatEngineScript.new())
+var run_progress
+var battle_configuration: Dictionary = {}
 var selected_ids: Array[String] = []
 var hand_card_nodes: Array = []
 var _battle_finish_emitted: bool = false
@@ -73,6 +75,9 @@ var staging_hint: Label
 var board_message: Label
 var hand_fan: Control
 var log_label: RichTextLabel
+var log_channel_button: Button
+var log_subtitle: Label
+var active_log_channel: String = "battle"
 var delayed_badge: Label
 var log_overlay: PanelContainer
 var resolution_strip: Label
@@ -83,8 +88,26 @@ var discard_count_label: Label
 
 func _ready() -> void:
     _build_interface()
-    engine.state_changed.connect(_refresh)
+    battle_session.state_changed.connect(_refresh)
+    if not battle_configuration.is_empty():
+        seed_input.value = int(battle_configuration.get("content_seed", seed_input.value))
     _reset_battle()
+
+func configure_battle(configuration: Dictionary) -> void:
+    battle_configuration = configuration.duplicate(true)
+
+func configure_battle_session(session) -> void:
+    if session != null:
+        battle_session = session
+
+func configure_run_context(shared_game_log, progress_snapshot) -> void:
+    if shared_game_log == null:
+        return
+    battle_session.use_game_log(shared_game_log)
+    run_progress = progress_snapshot
+
+func player_progress_snapshot():
+    return battle_session.player_progress_snapshot()
 
 func _build_interface() -> void:
     var background = FeltBackgroundScript.new()
@@ -745,6 +768,12 @@ func _build_log_overlay() -> PanelContainer:
     header.add_child(title)
     delayed_badge = _status_chip("延迟 0", COLORS["purple"])
     header.add_child(delayed_badge)
+    log_channel_button = Button.new()
+    log_channel_button.text = "系统日志"
+    log_channel_button.tooltip_text = "切换战斗结算日志与系统诊断日志"
+    log_channel_button.pressed.connect(_toggle_log_channel)
+    _style_small_button(log_channel_button)
+    header.add_child(log_channel_button)
     var close := Button.new()
     close.text = "×"
     close.tooltip_text = "关闭结算记录"
@@ -752,11 +781,11 @@ func _build_log_overlay() -> PanelContainer:
     _style_small_button(close)
     header.add_child(close)
     box.add_child(header)
-    var subtitle := Label.new()
-    subtitle.text = "同一时点 · 从左到右实时结算"
-    subtitle.add_theme_font_size_override("font_size", 11)
-    subtitle.add_theme_color_override("font_color", COLORS["muted"])
-    box.add_child(subtitle)
+    log_subtitle = Label.new()
+    log_subtitle.text = "战斗日志 · 同一时点从左到右实时结算"
+    log_subtitle.add_theme_font_size_override("font_size", 11)
+    log_subtitle.add_theme_color_override("font_color", COLORS["muted"])
+    box.add_child(log_subtitle)
     box.add_child(_divider())
     log_label = RichTextLabel.new()
     log_label.bbcode_enabled = true
@@ -777,43 +806,53 @@ func _build_log_overlay() -> PanelContainer:
 func _toggle_log_overlay() -> void:
     log_overlay.visible = not log_overlay.visible
 
+func _toggle_log_channel() -> void:
+    active_log_channel = "system" if active_log_channel == "battle" else "battle"
+    _refresh()
+
 func _reset_battle() -> void:
     selected_ids.clear()
     active_consumable_slot = -1
     _battle_finish_emitted = false
-    engine.setup_scripted_battle(int(seed_input.value), "res://data/scripted_battle.json", true)
-    if run_state != null:
-        run_state.apply_to_battle_side(engine.player)
-    engine.start_player_turn()
+    var configuration := battle_configuration.duplicate(true)
+    configuration["content_seed"] = int(seed_input.value)
+    battle_session.setup_battle(configuration, run_progress)
+    battle_session.execute({"type": "start_turn"})
     _refresh()
 
 func _start_turn() -> void:
     selected_ids.clear()
-    if engine.battle_state != "active":
+    var current = battle_session.snapshot()
+    if current.value("battle_state", "") != "active":
         _refresh()
         return
-    if engine.actions_available > 0 or engine.enemy_actions_available > 0:
+    if int(current.value("actions_available", 0)) > 0 \
+            or int(current.value("enemy_actions_available", 0)) > 0:
         board_message.text = "当前击仍有出牌机会；先出招或结束回合"
         return
-    if not engine.round_ended:
-        engine.end_player_turn()
-    engine.start_player_turn()
+    if not bool(current.value("round_ended", false)):
+        battle_session.execute({"type": "end_turn"})
+    battle_session.execute({"type": "start_turn"})
     _refresh()
 
 func _end_turn() -> void:
     selected_ids.clear()
-    engine.end_player_turn()
+    battle_session.execute({"type": "end_turn"})
     _refresh()
 
 func _confirm_play() -> void:
-    var result: Dictionary = engine.confirm_play(selected_ids)
+    var result: Dictionary = battle_session.execute({
+        "type": "play_cards",
+        "card_ids": selected_ids.duplicate(),
+    })
     if not result.get("success", false):
-        engine.trigger_queue.add_history("ui", "无法出招", "界面", "失败", result.get("reason", "未知原因"))
+        board_message.text = str(result.get("reason", "无法出招"))
     selected_ids.clear()
     _refresh()
 
 func _select_consumable_slot(slot_index: int) -> void:
-    if slot_index < 0 or slot_index >= engine.player.consumable_ids.size():
+    var player_state: Dictionary = battle_session.snapshot().section("player")
+    if slot_index < 0 or slot_index >= player_state.get("consumables", []).size():
         return
     if active_consumable_slot == slot_index:
         active_consumable_slot = -1
@@ -825,27 +864,33 @@ func _select_consumable_slot(slot_index: int) -> void:
 func _use_active_consumable() -> void:
     if active_consumable_slot < 0:
         return
-    var result: Dictionary = engine.use_player_consumable(active_consumable_slot, selected_ids)
+    var result: Dictionary = battle_session.execute({
+        "type": "use_consumable",
+        "slot_index": active_consumable_slot,
+        "card_ids": selected_ids.duplicate(),
+    })
     if not result.get("success", false):
-        engine.trigger_queue.add_history(
-            "ui", "无法使用消耗品", "界面", "失败", result.get("reason", "未知原因"))
+        board_message.text = str(result.get("reason", "无法使用消耗品"))
     else:
         var retained: Array[String] = []
+        var player_state: Dictionary = battle_session.snapshot().section("player")
+        var hand: Array = player_state.get("hand", [])
         for card_id in selected_ids:
-            if engine.player.find_hand_card(card_id) != null:
+            if not _find_card_snapshot(hand, card_id).is_empty():
                 retained.append(card_id)
         selected_ids = retained
         active_consumable_slot = -1
-        if run_state != null:
-            run_state.sync_from_battle_side(engine.player)
+        run_progress = battle_session.player_progress_snapshot()
     _refresh()
 
 func _on_card_pressed(card_id: String) -> void:
     if selected_ids.has(card_id):
         selected_ids.erase(card_id)
     elif active_consumable_slot >= 0:
-        var consumable_id: String = engine.player.consumable_ids[active_consumable_slot]
-        var limits: Dictionary = engine.consumable_repository.target_limits(consumable_id)
+        var consumables: Array = battle_session.snapshot().section("player").get("consumables", [])
+        if active_consumable_slot >= consumables.size():
+            return
+        var limits: Dictionary = consumables[active_consumable_slot].get("targeting_limits", {})
         if limits["zone"] == "none":
             board_message.text = "该消耗品不需要选择真气"
             return
@@ -863,71 +908,99 @@ func _on_card_pressed(card_id: String) -> void:
 func _refresh() -> void:
     if player_hp_bar == null:
         return
-    player_hp_bar.max_value = engine.player.max_life
-    player_hp_bar.value = engine.player.life
-    player_hp_text.text = "♥  %d / %d" % [engine.player.life, engine.player.max_life]
-    player_defense_text.text = "盾 %d" % engine.player.defense
-    player_momentum_text.text = "连势 %d" % int(engine.player.stacks.get("momentum", 0))
-    enemy_hp_bar.max_value = engine.enemy.max_life
-    enemy_hp_bar.value = engine.enemy.life
-    enemy_hp_text.text = "♥  %d / %d" % [engine.enemy.life, engine.enemy.max_life]
-    enemy_name_label.text = engine.enemy.name
-    enemy_defense_text.text = "盾 %d" % engine.enemy.defense
-    enemy_gu_text.text = "蛊印 %d" % int(engine.enemy.stacks.get("gu_mark", 0))
-    enemy_momentum_text.text = "连势 %d" % int(engine.enemy.stacks.get("momentum", 0))
-    enemy_poison_text.text = "烈毒 %d" % engine.enemy.count_status_in_zone("hand", "outplay", "lethal_poison")
-    var has_plan: bool = not engine.enemy_plan.is_empty()
-    enemy_plan_damage_text.text = "伤害 %s" % str(engine.enemy_plan.get("damage", 0) if has_plan else "—")
-    enemy_plan_defense_text.text = "防御 %s" % str(engine.enemy_plan.get("defense", 0) if has_plan else "—")
-    enemy_plan_combo_text.text = "连击 %s" % ("是" if engine.enemy_plan.get("combo", false) else ("否" if has_plan else "—"))
+    var current = battle_session.snapshot()
+    var player_state: Dictionary = current.section("player")
+    var enemy_state: Dictionary = current.section("enemy")
+    var player_stacks: Dictionary = player_state.get("stacks", {})
+    var enemy_stacks: Dictionary = enemy_state.get("stacks", {})
+    var enemy_plan: Dictionary = current.value("enemy_plan", {})
+    player_hp_bar.max_value = int(player_state.get("max_life", 0))
+    player_hp_bar.value = int(player_state.get("life", 0))
+    player_hp_text.text = "♥  %d / %d" % [player_state.get("life", 0), player_state.get("max_life", 0)]
+    player_defense_text.text = "盾 %d" % int(player_state.get("defense", 0))
+    player_momentum_text.text = "连势 %d" % int(player_stacks.get("momentum", 0))
+    enemy_hp_bar.max_value = int(enemy_state.get("max_life", 0))
+    enemy_hp_bar.value = int(enemy_state.get("life", 0))
+    enemy_hp_text.text = "♥  %d / %d" % [enemy_state.get("life", 0), enemy_state.get("max_life", 0)]
+    enemy_name_label.text = str(enemy_state.get("name", "敌人"))
+    enemy_defense_text.text = "盾 %d" % int(enemy_state.get("defense", 0))
+    enemy_gu_text.text = "蛊印 %d" % int(enemy_stacks.get("gu_mark", 0))
+    enemy_momentum_text.text = "连势 %d" % int(enemy_stacks.get("momentum", 0))
+    enemy_poison_text.text = "烈毒 %d" % _count_card_anomaly(
+        enemy_state.get("hand", []), "poison", "lethal_poison")
+    var has_plan: bool = not enemy_plan.is_empty()
+    enemy_plan_damage_text.text = "伤害 %s" % str(enemy_plan.get("damage", 0) if has_plan else "—")
+    enemy_plan_defense_text.text = "防御 %s" % str(enemy_plan.get("defense", 0) if has_plan else "—")
+    enemy_plan_combo_text.text = "连击 %s" % ("是" if enemy_plan.get("combo", false) else ("否" if has_plan else "—"))
     enemy_hand_count_label.text = "%d / %d%s" % [
-        engine.enemy.hand.size(),
-        engine.enemy.hand_limit,
-        " · 已计划" if not engine.locked_enemy_card_ids.is_empty() else "",
+        enemy_state.get("hand_count", 0),
+        enemy_state.get("hand_limit", 0),
+        " · 已计划" if int(current.value("locked_enemy_card_count", 0)) > 0 else "",
     ]
     round_badge.text = "第 %d 回合 · 我方 %d / 对手 %d 次" % [
-        engine.turn_number, engine.actions_available, engine.enemy_actions_available]
-    if engine.battle_state != "active":
-        round_badge.text = engine.battle_state_detail
+        current.value("turn_number", 0),
+        current.value("actions_available", 0),
+        current.value("enemy_actions_available", 0)]
+    if current.value("battle_state", "") != "active":
+        round_badge.text = str(current.value("battle_state_detail", ""))
     zone_counts_label.text = "牌库 %d   手牌 %d/%d   弃牌 %d" % [
-        engine.player.draw_pile.size(),
-        engine.player.hand.size(),
-        engine.player.hand_limit,
-        engine.player.discard_pile.size(),
+        player_state.get("draw_count", 0),
+        player_state.get("hand_count", 0),
+        player_state.get("hand_limit", 0),
+        player_state.get("discard_count", 0),
     ]
-    delayed_badge.text = "延迟 %d" % engine.delayed_effects.size()
-    draw_count_label.text = "%d / 52" % engine.player.draw_pile.size()
-    discard_count_label.text = "%d" % engine.player.discard_pile.size()
-    _refresh_hand_fan()
-    _refresh_enemy_hand()
-    _refresh_inner_slots()
-    _refresh_consumable_slots()
-    _refresh_preview_and_staging()
-    _refresh_log()
+    delayed_badge.text = "延迟 %d" % int(current.value("delayed_count", 0))
+    draw_count_label.text = "%d / %d" % [
+        int(player_state.get("draw_count", 0)),
+        int(player_state.get("deck_count", 0)),
+    ]
+    discard_count_label.text = "%d" % int(player_state.get("discard_count", 0))
+    _refresh_hand_fan(player_state)
+    _refresh_enemy_hand(enemy_state)
+    _refresh_inner_slots(player_state)
+    _refresh_consumable_slots(player_state)
+    _refresh_preview_and_staging(current, player_state)
+    _refresh_log(current)
     confirm_button.disabled = (
         selected_ids.is_empty()
         or active_consumable_slot >= 0
-        or engine.actions_available <= 0
-        or engine.battle_state != "active")
-    if engine.battle_state != "active" and not _battle_finish_emitted:
+        or int(current.value("actions_available", 0)) <= 0
+        or current.value("battle_state", "") != "active")
+    if current.value("battle_state", "") != "active" and not _battle_finish_emitted:
         _battle_finish_emitted = true
-        if run_state != null:
-            run_state.sync_from_battle_side(engine.player)
-        battle_finished.emit.call_deferred(engine.battle_state)
+        run_progress = battle_session.player_progress_snapshot()
+        battle_finished.emit.call_deferred(str(current.value("battle_state", "")))
 
-func _refresh_consumable_slots() -> void:
+func _count_card_anomaly(cards: Array, category: String, anomaly_id: String) -> int:
+    var count := 0
+    for card_value in cards:
+        var card: Dictionary = card_value
+        var anomalies: Dictionary = card.get("anomalies", {})
+        var matched := false
+        if category in ["poison", "state"]:
+            matched = str(anomalies.get(category, "")) == anomaly_id
+        elif category == "mark":
+            matched = anomalies.get("marks", {}).has(anomaly_id)
+        elif category == "other":
+            matched = anomalies.get("others", {}).has(anomaly_id)
+        if matched:
+            count += 1
+    return count
+
+func _refresh_consumable_slots(player_state: Dictionary) -> void:
     if consumable_slots_row == null:
         return
-    if active_consumable_slot >= engine.player.consumable_ids.size():
+    var consumables: Array = player_state.get("consumables", [])
+    var consumable_limit := int(player_state.get("consumable_limit", 0))
+    if active_consumable_slot >= consumables.size():
         active_consumable_slot = -1
     for child in consumable_slots_row.get_children():
         child.queue_free()
     consumable_count_label.text = "%d / %d" % [
-        engine.player.consumable_ids.size(), engine.player.consumable_limit]
-    for index in range(engine.player.consumable_limit):
-        if index < engine.player.consumable_ids.size():
-            var definition: Dictionary = engine.consumable_repository.get_consumable(engine.player.consumable_ids[index])
-            consumable_slots_row.add_child(_consumable_slot(definition, index))
+        consumables.size(), consumable_limit]
+    for index in range(consumable_limit):
+        if index < consumables.size():
+            consumable_slots_row.add_child(_consumable_slot(consumables[index], index))
         else:
             consumable_slots_row.add_child(_loadout_slot("消耗品", index + 1, COLORS["purple"], Vector2(58, 58)))
     use_consumable_button = Button.new()
@@ -936,77 +1009,78 @@ func _refresh_consumable_slots() -> void:
     use_consumable_button.tooltip_text = "使用当前选中的消耗品"
     use_consumable_button.pressed.connect(_use_active_consumable)
     _style_small_button(use_consumable_button)
-    use_consumable_button.disabled = not _active_consumable_targets_valid()
+    use_consumable_button.disabled = not _active_consumable_targets_valid(player_state)
     consumable_slots_row.add_child(use_consumable_button)
 
-func _active_consumable_targets_valid() -> bool:
-    if active_consumable_slot < 0 or active_consumable_slot >= engine.player.consumable_ids.size():
+func _active_consumable_targets_valid(player_state: Dictionary = {}) -> bool:
+    if player_state.is_empty():
+        player_state = battle_session.snapshot().section("player")
+    var consumables: Array = player_state.get("consumables", [])
+    if active_consumable_slot < 0 or active_consumable_slot >= consumables.size():
         return false
-    var cards: Array = []
-    for card_id in selected_ids:
-        var card = engine.player.find_hand_card(card_id)
-        if card != null:
-            cards.append(card)
-    var consumable_id: String = engine.player.consumable_ids[active_consumable_slot]
-    return bool(engine.consumable_repository.validate_targets(consumable_id, cards).get("ok", false))
+    return bool(battle_session.validate_consumable_targets(
+        active_consumable_slot,
+        selected_ids).get("ok", false))
 
-func _refresh_enemy_hand() -> void:
+func _refresh_enemy_hand(enemy_state: Dictionary) -> void:
     for child in enemy_hand_row.get_children():
         child.queue_free()
-    var visible_cards := mini(engine.enemy.hand.size(), 10)
+    var visible_cards := mini(int(enemy_state.get("hand_count", 0)), 10)
     for _index in range(visible_cards):
         enemy_hand_row.add_child(_enemy_hand_back())
 
-func _refresh_inner_slots() -> void:
+func _refresh_inner_slots(player_state: Dictionary) -> void:
     if inner_slots_row == null:
         return
     for child in inner_slots_row.get_children():
         child.queue_free()
-    var equipped: Array = engine.player.equipped_inner_skill_ids
+    var equipped: Array = player_state.get("equipped_inner_skills", [])
     inner_count_label.text = "%d / 6" % equipped.size()
-    technique_slot_left_button.disabled = engine.player.technique_slot_index <= 0
-    technique_slot_right_button.disabled = engine.player.technique_slot_index >= equipped.size()
+    var technique_slot_index := int(player_state.get("technique_slot_index", 0))
+    technique_slot_left_button.disabled = technique_slot_index <= 0
+    technique_slot_right_button.disabled = technique_slot_index >= equipped.size()
     for index in range(6):
         if index < equipped.size():
-            var definition: Dictionary = engine.inner_skill_repository.get_inner_skill(equipped[index])
-            inner_slots_row.add_child(_equipped_inner_slot(definition, index + 1))
+            inner_slots_row.add_child(_equipped_inner_slot(equipped[index], index + 1))
         else:
             inner_slots_row.add_child(_loadout_slot("内功", index + 1, Color("485461"), Vector2(84, 58)))
 
 func _move_technique_slot(direction: int) -> void:
-    engine.player.technique_slot_index = clampi(
-        engine.player.technique_slot_index + direction,
-        0,
-        engine.player.equipped_inner_skill_ids.size())
+    battle_session.execute({
+        "type": "move_technique_slot",
+        "direction": direction,
+    })
     _refresh()
 
-func _refresh_hand_fan() -> void:
+func _refresh_hand_fan(player_state: Dictionary) -> void:
     for child in hand_card_nodes:
         if is_instance_valid(child):
             child.queue_free()
     hand_card_nodes.clear()
-    var sorted_hand: Array = engine.player.hand.duplicate()
+    var sorted_hand: Array = player_state.get("hand", []).duplicate(true)
     sorted_hand.sort_custom(func(left, right):
-        if left.rank_order == right.rank_order:
-            return left.attribute < right.attribute
-        return left.rank_order < right.rank_order)
+        if int(left.get("rank_order", 0)) == int(right.get("rank_order", 0)):
+            return str(left.get("attribute", "")) < str(right.get("attribute", ""))
+        return int(left.get("rank_order", 0)) < int(right.get("rank_order", 0)))
     for card in sorted_hand:
         var view = QiCardViewScript.new()
-        view.setup(card, selected_ids.has(card.id), false, true)
+        view.setup(card, selected_ids.has(card.get("id", "")), false, true)
         view.qi_card_pressed.connect(_on_card_pressed)
         var enhancement_text: String = {
             "bonus": "｜奖励牌：有效真气值 +2",
             "multiplier": "｜倍率牌：功法倍率 +2",
-        }.get(card.enhancement, "")
-        var edition_text: String = {
+        }.get(card.get("reshapes", {}).get("enhancement", ""), "")
+        var finish_text: String = {
             "foil": "｜箔面：自身贡献 +3",
             "holographic": "｜镭射：功法倍率 +1",
             "polychrome": "｜多彩：功法值增幅 +20%",
-        }.get(card.edition, "")
+        }.get(card.get("reshapes", {}).get("finish", ""), "")
         view.tooltip_text = "%s｜牌阶 %s｜真气值 %d｜%s属性%s%s%s" % [
-            card.id, card.rank_name, card.qi_value, card.attribute_name,
-            enhancement_text, edition_text,
-            "｜烈毒：打出时受到当前有效真气值伤害" if card.has_combat_status("outplay", "lethal_poison") else ""]
+            card.get("id", ""), card.get("rank_name", ""), card.get("qi_value", 0), card.get("attribute_name", ""),
+            enhancement_text, finish_text,
+            "｜烈毒：打出时受到当前有效真气值伤害"
+            if str(card.get("anomalies", {}).get("poison", "")) == "lethal_poison"
+            else ""]
         hand_fan.add_child(view)
         hand_card_nodes.append(view)
     _layout_hand_fan.call_deferred()
@@ -1033,16 +1107,17 @@ func _layout_hand_fan() -> void:
     for index in range(count):
         var view = hand_card_nodes[index]
         var distance: float = absf(index - middle)
-        var lift := 24.0 if selected_ids.has(view.card_data.id) else 0.0
+        var lift := 24.0 if selected_ids.has(view.card_id()) else 0.0
         view.position = Vector2(start_x + index * spacing, 8.0 + distance * 2.8 - lift)
         view.rotation = deg_to_rad((index - middle) * 1.15)
-        view.z_index = 50 + index if selected_ids.has(view.card_data.id) else index
+        view.z_index = 50 + index if selected_ids.has(view.card_id()) else index
 
-func _refresh_preview_and_staging() -> void:
+func _refresh_preview_and_staging(current, player_state: Dictionary) -> void:
     for child in staging_row.get_children():
         child.queue_free()
-    if active_consumable_slot >= 0 and active_consumable_slot < engine.player.consumable_ids.size():
-        _refresh_consumable_targeting()
+    var consumables: Array = player_state.get("consumables", [])
+    if active_consumable_slot >= 0 and active_consumable_slot < consumables.size():
+        _refresh_consumable_targeting(player_state)
         return
     if selected_ids.is_empty():
         hand_name_label.text = "等待选牌"
@@ -1053,29 +1128,32 @@ func _refresh_preview_and_staging() -> void:
         left_technique_name.text = "当前功法：—"
         left_technique_description.text = "选择真气后显示功法效果。"
         current_technique_name.text = "等待选牌"
-        current_technique_description.text = "结算顺序：%s" % " → ".join(engine.combat_order_labels(engine.player))
+        current_technique_description.text = "结算顺序：%s" % " → ".join(battle_session.combat_order_labels())
         next_technique_name.text = "—"
         sequence_pips.text = "○ ○"
-        if not engine.last_player_action_cards.is_empty() or not engine.last_enemy_action_cards.is_empty():
+        var player_action_cards: Array = current.value("last_player_action_cards", [])
+        var enemy_action_cards: Array = current.value("last_enemy_action_cards", [])
+        if not player_action_cards.is_empty() or not enemy_action_cards.is_empty():
             staging_hint.visible = false
-            _show_last_synchronized_reveal()
+            _show_last_synchronized_reveal(current)
         else:
             staging_hint.visible = true
             board_message.text = (
-                engine.battle_state_detail
-                if engine.battle_state != "active"
+                current.value("battle_state_detail", "")
+                if current.value("battle_state", "") != "active"
                 else "对手计划已公开 · 牌型与真气保持隐藏")
         return
 
-    var preview: Dictionary = engine.preview(selected_ids)
+    var preview: Dictionary = battle_session.preview(selected_ids)
     if not preview.get("valid", false):
         hand_name_label.text = "无效选择"
         board_message.text = preview.get("reason", "选择无效")
         return
     staging_hint.visible = false
+    var contributing_ids: Array = preview["hand"].get("contributing_card_ids", [])
     for card in preview["cards"]:
         var compact_view = QiCardViewScript.new()
-        compact_view.setup(card, preview["hand"]["contributing"].has(card), true, false)
+        compact_view.setup(card, contributing_ids.has(card.get("id", "")), true, false)
         staging_row.add_child(compact_view)
 
     var hand: Dictionary = preview["hand"]
@@ -1097,21 +1175,22 @@ func _refresh_preview_and_staging() -> void:
     current_technique_name.text = technique_name
     var condition_text := "条件满足" if condition_ok else "条件失败：%s" % preview["condition"]["reason"]
     current_technique_description.text = "%s · 顺序：%s" % [
-        condition_text, " → ".join(engine.combat_order_labels(engine.player, technique_name))]
+        condition_text, " → ".join(battle_session.combat_order_labels(technique_name))]
     var next_name: String = next_technique.get("name", "空序列")
     next_technique_name.text = next_name
     sequence_pips.text = "●  ○" if technique_name != next_name else "●"
-    var contributing_count: int = hand["contributing"].size()
+    var contributing_count: int = hand.get("contributing_card_ids", []).size()
     board_message.text = "%s · %d 张参与数值计算 · P = %d · 内功防御 +%d · 对手计划已锁定" % [
         hand["name"], contributing_count, values["technique_value"], inner_defense]
 
-func _refresh_consumable_targeting() -> void:
-    var consumable_id: String = engine.player.consumable_ids[active_consumable_slot]
-    var definition: Dictionary = engine.consumable_repository.get_consumable(consumable_id)
-    var limits: Dictionary = engine.consumable_repository.target_limits(consumable_id)
+func _refresh_consumable_targeting(player_state: Dictionary) -> void:
+    var consumables: Array = player_state.get("consumables", [])
+    var definition: Dictionary = consumables[active_consumable_slot]
+    var limits: Dictionary = definition.get("targeting_limits", {})
+    var hand: Array = player_state.get("hand", [])
     for card_id in selected_ids:
-        var card = engine.player.find_hand_card(card_id)
-        if card == null:
+        var card := _find_card_snapshot(hand, card_id)
+        if card.is_empty():
             continue
         var compact_view = QiCardViewScript.new()
         compact_view.setup(card, true, true, false)
@@ -1136,32 +1215,36 @@ func _refresh_consumable_targeting() -> void:
         staging_hint.text = "选择 %d～%d 张当前手牌" % [limits["minimum"], limits["maximum"]]
     board_message.text = "%s · 已选 %d / %d 张%s" % [
         definition.get("description", ""), selected_ids.size(), limits["maximum"],
-        " · 可以使用" if _active_consumable_targets_valid() else ""]
+        " · 可以使用" if _active_consumable_targets_valid(player_state) else ""]
 
-func _show_last_synchronized_reveal() -> void:
-    if not engine.last_player_action_cards.is_empty():
+func _show_last_synchronized_reveal(current) -> void:
+    var player_action_cards: Array = current.value("last_player_action_cards", [])
+    var enemy_action_cards: Array = current.value("last_enemy_action_cards", [])
+    var player_preview: Dictionary = current.value("last_preview", {})
+    var enemy_preview: Dictionary = current.value("last_enemy_preview", {})
+    if not player_action_cards.is_empty():
         staging_row.add_child(_staging_caption("我方"))
-        for card in engine.last_player_action_cards:
+        var player_contributing: Array = player_preview.get("hand", {}).get("contributing_card_ids", [])
+        for card in player_action_cards:
             var player_view = QiCardViewScript.new()
-            var player_contributing: Array = engine.last_preview.get("hand", {}).get("contributing", [])
-            player_view.setup(card, player_contributing.has(card), true, false)
+            player_view.setup(card, player_contributing.has(card.get("id", "")), true, false)
             staging_row.add_child(player_view)
-    if not engine.last_enemy_action_cards.is_empty():
+    if not enemy_action_cards.is_empty():
         var divider := Label.new()
         divider.text = "  对  "
         divider.add_theme_font_size_override("font_size", 14)
         divider.add_theme_color_override("font_color", COLORS["gold"])
         staging_row.add_child(divider)
         staging_row.add_child(_staging_caption("对手"))
-        for card in engine.last_enemy_action_cards:
+        var enemy_contributing: Array = enemy_preview.get("hand", {}).get("contributing_card_ids", [])
+        for card in enemy_action_cards:
             var enemy_view = QiCardViewScript.new()
-            var enemy_contributing: Array = engine.last_enemy_preview.get("hand", {}).get("contributing", [])
-            enemy_view.setup(card, enemy_contributing.has(card), true, false)
+            enemy_view.setup(card, enemy_contributing.has(card.get("id", "")), true, false)
             staging_row.add_child(enemy_view)
-    var player_hand_name: String = engine.last_preview.get("hand", {}).get("name", "未出牌")
+    var player_hand_name: String = player_preview.get("hand", {}).get("name", "未出牌")
     board_message.text = "同步结算 · 我方 %s / 对手已出招" % player_hand_name
-    if engine.battle_state != "active":
-        board_message.text += " · %s" % engine.battle_state_detail
+    if current.value("battle_state", "") != "active":
+        board_message.text += " · %s" % current.value("battle_state_detail", "")
 
 func _staging_caption(text_value: String) -> Label:
     var label := Label.new()
@@ -1171,37 +1254,52 @@ func _staging_caption(text_value: String) -> Label:
     label.add_theme_color_override("font_color", COLORS["muted"])
     return label
 
-func _refresh_log() -> void:
+func _refresh_log(current) -> void:
     var lines: Array[String] = []
-    var history: Array = engine.trigger_queue.history
-    if history.is_empty():
+    var history: Array = current.value("%s_log" % active_log_channel, [])
+    var battle_history: Array = current.value("battle_log", [])
+    log_channel_button.text = "系统日志" if active_log_channel == "battle" else "战斗日志"
+    log_subtitle.text = (
+        "战斗日志 · 同一时点从左到右实时结算"
+        if active_log_channel == "battle"
+        else "系统日志 · 会话、命令与内容加载诊断")
+    if battle_history.is_empty():
         resolution_strip.text = "结算播报 · 等待出招"
     else:
-        var latest: Dictionary = history[history.size() - 1]
+        var latest: Dictionary = battle_history[battle_history.size() - 1]
+        var latest_status := str(latest.get("context", {}).get("status", ""))
         var latest_detail: String = latest.get("detail", "")
         resolution_strip.text = "结算播报 · %s · %s%s" % [
-            latest["label"],
-            latest["status"],
+            latest.get("message", ""),
+            latest_status,
             " · %s" % latest_detail if latest_detail != "" else "",
         ]
     var start := maxi(0, history.size() - 13)
     for index in range(start, history.size()):
         var entry: Dictionary = history[index]
-        var success: bool = entry["status"] in ["成功", "结算"]
+        var status := str(entry.get("context", {}).get("status", entry.get("severity", "info")))
+        var success: bool = entry.get("severity", "info") not in ["warning", "error"]
         var color := "#efbd50" if success else "#df6a61"
         lines.append((
             "[color=#657478]%02d  %s[/color]\n"
             + "[color=%s]●[/color] [b]%s[/b]  [color=#a7b1b2]%s[/color]\n"
             + "[color=#849092]%s[/color]") % [
-                index + 1,
-                entry["timing"],
+                int(entry.get("serial", index)) + 1,
+                entry.get("category", ""),
                 color,
-                entry["label"],
-                entry["status"],
+                entry.get("message", ""),
+                status,
                 entry.get("detail", ""),
             ])
-    log_label.text = "\n\n".join(lines) if not lines.is_empty() else "[color=#768485]等待第一次出招……[/color]"
+    log_label.text = "\n\n".join(lines) if not lines.is_empty() else "[color=#768485]当前通道暂无记录……[/color]"
     log_label.scroll_to_line(maxi(0, lines.size() * 3 - 1))
+
+func _find_card_snapshot(cards: Array, card_id: String) -> Dictionary:
+    for card_value in cards:
+        var card: Dictionary = card_value
+        if str(card.get("id", "")) == card_id:
+            return card
+    return {}
 
 func _make_life_meter(color: Color, width: float = 220.0) -> Dictionary:
     var root := Control.new()

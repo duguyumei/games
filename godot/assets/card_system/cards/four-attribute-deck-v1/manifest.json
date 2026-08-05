@@ -1,0 +1,474 @@
+{
+  "deck": "four-attribute-deck-v1",
+  "card_count": 52,
+  "cards": [
+    {
+      "filename": "wind-a.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "A",
+      "display_name_zh": "风A",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-02.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "2",
+      "display_name_zh": "风2",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-03.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "3",
+      "display_name_zh": "风3",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-04.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "4",
+      "display_name_zh": "风4",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-05.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "5",
+      "display_name_zh": "风5",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-06.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "6",
+      "display_name_zh": "风6",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-07.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "7",
+      "display_name_zh": "风7",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-08.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "8",
+      "display_name_zh": "风8",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-09.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "9",
+      "display_name_zh": "风9",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-10.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "10",
+      "display_name_zh": "风10",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-j.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "J",
+      "display_name_zh": "风J",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-q.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "Q",
+      "display_name_zh": "风Q",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "wind-k.png",
+      "attribute": "wind",
+      "attribute_zh": "风",
+      "rank": "K",
+      "display_name_zh": "风K",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-a.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "A",
+      "display_name_zh": "林A",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-02.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "2",
+      "display_name_zh": "林2",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-03.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "3",
+      "display_name_zh": "林3",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-04.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "4",
+      "display_name_zh": "林4",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-05.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "5",
+      "display_name_zh": "林5",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-06.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "6",
+      "display_name_zh": "林6",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-07.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "7",
+      "display_name_zh": "林7",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-08.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "8",
+      "display_name_zh": "林8",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-09.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "9",
+      "display_name_zh": "林9",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-10.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "10",
+      "display_name_zh": "林10",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-j.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "J",
+      "display_name_zh": "林J",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-q.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "Q",
+      "display_name_zh": "林Q",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "forest-k.png",
+      "attribute": "forest",
+      "attribute_zh": "林",
+      "rank": "K",
+      "display_name_zh": "林K",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-a.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "A",
+      "display_name_zh": "火A",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-02.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "2",
+      "display_name_zh": "火2",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-03.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "3",
+      "display_name_zh": "火3",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-04.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "4",
+      "display_name_zh": "火4",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-05.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "5",
+      "display_name_zh": "火5",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-06.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "6",
+      "display_name_zh": "火6",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-07.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "7",
+      "display_name_zh": "火7",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-08.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "8",
+      "display_name_zh": "火8",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-09.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "9",
+      "display_name_zh": "火9",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-10.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "10",
+      "display_name_zh": "火10",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-j.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "J",
+      "display_name_zh": "火J",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-q.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "Q",
+      "display_name_zh": "火Q",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "fire-k.png",
+      "attribute": "fire",
+      "attribute_zh": "火",
+      "rank": "K",
+      "display_name_zh": "火K",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-a.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "A",
+      "display_name_zh": "山A",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-02.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "2",
+      "display_name_zh": "山2",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-03.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "3",
+      "display_name_zh": "山3",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-04.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "4",
+      "display_name_zh": "山4",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-05.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "5",
+      "display_name_zh": "山5",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-06.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "6",
+      "display_name_zh": "山6",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-07.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "7",
+      "display_name_zh": "山7",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-08.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "8",
+      "display_name_zh": "山8",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-09.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "9",
+      "display_name_zh": "山9",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-10.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "10",
+      "display_name_zh": "山10",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-j.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "J",
+      "display_name_zh": "山J",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-q.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "Q",
+      "display_name_zh": "山Q",
+      "width": 700,
+      "height": 980
+    },
+    {
+      "filename": "mountain-k.png",
+      "attribute": "mountain",
+      "attribute_zh": "山",
+      "rank": "K",
+      "display_name_zh": "山K",
+      "width": 700,
+      "height": 980
+    }
+  ]
+}

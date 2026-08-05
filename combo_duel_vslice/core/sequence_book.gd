@@ -15,7 +15,12 @@ func load_from_file(path: String = DATA_PATH) -> bool:
     return true
 
 func configure(values: Dictionary) -> void:
-    sequences = values.duplicate(true)
+    sequences.clear()
+    for hand_id in values:
+        if str(hand_id) == "version":
+            continue
+        if values[hand_id] is Array:
+            sequences[str(hand_id)] = values[hand_id].duplicate(true)
     reset()
 
 func reset() -> void:

@@ -28,7 +28,7 @@ func setup(card, is_selected: bool = false, is_compact: bool = false, is_interac
     selected = is_selected
     compact = is_compact
     interactive = is_interactive
-    _accent = ATTR_COLORS.get(card.attribute, Color("666666"))
+    _accent = ATTR_COLORS.get(_card_value("attribute", ""), Color("666666"))
     custom_minimum_size = Vector2(80, 114) if compact else Vector2(116, 168)
     size = custom_minimum_size
     pivot_offset = size * 0.5
@@ -41,7 +41,7 @@ func setup(card, is_selected: bool = false, is_compact: bool = false, is_interac
     if interactive:
         mouse_entered.connect(_on_mouse_entered)
         mouse_exited.connect(_on_mouse_exited)
-        pressed.connect(func(): qi_card_pressed.emit(card_data.id))
+        pressed.connect(func(): qi_card_pressed.emit(card_id()))
 
 func _rebuild_visuals() -> void:
     for child in get_children():
@@ -62,12 +62,12 @@ func _rebuild_visuals() -> void:
         artwork.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
         artwork.mouse_filter = Control.MOUSE_FILTER_IGNORE
         add_child(artwork)
-        _add_status_badges(width)
+        _add_effect_badges(width)
         _add_selected_badge(width)
         return
 
     var rank := Label.new()
-    rank.text = card_data.rank_name
+    rank.text = str(_card_value("rank_name", ""))
     rank.position = Vector2(9, 5)
     rank.size = Vector2(48, 36)
     rank.add_theme_font_size_override("font_size", rank_size)
@@ -76,7 +76,7 @@ func _rebuild_visuals() -> void:
     add_child(rank)
 
     var symbol := Label.new()
-    symbol.text = ATTR_SYMBOLS.get(card_data.attribute, "●")
+    symbol.text = ATTR_SYMBOLS.get(_card_value("attribute", ""), "●")
     symbol.position = Vector2(10, 34 if not compact else 27)
     symbol.size = Vector2(34, 28)
     symbol.add_theme_font_size_override("font_size", 17 if compact else 23)
@@ -92,7 +92,7 @@ func _rebuild_visuals() -> void:
     emblem.add_theme_stylebox_override("panel", _emblem_style())
     emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
     var emblem_label := Label.new()
-    emblem_label.text = card_data.attribute_name
+    emblem_label.text = str(_card_value("attribute_name", ""))
     emblem_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     emblem_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     emblem_label.add_theme_font_size_override("font_size", 23 if compact else 34)
@@ -107,7 +107,7 @@ func _rebuild_visuals() -> void:
     qi_pill.add_theme_stylebox_override("panel", _pill_style())
     qi_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
     var qi_label := Label.new()
-    qi_label.text = "气 %d" % card_data.qi_value
+    qi_label.text = "气 %d" % int(_card_value("qi_value", 0))
     qi_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     qi_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     qi_label.add_theme_font_size_override("font_size", small_size)
@@ -117,7 +117,7 @@ func _rebuild_visuals() -> void:
     add_child(qi_pill)
 
     var corner_rank := Label.new()
-    corner_rank.text = card_data.rank_name
+    corner_rank.text = str(_card_value("rank_name", ""))
     corner_rank.position = Vector2(width - (29 if compact else 40), height - (31 if compact else 43))
     corner_rank.size = Vector2(25, 29)
     corner_rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -126,23 +126,27 @@ func _rebuild_visuals() -> void:
     corner_rank.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(corner_rank)
 
-    _add_status_badges(width)
+    _add_effect_badges(width)
     _add_selected_badge(width)
 
-func _add_status_badges(width: float) -> void:
+func _add_effect_badges(width: float) -> void:
     var badges: Array = []
-    if card_data.enhancement != "":
+    var enhancement := str(_reshape_value("enhancement", ""))
+    var finish := str(_reshape_value("finish", ""))
+    if enhancement != "":
         badges.append({
-            "text": {"bonus": "奖励", "multiplier": "倍率"}.get(card_data.enhancement, "强化"),
+            "text": {"bonus": "奖励", "multiplier": "倍率"}.get(enhancement, "强化"),
             "color": Color("a56d27"),
         })
-    if card_data.edition != "":
+    if finish != "":
         badges.append({
-            "text": {"foil": "箔面", "holographic": "镭射", "polychrome": "多彩"}.get(card_data.edition, "版本"),
-            "color": {"foil": Color("897d62"), "holographic": Color("3477a8"), "polychrome": Color("7546a0")}.get(card_data.edition, Color("59616a")),
+            "text": {"foil": "箔面", "holographic": "镭射", "polychrome": "多彩"}.get(finish, "品相"),
+            "color": {"foil": Color("897d62"), "holographic": Color("3477a8"), "polychrome": Color("7546a0")}.get(finish, Color("59616a")),
         })
-    if card_data.has_combat_status("outplay", "lethal_poison"):
+    if _has_anomaly("poison", "lethal_poison"):
         badges.append({"text": "烈毒", "color": Color("9b3139")})
+    if _has_anomaly("mark", "purification"):
+        badges.append({"text": "净化", "color": Color("508a8a")})
     for index in range(badges.size()):
         var badge_data: Dictionary = badges[index]
         var badge := Label.new()
@@ -153,11 +157,11 @@ func _add_status_badges(width: float) -> void:
         badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         badge.add_theme_font_size_override("font_size", 9 if compact else 10)
         badge.add_theme_color_override("font_color", Color("fff1dc"))
-        badge.add_theme_stylebox_override("normal", _status_style(badge_data["color"]))
+        badge.add_theme_stylebox_override("normal", _effect_badge_style(badge_data["color"]))
         badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
         add_child(badge)
 
-func _status_style(color: Color) -> StyleBoxFlat:
+func _effect_badge_style(color: Color) -> StyleBoxFlat:
     var style := StyleBoxFlat.new()
     style.bg_color = color
     style.border_color = color.lightened(0.24)
@@ -178,8 +182,9 @@ func _add_selected_badge(width: float) -> void:
     add_child(selected_badge)
 
 func _find_card_art() -> String:
+    var artwork_id := str(_card_value("definition_id", card_id()))
     for extension in ["png", "webp", "jpg"]:
-        var candidate := "res://assets/cards/%s.%s" % [card_data.id, extension]
+        var candidate := "res://assets/cards/%s.%s" % [artwork_id, extension]
         if ResourceLoader.exists(candidate):
             return candidate
     return ""
@@ -232,3 +237,33 @@ func _on_mouse_exited() -> void:
     var tween := create_tween()
     tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
     tween.tween_property(self, "scale", Vector2.ONE, 0.1)
+
+func card_id() -> String:
+    return str(_card_value("id", ""))
+
+func _card_value(key: String, default_value = null):
+    if card_data is Dictionary:
+        return card_data.get(key, default_value)
+    var result = card_data.get(key)
+    return default_value if result == null else result
+
+func _reshape_value(category: String, default_value = null):
+    if card_data is Dictionary:
+        return card_data.get("reshapes", {}).get(category, default_value)
+    return card_data.active_reshape_state().get(category, default_value)
+
+func _has_anomaly(category: String, anomaly_id: String = "") -> bool:
+    if not card_data is Dictionary:
+        return card_data.has_anomaly(category, anomaly_id)
+    var anomalies: Dictionary = card_data.get("anomalies", {})
+    match category:
+        "poison", "state":
+            var current := str(anomalies.get(category, ""))
+            return current != "" and (anomaly_id == "" or current == anomaly_id)
+        "mark":
+            var marks: Dictionary = anomalies.get("marks", {})
+            return not marks.is_empty() if anomaly_id == "" else marks.has(anomaly_id)
+        "other":
+            var others: Dictionary = anomalies.get("others", {})
+            return not others.is_empty() if anomaly_id == "" else others.has(anomaly_id)
+    return false

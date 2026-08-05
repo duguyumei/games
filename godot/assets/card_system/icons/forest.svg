@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">林属性梅花</title>
+  <desc id="desc">完整梅花剪影，内部以留白枝脉表现林木生长。</desc>
+  <path fill="currentColor" fill-rule="evenodd" d="M512 112C398 112 323 233 370 336C264 286 140 363 140 482C140 607 272 685 380 625C365 735 322 817 244 872V920H780V872C702 817 659 735 644 625C752 685 884 607 884 482C884 363 760 286 654 336C701 233 626 112 512 112ZM500 750H524V527L650 428L635 409L524 496V322H500V496L389 409L374 428L500 527V750Z"/>
+</svg>

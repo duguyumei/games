@@ -7,19 +7,23 @@ var techniques: Dictionary = {}
 var pool_membership: Dictionary = {}
 
 func load_from_file(path: String = DATA_PATH) -> bool:
-    techniques.clear()
-    pool_membership.clear()
     var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
     if not parsed is Dictionary:
         push_error("功法数据无法解析：%s" % path)
         return false
+    return configure(parsed)
+
+func configure(value: Dictionary) -> bool:
+    techniques.clear()
+    pool_membership.clear()
+    var parsed := value.duplicate(true)
     pool_membership = parsed.get("pool_membership", {}).duplicate(true)
     for definition in parsed.get("techniques", []):
         techniques[str(definition["id"])] = definition.duplicate(true)
     return not techniques.is_empty()
 
 func get_technique(technique_id: String) -> Dictionary:
-    return techniques.get(technique_id, {})
+    return techniques.get(technique_id, {}).duplicate(true)
 
 func is_allowed_for_hand(technique: Dictionary, hand_id: String) -> bool:
     var eligible_pools: Array = pool_membership.get(hand_id, [])
@@ -54,4 +58,3 @@ static func is_pure_attribute(hand_result: Dictionary, attribute: String) -> boo
         if card.attribute != attribute:
             return false
     return true
-

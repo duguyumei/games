@@ -1,7 +1,11 @@
 class_name BattleSide
 extends RefCounted
 
+const DamageResolverScript = preload("res://core/damage_resolver.gd")
+const CardZoneServiceScript = preload("res://core/card_zone_service.gd")
+
 var name: String
+var owner_id: String
 var max_life: int = 100
 var life: int = 100
 var defense: int = 0
@@ -10,6 +14,7 @@ var draw_pile: Array = []
 var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
+var temporarily_removed_cards: Array = []
 var stacks: Dictionary = {}
 var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
@@ -17,9 +22,22 @@ var consumable_ids: Array[String] = []
 var consumable_limit: int = 3
 var insight_multipliers: Dictionary = {}
 var owned_technique_ids: Array[String] = []
+var permanently_removed_card_ids: Array[String] = []
+var card_state_lifecycle
+var status_system
+var card_zone_service := CardZoneServiceScript.new()
 
-func _init(side_name: String = "") -> void:
+func _init(side_name: String = "", stable_owner_id: String = "") -> void:
     name = side_name
+    owner_id = stable_owner_id if stable_owner_id != "" else side_name
+
+func use_card_state_lifecycle(lifecycle) -> void:
+    card_state_lifecycle = lifecycle
+    card_zone_service.use_card_state_lifecycle(lifecycle)
+
+func use_status_system(system) -> void:
+    status_system = system
+    card_zone_service.use_status_system(system)
 
 func reset(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
     life = max_life
@@ -32,29 +50,32 @@ func reset(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true)
     consumable_limit = 3
     insight_multipliers.clear()
     owned_technique_ids.clear()
-    hand.clear()
-    staging.clear()
-    discard_pile.clear()
-    draw_pile = cards.duplicate()
-    if shuffle_cards:
-        _shuffle(draw_pile, rng)
+    permanently_removed_card_ids.clear()
+    card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
+
+func replace_deck(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
+    card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
+
+func all_zone_cards() -> Array:
+    var cards: Array = []
+    for zone in [draw_pile, hand, staging, discard_pile]:
+        cards.append_array(zone)
+    return cards
+
+func all_cards_for_run_sync() -> Array:
+    var cards := all_zone_cards()
+    cards.append_array(temporarily_removed_cards)
+    return cards
+
+func mark_permanently_removed(instance_id: String) -> void:
+    if instance_id != "" and not permanently_removed_card_ids.has(instance_id):
+        permanently_removed_card_ids.append(instance_id)
 
 func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
-    for index in range(cards.size() - 1, 0, -1):
-        var other := rng.randi_range(0, index)
-        var temporary = cards[index]
-        cards[index] = cards[other]
-        cards[other] = temporary
+    card_zone_service.shuffle(cards, rng)
 
 func draw(count: int) -> Array:
-    var drawn: Array = []
-    for _index in range(maxi(0, count)):
-        if draw_pile.is_empty():
-            break
-        var card = draw_pile.pop_back()
-        hand.append(card)
-        drawn.append(card)
-    return drawn
+    return card_zone_service.draw(self, count)
 
 func draw_to_limit() -> Array:
     if hand.size() >= hand_limit:
@@ -62,16 +83,10 @@ func draw_to_limit() -> Array:
     return draw(hand_limit - hand.size())
 
 func stage_cards(card_ids: Array) -> bool:
-    var found: Array = []
-    for card_id in card_ids:
-        var card = find_hand_card(str(card_id))
-        if card == null or found.has(card):
-            return false
-        found.append(card)
-    for card in found:
-        hand.erase(card)
-        staging.append(card)
-    return true
+    return card_zone_service.stage_cards(self, card_ids)
+
+func rollback_staging() -> Array:
+    return card_zone_service.rollback_staging(self)
 
 func find_hand_card(card_id: String):
     for card in hand:
@@ -79,29 +94,26 @@ func find_hand_card(card_id: String):
             return card
     return null
 
+func resolve_hand_definition_ids(definition_ids: Array) -> Array[String]:
+    var resolved: Array[String] = []
+    var used: Dictionary = {}
+    for definition_id in definition_ids:
+        for card in hand:
+            if used.has(card.id) or card.definition_id != str(definition_id):
+                continue
+            used[card.id] = true
+            resolved.append(str(card.id))
+            break
+    return resolved
+
 func commit_staging() -> Array:
-    var committed := staging.duplicate()
-    discard_pile.append_array(staging)
-    staging.clear()
-    return committed
+    return card_zone_service.commit_staging(self)
 
-func commit_staging_with_recycles(recycle_statuses: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
-    var committed := staging.duplicate()
-    var recycled: Array = []
-    for card in staging:
-        if recycle_statuses.has(card.id):
-            var status_data: Dictionary = recycle_statuses[card.id]
-            card.set_combat_status(str(status_data["slot"]), str(status_data["status"]))
-            draw_pile.append(card)
-            recycled.append(card)
-        else:
-            discard_pile.append(card)
-    staging.clear()
-    if not recycled.is_empty():
-        _shuffle(draw_pile, rng)
-    return {"committed": committed, "recycled": recycled}
+func commit_staging_with_recycles(recycle_anomalies: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+    return card_zone_service.commit_staging_with_recycles(
+        self, recycle_anomalies, rng)
 
-func count_status_in_zone(zone: String, slot: String, status_id: String) -> int:
+func count_anomaly_in_zone(zone: String, category: String, anomaly_id: String) -> int:
     var cards: Array = []
     match zone:
         "hand": cards = hand
@@ -110,26 +122,41 @@ func count_status_in_zone(zone: String, slot: String, status_id: String) -> int:
         "discard_pile": cards = discard_pile
     var count := 0
     for card in cards:
-        if card.has_combat_status(slot, status_id):
+        if card.has_anomaly(category, anomaly_id):
             count += 1
     return count
 
 func random_discard(count: int, rng: RandomNumberGenerator) -> Array:
-    var discarded: Array = []
-    for _index in range(maxi(0, count)):
-        if hand.is_empty():
-            break
-        var chosen := rng.randi_range(0, hand.size() - 1)
-        var card = hand.pop_at(chosen)
-        discard_pile.append(card)
-        discarded.append(card)
-    return discarded
+    return card_zone_service.random_discard(self, count, rng)
 
 func discard_all() -> Array:
-    var discarded := hand.duplicate()
-    discard_pile.append_array(hand)
-    hand.clear()
-    return discarded
+    return card_zone_service.discard_all(self)
+
+func recover_from_discard(count: int, destination: String = "draw_pile") -> Array:
+    return card_zone_service.recover_from_discard(self, count, destination)
+
+func temporarily_remove_card(instance_id: String, reason: String = "burn") -> Dictionary:
+    return card_zone_service.temporarily_remove(self, instance_id, reason)
+
+func permanently_remove_card(instance_id: String, reason: String = "permanent_remove") -> Dictionary:
+    return card_zone_service.permanently_remove(self, instance_id, reason)
+
+func add_generated_card(card, destination: String, temporary: bool) -> Dictionary:
+    return card_zone_service.add_generated(self, card, destination, temporary)
+
+func temporarily_transfer_card_to(
+        target_side,
+        instance_id: String,
+        destination: String = "draw_pile") -> Dictionary:
+    return card_zone_service.temporarily_transfer(
+        self, target_side, instance_id, destination)
+
+func return_transferred_card_to(
+        original_side,
+        instance_id: String,
+        destination: String = "draw_pile") -> Dictionary:
+    return card_zone_service.return_transferred(
+        self, original_side, instance_id, destination)
 
 func add_defense(amount: int) -> int:
     var gained := maxi(0, amount)
@@ -137,6 +164,10 @@ func add_defense(amount: int) -> int:
     return gained
 
 func add_stack(stack_id: String, amount: int) -> int:
+    if status_system != null:
+        var result: Dictionary = status_system.add_actor_status(
+            self, stack_id, amount, "战斗方接口")
+        return int(result.get("changed", 0)) if result.get("success", false) else 0
     var gained := maxi(0, amount)
     stacks[stack_id] = int(stacks.get(stack_id, 0)) + gained
     return gained
@@ -177,21 +208,4 @@ func combat_source_order(inner_skill_index: int) -> int:
     return inner_skill_index if inner_skill_index < technique_slot_index else inner_skill_index + 1
 
 func receive_damage(amount: int, true_damage: bool = false) -> Dictionary:
-    var incoming := maxi(0, amount)
-    var defense_lost := 0
-    var life_lost := 0
-    if true_damage:
-        life_lost = mini(life, incoming)
-        life -= life_lost
-    else:
-        defense_lost = mini(defense, incoming)
-        defense -= defense_lost
-        var remainder := incoming - defense_lost
-        life_lost = mini(life, remainder)
-        life -= life_lost
-    return {
-        "requested": incoming,
-        "defense_lost": defense_lost,
-        "life_lost": life_lost,
-        "true_damage": true_damage,
-    }
+    return DamageResolverScript.apply_to_target(self, amount, true_damage)
