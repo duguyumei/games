@@ -1,0 +1,33 @@
+{
+  "locale": "zh_CN",
+  "entries": [
+    {
+      "key": "content.technique.fire_sparks.name",
+      "text": "火星连点"
+    },
+    {
+      "key": "content.technique.fire_sparks.description",
+      "text": "造成 {segments} 次 {damage} 点伤害；每个攻击段后获得 {momentum} 层连势。"
+    },
+    {
+      "key": "ui.sample.turn_summary",
+      "text": "第 {turn} 回合：{actor} 打出 {technique}"
+    },
+    {
+      "key": "ui.sample.default_only",
+      "text": "默认中文回退可用"
+    },
+    {
+      "key": "ui.sample.long_text",
+      "text": "这是一段用于验证超长本地化文案、自动换行和中文字体回退的说明文字。它故意超过常见按钮与卡牌描述区域的一行宽度，以确保展示层不会依赖手工插入换行符，也不会因为语言切换后文本长度变化而截断关键信息。"
+    },
+    {
+      "key": "keyword.power.name",
+      "text": "威力"
+    },
+    {
+      "key": "tooltip.power.description",
+      "text": "本次功法结算使用的基础数值为 {power}。"
+    }
+  ]
+}

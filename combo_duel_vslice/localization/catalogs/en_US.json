@@ -1,0 +1,29 @@
+{
+  "locale": "en_US",
+  "entries": [
+    {
+      "key": "content.technique.fire_sparks.name",
+      "text": "Spark Barrage"
+    },
+    {
+      "key": "content.technique.fire_sparks.description",
+      "text": "Deal {damage} damage {segments} times; gain {momentum} Momentum after each hit."
+    },
+    {
+      "key": "ui.sample.turn_summary",
+      "text": "Turn {turn}: {actor} uses {technique}"
+    },
+    {
+      "key": "ui.sample.long_text",
+      "text": "This deliberately long localized paragraph verifies wrapping and font fallback without manual line breaks, even when a translated card description grows well beyond the width assumed by its original language."
+    },
+    {
+      "key": "keyword.power.name",
+      "text": "Power"
+    },
+    {
+      "key": "tooltip.power.description",
+      "text": "The base value used to resolve this technique is {power}."
+    }
+  ]
+}
