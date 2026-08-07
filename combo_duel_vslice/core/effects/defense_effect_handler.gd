@@ -1,5 +1,5 @@
 class_name DefenseEffectHandler
-extends RefCounted
+extends EffectHandler
 
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")

@@ -24,8 +24,7 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
     register_handler(ChoiceHandlerScript.new(random_source, value_resolver))
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
-    if handler == null or not handler.has_method("operation_ids") \
-            or not handler.has_method("execute") or not handler.has_method("summarize"):
+    if not (handler is EffectHandler):
         return false
     var operation_ids: Array = handler.operation_ids()
     if operation_ids.is_empty():

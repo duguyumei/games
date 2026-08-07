@@ -1,5 +1,5 @@
 class_name CardAnomalyEffectHandler
-extends RefCounted
+extends EffectHandler
 
 const CardStateLifecycleScript = preload("res://core/card_state_lifecycle.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")

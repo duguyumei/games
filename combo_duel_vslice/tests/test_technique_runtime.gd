@@ -19,24 +19,7 @@ const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
 
-class PendingChoiceHandler:
-    extends RefCounted
-
-    const ResultScript = preload("res://core/effects/technique_effect_result.gd")
-
-    func operation_ids() -> Array[String]:
-        return ["test_pending_choice"]
-
-    func group_name() -> String:
-        return "test"
-
-    func execute(_effect: Dictionary, _context):
-        return ResultScript.pending_choice(
-            "请选择一张真气",
-            {"request_id": "choice-001", "minimum": 1, "maximum": 1})
-
-    func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
-        pass
+const PendingChoiceHandlerScript = preload("res://tests/support/pending_choice_handler.gd")
 
 var failures: Array[String] = []
 var assertions: int = 0
@@ -468,7 +451,7 @@ func _test_structured_results_and_pending_boundary() -> void:
 
     var rng := RandomNumberGenerator.new()
     var executor = EffectExecutorScript.new(rng)
-    _assert_true(executor.registry.register_handler(PendingChoiceHandler.new()), "运行时允许注册等待选择处理器")
+    _assert_true(executor.registry.register_handler(PendingChoiceHandlerScript.new()), "运行时允许注册等待选择处理器")
     var pending: Dictionary = executor.execute_all(
         [{"op": "test_pending_choice"}],
         EffectContextScript.new())

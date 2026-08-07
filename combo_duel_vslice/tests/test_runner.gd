@@ -52,21 +52,7 @@ const RunScene = preload("res://ui/run_main.tscn")
 const FrontScene = preload("res://ui/front_main.tscn")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
-class ProbeEffectHandler:
-    extends RefCounted
-
-    func operation_ids() -> Array[String]:
-        return ["probe_effect"]
-
-    func group_name() -> String:
-        return "test_probe"
-
-    func execute(_effect: Dictionary, context: Dictionary) -> Dictionary:
-        context["probe_count"] = int(context.get("probe_count", 0)) + 1
-        return {"success": true, "detail": "探针已执行"}
-
-    func summarize(_effect: Dictionary, _context: Dictionary, intent: Dictionary, _state: Dictionary) -> void:
-        intent["defense"] = int(intent.get("defense", 0)) + 7
+const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 
 class TimingProbe:
     extends RefCounted
@@ -1193,9 +1179,9 @@ func _test_effect_handler_registry_contract() -> void:
     _assert_true(not unknown_result["success"], "未注册操作码在执行边界被安全拒绝")
     _assert_true(str(unknown_result["detail"]).contains("未注册"), "未知操作码返回明确诊断")
 
-    var probe_handler := ProbeEffectHandler.new()
+    var probe_handler := ProbeEffectHandlerScript.new()
     _assert_true(executor.registry.register_handler(probe_handler), "新处理器可通过注册接口扩展")
-    _assert_true(not executor.registry.register_handler(ProbeEffectHandler.new()), "重复操作码默认不能覆盖现有处理器")
+    _assert_true(not executor.registry.register_handler(ProbeEffectHandlerScript.new()), "重复操作码默认不能覆盖现有处理器")
     var probe_context := {}
     var probe_result: Dictionary = executor.execute_all([{"op": "probe_effect"}], probe_context)
     _assert_true(probe_result["success"], "动态注册处理器可以参与统一执行链")
