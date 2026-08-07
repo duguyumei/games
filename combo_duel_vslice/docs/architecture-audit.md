@@ -4,6 +4,24 @@
 范围：`combo_duel_vslice/` 当前全部脚本、数据与测试
 设计依据：`godot/docs/design-current/README.md` v0.30
 
+> **2026-08-07 状态更新**
+>
+> 本文档记录 2026-08-06 的审计快照，下列结论已被后续改造推进，正文保留原判断以
+> 便追溯：
+>
+> - 「P1：运行时字典契约仍缺少类型边界」—— core 与表现层之间的快照边界已完成
+>   类型化。`BattleSnapshot`、`RunSnapshot` 与新增的 `BattleSideSnapshot` 改为
+>   显式字段，`value(key, default)` 与 `section(key)` 已删除而非保留兼容。
+>   存档、事件流与 AI 传输三条边界（`RunProgressSnapshot`、`BattleEvent`、
+>   `RunEvent`、`AiConversationSnapshot`）仍是字典包装。
+> - 「P2：大型脚本式 UI 难维护」—— 表现层转发层已消除，`BattleValuePanel` 与
+>   `ContentFailurePage` 已抽出组件，`ui/main.gd` 从 856 行降至 713 行。
+> - 内容加载失败的静默降级已消除：组合根内容未通过校验时拒绝创建会话，
+>   `BattleEffectPorts` 的四个依赖改为必需，删除全部 null 兜底分支。
+> - `ContentValidator` 的效果规格校验已拆到 `EffectSpecValidator`。
+>
+> 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
+
 ## 结论
 
 当前项目具备合格的纵切架构基础，但尚未达到适合长期承载完整功法池、完整三层内容和大量状态组合的生产架构。

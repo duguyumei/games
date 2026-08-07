@@ -3,7 +3,8 @@
 这是一个全新的 Godot 4.7 工程，依据 `godot/docs/design-current/README.md` 当前 v0.30
 实现。它不引用原 `godot/` 项目的场景、脚本或测试。
 
-当前模块边界、耦合风险与目标架构见 `docs/architecture-audit.md`。
+开发流程、各节点质量门禁与当前架构债务见 `docs/development-workflow.md`。
+模块边界与目标架构的详细审计见 `docs/architecture-audit.md`。
 
 ## 功法数量口径
 
