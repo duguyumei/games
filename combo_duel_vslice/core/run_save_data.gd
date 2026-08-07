@@ -167,7 +167,7 @@ func restore_session(content_catalog = null) -> Dictionary:
         navigation.completed_node_ids[str(node_id)] = true
     var growth = GrowthInventoryScript.new(catalog, false)
     growth.experience = int(growth_state["experience"])
-    growth.apply_progress_snapshot(RunProgressSnapshotScript.new({
+    growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict({
         "consumable_ids": growth_state["consumable_ids"],
         "insight_multipliers": growth_state["insight_multipliers"],
         "learned_technique_ids": growth_state["learned_technique_ids"],

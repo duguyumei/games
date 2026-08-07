@@ -99,14 +99,14 @@ func _public_effect_result(result: Dictionary) -> Dictionary:
     public_result.erase("_choice_request_object")
     return public_result
 
-func summarize_intent(effects: Array, context, initial_momentum: int = 0) -> Dictionary:
+func summarize_intent(effects: Array, context, initial_damage_percent: int = 0) -> Dictionary:
     var intent := {
         "damage": 0,
         "defense": 0,
         "segments": 0,
         "technique_combo": false,
     }
-    var state := {"momentum": maxi(0, initial_momentum)}
+    var state := {"damage_percent": initial_damage_percent}
     for effect_value in effects:
         var effect: Dictionary = effect_value
         if registry.condition_met(effect.get("when", {}), context):

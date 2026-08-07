@@ -8,6 +8,8 @@ extends RefCounted
 ## 持续增长，而这里的形状规则基本稳定。
 
 const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
+const StatusBehaviorRegistryScript = preload(
+    "res://core/statuses/status_behavior_registry.gd")
 
 const CONTENT_KEYS := [
     "base_deck",
@@ -41,17 +43,15 @@ const REQUIRED_ENHANCEMENT_IDS := [
 ]
 const REQUIRED_FINISH_IDS := ["foil", "holographic", "polychrome", "negative"]
 const REQUIRED_IMPRINT_IDS := ["gold", "red", "blue", "purple"]
-const REQUIRED_ANOMALY_IDS := [
-    "lethal_poison", "stagnant_poison", "qi_dissipation",
-    "vulnerability", "acupoint_block", "forbidden", "wind_mark", "wind_lure",
-    "returning_wind", "turbulence", "qi_severance", "purification",
-]
-const REQUIRED_ACTOR_STATUS_IDS := [
-    "gu_mark", "momentum", "qi_intake", "steal_wind", "full_sleeve", "bound_sleeve",
-    "four_symbols_harmony",
-]
 const ANOMALY_ON_APPLY_POLICIES := ["", "suppress_existing_effects"]
 const MARK_LIFECYCLE_EVENTS := ["draw", "explicit_discard", "enter_discard", "turn_end", "battle_end"]
+const CARD_STATUS_TRIGGERS := ["played", "draw", "explicit_discard", "enter_discard"]
+const ACTOR_STATUS_TRIGGERS := [
+    "after_normal_draw",
+    "opponent_card_drawn",
+    "played_card_anomaly_resolved",
+    "technique_card_flow",
+]
 const RANK_SPECS := [
     ["2", 2, 2], ["3", 3, 3], ["4", 4, 4], ["5", 5, 5],
     ["6", 6, 6], ["7", 7, 7], ["8", 8, 8], ["9", 9, 9],
@@ -134,8 +134,10 @@ var _techniques_by_id: Dictionary = {}
 var _inner_skills_by_id: Dictionary = {}
 var _consumables_by_id: Dictionary = {}
 var _effect_specs: EffectSpecValidator
+var _status_behavior_ids: Array[String] = []
 
 func _init() -> void:
+    _status_behavior_ids = StatusBehaviorRegistryScript.new().behavior_ids()
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {
@@ -365,10 +367,8 @@ func _validate_battle_statuses(definition: Dictionary) -> void:
         var clear_on = value.get("clear_on")
         if not clear_on is Array or not clear_on.has("battle_end"):
             _error(scope + ".clear_on", "必须包含 battle_end")
-    _validate_required_ids(
-        _actor_statuses_by_id,
-        REQUIRED_ACTOR_STATUS_IDS,
-        "battle_statuses.actor_statuses")
+        _validate_status_behaviors(value, ACTOR_STATUS_TRIGGERS, scope)
+        _validate_status_modifiers(value, scope)
 
 func _validate_card_states(definition: Dictionary) -> void:
     _validate_categories(
@@ -456,8 +456,100 @@ func _validate_card_states(definition: Dictionary) -> void:
                 _error(scope, "未知异状获得策略 %s" % on_apply)
             if on_apply == "suppress_existing_effects" and category != "mark":
                 _error(scope, "失效既有效果策略只允许异状标记")
-        _validate_required_ids(_anomalies_by_id, REQUIRED_ANOMALY_IDS, "card_states.anomalies")
+            var runtime_payload = value.get("runtime_payload", {})
+            if not runtime_payload is Dictionary:
+                _error(scope + ".runtime_payload", "必须是对象")
+            else:
+                for attribute_id in runtime_payload.get("attribute_aliases", []):
+                    if not ATTRIBUTE_IDS.has(str(attribute_id)):
+                        _error(scope + ".runtime_payload.attribute_aliases", "未知属性 %s" % str(attribute_id))
+            _validate_status_behaviors(value, CARD_STATUS_TRIGGERS, scope)
+        _validate_card_status_behavior_references()
     _validate_other_reshape_battle_start_anomalies()
+
+func _validate_status_behaviors(
+        definition: Dictionary,
+        allowed_triggers: Array,
+        scope: String) -> void:
+    var behaviors = definition.get("behaviors", [])
+    if not behaviors is Array:
+        _error(scope + ".behaviors", "必须是数组")
+        return
+    for index in range(behaviors.size()):
+        var behavior = behaviors[index]
+        var behavior_scope := "%s.behaviors[%d]" % [scope, index]
+        if not behavior is Dictionary:
+            _error(behavior_scope, "必须是对象")
+            continue
+        var trigger := str(behavior.get("trigger", ""))
+        if not allowed_triggers.has(trigger):
+            _error(behavior_scope + ".trigger", "未知状态触发时点 %s" % trigger)
+        var handler_id := str(behavior.get("handler", ""))
+        if not _status_behavior_ids.has(handler_id):
+            _error(behavior_scope + ".handler", "未注册的状态处理器 %s" % handler_id)
+        if behavior.has("priority") and not _is_integer(behavior["priority"]):
+            _error(behavior_scope + ".priority", "必须是整数")
+        if behavior.has("count") and (
+                not _is_integer(behavior["count"]) or int(behavior["count"]) < 0):
+            _error(behavior_scope + ".count", "必须是非负整数")
+        if behavior.has("amount") and (
+                not _is_integer(behavior["amount"]) or int(behavior["amount"]) < 0):
+            _error(behavior_scope + ".amount", "必须是非负整数")
+        if behavior.has("attribute") and not ATTRIBUTE_IDS.has(str(behavior["attribute"])):
+            _error(behavior_scope + ".attribute", "未知属性 %s" % str(behavior["attribute"]))
+        if behavior.has("category") \
+                and not ANOMALY_CATEGORY_IDS.has(str(behavior["category"])):
+            _error(behavior_scope + ".category", "未知异状类别 %s" % str(behavior["category"]))
+        if behavior.has("effects_by_flow") and not behavior["effects_by_flow"] is Dictionary:
+            _error(behavior_scope + ".effects_by_flow", "必须是对象")
+
+func _validate_status_modifiers(definition: Dictionary, scope: String) -> void:
+    var modifiers = definition.get("modifiers", [])
+    if not modifiers is Array:
+        _error(scope + ".modifiers", "必须是数组")
+        return
+    for index in range(modifiers.size()):
+        var modifier = modifiers[index]
+        var modifier_scope := "%s.modifiers[%d]" % [scope, index]
+        if not modifier is Dictionary:
+            _error(modifier_scope, "必须是对象")
+            continue
+        if str(modifier.get("id", "")) == "":
+            _error(modifier_scope + ".id", "必须是非空字符串")
+        if not modifier.has("presence") and not modifier.has("per_stack"):
+            _error(modifier_scope, "必须声明 presence 或 per_stack")
+        for field in ["presence", "per_stack"]:
+            if modifier.has(field) and not _is_integer(modifier[field]):
+                _error(modifier_scope + "." + field, "必须是整数")
+        var source_kinds = modifier.get("source_kinds", [])
+        if not source_kinds is Array:
+            _error(modifier_scope + ".source_kinds", "必须是数组")
+        else:
+            for source_kind in source_kinds:
+                if not source_kind is String or str(source_kind) == "":
+                    _error(modifier_scope + ".source_kinds", "必须只包含非空字符串")
+
+func _validate_card_status_behavior_references() -> void:
+    for status_id in _anomalies_by_id:
+        var definition: Dictionary = _anomalies_by_id[status_id]
+        for index in range(definition.get("behaviors", []).size()):
+            var behavior: Dictionary = definition["behaviors"][index]
+            if not behavior.has("apply_anomaly"):
+                continue
+            var scope := "card_states.anomalies.%s.behaviors[%d].apply_anomaly" % [
+                status_id, index]
+            var applied = behavior["apply_anomaly"]
+            if not applied is Dictionary:
+                _error(scope, "必须是对象")
+                continue
+            var applied_id := str(applied.get("id", ""))
+            var category := str(applied.get("category", ""))
+            if not _anomalies_by_id.has(applied_id):
+                _error(scope, "引用未知真气异状 %s" % applied_id)
+            elif str(_anomalies_by_id[applied_id].get("category", "")) != category:
+                _error(scope, "异状 %s 不属于类别 %s" % [applied_id, category])
+            if applied.has("payload") and not applied["payload"] is Dictionary:
+                _error(scope + ".payload", "必须是对象")
 
 func _validate_other_reshape_battle_start_anomalies() -> void:
     for reshape_id in _other_reshapes_by_id:
@@ -615,6 +707,19 @@ func _validate_consumables(definition: Dictionary) -> void:
                                 _error("%s.effects[%d]" % [scope, effect_index], "引用未知品相 %s" % finish_id)
                             elif not _finishes_by_id[finish_id].get("allowed_carriers", []).has("card"):
                                 _error("%s.effects[%d]" % [scope, effect_index], "品相 %s 不能用于真气" % finish_id)
+    var practice_offer_ids = definition.get("practice_offer_ids")
+    if not practice_offer_ids is Array or practice_offer_ids.is_empty():
+        _error("consumables.practice_offer_ids", "必须是非空数组")
+    else:
+        var seen_offers: Dictionary = {}
+        for index in range(practice_offer_ids.size()):
+            var consumable_id := str(practice_offer_ids[index])
+            var scope := "consumables.practice_offer_ids[%d]" % index
+            if not _consumables_by_id.has(consumable_id):
+                _error(scope, "引用未知消耗品 %s" % consumable_id)
+            elif seen_offers.has(consumable_id):
+                _error(scope, "重复引用消耗品 %s" % consumable_id)
+            seen_offers[consumable_id] = true
 
 func _validate_sequences(definition: Dictionary, scope: String) -> void:
     var membership: Dictionary = _contents.get("techniques", {}).get("pool_membership", {})

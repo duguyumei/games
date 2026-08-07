@@ -1,6 +1,11 @@
 class_name AiDecisionGateway
 extends RefCounted
 
+## 远程 AI 决策的一次请求、校验与有限重试边界。
+##
+## 网关只接受本地生成的候选并把合法回答还原为候选提案；故意不让远程响应
+## 直接修改战斗状态，候选枚举与最终锁定仍留在本地战斗模块。
+
 signal decision_ready(decision_id, proposal, metadata)
 signal decision_retry(decision_id, retry_index, error)
 signal decision_failed(decision_id, error)

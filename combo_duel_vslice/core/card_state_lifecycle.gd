@@ -23,7 +23,9 @@ func apply_anomaly(
         if card.has_anomaly("mark", anomaly_id):
             return {"success": true, "removed": removed, "refreshed": true}
         removed = card.suppress_existing_reshapes_and_clear_anomalies()
-    if not card.set_anomaly(category, anomaly_id, payload):
+    var runtime_payload: Dictionary = definition.get("runtime_payload", {}).duplicate(true)
+    runtime_payload.merge(payload, true)
+    if not card.set_anomaly(category, anomaly_id, runtime_payload):
         return {"success": false, "reason": "无法施加异状 %s" % anomaly_id}
     return {"success": true, "removed": removed, "refreshed": false}
 

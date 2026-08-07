@@ -109,6 +109,14 @@ func _validate_single_effect(
         _validate_actor_status_reference(
             after_each_stack.get("stack"),
             effect_scope + ".after_each_stack.stack")
+    var chase_stack = effect.get("chase_stack")
+    if chase_stack is Dictionary and not chase_stack.is_empty():
+        _validate_actor_status_reference(
+            chase_stack.get("stack"),
+            effect_scope + ".chase_stack.stack")
+        if not _is_integer(chase_stack.get("amount")) \
+                or int(chase_stack.get("amount", 0)) < 0:
+            _error(effect_scope + ".chase_stack.amount", "必须是非负整数")
     var condition = effect.get("when", {})
     if condition is Dictionary \
             and condition.has("pure_attribute") \

@@ -444,21 +444,31 @@ func _resolve_played_card_anomalies(records: Array) -> void:
             holder.staging)
         for resolution in resolutions:
             var card = resolution["card"]
-            var poison_damage := int(resolution["damage"])
+            var anomaly_name := str(resolution.get(
+                "anomaly_name", resolution.get("anomaly_id", "真气异状")))
+            var anomaly_damage := int(resolution.get("damage", 0))
             trigger_queue.add_history(
-                "card_anomaly_damage", "%s·%s触发烈毒" % [holder.name, card.display_name()],
-                "真气异状", "结算", "%d 点伤害" % poison_damage)
+                "card_anomaly_damage",
+                "%s·%s触发%s" % [holder.name, card.display_name(), anomaly_name],
+                "真气异状",
+                "结算",
+                "%d 点伤害" % anomaly_damage)
             if bool(resolution["recycle"]):
                 var side_id: int = holder.get_instance_id()
                 if not _recycle_after_play.has(side_id):
                     _recycle_after_play[side_id] = {}
                 _recycle_after_play[side_id][card.id] = {
-                    "category": "poison",
-                    "anomaly": "lethal_poison",
+                    "category": str(resolution.get("recycle_category", "")),
+                    "anomaly": str(resolution.get("recycle_anomaly_id", "")),
                 }
+                var recycle_status_name := str(resolution.get(
+                    "recycle_status_name", "状态"))
                 trigger_queue.add_history(
-                    "gu_mark_consume", "%s消耗 1 层蛊印" % holder.name,
-                    "蛊印", "成功", "%s续上烈毒，结算后洗回牌库" % card.display_name())
+                    "card_anomaly_recycle",
+                    "%s消耗 1 层%s" % [holder.name, recycle_status_name],
+                    recycle_status_name,
+                    "成功",
+                    "%s续上%s，结算后洗回牌库" % [card.display_name(), anomaly_name])
 
 func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")

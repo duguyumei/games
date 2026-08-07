@@ -1,6 +1,11 @@
 class_name BattleAiAdapter
 extends RefCounted
 
+## CombatEngine 与远程 AI 协议之间的防腐适配层。
+##
+## 这里把领域对象投影为公开上下文、观察和候选，并回写公开行动结果；故意
+## 不选择候选、不调用 Provider，也不绕过引擎执行远程动作。
+
 const BattleContextScript = preload("res://core/ai/ai_battle_context.gd")
 const DecisionObservationScript = preload("res://core/ai/ai_decision_observation.gd")
 const CandidateScript = preload("res://core/ai/ai_candidate.gd")

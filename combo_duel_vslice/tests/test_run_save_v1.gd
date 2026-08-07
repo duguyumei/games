@@ -40,7 +40,7 @@ func _test_round_trip_and_complete_run_deck() -> void:
     var available: Array = session.snapshot().available_node_ids
     _assert_true(not available.is_empty(), "建局后存在可进入节点")
     _assert_true(
-        session.execute({"type": "begin_node", "node_id": str(available[0])})["success"],
+        session.execute({"type": "begin_node", "node_id": str(available[0])}).success,
         "在节点入口合法边界保存")
     var expected = RunSaveDataScript.new().capture(session)
     _assert_equal(expected.validate(service.content_catalog), [], "完整本局数据通过稳定内容 ID 校验")
@@ -126,8 +126,8 @@ func _test_corruption_backup_recovery_and_unknown_version_rejection() -> void:
 func _test_reward_boundary_and_v1_to_v2_migration() -> void:
     var session = _configured_session(420, 3)
     var node_id := str(session.snapshot().available_node_ids[0])
-    _assert_true(session.execute({"type": "begin_node", "node_id": node_id})["success"], "奖励边界测试进入节点")
-    _assert_true(session.execute({"type": "complete_node"})["success"], "奖励边界测试完成节点")
+    _assert_true(session.execute({"type": "begin_node", "node_id": node_id}).success, "奖励边界测试进入节点")
+    _assert_true(session.execute({"type": "complete_node"}).success, "奖励边界测试完成节点")
     var data = RunSaveDataScript.new().capture(session)
     _assert_equal(data.to_dict()["node_state"]["phase"], "awaiting_reward", "v1 保存待领奖励阶段")
     _assert_true(not data.to_dict()["node_state"]["pending_reward"].is_empty(), "v1 保存确定性待领奖励包")
@@ -136,7 +136,7 @@ func _test_reward_boundary_and_v1_to_v2_migration() -> void:
     var reward_session = restored["run_session"]
     var bundle_id := str(reward_session.snapshot().reward["bundle"]["id"])
     _assert_true(
-        reward_session.execute({"type": "claim_reward", "bundle_id": bundle_id})["success"],
+        reward_session.execute({"type": "claim_reward", "bundle_id": bundle_id}).success,
         "恢复后不会丢失待领奖励命令状态")
 
     var registry = MigrationRegistryScript.new(2)
@@ -151,13 +151,13 @@ func _test_reward_boundary_and_v1_to_v2_migration() -> void:
     _assert_equal(migrated["migrations"], ["v1->v2"], "迁移结果记录完整迁移链")
 
 func _configured_session(seed_value: int, experience: int):
-    var session = RunSessionScript.new()
+    var session: RunSession = RunSessionScript.new()
     var setup := session.execute({
         "type": "setup_run",
         "seed": seed_value,
         "starter_build_id": "standard_52",
     })
-    _assert_true(setup.get("success", false), "测试本局建立成功")
+    _assert_true(setup.success, "测试本局建立成功")
     session.growth.experience = experience
     session.growth.consumable_ids.clear()
     session.growth.consumable_ids.append("aura")

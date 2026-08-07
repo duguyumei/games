@@ -4,6 +4,10 @@ extends RefCounted
 const CardStateLifecycleScript = preload("res://core/card_state_lifecycle.gd")
 const StatusChangeScript = preload("res://core/status_change.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const StatusBehaviorRegistryScript = preload(
+    "res://core/statuses/status_behavior_registry.gd")
+const StatusBehaviorContextScript = preload(
+    "res://core/statuses/status_behavior_context.gd")
 
 var content_catalog
 var lifecycle
@@ -16,6 +20,7 @@ var _game_log
 var _effect_ports_ref
 var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
+var behavior_registry
 
 func _init(
         catalog,
@@ -24,6 +29,7 @@ func _init(
         effect_ports = null) -> void:
     content_catalog = catalog
     lifecycle = CardStateLifecycleScript.new(catalog)
+    behavior_registry = StatusBehaviorRegistryScript.new()
     timing_system = battle_timing_system
     _game_log = game_log_override
     use_effect_ports(effect_ports)
@@ -94,17 +100,10 @@ func record_technique_card_flow(side, flow_kind: String, count: int) -> void:
     if flow_kind == "draw" and count > 0:
         var side_key := int(side.get_instance_id())
         _technique_draw_counts[side_key] = int(_technique_draw_counts.get(side_key, 0)) + count
-    var amount := actor_status_value(side, "four_symbols_harmony")
-    if amount <= 0 or count <= 0:
-        return
-    var effect_ports = _effect_ports()
-    if flow_kind == "draw":
-        side.add_defense(amount * count)
-    elif flow_kind == "discard" and effect_ports != null:
-        var opponent = effect_ports.opponent_of(side)
-        if opponent != null:
-            effect_ports.deal_damage(
-                side, opponent, amount * count, "technique_persistent")
+    _dispatch_actor_behaviors(side, "technique_card_flow", {
+        "flow_kind": flow_kind,
+        "count": count,
+    })
 
 func technique_draw_count(side) -> int:
     return int(_technique_draw_counts.get(int(side.get_instance_id()), 0))
@@ -242,17 +241,11 @@ func on_card_enter_discard(card, source: String = "进入弃牌堆") -> Dictiona
         _record_change(
             "card_anomaly_remove", "card", str(card.id), before_state,
             before_state, null, source, {"category": "state"})
-    if card.has_anomaly("mark", "qi_severance"):
-        var effect_ports = _effect_ports()
-        remove_card_anomaly(card, "mark", "qi_severance", "绝气标记触发")
-        apply_card_anomaly(card, "state", "forbidden", {}, "绝气标记触发")
-        if effect_ports != null:
-            for side in effect_ports._sides:
-                if side.discard_pile.has(card):
-                    effect_ports.move_card(
-                        side, "discard_pile", side, "draw_pile", card,
-                        "qi_severance", "top")
-                    break
+    var effect_ports = _effect_ports()
+    var holder = (
+        effect_ports.side_holding_card(card, "discard_pile")
+        if effect_ports != null else null)
+    _dispatch_card_behaviors("enter_discard", holder, card)
     return removed
 
 func on_card_drawn(holder, card) -> void:
@@ -260,66 +253,183 @@ func on_card_drawn(holder, card) -> void:
     if effect_ports == null:
         return
     var opponent = effect_ports.opponent_of(holder)
-    if opponent != null \
-            and actor_status_value(opponent, "steal_wind") > 0 \
-            and card.is_attribute("wind"):
-        consume_actor_status(opponent, "steal_wind", 1, "夺风")
-        effect_ports.move_card(
-            holder, "hand", opponent, "hand", card, "steal_wind")
+    if opponent != null and _dispatch_actor_behaviors(
+            opponent,
+            "opponent_card_drawn",
+            {"holder": holder, "card": card}).get("stop_card_behaviors", false):
         return
     if not holder.hand.has(card):
         return
-    if card.has_anomaly("mark", "turbulence"):
-        remove_card_anomaly(card, "mark", "turbulence", "乱流触发")
-        effect_ports.move_card(
-            holder, "hand", holder, "discard_pile", card,
-            "explicit_discard")
-        return
-    if card.has_anomaly("mark", "wind_lure"):
-        remove_card_anomaly(card, "mark", "wind_lure", "风引触发")
-        holder.draw(1)
+    _dispatch_card_behaviors("draw", holder, card)
 
 func on_card_explicit_discard(holder, card) -> void:
-    if not holder.discard_pile.has(card) \
-            or not card.has_anomaly("mark", "returning_wind"):
+    if not holder.discard_pile.has(card):
         return
-    remove_card_anomaly(card, "mark", "returning_wind", "回风触发")
-    var effect_ports = _effect_ports()
-    if effect_ports != null:
-        effect_ports.move_card(
-            holder, "discard_pile", holder, "draw_pile", card,
-            "returning_wind", "top")
+    _dispatch_card_behaviors("explicit_discard", holder, card)
 
 func _on_after_normal_draw(event) -> Dictionary:
     if event.actor == null:
         return {"success": false, "detail": "正常补牌完成时点缺少行动方"}
-    var consumed := 0
-    if actor_status_value(event.actor, "qi_intake") > 0:
-        consumed = int(consume_actor_status(
-            event.actor, "qi_intake", 1, "正常补牌完成").get("changed", 0))
-    return {"success": true, "detail": "纳气层数 -%d" % consumed}
+    var result := _dispatch_actor_behaviors(
+        event.actor, "after_normal_draw", {"event": event})
+    return {"success": true, "detail": str(result.get("detail", ""))}
 
 func resolve_played_card_anomalies(holder, cards: Array) -> Array:
     var resolutions: Array = []
-    var effect_ports = _effect_ports()
-    if effect_ports == null:
-        return resolutions
     for card in cards:
-        if not card.has_anomaly("poison", "lethal_poison"):
-            continue
-        remove_card_anomaly(card, "poison", "lethal_poison", "烈毒触发")
-        var poison_damage := _effective_qi_value(card)
-        effect_ports.deal_damage(holder, holder, poison_damage, "烈毒")
-        var recycled := actor_status_value(holder, "gu_mark") > 0
-        if recycled:
-            consume_actor_status(holder, "gu_mark", 1, "烈毒续毒")
-        resolutions.append({
-            "card": card,
-            "anomaly_id": "lethal_poison",
-            "damage": poison_damage,
-            "recycle": recycled,
-        })
+        for resolution in _dispatch_card_behaviors("played", holder, card).get(
+                "resolutions", []):
+            _dispatch_actor_behaviors(holder, "played_card_anomaly_resolved", {
+                "card": card,
+                "resolution": resolution,
+            })
+            resolutions.append(resolution)
     return resolutions
+
+func actor_numeric_modifier(
+        side,
+        modifier_id: String,
+        context: Dictionary = {}) -> int:
+    var total := 0
+    for status_id_value in side.stacks.keys():
+        var status_id := str(status_id_value)
+        var stacks := actor_status_value(side, status_id)
+        if stacks <= 0:
+            continue
+        var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
+        for modifier_value in definition.get("modifiers", []):
+            var modifier: Dictionary = modifier_value
+            if str(modifier.get("id", "")) != modifier_id \
+                    or not _modifier_context_matches(modifier, context):
+                continue
+            total += int(modifier.get("presence", 0))
+            total += stacks * int(modifier.get("per_stack", 0))
+    return total
+
+func status_modifier_per_stack(
+        status_id: String,
+        modifier_id: String,
+        context: Dictionary = {}) -> int:
+    var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
+    for modifier_value in definition.get("modifiers", []):
+        var modifier: Dictionary = modifier_value
+        if str(modifier.get("id", "")) == modifier_id \
+                and _modifier_context_matches(modifier, context):
+            return int(modifier.get("per_stack", 0))
+    return 0
+
+func effective_qi_value(card) -> int:
+    return _effective_qi_value(card)
+
+func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
+    var entries: Array = []
+    var snapshot: Dictionary = card.anomaly_snapshot()
+    _append_card_behavior_entries(entries, trigger, "poison", str(snapshot.get("poison", "")))
+    _append_card_behavior_entries(entries, trigger, "state", str(snapshot.get("state", "")))
+    for status_id in snapshot.get("marks", {}).keys():
+        _append_card_behavior_entries(entries, trigger, "mark", str(status_id))
+    for status_id in snapshot.get("others", {}).keys():
+        _append_card_behavior_entries(entries, trigger, "other", str(status_id))
+    entries.sort_custom(func(left, right):
+        return int(left["priority"]) < int(right["priority"]))
+    var resolutions: Array = []
+    var stopped := false
+    for entry_value in entries:
+        var entry: Dictionary = entry_value
+        if not card.has_anomaly(str(entry["category"]), str(entry["status_id"])):
+            continue
+        var context = StatusBehaviorContextScript.new().configure({
+            "trigger": trigger,
+            "status_id": entry["status_id"],
+            "category": entry["category"],
+            "definition": entry["definition"],
+            "behavior": entry["behavior"],
+            "holder": holder,
+            "card": card,
+            "status_system": self,
+            "effect_ports": _effect_ports(),
+        })
+        var result: Dictionary = behavior_registry.execute(entry["behavior"], context)
+        if result.has("resolution"):
+            resolutions.append(result["resolution"])
+        if bool(result.get("stop_card_behaviors", false)):
+            stopped = true
+            break
+    return {"resolutions": resolutions, "stop_card_behaviors": stopped}
+
+func _append_card_behavior_entries(
+        entries: Array,
+        trigger: String,
+        category: String,
+        status_id: String) -> void:
+    if status_id == "":
+        return
+    var definition: Dictionary = content_catalog.get_by_id("anomaly", status_id)
+    for behavior_value in definition.get("behaviors", []):
+        var behavior: Dictionary = behavior_value
+        if str(behavior.get("trigger", "")) != trigger:
+            continue
+        entries.append({
+            "priority": int(behavior.get("priority", 500)),
+            "category": category,
+            "status_id": status_id,
+            "definition": definition,
+            "behavior": behavior,
+        })
+
+func _dispatch_actor_behaviors(
+        side,
+        trigger: String,
+        values: Dictionary = {}) -> Dictionary:
+    var entries: Array = []
+    for status_id_value in side.stacks.keys():
+        var status_id := str(status_id_value)
+        if actor_status_value(side, status_id) <= 0:
+            continue
+        var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
+        for behavior_value in definition.get("behaviors", []):
+            var behavior: Dictionary = behavior_value
+            if str(behavior.get("trigger", "")) == trigger:
+                entries.append({
+                    "priority": int(behavior.get("priority", 500)),
+                    "status_id": status_id,
+                    "definition": definition,
+                    "behavior": behavior,
+                })
+    entries.sort_custom(func(left, right):
+        return int(left["priority"]) < int(right["priority"]))
+    var stopped := false
+    var consumed := 0
+    for entry_value in entries:
+        var entry: Dictionary = entry_value
+        if actor_status_value(side, str(entry["status_id"])) <= 0:
+            continue
+        var context_values := values.duplicate()
+        context_values.merge({
+            "trigger": trigger,
+            "status_id": entry["status_id"],
+            "definition": entry["definition"],
+            "behavior": entry["behavior"],
+            "actor": side,
+            "status_system": self,
+            "effect_ports": _effect_ports(),
+        }, true)
+        var context = StatusBehaviorContextScript.new().configure(context_values)
+        var result: Dictionary = behavior_registry.execute(entry["behavior"], context)
+        consumed += int(result.get("consumed", 0))
+        if bool(result.get("stop_card_behaviors", false)):
+            stopped = true
+            break
+    return {
+        "stop_card_behaviors": stopped,
+        "detail": "状态层数 -%d" % consumed if consumed > 0 else "",
+    }
+
+func _modifier_context_matches(modifier: Dictionary, context: Dictionary) -> bool:
+    var source_kinds = modifier.get("source_kinds", [])
+    return not source_kinds is Array \
+        or source_kinds.is_empty() \
+        or source_kinds.has(str(context.get("source_kind", "")))
 
 func register_attack_counter_delay(
         label: String,

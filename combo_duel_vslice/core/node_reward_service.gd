@@ -1,13 +1,23 @@
 class_name NodeRewardService
 extends RefCounted
 
-const RewardBundleScript = preload("res://core/reward_bundle.gd")
+## 数据驱动的节点奖励创建与应用服务。
+##
+## 这里只把节点定义转换为奖励包并应用已实现的奖励类型，不推进地图阶段，
+## 也不负责奖励界面的领取时机；生命周期由 RunSession 编排。
 
-const IMPLEMENTED_KINDS := ["experience"]
+const RewardBundleScript = preload("res://core/reward_bundle.gd")
+const RewardHandlerRegistryScript = preload(
+    "res://core/rewards/reward_handler_registry.gd")
 
 var _definition: Dictionary = {}
+var handler_registry
 
-func _init(definition: Dictionary = {}) -> void:
+func _init(definition: Dictionary = {}, registry_override = null) -> void:
+    handler_registry = (
+        registry_override
+        if registry_override != null
+        else RewardHandlerRegistryScript.new())
     configure(definition)
 
 func configure(definition: Dictionary) -> void:
@@ -35,16 +45,15 @@ func apply_bundle(bundle, growth) -> Dictionary:
         return {"success": false, "reason": "奖励包不存在"}
     for entry_value in bundle.entries():
         var kind := str(entry_value.get("kind", ""))
-        if not IMPLEMENTED_KINDS.has(kind):
+        if not handler_registry.has_handler(kind):
             return {"success": false, "reason": "奖励类型尚未接入：%s" % kind}
     var applied: Array = []
     for entry_value in bundle.entries():
         var entry: Dictionary = entry_value
-        var kind := str(entry.get("kind", ""))
-        if kind == "experience":
-            var amount := int(entry.get("amount", 0))
-            growth.experience += amount
-            applied.append({"kind": kind, "amount": amount})
+        var result: Dictionary = handler_registry.apply(entry, growth)
+        if not result.get("success", false):
+            return result
+        applied.append(result.get("applied", {}).duplicate(true))
     return {
         "success": true,
         "bundle_id": bundle.bundle_id(),

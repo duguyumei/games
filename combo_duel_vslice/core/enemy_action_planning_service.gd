@@ -2,7 +2,9 @@ class_name EnemyActionPlanningService
 extends RefCounted
 
 ## 敌方行动生成与锁定。
-## 生成方式可以是脚本、Utility 或远程候选，但最终都在本地复核后锁定。
+##
+## 生成方式可以是脚本、Utility 或远程候选，但最终都在本地复核后锁定；
+## 这里不执行伤害与牌区提交，也不允许远程响应直接成为领域动作。
 
 const BattleObservationScript = preload("res://core/battle_observation.gd")
 

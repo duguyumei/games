@@ -88,13 +88,23 @@ func draw_to_limit() -> Array:
     return draw(limit - hand.size())
 
 func current_hand_limit() -> int:
-    var qi_intake_bonus := 1 if int(stacks.get("qi_intake", 0)) > 0 else 0
     return maxi(
         1,
         hand_limit
-        + qi_intake_bonus
-        + int(stacks.get("full_sleeve", 0))
-        - int(stacks.get("bound_sleeve", 0)))
+        + status_modifier("hand_limit"))
+
+func status_modifier(modifier_id: String, context: Dictionary = {}) -> int:
+    if status_system == null:
+        return 0
+    return status_system.actor_numeric_modifier(self, modifier_id, context)
+
+func status_modifier_per_stack(
+        status_id: String,
+        modifier_id: String,
+        context: Dictionary = {}) -> int:
+    if status_system == null:
+        return 0
+    return status_system.status_modifier_per_stack(status_id, modifier_id, context)
 
 func stage_cards(card_ids: Array) -> bool:
     return card_zone_service.stage_cards(self, card_ids)

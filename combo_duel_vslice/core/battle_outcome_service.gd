@@ -2,7 +2,9 @@ class_name BattleOutcomeService
 extends RefCounted
 
 ## 战斗结果与终局清理。
-## 结果状态只在这里计算；BattleSession 仍通过 CombatEngine 的兼容属性读取。
+##
+## 结果状态只在这里计算并触发终局时点；不负责回合推进、伤害计算或本局奖励。
+## BattleSession 仍通过 CombatEngine 的门面属性读取最终状态。
 
 const BattleTimingSystemScript = preload("res://core/battle_timing_system.gd")
 

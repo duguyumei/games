@@ -49,7 +49,11 @@ func is_attribute(attribute_id: String) -> bool:
         return attribute_id in ["wind", "forest", "fire", "mountain"]
     if attribute == attribute_id:
         return true
-    return attribute_id == "wind" and has_anomaly("mark", "wind_mark")
+    for payload_value in anomaly_marks.values():
+        var payload: Dictionary = payload_value
+        if payload.get("attribute_aliases", []).has(attribute_id):
+            return true
+    return false
 
 func set_enhancement(enhancement_id: String) -> void:
     suppressed_reshapes.erase("enhancement")

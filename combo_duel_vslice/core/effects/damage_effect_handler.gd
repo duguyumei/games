@@ -38,20 +38,25 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
         "damage":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
             intent["damage"] = int(intent.get("damage", 0)) + int(floor(
-                amount * (1.0 + int(state.get("momentum", 0)) / 100.0)))
+                amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
             intent["segments"] = int(intent.get("segments", 0)) + 1
         "multi_damage":
             var count := maxi(0, int(effect.get("segments", 1)))
             for _index in range(count):
                 var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
                 intent["damage"] = int(intent.get("damage", 0)) + int(floor(
-                    amount * (1.0 + int(state.get("momentum", 0)) / 100.0)))
+                    amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
                 intent["segments"] = int(intent.get("segments", 0)) + 1
                 var after_stack: Dictionary = effect.get("after_each_stack", {})
-                if after_stack.get("stack", "") == "momentum":
-                    state["momentum"] = (
-                        int(state.get("momentum", 0))
-                        + maxi(0, int(after_stack.get("amount", 0))))
+                var actor = context.actor if context != null else null
+                if actor != null:
+                    state["damage_percent"] = (
+                        int(state.get("damage_percent", 0))
+                        + maxi(0, int(after_stack.get("amount", 0)))
+                        * actor.status_modifier_per_stack(
+                            str(after_stack.get("stack", "")),
+                            "damage_percent",
+                            {"source_kind": "technique"}))
 
 func _execute_multi_damage(effect: Dictionary, runtime):
     var actor = runtime.actor
@@ -83,11 +88,13 @@ func _execute_multi_damage(effect: Dictionary, runtime):
             var chase_amount := int(floor(
                 amount * int(effect["chase_on_consecutive_life_hits_percent"]) / 100.0))
             ports.deal_damage(actor, target, chase_amount, "chase")
-            ports.add_actor_status(
-                actor,
-                "momentum",
-                int(effect.get("chase_stack", 0)),
-                runtime.technique_name if runtime.technique_name != "" else "功法")
+            var chase_stack: Dictionary = effect.get("chase_stack", {})
+            if not chase_stack.is_empty():
+                ports.add_actor_status(
+                    actor,
+                    str(chase_stack.get("stack", "")),
+                    int(chase_stack.get("amount", 0)),
+                    runtime.technique_name if runtime.technique_name != "" else "功法")
             chase_count += 1
         previous_life_hit = current_life_hit
     return EffectResultScript.succeeded(

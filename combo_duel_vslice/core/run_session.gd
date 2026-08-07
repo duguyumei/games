@@ -1,6 +1,11 @@
 class_name RunSession
 extends RefCounted
 
+## 单局地图、成长、奖励与战斗入口的应用层门面。
+##
+## 会话统一接受命令并发布快照和事件；故意不执行战斗规则、不解析内容文件，
+## 也不把地图、奖励或成长服务的规则复制到门面中。
+
 signal state_changed
 
 const RunStateScript = preload("res://core/run_state.gd")
@@ -8,6 +13,7 @@ const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunSnapshotScript = preload("res://core/run_snapshot.gd")
 const RunEventScript = preload("res://core/run_event.gd")
+const CommandResultScript = preload("res://core/command_result.gd")
 const NodeDispatcherScript = preload("res://core/node_dispatcher.gd")
 const ConsumableRepositoryScript = preload("res://core/consumable_repository.gd")
 const GameLogScript = preload("res://core/game_log.gd")
@@ -18,8 +24,6 @@ const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.
 const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
-
-const PRACTICE_OFFER_IDS := ["high_card_insight", "hierophant", "aura"]
 
 var game_log
 var _run_state
@@ -116,7 +120,7 @@ func _init(
             _content_catalog.definition("starter_builds"))
     _run_state.changed.connect(_on_run_state_changed)
 
-func create_battle_session():
+func create_battle_session() -> BattleSession:
     var session = _battle_session_factory.create()
     if _ai_settings_service != null \
             and _ai_settings_service.has_method("runtime_profile"):
@@ -133,7 +137,7 @@ func ai_settings_snapshot() -> Dictionary:
         return {}
     return _ai_settings_service.public_snapshot()
 
-func execute(command: Dictionary) -> Dictionary:
+func execute(command: Dictionary) -> CommandResult:
     var command_type := str(command.get("type", ""))
     var result: Dictionary
     match command_type:
@@ -164,7 +168,7 @@ func execute(command: Dictionary) -> Dictionary:
             result = {"success": false, "reason": "未知本局命令：%s" % command_type}
     if not result.get("success", false):
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
-    return result
+    return CommandResultScript.from_dict(command_type, result)
 
 func snapshot() -> RunSnapshot:
     var graph: Dictionary = navigation.graph.duplicate(true)
@@ -201,13 +205,13 @@ func drain_events() -> Array:
     _event_queue.clear()
     return drained
 
-func progress_snapshot():
+func progress_snapshot() -> RunProgressSnapshot:
     return growth.to_progress_snapshot()
 
 func available_starter_builds() -> Array:
     return _starter_build_repository.available_builds()
 
-func sync_progress_snapshot(progress_snapshot) -> void:
+func sync_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
     if progress_snapshot == null:
         return
     var before: Dictionary = growth.to_progress_snapshot().to_dict()
@@ -438,7 +442,7 @@ func _close_practice() -> Dictionary:
 
 func _purchase_consumable(consumable_id: String) -> Dictionary:
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
-    if definition.is_empty() or not PRACTICE_OFFER_IDS.has(consumable_id):
+    if definition.is_empty() or not _consumable_repository.practice_offers().has(consumable_id):
         return {"success": false, "reason": "当前修习没有该选项"}
     var price := int(definition.get("price", 0))
     var result: Dictionary = growth.purchase_consumable(
@@ -469,8 +473,9 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
     return result
 
 func _practice_snapshot() -> Dictionary:
+    var offer_ids: Array[String] = _consumable_repository.practice_offers()
     var offers: Array = []
-    for consumable_id in PRACTICE_OFFER_IDS:
+    for consumable_id in offer_ids:
         var definition: Dictionary = _consumable_repository.get_consumable(consumable_id).duplicate(true)
         if definition.is_empty():
             continue
@@ -485,7 +490,7 @@ func _practice_snapshot() -> Dictionary:
         offers.append(definition)
     return {
         "available": navigation.can_open_practice(),
-        "offer_ids": PRACTICE_OFFER_IDS.duplicate(),
+        "offer_ids": offer_ids,
         "offers": offers,
         "purchased_ids": growth.practice_purchases.keys(),
     }
@@ -518,11 +523,11 @@ func _record_command_rejected(command_type: String, reason: String) -> void:
     })
 
 func _queue_event(event_type: String, log_entry: Dictionary, values: Dictionary = {}) -> void:
-    var data := values.duplicate(true)
-    data["type"] = event_type
-    data["serial"] = _event_serial
-    data["log_serial"] = int(log_entry.get("serial", -1))
-    _event_queue.append(RunEventScript.new(data))
+    _event_queue.append(RunEventScript.create(
+        event_type,
+        _event_serial,
+        int(log_entry.get("serial", -1)),
+        values))
     _event_serial += 1
 
 func _on_run_state_changed() -> void:

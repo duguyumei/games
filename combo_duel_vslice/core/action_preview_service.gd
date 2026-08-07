@@ -1,6 +1,11 @@
 class_name ActionPreviewService
 extends RefCounted
 
+## 行动提案的纯预览服务。
+##
+## 这里组合牌型、功法与内功修正，产出可展示的结算预览；故意不移动牌区、
+## 推进功法序列或写入战斗状态，真实提交仍由 BattleActionService 负责。
+
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
@@ -84,7 +89,7 @@ func preview_dto(
         _merge_intent(intent, effect_executor.summarize_intent(
             technique_definition.effects,
             intent_context,
-            int(side.stacks.get("momentum", 0))))
+            side.status_modifier("damage_percent", {"source_kind": "technique"})))
     for inner_skill_id in side.equipped_inner_skill_ids:
         var inner_skill: Dictionary = inner_skill_repository.get_inner_skill(inner_skill_id)
         if inner_skill.get("timing", "") != "on_play_resolve":
@@ -92,7 +97,7 @@ func preview_dto(
         var inner_intent: Dictionary = effect_executor.summarize_intent(
             inner_skill.get("effects", []),
             intent_context,
-            int(side.stacks.get("momentum", 0)))
+            side.status_modifier("damage_percent", {"source_kind": "technique"}))
         intent["inner_skill_defense"] = (
             int(intent["inner_skill_defense"])
             + int(inner_intent.get("defense", 0)))

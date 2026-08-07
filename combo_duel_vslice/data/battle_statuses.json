@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "actor_statuses": [
     {
       "id": "gu_mark",
@@ -7,7 +7,15 @@
       "duration": "battle",
       "stacking": true,
       "maximum": -1,
-      "clear_on": ["battle_end"]
+      "clear_on": ["battle_end"],
+      "behaviors": [
+        {
+          "trigger": "played_card_anomaly_resolved",
+          "handler": "recycle_triggered_card_anomaly",
+          "category": "poison",
+          "amount": 1
+        }
+      ]
     },
     {
       "id": "momentum",
@@ -15,7 +23,14 @@
       "duration": "battle",
       "stacking": true,
       "maximum": -1,
-      "clear_on": ["battle_end"]
+      "clear_on": ["battle_end"],
+      "modifiers": [
+        {
+          "id": "damage_percent",
+          "per_stack": 1,
+          "source_kinds": ["technique", "chase", "counter", "delayed_chase"]
+        }
+      ]
     },
     {
       "id": "qi_intake",
@@ -23,7 +38,16 @@
       "duration": "battle",
       "stacking": true,
       "maximum": -1,
-      "clear_on": ["after_normal_draw", "battle_end"]
+      "clear_on": ["after_normal_draw", "battle_end"],
+      "modifiers": [{"id": "hand_limit", "presence": 1}],
+      "behaviors": [
+        {
+          "trigger": "after_normal_draw",
+          "handler": "consume_stack",
+          "amount": 1,
+          "source": "正常补牌完成"
+        }
+      ]
     },
     {
       "id": "steal_wind",
@@ -31,7 +55,15 @@
       "duration": "battle",
       "stacking": true,
       "maximum": -1,
-      "clear_on": ["draw", "battle_end"]
+      "clear_on": ["draw", "battle_end"],
+      "behaviors": [
+        {
+          "trigger": "opponent_card_drawn",
+          "handler": "transfer_opponent_drawn_attribute",
+          "attribute": "wind",
+          "reason": "steal_wind"
+        }
+      ]
     },
     {
       "id": "full_sleeve",
@@ -39,7 +71,8 @@
       "duration": "battle",
       "stacking": true,
       "maximum": -1,
-      "clear_on": ["battle_end"]
+      "clear_on": ["battle_end"],
+      "modifiers": [{"id": "hand_limit", "per_stack": 1}]
     },
     {
       "id": "bound_sleeve",
@@ -47,7 +80,8 @@
       "duration": "battle",
       "stacking": true,
       "maximum": -1,
-      "clear_on": ["battle_end"]
+      "clear_on": ["battle_end"],
+      "modifiers": [{"id": "hand_limit", "per_stack": -1}]
     },
     {
       "id": "four_symbols_harmony",
@@ -55,7 +89,18 @@
       "duration": "battle",
       "stacking": true,
       "maximum": 2,
-      "clear_on": ["battle_end"]
+      "clear_on": ["battle_end"],
+      "behaviors": [
+        {
+          "trigger": "technique_card_flow",
+          "handler": "technique_card_flow_rewards",
+          "source_kind": "technique_persistent",
+          "effects_by_flow": {
+            "draw": {"defense_per_stack": 1},
+            "discard": {"opponent_damage_per_stack": 1}
+          }
+        }
+      ]
     }
   ]
 }

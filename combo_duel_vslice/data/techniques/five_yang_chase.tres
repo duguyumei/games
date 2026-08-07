@@ -8,4 +8,4 @@ id = "five_yang_chase"
 display_name = "五阳逐影"
 pool = "straight"
 description = "造成 5 次 floor(P/7) 点伤害；每段后获得 1 层连势；连续两段伤及生命时追加 50% 追击。"
-effects = [{"op":"multi_damage","segments":5,"amount":{"kind":"power_fraction","numerator":1,"denominator":7,"minimum":1},"after_each_stack":{"stack":"momentum","amount":1},"chase_on_consecutive_life_hits_percent":50,"chase_stack":1}]
+effects = [{"op":"multi_damage","segments":5,"amount":{"kind":"power_fraction","numerator":1,"denominator":7,"minimum":1},"after_each_stack":{"stack":"momentum","amount":1},"chase_on_consecutive_life_hits_percent":50,"chase_stack":{"stack":"momentum","amount":1}}]

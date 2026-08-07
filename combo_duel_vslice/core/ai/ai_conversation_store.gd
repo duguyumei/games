@@ -1,6 +1,11 @@
 class_name AiConversationStore
 extends RefCounted
 
+## AI 对话审计记录的磁盘边界。
+##
+## 这里只负责编码、递归脱敏与文件读写，不决定何时压缩历史，也不参与
+## Provider 请求生命周期；这些职责分别属于对话模型与决策网关。
+
 const DEFAULT_DIRECTORY := "user://ai/conversations"
 const REDACTED := "[REDACTED]"
 const SECRET_KEYS := [

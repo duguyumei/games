@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "reshape_categories": [
     {"id": "enhancement", "capacity": 1},
     {"id": "finish", "capacity": 1},
@@ -41,7 +41,14 @@
       "name": "烈毒",
       "category": "poison",
       "remove_on_enter_discard": true,
-      "remove_on_battle_end": true
+      "remove_on_battle_end": true,
+      "behaviors": [
+        {
+          "trigger": "played",
+          "handler": "damage_holder_by_current_qi",
+          "source_kind": "烈毒"
+        }
+      ]
     },
     {
       "id": "stagnant_poison",
@@ -85,7 +92,8 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["battle_end"]
+      "lifecycle": ["battle_end"],
+      "runtime_payload": {"attribute_aliases": ["wind"]}
     },
     {
       "id": "wind_lure",
@@ -93,7 +101,15 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["draw"]
+      "lifecycle": ["draw"],
+      "behaviors": [
+        {
+          "trigger": "draw",
+          "priority": 200,
+          "handler": "remove_self_and_draw",
+          "count": 1
+        }
+      ]
     },
     {
       "id": "returning_wind",
@@ -101,7 +117,14 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["explicit_discard"]
+      "lifecycle": ["explicit_discard"],
+      "behaviors": [
+        {
+          "trigger": "explicit_discard",
+          "handler": "remove_self_and_return_top",
+          "reason": "returning_wind"
+        }
+      ]
     },
     {
       "id": "turbulence",
@@ -109,7 +132,14 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["draw"]
+      "lifecycle": ["draw"],
+      "behaviors": [
+        {
+          "trigger": "draw",
+          "priority": 100,
+          "handler": "remove_self_and_explicit_discard"
+        }
+      ]
     },
     {
       "id": "qi_severance",
@@ -117,7 +147,15 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["enter_discard"]
+      "lifecycle": ["enter_discard"],
+      "behaviors": [
+        {
+          "trigger": "enter_discard",
+          "handler": "remove_self_apply_anomaly_and_return_top",
+          "reason": "qi_severance",
+          "apply_anomaly": {"category": "state", "id": "forbidden"}
+        }
+      ]
     },
     {
       "id": "purification",

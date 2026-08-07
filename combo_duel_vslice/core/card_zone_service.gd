@@ -1,6 +1,11 @@
 class_name CardZoneService
 extends RefCounted
 
+## 单个参战者的牌区移动与索引维护服务。
+##
+## 这里只保持抽牌堆、手牌、待出区和弃牌堆的一致性，不判断牌型、不结算功法，
+## 也不决定一次行动何时提交。
+
 const ACTIVE_ZONES := ["draw_pile", "hand", "staging", "discard_pile"]
 
 var card_state_lifecycle

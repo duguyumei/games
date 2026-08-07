@@ -1,13 +1,18 @@
 class_name BattleSession
 extends RefCounted
 
+## 战斗用例门面，统一命令、快照、事件与远程 AI 协调边界。
+##
+## 会话只编排应用流程并把领域结果转换为 CommandResult；具体牌型、效果、
+## 伤害和回合规则仍由 CombatEngine 下属组件负责，不在门面复制规则。
+
 signal state_changed
 
 const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSnapshotScript = preload("res://core/battle_snapshot.gd")
 const BattleEventScript = preload("res://core/battle_event.gd")
 const BattleCommandScript = preload("res://core/battle_command_dto.gd")
-const BattleCommandResultScript = preload("res://core/battle_command_result.gd")
+const CommandResultScript = preload("res://core/command_result.gd")
 const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 const ActionWindowAiCoordinatorScript = preload("res://core/ai/action_window_ai_coordinator.gd")
 const BattleAiAdapterScript = preload("res://core/ai/battle_ai_adapter.gd")
@@ -91,7 +96,9 @@ func _notification(what: int) -> void:
             and _ai_provider != null and is_instance_valid(_ai_provider):
         _ai_provider.queue_free()
 
-func setup_battle(configuration: Dictionary = {}, progress_snapshot = null) -> bool:
+func setup_battle(
+        configuration: Dictionary = {},
+        progress_snapshot: RunProgressSnapshot = null) -> bool:
     engine.game_log.clear("battle")
     _event_queue.clear()
     _history_cursor = 0
@@ -167,10 +174,10 @@ func setup_battle(configuration: Dictionary = {}, progress_snapshot = null) -> b
         {"scenario_path": scenario_path, "use_enemy_ai": use_enemy_ai})
     return loaded
 
-func execute(command: Dictionary) -> Dictionary:
-    return execute_dto(BattleCommandScript.new().configure(command)).to_legacy_dict()
+func execute(command: Dictionary) -> CommandResult:
+    return _execute_command(BattleCommandScript.new().configure(command))
 
-func execute_dto(command):
+func _execute_command(command: BattleCommandDto) -> CommandResult:
     var command_type: String = str(command.type)
     var result: Dictionary
     match command_type:
@@ -231,7 +238,7 @@ func execute_dto(command):
     if not result.get("success", false):
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
     _capture_trigger_history()
-    return BattleCommandResultScript.new().configure(command_type, result)
+    return CommandResultScript.from_dict(command_type, result)
 
 func preview(card_ids: Array) -> Dictionary:
     return _safe_preview_snapshot(engine.preview(card_ids))
@@ -247,14 +254,14 @@ func validate_consumable_targets(slot_index: int, card_ids: Array) -> Dictionary
     var consumable_id: String = engine.player.consumable_ids[slot_index]
     return engine.consumable_repository.validate_targets(consumable_id, cards)
 
-func apply_player_progress_from(progress_snapshot) -> void:
+func apply_player_progress_from(progress_snapshot: RunProgressSnapshot) -> void:
     if progress_snapshot == null:
         return
     _player_run_deck = _battle_setup_service.run_deck_from_progress(progress_snapshot)
     engine.replace_player_deck(_player_run_deck.create_battle_cards(), true)
     _battle_setup_service.apply_non_deck_progress(engine.player, progress_snapshot)
 
-func player_progress_snapshot():
+func player_progress_snapshot() -> RunProgressSnapshot:
     return _battle_setup_service.capture_progress(engine.player, _player_run_deck)
 
 func combat_order_labels(technique_name: String = "当前功法") -> Array[String]:
@@ -314,7 +321,7 @@ func poll_ai_timeout(now_msec: int = -1) -> bool:
         return false
     return ai_coordinator.poll_timeout(now_msec)
 
-func ai_conversation_snapshot():
+func ai_conversation_snapshot() -> AiConversationSnapshot:
     if ai_coordinator == null:
         return null
     return ai_coordinator.conversation_snapshot()
@@ -478,15 +485,8 @@ func _capture_trigger_history() -> void:
         _history_cursor = 0
     while _history_cursor < history.size():
         var entry: Dictionary = history[_history_cursor]
-        _event_queue.append(BattleEventScript.new({
-            "type": "trigger_resolved",
-            "serial": _event_serial,
-            "timing": str(entry.get("timing", "")),
-            "label": str(entry.get("label", "")),
-            "source": str(entry.get("source", "")),
-            "status": str(entry.get("status", "")),
-            "detail": str(entry.get("detail", "")),
-        }))
+        _event_queue.append(BattleEventScript.trigger_history(
+            _event_serial, entry))
         _event_serial += 1
         _history_cursor += 1
 
@@ -497,13 +497,11 @@ func _record_command_rejected(command_type: String, reason: String) -> void:
         "战斗命令被拒绝",
         reason,
         {"command": command_type})
-    _event_queue.append(BattleEventScript.new({
-        "type": "command_rejected",
-        "serial": _event_serial,
-        "log_serial": log_entry["serial"],
-        "command": command_type,
-        "reason": reason,
-    }))
+    _event_queue.append(BattleEventScript.command_rejected(
+        _event_serial,
+        command_type,
+        reason,
+        int(log_entry["serial"])))
     _event_serial += 1
 
 func _side_snapshot(side) -> Dictionary:

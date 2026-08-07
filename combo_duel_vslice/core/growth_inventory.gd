@@ -52,8 +52,8 @@ func purchase_consumable(consumable_id: String, price: int, practice_available: 
     practice_purchases[consumable_id] = true
     return {"success": true, "remaining_experience": experience}
 
-func to_progress_snapshot():
-    return RunProgressSnapshotScript.new({
+func to_progress_snapshot() -> RunProgressSnapshot:
+    return RunProgressSnapshotScript.from_dict({
         "consumable_ids": consumable_ids.duplicate(),
         "insight_multipliers": insight_multipliers.duplicate(true),
         "learned_technique_ids": learned_technique_ids.duplicate(),
@@ -63,28 +63,25 @@ func to_progress_snapshot():
         "run_deck": run_deck.to_snapshot(),
     })
 
-func apply_progress_snapshot(progress_snapshot) -> void:
-    var values: Dictionary = progress_snapshot.to_dict()
-    consumable_ids.clear()
-    for consumable_id in values.get("consumable_ids", []):
-        consumable_ids.append(str(consumable_id))
-    insight_multipliers = values.get("insight_multipliers", {}).duplicate(true)
-    learned_technique_ids.clear()
-    for technique_id in values.get("learned_technique_ids", []):
-        learned_technique_ids.append(str(technique_id))
-    learned_inner_skill_ids.clear()
-    for inner_skill_id in values.get("learned_inner_skill_ids", []):
-        learned_inner_skill_ids.append(str(inner_skill_id))
-    equipped_inner_skill_ids.clear()
-    for inner_skill_id in values.get("equipped_inner_skill_ids", []):
-        equipped_inner_skill_ids.append(str(inner_skill_id))
-    technique_slot_index = clampi(
-        int(values.get("technique_slot_index", 0)),
-        0,
-        equipped_inner_skill_ids.size())
-    var run_deck_values: Dictionary = values.get("run_deck", {})
-    if not run_deck_values.is_empty():
-        var errors: Array[String] = run_deck.restore_snapshot(run_deck_values)
+func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
+    if progress_snapshot.has_consumable_ids:
+        consumable_ids.assign(progress_snapshot.consumable_ids)
+    if progress_snapshot.has_insight_multipliers:
+        insight_multipliers = progress_snapshot.insight_multipliers.duplicate(true)
+    if progress_snapshot.has_learned_technique_ids:
+        learned_technique_ids.assign(progress_snapshot.learned_technique_ids)
+    if progress_snapshot.has_learned_inner_skill_ids:
+        learned_inner_skill_ids.assign(progress_snapshot.learned_inner_skill_ids)
+    if progress_snapshot.has_equipped_inner_skill_ids:
+        equipped_inner_skill_ids.assign(progress_snapshot.equipped_inner_skill_ids)
+    if progress_snapshot.has_technique_slot_index:
+        technique_slot_index = progress_snapshot.technique_slot_index
+    if progress_snapshot.has_equipped_inner_skill_ids \
+            or progress_snapshot.has_technique_slot_index:
+        technique_slot_index = clampi(
+            technique_slot_index, 0, equipped_inner_skill_ids.size())
+    if progress_snapshot.has_run_deck and not progress_snapshot.run_deck.is_empty():
+        var errors: Array[String] = run_deck.restore_snapshot(progress_snapshot.run_deck)
         if not errors.is_empty():
             push_error("无法导入本局牌组：%s" % "；".join(errors))
 

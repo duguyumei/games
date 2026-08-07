@@ -2,7 +2,9 @@ class_name BattleConsumableService
 extends RefCounted
 
 ## 战斗内消耗品用例。
-## 消耗品定义来自 ContentCatalog；这里只把已校验的效果应用到玩家状态。
+##
+## 消耗品定义来自 ContentCatalog；这里只校验目标并把已配置效果应用到玩家
+## 状态，不负责购买、共享库存或跨战斗持久化。
 
 var player
 var consumable_repository

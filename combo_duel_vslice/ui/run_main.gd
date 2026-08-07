@@ -303,11 +303,11 @@ func _refresh_practice() -> void:
     practice_overlay.present(current_run)
 
 func _on_node_selected(node_id: String) -> void:
-    var result: Dictionary = run_session.execute({"type": "begin_node", "node_id": node_id})
-    if not result.get("success", false):
-        _show_toast(result.get("reason", "无法进入节点"))
+    var result := run_session.execute({"type": "begin_node", "node_id": node_id})
+    if not result.success:
+        _show_toast(result.reason_or("无法进入节点"))
         return
-    var dispatch_result: Dictionary = result.get("dispatch", {})
+    var dispatch_result: Dictionary = result.payload_value("dispatch", {})
     _open_dispatched_content(dispatch_result)
 
 func _open_dispatched_content(dispatch_result: Dictionary) -> void:
@@ -338,9 +338,9 @@ func _on_battle_finished(outcome: String) -> void:
     current_battle.queue_free()
     current_battle = null
     battle_layer.visible = false
-    var result: Dictionary = run_session.execute({"type": "complete_node"})
-    if not result.get("success", false):
-        _show_toast(result.get("reason", "无法建立节点奖励"))
+    var result := run_session.execute({"type": "complete_node"})
+    if not result.success:
+        _show_toast(result.reason_or("无法建立节点奖励"))
         return
     _show_reward_overlay()
 
@@ -354,9 +354,9 @@ func _open_noncombat_node(dispatch_result: Dictionary) -> void:
 
 func _complete_noncombat_node() -> void:
     node_overlay.visible = false
-    var result: Dictionary = run_session.execute({"type": "complete_node"})
-    if not result.get("success", false):
-        _show_toast(result.get("reason", "无法建立节点奖励"))
+    var result := run_session.execute({"type": "complete_node"})
+    if not result.success:
+        _show_toast(result.reason_or("无法建立节点奖励"))
         return
     _show_reward_overlay()
 
@@ -368,35 +368,35 @@ func _claim_reward(bundle_id: String = "") -> void:
     if bundle_id == "":
         var reward: Dictionary = run_session.snapshot().reward
         bundle_id = str(reward.get("bundle", {}).get("id", ""))
-    var result: Dictionary = run_session.execute({
+    var result := run_session.execute({
         "type": "claim_reward",
         "bundle_id": bundle_id,
     })
-    if not result.get("success", false):
-        _show_toast(result.get("reason", "无法领取奖励"))
+    if not result.success:
+        _show_toast(result.reason_or("无法领取奖励"))
         return
     reward_overlay.visible = false
-    match str(result.get("phase", "")):
+    match result.phase:
         "boss_chest":
             boss_chest_overlay.visible = true
             _show_toast("Boss 奖励已领取 · 进入第 17 层 Boss 宝箱")
         "run_complete":
             _show_toast("节点奖励已领取 · 本局完成")
         _:
-            _show_toast("节点奖励已领取 · 当前历练 %d" % int(result.get("experience", 0)))
+            _show_toast("节点奖励已领取 · 当前历练 %d" % int(result.payload_value("experience", 0)))
 
 func _complete_boss_chest() -> void:
-    var result: Dictionary = run_session.execute({"type": "complete_boss_chest"})
-    if not result.get("success", false):
-        _show_toast(result.get("reason", "无法完成 Boss 宝箱"))
+    var result := run_session.execute({"type": "complete_boss_chest"})
+    if not result.success:
+        _show_toast(result.reason_or("无法完成 Boss 宝箱"))
         return
     boss_chest_overlay.visible = false
-    _show_toast("Boss 宝箱流程完成 · 进入第 %d 层地图" % int(result.get("act", 1)))
+    _show_toast("Boss 宝箱流程完成 · 进入第 %d 层地图" % int(result.payload_value("act", 1)))
 
 func _open_practice() -> void:
-    var result: Dictionary = run_session.execute({"type": "open_practice"})
-    if not result.get("success", false):
-        _show_toast(result.get("reason", "当前不能修习"))
+    var result := run_session.execute({"type": "open_practice"})
+    if not result.success:
+        _show_toast(result.reason_or("当前不能修习"))
         return
     practice_overlay.visible = true
     _refresh_practice()
@@ -406,14 +406,14 @@ func _close_practice() -> void:
     practice_overlay.visible = false
 
 func _buy_consumable(consumable_id: String) -> void:
-    var result: Dictionary = run_session.execute({
+    var result := run_session.execute({
         "type": "purchase_consumable",
         "consumable_id": consumable_id,
     })
-    if result.get("success", false):
-        _show_toast("修习完成 · %s进入共享消耗品栏" % result.get("definition", {}).get("name", consumable_id))
+    if result.success:
+        _show_toast("修习完成 · %s进入共享消耗品栏" % result.payload_value("definition", {}).get("name", consumable_id))
     else:
-        _show_toast(result.get("reason", "无法购买"))
+        _show_toast(result.reason_or("无法购买"))
     _refresh()
 
 func _reset_run() -> void:

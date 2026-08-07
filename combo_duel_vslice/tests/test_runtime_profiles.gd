@@ -102,7 +102,7 @@ func _test_production_rejects_debug_resources() -> void:
 
     var root = GameCompositionRootScript.new(production)
     _assert_true(root.initialize(), "production 组合根可使用正式内容初始化")
-    var battle_session = root.create_run_session().create_battle_session()
+    var battle_session: BattleSession = root.create_run_session().create_battle_session()
     _assert_true(
         not battle_session.setup_battle({
             "content_seed": 2308,
@@ -121,7 +121,7 @@ func _test_composition_root_injects_mode() -> void:
             RuntimeProfileScript.test()]:
         var root = GameCompositionRootScript.new(profile)
         _assert_true(root.initialize(), "%s 组合根初始化" % profile.mode_name())
-        var session = root.create_run_session()
+        var session: RunSession = root.create_run_session()
         _assert_true(
             session.runtime_profile == profile,
             "%s 由组合根注入本局会话" % profile.mode_name())
@@ -133,12 +133,15 @@ func _test_composition_root_injects_mode() -> void:
     var test_root = GameCompositionRootScript.new(test_profile)
     _assert_true(test_root.initialize(), "test 组合根初始化")
     var test_session = test_root.create_run_session()
-    var setup: Dictionary = test_session.execute({
+    var setup := test_session.execute({
         "type": "setup_run",
         "starter_build_id": "standard_52",
     })
-    _assert_true(setup.get("success", false), "test 模式建立本局")
-    _assert_equal(setup.get("seed"), RuntimeProfileScript.TEST_SEED, "test 强制固定种子")
+    _assert_true(setup.success, "test 模式建立本局")
+    _assert_equal(
+        setup.payload_value("seed"),
+        RuntimeProfileScript.TEST_SEED,
+        "test 强制固定种子")
 
 func _assert_equal(actual, expected, label: String) -> void:
     assertions += 1

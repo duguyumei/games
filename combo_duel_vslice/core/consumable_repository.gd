@@ -4,6 +4,7 @@ extends RefCounted
 const DATA_PATH := "res://data/consumables.json"
 
 var consumables: Dictionary = {}
+var practice_offer_ids: Array[String] = []
 
 func load_from_file(path: String = DATA_PATH) -> bool:
     var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
@@ -14,13 +15,19 @@ func load_from_file(path: String = DATA_PATH) -> bool:
 
 func configure(value: Dictionary) -> bool:
     consumables.clear()
+    practice_offer_ids.clear()
     var parsed := value.duplicate(true)
     for definition in parsed.get("consumables", []):
         consumables[str(definition["id"])] = definition.duplicate(true)
+    for consumable_id in parsed.get("practice_offer_ids", []):
+        practice_offer_ids.append(str(consumable_id))
     return not consumables.is_empty()
 
 func get_consumable(consumable_id: String) -> Dictionary:
     return consumables.get(consumable_id, {}).duplicate(true)
+
+func practice_offers() -> Array[String]:
+    return practice_offer_ids.duplicate()
 
 func target_limits(consumable_id: String) -> Dictionary:
     var definition := get_consumable(consumable_id)

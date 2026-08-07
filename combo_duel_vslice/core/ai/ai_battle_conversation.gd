@@ -150,8 +150,8 @@ func record_local_outcome(
     })
     changed.emit()
 
-func snapshot():
-    return SnapshotScript.new({
+func snapshot() -> AiConversationSnapshot:
+    return SnapshotScript.from_dict({
         "battle_id": battle_id,
         "context_snapshot": context_snapshot.duplicate(true),
         "settings": settings.duplicate(true),

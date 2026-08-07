@@ -13,7 +13,7 @@ const TargetQueryScript = preload("res://core/effects/effect_target_query.gd")
 const ChoiceRequestScript = preload("res://core/effects/battle_choice_request.gd")
 const BattleActionProposalScript = preload("res://core/battle_action_proposal.gd")
 const BattleCommandScript = preload("res://core/battle_command_dto.gd")
-const BattleCommandResultScript = preload("res://core/battle_command_result.gd")
+const CommandResultScript = preload("res://core/command_result.gd")
 const NodeDispatcherScript = preload("res://core/node_dispatcher.gd")
 const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
@@ -449,11 +449,19 @@ func _test_action_and_dispatch_dto_contracts() -> void:
     _assert_equal(command.snapshot()["schema_version"], 1, "战斗命令 DTO 使用稳定版本号")
     _assert_equal(command.direction, -1, "战斗命令 DTO 保留方向")
     _assert_equal(command.cooperation_card_ids, ["forest_3"], "战斗命令 DTO 保留协同组选牌")
-    var command_result = BattleCommandResultScript.new().configure(
+    var command_result := CommandResultScript.from_dict(
         command.type,
         {"success": false, "reason": "测试拒绝", "value": 7})
-    _assert_equal(command_result.snapshot()["schema_version"], 1, "命令结果 DTO 使用稳定版本号")
-    _assert_equal(command_result.to_legacy_dict()["value"], 7, "命令结果 DTO 保留扩展负载")
+    _assert_equal(command_result.to_dict()["schema_version"], 1, "命令结果 DTO 使用稳定版本号")
+    _assert_equal(command_result.status, "rejected", "命令拒绝使用稳定状态字段")
+    _assert_equal(command_result.reason_or("默认原因"), "测试拒绝", "命令结果公开统一原因入口")
+    _assert_equal(command_result.payload_value("value"), 7, "命令结果 DTO 保留扩展负载")
+    var successful_command := CommandResultScript.from_dict(
+        "claim_reward",
+        {"success": true, "phase": "awaiting_node", "experience": 3})
+    _assert_equal(successful_command.status, "succeeded", "成功命令使用稳定状态字段")
+    _assert_equal(successful_command.phase, "awaiting_node", "流程阶段使用显式字段")
+    _assert_equal(successful_command.payload_value("experience"), 3, "领域数据进入命令负载")
     _assert_equal(
         engine.pending_action_transaction_snapshot()["schema_version"],
         1,
@@ -718,22 +726,26 @@ func _test_combat_action_pauses_and_resumes_transactionally() -> void:
     _assert_equal(engine.player.discard_pile.size(), 0, "暂停期间不提前进入弃牌堆")
     _assert_equal(engine.sequence_book.position("high_card"), 0, "暂停期间功法序列不推进")
     _assert_equal(engine.player.defense, 5, "暂停前阶段效果已经建立")
-    var session = BattleSessionScript.new(engine)
+    var session: BattleSession = BattleSessionScript.new(engine)
     var request: Dictionary = session.snapshot().pending_choice
     _assert_equal(request["request_id"], engine.pending_effect_choice_snapshot()["request_id"], "战斗快照公开同一选择请求")
-    var rejected: Dictionary = session.execute({
+    var rejected := session.execute({
         "type": "resolve_choice",
         "request_id": str(request["request_id"]),
         "card_ids": ["not-a-candidate"],
     })
-    _assert_true(not rejected["success"] and rejected["pending_choice"], "战斗核拒绝非法选择并保持事务")
+    _assert_true(
+        not rejected.success and rejected.payload_value("pending_choice", false),
+        "战斗核拒绝非法选择并保持事务")
     _assert_equal(engine.player.defense, 5, "战斗核非法恢复不重复结算")
-    var completed: Dictionary = session.execute({
+    var completed := session.execute({
         "type": "resolve_choice",
         "request_id": str(request["request_id"]),
         "card_ids": [request["candidate_ids"][0]],
     })
-    _assert_true(completed["success"] and not completed.get("pending_choice", false), "合法选择完成整次行动")
+    _assert_true(
+        completed.success and not completed.payload_value("pending_choice", false),
+        "合法选择完成整次行动")
     _assert_equal(engine.player.staging.size(), 0, "恢复完成后清空待出区")
     _assert_equal(engine.player.discard_pile.size(), 1, "恢复完成后打出真气进入弃牌堆")
     _assert_equal(engine.sequence_book.position("high_card"), 1, "恢复完成后功法序列只推进一格")

@@ -43,6 +43,12 @@ func opponent_of(side: BattleSide) -> BattleSide:
             return candidate
     return null
 
+func side_holding_card(card, zone: String) -> BattleSide:
+    for side in _sides:
+        if zone_cards(side, zone).has(card):
+            return side
+    return null
+
 func deal_damage(
         actor: BattleSide,
         target: BattleSide,

@@ -1,6 +1,11 @@
 class_name MapNavigationService
 extends RefCounted
 
+## 本局地图生成、可达性与节点阶段流转服务。
+##
+## 这里只维护路线和流程阶段，不分发节点内容、不结算奖励，也不持有玩家成长；
+## 这些职责由 NodeDispatcher、NodeRewardService 与 GrowthInventory 分别承担。
+
 const MapGeneratorScript = preload("res://core/map_generator.gd")
 
 var map_generator

@@ -1,6 +1,11 @@
 class_name RunSaveApplicationService
 extends RefCounted
 
+## 本局存档用例的应用层门面。
+##
+## 这里编排捕获、校验、保存与恢复，不实现文件原子替换和版本迁移细节，
+## 也不允许存储层直接修改运行中的 RunSession。
+
 const RunSaveDataScript = preload("res://core/run_save_data.gd")
 const SaveRepositoryScript = preload("res://core/save_repository.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")

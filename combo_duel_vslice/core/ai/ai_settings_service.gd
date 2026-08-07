@@ -1,6 +1,11 @@
 class_name AiSettingsService
 extends RefCounted
 
+## 远程 AI 配置的加载、规范化与公开投影边界。
+##
+## 这里管理本机 Provider、会话和存储设置，不发送网络请求，也不把密钥放入
+## 公开快照；请求执行与审计脱敏由各自组件负责。
+
 const ProviderSettingsScript = preload("res://core/ai/providers/ai_provider_settings.gd")
 
 const DEFAULT_PATH := "user://ai/ai_settings.cfg"

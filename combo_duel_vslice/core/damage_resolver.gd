@@ -1,8 +1,6 @@
 class_name ComboDamageResolver
 extends RefCounted
 
-const MOMENTUM_DAMAGE_SOURCES := ["technique", "chase", "counter", "delayed_chase"]
-
 var _buffer_active: bool = false
 var _buffer: Array = []
 var _shadows: Dictionary = {}
@@ -85,12 +83,13 @@ static func calculate_final_amount(
         true_damage: bool = false,
         status_system = null) -> int:
     var final_amount := maxi(0, base_amount)
-    if not true_damage and source_kind in MOMENTUM_DAMAGE_SOURCES:
-        var momentum: int = (
-            status_system.actor_status_value(actor, "momentum")
+    if not true_damage:
+        var damage_percent: int = (
+            status_system.actor_numeric_modifier(
+                actor, "damage_percent", {"source_kind": source_kind})
             if status_system != null
-            else int(actor.stacks.get("momentum", 0)))
-        final_amount = int(floor(final_amount * (1.0 + momentum / 100.0)))
+            else actor.status_modifier("damage_percent", {"source_kind": source_kind}))
+        final_amount = int(floor(final_amount * (1.0 + damage_percent / 100.0)))
     return final_amount
 
 static func apply_to_target(target, amount: int, true_damage: bool = false) -> Dictionary:

@@ -83,11 +83,11 @@ flowchart LR
 - `data/techniques/*.tres`：每门功法一个独立文件，当前 9 门可执行纵切样本从这里加载。
 - `starter_builds.json`：当前唯一构筑显式声明 52 个基础真气 ID；`StarterBuildAssembler` 将其装配为 `RunDeck`，不再把构筑 ID 只当作快照标签。
 - `node_rewards.json`：注册可扩展奖励类型，并只录入已确认的普通、精英、Boss 基础历练。
-- `battle_statuses.json`：角色战斗状态定义；当前登记蛊印和连势，并声明叠层与战斗结束清理。
-- `card_states.json`：统一定义重塑、异状、单槽／多实例容量、标记生命周期和进入弃牌堆的清理策略。
+- `battle_statuses.json`：角色战斗状态定义；声明叠层、清理时点、数值修正与事件行为，不由战斗流程按状态 ID 分支。
+- `card_states.json`：统一定义重塑、异状、单槽／多实例容量、标记生命周期、运行时身份修正与触发处理器。
 - `technique_repository.gd`、`inner_skill_repository.gd`、`consumable_repository.gd`、`starter_build_repository.gd`：消费已校验定义并提供领域查询；独立文件读取仅作为兼容入口保留。
 - `starter_build_assembler.gd`、`battle_session_factory.gd`：分别隔离构筑到本局牌组的装配和战斗会话的依赖创建。
-- `reward_bundle.gd`、`node_reward_service.gd`：分别保存版本化待领取奖励和执行节点奖励生成／发放；目前实现历练条目，其他奖励类型只保留受校验接口。
+- `reward_bundle.gd`、`node_reward_service.gd`、`rewards/reward_handler_registry.gd`：分别保存版本化待领取奖励、编排生成／发放并按类型注册处理器；目前注册历练处理器，其他奖励类型仍明确拒绝。
 - `sequence_book.gd`：精确牌型独立功法序列。
 - `effect_executor.gd`：统一执行与预览汇总的 43 行兼容门面。
 - `effects/technique_effect_context.gd`、`effects/battle_effect_ports.gd`：类型化功法上下文与窄修改端口；正式处理器通过伤害、牌区、状态、流程能力访问战斗，不再从上下文字典取得完整引擎。
@@ -103,7 +103,7 @@ flowchart LR
 ### 4. 战斗会话、敌方与测试场景
 
 - `battle_session.gd`：应用层战斗门面，接受结构化命令并提供快照和事件流。
-- `battle_command_dto.gd`、`battle_command_result.gd`：统一战斗命令输入和命令结果的 v1 DTO；`BattleSession.execute()` 仍提供字典兼容出口。
+- `battle_command_dto.gd`、`command_result.gd`：统一战斗命令输入，以及战斗／本局会话跨 core 边界共用的类型化命令结果。
 - `battle_snapshot.gd`：供表现层读取的深复制状态快照。
 - `battle_event.gd`：从触发历史和命令拒绝产生的结构化事件。
 - `action_preview_service.gd`：独立完成选牌校验、牌型与功法值、功法条件、内功预计效果和公开意图，不依赖 UI 或场景树。
@@ -112,7 +112,7 @@ flowchart LR
 - `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复和结算完成后的连击推进；不生成内容或决定胜负。
 - `battle_pending_action_transaction.gd`：保存等待功法选择时的可恢复行动事务，区分玩家单方、敌方单方和敌我同步三种形态，并提供版本化快照。
 - `damage_resolver.gd`：独立完成普通伤害、真伤、连势增伤、防御／生命扣减、同步伤害 shadow 和攻击段存活判断，不依赖触发队列或 UI。
-- `status_system.gd`、`status_change.gd`：统一敌我角色层数、真气异状、烈毒与蛊印续毒、延迟快照、战斗时点清理和结构化状态变化历史；保留 `BattleSide.stacks` 与 `CombatEngine.delayed_effects` 作为兼容读口。
+- `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。
 - `battle_action_proposal.gd`：统一玩家、脚本敌人和策略敌人的 v1 选牌提案 DTO，不包含实际结算权限。
 - `battle_action_record.gd`：统一实际行动执行记录 DTO，保存参与方、牌型预览、顺序、回合、触发状态和捕获表；内部结算仍可通过属性访问，日志使用 `snapshot()`。
 - `battle_timing_event.gd`、`battle_timing_system.gd`：统一十类战斗生命周期边界，以 `order + 注册序号` 调度处理器并保存结构化时点历史；战斗快照可读取该历史，内建处理器采用弱目标引用避免与战斗核心形成引用环。
@@ -183,7 +183,7 @@ flowchart LR
 - `action_preview_service.gd`：118 行，集中行动预览的纯规则编排。
 - `hand_result_dto.gd`、`action_preview_dto.gd`：牌型与行动预览的 v1 DTO；只在兼容边界转换为字典。
 - `battle_action_proposal.gd`、`battle_action_record.gd`、`node_dispatch_result.gd`：行动提案、实际行动记录和节点调度结果的 v1 DTO。
-- `battle_command_dto.gd`、`battle_command_result.gd`、`battle_pending_action_transaction.gd`：战斗命令、命令结果和待恢复行动事务的 v1 DTO。
+- `battle_command_dto.gd`、`command_result.gd`、`battle_pending_action_transaction.gd`：战斗命令、跨会话命令结果和待恢复行动事务的 v1 DTO。
 - `damage_resolver.gd`：140 行，集中普通／真伤、同步缓冲与攻击段存活规则。
 - `game_log.gd`：90 行，统一战斗／本局／系统日志结构和查询边界。
 - `battle_session.gd`：约 550 行，包装命令、预览、只读快照、日志、事件流、成长 DTO 与 AI 窗口编排；AI DTO 投影已拆到 225 行的 `BattleAiAdapter`。
@@ -262,7 +262,7 @@ flowchart LR
 - `BattleOutcomeService`：已建立第一版；负责胜负判定、战斗结束时点、行动清零和一次性清理。
 - `BattleTimingSystem`：已建立第一版，统一十类生命周期时点、稳定处理器顺序、结构化历史、延迟到期、序列推进和战斗结束清理。
 - `DamageResolver`：已建立第一版，负责普通伤害、真伤、连势、同步缓冲与攻击段存活判断；受击响应仍由 `StatusSystem`／`ActionResolver` 协调。
-- `StatusSystem + StatusChange`：已建立第一版，统一角色状态、真气异状、烈毒／蛊印、延迟记录、状态变化历史和战斗结束清理；后续新增公共状态只扩展此端口与小型处理器，不回填战斗控制器分支。
+- `StatusSystem + StatusChange + StatusBehaviorRegistry`：已建立第一版，统一角色状态、真气异状、延迟记录、状态变化历史和战斗结束清理；角色状态与真气异状通过内容定义绑定处理器及数值修正，新增复杂公共状态只增加小型注册处理器，不回填中央状态分支。
 - `EffectHandlerRegistry`：已建立第一版，按 `op` 注册六类小型处理器，效果数据继续保持数据驱动。
 - `BattleSnapshot`：已经建立第一版，覆盖生命、牌区、公开计划、卡牌、内功、消耗品、预览、日志和行动状态；后续以有校验的 ViewModel 逐步替代裸字典。
 - `AiBattleConversation + AiDecisionGateway + AiProvider`：已经建立第一版；负责脱敏公开信息、历史增量与压缩、合法候选选择、纠错、持久化和 Provider 适配，不拥有战斗状态。
@@ -273,7 +273,7 @@ flowchart LR
 - `RunSession`：已经建立第一版；本局门面、状态机、命令、事件和日志边界。
 - `MapNavigationService`：已经建立第一版；负责可达节点、开始节点、完成节点与换层。
 - `NodeDispatcher`：已经建立，继续只返回调度结果。
-- `RewardBundle + NodeRewardService`：已建立第一版，负责基础节点奖励包、领取门禁和一次性发放。自我精进、内功节点收益及三者准确先后仍未确认，不能并入当前服务。
+- `RewardBundle + NodeRewardService + RewardHandlerRegistry`：已建立第一版，负责基础节点奖励包、领取门禁和一次性发放；新增奖励类型通过处理器注册。自我精进、内功节点收益及三者准确先后仍未确认，不能并入当前服务。
 - `GrowthInventory`：已经建立第一版；负责历练、功法库、消耗品、完整 `RunDeck` 和修习购买记录。
 - `RunDeck`：已经建立第一版；负责完整本局真气实例、复制、永久移出、快照校验、战斗实例化与跨战斗同步。
 - `CardZoneService`：已经建立第一版；统一牌区移动、弃牌生命周期、临时移出、夺取归还、生成与永久移出登记。

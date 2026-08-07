@@ -1,6 +1,11 @@
 class_name SaveRepository
 extends RefCounted
 
+## 本局存档的原子文件存储、备份恢复与迁移入口。
+##
+## 仓库只处理持久化可靠性和版本兼容，不理解地图与成长规则；领域完整性由
+## RunSaveData 校验，运行中会话的捕获与恢复由应用服务编排。
+
 const RunSaveDataScript = preload("res://core/run_save_data.gd")
 const MigrationRegistryScript = preload("res://core/run_save_migration_registry.gd")
 

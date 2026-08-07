@@ -1,5 +1,6 @@
 {
-  "version": 1,
+  "version": 2,
+  "practice_offer_ids": ["high_card_insight", "hierophant", "aura"],
   "consumables": [
     {
       "id": "high_card_insight",

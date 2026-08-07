@@ -225,7 +225,7 @@ func snapshot() -> Dictionary:
         "last_metadata": last_metadata.duplicate(true),
     }
 
-func conversation_snapshot():
+func conversation_snapshot() -> AiConversationSnapshot:
     return conversation.snapshot() if conversation != null else null
 
 func save_conversation(path: String = "") -> bool:

@@ -17,7 +17,7 @@ const ValuePanelScript = preload("res://ui/components/battle_value_panel.gd")
 const COLORS := UiDesignScript.COLORS
 
 var battle_session: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
-var run_progress
+var run_progress: RunProgressSnapshot
 var battle_configuration: Dictionary = {}
 var selected_ids: Array[String] = []
 var _battle_finish_emitted: bool = false
@@ -68,13 +68,15 @@ func configure_ai_provider(provider) -> void:
 func configure_ai_provider_settings(config: Dictionary) -> void:
     battle_session.configure_ai_provider(config)
 
-func configure_run_context(shared_game_log, progress_snapshot) -> void:
+func configure_run_context(
+        shared_game_log,
+        progress_snapshot: RunProgressSnapshot) -> void:
     if shared_game_log == null:
         return
     battle_session.use_game_log(shared_game_log)
     run_progress = progress_snapshot
 
-func player_progress_snapshot():
+func player_progress_snapshot() -> RunProgressSnapshot:
     return battle_session.player_progress_snapshot()
 
 func _build_interface() -> void:
@@ -374,18 +376,18 @@ func _start_turn() -> void:
 
 func _end_turn() -> void:
     selected_ids.clear()
-    var result: Dictionary = battle_session.execute({"type": "end_turn"})
-    if not result.get("success", false):
-        board_message.text = str(result.get("reason", "暂时不能结束回合"))
+    var result := battle_session.execute({"type": "end_turn"})
+    if not result.success:
+        board_message.text = str(result.reason_or("暂时不能结束回合"))
     _refresh()
 
 func _confirm_play() -> void:
-    var result: Dictionary = battle_session.execute({
+    var result := battle_session.execute({
         "type": "play_cards",
         "card_ids": selected_ids.duplicate(),
     })
-    if not result.get("success", false):
-        board_message.text = str(result.get("reason", "无法出招"))
+    if not result.success:
+        board_message.text = str(result.reason_or("无法出招"))
     selected_ids.clear()
     _refresh()
 
@@ -403,13 +405,13 @@ func _select_consumable_slot(slot_index: int) -> void:
 func _use_active_consumable() -> void:
     if active_consumable_slot < 0:
         return
-    var result: Dictionary = battle_session.execute({
+    var result := battle_session.execute({
         "type": "use_consumable",
         "slot_index": active_consumable_slot,
         "card_ids": selected_ids.duplicate(),
     })
-    if not result.get("success", false):
-        board_message.text = str(result.get("reason", "无法使用消耗品"))
+    if not result.success:
+        board_message.text = str(result.reason_or("无法使用消耗品"))
     else:
         var retained: Array[String] = []
         var hand: Array = battle_session.snapshot().player.hand
@@ -710,4 +712,3 @@ func _find_card_snapshot(cards: Array, card_id: String) -> Dictionary:
         if str(card.get("id", "")) == card_id:
             return card
     return {}
-
