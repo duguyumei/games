@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "triple_layer_return_armor"
+display_name = "三叠回甲"
+pool = "three_full_house"
+description = "获得P点防御；从弃牌堆随机洗回至多3张没有任何重塑的普通真气，葫芦额外2张。"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"move_query","query":{"side":"actor","zone":"discard_pile","order":"random","limit":{"kind":"hand_map","values":{"three_kind":3,"full_house":5}},"filters":{"card_kind":"normal","has_any_reshape":false}},"to_side":"actor","to_zone":"draw_pile","reason":"recover","shuffle_destination":true}]

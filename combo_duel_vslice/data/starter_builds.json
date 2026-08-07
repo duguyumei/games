@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "starter_builds": [
+    {
+      "id": "standard_52",
+      "name": "四象周天",
+      "description": "由风、林、火、山各十三张真气组成的标准五十二张初始牌组。",
+      "deck_kind": "standard_52",
+      "card_count": 52,
+      "available": true,
+      "card_ids": [
+        "wind_2", "wind_3", "wind_4", "wind_5", "wind_6", "wind_7", "wind_8",
+        "wind_9", "wind_10", "wind_J", "wind_Q", "wind_K", "wind_A",
+        "forest_2", "forest_3", "forest_4", "forest_5", "forest_6", "forest_7", "forest_8",
+        "forest_9", "forest_10", "forest_J", "forest_Q", "forest_K", "forest_A",
+        "fire_2", "fire_3", "fire_4", "fire_5", "fire_6", "fire_7", "fire_8",
+        "fire_9", "fire_10", "fire_J", "fire_Q", "fire_K", "fire_A",
+        "mountain_2", "mountain_3", "mountain_4", "mountain_5", "mountain_6", "mountain_7", "mountain_8",
+        "mountain_9", "mountain_10", "mountain_J", "mountain_Q", "mountain_K", "mountain_A"
+      ]
+    }
+  ]
+}

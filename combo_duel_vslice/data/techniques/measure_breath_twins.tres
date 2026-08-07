@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "measure_breath_twins"
+display_name = "量息双生"
+pool = "pair_two_pair"
+description = "抽X=max(1,floor(P/20))张；随后明确弃掉全部风属性手牌，并获得等于弃前有效真气值总和的防御；两对额外获得2层纳气。"
+effects = [{"op":"draw","count":{"kind":"power_fraction","numerator":1,"denominator":20,"minimum":1},"capture":"drawn"},{"op":"move_query","query":{"side":"actor","zone":"hand","order":"zone","filters":{"attributes":["wind"]}},"to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","capture":"discarded_wind"},{"op":"defense","amount":{"kind":"capture_qi_sum","capture":"discarded_wind"},"phase":"zones"},{"op":"add_stack","stack":"qi_intake","amount":2,"phase":"zones","when":{"hand_id":"two_pair"}}]

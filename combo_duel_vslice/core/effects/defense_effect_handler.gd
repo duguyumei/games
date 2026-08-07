@@ -1,6 +1,9 @@
 class_name DefenseEffectHandler
 extends RefCounted
 
+const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
+
 var value_resolver
 
 func _init(resolver) -> void:
@@ -12,19 +15,26 @@ func operation_ids() -> Array[String]:
 func group_name() -> String:
     return "defense"
 
-func execute(effect: Dictionary, context: Dictionary) -> Dictionary:
+func execute(effect: Dictionary, context):
+    var runtime = EffectContextScript.coerce(context)
+    if runtime.actor == null:
+        return EffectResultScript.failed("防御处理器缺少行动方")
     match str(effect.get("op", "")):
         "defense":
-            var amount: int = context["actor"].add_defense(
-                value_resolver.resolve(effect.get("amount", {}), context))
-            return {"success": true, "detail": "获得 %d 防御" % amount}
+            var resolved: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            var amount: int = (
+                runtime.ports.add_defense(runtime.actor, resolved)
+                if runtime.ports != null else runtime.actor.add_defense(resolved))
+            return EffectResultScript.succeeded("获得 %d 防御" % amount)
         "defense_from_noncontributing_qi":
-            var amount: int = context["actor"].add_defense(
-                value_resolver.noncontributing_qi_total(context))
-            return {"success": true, "detail": "额外真气转化 %d 防御" % amount}
-    return {"success": false, "detail": "防御处理器不支持：%s" % str(effect.get("op", ""))}
+            var resolved: int = value_resolver.noncontributing_qi_total(runtime)
+            var amount: int = (
+                runtime.ports.add_defense(runtime.actor, resolved)
+                if runtime.ports != null else runtime.actor.add_defense(resolved))
+            return EffectResultScript.succeeded("额外真气转化 %d 防御" % amount)
+    return EffectResultScript.failed("防御处理器不支持：%s" % str(effect.get("op", "")))
 
-func summarize(effect: Dictionary, context: Dictionary, intent: Dictionary, _state: Dictionary) -> void:
+func summarize(effect: Dictionary, context, intent: Dictionary, _state: Dictionary) -> void:
     match str(effect.get("op", "")):
         "defense":
             intent["defense"] = int(intent.get("defense", 0)) + maxi(

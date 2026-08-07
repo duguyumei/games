@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "three_cards_listen_tide"
+display_name = "三牌听潮"
+pool = "three_full_house"
+description = "获得floor(P/2)防御；本回合结束时交换双方当前手牌；葫芦交换前给我方普通手牌随机施加破绽或封穴。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"register_delayed_effects","timing":"turn_end","occurrences":1,"effects":[{"op":"capture_query","query":{"side":"actor","zone":"hand","order":"zone","filters":{"card_kind":"normal"}},"capture":"own_hand","when":{"hand_id":"full_house"}},{"op":"apply_card_anomaly_to_captured","capture":"own_hand","random_options":[{"category":"state","anomaly":"vulnerability"},{"category":"state","anomaly":"acupoint_block"}],"when":{"hand_id":"full_house"}},{"op":"swap_hands"}]}]

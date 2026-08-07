@@ -8,6 +8,7 @@ const CardZoneHandlerScript = preload("res://core/effects/card_zone_effect_handl
 const CardAnomalyHandlerScript = preload("res://core/effects/card_anomaly_effect_handler.gd")
 const StackHandlerScript = preload("res://core/effects/stack_effect_handler.gd")
 const FlowHandlerScript = preload("res://core/effects/flow_effect_handler.gd")
+const ChoiceHandlerScript = preload("res://core/effects/choice_effect_handler.gd")
 
 var value_resolver
 var _handlers_by_op: Dictionary = {}
@@ -20,6 +21,7 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
     register_handler(CardAnomalyHandlerScript.new(value_resolver, random_source, content_catalog))
     register_handler(StackHandlerScript.new(value_resolver))
     register_handler(FlowHandlerScript.new(value_resolver))
+    register_handler(ChoiceHandlerScript.new(random_source, value_resolver))
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
     if handler == null or not handler.has_method("operation_ids") \
@@ -52,17 +54,17 @@ func handler_group(operation_id: String) -> String:
         return ""
     return str(handler.group_name())
 
-func condition_met(condition: Dictionary, context: Dictionary) -> bool:
+func condition_met(condition: Dictionary, context) -> bool:
     return value_resolver.condition_met(condition, context)
 
-func execute(effect: Dictionary, context: Dictionary) -> Dictionary:
+func execute(effect: Dictionary, context):
     var operation_id := str(effect.get("op", ""))
     var handler = _handlers_by_op.get(operation_id)
     if handler == null:
         return {"success": false, "detail": "未注册的功法效果操作：%s" % operation_id}
     return handler.execute(effect, context)
 
-func summarize(effect: Dictionary, context: Dictionary, intent: Dictionary, state: Dictionary) -> void:
+func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionary) -> void:
     var handler = _handlers_by_op.get(str(effect.get("op", "")))
     if handler != null:
         handler.summarize(effect, context, intent, state)

@@ -10,7 +10,9 @@
 
 当前唯一设计入口是：
 
-- `docs/combo-duel-current.md`
+- `docs/design-current/README.md`
+
+旧入口 `docs/combo-duel-current.md` 只保留为迁移指针。
 
 ## 当前边界
 

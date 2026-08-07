@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "long_wind_full_sleeve"
+display_name = "长风满袖"
+pool = "high"
+description = "造成 P 点伤害后抽1张；若本功法直接抽到风牌，再造成 floor(P/2) 伤害，否则获得 floor(P/2) 防御。"
+effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"draw","count":1,"capture":"direct_draw"},{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2},"phase":"zones","when":{"capture_all_attribute":{"capture":"direct_draw","attribute":"wind"}}},{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2},"phase":"zones","when":{"not":{"capture_all_attribute":{"capture":"direct_draw","attribute":"wind"}}}}]

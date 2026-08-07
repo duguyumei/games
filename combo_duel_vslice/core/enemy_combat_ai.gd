@@ -7,14 +7,9 @@ func _init(random_source: RandomNumberGenerator) -> void:
     rng = random_source
 
 func choose_action(observation, preview_action: Callable, policy: Dictionary) -> Dictionary:
-    var candidates: Array = []
-    var hand: Array = observation.actor_hand
-    var maximum_cards := mini(5, hand.size())
-    for card_count in range(1, maximum_cards + 1):
-        _collect_candidates(hand, preview_action, policy, card_count, 0, [], candidates)
+    var candidates := enumerate_actions(observation, preview_action, policy)
     if candidates.is_empty():
         return {}
-    _score_strategic_context(candidates, observation, policy)
     var best_priority := -1
     for candidate in candidates:
         best_priority = maxi(best_priority, int(candidate["priority"]))
@@ -29,6 +24,17 @@ func choose_action(observation, preview_action: Callable, policy: Dictionary) ->
                 and is_equal_approx(float(candidate["score"]), best_score):
             best.append(candidate)
     return best[rng.randi_range(0, best.size() - 1)]
+
+func enumerate_actions(observation, preview_action: Callable, policy: Dictionary) -> Array:
+    var candidates: Array = []
+    var hand: Array = observation.actor_hand
+    var maximum_cards := mini(5, hand.size())
+    for card_count in range(1, maximum_cards + 1):
+        _collect_candidates(hand, preview_action, policy, card_count, 0, [], candidates)
+    if candidates.is_empty():
+        return []
+    _score_strategic_context(candidates, observation, policy)
+    return candidates
 
 func _collect_candidates(
         hand: Array,

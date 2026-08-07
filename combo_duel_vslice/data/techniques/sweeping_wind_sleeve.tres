@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "sweeping_wind_sleeve"
+display_name = "掠风惊袖"
+pool = "high"
+description = "造成 P 点伤害；造成伤害后抽 2 张牌，再由玩家选择当前手牌 1 张明确弃掉。"
+effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"draw","count":2,"capture":"drawn"},{"op":"select_cards","choice_id":"discard_one","prompt":"选择1张手牌明确弃掉","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected_discard"},{"op":"move_captured","capture":"selected_discard","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"}]

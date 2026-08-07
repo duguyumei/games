@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "double_gu_exchange_breath"
+display_name = "双蛊换息"
+pool = "pair_two_pair"
+description = "造成P点伤害；将我方手牌中至多4张带毒真气置入敌方手牌；两对中植入前先随机将敌方至多4张手牌移入我方手牌。"
+effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"move_query","query":{"side":"target","zone":"hand","order":"random","limit":4},"to_side":"actor","to_zone":"hand","when":{"hand_id":"two_pair"}},{"op":"move_query","query":{"side":"actor","zone":"hand","order":"zone","limit":4,"filters":{"anomaly":{"category":"poison","present":true}}},"to_side":"target","to_zone":"hand"}]

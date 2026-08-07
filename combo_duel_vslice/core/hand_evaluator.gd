@@ -12,6 +12,40 @@ const HANDS := {
     "four_kind": {"name": "四条", "multiplier": 7, "strength": 7},
     "straight_flush": {"name": "同花顺", "multiplier": 8, "strength": 8},
 }
+const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
+
+static func evaluate_dto(cards: Array):
+    return HandResultDtoScript.new().configure(evaluate(cards))
+
+static func evaluate_best(cards: Array) -> Dictionary:
+    var candidates := evaluate_best_candidates(cards)
+    return candidates[0] if not candidates.is_empty() else {}
+
+static func evaluate_best_candidates(cards: Array) -> Array:
+    var best_strength := -1
+    var candidates: Array = []
+    var seen_contributing: Dictionary = {}
+    for size in range(1, mini(5, cards.size()) + 1):
+        for group in _combinations(cards, size):
+            var candidate := evaluate(group)
+            if candidate.is_empty():
+                continue
+            var strength := int(candidate["strength"])
+            if strength < best_strength:
+                continue
+            if strength > best_strength:
+                best_strength = strength
+                candidates.clear()
+                seen_contributing.clear()
+            var contributing_ids: Array[String] = []
+            for card in candidate["contributing"]:
+                contributing_ids.append(str(card.id))
+            contributing_ids.sort()
+            var key := "|".join(contributing_ids)
+            if not seen_contributing.has(key):
+                seen_contributing[key] = true
+                candidates.append(candidate)
+    return candidates
 
 static func evaluate(cards: Array) -> Dictionary:
     if cards.is_empty() or cards.size() > 5:
@@ -113,3 +147,14 @@ static func _is_royal(cards: Array) -> bool:
         ranks.append(card.rank_order)
     ranks.sort()
     return ranks == [10, 11, 12, 13, 14]
+
+static func _combinations(cards: Array, size: int, start: int = 0, prefix: Array = []) -> Array:
+    if prefix.size() == size:
+        return [prefix.duplicate()]
+    var groups: Array = []
+    var remaining := size - prefix.size()
+    for index in range(start, cards.size() - remaining + 1):
+        prefix.append(cards[index])
+        groups.append_array(_combinations(cards, size, index + 1, prefix))
+        prefix.pop_back()
+    return groups

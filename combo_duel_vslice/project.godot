@@ -4,7 +4,7 @@ config_version=5
 [application]
 
 config/name="组合出招：第一阶段纵切"
-run/main_scene="res://ui/run_main.tscn"
+run/main_scene="res://ui/front_main.tscn"
 
 [display]
 

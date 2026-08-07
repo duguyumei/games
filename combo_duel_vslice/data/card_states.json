@@ -80,6 +80,14 @@
       "lifecycle": ["turn_end"]
     },
     {
+      "id": "wind_mark",
+      "name": "风标记",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["battle_end"]
+    },
+    {
       "id": "wind_lure",
       "name": "风引",
       "category": "mark",

@@ -62,6 +62,11 @@ func _submit_state(state: Dictionary) -> Dictionary:
             "error_code": "PROVIDER_REJECTED",
             "message": "Provider 拒绝接收请求",
         }
+        state["conversation"].record_response(request_id, {
+            "success": false,
+            "error_code": error["error_code"],
+            "message": error["message"],
+        })
         decision_failed.emit(decision_id, error)
         return {"success": false, "reason": error["message"]}
     return {
@@ -118,3 +123,28 @@ func _on_request_completed(request_id: String, provider_result: Dictionary) -> v
 
 func pending_request_ids() -> Array:
     return _pending.keys()
+
+func cancel_decision(decision_id: String, reason: String = "请求已取消") -> bool:
+    var cancelled := false
+    for request_id_value in _pending.keys():
+        var request_id := str(request_id_value)
+        var state: Dictionary = _pending[request_id]
+        if str(state.get("observation", {}).get("decision_id", "")) != decision_id:
+            continue
+        _pending.erase(request_id)
+        if provider != null:
+            provider.cancel(request_id)
+        state["conversation"].record_response(request_id, {
+            "success": false,
+            "error_code": "REQUEST_CANCELLED",
+            "message": reason,
+        })
+        cancelled = true
+    if cancelled:
+        decision_failed.emit(decision_id, {
+            "valid": false,
+            "error_code": "REQUEST_CANCELLED",
+            "message": reason,
+            "context": {},
+        })
+    return cancelled

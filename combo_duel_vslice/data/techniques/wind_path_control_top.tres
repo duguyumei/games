@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "wind_path_control_top"
+display_name = "风路控顶"
+pool = "straight"
+description = "造成max(1,floor(P/2))伤害；展示敌方牌库顶N+4张，选择1至N张按任意顺序置顶，其余展示牌明确弃掉。"
+effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":1}},{"op":"select_cards","choice_id":"wind_path_enemy_top","prompt":"选择1至N张，并按所选顺序放回敌方牌库顶","chooser":"actor","minimum":1,"maximum":{"kind":"n60"},"insufficient_policy":"use_available","query":{"side":"target","zone":"draw_pile","order":"top","limit":{"kind":"add","values":[{"kind":"n60"},{"kind":"constant","value":4}]}},"capture":"enemy_ordered_top"},{"op":"move_captured","capture":"enemy_ordered_top","from_side":"target","from_zone":"draw_pile","to_side":"target","to_zone":"draw_pile","placement":"top","preserve_selection_order":true},{"op":"move_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":{"kind":"add","values":[{"kind":"n60"},{"kind":"constant","value":4}]},"exclude_capture":"enemy_ordered_top"},"to_side":"target","to_zone":"discard_pile","reason":"explicit_discard"}]

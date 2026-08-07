@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "returning_loop_long_breath"
+display_name = "回环长息"
+pool = "straight"
+condition = {"pure_attribute":"wind"}
+description = "纯风：获得max(1,floor(P/3))防御；本次顺子进入弃牌堆后，仍在弃牌堆的牌全部附风引并洗回牌库。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":3,"minimum":1}},{"op":"register_played_return","destination":"draw_pile","enter_discard_first":true,"count":5,"anomaly":"wind_lure","shuffle":true}]

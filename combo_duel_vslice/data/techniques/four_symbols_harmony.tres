@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "four_symbols_harmony"
+display_name = "四象合鸣"
+pool = "four_five"
+special = true
+description = "纯风时先从弃牌堆随机回手至多4张；随后明确弃掉全部手牌，并建立四象合鸣。功法直接抽弃每张产生1点防御或伤害，五条提高为2点。"
+effects = [{"op":"move_query","query":{"side":"actor","zone":"discard_pile","order":"random","limit":4},"to_side":"actor","to_zone":"hand","reason":"recover","when":{"pure_attribute":"wind"}},{"op":"discard_all_hand","side":"actor","capture":"initial_discard"},{"op":"set_stack_minimum","stack":"four_symbols_harmony","amount":{"kind":"hand_map","values":{"four_kind":1,"five_kind":2}}}]

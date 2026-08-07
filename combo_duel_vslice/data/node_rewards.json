@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "reward_kinds": ["experience", "card", "technique", "inner_skill", "consumable", "reshape", "special"],
+  "node_rewards": {
+    "combat": [
+      {"kind": "experience", "amount": 3, "source": "battle_victory"}
+    ],
+    "elite": [
+      {"kind": "experience", "amount": 4, "source": "battle_victory"}
+    ],
+    "boss": [
+      {"kind": "experience", "amount": 5, "source": "battle_victory"}
+    ],
+    "event": [],
+    "rest": [],
+    "treasure": []
+  }
+}

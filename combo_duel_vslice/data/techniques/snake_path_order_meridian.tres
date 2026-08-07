@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "snake_path_order_meridian"
+display_name = "蛇行理脉"
+pool = "straight"
+description = "获得max(1,floor(P/3))防御；展示牌库顶N+4张，选择至多5张并按任意顺序放回牌库顶。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":3,"minimum":1}},{"op":"select_cards","choice_id":"snake_order_top","prompt":"选择至多5张，并按所选顺序放回牌库顶","chooser":"actor","minimum":0,"maximum":5,"insufficient_policy":"use_available","query":{"side":"actor","zone":"draw_pile","order":"top","limit":{"kind":"add","values":[{"kind":"n60"},{"kind":"constant","value":4}]}},"capture":"ordered_top"},{"op":"move_captured","capture":"ordered_top","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"draw_pile","placement":"top","preserve_selection_order":true}]

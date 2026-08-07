@@ -61,25 +61,45 @@ func commit_staging_with_recycles(
         side,
         recycle_anomalies: Dictionary,
         rng: RandomNumberGenerator) -> Dictionary:
-    var committed: Array = side.staging.duplicate()
+    return commit_selected_staging_with_recycles(
+        side, side.staging.duplicate(), recycle_anomalies, rng)
+
+func commit_selected_staging_with_recycles(
+        side,
+        selected_cards: Array,
+        recycle_anomalies: Dictionary,
+        rng: RandomNumberGenerator) -> Dictionary:
+    var committed: Array = []
     var recycled: Array = []
-    for card in committed:
+    var should_shuffle := false
+    for card in selected_cards:
+        if not side.staging.has(card):
+            continue
+        committed.append(card)
         if recycle_anomalies.has(card.id):
             var anomaly_data: Dictionary = recycle_anomalies[card.id]
-            if status_system != null:
+            var anomaly_id := str(anomaly_data.get("anomaly", ""))
+            if anomaly_id != "" and status_system != null:
                 status_system.apply_card_anomaly(
                     card,
-                    str(anomaly_data["category"]),
-                    str(anomaly_data["anomaly"]),
+                    str(anomaly_data.get("category", "mark")),
+                    anomaly_id,
                     {},
-                    "蛊印续毒")
+                    "出牌后回收")
+            elif anomaly_id != "":
+                card.set_anomaly(str(anomaly_data.get("category", "mark")), anomaly_id)
+            var destination := str(anomaly_data.get("destination", "draw_pile"))
+            if bool(anomaly_data.get("enter_discard_first", false)):
+                move_card(side, "staging", "discard_pile", card, "normal_play")
+                if side.discard_pile.has(card):
+                    move_card(side, "discard_pile", destination, card, "played_return")
             else:
-                card.set_anomaly(str(anomaly_data["category"]), str(anomaly_data["anomaly"]))
-            move_card(side, "staging", "draw_pile", card, "gu_recycle")
+                move_card(side, "staging", destination, card, "gu_recycle")
+            should_shuffle = should_shuffle or bool(anomaly_data.get("shuffle", destination == "draw_pile"))
             recycled.append(card)
         else:
             move_card(side, "staging", "discard_pile", card, "normal_play")
-    if not recycled.is_empty():
+    if should_shuffle:
         shuffle(side.draw_pile, rng)
     return {"committed": committed, "recycled": recycled}
 
@@ -236,12 +256,16 @@ func move_card(
     if not source.has(card):
         return {"success": false, "reason": "来源牌区没有目标真气"}
     source.erase(card)
+    zone(side, destination_zone).append(card)
     if destination_zone == "discard_pile":
         if status_system != null:
             status_system.on_card_enter_discard(card, reason)
         elif card_state_lifecycle != null:
             card_state_lifecycle.on_enter_discard(card)
-    zone(side, destination_zone).append(card)
+        if reason == "explicit_discard" and status_system != null:
+            status_system.on_card_explicit_discard(side, card)
+    elif destination_zone == "hand" and reason == "draw" and status_system != null:
+        status_system.on_card_drawn(side, card)
     return {
         "success": true,
         "card": card,

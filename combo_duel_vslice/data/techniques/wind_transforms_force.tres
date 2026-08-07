@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "wind_transforms_force"
+display_name = "风行化力"
+pool = "high"
+description = "选择至多3张手牌明确弃掉；每弃1张风牌抽1张，每弃1张非风牌获得 floor(P/2) 防御。"
+effects = [{"op":"select_cards","choice_id":"discard_up_to_three","prompt":"选择至多3张手牌明确弃掉","chooser":"actor","minimum":0,"maximum":3,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected"},{"op":"move_captured","capture":"selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"draw","count":{"kind":"capture_attribute_count","capture":"discarded","attribute":"wind"},"capture":"drawn"},{"op":"defense","amount":{"kind":"multiply","values":[{"kind":"power_fraction","numerator":1,"denominator":2},{"kind":"capture_non_attribute_count","capture":"discarded","attribute":"wind"}]},"phase":"zones"}]

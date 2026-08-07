@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "content_type": "technique",
+  "content": {
+    "id": "invalid_target_fixture",
+    "name": "非法目标夹具",
+    "pool": "high",
+    "special": false,
+    "description": "用于验证 CI 非零退出状态。",
+    "condition": {},
+    "effects": [
+      {
+        "op": "select_cards",
+        "choice_id": "invalid_target",
+        "chooser": "spectator",
+        "minimum": 1,
+        "maximum": 1,
+        "insufficient_policy": "invent_targets",
+        "query": {"side": "spectator", "zone": "void", "order": "nearest"}
+      }
+    ]
+  }
+}

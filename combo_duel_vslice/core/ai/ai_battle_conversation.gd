@@ -1,6 +1,8 @@
 class_name AiBattleConversation
 extends RefCounted
 
+signal changed
+
 const SnapshotScript = preload("res://core/ai/ai_conversation_snapshot.gd")
 const CompactorScript = preload("res://core/ai/ai_history_compactor.gd")
 
@@ -45,6 +47,7 @@ func record_public_event(event) -> void:
     public_events.append(snapshot)
     public_events.sort_custom(func(left, right):
         return int(left.get("sequence", -1)) < int(right.get("sequence", -1)))
+    changed.emit()
 
 func complete_round(round_number: int) -> bool:
     if not bool(settings.get("compression_enabled", true)):
@@ -57,6 +60,7 @@ func complete_round(round_number: int) -> bool:
     last_compacted_round = round_number
     provider_epoch += 1
     context_sent_in_epoch = false
+    changed.emit()
     return true
 
 func build_decision_request(
@@ -111,6 +115,7 @@ func record_request(request_id: String, request: Dictionary) -> void:
     })
     if request.has("battle_context"):
         context_sent_in_epoch = true
+    changed.emit()
 
 func record_response(request_id: String, response: Dictionary) -> void:
     exchanges.append({
@@ -119,6 +124,7 @@ func record_response(request_id: String, response: Dictionary) -> void:
         "provider_epoch": provider_epoch,
         "payload": response.duplicate(true),
     })
+    changed.emit()
 
 func accept_decision(request: Dictionary, result: Dictionary) -> void:
     last_sent_public_sequence = maxi(
@@ -130,6 +136,19 @@ func accept_decision(request: Dictionary, result: Dictionary) -> void:
         "candidate_id": str(result.get("candidate_id", "")),
         "provider_epoch": provider_epoch,
     })
+    changed.emit()
+
+func record_local_outcome(
+        decision_id: String,
+        outcome_kind: String,
+        payload: Dictionary = {}) -> void:
+    exchanges.append({
+        "kind": outcome_kind,
+        "decision_id": decision_id,
+        "provider_epoch": provider_epoch,
+        "payload": payload.duplicate(true),
+    })
+    changed.emit()
 
 func snapshot():
     return SnapshotScript.new({
@@ -144,17 +163,3 @@ func snapshot():
         "provider_epoch": provider_epoch,
         "context_sent_in_epoch": context_sent_in_epoch,
     })
-
-func restore(values: Dictionary):
-    battle_id = str(values.get("battle_id", ""))
-    context_snapshot = values.get("context_snapshot", {}).duplicate(true)
-    settings = DEFAULT_SETTINGS.duplicate(true)
-    settings.merge(values.get("settings", {}), true)
-    public_events = values.get("public_events", []).duplicate(true)
-    exchanges = values.get("exchanges", []).duplicate(true)
-    work_summary = values.get("work_summary", {}).duplicate(true)
-    last_compacted_round = int(values.get("last_compacted_round", 0))
-    last_sent_public_sequence = int(values.get("last_sent_public_sequence", -1))
-    provider_epoch = int(values.get("provider_epoch", 0))
-    context_sent_in_epoch = bool(values.get("context_sent_in_epoch", false))
-    return self

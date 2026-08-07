@@ -1,0 +1,8 @@
+extends SceneTree
+
+const MissingResource = preload("res://tests/fixtures/__missing_resource_probe__.tres")
+
+
+func _initialize() -> void:
+    print(MissingResource)
+    quit(0)

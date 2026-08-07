@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "full_sleeve_bind_enemy"
+display_name = "盈袖束敌"
+pool = "four_five"
+description = "获得floor(P/3)防御并获得1层盈袖；五条再使敌方获得1层束袖。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":3}},{"op":"add_stack","stack":"full_sleeve","amount":1},{"op":"add_target_stack","stack":"bound_sleeve","amount":1,"when":{"hand_id":"five_kind"}}]

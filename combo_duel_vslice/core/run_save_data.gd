@@ -1,0 +1,291 @@
+class_name RunSaveData
+extends RefCounted
+
+const RunStateScript = preload("res://core/run_state.gd")
+const RunSessionScript = preload("res://core/run_session.gd")
+const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd")
+const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
+const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
+const ContentCatalogScript = preload("res://core/content_catalog.gd")
+const RewardBundleScript = preload("res://core/reward_bundle.gd")
+
+const SCHEMA_VERSION := 1
+const CONTENT_VERSION := 1
+const SAVE_FORMAT := "taiwu_run_save"
+const ALLOWED_PHASES := [
+    "awaiting_node",
+    "node_in_progress",
+    "awaiting_reward",
+    "boss_chest",
+    "run_complete",
+]
+
+var _data: Dictionary
+
+func _init(values: Dictionary = {}) -> void:
+    _data = values.duplicate(true)
+    _normalize_v1_types()
+
+func capture(run_session, content_version_value: int = CONTENT_VERSION):
+    var reward: Dictionary = run_session.snapshot().section("reward")
+    var pending_reward: Dictionary = (
+        reward.get("bundle", {}).duplicate(true)
+        if reward.get("available", false) else {})
+    var phase := str(run_session.navigation.phase)
+    _data = {
+        "schema_version": SCHEMA_VERSION,
+        "content_version": content_version_value,
+        "run": {
+            "seed": int(run_session.navigation.seed),
+            "starter_build_id": str(run_session.selected_starter_build_id),
+        },
+        "map_state": {
+            "act": int(run_session.navigation.act),
+            "graph": run_session.navigation.graph.duplicate(true),
+        },
+        "node_state": {
+            "phase": phase,
+            "current_node_id": str(run_session.navigation.current_node_id),
+            "completed_node_ids": run_session.navigation.completed_node_ids.keys(),
+            "pending_reward": pending_reward,
+            "resume_policy": (
+                "restart_node_from_start"
+                if phase == "node_in_progress" else "resume_boundary"),
+        },
+        "growth": {
+            "experience": int(run_session.growth.experience),
+            "consumable_ids": run_session.growth.consumable_ids.duplicate(),
+            "insight_multipliers": run_session.growth.insight_multipliers.duplicate(true),
+            "learned_technique_ids": run_session.growth.learned_technique_ids.duplicate(),
+            "learned_inner_skill_ids": run_session.growth.learned_inner_skill_ids.duplicate(),
+            "equipped_inner_skill_ids": run_session.growth.equipped_inner_skill_ids.duplicate(),
+            "technique_slot_index": int(run_session.growth.technique_slot_index),
+            "practice_purchase_ids": run_session.growth.practice_purchases.keys(),
+            "run_deck": run_session.growth.run_deck.to_snapshot(),
+        },
+    }
+    return self
+
+func to_dict() -> Dictionary:
+    return _data.duplicate(true)
+
+func schema_version() -> int:
+    return int(_data.get("schema_version", 0))
+
+func content_version() -> int:
+    return int(_data.get("content_version", 0))
+
+func validate(content_catalog = null) -> Array[String]:
+    var errors: Array[String] = []
+    if schema_version() != SCHEMA_VERSION:
+        errors.append("本局存档 schema_version 不受支持：%s" % str(_data.get("schema_version", "")))
+    if content_version() != CONTENT_VERSION:
+        errors.append("本局存档 content_version 不受支持：%s" % str(_data.get("content_version", "")))
+    for section in ["run", "map_state", "node_state", "growth"]:
+        if not _data.get(section) is Dictionary:
+            errors.append("本局存档缺少对象 %s" % section)
+    if not errors.is_empty():
+        return errors
+    var run: Dictionary = _data["run"]
+    var map_state: Dictionary = _data["map_state"]
+    var node_state: Dictionary = _data["node_state"]
+    var growth: Dictionary = _data["growth"]
+    var graph = map_state.get("graph", {})
+    if not graph is Dictionary or not graph.get("nodes", []) is Array \
+            or not graph.get("edges", []) is Array:
+        errors.append("地图状态 graph 结构无效")
+        return errors
+    var node_ids: Dictionary = {}
+    for node in graph.get("nodes", []):
+        if not node is Dictionary or str(node.get("id", "")) == "":
+            errors.append("地图包含缺少稳定 ID 的节点")
+            continue
+        node_ids[str(node["id"])] = true
+    var phase := str(node_state.get("phase", ""))
+    var current_node_id := str(node_state.get("current_node_id", ""))
+    if not ALLOWED_PHASES.has(phase):
+        errors.append("本局阶段不是合法节点边界：%s" % phase)
+    if current_node_id != "" and not node_ids.has(current_node_id):
+        errors.append("当前节点 ID 不在已保存地图中：%s" % current_node_id)
+    if phase in ["node_in_progress", "awaiting_reward"] and current_node_id == "":
+        errors.append("阶段 %s 缺少 current_node_id" % phase)
+    if phase == "node_in_progress" \
+            and str(node_state.get("resume_policy", "")) != "restart_node_from_start":
+        errors.append("进行中节点必须声明从节点开头恢复")
+    for completed_id in node_state.get("completed_node_ids", []):
+        if not node_ids.has(str(completed_id)):
+            errors.append("已完成节点 ID 不在已保存地图中：%s" % str(completed_id))
+    var pending_reward = node_state.get("pending_reward", {})
+    if phase == "awaiting_reward" and (not pending_reward is Dictionary or pending_reward.is_empty()):
+        errors.append("待领取奖励阶段缺少 pending_reward")
+    if phase != "awaiting_reward" and pending_reward is Dictionary and not pending_reward.is_empty():
+        errors.append("非奖励边界不能保存 pending_reward")
+    if int(growth.get("experience", -1)) < 0:
+        errors.append("历练不能为负数")
+    if not growth.get("run_deck", {}) is Dictionary:
+        errors.append("成长状态缺少完整 RunDeck")
+        return errors
+    var catalog = content_catalog
+    if catalog == null:
+        catalog = ContentCatalogScript.new()
+        if not catalog.load_all():
+            errors.append("无法载入内容目录以校验存档")
+            return errors
+    _validate_content_ids(run, growth, catalog, errors)
+    var deck = GrowthInventoryScript.new(catalog, false).run_deck
+    errors.append_array(deck.restore_snapshot(growth["run_deck"]))
+    for card in growth["run_deck"].get("cards", []):
+        if not card is Dictionary:
+            continue
+        if card.has("anomalies") or card.has("suppressed_reshapes"):
+            errors.append("本局 RunDeck 不能包含战斗异状或压制状态")
+        if bool(card.get("temporary_card", false)) or str(card.get("original_owner_id", "")) != "":
+            errors.append("本局 RunDeck 不能包含临时或夺取真气")
+    return errors
+
+func restore_session(content_catalog = null) -> Dictionary:
+    var catalog = content_catalog
+    if catalog == null:
+        catalog = ContentCatalogScript.new()
+        if not catalog.load_all():
+            return {"success": false, "reason": "统一内容目录无效"}
+    var errors := validate(catalog)
+    if not errors.is_empty():
+        return {"success": false, "reason": "；".join(errors), "errors": errors}
+    var run: Dictionary = _data["run"]
+    var map_state: Dictionary = _data["map_state"]
+    var node_state: Dictionary = _data["node_state"]
+    var growth_state: Dictionary = _data["growth"]
+    var navigation = MapNavigationServiceScript.new()
+    navigation.seed = int(run["seed"])
+    navigation.act = int(map_state["act"])
+    navigation.graph = map_state["graph"].duplicate(true)
+    navigation.phase = str(node_state["phase"])
+    navigation.current_node_id = str(node_state["current_node_id"])
+    navigation.completed_node_ids.clear()
+    for node_id in node_state["completed_node_ids"]:
+        navigation.completed_node_ids[str(node_id)] = true
+    var growth = GrowthInventoryScript.new(catalog, false)
+    growth.experience = int(growth_state["experience"])
+    growth.apply_progress_snapshot(RunProgressSnapshotScript.new({
+        "consumable_ids": growth_state["consumable_ids"],
+        "insight_multipliers": growth_state["insight_multipliers"],
+        "learned_technique_ids": growth_state["learned_technique_ids"],
+        "learned_inner_skill_ids": growth_state["learned_inner_skill_ids"],
+        "equipped_inner_skill_ids": growth_state["equipped_inner_skill_ids"],
+        "technique_slot_index": growth_state["technique_slot_index"],
+        "run_deck": growth_state["run_deck"],
+    }))
+    growth.practice_purchases.clear()
+    for content_id in growth_state["practice_purchase_ids"]:
+        growth.practice_purchases[str(content_id)] = true
+    var state = RunStateScript.new(navigation, growth)
+    var session = RunSessionScript.new(state, null, null, null, catalog)
+    session.selected_starter_build_id = str(run["starter_build_id"])
+    if navigation.phase == "awaiting_reward":
+        session._pending_reward = RewardBundleScript.new(node_state["pending_reward"])
+    return {
+        "success": true,
+        "run_session": session,
+        "resume_policy": str(node_state["resume_policy"]),
+    }
+
+func _validate_content_ids(
+        run: Dictionary,
+        growth: Dictionary,
+        catalog,
+        errors: Array[String]) -> void:
+    var starter_build_id := str(run.get("starter_build_id", ""))
+    if starter_build_id != "" and not catalog.has_id("starter_build", starter_build_id):
+        errors.append("存档引用未知初始构筑 ID：%s" % starter_build_id)
+    _validate_id_array(growth.get("consumable_ids", []), "consumable", catalog, errors)
+    _validate_id_array(growth.get("practice_purchase_ids", []), "consumable", catalog, errors)
+    _validate_id_array(growth.get("learned_technique_ids", []), "technique", catalog, errors)
+    _validate_id_array(growth.get("learned_inner_skill_ids", []), "inner_skill", catalog, errors)
+    _validate_id_array(growth.get("equipped_inner_skill_ids", []), "inner_skill", catalog, errors)
+    for inner_skill_id in growth.get("equipped_inner_skill_ids", []):
+        if not growth.get("learned_inner_skill_ids", []).has(inner_skill_id):
+            errors.append("已装备内功未包含在已习得内功中：%s" % str(inner_skill_id))
+    var equipped_count: int = growth.get("equipped_inner_skill_ids", []).size()
+    var slot := int(growth.get("technique_slot_index", -1))
+    if slot < 0 or slot > equipped_count:
+        errors.append("功法结算槽位超出已装备内功范围")
+
+func _validate_id_array(
+        values,
+        content_type: String,
+        catalog,
+        errors: Array[String]) -> void:
+    if not values is Array:
+        errors.append("%s ID 列表必须是数组" % content_type)
+        return
+    var seen: Dictionary = {}
+    for value in values:
+        var content_id := str(value)
+        if content_id == "" or not catalog.has_id(content_type, content_id):
+            errors.append("存档引用未知 %s ID：%s" % [content_type, content_id])
+        elif seen.has(content_id):
+            errors.append("存档包含重复 %s ID：%s" % [content_type, content_id])
+        seen[content_id] = true
+
+func _normalize_v1_types() -> void:
+    if int(_data.get("schema_version", 0)) != SCHEMA_VERSION:
+        return
+    _data["schema_version"] = int(_data.get("schema_version", 0))
+    _data["content_version"] = int(_data.get("content_version", 0))
+    var run = _data.get("run", {})
+    if run is Dictionary:
+        run["seed"] = int(run.get("seed", 0))
+    var map_state = _data.get("map_state", {})
+    if map_state is Dictionary:
+        map_state["act"] = int(map_state.get("act", 1))
+        _normalize_graph(map_state.get("graph", {}))
+    var node_state = _data.get("node_state", {})
+    if node_state is Dictionary:
+        _normalize_reward(node_state.get("pending_reward", {}))
+    var growth = _data.get("growth", {})
+    if not growth is Dictionary:
+        return
+    growth["experience"] = int(growth.get("experience", 0))
+    growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
+    var multipliers = growth.get("insight_multipliers", {})
+    if multipliers is Dictionary:
+        for hand_id in multipliers:
+            multipliers[hand_id] = int(multipliers[hand_id])
+    var run_deck = growth.get("run_deck", {})
+    if not run_deck is Dictionary:
+        return
+    run_deck["version"] = int(run_deck.get("version", 0))
+    run_deck["next_serial"] = int(run_deck.get("next_serial", 1))
+    for card in run_deck.get("cards", []):
+        if not card is Dictionary:
+            continue
+        card["version"] = int(card.get("version", 0))
+        card["rank_order"] = int(card.get("rank_order", 0))
+        card["qi_value"] = int(card.get("qi_value", 0))
+
+func _normalize_graph(graph) -> void:
+    if not graph is Dictionary:
+        return
+    for field in ["seed", "act", "width", "route_rows", "boss_variant"]:
+        graph[field] = int(graph.get(field, 0))
+    for node in graph.get("nodes", []):
+        if not node is Dictionary:
+            continue
+        node["row"] = int(node.get("row", 0))
+        node["column"] = int(node.get("column", 0))
+    for edge in graph.get("edges", []):
+        if not edge is Dictionary:
+            continue
+        for field in ["from_row", "from_column", "to_row", "to_column"]:
+            edge[field] = int(edge.get(field, 0))
+
+func _normalize_reward(reward) -> void:
+    if not reward is Dictionary or reward.is_empty():
+        return
+    reward["version"] = int(reward.get("version", 0))
+    reward["seed"] = int(reward.get("seed", 0))
+    reward["act"] = int(reward.get("act", 1))
+    for entry in reward.get("entries", []):
+        if entry is Dictionary and entry.has("amount"):
+            entry["amount"] = int(entry["amount"])

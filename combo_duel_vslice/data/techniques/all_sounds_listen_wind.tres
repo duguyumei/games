@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "all_sounds_listen_wind"
+display_name = "万籁听风"
+pool = "four_five"
+description = "五条先检查牌库底8张并使其中普通真气获得风引；随后按牌库风引数量提高本段P伤害，纯风时每张的增幅由5%改为10%。"
+effects = [{"op":"capture_query","query":{"side":"actor","zone":"draw_pile","order":"bottom","limit":8},"capture":"bottom_eight","when":{"hand_id":"five_kind"}},{"op":"apply_card_anomaly_to_captured","capture":"bottom_eight","category":"mark","anomaly":"wind_lure","when":{"hand_id":"five_kind"}},{"op":"damage","amount":{"kind":"power_scaled_by_zone_anomaly","side":"actor","zone":"draw_pile","category":"mark","anomaly":"wind_lure","percent_per_card":5,"pure_attribute_percent":10,"attribute":"wind"}}]

@@ -1,5 +1,5 @@
 class_name AiProvider
-extends RefCounted
+extends Node
 
 signal request_completed(request_id, result)
 

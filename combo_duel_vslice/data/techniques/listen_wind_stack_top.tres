@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "listen_wind_stack_top"
+display_name = "听风布顶"
+pool = "high"
+description = "获得 floor(P/2) 防御；展示牌库顶至多4张，选择1张入手，再选择1张置顶，其余按原相对顺序置底；入手风牌时可给置顶牌附风引。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"select_cards","choice_id":"take_from_top","prompt":"从牌库顶展示牌中选择1张加入手牌","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"draw_pile","order":"top","limit":4},"capture":"take_card"},{"op":"move_captured","capture":"take_card","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"hand","reason":"effect"},{"op":"select_cards","choice_id":"keep_on_top","prompt":"从剩余展示牌中选择1张放回牌库顶","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"draw_pile","order":"top","limit":3},"capture":"top_card"},{"op":"move_captured","capture":"top_card","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"draw_pile","placement":"top"},{"op":"apply_card_anomaly_to_captured","capture":"top_card","category":"mark","anomaly":"wind_lure","when":{"capture_all_attribute":{"capture":"take_card","attribute":"wind"}}},{"op":"move_query","query":{"side":"actor","zone":"draw_pile","order":"top","limit":3,"exclude_capture":"top_card"},"to_side":"actor","to_zone":"draw_pile","placement":"bottom","reason":"effect"}]

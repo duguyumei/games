@@ -16,6 +16,46 @@
       "stacking": true,
       "maximum": -1,
       "clear_on": ["battle_end"]
+    },
+    {
+      "id": "qi_intake",
+      "name": "纳气",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["after_normal_draw", "battle_end"]
+    },
+    {
+      "id": "steal_wind",
+      "name": "夺风",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["draw", "battle_end"]
+    },
+    {
+      "id": "full_sleeve",
+      "name": "盈袖",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["battle_end"]
+    },
+    {
+      "id": "bound_sleeve",
+      "name": "束袖",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["battle_end"]
+    },
+    {
+      "id": "four_symbols_harmony",
+      "name": "四象合鸣",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": 2,
+      "clear_on": ["battle_end"]
     }
   ]
 }

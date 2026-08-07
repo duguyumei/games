@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://ui/components/starter_build_page.gd" type="Script" id="1"]
+
+[node name="StarterBuildPage" type="Control"]
+script = ExtResource("1")

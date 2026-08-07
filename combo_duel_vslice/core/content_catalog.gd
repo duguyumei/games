@@ -2,14 +2,18 @@ class_name ContentCatalog
 extends RefCounted
 
 const ContentValidatorScript = preload("res://core/content_validator.gd")
+const TechniqueDefinitionScript = preload("res://core/technique_definition.gd")
+const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 const CONTENT_ORDER := [
     "base_deck",
+    "starter_builds",
     "battle_statuses",
     "card_states",
     "techniques",
     "inner_skills",
     "consumables",
+    "node_rewards",
     "map_rules",
     "node_content",
     "scripted_battle",
@@ -17,11 +21,13 @@ const CONTENT_ORDER := [
 ]
 const DEFAULT_PATHS := {
     "base_deck": "res://data/base_deck.json",
+    "starter_builds": "res://data/starter_builds.json",
     "battle_statuses": "res://data/battle_statuses.json",
     "card_states": "res://data/card_states.json",
     "techniques": "res://data/techniques.json",
     "inner_skills": "res://data/inner_skills.json",
     "consumables": "res://data/consumables.json",
+    "node_rewards": "res://data/node_rewards.json",
     "map_rules": "res://data/map_rules.json",
     "node_content": "res://data/node_content.json",
     "scripted_battle": "res://data/scripted_battle.json",
@@ -34,17 +40,30 @@ var loaded: bool = false
 var paths: Dictionary = {}
 var _definitions: Dictionary = {}
 var _indexes: Dictionary = {}
+var runtime_profile
+
+func _init(runtime_profile_override = null) -> void:
+    runtime_profile = (
+        runtime_profile_override
+        if runtime_profile_override != null
+        else RuntimeProfileScript.current())
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()
     warnings.clear()
     loaded = false
     paths = DEFAULT_PATHS.duplicate(true)
+    paths.merge(runtime_profile.content_path_overrides(), true)
     for key in path_overrides:
         if not CONTENT_ORDER.has(str(key)):
             errors.append("catalog: 未知内容路径键 %s" % str(key))
             continue
         paths[str(key)] = str(path_overrides[key])
+    errors.append_array(runtime_profile.validate_content_paths(paths))
+    if not errors.is_empty():
+        _definitions.clear()
+        _indexes.clear()
+        return false
     var values: Dictionary = {}
     for key in CONTENT_ORDER:
         var path := str(paths[key])
@@ -72,9 +91,19 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
     warnings.clear()
     loaded = false
     paths = DEFAULT_PATHS.duplicate(true)
+    paths.merge(runtime_profile.content_path_overrides(), true)
     for key in source_paths:
         paths[str(key)] = str(source_paths[key])
+    errors.append_array(runtime_profile.validate_content_paths(paths))
+    if not errors.is_empty():
+        _definitions.clear()
+        _indexes.clear()
+        return false
     _definitions = values.duplicate(true)
+    _expand_technique_resources()
+    if not errors.is_empty():
+        _indexes.clear()
+        return false
     var validator = ContentValidatorScript.new()
     var validation: Dictionary = validator.validate(_definitions, paths)
     errors.assign(validation.get("errors", []))
@@ -107,6 +136,7 @@ func all_of(content_type: String) -> Array:
 func _build_indexes() -> void:
     _indexes = {
         "card": {},
+        "starter_build": {},
         "actor_status": {},
         "enhancement": {},
         "finish": {},
@@ -120,6 +150,7 @@ func _build_indexes() -> void:
         "scenario": {},
     }
     var base_deck: Dictionary = _definitions["base_deck"]
+    _index_array("starter_build", _definitions["starter_builds"]["starter_builds"])
     for attribute_value in base_deck["attributes"]:
         var attribute: Dictionary = attribute_value
         for rank_value in base_deck["ranks"]:
@@ -153,3 +184,18 @@ func _build_indexes() -> void:
 func _index_array(content_type: String, values: Array) -> void:
     for value in values:
         _indexes[content_type][str(value["id"])] = value.duplicate(true)
+
+func _expand_technique_resources() -> void:
+    var technique_content: Dictionary = _definitions.get("techniques", {})
+    if technique_content.has("techniques"):
+        return
+    var definitions: Array = []
+    for path_value in technique_content.get("resource_paths", []):
+        var path := str(path_value)
+        var resource = load(path)
+        if not resource is TechniqueDefinition:
+            errors.append("techniques: 功法资源无法加载：%s" % path)
+            continue
+        definitions.append(resource.to_definition())
+    technique_content["techniques"] = definitions
+    _definitions["techniques"] = technique_content

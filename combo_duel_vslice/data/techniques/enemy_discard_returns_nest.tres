@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "enemy_discard_returns_nest"
+display_name = "敌弃归巢"
+pool = "pair_two_pair"
+description = "获得P点防御；从敌方弃牌堆随机选择至多2张风牌洗入我方牌库；两对改为3张且获得风引。"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"move_query","query":{"side":"target","zone":"discard_pile","order":"random","limit":{"kind":"hand_map","values":{"pair":2,"two_pair":3}},"filters":{"attributes":["wind"]}},"to_side":"actor","to_zone":"draw_pile","reason":"recover","shuffle_destination":true,"capture":"returned"},{"op":"apply_card_anomaly_to_captured","capture":"returned","category":"mark","anomaly":"wind_lure","when":{"hand_id":"two_pair"}}]

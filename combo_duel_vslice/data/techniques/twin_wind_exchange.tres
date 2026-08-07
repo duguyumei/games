@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "twin_wind_exchange"
+display_name = "双风换气"
+pool = "pair_two_pair"
+description = "造成P点伤害；一对抽3张后选择1张手牌明确弃掉，两对额外抽1张；两对弃风牌时敌方随机明确弃1张手牌。"
+effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"draw","count":{"kind":"hand_map","values":{"pair":3,"two_pair":4}},"capture":"drawn"},{"op":"select_cards","choice_id":"discard_one","prompt":"选择1张手牌明确弃掉","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected"},{"op":"move_captured","capture":"selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"discard_random","side":"target","count":1,"when":{"all":[{"hand_id":"two_pair"},{"capture_all_attribute":{"capture":"discarded","attribute":"wind"}}]}}]

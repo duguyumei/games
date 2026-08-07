@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "balance_sleeves_listen_wind"
+display_name = "衡袖听风"
+pool = "pair_two_pair"
+description = "获得floor(P/2)防御；一对比较双方手牌，敌方更多则随机弃2张，否则造成floor(P/2)伤害；两对两种效果均执行。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2},"when":{"any":[{"hand_id":"two_pair"},{"all":[{"hand_id":"pair"},{"not":{"actor_hand_less_than_target":true}}]}]}},{"op":"discard_random","side":"target","count":2,"when":{"any":[{"hand_id":"two_pair"},{"all":[{"hand_id":"pair"},{"actor_hand_less_than_target":true}]}]}}]

@@ -1,6 +1,7 @@
 class_name AiConversationStore
 extends RefCounted
 
+const DEFAULT_DIRECTORY := "user://ai/conversations"
 const REDACTED := "[REDACTED]"
 const SECRET_KEYS := [
     "api_key",
@@ -22,6 +23,8 @@ func decode(encoded: String) -> Dictionary:
     return parsed if parsed is Dictionary else {}
 
 func save(path: String, snapshot) -> bool:
+    if not _ensure_parent_directory(path):
+        return false
     var file := FileAccess.open(path, FileAccess.WRITE)
     if file == null:
         return false
@@ -32,6 +35,31 @@ func load(path: String) -> Dictionary:
     if not FileAccess.file_exists(path):
         return {}
     return decode(FileAccess.get_file_as_string(path))
+
+func path_for_battle(
+        battle_id: String,
+        directory: String = DEFAULT_DIRECTORY) -> String:
+    var safe_id := _safe_file_stem(battle_id)
+    if safe_id == "":
+        safe_id = "unknown-battle"
+    return "%s/%s.json" % [directory.rstrip("/"), safe_id]
+
+func save_battle(
+        snapshot,
+        directory: String = DEFAULT_DIRECTORY) -> bool:
+    var values: Dictionary = (
+        snapshot.to_dict()
+        if snapshot is Object and snapshot.has_method("to_dict")
+        else snapshot.duplicate(true) if snapshot is Dictionary else {})
+    var battle_id := str(values.get("battle_id", ""))
+    if battle_id == "":
+        return false
+    return save(path_for_battle(battle_id, directory), values)
+
+func load_battle(
+        battle_id: String,
+        directory: String = DEFAULT_DIRECTORY) -> Dictionary:
+    return self.load(path_for_battle(battle_id, directory))
 
 func _sanitize(value):
     if value is Dictionary:
@@ -46,3 +74,18 @@ func _sanitize(value):
             result.append(_sanitize(item))
         return result
     return value
+
+func _ensure_parent_directory(path: String) -> bool:
+    var parent := path.get_base_dir()
+    if parent == "":
+        return true
+    var error := DirAccess.make_dir_recursive_absolute(
+        ProjectSettings.globalize_path(parent))
+    return error in [OK, ERR_ALREADY_EXISTS]
+
+func _safe_file_stem(value: String) -> String:
+    var result := ""
+    var allowed := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    for character in value:
+        result += character if allowed.contains(character) else "_"
+    return result.left(120)

@@ -24,8 +24,14 @@ const AiHistoryProjectorScript = preload("res://core/ai/ai_history_projector.gd"
 const AiBattleConversationScript = preload("res://core/ai/ai_battle_conversation.gd")
 const AiCandidateScript = preload("res://core/ai/ai_candidate.gd")
 const AiConversationStoreScript = preload("res://core/ai/ai_conversation_store.gd")
+const AiSettingsServiceScript = preload("res://core/ai/ai_settings_service.gd")
 const AiDecisionGatewayScript = preload("res://core/ai/ai_decision_gateway.gd")
+const AiPromptEncoderScript = preload("res://core/ai/ai_prompt_encoder.gd")
+const AiResponseValidatorScript = preload("res://core/ai/ai_response_validator.gd")
 const MockAiProviderScript = preload("res://core/ai/providers/mock_ai_provider.gd")
+const AiProviderSettingsScript = preload("res://core/ai/providers/ai_provider_settings.gd")
+const ChatCompletionsAiProviderScript = preload("res://core/ai/providers/chat_completions_ai_provider.gd")
+const AiProviderFactoryScript = preload("res://core/ai/providers/ai_provider_factory.gd")
 const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const GameLogScript = preload("res://core/game_log.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
@@ -38,8 +44,13 @@ const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const ContentValidatorScript = preload("res://core/content_validator.gd")
+const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.gd")
+const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
+const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const RunScene = preload("res://ui/run_main.tscn")
+const FrontScene = preload("res://ui/front_main.tscn")
+const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 class ProbeEffectHandler:
     extends RefCounted
@@ -71,7 +82,13 @@ var assertions: int = 0
 var card_serial: int = 0
 
 func _initialize() -> void:
+    if not RuntimeProfileScript.current().is_test():
+        push_error("自动化测试必须显式指定 --launch-mode=test")
+        quit(2)
+        return
     _test_content_catalog_and_validator()
+    _test_starter_build_assembly_and_composition_root()
+    _test_node_reward_service_contract()
     _test_qi_instance_state_contract()
     _test_run_deck_contract()
     _test_card_zone_service_contract()
@@ -80,6 +97,9 @@ func _initialize() -> void:
     _test_status_system_contract()
     _test_action_controller_boundaries_and_strategy()
     _test_remote_ai_module_contract()
+    _test_chat_completions_provider_contract()
+    _test_ai_settings_and_conversation_disk_contract()
+    _test_remote_ai_action_window_session_gate()
     _test_effect_handler_registry_contract()
     _test_standard_deck()
     _test_pool_structure_and_turn_draw_rules()
@@ -115,6 +135,7 @@ func _initialize() -> void:
     _test_boss_chest_flow()
     _test_run_state_battle_growth_persistence()
     _test_map_practice_and_battle_scene_integration()
+    _test_front_menu_and_starter_build_flow()
     _test_scripted_enemy_is_deterministic_and_locked()
     _test_enemy_ai_plan_is_deterministic_and_hidden()
     _test_enemy_ai_uses_natural_combo()
@@ -160,15 +181,22 @@ func _assert_true(value: bool, label: String) -> void:
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
-    _assert_equal(catalog.errors, [], "当前十份内容数据没有校验错误")
+    _assert_equal(catalog.errors, [], "当前十二份内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
     _assert_equal(catalog.definition("card_states")["version"], 3, "真气重塑与异状数据带顶层版本")
+    _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
+    _assert_equal(catalog.all_of("starter_build").size(), 1, "当前只开放一套初始构筑")
+    _assert_equal(catalog.get_by_id("starter_build", "standard_52")["card_count"], 52, "唯一初始构筑为标准52张牌组")
+    _assert_equal(
+        catalog.get_by_id("starter_build", "standard_52")["card_ids"].size(),
+        52,
+        "标准初始构筑显式声明 52 个真气 ID")
     _assert_equal(catalog.all_of("card").size(), 52, "内容目录建立 52 张唯一基础真气索引")
     _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种强化索引")
     _assert_equal(catalog.all_of("finish").size(), 4, "内容目录建立四种品相索引")
     _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种印记索引")
-    _assert_equal(catalog.all_of("anomaly").size(), 11, "内容目录建立十一种战斗异状索引")
-    _assert_equal(catalog.all_of("actor_status").size(), 2, "内容目录建立蛊印与连势角色状态索引")
+    _assert_equal(catalog.all_of("anomaly").size(), 12, "内容目录建立十二种战斗异状索引")
+    _assert_equal(catalog.all_of("actor_status").size(), 7, "内容目录建立七种角色战斗状态索引")
     _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
     _assert_equal(
         catalog.get_by_id("anomaly", "purification")["on_apply"],
@@ -372,6 +400,64 @@ func _array_contains_effect_stack(effects: Array, wanted: String) -> bool:
             return true
     return false
 
+func _test_starter_build_assembly_and_composition_root() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "构筑装配测试内容目录有效")
+    var assembler = StarterBuildAssemblerScript.new(catalog)
+    var assembled: Dictionary = assembler.assemble_into_run_deck({
+        "id": "assembly_probe",
+        "card_count": 2,
+        "card_ids": ["wind_2", "fire_A"],
+    }, "assembly-probe")
+    _assert_true(assembled.get("success", false), "初始构筑装配器按显式 card_ids 建立 RunDeck")
+    var assembled_deck: Object = assembled.get("run_deck")
+    _assert_equal(assembled_deck.card_count(), 2, "装配器不会退回固定标准52张牌组")
+    _assert_true(assembled_deck.has_card("wind_2"), "装配结果包含构筑声明的风2")
+    _assert_true(assembled_deck.has_card("fire_A"), "装配结果包含构筑声明的火A")
+    var rejected: Dictionary = assembler.assemble_card_ids({
+        "card_count": 1,
+        "card_ids": ["missing_card"],
+    })
+    _assert_true(not rejected.get("success", false), "构筑装配器拒绝未知真气引用")
+
+    var composition_root: Object = GameCompositionRootScript.new()
+    _assert_true(composition_root.initialize(), "游戏组合根一次性加载统一内容平台")
+    var first_session: Object = composition_root.create_run_session()
+    var second_session: Object = composition_root.create_run_session()
+    _assert_true(first_session._content_catalog == composition_root.content_catalog, "本局会话复用组合根内容目录")
+    _assert_true(second_session._content_catalog == composition_root.content_catalog, "多个本局会话不重复创建内容目录")
+    _assert_true(first_session.game_log == composition_root.game_log, "本局与战斗流程复用组合根结构化日志")
+    var setup_result: Dictionary = first_session.execute({
+        "type": "setup_run",
+        "seed": 2308,
+        "starter_build_id": "standard_52",
+    })
+    _assert_true(setup_result.get("success", false), "组合根建立的本局可按初始构筑启动")
+    _assert_equal(first_session.snapshot().section("growth")["run_deck_count"], 52, "初始构筑装配结果进入本局权威牌组")
+
+func _test_node_reward_service_contract() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "奖励服务测试内容目录有效")
+    var service = NodeRewardServiceScript.new(catalog.definition("node_rewards"))
+    var combat = service.create_bundle(
+        {"id": "0_1", "type": "combat"},
+        {"seed": 2308, "act": 1})
+    var combat_again = service.create_bundle(
+        {"id": "0_1", "type": "combat"},
+        {"seed": 2308, "act": 1})
+    _assert_equal(combat.to_dict(), combat_again.to_dict(), "相同节点上下文生成确定性奖励包")
+    _assert_equal(combat.total("experience"), 3, "普通战斗奖励包包含三点历练")
+    var elite = service.create_bundle({"id": "5_2", "type": "elite"}, {"seed": 2308, "act": 1})
+    var boss = service.create_bundle({"id": "boss", "type": "boss"}, {"seed": 2308, "act": 1})
+    _assert_equal(elite.total("experience"), 4, "精英奖励包包含四点历练")
+    _assert_equal(boss.total("experience"), 5, "Boss奖励包包含五点历练")
+    var event = service.create_bundle({"id": "4_2", "type": "event"}, {"seed": 2308, "act": 1})
+    _assert_true(event.entries().is_empty(), "未确认的事件奖励保持空包而不补设计")
+    var growth = GrowthInventoryScript.new()
+    var applied: Dictionary = service.apply_bundle(combat, growth)
+    _assert_true(applied.get("success", false), "奖励服务可以应用已实现的历练奖励")
+    _assert_equal(growth.experience, 3, "奖励服务通过成长库存发放历练")
+
 func _test_qi_instance_state_contract() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "真气实例契约测试载入统一目录")
@@ -537,7 +623,7 @@ func _test_qi_instance_state_contract() -> void:
 func _test_remote_ai_module_contract() -> void:
     var context = AiBattleContextScript.new().configure({
         "battle_id": "battle-ai-contract",
-        "rules_version": "v0.28",
+        "rules_version": "v0.30",
         "player_build": {
             "deck": ["wind_2", "forest_3"],
             "techniques": ["fire_sparks"],
@@ -731,12 +817,361 @@ func _test_remote_ai_module_contract() -> void:
         decoded["context_snapshot"]["protocol"]["credentials"]["api_key"],
         "[REDACTED]",
         "AI 会话持久化递归脱敏 API Key")
-    var restored = AiBattleConversationScript.new().restore(decoded)
-    _assert_equal(restored.battle_id, conversation.battle_id, "AI 会话快照恢复战斗 ID")
-    _assert_equal(restored.public_events.size(), conversation.public_events.size(), "AI 会话快照恢复完整公开事件数量")
-    _assert_equal(restored.public_events[1]["window_id"], "player-only-combo", "AI 会话快照恢复事件窗口")
-    _assert_equal(int(restored.public_events[1]["sequence"]), 11, "AI 会话快照恢复事件序号")
-    _assert_equal(restored.exchanges.size(), conversation.exchanges.size(), "AI 会话快照恢复请求回答审计链")
+    _assert_equal(decoded["battle_id"], conversation.battle_id, "AI 审计快照读取战斗 ID")
+    _assert_equal(decoded["public_events"].size(), conversation.public_events.size(), "AI 审计快照读取完整公开事件数量")
+    _assert_equal(decoded["public_events"][1]["window_id"], "player-only-combo", "AI 审计快照读取事件窗口")
+    _assert_equal(int(decoded["public_events"][1]["sequence"]), 11, "AI 审计快照读取事件序号")
+    _assert_equal(decoded["exchanges"].size(), conversation.exchanges.size(), "AI 审计快照读取请求回答链")
+    provider.free()
+
+func _test_remote_ai_action_window_session_gate() -> void:
+    var provider = MockAiProviderScript.new(false)
+    var session = BattleSessionScript.new()
+    session.use_ai_provider(provider)
+    var configuration := {
+        "content_seed": 2308,
+        "content_id": "remote-ai-window-contract",
+        "battle": {
+            "scenario_path": "res://data/scripted_battle.json",
+            "use_enemy_ai": true,
+            "use_remote_ai": true,
+        },
+        "ai_settings": {
+            "timeout_msec": 30000,
+            "max_retries": 1,
+            "intent_visibility": "full",
+        },
+    }
+    _assert_true(session.setup_battle(configuration), "远程 AI 行动窗口战斗建立成功")
+    _assert_true(session.execute({"type": "start_turn"})["success"], "远程 AI 战斗开始首个行动窗口")
+    var thinking_snapshot = session.snapshot()
+    _assert_equal(thinking_snapshot.section("ai_decision")["state"], "thinking", "行动窗口开始时敌方立即进入异步思考")
+    _assert_true(not thinking_snapshot.section("ai_decision")["can_player_confirm"], "敌方思考期间玩家确认门禁关闭")
+    _assert_equal(thinking_snapshot.value("locked_enemy_card_count", -1), 0, "AI 回答前敌方不提前移动或锁定真气")
+    _assert_equal(provider.submitted_requests.size(), 1, "首个敌方出手机会只发送一次接口请求")
+    var first_request: Dictionary = provider.submitted_requests[0]["payload"]
+    _assert_true(first_request.get("candidates", []).size() > 1, "远程 AI 只收到本地枚举的多个合法选择")
+    _assert_equal(first_request["candidates"][0]["groups"][0]["kind"], "main", "普通候选使用第 0 主牌型组契约")
+
+    var player_hand_before: Array = thinking_snapshot.section("player")["hand"]
+    var blocked_play: Dictionary = session.execute({
+        "type": "play_cards",
+        "card_ids": [player_hand_before[0]["id"]],
+    })
+    _assert_true(not blocked_play["success"], "敌方思考期间玩家出牌命令被应用层拒绝")
+    _assert_true(str(blocked_play["reason"]).contains("思考"), "出牌门禁返回明确思考状态")
+    _assert_equal(session.snapshot().section("player")["staging_count"], 0, "门禁拒绝不会把玩家真气移入待出区")
+    var blocked_end: Dictionary = session.execute({"type": "end_turn"})
+    _assert_true(not blocked_end["success"], "敌方思考期间结束回合同样受门禁保护")
+
+    var consumable_result: Dictionary = session.execute({
+        "type": "use_consumable",
+        "slot_index": 0,
+        "card_ids": [],
+    })
+    _assert_true(consumable_result["success"], "敌方思考期间仍可使用只影响我方的消耗品")
+    _assert_equal(provider.submitted_requests.size(), 1, "思考期间使用我方消耗品不取消或重发当前请求")
+
+    provider.queue_result({
+        "success": true,
+        "body": {
+            "schema_version": 1,
+            "decision_id": first_request["observation"]["decision_id"],
+            "state_hash": first_request["observation"]["state_hash"],
+            "candidate_id": first_request["candidates"][0]["candidate_id"],
+        },
+    })
+    _assert_true(provider.complete(str(provider.submitted_requests[0]["request_id"])), "Mock Provider 完成首个远程回答")
+    var ready_snapshot = session.snapshot()
+    _assert_equal(ready_snapshot.section("ai_decision")["state"], "ready", "合法回答通过后行动窗口转为思考完毕")
+    _assert_true(ready_snapshot.section("ai_decision")["can_player_confirm"], "敌方行动锁定后开放玩家确认")
+    _assert_true(ready_snapshot.value("locked_enemy_card_count", 0) > 0, "远程候选经本地复核后才锁定敌方真气")
+    _assert_true(ready_snapshot.value("enemy_plan", {}).has("damage"), "本地预览核为已锁定远程候选生成公开伤害意图")
+
+    var mixed_ids: Array[String] = []
+    var ready_hand: Array = ready_snapshot.section("player")["hand"]
+    for left_index in range(ready_hand.size()):
+        for right_index in range(left_index + 1, ready_hand.size()):
+            if ready_hand[left_index]["attribute"] != ready_hand[right_index]["attribute"]:
+                mixed_ids = [
+                    str(ready_hand[left_index]["id"]),
+                    str(ready_hand[right_index]["id"]),
+                ]
+                break
+        if not mixed_ids.is_empty():
+            break
+    _assert_equal(mixed_ids.size(), 2, "固定起手存在混属性选牌用于制造敌方单方连击窗口")
+    var synchronized_result: Dictionary = session.execute({
+        "type": "play_cards",
+        "card_ids": mixed_ids,
+    })
+    _assert_true(synchronized_result["success"], "双方提案都准备后才进入真实同步结算")
+    _assert_equal(provider.submitted_requests.size(), 2, "敌方获得连击出手机会后立即发起第二次接口请求")
+    var second_request: Dictionary = provider.submitted_requests[1]["payload"]
+    var second_history_types: Array[String] = []
+    for event in second_request.get("history_delta", []):
+        second_history_types.append(str(event.get("event_type", "")))
+    _assert_true(second_history_types.has("consumable_used"), "下一次请求补发思考期间的我方消耗品事件")
+    _assert_true(second_history_types.has("cards_played"), "下一次请求包含双方上一击公开出牌历史")
+    _assert_true(second_history_types.has("action_resolved"), "下一次请求包含上一击生命防御结算结果")
+    _assert_equal(session.snapshot().section("ai_decision")["state"], "thinking", "敌方单方连击使用新的独立思考窗口")
+
+    provider.queue_result({
+        "success": true,
+        "body": {
+            "schema_version": 1,
+            "decision_id": second_request["observation"]["decision_id"],
+            "state_hash": second_request["observation"]["state_hash"],
+            "candidate_id": second_request["candidates"][0]["candidate_id"],
+        },
+    })
+    _assert_true(provider.complete(str(provider.submitted_requests[1]["request_id"])), "Mock Provider 完成敌方单方连击回答")
+    _assert_equal(session.snapshot().section("enemy")["discard_count"], 2, "玩家无行动机会时敌方合法回答自动完成单方连击")
+    _assert_equal(provider.submitted_requests.size(), 2, "同一完整回合自然连击只触发一次，不额外请求")
+    _assert_true(session.execute({"type": "end_turn"})["success"], "双方行动耗尽后可以正常结束完整回合")
+
+    var timeout_provider = MockAiProviderScript.new(false)
+    var timeout_session = BattleSessionScript.new()
+    timeout_session.use_ai_provider(timeout_provider)
+    var timeout_configuration: Dictionary = configuration.duplicate(true)
+    timeout_configuration["content_seed"] = 2309
+    timeout_configuration["content_id"] = "remote-ai-timeout-contract"
+    _assert_true(timeout_session.setup_battle(timeout_configuration), "远程 AI 超时保底战斗建立成功")
+    timeout_session.execute({"type": "start_turn"})
+    _assert_true(timeout_session.poll_ai_timeout(9223372036854775807), "到达截止时间后取消远程请求")
+    var fallback_snapshot = timeout_session.snapshot()
+    _assert_equal(fallback_snapshot.section("ai_decision")["state"], "fallback_ready", "远程超时后由本地 Utility AI 接管")
+    _assert_true(fallback_snapshot.section("ai_decision")["can_player_confirm"], "本地接管成功后重新开放玩家确认")
+    _assert_equal(timeout_provider.pending.size(), 0, "超时取消清理 Provider 待处理请求")
+    var timeout_system_log: Array = fallback_snapshot.value("system_log", [])
+    var has_fallback_log := false
+    for entry in timeout_system_log:
+        if str(entry.get("category", "")) == "remote_ai_fallback":
+            has_fallback_log = true
+            break
+    _assert_true(has_fallback_log, "远程超时降级进入统一系统日志")
+    var timeout_exchange_kinds: Array[String] = []
+    for exchange in timeout_session.ai_conversation_snapshot().value("exchanges", []):
+        timeout_exchange_kinds.append(str(exchange.get("kind", "")))
+    _assert_true(timeout_exchange_kinds.has("response"), "AI 会话持久记录超时取消响应")
+    _assert_true(timeout_exchange_kinds.has("fallback_selected"), "AI 会话持久记录最终本地接管行动")
+    provider.free()
+    timeout_provider.free()
+
+func _test_chat_completions_provider_contract() -> void:
+    var defaults = AiProviderSettingsScript.new()
+    _assert_equal(defaults.provider_id, "deepseek", "远程 AI 默认服务商为 DeepSeek")
+    _assert_equal(defaults.base_url, "https://api.deepseek.com", "DeepSeek 默认 base_url 正确")
+    _assert_equal(defaults.endpoint_url(), "https://api.deepseek.com/chat/completions", "OpenAI 兼容 Chat Completions 端点正确")
+    _assert_equal(defaults.model, "deepseek-v4-flash", "频繁战斗窗口默认使用 Flash 模型")
+    _assert_equal(defaults.reasoning_effort, "medium", "Flash 默认使用中等推理强度")
+    _assert_true(defaults.thinking_enabled, "DeepSeek 默认开启 thinking")
+    _assert_true(not defaults.public_snapshot().has("api_key"), "公开 Provider 设置不包含 API Key 字段")
+
+    var pro = AiProviderSettingsScript.new({"model": "deepseek-v4-pro"})
+    _assert_equal(pro.reasoning_effort, "high", "Pro 模型默认使用高推理强度")
+    var custom = AiProviderSettingsScript.new({
+        "provider_id": "custom_openai_compatible",
+        "base_url": "https://example.invalid/v1/",
+        "path": "/chat/completions",
+        "model": "custom-strategist",
+        "reasoning_effort": "low",
+    })
+    _assert_equal(custom.endpoint_url(), "https://example.invalid/v1/chat/completions", "通用 Provider 正确拼接自定义端点")
+    _assert_equal(custom.model, "custom-strategist", "模型字符串允许玩家自由填写")
+    _assert_true(custom.is_valid(), "自定义 OpenAI 兼容 Provider 设置通过基础校验")
+
+    var prompt = AiPromptEncoderScript.new()
+    var system_content := str(prompt.system_message()["content"])
+    _assert_true(system_content.contains("最终胜率"), "通用提示词明确优化全局胜率而非即时最大伤害")
+    _assert_true(system_content.contains("只能从 candidates"), "通用提示词限制 AI 只能选择本地候选")
+    _assert_true(system_content.contains("隐藏手牌"), "通用提示词禁止猜测玩家隐藏信息")
+    _assert_true(system_content.contains("candidate_id"), "通用提示词内置固定 JSON 返回字段")
+    _assert_true(not system_content.contains("decision-provider-test"), "稳定系统提示不混入单次决策内容")
+
+    var provider = ChatCompletionsAiProviderScript.new({
+        "api_key": "unit-test-secret",
+        "extra_body": {
+            "temperature": 0.15,
+            "model": "must-not-override",
+            "messages": [{"role": "user", "content": "must-not-override"}],
+            "stream": true,
+            "api_key": "must-not-leak",
+            "metadata": {"authorization": "nested-must-not-leak"},
+        },
+    })
+    var decision_payload := {
+        "schema_version": 1,
+        "type": "battle_decision",
+        "battle_id": "provider-contract-battle",
+        "provider_epoch": 0,
+        "observation": {
+            "decision_id": "decision-provider-test",
+            "state_hash": "provider-state-hash",
+        },
+        "history_summary": {},
+        "history_delta": [],
+        "candidates": [{"candidate_id": "candidate-000"}],
+    }
+    var request_body: Dictionary = provider.build_request_payload(decision_payload)
+    _assert_equal(request_body["model"], "deepseek-v4-flash", "请求体使用配置模型")
+    _assert_equal(request_body["thinking"], {"type": "enabled"}, "请求体使用 DeepSeek thinking 结构")
+    _assert_equal(request_body["reasoning_effort"], "medium", "请求体携带通用推理强度")
+    _assert_equal(request_body["stream"], false, "战斗决策默认使用非流式响应")
+    _assert_equal(request_body["temperature"], 0.15, "通用附加请求字段进入请求体")
+    _assert_true(not request_body.has("api_key"), "通用附加字段不能把凭据写入请求体")
+    _assert_true(not JSON.stringify(request_body).contains("must-not-leak"), "嵌套附加字段中的凭据也不会进入请求或审计")
+    _assert_equal(request_body["model"], "deepseek-v4-flash", "通用附加字段不能覆盖配置模型")
+    _assert_equal(request_body["messages"].size(), 2, "首次请求只包含稳定系统提示和一个结构化用户消息")
+    _assert_equal(request_body["messages"][0]["role"], "system", "Chat Completions 首条消息为系统提示")
+    _assert_true(str(request_body["messages"][1]["content"]).contains("decision-provider-test"), "单次决策只进入结构化用户消息")
+    _assert_true(not request_body.has("api_key"), "API Key 不进入 JSON 请求体")
+    _assert_true(not provider.submitted_requests.any(func(entry): return JSON.stringify(entry).contains("unit-test-secret")), "Provider 审计请求不保存 API Key")
+
+    var next_epoch_payload: Dictionary = decision_payload.duplicate(true)
+    next_epoch_payload["provider_epoch"] = 1
+    next_epoch_payload["observation"]["decision_id"] = "decision-provider-epoch-1"
+    var next_epoch_body: Dictionary = provider.build_request_payload(next_epoch_payload)
+    _assert_equal(next_epoch_body["messages"].size(), 2, "历史压缩推进 Provider epoch 后重建短会话前缀")
+
+    provider._rollback_messages({
+        "battle_id": "provider-contract-battle",
+        "message_count_before": 1,
+    })
+    _assert_equal(provider._messages_by_battle["provider-contract-battle"].size(), 1, "取消或失败请求会回滚未获回答的用户消息")
+
+    var decision_json := JSON.stringify({
+        "schema_version": 1,
+        "decision_id": "decision-provider-test",
+        "state_hash": "provider-state-hash",
+        "candidate_id": "candidate-000",
+        "reason_code": "preserve_future_options",
+        "confidence": 0.8,
+    })
+    var parsed_response: Dictionary = provider.parse_provider_response(
+        HTTPRequest.RESULT_SUCCESS,
+        200,
+        JSON.stringify({
+            "choices": [{"message": {"content": decision_json}}],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 24},
+        }))
+    _assert_true(parsed_response["success"], "通用 Provider 解析 OpenAI 兼容成功响应")
+    _assert_equal(parsed_response["body"], decision_json, "Provider 把 assistant content 交给本地协议验证器")
+    _assert_equal(parsed_response["usage"]["completion_tokens"], 24, "Provider 保留用量供本地审计")
+    var http_error: Dictionary = provider.parse_provider_response(
+        HTTPRequest.RESULT_SUCCESS,
+        401,
+        JSON.stringify({"error": {"message": "invalid api key"}}))
+    _assert_equal(http_error["error_code"], "HTTP_STATUS_401", "HTTP 错误转换为稳定 Provider 错误码")
+    _assert_equal(http_error["message"], "invalid api key", "Provider 保留兼容服务返回的错误信息")
+
+    var validator = AiResponseValidatorScript.new()
+    var unexpected_field: Dictionary = validator.validate({
+        "schema_version": 1,
+        "decision_id": "decision-provider-test",
+        "state_hash": "provider-state-hash",
+        "candidate_id": "candidate-000",
+        "explanation": "不应返回的自然语言",
+    }, decision_payload["observation"], ["candidate-000"])
+    _assert_equal(unexpected_field["error_code"], "UNEXPECTED_FIELD", "本地协议拒绝提示词之外的额外返回字段")
+    var factory_defaults: Dictionary = AiProviderFactoryScript.default_deepseek_config()
+    _assert_equal(factory_defaults["provider_id"], "deepseek", "Provider 工厂公开 DeepSeek 默认配置")
+    _assert_true(not factory_defaults.has("api_key"), "Provider 工厂默认配置不持久化密钥")
+    provider.free()
+
+func _test_ai_settings_and_conversation_disk_contract() -> void:
+    var example := ConfigFile.new()
+    _assert_equal(
+        example.load("res://config/ai_settings.example.cfg"),
+        OK,
+        "仓库 AI 配置样例保持为可解析的 Godot ConfigFile")
+    _assert_true(not bool(example.get_value("remote_ai", "enabled", true)), "AI 配置样例默认禁止联网")
+    _assert_equal(example.get_value("provider", "api_key", "missing"), "", "AI 配置样例不携带真实密钥")
+    var settings_path := "/tmp/taiwu-ai-settings-contract.cfg"
+    if FileAccess.file_exists(settings_path):
+        DirAccess.remove_absolute(settings_path)
+    var settings_service = AiSettingsServiceScript.new(settings_path)
+    _assert_true(settings_service.load_or_create(), "AI 设置服务自动建立可编辑配置文件")
+    _assert_true(FileAccess.file_exists(settings_path), "AI 设置配置文件写入指定磁盘路径")
+    var defaults: Dictionary = settings_service.public_snapshot()
+    _assert_true(not defaults["enabled"], "远程 AI 默认关闭，避免测试和离线游玩意外联网")
+    _assert_equal(defaults["provider"]["model"], "deepseek-v4-flash", "配置文件沿用 DeepSeek Flash 默认模型")
+    _assert_true(not defaults["provider"].has("api_key"), "公开 AI 设置快照不暴露 API Key 字段")
+
+    var editable := ConfigFile.new()
+    _assert_equal(editable.load(settings_path), OK, "生成的 AI 配置可由 Godot ConfigFile 重新读取")
+    editable.set_value("remote_ai", "enabled", true)
+    editable.set_value("provider", "api_key", "settings-contract-secret")
+    editable.set_value("provider", "model", "custom-compatible-model")
+    editable.set_value("conversation", "compression_interval_rounds", 7)
+    editable.set_value("storage", "conversation_directory", "/tmp/taiwu-ai-conversation-contract")
+    _assert_equal(editable.save(settings_path), OK, "玩家可以直接修改并保存 AI 配置文件")
+    _assert_true(settings_service.reload(), "AI 设置服务重新载入玩家编辑后的配置")
+    var runtime_profile: Dictionary = settings_service.runtime_profile(true)
+    _assert_true(runtime_profile["enabled"], "配置文件可以启用远程 AI")
+    _assert_equal(runtime_profile["provider"]["api_key"], "settings-contract-secret", "运行时 Provider 可以读取配置文件 API Key")
+    _assert_equal(runtime_profile["provider"]["model"], "custom-compatible-model", "配置文件允许任意兼容模型名")
+    _assert_equal(runtime_profile["conversation"]["compression_interval_rounds"], 7, "配置文件控制历史压缩间隔")
+    _assert_true(not JSON.stringify(settings_service.public_snapshot()).contains("settings-contract-secret"), "公开设置与日志投影不会泄露配置文件 API Key")
+
+    var store = AiConversationStoreScript.new()
+    var unsafe_battle_id := "battle/contract:01"
+    var conversation_path: String = store.path_for_battle(
+        unsafe_battle_id,
+        "/tmp/taiwu-ai-conversation-contract")
+    _assert_true(not conversation_path.get_file().contains("/"), "会话文件名会清理路径分隔符")
+    _assert_true(store.save(conversation_path, {
+        "schema_version": 1,
+        "battle_id": unsafe_battle_id,
+        "api_key": "conversation-secret",
+        "nested": {"authorization": "Bearer conversation-secret"},
+        "public_events": [{"sequence": 3, "event_type": "cards_played"}],
+    }), "会话存储器自动创建目录并保存快照")
+    _assert_true(FileAccess.file_exists(conversation_path), "脱敏 AI 会话实际写入磁盘")
+    var raw_conversation := FileAccess.get_file_as_string(conversation_path)
+    _assert_true(not raw_conversation.contains("conversation-secret"), "磁盘 AI 会话递归移除 API Key 与认证头")
+    _assert_true(raw_conversation.contains(AiConversationStoreScript.REDACTED), "磁盘会话保留明确脱敏占位符供审计")
+    var loaded_conversation: Dictionary = store.load(conversation_path)
+    _assert_equal(loaded_conversation["battle_id"], unsafe_battle_id, "磁盘 AI 会话可以无损恢复公开身份")
+    _assert_equal(loaded_conversation["public_events"][0]["sequence"], 3, "磁盘 AI 会话可以恢复公开历史序号")
+
+    var mock_provider = MockAiProviderScript.new(false)
+    var first_session = BattleSessionScript.new()
+    first_session.configure_ai_runtime(runtime_profile)
+    first_session.use_ai_provider(mock_provider)
+    var battle_config := {
+        "content_seed": 8811,
+        "content_id": "ai-disk-contract",
+        "battle": {
+            "scenario_path": "res://data/scripted_battle.json",
+            "use_enemy_ai": true,
+            "use_remote_ai": false,
+        },
+    }
+    _assert_true(first_session.setup_battle(battle_config), "配置文件启用状态可以为普通敌人开启远程 AI")
+    first_session.execute({"type": "start_turn"})
+    var autosave_path := first_session.ai_conversation_path()
+    _assert_true(FileAccess.file_exists(autosave_path), "行动窗口变化自动保存脱敏 AI 会话")
+    var first_saved: Dictionary = store.load(autosave_path)
+    _assert_true(first_saved.get("public_events", []).size() > 0, "自动会话文件包含公开行动历史")
+    _assert_true(first_saved.get("exchanges", []).size() > 0, "自动会话文件包含请求审计链")
+
+    var restarted_session = BattleSessionScript.new()
+    restarted_session.configure_ai_runtime(runtime_profile)
+    var restarted_provider = MockAiProviderScript.new(false)
+    restarted_session.use_ai_provider(restarted_provider)
+    _assert_true(restarted_session.setup_battle(battle_config), "重新进入相同节点时从头建立新战斗")
+    restarted_session.execute({"type": "start_turn"})
+    var restarted_path := restarted_session.ai_conversation_path()
+    _assert_true(restarted_path != autosave_path, "重新开始战斗会建立独立 AI 审计会话")
+    _assert_true(FileAccess.file_exists(autosave_path), "旧战斗 AI 审计文件不会被新尝试覆盖")
+    _assert_true(FileAccess.file_exists(restarted_path), "新战斗尝试拥有自己的 AI 审计文件")
+    _assert_true(not restarted_session.has_method("load_ai_conversation"), "战斗会话不提供中途 AI 续接入口")
+    _assert_true(not restarted_session.ai_coordinator.has_method("restore_conversation"), "行动窗口不从旧对话恢复")
+    _assert_true(not restarted_session.ai_coordinator.conversation.has_method("resume_provider_session"), "Provider 会话不跨战斗尝试续接")
+    _assert_true(not restarted_session.ai_coordinator.conversation.has_method("restore"), "AI 会话对象不提供续战恢复入口")
+    mock_provider.free()
+    restarted_provider.free()
 
 func _test_effect_handler_registry_contract() -> void:
     var rng := RandomNumberGenerator.new()
@@ -1038,6 +1473,10 @@ func _test_status_system_contract() -> void:
     _assert_equal(system.actor_status_value(engine.enemy, "momentum"), 3, "统一接口查询敌方状态层数")
     _assert_equal(system.consume_actor_status(engine.player, "gu_mark", 2, "状态契约")["changed"], 2, "统一接口消费角色状态")
     _assert_true(not system.add_actor_status(engine.player, "missing_status", 1)["success"], "状态系统拒绝未登记角色状态")
+    system.add_actor_status(engine.player, "qi_intake", 2, "状态契约")
+    system.add_actor_status(engine.player, "full_sleeve", 2, "状态契约")
+    system.add_actor_status(engine.player, "bound_sleeve", 1, "状态契约")
+    _assert_equal(engine.player.current_hand_limit(), 10, "纳气、盈袖与束袖统一计算当前手牌上限")
 
     var card = _card("9", "fire")
     card.set_finish("foil")
@@ -1049,8 +1488,10 @@ func _test_status_system_contract() -> void:
     system.apply_card_anomaly(card, "state", "acupoint_block", {}, "状态契约")
     _assert_true(card.has_anomaly("state", "acupoint_block"), "新状态通过状态系统替换唯一状态槽")
     system.apply_card_anomaly(card, "mark", "wind_lure", {}, "状态契约")
+    system.apply_card_anomaly(card, "mark", "wind_mark", {}, "状态契约")
+    _assert_true(card.is_attribute("wind"), "风标记令普通真气同时视为风")
     system.apply_card_anomaly(card, "mark", "qi_severance", {}, "状态契约")
-    _assert_equal(card.anomaly_marks.size(), 2, "不同标记可通过状态系统共存")
+    _assert_equal(card.anomaly_marks.size(), 3, "不同标记可通过状态系统共存")
     system.apply_card_anomaly(card, "mark", "purification", {}, "状态契约")
     _assert_equal(card.reshape_finish, "", "净化通过状态系统屏蔽既有重塑")
     _assert_equal(card.anomaly_marks.keys(), ["purification"], "净化清除既有异状后保留自身")
@@ -1567,7 +2008,7 @@ func _test_action_resolver_boundary_and_queue_rebind() -> void:
     engine.sequence_book.configure({"pair": ["double_gu_bind", "test_next_pair"]})
     var action_preview: Dictionary = engine.preview(_ids(pair))
     _assert_true(engine.player.stage_cards(_ids(pair)), "行动解析器测试真气进入待出区")
-    var record: Dictionary = engine.action_resolver.make_action_record(
+    var record = engine.action_resolver.make_action_record(
         engine.player,
         engine.enemy,
         action_preview,
@@ -1693,14 +2134,14 @@ func _test_delayed_power_snapshot() -> void:
     var engine = _engine_with_hand(flush)
     var result := engine.confirm_play(_ids(flush))
     _assert_true(result["technique_triggered"], "百击归烬建立延迟记录")
-    _assert_equal(engine.delayed_effects[0]["snapshot_power"], 120, "延迟记录建立时 P")
-    _assert_equal(engine.delayed_effects[0]["damage_per_segment"], 6, "延迟每段读取快照 P/20")
+    _assert_equal(engine.delayed_effects[0]["snapshot_power"], 180, "延迟记录建立时 P（含五张同属性+50%）")
+    _assert_equal(engine.delayed_effects[0]["damage_per_segment"], 9, "延迟每段读取快照 P/20")
     engine.deal_damage(engine.player, engine.enemy, 20, "technique")
     engine.power_modifiers["flush"] = {"power_amp_percent": 500}
     engine.end_player_turn()
     _assert_equal(engine.enemy.life, 80, "第一个回合结束尚未结算延迟")
     engine.end_player_turn()
-    _assert_equal(engine.enemy.life, 74, "第二个回合结束按旧快照造成一段 6 伤害")
+    _assert_equal(engine.enemy.life, 71, "第二个回合结束按旧快照造成一段 9 伤害")
     _assert_equal(engine.delayed_effects.size(), 0, "延迟结算后移除记录")
 
 func _test_visible_queue_left_to_right() -> void:
@@ -1796,13 +2237,15 @@ func _test_insight_growth_and_technique_acquisition() -> void:
     var engine = _engine_with_hand([high] + pair, [], 810)
     engine.player.configure_consumables(["high_card_insight"])
     _assert_true(not engine.player.owned_technique_ids.has("fire_sparks"), "初始玩家功法库不含敌方代表功法")
+    var owned_before: Array[String] = engine.player.owned_technique_ids.duplicate()
     var sequence_before: Array = engine.sequence_book.sequences["high_card"].duplicate()
     var result := engine.use_player_consumable(0, [])
     _assert_true(result["success"], "高牌心得使用成功")
     _assert_equal(engine.player.insight_multipliers.get("high_card", 0), 1, "心得只增加指定精确牌型累计倍率")
     _assert_equal(engine.player.insight_multipliers.get("pair", 0), 0, "高牌心得不提高一对")
-    _assert_equal(result["acquired_technique_id"], "fire_sparks", "心得从合格池获得尚未拥有的功法")
-    _assert_true(engine.player.owned_technique_ids.has("fire_sparks"), "所得功法进入本局功法库")
+    var acquired_id := str(result["acquired_technique_id"])
+    _assert_true(acquired_id != "" and not owned_before.has(acquired_id), "心得从合格池获得尚未拥有的功法")
+    _assert_true(engine.player.owned_technique_ids.has(acquired_id), "所得功法进入本局功法库")
     _assert_equal(engine.sequence_book.sequences["high_card"], sequence_before, "心得所得功法不自动修改当前序列")
     var high_preview := engine.preview([high.id])
     _assert_equal(high_preview["values"]["technique_multiplier"], 2, "高牌固定倍率与累计心得倍率相加")
@@ -2164,8 +2607,19 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
 
     var completion := session.execute({"type": "complete_node"})
     _assert_true(completion["success"], "本局会话完成当前节点")
-    _assert_equal(session.snapshot().value("experience"), 3, "节点奖励通过本局快照公开")
-    _assert_true(session.execute({"type": "open_practice"})["success"], "返回待选状态后可以打开修习")
+    _assert_equal(session.snapshot().value("phase"), "awaiting_reward", "节点完成后进入待领取奖励阶段")
+    _assert_equal(session.snapshot().value("experience"), 0, "领取前奖励不会提前写入历练")
+    var reward_snapshot: Dictionary = session.snapshot().section("reward")
+    _assert_true(reward_snapshot.get("available", false), "本局快照公开待领取奖励包")
+    _assert_equal(reward_snapshot.get("experience_total"), 3, "奖励快照公开普通战斗三点历练")
+    _assert_true(not session.execute({"type": "open_practice"})["success"], "奖励领取前修习保持锁定")
+    var bundle_id := str(reward_snapshot.get("bundle", {}).get("id", ""))
+    var claim: Dictionary = session.execute({"type": "claim_reward", "bundle_id": bundle_id})
+    _assert_true(claim.get("success", false), "匹配奖励包ID后可以领取节点奖励")
+    _assert_equal(session.snapshot().value("experience"), 3, "领取后节点奖励写入本局历练")
+    _assert_equal(session.snapshot().value("phase"), "awaiting_node", "领取后才返回地图待选状态")
+    _assert_true(not session.execute({"type": "claim_reward", "bundle_id": bundle_id})["success"], "同一奖励包不能重复领取")
+    _assert_true(session.execute({"type": "open_practice"})["success"], "领取奖励返回待选状态后可以打开修习")
     var purchase := session.execute({
         "type": "purchase_consumable",
         "consumable_id": "hierophant",
@@ -2197,10 +2651,15 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     boss_state.phase = "node_in_progress"
     var boss_session = RunSessionScript.new(boss_state)
     _assert_true(boss_session.execute({"type": "complete_node"})["success"], "Boss 节点完成也经过本局会话")
-    _assert_equal(boss_session.snapshot().value("phase"), "boss_chest", "本局快照公开 Boss 宝箱阶段")
+    _assert_equal(boss_session.snapshot().value("phase"), "awaiting_reward", "Boss胜利先进入奖励阶段")
+    _assert_equal(boss_session.snapshot().section("reward")["experience_total"], 5, "Boss奖励包为五点历练")
+    var boss_bundle_id := str(boss_session.snapshot().section("reward")["bundle"]["id"])
+    _assert_true(boss_session.execute({"type": "claim_reward", "bundle_id": boss_bundle_id})["success"], "领取Boss奖励后推进流程")
+    _assert_equal(boss_session.snapshot().value("phase"), "boss_chest", "领取后本局快照公开 Boss 宝箱阶段")
+    _assert_equal(boss_session.snapshot().value("experience"), 5, "Boss基础历练在领取后到账")
     _assert_true(boss_session.execute({"type": "complete_boss_chest"})["success"], "Boss 宝箱流程通过本局命令完成")
     _assert_equal(boss_session.snapshot().value("act"), 2, "Boss 宝箱命令推进到下一层")
-    _assert_equal(boss_session.snapshot().value("run_log", []).size(), 2, "Boss 节点与宝箱流程均写入本局日志")
+    _assert_equal(boss_session.snapshot().value("run_log", []).size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
 
 func _test_boss_chest_flow() -> void:
     var state = RunStateScript.new()
@@ -2288,14 +2747,45 @@ func _test_map_practice_and_battle_scene_integration() -> void:
         "地图 UI 将节点稳定内容种子传入战斗场景")
     _assert_true(run_ui.practice_button.disabled, "战斗节点进行中修习按钮锁定")
     run_ui._on_battle_finished("player_victory")
-    _assert_equal(run_ui.run_session.snapshot().value("phase"), "awaiting_node", "战斗胜利后直接返回地图待选状态")
-    _assert_equal(run_ui.run_session.snapshot().value("experience"), 3, "战斗胜利奖励显示为当前历练")
+    _assert_equal(run_ui.run_session.snapshot().value("phase"), "awaiting_reward", "战斗胜利后进入可见奖励阶段")
+    _assert_equal(run_ui.run_session.snapshot().value("experience"), 0, "领取前战斗奖励不会提前到账")
+    _assert_true(run_ui.reward_overlay.visible, "战斗胜利后显示奖励结算页面")
+    _assert_true(run_ui.practice_button.disabled, "奖励领取期间修习保持锁定")
+    run_ui._claim_reward()
+    _assert_equal(run_ui.run_session.snapshot().value("phase"), "awaiting_node", "领取奖励后返回地图待选状态")
+    _assert_equal(run_ui.run_session.snapshot().value("experience"), 3, "领取后战斗奖励显示为当前历练")
+    _assert_true(not run_ui.reward_overlay.visible, "领取后关闭奖励结算页面")
     _assert_true(
         run_ui.run_session.snapshot().value("run_log", []).size() >= 3,
         "地图、战斗节点完成与本局流程共用结构化日志")
     _assert_true(not run_ui.battle_layer.visible, "战斗胜利后关闭战斗层而不自动打开修习")
     _assert_true(not run_ui.practice_overlay.visible, "战斗胜利不会强制弹出修习页面")
     run_ui.queue_free()
+
+func _test_front_menu_and_starter_build_flow() -> void:
+    var front = FrontScene.instantiate()
+    front.initialize_interface()
+    root.add_child(front)
+    _assert_true(front.menu_page.visible, "项目入口默认显示主菜单")
+    _assert_true(front.continue_button.disabled, "没有存档时继续游戏入口明确不可用")
+    _assert_true(front.starter_repository.available_builds().size() == 1, "主菜单读取唯一标准初始构筑")
+    front._on_new_game()
+    _assert_true(front.build_page.visible, "新游戏进入初始构筑页面")
+    _assert_equal(front.selected_starter_build_id, "standard_52", "初始构筑页面默认选中标准52张牌组")
+    _assert_true(not front.begin_run_button.disabled, "存在可用初始构筑时允许开始行旅")
+    front._start_new_run()
+    _assert_true(front.active_run != null, "确认初始构筑后创建本局地图场景")
+    _assert_equal(
+        front.active_run.run_session.snapshot().value("starter_build_id"),
+        "standard_52",
+        "初始构筑ID进入本局快照：run=%s" % [
+            str(front.active_run.starter_build_id),
+            ])
+    _assert_equal(
+        front.active_run.run_session.snapshot().value("phase"),
+        "awaiting_node",
+        "确认构筑后本局从地图待选状态开始")
+    front.queue_free()
 
 func _assert_map_route_constraints(graph: Dictionary, label: String) -> void:
     var nodes_by_id: Dictionary = {}

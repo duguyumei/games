@@ -78,9 +78,19 @@ func draw(count: int) -> Array:
     return card_zone_service.draw(self, count)
 
 func draw_to_limit() -> Array:
-    if hand.size() >= hand_limit:
+    var limit := current_hand_limit()
+    if hand.size() >= limit:
         return []
-    return draw(hand_limit - hand.size())
+    return draw(limit - hand.size())
+
+func current_hand_limit() -> int:
+    var qi_intake_bonus := 1 if int(stacks.get("qi_intake", 0)) > 0 else 0
+    return maxi(
+        1,
+        hand_limit
+        + qi_intake_bonus
+        + int(stacks.get("full_sleeve", 0))
+        - int(stacks.get("bound_sleeve", 0)))
 
 func stage_cards(card_ids: Array) -> bool:
     return card_zone_service.stage_cards(self, card_ids)
@@ -112,6 +122,13 @@ func commit_staging() -> Array:
 func commit_staging_with_recycles(recycle_anomalies: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
     return card_zone_service.commit_staging_with_recycles(
         self, recycle_anomalies, rng)
+
+func commit_selected_staging_with_recycles(
+        cards: Array,
+        recycle_anomalies: Dictionary,
+        rng: RandomNumberGenerator) -> Dictionary:
+    return card_zone_service.commit_selected_staging_with_recycles(
+        self, cards, recycle_anomalies, rng)
 
 func count_anomaly_in_zone(zone: String, category: String, anomaly_id: String) -> int:
     var cards: Array = []

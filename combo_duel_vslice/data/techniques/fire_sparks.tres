@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "fire_sparks"
+display_name = "火星连点"
+pool = "high"
+description = "造成 3 次 max(1,floor(P/4)) 点伤害；每个攻击段后获得 1 层连势。"
+effects = [{"op":"multi_damage","segments":3,"amount":{"kind":"power_fraction","numerator":1,"denominator":4,"minimum":1},"after_each_stack":{"stack":"momentum","amount":1}}]

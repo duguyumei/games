@@ -3,11 +3,13 @@ extends RefCounted
 
 const CONTENT_KEYS := [
     "base_deck",
+    "starter_builds",
     "battle_statuses",
     "card_states",
     "techniques",
     "inner_skills",
     "consumables",
+    "node_rewards",
     "map_rules",
     "node_content",
     "scripted_battle",
@@ -17,6 +19,8 @@ const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight", "flush",
     "full_house", "four_kind", "straight_flush",
 ]
+# 五条的固定倍率尚未确认，因此暂不进入可识别牌型；功法数据仍可先声明并测试五条分支。
+const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS + ["five_kind"]
 const POOL_IDS := [
     "high", "pair_two_pair", "three_full_house", "four_five", "straight", "flush",
 ]
@@ -31,10 +35,13 @@ const REQUIRED_FINISH_IDS := ["foil", "holographic", "polychrome", "negative"]
 const REQUIRED_IMPRINT_IDS := ["gold", "red", "blue", "purple"]
 const REQUIRED_ANOMALY_IDS := [
     "lethal_poison", "stagnant_poison", "qi_dissipation",
-    "vulnerability", "acupoint_block", "forbidden", "wind_lure",
+    "vulnerability", "acupoint_block", "forbidden", "wind_mark", "wind_lure",
     "returning_wind", "turbulence", "qi_severance", "purification",
 ]
-const REQUIRED_ACTOR_STATUS_IDS := ["gu_mark", "momentum"]
+const REQUIRED_ACTOR_STATUS_IDS := [
+    "gu_mark", "momentum", "qi_intake", "steal_wind", "full_sleeve", "bound_sleeve",
+    "four_symbols_harmony",
+]
 const ANOMALY_ON_APPLY_POLICIES := ["", "suppress_existing_effects"]
 const MARK_LIFECYCLE_EVENTS := ["draw", "explicit_discard", "enter_discard", "turn_end", "battle_end"]
 const RANK_SPECS := [
@@ -56,14 +63,39 @@ const BATTLE_EFFECT_OPS := [
     "add_stack",
     "add_target_stack",
     "add_stack_per_captured_card",
+    "set_stack_minimum",
     "gain_extra_action",
     "register_attack_counter_delay",
+    "select_cards",
+    "move_captured",
+    "move_query",
+    "draw_filtered",
+    "draw_to_limit",
+    "apply_card_anomaly_to_captured",
+    "capture_metadata",
+    "register_turn_end_stack",
+    "register_played_return",
+    "register_delayed_effects",
+    "retrigger_current_hand_technique",
+    "capture_query",
+    "swap_hands",
 ]
 const CONSUMABLE_EFFECT_OPS := [
     "gain_insight", "apply_enhancement", "apply_random_finish",
 ]
-const AMOUNT_KINDS := ["constant", "power", "power_fraction", "n60", "hand_map", "max"]
+const AMOUNT_KINDS := [
+    "constant", "power", "power_fraction", "n60", "hand_map", "max",
+    "add", "multiply", "divide_floor", "divide_ceil", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
+    "capture_attribute_count", "capture_non_attribute_count", "hand_count",
+    "target_hand_count", "hand_limit",
+    "conditional",
+    "power_scaled_by_zone_anomaly",
+]
 const ROUTES := ["battle", "placeholder"]
+const REWARD_KINDS := [
+    "experience", "card", "technique", "inner_skill",
+    "consumable", "reshape", "special",
+]
 const ENEMY_AI_NUMBER_FIELDS := [
     "damage_weight",
     "defense_weight",
@@ -117,16 +149,54 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     if not _has_all_content():
         return result()
     _validate_base_deck(_contents["base_deck"])
+    _validate_starter_builds(_contents["starter_builds"])
     _validate_battle_statuses(_contents["battle_statuses"])
     _validate_card_states(_contents["card_states"])
     _validate_techniques(_contents["techniques"])
     _validate_inner_skills(_contents["inner_skills"])
     _validate_consumables(_contents["consumables"])
+    _validate_node_rewards(_contents["node_rewards"])
     _validate_sequences(_contents["sequences"], "sequences")
     _validate_scripted_battle(_contents["scripted_battle"])
     _validate_node_content(_contents["node_content"])
     _validate_map_rules(_contents["map_rules"], _contents["node_content"])
     return result()
+
+func _validate_node_rewards(definition: Dictionary) -> void:
+    var declared_kinds = definition.get("reward_kinds")
+    if not declared_kinds is Array:
+        _error("node_rewards.reward_kinds", "必须是数组")
+    else:
+        for kind in REWARD_KINDS:
+            if not declared_kinds.has(kind):
+                _error("node_rewards.reward_kinds", "缺少奖励类型 %s" % kind)
+    var rewards = definition.get("node_rewards")
+    if not rewards is Dictionary:
+        _error("node_rewards.node_rewards", "必须是对象")
+        return
+    for node_type in ["combat", "elite", "boss", "event", "rest", "treasure"]:
+        if not rewards.has(node_type) or not rewards[node_type] is Array:
+            _error("node_rewards.node_rewards.%s" % node_type, "必须是数组")
+            continue
+        for index in range(rewards[node_type].size()):
+            var entry = rewards[node_type][index]
+            var scope := "node_rewards.node_rewards.%s[%d]" % [node_type, index]
+            if not entry is Dictionary:
+                _error(scope, "必须是对象")
+                continue
+            if str(entry.get("kind", "")) not in REWARD_KINDS:
+                _error(scope + ".kind", "引用未知奖励类型")
+            if str(entry.get("kind", "")) == "experience" \
+                    and (not _is_integer(entry.get("amount")) or int(entry.get("amount", 0)) < 0):
+                _error(scope + ".amount", "历练数量必须是非负整数")
+    for spec in [["combat", 3], ["elite", 4], ["boss", 5]]:
+        var entries: Array = rewards.get(spec[0], [])
+        var experience := 0
+        for entry in entries:
+            if entry is Dictionary and str(entry.get("kind", "")) == "experience":
+                experience += int(entry.get("amount", 0))
+        if experience != int(spec[1]):
+            _error("node_rewards.node_rewards.%s" % spec[0], "基础战斗历练必须为 %d" % int(spec[1]))
 
 func result() -> Dictionary:
     return {
@@ -201,6 +271,51 @@ func _validate_base_deck(definition: Dictionary) -> void:
             _card_ids["%s_%s" % [attribute_id, spec[0]]] = true
     if _card_ids.size() != 52:
         _error("base_deck", "基础牌组必须生成 52 个唯一真气 ID")
+
+func _validate_starter_builds(definition: Dictionary) -> void:
+    var values = definition.get("starter_builds")
+    if not values is Array or values.is_empty():
+        _error("starter_builds.starter_builds", "必须是非空数组")
+        return
+    var build_ids: Dictionary = {}
+    for index in range(values.size()):
+        var value = values[index]
+        var scope := "starter_builds.starter_builds[%d]" % index
+        if not value is Dictionary:
+            _error(scope, "必须是对象")
+            continue
+        var build_id := _required_id(value, scope)
+        _register_unique(build_ids, build_id, scope, value)
+        _validate_name(value, scope)
+        if not value.get("description") is String \
+                or str(value.get("description", "")) == "":
+            _error(scope + ".description", "必须是非空字符串")
+        if str(value.get("deck_kind", "")) != "standard_52":
+            _error(scope + ".deck_kind", "当前只支持 standard_52")
+        if not _is_integer(value.get("card_count")) \
+                or int(value.get("card_count", 0)) != 52:
+            _error(scope + ".card_count", "标准初始牌组必须为 52 张")
+        if not value.get("available") is bool:
+            _error(scope + ".available", "必须是布尔值")
+        var card_ids = value.get("card_ids")
+        if not card_ids is Array or card_ids.is_empty():
+            _error(scope + ".card_ids", "必须提供非空真气 ID 数组")
+        else:
+            var unique_card_ids: Dictionary = {}
+            for card_index in range(card_ids.size()):
+                var card_id := str(card_ids[card_index])
+                if card_id == "" or not _card_ids.has(card_id):
+                    _error("%s.card_ids[%d]" % [scope, card_index], "引用未知基础真气：%s" % card_id)
+                elif unique_card_ids.has(card_id):
+                    _error("%s.card_ids" % scope, "不能重复引用真气：%s" % card_id)
+                unique_card_ids[card_id] = true
+            if _is_integer(value.get("card_count")) \
+                    and int(value.get("card_count", 0)) != card_ids.size():
+                _error(scope + ".card_count", "必须等于 card_ids 数量")
+    if not build_ids.has("standard_52"):
+        _error("starter_builds.starter_builds", "必须提供 standard_52 初始构筑")
+    elif not bool(build_ids["standard_52"].get("available", false)):
+        _error("starter_builds.standard_52", "当前唯一标准构筑必须可选择")
 
 func _validate_battle_statuses(definition: Dictionary) -> void:
     var values = definition.get("actor_statuses")
@@ -377,9 +492,28 @@ func _validate_techniques(definition: Dictionary) -> void:
         var pool_id := str(value.get("pool", ""))
         if not POOL_IDS.has(pool_id):
             _error(scope, "引用未知功法池 %s" % pool_id)
+        _validate_cooperation(value.get("cooperation", {}), scope + ".cooperation")
         if not value.get("special") is bool:
             _error(scope, "special 必须是布尔值")
         _validate_effects(value.get("effects"), BATTLE_EFFECT_OPS, scope + ".effects")
+
+func _validate_cooperation(value, scope: String) -> void:
+    if value == null or (value is Dictionary and value.is_empty()):
+        return
+    if not value is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    if str(value.get("hand_id", "")) not in HAND_IDS:
+        _error(scope + ".hand_id", "引用未知协同牌型")
+    if not _is_integer(value.get("max_groups")) or int(value.get("max_groups", 0)) <= 0:
+        _error(scope + ".max_groups", "必须是正整数")
+    if str(value.get("power_rule", "shared_half")) != "shared_half":
+        _error(scope + ".power_rule", "当前只支持 shared_half")
+    var post_commit = value.get("post_commit", {})
+    if not post_commit is Dictionary:
+        _error(scope + ".post_commit", "必须是对象")
+    elif str(post_commit.get("destination", "own_discard")) not in ["own_discard", "target_draw_pile_top"]:
+        _error(scope + ".post_commit.destination", "引用未知协同牌提交位置")
 
 func _validate_inner_skills(definition: Dictionary) -> void:
     var values = definition.get("inner_skills")
@@ -610,6 +744,9 @@ func _validate_node_content(definition: Dictionary) -> void:
                 _error(scope + ".battle", "战斗路由必须包含 battle 对象")
                 continue
             var scenario_path := str(battle.get("scenario_path", ""))
+            var entry_kind := str(battle.get("entry_kind", "scripted"))
+            if entry_kind not in ["formal", "scripted"]:
+                _error(scope + ".battle", "entry_kind 必须是 formal 或 scripted")
             if scenario_path == "":
                 _error(scope + ".battle", "scenario_path 不能为空")
             elif not FileAccess.file_exists(scenario_path):
@@ -706,6 +843,7 @@ func _validate_effects(values, allowed_ops: Array, scope: String) -> void:
     if not values is Array or values.is_empty():
         _error(scope, "必须是非空效果数组")
         return
+    var choice_ids: Dictionary = {}
     for index in range(values.size()):
         var effect = values[index]
         var effect_scope := "%s[%d]" % [scope, index]
@@ -720,14 +858,26 @@ func _validate_effects(values, allowed_ops: Array, scope: String) -> void:
                 _validate_amount_spec(effect[field], effect_scope + "." + field)
         if op == "multi_damage" and (not _is_integer(effect.get("segments")) or int(effect.get("segments", 0)) <= 0):
             _error(effect_scope, "segments 必须是正整数")
-        if op == "apply_random_card_anomaly":
+        if op == "select_cards":
+            _validate_choice_effect(effect, effect_scope)
+            var choice_id := str(effect.get("choice_id", ""))
+            if choice_id != "" and choice_ids.has(choice_id):
+                _error(effect_scope + ".choice_id", "同一效果链中的 choice_id 不能重复")
+            choice_ids[choice_id] = true
+        if op == "register_delayed_effects":
+            _validate_effects(
+                effect.get("effects"),
+                BATTLE_EFFECT_OPS,
+                effect_scope + ".effects")
+        if op in ["apply_random_card_anomaly", "apply_card_anomaly_to_captured"] \
+                and not effect.has("random_options"):
             var anomaly_id := str(effect.get("anomaly", ""))
             var category := str(effect.get("category", ""))
             if not _anomalies_by_id.has(anomaly_id):
                 _error(effect_scope, "引用未知真气异状 %s" % anomaly_id)
             elif str(_anomalies_by_id[anomaly_id].get("category", "")) != category:
                 _error(effect_scope, "异状 %s 不属于类别 %s" % [anomaly_id, category])
-        if op in ["add_stack", "add_target_stack", "add_stack_per_captured_card"]:
+        if op in ["add_stack", "add_target_stack", "add_stack_per_captured_card", "set_stack_minimum", "register_turn_end_stack"]:
             _validate_actor_status_reference(
                 effect.get("stack"),
                 effect_scope + ".stack")
@@ -744,6 +894,80 @@ func _validate_actor_status_reference(value, scope: String) -> void:
     var status_id := str(value)
     if not _actor_statuses_by_id.has(status_id):
         _error(scope, "引用未知角色状态 %s" % status_id)
+
+func _validate_choice_effect(effect: Dictionary, scope: String) -> void:
+    if not effect.get("choice_id") is String or str(effect.get("choice_id", "")) == "":
+        _error(scope + ".choice_id", "必须是非空字符串")
+    if not effect.get("query") is Dictionary:
+        _error(scope + ".query", "必须是对象")
+    else:
+        _validate_target_query(effect["query"], scope + ".query")
+    for field in ["minimum", "maximum"]:
+        var value = effect.get(field)
+        if value is Dictionary:
+            _validate_amount_spec(value, scope + "." + field)
+        elif not _is_integer(value) or int(value) < 0:
+            _error(scope + "." + field, "必须是非负整数或数值规格")
+    if _is_integer(effect.get("minimum")) and _is_integer(effect.get("maximum")) \
+            and int(effect.get("maximum")) < int(effect.get("minimum")):
+        _error(scope, "maximum 不能小于 minimum")
+    if str(effect.get("insufficient_policy", "")) not in ["use_available", "skip", "fail"]:
+        _error(scope + ".insufficient_policy", "必须明确为 use_available、skip 或 fail")
+    if effect.has("chooser") and str(effect.get("chooser")) not in ["actor", "target"]:
+        _error(scope + ".chooser", "必须为 actor 或 target")
+
+func _validate_target_query(query: Dictionary, scope: String) -> void:
+    if str(query.get("side", "actor")) not in ["actor", "target"]:
+        _error(scope + ".side", "必须为 actor 或 target")
+    if str(query.get("zone", "hand")) not in ["hand", "draw_pile", "staging", "discard_pile"]:
+        _error(scope + ".zone", "引用未知牌区")
+    if str(query.get("order", "zone")) not in ["zone", "top", "bottom", "random"]:
+        _error(scope + ".order", "必须为 zone、top、bottom 或 random")
+    if query.has("limit"):
+        if query["limit"] is Dictionary:
+            _validate_amount_spec(query["limit"], scope + ".limit")
+        elif not _is_integer(query["limit"]) \
+                or int(query["limit"]) == 0 \
+                or int(query["limit"]) < -1:
+            _error(scope + ".limit", "必须为 -1、正整数或数值规格")
+    var filters = query.get("filters", {})
+    if not filters is Dictionary:
+        _error(scope + ".filters", "必须是对象")
+        return
+    if str(filters.get("card_kind", "any")) not in ["any", "normal", "stone"]:
+        _error(scope + ".filters.card_kind", "必须为 any、normal 或 stone")
+    for field in ["attributes", "exclude_attributes", "rank_names", "rank_orders", "definition_ids"]:
+        if filters.has(field) and not filters[field] is Array:
+            _error(scope + ".filters." + field, "必须是数组")
+    for attribute_field in ["attributes", "exclude_attributes"]:
+        if not filters.has(attribute_field):
+            continue
+        for attribute in filters[attribute_field]:
+            if str(attribute) not in ATTRIBUTE_IDS:
+                _error(scope + ".filters." + attribute_field, "引用未知属性 %s" % str(attribute))
+    if filters.has("temporary") and not filters["temporary"] is bool:
+        _error(scope + ".filters.temporary", "必须是布尔值")
+    if filters.has("has_any_reshape") and not filters["has_any_reshape"] is bool:
+        _error(scope + ".filters.has_any_reshape", "必须是布尔值")
+    if filters.has("anomaly"):
+        _validate_target_state_filter(
+            filters["anomaly"],
+            ANOMALY_CATEGORY_IDS,
+            scope + ".filters.anomaly")
+    if filters.has("reshape"):
+        _validate_target_state_filter(
+            filters["reshape"],
+            RESHAPE_CATEGORY_IDS,
+            scope + ".filters.reshape")
+
+func _validate_target_state_filter(value, category_ids: Array, scope: String) -> void:
+    if not value is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    if str(value.get("category", "")) not in category_ids:
+        _error(scope + ".category", "引用未知类别")
+    if value.has("present") and not value["present"] is bool:
+        _error(scope + ".present", "必须是布尔值")
 
 func _validate_amount_spec(spec: Dictionary, scope: String) -> void:
     var kind := str(spec.get("kind", ""))
@@ -767,11 +991,11 @@ func _validate_amount_spec(spec: Dictionary, scope: String) -> void:
                 _error(scope, "hand_map.values 必须是对象")
             else:
                 for hand_id in values:
-                    if not HAND_IDS.has(str(hand_id)):
+                    if not TECHNIQUE_BRANCH_HAND_IDS.has(str(hand_id)):
                         _error(scope, "hand_map 引用未知精确牌型 %s" % str(hand_id))
                     if not _is_number(values[hand_id]):
                         _error(scope, "hand_map.%s 必须是数值" % str(hand_id))
-        "max":
+        "max", "add", "multiply":
             var values = spec.get("values")
             if not values is Array or values.is_empty():
                 _error(scope, "max.values 必须是非空数组")
@@ -781,6 +1005,27 @@ func _validate_amount_spec(spec: Dictionary, scope: String) -> void:
                         _error("%s.values[%d]" % [scope, index], "必须是数值规格对象")
                     else:
                         _validate_amount_spec(values[index], "%s.values[%d]" % [scope, index])
+        "divide_floor", "divide_ceil":
+            for field in ["value", "divisor"]:
+                if not spec.get(field) is Dictionary:
+                    _error(scope + "." + field, "必须是数值规格对象")
+                else:
+                    _validate_amount_spec(spec[field], scope + "." + field)
+        "capture_count", "capture_qi_sum", "capture_attribute_qi_sum", "capture_attribute_count", "capture_non_attribute_count":
+            if not spec.get("capture") is String or str(spec.get("capture", "")) == "":
+                _error(scope + ".capture", "必须是非空捕获键")
+            if kind in ["capture_attribute_qi_sum", "capture_attribute_count", "capture_non_attribute_count"] \
+                    and str(spec.get("attribute", "")) not in ATTRIBUTE_IDS:
+                _error(scope + ".attribute", "引用未知属性")
+        "conditional":
+            for field in ["then", "else"]:
+                if not spec.get(field) is Dictionary:
+                    _error(scope + "." + field, "必须是数值规格对象")
+                else:
+                    _validate_amount_spec(spec[field], scope + "." + field)
+        "power_scaled_by_zone_anomaly":
+            if str(spec.get("category", "")) not in ANOMALY_CATEGORY_IDS:
+                _error(scope + ".category", "引用未知异状类别")
 
 func _required_id(value: Dictionary, scope: String) -> String:
     if not value.get("id") is String or str(value.get("id", "")) == "":

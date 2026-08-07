@@ -44,6 +44,13 @@ func _init(
 func display_name() -> String:
     return "%s·%s" % [attribute_name, rank_name]
 
+func is_attribute(attribute_id: String) -> bool:
+    if reshape_enhancement == "wild":
+        return attribute_id in ["wind", "forest", "fire", "mountain"]
+    if attribute == attribute_id:
+        return true
+    return attribute_id == "wind" and has_anomaly("mark", "wind_mark")
+
 func set_enhancement(enhancement_id: String) -> void:
     suppressed_reshapes.erase("enhancement")
     reshape_enhancement = enhancement_id

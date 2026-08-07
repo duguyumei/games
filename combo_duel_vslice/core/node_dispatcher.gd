@@ -2,6 +2,7 @@ class_name ComboNodeDispatcher
 extends RefCounted
 
 const DATA_PATH := "res://data/node_content.json"
+const NodeDispatchResultScript = preload("res://core/node_dispatch_result.gd")
 
 var definition: Dictionary = {}
 
@@ -24,6 +25,9 @@ func configure(value: Dictionary) -> bool:
     return not definition.is_empty()
 
 func dispatch(node: Dictionary, context: Dictionary = {}) -> Dictionary:
+    return dispatch_dto(node, context).to_dict()
+
+func dispatch_dto(node: Dictionary, context: Dictionary = {}):
     if node.is_empty():
         return _failure("节点数据为空")
     var type_id := str(node.get("type", ""))
@@ -59,10 +63,12 @@ func dispatch(node: Dictionary, context: Dictionary = {}) -> Dictionary:
         if scenario_path == "":
             return _failure("战斗节点缺少场景配置：%s" % type_id)
         result["battle"] = {
+            "entry_kind": str(battle.get("entry_kind", "scripted")),
             "scenario_path": scenario_path,
             "use_enemy_ai": bool(battle.get("use_enemy_ai", true)),
+            "use_remote_ai": bool(battle.get("use_remote_ai", false)),
         }
-    return result
+    return NodeDispatchResultScript.new().configure(result)
 
 func _content_seed(node: Dictionary, context: Dictionary, seed_offset: int) -> int:
     return (
@@ -72,5 +78,8 @@ func _content_seed(node: Dictionary, context: Dictionary, seed_offset: int) -> i
         + (int(node.get("column", -1)) + 1) * 131
         + seed_offset)
 
-func _failure(reason: String) -> Dictionary:
-    return {"success": false, "reason": reason}
+func _failure(reason: String):
+    return NodeDispatchResultScript.new().configure({
+        "success": false,
+        "reason": reason,
+    })

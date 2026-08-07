@@ -30,6 +30,24 @@ func propose_utility(observation, preview_action: Callable, policy: Dictionary):
             "observation": observation.public_snapshot(),
         })
 
+func propose_utility_candidates(
+        observation,
+        preview_action: Callable,
+        policy: Dictionary) -> Array:
+    var proposals: Array = []
+    for choice in planner.enumerate_actions(observation, preview_action, policy):
+        proposals.append(ProposalScript.new().configure_accept(
+            "enemy_remote_candidate",
+            choice.get("card_ids", []),
+            choice.get("preview", {}),
+            float(choice.get("score", 0.0)),
+            {
+                "priority": int(choice.get("priority", 0)),
+                "score_components": choice.get("score_components", {}).duplicate(true),
+                "observation": observation.public_snapshot(),
+            }))
+    return proposals
+
 func propose_scripted(
         definition_ids: Array,
         resolve_definition_ids: Callable,

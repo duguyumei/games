@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "exchange_sea_intake_qi"
+display_name = "换海纳气"
+pool = "four_five"
+description = "获得floor(P/3)防御；四条补至手牌上限，五条明确抽取等于手牌上限的张数；纯风获得1次连击。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":3}},{"op":"draw_to_limit","side":"actor","when":{"hand_id":"four_kind"}},{"op":"draw","count":{"kind":"hand_limit"},"when":{"hand_id":"five_kind"}},{"op":"gain_extra_action","amount":1,"when":{"pure_attribute":"wind"}}]

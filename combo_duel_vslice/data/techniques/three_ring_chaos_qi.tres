@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "three_ring_chaos_qi"
+display_name = "三环乱气"
+pool = "three_full_house"
+description = "造成floor(P/2)伤害；本回合结束时给敌方全部普通手牌随机施加破绽、封穴或一种随机毒；葫芦施加前先补至手牌上限。"
+effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"register_delayed_effects","timing":"turn_end","occurrences":1,"effects":[{"op":"draw_to_limit","side":"target","when":{"hand_id":"full_house"}},{"op":"capture_query","query":{"side":"target","zone":"hand","order":"zone","filters":{"card_kind":"normal"}},"capture":"enemy_hand"},{"op":"apply_card_anomaly_to_captured","capture":"enemy_hand","random_options":[{"category":"state","anomaly":"vulnerability"},{"category":"state","anomaly":"acupoint_block"},{"category":"poison","anomaly":"lethal_poison"},{"category":"poison","anomaly":"stagnant_poison"}]}]}]

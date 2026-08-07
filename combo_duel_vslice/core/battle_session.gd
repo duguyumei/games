@@ -6,7 +6,14 @@ signal state_changed
 const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSnapshotScript = preload("res://core/battle_snapshot.gd")
 const BattleEventScript = preload("res://core/battle_event.gd")
+const BattleCommandScript = preload("res://core/battle_command_dto.gd")
+const BattleCommandResultScript = preload("res://core/battle_command_result.gd")
 const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
+const ActionWindowAiCoordinatorScript = preload("res://core/ai/action_window_ai_coordinator.gd")
+const BattleAiAdapterScript = preload("res://core/ai/battle_ai_adapter.gd")
+const AiProviderFactoryScript = preload("res://core/ai/providers/ai_provider_factory.gd")
+const AiConversationStoreScript = preload("res://core/ai/ai_conversation_store.gd")
+const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 var engine
 var _battle_setup_service
@@ -14,9 +21,36 @@ var _player_run_deck
 var _event_queue: Array = []
 var _history_cursor: int = 0
 var _event_serial: int = 0
+var ai_coordinator = null
+var _ai_provider = null
+var _owns_ai_provider: bool = false
+var _remote_ai_enabled: bool = false
+var _ai_settings: Dictionary = {}
+var _ai_window_serial: int = 0
+var _ai_battle_id: String = ""
+var _resolving_external_enemy: bool = false
+var _last_ai_completed_round: int = 0
+var _ai_adapter = null
+var _ai_runtime_profile: Dictionary = {}
+var _ai_conversation_store = AiConversationStoreScript.new()
+var _ai_conversation_path: String = ""
+var runtime_profile
 
-func _init(engine_override = null) -> void:
+static var _ai_attempt_serial: int = 0
+
+func _init(engine_override = null, runtime_profile_override = null) -> void:
     engine = engine_override if engine_override != null else CombatEngineScript.new()
+    runtime_profile = (
+        runtime_profile_override
+        if runtime_profile_override != null
+        else (
+            engine.content_catalog.runtime_profile
+            if engine.content_catalog != null
+            and engine.content_catalog.get("runtime_profile") != null
+            else RuntimeProfileScript.current()))
+    _ai_runtime_profile = {
+        "provider": {"kind": runtime_profile.ai_provider_kind()},
+    }
     _battle_setup_service = BattleSetupServiceScript.new(engine.content_catalog)
     _player_run_deck = _battle_setup_service.run_deck_from_progress(null)
     engine.state_changed.connect(_on_engine_state_changed)
@@ -27,14 +61,85 @@ func use_game_log(shared_game_log) -> void:
     _history_cursor = 0
     _event_serial = 0
 
+func use_ai_provider(provider) -> void:
+    if _owns_ai_provider and _ai_provider != null \
+            and _ai_provider != provider \
+            and is_instance_valid(_ai_provider):
+        _ai_provider.queue_free()
+    _ai_provider = provider
+    _owns_ai_provider = false
+    if ai_coordinator != null:
+        ai_coordinator.use_provider(provider)
+
+func configure_ai_provider(config: Dictionary = {}):
+    var provider = AiProviderFactoryScript.create(config)
+    use_ai_provider(provider)
+    _owns_ai_provider = true
+    return provider
+
+func configure_ai_runtime(profile: Dictionary) -> void:
+    var provider_defaults: Dictionary = _ai_runtime_profile.get(
+        "provider", {}).duplicate(true)
+    _ai_runtime_profile = profile.duplicate(true)
+    var configured_provider: Dictionary = _ai_runtime_profile.get(
+        "provider", {}).duplicate(true)
+    provider_defaults.merge(configured_provider, true)
+    _ai_runtime_profile["provider"] = provider_defaults
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_PREDELETE and _owns_ai_provider \
+            and _ai_provider != null and is_instance_valid(_ai_provider):
+        _ai_provider.queue_free()
+
 func setup_battle(configuration: Dictionary = {}, progress_snapshot = null) -> bool:
     engine.game_log.clear("battle")
     _event_queue.clear()
     _history_cursor = 0
     _event_serial = 0
     var battle: Dictionary = configuration.get("battle", {})
-    var scenario_path := str(battle.get("scenario_path", "res://data/scripted_battle.json"))
+    var scenario_path := str(battle.get(
+        "scenario_path", engine.content_catalog.path_for("scripted_battle")))
+    var entry_kind := str(battle.get(
+        "entry_kind", runtime_profile.enemy_entry_kind()))
+    if not runtime_profile.allows_resource_path(scenario_path):
+        engine.game_log.record_system(
+            "error",
+            "runtime_profile",
+            "运行模式拒绝战斗资源",
+            "%s 禁止引用 %s" % [runtime_profile.mode_name(), scenario_path])
+        return false
+    if runtime_profile.is_production() and entry_kind != "formal":
+        engine.game_log.record_system(
+            "error",
+            "runtime_profile",
+            "production 模式拒绝调试敌人入口",
+            entry_kind)
+        return false
     var use_enemy_ai := bool(battle.get("use_enemy_ai", true))
+    var runtime_enabled := bool(_ai_runtime_profile.get("enabled", false))
+    _remote_ai_enabled = (
+        bool(battle.get("use_remote_ai", false)) or runtime_enabled) \
+        and use_enemy_ai
+    _ai_settings = _ai_runtime_profile.get(
+        "conversation", {}).duplicate(true)
+    _ai_settings.merge(configuration.get("ai_settings", {}), true)
+    var storage: Dictionary = _ai_runtime_profile.get("storage", {})
+    _ai_settings["autosave_conversation"] = bool(
+        storage.get("autosave_conversation", false))
+    if _remote_ai_enabled and _ai_provider == null:
+        var provider_config: Dictionary = _ai_runtime_profile.get(
+            "provider", {}).duplicate(true)
+        provider_config.merge(configuration.get("ai_provider", {}), true)
+        configure_ai_provider(provider_config)
+    _ai_window_serial = 0
+    _last_ai_completed_round = 0
+    _ai_battle_id = _create_ai_battle_id(configuration)
+    _ai_conversation_path = _ai_conversation_store.path_for_battle(
+        _ai_battle_id,
+        str(storage.get(
+            "conversation_directory",
+            AiConversationStoreScript.DEFAULT_DIRECTORY)))
+    _ai_settings["conversation_path"] = _ai_conversation_path
     _player_run_deck = _battle_setup_service.run_deck_from_progress(progress_snapshot)
     var player_cards = (
         _player_run_deck.create_battle_cards()
@@ -44,9 +149,15 @@ func setup_battle(configuration: Dictionary = {}, progress_snapshot = null) -> b
         int(configuration.get("content_seed", 2308)),
         scenario_path,
         use_enemy_ai,
-        player_cards)
+        player_cards,
+        true)
     if loaded:
         _battle_setup_service.apply_non_deck_progress(engine.player, progress_snapshot)
+        engine.use_external_enemy_actions(_remote_ai_enabled)
+        if _remote_ai_enabled:
+            _configure_ai_coordinator()
+        else:
+            ai_coordinator = null
     _capture_trigger_history()
     engine.game_log.record_system(
         "info" if loaded else "error",
@@ -57,7 +168,10 @@ func setup_battle(configuration: Dictionary = {}, progress_snapshot = null) -> b
     return loaded
 
 func execute(command: Dictionary) -> Dictionary:
-    var command_type := str(command.get("type", ""))
+    return execute_dto(BattleCommandScript.new().configure(command)).to_legacy_dict()
+
+func execute_dto(command):
+    var command_type: String = str(command.type)
     var result: Dictionary
     match command_type:
         "start_turn":
@@ -66,26 +180,58 @@ func execute(command: Dictionary) -> Dictionary:
             else:
                 var drawn: Array = engine.start_player_turn()
                 result = {"success": true, "drawn_card_ids": _card_ids(drawn)}
+                if _remote_ai_enabled:
+                    _open_current_action_window()
         "end_turn":
             if engine.battle_state != "active":
                 result = {"success": false, "reason": "战斗已经结束"}
+            elif engine.has_pending_effect_choice():
+                result = {"success": false, "reason": "正在等待功法选择，请先完成选择"}
+            elif _remote_ai_enabled and _enemy_ai_gate_reason() != "":
+                result = {"success": false, "reason": _enemy_ai_gate_reason()}
             else:
                 engine.end_player_turn()
                 result = {"success": true}
+                if _remote_ai_enabled and engine.has_locked_enemy_action() \
+                        and not engine.battle_flow.can_act(engine.player):
+                    _resolve_external_enemy_action_and_continue()
+                _complete_ai_round_if_needed()
         "play_cards":
-            result = engine.confirm_play(command.get("card_ids", []))
+            if _remote_ai_enabled and _enemy_ai_gate_reason() != "":
+                result = {"success": false, "reason": _enemy_ai_gate_reason()}
+            else:
+                result = engine.confirm_play(
+                    command.card_ids,
+                    command.cooperation_card_ids)
+                if _remote_ai_enabled and result.get("success", false) \
+                        and not result.get("pending_choice", false):
+                    _ai_adapter.record_action_result(ai_coordinator, result)
+                    _open_current_action_window()
+        "resolve_choice":
+            result = engine.resolve_effect_choice(
+                command.request_id,
+                command.card_ids)
+            if _remote_ai_enabled and result.get("success", false) \
+                    and not result.get("pending_choice", false):
+                _ai_adapter.record_action_result(ai_coordinator, result)
+                _open_current_action_window()
         "use_consumable":
             result = engine.use_player_consumable(
-                int(command.get("slot_index", -1)),
-                command.get("card_ids", []))
+                command.slot_index,
+                command.card_ids)
+            if _remote_ai_enabled and result.get("success", false):
+                _ai_adapter.record_consumable_use(
+                    ai_coordinator,
+                    command.card_ids,
+                    result)
         "move_technique_slot":
-            result = engine.move_player_technique_slot(int(command.get("direction", 0)))
+            result = engine.move_player_technique_slot(command.direction)
         _:
             result = {"success": false, "reason": "未知战斗命令：%s" % command_type}
     if not result.get("success", false):
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
     _capture_trigger_history()
-    return result
+    return BattleCommandResultScript.new().configure(command_type, result)
 
 func preview(card_ids: Array) -> Dictionary:
     return _safe_preview_snapshot(engine.preview(card_ids))
@@ -115,6 +261,18 @@ func combat_order_labels(technique_name: String = "当前功法") -> Array[Strin
     return engine.combat_order_labels(engine.player, technique_name)
 
 func snapshot():
+    var ai_snapshot: Dictionary = (
+        ai_coordinator.snapshot()
+        if _remote_ai_enabled and ai_coordinator != null
+        else {
+            "state": "local_utility" if engine.enemy_ai_enabled else "disabled",
+            "can_player_confirm": true,
+            "public_intent": engine.enemy_plan.duplicate(true),
+        })
+    var visible_enemy_plan: Dictionary = engine.enemy_plan.duplicate(true)
+    if _remote_ai_enabled:
+        visible_enemy_plan = ai_snapshot.get("public_intent", {}).duplicate(true)
+        visible_enemy_plan.erase("ready")
     return BattleSnapshotScript.new({
         "battle_state": engine.battle_state,
         "battle_state_detail": engine.battle_state_detail,
@@ -128,7 +286,10 @@ func snapshot():
         "resolution_mode": engine.battle_flow.resolution_mode(),
         "round_ended": engine.round_ended,
         "locked_enemy_card_count": engine.locked_enemy_card_ids.size(),
-        "enemy_plan": engine.enemy_plan.duplicate(true),
+        "enemy_plan": visible_enemy_plan,
+        "ai_decision": ai_snapshot,
+        "pending_choice": engine.pending_effect_choice_snapshot(),
+        "pending_action_transaction": engine.pending_action_transaction_snapshot(),
         "delayed_count": engine.delayed_effects.size(),
         "timing_history": engine.timing_system.history_snapshot(200),
         "status_history": engine.status_system.history_snapshot(200),
@@ -147,6 +308,165 @@ func drain_events() -> Array:
     var drained := _event_queue.duplicate()
     _event_queue.clear()
     return drained
+
+func poll_ai_timeout(now_msec: int = -1) -> bool:
+    if not _remote_ai_enabled or ai_coordinator == null:
+        return false
+    return ai_coordinator.poll_timeout(now_msec)
+
+func ai_conversation_snapshot():
+    if ai_coordinator == null:
+        return null
+    return ai_coordinator.conversation_snapshot()
+
+func ai_conversation_path() -> String:
+    return _ai_conversation_path
+
+func save_ai_conversation(path: String = "") -> bool:
+    if ai_coordinator == null:
+        return false
+    return ai_coordinator.save_conversation(path)
+
+func _configure_ai_coordinator() -> void:
+    _ai_adapter = BattleAiAdapterScript.new(engine)
+    var context = _ai_adapter.build_context(_ai_battle_id)
+    ai_coordinator = ActionWindowAiCoordinatorScript.new().configure(
+        context,
+        _ai_provider,
+        _ai_settings,
+        Callable(engine, "lock_external_enemy_action"))
+    ai_coordinator.state_changed.connect(_on_ai_coordinator_state_changed)
+    ai_coordinator.proposal_locked.connect(_on_ai_proposal_locked)
+    ai_coordinator.fallback_used.connect(_on_ai_fallback_used)
+    ai_coordinator.window_failed.connect(_on_ai_window_failed)
+
+func _create_ai_battle_id(configuration: Dictionary) -> String:
+    _ai_attempt_serial += 1
+    var started_at_msec := int(Time.get_unix_time_from_system() * 1000.0)
+    return "battle-%d-%s-%d-%d" % [
+        int(configuration.get("content_seed", 2308)),
+        str(configuration.get("content_id", "representative")),
+        started_at_msec,
+        _ai_attempt_serial,
+    ]
+
+func _open_current_action_window() -> void:
+    if not _remote_ai_enabled or ai_coordinator == null:
+        return
+    if engine.battle_state != "active" or engine.round_ended:
+        ai_coordinator.close_window()
+        return
+    var player_can_act: bool = engine.battle_flow.can_act(engine.player)
+    var enemy_can_act: bool = engine.battle_flow.can_act(engine.enemy)
+    if not player_can_act and not enemy_can_act:
+        ai_coordinator.close_window()
+        return
+    var window: Dictionary = _ai_adapter.build_window(
+        _ai_battle_id, _ai_window_serial)
+    _ai_window_serial += 1
+    engine.game_log.record_system(
+        "info",
+        "remote_ai_window",
+        "敌方 AI 行动窗口已建立",
+        "回合 %d｜行动 %d｜敌方%s行动" % [
+            engine.turn_number,
+            engine.enemy_action_index,
+            "可以" if enemy_can_act else "不能"],
+        {
+            "window_id": window["window_id"],
+            "player_can_act": player_can_act,
+            "enemy_can_act": enemy_can_act,
+        })
+    ai_coordinator.open_window(
+        window,
+        window["candidates"],
+        window["fallback_proposal"])
+
+func _enemy_ai_gate_reason() -> String:
+    if not _remote_ai_enabled or ai_coordinator == null \
+            or not engine.battle_flow.can_act(engine.enemy):
+        return ""
+    var ai_state := str(ai_coordinator.state)
+    if ai_state == ActionWindowAiCoordinatorScript.THINKING:
+        return "敌方仍在思考，暂时不能确认出牌或结束回合"
+    if ai_state in [
+            ActionWindowAiCoordinatorScript.READY,
+            ActionWindowAiCoordinatorScript.FALLBACK_READY] \
+            and engine.has_locked_enemy_action():
+        return ""
+    return "敌方行动尚未准备完成"
+
+func _resolve_external_enemy_action_and_continue() -> void:
+    if _resolving_external_enemy or not engine.has_locked_enemy_action():
+        return
+    _resolving_external_enemy = true
+    var result: Dictionary = engine.resolve_external_enemy_action()
+    if result.get("success", false):
+        _ai_adapter.record_action_result(ai_coordinator, result)
+    _resolving_external_enemy = false
+    _complete_ai_round_if_needed()
+    if result.get("success", false) and engine.battle_state == "active" \
+            and (engine.battle_flow.can_act(engine.player) \
+                or engine.battle_flow.can_act(engine.enemy)):
+        _open_current_action_window()
+    elif ai_coordinator != null and not engine.battle_flow.can_act(engine.player) \
+            and not engine.battle_flow.can_act(engine.enemy):
+        ai_coordinator.close_window()
+
+func _complete_ai_round_if_needed() -> void:
+    if ai_coordinator == null or not engine.round_ended \
+            or engine.turn_number <= _last_ai_completed_round:
+        return
+    ai_coordinator.complete_round(engine.turn_number)
+    _last_ai_completed_round = engine.turn_number
+
+func _on_ai_coordinator_state_changed(_snapshot: Dictionary) -> void:
+    state_changed.emit()
+
+func _on_ai_proposal_locked(
+        window_id: String,
+        _proposal,
+        metadata: Dictionary) -> void:
+    engine.game_log.record_system(
+        "info",
+        "remote_ai_decision",
+        "敌方 AI 行动提案已准备",
+        "远程回答" if str(metadata.get("source", "")) == "remote" else "本地 Utility 接管",
+        {
+            "window_id": window_id,
+            "source": str(metadata.get("source", "")),
+        })
+    if not engine.battle_flow.can_act(engine.player) \
+            and engine.battle_flow.can_act(engine.enemy):
+        _resolve_external_enemy_action_and_continue()
+    state_changed.emit()
+
+func _on_ai_fallback_used(window_id: String, reason: Dictionary) -> void:
+    engine.game_log.record_system(
+        "warning",
+        "remote_ai_fallback",
+        "远程 AI 已由本地 Utility 接管",
+        str(reason.get("message", "远程 AI 不可用")),
+        {
+            "window_id": window_id,
+            "error_code": str(reason.get("error_code", "")),
+        })
+
+func _on_ai_window_failed(window_id: String, error: Dictionary) -> void:
+    if engine.battle_flow.can_act(engine.enemy):
+        engine.forfeit_actor_actions(
+            engine.enemy,
+            str(error.get("message", "敌方没有合法行动")))
+    if engine.external_round_end_requested and not engine.round_ended:
+        engine.end_player_turn()
+    engine.game_log.record_system(
+        "error",
+        "remote_ai_window",
+        "敌方行动窗口失败",
+        str(error.get("message", "未知错误")),
+        {"window_id": window_id})
+    _complete_ai_round_if_needed()
+    state_changed.emit()
 
 func _on_engine_state_changed() -> void:
     _capture_trigger_history()
@@ -201,7 +521,7 @@ func _side_snapshot(side) -> Dictionary:
         "life": side.life,
         "max_life": side.max_life,
         "defense": side.defense,
-        "hand_limit": side.hand_limit,
+        "hand_limit": side.current_hand_limit(),
         "draw_count": side.draw_pile.size(),
         "hand_count": side.hand.size(),
         "staging_count": side.staging.size(),

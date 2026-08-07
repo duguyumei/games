@@ -19,13 +19,55 @@ func _init(content_catalog = null, base_deck_definition: Dictionary = {}) -> voi
         _base_deck_definition = _content_catalog.definition("base_deck")
 
 func reset_standard(namespace_value: String = "run") -> void:
-    _cards.clear()
-    _id_factory = CardInstanceIdFactoryScript.new(namespace_value)
     var definition := _base_deck_definition
     if definition.is_empty():
         definition = DeckFactoryScript.load_definition()
-    for card in DeckFactoryScript.create_standard_deck_from_definition(definition):
+    _base_deck_definition = definition.duplicate(true)
+    var card_ids: Array[String] = []
+    for attribute in definition.get("attributes", []):
+        for rank in definition.get("ranks", []):
+            card_ids.append("%s_%s" % [attribute["id"], rank["id"]])
+    reset_from_card_ids(card_ids, namespace_value)
+
+func reset_from_card_ids(card_ids: Array, namespace_value: String = "run") -> Array[String]:
+    _cards.clear()
+    _id_factory = CardInstanceIdFactoryScript.new(namespace_value)
+    var errors: Array[String] = []
+    var used_ids: Dictionary = {}
+    for card_id_value in card_ids:
+        var definition_id := str(card_id_value)
+        var definition: Dictionary = (
+            _content_catalog.get_by_id("card", definition_id)
+            if _content_catalog != null
+            else _definition_from_base_deck(definition_id))
+        if definition.is_empty():
+            errors.append("初始构筑引用未知真气：%s" % definition_id)
+            continue
+        var instance_id := definition_id
+        if used_ids.has(definition_id):
+            instance_id = _id_factory.next_id(definition_id)
+        used_ids[definition_id] = true
+        var card = DeckFactoryScript.create_card_instance(definition, instance_id)
         _cards.append(QiCardInstanceDataScript.capture(card))
+    return errors
+
+func _definition_from_base_deck(definition_id: String) -> Dictionary:
+    if _base_deck_definition.is_empty():
+        return {}
+    for attribute in _base_deck_definition.get("attributes", []):
+        for rank in _base_deck_definition.get("ranks", []):
+            var candidate_id := "%s_%s" % [attribute["id"], rank["id"]]
+            if candidate_id != definition_id:
+                continue
+            return {
+                "id": candidate_id,
+                "rank": str(rank["id"]),
+                "order": int(rank["order"]),
+                "qi": int(rank["qi"]),
+                "attribute": str(attribute["id"]),
+                "attribute_name": str(attribute["name"]),
+            }
+    return {}
 
 func card_count() -> int:
     return _cards.size()

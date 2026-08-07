@@ -1,6 +1,9 @@
 class_name DamageEffectHandler
 extends RefCounted
 
+const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
+
 var value_resolver
 
 func _init(resolver) -> void:
@@ -12,22 +15,25 @@ func operation_ids() -> Array[String]:
 func group_name() -> String:
     return "damage"
 
-func execute(effect: Dictionary, context: Dictionary) -> Dictionary:
+func execute(effect: Dictionary, context):
+    var runtime = EffectContextScript.coerce(context)
+    if runtime.ports == null:
+        return EffectResultScript.failed("伤害处理器缺少战斗端口")
     match str(effect.get("op", "")):
         "damage":
-            var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
-            var result: Dictionary = context["engine"].deal_damage(
-                context["actor"], context["target"], amount, "technique")
-            return {
-                "success": true,
-                "detail": "伤害 %d（防御-%d / 生命-%d）" % [
-                    amount, result["defense_lost"], result["life_lost"]],
-            }
+            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            var result: Dictionary = runtime.ports.deal_damage(
+                runtime.actor, runtime.target, amount, "technique")
+            if not result.get("success", false):
+                return EffectResultScript.failed(str(result.get("reason", "伤害结算失败")))
+            return EffectResultScript.succeeded(
+                "伤害 %d（防御-%d / 生命-%d）" % [
+                    amount, result["defense_lost"], result["life_lost"]])
         "multi_damage":
-            return _execute_multi_damage(effect, context)
+            return _execute_multi_damage(effect, runtime)
     return _unsupported(effect)
 
-func summarize(effect: Dictionary, context: Dictionary, intent: Dictionary, state: Dictionary) -> void:
+func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionary) -> void:
     match str(effect.get("op", "")):
         "damage":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
@@ -47,37 +53,46 @@ func summarize(effect: Dictionary, context: Dictionary, intent: Dictionary, stat
                         int(state.get("momentum", 0))
                         + maxi(0, int(after_stack.get("amount", 0))))
 
-func _execute_multi_damage(effect: Dictionary, context: Dictionary) -> Dictionary:
-    var actor = context["actor"]
-    var target = context["target"]
-    var engine = context["engine"]
+func _execute_multi_damage(effect: Dictionary, runtime):
+    var actor = runtime.actor
+    var target = runtime.target
+    var ports = runtime.ports
     var segments := int(effect.get("segments", 1))
     var life_hits := 0
     var previous_life_hit := false
     var chase_count := 0
     for _index in range(segments):
-        if not engine.damage_actor_can_continue(actor) or not engine.damage_target_can_receive(target):
+        if not ports.actor_can_continue(actor) or not ports.target_can_receive(target):
             break
-        var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
-        var hit: Dictionary = engine.deal_damage(actor, target, amount, "technique")
+        var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+        var hit: Dictionary = ports.deal_damage(actor, target, amount, "technique")
+        if not hit.get("success", false):
+            return EffectResultScript.failed(str(hit.get("reason", "多段伤害结算失败")))
         var current_life_hit: bool = int(hit["life_lost"]) > 0
         if current_life_hit:
             life_hits += 1
         var after_stack: Dictionary = effect.get("after_each_stack", {})
         if not after_stack.is_empty():
-            actor.add_stack(after_stack["stack"], int(after_stack.get("amount", 0)))
+            ports.add_actor_status(
+                actor,
+                str(after_stack["stack"]),
+                int(after_stack.get("amount", 0)),
+                runtime.technique_name if runtime.technique_name != "" else "功法")
         if previous_life_hit and current_life_hit \
                 and int(effect.get("chase_on_consecutive_life_hits_percent", 0)) > 0:
             var chase_amount := int(floor(
                 amount * int(effect["chase_on_consecutive_life_hits_percent"]) / 100.0))
-            engine.deal_damage(actor, target, chase_amount, "chase")
-            actor.add_stack("momentum", int(effect.get("chase_stack", 0)))
+            ports.deal_damage(actor, target, chase_amount, "chase")
+            ports.add_actor_status(
+                actor,
+                "momentum",
+                int(effect.get("chase_stack", 0)),
+                runtime.technique_name if runtime.technique_name != "" else "功法")
             chase_count += 1
         previous_life_hit = current_life_hit
-    return {
-        "success": true,
-        "detail": "多段 %d，伤及生命 %d 段，追击 %d 段" % [segments, life_hits, chase_count],
-    }
+    return EffectResultScript.succeeded(
+        "多段 %d，伤及生命 %d 段，追击 %d 段" % [segments, life_hits, chase_count])
 
-func _unsupported(effect: Dictionary) -> Dictionary:
-    return {"success": false, "detail": "伤害处理器不支持：%s" % str(effect.get("op", ""))}
+func _unsupported(effect: Dictionary):
+    return EffectResultScript.failed(
+        "伤害处理器不支持：%s" % str(effect.get("op", "")))

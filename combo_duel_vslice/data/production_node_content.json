@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "node_types": {
+    "combat": {
+      "route": "battle",
+      "content_id": "journey_combat",
+      "content_status": "production",
+      "title": "普通战斗",
+      "message": "进入普通战斗",
+      "seed_offset": 101,
+      "battle": {
+        "entry_kind": "formal",
+        "scenario_path": "res://data/production_enemy_entry.json",
+        "use_enemy_ai": true
+      }
+    },
+    "elite": {
+      "route": "battle",
+      "content_id": "journey_elite",
+      "content_status": "production",
+      "title": "精英战斗",
+      "message": "进入精英战斗",
+      "seed_offset": 211,
+      "battle": {
+        "entry_kind": "formal",
+        "scenario_path": "res://data/production_enemy_entry.json",
+        "use_enemy_ai": true
+      }
+    },
+    "boss": {
+      "route": "battle",
+      "content_id": "journey_boss",
+      "content_status": "production",
+      "title": "层末 Boss",
+      "message": "进入层末 Boss",
+      "seed_offset": 307,
+      "battle": {
+        "entry_kind": "formal",
+        "scenario_path": "res://data/production_enemy_entry.json",
+        "use_enemy_ai": true
+      }
+    },
+    "event": {
+      "route": "placeholder",
+      "content_id": "journey_event",
+      "content_status": "production",
+      "title": "事件",
+      "message": "进入事件",
+      "description": "事件节点",
+      "seed_offset": 401
+    },
+    "rest": {
+      "route": "placeholder",
+      "content_id": "journey_rest",
+      "content_status": "production",
+      "title": "休息",
+      "message": "进入休息节点",
+      "description": "休息节点",
+      "seed_offset": 503
+    },
+    "treasure": {
+      "route": "placeholder",
+      "content_id": "journey_treasure",
+      "content_status": "production",
+      "title": "宝箱／特殊奖励",
+      "message": "进入宝箱／特殊奖励节点",
+      "description": "宝箱节点",
+      "seed_offset": 601
+    }
+  }
+}

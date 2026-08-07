@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "discard_gu_exchange_breath"
+display_name = "弃蛊换息"
+pool = "high"
+description = "获得 floor(P/2) 防御；双方各选择1张手牌明确弃掉；我方弃毒牌获得2层纳气，敌方弃毒牌时受到其有效真气值伤害。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"select_cards","choice_id":"discard_own","prompt":"选择我方1张手牌明确弃掉","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"own_selected"},{"op":"capture_metadata","capture":"own_selected","result_capture":"own_before"},{"op":"move_captured","capture":"own_selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard"},{"op":"add_stack","stack":"qi_intake","amount":2,"phase":"zones","when":{"capture_any_poison":"own_before"}},{"op":"select_cards","choice_id":"discard_enemy","prompt":"选择敌方1张手牌明确弃掉","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"target","zone":"hand","order":"zone"},"capture":"enemy_selected"},{"op":"capture_metadata","capture":"enemy_selected","result_capture":"enemy_before"},{"op":"move_captured","capture":"enemy_selected","from_side":"target","from_zone":"hand","to_side":"target","to_zone":"discard_pile","reason":"explicit_discard"},{"op":"damage","amount":{"kind":"capture_qi_sum","capture":"enemy_before"},"phase":"zones","when":{"capture_any_poison":"enemy_before"}}]

@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "poison_nest_seek_meridian"
+display_name = "毒巢索脉"
+pool = "four_five"
+description = "获得floor(P/3)防御；回合结束时敌方补至手牌上限，再处理全部非毒牌：四条明确弃掉，五条洗入我方牌库并附风标记。"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":3}},{"op":"register_delayed_effects","timing":"turn_end","occurrences":1,"effects":[{"op":"draw_to_limit","side":"target"},{"op":"move_query","query":{"side":"target","zone":"hand","order":"zone","filters":{"anomaly":{"category":"poison","present":false}}},"to_side":"target","to_zone":"discard_pile","reason":"explicit_discard","capture":"non_poison","when":{"hand_id":"four_kind"}},{"op":"move_query","query":{"side":"target","zone":"hand","order":"zone","filters":{"anomaly":{"category":"poison","present":false}}},"to_side":"actor","to_zone":"draw_pile","reason":"effect","shuffle_destination":true,"capture":"non_poison","when":{"hand_id":"five_kind"}},{"op":"apply_card_anomaly_to_captured","capture":"non_poison","category":"mark","anomaly":"wind_mark","when":{"hand_id":"five_kind"}}]}]

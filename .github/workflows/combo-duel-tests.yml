@@ -1,0 +1,80 @@
+name: Combo Duel tests
+
+on:
+  push:
+    paths:
+      - "combo_duel_vslice/**"
+      - "scripts/run_tests.sh"
+      - "scripts/verify_test_runner.sh"
+      - ".github/workflows/combo-duel-tests.yml"
+  pull_request:
+    paths:
+      - "combo_duel_vslice/**"
+      - "scripts/run_tests.sh"
+      - "scripts/verify_test_runner.sh"
+      - ".github/workflows/combo-duel-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GODOT_VERSION: "4.7.1"
+      GODOT_INSTALL_DIR: ${{ runner.temp }}/godot-4.7.1
+      GODOT_BIN: ${{ runner.temp }}/godot-4.7.1/godot
+      TAIWU_TEST_LOG_DIR: /tmp/taiwu-test-logs
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Cache pinned Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GODOT_INSTALL_DIR }}
+          key: godot-${{ runner.os }}-x86_64-${{ env.GODOT_VERSION }}-stable
+
+      - name: Install pinned Godot binary
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/godot-${GODOT_VERSION}.zip"
+          mkdir -p "${GODOT_INSTALL_DIR}"
+          curl --fail --location --retry 3 \
+            --output "${archive}" \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "${archive}" -d "${GODOT_INSTALL_DIR}"
+          mv "${GODOT_INSTALL_DIR}/Godot_v${GODOT_VERSION}-stable_linux.x86_64" "${GODOT_BIN}"
+          chmod +x "${GODOT_BIN}"
+
+      - name: Verify Godot version
+        run: |
+          actual_version="$(${GODOT_BIN} --version)"
+          case "${actual_version}" in
+            "${GODOT_VERSION}.stable"*) ;;
+            *)
+              printf 'Expected Godot %s, got %s\n' "${GODOT_VERSION}" "${actual_version}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify missing scripts fail the runner
+        run: ./scripts/verify_test_runner.sh
+
+      - name: Run complete serial test suite
+        run: ./scripts/run_tests.sh full
+
+      - name: Upload Godot logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: combo-duel-godot-logs
+          path: /tmp/taiwu-test-logs/
+          if-no-files-found: warn
+          retention-days: 14

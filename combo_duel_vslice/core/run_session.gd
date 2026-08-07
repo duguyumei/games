@@ -13,8 +13,11 @@ const ConsumableRepositoryScript = preload("res://core/consumable_repository.gd"
 const GameLogScript = preload("res://core/game_log.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const MapGeneratorScript = preload("res://core/map_generator.gd")
-const CombatEngineScript = preload("res://core/combat_engine.gd")
-const BattleSessionScript = preload("res://core/battle_session.gd")
+const StarterBuildRepositoryScript = preload("res://core/starter_build_repository.gd")
+const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.gd")
+const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd")
+const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
+const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 const PRACTICE_OFFER_IDS := ["high_card_insight", "hierophant", "aura"]
 
@@ -27,18 +30,35 @@ var _consumable_repository
 var _content_catalog
 var _event_queue: Array = []
 var _event_serial: int = 0
+var _ai_settings_service = null
+var _starter_build_repository := StarterBuildRepositoryScript.new()
+var _starter_build_assembler
+var _battle_session_factory
+var _node_reward_service
+var _pending_reward = null
+var selected_starter_build_id: String = ""
+var runtime_profile
 
 func _init(
         run_state_override = null,
         node_dispatcher_override = null,
         game_log_override = null,
         consumable_repository_override = null,
-        content_catalog_override = null) -> void:
+        content_catalog_override = null,
+        starter_build_repository_override = null,
+        starter_build_assembler_override = null,
+        battle_session_factory_override = null,
+        node_reward_service_override = null,
+        runtime_profile_override = null) -> void:
+    runtime_profile = (
+        runtime_profile_override
+        if runtime_profile_override != null
+        else RuntimeProfileScript.current())
     game_log = game_log_override if game_log_override != null else GameLogScript.new()
     _content_catalog = (
         content_catalog_override
         if content_catalog_override != null
-        else ContentCatalogScript.new())
+        else ContentCatalogScript.new(runtime_profile))
     if content_catalog_override == null:
         _content_catalog.load_all()
     if run_state_override != null:
@@ -66,27 +86,72 @@ func _init(
         _consumable_repository.configure(_content_catalog.definition("consumables"))
     elif consumable_repository_override == null:
         _consumable_repository.consumables.clear()
+    _starter_build_repository = (
+        starter_build_repository_override
+        if starter_build_repository_override != null
+        else StarterBuildRepositoryScript.new())
+    _starter_build_assembler = (
+        starter_build_assembler_override
+        if starter_build_assembler_override != null
+        else StarterBuildAssemblerScript.new(_content_catalog))
+    _battle_session_factory = (
+        battle_session_factory_override
+        if battle_session_factory_override != null
+        else BattleSessionFactoryScript.new(
+            game_log, _content_catalog, runtime_profile))
+    _node_reward_service = (
+        node_reward_service_override
+        if node_reward_service_override != null
+        else NodeRewardServiceScript.new(
+            _content_catalog.definition("node_rewards")
+            if _content_catalog.loaded else {}))
     if not _content_catalog.loaded:
         game_log.record_system(
             "error",
             "content_catalog",
             "本局内容目录校验失败",
             "\n".join(_content_catalog.errors))
+    else:
+        _starter_build_repository.configure(
+            _content_catalog.definition("starter_builds"))
     _run_state.changed.connect(_on_run_state_changed)
 
 func create_battle_session():
-    return BattleSessionScript.new(CombatEngineScript.new(game_log, _content_catalog))
+    var session = _battle_session_factory.create()
+    if _ai_settings_service != null \
+            and _ai_settings_service.has_method("runtime_profile"):
+        session.configure_ai_runtime(
+            _ai_settings_service.runtime_profile(true))
+    return session
+
+func configure_ai_settings_service(service) -> void:
+    _ai_settings_service = service
+
+func ai_settings_snapshot() -> Dictionary:
+    if _ai_settings_service == null \
+            or not _ai_settings_service.has_method("public_snapshot"):
+        return {}
+    return _ai_settings_service.public_snapshot()
 
 func execute(command: Dictionary) -> Dictionary:
     var command_type := str(command.get("type", ""))
     var result: Dictionary
     match command_type:
         "setup_run":
-            result = _setup_run(int(command.get("seed", 2308)))
+            result = _setup_run(
+                (
+                    int(command["seed"])
+                    if command.has("seed")
+                    else runtime_profile.default_seed()),
+                str(command.get(
+                    "starter_build_id",
+                    StarterBuildRepositoryScript.DEFAULT_BUILD_ID)))
         "begin_node":
             result = _begin_node(str(command.get("node_id", "")))
         "complete_node":
             result = _complete_node()
+        "claim_reward":
+            result = _claim_reward(str(command.get("bundle_id", "")))
         "complete_boss_chest":
             result = _complete_boss_chest()
         "open_practice":
@@ -107,6 +172,7 @@ func snapshot():
     var available: Array[String] = navigation.available_node_ids()
     return RunSnapshotScript.new({
         "seed": navigation.seed,
+        "starter_build_id": selected_starter_build_id,
         "act": navigation.act,
         "act_count": int(navigation.map_generator.rules.get("acts", 3)),
         "phase": navigation.phase,
@@ -116,13 +182,18 @@ func snapshot():
         "completed_node_count": completed.size(),
         "available_node_ids": available,
         "available_node_count": available.size(),
-        "can_open_practice": navigation.can_open_practice(),
+        "can_open_practice": (
+            runtime_profile.allows_debug_menu()
+            and navigation.can_open_practice()),
+        "reward": _reward_snapshot(),
         "graph": graph,
         "practice": _practice_snapshot(),
         "growth": _growth_snapshot(),
         "run_log": game_log.entries("run", 200),
         "battle_log": game_log.entries("battle", 200),
         "system_log": game_log.entries("system", 200),
+        "runtime_mode": runtime_profile.mode_name(),
+        "debug_menu_enabled": runtime_profile.allows_debug_menu(),
     })
 
 func drain_events() -> Array:
@@ -132,6 +203,9 @@ func drain_events() -> Array:
 
 func progress_snapshot():
     return growth.to_progress_snapshot()
+
+func available_starter_builds() -> Array:
+    return _starter_build_repository.available_builds()
 
 func sync_progress_snapshot(progress_snapshot) -> void:
     if progress_snapshot == null:
@@ -156,23 +230,48 @@ func sync_progress_snapshot(progress_snapshot) -> void:
     })
     _run_state.changed.emit()
 
-func _setup_run(seed_value: int) -> Dictionary:
+func _setup_run(seed_value: int, starter_build_id: String) -> Dictionary:
     if not _content_catalog.loaded:
         return {"success": false, "reason": "统一内容目录无效"}
+    var build_check: Dictionary = _starter_build_repository.validate_selection(
+        starter_build_id)
+    if not build_check.get("success", false):
+        return build_check
+    var assembled: Dictionary = _starter_build_assembler.assemble_into_run_deck(
+        build_check["definition"], "run-%d" % seed_value)
+    if not assembled.get("success", false):
+        return assembled
     game_log.clear("run")
     game_log.clear("battle")
     _event_queue.clear()
     _event_serial = 0
-    growth.reset("run-%d" % seed_value)
+    _pending_reward = null
+    growth.reset("run-%d" % seed_value, assembled["run_deck"])
+    selected_starter_build_id = starter_build_id
     navigation.setup(seed_value)
     _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
         "run_lifecycle",
         "建立新本局",
-        "第 1 层路线已生成",
-        {"seed": seed_value, "act": 1, "phase": navigation.phase})
-    _queue_event("run_setup", entry, {"seed": seed_value, "act": 1})
-    return {"success": true, "seed": seed_value, "act": 1}
+        "%s · 第 1 层路线已生成" % build_check["definition"].get(
+            "name", starter_build_id),
+        {
+            "seed": seed_value,
+            "act": 1,
+            "phase": navigation.phase,
+            "starter_build_id": starter_build_id,
+        })
+    _queue_event("run_setup", entry, {
+        "seed": seed_value,
+        "act": 1,
+        "starter_build_id": starter_build_id,
+    })
+    return {
+        "success": true,
+        "seed": seed_value,
+        "act": 1,
+        "starter_build_id": starter_build_id,
+    }
 
 func _begin_node(node_id: String) -> Dictionary:
     var node: Dictionary = navigation.node_definition(node_id)
@@ -207,33 +306,92 @@ func _begin_node(node_id: String) -> Dictionary:
 
 func _complete_node() -> Dictionary:
     var act_before: int = navigation.act
-    var result: Dictionary = navigation.complete_current_node()
+    var result: Dictionary = navigation.complete_current_node_to_reward()
     if not result.get("success", false):
         return result
-    growth.experience += int(result.get("reward", 0))
-    growth.clear_practice_purchases()
-    _run_state.changed.emit()
     var node: Dictionary = result.get("node", {})
+    _pending_reward = _node_reward_service.create_bundle(node, {
+        "seed": navigation.seed,
+        "act": act_before,
+    })
+    _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
-        "node_lifecycle",
-        "完成节点",
-        "%s · 历练 +%d · 下一阶段 %s" % [
-            node.get("type", ""), result.get("reward", 0), result.get("phase", "")],
+        "reward_lifecycle",
+        "建立节点奖励",
+        "%s · 待领取历练 %d" % [
+            node.get("type", ""), _pending_reward.total("experience")],
         {
             "act": act_before,
             "node_id": node.get("id", ""),
             "node_type": node.get("type", ""),
-            "reward": result.get("reward", 0),
-            "experience": growth.experience,
-            "next_phase": result.get("phase", ""),
+            "bundle_id": _pending_reward.bundle_id(),
+            "experience_reward": _pending_reward.total("experience"),
         })
-    _queue_event("node_completed", entry, {
+    _queue_event("reward_created", entry, {
         "act": act_before,
         "node_id": node.get("id", ""),
-        "reward": result.get("reward", 0),
-        "next_phase": result.get("phase", ""),
+        "bundle_id": _pending_reward.bundle_id(),
+        "experience_reward": _pending_reward.total("experience"),
     })
+    result["reward"] = _pending_reward.to_dict()
     return result
+
+func _claim_reward(bundle_id: String) -> Dictionary:
+    if navigation.phase != "awaiting_reward" or _pending_reward == null:
+        return {"success": false, "reason": "当前没有待领取的节点奖励"}
+    if bundle_id != "" and bundle_id != _pending_reward.bundle_id():
+        return {"success": false, "reason": "奖励包已过期或不匹配"}
+    var bundle_snapshot: Dictionary = _pending_reward.to_dict()
+    var apply_result: Dictionary = _node_reward_service.apply_bundle(
+        _pending_reward, growth)
+    if not apply_result.get("success", false):
+        return apply_result
+    var navigation_result: Dictionary = navigation.claim_current_node_reward()
+    if not navigation_result.get("success", false):
+        return navigation_result
+    growth.clear_practice_purchases()
+    _pending_reward = null
+    _run_state.changed.emit()
+    var entry: Dictionary = game_log.record_run(
+        "reward_lifecycle",
+        "领取节点奖励",
+        "历练 +%d · 下一阶段 %s" % [
+            int(apply_result.get("applied", []).reduce(
+                func(total, value): return total + (
+                    int(value.get("amount", 0))
+                    if str(value.get("kind", "")) == "experience" else 0), 0)),
+            navigation_result.get("phase", "")],
+        {
+            "act": int(bundle_snapshot.get("act", navigation.act)),
+            "node_id": bundle_snapshot.get("node_id", ""),
+            "node_type": bundle_snapshot.get("node_type", ""),
+            "bundle_id": bundle_snapshot.get("id", ""),
+            "applied": apply_result.get("applied", []).duplicate(true),
+            "experience": growth.experience,
+            "next_phase": navigation_result.get("phase", ""),
+        })
+    _queue_event("reward_claimed", entry, {
+        "bundle_id": bundle_snapshot.get("id", ""),
+        "experience": growth.experience,
+        "next_phase": navigation_result.get("phase", ""),
+    })
+    navigation_result["bundle"] = bundle_snapshot
+    navigation_result["applied"] = apply_result.get("applied", []).duplicate(true)
+    navigation_result["experience"] = growth.experience
+    return navigation_result
+
+func _reward_snapshot() -> Dictionary:
+    if _pending_reward == null:
+        return {
+            "available": false,
+            "bundle": {},
+            "experience_total": 0,
+        }
+    return {
+        "available": true,
+        "bundle": _pending_reward.to_dict(),
+        "experience_total": _pending_reward.total("experience"),
+    }
 
 func _complete_boss_chest() -> Dictionary:
     var act_before: int = navigation.act
@@ -257,6 +415,8 @@ func _complete_boss_chest() -> Dictionary:
     return result
 
 func _open_practice() -> Dictionary:
+    if not runtime_profile.allows_debug_menu():
+        return {"success": false, "reason": "production 模式未装配调试修习入口"}
     if not navigation.can_open_practice():
         return {"success": false, "reason": "当前节点尚未完成，不能修习"}
     var entry: Dictionary = game_log.record_run(

@@ -52,11 +52,28 @@ func begin_node(node_id: String) -> Dictionary:
     return {"success": true, "node": node_definition(node_id)}
 
 func complete_current_node() -> Dictionary:
+    var prepared := complete_current_node_to_reward()
+    if not prepared.get("success", false):
+        return prepared
+    var claimed := claim_current_node_reward()
+    if not claimed.get("success", false):
+        return claimed
+    claimed["reward"] = _reward_for_type(str(prepared["node"].get("type", "")))
+    return claimed
+
+func complete_current_node_to_reward() -> Dictionary:
     if phase != "node_in_progress" or current_node_id == "":
         return {"success": false, "reason": "当前没有进行中的节点"}
     var node := node_definition(current_node_id)
-    var reward := _reward_for_type(str(node.get("type", "")))
     completed_node_ids[current_node_id] = true
+    phase = "awaiting_reward"
+    return {"success": true, "node": node, "phase": phase}
+
+func claim_current_node_reward() -> Dictionary:
+    if phase != "awaiting_reward" or current_node_id == "":
+        return {"success": false, "reason": "当前没有待领取的节点奖励"}
+    var node := node_definition(current_node_id)
+    var reward := _reward_for_type(str(node.get("type", "")))
     if str(node.get("type", "")) == "boss":
         if _act_has_boss_chest():
             phase = "boss_chest"
