@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "borrow_fire_guard_heart"
+display_name = "借火护心"
+pool = "high"
+description = "造成 floor(P/2) 点伤害，获得 1 层借力；结算时我方防御为 0 则改为 2 层。"
+effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2},"phase":"damage"},{"op":"add_stack","stack":"borrowed_force","amount":{"kind":"constant","value":2},"when":{"actor_defense_equals":0},"phase":"zones"},{"op":"add_stack","stack":"borrowed_force","amount":{"kind":"constant","value":1},"when":{"not":{"actor_defense_equals":0}},"phase":"zones"}]

@@ -42,16 +42,20 @@ func begin_synchronized(actors: Array) -> void:
     for actor in actors:
         _actor_start_alive[actor.get_instance_id()] = actor.life > 0
 
-func flush_synchronized() -> Array:
+func flush_synchronized(after_resolution: Callable = Callable()) -> Array:
     var buffered := _buffer.duplicate()
     _buffer_active = false
     var resolved: Array = []
+    var stopped_actor_ids: Dictionary = {}
     for intent in buffered:
+        var actor_id: int = int(intent["actor"].get_instance_id())
+        if stopped_actor_ids.has(actor_id):
+            continue
         var actual := apply_to_target(
             intent["target"],
             int(intent["amount"]),
             bool(intent["true_damage"]))
-        resolved.append({
+        var resolution := {
             "actor": intent["actor"],
             "target": intent["target"],
             "amount": intent["amount"],
@@ -59,7 +63,11 @@ func flush_synchronized() -> Array:
             "true_damage": intent["true_damage"],
             "preview": intent["preview"],
             "result": actual,
-        })
+        }
+        resolved.append(resolution)
+        if after_resolution.is_valid() \
+                and bool(after_resolution.call(resolution)):
+            stopped_actor_ids[actor_id] = true
     reset()
     return resolved
 

@@ -163,6 +163,10 @@ func condition_met(condition: Dictionary, context) -> bool:
         if runtime.actor == null or runtime.target == null \
                 or runtime.actor.hand.size() >= runtime.target.hand.size():
             return false
+    if condition.has("actor_defense_equals"):
+        if runtime.actor == null \
+                or int(runtime.actor.defense) != int(condition["actor_defense_equals"]):
+            return false
     return true
 
 func _capture_cards(runtime, spec: Dictionary) -> Array:

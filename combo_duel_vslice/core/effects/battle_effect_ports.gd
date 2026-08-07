@@ -65,6 +65,9 @@ func deal_damage(
     if not bool(result["buffered"]):
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
     _status_system.record_attack_segment(actor, source_kind)
+    if not bool(result["buffered"]):
+        _status_system.resolve_received_attack_segment(
+            actor, target, source_kind, result)
     result["success"] = true
     return result
 
@@ -81,13 +84,8 @@ func begin_synchronized_damage(records: Array) -> void:
     _damage_resolver.begin_synchronized(actors)
 
 func flush_synchronized_damage() -> void:
-    for resolution in _damage_resolver.flush_synchronized():
-        _log_damage(
-            resolution["actor"],
-            resolution["target"],
-            int(resolution["amount"]),
-            resolution["source_kind"],
-            resolution["result"])
+    _damage_resolver.flush_synchronized(Callable(
+        self, "_on_synchronized_damage_resolved"))
 
 func add_defense(side: BattleSide, amount: int) -> int:
     return side.add_defense(amount)
@@ -273,3 +271,17 @@ func _log_damage(
             final_amount,
             result["defense_lost"],
             result["life_lost"]])
+
+func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
+    _log_damage(
+        resolution["actor"],
+        resolution["target"],
+        int(resolution["amount"]),
+        str(resolution["source_kind"]),
+        resolution["result"])
+    _status_system.resolve_received_attack_segment(
+        resolution["actor"],
+        resolution["target"],
+        str(resolution["source_kind"]),
+        resolution["result"])
+    return int(resolution["actor"].life) <= 0

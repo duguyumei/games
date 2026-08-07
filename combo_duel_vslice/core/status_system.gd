@@ -596,6 +596,21 @@ func record_attack_segment(actor, source_kind: String) -> void:
                 and delayed.get("actor") == actor:
             delayed["attack_count"] = int(delayed.get("attack_count", 0)) + 1
 
+func resolve_received_attack_segment(
+        attacker,
+        target,
+        source_kind: String,
+        result: Dictionary) -> Dictionary:
+    if attacker == null or target == null or attacker == target \
+            or source_kind not in ["technique", "chase", "counter"]:
+        return {"success": true}
+    return _dispatch_actor_behaviors(target, "attack_segment_received", {
+        "attacker": attacker,
+        "source_kind": source_kind,
+        "defense_lost": int(result.get("defense_lost", 0)),
+        "life_lost": int(result.get("life_lost", 0)),
+    })
+
 func _on_battle_start(event) -> Dictionary:
     var applied_count := 0
     for side in event.actors:

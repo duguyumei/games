@@ -39,6 +39,9 @@ func _initialize() -> void:
     _test_wind_cooperation_group_resolution()
     _test_wind_echo_and_five_card_power()
     _test_wind_four_kind_card_flow_and_persistent_trigger()
+    _test_stagnant_gu_conceal_breath_pipeline()
+    _test_borrow_fire_guard_heart_pipeline()
+    _test_borrowed_force_attack_segments()
     _test_structured_context_and_ports()
     _test_action_preview_dto_contract()
     _test_action_and_dispatch_dto_contracts()
@@ -64,7 +67,7 @@ func _test_technique_entities_are_individual_resources() -> void:
     _assert_true(
         repository.configure(catalog.definition("techniques"), true),
         "功法仓库建立统一实体索引")
-    _assert_equal(repository.definitions.size(), 45, "七门纵切夹具与三十八门风功法均建立实体")
+    _assert_equal(repository.definitions.size(), 47, "七门纵切夹具、三十八门风功法与两门产线探针均建立实体")
     var wind_ids := [
         "sweeping_wind_sleeve", "full_sleeve_wind", "wind_transforms_force",
         "layered_leaves_return_tide", "long_wind_full_sleeve", "double_wind_continue_form",
@@ -308,6 +311,127 @@ func _test_wind_four_kind_card_flow_and_persistent_trigger() -> void:
     harmony.effect_ports.discard_random(harmony.player, 1, harmony.rng)
     _assert_equal(harmony.enemy.life, 99, "四象合鸣统计后续功法明确弃牌并造成伤害")
 
+func _test_stagnant_gu_conceal_breath_pipeline() -> void:
+    var hand_target = _wind_high_engine(
+        "stagnant_gu_conceal_breath", "forest_10", [], [], 8731)
+    var first_hand = _catalog_card(hand_target, "wind_3", "stagnant:hand:first")
+    var second_hand = _catalog_card(hand_target, "fire_4", "stagnant:hand:second")
+    hand_target.enemy.hand = [first_hand, second_hand]
+    var hand_preview: Dictionary = hand_target.preview([hand_target.player.hand[0].id])
+    var hand_result: Dictionary = hand_target.confirm_play([hand_target.player.hand[0].id])
+    _assert_equal(hand_preview["intent"]["defense"], 10, "郁蛊敛息预览获得P点防御")
+    _assert_equal(hand_target.player.defense, 10, "郁蛊敛息实际防御与预览一致")
+    _assert_true(hand_result.get("success", false), "郁蛊敛息手牌目标链完成")
+    _assert_equal(_anomaly_count(hand_target.enemy.hand, "poison", "stagnant_poison"), 1, "敌方手牌随机一张合格真气获得郁毒")
+
+    var deck_fallback = _wind_high_engine(
+        "stagnant_gu_conceal_breath", "forest_10", [], [], 8732)
+    var hand_stone = _catalog_card(deck_fallback, "mountain_2", "stagnant:fallback:hand-stone")
+    hand_stone.set_enhancement("stone")
+    deck_fallback.enemy.hand = [hand_stone]
+    var lower = _catalog_card(deck_fallback, "wind_3", "stagnant:fallback:lower")
+    var top = _catalog_card(deck_fallback, "fire_4", "stagnant:fallback:top")
+    deck_fallback.enemy.draw_pile = [lower, top]
+    deck_fallback.confirm_play([deck_fallback.player.hand[0].id])
+    _assert_true(top.has_anomaly("poison", "stagnant_poison"), "纯林高牌从牌库顶向下命中第一张合法目标")
+    _assert_true(not lower.has_anomaly("poison"), "牌库候补找到第一张后停止继续附毒")
+
+    var no_target = _wind_high_engine(
+        "stagnant_gu_conceal_breath", "forest_10", [], [], 8733)
+    var no_hand = _catalog_card(no_target, "mountain_2", "stagnant:none:hand")
+    var no_deck = _catalog_card(no_target, "mountain_3", "stagnant:none:deck")
+    no_hand.set_enhancement("stone")
+    no_deck.set_enhancement("stone")
+    no_target.enemy.hand = [no_hand]
+    no_target.enemy.draw_pile = [no_deck]
+    var no_result: Dictionary = no_target.confirm_play([no_target.player.hand[0].id])
+    _assert_true(no_result.get("success", false), "郁蛊敛息没有合法目标时只结算实际部分")
+    _assert_equal(_anomaly_count([no_hand, no_deck], "poison", "stagnant_poison"), 0, "没有合法目标时不错误施加郁毒")
+
+func _test_borrow_fire_guard_heart_pipeline() -> void:
+    var guarded = _wind_high_engine(
+        "borrow_fire_guard_heart", "fire_10", [], [], 8741)
+    guarded.player.defense = 1
+    var guarded_preview: Dictionary = guarded.preview([guarded.player.hand[0].id])
+    var guarded_result: Dictionary = guarded.confirm_play([guarded.player.hand[0].id])
+    _assert_true(guarded_result.get("success", false), "借火护心有防御分支完成")
+    _assert_equal(guarded_preview["intent"]["damage"], 5, "借火护心预览floor(P/2)伤害")
+    _assert_equal(guarded.enemy.life, 95, "借火护心实际伤害与预览一致")
+    _assert_equal(guarded.player.stacks.get("borrowed_force", 0), 1, "结算时有防御获得一层借力")
+
+    var exposed = _wind_high_engine(
+        "borrow_fire_guard_heart", "fire_10", [], [], 8742)
+    exposed.player.defense = 0
+    exposed.confirm_play([exposed.player.hand[0].id])
+    _assert_equal(exposed.player.stacks.get("borrowed_force", 0), 2, "结算时防御为零改为两层借力")
+
+func _test_borrowed_force_attack_segments() -> void:
+    var defense_only = _borrowed_force_engine(1)
+    defense_only.player.defense = 5
+    defense_only.effect_ports.deal_damage(
+        defense_only.enemy, defense_only.player, 3, "technique")
+    _assert_equal(defense_only.player.defense, 2, "借力记录只损失防御的攻击段")
+    _assert_equal(defense_only.enemy.life, 97, "只损失防御时按实际损失反击")
+    _assert_equal(defense_only.player.stacks.get("borrowed_force", 0), 0, "实际损失后消耗一层借力")
+    _assert_true(
+        defense_only.status_system.history.any(func(entry):
+            return entry.get("change_type", "") == "actor_status_consume" \
+                and entry.get("status_id", "") == "borrowed_force"),
+        "借力消费进入统一状态历史")
+    _assert_true(
+        defense_only.trigger_queue.history.any(func(entry):
+            return entry.get("timing", "") == "damage_segment" \
+                and entry.get("source", "") == "counter"),
+        "借力反击进入统一战斗日志")
+
+    var life_only = _borrowed_force_engine(1)
+    life_only.effect_ports.deal_damage(life_only.enemy, life_only.player, 4, "chase")
+    _assert_equal(life_only.player.life, 96, "借力记录只损失生命的攻击段")
+    _assert_equal(life_only.enemy.life, 96, "只损失生命时按实际损失反击")
+
+    var mixed = _borrowed_force_engine(1)
+    mixed.player.defense = 2
+    mixed.effect_ports.deal_damage(mixed.enemy, mixed.player, 5, "counter")
+    _assert_equal(mixed.player.life, 97, "攻击段可以同时减少防御与生命")
+    _assert_equal(mixed.enemy.life, 95, "同时损失时反击等于防御与生命损失之和")
+
+    var blocked = _borrowed_force_engine(1)
+    blocked.effect_ports.deal_damage(blocked.enemy, blocked.player, 0, "technique")
+    _assert_equal(blocked.player.stacks.get("borrowed_force", 0), 1, "没有实际损失时不消耗借力")
+    _assert_equal(blocked.enemy.life, 100, "没有实际损失时不加入反击")
+
+    var segmented = _borrowed_force_engine(2)
+    segmented.player.defense = 2
+    var context = EffectContextScript.new().configure({
+        "actor": segmented.enemy,
+        "target": segmented.player,
+        "power": 3,
+        "ports": segmented.effect_ports,
+    })
+    segmented.effect_executor.execute_all([{
+        "op": "multi_damage",
+        "segments": 3,
+        "amount": {"kind": "constant", "value": 3},
+    }], context)
+    _assert_equal(segmented.player.life, 93, "敌方多段攻击逐段读取防御与生命")
+    _assert_equal(segmented.enemy.life, 94, "两层借力分别响应前两个实际损失攻击段")
+    _assert_equal(segmented.player.stacks.get("borrowed_force", 0), 0, "多段攻击按段消耗借力")
+
+    var lethal_counter = _borrowed_force_engine(1)
+    lethal_counter.enemy.life = 2
+    var lethal_context = EffectContextScript.new().configure({
+        "actor": lethal_counter.enemy,
+        "target": lethal_counter.player,
+        "ports": lethal_counter.effect_ports,
+    })
+    lethal_counter.effect_executor.execute_all([{
+        "op": "multi_damage",
+        "segments": 3,
+        "amount": {"kind": "constant", "value": 3},
+    }], lethal_context)
+    _assert_equal(lethal_counter.player.life, 97, "借力反击击杀攻击者后停止后续攻击段")
+    _assert_equal(lethal_counter.enemy.life, 0, "致死借力反击按普通伤害结算")
+
 func _wind_high_engine(
         technique_id: String,
         played_definition_id: String,
@@ -336,6 +460,24 @@ func _catalog_card(engine, definition_id: String, instance_id: String):
     return DeckFactoryScript.create_card_instance(
         engine.content_catalog.get_by_id("card", definition_id),
         instance_id)
+
+func _borrowed_force_engine(stacks: int):
+    var engine = CombatEngineScript.new()
+    engine.setup(8750 + stacks, false)
+    engine.player.defense = 0
+    engine.player.life = 100
+    engine.enemy.defense = 0
+    engine.enemy.life = 100
+    engine.status_system.add_actor_status(
+        engine.player, "borrowed_force", stacks, "借力测试")
+    return engine
+
+func _anomaly_count(cards: Array, category: String, anomaly_id: String) -> int:
+    var count := 0
+    for card in cards:
+        if card.has_anomaly(category, anomaly_id):
+            count += 1
+    return count
 
 func _test_structured_context_and_ports() -> void:
     var actor = BattleSideScript.new("行动方", "actor")

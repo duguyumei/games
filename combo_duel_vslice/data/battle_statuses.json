@@ -101,6 +101,21 @@
           }
         }
       ]
+    },
+    {
+      "id": "borrowed_force",
+      "name": "借力",
+      "duration": "battle",
+      "stacking": true,
+      "maximum": -1,
+      "clear_on": ["battle_end"],
+      "behaviors": [
+        {
+          "trigger": "attack_segment_received",
+          "handler": "counter_actual_attack_loss",
+          "source_kind": "counter"
+        }
+      ]
     }
   ]
 }

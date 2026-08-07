@@ -100,10 +100,10 @@ func _validate_single_effect(
         if effect.has(field) and str(effect[field]) not in ZONE_IDS:
             _error(effect_scope + "." + field, "引用未知牌区")
     var condition = effect.get("when", {})
-    if condition is Dictionary \
-            and condition.has("pure_attribute") \
-            and not _attribute_ids.has(str(condition["pure_attribute"])):
-        _error(effect_scope + ".when", "引用未知属性 %s" % str(condition["pure_attribute"]))
+    if not condition is Dictionary:
+        _error(effect_scope + ".when", "必须是对象")
+    else:
+        _validate_condition(condition, effect_scope + ".when")
     if registered and operation_source is String and operation_source == "battle":
         _effect_registry.validate_effect(effect, self, effect_scope)
 
@@ -119,6 +119,36 @@ func validate_actor_status_reference(value, scope: String) -> void:
     var status_id := str(value)
     if not _actor_statuses_by_id.has(status_id):
         _error(scope, "引用未知角色状态 %s" % status_id)
+
+func _validate_condition(condition: Dictionary, scope: String) -> void:
+    for list_field in ["all", "any"]:
+        if not condition.has(list_field):
+            continue
+        if not condition[list_field] is Array:
+            _error(scope + "." + list_field, "必须是数组")
+            continue
+        for index in range(condition[list_field].size()):
+            var child = condition[list_field][index]
+            var child_scope := "%s.%s[%d]" % [scope, list_field, index]
+            if not child is Dictionary:
+                _error(child_scope, "必须是对象")
+            else:
+                _validate_condition(child, child_scope)
+    if condition.has("not"):
+        if not condition["not"] is Dictionary:
+            _error(scope + ".not", "必须是对象")
+        else:
+            _validate_condition(condition["not"], scope + ".not")
+    if condition.has("pure_attribute") \
+            and not _attribute_ids.has(str(condition["pure_attribute"])):
+        _error(scope + ".pure_attribute", "引用未知属性 %s" % str(condition["pure_attribute"]))
+    if condition.has("hand_id") \
+            and not _hand_ids.has(str(condition["hand_id"])):
+        _error(scope + ".hand_id", "引用未知精确牌型 %s" % str(condition["hand_id"]))
+    if condition.has("actor_defense_equals") \
+            and (not _is_integer(condition["actor_defense_equals"]) \
+            or int(condition["actor_defense_equals"]) < 0):
+        _error(scope + ".actor_defense_equals", "必须是非负整数")
 
 func validate_choice_effect(effect: Dictionary, scope: String) -> void:
     if not effect.get("choice_id") is String or str(effect.get("choice_id", "")) == "":

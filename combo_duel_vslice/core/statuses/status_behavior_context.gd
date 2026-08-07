@@ -17,6 +17,10 @@ var event = null
 var flow_kind: String = ""
 var count: int = 0
 var resolution: Dictionary = {}
+var attacker = null
+var source_kind: String = ""
+var defense_lost: int = 0
+var life_lost: int = 0
 var status_system = null
 var effect_ports = null
 
@@ -33,6 +37,10 @@ func configure(values: Dictionary):
     flow_kind = str(values.get("flow_kind", ""))
     count = int(values.get("count", 0))
     resolution = values.get("resolution", {})
+    attacker = values.get("attacker")
+    source_kind = str(values.get("source_kind", ""))
+    defense_lost = int(values.get("defense_lost", 0))
+    life_lost = int(values.get("life_lost", 0))
     status_system = values.get("status_system")
     effect_ports = values.get("effect_ports")
     return self

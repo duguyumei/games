@@ -193,13 +193,15 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.all_of("finish").size(), 4, "内容目录建立四种品相索引")
     _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种印记索引")
     _assert_equal(catalog.all_of("anomaly").size(), 12, "内容目录建立十二种战斗异状索引")
-    _assert_equal(catalog.all_of("actor_status").size(), 7, "内容目录建立七种角色战斗状态索引")
+    _assert_equal(catalog.all_of("actor_status").size(), 8, "内容目录建立八种角色战斗状态索引")
     _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
     _assert_equal(
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "suppress_existing_effects",
         "净化通过内容策略声明获得时生命周期")
     _assert_equal(catalog.get_by_id("technique", "fire_sparks")["name"], "火星连点", "可按类型与 ID 查询功法")
+    _assert_equal(catalog.get_by_id("technique", "stagnant_gu_conceal_breath")["name"], "郁蛊敛息", "郁蛊敛息进入统一功法目录")
+    _assert_equal(catalog.get_by_id("technique", "borrow_fire_guard_heart")["name"], "借火护心", "借火护心进入统一功法目录")
 
     var changed_query: Dictionary = catalog.get_by_id("technique", "fire_sparks")
     changed_query["name"] = "外部篡改"
@@ -1291,6 +1293,22 @@ func _test_effect_extension_entry_contract() -> void:
     _assert_true(
         _array_contains_text(invalid_result["errors"], "amount 必须是正整数"),
         "非法参数返回处理器声明的明确诊断")
+
+    var invalid_condition_definitions := _catalog_definitions(catalog)
+    for technique in invalid_condition_definitions["techniques"]["techniques"]:
+        if str(technique.get("id", "")) == "borrow_fire_guard_heart":
+            technique["effects"][1]["when"]["actor_defense_equals"] = -1
+            break
+    var invalid_condition_result: Dictionary = ContentValidatorScript.new().validate(
+        invalid_condition_definitions)
+    _assert_true(
+        not invalid_condition_result["valid"],
+        "非法防御条件在内容加载阶段失败")
+    _assert_true(
+        _array_contains_text(
+            invalid_condition_result["errors"],
+            "actor_defense_equals: 必须是非负整数"),
+        "非法防御条件返回明确诊断：%s" % str(invalid_condition_result["errors"]))
 
     var missing_registry_catalog = ContentCatalogScript.new()
     _assert_true(not missing_registry_catalog.load_from_definitions(definitions), "缺失效果注册在内容校验阶段失败")

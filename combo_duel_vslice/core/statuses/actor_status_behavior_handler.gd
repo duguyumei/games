@@ -11,6 +11,8 @@ func _init() -> void:
         "technique_card_flow_rewards": Callable(self, "_technique_card_flow_rewards"),
         "recycle_triggered_card_anomaly": Callable(
             self, "_recycle_triggered_card_anomaly"),
+        "counter_actual_attack_loss": Callable(
+            self, "_counter_actual_attack_loss"),
     }
 
 func behavior_ids() -> Array[String]:
@@ -110,3 +112,22 @@ func _recycle_triggered_card_anomaly(context) -> Dictionary:
     context.resolution["recycle_status_name"] = str(
         context.definition.get("name", context.status_id))
     return {"success": true}
+
+func _counter_actual_attack_loss(context) -> Dictionary:
+    var actual_loss: int = context.defense_lost + context.life_lost
+    if actual_loss <= 0 or context.attacker == null or context.effect_ports == null:
+        return {"success": true}
+    var consumed := int(context.status_system.consume_actor_status(
+        context.actor,
+        context.status_id,
+        1,
+        str(context.definition.get("name", context.status_id))
+    ).get("changed", 0))
+    if consumed <= 0:
+        return {"success": true}
+    context.effect_ports.deal_damage(
+        context.actor,
+        context.attacker,
+        actual_loss,
+        str(context.behavior.get("source_kind", "counter")))
+    return {"success": true, "consumed": consumed}

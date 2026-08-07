@@ -60,6 +60,7 @@ const ACTOR_STATUS_TRIGGERS := [
     "opponent_card_drawn",
     "played_card_anomaly_resolved",
     "technique_card_flow",
+    "attack_segment_received",
 ]
 const RANK_SPECS := [
     ["2", 2, 2], ["3", 3, 3], ["4", 4, 4], ["5", 5, 5],
