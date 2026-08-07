@@ -34,10 +34,8 @@
       "two_pair": [],
       "three_kind": [],
       "straight": [],
-      "flush": [],
       "full_house": [],
-      "four_kind": [],
-      "straight_flush": []
+      "four_kind": []
     }
   },
   "rounds": []

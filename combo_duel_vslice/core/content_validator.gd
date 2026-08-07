@@ -26,13 +26,13 @@ const CONTENT_KEYS := [
     "sequences",
 ]
 const HAND_IDS := [
-    "high_card", "pair", "two_pair", "three_kind", "straight", "flush",
-    "full_house", "four_kind", "straight_flush",
+    "high_card", "pair", "two_pair", "three_kind", "straight",
+    "full_house", "four_kind",
 ]
 # 五条的固定倍率尚未确认，因此暂不进入可识别牌型；功法数据仍可先声明并测试五条分支。
 const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS + ["five_kind"]
 const POOL_IDS := [
-    "high", "pair_two_pair", "three_full_house", "four_five", "straight", "flush",
+    "high", "pair_two_pair", "three_full_house", "four_five", "straight",
 ]
 const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
 const RESHAPE_CATEGORY_IDS := ["enhancement", "finish", "imprint", "other"]

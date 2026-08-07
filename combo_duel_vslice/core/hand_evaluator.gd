@@ -7,10 +7,8 @@ const HANDS := {
     "two_pair": {"name": "两对", "multiplier": 2, "strength": 2},
     "three_kind": {"name": "三条", "multiplier": 3, "strength": 3},
     "straight": {"name": "顺子", "multiplier": 4, "strength": 4},
-    "flush": {"name": "同花", "multiplier": 4, "strength": 5},
-    "full_house": {"name": "葫芦", "multiplier": 4, "strength": 6},
-    "four_kind": {"name": "四条", "multiplier": 7, "strength": 7},
-    "straight_flush": {"name": "同花顺", "multiplier": 8, "strength": 8},
+    "full_house": {"name": "葫芦", "multiplier": 4, "strength": 5},
+    "four_kind": {"name": "四条", "multiplier": 7, "strength": 6},
 }
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
 
@@ -58,9 +56,6 @@ static func evaluate(cards: Array) -> Dictionary:
 
     var is_five := cards.size() == 5
     var straight := is_five and _is_straight(cards)
-    var flush := is_five and _is_flush(cards)
-    if straight and flush:
-        return _result("straight_flush", cards, _is_royal(cards))
 
     var four_rank := _highest_rank_with_count(rank_groups, 4)
     if four_rank >= 0:
@@ -73,8 +68,6 @@ static func evaluate(cards: Array) -> Dictionary:
         full_cards.append_array(rank_groups[three_rank])
         full_cards.append_array(rank_groups[pair_ranks[0]])
         return _result("full_house", full_cards)
-    if flush:
-        return _result("flush", cards)
     if straight:
         return _result("straight", cards)
     if three_rank >= 0:
@@ -93,15 +86,15 @@ static func evaluate(cards: Array) -> Dictionary:
             highest = card
     return _result("high_card", [highest])
 
-static func _result(hand_id: String, contributing: Array, royal: bool = false) -> Dictionary:
+static func _result(hand_id: String, contributing: Array) -> Dictionary:
     var definition: Dictionary = HANDS[hand_id]
     return {
         "id": hand_id,
-        "name": "皇家同花顺" if royal else definition["name"],
+        "name": definition["name"],
         "multiplier": definition["multiplier"],
         "strength": definition["strength"],
         "contributing": contributing.duplicate(),
-        "royal": royal,
+        "royal": false,
     }
 
 static func _highest_rank_with_count(groups: Dictionary, count: int) -> int:
@@ -120,13 +113,6 @@ static func _ranks_with_count(groups: Dictionary, count: int) -> Array:
     ranks.reverse()
     return ranks
 
-static func _is_flush(cards: Array) -> bool:
-    var attribute: String = cards[0].attribute
-    for card in cards:
-        if card.attribute != attribute:
-            return false
-    return true
-
 static func _is_straight(cards: Array) -> bool:
     var ranks: Array = []
     for card in cards:
@@ -140,13 +126,6 @@ static func _is_straight(cards: Array) -> bool:
         if ranks[index] != ranks[index - 1] + 1:
             return false
     return true
-
-static func _is_royal(cards: Array) -> bool:
-    var ranks: Array = []
-    for card in cards:
-        ranks.append(card.rank_order)
-    ranks.sort()
-    return ranks == [10, 11, 12, 13, 14]
 
 static func _combinations(cards: Array, size: int, start: int = 0, prefix: Array = []) -> Array:
     if prefix.size() == size:

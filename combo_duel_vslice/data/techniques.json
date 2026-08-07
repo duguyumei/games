@@ -7,9 +7,7 @@
     "three_kind": ["three_full_house"],
     "full_house": ["three_full_house"],
     "four_kind": ["four_five"],
-    "straight": ["straight"],
-    "flush": ["flush"],
-    "straight_flush": ["straight", "flush"]
+    "straight": ["straight"]
   },
   "resource_paths": [
     "res://data/techniques/fire_sparks.tres",

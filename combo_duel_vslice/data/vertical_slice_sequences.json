@@ -5,8 +5,6 @@
   "two_pair": ["double_gu_bind"],
   "three_kind": ["three_corpses_gu"],
   "straight": ["five_yang_chase"],
-  "flush": [],
   "full_house": ["three_corpses_gu"],
-  "four_kind": ["discard_fuel_open_furnace"],
-  "straight_flush": ["five_yang_chase"]
+  "four_kind": ["discard_fuel_open_furnace"]
 }

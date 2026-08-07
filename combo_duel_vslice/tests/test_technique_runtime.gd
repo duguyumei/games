@@ -256,6 +256,8 @@ func _test_wind_echo_and_five_card_power() -> void:
     var straight_result: Dictionary = five_engine.confirm_play(
         straight_cards.map(func(card): return card.id))
     _assert_true(straight_result.get("success", false), "五张同属性真气完成顺子功法")
+    _assert_equal(straight_result["preview"]["hand"]["id"], "straight", "同属性顺子不升级为同花牌型")
+    _assert_equal(straight_result["preview"]["hand"]["multiplier"], 4, "同属性顺子保持顺子固定倍率")
     _assert_equal(straight_result["preview"]["values"]["power_amp_percent"], 50, "五张同属性真气获得50%功法值增幅")
     _assert_equal(five_engine.player.draw_pile.size(), 5, "回环长息将顺子五张牌洗回牌库")
 

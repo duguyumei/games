@@ -89,7 +89,7 @@ func _initialize() -> void:
     _test_effect_handler_registry_contract()
     _test_standard_deck()
     _test_pool_structure_and_turn_draw_rules()
-    _test_all_nine_hand_types_and_contributors()
+    _test_active_hand_types_and_same_attribute_rules()
     _test_power_calculation()
     _test_damage_resolver_rules_and_facade()
     _test_structured_game_log_channels()
@@ -226,6 +226,14 @@ func _test_content_catalog_and_validator() -> void:
     var wrong_pool_catalog = ContentCatalogScript.new()
     _assert_true(not wrong_pool_catalog.load_from_definitions(wrong_pool_values), "错误功法池资格被拒绝")
     _assert_true(_array_contains_text(wrong_pool_catalog.errors, "不属于 pair 的合格共用池"), "错误功法池错误稳定定位")
+
+    var abolished_hand_values := _catalog_definitions(catalog)
+    abolished_hand_values["sequences"]["flush"] = []
+    var abolished_hand_catalog = ContentCatalogScript.new()
+    _assert_true(not abolished_hand_catalog.load_from_definitions(abolished_hand_values), "废弃同花序列键被拒绝")
+    _assert_true(
+        _array_contains_text(abolished_hand_catalog.errors, "包含未知精确牌型 flush"),
+        "废弃牌型错误稳定定位")
 
     var bad_op_values := _catalog_definitions(catalog)
     bad_op_values["techniques"]["techniques"][0]["effects"][0]["op"] = "unknown_op"
@@ -1821,8 +1829,12 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
     for hand_id in engine.repository.pool_membership:
         for pool_id in engine.repository.pool_membership[hand_id]:
             unique_pools[pool_id] = true
-    _assert_equal(unique_pools.size(), 6, "六类共用功法池")
-    _assert_equal(engine.repository.pool_membership.size(), 9, "九种精确牌型均配置合格池")
+    _assert_equal(unique_pools.size(), 5, "五类共用功法池")
+    _assert_equal(engine.repository.pool_membership.size(), 7, "七种有效精确牌型均配置合格池")
+    _assert_equal(
+        engine.sequence_book.sequences["straight"],
+        ["five_yang_chase"],
+        "五阳逐影只挂有效顺子序列")
     engine.sequence_book.configure({"pair": ["a", "b"], "two_pair": ["a", "b"]})
     engine.sequence_book.advance("pair")
     _assert_equal(engine.sequence_book.position("pair"), 1, "一对序列独立推进")
@@ -1840,17 +1852,15 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
     engine.player.hand = [_card("2"), _card("3"), _card("4"), _card("5"), _card("6"), _card("7")]
     _assert_equal(engine.preview(_ids(engine.player.hand))["valid"], false, "不能选择超过 5 张")
 
-func _test_all_nine_hand_types_and_contributors() -> void:
+func _test_active_hand_types_and_same_attribute_rules() -> void:
     var cases := [
         {"id": "high_card", "cards": [_card("A"), _card("7", "forest"), _card("3", "fire")], "count": 1, "sum": 12},
         {"id": "pair", "cards": [_card("7"), _card("7", "forest"), _card("A", "fire"), _card("3")], "count": 2, "sum": 14},
         {"id": "two_pair", "cards": [_card("9"), _card("9", "forest"), _card("4"), _card("4", "fire"), _card("A")], "count": 4, "sum": 26},
         {"id": "three_kind", "cards": [_card("6"), _card("6", "forest"), _card("6", "fire"), _card("A")], "count": 3, "sum": 18},
         {"id": "straight", "cards": [_card("A"), _card("2", "forest"), _card("3", "fire"), _card("4", "mountain"), _card("5")], "count": 5, "sum": 26},
-        {"id": "flush", "cards": [_card("2"), _card("5"), _card("8"), _card("J"), _card("K")], "count": 5, "sum": 37},
         {"id": "full_house", "cards": [_card("7"), _card("7", "forest"), _card("7", "fire"), _card("3"), _card("3", "forest")], "count": 5, "sum": 27},
         {"id": "four_kind", "cards": [_card("8"), _card("8", "forest"), _card("8", "fire"), _card("8", "mountain"), _card("A")], "count": 4, "sum": 32},
-        {"id": "straight_flush", "cards": [_card("10", "fire"), _card("J", "fire"), _card("Q", "fire"), _card("K", "fire"), _card("A", "fire")], "count": 5, "sum": 55},
     ]
     for test_case in cases:
         var result := HandEvaluatorScript.evaluate(test_case["cards"])
@@ -1862,6 +1872,15 @@ func _test_all_nine_hand_types_and_contributors() -> void:
         _assert_equal(qi_sum, test_case["sum"], "%s 参与真气值" % test_case["id"])
     var jq := HandEvaluatorScript.evaluate([_card("J"), _card("Q")])
     _assert_equal(jq["id"], "high_card", "J/Q 真气值相同但不成对")
+    var same_attribute_cards := [
+        _card("2", "fire"), _card("3", "fire"), _card("4", "fire"),
+        _card("5", "fire"), _card("6", "fire"),
+    ]
+    var same_attribute_straight := HandEvaluatorScript.evaluate(same_attribute_cards)
+    _assert_equal(same_attribute_straight["id"], "straight", "同属性顺子仍只识别为顺子")
+    _assert_equal(same_attribute_straight["multiplier"], 4, "同属性顺子只使用顺子固定倍率")
+    _assert_true(not HandEvaluatorScript.HANDS.has("flush"), "正式牌型表不再包含同花")
+    _assert_true(not HandEvaluatorScript.HANDS.has("straight_flush"), "正式牌型表不再包含同花顺")
 
 func _test_power_calculation() -> void:
     var result := HandEvaluatorScript.evaluate([_card("7"), _card("7", "forest"), _card("4"), _card("3"), _card("A")])
@@ -2176,12 +2195,15 @@ func _test_delayed_power_snapshot() -> void:
     ## 此前由百击归烬承载。该功法已被权威源废弃（同花池整体废弃），但操作码保留：
     ## 火池「待确认」明确记录需要新的替代设计来提供跨回合延迟追击。因此改用合成
     ## 夹具，保住机制的运行时覆盖，等替代设计落地后再换回真实功法。
-    var flush := [_card("2", "forest"), _card("4", "forest"), _card("6", "forest"), _card("8", "forest"), _card("10", "forest")]
-    var engine = _engine_with_hand(flush)
+    var same_attribute_straight := [
+        _card("2", "forest"), _card("3", "forest"), _card("4", "forest"),
+        _card("5", "forest"), _card("6", "forest"),
+    ]
+    var engine = _engine_with_hand(same_attribute_straight)
     engine.repository.techniques["probe_attack_counter_delay"] = {
         "id": "probe_attack_counter_delay",
         "name": "测试延迟追击",
-        "pool": "flush",
+        "pool": "straight",
         "special": true,
         "effects": [{
             "op": "register_attack_counter_delay",
@@ -2194,17 +2216,19 @@ func _test_delayed_power_snapshot() -> void:
             },
         }],
     }
-    engine.sequence_book.configure({"flush": ["probe_attack_counter_delay"]})
-    var result := engine.confirm_play(_ids(flush))
+    engine.sequence_book.configure({"straight": ["probe_attack_counter_delay"]})
+    var result := engine.confirm_play(_ids(same_attribute_straight))
     _assert_true(result["technique_triggered"], "延迟追击功法建立延迟记录")
-    _assert_equal(engine.delayed_effects[0]["snapshot_power"], 180, "延迟记录建立时 P（含五张同属性+50%）")
-    _assert_equal(engine.delayed_effects[0]["damage_per_segment"], 9, "延迟每段读取快照 P/20")
+    _assert_equal(result["preview"]["hand"]["id"], "straight", "延迟夹具使用合法顺子入口")
+    _assert_equal(result["preview"]["values"]["power_amp_percent"], 50, "同属性顺子只进入公共+50%加法池")
+    _assert_equal(engine.delayed_effects[0]["snapshot_power"], 120, "延迟记录建立时 P（含五张同属性+50%）")
+    _assert_equal(engine.delayed_effects[0]["damage_per_segment"], 6, "延迟每段读取快照 P/20")
     engine.deal_damage(engine.player, engine.enemy, 20, "technique")
-    engine.power_modifiers["flush"] = {"power_amp_percent": 500}
+    engine.power_modifiers["straight"] = {"power_amp_percent": 500}
     engine.end_player_turn()
     _assert_equal(engine.enemy.life, 80, "第一个回合结束尚未结算延迟")
     engine.end_player_turn()
-    _assert_equal(engine.enemy.life, 71, "第二个回合结束按旧快照造成一段 9 伤害")
+    _assert_equal(engine.enemy.life, 74, "第二个回合结束按旧快照造成一段 6 伤害")
     _assert_equal(engine.delayed_effects.size(), 0, "延迟结算后移除记录")
 
 func _test_visible_queue_left_to_right() -> void:
