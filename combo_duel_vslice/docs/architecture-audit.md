@@ -12,13 +12,18 @@
 > - 「P1：运行时字典契约仍缺少类型边界」—— core 与表现层之间的快照边界已完成
 >   类型化。`BattleSnapshot`、`RunSnapshot` 与新增的 `BattleSideSnapshot` 改为
 >   显式字段，`value(key, default)` 与 `section(key)` 已删除而非保留兼容。
->   存档、事件流与 AI 传输三条边界（`RunProgressSnapshot`、`BattleEvent`、
->   `RunEvent`、`AiConversationSnapshot`）仍是字典包装。
+>   S0 又在基线 `0555d0f` 完成 `CommandResult`、`RunProgressSnapshot`、`BattleEvent`、
+>   `RunEvent` 与 `AiConversationSnapshot` 的当前边界类型化；旧 `BattleCommandResult`
+>   已删除。规则结算层尚未形成稳定边界的内部字典不在本次清零范围。
 > - 「P2：大型脚本式 UI 难维护」—— 表现层转发层已消除，`BattleValuePanel` 与
 >   `ContentFailurePage` 已抽出组件，`ui/main.gd` 从 856 行降至 713 行。
 > - 内容加载失败的静默降级已消除：组合根内容未通过校验时拒绝创建会话，
 >   `BattleEffectPorts` 的四个依赖改为必需，删除全部 null 兜底分支。
 > - `ContentValidator` 的效果规格校验已拆到 `EffectSpecValidator`。
+> - 状态行为已采用数据绑定与小型处理器注册；`BattleEffectPorts._sides` 只由端口内部
+>   持有，外部代码通过公开窄查询访问。
+> - S0 最终验收已通过，当前执行阶段为 S1；大型战斗核心瘦身、状态系统继续拆分、
+>   UI／美术、测试拆分和文档维护继续保留在长期轨道。
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
