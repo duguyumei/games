@@ -9,6 +9,7 @@ const HANDS := {
     "straight": {"name": "顺子", "multiplier": 4, "strength": 4},
     "full_house": {"name": "葫芦", "multiplier": 4, "strength": 5},
     "four_kind": {"name": "四条", "multiplier": 7, "strength": 6},
+    "five_kind": {"name": "五条", "multiplier": 12, "strength": 7},
 }
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
 
@@ -56,6 +57,10 @@ static func evaluate(cards: Array) -> Dictionary:
 
     var is_five := cards.size() == 5
     var straight := is_five and _is_straight(cards)
+
+    var five_rank := _highest_rank_with_count(rank_groups, 5)
+    if five_rank >= 0:
+        return _result("five_kind", rank_groups[five_rank])
 
     var four_rank := _highest_rank_with_count(rank_groups, 4)
     if four_rank >= 0:

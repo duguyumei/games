@@ -27,10 +27,9 @@ const CONTENT_KEYS := [
 ]
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
-    "full_house", "four_kind",
+    "full_house", "four_kind", "five_kind",
 ]
-# 五条的固定倍率尚未确认，因此暂不进入可识别牌型；功法数据仍可先声明并测试五条分支。
-const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS + ["five_kind"]
+const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS
 const POOL_IDS := [
     "high", "pair_two_pair", "three_full_house", "four_five", "straight",
 ]

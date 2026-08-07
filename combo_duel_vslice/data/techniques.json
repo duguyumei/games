@@ -7,6 +7,7 @@
     "three_kind": ["three_full_house"],
     "full_house": ["three_full_house"],
     "four_kind": ["four_five"],
+    "five_kind": ["four_five"],
     "straight": ["straight"]
   },
   "resource_paths": [

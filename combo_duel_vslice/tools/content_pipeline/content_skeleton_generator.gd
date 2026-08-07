@@ -4,7 +4,7 @@ const SCHEMA_VERSION := 1
 const TYPES := ["technique", "inner_skill", "consumable", "enemy", "node"]
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
-    "full_house", "four_kind",
+    "full_house", "four_kind", "five_kind",
 ]
 
 var _id_regex := RegEx.new()

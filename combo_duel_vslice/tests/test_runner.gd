@@ -227,13 +227,18 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(not wrong_pool_catalog.load_from_definitions(wrong_pool_values), "错误功法池资格被拒绝")
     _assert_true(_array_contains_text(wrong_pool_catalog.errors, "不属于 pair 的合格共用池"), "错误功法池错误稳定定位")
 
-    var abolished_hand_values := _catalog_definitions(catalog)
-    abolished_hand_values["sequences"]["flush"] = []
-    var abolished_hand_catalog = ContentCatalogScript.new()
-    _assert_true(not abolished_hand_catalog.load_from_definitions(abolished_hand_values), "废弃同花序列键被拒绝")
-    _assert_true(
-        _array_contains_text(abolished_hand_catalog.errors, "包含未知精确牌型 flush"),
-        "废弃牌型错误稳定定位")
+    for abolished_hand_id in ["flush", "straight_flush", "royal_flush"]:
+        var abolished_hand_values := _catalog_definitions(catalog)
+        abolished_hand_values["sequences"][abolished_hand_id] = []
+        var abolished_hand_catalog = ContentCatalogScript.new()
+        _assert_true(
+            not abolished_hand_catalog.load_from_definitions(abolished_hand_values),
+            "废弃牌型 %s 序列键被拒绝" % abolished_hand_id)
+        _assert_true(
+            _array_contains_text(
+                abolished_hand_catalog.errors,
+                "包含未知精确牌型 %s" % abolished_hand_id),
+            "废弃牌型 %s 错误稳定定位" % abolished_hand_id)
 
     var bad_op_values := _catalog_definitions(catalog)
     bad_op_values["techniques"]["techniques"][0]["effects"][0]["op"] = "unknown_op"
@@ -1810,8 +1815,12 @@ func _test_standard_deck() -> void:
     _assert_equal(deck.size(), 52, "基础牌组共 52 张")
     var attribute_counts := {"wind": 0, "forest": 0, "fire": 0, "mountain": 0}
     var face_values := {}
+    var rank_groups: Dictionary = {}
     for card in deck:
         attribute_counts[card.attribute] += 1
+        if not rank_groups.has(card.rank_order):
+            rank_groups[card.rank_order] = []
+        rank_groups[card.rank_order].append(card)
         _assert_equal(card.definition_id, card.id, "基础牌兼容ID同时保留定义身份")
         if card.attribute == "wind":
             face_values[card.rank_name] = card.qi_value
@@ -1821,6 +1830,12 @@ func _test_standard_deck() -> void:
     _assert_equal(face_values["Q"], 11, "Q 真气值")
     _assert_equal(face_values["K"], 11, "K 真气值")
     _assert_equal(face_values["A"], 12, "A 真气值")
+    for rank_order in rank_groups:
+        _assert_equal(rank_groups[rank_order].size(), 4, "标准牌组每个牌阶只有四张真气")
+        _assert_equal(
+            HandEvaluatorScript.evaluate(rank_groups[rank_order])["id"],
+            "four_kind",
+            "标准牌组任一同牌阶组最多形成四条")
 
 func _test_pool_structure_and_turn_draw_rules() -> void:
     var engine = CombatEngineScript.new()
@@ -1830,11 +1845,16 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
         for pool_id in engine.repository.pool_membership[hand_id]:
             unique_pools[pool_id] = true
     _assert_equal(unique_pools.size(), 5, "五类共用功法池")
-    _assert_equal(engine.repository.pool_membership.size(), 7, "七种有效精确牌型均配置合格池")
+    _assert_equal(engine.repository.pool_membership.size(), 8, "八种有效精确牌型均配置合格池")
+    _assert_equal(
+        engine.repository.pool_membership["five_kind"],
+        ["four_five"],
+        "五条沿用四条五条共用功法池")
     _assert_equal(
         engine.sequence_book.sequences["straight"],
         ["five_yang_chase"],
         "五阳逐影只挂有效顺子序列")
+    _assert_equal(engine.sequence_book.sequences["five_kind"], [], "五条使用独立空初始序列")
     engine.sequence_book.configure({"pair": ["a", "b"], "two_pair": ["a", "b"]})
     engine.sequence_book.advance("pair")
     _assert_equal(engine.sequence_book.position("pair"), 1, "一对序列独立推进")
@@ -1853,6 +1873,10 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
     _assert_equal(engine.preview(_ids(engine.player.hand))["valid"], false, "不能选择超过 5 张")
 
 func _test_active_hand_types_and_same_attribute_rules() -> void:
+    var five_kind_cards := [
+        _card("8", "wind"), _card("8", "forest"), _card("8", "fire"),
+        _card("8", "mountain"), _card("8", "wind"),
+    ]
     var cases := [
         {"id": "high_card", "cards": [_card("A"), _card("7", "forest"), _card("3", "fire")], "count": 1, "sum": 12},
         {"id": "pair", "cards": [_card("7"), _card("7", "forest"), _card("A", "fire"), _card("3")], "count": 2, "sum": 14},
@@ -1861,6 +1885,7 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
         {"id": "straight", "cards": [_card("A"), _card("2", "forest"), _card("3", "fire"), _card("4", "mountain"), _card("5")], "count": 5, "sum": 26},
         {"id": "full_house", "cards": [_card("7"), _card("7", "forest"), _card("7", "fire"), _card("3"), _card("3", "forest")], "count": 5, "sum": 27},
         {"id": "four_kind", "cards": [_card("8"), _card("8", "forest"), _card("8", "fire"), _card("8", "mountain"), _card("A")], "count": 4, "sum": 32},
+        {"id": "five_kind", "cards": five_kind_cards, "count": 5, "sum": 40},
     ]
     for test_case in cases:
         var result := HandEvaluatorScript.evaluate(test_case["cards"])
@@ -1881,6 +1906,35 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
     _assert_equal(same_attribute_straight["multiplier"], 4, "同属性顺子只使用顺子固定倍率")
     _assert_true(not HandEvaluatorScript.HANDS.has("flush"), "正式牌型表不再包含同花")
     _assert_true(not HandEvaluatorScript.HANDS.has("straight_flush"), "正式牌型表不再包含同花顺")
+
+    var four_kind_result := HandEvaluatorScript.evaluate(five_kind_cards.slice(0, 4))
+    var five_kind_result := HandEvaluatorScript.evaluate(five_kind_cards)
+    _assert_equal(five_kind_result["multiplier"], 12, "五条固定倍率为十二倍")
+    _assert_true(
+        five_kind_result["strength"] > four_kind_result["strength"],
+        "五条强度高于四条")
+    var four_kind_values := PowerCalculatorScript.calculate(four_kind_result)
+    var five_kind_values := PowerCalculatorScript.calculate(five_kind_result)
+    _assert_true(
+        is_equal_approx(
+            float(five_kind_values["baseline_value"]) / float(four_kind_values["baseline_value"]),
+            15.0 / 7.0),
+        "同牌阶五条基准值约为四条的 2.14 倍")
+
+    var best_source := five_kind_cards + [_card("A", "forest")]
+    var best_candidates := HandEvaluatorScript.evaluate_best_candidates(best_source)
+    _assert_equal(best_candidates.size(), 1, "五条稳定排除同源四条候选")
+    _assert_equal(HandEvaluatorScript.evaluate_best(best_source)["id"], "five_kind", "五条稳定成为最高牌型")
+
+    var same_attribute_five := [
+        _card("7", "wind"), _card("7", "wind"), _card("7", "wind"),
+        _card("7", "wind"), _card("7", "wind"),
+    ]
+    var five_engine = _engine_with_hand(same_attribute_five)
+    var same_attribute_five_preview: Dictionary = five_engine.preview(_ids(same_attribute_five))
+    _assert_equal(same_attribute_five_preview["hand"]["id"], "five_kind", "同属性五张同牌阶仍识别为五条")
+    _assert_equal(same_attribute_five_preview["values"]["fixed_multiplier"], 12, "同属性五条保持十二倍固定倍率")
+    _assert_equal(same_attribute_five_preview["values"]["power_amp_percent"], 50, "同属性五条独立获得公共+50%增幅")
 
 func _test_power_calculation() -> void:
     var result := HandEvaluatorScript.evaluate([_card("7"), _card("7", "forest"), _card("4"), _card("3"), _card("A")])
@@ -2339,6 +2393,19 @@ func _test_insight_growth_and_technique_acquisition() -> void:
     _assert_equal(high_preview["values"]["technique_value"], 18, "心得立即影响高牌功法值预览")
     var pair_preview := engine.preview(_ids(pair))
     _assert_equal(pair_preview["values"]["technique_multiplier"], 2, "其他精确牌型倍率保持不变")
+
+    var consumable_definition: Dictionary = engine.content_catalog.definition("consumables")
+    var five_kind_insight_ids: Array[String] = []
+    for consumable in consumable_definition["consumables"]:
+        for effect in consumable.get("effects", []):
+            if effect.get("op", "") == "gain_insight" \
+                    and effect.get("hand", "") == "five_kind":
+                five_kind_insight_ids.append(str(consumable.get("id", "")))
+    _assert_equal(five_kind_insight_ids, [], "五条心得定义继续保持禁用")
+    for offer_id in consumable_definition["practice_offer_ids"]:
+        _assert_true(
+            not five_kind_insight_ids.has(str(offer_id)),
+            "普通修习随机池不包含五条心得")
 
 func _test_hierophant_bonus_enhancement_and_preview() -> void:
     var pair := [_card("7", "wind"), _card("7", "forest")]

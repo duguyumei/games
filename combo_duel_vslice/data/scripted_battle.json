@@ -39,6 +39,7 @@
       "three_kind": ["three_corpses_gu"],
       "full_house": ["three_corpses_gu"],
       "four_kind": ["discard_fuel_open_furnace"],
+      "five_kind": [],
       "straight": ["five_yang_chase"]
     }
   },
