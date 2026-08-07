@@ -1,4 +1,0 @@
-interface:
-  display_name: "太吾战斗规则设计"
-  short_description: "维护人物思绪战斗的时序、距离、资源、状态与运行功法生命周期"
-  default_prompt: "Use $taiwu-combat-design to maintain the current Taiwu thought-combat foundation and event rules."

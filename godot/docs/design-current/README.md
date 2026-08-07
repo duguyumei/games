@@ -57,7 +57,8 @@
 - `combo_duel_vslice/data/*.json` 是运行子集或测试夹具，不反向定义设计。
 - `combo_duel_vslice/docs/technique-content-status.md` 只记录接入状态。
 - `combo_duel_vslice/docs/unconfirmed-rules.md` 只记录未确认问题。
-- `skills/` 下声明依赖缺失旧战斗文档的另一套规则，不属于本项目当前组合出招权威源。
+- 原 `skills/` 下声明依赖缺失旧战斗文档的另一套规则，不属于本项目当前组合出招权威源；
+  已于 2026-08-07 移出仓库至 `taiwu-deprecated/2026-08-07-dangling-skills/`。
 - 旧 Godot 工程归档不作为当前规则或实现输入。
 
 ## 修改协议

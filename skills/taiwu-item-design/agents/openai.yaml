@@ -1,4 +1,0 @@
-interface:
-  display_name: "太吾物品设计"
-  short_description: "设计太吾卡牌游戏的武器物品、护具、消耗品、遗物式物品与掉落规则"
-  default_prompt: "Use $taiwu-item-design to design items and equipment for the Taiwu card game."

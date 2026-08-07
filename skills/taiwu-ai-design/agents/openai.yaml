@@ -1,4 +1,0 @@
-interface:
-  display_name: "太吾战斗AI"
-  short_description: "设计太吾卡牌游戏的敌方决策、同时规划、信息边界、难度层级和可测试AI策略"
-  default_prompt: "Use $taiwu-ai-design to design decision-making AI for the Taiwu card game."

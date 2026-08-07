@@ -1,13 +1,13 @@
 # 组合出招：第一阶段可玩纵切
 
-这是一个全新的 Godot 4.7 工程，依据 `godot/docs/combo-duel-current.md` 当前 v0.30
+这是一个全新的 Godot 4.7 工程，依据 `godot/docs/design-current/README.md` 当前 v0.30
 实现。它不引用原 `godot/` 项目的场景、脚本或测试。
 
 当前模块边界、耦合风险与目标架构见 `docs/architecture-audit.md`。
 
 ## 功法数量口径
 
-功法设计唯一来源是 `godot/docs/combo-duel-current.md` 指向的 v0.30 模块化权威源；
+功法设计唯一来源是 `godot/docs/design-current/README.md` 这份 v0.30 模块化权威源；
 当前三个功法池模块分别记录风林蛊毒 29 门、风运转 38 门、火反击 40 门活跃候选。
 当前 Godot 只保留 9 门可执行纵切样本，它们是运行测试夹具，不代表权威内容总量。
 当前接入状态与剩余迁移范围见

@@ -1,7 +1,6 @@
 .dotnet/
 .dotnet-tools/
 decompiled/
-dotnet-install.sh
 bin/
 obj/
 artifacts/

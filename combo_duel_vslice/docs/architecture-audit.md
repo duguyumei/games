@@ -2,7 +2,7 @@
 
 日期：2026-08-06
 范围：`combo_duel_vslice/` 当前全部脚本、数据与测试
-设计依据：`godot/docs/combo-duel-current.md` v0.30
+设计依据：`godot/docs/design-current/README.md` v0.30
 
 ## 结论
 
