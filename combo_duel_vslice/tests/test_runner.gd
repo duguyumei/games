@@ -52,6 +52,7 @@ const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
+const BattleScene = preload("res://ui/main.tscn")
 const RunScene = preload("res://ui/run_main.tscn")
 const FrontScene = preload("res://ui/front_main.tscn")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
@@ -131,6 +132,7 @@ func _initialize() -> void:
     _test_boss_chest_flow()
     _test_run_state_battle_growth_persistence()
     _test_map_practice_and_battle_scene_integration()
+    _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback()
     _test_front_menu_and_starter_build_flow()
     _test_scripted_enemy_is_deterministic_and_locked()
     _test_enemy_ai_plan_is_deterministic_and_hidden()
@@ -3251,6 +3253,36 @@ func _test_map_practice_and_battle_scene_integration() -> void:
     _assert_true(not run_ui.battle_layer.visible, "战斗胜利后关闭战斗层而不自动打开修习")
     _assert_true(not run_ui.practice_overlay.visible, "战斗胜利不会强制弹出修习页面")
     run_ui.queue_free()
+
+func _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback() -> void:
+    var injected_scene = BattleScene.instantiate()
+    _assert_true(
+        injected_scene.battle_session == null,
+        "战斗场景实例化时不提前创建并加载默认会话")
+    var shared_root = GameCompositionRootScript.new()
+    _assert_true(shared_root.initialize(), "UI 注入测试建立共享组合根")
+    var shared_run = shared_root.create_run_session()
+    var injected_session = shared_run.create_battle_session()
+    injected_scene.configure_battle_session(injected_session)
+    root.add_child(injected_scene)
+    _assert_true(
+        injected_scene.battle_session == injected_session,
+        "正式流程在 ready 前注入并保留共享战斗会话")
+    _assert_true(
+        injected_scene.battle_session.engine.content_catalog == shared_root.content_catalog,
+        "正式流程复用组合根内容目录而不建立第二份目录")
+    injected_scene.queue_free()
+
+    var standalone_scene = BattleScene.instantiate()
+    standalone_scene._ensure_battle_session()
+    _assert_true(
+        standalone_scene.battle_session != null,
+        "独立启动战斗场景时建立默认会话")
+    _assert_true(
+        standalone_scene.battle_session.engine.content_ready,
+        "独立战斗场景的默认会话完成内容加载：%s" % ", ".join(
+            standalone_scene.battle_session.engine.content_catalog.errors))
+    standalone_scene.queue_free()
 
 func _test_front_menu_and_starter_build_flow() -> void:
     var front = FrontScene.instantiate()

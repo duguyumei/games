@@ -1,67 +1,82 @@
 # 功法内容接入状态
 
-本文件记录工程接入状态，不新增或修改功法设计。
+本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
+`godot/docs/design-current/README.md` v0.30 及其功法框架、三个功法池正文。
 
-## 唯一权威设计库
+## 统计口径
 
-- 入口：`godot/docs/design-current/README.md` v0.30。
-- 功法框架：`godot/docs/design-current/martial-arts/20-gongfa-framework.md`。
-- 风功法正文：`godot/docs/design-current/martial-arts/22-gongfa-wind-pool.md`。
-- 风林蛊毒功法池当前记录 29 门活跃候选。
-- 风运转功法池当前记录 38 门活跃候选。
-- 火反击功法池当前记录 40 门活跃候选。
+`data/techniques/*.tres` 当前有 47 个可执行实体；这个数字只说明资源能够通过统一定义、效果
+注册和内容校验加载，不能证明公式、条件、目标、时点和失败边界均与权威正文一致。
+`DesignConsistencyValidator` 的 0 错误也只证明名称、共用牌型池与废弃状态一致。
 
-不得从废弃归档、原作导出、反编译内容或 Mod 数据补充本项目功法，也不得以运行数据数组
-长度推断设计总量。
+Gate-S01 以基线 `c364540` 逐项核对资源、处理器和行为测试后，证据分类为：
 
-## 当前 Godot 运行库
+| 接入状态 | 数量 | 判定边界 |
+|---|---:|---|
+| 正式语义完整 | 2 | 权威分支、目标与失败边界均有当前处理器和确定性行为测试 |
+| 部分接入 | 38 | 资源与所需通用处理器已存在，但没有逐门覆盖全部权威分支／时点的行为测试，暂不据此宣称语义完整 |
+| 回归夹具 | 7 | 早期纵切用于回归协议；不是 S2 正式白名单候选，其中两门另有已确认语义偏差 |
+| 禁用或延期资源 | 0 | 当前 47 个资源内没有；五条心得等禁用内容不属于这 47 门功法实体 |
 
-- 来源：`data/techniques/*.tres`；每门功法一个统一 `TechniqueDefinition` 资源实体。
-- `data/techniques.json` 只保存资源路径清单和牌型池映射，不保存功法正文。
-- 当前共有 47 个可执行功法实体：38 门风运转功法、7 门早期纵切回归夹具，
-  以及 S1.5 接入的 `郁蛊敛息`、`借火护心` 两门产线探针。
-  夹具原为 9 门，其中 `清风过隙`（随风池重写移出权威活跃名单）与 `百击归烬`
-  （随同花池整体废弃）已按权威源移除。
-- 38 门风运转功法按高牌 10、一对／两对 8、三条／葫芦 8、四条／五条 8、顺子 4 全部接入。
-- 五条已经进入统一功法实体、效果校验、运行时牌型识别和独立序列契约；固定倍率为 `×12`，
-  映射到四条／五条共用功法池。五条心得仍未进入普通修习随机池。
-- `data/vertical_slice_sequences.json` 只是确定性纵切调试装配，不是正式开局序列或玩家构筑。
+因此，当前口径是“47 个可执行实体、2 门已由证据证明正式语义完整、45 门尚不能计入正式
+玩家内容统计”。后续只有补齐逐门权威分支与确定性行为测试后，才能把条目从部分／夹具迁移为
+正式语义完整；不能依据资源加载成功或结构一致性统计自动迁移。
 
-“已设计”表示规则文本已经存在于权威文档；“已运行接入”表示功法已经具备经校验的 JSON
-定义、所需效果操作码／处理器和确定性结算测试。两种状态必须分别统计。
+## 47 门覆盖矩阵
 
-## 风功法接入结果
+### 已证明正式语义完整（2）
 
-本阶段以 38 门风运转功法为完整清单，不再使用“只有 9 门运行功法”的旧记录。
+- `stagnant_gu_conceal_breath`（郁蛊敛息）
+- `borrow_fire_guard_heart`（借火护心）
 
-本阶段应建立可复用的功法平台：
+### 风运转资源：部分接入（38）
 
-1. 通用功法定义契约，数据可以声明合格牌型池、属性条件、特殊标记、触发时点、目标与效果序列。
-2. 按能力拆分的效果处理器与窄端口，覆盖伤害、防御、牌区、角色状态、真气异状、抽弃回收、层数、延迟快照、多段攻击和特殊流程；不得按功法名称在战斗控制器中增加分支。
-3. 本局功法库与八个精确牌型序列的编排边界，支持池资格、去重、排序、进度、战斗开始锁定与跨战斗保存。
-4. 预览、正式结算、敌方候选和日志读取同一份功法定义，随机行为使用可注入随机源。
-5. 风功法逐门使用同一个 `TechniqueDefinition` 类型；协同、延迟重触、牌区查询和持续触发通过通用协议表达。
+这 38 门已逐门拥有 `TechniqueDefinition` 和可加载的效果链，静态定义与风池正文的主要公式、
+条件和目标相符；当前测试只覆盖平台能力及部分代表路径，尚未逐门覆盖所有牌型分支、牌区不足、
+选择、延迟时点和失败边界。因此整批保守标为部分接入，不能直接进入 S2 正式白名单。
 
-`郁蛊敛息` 已通过统一牌区查询、可注入随机源与异状处理器接入；`借火护心` 已通过统一
-伤害、层数与受击状态处理器接入。当前权威活跃 107 门、运行接入 47 门、待接入 60 门。
-风林蛊毒与火反击池的其余逐门数据化、正式功法手册页面和正式开局序列仍属于后续内容生产阶段。
+| 共用池 | 数量 | 资源 ID |
+|---|---:|---|
+| 高牌 | 10 | `sweeping_wind_sleeve`、`full_sleeve_wind`、`wind_transforms_force`、`layered_leaves_return_tide`、`long_wind_full_sleeve`、`double_wind_continue_form`、`listen_wind_stack_top`、`wind_born_echo`、`poison_wind_seek_meridian`、`discard_gu_exchange_breath` |
+| 一对／两对 | 8 | `twin_wind_exchange`、`measure_breath_twins`、`twin_swallows_press_sleeve`、`balance_sleeves_listen_wind`、`twin_leaves_build_momentum`、`exchange_nest_into_enemy`、`enemy_discard_returns_nest`、`double_gu_exchange_breath` |
+| 三条／葫芦 | 8 | `three_ring_breathing`、`triple_layer_return_armor`、`returning_wind_continue_form`、`three_breath_turbulence`、`gather_wind_faces`、`three_ring_ensemble`、`three_ring_chaos_qi`、`three_cards_listen_tide` |
+| 四条／五条 | 8 | `wind_deck_return_tide`、`exchange_sea_intake_qi`、`seize_qi_return_nest`、`four_poles_control_top`、`poison_nest_seek_meridian`、`full_sleeve_bind_enemy`、`all_sounds_listen_wind`、`four_symbols_harmony` |
+| 顺子 | 4 | `snake_path_order_meridian`、`wind_path_control_top`、`returning_loop_long_breath`、`five_steps_echo` |
 
-### Technique Runtime v1 第一、二包状态
+### 早期纵切回归夹具（7）
 
-第一包已经建立类型化执行上下文、窄战斗修改端口和结构化效果结果，并将现有六类处理器、
-行动解析与预览入口迁移到新契约。正式战斗效果上下文不再暴露完整 `CombatEngine`；旧字典
-调用仅作为迁移期兼容入口保留。现有 9 门代表功法行为保持不变。
+- `lethal_gu_needle`
+- `suspended_gu`
+- `double_gu_bind`
+- `three_corpses_gu`
+- `fire_sparks`
+- `five_yang_chase`
+- `discard_fuel_open_furnace`
 
-第二包已经建立：
+这些资源只出现在 `vertical_slice_sequences.json` 或 `scripted_battle.json` 等调试装配中；
+`production_sequences.json` 与 `production_enemy_entry.json` 当前均为空序列。它们不得被 S2 白名单、
+正式开局、正式敌人或玩家可见内容统计引用，除非以后按权威语义重新验收。
 
-- 通用目标查询：阵营、手牌／牌库／待出／弃牌、牌库顶和固定种子随机顺序，以及属性、
-  牌阶、定义、普通／石头、临时牌、重塑和异状筛选；
-- 明确选择请求：冻结候选、选择方、最少／最多数量和 `use_available`／`skip`／`fail`
-  三种目标不足策略，不采用未确认的默认策略；
-- 可恢复效果链：记录当前效果下标、已完成详情和捕获表，非法选择不重放前置效果，合法选择
-  后从原位置继续，也允许后续效果再次建立新选择请求；
-- 可恢复行动事务：选择期间真气保留在待出区，不提前进入弃牌堆、不推进功法序列；
-  `BattleSession` 通过只读快照公开请求并接受统一 `resolve_choice` 命令。
+## 九门重点深审
 
-在上述运行时契约上，风池现已补齐通用牌区顶／底／随机查询、跨阵营转移、动态数量、
-功法直接抽弃统计、四象合鸣持续触发、协同共享功法值和风生回响的回合末重触。
+| 资源 | 权威位置与完整语义 | 当前数据与处理器能力 | 当前行为测试证据 | 状态 |
+|---|---|---|---|---|
+| `lethal_gu_needle` | `21-gongfa-poison-pool.md:14`：`max(1,floor(P/2))` 伤害；随机给敌手一张合格手牌附烈毒；纯风高牌且实际附毒才加 1 蛊印；无目标时只保留伤害 | `damage` + 随机手牌异状 + 捕获非空／纯风条件层数，数据可表达正文 | `_test_data_driven_lethal_gu_needle` 只覆盖纯风且存在目标；无目标和非纯风边界未独立覆盖 | 回归夹具 |
+| `suspended_gu` | `21-gongfa-poison-pool.md:15`：获得 `P` 防御；敌方 1 蛊印，纯风高牌改为 2 | `defense` + 两个数据条件层数效果可以表达 | 没有以该资源为目标的确定性行为测试 | 回归夹具 |
+| `double_gu_bind` | `21-gongfa-poison-pool.md:24`：`max(1,floor(P/2))` 防御；一对 1 蛊印、两对 2 蛊印 | `power_fraction(minimum=1)` + `hand_map` 层数可以表达 | `_test_representative_defense_and_layers` 与行动解析测试只明确覆盖一对；两对分支未独立覆盖 | 回归夹具 |
+| `three_corpses_gu` | `21-gongfa-poison-pool.md:32`：`max(1,floor(P/3))` 防御；三条 3、葫芦 4 蛊印；纯风再 +1 | `power_fraction(minimum=1)` + `hand_map` + 纯风条件层数可以表达 | 没有以该资源为目标的确定性行为测试 | 回归夹具 |
+| `fire_sparks` | `23-gongfa-fire-pool.md:14`：三段 `max(1,floor(P/4))`，每段后 +1 连势；纯阳时第三段改真伤 | `multi_damage` 只能表达等额普通攻击段及逐段加连势；资源缺少纯阳第三段真伤，当前也缺指定攻击段真伤所需的完整纯阳行动上下文 | 现有测试仅间接加载／使用资源，没有覆盖纯阳分支 | 回归夹具；在补齐 S5 通用能力前禁止进入正式白名单 |
+| `five_yang_chase` | `23-gongfa-fire-pool.md:58`：五段 `max(1,floor(P/7))`；每段 +1 连势；连续两段均实际扣生命时，后一段追加 50% 追击，追击不参与连续判断且再 +1 连势 | `multi_damage` 已有逐段实际生命损失判断、50% 追击与独立追击连势参数 | `_test_representative_multi_attack` 覆盖五段、四次连续追击和连势总数；仍作为早期纵切装配而非正式玩家内容 | 回归夹具 |
+| `discard_fuel_open_furnace` | `23-gongfa-fire-pool.md:53`：本次出牌先进入弃牌堆，再弃全部剩余手牌；按非火 2／火 4 加连势，随后抽 `max(2,N)` 并获一次连击；无直接伤害 | 数值、捕获、抽牌和连击均可表达；但当前 `zones` 效果在 `commit_staging_for` 之前执行，真实顺序是先弃剩余手牌、后提交本次出牌，缺少通用的出牌提交后时点 | `_test_representative_special_technique` 只断言最终牌区和数值，没有证明权威先后顺序 | 回归夹具；新增通用行动后置时点前禁止进入正式白名单 |
+| `stagnant_gu_conceal_breath` | `21-gongfa-poison-pool.md:16`：获得 `P` 防御；随机附郁毒；纯林高牌且手牌无合法目标时从牌库顶向下找第一张；没有合法目标时防御仍结算 | 防御、窄牌区查询、可注入随机源、捕获与异状处理器完整表达 | `_test_stagnant_gu_conceal_breath_pipeline` 覆盖手牌目标、纯林牌库候补、第一张停止、全无目标及预览／实际防御 | 正式语义完整 |
+| `borrow_fire_guard_heart` | `23-gongfa-fire-pool.md:15` 及公共借力规则：`floor(P/2)` 伤害；按结算时防御获得 1／2 层；敌方攻击段有实际防御或生命损失才逐层消费并按总损失普通反击 | 伤害、结算时防御条件、角色状态处理器和窄反击端口完整表达 | `_test_borrow_fire_guard_heart_pipeline`、`_test_borrowed_force_attack_segments` 覆盖预览／实际、1／2 层、防御／生命／混合损失、零损失、多段及反击击杀中止 | 正式语义完整 |
+
+## 平台能力与后续迁移规则
+
+- 五条已完成运行时识别，固定倍率 `×12`，映射到四条／五条共用池并使用独立序列；五条心得仍禁用。
+- 所有效果继续通过 `EffectHandlerRegistry` 的稳定操作码、定义校验、预览和正式结算入口运行；
+  随机行为使用可注入随机源，处理器只通过窄战斗端口修改状态。
+- 38 门风资源从“部分接入”迁移时，应以单门或同能力小批次补齐权威公式、牌型分支、目标不足、
+  牌区时点和确定性测试；若撞到新通用语义，先建设对应能力，不在中央流程加内容 ID 分支。
+- `data/vertical_slice_sequences.json` 和 `data/scripted_battle.json` 是确定性调试装配，不是正式开局、
+  S2 白名单或玩家构筑。正式装配必须只引用已经标为正式语义完整的条目。

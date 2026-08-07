@@ -16,7 +16,7 @@ const ValuePanelScript = preload("res://ui/components/battle_value_panel.gd")
 
 const COLORS := UiDesignScript.COLORS
 
-var battle_session: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+var battle_session: BattleSession = null
 var run_progress: RunProgressSnapshot
 var battle_configuration: Dictionary = {}
 var selected_ids: Array[String] = []
@@ -45,6 +45,7 @@ var trigger_log_view
 var resolution_strip: Label
 
 func _ready() -> void:
+    _ensure_battle_session()
     theme = UiDesignScript.create_theme()
     _build_interface()
     battle_session.state_changed.connect(_refresh)
@@ -61,6 +62,10 @@ func configure_battle(configuration: Dictionary) -> void:
 func configure_battle_session(session: BattleSession) -> void:
     if session != null:
         battle_session = session
+
+func _ensure_battle_session() -> void:
+    if battle_session == null:
+        battle_session = BattleSessionScript.new(CombatEngineScript.new())
 
 func configure_ai_provider(provider) -> void:
     battle_session.use_ai_provider(provider)
