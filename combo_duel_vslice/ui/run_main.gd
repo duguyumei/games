@@ -361,13 +361,12 @@ func _complete_noncombat_node() -> void:
     _show_reward_overlay()
 
 func _show_reward_overlay() -> void:
-    var reward: Dictionary = run_session.snapshot().section("reward")
-    var bundle: Dictionary = reward.get("bundle", {})
+    var bundle: Dictionary = run_session.snapshot().reward.get("bundle", {})
     reward_overlay.present(bundle)
 
 func _claim_reward(bundle_id: String = "") -> void:
     if bundle_id == "":
-        var reward: Dictionary = run_session.snapshot().section("reward")
+        var reward: Dictionary = run_session.snapshot().reward
         bundle_id = str(reward.get("bundle", {}).get("id", ""))
     var result: Dictionary = run_session.execute({
         "type": "claim_reward",

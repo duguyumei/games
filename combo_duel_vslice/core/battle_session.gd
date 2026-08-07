@@ -260,7 +260,7 @@ func player_progress_snapshot():
 func combat_order_labels(technique_name: String = "当前功法") -> Array[String]:
     return engine.combat_order_labels(engine.player, technique_name)
 
-func snapshot():
+func snapshot() -> BattleSnapshot:
     var ai_snapshot: Dictionary = (
         ai_coordinator.snapshot()
         if _remote_ai_enabled and ai_coordinator != null
@@ -273,7 +273,7 @@ func snapshot():
     if _remote_ai_enabled:
         visible_enemy_plan = ai_snapshot.get("public_intent", {}).duplicate(true)
         visible_enemy_plan.erase("ready")
-    return BattleSnapshotScript.new({
+    return BattleSnapshotScript.from_dict({
         "battle_state": engine.battle_state,
         "battle_state_detail": engine.battle_state_detail,
         "turn_number": engine.turn_number,
@@ -522,6 +522,7 @@ func _side_snapshot(side) -> Dictionary:
         "max_life": side.max_life,
         "defense": side.defense,
         "hand_limit": side.current_hand_limit(),
+        "inner_skill_limit": side.INNER_SKILL_LIMIT,
         "draw_count": side.draw_pile.size(),
         "hand_count": side.hand.size(),
         "staging_count": side.staging.size(),

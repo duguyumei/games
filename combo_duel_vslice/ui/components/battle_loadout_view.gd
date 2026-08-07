@@ -19,12 +19,15 @@ var _built := false
 func _ready() -> void:
     _ensure_built()
 
-func present(data: Dictionary, active_consumable_slot: int, can_use_consumable: bool) -> void:
+func present(
+        side: BattleSideSnapshot,
+        active_consumable_slot: int,
+        can_use_consumable: bool) -> void:
     _ensure_built()
     _active_consumable_slot = active_consumable_slot
-    var equipped: Array = data.get("equipped_inner_skills", [])
-    var inner_limit := int(data.get("inner_skill_limit", 6))
-    var slot_index := int(data.get("technique_slot_index", 0))
+    var equipped: Array = side.equipped_inner_skills
+    var inner_limit := side.inner_skill_limit
+    var slot_index := side.technique_slot_index
     _inner_count.text = "%d / %d" % [equipped.size(), inner_limit]
     _move_left.disabled = slot_index <= 0
     _move_right.disabled = slot_index >= equipped.size()
@@ -34,8 +37,8 @@ func present(data: Dictionary, active_consumable_slot: int, can_use_consumable: 
             _inner_slots.add_child(_equipped_inner_slot(equipped[index], index + 1))
         else:
             _inner_slots.add_child(_empty_slot("内功", index + 1, Color("485461"), Vector2(84, 58)))
-    var consumables: Array = data.get("consumables", [])
-    var consumable_limit := int(data.get("consumable_limit", 0))
+    var consumables: Array = side.consumables
+    var consumable_limit := side.consumable_limit
     _consumable_count.text = "%d / %d" % [consumables.size(), consumable_limit]
     _clear(_consumable_slots)
     for index in range(consumable_limit):

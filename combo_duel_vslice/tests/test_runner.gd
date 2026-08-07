@@ -112,6 +112,7 @@ func _initialize() -> void:
     _test_aura_seeded_finish_and_preview()
     _test_battle_consumable_reshape_persists_via_run_deck()
     _test_battle_session_commands_snapshots_and_events()
+    _test_snapshot_boundaries_are_typed()
     _test_map_generation_is_deterministic_and_constrained()
     _test_map_routes_reach_boss_without_crossing()
     _test_node_dispatcher_is_data_driven_and_deterministic()
@@ -419,7 +420,7 @@ func _test_starter_build_assembly_and_composition_root() -> void:
         "starter_build_id": "standard_52",
     })
     _assert_true(setup_result.get("success", false), "组合根建立的本局可按初始构筑启动")
-    _assert_equal(first_session.snapshot().section("growth")["run_deck_count"], 52, "初始构筑装配结果进入本局权威牌组")
+    _assert_equal(first_session.snapshot().growth["run_deck_count"], 52, "初始构筑装配结果进入本局权威牌组")
 
 func _test_node_reward_service_contract() -> void:
     var catalog = ContentCatalogScript.new()
@@ -831,22 +832,22 @@ func _test_remote_ai_action_window_session_gate() -> void:
     _assert_true(session.setup_battle(configuration), "远程 AI 行动窗口战斗建立成功")
     _assert_true(session.execute({"type": "start_turn"})["success"], "远程 AI 战斗开始首个行动窗口")
     var thinking_snapshot = session.snapshot()
-    _assert_equal(thinking_snapshot.section("ai_decision")["state"], "thinking", "行动窗口开始时敌方立即进入异步思考")
-    _assert_true(not thinking_snapshot.section("ai_decision")["can_player_confirm"], "敌方思考期间玩家确认门禁关闭")
-    _assert_equal(thinking_snapshot.value("locked_enemy_card_count", -1), 0, "AI 回答前敌方不提前移动或锁定真气")
+    _assert_equal(thinking_snapshot.ai_decision["state"], "thinking", "行动窗口开始时敌方立即进入异步思考")
+    _assert_true(not thinking_snapshot.ai_decision["can_player_confirm"], "敌方思考期间玩家确认门禁关闭")
+    _assert_equal(thinking_snapshot.locked_enemy_card_count, 0, "AI 回答前敌方不提前移动或锁定真气")
     _assert_equal(provider.submitted_requests.size(), 1, "首个敌方出手机会只发送一次接口请求")
     var first_request: Dictionary = provider.submitted_requests[0]["payload"]
     _assert_true(first_request.get("candidates", []).size() > 1, "远程 AI 只收到本地枚举的多个合法选择")
     _assert_equal(first_request["candidates"][0]["groups"][0]["kind"], "main", "普通候选使用第 0 主牌型组契约")
 
-    var player_hand_before: Array = thinking_snapshot.section("player")["hand"]
+    var player_hand_before: Array = thinking_snapshot.player.hand
     var blocked_play: Dictionary = session.execute({
         "type": "play_cards",
         "card_ids": [player_hand_before[0]["id"]],
     })
     _assert_true(not blocked_play["success"], "敌方思考期间玩家出牌命令被应用层拒绝")
     _assert_true(str(blocked_play["reason"]).contains("思考"), "出牌门禁返回明确思考状态")
-    _assert_equal(session.snapshot().section("player")["staging_count"], 0, "门禁拒绝不会把玩家真气移入待出区")
+    _assert_equal(session.snapshot().player.staging_count, 0, "门禁拒绝不会把玩家真气移入待出区")
     var blocked_end: Dictionary = session.execute({"type": "end_turn"})
     _assert_true(not blocked_end["success"], "敌方思考期间结束回合同样受门禁保护")
 
@@ -869,13 +870,13 @@ func _test_remote_ai_action_window_session_gate() -> void:
     })
     _assert_true(provider.complete(str(provider.submitted_requests[0]["request_id"])), "Mock Provider 完成首个远程回答")
     var ready_snapshot = session.snapshot()
-    _assert_equal(ready_snapshot.section("ai_decision")["state"], "ready", "合法回答通过后行动窗口转为思考完毕")
-    _assert_true(ready_snapshot.section("ai_decision")["can_player_confirm"], "敌方行动锁定后开放玩家确认")
-    _assert_true(ready_snapshot.value("locked_enemy_card_count", 0) > 0, "远程候选经本地复核后才锁定敌方真气")
-    _assert_true(ready_snapshot.value("enemy_plan", {}).has("damage"), "本地预览核为已锁定远程候选生成公开伤害意图")
+    _assert_equal(ready_snapshot.ai_decision["state"], "ready", "合法回答通过后行动窗口转为思考完毕")
+    _assert_true(ready_snapshot.ai_decision["can_player_confirm"], "敌方行动锁定后开放玩家确认")
+    _assert_true(ready_snapshot.locked_enemy_card_count > 0, "远程候选经本地复核后才锁定敌方真气")
+    _assert_true(ready_snapshot.enemy_plan.has("damage"), "本地预览核为已锁定远程候选生成公开伤害意图")
 
     var mixed_ids: Array[String] = []
-    var ready_hand: Array = ready_snapshot.section("player")["hand"]
+    var ready_hand: Array = ready_snapshot.player.hand
     for left_index in range(ready_hand.size()):
         for right_index in range(left_index + 1, ready_hand.size()):
             if ready_hand[left_index]["attribute"] != ready_hand[right_index]["attribute"]:
@@ -900,7 +901,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     _assert_true(second_history_types.has("consumable_used"), "下一次请求补发思考期间的我方消耗品事件")
     _assert_true(second_history_types.has("cards_played"), "下一次请求包含双方上一击公开出牌历史")
     _assert_true(second_history_types.has("action_resolved"), "下一次请求包含上一击生命防御结算结果")
-    _assert_equal(session.snapshot().section("ai_decision")["state"], "thinking", "敌方单方连击使用新的独立思考窗口")
+    _assert_equal(session.snapshot().ai_decision["state"], "thinking", "敌方单方连击使用新的独立思考窗口")
 
     provider.queue_result({
         "success": true,
@@ -912,7 +913,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
         },
     })
     _assert_true(provider.complete(str(provider.submitted_requests[1]["request_id"])), "Mock Provider 完成敌方单方连击回答")
-    _assert_equal(session.snapshot().section("enemy")["discard_count"], 2, "玩家无行动机会时敌方合法回答自动完成单方连击")
+    _assert_equal(session.snapshot().enemy.discard_count, 2, "玩家无行动机会时敌方合法回答自动完成单方连击")
     _assert_equal(provider.submitted_requests.size(), 2, "同一完整回合自然连击只触发一次，不额外请求")
     _assert_true(session.execute({"type": "end_turn"})["success"], "双方行动耗尽后可以正常结束完整回合")
 
@@ -926,10 +927,10 @@ func _test_remote_ai_action_window_session_gate() -> void:
     timeout_session.execute({"type": "start_turn"})
     _assert_true(timeout_session.poll_ai_timeout(9223372036854775807), "到达截止时间后取消远程请求")
     var fallback_snapshot = timeout_session.snapshot()
-    _assert_equal(fallback_snapshot.section("ai_decision")["state"], "fallback_ready", "远程超时后由本地 Utility AI 接管")
-    _assert_true(fallback_snapshot.section("ai_decision")["can_player_confirm"], "本地接管成功后重新开放玩家确认")
+    _assert_equal(fallback_snapshot.ai_decision["state"], "fallback_ready", "远程超时后由本地 Utility AI 接管")
+    _assert_true(fallback_snapshot.ai_decision["can_player_confirm"], "本地接管成功后重新开放玩家确认")
     _assert_equal(timeout_provider.pending.size(), 0, "超时取消清理 Provider 待处理请求")
-    var timeout_system_log: Array = fallback_snapshot.value("system_log", [])
+    var timeout_system_log: Array = fallback_snapshot.system_log
     var has_fallback_log := false
     for entry in timeout_system_log:
         if str(entry.get("category", "")) == "remote_ai_fallback":
@@ -1511,7 +1512,7 @@ func _test_status_system_contract() -> void:
         "状态历史记录延迟建立与结算")
     var status_snapshot = BattleSessionScript.new(engine).snapshot()
     _assert_equal(
-        status_snapshot.value("status_history", []).size(),
+        status_snapshot.status_history.size(),
         system.history.size(),
         "战斗快照公开状态系统的深复制历史")
 
@@ -2354,35 +2355,35 @@ func _test_battle_session_commands_snapshots_and_events() -> void:
     _assert_true(second.execute({"type": "start_turn"})["success"], "第二会话开始回合命令成功")
     var first_snapshot = first.snapshot()
     var second_snapshot = second.snapshot()
-    _assert_equal(first_snapshot.section("player")["hand_count"], 8, "战斗快照包含玩家手牌数量")
-    _assert_equal(first_snapshot.section("enemy")["hand_count"], 8, "战斗快照包含敌方手牌数量")
-    _assert_true(first_snapshot.section("action_states")["player"]["can_act"], "战斗快照公开通用玩家行动资格")
-    _assert_true(first_snapshot.section("action_states")["enemy"]["can_act"], "战斗快照公开通用敌方行动资格")
-    _assert_equal(first_snapshot.section("player")["equipped_inner_skills"][0]["id"], "extra_qi_to_defense", "快照提供内功展示定义")
-    _assert_equal(first_snapshot.section("player")["consumables"][1]["targeting_limits"]["maximum"], 2, "快照提供消耗品展示与目标上限")
-    _assert_true(not first_snapshot.value("battle_log", []).is_empty(), "战斗快照提供独立战斗日志通道")
-    _assert_equal(first_snapshot.value("battle_log", [])[0]["channel"], "battle", "战斗日志具有统一通道字段")
-    _assert_equal(first_snapshot.value("system_log", [])[0]["channel"], "system", "系统日志具有统一通道字段")
+    _assert_equal(first_snapshot.player.hand_count, 8, "战斗快照包含玩家手牌数量")
+    _assert_equal(first_snapshot.enemy.hand_count, 8, "战斗快照包含敌方手牌数量")
+    _assert_true(first_snapshot.action_states["player"]["can_act"], "战斗快照公开通用玩家行动资格")
+    _assert_true(first_snapshot.action_states["enemy"]["can_act"], "战斗快照公开通用敌方行动资格")
+    _assert_equal(first_snapshot.player.equipped_inner_skills[0]["id"], "extra_qi_to_defense", "快照提供内功展示定义")
+    _assert_equal(first_snapshot.player.consumables[1]["targeting_limits"]["maximum"], 2, "快照提供消耗品展示与目标上限")
+    _assert_true(not first_snapshot.battle_log.is_empty(), "战斗快照提供独立战斗日志通道")
+    _assert_equal(first_snapshot.battle_log[0]["channel"], "battle", "战斗日志具有统一通道字段")
+    _assert_equal(first_snapshot.system_log[0]["channel"], "system", "系统日志具有统一通道字段")
     _assert_equal(
-        first_snapshot.section("player")["hand"],
-        second_snapshot.section("player")["hand"],
+        first_snapshot.player.hand,
+        second_snapshot.player.hand,
         "相同配置与种子产生相同只读手牌快照")
     var changed_copy: Dictionary = first_snapshot.to_dict()
     changed_copy["player"]["life"] = 0
-    _assert_equal(first.snapshot().section("player")["life"], 100, "修改快照副本不会修改战斗核心")
-    var battle_log_copy: Array = first_snapshot.value("battle_log", [])
+    _assert_equal(first.snapshot().player.life, 100, "修改快照副本不会修改战斗核心")
+    var battle_log_copy: Array = first_snapshot.battle_log
     battle_log_copy[0]["message"] = "外部篡改"
-    _assert_true(first.snapshot().value("battle_log", [])[0]["message"] != "外部篡改", "日志快照同样保持只读副本边界")
+    _assert_true(first.snapshot().battle_log[0]["message"] != "外部篡改", "日志快照同样保持只读副本边界")
 
     var preview_snapshot: Dictionary = first.preview([
-        first_snapshot.section("player")["hand"][0]["id"]])
+        first_snapshot.player.hand[0]["id"]])
     _assert_true(preview_snapshot.get("cards", [])[0] is Dictionary, "会话预览只返回卡牌快照而非领域对象")
     _assert_true(preview_snapshot.get("hand", {}).has("contributing_card_ids"), "会话预览用卡牌 ID 表达参与牌")
 
     var move_result := first.execute({"type": "move_technique_slot", "direction": -1})
     _assert_true(move_result["success"], "调整功法位命令通过战斗会话执行")
-    _assert_equal(first.snapshot().section("player")["technique_slot_index"], 0, "功法位变化进入新快照")
-    var hand: Array = first.snapshot().section("player")["hand"]
+    _assert_equal(first.snapshot().player.technique_slot_index, 0, "功法位变化进入新快照")
+    var hand: Array = first.snapshot().player.hand
     var play_result := first.execute({"type": "play_cards", "card_ids": [hand[0]["id"]]})
     _assert_true(play_result["success"], "出牌命令通过战斗会话执行")
     var action_events: Array = first.drain_events()
@@ -2393,9 +2394,57 @@ func _test_battle_session_commands_snapshots_and_events() -> void:
     _assert_equal(rejected["success"], false, "未知战斗命令被安全拒绝")
     var rejected_events: Array = first.drain_events()
     _assert_equal(rejected_events[-1].event_type(), "command_rejected", "命令失败产生结构化拒绝事件")
-    var system_log: Array = first.snapshot().value("system_log", [])
+    var system_log: Array = first.snapshot().system_log
     _assert_equal(system_log[-1]["severity"], "warning", "命令拒绝进入系统日志 warning 通道")
     _assert_equal(system_log[-1]["context"]["command"], "not_a_command", "系统日志保留被拒绝命令上下文")
+
+func _test_snapshot_boundaries_are_typed() -> void:
+    ## 锁住 core → 表现层的类型化读取边界。
+    ##
+    ## 这两个快照类曾经只包一个裸 Dictionary 并暴露 value(key, default)，
+    ## 键名写错会静默返回默认值。这里断言字段访问可用、无类型旁路残留，
+    ## 且 inner_skill_limit 由领域常量供给而不是表现层各自假设一个数字。
+    var session = BattleSessionScript.new(CombatEngineScript.new())
+    _assert_true(session.setup_battle({"seed": 8801}), "战斗会话建立用于快照边界检查")
+    session.execute({"type": "start_turn"})
+    var battle := session.snapshot()
+
+    _assert_true(battle is BattleSnapshot, "战斗快照是类型化对象")
+    _assert_true(battle.player is BattleSideSnapshot, "参战方快照是类型化对象")
+    _assert_true(
+        not battle.has_method("value") and not battle.has_method("section"),
+        "战斗快照不再保留无类型读取旁路")
+    _assert_true(
+        not battle.player.has_method("value"),
+        "参战方快照不再保留无类型读取旁路")
+    _assert_equal(
+        battle.player.inner_skill_limit,
+        BattleSideScript.INNER_SKILL_LIMIT,
+        "内功容量由领域常量供给，表现层不各自假设")
+    _assert_equal(battle.SCHEMA_VERSION, 1, "战斗快照使用稳定版本号")
+    _assert_equal(battle.to_dict()["schema_version"], 1, "战斗快照序列化保留版本号")
+    _assert_equal(
+        battle.log_channel("battle"),
+        battle.battle_log,
+        "日志通道入口与字段访问返回同一内容")
+    _assert_true(
+        battle.action_state("player").has("can_act"),
+        "行动状态入口按方返回结构")
+
+    var composition_root = GameCompositionRootScript.new()
+    _assert_true(composition_root.initialize(), "组合根初始化用于本局快照检查")
+    var run_session = composition_root.create_run_session()
+    _assert_true(run_session != null, "内容通过校验时组合根产出本局会话")
+    run_session.execute({"type": "setup_run", "seed": 8802})
+    var run := run_session.snapshot()
+
+    _assert_true(run is RunSnapshot, "本局快照是类型化对象")
+    _assert_true(
+        not run.has_method("value") and not run.has_method("section"),
+        "本局快照不再保留无类型读取旁路")
+    _assert_equal(run.seed, 8802, "本局快照按字段公开种子")
+    _assert_equal(run.SCHEMA_VERSION, 1, "本局快照使用稳定版本号")
+    _assert_true(not run.available_node_ids.is_empty(), "本局快照按字段公开可选节点")
 
 func _test_map_generation_is_deterministic_and_constrained() -> void:
     var generator = MapGeneratorScript.new()
@@ -2575,35 +2624,35 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     var setup := session.execute({"type": "setup_run", "seed": 2308})
     _assert_true(setup["success"], "本局会话接受结构化建局命令")
     var initial = session.snapshot()
-    _assert_equal(initial.value("act"), 1, "本局快照提供当前层数")
-    _assert_equal(initial.value("phase"), "awaiting_node", "本局快照提供当前流程阶段")
-    _assert_true(initial.value("can_open_practice"), "本局快照提供修习可用状态")
-    _assert_equal(initial.section("practice").get("offers", []).size(), 3, "修习代表选项由本局快照提供")
-    var copied_graph: Dictionary = initial.section("graph")
+    _assert_equal(initial.act, 1, "本局快照提供当前层数")
+    _assert_equal(initial.phase, "awaiting_node", "本局快照提供当前流程阶段")
+    _assert_true(initial.can_open_practice, "本局快照提供修习可用状态")
+    _assert_equal(initial.practice.get("offers", []).size(), 3, "修习代表选项由本局快照提供")
+    var copied_graph: Dictionary = initial.graph
     copied_graph["act"] = 99
-    _assert_equal(session.snapshot().section("graph").get("act"), 1, "修改地图快照不会污染本局核心")
+    _assert_equal(session.snapshot().graph.get("act"), 1, "修改地图快照不会污染本局核心")
 
-    var first_node_id := str(initial.value("available_node_ids", [])[0])
+    var first_node_id := str(initial.available_node_ids[0])
     var begin := session.execute({"type": "begin_node", "node_id": first_node_id})
     _assert_true(begin["success"], "本局会话统一校验并进入可达节点")
     _assert_true(begin.get("dispatch", {}).get("success", false), "进入节点命令同时返回数据驱动调度结果")
-    _assert_equal(session.snapshot().value("phase"), "node_in_progress", "节点开始后快照进入未完成状态")
+    _assert_equal(session.snapshot().phase, "node_in_progress", "节点开始后快照进入未完成状态")
     var rejected := session.execute({"type": "open_practice"})
     _assert_equal(rejected["success"], false, "节点未完成时本局会话拒绝打开修习")
 
     var completion := session.execute({"type": "complete_node"})
     _assert_true(completion["success"], "本局会话完成当前节点")
-    _assert_equal(session.snapshot().value("phase"), "awaiting_reward", "节点完成后进入待领取奖励阶段")
-    _assert_equal(session.snapshot().value("experience"), 0, "领取前奖励不会提前写入历练")
-    var reward_snapshot: Dictionary = session.snapshot().section("reward")
+    _assert_equal(session.snapshot().phase, "awaiting_reward", "节点完成后进入待领取奖励阶段")
+    _assert_equal(session.snapshot().experience, 0, "领取前奖励不会提前写入历练")
+    var reward_snapshot: Dictionary = session.snapshot().reward
     _assert_true(reward_snapshot.get("available", false), "本局快照公开待领取奖励包")
     _assert_equal(reward_snapshot.get("experience_total"), 3, "奖励快照公开普通战斗三点历练")
     _assert_true(not session.execute({"type": "open_practice"})["success"], "奖励领取前修习保持锁定")
     var bundle_id := str(reward_snapshot.get("bundle", {}).get("id", ""))
     var claim: Dictionary = session.execute({"type": "claim_reward", "bundle_id": bundle_id})
     _assert_true(claim.get("success", false), "匹配奖励包ID后可以领取节点奖励")
-    _assert_equal(session.snapshot().value("experience"), 3, "领取后节点奖励写入本局历练")
-    _assert_equal(session.snapshot().value("phase"), "awaiting_node", "领取后才返回地图待选状态")
+    _assert_equal(session.snapshot().experience, 3, "领取后节点奖励写入本局历练")
+    _assert_equal(session.snapshot().phase, "awaiting_node", "领取后才返回地图待选状态")
     _assert_true(not session.execute({"type": "claim_reward", "bundle_id": bundle_id})["success"], "同一奖励包不能重复领取")
     _assert_true(session.execute({"type": "open_practice"})["success"], "领取奖励返回待选状态后可以打开修习")
     var purchase := session.execute({
@@ -2613,11 +2662,11 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     })
     _assert_true(purchase["success"], "修习购买通过本局命令完成")
     _assert_equal(purchase["price"], 3, "修习价格由核心内容定义决定而不信任 UI 参数")
-    _assert_equal(session.snapshot().value("experience"), 0, "修习购买后的历练进入只读快照")
-    _assert_equal(session.snapshot().section("growth").get("consumable_ids"), ["hierophant"], "本局成长快照包含共享消耗品")
+    _assert_equal(session.snapshot().experience, 0, "修习购买后的历练进入只读快照")
+    _assert_equal(session.snapshot().growth.get("consumable_ids"), ["hierophant"], "本局成长快照包含共享消耗品")
 
-    var run_log: Array = session.snapshot().value("run_log", [])
-    var system_log: Array = session.snapshot().value("system_log", [])
+    var run_log: Array = session.snapshot().run_log
+    var system_log: Array = session.snapshot().system_log
     _assert_true(run_log.size() >= 5, "建局、节点、修习和购买写入统一本局日志通道")
     _assert_true(not system_log.is_empty(), "被拒绝的本局命令写入统一系统日志通道")
     var events: Array = session.drain_events()
@@ -2637,15 +2686,15 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     boss_state.phase = "node_in_progress"
     var boss_session = RunSessionScript.new(boss_state)
     _assert_true(boss_session.execute({"type": "complete_node"})["success"], "Boss 节点完成也经过本局会话")
-    _assert_equal(boss_session.snapshot().value("phase"), "awaiting_reward", "Boss胜利先进入奖励阶段")
-    _assert_equal(boss_session.snapshot().section("reward")["experience_total"], 5, "Boss奖励包为五点历练")
-    var boss_bundle_id := str(boss_session.snapshot().section("reward")["bundle"]["id"])
+    _assert_equal(boss_session.snapshot().phase, "awaiting_reward", "Boss胜利先进入奖励阶段")
+    _assert_equal(boss_session.snapshot().reward["experience_total"], 5, "Boss奖励包为五点历练")
+    var boss_bundle_id := str(boss_session.snapshot().reward["bundle"]["id"])
     _assert_true(boss_session.execute({"type": "claim_reward", "bundle_id": boss_bundle_id})["success"], "领取Boss奖励后推进流程")
-    _assert_equal(boss_session.snapshot().value("phase"), "boss_chest", "领取后本局快照公开 Boss 宝箱阶段")
-    _assert_equal(boss_session.snapshot().value("experience"), 5, "Boss基础历练在领取后到账")
+    _assert_equal(boss_session.snapshot().phase, "boss_chest", "领取后本局快照公开 Boss 宝箱阶段")
+    _assert_equal(boss_session.snapshot().experience, 5, "Boss基础历练在领取后到账")
     _assert_true(boss_session.execute({"type": "complete_boss_chest"})["success"], "Boss 宝箱流程通过本局命令完成")
-    _assert_equal(boss_session.snapshot().value("act"), 2, "Boss 宝箱命令推进到下一层")
-    _assert_equal(boss_session.snapshot().value("run_log", []).size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
+    _assert_equal(boss_session.snapshot().act, 2, "Boss 宝箱命令推进到下一层")
+    _assert_equal(boss_session.snapshot().run_log.size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
 
 func _test_boss_chest_flow() -> void:
     var state = RunStateScript.new()
@@ -2720,9 +2769,9 @@ func _test_map_practice_and_battle_scene_integration() -> void:
     run_ui._open_practice()
     _assert_true(run_ui.practice_overlay.visible, "点击修习按钮打开卡片式修习页面")
     run_ui._close_practice()
-    var first_node_id: String = str(run_ui.run_session.snapshot().value("available_node_ids", [])[0])
+    var first_node_id: String = str(run_ui.run_session.snapshot().available_node_ids[0])
     run_ui._on_node_selected(first_node_id)
-    _assert_equal(run_ui.run_session.snapshot().value("phase"), "node_in_progress", "地图选择战斗节点后进入未完成状态")
+    _assert_equal(run_ui.run_session.snapshot().phase, "node_in_progress", "地图选择战斗节点后进入未完成状态")
     _assert_true(run_ui.battle_layer.visible and run_ui.current_battle != null, "战斗节点接入现有战斗场景")
     _assert_equal(
         run_ui.current_battle.battle_configuration["content_id"],
@@ -2733,16 +2782,16 @@ func _test_map_practice_and_battle_scene_integration() -> void:
         "地图 UI 将节点稳定内容种子传入战斗场景")
     _assert_true(run_ui.practice_button.disabled, "战斗节点进行中修习按钮锁定")
     run_ui._on_battle_finished("player_victory")
-    _assert_equal(run_ui.run_session.snapshot().value("phase"), "awaiting_reward", "战斗胜利后进入可见奖励阶段")
-    _assert_equal(run_ui.run_session.snapshot().value("experience"), 0, "领取前战斗奖励不会提前到账")
+    _assert_equal(run_ui.run_session.snapshot().phase, "awaiting_reward", "战斗胜利后进入可见奖励阶段")
+    _assert_equal(run_ui.run_session.snapshot().experience, 0, "领取前战斗奖励不会提前到账")
     _assert_true(run_ui.reward_overlay.visible, "战斗胜利后显示奖励结算页面")
     _assert_true(run_ui.practice_button.disabled, "奖励领取期间修习保持锁定")
     run_ui._claim_reward()
-    _assert_equal(run_ui.run_session.snapshot().value("phase"), "awaiting_node", "领取奖励后返回地图待选状态")
-    _assert_equal(run_ui.run_session.snapshot().value("experience"), 3, "领取后战斗奖励显示为当前历练")
+    _assert_equal(run_ui.run_session.snapshot().phase, "awaiting_node", "领取奖励后返回地图待选状态")
+    _assert_equal(run_ui.run_session.snapshot().experience, 3, "领取后战斗奖励显示为当前历练")
     _assert_true(not run_ui.reward_overlay.visible, "领取后关闭奖励结算页面")
     _assert_true(
-        run_ui.run_session.snapshot().value("run_log", []).size() >= 3,
+        run_ui.run_session.snapshot().run_log.size() >= 3,
         "地图、战斗节点完成与本局流程共用结构化日志")
     _assert_true(not run_ui.battle_layer.visible, "战斗胜利后关闭战斗层而不自动打开修习")
     _assert_true(not run_ui.practice_overlay.visible, "战斗胜利不会强制弹出修习页面")
@@ -2762,13 +2811,13 @@ func _test_front_menu_and_starter_build_flow() -> void:
     front._start_new_run()
     _assert_true(front.active_run != null, "确认初始构筑后创建本局地图场景")
     _assert_equal(
-        front.active_run.run_session.snapshot().value("starter_build_id"),
+        front.active_run.run_session.snapshot().starter_build_id,
         "standard_52",
         "初始构筑ID进入本局快照：run=%s" % [
             str(front.active_run.starter_build_id),
             ])
     _assert_equal(
-        front.active_run.run_session.snapshot().value("phase"),
+        front.active_run.run_session.snapshot().phase,
         "awaiting_node",
         "确认构筑后本局从地图待选状态开始")
     front.queue_free()

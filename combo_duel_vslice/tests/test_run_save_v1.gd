@@ -37,7 +37,7 @@ func _test_round_trip_and_complete_run_deck() -> void:
     var repository = SaveRepositoryScript.new(SAVE_PATH)
     var service = ApplicationServiceScript.new(repository)
     var session = _configured_session(2308, 12)
-    var available: Array = session.snapshot().value("available_node_ids", [])
+    var available: Array = session.snapshot().available_node_ids
     _assert_true(not available.is_empty(), "建局后存在可进入节点")
     _assert_true(
         session.execute({"type": "begin_node", "node_id": str(available[0])})["success"],
@@ -125,7 +125,7 @@ func _test_corruption_backup_recovery_and_unknown_version_rejection() -> void:
 
 func _test_reward_boundary_and_v1_to_v2_migration() -> void:
     var session = _configured_session(420, 3)
-    var node_id := str(session.snapshot().value("available_node_ids", [])[0])
+    var node_id := str(session.snapshot().available_node_ids[0])
     _assert_true(session.execute({"type": "begin_node", "node_id": node_id})["success"], "奖励边界测试进入节点")
     _assert_true(session.execute({"type": "complete_node"})["success"], "奖励边界测试完成节点")
     var data = RunSaveDataScript.new().capture(session)
@@ -134,7 +134,7 @@ func _test_reward_boundary_and_v1_to_v2_migration() -> void:
     var restored: Dictionary = data.restore_session()
     _assert_true(restored.get("success", false), "待领奖励边界可恢复")
     var reward_session = restored["run_session"]
-    var bundle_id := str(reward_session.snapshot().section("reward")["bundle"]["id"])
+    var bundle_id := str(reward_session.snapshot().reward["bundle"]["id"])
     _assert_true(
         reward_session.execute({"type": "claim_reward", "bundle_id": bundle_id})["success"],
         "恢复后不会丢失待领奖励命令状态")

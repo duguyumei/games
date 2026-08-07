@@ -15,7 +15,7 @@ const TriggerLogScene = preload("res://ui/components/trigger_log_view.tscn")
 
 const COLORS := UiDesignScript.COLORS
 
-var battle_session = BattleSessionScript.new(CombatEngineScript.new())
+var battle_session: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
 var run_progress
 var battle_configuration: Dictionary = {}
 var selected_ids: Array[String] = []
@@ -63,7 +63,7 @@ func _process(_delta: float) -> void:
 func configure_battle(configuration: Dictionary) -> void:
     battle_configuration = configuration.duplicate(true)
 
-func configure_battle_session(session) -> void:
+func configure_battle_session(session: BattleSession) -> void:
     if session != null:
         battle_session = session
 
@@ -425,15 +425,14 @@ func _reset_battle() -> void:
 
 func _start_turn() -> void:
     selected_ids.clear()
-    var current = battle_session.snapshot()
-    if current.value("battle_state", "") != "active":
+    var current := battle_session.snapshot()
+    if current.battle_state != "active":
         _refresh()
         return
-    if int(current.value("actions_available", 0)) > 0 \
-            or int(current.value("enemy_actions_available", 0)) > 0:
+    if current.actions_available > 0 or current.enemy_actions_available > 0:
         board_message.text = "当前击仍有出牌机会；先出招或结束回合"
         return
-    if not bool(current.value("round_ended", false)):
+    if not current.round_ended:
         battle_session.execute({"type": "end_turn"})
     battle_session.execute({"type": "start_turn"})
     _refresh()
@@ -456,8 +455,8 @@ func _confirm_play() -> void:
     _refresh()
 
 func _select_consumable_slot(slot_index: int) -> void:
-    var player_state: Dictionary = battle_session.snapshot().section("player")
-    if slot_index < 0 or slot_index >= player_state.get("consumables", []).size():
+    var player_state := battle_session.snapshot().player
+    if slot_index < 0 or slot_index >= player_state.consumables.size():
         return
     if active_consumable_slot == slot_index:
         active_consumable_slot = -1
@@ -478,8 +477,7 @@ func _use_active_consumable() -> void:
         board_message.text = str(result.get("reason", "无法使用消耗品"))
     else:
         var retained: Array[String] = []
-        var player_state: Dictionary = battle_session.snapshot().section("player")
-        var hand: Array = player_state.get("hand", [])
+        var hand: Array = battle_session.snapshot().player.hand
         for card_id in selected_ids:
             if not _find_card_snapshot(hand, card_id).is_empty():
                 retained.append(card_id)
@@ -492,7 +490,7 @@ func _on_card_pressed(card_id: String) -> void:
     if selected_ids.has(card_id):
         selected_ids.erase(card_id)
     elif active_consumable_slot >= 0:
-        var consumables: Array = battle_session.snapshot().section("player").get("consumables", [])
+        var consumables: Array = battle_session.snapshot().player.consumables
         if active_consumable_slot >= consumables.size():
             return
         var limits: Dictionary = consumables[active_consumable_slot].get("targeting_limits", {})
@@ -513,13 +511,11 @@ func _on_card_pressed(card_id: String) -> void:
 func _refresh() -> void:
     if player_actor_status == null:
         return
-    var current = battle_session.snapshot()
-    var player_state: Dictionary = current.section("player")
-    var enemy_state: Dictionary = current.section("enemy")
-    var player_stacks: Dictionary = player_state.get("stacks", {})
-    var enemy_stacks: Dictionary = enemy_state.get("stacks", {})
-    var enemy_plan: Dictionary = current.value("enemy_plan", {})
-    var ai_decision: Dictionary = current.value("ai_decision", {})
+    var current := battle_session.snapshot()
+    var player_state := current.player
+    var enemy_state := current.enemy
+    var enemy_plan: Dictionary = current.enemy_plan
+    var ai_decision: Dictionary = current.ai_decision
     var has_plan: bool = not enemy_plan.is_empty()
     var ai_state := str(ai_decision.get("state", "disabled"))
     var ai_state_label: String = {
@@ -534,23 +530,23 @@ func _refresh() -> void:
     }.get(ai_state, ai_state)
     player_actor_status.present({
         "name": "太吾 · 战斗状态",
-        "life": player_state.get("life", 0),
-        "max_life": player_state.get("max_life", 0),
-        "defense": player_state.get("defense", 0),
+        "life": player_state.life,
+        "max_life": player_state.max_life,
+        "defense": player_state.defense,
         "statuses": [{
-            "text": "连势 %d" % int(player_stacks.get("momentum", 0)),
+            "text": "连势 %d" % player_state.stack_count("momentum"),
             "color": COLORS["orange"],
         }],
     })
     enemy_actor_status.present({
-        "name": enemy_state.get("name", "敌人"),
-        "life": enemy_state.get("life", 0),
-        "max_life": enemy_state.get("max_life", 0),
-        "defense": enemy_state.get("defense", 0),
+        "name": enemy_state.name,
+        "life": enemy_state.life,
+        "max_life": enemy_state.max_life,
+        "defense": enemy_state.defense,
         "statuses": [
-            {"text": "蛊印 %d" % int(enemy_stacks.get("gu_mark", 0)), "color": COLORS["purple"]},
-            {"text": "连势 %d" % int(enemy_stacks.get("momentum", 0)), "color": COLORS["orange"]},
-            {"text": "烈毒 %d" % _count_card_anomaly(enemy_state.get("hand", []), "poison", "lethal_poison"), "color": COLORS["red"]},
+            {"text": "蛊印 %d" % enemy_state.stack_count("gu_mark"), "color": COLORS["purple"]},
+            {"text": "连势 %d" % enemy_state.stack_count("momentum"), "color": COLORS["orange"]},
+            {"text": "烈毒 %d" % _count_card_anomaly(enemy_state.hand, "poison", "lethal_poison"), "color": COLORS["red"]},
         ],
         "plans": [
             {"text": ai_state_label, "color": COLORS["purple"], "tooltip": "敌方当前行动提案的生成状态；远程失败时自动切回本地 Utility AI"},
@@ -560,23 +556,23 @@ func _refresh() -> void:
         ],
     })
     enemy_hand_count_label.text = "%d / %d%s" % [
-        enemy_state.get("hand_count", 0),
-        enemy_state.get("hand_limit", 0),
-        " · 已计划" if int(current.value("locked_enemy_card_count", 0)) > 0 else "",
+        enemy_state.hand_count,
+        enemy_state.hand_limit,
+        " · 已计划" if current.locked_enemy_card_count > 0 else "",
     ]
     round_badge.text = "第 %d 回合 · 我方 %d / 对手 %d 次" % [
-        current.value("turn_number", 0),
-        current.value("actions_available", 0),
-        current.value("enemy_actions_available", 0)]
-    if current.value("battle_state", "") != "active":
-        round_badge.text = str(current.value("battle_state_detail", ""))
+        current.turn_number,
+        current.actions_available,
+        current.enemy_actions_available]
+    if current.battle_state != "active":
+        round_badge.text = current.battle_state_detail
     zone_counts_label.text = "牌库 %d   手牌 %d/%d   弃牌 %d" % [
-        player_state.get("draw_count", 0),
-        player_state.get("hand_count", 0),
-        player_state.get("hand_limit", 0),
-        player_state.get("discard_count", 0),
+        player_state.draw_count,
+        player_state.hand_count,
+        player_state.hand_limit,
+        player_state.discard_count,
     ]
-    var consumables: Array = player_state.get("consumables", [])
+    var consumables: Array = player_state.consumables
     if active_consumable_slot >= consumables.size():
         active_consumable_slot = -1
     hand_zone.present(player_state, selected_ids)
@@ -588,13 +584,13 @@ func _refresh() -> void:
     confirm_button.disabled = (
         selected_ids.is_empty()
         or active_consumable_slot >= 0
-        or int(current.value("actions_available", 0)) <= 0
+        or current.actions_available <= 0
         or not bool(ai_decision.get("can_player_confirm", true))
-        or current.value("battle_state", "") != "active")
-    if current.value("battle_state", "") != "active" and not _battle_finish_emitted:
+        or current.battle_state != "active")
+    if current.battle_state != "active" and not _battle_finish_emitted:
         _battle_finish_emitted = true
         run_progress = battle_session.player_progress_snapshot()
-        battle_finished.emit.call_deferred(str(current.value("battle_state", "")))
+        battle_finished.emit.call_deferred(current.battle_state)
 
 func _count_card_anomaly(cards: Array, category: String, anomaly_id: String) -> int:
     var count := 0
@@ -612,20 +608,20 @@ func _count_card_anomaly(cards: Array, category: String, anomaly_id: String) -> 
             count += 1
     return count
 
-func _active_consumable_targets_valid(player_state: Dictionary = {}) -> bool:
-    if player_state.is_empty():
-        player_state = battle_session.snapshot().section("player")
-    var consumables: Array = player_state.get("consumables", [])
-    if active_consumable_slot < 0 or active_consumable_slot >= consumables.size():
+func _active_consumable_targets_valid(player_state: BattleSideSnapshot = null) -> bool:
+    if player_state == null:
+        player_state = battle_session.snapshot().player
+    if active_consumable_slot < 0 \
+            or active_consumable_slot >= player_state.consumables.size():
         return false
     return bool(battle_session.validate_consumable_targets(
         active_consumable_slot,
         selected_ids).get("ok", false))
 
-func _refresh_enemy_hand(enemy_state: Dictionary) -> void:
+func _refresh_enemy_hand(enemy_state: BattleSideSnapshot) -> void:
     for child in enemy_hand_row.get_children():
         child.queue_free()
-    var visible_cards := mini(int(enemy_state.get("hand_count", 0)), 10)
+    var visible_cards := mini(enemy_state.hand_count, 10)
     for _index in range(visible_cards):
         enemy_hand_row.add_child(_enemy_hand_back())
 
@@ -636,11 +632,13 @@ func _move_technique_slot(direction: int) -> void:
     })
     _refresh()
 
-func _refresh_preview_and_staging(current, player_state: Dictionary) -> void:
+func _refresh_preview_and_staging(
+        current: BattleSnapshot,
+        player_state: BattleSideSnapshot) -> void:
     for child in staging_row.get_children():
         child.queue_free()
-    var consumables: Array = player_state.get("consumables", [])
-    if active_consumable_slot >= 0 and active_consumable_slot < consumables.size():
+    if active_consumable_slot >= 0 \
+            and active_consumable_slot < player_state.consumables.size():
         _refresh_consumable_targeting(player_state)
         return
     if selected_ids.is_empty():
@@ -657,16 +655,15 @@ func _refresh_preview_and_staging(current, player_state: Dictionary) -> void:
             "next_name": "—",
             "pips": "○ ○",
         })
-        var player_action_cards: Array = current.value("last_player_action_cards", [])
-        var enemy_action_cards: Array = current.value("last_enemy_action_cards", [])
-        if not player_action_cards.is_empty() or not enemy_action_cards.is_empty():
+        if not current.last_player_action_cards.is_empty() \
+                or not current.last_enemy_action_cards.is_empty():
             staging_hint.visible = false
             _show_last_synchronized_reveal(current)
         else:
             staging_hint.visible = true
             board_message.text = (
-                current.value("battle_state_detail", "")
-                if current.value("battle_state", "") != "active"
+                current.battle_state_detail
+                if current.battle_state != "active"
                 else "对手计划已公开 · 牌型与真气保持隐藏")
         return
 
@@ -711,11 +708,10 @@ func _refresh_preview_and_staging(current, player_state: Dictionary) -> void:
     board_message.text = "%s · %d 张参与数值计算 · P = %d · 内功防御 +%d · 对手计划已锁定" % [
         hand["name"], contributing_count, values["technique_value"], inner_defense]
 
-func _refresh_consumable_targeting(player_state: Dictionary) -> void:
-    var consumables: Array = player_state.get("consumables", [])
-    var definition: Dictionary = consumables[active_consumable_slot]
+func _refresh_consumable_targeting(player_state: BattleSideSnapshot) -> void:
+    var definition: Dictionary = player_state.consumables[active_consumable_slot]
     var limits: Dictionary = definition.get("targeting_limits", {})
-    var hand: Array = player_state.get("hand", [])
+    var hand: Array = player_state.hand
     for card_id in selected_ids:
         var card := _find_card_snapshot(hand, card_id)
         if card.is_empty():
@@ -747,11 +743,11 @@ func _refresh_consumable_targeting(player_state: Dictionary) -> void:
         definition.get("description", ""), selected_ids.size(), limits["maximum"],
         " · 可以使用" if _active_consumable_targets_valid(player_state) else ""]
 
-func _show_last_synchronized_reveal(current) -> void:
-    var player_action_cards: Array = current.value("last_player_action_cards", [])
-    var enemy_action_cards: Array = current.value("last_enemy_action_cards", [])
-    var player_preview: Dictionary = current.value("last_preview", {})
-    var enemy_preview: Dictionary = current.value("last_enemy_preview", {})
+func _show_last_synchronized_reveal(current: BattleSnapshot) -> void:
+    var player_action_cards: Array = current.last_player_action_cards
+    var enemy_action_cards: Array = current.last_enemy_action_cards
+    var player_preview: Dictionary = current.last_preview
+    var enemy_preview: Dictionary = current.last_enemy_preview
     if not player_action_cards.is_empty():
         staging_row.add_child(_staging_caption("我方"))
         var player_contributing: Array = player_preview.get("hand", {}).get("contributing_card_ids", [])
@@ -773,8 +769,8 @@ func _show_last_synchronized_reveal(current) -> void:
             staging_row.add_child(enemy_view)
     var player_hand_name: String = player_preview.get("hand", {}).get("name", "未出牌")
     board_message.text = "同步结算 · 我方 %s / 对手已出招" % player_hand_name
-    if current.value("battle_state", "") != "active":
-        board_message.text += " · %s" % current.value("battle_state_detail", "")
+    if current.battle_state != "active":
+        board_message.text += " · %s" % current.battle_state_detail
 
 func _staging_caption(text_value: String) -> Label:
     var label := Label.new()
@@ -784,13 +780,12 @@ func _staging_caption(text_value: String) -> Label:
     label.add_theme_color_override("font_color", COLORS["muted"])
     return label
 
-func _refresh_log(current) -> void:
-    var history: Array = current.value("%s_log" % active_log_channel, [])
-    var battle_history: Array = current.value("battle_log", [])
+func _refresh_log(current: BattleSnapshot) -> void:
+    var battle_history: Array = current.battle_log
     trigger_log_view.present({
         "channel": active_log_channel,
-        "history": history,
-        "delayed_count": current.value("delayed_count", 0),
+        "history": current.log_channel(active_log_channel),
+        "delayed_count": current.delayed_count,
     })
     if battle_history.is_empty():
         resolution_strip.text = "结算播报 · 等待出招"

@@ -4,6 +4,10 @@ extends RefCounted
 const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const CardZoneServiceScript = preload("res://core/card_zone_service.gd")
 
+## 可同时装备的内功上限。`configure_inner_skills()` 按此截断，快照按此对外公开，
+## 表现层不再各自假设一个数字。
+const INNER_SKILL_LIMIT := 6
+
 var name: String
 var owner_id: String
 var max_life: int = 100
@@ -191,7 +195,7 @@ func add_stack(stack_id: String, amount: int) -> int:
 
 func configure_inner_skills(inner_skill_ids: Array, dynamic_technique_slot: int = 0) -> void:
     equipped_inner_skill_ids.clear()
-    for inner_skill_id in inner_skill_ids.slice(0, 6):
+    for inner_skill_id in inner_skill_ids.slice(0, INNER_SKILL_LIMIT):
         equipped_inner_skill_ids.append(str(inner_skill_id))
     technique_slot_index = clampi(dynamic_technique_slot, 0, equipped_inner_skill_ids.size())
 

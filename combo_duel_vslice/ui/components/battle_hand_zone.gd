@@ -18,19 +18,18 @@ var _built := false
 func _ready() -> void:
     _ensure_built()
 
-func present(data: Dictionary, selected_ids: Array) -> void:
+func present(side: BattleSideSnapshot, selected_ids: Array) -> void:
     _ensure_built()
     _selected_ids.clear()
     for card_id in selected_ids:
         _selected_ids.append(str(card_id))
-    _draw_count.text = "%d / %d" % [
-        int(data.get("draw_count", 0)), int(data.get("deck_count", 0))]
-    _discard_count.text = str(int(data.get("discard_count", 0)))
+    _draw_count.text = "%d / %d" % [side.draw_count, side.deck_count]
+    _discard_count.text = str(side.discard_count)
     for child in _card_nodes:
         if is_instance_valid(child):
             child.queue_free()
     _card_nodes.clear()
-    var sorted_hand: Array = data.get("hand", []).duplicate(true)
+    var sorted_hand: Array = side.hand.duplicate(true)
     sorted_hand.sort_custom(func(left, right):
         if int(left.get("rank_order", 0)) == int(right.get("rank_order", 0)):
             return str(left.get("attribute", "")) < str(right.get("attribute", ""))

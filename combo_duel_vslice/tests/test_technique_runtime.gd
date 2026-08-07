@@ -716,7 +716,7 @@ func _test_combat_action_pauses_and_resumes_transactionally() -> void:
     _assert_equal(engine.sequence_book.position("high_card"), 0, "暂停期间功法序列不推进")
     _assert_equal(engine.player.defense, 5, "暂停前阶段效果已经建立")
     var session = BattleSessionScript.new(engine)
-    var request: Dictionary = session.snapshot().section("pending_choice")
+    var request: Dictionary = session.snapshot().pending_choice
     _assert_equal(request["request_id"], engine.pending_effect_choice_snapshot()["request_id"], "战斗快照公开同一选择请求")
     var rejected: Dictionary = session.execute({
         "type": "resolve_choice",

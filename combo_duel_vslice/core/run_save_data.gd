@@ -26,8 +26,8 @@ func _init(values: Dictionary = {}) -> void:
     _data = values.duplicate(true)
     _normalize_v1_types()
 
-func capture(run_session, content_version_value: int = CONTENT_VERSION):
-    var reward: Dictionary = run_session.snapshot().section("reward")
+func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSION):
+    var reward: Dictionary = run_session.snapshot().reward
     var pending_reward: Dictionary = (
         reward.get("bundle", {}).duplicate(true)
         if reward.get("available", false) else {})

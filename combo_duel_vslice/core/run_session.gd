@@ -166,11 +166,11 @@ func execute(command: Dictionary) -> Dictionary:
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
     return result
 
-func snapshot():
+func snapshot() -> RunSnapshot:
     var graph: Dictionary = navigation.graph.duplicate(true)
     var completed: Dictionary = navigation.completed_node_ids.duplicate(true)
     var available: Array[String] = navigation.available_node_ids()
-    return RunSnapshotScript.new({
+    return RunSnapshotScript.from_dict({
         "seed": navigation.seed,
         "starter_build_id": selected_starter_build_id,
         "act": navigation.act,
