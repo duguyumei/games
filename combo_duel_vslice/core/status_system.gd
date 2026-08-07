@@ -42,7 +42,7 @@ func _init(
             "_on_after_normal_draw_delays")
         timing_system.register_weak_handler(
             timing_system.AFTER_NORMAL_DRAW,
-            "status_system.qi_intake_duration",
+            "status_system.after_normal_draw_behaviors",
             800,
             self,
             "_on_after_normal_draw")
@@ -95,6 +95,58 @@ func reset() -> void:
 
 func actor_status_value(side, status_id: String) -> int:
     return maxi(0, int(side.stacks.get(status_id, 0)))
+
+func card_numeric_modifier(card, modifier_id: String) -> int:
+    if card == null or modifier_id == "":
+        return 0
+    var total := 0
+    var snapshot: Dictionary = card.anomaly_snapshot()
+    var anomaly_ids: Array = []
+    if str(snapshot.get("poison", "")) != "":
+        anomaly_ids.append(str(snapshot["poison"]))
+    if str(snapshot.get("state", "")) != "":
+        anomaly_ids.append(str(snapshot["state"]))
+    anomaly_ids.append_array(snapshot.get("marks", {}).keys())
+    anomaly_ids.append_array(snapshot.get("others", {}).keys())
+    for anomaly_id in anomaly_ids:
+        var definition: Dictionary = content_catalog.get_by_id("anomaly", str(anomaly_id))
+        for modifier_value in definition.get("modifiers", []):
+            var modifier: Dictionary = modifier_value
+            if str(modifier.get("id", "")) == modifier_id:
+                total += int(modifier.get("value", 0))
+    return total
+
+func actor_hand_card_numeric_modifier(side, modifier_id: String) -> int:
+    var total := 0
+    for card in side.hand:
+        total += card_numeric_modifier(card, modifier_id)
+    return total
+
+func modify_card_contribution(card, contribution: int, holder = null) -> int:
+    var value := int(floor(contribution * (100.0 + card_numeric_modifier(
+            card, "qi_contribution_percent")) / 100.0))
+    var reduction_percent := card_numeric_modifier(
+        card, "poison_contribution_reduction_percent")
+    if reduction_percent != 0:
+        var poison_effect_percent := 100
+        if holder != null:
+            poison_effect_percent += actor_numeric_modifier(
+                holder, "poison_effect_percent")
+        value -= int(floor(value * reduction_percent * poison_effect_percent / 10000.0))
+    return value
+
+func can_play_card(holder, card) -> Dictionary:
+    var result := _dispatch_card_behaviors("play_attempt", holder, card)
+    if bool(result.get("blocked", false)):
+        return {"allowed": false, "reason": str(result.get("reason", "此真气本回合不能打出"))}
+    return {"allowed": true}
+
+func can_play_cards(holder, cards: Array) -> Dictionary:
+    for card in cards:
+        var result := can_play_card(holder, card)
+        if not bool(result.get("allowed", false)):
+            return result
+    return {"allowed": true}
 
 func record_technique_card_flow(side, flow_kind: String, count: int) -> void:
     if flow_kind == "draw" and count > 0:
@@ -331,9 +383,15 @@ func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
     for status_id in snapshot.get("others", {}).keys():
         _append_card_behavior_entries(entries, trigger, "other", str(status_id))
     entries.sort_custom(func(left, right):
-        return int(left["priority"]) < int(right["priority"]))
+        if int(left["priority"]) != int(right["priority"]):
+            return int(left["priority"]) < int(right["priority"])
+        if str(left["status_id"]) != str(right["status_id"]):
+            return str(left["status_id"]) < str(right["status_id"])
+        return int(left["behavior_index"]) < int(right["behavior_index"]))
     var resolutions: Array = []
     var stopped := false
+    var blocked := false
+    var block_reason := ""
     for entry_value in entries:
         var entry: Dictionary = entry_value
         if not card.has_anomaly(str(entry["category"]), str(entry["status_id"])):
@@ -352,10 +410,18 @@ func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
         var result: Dictionary = behavior_registry.execute(entry["behavior"], context)
         if result.has("resolution"):
             resolutions.append(result["resolution"])
+        if bool(result.get("blocked", false)):
+            blocked = true
+            block_reason = str(result.get("reason", ""))
         if bool(result.get("stop_card_behaviors", false)):
             stopped = true
             break
-    return {"resolutions": resolutions, "stop_card_behaviors": stopped}
+    return {
+        "resolutions": resolutions,
+        "stop_card_behaviors": stopped,
+        "blocked": blocked,
+        "reason": block_reason,
+    }
 
 func _append_card_behavior_entries(
         entries: Array,
@@ -365,7 +431,8 @@ func _append_card_behavior_entries(
     if status_id == "":
         return
     var definition: Dictionary = content_catalog.get_by_id("anomaly", status_id)
-    for behavior_value in definition.get("behaviors", []):
+    for behavior_index in range(definition.get("behaviors", []).size()):
+        var behavior_value = definition.get("behaviors", [])[behavior_index]
         var behavior: Dictionary = behavior_value
         if str(behavior.get("trigger", "")) != trigger:
             continue
@@ -375,6 +442,7 @@ func _append_card_behavior_entries(
             "status_id": status_id,
             "definition": definition,
             "behavior": behavior,
+            "behavior_index": behavior_index,
         })
 
 func _dispatch_actor_behaviors(
@@ -387,17 +455,22 @@ func _dispatch_actor_behaviors(
         if actor_status_value(side, status_id) <= 0:
             continue
         var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
-        for behavior_value in definition.get("behaviors", []):
-            var behavior: Dictionary = behavior_value
+        for behavior_index in range(definition.get("behaviors", []).size()):
+            var behavior: Dictionary = definition.get("behaviors", [])[behavior_index]
             if str(behavior.get("trigger", "")) == trigger:
                 entries.append({
                     "priority": int(behavior.get("priority", 500)),
                     "status_id": status_id,
                     "definition": definition,
                     "behavior": behavior,
+                    "behavior_index": behavior_index,
                 })
     entries.sort_custom(func(left, right):
-        return int(left["priority"]) < int(right["priority"]))
+        if int(left["priority"]) != int(right["priority"]):
+            return int(left["priority"]) < int(right["priority"])
+        if str(left["status_id"]) != str(right["status_id"]):
+            return str(left["status_id"]) < str(right["status_id"])
+        return int(left["behavior_index"]) < int(right["behavior_index"]))
     var stopped := false
     var consumed := 0
     for entry_value in entries:
@@ -596,10 +669,20 @@ func _on_turn_end(event) -> Dictionary:
             0,
             null,
             str(delayed["label"]))
+    _dispatch_card_turn_end(event.actor)
     return {
         "success": true,
         "detail": "%s结算 %d 个到期延迟效果" % [event.actor.name, due.size()],
     }
+
+func _dispatch_card_turn_end(holder) -> void:
+    var cards: Array = []
+    for zone in [holder.draw_pile, holder.hand, holder.staging, holder.discard_pile]:
+        for card in zone:
+            if not cards.has(card):
+                cards.append(card)
+    for card in cards:
+        _dispatch_card_behaviors("turn_end", holder, card)
 
 func _on_after_normal_draw_delays(event) -> Dictionary:
     if event.actor == null:

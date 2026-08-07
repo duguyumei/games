@@ -55,28 +55,48 @@
       "name": "郁毒",
       "category": "poison",
       "remove_on_enter_discard": true,
-      "remove_on_battle_end": true
+      "remove_on_battle_end": true,
+      "modifiers": [
+        {"id": "poison_contribution_reduction_percent", "value": 50}
+      ],
+      "behaviors": [
+        {
+          "trigger": "played",
+          "handler": "remove_self_with_resolution",
+          "effect_kind": "qi_reduction",
+          "detail": "郁毒削减已计入本次真气贡献"
+        }
+      ]
     },
     {
       "id": "qi_dissipation",
       "name": "散气",
       "category": "state",
       "remove_on_enter_discard": true,
-      "remove_on_battle_end": true
+      "remove_on_battle_end": true,
+      "modifiers": [
+        {"id": "qi_contribution_percent", "value": -50}
+      ]
     },
     {
       "id": "vulnerability",
       "name": "破绽",
       "category": "state",
       "remove_on_enter_discard": true,
-      "remove_on_battle_end": true
+      "remove_on_battle_end": true,
+      "modifiers": [
+        {"id": "incoming_damage_percent", "value": 20}
+      ]
     },
     {
       "id": "acupoint_block",
       "name": "封穴",
       "category": "state",
       "remove_on_enter_discard": true,
-      "remove_on_battle_end": true
+      "remove_on_battle_end": true,
+      "modifiers": [
+        {"id": "outgoing_damage_percent", "value": -20}
+      ]
     },
     {
       "id": "forbidden",
@@ -84,7 +104,19 @@
       "category": "state",
       "remove_on_enter_discard": true,
       "remove_on_battle_end": true,
-      "lifecycle": ["turn_end"]
+      "lifecycle": ["turn_end"],
+      "behaviors": [
+        {
+          "trigger": "play_attempt",
+          "priority": 100,
+          "handler": "block_play",
+          "reason": "封禁令此真气本回合不能打出"
+        },
+        {
+          "trigger": "turn_end",
+          "handler": "remove_self"
+        }
+      ]
     },
     {
       "id": "wind_mark",
@@ -121,6 +153,7 @@
       "behaviors": [
         {
           "trigger": "explicit_discard",
+          "priority": 900,
           "handler": "remove_self_and_return_top",
           "reason": "returning_wind"
         }

@@ -21,6 +21,7 @@ func resolve(
         status_system = null) -> Dictionary:
     var final_amount := calculate_final_amount(
         actor,
+        target,
         base_amount,
         source_kind,
         true_damage,
@@ -78,6 +79,7 @@ func is_buffering() -> bool:
 
 static func calculate_final_amount(
         actor,
+        target,
         base_amount: int,
         source_kind: String,
         true_damage: bool = false,
@@ -89,6 +91,11 @@ static func calculate_final_amount(
                 actor, "damage_percent", {"source_kind": source_kind})
             if status_system != null
             else actor.status_modifier("damage_percent", {"source_kind": source_kind}))
+        if status_system != null:
+            damage_percent += status_system.actor_hand_card_numeric_modifier(
+                actor, "outgoing_damage_percent")
+            damage_percent += status_system.actor_hand_card_numeric_modifier(
+                target, "incoming_damage_percent")
         final_amount = int(floor(final_amount * (1.0 + damage_percent / 100.0)))
     return final_amount
 

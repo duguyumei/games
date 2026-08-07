@@ -47,6 +47,9 @@ func stage_cards(side, card_ids: Array) -> bool:
             return false
         found.append(card)
     for card in found:
+        if status_system != null and not status_system.can_play_card(side, card).get("allowed", false):
+            return false
+    for card in found:
         move_card(side, "hand", "staging", card, "stage")
     return true
 

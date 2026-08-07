@@ -11,6 +11,9 @@ func _init() -> void:
         "remove_self_and_return_top": Callable(self, "_remove_self_and_return_top"),
         "remove_self_apply_anomaly_and_return_top": Callable(
             self, "_remove_self_apply_anomaly_and_return_top"),
+        "block_play": Callable(self, "_block_play"),
+        "remove_self": Callable(self, "_remove_self_behavior"),
+        "remove_self_with_resolution": Callable(self, "_remove_self_with_resolution"),
     }
 
 func behavior_ids() -> Array[String]:
@@ -112,6 +115,34 @@ func _remove_self_apply_anomaly_and_return_top(context) -> Dictionary:
         str(context.behavior.get("reason", context.status_id)),
         "top")
     return {"success": bool(moved.get("success", false))}
+
+func _block_play(context) -> Dictionary:
+    return {
+        "success": true,
+        "blocked": true,
+        "reason": str(context.behavior.get(
+            "reason", "%s令此真气本回合不能打出" % str(
+                context.definition.get("name", context.status_id)))),
+    }
+
+func _remove_self_behavior(context) -> Dictionary:
+    _remove_self(context)
+    return {"success": true}
+
+func _remove_self_with_resolution(context) -> Dictionary:
+    _remove_self(context)
+    return {
+        "success": true,
+        "resolution": {
+            "card": context.card,
+            "category": context.category,
+            "anomaly_id": context.status_id,
+            "anomaly_name": str(context.definition.get("name", context.status_id)),
+            "effect_kind": str(context.behavior.get("effect_kind", "status")),
+            "detail": str(context.behavior.get("detail", "状态已结算")),
+            "recycle": false,
+        },
+    }
 
 func _remove_self(context) -> void:
     context.status_system.remove_card_anomaly(

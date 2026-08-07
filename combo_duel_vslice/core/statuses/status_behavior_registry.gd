@@ -17,10 +17,13 @@ func register_handler(handler, replace_existing: bool = false) -> bool:
     var behavior_ids: Array = handler.behavior_ids()
     if behavior_ids.is_empty():
         return false
+    var seen_ids: Dictionary = {}
     for behavior_id_value in behavior_ids:
         var behavior_id := str(behavior_id_value)
-        if behavior_id == "" or (_handlers_by_behavior.has(behavior_id) and not replace_existing):
+        if behavior_id == "" or seen_ids.has(behavior_id) \
+                or (_handlers_by_behavior.has(behavior_id) and not replace_existing):
             return false
+        seen_ids[behavior_id] = true
     for behavior_id_value in behavior_ids:
         _handlers_by_behavior[str(behavior_id_value)] = handler
     return true

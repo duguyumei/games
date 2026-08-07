@@ -44,7 +44,15 @@ const REQUIRED_FINISH_IDS := ["foil", "holographic", "polychrome", "negative"]
 const REQUIRED_IMPRINT_IDS := ["gold", "red", "blue", "purple"]
 const ANOMALY_ON_APPLY_POLICIES := ["", "suppress_existing_effects"]
 const MARK_LIFECYCLE_EVENTS := ["draw", "explicit_discard", "enter_discard", "turn_end", "battle_end"]
-const CARD_STATUS_TRIGGERS := ["played", "draw", "explicit_discard", "enter_discard"]
+const CARD_STATUS_TRIGGERS := [
+    "play_attempt", "played", "draw", "explicit_discard", "enter_discard", "turn_end",
+]
+const CARD_STATUS_MODIFIER_IDS := [
+    "qi_contribution_percent",
+    "poison_contribution_reduction_percent",
+    "outgoing_damage_percent",
+    "incoming_damage_percent",
+]
 const ACTOR_STATUS_TRIGGERS := [
     "after_normal_draw",
     "opponent_card_drawn",
@@ -463,6 +471,7 @@ func _validate_card_states(definition: Dictionary) -> void:
                     if not ATTRIBUTE_IDS.has(str(attribute_id)):
                         _error(scope + ".runtime_payload.attribute_aliases", "未知属性 %s" % str(attribute_id))
             _validate_status_behaviors(value, CARD_STATUS_TRIGGERS, scope)
+            _validate_card_status_modifiers(value, scope)
         _validate_card_status_behavior_references()
     _validate_other_reshape_battle_start_anomalies()
 
@@ -527,6 +536,23 @@ func _validate_status_modifiers(definition: Dictionary, scope: String) -> void:
             for source_kind in source_kinds:
                 if not source_kind is String or str(source_kind) == "":
                     _error(modifier_scope + ".source_kinds", "必须只包含非空字符串")
+
+func _validate_card_status_modifiers(definition: Dictionary, scope: String) -> void:
+    var modifiers = definition.get("modifiers", [])
+    if not modifiers is Array:
+        _error(scope + ".modifiers", "必须是数组")
+        return
+    for index in range(modifiers.size()):
+        var modifier = modifiers[index]
+        var modifier_scope := "%s.modifiers[%d]" % [scope, index]
+        if not modifier is Dictionary:
+            _error(modifier_scope, "必须是对象")
+            continue
+        var modifier_id := str(modifier.get("id", ""))
+        if not CARD_STATUS_MODIFIER_IDS.has(modifier_id):
+            _error(modifier_scope + ".id", "未知真气状态数值修正 %s" % modifier_id)
+        if not _is_integer(modifier.get("value")):
+            _error(modifier_scope + ".value", "必须是整数")
 
 func _validate_card_status_behavior_references() -> void:
     for status_id in _anomalies_by_id:

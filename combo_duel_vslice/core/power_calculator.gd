@@ -1,7 +1,10 @@
 class_name PowerCalculator
 extends RefCounted
 
-static func calculate(hand_result: Dictionary, modifiers: Dictionary = {}) -> Dictionary:
+static func calculate(
+        hand_result: Dictionary,
+        modifiers: Dictionary = {},
+        contribution_modifier: Callable = Callable()) -> Dictionary:
     if hand_result.is_empty():
         return {}
     var card_total := 0
@@ -19,6 +22,8 @@ static func calculate(hand_result: Dictionary, modifiers: Dictionary = {}) -> Di
             card_multiplier_bonus += 1
         if card.reshape_finish == "polychrome":
             card_amp_percent += 20
+        if contribution_modifier.is_valid():
+            contribution = int(contribution_modifier.call(card, contribution))
         card_total += contribution
     var base_value: int = card_total + int(modifiers.get("base_fixed", 0))
     var fixed_multiplier: int = int(hand_result["multiplier"])

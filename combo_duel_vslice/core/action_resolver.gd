@@ -447,12 +447,14 @@ func _resolve_played_card_anomalies(records: Array) -> void:
             var anomaly_name := str(resolution.get(
                 "anomaly_name", resolution.get("anomaly_id", "真气异状")))
             var anomaly_damage := int(resolution.get("damage", 0))
+            var anomaly_detail := str(resolution.get(
+                "detail", "%d 点伤害" % anomaly_damage))
             trigger_queue.add_history(
-                "card_anomaly_damage",
+                "card_anomaly_damage" if resolution.has("damage") else "card_anomaly_resolved",
                 "%s·%s触发%s" % [holder.name, card.display_name(), anomaly_name],
                 "真气异状",
                 "结算",
-                "%d 点伤害" % anomaly_damage)
+                anomaly_detail)
             if bool(resolution["recycle"]):
                 var side_id: int = holder.get_instance_id()
                 if not _recycle_after_play.has(side_id):

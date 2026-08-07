@@ -462,7 +462,8 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
         card_ids,
         book,
         modifiers_by_hand,
-        battle_flow.has_claimed_combo(side, "natural_attribute"))
+        battle_flow.has_claimed_combo(side, "natural_attribute"),
+        enemy if side == player else player)
 
 func grant_consumable(side, consumable_id: String, source: String = "效果") -> bool:
     return consumable_service.grant(side, consumable_id, source)

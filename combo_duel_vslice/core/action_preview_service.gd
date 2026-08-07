@@ -25,20 +25,23 @@ func preview(
         card_ids: Array,
         sequence_book,
         modifiers_by_hand: Dictionary = {},
-        natural_combo_used: bool = false) -> Dictionary:
+        natural_combo_used: bool = false,
+        target = null) -> Dictionary:
     return preview_dto(
         side,
         card_ids,
         sequence_book,
         modifiers_by_hand,
-        natural_combo_used).to_dict()
+        natural_combo_used,
+        target).to_dict()
 
 func preview_dto(
         side,
         card_ids: Array,
         sequence_book,
         modifiers_by_hand: Dictionary = {},
-        natural_combo_used: bool = false):
+        natural_combo_used: bool = false,
+        target = null):
     if card_ids.size() < 1 or card_ids.size() > 5:
         return _invalid_preview("每次必须选择 1～5 张真气")
     var cards: Array = []
@@ -52,13 +55,21 @@ func preview_dto(
         return _invalid_preview("无法识别牌型")
     var hand_result: Dictionary = hand_result_dto.to_dict()
 
+    var play_check: Dictionary = side.status_system.can_play_cards(side, cards) \
+        if side.status_system != null else {"allowed": true}
+    if not bool(play_check.get("allowed", false)):
+        return _invalid_preview(str(play_check.get("reason", "此真气本回合不能打出")))
+
     var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {}).duplicate(true)
     if cards.size() == 5 and is_same_attribute_action(cards):
         modifiers["power_amp_percent"] = int(modifiers.get("power_amp_percent", 0)) + 50
     modifiers["insight_multiplier"] = (
         int(modifiers.get("insight_multiplier", 0))
         + int(side.insight_multipliers.get(hand_result["id"], 0)))
-    var values := PowerCalculatorScript.calculate(hand_result, modifiers)
+    var contribution_modifier := Callable()
+    if side.status_system != null:
+        contribution_modifier = Callable(side.status_system, "modify_card_contribution").bind(side)
+    var values := PowerCalculatorScript.calculate(hand_result, modifiers, contribution_modifier)
     var technique_id: String = sequence_book.current_id(hand_result["id"])
     var technique_definition = technique_repository.get_definition(technique_id)
     var technique: Dictionary = (
@@ -85,11 +96,19 @@ func preview_dto(
         "captures": {},
         "source_kind": "preview",
     })
+    var damage_percent: int = side.status_modifier(
+        "damage_percent", {"source_kind": "technique"})
+    if side.status_system != null:
+        damage_percent += side.status_system.actor_hand_card_numeric_modifier(
+            side, "outgoing_damage_percent")
+        if target != null:
+            damage_percent += side.status_system.actor_hand_card_numeric_modifier(
+                target, "incoming_damage_percent")
     if technique_definition != null and condition["ok"]:
         _merge_intent(intent, effect_executor.summarize_intent(
             technique_definition.effects,
             intent_context,
-            side.status_modifier("damage_percent", {"source_kind": "technique"})))
+            damage_percent))
     for inner_skill_id in side.equipped_inner_skill_ids:
         var inner_skill: Dictionary = inner_skill_repository.get_inner_skill(inner_skill_id)
         if inner_skill.get("timing", "") != "on_play_resolve":
@@ -97,7 +116,7 @@ func preview_dto(
         var inner_intent: Dictionary = effect_executor.summarize_intent(
             inner_skill.get("effects", []),
             intent_context,
-            side.status_modifier("damage_percent", {"source_kind": "technique"}))
+            damage_percent)
         intent["inner_skill_defense"] = (
             int(intent["inner_skill_defense"])
             + int(inner_intent.get("defense", 0)))

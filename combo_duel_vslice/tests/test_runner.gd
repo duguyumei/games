@@ -13,6 +13,8 @@ const BattleSideScript = preload("res://core/battle_side.gd")
 const BattleFlowCoordinatorScript = preload("res://core/battle_flow_coordinator.gd")
 const BattleTimingSystemScript = preload("res://core/battle_timing_system.gd")
 const StatusSystemScript = preload("res://core/status_system.gd")
+const StatusBehaviorRegistryScript = preload(
+    "res://core/statuses/status_behavior_registry.gd")
 const TriggerQueueScript = preload("res://core/trigger_queue.gd")
 const BattleObservationScript = preload("res://core/battle_observation.gd")
 const PlayerActionControllerScript = preload("res://core/player_action_controller.gd")
@@ -53,6 +55,8 @@ const FrontScene = preload("res://ui/front_main.tscn")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
+const ProbeStatusBehaviorHandlerScript = preload(
+    "res://tests/support/probe_status_behavior_handler.gd")
 
 class TimingProbe:
     extends RefCounted
@@ -80,7 +84,9 @@ func _initialize() -> void:
     _test_card_zone_service_contract()
     _test_battle_flow_coordinator_contract()
     _test_battle_timing_system_contract_and_integration()
+    _test_status_behavior_registry_contract()
     _test_status_system_contract()
+    _test_declared_card_status_runtime_semantics()
     _test_action_controller_boundaries_and_strategy()
     _test_remote_ai_module_contract()
     _test_chat_completions_provider_contract()
@@ -315,6 +321,19 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(
         _array_contains_text(bad_status_handler_catalog.errors, "未注册的状态处理器 missing_status_handler"),
         "状态处理器错误稳定定位")
+
+    var bad_actor_status_handler_values := _catalog_definitions(catalog)
+    bad_actor_status_handler_values["battle_statuses"]["actor_statuses"][0]["behaviors"][0]["handler"] = "missing_actor_status_handler"
+    var bad_actor_status_handler_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_actor_status_handler_catalog.load_from_definitions(
+            bad_actor_status_handler_values),
+        "角色状态拒绝未注册的状态处理器")
+    _assert_true(
+        _array_contains_text(
+            bad_actor_status_handler_catalog.errors,
+            "未注册的状态处理器 missing_actor_status_handler"),
+        "角色状态处理器错误稳定定位")
 
     var bad_status_reference_values := _catalog_definitions(catalog)
     for anomaly in bad_status_reference_values["card_states"]["anomalies"]:
@@ -1482,6 +1501,37 @@ func _test_battle_timing_system_contract_and_integration() -> void:
             turn_start_actor_ids.append(entry["actor_id"])
     _assert_equal(turn_start_actor_ids, ["player", "enemy"], "敌我通过同一种行动方回合开始时点进入正常补牌")
 
+func _test_status_behavior_registry_contract() -> void:
+    var registry = StatusBehaviorRegistryScript.new()
+    var probe = ProbeStatusBehaviorHandlerScript.new()
+    _assert_true(registry.register_handler(probe), "状态行为注册表接收外部小型处理器")
+    _assert_true(
+        not registry.register_handler(ProbeStatusBehaviorHandlerScript.new()),
+        "状态行为注册表拒绝重复处理器 ID")
+    _assert_true(
+        not registry.register_handler(ProbeStatusBehaviorHandlerScript.new(["dup", "dup"])),
+        "单个处理器不能重复声明同一行为 ID")
+    _assert_true(
+        registry.register_handler(
+            ProbeStatusBehaviorHandlerScript.new(["probe_status_behavior"]), true),
+        "显式替换可以更新已登记状态处理器")
+    var unknown: Dictionary = registry.execute({"handler": "missing_behavior"}, null)
+    _assert_true(not unknown.get("success", true), "运行边界拒绝未知状态处理器")
+    _assert_true(str(unknown.get("detail", "")).contains("未注册"), "未知处理器返回稳定诊断")
+
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "状态注册覆盖测试载入内容目录")
+    var system = StatusSystemScript.new(catalog)
+    for content_type in ["anomaly", "actor_status"]:
+        for definition in catalog.all_of(content_type):
+            for behavior in definition.get("behaviors", []):
+                _assert_true(
+                    system.behavior_registry.has_handler(str(behavior.get("handler", ""))),
+                    "%s.%s 的行为已登记：%s" % [
+                        content_type,
+                        definition.get("id", ""),
+                        behavior.get("handler", "")])
+
 func _test_status_system_contract() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "状态系统契约测试载入统一内容目录")
@@ -1565,6 +1615,147 @@ func _test_status_system_contract() -> void:
     _assert_true(engine.player.stacks.is_empty() and engine.enemy.stacks.is_empty(), "战斗结束统一清除敌我角色状态")
     _assert_true(not system.history.is_empty(), "状态系统公开结构化变化历史")
     _assert_true(not shared_log.entries("battle").is_empty(), "状态变化进入统一战斗日志")
+
+func _test_declared_card_status_runtime_semantics() -> void:
+    var engine = CombatEngineScript.new()
+    engine.setup(816, false)
+    engine.sequence_book.configure({"high_card": []})
+
+    var dissipated = _card("9", "forest")
+    engine.player.hand = [dissipated]
+    engine.status_system.apply_card_anomaly(
+        dissipated, "state", "qi_dissipation", {}, "状态语义测试")
+    _assert_equal(
+        engine.preview([dissipated.id])["values"]["card_total"],
+        4,
+        "散气令参与最高牌型的有效真气贡献减半并向下取整")
+
+    var stagnant = _card("9", "forest")
+    engine.player.hand = [stagnant]
+    engine.status_system.apply_card_anomaly(
+        stagnant, "poison", "stagnant_poison", {}, "状态语义测试")
+    _assert_equal(
+        engine.preview([stagnant.id])["values"]["card_total"],
+        5,
+        "郁毒按原本贡献计算并扣除向下取整的50%削减值")
+    engine.status_system.apply_card_anomaly(
+        stagnant, "state", "qi_dissipation", {}, "状态语义测试")
+    _assert_equal(
+        engine.preview([stagnant.id])["values"]["card_total"],
+        2,
+        "散气先确定有效贡献后郁毒独立扣除该贡献的50%")
+
+    var acupoint_a = _card("2", "forest")
+    var acupoint_b = _card("3", "forest")
+    var vulnerable = _card("4", "mountain")
+    engine.player.hand = [acupoint_a, acupoint_b]
+    engine.enemy.hand = [vulnerable]
+    engine.status_system.apply_card_anomaly(
+        acupoint_a, "state", "acupoint_block", {}, "状态语义测试")
+    engine.status_system.apply_card_anomaly(
+        acupoint_b, "state", "acupoint_block", {}, "状态语义测试")
+    engine.status_system.apply_card_anomaly(
+        vulnerable, "state", "vulnerability", {}, "状态语义测试")
+    engine.enemy.life = 1000
+    engine.enemy.max_life = 1000
+    engine.deal_damage(engine.player, engine.enemy, 100, "technique")
+    _assert_equal(engine.enemy.life, 920, "两张封穴与一张破绽按每张20%合并修正普通伤害")
+    engine.enemy.life = 1000
+    engine.deal_damage(engine.player, engine.enemy, 100, "technique", true)
+    _assert_equal(engine.enemy.life, 900, "破绽与封穴不修改权威规则未明确包含的真伤")
+
+    var limited = CombatEngineScript.new()
+    limited.setup(817, false)
+    limited.status_system.add_actor_status(limited.player, "qi_intake", 3, "状态语义测试")
+    _assert_equal(limited.player.current_hand_limit(), 9, "纳气按是否存在统一增加1点上限而非按层叠加")
+    limited.status_system.add_actor_status(limited.player, "full_sleeve", 2, "状态语义测试")
+    limited.status_system.add_actor_status(limited.player, "bound_sleeve", 20, "状态语义测试")
+    _assert_equal(limited.player.current_hand_limit(), 1, "盈袖束袖叠加后手牌上限最低为1")
+    limited.timing_system.emit_timing(BattleTimingSystemScript.AFTER_NORMAL_DRAW, {
+        "actor": limited.player,
+    })
+    _assert_equal(
+        limited.status_system.actor_status_value(limited.player, "qi_intake"),
+        2,
+        "纳气在正常补牌完成后只移除1层")
+
+    var forbidden = _card("7", "fire")
+    limited.player.hand = [forbidden]
+    limited.sequence_book.configure({"high_card": []})
+    limited.status_system.apply_card_anomaly(
+        forbidden, "state", "forbidden", {}, "状态语义测试")
+    var forbidden_preview: Dictionary = limited.preview([forbidden.id])
+    _assert_true(not forbidden_preview.get("valid", false), "封禁牌在本回合不能进入合法出牌提案")
+    _assert_true(
+        str(forbidden_preview.get("reason", "")).contains("封禁"),
+        "封禁拒绝原因可供UI与AI统一读取")
+    limited.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
+        "actor": limited.player,
+    })
+    _assert_true(not forbidden.has_anomaly("state", "forbidden"), "封禁在持有者本回合结束后移除")
+    _assert_true(limited.preview([forbidden.id]).get("valid", false), "封禁移除后真气恢复可打出")
+
+    var severed = _card("8", "fire")
+    limited.player.hand = [severed]
+    limited.player.draw_pile.clear()
+    limited.status_system.apply_card_anomaly(
+        severed, "state", "vulnerability", {}, "状态语义测试")
+    limited.status_system.apply_card_anomaly(
+        severed, "mark", "qi_severance", {}, "状态语义测试")
+    limited.player.random_discard(1, limited.rng)
+    _assert_true(
+        limited.player.draw_pile.back() == severed,
+        "绝气标记在真气进入弃牌堆后将其改置牌库顶")
+    _assert_true(severed.has_anomaly("state", "forbidden"), "绝气改置时以封禁替换此前状态")
+    _assert_true(not severed.has_anomaly("mark", "qi_severance"), "绝气标记成功触发后移除自身")
+
+    var returning = _card("6", "wind")
+    limited.player.hand = [returning]
+    limited.player.draw_pile.clear()
+    limited.status_system.apply_card_anomaly(
+        returning, "poison", "lethal_poison", {}, "状态语义测试")
+    limited.status_system.apply_card_anomaly(
+        returning, "mark", "returning_wind", {}, "状态语义测试")
+    var history_before: int = limited.status_system.history.size()
+    limited.player.random_discard(1, limited.rng)
+    var discard_history: Array = limited.status_system.history.slice(history_before)
+    _assert_equal(discard_history[0]["status_id"], "lethal_poison", "回风改置前先完成进入弃牌堆的毒清理响应")
+    _assert_equal(discard_history[1]["status_id"], "returning_wind", "回风在其他明确弃牌响应后移除自身")
+    _assert_true(limited.player.draw_pile.back() == returning, "回风最终把真气放回牌库顶")
+
+    var stopped = CombatEngineScript.new()
+    stopped.setup(818, false)
+    var turbulence_card = _card("5", "mountain")
+    var follow = _card("4", "forest")
+    stopped.status_system.apply_card_anomaly(
+        turbulence_card, "mark", "wind_lure", {}, "优先级测试")
+    stopped.status_system.apply_card_anomaly(
+        turbulence_card, "mark", "turbulence", {}, "优先级测试")
+    stopped.enemy.draw_pile = [follow, turbulence_card]
+    stopped.enemy.hand.clear()
+    stopped.enemy.draw(1)
+    _assert_true(stopped.enemy.discard_pile.has(turbulence_card), "低优先级数值的乱流先于风引触发")
+    _assert_true(turbulence_card.has_anomaly("mark", "wind_lure"), "乱流改置后停止同张牌剩余抽牌行为")
+    _assert_true(stopped.enemy.draw_pile.has(follow), "停止分发后风引没有额外抽取下一张牌")
+
+    var stolen = _card("10", "wind")
+    stopped.status_system.apply_card_anomaly(
+        stolen, "mark", "wind_lure", {}, "优先级测试")
+    stopped.status_system.apply_card_anomaly(
+        stolen, "mark", "turbulence", {}, "优先级测试")
+    stopped.status_system.add_actor_status(stopped.player, "steal_wind", 1, "优先级测试")
+    stopped.enemy.draw_pile = [stolen]
+    stopped.enemy.draw(1)
+    _assert_true(stopped.player.hand.has(stolen), "夺风先于被抽入手牌的真气状态响应")
+    _assert_true(
+        stolen.has_anomaly("mark", "wind_lure") and stolen.has_anomaly("mark", "turbulence"),
+        "夺风移走真气后停止原持有者的风引与乱流响应")
+    _assert_true(
+        _array_contains_change_type(limited.status_system.history, "card_anomaly_remove"),
+        "处理器触发产生结构化状态历史")
+    _assert_true(
+        not limited.game_log.entries("battle").is_empty(),
+        "处理器触发与数值状态变化进入统一战斗日志")
 
 func _array_contains_change_type(values: Array, wanted: String) -> bool:
     for value in values:
