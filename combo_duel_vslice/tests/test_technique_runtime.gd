@@ -64,7 +64,7 @@ func _test_technique_entities_are_individual_resources() -> void:
     _assert_true(
         repository.configure(catalog.definition("techniques"), true),
         "功法仓库建立统一实体索引")
-    _assert_equal(repository.definitions.size(), 47, "九门纵切夹具与三十八门风功法均建立实体")
+    _assert_equal(repository.definitions.size(), 45, "七门纵切夹具与三十八门风功法均建立实体")
     var wind_ids := [
         "sweeping_wind_sleeve", "full_sleeve_wind", "wind_transforms_force",
         "layered_leaves_return_tide", "long_wind_full_sleeve", "double_wind_continue_form",
@@ -108,9 +108,9 @@ func _test_technique_entities_are_individual_resources() -> void:
             definition.resource_path.ends_with("/%s.tres" % technique_id),
             "%s 来自独立资源文件" % technique_id)
         _assert_true(not definition.effects.is_empty(), "%s 实体保存自身效果" % technique_id)
-    var instance = repository.get_instance("clear_wind_gap", "player", 2)
+    var instance = repository.get_instance("long_wind_full_sleeve", "player", 2)
     _assert_true(instance is TechniqueInstance, "功法定义可以建立统一运行时实例")
-    _assert_equal(instance.id(), "clear_wind_gap", "运行时实例引用正确功法定义")
+    _assert_equal(instance.id(), "long_wind_full_sleeve", "运行时实例引用正确功法定义")
     _assert_equal(instance.owner_id, "player", "运行时实例保存拥有者")
 
 func _test_wind_common_card_flow_rules() -> void:
@@ -194,7 +194,7 @@ func _test_wind_cooperation_group_resolution() -> void:
     var engine = CombatEngineScript.new()
     engine.setup(8720, false)
     engine.sequence_book.configure({
-        "high_card": ["double_wind_continue_form", "clear_wind_gap"],
+        "high_card": ["double_wind_continue_form", "long_wind_full_sleeve"],
     })
     var main_card = _catalog_card(engine, "wind_2", "cooperation:main")
     var cooperation_card = _catalog_card(engine, "forest_3", "cooperation:follow")
@@ -207,6 +207,9 @@ func _test_wind_cooperation_group_resolution() -> void:
     _assert_true(result.get("success", false), "双风接式完成主组与协同组的顺序结算")
     _assert_equal(result["preview"]["values"]["technique_value"], 3, "主组读取P_main加半个P_coop的共享功法值")
     _assert_equal(result["cooperation_preview"]["values"]["technique_value"], 3, "协同组读取同一个共享功法值")
+    ## 双风接式 floor(P/2)=1 加协同组长风满袖 P=3，共 4 点。
+    ## 牌库已清空，长风满袖的直接抽牌捕获为空，按 capture_all_attribute 对空集合
+    ## 返回 false 走防御分支，不额外造成伤害。
     _assert_equal(engine.enemy.life, 96, "双风接式半P伤害与协同高牌功法依次结算")
     _assert_true(engine.player.discard_pile.has(main_card), "主牌型组先完成离场并进入我方弃牌堆")
     _assert_true(engine.enemy.draw_pile.has(cooperation_card), "双风接式将协同牌改置敌方牌库顶")

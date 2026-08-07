@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "high_card": ["suspended_gu", "lethal_gu_needle", "clear_wind_gap"],
+  "high_card": ["suspended_gu", "lethal_gu_needle", "long_wind_full_sleeve"],
   "pair": ["double_gu_bind"],
   "two_pair": ["double_gu_bind"],
   "three_kind": ["three_corpses_gu"],
   "straight": ["five_yang_chase"],
-  "flush": ["hundred_strikes_ashes"],
+  "flush": [],
   "full_house": ["three_corpses_gu"],
   "four_kind": ["discard_fuel_open_furnace"],
-  "straight_flush": ["five_yang_chase", "hundred_strikes_ashes"]
+  "straight_flush": ["five_yang_chase"]
 }

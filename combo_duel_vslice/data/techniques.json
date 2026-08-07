@@ -14,13 +14,11 @@
   "resource_paths": [
     "res://data/techniques/fire_sparks.tres",
     "res://data/techniques/lethal_gu_needle.tres",
-    "res://data/techniques/clear_wind_gap.tres",
     "res://data/techniques/suspended_gu.tres",
     "res://data/techniques/double_gu_bind.tres",
     "res://data/techniques/three_corpses_gu.tres",
     "res://data/techniques/discard_fuel_open_furnace.tres",
-    "res://data/techniques/five_yang_chase.tres",
-    "res://data/techniques/hundred_strikes_ashes.tres"
+    "res://data/techniques/five_yang_chase.tres"
     ,"res://data/techniques/sweeping_wind_sleeve.tres"
     ,"res://data/techniques/full_sleeve_wind.tres"
     ,"res://data/techniques/wind_transforms_force.tres"

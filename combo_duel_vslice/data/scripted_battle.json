@@ -33,14 +33,14 @@
       "next_technique_bias": {}
     },
     "sequences": {
-      "high_card": ["fire_sparks", "suspended_gu", "clear_wind_gap"],
+      "high_card": ["fire_sparks", "suspended_gu", "long_wind_full_sleeve"],
       "pair": ["double_gu_bind"],
       "two_pair": ["double_gu_bind"],
       "three_kind": ["three_corpses_gu"],
       "full_house": ["three_corpses_gu"],
       "four_kind": ["discard_fuel_open_furnace"],
       "straight": ["five_yang_chase"],
-      "flush": ["hundred_strikes_ashes"],
+      "flush": [],
       "straight_flush": ["five_yang_chase"]
     }
   },

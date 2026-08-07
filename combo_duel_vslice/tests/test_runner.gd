@@ -1740,7 +1740,7 @@ func _test_run_deck_contract() -> void:
     var progress = RunProgressSnapshotScript.new({
         "consumable_ids": ["aura"],
         "insight_multipliers": {"high_card": 1},
-        "learned_technique_ids": ["clear_wind_gap"],
+        "learned_technique_ids": ["long_wind_full_sleeve"],
         "run_deck": run_deck.to_snapshot(),
     })
     var battle_session = BattleSessionScript.new(CombatEngineScript.new())
@@ -2076,14 +2076,35 @@ func _test_no_automatic_damage_or_draw() -> void:
     _assert_equal(engine.player.discard_pile.size(), 2, "打出牌进入弃牌堆")
 
 func _test_representative_damage_draw_discard() -> void:
+    ## 覆盖 damage + draw + discard_random + draw_if_captured_attribute 效果链。
+    ##
+    ## 此前由清风过隙承载，该功法已随风池重写移出权威活跃名单（提交 d66b4a3）。
+    ## draw_if_captured_attribute 仍是注册操作码但已无内容承载，因此改用合成夹具，
+    ## 避免这条链变成零运行时覆盖。
     var selected := [_card("9", "mountain")]
     var remaining := [_card("3", "forest"), _card("4", "fire")]
     var draw_cards := [_card("6", "forest"), _card("2", "wind")]
     var engine = _engine_with_hand(selected + remaining, draw_cards, 4242)
-    engine.sequence_book.configure({"high_card": ["clear_wind_gap"]})
+    engine.repository.techniques["probe_draw_discard_chain"] = {
+        "id": "probe_draw_discard_chain",
+        "name": "测试抽弃条件链",
+        "pool": "high",
+        "effects": [
+            {"op": "damage", "amount": {"kind": "power"}},
+            {"op": "draw", "count": {"kind": "constant", "value": 1}, "capture": "first_draw"},
+            {"op": "discard_random", "count": {"kind": "constant", "value": 1}},
+            {
+                "op": "draw_if_captured_attribute",
+                "capture": "first_draw",
+                "attribute": "wind",
+                "count": 1,
+            },
+        ],
+    }
+    engine.sequence_book.configure({"high_card": ["probe_draw_discard_chain"]})
     var result := engine.confirm_play(_ids(selected))
-    _assert_true(result["technique_triggered"], "清风过隙触发")
-    _assert_equal(engine.enemy.life, 91, "清风过隙造成 P 点伤害")
+    _assert_true(result["technique_triggered"], "抽弃条件链功法触发")
+    _assert_equal(engine.enemy.life, 91, "效果链首项造成 P 点伤害")
     _assert_equal(engine.player.draw_pile.size(), 0, "首次抽到风后额外抽 1 张")
     _assert_equal(engine.player.hand.size(), 3, "抽 2、随机弃 1、打出 1 后手牌数量")
 
@@ -2117,10 +2138,32 @@ func _test_representative_special_technique() -> void:
     _assert_equal(engine.actions_available, 1, "获得一次额外出牌机会")
 
 func _test_delayed_power_snapshot() -> void:
+    ## 覆盖 register_attack_counter_delay：建立时冻结 P 快照，跨回合按旧快照结算。
+    ##
+    ## 此前由百击归烬承载。该功法已被权威源废弃（同花池整体废弃），但操作码保留：
+    ## 火池「待确认」明确记录需要新的替代设计来提供跨回合延迟追击。因此改用合成
+    ## 夹具，保住机制的运行时覆盖，等替代设计落地后再换回真实功法。
     var flush := [_card("2", "forest"), _card("4", "forest"), _card("6", "forest"), _card("8", "forest"), _card("10", "forest")]
     var engine = _engine_with_hand(flush)
+    engine.repository.techniques["probe_attack_counter_delay"] = {
+        "id": "probe_attack_counter_delay",
+        "name": "测试延迟追击",
+        "pool": "flush",
+        "special": true,
+        "effects": [{
+            "op": "register_attack_counter_delay",
+            "turn_ends": 2,
+            "damage": {
+                "kind": "power_fraction",
+                "numerator": 1,
+                "denominator": 20,
+                "minimum": 1,
+            },
+        }],
+    }
+    engine.sequence_book.configure({"flush": ["probe_attack_counter_delay"]})
     var result := engine.confirm_play(_ids(flush))
-    _assert_true(result["technique_triggered"], "百击归烬建立延迟记录")
+    _assert_true(result["technique_triggered"], "延迟追击功法建立延迟记录")
     _assert_equal(engine.delayed_effects[0]["snapshot_power"], 180, "延迟记录建立时 P（含五张同属性+50%）")
     _assert_equal(engine.delayed_effects[0]["damage_per_segment"], 9, "延迟每段读取快照 P/20")
     engine.deal_damage(engine.player, engine.enemy, 20, "technique")
@@ -2611,7 +2654,7 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var manual_progress = RunProgressSnapshotScript.new({
         "consumable_ids": ["aura"],
         "insight_multipliers": {"high_card": 2},
-        "learned_technique_ids": ["clear_wind_gap"],
+        "learned_technique_ids": ["long_wind_full_sleeve"],
         "run_deck": manual_deck.to_snapshot(),
     })
     growth.apply_progress_snapshot(manual_progress)
