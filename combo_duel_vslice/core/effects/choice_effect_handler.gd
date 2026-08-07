@@ -89,6 +89,9 @@ func execute(effect: Dictionary, context):
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
     pass
 
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    validator.validate_choice_effect(effect, scope)
+
 func _resolve_bound(value, runtime) -> int:
     if value is Dictionary and value_resolver != null:
         return maxi(0, value_resolver.resolve(value, runtime))

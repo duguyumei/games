@@ -205,7 +205,7 @@ func _audit_definitions(definitions: Dictionary) -> void:
     var techniques: Array = definitions.get("techniques", {}).get("techniques", [])
     for index in range(techniques.size()):
         if techniques[index] is Dictionary:
-            _audit_effects(techniques[index].get("effects", []), ContentValidatorScript.BATTLE_EFFECT_OPS,
+            _audit_effects(techniques[index].get("effects", []), _battle_effect_ops(),
                 "techniques.techniques[%d].effects" % index)
     var inner_skills: Array = definitions.get("inner_skills", {}).get("inner_skills", [])
     for index in range(inner_skills.size()):
@@ -215,7 +215,7 @@ func _audit_definitions(definitions: Dictionary) -> void:
         var scope := "inner_skills.inner_skills[%d]" % index
         if str(value.get("timing", "")) not in INNER_SKILL_TIMINGS:
             _add("error", "UNKNOWN_EVENT_TIMING", scope + ".timing", "未知内功事件时点 %s" % str(value.get("timing", "")))
-        _audit_effects(value.get("effects", []), ContentValidatorScript.BATTLE_EFFECT_OPS, scope + ".effects")
+        _audit_effects(value.get("effects", []), _battle_effect_ops(), scope + ".effects")
     var consumables: Array = definitions.get("consumables", {}).get("consumables", [])
     for index in range(consumables.size()):
         if consumables[index] is Dictionary:
@@ -224,9 +224,8 @@ func _audit_definitions(definitions: Dictionary) -> void:
 
 func _audit_runtime_operation_registry() -> void:
     var registry = EffectHandlerRegistryScript.new(RandomNumberGenerator.new())
-    for operation_id in ContentValidatorScript.BATTLE_EFFECT_OPS:
-        if not registry.has_handler(str(operation_id)):
-            _add("error", "OP_NOT_REGISTERED", "runtime.operations", "校验器允许但运行时未注册操作码 %s" % str(operation_id))
+    if registry.operation_ids().is_empty():
+        _add("error", "OP_NOT_REGISTERED", "runtime.operations", "运行时没有注册任何战斗效果")
 
 func _audit_ids(definitions: Dictionary) -> void:
     var arrays := [
@@ -290,7 +289,7 @@ func _audit_effects(values, allowed_ops: Array, scope: String) -> void:
                 _add("error", "UNKNOWN_EVENT_TIMING", effect_scope + ".timing", "未知延迟事件时点 %s" % str(effect.get("timing", "")))
             if not _is_positive_integer(effect.get("occurrences")):
                 _add("error", "INVALID_OCCURRENCES", effect_scope + ".occurrences", "occurrences 必须是正整数")
-            _audit_effects(effect.get("effects", []), ContentValidatorScript.BATTLE_EFFECT_OPS, effect_scope + ".effects")
+            _audit_effects(effect.get("effects", []), _battle_effect_ops(), effect_scope + ".effects")
         if op in ["add_stack", "add_target_stack", "add_stack_per_captured_card", "register_turn_end_stack"]:
             var stack_id := str(effect.get("stack", ""))
             if not _actor_status_ids.has(stack_id):
@@ -350,8 +349,11 @@ func _audit_amount_spec(spec: Dictionary, scope: String) -> void:
             "reshape_category_ids": ContentValidatorScript.RESHAPE_CATEGORY_IDS,
             "hand_ids": ContentValidatorScript.TECHNIQUE_BRANCH_HAND_IDS,
         },
-        ContentValidatorScript.BATTLE_EFFECT_OPS)
+        EffectHandlerRegistryScript.new(RandomNumberGenerator.new()))
     validator.validate_amount_spec(spec, scope)
+
+func _battle_effect_ops() -> Array[String]:
+    return EffectHandlerRegistryScript.new(RandomNumberGenerator.new()).operation_ids()
 
 func _validate_authoring_fragments(baseline: Dictionary) -> void:
     var fragments: Array[Dictionary] = []

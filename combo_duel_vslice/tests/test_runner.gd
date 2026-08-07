@@ -50,6 +50,8 @@ const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.
 const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
+const EffectHandlerRegistryScript = preload(
+    "res://core/effects/effect_handler_registry.gd")
 const RunScene = preload("res://ui/run_main.tscn")
 const FrontScene = preload("res://ui/front_main.tscn")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
@@ -93,6 +95,7 @@ func _initialize() -> void:
     _test_ai_settings_and_conversation_disk_contract()
     _test_remote_ai_action_window_session_gate()
     _test_effect_handler_registry_contract()
+    _test_effect_extension_entry_contract()
     _test_standard_deck()
     _test_pool_structure_and_turn_draw_rules()
     _test_active_hand_types_and_same_attribute_rules()
@@ -1224,11 +1227,7 @@ func _test_effect_handler_registry_contract() -> void:
     var rng := RandomNumberGenerator.new()
     rng.seed = 814
     var executor = EffectExecutorScript.new(rng)
-    var expected_ops: Array[String] = []
-    for operation_id in ContentValidatorScript.BATTLE_EFFECT_OPS:
-        expected_ops.append(str(operation_id))
-    expected_ops.sort()
-    _assert_equal(executor.registry.operation_ids(), expected_ops, "运行时注册表与内容校验器使用相同的 14 个战斗操作码")
+    _assert_true(not executor.registry.operation_ids().is_empty(), "运行时注册表公开稳定战斗效果 ID")
     _assert_equal(executor.registry.handler_group("damage"), "damage", "伤害操作进入伤害处理器")
     _assert_equal(executor.registry.handler_group("defense"), "defense", "防御操作进入防御处理器")
     _assert_equal(executor.registry.handler_group("draw"), "card_zone", "抽牌操作进入牌区处理器")
@@ -1243,14 +1242,69 @@ func _test_effect_handler_registry_contract() -> void:
     var probe_handler := ProbeEffectHandlerScript.new()
     _assert_true(executor.registry.register_handler(probe_handler), "新处理器可通过注册接口扩展")
     _assert_true(not executor.registry.register_handler(ProbeEffectHandlerScript.new()), "重复操作码默认不能覆盖现有处理器")
+    _assert_true(
+        not executor.registry.register_handler(ProbeEffectHandlerScript.new(["duplicate_probe", "duplicate_probe"])),
+        "单个效果处理器不能重复声明同一效果 ID")
+    _assert_true(
+        not executor.registry.register_handler(ProbeEffectHandlerScript.new(["Bad Effect ID"])),
+        "效果 ID 必须使用稳定 snake_case")
     var probe_context := {}
-    var probe_result: Dictionary = executor.execute_all([{"op": "probe_effect"}], probe_context)
+    var probe_result: Dictionary = executor.execute_all([{"op": "probe_effect", "amount": 7}], probe_context)
     _assert_true(probe_result["success"], "动态注册处理器可以参与统一执行链")
     _assert_equal(probe_context["probe_count"], 1, "动态处理器只执行一次")
     _assert_equal(
-        executor.summarize_intent([{"op": "probe_effect"}], {})["defense"],
+        executor.summarize_intent([{"op": "probe_effect", "amount": 7}], {})["defense"],
         7,
         "动态处理器同时接入预览汇总链")
+
+func _test_effect_extension_entry_contract() -> void:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 815
+    var registry = EffectHandlerRegistryScript.new(rng)
+    _assert_true(registry.register_handler(ProbeEffectHandlerScript.new()), "测试效果只在统一注册入口登记")
+    var duplicate_registry = EffectHandlerRegistryScript.new(rng)
+    _assert_true(duplicate_registry.register_handler(ProbeEffectHandlerScript.new()), "重复注册探针先登记一次")
+    _assert_true(not duplicate_registry.register_handler(ProbeEffectHandlerScript.new()), "重复效果 ID 被注册表拒绝")
+
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "效果扩展测试载入基线内容")
+    var definitions: Dictionary = {}
+    for key in ContentCatalogScript.CONTENT_ORDER:
+        definitions[key] = catalog.definition(key)
+    definitions["techniques"]["techniques"][0]["effects"] = [
+        {"op": "probe_effect", "amount": 9},
+    ]
+    var registered_catalog = ContentCatalogScript.new(null, registry)
+    _assert_true(
+        registered_catalog.load_from_definitions(definitions),
+        "已注册效果在内容加载校验阶段可直接使用")
+    var duplicate_catalog = ContentCatalogScript.new(null, duplicate_registry)
+    _assert_true(not duplicate_catalog.load_from_definitions(definitions), "重复注册在内容校验阶段明确失败")
+    _assert_true(
+        _array_contains_text(duplicate_catalog.errors, "效果 ID 重复注册：probe_effect"),
+        "重复注册错误包含稳定效果 ID")
+
+    var invalid_definitions := definitions.duplicate(true)
+    invalid_definitions["techniques"]["techniques"][0]["effects"][0]["amount"] = 0
+    var invalid_result: Dictionary = ContentValidatorScript.new(registry).validate(invalid_definitions)
+    _assert_true(not invalid_result["valid"], "已注册效果的非法参数在内容校验阶段失败")
+    _assert_true(
+        _array_contains_text(invalid_result["errors"], "amount 必须是正整数"),
+        "非法参数返回处理器声明的明确诊断")
+
+    var missing_registry_catalog = ContentCatalogScript.new()
+    _assert_true(not missing_registry_catalog.load_from_definitions(definitions), "缺失效果注册在内容校验阶段失败")
+    _assert_true(
+        _array_contains_text(missing_registry_catalog.errors, "未知效果操作码 probe_effect"),
+        "缺失注册返回稳定效果 ID")
+
+    var actor = BattleSideScript.new("效果探针行动方")
+    var executor = EffectExecutorScript.new(rng, registry)
+    var effect := {"op": "probe_effect", "amount": 9}
+    var preview: Dictionary = executor.summarize_intent([effect], {"actor": actor})
+    var resolved: Dictionary = executor.execute_all([effect], {"actor": actor})
+    _assert_true(resolved["success"], "测试效果通过统一执行入口结算")
+    _assert_equal(preview["defense"], actor.defense, "测试效果预览与实际结算结果一致")
 
 func _test_card_zone_service_contract() -> void:
     var catalog = ContentCatalogScript.new()

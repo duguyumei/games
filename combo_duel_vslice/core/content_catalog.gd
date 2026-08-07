@@ -41,12 +41,14 @@ var paths: Dictionary = {}
 var _definitions: Dictionary = {}
 var _indexes: Dictionary = {}
 var runtime_profile
+var effect_registry
 
-func _init(runtime_profile_override = null) -> void:
+func _init(runtime_profile_override = null, effect_registry_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
         else RuntimeProfileScript.current())
+    effect_registry = effect_registry_override
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()
@@ -104,7 +106,7 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
     if not errors.is_empty():
         _indexes.clear()
         return false
-    var validator = ContentValidatorScript.new()
+    var validator = ContentValidatorScript.new(effect_registry)
     var validation: Dictionary = validator.validate(_definitions, paths)
     errors.assign(validation.get("errors", []))
     warnings.assign(validation.get("warnings", []))

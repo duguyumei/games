@@ -120,6 +120,14 @@ func execute(effect: Dictionary, context):
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
     pass
 
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    if str(effect.get("op", "")) in ["move_query", "draw_filtered", "capture_query"]:
+        var query = effect.get("query")
+        if not query is Dictionary:
+            validator.report_error(scope + ".query", "必须是对象")
+        else:
+            validator.validate_target_query(query, scope + ".query")
+
 func _move_captured(effect: Dictionary, runtime):
     if runtime.ports == null:
         return EffectResultScript.failed("牌区移动缺少战斗端口")

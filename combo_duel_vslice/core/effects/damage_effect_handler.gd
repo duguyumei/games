@@ -58,6 +58,19 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
                             "damage_percent",
                             {"source_kind": "technique"}))
 
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    if str(effect.get("op", "")) != "multi_damage":
+        return
+    validator.validate_positive_integer(effect.get("segments"), scope + ".segments", "segments")
+    for field in ["after_each_stack", "chase_stack"]:
+        var stack_spec = effect.get(field, {})
+        if not stack_spec is Dictionary or stack_spec.is_empty():
+            continue
+        validator.validate_actor_status_reference(
+            stack_spec.get("stack"), scope + "." + field + ".stack")
+        validator.validate_non_negative_integer(
+            stack_spec.get("amount"), scope + "." + field + ".amount", field + ".amount")
+
 func _execute_multi_damage(effect: Dictionary, runtime):
     var actor = runtime.actor
     var target = runtime.target

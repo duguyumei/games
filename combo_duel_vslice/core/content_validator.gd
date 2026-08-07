@@ -8,6 +8,8 @@ extends RefCounted
 ## 持续增长，而这里的形状规则基本稳定。
 
 const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
+const EffectHandlerRegistryScript = preload(
+    "res://core/effects/effect_handler_registry.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
 
@@ -65,46 +67,8 @@ const RANK_SPECS := [
     ["10", 10, 10], ["J", 11, 11], ["Q", 12, 11], ["K", 13, 11],
     ["A", 14, 12],
 ]
-const BATTLE_EFFECT_OPS := [
-    "damage",
-    "multi_damage",
-    "defense",
-    "defense_from_noncontributing_qi",
-    "draw",
-    "draw_if_captured_attribute",
-    "discard_random",
-    "discard_all_hand",
-    "apply_random_card_anomaly",
-    "add_stack",
-    "add_target_stack",
-    "add_stack_per_captured_card",
-    "set_stack_minimum",
-    "gain_extra_action",
-    "register_attack_counter_delay",
-    "select_cards",
-    "move_captured",
-    "move_query",
-    "draw_filtered",
-    "draw_to_limit",
-    "apply_card_anomaly_to_captured",
-    "capture_metadata",
-    "register_turn_end_stack",
-    "register_played_return",
-    "register_delayed_effects",
-    "retrigger_current_hand_technique",
-    "capture_query",
-    "swap_hands",
-]
 const CONSUMABLE_EFFECT_OPS := [
     "gain_insight", "apply_enhancement", "apply_random_finish",
-]
-const AMOUNT_KINDS := [
-    "constant", "power", "power_fraction", "n60", "hand_map", "max",
-    "add", "multiply", "divide_floor", "divide_ceil", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
-    "capture_attribute_count", "capture_non_attribute_count", "hand_count",
-    "target_hand_count", "hand_limit",
-    "conditional",
-    "power_scaled_by_zone_anomaly",
 ]
 const ROUTES := ["battle", "placeholder"]
 const REWARD_KINDS := [
@@ -141,10 +105,14 @@ var _techniques_by_id: Dictionary = {}
 var _inner_skills_by_id: Dictionary = {}
 var _consumables_by_id: Dictionary = {}
 var _effect_specs: EffectSpecValidator
+var _effect_registry
 var _status_behavior_ids: Array[String] = []
 
-func _init() -> void:
+func _init(effect_registry_override = null) -> void:
     _status_behavior_ids = StatusBehaviorRegistryScript.new().behavior_ids()
+    _effect_registry = effect_registry_override
+    if _effect_registry == null:
+        _effect_registry = EffectHandlerRegistryScript.new(RandomNumberGenerator.new())
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {
@@ -153,7 +121,7 @@ func _init() -> void:
             "reshape_category_ids": RESHAPE_CATEGORY_IDS,
             "hand_ids": TECHNIQUE_BRANCH_HAND_IDS,
         },
-        BATTLE_EFFECT_OPS)
+        _effect_registry)
     ## 索引在校验过程中增量建立（异状先于功法校验注册）。这里传入的是同一份
     ## 字典引用，因此后续 clear 与写入都对效果校验器可见；这两个索引只允许
     ## clear 和写入，不能整体重新赋值，否则引用会断开。
@@ -162,6 +130,8 @@ func _init() -> void:
 func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     errors.clear()
     warnings.clear()
+    for message in _effect_registry.validation_errors():
+        _error("effects.registry", str(message))
     _contents = contents
     _paths = paths
     _card_ids.clear()
@@ -636,7 +606,7 @@ func _validate_techniques(definition: Dictionary) -> void:
         _validate_cooperation(value.get("cooperation", {}), scope + ".cooperation")
         if not value.get("special") is bool:
             _error(scope, "special 必须是布尔值")
-        _effect_specs.validate_effects(value.get("effects"), BATTLE_EFFECT_OPS, scope + ".effects")
+        _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
 
 func _validate_cooperation(value, scope: String) -> void:
     if value == null or (value is Dictionary and value.is_empty()):
@@ -671,7 +641,7 @@ func _validate_inner_skills(definition: Dictionary) -> void:
         _register_unique(_inner_skills_by_id, content_id, scope, value)
         if not value.get("name") is String or str(value.get("name", "")) == "":
             _error(scope, "name 必须是非空字符串")
-        _effect_specs.validate_effects(value.get("effects"), BATTLE_EFFECT_OPS, scope + ".effects")
+        _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
 
 func _validate_consumables(definition: Dictionary) -> void:
     var values = definition.get("consumables")

@@ -63,6 +63,10 @@ func execute(effect: Dictionary, context):
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
     pass
 
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    validator.validate_actor_status_reference(
+        effect.get("stack"), scope + ".stack")
+
 func _add_status(runtime, side, status_id: String, amount: int) -> int:
     if runtime.ports == null:
         return side.add_stack(status_id, amount)

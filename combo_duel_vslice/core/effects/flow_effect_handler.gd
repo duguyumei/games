@@ -93,3 +93,16 @@ func summarize(effect: Dictionary, context, intent: Dictionary, _state: Dictiona
         intent["technique_combo"] = (
             bool(intent.get("technique_combo", false))
             or value_resolver.resolve(effect.get("amount", {}), context) > 0)
+
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    match str(effect.get("op", "")):
+        "register_turn_end_stack":
+            validator.validate_actor_status_reference(
+                effect.get("stack"), scope + ".stack")
+        "register_delayed_effects":
+            if str(effect.get("timing", "")) not in ["turn_end", "after_normal_draw"]:
+                validator.report_error(scope + ".timing", "未知延迟事件时点 %s" % str(effect.get("timing", "")))
+            validator.validate_positive_integer(
+                effect.get("occurrences"), scope + ".occurrences", "occurrences")
+            validator.validate_nested_battle_effects(
+                effect.get("effects"), scope + ".effects")

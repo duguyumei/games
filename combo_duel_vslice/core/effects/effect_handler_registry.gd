@@ -12,8 +12,11 @@ const ChoiceHandlerScript = preload("res://core/effects/choice_effect_handler.gd
 
 var value_resolver
 var _handlers_by_op: Dictionary = {}
+var registration_errors: Array[String] = []
+var _operation_id_pattern := RegEx.new()
 
 func _init(random_source: RandomNumberGenerator, resolver_override = null, content_catalog = null) -> void:
+    _operation_id_pattern.compile("^[a-z][a-z0-9_]*$")
     value_resolver = resolver_override if resolver_override != null else ValueResolverScript.new()
     register_handler(DamageHandlerScript.new(value_resolver))
     register_handler(DefenseHandlerScript.new(value_resolver))
@@ -25,17 +28,31 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
     if not (handler is EffectHandler):
+        registration_errors.append("效果处理器必须继承 EffectHandler")
         return false
     var operation_ids: Array = handler.operation_ids()
     if operation_ids.is_empty():
+        registration_errors.append("效果处理器必须声明至少一个效果 ID")
         return false
+    var seen: Dictionary = {}
     for operation_id_value in operation_ids:
         var operation_id := str(operation_id_value)
-        if operation_id == "" or (_handlers_by_op.has(operation_id) and not replace_existing):
+        if _operation_id_pattern.search(operation_id) == null:
+            registration_errors.append("效果 ID 必须使用稳定 snake_case：%s" % operation_id)
             return false
+        if seen.has(operation_id):
+            registration_errors.append("单个处理器重复声明效果 ID：%s" % operation_id)
+            return false
+        if _handlers_by_op.has(operation_id) and not replace_existing:
+            registration_errors.append("效果 ID 重复注册：%s" % operation_id)
+            return false
+        seen[operation_id] = true
     for operation_id_value in operation_ids:
         _handlers_by_op[str(operation_id_value)] = handler
     return true
+
+func validation_errors() -> Array[String]:
+    return registration_errors.duplicate()
 
 func has_handler(operation_id: String) -> bool:
     return _handlers_by_op.has(operation_id)
@@ -52,6 +69,14 @@ func handler_group(operation_id: String) -> String:
     if handler == null or not handler.has_method("group_name"):
         return ""
     return str(handler.group_name())
+
+func validate_effect(effect: Dictionary, validator, scope: String) -> bool:
+    var operation_id := str(effect.get("op", ""))
+    var handler = _handlers_by_op.get(operation_id)
+    if handler == null:
+        return false
+    handler.validate_effect(effect, validator, scope)
+    return true
 
 func condition_met(condition: Dictionary, context) -> bool:
     return value_resolver.condition_met(condition, context)

@@ -3,12 +3,12 @@ extends RefCounted
 
 ## 效果规格校验。
 ##
-## 只判断「一条效果规格是否结构合法」：操作码是否在允许集合内、数值规格是否自洽、
+## 只判断「一条效果规格是否结构合法」：操作码是否已注册、数值规格是否自洽、
 ## 目标查询与选择协议字段是否完整、引用的异状与角色状态是否存在。
 ##
 ## 不判断内容定义的整体形状（那属于 ContentValidator），也不知道自己在校验哪份
-## 内容文件。允许的操作码由调用方按场景传入，因为战斗效果与消耗品效果的可用
-## 操作集合不同。
+## 内容文件。战斗操作码与专有参数规则来自 EffectHandlerRegistry；消耗品仍使用
+## 自己的轻量允许集合。
 ##
 ## 从 ContentValidator 拆出的原因：效果操作码随功法内容持续增长，而内容定义的
 ## 形状规则基本稳定，两者的变更频率相差很大。
@@ -34,7 +34,7 @@ var _attribute_ids: Array
 var _anomaly_category_ids: Array
 var _reshape_category_ids: Array
 var _hand_ids: Array
-var _nested_battle_ops: Array
+var _effect_registry
 var _anomalies_by_id: Dictionary = {}
 var _actor_statuses_by_id: Dictionary = {}
 
@@ -43,13 +43,13 @@ var _actor_statuses_by_id: Dictionary = {}
 func _init(
         report_error: Callable,
         vocabulary: Dictionary,
-        nested_battle_ops: Array) -> void:
+        effect_registry) -> void:
     _report_error = report_error
     _attribute_ids = vocabulary["attribute_ids"]
     _anomaly_category_ids = vocabulary["anomaly_category_ids"]
     _reshape_category_ids = vocabulary["reshape_category_ids"]
     _hand_ids = vocabulary["hand_ids"]
-    _nested_battle_ops = nested_battle_ops
+    _effect_registry = effect_registry
 
 ## 提供引用检查所需的索引。索引在内容校验过程中增量建立，因此单独设置。
 func use_indexes(
@@ -58,8 +58,8 @@ func use_indexes(
     _anomalies_by_id = anomalies_by_id
     _actor_statuses_by_id = actor_statuses_by_id
 
-## 校验一条效果链。`allowed_ops` 按场景传入（战斗效果与消耗品效果不同）。
-func validate_effects(values, allowed_ops: Array, scope: String) -> void:
+## 校验一条效果链。战斗效果传入 `battle`，其他轻量场景可传入允许操作码数组。
+func validate_effects(values, operation_source, scope: String) -> void:
     if not values is Array or values.is_empty():
         _error(scope, "必须是非空效果数组")
         return
@@ -70,60 +70,44 @@ func validate_effects(values, allowed_ops: Array, scope: String) -> void:
         if not effect is Dictionary:
             _error(effect_scope, "必须是对象")
             continue
-        _validate_single_effect(effect, allowed_ops, effect_scope, choice_ids)
+        _validate_single_effect(effect, operation_source, effect_scope, choice_ids)
 
 func _validate_single_effect(
         effect: Dictionary,
-        allowed_ops: Array,
+        operation_source,
         effect_scope: String,
         choice_ids: Dictionary) -> void:
     var op := str(effect.get("op", ""))
-    if not allowed_ops.has(op):
+    var registered: bool = false
+    if operation_source is String and operation_source == "battle":
+        registered = _effect_registry != null and _effect_registry.has_handler(op)
+    elif operation_source is Array:
+        registered = operation_source.has(op)
+    if not registered:
         _error(effect_scope, "未知效果操作码 %s" % op)
-    for field in ["amount", "count", "damage"]:
-        if effect.has(field) and effect[field] is Dictionary:
-            validate_amount_spec(effect[field], effect_scope + "." + field)
-    if op == "multi_damage" \
-            and (not _is_integer(effect.get("segments")) or int(effect.get("segments", 0)) <= 0):
-        _error(effect_scope, "segments 必须是正整数")
-    if op == "select_cards":
-        _validate_choice_effect(effect, effect_scope)
+    if effect.has("choice_id"):
         var choice_id := str(effect.get("choice_id", ""))
         if choice_id != "" and choice_ids.has(choice_id):
             _error(effect_scope + ".choice_id", "同一效果链中的 choice_id 不能重复")
         choice_ids[choice_id] = true
-    if op == "register_delayed_effects":
-        validate_effects(
-            effect.get("effects"),
-            _nested_battle_ops,
-            effect_scope + ".effects")
-    if op in ["apply_random_card_anomaly", "apply_card_anomaly_to_captured"] \
-            and not effect.has("random_options"):
-        _validate_anomaly_reference(effect, effect_scope)
-    if op in [
-            "add_stack", "add_target_stack", "add_stack_per_captured_card",
-            "set_stack_minimum", "register_turn_end_stack"]:
-        _validate_actor_status_reference(effect.get("stack"), effect_scope + ".stack")
-    var after_each_stack = effect.get("after_each_stack")
-    if after_each_stack is Dictionary and not after_each_stack.is_empty():
-        _validate_actor_status_reference(
-            after_each_stack.get("stack"),
-            effect_scope + ".after_each_stack.stack")
-    var chase_stack = effect.get("chase_stack")
-    if chase_stack is Dictionary and not chase_stack.is_empty():
-        _validate_actor_status_reference(
-            chase_stack.get("stack"),
-            effect_scope + ".chase_stack.stack")
-        if not _is_integer(chase_stack.get("amount")) \
-                or int(chase_stack.get("amount", 0)) < 0:
-            _error(effect_scope + ".chase_stack.amount", "必须是非负整数")
+    for field in ["amount", "count", "damage"]:
+        if effect.has(field) and effect[field] is Dictionary:
+            validate_amount_spec(effect[field], effect_scope + "." + field)
+    for field in ["side", "from_side", "to_side", "chooser"]:
+        if effect.has(field) and str(effect[field]) not in QUERY_SIDES:
+            _error(effect_scope + "." + field, "必须为 actor 或 target")
+    for field in ["zone", "from_zone", "to_zone"]:
+        if effect.has(field) and str(effect[field]) not in ZONE_IDS:
+            _error(effect_scope + "." + field, "引用未知牌区")
     var condition = effect.get("when", {})
     if condition is Dictionary \
             and condition.has("pure_attribute") \
             and not _attribute_ids.has(str(condition["pure_attribute"])):
         _error(effect_scope + ".when", "引用未知属性 %s" % str(condition["pure_attribute"]))
+    if registered and operation_source is String and operation_source == "battle":
+        _effect_registry.validate_effect(effect, self, effect_scope)
 
-func _validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> void:
+func validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> void:
     var anomaly_id := str(effect.get("anomaly", ""))
     var category := str(effect.get("category", ""))
     if not _anomalies_by_id.has(anomaly_id):
@@ -131,12 +115,12 @@ func _validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> vo
     elif str(_anomalies_by_id[anomaly_id].get("category", "")) != category:
         _error(effect_scope, "异状 %s 不属于类别 %s" % [anomaly_id, category])
 
-func _validate_actor_status_reference(value, scope: String) -> void:
+func validate_actor_status_reference(value, scope: String) -> void:
     var status_id := str(value)
     if not _actor_statuses_by_id.has(status_id):
         _error(scope, "引用未知角色状态 %s" % status_id)
 
-func _validate_choice_effect(effect: Dictionary, scope: String) -> void:
+func validate_choice_effect(effect: Dictionary, scope: String) -> void:
     if not effect.get("choice_id") is String or str(effect.get("choice_id", "")) == "":
         _error(scope + ".choice_id", "必须是非空字符串")
     if not effect.get("query") is Dictionary:
@@ -156,6 +140,20 @@ func _validate_choice_effect(effect: Dictionary, scope: String) -> void:
         _error(scope + ".insufficient_policy", "必须明确为 use_available、skip 或 fail")
     if effect.has("chooser") and str(effect.get("chooser")) not in QUERY_SIDES:
         _error(scope + ".chooser", "必须为 actor 或 target")
+
+func validate_nested_battle_effects(values, scope: String) -> void:
+    validate_effects(values, "battle", scope)
+
+func validate_positive_integer(value, scope: String, label: String) -> void:
+    if not _is_integer(value) or int(value) <= 0:
+        _error(scope, "%s 必须是正整数" % label)
+
+func validate_non_negative_integer(value, scope: String, label: String) -> void:
+    if not _is_integer(value) or int(value) < 0:
+        _error(scope, "%s 必须是非负整数" % label)
+
+func report_error(scope: String, message: String) -> void:
+    _error(scope, message)
 
 ## 校验通用目标查询。
 func validate_target_query(query: Dictionary, scope: String) -> void:

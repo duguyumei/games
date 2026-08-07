@@ -66,6 +66,10 @@ func execute(effect: Dictionary, context):
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
     pass
 
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    if not effect.has("random_options"):
+        validator.validate_anomaly_reference(effect, scope)
+
 func _apply_to_captured(effect: Dictionary, runtime):
     var cards: Array = runtime.captures.get(str(effect.get("capture", "")), [])
     var applied: Array = []
