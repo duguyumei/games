@@ -99,3 +99,52 @@ static func divider(separation: int = 2) -> HSeparator:
     var separator := HSeparator.new()
     separator.add_theme_constant_override("separation", separation)
     return separator
+
+## 资源药丸标签。用于层数、历练等单值展示。
+static func pill(
+        text_value: String,
+        color: Color,
+        minimum_size: Vector2 = Vector2(112, 34)) -> Label:
+    var label := Label.new()
+    label.text = text_value
+    label.custom_minimum_size = minimum_size
+    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    label.add_theme_color_override("font_color", Color("fff4d5"))
+    label.add_theme_stylebox_override(
+        "normal", box(color.darkened(0.42), 10, color, 2, 2))
+    return label
+
+## 大字数值瓷砖。返回根节点与数值标签，调用方持有后者用于刷新。
+static func number_tile(
+        initial: String,
+        caption_text: String,
+        color: Color) -> Dictionary:
+    var panel := PanelContainer.new()
+    panel.custom_minimum_size = Vector2(83, 74)
+    panel.add_theme_stylebox_override(
+        "panel", box(color.darkened(0.1), 11, color.lightened(0.2), 2, 5))
+    var column := VBoxContainer.new()
+    var value := Label.new()
+    value.text = initial
+    value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    value.add_theme_font_size_override("font_size", 29)
+    value.add_theme_color_override("font_color", Color("fff4df"))
+    column.add_child(value)
+    var caption := Label.new()
+    caption.text = caption_text
+    caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    caption.add_theme_font_size_override("font_size", 10)
+    caption.add_theme_color_override("font_color", Color("f2d9c7"))
+    column.add_child(caption)
+    panel.add_child(column)
+    return {"root": panel, "value": value}
+
+## 小号说明文字。用于待出区分组标注等场景。
+static func caption(text_value: String) -> Label:
+    var label := Label.new()
+    label.text = text_value
+    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    label.add_theme_font_size_override("font_size", FONT_CAPTION + 1)
+    label.add_theme_color_override("font_color", COLORS["muted"])
+    return label

@@ -12,6 +12,7 @@ const HandZoneScene = preload("res://ui/components/battle_hand_zone.tscn")
 const LoadoutScene = preload("res://ui/components/battle_loadout_view.tscn")
 const TechniqueSequenceScene = preload("res://ui/components/technique_sequence_view.tscn")
 const TriggerLogScene = preload("res://ui/components/trigger_log_view.tscn")
+const ValuePanelScript = preload("res://ui/components/battle_value_panel.gd")
 
 const COLORS := UiDesignScript.COLORS
 
@@ -30,13 +31,7 @@ var loadout_view
 var active_consumable_slot: int = -1
 
 var round_badge: Label
-var hand_name_label: Label
-var base_value_label: Label
-var multiplier_label: Label
-var power_value_label: Label
-var baseline_label: Label
-var left_technique_name: Label
-var left_technique_description: Label
+var value_panel: BattleValuePanel
 var zone_counts_label: Label
 var confirm_button: Button
 
@@ -114,7 +109,7 @@ func _build_interface() -> void:
 func _build_top_bar() -> Control:
     var panel := PanelContainer.new()
     panel.custom_minimum_size.y = 46
-    panel.add_theme_stylebox_override("panel", _box(COLORS["ink"], 10, Color("3b4650"), 2, 6))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(COLORS["ink"], 10, Color("3b4650"), 2, 6))
     var bar := HBoxContainer.new()
     bar.add_theme_constant_override("separation", 12)
     var mark := Label.new()
@@ -137,7 +132,7 @@ func _build_top_bar() -> Control:
     log_button.text = "结算记录"
     log_button.tooltip_text = "展开调试用完整触发历史"
     log_button.pressed.connect(_toggle_log_overlay)
-    _style_small_button(log_button)
+    UiDesignScript.style_button(log_button)
     bar.add_child(log_button)
     var seed_label := Label.new()
     seed_label.text = "种子"
@@ -152,7 +147,7 @@ func _build_top_bar() -> Control:
     var reset := Button.new()
     reset.text = "↻  重置"
     reset.pressed.connect(_reset_battle)
-    _style_small_button(reset)
+    UiDesignScript.style_button(reset)
     bar.add_child(reset)
     panel.add_child(bar)
     return panel
@@ -160,7 +155,7 @@ func _build_top_bar() -> Control:
 func _build_left_console() -> Control:
     var panel := PanelContainer.new()
     panel.custom_minimum_size.x = 258
-    panel.add_theme_stylebox_override("panel", _box(COLORS["panel"], 13, Color("0b1216"), 3, 10))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(COLORS["panel"], 13, Color("0b1216"), 3, 10))
     var box := VBoxContainer.new()
     box.add_theme_constant_override("separation", 9)
 
@@ -170,7 +165,7 @@ func _build_left_console() -> Control:
     round_badge.add_theme_font_size_override("font_size", 14)
     round_badge.add_theme_color_override("font_color", COLORS["gold"])
     box.add_child(round_badge)
-    box.add_child(_divider())
+    box.add_child(UiDesignScript.divider())
 
     var player_title := Label.new()
     player_title.text = "太吾 · 战斗状态"
@@ -180,70 +175,10 @@ func _build_left_console() -> Control:
     player_actor_status = ActorStatusScene.instantiate()
     player_actor_status.configure({"meter_width": 166.0, "hide_name": true})
     box.add_child(player_actor_status)
-    box.add_child(_divider())
+    box.add_child(UiDesignScript.divider())
 
-    var type_caption := Label.new()
-    type_caption.text = "当前牌型"
-    type_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    type_caption.add_theme_color_override("font_color", COLORS["muted"])
-    box.add_child(type_caption)
-    hand_name_label = Label.new()
-    hand_name_label.text = "等待选牌"
-    hand_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    hand_name_label.add_theme_font_size_override("font_size", 28)
-    hand_name_label.add_theme_color_override("font_color", COLORS["cream"])
-    box.add_child(hand_name_label)
-
-    var equation := HBoxContainer.new()
-    equation.alignment = BoxContainer.ALIGNMENT_CENTER
-    equation.add_theme_constant_override("separation", 7)
-    var base_tile := _number_tile("0", "基础值", COLORS["red"])
-    base_value_label = base_tile["value"]
-    equation.add_child(base_tile["root"])
-    var times := Label.new()
-    times.text = "×"
-    times.add_theme_font_size_override("font_size", 28)
-    times.add_theme_color_override("font_color", COLORS["muted"])
-    equation.add_child(times)
-    var multiplier_tile := _number_tile("1", "功法倍率", COLORS["blue"])
-    multiplier_label = multiplier_tile["value"]
-    equation.add_child(multiplier_tile["root"])
-    box.add_child(equation)
-
-    var power_panel := PanelContainer.new()
-    power_panel.add_theme_stylebox_override("panel", _box(Color("3b3120"), 11, COLORS["gold"], 2, 5))
-    var power_box := VBoxContainer.new()
-    var power_caption := Label.new()
-    power_caption.text = "功法值  P"
-    power_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    power_caption.add_theme_color_override("font_color", Color("d8c79f"))
-    power_box.add_child(power_caption)
-    power_value_label = Label.new()
-    power_value_label.text = "0"
-    power_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    power_value_label.add_theme_font_size_override("font_size", 34)
-    power_value_label.add_theme_color_override("font_color", Color("ffe08a"))
-    power_box.add_child(power_value_label)
-    baseline_label = Label.new()
-    baseline_label.text = "牌型基准值 0 · 不自动伤害"
-    baseline_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    baseline_label.add_theme_font_size_override("font_size", 11)
-    baseline_label.add_theme_color_override("font_color", Color("cbbd98"))
-    power_box.add_child(baseline_label)
-    power_panel.add_child(power_box)
-    box.add_child(power_panel)
-
-    left_technique_name = Label.new()
-    left_technique_name.text = "当前功法：—"
-    left_technique_name.add_theme_font_size_override("font_size", 16)
-    left_technique_name.add_theme_color_override("font_color", COLORS["gold"])
-    box.add_child(left_technique_name)
-    left_technique_description = Label.new()
-    left_technique_description.text = "选择真气后显示功法效果。"
-    left_technique_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    left_technique_description.add_theme_font_size_override("font_size", 12)
-    left_technique_description.add_theme_color_override("font_color", COLORS["muted"])
-    box.add_child(left_technique_description)
+    value_panel = ValuePanelScript.new()
+    box.add_child(value_panel)
 
     var spacer := Control.new()
     spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -254,9 +189,9 @@ func _build_left_console() -> Control:
     confirm_button.custom_minimum_size.y = 62
     confirm_button.add_theme_font_size_override("font_size", 24)
     confirm_button.add_theme_color_override("font_color", Color("fff4d2"))
-    confirm_button.add_theme_stylebox_override("normal", _box(COLORS["orange"], 12, Color("5f2c18"), 3, 7))
-    confirm_button.add_theme_stylebox_override("hover", _box(COLORS["orange"].lightened(0.12), 12, COLORS["gold"], 3, 10))
-    confirm_button.add_theme_stylebox_override("pressed", _box(COLORS["orange"].darkened(0.12), 12, Color("ffe8a6"), 3, 3))
+    confirm_button.add_theme_stylebox_override("normal", UiDesignScript.box(COLORS["orange"], 12, Color("5f2c18"), 3, 7))
+    confirm_button.add_theme_stylebox_override("hover", UiDesignScript.box(COLORS["orange"].lightened(0.12), 12, COLORS["gold"], 3, 10))
+    confirm_button.add_theme_stylebox_override("pressed", UiDesignScript.box(COLORS["orange"].darkened(0.12), 12, Color("ffe8a6"), 3, 3))
     confirm_button.pressed.connect(_confirm_play)
     box.add_child(confirm_button)
 
@@ -267,14 +202,14 @@ func _build_left_console() -> Control:
     start_turn.tooltip_text = "回合开始：补至当前手牌上限"
     start_turn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     start_turn.pressed.connect(_start_turn)
-    _style_small_button(start_turn)
+    UiDesignScript.style_button(start_turn)
     turn_buttons.add_child(start_turn)
     var end_turn := Button.new()
     end_turn.text = "结束回合"
     end_turn.tooltip_text = "结束玩家回合并推进延迟功法"
     end_turn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     end_turn.pressed.connect(_end_turn)
-    _style_small_button(end_turn)
+    UiDesignScript.style_button(end_turn)
     turn_buttons.add_child(end_turn)
     box.add_child(turn_buttons)
 
@@ -290,7 +225,7 @@ func _build_left_console() -> Control:
 func _build_table() -> Control:
     var panel := PanelContainer.new()
     panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    panel.add_theme_stylebox_override("panel", _box(Color(0.035, 0.19, 0.15, 0.58), 15, Color("2a6b58"), 2, 9))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(Color(0.035, 0.19, 0.15, 0.58), 15, Color("2a6b58"), 2, 9))
     var board := VBoxContainer.new()
     board.add_theme_constant_override("separation", 5)
     board.add_child(_build_enemy_strip())
@@ -303,7 +238,7 @@ func _build_table() -> Control:
     resolution_strip.custom_minimum_size.y = 22
     resolution_strip.add_theme_font_size_override("font_size", 11)
     resolution_strip.add_theme_color_override("font_color", Color("e8d9a7"))
-    resolution_strip.add_theme_stylebox_override("normal", _box(Color(0.08, 0.12, 0.12, 0.74), 7, Color("3d5d57"), 1, 1))
+    resolution_strip.add_theme_stylebox_override("normal", UiDesignScript.box(Color(0.08, 0.12, 0.12, 0.74), 7, Color("3d5d57"), 1, 1))
     board.add_child(resolution_strip)
     board.add_child(_build_staging_zone())
     board.add_child(_build_hand_fan())
@@ -316,14 +251,14 @@ func _build_enemy_strip() -> Control:
         "minimum_height": 92.0,
         "meter_width": 310.0,
         "portrait": "敌",
-        "panel_style": _box(Color(0.08, 0.12, 0.13, 0.88), 10, Color("25383d"), 1, 3),
+        "panel_style": UiDesignScript.box(Color(0.08, 0.12, 0.13, 0.88), 10, Color("25383d"), 1, 3),
     })
     return enemy_actor_status
 
 func _build_enemy_hand_strip() -> Control:
     var panel := PanelContainer.new()
     panel.custom_minimum_size.y = 50
-    panel.add_theme_stylebox_override("panel", _box(Color(0.045, 0.1, 0.1, 0.62), 9, Color("28443e"), 1, 2))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(Color(0.045, 0.1, 0.1, 0.62), 9, Color("28443e"), 1, 2))
     var row := HBoxContainer.new()
     row.alignment = BoxContainer.ALIGNMENT_CENTER
     row.add_theme_constant_override("separation", 5)
@@ -337,7 +272,7 @@ func _build_enemy_hand_strip() -> Control:
     enemy_hand_row.alignment = BoxContainer.ALIGNMENT_CENTER
     enemy_hand_row.add_theme_constant_override("separation", -12)
     row.add_child(enemy_hand_row)
-    enemy_hand_count_label = _status_chip("0 / 8", Color("485d69"))
+    enemy_hand_count_label = UiDesignScript.chip("0 / 8", Color("485d69"))
     row.add_child(enemy_hand_count_label)
     panel.add_child(row)
     return panel
@@ -346,7 +281,7 @@ func _enemy_hand_back() -> Control:
     var card := PanelContainer.new()
     card.custom_minimum_size = Vector2(32, 42)
     card.rotation = deg_to_rad(-1.5)
-    card.add_theme_stylebox_override("panel", _box(Color("4f356f"), 6, Color("9c78c5"), 2, 2))
+    card.add_theme_stylebox_override("panel", UiDesignScript.box(Color("4f356f"), 6, Color("9c78c5"), 2, 2))
     var mark := Label.new()
     mark.text = "◇"
     mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -371,7 +306,7 @@ func _build_staging_zone() -> Control:
     var panel := PanelContainer.new()
     panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
     panel.custom_minimum_size.y = 165
-    panel.add_theme_stylebox_override("panel", _box(Color(0.03, 0.15, 0.12, 0.5), 14, Color(0.36, 0.76, 0.62, 0.18), 2, 3))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(Color(0.03, 0.15, 0.12, 0.5), 14, Color(0.36, 0.76, 0.62, 0.18), 2, 3))
     var box := VBoxContainer.new()
     box.alignment = BoxContainer.ALIGNMENT_CENTER
     var title := Label.new()
@@ -642,13 +577,7 @@ func _refresh_preview_and_staging(
         _refresh_consumable_targeting(player_state)
         return
     if selected_ids.is_empty():
-        hand_name_label.text = "等待选牌"
-        base_value_label.text = "0"
-        multiplier_label.text = "1"
-        power_value_label.text = "0"
-        baseline_label.text = "牌型基准值 0 · 不自动伤害"
-        left_technique_name.text = "当前功法：—"
-        left_technique_description.text = "选择真气后显示功法效果。"
+        value_panel.present_idle()
         technique_sequence_view.present({
             "current_name": "等待选牌",
             "description": "结算顺序：%s" % " → ".join(battle_session.combat_order_labels()),
@@ -669,7 +598,7 @@ func _refresh_preview_and_staging(
 
     var preview: Dictionary = battle_session.preview(selected_ids)
     if not preview.get("valid", false):
-        hand_name_label.text = "无效选择"
+        value_panel.present_invalid()
         board_message.text = preview.get("reason", "选择无效")
         return
     staging_hint.visible = false
@@ -684,17 +613,9 @@ func _refresh_preview_and_staging(
     var technique: Dictionary = preview["technique"]
     var next_technique: Dictionary = preview["next_technique"]
     var condition_ok: bool = preview["condition"]["ok"]
-    hand_name_label.text = hand["name"]
-    base_value_label.text = str(values["base_value"])
-    multiplier_label.text = str(values["technique_multiplier"])
-    power_value_label.text = str(values["technique_value"])
-    baseline_label.text = "牌型基准值 %d · 不自动伤害" % values["baseline_value"]
-    var technique_name: String = technique.get("name", "空序列")
-    left_technique_name.text = "当前功法：%s" % technique_name
-    left_technique_description.text = technique.get("description", "该精确牌型当前没有功法。")
     var inner_defense: int = int(preview.get("intent", {}).get("inner_skill_defense", 0))
-    if inner_defense > 0:
-        left_technique_description.text += "\n内功预计获得 %d 防御。" % inner_defense
+    value_panel.present_preview(hand, values, technique, inner_defense)
+    var technique_name: String = technique.get("name", "空序列")
     var condition_text := "条件满足" if condition_ok else "条件失败：%s" % preview["condition"]["reason"]
     var next_name: String = next_technique.get("name", "空序列")
     technique_sequence_view.present({
@@ -719,15 +640,7 @@ func _refresh_consumable_targeting(player_state: BattleSideSnapshot) -> void:
         var compact_view = QiCardViewScript.new()
         compact_view.setup(card, true, true, false)
         staging_row.add_child(compact_view)
-    hand_name_label.text = "使用 · %s" % definition.get("name", "消耗品")
-    base_value_label.text = "—"
-    multiplier_label.text = "—"
-    power_value_label.text = "—"
-    baseline_label.text = "构筑改造 · 使用后立即刷新预览"
-    left_technique_name.text = "%s · %s" % [
-        {"insight": "心得", "pill": "丹药", "treasure": "天材地宝"}.get(definition.get("kind", ""), "消耗品"),
-        definition.get("name", "")]
-    left_technique_description.text = definition.get("description", "")
+    value_panel.present_consumable(definition)
     technique_sequence_view.present({
         "current_name": definition.get("name", "消耗品"),
         "description": "纵切调试构筑入口",
@@ -749,7 +662,7 @@ func _show_last_synchronized_reveal(current: BattleSnapshot) -> void:
     var player_preview: Dictionary = current.last_preview
     var enemy_preview: Dictionary = current.last_enemy_preview
     if not player_action_cards.is_empty():
-        staging_row.add_child(_staging_caption("我方"))
+        staging_row.add_child(UiDesignScript.caption("我方"))
         var player_contributing: Array = player_preview.get("hand", {}).get("contributing_card_ids", [])
         for card in player_action_cards:
             var player_view = QiCardViewScript.new()
@@ -761,7 +674,7 @@ func _show_last_synchronized_reveal(current: BattleSnapshot) -> void:
         divider.add_theme_font_size_override("font_size", 14)
         divider.add_theme_color_override("font_color", COLORS["gold"])
         staging_row.add_child(divider)
-        staging_row.add_child(_staging_caption("对手"))
+        staging_row.add_child(UiDesignScript.caption("对手"))
         var enemy_contributing: Array = enemy_preview.get("hand", {}).get("contributing_card_ids", [])
         for card in enemy_action_cards:
             var enemy_view = QiCardViewScript.new()
@@ -771,14 +684,6 @@ func _show_last_synchronized_reveal(current: BattleSnapshot) -> void:
     board_message.text = "同步结算 · 我方 %s / 对手已出招" % player_hand_name
     if current.battle_state != "active":
         board_message.text += " · %s" % current.battle_state_detail
-
-func _staging_caption(text_value: String) -> Label:
-    var label := Label.new()
-    label.text = text_value
-    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    label.add_theme_font_size_override("font_size", 12)
-    label.add_theme_color_override("font_color", COLORS["muted"])
-    return label
 
 func _refresh_log(current: BattleSnapshot) -> void:
     var battle_history: Array = current.battle_log
@@ -806,46 +711,3 @@ func _find_card_snapshot(cards: Array, card_id: String) -> Dictionary:
             return card
     return {}
 
-func _status_chip(text_value: String, color: Color) -> Label:
-    return UiDesignScript.chip(text_value, color)
-
-func _resource_pill(text_value: String, color: Color) -> Label:
-    var label := Label.new()
-    label.text = text_value
-    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    label.custom_minimum_size = Vector2(90, 28)
-    label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    label.add_theme_font_size_override("font_size", 12)
-    label.add_theme_color_override("font_color", Color("f9f1df"))
-    label.add_theme_stylebox_override("normal", _box(color.darkened(0.25), 8, color, 2, 2))
-    return label
-
-func _number_tile(initial: String, caption_text: String, color: Color) -> Dictionary:
-    var panel := PanelContainer.new()
-    panel.custom_minimum_size = Vector2(83, 74)
-    panel.add_theme_stylebox_override("panel", _box(color.darkened(0.1), 11, color.lightened(0.2), 2, 5))
-    var box := VBoxContainer.new()
-    var value := Label.new()
-    value.text = initial
-    value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    value.add_theme_font_size_override("font_size", 29)
-    value.add_theme_color_override("font_color", Color("fff4df"))
-    box.add_child(value)
-    var caption := Label.new()
-    caption.text = caption_text
-    caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    caption.add_theme_font_size_override("font_size", 10)
-    caption.add_theme_color_override("font_color", Color("f2d9c7"))
-    box.add_child(caption)
-    panel.add_child(box)
-    return {"root": panel, "value": value}
-
-func _divider() -> HSeparator:
-    return UiDesignScript.divider()
-
-func _style_small_button(button: Button) -> void:
-    UiDesignScript.style_button(button)
-
-func _box(fill: Color, radius: int, border: Color, border_width: int, shadow_size: int) -> StyleBoxFlat:
-    return UiDesignScript.box(fill, radius, border, border_width, shadow_size)

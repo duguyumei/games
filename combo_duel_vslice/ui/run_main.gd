@@ -121,7 +121,7 @@ func _build_interface() -> void:
     var map_panel := PanelContainer.new()
     map_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     map_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    map_panel.add_theme_stylebox_override("panel", _box(Color("111b21"), 14, Color("31535a"), 2, 8))
+    map_panel.add_theme_stylebox_override("panel", UiDesignScript.box(Color("111b21"), 14, Color("31535a"), 2, 8))
     map_scroll = ScrollContainer.new()
     map_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     map_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -143,9 +143,9 @@ func _build_interface() -> void:
     practice_button.offset_bottom = -28
     practice_button.add_theme_font_size_override("font_size", 18)
     practice_button.add_theme_color_override("font_color", Color("fff1cb"))
-    practice_button.add_theme_stylebox_override("normal", _box(Color("542f25"), 22, COLORS["gold"], 3, 9))
-    practice_button.add_theme_stylebox_override("hover", _box(Color("75452e"), 22, Color("ffe08a"), 4, 13))
-    practice_button.add_theme_stylebox_override("pressed", _box(Color("3f251f"), 22, Color("fff0b2"), 3, 4))
+    practice_button.add_theme_stylebox_override("normal", UiDesignScript.box(Color("542f25"), 22, COLORS["gold"], 3, 9))
+    practice_button.add_theme_stylebox_override("hover", UiDesignScript.box(Color("75452e"), 22, Color("ffe08a"), 4, 13))
+    practice_button.add_theme_stylebox_override("pressed", UiDesignScript.box(Color("3f251f"), 22, Color("fff0b2"), 3, 4))
     practice_button.pressed.connect(_open_practice)
     practice_button.z_index = 50
     add_child(practice_button)
@@ -159,7 +159,7 @@ func _build_interface() -> void:
     toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     toast_label.add_theme_color_override("font_color", Color("ffe5a0"))
-    toast_label.add_theme_stylebox_override("normal", _box(Color(0.08, 0.11, 0.12, 0.92), 10, Color("66552e"), 1, 2))
+    toast_label.add_theme_stylebox_override("normal", UiDesignScript.box(Color(0.08, 0.11, 0.12, 0.92), 10, Color("66552e"), 1, 2))
     toast_label.visible = false
     toast_label.z_index = 60
     add_child(toast_label)
@@ -187,7 +187,7 @@ func _build_interface() -> void:
         "action_text": "完成宝箱流程并进入下一层",
         "action_size": Vector2(320, 58),
         "panel_size": Vector2(700, 410),
-        "panel_style": _box(Color("2b2520"), 20, COLORS["gold"], 3, 14),
+        "panel_style": UiDesignScript.box(Color("2b2520"), 20, COLORS["gold"], 3, 14),
         "z_index": 190,
     })
     add_child(boss_chest_overlay)
@@ -200,7 +200,7 @@ func _build_interface() -> void:
 func _build_top_bar() -> Control:
     var panel := PanelContainer.new()
     panel.custom_minimum_size.y = 58
-    panel.add_theme_stylebox_override("panel", _box(COLORS["ink"], 12, Color("39464f"), 2, 5))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(COLORS["ink"], 12, Color("39464f"), 2, 5))
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 12)
     var mark := Label.new()
@@ -218,13 +218,13 @@ func _build_top_bar() -> Control:
     act_label.add_theme_font_size_override("font_size", 14)
     act_label.add_theme_color_override("font_color", COLORS["muted"])
     row.add_child(act_label)
-    experience_label = _pill("历练 0", COLORS["gold"])
+    experience_label = UiDesignScript.pill("历练 0", COLORS["gold"])
     row.add_child(experience_label)
     var reset := Button.new()
     reset.text = "新路线"
     reset.tooltip_text = "以当前种子重新生成本局"
     reset.pressed.connect(_reset_run)
-    _style_button(reset)
+    UiDesignScript.style_button(reset)
     row.add_child(reset)
     panel.add_child(row)
     return panel
@@ -232,7 +232,7 @@ func _build_top_bar() -> Control:
 func _build_map_status_strip() -> Control:
     var panel := PanelContainer.new()
     panel.custom_minimum_size.y = 58
-    panel.add_theme_stylebox_override("panel", _box(COLORS["panel"], 12, Color("10161b"), 2, 5))
+    panel.add_theme_stylebox_override("panel", UiDesignScript.box(COLORS["panel"], 12, Color("10161b"), 2, 5))
     var box := HBoxContainer.new()
     box.add_theme_constant_override("separation", 18)
     phase_label = Label.new()
@@ -256,7 +256,7 @@ func _build_map_status_strip() -> Control:
     var legend := Button.new()
     legend.text = "图例"
     legend.tooltip_text = "始 旅程起点｜战 普通战斗｜精 精英战斗｜? 事件｜息 休息｜藏 宝箱｜首 Boss\n地图不生成商店节点；原商店节点进入事件。"
-    _style_button(legend)
+    UiDesignScript.style_button(legend)
     box.add_child(legend)
     panel.add_child(box)
     return panel
@@ -454,21 +454,3 @@ func _show_toast(text: String) -> void:
     tween.tween_interval(2.2)
     tween.tween_callback(func(): toast_label.visible = false)
 
-func _pill(text_value: String, color: Color) -> Label:
-    var label := Label.new()
-    label.text = text_value
-    label.custom_minimum_size = Vector2(112, 34)
-    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    label.add_theme_color_override("font_color", Color("fff4d5"))
-    label.add_theme_stylebox_override("normal", _box(color.darkened(0.42), 10, color, 2, 2))
-    return label
-
-func _style_button(button: Button) -> void:
-    UiDesignScript.style_button(button)
-
-func _divider() -> HSeparator:
-    return UiDesignScript.divider()
-
-func _box(fill: Color, radius: int, border: Color, border_width: int, shadow: int) -> StyleBoxFlat:
-    return UiDesignScript.box(fill, radius, border, border_width, shadow)
