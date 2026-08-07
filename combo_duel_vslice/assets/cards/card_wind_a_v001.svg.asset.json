@@ -1,0 +1,11 @@
+{
+  "asset_id": "card_wind_a_v001",
+  "category": "cards",
+  "version": 1,
+  "source": {"kind": "generated_placeholder", "provider": "project team", "license": "Copyright project team; internal prototype use", "source_url": ""},
+  "generation": {"model": "n/a", "prompt": "Code-authored abstract wind card pipeline placeholder", "seed": 0},
+  "edits": [{"tool": "SVG", "summary": "Hand-authored geometric placeholder using UiDesign palette"}],
+  "approval": {"status": "approved", "reviewer": "pipeline sample", "reviewed_at": "2026-08-07", "notes": "Pipeline sample only; not formal art"},
+  "anchors": {"x": 0.5, "y": 0.5},
+  "transparent_padding": {"left": 24, "top": 24, "right": 24, "bottom": 24}
+}

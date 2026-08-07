@@ -1,17 +1,7 @@
-# 真气整卡图片接入
+# 真气卡图
 
-将 52 张完整牌图放在本目录，文件名使用基础真气 ID：
+正式文件名为 `card_<wind|forest|fire|mountain>_<a|2..10|j|q|k>_vNNN`，
+母版 744×1039，四边至少 24 px 安全区。完整规则见
+`res://docs/art-asset-pipeline.md`。
 
-```text
-wind_A.png
-wind_2.png
-forest_K.png
-fire_10.png
-mountain_Q.png
-```
-
-属性前缀固定为 `wind`、`forest`、`fire`、`mountain`；牌阶为
-`2`～`10`、`J`、`Q`、`K`、`A`。支持 PNG、WebP 和 JPG，优先读取 PNG。
-
-牌图按完整扑克牌画面接入；程序只保留选择金框、悬浮抬升和点击交互，不再叠加
-占位牌阶、属性徽记或真气值文字。缺少对应图片时才显示程序生成的占位牌面。
+运行时仍兼容历史 `wind_A.png` 一类文件名；新资源不得继续采用历史命名，待内容引用迁移后删除兼容入口。

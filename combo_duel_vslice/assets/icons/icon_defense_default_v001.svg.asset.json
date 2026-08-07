@@ -1,0 +1,11 @@
+{
+  "asset_id": "icon_defense_default_v001",
+  "category": "icons",
+  "version": 1,
+  "source": {"kind": "generated_placeholder", "provider": "project team", "license": "Copyright project team; internal prototype use", "source_url": ""},
+  "generation": {"model": "n/a", "prompt": "Code-authored defense icon pipeline placeholder", "seed": 0},
+  "edits": [{"tool": "SVG", "summary": "Hand-authored shield silhouette with negative-space cross"}],
+  "approval": {"status": "approved", "reviewer": "pipeline sample", "reviewed_at": "2026-08-07", "notes": "Pipeline sample only; not formal art"},
+  "anchors": {"x": 0.5, "y": 0.5},
+  "transparent_padding": {"left": 12, "top": 12, "right": 12, "bottom": 10}
+}

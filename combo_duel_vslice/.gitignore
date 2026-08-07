@@ -1,3 +1,4 @@
 /.godot/
 *.log
 *.tmp
+assets/**/*.import

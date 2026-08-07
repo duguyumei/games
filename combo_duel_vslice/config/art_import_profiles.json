@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "godot": "4.7",
+  "profiles": {
+    "cards": {
+      "extensions": ["svg", "png", "webp"],
+      "canvas": [744, 1039],
+      "filter": true,
+      "mipmaps": false,
+      "compress": "lossless",
+      "atlas": "per_asset",
+      "pixel_density": 1.0,
+      "transparent_safe_margin_px": 24
+    },
+    "portraits": {
+      "extensions": ["svg", "png", "webp"],
+      "canvas": [512, 512],
+      "filter": true,
+      "mipmaps": false,
+      "compress": "lossless",
+      "atlas": "none",
+      "pixel_density": 1.0,
+      "transparent_safe_margin_px": 32
+    },
+    "backgrounds": {
+      "extensions": ["svg", "png", "webp"],
+      "canvas": [1920, 1080],
+      "filter": true,
+      "mipmaps": true,
+      "compress": "lossy",
+      "atlas": "none",
+      "pixel_density": 1.0,
+      "transparent_safe_margin_px": 0
+    },
+    "icons": {
+      "extensions": ["svg", "png", "webp"],
+      "canvas": [128, 128],
+      "filter": true,
+      "mipmaps": false,
+      "compress": "lossless",
+      "atlas": "semantic_sheet",
+      "pixel_density": 2.0,
+      "transparent_safe_margin_px": 12
+    },
+    "vfx": {
+      "extensions": ["svg", "png", "webp"],
+      "canvas": [512, 512],
+      "filter": true,
+      "mipmaps": false,
+      "compress": "lossless",
+      "atlas": "effect_sheet",
+      "pixel_density": 2.0,
+      "transparent_safe_margin_px": 40
+    },
+    "audio": {
+      "extensions": ["wav", "ogg"],
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "loop_metadata": "required_for_looped_assets"
+    },
+    "fonts": {
+      "extensions": ["ttf", "otf"],
+      "pixel_density": 1.0,
+      "atlas": "godot_dynamic_font"
+    }
+  },
+  "platform_overrides": {
+    "desktop": {"texture_compress": "lossless_or_lossy_by_profile", "audio": "ogg"},
+    "mobile": {"texture_compress": "basis_universal", "audio": "ogg"},
+    "web": {"texture_compress": "lossless", "audio": "ogg"}
+  }
+}
