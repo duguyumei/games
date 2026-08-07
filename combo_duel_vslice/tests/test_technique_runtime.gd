@@ -18,6 +18,10 @@ const NodeDispatcherScript = preload("res://core/node_dispatcher.gd")
 const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
+const DamageResolverScript = preload("res://core/damage_resolver.gd")
+const StatusSystemScript = preload("res://core/status_system.gd")
+const BattleFlowCoordinatorScript = preload("res://core/battle_flow_coordinator.gd")
+const TriggerQueueScript = preload("res://core/trigger_queue.gd")
 
 const PendingChoiceHandlerScript = preload("res://tests/support/pending_choice_handler.gd")
 
@@ -331,7 +335,18 @@ func _catalog_card(engine, definition_id: String, instance_id: String):
 func _test_structured_context_and_ports() -> void:
     var actor = BattleSideScript.new("行动方", "actor")
     var target = BattleSideScript.new("目标", "target")
-    var ports = EffectPortsScript.new()
+    ## 端口依赖必须是真实实例。此前这里传空构造，导致 add_stack 断言实际走的是
+    ## 端口内的 null 兜底分支，而不是它声称验证的 StatusSystem 生产路径。
+    var catalog = ContentCatalogScript.new()
+    catalog.load_all()
+    var status_system = StatusSystemScript.new(catalog)
+    var ports = EffectPortsScript.new(
+        DamageResolverScript.new(),
+        status_system,
+        BattleFlowCoordinatorScript.new(),
+        TriggerQueueScript.new())
+    ports.use_sides(actor, target)
+    status_system.use_effect_ports(ports)
     var captures := {}
     var context = EffectContextScript.new().configure({
         "actor": actor,

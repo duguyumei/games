@@ -7,12 +7,13 @@ const UiDesignScript = preload("res://ui/ui_design.gd")
 const PracticeOverlayScene = preload("res://ui/components/practice_overlay.tscn")
 const RewardOverlayScene = preload("res://ui/components/reward_overlay.tscn")
 const PlaceholderPageScene = preload("res://ui/components/node_placeholder_page.tscn")
+const ContentFailurePageScript = preload("res://ui/components/content_failure_page.gd")
 
 const COLORS := UiDesignScript.COLORS
 
-var run_session = null
-var ai_settings_service = null
-var composition_root = null
+var run_session: RunSession = null
+var ai_settings_service: AiSettingsService = null
+var composition_root: GameCompositionRoot = null
 var current_run: Dictionary = {}
 var map_view
 var map_scroll: ScrollContainer
@@ -43,6 +44,8 @@ func configure_new_run(configuration: Dictionary) -> void:
         "starter_build_id", starter_build_id))
     if _interface_initialized:
         _ensure_services()
+        if run_session == null:
+            return
         run_session.execute({
             "type": "setup_run",
             "seed": seed_value,
@@ -55,6 +58,9 @@ func initialize_interface() -> void:
     _interface_initialized = true
     theme = UiDesignScript.create_theme()
     _ensure_services()
+    if run_session == null:
+        _build_content_failure_page()
+        return
     var ai_settings_loaded := true
     if DisplayServer.get_name() != "headless":
         ai_settings_loaded = ai_settings_service.load_or_create()
@@ -73,13 +79,14 @@ func initialize_interface() -> void:
         "starter_build_id": starter_build_id,
     })
 
-func configure_composition_root(root) -> void:
+func configure_composition_root(root: GameCompositionRoot) -> void:
     if _interface_initialized:
         return
     composition_root = root
-    if composition_root != null and composition_root.has_method("create_run_session"):
-        run_session = composition_root.create_run_session()
-        ai_settings_service = composition_root.ai_settings_service
+    if composition_root == null:
+        return
+    run_session = composition_root.create_run_session()
+    ai_settings_service = composition_root.ai_settings_service
 
 func _ensure_services() -> void:
     if run_session != null:
@@ -431,6 +438,15 @@ func _scroll_map_to_bottom() -> void:
     await get_tree().process_frame
     if map_scroll != null:
         map_scroll.scroll_vertical = 100000
+
+func _build_content_failure_page() -> void:
+    var page := ContentFailurePageScript.new()
+    add_child(page)
+    page.present(
+        "内容校验失败，无法进入本局",
+        composition_root.content_errors()
+        if composition_root != null
+        else ["组合根未创建"] as Array[String])
 
 func _show_toast(text: String) -> void:
     toast_label.text = text

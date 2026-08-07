@@ -7,12 +7,13 @@ const UiDesignScript = preload("res://ui/ui_design.gd")
 const MenuPageScene = preload("res://ui/components/front_menu_page.tscn")
 const BuildPageScene = preload("res://ui/components/starter_build_page.tscn")
 const InfoPageScene = preload("res://ui/components/front_info_page.tscn")
+const ContentFailurePageScript = preload("res://ui/components/content_failure_page.gd")
 
 const COLORS := UiDesignScript.COLORS
 
-var composition_root := GameCompositionRootScript.new()
-var content_catalog
-var starter_repository
+var composition_root: GameCompositionRoot = GameCompositionRootScript.new()
+var content_catalog: ContentCatalog
+var starter_repository: StarterBuildRepository
 var selected_starter_build_id: String = ""
 var seed_value: int = 2308
 
@@ -33,15 +34,19 @@ func initialize_interface() -> void:
         return
     _initialized = true
     theme = UiDesignScript.create_theme()
-    composition_root.initialize()
+    var content_loaded := composition_root.initialize()
     content_catalog = composition_root.content_catalog
     starter_repository = composition_root.starter_build_repository
-    if content_catalog.loaded:
-        starter_repository.configure(
-            content_catalog.definition("starter_builds"))
-        var builds: Array = starter_repository.available_builds()
-        if builds.size() == 1:
-            selected_starter_build_id = str(builds[0].get("id", ""))
+    if not content_loaded:
+        var page := ContentFailurePageScript.new()
+        add_child(page)
+        page.present("内容校验失败，无法启动游戏", composition_root.content_errors())
+        return
+    starter_repository.configure(
+        content_catalog.definition("starter_builds"))
+    var builds: Array = starter_repository.available_builds()
+    if builds.size() == 1:
+        selected_starter_build_id = str(builds[0].get("id", ""))
     _build_background()
     shell = Control.new()
     shell.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

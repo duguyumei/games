@@ -1,28 +1,34 @@
 class_name BattleEffectPorts
 extends RefCounted
 
-var _damage_resolver = null
-var _status_system = null
-var _battle_flow = null
-var _trigger_queue = null
-var _sides: Array = []
+## 效果处理器修改战斗状态的唯一窄端口。
+##
+## 四个依赖是必需的，不接受 null：端口一旦允许缺依赖，每个方法都要带一条兜底分支，
+## 而兜底分支会在依赖真的缺失时静默改用另一套判定，把装配错误伪装成正常结果。
+## 装配失败应当在构造点暴露，不应推迟到某个效果结算时。
+
+var _damage_resolver: ComboDamageResolver
+var _status_system: StatusSystem
+var _battle_flow: BattleFlowCoordinator
+var _trigger_queue: VisibleTriggerQueue
+var _sides: Array[BattleSide] = []
 var _played_return_callback: Callable
 var _hand_retrigger_callback: Callable
 
 func _init(
-        damage_resolver = null,
-        status_system = null,
-        battle_flow = null,
-        trigger_queue = null) -> void:
+        damage_resolver: ComboDamageResolver,
+        status_system: StatusSystem,
+        battle_flow: BattleFlowCoordinator,
+        trigger_queue: VisibleTriggerQueue) -> void:
     _damage_resolver = damage_resolver
     _status_system = status_system
     _battle_flow = battle_flow
     _trigger_queue = trigger_queue
 
-func use_trigger_queue(trigger_queue) -> void:
+func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
     _trigger_queue = trigger_queue
 
-func use_sides(first, second) -> void:
+func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
 
 func use_played_return_callback(callback: Callable) -> void:
@@ -31,23 +37,18 @@ func use_played_return_callback(callback: Callable) -> void:
 func use_hand_retrigger_callback(callback: Callable) -> void:
     _hand_retrigger_callback = callback
 
-func opponent_of(side):
+func opponent_of(side: BattleSide) -> BattleSide:
     for candidate in _sides:
         if candidate != side:
             return candidate
     return null
 
-func is_combat_available() -> bool:
-    return _damage_resolver != null and _status_system != null
-
 func deal_damage(
-        actor,
-        target,
+        actor: BattleSide,
+        target: BattleSide,
         amount: int,
         source_kind: String,
         true_damage: bool = false) -> Dictionary:
-    if not is_combat_available():
-        return {"success": false, "reason": "伤害端口未连接战斗"}
     var result: Dictionary = _damage_resolver.resolve(
         actor,
         target,
@@ -61,17 +62,11 @@ func deal_damage(
     result["success"] = true
     return result
 
-func actor_can_continue(side) -> bool:
-    return (
-        _damage_resolver.actor_can_continue(side)
-        if _damage_resolver != null
-        else side.life > 0)
+func actor_can_continue(side: BattleSide) -> bool:
+    return _damage_resolver.actor_can_continue(side)
 
-func target_can_receive(side) -> bool:
-    return (
-        _damage_resolver.target_can_receive(side)
-        if _damage_resolver != null
-        else side.life > 0)
+func target_can_receive(side: BattleSide) -> bool:
+    return _damage_resolver.target_can_receive(side)
 
 func begin_synchronized_damage(records: Array) -> void:
     var actors: Array = []
@@ -88,31 +83,29 @@ func flush_synchronized_damage() -> void:
             resolution["source_kind"],
             resolution["result"])
 
-func add_defense(side, amount: int) -> int:
+func add_defense(side: BattleSide, amount: int) -> int:
     return side.add_defense(amount)
 
-func draw(side, count: int, source_kind: String = "") -> Array:
+func draw(side: BattleSide, count: int, source_kind: String = "") -> Array:
     var drawn: Array = side.draw(count)
-    if source_kind == "technique" and _status_system != null:
+    if source_kind == "technique":
         _status_system.record_technique_card_flow(side, "draw", drawn.size())
     return drawn
 
-func discard_random(side, count: int, rng: RandomNumberGenerator) -> Array:
+func discard_random(side: BattleSide, count: int, rng: RandomNumberGenerator) -> Array:
     var discarded: Array = side.random_discard(count, rng)
-    if _status_system != null:
-        _status_system.record_technique_card_flow(side, "discard", discarded.size())
+    _status_system.record_technique_card_flow(side, "discard", discarded.size())
     return discarded
 
-func discard_all(side) -> Array:
+func discard_all(side: BattleSide) -> Array:
     var discarded: Array = side.discard_all()
-    if _status_system != null:
-        _status_system.record_technique_card_flow(side, "discard", discarded.size())
+    _status_system.record_technique_card_flow(side, "discard", discarded.size())
     return discarded
 
 func move_card(
-        source_side,
+        source_side: BattleSide,
         source_zone: String,
-        target_side,
+        target_side: BattleSide,
         destination_zone: String,
         card,
         reason: String = "effect",
@@ -130,14 +123,14 @@ func move_card(
             target_side, destination_zone)
         destination.erase(card)
         destination.push_front(card)
-    if result.get("success", false) and source_kind == "technique" and _status_system != null:
+    if result.get("success", false) and source_kind == "technique":
         if destination_zone == "hand" and reason == "draw":
             _status_system.record_technique_card_flow(target_side, "draw", 1)
         elif destination_zone == "discard_pile" and reason == "explicit_discard":
             _status_system.record_technique_card_flow(source_side, "discard", 1)
     return result
 
-func zone_cards(side, zone: String) -> Array:
+func zone_cards(side: BattleSide, zone: String) -> Array:
     match zone:
         "hand": return side.hand.duplicate()
         "draw_pile": return side.draw_pile.duplicate()
@@ -145,11 +138,8 @@ func zone_cards(side, zone: String) -> Array:
         "discard_pile": return side.discard_pile.duplicate()
     return []
 
-func add_actor_status(side, status_id: String, amount: int, source: String) -> Dictionary:
-    if _status_system != null:
-        return _status_system.add_actor_status(side, status_id, amount, source)
-    var changed: int = side.add_stack(status_id, amount)
-    return {"success": true, "changed": changed}
+func add_actor_status(side: BattleSide, status_id: String, amount: int, source: String) -> Dictionary:
+    return _status_system.add_actor_status(side, status_id, amount, source)
 
 func apply_card_anomaly(
         card,
@@ -157,17 +147,13 @@ func apply_card_anomaly(
         anomaly_id: String,
         payload: Dictionary,
         source: String) -> Dictionary:
-    if _status_system == null:
-        return {"success": false, "reason": "异状端口未连接战斗状态系统"}
     return _status_system.apply_card_anomaly(
         card, category, anomaly_id, payload, source)
 
-func resolve_played_card_anomalies(holder, cards: Array) -> Array:
+func resolve_played_card_anomalies(holder: BattleSide, cards: Array) -> Array:
     return _status_system.resolve_played_card_anomalies(holder, cards)
 
-func gain_extra_actions(side, amount: int, source: String) -> int:
-    if _battle_flow == null:
-        return 0
+func gain_extra_actions(side: BattleSide, amount: int, source: String) -> int:
     var gained: int = _battle_flow.grant_actions(side, amount)
     add_history(
         "action_end",
@@ -182,10 +168,8 @@ func register_attack_counter_delay(
         turn_ends: int,
         snapshot_power: int,
         damage_per_segment: int,
-        actor,
-        target) -> Dictionary:
-    if _status_system == null:
-        return {"success": false, "reason": "延迟端口未连接战斗"}
+        actor: BattleSide,
+        target: BattleSide) -> Dictionary:
     var result: Dictionary = _status_system.register_attack_counter_delay(
         label,
         turn_ends,
@@ -206,14 +190,12 @@ func register_turn_end_stack(
         turn_ends: int,
         stack_id: String,
         amount: int,
-        actor) -> Dictionary:
-    if _status_system == null:
-        return {"success": false, "reason": "延迟端口未连接战斗"}
+        actor: BattleSide) -> Dictionary:
     return _status_system.register_turn_end_stack(
         label, turn_ends, stack_id, amount, actor)
 
 func register_played_return(
-        side,
+        side: BattleSide,
         played_cards: Array,
         contributing_cards: Array,
         count: int,
@@ -239,17 +221,15 @@ func register_delayed_effects(
         occurrences: int,
         effects: Array,
         context) -> Dictionary:
-    if _status_system == null:
-        return {"success": false, "reason": "延迟端口未连接状态系统"}
     return _status_system.register_delayed_effects(
         label, timing, occurrences, effects, context)
 
-func technique_draw_count(side) -> int:
-    return _status_system.technique_draw_count(side) if _status_system != null else 0
+func technique_draw_count(side: BattleSide) -> int:
+    return _status_system.technique_draw_count(side)
 
 func retrigger_current_hand_technique(
-        actor,
-        target,
+        actor: BattleSide,
+        target: BattleSide,
         sequence_book,
         snapshot_power: int,
         maximum_discard: int,
@@ -270,10 +250,14 @@ func add_history(
         source: String,
         result: String,
         detail: String = "") -> void:
-    if _trigger_queue != null:
-        _trigger_queue.add_history(timing, label, source, result, detail)
+    _trigger_queue.add_history(timing, label, source, result, detail)
 
-func _log_damage(actor, target, final_amount: int, source_kind: String, result: Dictionary) -> void:
+func _log_damage(
+        actor: BattleSide,
+        target: BattleSide,
+        final_amount: int,
+        source_kind: String,
+        result: Dictionary) -> void:
     add_history(
         "damage_segment",
         "%s → %s" % [actor.name, target.name],

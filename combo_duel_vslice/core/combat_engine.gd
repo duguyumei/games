@@ -28,6 +28,7 @@ const BattleConsumableServiceScript = preload("res://core/battle_consumable_serv
 const BattleOutcomeServiceScript = preload("res://core/battle_outcome_service.gd")
 const EnemyActionPlanningServiceScript = preload("res://core/enemy_action_planning_service.gd")
 const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
+const BattleLoadoutServiceScript = preload("res://core/battle_loadout_service.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -59,6 +60,7 @@ var consumable_service
 var outcome_service
 var enemy_planning_service
 var battle_setup_service
+var loadout_service: BattleLoadoutService
 
 var turn_number: int:
     get: return round_service.turn_number
@@ -199,6 +201,10 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         Callable(action_resolver, "register_played_return"))
     effect_ports.use_hand_retrigger_callback(
         Callable(action_resolver, "retrigger_current_hand_technique"))
+    loadout_service = BattleLoadoutServiceScript.new(
+        player,
+        trigger_queue,
+        Callable(action_resolver, "has_pending_choice"))
     round_service = BattleRoundServiceScript.new(
         player,
         enemy,
@@ -485,26 +491,10 @@ func combat_order_labels(side, technique_name: String = "当前功法") -> Array
     return action_resolver.combat_order_labels(side, technique_name)
 
 func move_player_technique_slot(direction: int) -> Dictionary:
-    if action_resolver.has_pending_choice():
-        return {"success": false, "reason": "正在等待功法选择，不能调整功法位"}
-    if direction == 0:
-        return {"success": false, "reason": "功法位移动方向无效"}
-    var previous := player.technique_slot_index
-    var next := clampi(
-        previous + signi(direction),
-        0,
-        player.equipped_inner_skill_ids.size())
-    if next == previous:
-        return {"success": false, "reason": "功法位已经位于该方向边界"}
-    player.technique_slot_index = next
-    trigger_queue.add_history(
-        "loadout_order",
-        "调整功法结算位",
-        "玩家命令",
-        "成功",
-        "%d → %d" % [previous, next])
-    state_changed.emit()
-    return {"success": true, "previous": previous, "current": next}
+    var result: Dictionary = loadout_service.move_technique_slot(direction)
+    if result["success"]:
+        state_changed.emit()
+    return result
 
 func enemy_decision_observation():
     return enemy_planning_service.decision_observation()
