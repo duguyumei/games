@@ -4,6 +4,7 @@ const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueDefinitionScript = preload("res://core/technique_definition.gd")
 const EffectHandlerRegistryScript = preload("res://core/effects/effect_handler_registry.gd")
+const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
 
 const REPORT_SCHEMA_VERSION := 1
 const TECHNIQUE_SCHEMA_VERSION := 1
@@ -337,10 +338,20 @@ func _audit_anomaly_options(effect: Dictionary, scope: String) -> void:
                 "异状 %s 不属于类别 %s" % [anomaly_id, category])
 
 func _audit_amount_spec(spec: Dictionary, scope: String) -> void:
-    var helper = ContentValidatorScript.new()
-    helper._validate_amount_spec(spec, scope)
-    for message in helper.errors:
-        _add_core_error(str(message))
+    ## 此前这里 new 一个临时 ContentValidator 只为调用其私有 _validate_amount_spec
+    ## 再从 errors 数组捞结果。数值规格校验现在是 EffectSpecValidator 的公开接口，
+    ## 直接构造并接管错误汇总。
+    var validator = EffectSpecValidatorScript.new(
+        func(error_scope: String, message: String) -> void:
+            _add_core_error("%s: %s" % [error_scope, message]),
+        {
+            "attribute_ids": ContentValidatorScript.ATTRIBUTE_IDS,
+            "anomaly_category_ids": ContentValidatorScript.ANOMALY_CATEGORY_IDS,
+            "reshape_category_ids": ContentValidatorScript.RESHAPE_CATEGORY_IDS,
+            "hand_ids": ContentValidatorScript.TECHNIQUE_BRANCH_HAND_IDS,
+        },
+        ContentValidatorScript.BATTLE_EFFECT_OPS)
+    validator.validate_amount_spec(spec, scope)
 
 func _validate_authoring_fragments(baseline: Dictionary) -> void:
     var fragments: Array[Dictionary] = []
