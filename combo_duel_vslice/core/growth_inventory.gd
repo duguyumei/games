@@ -15,14 +15,21 @@ var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
 var run_deck
 var practice_purchases: Dictionary = {}
+var life: int = 100
+var max_life: int = 100
 
 func _init(content_catalog = null, initialize_standard_deck: bool = true) -> void:
     run_deck = RunDeckScript.new(content_catalog)
     if initialize_standard_deck:
         run_deck.reset_standard()
 
-func reset(run_namespace: String = "run", run_deck_override = null) -> void:
+func reset(
+        run_namespace: String = "run",
+        run_deck_override = null,
+        initial_max_life: int = 100) -> void:
     experience = 0
+    max_life = initial_max_life
+    life = max_life
     consumable_ids.clear()
     insight_multipliers.clear()
     learned_technique_ids.clear()
@@ -61,6 +68,8 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
         "technique_slot_index": technique_slot_index,
         "run_deck": run_deck.to_snapshot(),
+        "life": life,
+        "max_life": max_life,
     })
 
 func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
@@ -84,8 +93,19 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
         var errors: Array[String] = run_deck.restore_snapshot(progress_snapshot.run_deck)
         if not errors.is_empty():
             push_error("无法导入本局牌组：%s" % "；".join(errors))
+    if progress_snapshot.has_max_life:
+        max_life = progress_snapshot.max_life
+    if progress_snapshot.has_life:
+        life = progress_snapshot.life
+
+func grow_life_to(new_max_life: int) -> void:
+    var increase := new_max_life - max_life
+    max_life = new_max_life
+    life = mini(life + increase, max_life)
 
 func apply_to_battle_side(side) -> void:
+    side.max_life = max_life
+    side.life = life
     side.configure_consumables(consumable_ids)
     side.insight_multipliers = insight_multipliers.duplicate(true)
     for technique_id in learned_technique_ids:
@@ -95,6 +115,8 @@ func apply_to_battle_side(side) -> void:
     side.replace_deck(run_deck.create_battle_cards(), no_shuffle_rng, false)
 
 func sync_from_battle_side(side) -> void:
+    max_life = int(side.max_life)
+    life = int(side.life)
     consumable_ids.clear()
     for consumable_id in side.consumable_ids:
         consumable_ids.append(str(consumable_id))

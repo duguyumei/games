@@ -3,7 +3,7 @@ extends RefCounted
 
 ## 静态内容定义校验。
 ##
-## 负责十二份内容文件的整体形状：顶层对象、版本、必填字段、ID 唯一性、容量上限、
+## 负责内容文件的整体形状：顶层对象、版本、必填字段、ID 唯一性、容量上限、
 ## 跨内容引用。效果规格本身的校验已拆到 EffectSpecValidator，因为操作码随功法内容
 ## 持续增长，而这里的形状规则基本稳定。
 
@@ -22,6 +22,7 @@ const CONTENT_KEYS := [
     "inner_skills",
     "consumables",
     "node_rewards",
+    "act_progression",
     "map_rules",
     "node_content",
     "scripted_battle",
@@ -165,6 +166,7 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _validate_inner_skills(_contents["inner_skills"])
     _validate_consumables(_contents["consumables"])
     _validate_node_rewards(_contents["node_rewards"])
+    _validate_act_progression(_contents["act_progression"])
     _validate_sequences(_contents["sequences"], "sequences")
     _validate_scripted_battle(_contents["scripted_battle"])
     _validate_node_content(_contents["node_content"])
@@ -206,6 +208,52 @@ func _validate_node_rewards(definition: Dictionary) -> void:
                 experience += int(entry.get("amount", 0))
         if experience != int(spec[1]):
             _error("node_rewards.node_rewards.%s" % spec[0], "基础战斗历练必须为 %d" % int(spec[1]))
+
+func _validate_act_progression(definition: Dictionary) -> void:
+    var acts = definition.get("acts")
+    if not acts is Array:
+        _error("act_progression.acts", "必须是数组")
+        return
+    var acts_by_number: Dictionary = {}
+    for index in range(acts.size()):
+        var entry = acts[index]
+        var scope := "act_progression.acts[%d]" % index
+        if not entry is Dictionary:
+            _error(scope, "必须是对象")
+            continue
+        if not _is_integer(entry.get("act")):
+            _error(scope + ".act", "必须是第 1～3 层的整数")
+            continue
+        var act := int(entry.get("act", 0))
+        if act < 1 or act > 3:
+            _error(scope + ".act", "必须是第 1～3 层的整数")
+            continue
+        if acts_by_number.has(act):
+            _error(scope + ".act", "层数重复：第 %d 层" % act)
+        else:
+            acts_by_number[act] = true
+        _validate_life_definition(entry.get("player"), scope + ".player")
+        var enemies = entry.get("enemies")
+        if not enemies is Dictionary:
+            _error(scope + ".enemies", "必须是对象")
+            continue
+        for node_type in ["combat", "elite", "boss"]:
+            if not enemies.has(node_type):
+                _error(scope + ".enemies.%s" % node_type, "缺少敌人生命定义")
+                continue
+            _validate_life_definition(
+                enemies[node_type], scope + ".enemies.%s" % node_type)
+    for act in range(1, 4):
+        if not acts_by_number.has(act):
+            _error("act_progression.acts", "缺少第 %d 层生命定义" % act)
+
+func _validate_life_definition(value, scope: String) -> void:
+    if not value is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    if not _is_integer(value.get("max_life")) \
+            or int(value.get("max_life", 0)) <= 0:
+        _error(scope + ".max_life", "必须是正整数")
 
 func result() -> Dictionary:
     return {

@@ -6,4 +6,5 @@ func _initialize() -> void:
         "_test_qi_instance_state_contract",
         "_test_run_deck_contract",
         "_test_battle_consumable_reshape_persists_via_run_deck",
+        "_test_run_save_life_round_trip_legacy_defaults_and_validation",
     ])

@@ -20,6 +20,8 @@ func _initialize() -> void:
     _remove_test_files()
     _test_round_trip_and_complete_run_deck()
     _remove_test_files()
+    _test_life_round_trip_and_legacy_defaults()
+    _remove_test_files()
     _test_corruption_backup_recovery_and_unknown_version_rejection()
     _remove_test_files()
     _test_reward_boundary_and_v1_to_v2_migration()
@@ -122,6 +124,31 @@ func _test_corruption_backup_recovery_and_unknown_version_rejection() -> void:
     _assert_true(
         not RunSaveDataScript.new(unknown).validate(service.content_catalog).is_empty(),
         "未知 content_version 在领域读取边界被拒绝")
+
+func _test_life_round_trip_and_legacy_defaults() -> void:
+    var session = _configured_session(5205, 9)
+    session.navigation.act = 2
+    session.navigation.graph = session.navigation.map_generator.generate(
+        session.navigation.seed, 2)
+    session.growth.life = 90
+    session.growth.max_life = 150
+    var data = RunSaveDataScript.new().capture(session)
+    var restored: Dictionary = data.restore_session()
+    _assert_true(restored.get("success", false), "含生命字段的v1存档可以恢复")
+    _assert_equal(restored["run_session"].growth.life, 90, "v1往返保留第二层90点当前生命")
+    _assert_equal(restored["run_session"].growth.max_life, 150, "v1往返保留第二层150点生命上限")
+    _assert_true(restored["run_session"].progress_snapshot().has_life, "生命往返快照has_life标志保持")
+    _assert_true(restored["run_session"].progress_snapshot().has_max_life, "生命往返快照has_max_life标志保持")
+
+    var legacy: Dictionary = data.to_dict()
+    legacy["growth"].erase("life")
+    legacy["growth"].erase("max_life")
+    var legacy_restored: Dictionary = RunSaveDataScript.new(legacy).restore_session()
+    _assert_true(legacy_restored.get("success", false), "缺少生命字段的旧v1存档可以恢复")
+    _assert_equal(legacy_restored["run_session"].growth.life, 150, "旧v1第2层补齐为150点满生命")
+    _assert_equal(legacy_restored["run_session"].growth.max_life, 150, "旧v1第2层按权威表补齐150点上限")
+    _assert_true(legacy_restored["run_session"].progress_snapshot().has_life, "旧v1补齐后快照has_life标志为真")
+    _assert_true(legacy_restored["run_session"].progress_snapshot().has_max_life, "旧v1补齐后快照has_max_life标志为真")
 
 func _test_reward_boundary_and_v1_to_v2_migration() -> void:
     var session = _configured_session(420, 3)

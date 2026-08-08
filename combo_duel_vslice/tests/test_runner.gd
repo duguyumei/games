@@ -44,6 +44,7 @@ const RunSessionScript = preload("res://core/run_session.gd")
 const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd")
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
+const RunSaveDataScript = preload("res://core/run_save_data.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
@@ -124,6 +125,7 @@ func _initialize() -> void:
     _test_hierophant_bonus_enhancement_and_preview()
     _test_aura_seeded_finish_and_preview()
     _test_battle_consumable_reshape_persists_via_run_deck()
+    _test_run_save_life_round_trip_legacy_defaults_and_validation()
     _test_battle_session_commands_snapshots_and_events()
     _test_snapshot_boundaries_are_typed()
     _test_map_generation_is_deterministic_and_constrained()
@@ -133,6 +135,7 @@ func _initialize() -> void:
     _test_run_service_boundaries_and_progress_snapshot()
     _test_run_session_commands_snapshots_events_and_logs()
     _test_boss_chest_flow()
+    _test_layered_life_progression_and_battle_persistence()
     _test_run_state_battle_growth_persistence()
     _test_map_practice_and_battle_scene_integration()
     _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback()
@@ -182,11 +185,16 @@ func _assert_true(value: bool, label: String) -> void:
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
-    _assert_equal(catalog.errors, [], "当前十二份内容数据没有校验错误")
+    _assert_equal(catalog.errors, [], "当前内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
     _assert_equal(catalog.definition("card_states")["version"], 4, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
     _assert_equal(catalog.definition("consumables")["version"], 2, "消耗品与修习商品数据带顶层版本")
+    var act_progression: Dictionary = catalog.definition("act_progression")
+    _assert_equal(act_progression["acts"].size(), 3, "生命成长内容完整声明三层数据")
+    _assert_equal(act_progression["acts"][0]["player"]["max_life"], 100, "第一层玩家生命上限来自成长内容")
+    _assert_equal(act_progression["acts"][1]["enemies"]["elite"]["max_life"], 225, "成长内容同时保留第二层精英生命")
+    _assert_equal(act_progression["acts"][2]["enemies"]["boss"]["max_life"], 450, "成长内容同时保留第三层 Boss 生命")
     _assert_equal(catalog.all_of("starter_build").size(), 1, "当前只开放一套初始构筑")
     _assert_equal(catalog.get_by_id("starter_build", "standard_52")["card_count"], 52, "唯一初始构筑为标准52张牌组")
     _assert_equal(
@@ -230,6 +238,28 @@ func _test_content_catalog_and_validator() -> void:
     var missing_version_catalog = ContentCatalogScript.new()
     _assert_true(not missing_version_catalog.load_from_definitions(missing_version_values), "缺少内容版本被拒绝")
     _assert_true(_array_contains_text(missing_version_catalog.errors, "缺少版本字段 version"), "版本错误稳定定位")
+
+    var missing_life_values := _catalog_definitions(catalog)
+    missing_life_values["act_progression"]["acts"][0]["player"].erase("max_life")
+    var missing_life_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not missing_life_catalog.load_from_definitions(missing_life_values),
+        "生命成长缺少具名字段时内容加载失败")
+    _assert_true(
+        _array_contains_text(
+            missing_life_catalog.errors,
+            "act_progression.acts[0].player.max_life"),
+        "生命成长缺字段错误稳定定位到玩家生命上限")
+
+    var missing_act_values := _catalog_definitions(catalog)
+    missing_act_values["act_progression"]["acts"].remove_at(2)
+    var missing_act_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not missing_act_catalog.load_from_definitions(missing_act_values),
+        "生命成长层数不全时内容加载失败")
+    _assert_true(
+        _array_contains_text(missing_act_catalog.errors, "缺少第 3 层生命定义"),
+        "生命成长缺层错误具名报告第三层")
 
     var unknown_values := _catalog_definitions(catalog)
     unknown_values["sequences"]["pair"] = ["missing_technique"]
@@ -3304,9 +3334,11 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
         "learned_technique_ids": ["long_wind_full_sleeve"],
         "run_deck": manual_deck.to_snapshot(),
     })
+    growth.life = 41
     growth.apply_progress_snapshot(manual_progress)
     _assert_equal(growth.consumable_ids, ["aura"], "成长库存可以从进度快照导入消耗品")
     _assert_equal(growth.insight_multipliers["high_card"], 2, "成长库存可以从进度快照导入心得")
+    _assert_equal(growth.life, 41, "局部战斗进度不清空未携带的当前生命")
     _assert_equal(growth.run_deck.card_data("wind_8")["reshapes"]["finish"], "foil", "成长库存可以从进度快照导入完整本局牌组")
     _assert_equal(
         growth.equipped_inner_skill_ids,
@@ -3424,6 +3456,102 @@ func _test_boss_chest_flow() -> void:
     state.complete_current_node()
     _assert_equal(state.phase, "run_complete", "第三层 Boss 后直接完成本局且没有 Boss 宝箱")
 
+func _test_layered_life_progression_and_battle_persistence() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(
+        session.execute({"type": "setup_run", "seed": 70401}).success,
+        "生命成长测试可以建立本局")
+    _assert_equal(session.growth.life, 100, "本局开局玩家当前生命为100")
+    _assert_equal(session.growth.max_life, 100, "本局开局玩家生命上限为100")
+    _assert_equal(session.snapshot().growth.get("life"), 100, "本局快照公开当前生命")
+    _assert_equal(session.snapshot().growth.get("max_life"), 100, "本局快照公开生命上限")
+
+    var first_battle: BattleSession = session.create_battle_session()
+    _assert_true(
+        first_battle.setup_battle(
+            {"content_seed": 70402, "battle": {"use_enemy_ai": false}},
+            session.progress_snapshot()),
+        "第一场战斗从本局成长快照建立")
+    _assert_equal(first_battle.engine.player.life, 100, "第一场战斗以本局当前生命开始")
+    first_battle.engine.deal_damage(
+        first_battle.engine.enemy,
+        first_battle.engine.player,
+        60,
+        "technique")
+    _assert_equal(first_battle.engine.player.life, 40, "战斗中受到60点伤害后剩余40生命")
+    session.sync_progress_snapshot(first_battle.player_progress_snapshot())
+    _assert_equal(session.growth.life, 40, "战后当前生命回写本局且不自动回满")
+    _assert_equal(session.growth.max_life, 100, "战后生命上限保持第一层100")
+
+    var second_battle: BattleSession = session.create_battle_session()
+    _assert_true(
+        second_battle.setup_battle(
+            {"content_seed": 70403, "battle": {"use_enemy_ai": false}},
+            session.progress_snapshot()),
+        "残血本局可以建立下一场战斗")
+    _assert_equal(second_battle.engine.player.life, 40, "下一场战斗以本局40点当前生命开始")
+    _assert_equal(second_battle.engine.player.max_life, 100, "下一场战斗保留第一层100点上限")
+
+    session.navigation.phase = "boss_chest"
+    var first_chest := session.execute({"type": "complete_boss_chest"})
+    _assert_true(first_chest.success, "第一层 Boss 宝箱完成后推进第二层")
+    _assert_equal(session.navigation.act, 2, "第一层 Boss 宝箱后进入第二层")
+    _assert_equal(session.growth.life, 90, "权威例子40/100跨层后成为90/150")
+    _assert_equal(session.growth.max_life, 150, "第一层跨层后生命上限增至150")
+
+    session.growth.life = 80
+    session.navigation.phase = "boss_chest"
+    var second_chest := session.execute({"type": "complete_boss_chest"})
+    _assert_true(second_chest.success, "第二层 Boss 宝箱完成后推进第三层")
+    _assert_equal(session.navigation.act, 3, "第二层 Boss 宝箱后进入第三层")
+    _assert_equal(session.growth.life, 155, "第二层80/150跨层后当前生命增加75至155")
+    _assert_equal(session.growth.max_life, 225, "第二层跨层后生命上限增至225")
+
+    var full_session: RunSession = RunSessionScript.new()
+    _assert_true(
+        full_session.execute({"type": "setup_run", "seed": 70404}).success,
+        "满血跨层测试可以建立独立本局")
+    full_session.navigation.phase = "boss_chest"
+    _assert_true(
+        full_session.execute({"type": "complete_boss_chest"}).success,
+        "满血时可以完成第一层 Boss 宝箱")
+    _assert_equal(full_session.growth.life, 150, "满血跨层当前生命不超过新上限")
+    _assert_equal(full_session.growth.max_life, 150, "满血跨层上限正确增长到150")
+
+    var final_session: RunSession = RunSessionScript.new()
+    _assert_true(
+        final_session.execute({"type": "setup_run", "seed": 70405}).success,
+        "第三层通关测试可以建立独立本局")
+    final_session.growth.max_life = 225
+    final_session.growth.life = 77
+    final_session.navigation.act = 3
+    final_session.navigation.graph = final_session.navigation.map_generator.generate(
+        final_session.navigation.seed, 3)
+    final_session.navigation.current_node_id = final_session.navigation.graph["boss_id"]
+    final_session.navigation.phase = "node_in_progress"
+    _assert_true(
+        final_session.execute({"type": "complete_node"}).success,
+        "第三层 Boss 胜利建立最终奖励")
+    var final_bundle_id := str(final_session.snapshot().reward["bundle"]["id"])
+    _assert_true(
+        final_session.execute({
+            "type": "claim_reward",
+            "bundle_id": final_bundle_id,
+        }).success,
+        "第三层 Boss 奖励领取成功")
+    _assert_equal(final_session.navigation.phase, "run_complete", "第三层 Boss 后直接完成本局")
+    _assert_equal(final_session.growth.life, 77, "第三层通关不改变当前生命")
+    _assert_equal(final_session.growth.max_life, 225, "第三层通关不执行下一层生命成长")
+
+    var reset_probe = BattleSideScript.new("重置探针")
+    var reset_rng := RandomNumberGenerator.new()
+    reset_probe.max_life = 150
+    reset_probe.life = 40
+    reset_probe.reset([], reset_rng, false, false)
+    _assert_equal(reset_probe.life, 40, "显式关闭生命重置时 BattleSide 保留当前生命")
+    reset_probe.reset([], reset_rng, false)
+    _assert_equal(reset_probe.life, 150, "默认重置仍为敌人侧和既有调用恢复满生命")
+
 func _test_run_state_battle_growth_persistence() -> void:
     var state = RunStateScript.new()
     state.setup(420)
@@ -3454,11 +3582,61 @@ func _test_run_state_battle_growth_persistence() -> void:
     _assert_equal(state.run_deck.card_data("wind_8")["reshapes"]["finish"], "polychrome", "战斗中的品相替换同步回本局 RunDeck")
     _assert_equal(state.consumable_ids.size(), 0, "战斗中使用消耗品后同步释放本局槽位")
 
+func _test_run_save_life_round_trip_legacy_defaults_and_validation() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(
+        session.execute({"type": "setup_run", "seed": 20501}).success,
+        "生命存档测试可以建立本局")
+    session.navigation.act = 2
+    session.navigation.graph = session.navigation.map_generator.generate(
+        session.navigation.seed, 2)
+    session.growth.life = 90
+    session.growth.max_life = 150
+    var save_data = RunSaveDataScript.new().capture(session)
+    var saved: Dictionary = save_data.to_dict()
+    _assert_equal(saved["growth"]["life"], 90, "存档 growth 段保存当前生命")
+    _assert_equal(saved["growth"]["max_life"], 150, "存档 growth 段保存生命上限")
+    var restored: Dictionary = save_data.restore_session()
+    _assert_true(restored.get("success", false), "第2层90/150生命存档可以恢复")
+    _assert_equal(restored["run_session"].growth.life, 90, "读档不把当前生命回满")
+    _assert_equal(restored["run_session"].growth.max_life, 150, "读档不把生命上限退回100")
+
+    var legacy: Dictionary = saved.duplicate(true)
+    legacy["growth"].erase("life")
+    legacy["growth"].erase("max_life")
+    var legacy_restored: Dictionary = RunSaveDataScript.new(legacy).restore_session()
+    _assert_true(legacy_restored.get("success", false), "缺少生命字段的旧版v1存档仍可读取")
+    _assert_equal(legacy_restored["run_session"].growth.life, 150, "第2层旧存档补齐为满血150")
+    _assert_equal(legacy_restored["run_session"].growth.max_life, 150, "第2层旧存档按权威表补齐150上限")
+
+    var over_max: Dictionary = saved.duplicate(true)
+    over_max["growth"]["life"] = 151
+    _assert_true(
+        _array_contains_text(
+            RunSaveDataScript.new(over_max).validate(),
+            "growth.life 不能大于 growth.max_life"),
+        "当前生命高于上限时校验报出具名错误")
+    var negative: Dictionary = saved.duplicate(true)
+    negative["growth"]["life"] = -1
+    _assert_true(
+        _array_contains_text(
+            RunSaveDataScript.new(negative).validate(),
+            "growth.life 必须是正整数"),
+        "负数当前生命被具名拒绝")
+    var fractional: Dictionary = saved.duplicate(true)
+    fractional["growth"]["life"] = 90.5
+    _assert_true(
+        _array_contains_text(
+            RunSaveDataScript.new(fractional).validate(),
+            "growth.life 必须是正整数"),
+        "非整数当前生命被具名拒绝")
+
 func _test_map_practice_and_battle_scene_integration() -> void:
     var run_ui = RunScene.instantiate()
     run_ui.initialize_interface()
     root.add_child(run_ui)
     _assert_true(run_ui.practice_button != null, "地图场景建立右下角修习按钮")
+    _assert_equal(run_ui.life_label.text, "生命 100/100", "地图顶栏显示当前生命与上限")
     _assert_true(run_ui.map_scroll != null, "地图使用纵向滚动容器")
     _assert_true(
         run_ui.map_view._node_position(-1, 3).y > run_ui.map_view._node_position(0, 3).y,

@@ -19,6 +19,7 @@ var map_view
 var map_scroll: ScrollContainer
 var act_label: Label
 var experience_label: Label
+var life_label: Label
 var phase_label: Label
 var hover_label: Label
 var route_label: Label
@@ -220,6 +221,8 @@ func _build_top_bar() -> Control:
     row.add_child(act_label)
     experience_label = UiDesignScript.pill("历练 0", COLORS["gold"])
     row.add_child(experience_label)
+    life_label = UiDesignScript.pill("生命 0/0", Color("d98673"))
+    row.add_child(life_label)
     var reset := Button.new()
     reset.text = "新路线"
     reset.tooltip_text = "以当前种子重新生成本局"
@@ -278,6 +281,9 @@ func _refresh() -> void:
         int(current_run.get("act_count", 3)),
         int(current_run.get("seed", 0))]
     experience_label.text = "历练 %d" % experience
+    life_label.text = "生命 %d/%d" % [
+        int(growth.get("life", 0)),
+        int(growth.get("max_life", 0))]
     practice_button.text = "♨\n修 习\n历练 %d" % experience
     practice_button.visible = bool(current_run.get("debug_menu_enabled", false))
     practice_button.disabled = not bool(current_run.get("can_open_practice", false))
@@ -453,4 +459,3 @@ func _show_toast(text: String) -> void:
     var tween := create_tween()
     tween.tween_interval(2.2)
     tween.tween_callback(func(): toast_label.visible = false)
-

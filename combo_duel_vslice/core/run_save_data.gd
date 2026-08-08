@@ -54,6 +54,8 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
         },
         "growth": {
             "experience": int(run_session.growth.experience),
+            "life": int(run_session.growth.life),
+            "max_life": int(run_session.growth.max_life),
             "consumable_ids": run_session.growth.consumable_ids.duplicate(),
             "insight_multipliers": run_session.growth.insight_multipliers.duplicate(true),
             "learned_technique_ids": run_session.growth.learned_technique_ids.duplicate(),
@@ -122,6 +124,7 @@ func validate(content_catalog = null) -> Array[String]:
         errors.append("非奖励边界不能保存 pending_reward")
     if int(growth.get("experience", -1)) < 0:
         errors.append("历练不能为负数")
+    _validate_life_fields(growth, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
         return errors
@@ -131,6 +134,11 @@ func validate(content_catalog = null) -> Array[String]:
         if not catalog.load_all():
             errors.append("无法载入内容目录以校验存档")
             return errors
+    if not growth.has("life") and not growth.has("max_life") \
+            and _player_max_life_for_act(catalog, int(map_state.get("act", 0))) <= 0:
+        errors.append(
+            "旧版存档 map_state.act 无对应玩家生命上限：%s" %
+            str(map_state.get("act", "")))
     _validate_content_ids(run, growth, catalog, errors)
     var deck = GrowthInventoryScript.new(catalog, false).run_deck
     errors.append_array(deck.restore_snapshot(growth["run_deck"]))
@@ -167,6 +175,8 @@ func restore_session(content_catalog = null) -> Dictionary:
         navigation.completed_node_ids[str(node_id)] = true
     var growth = GrowthInventoryScript.new(catalog, false)
     growth.experience = int(growth_state["experience"])
+    var restored_life := _life_values_for_restore(
+        growth_state, int(map_state["act"]), catalog)
     growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict({
         "consumable_ids": growth_state["consumable_ids"],
         "insight_multipliers": growth_state["insight_multipliers"],
@@ -175,6 +185,8 @@ func restore_session(content_catalog = null) -> Dictionary:
         "equipped_inner_skill_ids": growth_state["equipped_inner_skill_ids"],
         "technique_slot_index": growth_state["technique_slot_index"],
         "run_deck": growth_state["run_deck"],
+        "life": restored_life["life"],
+        "max_life": restored_life["max_life"],
     }))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
@@ -228,6 +240,46 @@ func _validate_id_array(
             errors.append("存档包含重复 %s ID：%s" % [content_type, content_id])
         seen[content_id] = true
 
+func _validate_life_fields(growth: Dictionary, errors: Array[String]) -> void:
+    var has_life := growth.has("life")
+    var has_max_life := growth.has("max_life")
+    if has_life != has_max_life:
+        errors.append("growth.life 与 growth.max_life 必须同时存在或同时缺省")
+        return
+    if not has_life:
+        return
+    var life_value = growth["life"]
+    var max_life_value = growth["max_life"]
+    var life_valid := life_value is int and int(life_value) > 0
+    var max_life_valid := max_life_value is int and int(max_life_value) > 0
+    if not life_valid:
+        errors.append("growth.life 必须是正整数")
+    if not max_life_valid:
+        errors.append("growth.max_life 必须是正整数")
+    if life_valid and max_life_valid and int(life_value) > int(max_life_value):
+        errors.append("growth.life 不能大于 growth.max_life")
+
+func _life_values_for_restore(
+        growth: Dictionary,
+        act: int,
+        catalog) -> Dictionary:
+    if growth.has("life") and growth.has("max_life"):
+        return {
+            "life": int(growth["life"]),
+            "max_life": int(growth["max_life"]),
+        }
+    var authoritative_max_life := _player_max_life_for_act(catalog, act)
+    return {
+        "life": authoritative_max_life,
+        "max_life": authoritative_max_life,
+    }
+
+func _player_max_life_for_act(catalog, act: int) -> int:
+    for entry in catalog.definition("act_progression").get("acts", []):
+        if int(entry.get("act", 0)) == act:
+            return int(entry.get("player", {}).get("max_life", 0))
+    return 0
+
 func _normalize_v1_types() -> void:
     if int(_data.get("schema_version", 0)) != SCHEMA_VERSION:
         return
@@ -247,6 +299,8 @@ func _normalize_v1_types() -> void:
     if not growth is Dictionary:
         return
     growth["experience"] = int(growth.get("experience", 0))
+    _normalize_optional_integer(growth, "life")
+    _normalize_optional_integer(growth, "max_life")
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
     var multipliers = growth.get("insight_multipliers", {})
     if multipliers is Dictionary:
@@ -263,6 +317,13 @@ func _normalize_v1_types() -> void:
         card["version"] = int(card.get("version", 0))
         card["rank_order"] = int(card.get("rank_order", 0))
         card["qi_value"] = int(card.get("qi_value", 0))
+
+func _normalize_optional_integer(values: Dictionary, field: String) -> void:
+    if not values.has(field):
+        return
+    var value = values[field]
+    if value is float and value == floor(value):
+        values[field] = int(value)
 
 func _normalize_graph(graph) -> void:
     if not graph is Dictionary:

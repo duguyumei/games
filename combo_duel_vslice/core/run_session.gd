@@ -250,7 +250,10 @@ func _setup_run(seed_value: int, starter_build_id: String) -> Dictionary:
     _event_queue.clear()
     _event_serial = 0
     _pending_reward = null
-    growth.reset("run-%d" % seed_value, assembled["run_deck"])
+    growth.reset(
+        "run-%d" % seed_value,
+        assembled["run_deck"],
+        _player_max_life_for_act(1))
     selected_starter_build_id = starter_build_id
     navigation.setup(seed_value)
     _run_state.changed.emit()
@@ -402,6 +405,9 @@ func _complete_boss_chest() -> Dictionary:
     var result: Dictionary = navigation.complete_boss_chest()
     if not result.get("success", false):
         return result
+    growth.grow_life_to(_player_max_life_for_act(navigation.act))
+    result["life"] = growth.life
+    result["max_life"] = growth.max_life
     _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
         "run_lifecycle",
@@ -411,10 +417,14 @@ func _complete_boss_chest() -> Dictionary:
             "act": act_before,
             "next_act": result.get("act", act_before),
             "next_phase": result.get("phase", ""),
+            "life": growth.life,
+            "max_life": growth.max_life,
         })
     _queue_event("boss_chest_completed", entry, {
         "act": act_before,
         "next_act": result.get("act", act_before),
+        "life": growth.life,
+        "max_life": growth.max_life,
     })
     return result
 
@@ -501,6 +511,8 @@ func _growth_snapshot() -> Dictionary:
         consumables.append(
             _consumable_repository.get_consumable(consumable_id).duplicate(true))
     return {
+        "life": growth.life,
+        "max_life": growth.max_life,
         "consumable_limit": 3,
         "consumable_ids": growth.consumable_ids.duplicate(),
         "consumables": consumables,
@@ -509,6 +521,12 @@ func _growth_snapshot() -> Dictionary:
         "run_deck": growth.run_deck.to_snapshot(),
         "run_deck_count": growth.run_deck.card_count(),
     }
+
+func _player_max_life_for_act(act: int) -> int:
+    for entry in _content_catalog.definition("act_progression").get("acts", []):
+        if int(entry.get("act", 0)) == act:
+            return int(entry.get("player", {}).get("max_life", 0))
+    return 0
 
 func _record_command_rejected(command_type: String, reason: String) -> void:
     var entry: Dictionary = game_log.record_system(

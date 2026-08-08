@@ -16,6 +16,8 @@ var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
 var run_deck: Dictionary = {}
+var life: int = 0
+var max_life: int = 0
 
 var has_consumable_ids: bool = false
 var has_insight_multipliers: bool = false
@@ -24,6 +26,8 @@ var has_learned_inner_skill_ids: bool = false
 var has_equipped_inner_skill_ids: bool = false
 var has_technique_slot_index: bool = false
 var has_run_deck: bool = false
+var has_life: bool = false
+var has_max_life: bool = false
 
 static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     var result := RunProgressSnapshot.new()
@@ -34,6 +38,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_equipped_inner_skill_ids = values.has("equipped_inner_skill_ids")
     result.has_technique_slot_index = values.has("technique_slot_index")
     result.has_run_deck = values.has("run_deck")
+    result.has_life = values.has("life")
+    result.has_max_life = values.has("max_life")
 
     for consumable_id in values.get("consumable_ids", []):
         result.consumable_ids.append(str(consumable_id))
@@ -47,6 +53,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
         result.equipped_inner_skill_ids.append(str(inner_skill_id))
     result.technique_slot_index = int(values.get("technique_slot_index", 0))
     result.run_deck = values.get("run_deck", {}).duplicate(true)
+    result.life = int(values.get("life", 0))
+    result.max_life = int(values.get("max_life", 0))
     return result
 
 func to_dict() -> Dictionary:
@@ -65,4 +73,8 @@ func to_dict() -> Dictionary:
         result["technique_slot_index"] = technique_slot_index
     if has_run_deck:
         result["run_deck"] = run_deck.duplicate(true)
+    if has_life:
+        result["life"] = life
+    if has_max_life:
+        result["max_life"] = max_life
     return result

@@ -43,8 +43,13 @@ func use_status_system(system) -> void:
     status_system = system
     card_zone_service.use_status_system(system)
 
-func reset(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
-    life = max_life
+func reset(
+        cards: Array,
+        rng: RandomNumberGenerator,
+        shuffle_cards: bool = true,
+        restore_life: bool = true) -> void:
+    if restore_life:
+        life = max_life
     defense = 0
     hand_limit = 8
     stacks.clear()

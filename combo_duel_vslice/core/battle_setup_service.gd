@@ -95,6 +95,10 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> vo
     if progress_snapshot.has_learned_technique_ids:
         for technique_id in progress_snapshot.learned_technique_ids:
             side.learn_technique(technique_id)
+    if progress_snapshot.has_max_life:
+        side.max_life = progress_snapshot.max_life
+    if progress_snapshot.has_life:
+        side.life = progress_snapshot.life
 
 func capture_progress(side, run_deck) -> RunProgressSnapshot:
     run_deck.sync_from_battle_cards(
@@ -104,5 +108,7 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "consumable_ids": side.consumable_ids.duplicate(),
         "insight_multipliers": side.insight_multipliers.duplicate(true),
         "learned_technique_ids": side.owned_technique_ids.duplicate(),
+        "life": side.life,
+        "max_life": side.max_life,
         "run_deck": run_deck.to_snapshot(),
     })

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "acts": [
+    {
+      "act": 1,
+      "player": {
+        "max_life": 100
+      },
+      "enemies": {
+        "combat": {
+          "max_life": 100
+        },
+        "elite": {
+          "max_life": 150
+        },
+        "boss": {
+          "max_life": 200
+        }
+      }
+    },
+    {
+      "act": 2,
+      "player": {
+        "max_life": 150
+      },
+      "enemies": {
+        "combat": {
+          "max_life": 150
+        },
+        "elite": {
+          "max_life": 225
+        },
+        "boss": {
+          "max_life": 300
+        }
+      }
+    },
+    {
+      "act": 3,
+      "player": {
+        "max_life": 225
+      },
+      "enemies": {
+        "combat": {
+          "max_life": 225
+        },
+        "elite": {
+          "max_life": 340
+        },
+        "boss": {
+          "max_life": 450
+        }
+      }
+    }
+  ]
+}
