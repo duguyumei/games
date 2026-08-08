@@ -9,6 +9,7 @@ const RESOURCE_DIR := "res://data/techniques"
 var techniques: Dictionary = {}
 var pool_membership: Dictionary = {}
 var definitions: Dictionary = {}
+var integration_statuses: Dictionary = {}
 
 func load_from_file(path: String = DATA_PATH) -> bool:
     var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
@@ -21,8 +22,10 @@ func configure(value: Dictionary, load_resource_entities: bool = false) -> bool:
     techniques.clear()
     pool_membership.clear()
     definitions.clear()
+    integration_statuses.clear()
     var parsed := value.duplicate(true)
     pool_membership = parsed.get("pool_membership", {}).duplicate(true)
+    integration_statuses = parsed.get("integration_statuses", {}).duplicate(true)
     for definition in parsed.get("techniques", []):
         var entity = DefinitionScript.new().configure_from_dictionary(definition)
         definitions[entity.id] = entity
@@ -50,6 +53,21 @@ func get_instance(technique_id: String, owner_id: String = "", acquired_order: i
 
 func get_technique(technique_id: String) -> Dictionary:
     return techniques.get(technique_id, {}).duplicate(true)
+
+func integration_status(technique_id: String) -> String:
+    return str(integration_statuses.get(technique_id, "missing"))
+
+func is_formally_complete(technique_id: String) -> bool:
+    return integration_status(technique_id) == "formal_complete"
+
+func formal_technique_ids() -> Array[String]:
+    var result: Array[String] = []
+    for technique_id_value in integration_statuses:
+        var technique_id := str(technique_id_value)
+        if is_formally_complete(technique_id):
+            result.append(technique_id)
+    result.sort()
+    return result
 
 func _load_resource_entities() -> void:
     var directory := DirAccess.open(RESOURCE_DIR)

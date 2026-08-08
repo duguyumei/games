@@ -35,6 +35,11 @@ const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS
 const POOL_IDS := [
     "high", "pair_two_pair", "three_full_house", "four_five", "straight",
 ]
+const TECHNIQUE_INTEGRATION_STATUSES := [
+    "formal_complete", "partial_integration", "regression_fixture",
+]
+const FORMAL_TECHNIQUE_STATUS := "formal_complete"
+const PRODUCTION_SEQUENCES_PATH := "res://data/production_sequences.json"
 const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
 const RESHAPE_CATEGORY_IDS := ["enhancement", "finish", "imprint", "other"]
 const ANOMALY_CATEGORY_IDS := ["mark", "poison", "state", "other"]
@@ -573,6 +578,7 @@ func _validate_other_reshape_battle_start_anomalies() -> void:
 func _validate_techniques(definition: Dictionary) -> void:
     var membership = definition.get("pool_membership")
     var techniques = definition.get("techniques")
+    var integration_statuses = definition.get("integration_statuses")
     if not membership is Dictionary:
         _error("techniques.pool_membership", "必须是对象")
         return
@@ -608,6 +614,35 @@ func _validate_techniques(definition: Dictionary) -> void:
         if not value.get("special") is bool:
             _error(scope, "special 必须是布尔值")
         _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
+    _validate_technique_integration_statuses(
+        integration_statuses,
+        definition.get("resource_paths", []))
+
+func _validate_technique_integration_statuses(value, resource_paths) -> void:
+    var scope := "techniques.integration_statuses"
+    if not value is Dictionary:
+        _error(scope, "必须是按功法 ID 声明接入档位的对象")
+        return
+    var resource_ids: Dictionary = {}
+    if not resource_paths is Array:
+        _error("techniques.resource_paths", "必须是数组")
+        return
+    for path_value in resource_paths:
+        var file_name := str(path_value).get_file()
+        var technique_id := file_name.trim_suffix(".tres")
+        resource_ids[technique_id] = true
+        if not value.has(technique_id):
+            _error(scope, "功法 %s 缺少显式接入档位" % technique_id)
+            continue
+        var status := str(value[technique_id])
+        if not TECHNIQUE_INTEGRATION_STATUSES.has(status):
+            _error(
+                "%s.%s" % [scope, technique_id],
+                "未知接入档位 %s" % status)
+    for technique_id_value in value:
+        var technique_id := str(technique_id_value)
+        if not resource_ids.has(technique_id):
+            _error(scope, "接入档位引用未知功法 %s" % technique_id)
 
 func _validate_cooperation(value, scope: String) -> void:
     if value == null or (value is Dictionary and value.is_empty()):
@@ -719,10 +754,21 @@ func _validate_consumables(definition: Dictionary) -> void:
 
 func _validate_sequences(definition: Dictionary, scope: String) -> void:
     var membership: Dictionary = _contents.get("techniques", {}).get("pool_membership", {})
+    var statuses: Dictionary = _contents.get("techniques", {}).get(
+        "integration_statuses", {})
+    var is_production_sequence := (
+        scope == "sequences"
+        and str(_paths.get("sequences", "")) == PRODUCTION_SEQUENCES_PATH)
     for hand_id in HAND_IDS:
         if not definition.has(hand_id) or not definition[hand_id] is Array:
             _error(scope, "缺少牌型 %s 的序列数组" % hand_id)
             continue
+        if is_production_sequence \
+                and hand_id != "five_kind" \
+                and definition[hand_id].is_empty():
+            _error(
+                "%s.%s" % [scope, hand_id],
+                "production 正式开局序列不能为空")
         var seen: Dictionary = {}
         for index in range(definition[hand_id].size()):
             var technique_id := str(definition[hand_id][index])
@@ -739,6 +785,13 @@ func _validate_sequences(definition: Dictionary, scope: String) -> void:
             var technique: Dictionary = _techniques_by_id[technique_id]
             if not membership.get(hand_id, []).has(technique.get("pool", "")):
                 _error(item_scope, "功法 %s 不属于 %s 的合格共用池" % [technique_id, hand_id])
+            if is_production_sequence:
+                var status := str(statuses.get(technique_id, "missing"))
+                if status != FORMAL_TECHNIQUE_STATUS:
+                    _error(
+                        item_scope,
+                        "功法 %s 当前接入档位为 %s，production 只允许 %s" % [
+                            technique_id, status, FORMAL_TECHNIQUE_STATUS])
     for key in definition:
         if str(key) != "version" and not HAND_IDS.has(str(key)):
             _error(scope, "包含未知精确牌型 %s" % str(key))

@@ -46,6 +46,7 @@ const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const ContentValidatorScript = preload("res://core/content_validator.gd")
+const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
 const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.gd")
 const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
@@ -80,6 +81,8 @@ func _initialize() -> void:
         quit(2)
         return
     _test_content_catalog_and_validator()
+    _test_production_formal_sequences_and_damage()
+    _test_formal_production_technique_behaviors()
     _test_starter_build_assembly_and_composition_root()
     _test_node_reward_service_contract()
     _test_qi_instance_state_contract()
@@ -239,6 +242,48 @@ func _test_content_catalog_and_validator() -> void:
     var wrong_pool_catalog = ContentCatalogScript.new()
     _assert_true(not wrong_pool_catalog.load_from_definitions(wrong_pool_values), "错误功法池资格被拒绝")
     _assert_true(_array_contains_text(wrong_pool_catalog.errors, "不属于 pair 的合格共用池"), "错误功法池错误稳定定位")
+
+    var production_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.production())
+    _assert_true(
+        production_catalog.load_all(),
+        "production 正式功法序列通过内容校验：%s" % str(production_catalog.errors))
+    var production_repository = TechniqueRepositoryScript.new()
+    _assert_true(
+        production_repository.configure(
+            production_catalog.definition("techniques"), true),
+        "功法仓库载入显式接入档位")
+    var production_sequences: Dictionary = production_catalog.definition("sequences")
+    for hand_id in ContentValidatorScript.HAND_IDS:
+        if hand_id == "five_kind":
+            _assert_equal(
+                production_sequences[hand_id],
+                [],
+                "五条正式序列是受规则允许的显式空数组")
+            continue
+        _assert_true(
+            not production_sequences[hand_id].is_empty(),
+            "production %s 开局序列非空" % hand_id)
+        for technique_id_value in production_sequences[hand_id]:
+            var technique_id := str(technique_id_value)
+            _assert_true(
+                production_repository.is_formally_complete(technique_id),
+                "production %s 只引用正式语义完整功法 %s" % [
+                    hand_id, technique_id])
+
+    var fixture_values := _catalog_definitions(production_catalog)
+    fixture_values["sequences"]["high_card"] = ["fire_sparks"]
+    var fixture_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.production())
+    _assert_true(
+        not fixture_catalog.load_from_definitions(
+            fixture_values,
+            production_catalog.paths),
+        "production 序列拒绝回归夹具功法")
+    _assert_true(
+        _array_contains_text(fixture_catalog.errors, "fire_sparks")
+        and _array_contains_text(fixture_catalog.errors, "regression_fixture"),
+        "回归夹具错误同时报告功法 ID 与当前档位")
 
     for abolished_hand_id in ["flush", "straight_flush", "royal_flush"]:
         var abolished_hand_values := _catalog_definitions(catalog)
@@ -430,6 +475,210 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(run_session.execute({"type": "setup_run", "seed": 17}).success, "本局流程从同一目录装配地图与节点内容")
     var battle_session: BattleSession = run_session.create_battle_session()
     _assert_true(battle_session.engine.content_catalog == catalog, "本局创建的战斗会话继续共享同一目录实例")
+
+func _test_production_formal_sequences_and_damage() -> void:
+    var root = GameCompositionRootScript.new(RuntimeProfileScript.production())
+    _assert_true(root.initialize(), "production 组合根载入正式内容")
+    var run_session: RunSession = root.create_run_session()
+    _assert_true(run_session != null, "production 正式内容可建立本局会话")
+    if run_session == null:
+        return
+    var battle_session: BattleSession = run_session.create_battle_session()
+    _assert_true(
+        battle_session.setup_battle({
+            "content_seed": 2308,
+            "battle": {"use_enemy_ai": false},
+        }),
+        "production 正式敌人入口可建立战斗")
+    var engine = battle_session.engine
+    var played = _card("9", "mountain")
+    engine.player.hand = [played]
+    engine.player.draw_pile.clear()
+    engine.player.staging.clear()
+    engine.actions_available = 1
+    _assert_equal(
+        engine.sequence_book.current_id("high_card"),
+        "borrow_fire_guard_heart",
+        "production 高牌首门功法来自正式开局序列")
+    _assert_true(
+        engine.repository.is_formally_complete(
+            engine.sequence_book.current_id("high_card")),
+        "production 战斗仓库确认当前高牌功法在白名单内")
+    var preview: Dictionary = battle_session.preview([played.id])
+    var life_before: int = engine.enemy.life
+    var result = battle_session.execute({
+        "type": "play_cards",
+        "card_ids": [played.id],
+    })
+    var actual_damage: int = life_before - int(engine.enemy.life)
+    _assert_true(result.success, "production 模式可以实际打出一次高牌")
+    _assert_equal(actual_damage, 4, "production 山9高牌由借火护心造成4点伤害")
+    _assert_equal(
+        actual_damage,
+        int(preview.get("intent", {}).get("damage", 0)),
+        "production 高牌预览与实际伤害一致")
+    _assert_true(actual_damage > 0, "production 高牌实际对敌方造成大于0的伤害")
+
+func _test_formal_production_technique_behaviors() -> void:
+    _test_double_gu_exchange_breath_formal_behavior()
+    _test_balance_sleeves_listen_wind_formal_behavior()
+    _test_three_ring_ensemble_formal_behavior()
+    _test_three_ring_chaos_qi_formal_behavior()
+    _test_five_steps_echo_formal_behavior()
+    _test_seize_qi_return_nest_formal_behavior()
+
+func _assert_preview_damage_matches(
+        engine,
+        played_cards: Array,
+        label: String,
+        cooperation_cards: Array = []) -> Dictionary:
+    var preview: Dictionary = engine.preview(_ids(played_cards))
+    var life_before: int = engine.enemy.life
+    var result: Dictionary = engine.confirm_play(
+        _ids(played_cards),
+        _ids(cooperation_cards))
+    _assert_true(result.get("success", false), "%s主分支完成结算" % label)
+    _assert_equal(
+        life_before - engine.enemy.life,
+        int(preview.get("intent", {}).get("damage", 0)),
+        "%s预览伤害与实际结算一致" % label)
+    return result
+
+func _test_double_gu_exchange_breath_formal_behavior() -> void:
+    var pair := [_card("6", "wind"), _card("6", "forest")]
+    var poison_card = _card("3", "fire")
+    poison_card.set_anomaly("poison", "lethal_poison")
+    var main = _engine_with_hand(pair + [poison_card])
+    main.enemy.hand = [_card("2", "mountain")]
+    main.sequence_book.configure({"pair": ["double_gu_exchange_breath"]})
+    var result := _assert_preview_damage_matches(
+        main, pair, "双蛊换息一对")
+    _assert_true(result.get("technique_triggered", false), "双蛊换息正式主分支触发")
+    _assert_true(main.enemy.hand.has(poison_card), "双蛊换息将合格带毒手牌置入敌方手牌")
+
+    var shortage_pair := [_card("5", "wind"), _card("5", "forest")]
+    var shortage = _engine_with_hand(shortage_pair)
+    shortage.enemy.hand.clear()
+    shortage.sequence_book.configure({"pair": ["double_gu_exchange_breath"]})
+    _assert_preview_damage_matches(shortage, shortage_pair, "双蛊换息目标不足")
+    _assert_equal(shortage.enemy.hand.size(), 0, "双蛊换息没有可移动目标时不凭空生成真气")
+
+func _test_balance_sleeves_listen_wind_formal_behavior() -> void:
+    var two_pair := [
+        _card("3", "wind"), _card("3", "forest"),
+        _card("4", "fire"), _card("4", "mountain"),
+    ]
+    var main = _engine_with_hand(two_pair)
+    main.enemy.hand = [
+        _card("2", "wind"), _card("7", "forest"), _card("8", "fire"),
+    ]
+    main.sequence_book.configure({"two_pair": ["balance_sleeves_listen_wind"]})
+    _assert_preview_damage_matches(main, two_pair, "衡袖听风两对")
+    _assert_equal(main.enemy.hand.size(), 1, "衡袖听风两对主分支随机弃敌方两张")
+    _assert_true(main.player.defense > 0, "衡袖听风两对主分支同时获得防御")
+
+    var shortage_cards := [
+        _card("5", "wind"), _card("5", "forest"),
+        _card("6", "fire"), _card("6", "mountain"),
+    ]
+    var shortage = _engine_with_hand(shortage_cards)
+    shortage.enemy.hand.clear()
+    shortage.sequence_book.configure({"two_pair": ["balance_sleeves_listen_wind"]})
+    _assert_preview_damage_matches(shortage, shortage_cards, "衡袖听风目标不足")
+    _assert_equal(shortage.enemy.hand.size(), 0, "衡袖听风敌方无手牌时弃牌安全收敛为空")
+
+func _test_three_ring_ensemble_formal_behavior() -> void:
+    var three_kind := [
+        _card("5", "wind"), _card("5", "forest"), _card("5", "fire"),
+    ]
+    var main = _engine_with_hand(three_kind)
+    main.sequence_book.configure({"three_kind": ["three_ring_ensemble"]})
+    var result := _assert_preview_damage_matches(main, three_kind, "三环并奏三条")
+    _assert_true(result.get("technique_triggered", false), "三环并奏正式主分支触发")
+
+    var shortage_cards := [
+        _card("4", "wind"), _card("4", "forest"), _card("4", "fire"),
+    ]
+    var shortage = _engine_with_hand(shortage_cards)
+    shortage.sequence_book.configure({"three_kind": ["three_ring_ensemble"]})
+    _assert_preview_damage_matches(shortage, shortage_cards, "三环并奏无协同目标")
+    _assert_equal(shortage.player.hand.size(), 0, "三环并奏没有可协同一对时只提交主牌型")
+
+func _test_three_ring_chaos_qi_formal_behavior() -> void:
+    var full_house := [
+        _card("3", "wind"), _card("3", "forest"), _card("3", "fire"),
+        _card("2", "wind"), _card("2", "mountain"),
+    ]
+    var main = _engine_with_hand(full_house)
+    main.enemy.hand = [_card("7", "forest"), _card("8", "mountain")]
+    main.enemy.draw_pile.clear()
+    main.sequence_book.configure({"full_house": ["three_ring_chaos_qi"]})
+    _assert_preview_damage_matches(main, full_house, "三环乱气葫芦")
+    main.end_player_turn()
+    for card in main.enemy.hand:
+        _assert_true(
+            card.has_anomaly("state") or card.has_anomaly("poison"),
+            "三环乱气回合结束主分支为敌方普通手牌施加声明异状")
+
+    var shortage_cards := [
+        _card("4", "wind"), _card("4", "forest"), _card("4", "fire"),
+        _card("2", "forest"), _card("2", "mountain"),
+    ]
+    var shortage = _engine_with_hand(shortage_cards)
+    shortage.enemy.hand.clear()
+    shortage.enemy.draw_pile.clear()
+    shortage.sequence_book.configure({"full_house": ["three_ring_chaos_qi"]})
+    _assert_preview_damage_matches(shortage, shortage_cards, "三环乱气目标不足")
+    shortage.end_player_turn()
+    _assert_equal(shortage.enemy.hand.size(), 0, "三环乱气无敌方手牌和牌库时延迟效果安全为空")
+
+func _test_five_steps_echo_formal_behavior() -> void:
+    var straight := [
+        _card("2", "wind"), _card("3", "forest"), _card("4", "fire"),
+        _card("5", "mountain"), _card("6", "wind"),
+    ]
+    var main = _engine_with_hand(straight)
+    main.sequence_book.configure({"straight": ["five_steps_echo"]})
+    var result := _assert_preview_damage_matches(main, straight, "五步余音顺子")
+    _assert_true(result.get("technique_triggered", false), "五步余音正式主分支触发")
+
+    var shortage_cards := [
+        _card("3", "wind"), _card("4", "forest"), _card("5", "fire"),
+        _card("6", "mountain"), _card("7", "wind"),
+    ]
+    var shortage = _engine_with_hand(shortage_cards)
+    shortage.sequence_book.configure({"straight": ["five_steps_echo"]})
+    _assert_preview_damage_matches(shortage, shortage_cards, "五步余音无协同目标")
+    _assert_equal(shortage.player.hand.size(), 0, "五步余音没有高牌协同时只提交主顺子")
+
+func _test_seize_qi_return_nest_formal_behavior() -> void:
+    var four_kind := [
+        _card("7", "wind"), _card("7", "forest"),
+        _card("7", "fire"), _card("7", "mountain"),
+    ]
+    var main = _engine_with_hand(four_kind, [], 9201)
+    main.sequence_book.configure({"four_kind": ["seize_qi_return_nest"]})
+    _assert_preview_damage_matches(main, four_kind, "夺气归巢四条")
+    _assert_equal(
+        main.player.stacks.get("steal_wind", 0),
+        10,
+        "夺气归巢四条主分支获得10层夺风")
+
+    var shortage_cards := [
+        _card("8", "wind"), _card("8", "forest"),
+        _card("8", "fire"), _card("8", "mountain"),
+    ]
+    var shortage = _engine_with_hand(shortage_cards, [], 9202)
+    shortage.enemy.hand.clear()
+    shortage.enemy.draw_pile.clear()
+    shortage.enemy.max_life = 1000
+    shortage.enemy.life = 1000
+    shortage.sequence_book.configure({"four_kind": ["seize_qi_return_nest"]})
+    _assert_preview_damage_matches(shortage, shortage_cards, "夺气归巢目标不足")
+    _assert_equal(
+        shortage.delayed_effects.size(),
+        0,
+        "夺气归巢四条在敌方无目标时不错误建立五条延迟效果")
 
 func _catalog_definitions(catalog) -> Dictionary:
     var result: Dictionary = {}
