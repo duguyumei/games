@@ -14,5 +14,6 @@ func _initialize() -> void:
         "_test_action_preview_service_matches_engine_facade",
         "_test_action_resolver_boundary_and_queue_rebind",
         "_test_battle_session_commands_snapshots_and_events",
+        "_test_formal_enemy_pool_battle_setup",
         "_test_snapshot_boundaries_are_typed",
     ])

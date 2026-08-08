@@ -9,11 +9,21 @@ extends RefCounted
 const RunDeckScript = preload("res://core/run_deck.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const DeckFactoryScript = preload("res://core/deck_factory.gd")
+const EnemyRepositoryScript = preload("res://core/enemy_repository.gd")
 
 var _content_catalog
+var enemy_repository
 
 func _init(content_catalog = null) -> void:
     _content_catalog = content_catalog
+    if content_catalog != null and content_catalog.loaded:
+        var shared_repository = null
+        if content_catalog.enemy_repository_ref != null:
+            shared_repository = content_catalog.enemy_repository_ref.get_ref()
+        enemy_repository = shared_repository
+        if enemy_repository == null:
+            enemy_repository = EnemyRepositoryScript.new(content_catalog)
+            enemy_repository.configure(content_catalog.definition("enemies"))
 
 func configure_repositories(
         technique_repository,
@@ -71,6 +81,50 @@ func apply_scripted_scenario(scenario, player, enemy, rng, enemy_deck: Array) ->
         "enemy_sequences": scenario.enemy_sequences(),
         "enemy_ai_policy": scenario.enemy_ai_policy(),
     }
+
+func apply_formal_enemy(
+        enemy,
+        act: int,
+        node_type: String,
+        content_seed: int,
+        boss_variant: int,
+        rng) -> Dictionary:
+    if enemy_repository == null:
+        return {"success": false, "reason": "正式敌人仓库未装配"}
+    var life_definition := _enemy_life_definition(act, node_type)
+    if life_definition.is_empty():
+        return {
+            "success": false,
+            "reason": "敌人生命表缺少组合：第 %d 层 / %s" % [act, node_type],
+        }
+    var selected: Dictionary = enemy_repository.select(
+        act, node_type, content_seed, boss_variant)
+    if not selected.get("success", false):
+        return selected
+    var entry: Dictionary = selected["entry"]
+    enemy.max_life = int(life_definition["max_life"])
+    enemy.life = enemy.max_life
+    enemy.configure_inner_skills(
+        entry.get("equipped_inner_skill_ids", []),
+        int(entry.get("technique_slot_index", 0)))
+    enemy.insight_multipliers = entry.get("insight_multipliers", {}).duplicate(true)
+    enemy.replace_deck(selected["cards"], rng, true)
+    return {
+        "success": true,
+        "entry": entry,
+        "ai_policy": selected["ai_policy"],
+        "sequences": entry.get("sequences", {}).duplicate(true),
+    }
+
+func _enemy_life_definition(act: int, node_type: String) -> Dictionary:
+    if _content_catalog == null:
+        return {}
+    for value in _content_catalog.definition("act_progression").get("acts", []):
+        if int(value.get("act", 0)) == act:
+            var enemies: Dictionary = value.get("enemies", {})
+            var result = enemies.get(node_type, {})
+            return result.duplicate(true) if result is Dictionary else {}
+    return {}
 
 func run_deck_from_progress(progress_snapshot: RunProgressSnapshot):
     var run_deck = RunDeckScript.new(_content_catalog)

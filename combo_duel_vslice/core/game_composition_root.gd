@@ -9,6 +9,7 @@ const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunStateScript = preload("res://core/run_state.gd")
 const NodeDispatcherScript = preload("res://core/node_dispatcher.gd")
 const ConsumableRepositoryScript = preload("res://core/consumable_repository.gd")
+const EnemyRepositoryScript = preload("res://core/enemy_repository.gd")
 const StarterBuildRepositoryScript = preload("res://core/starter_build_repository.gd")
 const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.gd")
 const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd")
@@ -24,6 +25,7 @@ var starter_build_assembler: StarterBuildAssembler
 var ai_settings_service: AiSettingsService
 var initialized: bool = false
 var runtime_profile: RuntimeProfile
+var enemy_repository
 
 func _init(runtime_profile_override: RuntimeProfile = null) -> void:
     runtime_profile = (
@@ -41,6 +43,10 @@ func initialize() -> bool:
     content_catalog = ContentCatalogScript.new(runtime_profile)
     var loaded: bool = content_catalog.load_all()
     game_log = GameLogScript.new()
+    enemy_repository = EnemyRepositoryScript.new(content_catalog)
+    if loaded:
+        enemy_repository.configure(content_catalog.definition("enemies"))
+        content_catalog.enemy_repository_ref = weakref(enemy_repository)
     starter_build_repository = StarterBuildRepositoryScript.new()
     starter_build_assembler = StarterBuildAssemblerScript.new(content_catalog)
     ai_settings_service = AiSettingsServiceScript.new()

@@ -50,6 +50,8 @@ const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
 const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.gd")
 const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
+const EnemyRepositoryScript = preload("res://core/enemy_repository.gd")
+const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const EffectHandlerRegistryScript = preload(
@@ -82,7 +84,9 @@ func _initialize() -> void:
         quit(2)
         return
     _test_content_catalog_and_validator()
+    _test_enemy_pool_content_and_repository()
     _test_production_formal_sequences_and_damage()
+    _test_formal_enemy_pool_battle_setup()
     _test_formal_production_technique_behaviors()
     _test_starter_build_assembly_and_composition_root()
     _test_node_reward_service_contract()
@@ -505,6 +509,69 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(run_session.execute({"type": "setup_run", "seed": 17}).success, "本局流程从同一目录装配地图与节点内容")
     var battle_session: BattleSession = run_session.create_battle_session()
     _assert_true(battle_session.engine.content_catalog == catalog, "本局创建的战斗会话继续共享同一目录实例")
+
+func _test_enemy_pool_content_and_repository() -> void:
+    var catalog := ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(catalog.load_all(), "敌人池内容随统一目录通过校验")
+    var definition: Dictionary = catalog.definition("enemies")
+    _assert_equal(definition["enemies"].size(), 1, "首轮敌人池只录入最小占位条目")
+    var repository := EnemyRepositoryScript.new(catalog)
+    _assert_true(repository.configure(definition), "敌人仓库可消费已校验内容")
+    var first: Dictionary = repository.select(1, "combat", 7301)
+    var second: Dictionary = repository.select(1, "combat", 7301)
+    _assert_true(first.get("success", false), "按层数和普通战斗可抽取敌人")
+    _assert_equal(first["entry"]["id"], second["entry"]["id"], "相同种子抽取相同敌人")
+    _assert_equal(first["cards"].size(), 20, "敌人牌组按编码展开为 20 张")
+    _assert_equal(first["cards"][0].id, second["cards"][0].id, "相同种子牌组实例 ID 稳定")
+    _assert_true(
+        first["cards"].all(func(card): return card.anomaly_snapshot()["poison"] == ""),
+        "敌人牌组不预置战斗异状")
+    var bad_values := _catalog_definitions(catalog)
+    bad_values["enemies"]["enemies"][0]["deck"] = ["wind_2*19"]
+    var bad_catalog := ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(not bad_catalog.load_from_definitions(bad_values), "敌人牌组低于 20 张时内容加载失败")
+    _assert_true(
+        _array_contains_text(bad_catalog.errors, "至少需要 20 张牌"),
+        "敌人牌组下限错误说明规则依据")
+    var no_match := repository.select(3, "event", 7301)
+    _assert_true(not no_match.get("success", false), "敌人池无匹配节点组合时明确失败")
+    _assert_true(
+        _array_contains_text([str(no_match.get("reason", ""))], "第 3 层 / event"),
+        "敌人池无匹配组合报告层数和节点类型")
+    var boss_values := definition.duplicate(true)
+    var second_boss: Dictionary = boss_values["enemies"][0].duplicate(true)
+    second_boss["id"] = "placeholder_boss_variant"
+    boss_values["enemies"].append(second_boss)
+    var boss_repository := EnemyRepositoryScript.new(catalog)
+    boss_repository.configure(boss_values)
+    var boss_a: Dictionary = boss_repository.select(1, "boss", 7301, 0)
+    var boss_b: Dictionary = boss_repository.select(1, "boss", 7301, 1)
+    _assert_true(
+        boss_a["entry"]["id"] != boss_b["entry"]["id"],
+        "Boss 抽取消费地图提供的 boss_variant")
+
+func _test_formal_enemy_pool_battle_setup() -> void:
+    var root := GameCompositionRootScript.new(RuntimeProfileScript.production())
+    _assert_true(root.initialize(), "正式模式可装配敌人池")
+    var run_session: RunSession = root.create_run_session()
+    var battle_session: BattleSession = run_session.create_battle_session()
+    _assert_true(
+        battle_session.setup_battle({
+            "act": 2,
+            "node_type": "elite",
+            "boss_variant": 0,
+            "content_seed": 8112,
+            "battle": {"use_enemy_ai": false},
+        }),
+        "正式战斗按层数、节点类型和种子完成敌人装配")
+    _assert_equal(battle_session.engine.enemy.max_life, 225, "第二层精英敌人生命来自权威生命表")
+    _assert_equal(battle_session.engine.enemy.life, 225, "正式敌人生命以查表上限开始")
+    _assert_equal(battle_session.engine.enemy.draw_pile.size(), 20, "正式敌人使用池定义牌组")
+    _assert_equal(battle_session.engine.enemy.name, "占位行旅对手", "正式敌人名称来自敌人池条目")
+    _assert_equal(
+        battle_session.engine.enemy_sequence_book.current_id("high_card"),
+        "borrow_fire_guard_heart",
+        "正式敌人功法序列引用正式白名单")
 
 func _test_production_formal_sequences_and_damage() -> void:
     var root = GameCompositionRootScript.new(RuntimeProfileScript.production())

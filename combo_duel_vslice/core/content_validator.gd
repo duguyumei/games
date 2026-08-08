@@ -12,6 +12,7 @@ const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
+const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 
 const CONTENT_KEYS := [
     "base_deck",
@@ -23,6 +24,7 @@ const CONTENT_KEYS := [
     "consumables",
     "node_rewards",
     "act_progression",
+    "enemies",
     "map_rules",
     "node_content",
     "scripted_battle",
@@ -96,6 +98,10 @@ const ENEMY_AI_NUMBER_FIELDS := [
     "combo_follow_up_weight",
     "combo_without_follow_up_penalty",
 ]
+const FORBIDDEN_ENEMY_ENTRY_FIELDS := [
+    "life", "max_life", "owned_technique_ids", "consumable_ids",
+    "permanently_removed_card_ids", "player",
+]
 
 var errors: Array[String] = []
 var warnings: Array[String] = []
@@ -167,6 +173,7 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _validate_consumables(_contents["consumables"])
     _validate_node_rewards(_contents["node_rewards"])
     _validate_act_progression(_contents["act_progression"])
+    _validate_enemies(_contents["enemies"])
     _validate_sequences(_contents["sequences"], "sequences")
     _validate_scripted_battle(_contents["scripted_battle"])
     _validate_node_content(_contents["node_content"])
@@ -254,6 +261,122 @@ func _validate_life_definition(value, scope: String) -> void:
     if not _is_integer(value.get("max_life")) \
             or int(value.get("max_life", 0)) <= 0:
         _error(scope + ".max_life", "必须是正整数")
+
+func _validate_enemies(definition: Dictionary) -> void:
+    var scope := "enemies"
+    var default_ai = definition.get("default_ai")
+    if not default_ai is Dictionary:
+        _error(scope + ".default_ai", "必须是对象")
+    else:
+        _validate_enemy_ai_policy(default_ai, scope + ".default_ai")
+    var values = definition.get("enemies")
+    if not values is Array or values.is_empty():
+        _error(scope + ".enemies", "必须是非空数组")
+        return
+    var seen: Dictionary = {}
+    for index in range(values.size()):
+        var entry = values[index]
+        var entry_scope := "%s.enemies[%d]" % [scope, index]
+        if not entry is Dictionary:
+            _error(entry_scope, "必须是对象")
+            continue
+        var enemy_id := _required_id(entry, entry_scope)
+        _register_unique(seen, enemy_id, entry_scope, entry)
+        _validate_name(entry, entry_scope)
+        for field in FORBIDDEN_ENEMY_ENTRY_FIELDS:
+            if entry.has(field):
+                _error(entry_scope, "正式敌人池条目不允许字段 %s" % field)
+        _validate_enemy_acts(entry.get("acts"), entry_scope + ".acts")
+        _validate_enemy_node_types(entry.get("node_types"), entry_scope + ".node_types")
+        var deck = entry.get("deck")
+        if not deck is Array or deck.is_empty():
+            _error(entry_scope + ".deck", "必须是非空数组")
+        else:
+            var deck_report := EnemyDeckEncodingScript.validate_tokens(
+                deck, _card_ids, _enhancements_by_id, _finishes_by_id, _imprints_by_id)
+            for deck_error in deck_report.get("errors", []):
+                _error(entry_scope + ".deck", str(deck_error))
+            if int(deck_report.get("expanded_count", 0)) < 20:
+                _error(entry_scope + ".deck", "展开后至少需要 20 张牌，避免牌库与手牌同时耗尽")
+        var inner_skill_ids = entry.get("equipped_inner_skill_ids")
+        if not inner_skill_ids is Array:
+            _error(entry_scope + ".equipped_inner_skill_ids", "必须是数组")
+        else:
+            if inner_skill_ids.size() > 6:
+                _error(entry_scope + ".equipped_inner_skill_ids", "内功最多装备 6 门")
+            var seen_skills: Dictionary = {}
+            for skill_id_value in inner_skill_ids:
+                var skill_id := str(skill_id_value)
+                if not _inner_skills_by_id.has(skill_id):
+                    _error(entry_scope + ".equipped_inner_skill_ids", "引用未知内功 %s" % skill_id)
+                elif seen_skills.has(skill_id):
+                    _error(entry_scope + ".equipped_inner_skill_ids", "重复引用内功 %s" % skill_id)
+                seen_skills[skill_id] = true
+        var slot_index = entry.get("technique_slot_index")
+        var slot_limit: int = inner_skill_ids.size() if inner_skill_ids is Array else -1
+        if not _is_integer(slot_index) or int(slot_index) < 0 \
+                or int(slot_index) > slot_limit:
+            _error(entry_scope + ".technique_slot_index", "必须位于已装备内功之间")
+        _validate_enemy_insights(entry.get("insight_multipliers"), entry_scope + ".insight_multipliers")
+        _validate_enemy_sequences(entry.get("sequences"), entry_scope + ".sequences")
+        if entry.has("ai"):
+            if not entry["ai"] is Dictionary:
+                _error(entry_scope + ".ai", "必须是对象")
+            else:
+                _validate_enemy_ai_policy(entry["ai"], entry_scope + ".ai")
+
+func _validate_enemy_acts(values, scope: String) -> void:
+    if not values is Array or values.is_empty():
+        _error(scope, "必须是非空的层数数组")
+        return
+    var seen: Dictionary = {}
+    for value in values:
+        if not _is_integer(value) or int(value) < 1 or int(value) > 3:
+            _error(scope, "层数必须是 1～3 的整数")
+        elif seen.has(int(value)):
+            _error(scope, "层数重复：%d" % int(value))
+        seen[int(value)] = true
+
+func _validate_enemy_node_types(values, scope: String) -> void:
+    if not values is Array or values.is_empty():
+        _error(scope, "必须是非空数组")
+        return
+    var seen: Dictionary = {}
+    for value in values:
+        var node_type := str(value)
+        if node_type not in ["combat", "elite", "boss"]:
+            _error(scope, "未知敌人节点类型 %s" % node_type)
+        elif seen.has(node_type):
+            _error(scope, "节点类型重复：%s" % node_type)
+        seen[node_type] = true
+
+func _validate_enemy_insights(values, scope: String) -> void:
+    if not values is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    for hand_id in HAND_IDS:
+        if not values.has(hand_id):
+            _error(scope, "缺少精确牌型 %s" % hand_id)
+        elif not _is_integer(values[hand_id]) or int(values[hand_id]) < 0:
+            _error(scope + ".%s" % hand_id, "心得倍率必须是非负整数")
+    for key in values:
+        if not HAND_IDS.has(str(key)):
+            _error(scope, "包含未知精确牌型 %s" % str(key))
+
+func _validate_enemy_sequences(values, scope: String) -> void:
+    if not values is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    _validate_sequences(values, scope)
+    var statuses: Dictionary = _contents.get("techniques", {}).get("integration_statuses", {})
+    for hand_id in HAND_IDS:
+        for technique_id_value in values.get(hand_id, []):
+            var technique_id := str(technique_id_value)
+            if str(statuses.get(technique_id, "missing")) != FORMAL_TECHNIQUE_STATUS:
+                _error(
+                    "%s.%s" % [scope, hand_id],
+                    "功法 %s 当前接入档位为 %s，敌人正式池只允许 %s" % [
+                        technique_id, statuses.get(technique_id, "missing"), FORMAL_TECHNIQUE_STATUS])
 
 func result() -> Dictionary:
     return {

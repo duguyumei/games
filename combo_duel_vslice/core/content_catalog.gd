@@ -15,6 +15,7 @@ const CONTENT_ORDER := [
     "consumables",
     "node_rewards",
     "act_progression",
+    "enemies",
     "map_rules",
     "node_content",
     "scripted_battle",
@@ -30,6 +31,7 @@ const DEFAULT_PATHS := {
     "consumables": "res://data/consumables.json",
     "node_rewards": "res://data/node_rewards.json",
     "act_progression": "res://data/act_progression.json",
+    "enemies": "res://data/enemies.json",
     "map_rules": "res://data/map_rules.json",
     "node_content": "res://data/node_content.json",
     "scripted_battle": "res://data/scripted_battle.json",
@@ -44,6 +46,7 @@ var _definitions: Dictionary = {}
 var _indexes: Dictionary = {}
 var runtime_profile
 var effect_registry
+var enemy_repository_ref: WeakRef = null
 
 func _init(runtime_profile_override = null, effect_registry_override = null) -> void:
     runtime_profile = (
@@ -152,6 +155,7 @@ func _build_indexes() -> void:
         "consumable": {},
         "node_type": {},
         "scenario": {},
+        "enemy": {},
     }
     var base_deck: Dictionary = _definitions["base_deck"]
     _index_array("starter_build", _definitions["starter_builds"]["starter_builds"])
@@ -178,6 +182,7 @@ func _build_indexes() -> void:
     _index_array("technique", _definitions["techniques"]["techniques"])
     _index_array("inner_skill", _definitions["inner_skills"]["inner_skills"])
     _index_array("consumable", _definitions["consumables"]["consumables"])
+    _index_array("enemy", _definitions["enemies"]["enemies"])
     for node_type in _definitions["node_content"]["node_types"]:
         var value: Dictionary = _definitions["node_content"]["node_types"][node_type].duplicate(true)
         value["id"] = str(node_type)

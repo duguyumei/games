@@ -123,6 +123,9 @@ func setup_battle(
             entry_kind)
         return false
     var use_enemy_ai := bool(battle.get("use_enemy_ai", true))
+    var act := int(configuration.get("act", 1))
+    var node_type := str(configuration.get("node_type", "combat"))
+    var boss_variant := int(configuration.get("boss_variant", -1))
     var runtime_enabled := bool(_ai_runtime_profile.get("enabled", false))
     _remote_ai_enabled = (
         bool(battle.get("use_remote_ai", false)) or runtime_enabled) \
@@ -159,6 +162,25 @@ func setup_battle(
         player_cards,
         true)
     if loaded:
+        if entry_kind == "formal":
+            var formal_setup: Dictionary = _battle_setup_service.apply_formal_enemy(
+                engine.enemy,
+                act,
+                node_type,
+                int(configuration.get("content_seed", 2308)),
+                boss_variant,
+                engine.rng)
+            if not formal_setup.get("success", false):
+                engine.game_log.record_system(
+                    "error", "enemy_repository", "正式敌人装配失败",
+                    str(formal_setup.get("reason", "未知错误")))
+                return false
+            engine.enemy.name = str(formal_setup["entry"].get("name", engine.enemy.name))
+            engine.enemy_sequence_book.configure(formal_setup["sequences"])
+            _battle_setup_service.seed_owned_techniques(
+                engine.enemy, engine.enemy_sequence_book)
+            engine.enemy_ai_policy = formal_setup["ai_policy"]
+            engine._sync_action_service_modes()
         _battle_setup_service.apply_non_deck_progress(engine.player, progress_snapshot)
         engine.use_external_enemy_actions(_remote_ai_enabled)
         if _remote_ai_enabled:

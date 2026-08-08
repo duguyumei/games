@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "default_ai": {
+    "damage_weight": 1.0,
+    "defense_weight": 0.7,
+    "power_weight": 0.02,
+    "combo_bonus": 8.0,
+    "card_cost": 0.5,
+    "failed_condition_penalty": 1000.0,
+    "danger_life_ratio": 0.3,
+    "overkill_penalty": 0.35,
+    "retained_card_weight": 0.15,
+    "sequence_progress_weight": 1.0,
+    "combo_follow_up_weight": 0.25,
+    "combo_without_follow_up_penalty": 10.0,
+    "next_technique_bias": {}
+  },
+  "enemies": [
+    {
+      "id": "placeholder_journey_enemy",
+      "name": "占位行旅对手",
+      "acts": [1, 2, 3],
+      "node_types": ["combat", "elite", "boss"],
+      "deck": ["wind_2*5", "forest_3*5", "fire_4*5", "mountain_5*5"],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 0,
+        "pair": 0,
+        "two_pair": 0,
+        "three_kind": 0,
+        "straight": 0,
+        "full_house": 0,
+        "four_kind": 0,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["borrow_fire_guard_heart", "stagnant_gu_conceal_breath"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": ["five_steps_echo"],
+        "full_house": ["three_ring_chaos_qi"],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      }
+    }
+  ]
+}
