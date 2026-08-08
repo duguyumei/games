@@ -296,8 +296,6 @@ func _validate_enemies(definition: Dictionary) -> void:
                 deck, _card_ids, _enhancements_by_id, _finishes_by_id, _imprints_by_id)
             for deck_error in deck_report.get("errors", []):
                 _error(entry_scope + ".deck", str(deck_error))
-            if int(deck_report.get("expanded_count", 0)) < 20:
-                _error(entry_scope + ".deck", "展开后至少需要 20 张牌，避免牌库与手牌同时耗尽")
         var inner_skill_ids = entry.get("equipped_inner_skill_ids")
         if not inner_skill_ids is Array:
             _error(entry_scope + ".equipped_inner_skill_ids", "必须是数组")

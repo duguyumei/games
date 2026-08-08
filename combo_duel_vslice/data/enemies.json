@@ -17,10 +17,311 @@
   },
   "enemies": [
     {
-      "id": "placeholder_journey_enemy",
-      "name": "占位行旅对手",
-      "acts": [1, 2, 3],
-      "node_types": ["combat", "elite", "boss"],
+      "id": "act1_gale_sleeve_adept",
+      "name": "疾袖客",
+      "acts": [1],
+      "node_types": ["combat"],
+      "deck": [
+        "wind_2*2", "wind_3*2", "wind_4*2", "wind_5*2",
+        "wind_6*2", "wind_7*2", "wind_8*2",
+        "forest_4*2", "fire_5*2", "mountain_6*2"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 1,
+        "pair": 1,
+        "two_pair": 0,
+        "three_kind": 0,
+        "straight": 0,
+        "full_house": 0,
+        "four_kind": 0,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["borrow_fire_guard_heart"],
+        "pair": ["balance_sleeves_listen_wind"],
+        "two_pair": ["double_gu_exchange_breath"],
+        "three_kind": [],
+        "straight": ["five_steps_echo"],
+        "full_house": [],
+        "four_kind": [],
+        "five_kind": []
+      }
+    },
+    {
+      "id": "act1_fourfold_roamer",
+      "name": "四象散人",
+      "acts": [1],
+      "node_types": ["combat"],
+      "deck": [
+        "wind_2", "wind_3", "wind_4", "wind_5", "wind_6", "wind_7", "wind_8",
+        "forest_2", "forest_3", "forest_4", "forest_5", "forest_6", "forest_7", "forest_8",
+        "fire_2", "fire_3", "fire_4", "fire_5", "fire_6", "fire_7", "fire_8",
+        "mountain_2", "mountain_3", "mountain_4", "mountain_5", "mountain_6", "mountain_7", "mountain_8"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 0,
+        "pair": 0,
+        "two_pair": 0,
+        "three_kind": 1,
+        "straight": 0,
+        "full_house": 1,
+        "four_kind": 0,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["borrow_fire_guard_heart"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": ["five_steps_echo"],
+        "full_house": ["three_ring_chaos_qi"],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      }
+    },
+    {
+      "id": "act1_mountain_gu_warden",
+      "name": "山蛊守",
+      "acts": [1],
+      "node_types": ["combat"],
+      "deck": [
+        "mountain_2*2", "mountain_3*2", "mountain_4*2", "mountain_5*2", "mountain_6*2",
+        "forest_2", "forest_3", "forest_4", "forest_5", "forest_6", "forest_7", "forest_8", "forest_9",
+        "wind_4", "wind_7", "wind_10",
+        "fire_3", "fire_6", "fire_9"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 1,
+        "pair": 0,
+        "two_pair": 1,
+        "three_kind": 0,
+        "straight": 0,
+        "full_house": 0,
+        "four_kind": 0,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["stagnant_gu_conceal_breath", "borrow_fire_guard_heart"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_chaos_qi"],
+        "straight": [],
+        "full_house": ["three_ring_ensemble"],
+        "four_kind": [],
+        "five_kind": []
+      }
+    },
+    {
+      "id": "act1_cinnabar_wind_hunter",
+      "name": "丹风逐影客",
+      "acts": [1],
+      "node_types": ["elite"],
+      "deck": [
+        "wind_2*2", "wind_3*2", "wind_4*2", "wind_5*2", "wind_6*2",
+        "wind_7", "wind_8",
+        "forest_3*2", "forest_5*2", "forest_7*2",
+        "fire_4*2", "fire_8*2",
+        "mountain_5*2", "mountain_9*2"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 1,
+        "pair": 1,
+        "two_pair": 1,
+        "three_kind": 0,
+        "straight": 1,
+        "full_house": 0,
+        "four_kind": 0,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["borrow_fire_guard_heart", "stagnant_gu_conceal_breath"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": ["five_steps_echo"],
+        "full_house": [],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      },
+      "ai": {
+        "damage_weight": 1.15,
+        "sequence_progress_weight": 1.2,
+        "overkill_penalty": 0.5
+      }
+    },
+    {
+      "id": "act1_mountain_lantern_warden",
+      "name": "山灯守关人",
+      "acts": [1],
+      "node_types": ["elite"],
+      "deck": [
+        "mountain_2*2", "mountain_3*2", "mountain_4*2", "mountain_5*2", "mountain_6*2", "mountain_7*2",
+        "forest_2*2", "forest_4*2", "forest_6*2", "forest_8*2",
+        "wind_5*2", "wind_9*2",
+        "fire_3*2", "fire_7*2"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 0,
+        "pair": 1,
+        "two_pair": 1,
+        "three_kind": 1,
+        "straight": 0,
+        "full_house": 1,
+        "four_kind": 0,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["stagnant_gu_conceal_breath"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": [],
+        "full_house": ["three_ring_chaos_qi"],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      },
+      "ai": {
+        "defense_weight": 0.95,
+        "retained_card_weight": 0.35,
+        "danger_life_ratio": 0.4
+      }
+    },
+    {
+      "id": "act1_wind_sect_chief",
+      "name": "裂风掌门",
+      "acts": [1],
+      "node_types": ["boss"],
+      "deck": [
+        "wind_2*2", "wind_3*2", "wind_4*2", "wind_5*2", "wind_6*2", "wind_7*2", "wind_8*2", "wind_9*2", "wind_10*2",
+        "forest_2*2", "forest_3*2", "forest_4*2", "forest_5*2", "forest_6*2",
+        "fire_4*2", "fire_6*2", "fire_8*2",
+        "mountain_5*2", "mountain_7*2", "mountain_9*2"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 2,
+        "pair": 2,
+        "two_pair": 2,
+        "three_kind": 1,
+        "straight": 1,
+        "full_house": 1,
+        "four_kind": 1,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["borrow_fire_guard_heart", "stagnant_gu_conceal_breath"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": ["five_steps_echo"],
+        "full_house": ["three_ring_chaos_qi"],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      },
+      "ai": {
+        "damage_weight": 1.25,
+        "combo_bonus": 10.0,
+        "combo_follow_up_weight": 0.45,
+        "overkill_penalty": 0.2
+      }
+    },
+    {
+      "id": "act1_gu_matriarch",
+      "name": "百蛊夫人",
+      "acts": [1],
+      "node_types": ["boss"],
+      "deck": [
+        "forest_2*2", "forest_3*2", "forest_4*2", "forest_5*2", "forest_6*2", "forest_7*2", "forest_8*2", "forest_9*2", "forest_10*2",
+        "wind_3*2", "wind_5*2", "wind_7*2", "wind_9*2",
+        "mountain_4*2", "mountain_6*2", "mountain_8*2",
+        "fire_5*2", "fire_7*2", "fire_9*3"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 1,
+        "pair": 1,
+        "two_pair": 1,
+        "three_kind": 1,
+        "straight": 1,
+        "full_house": 2,
+        "four_kind": 1,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["stagnant_gu_conceal_breath", "borrow_fire_guard_heart"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": ["five_steps_echo"],
+        "full_house": ["three_ring_chaos_qi"],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      },
+      "ai": {
+        "defense_weight": 1.15,
+        "danger_life_ratio": 0.45,
+        "retained_card_weight": 0.4,
+        "combo_without_follow_up_penalty": 8.0
+      }
+    },
+    {
+      "id": "act1_five_mountain_lord",
+      "name": "五岳魁首",
+      "acts": [1],
+      "node_types": ["boss"],
+      "deck": [
+        "mountain_2*2", "mountain_3*2", "mountain_4*2", "mountain_5*2", "mountain_6*2", "mountain_7*2", "mountain_8*2", "mountain_9*2", "mountain_10*2",
+        "fire_2*2", "fire_4*2", "fire_6*2", "fire_8*2", "fire_10*2",
+        "wind_3*2", "wind_6*2", "wind_9*2",
+        "forest_4*2", "forest_7*2", "forest_10*2",
+        "wind_A*2"
+      ],
+      "equipped_inner_skill_ids": [],
+      "technique_slot_index": 0,
+      "insight_multipliers": {
+        "high_card": 1,
+        "pair": 1,
+        "two_pair": 1,
+        "three_kind": 2,
+        "straight": 1,
+        "full_house": 2,
+        "four_kind": 2,
+        "five_kind": 0
+      },
+      "sequences": {
+        "high_card": ["borrow_fire_guard_heart"],
+        "pair": ["double_gu_exchange_breath"],
+        "two_pair": ["balance_sleeves_listen_wind"],
+        "three_kind": ["three_ring_ensemble"],
+        "straight": ["five_steps_echo"],
+        "full_house": ["three_ring_chaos_qi"],
+        "four_kind": ["seize_qi_return_nest"],
+        "five_kind": []
+      },
+      "ai": {
+        "damage_weight": 1.1,
+        "power_weight": 0.08,
+        "sequence_progress_weight": 1.35,
+        "card_cost": 0.35
+      }
+    },
+    {
+      "id": "transitional_elite_boss_placeholder",
+      "name": "第 2/3 层过渡占位精英首领",
+      "acts": [2, 3],
+      "node_types": ["elite", "boss"],
       "deck": ["wind_2*5", "forest_3*5", "fire_4*5", "mountain_5*5"],
       "equipped_inner_skill_ids": [],
       "technique_slot_index": 0,

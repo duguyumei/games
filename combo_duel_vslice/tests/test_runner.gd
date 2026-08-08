@@ -87,6 +87,7 @@ func _initialize() -> void:
     _test_enemy_pool_content_and_repository()
     _test_production_formal_sequences_and_damage()
     _test_formal_enemy_pool_battle_setup()
+    _test_production_enemy_pool_remote_ai_battle()
     _test_formal_production_technique_behaviors()
     _test_starter_build_assembly_and_composition_root()
     _test_node_reward_service_contract()
@@ -514,41 +515,85 @@ func _test_enemy_pool_content_and_repository() -> void:
     var catalog := ContentCatalogScript.new(RuntimeProfileScript.test())
     _assert_true(catalog.load_all(), "敌人池内容随统一目录通过校验")
     var definition: Dictionary = catalog.definition("enemies")
-    _assert_equal(definition["enemies"].size(), 1, "首轮敌人池只录入最小占位条目")
+    _assert_equal(definition["enemies"].size(), 9, "敌人池包含三名普通、两名精英、三名 Boss 与一个过渡占位条目")
     var repository := EnemyRepositoryScript.new(catalog)
     _assert_true(repository.configure(definition), "敌人仓库可消费已校验内容")
-    var first: Dictionary = repository.select(1, "combat", 7301)
-    var second: Dictionary = repository.select(1, "combat", 7301)
+    var first: Dictionary = repository.select(1, "combat", 2)
+    var second: Dictionary = repository.select(1, "combat", 2)
     _assert_true(first.get("success", false), "按层数和普通战斗可抽取敌人")
     _assert_equal(first["entry"]["id"], second["entry"]["id"], "相同种子抽取相同敌人")
-    _assert_equal(first["cards"].size(), 20, "敌人牌组按编码展开为 20 张")
+    _assert_equal(first["entry"]["id"], "act1_gale_sleeve_adept", "第 1 层普通种子 2 抽到疾袖客")
+    _assert_equal(first["cards"].size(), 20, "第一层普通敌人牌组按编码展开为 20 张")
     _assert_equal(first["cards"][0].id, second["cards"][0].id, "相同种子牌组实例 ID 稳定")
     _assert_true(
         first["cards"].all(func(card): return card.anomaly_snapshot()["poison"] == ""),
         "敌人牌组不预置战斗异状")
-    var bad_values := _catalog_definitions(catalog)
-    bad_values["enemies"]["enemies"][0]["deck"] = ["wind_2*19"]
-    var bad_catalog := ContentCatalogScript.new(RuntimeProfileScript.test())
-    _assert_true(not bad_catalog.load_from_definitions(bad_values), "敌人牌组低于 20 张时内容加载失败")
+    var one_card_values := _catalog_definitions(catalog)
+    one_card_values["enemies"]["enemies"][0]["deck"] = ["wind_2"]
+    var one_card_catalog := ContentCatalogScript.new(RuntimeProfileScript.test())
     _assert_true(
-        _array_contains_text(bad_catalog.errors, "至少需要 20 张牌"),
-        "敌人牌组下限错误说明规则依据")
+        one_card_catalog.load_from_definitions(one_card_values),
+        "一张牌的敌人牌组可以通过内容校验")
     var no_match := repository.select(3, "event", 7301)
     _assert_true(not no_match.get("success", false), "敌人池无匹配节点组合时明确失败")
     _assert_true(
         _array_contains_text([str(no_match.get("reason", ""))], "第 3 层 / event"),
         "敌人池无匹配组合报告层数和节点类型")
-    var boss_values := definition.duplicate(true)
-    var second_boss: Dictionary = boss_values["enemies"][0].duplicate(true)
-    second_boss["id"] = "placeholder_boss_variant"
-    boss_values["enemies"].append(second_boss)
-    var boss_repository := EnemyRepositoryScript.new(catalog)
-    boss_repository.configure(boss_values)
-    var boss_a: Dictionary = boss_repository.select(1, "boss", 7301, 0)
-    var boss_b: Dictionary = boss_repository.select(1, "boss", 7301, 1)
+    var seed_two := repository.select(1, "combat", 1)
+    var seed_five := repository.select(1, "combat", 5)
+    _assert_equal(seed_two["entry"]["id"], "act1_fourfold_roamer", "第 1 层普通种子 1 抽到四象散人")
+    _assert_equal(seed_five["entry"]["id"], "act1_mountain_gu_warden", "第 1 层普通种子 5 抽到山蛊守")
     _assert_true(
-        boss_a["entry"]["id"] != boss_b["entry"]["id"],
-        "Boss 抽取消费地图提供的 boss_variant")
+        first["entry"]["id"] != seed_two["entry"]["id"]
+        and seed_two["entry"]["id"] != seed_five["entry"]["id"],
+        "第一层普通不同 content_seed 能抽到不同敌人")
+    for selected in [first, seed_two, seed_five]:
+        _assert_equal(int(selected["entry"]["acts"][0]), 1, "抽到的第一层敌人声明覆盖第 1 层")
+        _assert_equal(str(selected["entry"]["node_types"][0]), "combat", "抽到的第一层敌人声明覆盖普通战斗")
+    var elite_ids: Dictionary = {}
+    for seed_value in range(256):
+        var elite_result: Dictionary = repository.select(1, "elite", 41000 + seed_value)
+        _assert_true(elite_result.get("success", false), "第 1 层精英候选可抽取")
+        elite_ids[str(elite_result["entry"]["id"])] = true
+    _assert_true(elite_ids.size() >= 2, "第 1 层精英候选至少有两个不同 ID")
+    var boss_ids: Dictionary = {}
+    var boss_variant_ids: Array[String] = []
+    for variant in range(3):
+        var boss_result: Dictionary = repository.select(1, "boss", 7301, variant)
+        _assert_true(boss_result.get("success", false), "第 1 层 Boss 候选可抽取")
+        boss_ids[str(boss_result["entry"]["id"])] = true
+        boss_variant_ids.append(str(boss_result["entry"]["id"]))
+        _assert_true(
+            str(boss_result["entry"]["id"]) != "transitional_elite_boss_placeholder",
+            "第 1 层 Boss 不抽到过渡占位条目")
+    _assert_equal(boss_ids.size(), 3, "第 1 层 Boss 的 boss_variant 0/1/2 分别抽到三个不同 ID")
+    print("S2-07 第一层 Boss 变体 seed=7301: variant0=%s, variant1=%s, variant2=%s" % boss_variant_ids)
+    var stable_boss_a: Dictionary = repository.select(1, "boss", 7301, 1)
+    var stable_boss_b: Dictionary = repository.select(1, "boss", 7301, 1)
+    _assert_equal(
+        stable_boss_a["entry"]["id"], stable_boss_b["entry"]["id"],
+        "相同 content_seed 与 boss_variant 抽取结果稳定")
+    var formal_ids := {
+        "balance_sleeves_listen_wind": true,
+        "double_gu_exchange_breath": true,
+        "three_ring_ensemble": true,
+        "three_ring_chaos_qi": true,
+        "seize_qi_return_nest": true,
+        "five_steps_echo": true,
+        "stagnant_gu_conceal_breath": true,
+        "borrow_fire_guard_heart": true,
+    }
+    for entry in definition["enemies"]:
+        for hand_id in entry.get("sequences", {}):
+            for technique_id in entry["sequences"][hand_id]:
+                _assert_true(
+                    formal_ids.has(str(technique_id)),
+                    "敌人功法只引用八门正式完整功法：%s" % technique_id)
+    var placeholder: Dictionary = definition["enemies"][definition["enemies"].size() - 1]
+    _assert_equal(placeholder["acts"].size(), 2, "过渡占位条目覆盖两层")
+    _assert_equal(int(placeholder["acts"][0]), 2, "过渡占位条目覆盖第 2 层")
+    _assert_equal(int(placeholder["acts"][1]), 3, "过渡占位条目覆盖第 3 层")
+    _assert_equal(placeholder["name"], "第 2/3 层过渡占位精英首领", "占位条目名称明确层数范围")
 
 func _test_formal_enemy_pool_battle_setup() -> void:
     var root := GameCompositionRootScript.new(RuntimeProfileScript.production())
@@ -557,21 +602,149 @@ func _test_formal_enemy_pool_battle_setup() -> void:
     var battle_session: BattleSession = run_session.create_battle_session()
     _assert_true(
         battle_session.setup_battle({
-            "act": 2,
+            "act": 1,
             "node_type": "elite",
             "boss_variant": 0,
             "content_seed": 8112,
             "battle": {"use_enemy_ai": false},
         }),
-        "正式战斗按层数、节点类型和种子完成敌人装配")
-    _assert_equal(battle_session.engine.enemy.max_life, 225, "第二层精英敌人生命来自权威生命表")
-    _assert_equal(battle_session.engine.enemy.life, 225, "正式敌人生命以查表上限开始")
-    _assert_equal(battle_session.engine.enemy.draw_pile.size(), 20, "正式敌人使用池定义牌组")
-    _assert_equal(battle_session.engine.enemy.name, "占位行旅对手", "正式敌人名称来自敌人池条目")
-    _assert_equal(
-        battle_session.engine.enemy_sequence_book.current_id("high_card"),
-        "borrow_fire_guard_heart",
-        "正式敌人功法序列引用正式白名单")
+        "正式第 1 层精英按层数、节点类型和种子完成敌人装配")
+    _assert_equal(battle_session.engine.enemy.max_life, 150, "第一层精英敌人生命来自权威生命表")
+    _assert_equal(battle_session.engine.enemy.life, 150, "第一层精英生命以查表上限开始")
+    _assert_true(battle_session.engine.enemy.draw_pile.size() > 0, "正式精英使用非空自由牌组")
+    _assert_true(
+        battle_session.engine.enemy.name != "第 2/3 层过渡占位精英首领",
+        "第一层精英不使用过渡占位条目")
+    _assert_true(
+        battle_session.engine.enemy_sequence_book.current_id("high_card") in [
+            "borrow_fire_guard_heart", "stagnant_gu_conceal_breath"],
+        "正式精英功法序列引用正式白名单")
+    var boss_session: BattleSession = run_session.create_battle_session()
+    _assert_true(
+        boss_session.setup_battle({
+            "act": 1,
+            "node_type": "boss",
+            "boss_variant": 2,
+            "content_seed": 8112,
+            "battle": {"use_enemy_ai": false},
+        }),
+        "正式第 1 层 Boss 完成战斗装配")
+    _assert_equal(boss_session.engine.enemy.max_life, 200, "第一层 Boss 敌人生命来自权威生命表")
+    _assert_equal(boss_session.engine.enemy.life, 200, "第一层 Boss 生命以查表上限开始")
+    _assert_true(boss_session.engine.enemy.draw_pile.size() > 0, "正式 Boss 使用非空自由牌组")
+
+func _test_production_enemy_pool_remote_ai_battle() -> void:
+    var root := GameCompositionRootScript.new(RuntimeProfileScript.production())
+    _assert_true(root.initialize(), "production 敌人池远程 AI 战斗内容加载成功")
+    var run_session: RunSession = root.create_run_session()
+    var session: BattleSession = run_session.create_battle_session()
+    var provider := MockAiProviderScript.new(false)
+    session.use_ai_provider(provider)
+    session.configure_ai_runtime({
+        "enabled": false,
+        "provider": {"kind": "mock"},
+        "storage": {"autosave_conversation": false},
+    })
+    var configuration := {
+        "act": 1,
+        "node_type": "combat",
+        "content_seed": 2,
+        "content_id": "s203b-act1-combat-remote-ai",
+        "battle": {
+            "entry_kind": "formal",
+            "scenario_path": "res://data/production_enemy_entry.json",
+            "use_enemy_ai": true,
+            "use_remote_ai": true,
+        },
+        "ai_settings": {
+            "timeout_msec": 30000,
+            "max_retries": 0,
+        },
+    }
+    _assert_true(session.setup_battle(configuration), "production 第一层普通敌人池战斗装配成功")
+    _assert_true(session._remote_ai_enabled, "敌人池战斗明确打开远程 AI 路径")
+    var enemy_id := str(session.engine.enemy.name)
+    _assert_true(
+        enemy_id in ["疾袖客", "四象散人", "山蛊守"],
+        "远程 AI 战斗敌人来自第一层正式普通敌人池")
+    _assert_true(session.execute({"type": "start_turn"}).success, "远程 AI 战斗建立首个行动窗口")
+
+    var request_cursor := 0
+    var window_count := 0
+    var action_count := 0
+    var enemy_effect_observed := false
+    var max_steps := 240
+    while session.engine.battle_state == "active" and max_steps > 0:
+        max_steps -= 1
+        if provider.submitted_requests.size() > request_cursor:
+            var request: Dictionary = provider.submitted_requests[request_cursor]
+            var payload: Dictionary = request["payload"]
+            var candidates: Array = payload.get("candidates", [])
+            _assert_true(not candidates.is_empty(), "远程 AI 每个行动窗口都收到合法候选")
+            provider.queue_result({
+                "success": true,
+                "body": {
+                    "schema_version": 1,
+                    "decision_id": payload["observation"]["decision_id"],
+                    "state_hash": payload["observation"]["state_hash"],
+                    "candidate_id": candidates[0]["candidate_id"],
+                },
+            })
+            _assert_true(
+                provider.complete(str(request["request_id"])),
+                "MockAiProvider 完成敌方远程回答")
+            request_cursor += 1
+            window_count += 1
+            continue
+        if session.engine.round_ended:
+            _assert_true(session.execute({"type": "start_turn"}).success, "远程 AI 战斗进入下一回合")
+            continue
+        var snapshot = session.snapshot()
+        var ai_state := str(snapshot.ai_decision.get("state", ""))
+        if ai_state == "thinking":
+            continue
+        if session.engine.battle_flow.can_act(session.engine.player):
+            if session.engine.player.hand.is_empty():
+                _assert_true(session.execute({"type": "end_turn"}).success, "玩家无牌时结束回合")
+                continue
+            var play_result = session.execute({
+                "type": "play_cards",
+                "card_ids": [session.engine.player.hand[0].id],
+            })
+            _assert_true(play_result.success, "玩家行动与远程敌方提案完成同步结算")
+            var enemy_preview_value = play_result.payload_value("enemy_preview", {})
+            var enemy_preview: Dictionary = enemy_preview_value if enemy_preview_value is Dictionary else {}
+            var enemy_intent_value = enemy_preview.get("intent", {})
+            var enemy_intent: Dictionary = enemy_intent_value if enemy_intent_value is Dictionary else {}
+            enemy_effect_observed = enemy_effect_observed \
+                or int(enemy_intent.get("damage", 0)) > 0 \
+                or int(enemy_intent.get("defense", 0)) > 0
+            action_count += 1
+        else:
+            _assert_true(session.execute({"type": "end_turn"}).success, "玩家无行动时结束回合")
+
+    var final_snapshot = session.snapshot()
+    _assert_true(window_count > 0, "远程 AI 战斗实际建立多个行动窗口")
+    _assert_true(provider.submitted_requests.size() > 0, "MockAiProvider 收到远程 AI 请求")
+    _assert_true(action_count > 0, "远程 AI 战斗至少完成一次玩家同步行动")
+    _assert_true(enemy_effect_observed, "远程 AI 选择产生可观察的敌方伤害或防御")
+    _assert_true(session.engine.battle_state != "active", "远程 AI 战斗在安全步数内到达终态")
+    _assert_true(
+        final_snapshot.player.life == 0 or final_snapshot.enemy.life == 0,
+        "远程 AI 战斗终态至少有一方生命降至 0")
+    print("S2-03b remote AI metrics: enemy=%s windows=%d requests=%d rounds=%d actions=%d state=%s player_life=%d enemy_life=%d" % [
+        enemy_id,
+        window_count,
+        provider.submitted_requests.size(),
+        session.engine.turn_number,
+        action_count,
+        session.engine.battle_state,
+        final_snapshot.player.life,
+        final_snapshot.enemy.life,
+    ])
+    if session.engine.battle_state == "unresolved_draw":
+        print("S2-03b remote AI simultaneous defeat: unresolved_draw")
+    provider.free()
 
 func _test_production_formal_sequences_and_damage() -> void:
     var root = GameCompositionRootScript.new(RuntimeProfileScript.production())

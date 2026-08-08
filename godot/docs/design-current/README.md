@@ -24,7 +24,7 @@
 7. [功法系统框架](./martial-arts/20-gongfa-framework.md)及[功法池目录](./martial-arts/21-gongfa-poison-pool.md)
 8. [内功系统与目录](./martial-arts/30-neigong-framework.md)
 9. [玩家成长与消耗品](./progression/40-progression-overview.md)
-10. [修习与历练经济](./economy/50-training-and-experience.md)及[地图流程](./run/60-map-run-and-health.md)
+10. [修习与历练经济](./economy/50-training-and-experience.md)及[地图流程](./run/60-map-run-and-health.md)、[正式敌人内容](./run/61-enemy-content.md)
 11. [敌方 AI](./ai/70-enemy-ai.md)
 12. [验证与开放问题](./validation/90-rule-calculator.md)
 
