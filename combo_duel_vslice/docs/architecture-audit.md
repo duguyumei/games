@@ -92,7 +92,8 @@ flowchart LR
 - `card_states.json`：统一定义重塑、异状、单槽／多实例容量、标记生命周期、运行时身份修正与触发处理器。
 - `technique_repository.gd`、`inner_skill_repository.gd`、`consumable_repository.gd`、`starter_build_repository.gd`：消费已校验定义并提供领域查询；独立文件读取仅作为兼容入口保留。
 - `starter_build_assembler.gd`、`battle_session_factory.gd`：分别隔离构筑到本局牌组的装配和战斗会话的依赖创建。
-- `reward_bundle.gd`、`node_reward_service.gd`、`rewards/reward_handler_registry.gd`：分别保存版本化待领取奖励、编排生成／发放并按类型注册处理器；目前注册历练处理器，其他奖励类型仍明确拒绝。
+- `reward_bundle.gd`、`node_reward_service.gd`：分别保存版本化待领取奖励并把整包交给一个本局原子事务；服务不按奖励类型或操作 ID 分支。
+- `run_effects/`：战斗外本局效果的 Handler 协议、唯一注册表、事务上下文与完整成长库存工作副本；当前正式注册 `gain_experience` 和平台探针 `heal_life`。旧 `rewards/` 脚本只保留为路径兼容门面，不维护第二套分派。
 - `sequence_book.gd`：精确牌型独立功法序列。
 - `effect_executor.gd`：统一执行与预览汇总的 43 行兼容门面。
 - `effects/technique_effect_context.gd`、`effects/battle_effect_ports.gd`：类型化功法上下文与窄修改端口；正式处理器通过伤害、牌区、状态、流程能力访问战斗，不再从上下文字典取得完整引擎。
@@ -278,7 +279,7 @@ flowchart LR
 - `RunSession`：已经建立第一版；本局门面、状态机、命令、事件和日志边界。
 - `MapNavigationService`：已经建立第一版；负责可达节点、开始节点、完成节点与换层。
 - `NodeDispatcher`：已经建立，继续只返回调度结果。
-- `RewardBundle + NodeRewardService + RewardHandlerRegistry`：已建立第一版，负责基础节点奖励包、领取门禁和一次性发放；新增奖励类型通过处理器注册。节点奖励完成后由本局会话统一结算功行生息，奖励服务本身不复制经济算法。
+- `RewardBundle + NodeRewardService + RunMutationService`：负责基础节点奖励包、领取门禁与整包原子提交；操作由 `RunEffectHandlerRegistry` 统一分派。节点奖励完成后由本局会话统一结算功行生息，奖励服务本身不复制经济算法。
 - `GrowthInventory`：已经建立第一版；负责历练、功法库、消耗品、完整 `RunDeck` 和修习购买记录。
 - `RunDeck`：已经建立第一版；负责完整本局真气实例、复制、永久移出、快照校验、战斗实例化与跨战斗同步。
 - `CardZoneService`：已经建立第一版；统一牌区移动、弃牌生命周期、临时移出、夺取归还、生成与永久移出登记。

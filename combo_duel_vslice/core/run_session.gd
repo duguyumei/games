@@ -23,6 +23,8 @@ const StarterBuildRepositoryScript = preload("res://core/starter_build_repositor
 const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.gd")
 const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
+const RunMutationServiceScript = preload(
+    "res://core/run_effects/run_mutation_service.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
 
@@ -110,7 +112,9 @@ func _init(
         if node_reward_service_override != null
         else NodeRewardServiceScript.new(
             _content_catalog.definition("node_rewards")
-            if _content_catalog.loaded else {}))
+            if _content_catalog.loaded else {},
+            RunMutationServiceScript.new(
+                _content_catalog.run_effect_registry)))
     _practice_service = PracticeServiceScript.new(_content_catalog)
     if not _content_catalog.loaded:
         game_log.record_system(

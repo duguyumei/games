@@ -16,6 +16,10 @@ const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd
 const RunSessionScript = preload("res://core/run_session.gd")
 const AiSettingsServiceScript = preload("res://core/ai/ai_settings_service.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
+const RunEffectHandlerRegistryScript = preload(
+    "res://core/run_effects/run_effect_handler_registry.gd")
+const RunMutationServiceScript = preload(
+    "res://core/run_effects/run_mutation_service.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 var content_catalog: ContentCatalog
@@ -26,6 +30,8 @@ var ai_settings_service: AiSettingsService
 var initialized: bool = false
 var runtime_profile: RuntimeProfile
 var enemy_repository
+var run_effect_registry
+var run_mutation_service
 
 func _init(runtime_profile_override: RuntimeProfile = null) -> void:
     runtime_profile = (
@@ -40,7 +46,10 @@ func _init(runtime_profile_override: RuntimeProfile = null) -> void:
 func initialize() -> bool:
     if initialized:
         return content_catalog.loaded
-    content_catalog = ContentCatalogScript.new(runtime_profile)
+    run_effect_registry = RunEffectHandlerRegistryScript.new()
+    run_mutation_service = RunMutationServiceScript.new(run_effect_registry)
+    content_catalog = ContentCatalogScript.new(
+        runtime_profile, null, run_effect_registry)
     var loaded: bool = content_catalog.load_all()
     game_log = GameLogScript.new()
     enemy_repository = EnemyRepositoryScript.new(content_catalog)
@@ -86,7 +95,8 @@ func create_run_session() -> RunSession:
     var battle_factory := BattleSessionFactoryScript.new(
         game_log, content_catalog, runtime_profile)
     var reward_service := NodeRewardServiceScript.new(
-        content_catalog.definition("node_rewards"))
+        content_catalog.definition("node_rewards"),
+        run_mutation_service)
     var session := RunSessionScript.new(
         run_state,
         node_dispatcher,

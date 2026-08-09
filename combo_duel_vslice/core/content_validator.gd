@@ -10,6 +10,8 @@ extends RefCounted
 const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
 const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
+const RunEffectHandlerRegistryScript = preload(
+    "res://core/run_effects/run_effect_handler_registry.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
@@ -120,13 +122,17 @@ var _inner_skills_by_id: Dictionary = {}
 var _consumables_by_id: Dictionary = {}
 var _effect_specs: EffectSpecValidator
 var _effect_registry
+var _run_effect_registry
 var _status_behavior_ids: Array[String] = []
 
-func _init(effect_registry_override = null) -> void:
+func _init(effect_registry_override = null, run_effect_registry_override = null) -> void:
     _status_behavior_ids = StatusBehaviorRegistryScript.new().behavior_ids()
     _effect_registry = effect_registry_override
     if _effect_registry == null:
         _effect_registry = EffectHandlerRegistryScript.new(RandomNumberGenerator.new())
+    _run_effect_registry = run_effect_registry_override
+    if _run_effect_registry == null:
+        _run_effect_registry = RunEffectHandlerRegistryScript.new()
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {
@@ -146,6 +152,8 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     warnings.clear()
     for message in _effect_registry.validation_errors():
         _error("effects.registry", str(message))
+    for message in _run_effect_registry.registration_errors():
+        _error("run_effects.registry", str(message))
     _contents = contents
     _paths = paths
     _card_ids.clear()
@@ -206,9 +214,7 @@ func _validate_node_rewards(definition: Dictionary) -> void:
                 continue
             if str(entry.get("kind", "")) not in REWARD_KINDS:
                 _error(scope + ".kind", "引用未知奖励类型")
-            if str(entry.get("kind", "")) == "experience" \
-                    and (not _is_integer(entry.get("amount")) or int(entry.get("amount", 0)) < 0):
-                _error(scope + ".amount", "历练数量必须是非负整数")
+            _run_effect_registry.validate_effect(entry, self, scope)
     for spec in [["combat", 3], ["elite", 4], ["boss", 5]]:
         var entries: Array = rewards.get(spec[0], [])
         var experience := 0
@@ -1310,3 +1316,6 @@ func _is_integer(value) -> bool:
 
 func _error(scope: String, message: String) -> void:
     errors.append("%s: %s" % [scope, message])
+
+func report_error(scope: String, message: String) -> void:
+    _error(scope, message)

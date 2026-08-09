@@ -59,6 +59,59 @@ func reset(
 func clear_practice_purchases() -> void:
     practice_purchases.clear()
 
+## 捕获本局效果事务所需的完整可变状态。
+##
+## 这不同于 RunProgressSnapshot 的部分快照：事务副本必须覆盖所有本局库存，
+## 才能保证未来的牌组或装备 Handler 失败时不会留下部分修改。
+func capture_mutation_state() -> Dictionary:
+    return {
+        "experience": experience,
+        "life": life,
+        "max_life": max_life,
+        "consumable_ids": consumable_ids.duplicate(),
+        "learned_technique_ids": learned_technique_ids.duplicate(),
+        "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
+        "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
+        "technique_slot_index": technique_slot_index,
+        "run_deck": run_deck.to_snapshot(),
+        "practice_purchases": practice_purchases.duplicate(true),
+        "hand_technique_progression": hand_technique_progression.duplicate(true),
+        "practice_shop_state": practice_shop_state.duplicate(true),
+    }
+
+func create_mutation_copy():
+    var working := GrowthInventory.new(_content_catalog, false)
+    var errors: Array[String] = working.replace_mutation_state(
+        capture_mutation_state())
+    if not errors.is_empty():
+        push_error("无法建立成长库存事务副本：%s" % "；".join(errors))
+        return null
+    return working
+
+## 用一个已完整验证的事务状态替换真实库存。
+##
+## RunDeck 先在独立实例中恢复并校验；只有成功后才替换所有字段，避免提交阶段
+## 因牌组错误把真实库存写到一半。
+func replace_mutation_state(state: Dictionary) -> Array[String]:
+    var replacement_deck = RunDeckScript.new(_content_catalog)
+    var deck_errors: Array[String] = replacement_deck.restore_snapshot(
+        state["run_deck"])
+    if not deck_errors.is_empty():
+        return deck_errors
+    experience = int(state["experience"])
+    life = int(state["life"])
+    max_life = int(state["max_life"])
+    consumable_ids.assign(state["consumable_ids"])
+    learned_technique_ids.assign(state["learned_technique_ids"])
+    learned_inner_skill_ids.assign(state["learned_inner_skill_ids"])
+    equipped_inner_skill_ids.assign(state["equipped_inner_skill_ids"])
+    technique_slot_index = int(state["technique_slot_index"])
+    run_deck = replacement_deck
+    practice_purchases = state["practice_purchases"].duplicate(true)
+    hand_technique_progression = state["hand_technique_progression"].duplicate(true)
+    practice_shop_state = state["practice_shop_state"].duplicate(true)
+    return []
+
 func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> void:
     hand_technique_progression.clear()
     for hand_id in HAND_IDS:

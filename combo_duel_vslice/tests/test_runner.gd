@@ -53,6 +53,10 @@ const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
 const EnemyRepositoryScript = preload("res://core/enemy_repository.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
+const RunEffectHandlerRegistryScript = preload(
+    "res://core/run_effects/run_effect_handler_registry.gd")
+const RunMutationServiceScript = preload(
+    "res://core/run_effects/run_mutation_service.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const EffectHandlerRegistryScript = preload(
@@ -75,6 +79,37 @@ class TimingProbe:
         calls.append("%s:%s:%d" % [event.timing, label, event.serial])
         return {"success": true, "detail": label}
 
+class RunEffectProbeHandler:
+    extends RefCounted
+
+    var _operation_ids: Array
+    var _fail_on_apply: bool
+
+    func _init(operation_ids_value: Array, fail_on_apply: bool = false) -> void:
+        _operation_ids = operation_ids_value.duplicate()
+        _fail_on_apply = fail_on_apply
+
+    func operation_ids() -> Array:
+        return _operation_ids.duplicate()
+
+    func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+        if not effect.get("amount") is int:
+            validator.report_error(scope + ".amount", "探针 amount 必须是整数")
+
+    func apply(effect: Dictionary, context) -> Dictionary:
+        if _fail_on_apply:
+            return {"success": false, "reason": "探针按约定失败"}
+        var amount := int(effect["amount"])
+        context.growth.experience += amount
+        return {
+            "success": true,
+            "applied": {
+                "op": str(effect["op"]),
+                "kind": "test_probe",
+                "amount": amount,
+            },
+        }
+
 var failures: Array[String] = []
 var assertions: int = 0
 var card_serial: int = 0
@@ -92,6 +127,7 @@ func _initialize() -> void:
     _test_formal_production_technique_behaviors()
     _test_starter_build_assembly_and_composition_root()
     _test_node_reward_service_contract()
+    _test_run_effect_platform_contract()
     _test_qi_instance_state_contract()
     _test_run_deck_contract()
     _test_card_zone_service_contract()
@@ -1020,6 +1056,10 @@ func _test_node_reward_service_contract() -> void:
         {"seed": 2308, "act": 1})
     _assert_equal(combat.to_dict(), combat_again.to_dict(), "相同节点上下文生成确定性奖励包")
     _assert_equal(combat.total("experience"), 3, "普通战斗奖励包包含三点历练")
+    _assert_equal(
+        combat.entries()[0].get("op"),
+        "gain_experience",
+        "节点历练奖励通过明确的本局效果操作执行")
     var elite = service.create_bundle({"id": "5_2", "type": "elite"}, {"seed": 2308, "act": 1})
     var boss = service.create_bundle({"id": "boss", "type": "boss"}, {"seed": 2308, "act": 1})
     _assert_equal(elite.total("experience"), 4, "精英奖励包包含四点历练")
@@ -1030,6 +1070,201 @@ func _test_node_reward_service_contract() -> void:
     var applied: Dictionary = service.apply_bundle(combat, growth)
     _assert_true(applied.get("success", false), "奖励服务可以应用已实现的历练奖励")
     _assert_equal(growth.experience, 3, "奖励服务通过成长库存发放历练")
+    var elite_growth = GrowthInventoryScript.new()
+    _assert_true(
+        service.apply_bundle(elite, elite_growth).get("success", false),
+        "精英奖励包通过同一本局事务执行")
+    _assert_equal(elite_growth.experience, 4, "精英节点实际获得四点历练")
+    var boss_growth = GrowthInventoryScript.new()
+    _assert_true(
+        service.apply_bundle(boss, boss_growth).get("success", false),
+        "Boss奖励包通过同一本局事务执行")
+    _assert_equal(boss_growth.experience, 5, "Boss节点实际获得五点历练")
+
+func _test_run_effect_platform_contract() -> void:
+    var registry = RunEffectHandlerRegistryScript.new()
+    _assert_equal(
+        registry.operation_ids(),
+        ["gain_experience", "heal_life"],
+        "本局效果默认注册表按稳定顺序公开两个正式操作")
+    _assert_true(registry.has_handler("gain_experience"), "历练增加操作已注册")
+    _assert_true(registry.has_handler("heal_life"), "生命回复操作已注册")
+
+    var invalid_id_registry = RunEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        not invalid_id_registry.register_handler(
+            RunEffectProbeHandler.new(["Bad-Operation"])),
+        "非 snake_case 本局效果操作 ID 被拒绝")
+    var empty_id_registry = RunEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        not empty_id_registry.register_handler(RunEffectProbeHandler.new([""])),
+        "空本局效果操作 ID 被拒绝")
+    var duplicate_declaration_registry = RunEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        not duplicate_declaration_registry.register_handler(
+            RunEffectProbeHandler.new(["probe_duplicate", "probe_duplicate"])),
+        "单个 Handler 重复声明同一操作 ID 被拒绝")
+    var duplicate_registration_registry = RunEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        duplicate_registration_registry.register_handler(
+            RunEffectProbeHandler.new(["probe_registered"])),
+        "第一个测试 Handler 可以注册")
+    _assert_true(
+        not duplicate_registration_registry.register_handler(
+            RunEffectProbeHandler.new(["probe_registered"])),
+        "多个 Handler 重复注册同一操作 ID 被拒绝")
+    var invalid_contract_registry = RunEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        not invalid_contract_registry.register_handler(RefCounted.new()),
+        "不符合 RunEffectHandler 契约的对象被拒绝")
+
+    var custom_registry = RunEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        custom_registry.register_handler(
+            RunEffectProbeHandler.new(["probe_experience"])),
+        "测试专用 Handler 只通过注册接入")
+    var custom_growth = GrowthInventoryScript.new()
+    var custom_result: Dictionary = RunMutationServiceScript.new(
+        custom_registry).apply_effects(
+            [{"op": "probe_experience", "amount": 4}], custom_growth)
+    _assert_true(custom_result.get("success", false), "注册后的测试操作可由事务服务执行")
+    _assert_equal(custom_growth.experience, 4, "测试操作无需修改中央服务即可增加历练")
+
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "本局效果平台测试内容目录有效")
+    var unknown_values := _catalog_definitions(catalog)
+    unknown_values["node_rewards"]["node_rewards"]["combat"][0]["op"] = "missing_run_effect"
+    var unknown_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_catalog.load_from_definitions(unknown_values),
+        "未注册本局效果操作在内容加载阶段失败")
+    _assert_true(
+        _array_contains_text(
+            unknown_catalog.errors,
+            "未注册的本局效果操作：missing_run_effect"),
+        "未知本局效果错误包含具名操作 ID")
+    var invalid_gain_values := _catalog_definitions(catalog)
+    invalid_gain_values["node_rewards"]["node_rewards"]["combat"][0].erase("amount")
+    var invalid_gain_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not invalid_gain_catalog.load_from_definitions(invalid_gain_values),
+        "gain_experience 缺少 amount 时内容加载失败")
+    _assert_true(
+        _array_contains_text(
+            invalid_gain_catalog.errors,
+            "gain_experience amount 必须是非负整数"),
+        "历练操作参数错误由 Handler 具名报告")
+
+    var mutation = RunMutationServiceScript.new(registry)
+    var percent_growth = GrowthInventoryScript.new(catalog)
+    percent_growth.life = 70
+    var percent_result: Dictionary = mutation.apply_effects(
+        [{"op": "heal_life", "max_life_percent": 30}], percent_growth)
+    _assert_true(percent_result.get("success", false), "按最大生命百分比回复执行成功")
+    _assert_equal(percent_growth.life, 100, "70/100 按最大生命30%回复到100/100")
+    _assert_equal(
+        percent_result.get("applied", [])[0].get("theoretical_amount"),
+        30,
+        "百分比回复记录理论回复量30")
+    var amount_growth = GrowthInventoryScript.new(catalog)
+    amount_growth.life = 90
+    var amount_result: Dictionary = mutation.apply_effects(
+        [{"op": "heal_life", "amount": 30}], amount_growth)
+    _assert_true(amount_result.get("success", false), "固定生命回复执行成功")
+    _assert_equal(amount_growth.life, 100, "90/100 回复30点不超过上限")
+    _assert_equal(
+        amount_result.get("applied", [])[0].get("actual_amount"),
+        10,
+        "固定回复记录实际回复量10")
+    _assert_true(
+        not mutation.apply_effects([{
+            "op": "heal_life",
+            "amount": 20,
+            "max_life_percent": 30,
+        }], amount_growth).get("success", false),
+        "heal_life 同时提供两种参数被拒绝")
+    _assert_true(
+        not mutation.apply_effects(
+            [{"op": "heal_life"}], amount_growth).get("success", false),
+        "heal_life 未提供回复参数被拒绝")
+    _assert_true(
+        not mutation.apply_effects(
+            [{"op": "gain_experience", "amount": -1}], amount_growth
+        ).get("success", false),
+        "gain_experience 拒绝负数消费历练")
+
+    var rollback_registry = RunEffectHandlerRegistryScript.new()
+    _assert_true(
+        rollback_registry.register_handler(
+            RunEffectProbeHandler.new(["fail_after_gain"], true)),
+        "原子失败探针注册成功")
+    var rollback_growth = GrowthInventoryScript.new(catalog)
+    rollback_growth.experience = 11
+    rollback_growth.life = 70
+    rollback_growth.consumable_ids.append("transaction_probe_consumable")
+    rollback_growth.practice_purchases["transaction_probe_purchase"] = true
+    rollback_growth.practice_shop_state = {"shop_index": 9, "slots": [{"id": "probe"}]}
+    rollback_growth.hand_technique_progression["pair"]["slot_count"] = 3
+    var rollback_before: Dictionary = rollback_growth.capture_mutation_state()
+    var rollback_result: Dictionary = RunMutationServiceScript.new(
+        rollback_registry).apply_effects([
+            {"op": "gain_experience", "amount": 5},
+            {"op": "fail_after_gain", "amount": 1},
+        ], rollback_growth)
+    _assert_true(not rollback_result.get("success", false), "第二个效果失败会拒绝整组事务")
+    _assert_equal(rollback_result.get("failed_effect_index"), 1, "失败结果定位第二个效果")
+    _assert_equal(
+        rollback_result.get("failed_operation_id"),
+        "fail_after_gain",
+        "失败结果报告具名操作 ID")
+    _assert_equal(
+        rollback_growth.capture_mutation_state(),
+        rollback_before,
+        "事务失败后历练、生命、牌组、库存与修习状态全部保持不变")
+
+    var success_growth = GrowthInventoryScript.new(catalog)
+    success_growth.experience = 1
+    success_growth.life = 70
+    var success_result: Dictionary = mutation.apply_effects([
+        {"op": "gain_experience", "amount": 4, "source": "contract_probe"},
+        {"op": "heal_life", "amount": 20},
+    ], success_growth)
+    _assert_true(success_result.get("success", false), "多效果全部成功后提交一次真实状态")
+    _assert_true(success_result.get("changed", false), "成功事务报告状态发生变化")
+    _assert_equal(success_result.get("applied", []).size(), 2, "成功事务按数据顺序返回两个结果")
+    _assert_equal(success_growth.experience, 5, "成功事务一次提交历练结果")
+    _assert_equal(success_growth.life, 90, "成功事务一次提交生命结果")
+
+    var save_session: RunSession = RunSessionScript.new()
+    _assert_true(
+        save_session.execute({"type": "setup_run", "seed": 2401}).success,
+        "本局效果存档探针建立正式本局")
+    save_session.growth.life = 70
+    var save_effect_result: Dictionary = mutation.apply_effects([
+        {"op": "gain_experience", "amount": 9},
+        {"op": "heal_life", "amount": 20},
+    ], save_session.growth)
+    _assert_true(save_effect_result.get("success", false), "存档前本局效果事务执行成功")
+    var restored: Dictionary = RunSaveDataScript.new().capture(
+        save_session).restore_session(save_session._content_catalog)
+    _assert_true(restored.get("success", false), "新框架产生的状态可以存档并读回")
+    _assert_equal(restored["run_session"].growth.experience, 9, "读档保留本局效果增加的历练")
+    _assert_equal(restored["run_session"].growth.life, 90, "读档保留本局效果回复的生命")
+
+    var composition_root = GameCompositionRootScript.new()
+    _assert_true(composition_root.initialize(), "组合根为本局效果平台注册共享依赖")
+    var composed_session: RunSession = composition_root.create_run_session()
+    _assert_true(
+        composed_session._node_reward_service.handler_registry \
+            == composition_root.run_effect_registry,
+        "内容校验与节点奖励执行复用组合根中的同一注册表")
+    var node_reward_source := FileAccess.get_file_as_string(
+        "res://core/node_reward_service.gd")
+    _assert_true(
+        not node_reward_source.contains("match ") \
+            and not node_reward_source.contains("gain_experience") \
+            and not node_reward_source.contains("heal_life"),
+        "NodeRewardService 不按操作 ID 或内容 ID 分支")
 
 func _test_qi_instance_state_contract() -> void:
     var catalog = ContentCatalogScript.new()

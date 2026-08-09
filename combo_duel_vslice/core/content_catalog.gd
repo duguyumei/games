@@ -4,6 +4,8 @@ extends RefCounted
 const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueDefinitionScript = preload("res://core/technique_definition.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
+const RunEffectHandlerRegistryScript = preload(
+    "res://core/run_effects/run_effect_handler_registry.gd")
 
 const CONTENT_ORDER := [
     "base_deck",
@@ -48,14 +50,22 @@ var _definitions: Dictionary = {}
 var _indexes: Dictionary = {}
 var runtime_profile
 var effect_registry
+var run_effect_registry
 var enemy_repository_ref: WeakRef = null
 
-func _init(runtime_profile_override = null, effect_registry_override = null) -> void:
+func _init(
+        runtime_profile_override = null,
+        effect_registry_override = null,
+        run_effect_registry_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
         else RuntimeProfileScript.current())
     effect_registry = effect_registry_override
+    run_effect_registry = (
+        run_effect_registry_override
+        if run_effect_registry_override != null
+        else RunEffectHandlerRegistryScript.new())
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()
@@ -113,7 +123,8 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
     if not errors.is_empty():
         _indexes.clear()
         return false
-    var validator = ContentValidatorScript.new(effect_registry)
+    var validator = ContentValidatorScript.new(
+        effect_registry, run_effect_registry)
     var validation: Dictionary = validator.validate(_definitions, paths)
     errors.assign(validation.get("errors", []))
     warnings.assign(validation.get("warnings", []))
