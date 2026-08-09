@@ -5,6 +5,12 @@ const GainExperienceHandlerScript = preload(
     "res://core/run_effects/gain_experience_run_effect_handler.gd")
 const HealLifeHandlerScript = preload(
     "res://core/run_effects/heal_life_run_effect_handler.gd")
+const RunCardCollectionHandlerScript = preload(
+    "res://core/run_effects/run_card_collection_effect_handler.gd")
+const RunCardTransformHandlerScript = preload(
+    "res://core/run_effects/run_card_transform_effect_handler.gd")
+const RunCardReshapeHandlerScript = preload(
+    "res://core/run_effects/run_card_reshape_effect_handler.gd")
 
 var _handlers_by_operation: Dictionary = {}
 var _registration_errors: Array[String] = []
@@ -13,6 +19,9 @@ var _operation_id_pattern := RegEx.new()
 func _init(register_defaults: bool = true) -> void:
     _operation_id_pattern.compile("^[a-z][a-z0-9_]*$")
     if register_defaults:
+        register_handler(RunCardCollectionHandlerScript.new())
+        register_handler(RunCardReshapeHandlerScript.new())
+        register_handler(RunCardTransformHandlerScript.new())
         register_handler(GainExperienceHandlerScript.new())
         register_handler(HealLifeHandlerScript.new())
 

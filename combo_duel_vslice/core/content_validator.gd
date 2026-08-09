@@ -1319,3 +1319,20 @@ func _error(scope: String, message: String) -> void:
 
 func report_error(scope: String, message: String) -> void:
     _error(scope, message)
+
+func has_content_id(content_type: String, content_id: String) -> bool:
+    return not content_definition(content_type, content_id).is_empty()
+
+func content_definition(content_type: String, content_id: String) -> Dictionary:
+    match content_type:
+        "card":
+            return {"id": content_id} if _card_ids.has(content_id) else {}
+        "enhancement":
+            return _enhancements_by_id.get(content_id, {}).duplicate(true)
+        "finish":
+            return _finishes_by_id.get(content_id, {}).duplicate(true)
+        "imprint":
+            return _imprints_by_id.get(content_id, {}).duplicate(true)
+        "other_reshape":
+            return _other_reshapes_by_id.get(content_id, {}).duplicate(true)
+    return {}

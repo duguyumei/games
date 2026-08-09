@@ -82,6 +82,11 @@ func card_data(instance_id: String) -> Dictionary:
 func cards_snapshot() -> Array:
     return _cards.duplicate(true)
 
+func content_definition(content_type: String, content_id: String) -> Dictionary:
+    if _content_catalog == null:
+        return {}
+    return _content_catalog.get_by_id(content_type, content_id)
+
 func create_battle_cards() -> Array:
     var result: Array = []
     for values in _cards:
@@ -104,22 +109,140 @@ func add_card(card) -> Dictionary:
     _cards.append(values)
     return {"success": true, "instance_id": str(card.id)}
 
+func add_card_by_definition(definition_id: String) -> Dictionary:
+    var definition := content_definition("card", definition_id)
+    if definition.is_empty():
+        return {"success": false, "reason": "未知基础真气定义：%s" % definition_id}
+    var serial_before := _id_factory.next_serial()
+    var instance_id := _next_unique_instance_id(definition_id)
+    var card = DeckFactoryScript.create_card_instance(definition, instance_id)
+    var values: Dictionary = QiCardInstanceDataScript.capture(card)
+    var errors := _validate(values)
+    if not errors.is_empty():
+        _id_factory.reset(serial_before)
+        return {"success": false, "reason": "；".join(errors)}
+    _cards.append(values)
+    return {
+        "success": true,
+        "instance_id": instance_id,
+        "definition_id": definition_id,
+    }
+
 func copy_card(instance_id: String, count: int = 1) -> Dictionary:
+    if count <= 0:
+        return {"success": false, "reason": "复制数量必须是正整数"}
     var source := card_data(instance_id)
     if source.is_empty():
         return {"success": false, "reason": "找不到要复制的真气"}
+    var serial_before := _id_factory.next_serial()
     var copied_ids: Array[String] = []
-    for _index in range(maxi(0, count)):
+    var candidates: Array[Dictionary] = []
+    var pending_ids: Dictionary = {}
+    for _index in range(count):
         var copy_values := source.duplicate(true)
-        var copy_id := _id_factory.next_id(str(source.get("definition_id", "card")))
-        while has_card(copy_id):
-            copy_id = _id_factory.next_id(str(source.get("definition_id", "card")))
+        var copy_id := _next_unique_instance_id(
+            str(source.get("definition_id", "card")), pending_ids)
         copy_values["instance_id"] = copy_id
         copy_values["original_owner_id"] = ""
         copy_values["temporary_card"] = false
-        _cards.append(copy_values)
+        var errors := _validate(copy_values)
+        if not errors.is_empty():
+            _id_factory.reset(serial_before)
+            return {"success": false, "reason": "；".join(errors)}
+        candidates.append(copy_values)
+        pending_ids[copy_id] = true
         copied_ids.append(copy_id)
+    _cards.append_array(candidates)
     return {"success": true, "instance_ids": copied_ids}
+
+func replace_card_definition(
+        instance_id: String,
+        definition_id: String,
+        preserve_reshapes: bool = true) -> Dictionary:
+    var index := _find_index(instance_id)
+    if index < 0:
+        return {"success": false, "reason": "找不到要转换的真气：%s" % instance_id}
+    var definition := content_definition("card", definition_id)
+    if definition.is_empty():
+        return {"success": false, "reason": "未知基础真气定义：%s" % definition_id}
+    var before: Dictionary = _cards[index].duplicate(true)
+    var card = DeckFactoryScript.create_card_instance(definition, instance_id)
+    if preserve_reshapes:
+        var reshapes: Dictionary = before.get("reshapes", {})
+        card.reshape_enhancement = str(reshapes.get("enhancement", ""))
+        card.reshape_finish = str(reshapes.get("finish", ""))
+        card.reshape_imprint = str(reshapes.get("imprint", ""))
+        card.reshape_others = reshapes.get("others", {}).duplicate(true)
+    var after: Dictionary = QiCardInstanceDataScript.capture(card)
+    var errors := _validate(after)
+    if not errors.is_empty():
+        return {"success": false, "reason": "；".join(errors)}
+    _cards[index] = after
+    return {"success": true, "before": before, "after": after.duplicate(true)}
+
+func replace_card_state_from_source(
+        source_instance_id: String,
+        target_instance_id: String) -> Dictionary:
+    var source := card_data(source_instance_id)
+    if source.is_empty():
+        return {"success": false, "reason": "找不到来源真气：%s" % source_instance_id}
+    var target_index := _find_index(target_instance_id)
+    if target_index < 0:
+        return {"success": false, "reason": "找不到目标真气：%s" % target_instance_id}
+    var before: Dictionary = _cards[target_index].duplicate(true)
+    var after := source.duplicate(true)
+    after["instance_id"] = target_instance_id
+    after["original_owner_id"] = ""
+    after["temporary_card"] = false
+    var errors := _validate(after)
+    if not errors.is_empty():
+        return {"success": false, "reason": "；".join(errors)}
+    _cards[target_index] = after
+    return {"success": true, "before": before, "after": after.duplicate(true)}
+
+func apply_card_reshape(
+        instance_id: String,
+        category: String,
+        reshape_id: String,
+        payload: Dictionary = {}) -> Dictionary:
+    var index := _find_index(instance_id)
+    if index < 0:
+        return {"success": false, "reason": "找不到要重塑的真气：%s" % instance_id}
+    var content_type := _reshape_content_type(category)
+    if content_type == "":
+        return {"success": false, "reason": "未知重塑类别：%s" % category}
+    var definition := content_definition(content_type, reshape_id)
+    if definition.is_empty():
+        var actual_category := _reshape_category_for_id(reshape_id)
+        if actual_category != "":
+            return {
+                "success": false,
+                "reason": "重塑 %s 属于类别 %s，不属于 %s" % [
+                    reshape_id, actual_category, category],
+            }
+        return {
+            "success": false,
+            "reason": "未知%s重塑：%s" % [category, reshape_id],
+        }
+    if definition.has("allowed_carriers") \
+            and not definition.get("allowed_carriers", []).has("card"):
+        return {
+            "success": false,
+            "reason": "重塑 %s 不允许施加给真气" % reshape_id,
+        }
+    var before: Dictionary = _cards[index].duplicate(true)
+    var card = QiCardInstanceDataScript.restore(before)
+    match category:
+        "enhancement": card.set_enhancement(reshape_id)
+        "finish": card.set_finish(reshape_id)
+        "imprint": card.set_imprint(reshape_id)
+        "other": card.set_other_reshape(reshape_id, payload)
+    var after: Dictionary = QiCardInstanceDataScript.capture(card)
+    var errors := _validate(after)
+    if not errors.is_empty():
+        return {"success": false, "reason": "；".join(errors)}
+    _cards[index] = after
+    return {"success": true, "before": before, "after": after.duplicate(true)}
 
 func remove_card(instance_id: String) -> Dictionary:
     var index := _find_index(instance_id)
@@ -211,3 +334,26 @@ func _find_index(instance_id: String) -> int:
         if str(_cards[index].get("instance_id", "")) == instance_id:
             return index
     return -1
+
+func _next_unique_instance_id(
+        definition_id: String,
+        pending_ids: Dictionary = {}) -> String:
+    var instance_id := _id_factory.next_id(definition_id)
+    while has_card(instance_id) or pending_ids.has(instance_id):
+        instance_id = _id_factory.next_id(definition_id)
+    return instance_id
+
+func _reshape_content_type(category: String) -> String:
+    match category:
+        "enhancement": return "enhancement"
+        "finish": return "finish"
+        "imprint": return "imprint"
+        "other": return "other_reshape"
+    return ""
+
+func _reshape_category_for_id(reshape_id: String) -> String:
+    for category in ["enhancement", "finish", "imprint", "other"]:
+        if not content_definition(
+                _reshape_content_type(category), reshape_id).is_empty():
+            return category
+    return ""
