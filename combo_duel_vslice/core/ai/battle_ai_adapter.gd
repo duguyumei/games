@@ -176,7 +176,7 @@ func _enemy_self_state(observation) -> Dictionary:
     result["stacks"] = engine.enemy.stacks.duplicate(true)
     result["equipped_inner_skill_ids"] = engine.enemy.equipped_inner_skill_ids.duplicate()
     result["owned_technique_ids"] = engine.enemy.owned_technique_ids.duplicate()
-    result["insight_multipliers"] = engine.enemy.insight_multipliers.duplicate(true)
+    result["hand_proficiency_fixed"] = engine.enemy.hand_proficiency_fixed.duplicate(true)
     return result
 
 func _player_public_state() -> Dictionary:
@@ -200,7 +200,7 @@ func _side_build(side, sequence_book) -> Dictionary:
         "deck": cards,
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
         "owned_technique_ids": side.owned_technique_ids.duplicate(),
-        "insight_multipliers": side.insight_multipliers.duplicate(true),
+        "hand_proficiency_fixed": side.hand_proficiency_fixed.duplicate(true),
         "sequences": sequence_book.sequences.duplicate(true),
         "sequence_positions": sequence_book.positions.duplicate(true),
     }

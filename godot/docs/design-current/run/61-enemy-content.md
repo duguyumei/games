@@ -17,7 +17,7 @@
 
 - `acts` 为 `[1]`，`node_types` 分别为 `["elite"]` 或 `["boss"]`；
 - `equipped_inner_skill_ids` 为空数组，`technique_slot_index` 为 `0`；
-- 完整列出八种精确牌型的 `insight_multipliers`；
+- 完整列出八种精确牌型的 `hand_proficiency_fixed`；该字段是敌方牌型熟练度固定修正，只进入功法值固定修正，不使用玩家心得语义，也不会令敌人随机获得功法；
 - 功法序列只允许 8 门正式语义完整功法：
   `balance_sleeves_listen_wind`、`double_gu_exchange_breath`、
   `three_ring_ensemble`、`three_ring_chaos_qi`、`seize_qi_return_nest`、
@@ -44,7 +44,7 @@ mountain_5*2 mountain_9*2
 `[three_ring_ensemble]`；顺子 `[five_steps_echo]`；葫芦为空；四条
 `[seize_qi_return_nest]`；五条为空。
 
-心得倍率：高牌 1、一对 1、两对 1、三条 0、顺子 1、葫芦 0、四条 0、五条 0。
+敌方牌型熟练度固定修正：高牌 1、一对 1、两对 1、三条 0、顺子 1、葫芦 0、四条 0、五条 0。
 AI 覆盖：`damage_weight=1.15`、`sequence_progress_weight=1.2`、`overkill_penalty=0.5`。
 
 ### 山灯守关人 `act1_mountain_lantern_warden`
@@ -61,7 +61,7 @@ wind_5*2 wind_9*2 fire_3*2 fire_7*2
 两对 `[balance_sleeves_listen_wind]`；三条 `[three_ring_ensemble]`；顺子为空；
 葫芦 `[three_ring_chaos_qi]`；四条 `[seize_qi_return_nest]`；五条为空。
 
-心得倍率：高牌 0、一对 1、两对 1、三条 1、顺子 0、葫芦 1、四条 0、五条 0。
+敌方牌型熟练度固定修正：高牌 0、一对 1、两对 1、三条 1、顺子 0、葫芦 1、四条 0、五条 0。
 AI 覆盖：`defense_weight=0.95`、`retained_card_weight=0.35`、`danger_life_ratio=0.4`。
 
 ## 3. 第 1 层 Boss
@@ -80,7 +80,7 @@ fire_4*2 fire_6*2 fire_8*2 mountain_5*2 mountain_7*2 mountain_9*2
 `[double_gu_exchange_breath]`；两对 `[balance_sleeves_listen_wind]`；三条
 `[three_ring_ensemble]`；顺子 `[five_steps_echo]`；葫芦 `[three_ring_chaos_qi]`；四条
 `[seize_qi_return_nest]`；五条为空。
-心得倍率为 `2/2/2/1/1/1/1/0`（按高牌、一对、两对、三条、顺子、葫芦、四条、五条）。
+敌方牌型熟练度固定修正为 `2/2/2/1/1/1/1/0`（按高牌、一对、两对、三条、顺子、葫芦、四条、五条）。
 AI 覆盖：`damage_weight=1.25`、`combo_bonus=10.0`、`combo_follow_up_weight=0.45`、
 `overkill_penalty=0.2`。
 
@@ -99,7 +99,7 @@ fire_5*2 fire_7*2 fire_9*3
 `[double_gu_exchange_breath]`；两对 `[balance_sleeves_listen_wind]`；三条
 `[three_ring_ensemble]`；顺子 `[five_steps_echo]`；葫芦 `[three_ring_chaos_qi]`；四条
 `[seize_qi_return_nest]`；五条为空。
-心得倍率为 `1/1/1/1/1/2/1/0`。AI 覆盖：`defense_weight=1.15`、
+敌方牌型熟练度固定修正为 `1/1/1/1/1/2/1/0`。AI 覆盖：`defense_weight=1.15`、
 `danger_life_ratio=0.45`、`retained_card_weight=0.4`、`combo_without_follow_up_penalty=8.0`。
 
 ### 五岳魁首 `act1_five_mountain_lord`
@@ -115,7 +115,7 @@ wind_3*2 wind_6*2 wind_9*2 forest_4*2 forest_7*2 forest_10*2 wind_A*2
 序列为：高牌 `[borrow_fire_guard_heart]`；一对 `[double_gu_exchange_breath]`；两对
 `[balance_sleeves_listen_wind]`；三条 `[three_ring_ensemble]`；顺子 `[five_steps_echo]`；
 葫芦 `[three_ring_chaos_qi]`；四条 `[seize_qi_return_nest]`；五条为空。
-心得倍率为 `1/1/1/2/1/2/2/0`。AI 覆盖：`damage_weight=1.1`、`power_weight=0.08`、
+敌方牌型熟练度固定修正为 `1/1/1/2/1/2/2/0`。AI 覆盖：`damage_weight=1.1`、`power_weight=0.08`、
 `sequence_progress_weight=1.35`、`card_cost=0.35`。
 
 ## 4. Boss 候选与过渡占位

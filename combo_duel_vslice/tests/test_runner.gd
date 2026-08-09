@@ -53,6 +53,7 @@ const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
 const EnemyRepositoryScript = preload("res://core/enemy_repository.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
+const PracticeServiceScript = preload("res://core/practice_service.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
@@ -127,6 +128,7 @@ func _initialize() -> void:
     _test_inner_skill_and_technique_left_to_right()
     _test_consumable_shared_slots_and_generation_limit()
     _test_insight_growth_and_technique_acquisition()
+    _test_formal_practice_shop_and_hand_progression()
     _test_hierophant_bonus_enhancement_and_preview()
     _test_aura_seeded_finish_and_preview()
     _test_battle_consumable_reshape_persists_via_run_deck()
@@ -139,6 +141,7 @@ func _initialize() -> void:
     _test_run_state_node_and_practice_gate()
     _test_run_service_boundaries_and_progress_snapshot()
     _test_run_session_commands_snapshots_events_and_logs()
+    _test_experience_interest_node_settlement()
     _test_boss_chest_flow()
     _test_layered_life_progression_and_battle_persistence()
     _test_run_state_battle_growth_persistence()
@@ -584,6 +587,8 @@ func _test_enemy_pool_content_and_repository() -> void:
         "borrow_fire_guard_heart": true,
     }
     for entry in definition["enemies"]:
+        var proficiency: Dictionary = entry.get("hand_proficiency_fixed", {})
+        _assert_equal(proficiency.size(), 8, "敌人完整声明八种牌型固定熟练度")
         for hand_id in entry.get("sequences", {}):
             for technique_id in entry["sequences"][hand_id]:
                 _assert_true(
@@ -2564,7 +2569,6 @@ func _test_run_deck_contract() -> void:
 
     var progress = RunProgressSnapshotScript.from_dict({
         "consumable_ids": ["aura"],
-        "insight_multipliers": {"high_card": 1},
         "learned_technique_ids": ["long_wind_full_sleeve"],
         "run_deck": run_deck.to_snapshot(),
     })
@@ -3166,17 +3170,29 @@ func _test_insight_growth_and_technique_acquisition() -> void:
     var sequence_before: Array = engine.sequence_book.sequences["high_card"].duplicate()
     var result := engine.use_player_consumable(0, [])
     _assert_true(result["success"], "高牌心得使用成功")
-    _assert_equal(engine.player.insight_multipliers.get("high_card", 0), 1, "心得只增加指定精确牌型累计倍率")
-    _assert_equal(engine.player.insight_multipliers.get("pair", 0), 0, "高牌心得不提高一对")
     var acquired_id := str(result["acquired_technique_id"])
     _assert_true(acquired_id != "" and not owned_before.has(acquired_id), "心得从合格池获得尚未拥有的功法")
     _assert_true(engine.player.owned_technique_ids.has(acquired_id), "所得功法进入本局功法库")
     _assert_equal(engine.sequence_book.sequences["high_card"], sequence_before, "心得所得功法不自动修改当前序列")
     var high_preview := engine.preview([high.id])
-    _assert_equal(high_preview["values"]["technique_multiplier"], 2, "高牌固定倍率与累计心得倍率相加")
-    _assert_equal(high_preview["values"]["technique_value"], 18, "心得立即影响高牌功法值预览")
+    _assert_equal(high_preview["values"]["technique_multiplier"], 1, "心得不改变高牌功法倍率")
+    _assert_equal(high_preview["values"]["technique_value"], 9, "心得不直接改变高牌功法值")
     var pair_preview := engine.preview(_ids(pair))
-    _assert_equal(pair_preview["values"]["technique_multiplier"], 2, "其他精确牌型倍率保持不变")
+    _assert_equal(pair_preview["values"]["technique_multiplier"], 2, "其他精确牌型功法倍率保持不变")
+
+    var exhausted := GrowthInventoryScript.new(engine.content_catalog, false)
+    exhausted.hand_technique_progression["four_kind"] = {
+        "slot_count": 1,
+        "sequence": ["seize_qi_return_nest"],
+    }
+    exhausted.learned_technique_ids = ["seize_qi_return_nest"]
+    var exhausted_result := exhausted.apply_insight_growth(
+        "four_kind", ["seize_qi_return_nest"])
+    _assert_true(exhausted_result["success"], "心得候选耗尽时仍成功完成槽位成长")
+    _assert_equal(exhausted_result["acquired_technique_id"], "", "候选耗尽时不跨池获得功法")
+    _assert_equal(
+        exhausted.hand_progression("four_kind")["slot_count"], 2,
+        "候选耗尽时对应牌型槽位仍增加1")
 
     var consumable_definition: Dictionary = engine.content_catalog.definition("consumables")
     var five_kind_insight_ids: Array[String] = []
@@ -3190,6 +3206,102 @@ func _test_insight_growth_and_technique_acquisition() -> void:
         _assert_true(
             not five_kind_insight_ids.has(str(offer_id)),
             "普通修习随机池不包含五条心得")
+
+func _test_formal_practice_shop_and_hand_progression() -> void:
+    var production_profile = RuntimeProfileScript.production()
+    var catalog = ContentCatalogScript.new(production_profile)
+    _assert_true(catalog.load_all(), "production 内容目录可以装载正式修习配置")
+    var first: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog, null, null, null, null, production_profile)
+    var second: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog, null, null, null, null, production_profile)
+    _assert_true(first.execute({"type": "setup_run", "seed": 21101}).success, "production 本局可以建立")
+    _assert_true(second.execute({"type": "setup_run", "seed": 21101}).success, "相同种子本局可以重复建立")
+    _assert_true(first.snapshot().can_open_practice, "production 模式待选地图可以打开修习")
+    var practice := first.snapshot().practice
+    var same_practice := second.snapshot().practice
+    _assert_equal(practice.get("normal", []).size(), 2, "普通商品栏固定为两个槽位")
+    _assert_equal(practice.get("packs", []).size(), 2, "补充包栏固定为两个槽位")
+    _assert_equal(practice.get("coupons", []).size(), 1, "优惠券栏固定为一个槽位")
+    _assert_equal(practice.get("normal"), same_practice.get("normal"), "相同种子普通商品稳定")
+    _assert_equal(practice.get("packs"), same_practice.get("packs"), "相同种子补充包稳定")
+    _assert_equal(practice.get("coupons"), same_practice.get("coupons"), "相同种子优惠券槽稳定")
+    _assert_true(first.execute({"type": "open_practice"}).success, "production 修习入口命令成功")
+
+    first.growth.experience = 100
+    var purchase := first.execute({
+        "type": "purchase_practice_offer", "group": "normal", "slot_index": 0})
+    _assert_true(purchase.success, "正式普通商品可以购买")
+    _assert_equal(first.snapshot().practice.get("normal", [])[0], {}, "购买后普通槽位保持为空")
+    var packs_before: Array = first.snapshot().practice.get("packs", []).duplicate(true)
+    var coupons_before: Array = first.snapshot().practice.get("coupons", []).duplicate(true)
+    var meditation_costs: Array[int] = []
+    for _index in range(3):
+        var meditation := first.execute({"type": "meditate"})
+        _assert_true(meditation.success, "历练足够时冥想成功")
+        meditation_costs.append(int(meditation.payload_value("cost", 0)))
+    _assert_equal(meditation_costs, [5, 6, 7], "同一商店冥想费用依次为5、6、7")
+    _assert_equal(first.snapshot().practice.get("normal", [])[0], {}, "冥想不补回已购买普通槽位")
+    _assert_equal(first.snapshot().practice.get("packs", []), packs_before, "冥想不刷新补充包")
+    _assert_equal(first.snapshot().practice.get("coupons", []), coupons_before, "冥想不刷新优惠券")
+    first.growth.experience = 0
+    var practice_before_reject := first.snapshot().practice.duplicate(true)
+    var rejected := first.execute({"type": "meditate"})
+    _assert_true(not rejected.success, "历练不足时冥想被拒绝")
+    _assert_equal(first.snapshot().practice, practice_before_reject, "拒绝冥想不改变商店状态或随机序列")
+
+    var high_initial: Dictionary = first.growth.hand_progression("high_card")
+    _assert_equal(high_initial.get("slot_count"), 1, "高牌初始功法槽位为1")
+    _assert_equal(high_initial.get("sequence", []).size(), 1, "高牌初始 active sequence 只有一门")
+    var five_initial: Dictionary = first.growth.hand_progression("five_kind")
+    _assert_equal(five_initial.get("slot_count"), 1, "五条初始功法槽位为1")
+    _assert_equal(five_initial.get("sequence", []), [], "五条初始序列允许为空")
+    var membership: Dictionary = catalog.definition("techniques").get("pool_membership", {})
+    _assert_equal(membership.get("four_kind"), ["four_five"], "四条读取四条五条共用功法池")
+    _assert_equal(membership.get("five_kind"), ["four_five"], "五条读取四条五条共用功法池")
+    var four_before: Dictionary = first.growth.hand_progression("four_kind")
+    var four_result: Dictionary = first.growth.apply_insight_growth(
+        "four_kind", ["seize_qi_return_nest"])
+    _assert_true(four_result.success, "四条心得成长成功")
+    _assert_equal(four_result.acquired_technique_id, "", "四条候选耗尽时不跨池改抽")
+    _assert_equal(first.growth.hand_progression("four_kind").slot_count, int(four_before.slot_count) + 1, "四条心得只增加四条槽位")
+    var five_result: Dictionary = first.growth.apply_insight_growth(
+        "five_kind", ["seize_qi_return_nest"])
+    _assert_true(five_result.success, "五条心得成长成功")
+    _assert_equal(five_result.acquired_technique_id, "seize_qi_return_nest", "五条从四条五条池获得正式功法")
+    _assert_equal(first.growth.hand_progression("five_kind").slot_count, 2, "五条心得增加五条槽位")
+    _assert_equal(first.growth.hand_progression("four_kind").slot_count, 2, "五条成长不改变四条槽位")
+
+    var direct_growth = GrowthInventoryScript.new(catalog, false)
+    direct_growth.experience = 3
+    var direct_service := PracticeServiceScript.new(catalog)
+    direct_service.configure({
+        "normal_slots": 1,
+        "pack_slots": 0,
+        "coupon_slots": 0,
+        "normal_candidates": [{
+            "id": "stagnant_gu_conceal_breath", "kind": "technique", "price": 3}],
+        "pack_candidates": [],
+        "coupon_candidates": [],
+    })
+    var direct_sequence: Array = direct_growth.hand_progression("high_card").sequence.duplicate()
+    direct_service.start_new_shop(direct_growth, 21102, 1, 1)
+    var direct_purchase := direct_service.purchase(direct_growth, "normal", 0, true)
+    _assert_true(direct_purchase.success, "直接购买正式功法成功")
+    _assert_true(direct_growth.learned_technique_ids.has("stagnant_gu_conceal_breath"), "直接购买只加入本局功法库")
+    _assert_equal(direct_growth.hand_progression("high_card").sequence, direct_sequence, "直接购买不自动修改牌型序列")
+
+    var save_data = RunSaveDataScript.new().capture(first)
+    var restored: Dictionary = save_data.restore_session(catalog)
+    _assert_true(restored.success, "修习商店和牌型成长可以存档读档")
+    _assert_equal(
+        restored.run_session.growth.practice_shop_state,
+        first.growth.practice_shop_state,
+        "读档保留当前商店槽位、空位和冥想费用")
+    _assert_equal(
+        restored.run_session.growth.hand_technique_progression,
+        first.growth.hand_technique_progression,
+        "读档保留八种牌型槽位与功法序列")
 
 func _test_hierophant_bonus_enhancement_and_preview() -> void:
     var pair := [_card("7", "wind"), _card("7", "forest")]
@@ -3256,7 +3368,6 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     run_deck.reset_standard("consumable-reshape")
     var progress = RunProgressSnapshotScript.from_dict({
         "consumable_ids": ["aura"],
-        "insight_multipliers": {},
         "learned_technique_ids": [],
         "run_deck": run_deck.to_snapshot(),
     })
@@ -3570,14 +3681,19 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     manual_deck.sync_from_battle_cards(manual_cards)
     var manual_progress = RunProgressSnapshotScript.from_dict({
         "consumable_ids": ["aura"],
-        "insight_multipliers": {"high_card": 2},
+        "hand_technique_progression": {
+            "high_card": {"slot_count": 2, "sequence": []},
+        },
         "learned_technique_ids": ["long_wind_full_sleeve"],
         "run_deck": manual_deck.to_snapshot(),
     })
     growth.life = 41
     growth.apply_progress_snapshot(manual_progress)
     _assert_equal(growth.consumable_ids, ["aura"], "成长库存可以从进度快照导入消耗品")
-    _assert_equal(growth.insight_multipliers["high_card"], 2, "成长库存可以从进度快照导入心得")
+    _assert_equal(
+        growth.hand_progression("high_card")["slot_count"],
+        2,
+        "成长库存可以从进度快照导入牌型功法槽位")
     _assert_equal(growth.life, 41, "局部战斗进度不清空未携带的当前生命")
     _assert_equal(growth.run_deck.card_data("wind_8")["reshapes"]["finish"], "foil", "成长库存可以从进度快照导入完整本局牌组")
     _assert_equal(
@@ -3669,10 +3785,94 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     var boss_bundle_id := str(boss_session.snapshot().reward["bundle"]["id"])
     _assert_true(boss_session.execute({"type": "claim_reward", "bundle_id": boss_bundle_id}).success, "领取Boss奖励后推进流程")
     _assert_equal(boss_session.snapshot().phase, "boss_chest", "领取后本局快照公开 Boss 宝箱阶段")
-    _assert_equal(boss_session.snapshot().experience, 5, "Boss基础历练在领取后到账")
+    _assert_equal(boss_session.snapshot().experience, 6, "Boss基础历练后按当前历练计算功行1")
     _assert_true(boss_session.execute({"type": "complete_boss_chest"}).success, "Boss 宝箱流程通过本局命令完成")
     _assert_equal(boss_session.snapshot().act, 2, "Boss 宝箱命令推进到下一层")
     _assert_equal(boss_session.snapshot().run_log.size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
+
+func _test_experience_interest_node_settlement() -> void:
+    var combat := _interest_test_session("combat", 0)
+    var combat_bundle := _claim_interest_test_node(combat)
+    _assert_equal(combat.growth.experience, 3, "当前历练0的普通战斗最终为3，功行生息为0")
+    _assert_equal(combat_bundle.payload_value("experience_interest", {}).get("amount"), 0, "普通战斗功行生息0")
+
+    var rest := _interest_test_session("rest", 7)
+    var rest_bundle := _claim_interest_test_node(rest)
+    _assert_equal(rest.growth.experience, 8, "当前历练7的休息节点功行生息1")
+    _assert_equal(rest_bundle.payload_value("experience_interest", {}).get("amount"), 1, "休息节点功行生息1")
+
+    var event := _interest_test_session("event", 10)
+    var event_bundle := _claim_interest_test_node(event)
+    _assert_equal(event.growth.experience, 12, "当前历练10的事件节点功行生息2")
+    _assert_equal(event_bundle.payload_value("experience_interest", {}).get("amount"), 2, "事件节点功行生息2")
+
+    var treasure := _interest_test_session("treasure", 7)
+    var treasure_bundle := _claim_interest_test_node(treasure)
+    _assert_equal(treasure.growth.experience, 8, "宝箱节点也触发一次功行生息")
+    _assert_equal(treasure_bundle.payload_value("experience_interest", {}).get("amount"), 1, "宝箱节点功行生息1")
+
+    var boss := _interest_test_session("boss", 25)
+    var boss_bundle := _claim_interest_test_node(boss)
+    _assert_equal(boss.growth.experience, 35, "Boss基础奖励后当前历练30，功行生息5")
+    _assert_equal(boss_bundle.payload_value("experience_interest", {}).get("amount"), 5, "Boss功行生息达到单次上限5")
+
+    var before_duplicate: int = combat.growth.experience
+    _assert_true(
+        not combat.execute({"type": "claim_reward", "bundle_id": ""}).success,
+        "同一节点重复领取被拒绝")
+    _assert_equal(combat.growth.experience, before_duplicate, "重复领取不重复增加历练或功行")
+
+    var hidden_chest := RunSessionScript.new()
+    _assert_true(
+        hidden_chest.execute({"type": "setup_run", "seed": 20606}).success,
+        "Boss隐藏宝箱功行测试可以建立本局")
+    hidden_chest.growth.experience = 10
+    hidden_chest.navigation.phase = "boss_chest"
+    var chest_result := hidden_chest.execute({"type": "complete_boss_chest"})
+    _assert_true(chest_result.success, "Boss隐藏宝箱完成并触发功行")
+    _assert_equal(hidden_chest.growth.experience, 12, "Boss隐藏宝箱当前历练10时功行生息2")
+    _assert_equal(chest_result.payload_value("experience_interest", {}).get("amount"), 2, "Boss隐藏宝箱功行生息2")
+    _assert_true(
+        not hidden_chest.execute({"type": "complete_boss_chest"}).success,
+        "同一Boss隐藏宝箱重复提交被拒绝")
+    _assert_equal(hidden_chest.growth.experience, 12, "重复提交Boss隐藏宝箱不重复触发功行")
+
+    var state := RunStateScript.new()
+    state.setup(20607)
+    state.growth.experience = 7
+    state.graph = {"nodes": [{"id": "compat-rest", "type": "rest"}], "edges": []}
+    state.current_node_id = "compat-rest"
+    state.phase = "node_in_progress"
+    var compatibility_result := state.complete_current_node()
+    _assert_true(compatibility_result.get("success", false), "RunState兼容门面复用节点功行规则")
+    _assert_equal(state.experience, 8, "RunState兼容门面对休息节点计算功行1")
+
+    var save_data = RunSaveDataScript.new().capture(rest)
+    var restored: Dictionary = save_data.restore_session()
+    _assert_true(restored.get("success", false), "包含功行生息后的节点状态可以存档读档")
+    _assert_equal(restored["run_session"].growth.experience, 8, "存档读档保留功行生息后的历练")
+
+func _interest_test_session(node_type: String, starting_experience: int) -> RunSession:
+    var session: RunSession = RunSessionScript.new()
+    session.execute({"type": "setup_run", "seed": 20600 + starting_experience})
+    session.navigation.graph = {
+        "nodes": [{"id": "interest-node", "type": node_type}],
+        "edges": [],
+        "boss_variant": 0,
+    }
+    session.navigation.current_node_id = "interest-node"
+    session.navigation.phase = "node_in_progress"
+    session.growth.experience = starting_experience
+    return session
+
+func _claim_interest_test_node(session: RunSession) -> CommandResult:
+    _assert_true(
+        session.execute({"type": "complete_node"}).success,
+        "功行测试节点建立奖励包")
+    var bundle_id := str(session.snapshot().reward.get("bundle", {}).get("id", ""))
+    var result := session.execute({"type": "claim_reward", "bundle_id": bundle_id})
+    _assert_true(result.success, "功行测试节点奖励领取成功")
+    return result
 
 func _test_boss_chest_flow() -> void:
     var state = RunStateScript.new()
@@ -3796,7 +3996,10 @@ func _test_run_state_battle_growth_persistence() -> void:
     var state = RunStateScript.new()
     state.setup(420)
     state.consumable_ids.append("aura")
-    state.insight_multipliers = {"high_card": 2}
+    state.hand_technique_progression["high_card"] = {
+        "slot_count": 2,
+        "sequence": [],
+    }
     var run_cards: Array = state.run_deck.create_battle_cards()
     for card in run_cards:
         if card.id == "wind_8":
@@ -3814,7 +4017,10 @@ func _test_run_state_battle_growth_persistence() -> void:
     _assert_true(modified != null, "本局牌组改造能应用到下一场战斗")
     _assert_equal(modified.reshape_enhancement, "bonus", "跨战斗保留真气强化")
     _assert_equal(modified.reshape_finish, "foil", "跨战斗保留真气品相")
-    _assert_equal(engine.player.insight_multipliers.get("high_card", 0), 2, "跨战斗保留精确牌型心得倍率")
+    _assert_equal(
+        engine.player.hand_technique_progression.get("high_card", {}).get("slot_count", 0),
+        2,
+        "跨战斗保留高牌功法槽位")
     _assert_equal(engine.player.consumable_ids, ["aura"], "跨战斗保留共享消耗品")
     modified.set_finish("polychrome")
     engine.player.consume_at(0)

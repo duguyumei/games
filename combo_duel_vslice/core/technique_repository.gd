@@ -69,6 +69,16 @@ func formal_technique_ids() -> Array[String]:
     result.sort()
     return result
 
+func formal_technique_ids_for_hand(hand_id: String, excluded_ids: Array = []) -> Array[String]:
+    var result: Array[String] = []
+    for technique_id in formal_technique_ids():
+        if excluded_ids.has(technique_id):
+            continue
+        var definition = get_definition(technique_id)
+        if definition != null and is_allowed_for_hand(definition, hand_id):
+            result.append(technique_id)
+    return result
+
 func _load_resource_entities() -> void:
     var directory := DirAccess.open(RESOURCE_DIR)
     if directory == null:

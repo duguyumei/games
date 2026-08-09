@@ -22,6 +22,7 @@ const CONTENT_KEYS := [
     "techniques",
     "inner_skills",
     "consumables",
+    "practice_shop",
     "node_rewards",
     "act_progression",
     "enemies",
@@ -171,6 +172,7 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _validate_techniques(_contents["techniques"])
     _validate_inner_skills(_contents["inner_skills"])
     _validate_consumables(_contents["consumables"])
+    _validate_practice_shop(_contents["practice_shop"])
     _validate_node_rewards(_contents["node_rewards"])
     _validate_act_progression(_contents["act_progression"])
     _validate_enemies(_contents["enemies"])
@@ -315,7 +317,9 @@ func _validate_enemies(definition: Dictionary) -> void:
         if not _is_integer(slot_index) or int(slot_index) < 0 \
                 or int(slot_index) > slot_limit:
             _error(entry_scope + ".technique_slot_index", "必须位于已装备内功之间")
-        _validate_enemy_insights(entry.get("insight_multipliers"), entry_scope + ".insight_multipliers")
+        _validate_enemy_insights(
+            entry.get("hand_proficiency_fixed"),
+            entry_scope + ".hand_proficiency_fixed")
         _validate_enemy_sequences(entry.get("sequences"), entry_scope + ".sequences")
         if entry.has("ai"):
             if not entry["ai"] is Dictionary:
@@ -356,7 +360,7 @@ func _validate_enemy_insights(values, scope: String) -> void:
         if not values.has(hand_id):
             _error(scope, "缺少精确牌型 %s" % hand_id)
         elif not _is_integer(values[hand_id]) or int(values[hand_id]) < 0:
-            _error(scope + ".%s" % hand_id, "心得倍率必须是非负整数")
+            _error(scope + ".%s" % hand_id, "敌方固定熟练度必须是非负整数")
     for key in values:
         if not HAND_IDS.has(str(key)):
             _error(scope, "包含未知精确牌型 %s" % str(key))
@@ -920,6 +924,46 @@ func _validate_consumables(definition: Dictionary) -> void:
             elif seen_offers.has(consumable_id):
                 _error(scope, "重复引用消耗品 %s" % consumable_id)
             seen_offers[consumable_id] = true
+
+func _validate_practice_shop(definition: Dictionary) -> void:
+    for field in ["normal_slots", "pack_slots", "coupon_slots"]:
+        if not _is_integer(definition.get(field)) or int(definition.get(field, 0)) < 0:
+            _error("practice_shop.%s" % field, "必须是非负整数")
+    for group in ["normal_candidates", "pack_candidates", "coupon_candidates"]:
+        var values = definition.get(group)
+        if not values is Array:
+            _error("practice_shop.%s" % group, "必须是数组")
+            continue
+        var seen: Dictionary = {}
+        for index in range(values.size()):
+            var value = values[index]
+            var scope := "practice_shop.%s[%d]" % [group, index]
+            if not value is Dictionary:
+                _error(scope, "必须是对象")
+                continue
+            var content_id := str(value.get("id", ""))
+            if content_id == "" or seen.has(content_id):
+                _error(scope + ".id", "ID 不能为空且不得重复")
+            seen[content_id] = true
+            var kind := str(value.get("kind", ""))
+            if kind == "technique":
+                if not _techniques_by_id.has(content_id):
+                    _error(scope, "引用未知功法 %s" % content_id)
+                elif str(_contents["techniques"].get("integration_statuses", {}).get(content_id, "")) != FORMAL_TECHNIQUE_STATUS:
+                    _error(scope, "功法 %s 不是 formal_complete" % content_id)
+            elif kind == "consumable":
+                if not _consumables_by_id.has(content_id):
+                    _error(scope, "引用未知消耗品 %s" % content_id)
+            elif kind == "insight_pack":
+                var candidate_ids = value.get("candidate_ids", [])
+                if not candidate_ids is Array or candidate_ids.is_empty():
+                    _error(scope + ".candidate_ids", "心得包必须有候选内容")
+                else:
+                    for candidate_id_value in candidate_ids:
+                        if not _consumables_by_id.has(str(candidate_id_value)):
+                            _error(scope + ".candidate_ids", "引用未知消耗品 %s" % str(candidate_id_value))
+            elif kind != "coupon":
+                _error(scope + ".kind", "未知修习商品类型 %s" % kind)
 
 func _validate_sequences(definition: Dictionary, scope: String) -> void:
     var membership: Dictionary = _contents.get("techniques", {}).get("pool_membership", {})

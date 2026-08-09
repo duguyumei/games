@@ -168,6 +168,9 @@ func _build_interface() -> void:
     practice_overlay = PracticeOverlayScene.instantiate()
     practice_overlay.close_requested.connect(_close_practice)
     practice_overlay.purchase_requested.connect(_buy_consumable)
+    practice_overlay.purchase_offer_requested.connect(_buy_practice_offer)
+    practice_overlay.pack_selection_requested.connect(_confirm_pack_selection)
+    practice_overlay.meditate_requested.connect(_meditate)
     add_child(practice_overlay)
     node_overlay = PlaceholderPageScene.instantiate()
     node_overlay.completed.connect(_complete_noncombat_node)
@@ -285,7 +288,7 @@ func _refresh() -> void:
         int(growth.get("life", 0)),
         int(growth.get("max_life", 0))]
     practice_button.text = "♨\n修 习\n历练 %d" % experience
-    practice_button.visible = bool(current_run.get("debug_menu_enabled", false))
+    practice_button.visible = true
     practice_button.disabled = not bool(current_run.get("can_open_practice", false))
     practice_button.tooltip_text = (
         "打开修习页面" if bool(current_run.get("can_open_practice", false))
@@ -385,11 +388,17 @@ func _claim_reward(bundle_id: String = "") -> void:
     match result.phase:
         "boss_chest":
             boss_chest_overlay.visible = true
-            _show_toast("Boss 奖励已领取 · 进入第 17 层 Boss 宝箱")
+            _show_toast(_interest_toast(
+                "Boss 奖励已领取 · 进入第 17 层 Boss 宝箱",
+                result.payload_value("experience_interest", {})))
         "run_complete":
-            _show_toast("节点奖励已领取 · 本局完成")
+            _show_toast(_interest_toast(
+                "节点奖励已领取 · 本局完成",
+                result.payload_value("experience_interest", {})))
         _:
-            _show_toast("节点奖励已领取 · 当前历练 %d" % int(result.payload_value("experience", 0)))
+            _show_toast(_interest_toast(
+                "节点奖励已领取 · 当前历练 %d" % int(result.payload_value("experience", 0)),
+                result.payload_value("experience_interest", {})))
 
 func _complete_boss_chest() -> void:
     var result := run_session.execute({"type": "complete_boss_chest"})
@@ -397,7 +406,12 @@ func _complete_boss_chest() -> void:
         _show_toast(result.reason_or("无法完成 Boss 宝箱"))
         return
     boss_chest_overlay.visible = false
-    _show_toast("Boss 宝箱流程完成 · 进入第 %d 层地图" % int(result.payload_value("act", 1)))
+    _show_toast(_interest_toast(
+        "Boss 宝箱流程完成 · 进入第 %d 层地图" % int(result.payload_value("act", 1)),
+        result.payload_value("experience_interest", {})))
+
+func _interest_toast(message: String, interest: Dictionary) -> String:
+    return "%s · 功行生息 +%d 历练" % [message, int(interest.get("amount", 0))]
 
 func _open_practice() -> void:
     var result := run_session.execute({"type": "open_practice"})
@@ -420,6 +434,57 @@ func _buy_consumable(consumable_id: String) -> void:
         _show_toast("修习完成 · %s进入共享消耗品栏" % result.payload_value("definition", {}).get("name", consumable_id))
     else:
         _show_toast(result.reason_or("无法购买"))
+    _refresh()
+
+func _buy_practice_offer(group: String, slot_index: int) -> void:
+    if group == "packs":
+        var preview := run_session.execute({
+            "type": "open_practice_pack",
+            "group": group,
+            "slot_index": slot_index,
+            "selected_ids": [],
+        })
+        var offered: Array = preview.payload_value("preview", []) if preview.success else []
+        if preview.success and not offered.is_empty():
+            practice_overlay.present_pack_choices(
+                group,
+                slot_index,
+                offered,
+                int(preview.payload_value("choose_count", 1)))
+        else:
+            _show_toast(preview.reason_or("无法开启补充包"))
+        _refresh()
+        return
+    var result := run_session.execute({
+        "type": "purchase_practice_offer",
+        "group": group,
+        "slot_index": slot_index,
+    })
+    if result.success:
+        _show_toast("修习完成 · 历练 -%d" % int(result.payload_value("price", 0)))
+    else:
+        _show_toast(result.reason_or("无法购买"))
+    _refresh()
+
+func _confirm_pack_selection(group: String, slot_index: int, selected_ids: Array) -> void:
+    var opened := run_session.execute({
+        "type": "open_practice_pack",
+        "group": group,
+        "slot_index": slot_index,
+        "selected_ids": selected_ids,
+    })
+    if opened.success:
+        _show_toast("补充包已开启 · 获得 %s" % "、".join(selected_ids))
+    else:
+        _show_toast(opened.reason_or("无法开启补充包"))
+    _refresh()
+
+func _meditate() -> void:
+    var result := run_session.execute({"type": "meditate"})
+    if result.success:
+        _show_toast("冥想完成 · 历练 -%d" % int(result.payload_value("cost", 0)))
+    else:
+        _show_toast(result.reason_or("无法冥想"))
     _refresh()
 
 func _reset_run() -> void:

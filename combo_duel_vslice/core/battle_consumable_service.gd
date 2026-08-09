@@ -78,14 +78,17 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
         match op:
             "gain_insight":
                 var hand_id: String = effect.get("hand", "")
-                var amount: int = int(effect.get("multiplier", 0))
-                var total: int = player.add_insight(hand_id, amount)
-                details.append("%s心得倍率 +%d（累计 +%d）" % [hand_id, amount, total])
-                acquired_technique_id = _learn_random_technique(effect.get("pools", []))
+                var candidates := _formal_candidates_for_hand(hand_id)
+                var insight_result: Dictionary = player.apply_insight_growth(
+                    hand_id, candidates, rng)
+                if not insight_result.get("success", false):
+                    return insight_result
+                details.append("%s功法槽位 +1" % hand_id)
+                acquired_technique_id = str(insight_result.get("acquired_technique_id", ""))
                 if acquired_technique_id != "":
                     details.append("获得功法：%s" % _technique_name(acquired_technique_id))
                 else:
-                    details.append("合格池暂无未获得功法")
+                    details.append("合格池暂无可抽功法，保留新增槽位")
             "apply_enhancement":
                 var enhancement_id: String = effect.get("enhancement", "")
                 for card in cards:
@@ -113,19 +116,8 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
         "detail": "；".join(details),
     }
 
-func _learn_random_technique(pools: Array) -> String:
-    var candidates: Array[String] = []
-    for technique_id_value in technique_repository.techniques.keys():
-        var technique_id: String = str(technique_id_value)
-        var technique: Dictionary = technique_repository.get_technique(technique_id)
-        if pools.has(technique.get("pool", "")) and not player.owned_technique_ids.has(technique_id):
-            candidates.append(technique_id)
-    candidates.sort()
-    if candidates.is_empty():
-        return ""
-    var chosen: String = candidates[rng.randi_range(0, candidates.size() - 1)]
-    player.learn_technique(chosen)
-    return chosen
+func _formal_candidates_for_hand(hand_id: String) -> Array[String]:
+    return technique_repository.formal_technique_ids_for_hand(hand_id)
 
 func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")

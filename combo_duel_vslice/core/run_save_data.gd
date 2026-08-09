@@ -57,7 +57,8 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "life": int(run_session.growth.life),
             "max_life": int(run_session.growth.max_life),
             "consumable_ids": run_session.growth.consumable_ids.duplicate(),
-            "insight_multipliers": run_session.growth.insight_multipliers.duplicate(true),
+            "hand_technique_progression": run_session.growth.hand_technique_progression.duplicate(true),
+            "practice_shop_state": run_session.growth.practice_shop_state.duplicate(true),
             "learned_technique_ids": run_session.growth.learned_technique_ids.duplicate(),
             "learned_inner_skill_ids": run_session.growth.learned_inner_skill_ids.duplicate(),
             "equipped_inner_skill_ids": run_session.growth.equipped_inner_skill_ids.duplicate(),
@@ -134,6 +135,7 @@ func validate(content_catalog = null) -> Array[String]:
         if not catalog.load_all():
             errors.append("无法载入内容目录以校验存档")
             return errors
+    _validate_hand_progression(growth.get("hand_technique_progression", {}), catalog, errors)
     if not growth.has("life") and not growth.has("max_life") \
             and _player_max_life_for_act(catalog, int(map_state.get("act", 0))) <= 0:
         errors.append(
@@ -177,9 +179,8 @@ func restore_session(content_catalog = null) -> Dictionary:
     growth.experience = int(growth_state["experience"])
     var restored_life := _life_values_for_restore(
         growth_state, int(map_state["act"]), catalog)
-    growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict({
+    var progress_values := {
         "consumable_ids": growth_state["consumable_ids"],
-        "insight_multipliers": growth_state["insight_multipliers"],
         "learned_technique_ids": growth_state["learned_technique_ids"],
         "learned_inner_skill_ids": growth_state["learned_inner_skill_ids"],
         "equipped_inner_skill_ids": growth_state["equipped_inner_skill_ids"],
@@ -187,7 +188,12 @@ func restore_session(content_catalog = null) -> Dictionary:
         "run_deck": growth_state["run_deck"],
         "life": restored_life["life"],
         "max_life": restored_life["max_life"],
-    }))
+    }
+    if growth_state.has("hand_technique_progression"):
+        progress_values["hand_technique_progression"] = growth_state["hand_technique_progression"]
+    if growth_state.has("practice_shop_state"):
+        progress_values["practice_shop_state"] = growth_state["practice_shop_state"]
+    growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict(progress_values))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
         growth.practice_purchases[str(content_id)] = true
@@ -259,6 +265,36 @@ func _validate_life_fields(growth: Dictionary, errors: Array[String]) -> void:
     if life_valid and max_life_valid and int(life_value) > int(max_life_value):
         errors.append("growth.life 不能大于 growth.max_life")
 
+func _validate_hand_progression(values, catalog, errors: Array[String]) -> void:
+    if values.is_empty():
+        return
+    if not values is Dictionary:
+        errors.append("growth.hand_technique_progression 必须是对象")
+        return
+    for hand_id in GrowthInventoryScript.HAND_IDS:
+        if not values.has(hand_id):
+            errors.append("growth.hand_technique_progression 缺少牌型：%s" % hand_id)
+            continue
+        var progression = values[hand_id]
+        if not progression is Dictionary:
+            errors.append("growth.hand_technique_progression.%s 必须是对象" % hand_id)
+            continue
+        var slot_count = progression.get("slot_count", 0)
+        var sequence = progression.get("sequence", [])
+        if not slot_count is int or int(slot_count) < 1:
+            errors.append("growth.hand_technique_progression.%s.slot_count 必须是正整数" % hand_id)
+        if not sequence is Array or sequence.size() > int(slot_count):
+            errors.append("growth.hand_technique_progression.%s.sequence 超出槽位" % hand_id)
+            continue
+        var seen: Dictionary = {}
+        for technique_id_value in sequence:
+            var technique_id := str(technique_id_value)
+            if seen.has(technique_id):
+                errors.append("growth.hand_technique_progression.%s.sequence 重复功法 %s" % [hand_id, technique_id])
+            seen[technique_id] = true
+            if not catalog.has_id("technique", technique_id):
+                errors.append("growth.hand_technique_progression 引用未知功法：%s" % technique_id)
+
 func _life_values_for_restore(
         growth: Dictionary,
         act: int,
@@ -302,10 +338,16 @@ func _normalize_v1_types() -> void:
     _normalize_optional_integer(growth, "life")
     _normalize_optional_integer(growth, "max_life")
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
-    var multipliers = growth.get("insight_multipliers", {})
-    if multipliers is Dictionary:
-        for hand_id in multipliers:
-            multipliers[hand_id] = int(multipliers[hand_id])
+    var progression = growth.get("hand_technique_progression", {})
+    if progression is Dictionary:
+        for hand_id in progression:
+            if progression[hand_id] is Dictionary:
+                progression[hand_id]["slot_count"] = int(progression[hand_id].get("slot_count", 1))
+    var shop = growth.get("practice_shop_state", {})
+    if shop is Dictionary:
+        for field in ["shop_index", "act", "meditation_count", "next_meditation_cost"]:
+            if shop.has(field):
+                shop[field] = int(shop[field])
     var run_deck = growth.get("run_deck", {})
     if not run_deck is Dictionary:
         return

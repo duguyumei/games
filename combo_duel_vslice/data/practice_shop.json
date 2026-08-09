@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "normal_slots": 2,
+  "pack_slots": 2,
+  "coupon_slots": 1,
+  "normal_candidates": [
+    {"id": "balance_sleeves_listen_wind", "kind": "technique", "price": 3},
+    {"id": "double_gu_exchange_breath", "kind": "technique", "price": 3},
+    {"id": "three_ring_ensemble", "kind": "technique", "price": 3},
+    {"id": "three_ring_chaos_qi", "kind": "technique", "price": 3},
+    {"id": "seize_qi_return_nest", "kind": "technique", "price": 3},
+    {"id": "five_steps_echo", "kind": "technique", "price": 3},
+    {"id": "stagnant_gu_conceal_breath", "kind": "technique", "price": 3},
+    {"id": "borrow_fire_guard_heart", "kind": "technique", "price": 3},
+    {"id": "high_card_insight", "kind": "consumable", "price": 3},
+    {"id": "pair_insight", "kind": "consumable", "price": 3},
+    {"id": "two_pair_insight", "kind": "consumable", "price": 3},
+    {"id": "three_kind_insight", "kind": "consumable", "price": 3},
+    {"id": "straight_insight", "kind": "consumable", "price": 3},
+    {"id": "full_house_insight", "kind": "consumable", "price": 3},
+    {"id": "four_kind_insight", "kind": "consumable", "price": 3},
+    {"id": "hierophant", "kind": "consumable", "price": 3},
+    {"id": "aura", "kind": "consumable", "price": 4}
+  ],
+  "pack_candidates": [
+    {
+      "id": "insight_pack_basic",
+      "name": "心得包",
+      "kind": "insight_pack",
+      "price": 4,
+      "offer_count": 3,
+      "choose_count": 1,
+      "candidate_ids": [
+        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
+        "straight_insight", "full_house_insight", "four_kind_insight"
+      ]
+    },
+    {
+      "id": "large_insight_pack",
+      "name": "大型心得包",
+      "kind": "insight_pack",
+      "price": 6,
+      "offer_count": 5,
+      "choose_count": 1,
+      "candidate_ids": [
+        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
+        "straight_insight", "full_house_insight", "four_kind_insight"
+      ]
+    },
+    {
+      "id": "deluxe_insight_pack",
+      "name": "豪华心得包",
+      "kind": "insight_pack",
+      "price": 8,
+      "offer_count": 5,
+      "choose_count": 2,
+      "candidate_ids": [
+        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
+        "straight_insight", "full_house_insight", "four_kind_insight"
+      ]
+    }
+  ],
+  "coupon_candidates": []
+}

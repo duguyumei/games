@@ -24,6 +24,7 @@ const StarterBuildAssemblerScript = preload("res://core/starter_build_assembler.
 const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd")
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
+const PracticeServiceScript = preload("res://core/practice_service.gd")
 
 var game_log
 var _run_state
@@ -39,6 +40,7 @@ var _starter_build_repository := StarterBuildRepositoryScript.new()
 var _starter_build_assembler
 var _battle_session_factory
 var _node_reward_service
+var _practice_service
 var _pending_reward = null
 var selected_starter_build_id: String = ""
 var runtime_profile
@@ -109,6 +111,7 @@ func _init(
         else NodeRewardServiceScript.new(
             _content_catalog.definition("node_rewards")
             if _content_catalog.loaded else {}))
+    _practice_service = PracticeServiceScript.new(_content_catalog)
     if not _content_catalog.loaded:
         game_log.record_system(
             "error",
@@ -162,6 +165,25 @@ func execute(command: Dictionary) -> CommandResult:
             result = _open_practice()
         "close_practice":
             result = _close_practice()
+        "purchase_practice_offer":
+            result = _purchase_practice_offer(
+                str(command.get("group", "normal")),
+                int(command.get("slot_index", -1)))
+        "open_practice_pack":
+            result = _open_practice_pack(
+                str(command.get("group", "packs")),
+                int(command.get("slot_index", -1)),
+                command.get("selected_ids", []))
+        "meditate":
+            result = _meditate()
+        "get_hand_technique_loadout":
+            result = {"success": true, "loadout": growth.get_hand_technique_loadout(
+                str(command.get("hand_id", "")))}
+        "set_hand_technique_loadout":
+            result = growth.set_hand_technique_loadout(
+                str(command.get("hand_id", "")), command.get("technique_ids", []))
+            if result.get("success", false):
+                _run_state.changed.emit()
         "purchase_consumable":
             result = _purchase_consumable(str(command.get("consumable_id", "")))
         _:
@@ -186,9 +208,7 @@ func snapshot() -> RunSnapshot:
         "completed_node_count": completed.size(),
         "available_node_ids": available,
         "available_node_count": available.size(),
-        "can_open_practice": (
-            runtime_profile.allows_debug_menu()
-            and navigation.can_open_practice()),
+        "can_open_practice": navigation.can_open_practice(),
         "reward": _reward_snapshot(),
         "graph": graph,
         "practice": _practice_snapshot(),
@@ -256,6 +276,7 @@ func _setup_run(seed_value: int, starter_build_id: String) -> Dictionary:
         _player_max_life_for_act(1))
     selected_starter_build_id = starter_build_id
     navigation.setup(seed_value)
+    _practice_service.start_new_shop(growth, seed_value, 1, 1)
     _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
         "run_lifecycle",
@@ -353,6 +374,7 @@ func _claim_reward(bundle_id: String) -> Dictionary:
         _pending_reward, growth)
     if not apply_result.get("success", false):
         return apply_result
+    var interest: Dictionary = _settle_node_experience_interest()
     var navigation_result: Dictionary = navigation.claim_current_node_reward()
     if not navigation_result.get("success", false):
         return navigation_result
@@ -362,11 +384,12 @@ func _claim_reward(bundle_id: String) -> Dictionary:
     var entry: Dictionary = game_log.record_run(
         "reward_lifecycle",
         "领取节点奖励",
-        "历练 +%d · 下一阶段 %s" % [
+        "历练 +%d · 功行生息 +%d · 下一阶段 %s" % [
             int(apply_result.get("applied", []).reduce(
                 func(total, value): return total + (
                     int(value.get("amount", 0))
                     if str(value.get("kind", "")) == "experience" else 0), 0)),
+            int(interest.get("amount", 0)),
             navigation_result.get("phase", "")],
         {
             "act": int(bundle_snapshot.get("act", navigation.act)),
@@ -374,17 +397,24 @@ func _claim_reward(bundle_id: String) -> Dictionary:
             "node_type": bundle_snapshot.get("node_type", ""),
             "bundle_id": bundle_snapshot.get("id", ""),
             "applied": apply_result.get("applied", []).duplicate(true),
+            "experience_interest": interest.duplicate(true),
             "experience": growth.experience,
             "next_phase": navigation_result.get("phase", ""),
         })
     _queue_event("reward_claimed", entry, {
         "bundle_id": bundle_snapshot.get("id", ""),
+        "experience_interest": interest.duplicate(true),
         "experience": growth.experience,
         "next_phase": navigation_result.get("phase", ""),
     })
     navigation_result["bundle"] = bundle_snapshot
     navigation_result["applied"] = apply_result.get("applied", []).duplicate(true)
+    navigation_result["experience_interest"] = interest.duplicate(true)
     navigation_result["experience"] = growth.experience
+    if navigation_result.get("phase", "") == "awaiting_node":
+        _practice_service.start_new_shop(
+            growth, navigation.seed, navigation.act,
+            int(growth.practice_shop_state.get("shop_index", 0)) + 1)
     return navigation_result
 
 func _reward_snapshot() -> Dictionary:
@@ -401,11 +431,19 @@ func _reward_snapshot() -> Dictionary:
     }
 
 func _complete_boss_chest() -> Dictionary:
+    if navigation.phase != "boss_chest":
+        return {"success": false, "reason": "当前没有待完成的 Boss 宝箱"}
     var act_before: int = navigation.act
+    var interest: Dictionary = _settle_node_experience_interest()
     var result: Dictionary = navigation.complete_boss_chest()
     if not result.get("success", false):
         return result
+    result["experience_interest"] = interest.duplicate(true)
+    result["experience"] = growth.experience
     growth.grow_life_to(_player_max_life_for_act(navigation.act))
+    _practice_service.start_new_shop(
+        growth, navigation.seed, navigation.act,
+        int(growth.practice_shop_state.get("shop_index", 0)) + 1)
     result["life"] = growth.life
     result["max_life"] = growth.max_life
     _run_state.changed.emit()
@@ -417,20 +455,22 @@ func _complete_boss_chest() -> Dictionary:
             "act": act_before,
             "next_act": result.get("act", act_before),
             "next_phase": result.get("phase", ""),
+            "experience_interest": interest.duplicate(true),
+            "experience": growth.experience,
             "life": growth.life,
             "max_life": growth.max_life,
         })
     _queue_event("boss_chest_completed", entry, {
         "act": act_before,
         "next_act": result.get("act", act_before),
+        "experience_interest": interest.duplicate(true),
+        "experience": growth.experience,
         "life": growth.life,
         "max_life": growth.max_life,
     })
     return result
 
 func _open_practice() -> Dictionary:
-    if not runtime_profile.allows_debug_menu():
-        return {"success": false, "reason": "production 模式未装配调试修习入口"}
     if not navigation.can_open_practice():
         return {"success": false, "reason": "当前节点尚未完成，不能修习"}
     var entry: Dictionary = game_log.record_run(
@@ -482,7 +522,41 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
     })
     return result
 
+func _purchase_practice_offer(group: String, slot_index: int) -> Dictionary:
+    if not navigation.can_open_practice():
+        return {"success": false, "reason": "当前节点尚未完成，不能修习"}
+    var result: Dictionary = _practice_service.purchase(
+        growth, group, slot_index, navigation.can_open_practice())
+    if result.get("success", false):
+        _run_state.changed.emit()
+    return result
+
+func _open_practice_pack(group: String, slot_index: int, selected_ids: Array) -> Dictionary:
+    var result: Dictionary = _practice_service.open_pack(
+        growth, group, slot_index, selected_ids,
+        navigation.can_open_practice(),
+        _practice_rng())
+    if result.get("success", false) and not result.has("preview"):
+        _run_state.changed.emit()
+    return result
+
+func _meditate() -> Dictionary:
+    var result: Dictionary = _practice_service.meditate(
+        growth, navigation.seed, navigation.act, navigation.can_open_practice())
+    if result.get("success", false):
+        _run_state.changed.emit()
+    return result
+
+func _practice_rng() -> RandomNumberGenerator:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = int(navigation.seed) * 1000003 \
+        + int(navigation.act) * 7919 \
+        + int(growth.practice_shop_state.get("shop_index", 1)) * 9176
+    return rng
+
 func _practice_snapshot() -> Dictionary:
+    var shop_state: Dictionary = _practice_service.ensure_shop(
+        growth, navigation.seed, navigation.act)
     var offer_ids: Array[String] = _consumable_repository.practice_offers()
     var offers: Array = []
     for consumable_id in offer_ids:
@@ -503,6 +577,12 @@ func _practice_snapshot() -> Dictionary:
         "offer_ids": offer_ids,
         "offers": offers,
         "purchased_ids": growth.practice_purchases.keys(),
+        "shop": shop_state,
+        "normal": shop_state.get("normal", []).duplicate(true),
+        "packs": shop_state.get("packs", []).duplicate(true),
+        "coupons": shop_state.get("coupons", []).duplicate(true),
+        "meditation_count": int(shop_state.get("meditation_count", 0)),
+        "next_meditation_cost": int(shop_state.get("next_meditation_cost", 5)),
     }
 
 func _growth_snapshot() -> Dictionary:
@@ -516,7 +596,8 @@ func _growth_snapshot() -> Dictionary:
         "consumable_limit": 3,
         "consumable_ids": growth.consumable_ids.duplicate(),
         "consumables": consumables,
-        "insight_multipliers": growth.insight_multipliers.duplicate(true),
+        "hand_technique_progression": growth.hand_technique_progression.duplicate(true),
+        "practice_shop_state": growth.practice_shop_state.duplicate(true),
         "learned_technique_ids": growth.learned_technique_ids.duplicate(),
         "run_deck": growth.run_deck.to_snapshot(),
         "run_deck_count": growth.run_deck.card_count(),
@@ -527,6 +608,9 @@ func _player_max_life_for_act(act: int) -> int:
         if int(entry.get("act", 0)) == act:
             return int(entry.get("player", {}).get("max_life", 0))
     return 0
+
+func _settle_node_experience_interest() -> Dictionary:
+    return growth.apply_experience_interest()
 
 func _record_command_rejected(command_type: String, reason: String) -> void:
     var entry: Dictionary = game_log.record_system(

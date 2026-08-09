@@ -78,7 +78,7 @@ func _ensure_built() -> void:
     UiDesignScript.style_button(claim)
     box.add_child(claim)
     var note := Label.new()
-    note.text = "自我精进及其与内功收益的结算顺序尚未确认，本页面暂不结算。"
+    note.text = "领取节点奖励后按当前历练结算功行生息。"
     note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     note.add_theme_color_override("font_color", Color("877f8b"))
     box.add_child(note)

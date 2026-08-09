@@ -278,7 +278,7 @@ flowchart LR
 - `RunSession`：已经建立第一版；本局门面、状态机、命令、事件和日志边界。
 - `MapNavigationService`：已经建立第一版；负责可达节点、开始节点、完成节点与换层。
 - `NodeDispatcher`：已经建立，继续只返回调度结果。
-- `RewardBundle + NodeRewardService + RewardHandlerRegistry`：已建立第一版，负责基础节点奖励包、领取门禁和一次性发放；新增奖励类型通过处理器注册。自我精进、内功节点收益及三者准确先后仍未确认，不能并入当前服务。
+- `RewardBundle + NodeRewardService + RewardHandlerRegistry`：已建立第一版，负责基础节点奖励包、领取门禁和一次性发放；新增奖励类型通过处理器注册。节点奖励完成后由本局会话统一结算功行生息，奖励服务本身不复制经济算法。
 - `GrowthInventory`：已经建立第一版；负责历练、功法库、消耗品、完整 `RunDeck` 和修习购买记录。
 - `RunDeck`：已经建立第一版；负责完整本局真气实例、复制、永久移出、快照校验、战斗实例化与跨战斗同步。
 - `CardZoneService`：已经建立第一版；统一牌区移动、弃牌生命周期、临时移出、夺取归还、生成与永久移出登记。

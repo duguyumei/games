@@ -63,9 +63,9 @@ func preview_dto(
     var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {}).duplicate(true)
     if cards.size() == 5 and is_same_attribute_action(cards):
         modifiers["power_amp_percent"] = int(modifiers.get("power_amp_percent", 0)) + 50
-    modifiers["insight_multiplier"] = (
-        int(modifiers.get("insight_multiplier", 0))
-        + int(side.insight_multipliers.get(hand_result["id"], 0)))
+    modifiers["power_fixed"] = (
+        int(modifiers.get("power_fixed", 0))
+        + int(side.hand_proficiency_fixed.get(hand_result["id"], 0)))
     var contribution_modifier := Callable()
     if side.status_system != null:
         contribution_modifier = Callable(side.status_system, "modify_card_contribution").bind(side)

@@ -67,6 +67,10 @@ func _test_round_trip_and_complete_run_deck() -> void:
         "本局存档往返保持全部状态一致")
     _assert_equal(restored.growth.experience, 12, "往返保留历练")
     _assert_equal(restored.growth.consumable_ids, ["aura"], "往返保留消耗品稳定 ID")
+    _assert_equal(
+        restored.growth.hand_progression("high_card")["slot_count"],
+        2,
+        "往返保留高牌功法槽位")
     _assert_equal(restored.growth.learned_technique_ids, ["long_wind_full_sleeve"], "往返保留功法稳定 ID")
     _assert_equal(restored.growth.learned_inner_skill_ids, ["extra_qi_to_defense"], "往返保留已习得内功 ID")
     _assert_equal(restored.growth.equipped_inner_skill_ids, ["extra_qi_to_defense"], "往返保留已装备内功 ID")
@@ -188,7 +192,10 @@ func _configured_session(seed_value: int, experience: int):
     session.growth.experience = experience
     session.growth.consumable_ids.clear()
     session.growth.consumable_ids.append("aura")
-    session.growth.insight_multipliers = {"high_card": 2}
+    session.growth.hand_technique_progression["high_card"] = {
+        "slot_count": 2,
+        "sequence": [],
+    }
     session.growth.learned_technique_ids.clear()
     session.growth.learned_technique_ids.append("long_wind_full_sleeve")
     session.growth.learned_inner_skill_ids.clear()

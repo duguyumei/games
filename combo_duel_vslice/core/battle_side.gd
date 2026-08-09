@@ -4,6 +4,11 @@ extends RefCounted
 const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const CardZoneServiceScript = preload("res://core/card_zone_service.gd")
 
+const HAND_IDS := [
+    "high_card", "pair", "two_pair", "three_kind", "straight",
+    "full_house", "four_kind", "five_kind",
+]
+
 ## 可同时装备的内功上限。`configure_inner_skills()` 按此截断，快照按此对外公开，
 ## 表现层不再各自假设一个数字。
 const INNER_SKILL_LIMIT := 6
@@ -24,7 +29,9 @@ var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
 var consumable_ids: Array[String] = []
 var consumable_limit: int = 3
-var insight_multipliers: Dictionary = {}
+var hand_proficiency_fixed: Dictionary = {}
+var hand_technique_progression: Dictionary = {}
+var hand_technique_progression_active: bool = false
 var owned_technique_ids: Array[String] = []
 var permanently_removed_card_ids: Array[String] = []
 var card_state_lifecycle
@@ -57,7 +64,9 @@ func reset(
     technique_slot_index = 0
     consumable_ids.clear()
     consumable_limit = 3
-    insight_multipliers.clear()
+    hand_proficiency_fixed.clear()
+    hand_technique_progression.clear()
+    hand_technique_progression_active = false
     owned_technique_ids.clear()
     permanently_removed_card_ids.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
@@ -230,9 +239,40 @@ func consume_at(slot_index: int) -> String:
         return ""
     return consumable_ids.pop_at(slot_index)
 
-func add_insight(hand_id: String, amount: int) -> int:
-    insight_multipliers[hand_id] = int(insight_multipliers.get(hand_id, 0)) + maxi(0, amount)
-    return int(insight_multipliers[hand_id])
+func apply_insight_growth(
+        hand_id: String,
+        candidates: Array = [],
+        rng: RandomNumberGenerator = null) -> Dictionary:
+    if not HAND_IDS.has(hand_id):
+        return {"success": false, "reason": "未知牌型：%s" % hand_id}
+    var progression: Dictionary = hand_technique_progression.get(hand_id, {
+        "slot_count": 1,
+        "sequence": [],
+    }).duplicate(true)
+    var before := int(progression.get("slot_count", 1))
+    progression["slot_count"] = before + 1
+    var sequence: Array = progression.get("sequence", []).duplicate()
+    var available: Array[String] = []
+    for candidate_value in candidates:
+        var candidate := str(candidate_value)
+        if candidate != "" and not sequence.has(candidate) and not available.has(candidate):
+            available.append(candidate)
+    available.sort()
+    var acquired := ""
+    if not available.is_empty():
+        var index := rng.randi_range(0, available.size() - 1) if rng != null else 0
+        acquired = available[index]
+        sequence.append(acquired)
+        learn_technique(acquired)
+    progression["sequence"] = sequence
+    hand_technique_progression[hand_id] = progression
+    return {
+        "success": true,
+        "slot_count_before": before,
+        "slot_count_after": before + 1,
+        "acquired_technique_id": acquired,
+        "no_technique_available": acquired == "",
+    }
 
 func learn_technique(technique_id: String) -> bool:
     if technique_id == "" or owned_technique_ids.has(technique_id):

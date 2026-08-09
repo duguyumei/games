@@ -50,6 +50,13 @@ func seed_owned_techniques(side, book) -> void:
         for technique_id_value in book.sequences[hand_id]:
             side.learn_technique(str(technique_id_value))
 
+func apply_player_technique_progression(side, book, progress_snapshot) -> void:
+    if progress_snapshot == null or not progress_snapshot.has_hand_technique_progression:
+        return
+    book.configure_hand_progression(progress_snapshot.hand_technique_progression)
+    side.hand_technique_progression = progress_snapshot.hand_technique_progression.duplicate(true)
+    side.hand_technique_progression_active = true
+
 func load_scenario(scenario, path: String) -> bool:
     if _content_catalog != null \
             and _content_catalog.runtime_profile != null \
@@ -107,7 +114,7 @@ func apply_formal_enemy(
     enemy.configure_inner_skills(
         entry.get("equipped_inner_skill_ids", []),
         int(entry.get("technique_slot_index", 0)))
-    enemy.insight_multipliers = entry.get("insight_multipliers", {}).duplicate(true)
+    enemy.hand_proficiency_fixed = entry.get("hand_proficiency_fixed", {}).duplicate(true)
     enemy.replace_deck(selected["cards"], rng, true)
     return {
         "success": true,
@@ -144,8 +151,9 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> vo
         return
     if progress_snapshot.has_consumable_ids:
         side.configure_consumables(progress_snapshot.consumable_ids)
-    if progress_snapshot.has_insight_multipliers:
-        side.insight_multipliers = progress_snapshot.insight_multipliers.duplicate(true)
+    if progress_snapshot.has_hand_technique_progression:
+        side.hand_technique_progression = progress_snapshot.hand_technique_progression.duplicate(true)
+        side.hand_technique_progression_active = true
     if progress_snapshot.has_learned_technique_ids:
         for technique_id in progress_snapshot.learned_technique_ids:
             side.learn_technique(technique_id)
@@ -160,7 +168,7 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         side.permanently_removed_card_ids)
     return RunProgressSnapshotScript.from_dict({
         "consumable_ids": side.consumable_ids.duplicate(),
-        "insight_multipliers": side.insight_multipliers.duplicate(true),
+        "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "learned_technique_ids": side.owned_technique_ids.duplicate(),
         "life": side.life,
         "max_life": side.max_life,

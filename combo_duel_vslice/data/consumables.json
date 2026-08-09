@@ -7,10 +7,10 @@
       "name": "高牌心得",
       "kind": "insight",
       "price": 3,
-      "description": "高牌累计心得倍率 +1，并从高牌池随机获得一门尚未获得的功法。",
+      "description": "高牌功法槽位 +1，并从高牌池随机获得一门尚未加入高牌序列的正式功法。",
       "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
       "effects": [
-        {"op": "gain_insight", "hand": "high_card", "multiplier": 1, "pools": ["high"]}
+        {"op": "gain_insight", "hand": "high_card", "pools": ["high"]}
       ]
     },
     {
@@ -34,6 +34,42 @@
       "effects": [
         {"op": "apply_random_finish", "finishes": ["foil", "holographic", "polychrome"]}
       ]
+    },
+    {
+      "id": "pair_insight", "name": "一对心得", "kind": "insight", "price": 3,
+      "description": "一对功法槽位 +1，并从一对、两对池抽取正式功法。",
+      "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "pair", "pools": ["pair_two_pair"]}]
+    },
+    {
+      "id": "two_pair_insight", "name": "两对心得", "kind": "insight", "price": 3,
+      "description": "两对功法槽位 +1，并从一对、两对池抽取正式功法。",
+      "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "two_pair", "pools": ["pair_two_pair"]}]
+    },
+    {
+      "id": "three_kind_insight", "name": "三条心得", "kind": "insight", "price": 3,
+      "description": "三条功法槽位 +1，并从三条、葫芦池抽取正式功法。",
+      "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "three_kind", "pools": ["three_full_house"]}]
+    },
+    {
+      "id": "straight_insight", "name": "顺子心得", "kind": "insight", "price": 3,
+      "description": "顺子功法槽位 +1，并从顺子池抽取正式功法。",
+      "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "straight", "pools": ["straight"]}]
+    },
+    {
+      "id": "full_house_insight", "name": "葫芦心得", "kind": "insight", "price": 3,
+      "description": "葫芦功法槽位 +1，并从三条、葫芦池抽取正式功法。",
+      "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "full_house", "pools": ["three_full_house"]}]
+    },
+    {
+      "id": "four_kind_insight", "name": "四条心得", "kind": "insight", "price": 3,
+      "description": "四条功法槽位 +1，并从四条、五条池抽取正式功法。",
+      "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "four_kind", "pools": ["four_five"]}]
     }
   ]
 }

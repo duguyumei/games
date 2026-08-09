@@ -35,7 +35,8 @@ var technique_slot_index: int = 0
 var consumable_ids: Array = []
 var consumables: Array = []
 var consumable_limit: int = 0
-var insight_multipliers: Dictionary = {}
+var hand_proficiency_fixed: Dictionary = {}
+var hand_technique_progression: Dictionary = {}
 var owned_technique_ids: Array = []
 
 ## 从战斗会话产出的字典构建。
@@ -80,7 +81,8 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.consumable_ids = values.get("consumable_ids", []).duplicate(true)
     result.consumables = values.get("consumables", []).duplicate(true)
     result.consumable_limit = int(values.get("consumable_limit", 0))
-    result.insight_multipliers = values.get("insight_multipliers", {}).duplicate(true)
+    result.hand_proficiency_fixed = values.get("hand_proficiency_fixed", {}).duplicate(true)
+    result.hand_technique_progression = values.get("hand_technique_progression", {}).duplicate(true)
     result.owned_technique_ids = values.get("owned_technique_ids", []).duplicate(true)
     return result
 
@@ -116,6 +118,7 @@ func to_dict() -> Dictionary:
         "consumable_ids": consumable_ids.duplicate(true),
         "consumables": consumables.duplicate(true),
         "consumable_limit": consumable_limit,
-        "insight_multipliers": insight_multipliers.duplicate(true),
+        "hand_proficiency_fixed": hand_proficiency_fixed.duplicate(true),
+        "hand_technique_progression": hand_technique_progression.duplicate(true),
         "owned_technique_ids": owned_technique_ids.duplicate(true),
     }

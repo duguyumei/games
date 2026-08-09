@@ -182,6 +182,8 @@ func setup_battle(
             engine.enemy_ai_policy = formal_setup["ai_policy"]
             engine._sync_action_service_modes()
         _battle_setup_service.apply_non_deck_progress(engine.player, progress_snapshot)
+        _battle_setup_service.apply_player_technique_progression(
+            engine.player, engine.sequence_book, progress_snapshot)
         engine.use_external_enemy_actions(_remote_ai_enabled)
         if _remote_ai_enabled:
             _configure_ai_coordinator()
@@ -561,7 +563,8 @@ func _side_snapshot(side) -> Dictionary:
         "consumable_ids": side.consumable_ids.duplicate(),
         "consumables": consumables,
         "consumable_limit": side.consumable_limit,
-        "insight_multipliers": side.insight_multipliers.duplicate(true),
+        "hand_proficiency_fixed": side.hand_proficiency_fixed.duplicate(true),
+        "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "owned_technique_ids": side.owned_technique_ids.duplicate(),
     }
 

@@ -60,11 +60,11 @@ var consumable_ids: Array[String]:
         return growth.consumable_ids
     set(value):
         growth.consumable_ids = value
-var insight_multipliers: Dictionary:
+var hand_technique_progression: Dictionary:
     get:
-        return growth.insight_multipliers
+        return growth.hand_technique_progression
     set(value):
-        growth.insight_multipliers = value
+        growth.hand_technique_progression = value
 var learned_technique_ids: Array[String]:
     get:
         return growth.learned_technique_ids
@@ -100,13 +100,20 @@ func complete_current_node() -> Dictionary:
     if not result.get("success", false):
         return result
     growth.experience += int(result.get("reward", 0))
+    result["experience_interest"] = growth.apply_experience_interest()
+    result["experience"] = growth.experience
     growth.clear_practice_purchases()
     changed.emit()
     return result
 
 func complete_boss_chest() -> Dictionary:
+    if navigation.phase != "boss_chest":
+        return {"success": false, "reason": "当前没有待完成的 Boss 宝箱"}
+    var interest: Dictionary = growth.apply_experience_interest()
     var result: Dictionary = navigation.complete_boss_chest()
     if result.get("success", false):
+        result["experience_interest"] = interest
+        result["experience"] = growth.experience
         changed.emit()
     return result
 
@@ -124,6 +131,21 @@ func purchase_consumable(consumable_id: String, price: int) -> Dictionary:
         consumable_id,
         price,
         navigation.can_open_practice())
+    if result.get("success", false):
+        changed.emit()
+    return result
+
+func apply_insight_growth(hand_id: String, candidates: Array = [], rng = null) -> Dictionary:
+    var result: Dictionary = growth.apply_insight_growth(hand_id, candidates, rng)
+    if result.get("success", false):
+        changed.emit()
+    return result
+
+func get_hand_technique_loadout(hand_id: String) -> Dictionary:
+    return growth.get_hand_technique_loadout(hand_id)
+
+func set_hand_technique_loadout(hand_id: String, technique_ids: Array) -> Dictionary:
+    var result: Dictionary = growth.set_hand_technique_loadout(hand_id, technique_ids)
     if result.get("success", false):
         changed.emit()
     return result

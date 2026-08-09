@@ -23,6 +23,20 @@ func configure(values: Dictionary) -> void:
             sequences[str(hand_id)] = values[hand_id].duplicate(true)
     reset()
 
+func configure_hand_progression(values: Dictionary) -> void:
+    var next: Dictionary = {}
+    for hand_id in sequences:
+        var progression: Dictionary = values.get(hand_id, {})
+        var sequence = progression.get("sequence", []) if progression is Dictionary else []
+        next[hand_id] = sequence.duplicate(true) if sequence is Array else []
+    for hand_id in values:
+        if not next.has(str(hand_id)):
+            var progression: Dictionary = values[hand_id]
+            var sequence = progression.get("sequence", []) if progression is Dictionary else []
+            next[str(hand_id)] = sequence.duplicate(true) if sequence is Array else []
+    sequences = next
+    reset()
+
 func reset() -> void:
     positions.clear()
     for hand_id in sequences:
