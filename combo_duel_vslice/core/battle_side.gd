@@ -20,6 +20,7 @@ var life: int = 100
 var defense: int = 0
 var experience: int = 0
 var hand_limit: int = 8
+var base_hand_limit_modifier: int = 0
 var draw_pile: Array = []
 var hand: Array = []
 var staging: Array = []
@@ -33,6 +34,7 @@ var consumable_limit: int = 3
 var hand_proficiency_fixed: Dictionary = {}
 var hand_technique_progression: Dictionary = {}
 var hand_technique_progression_active: bool = false
+var hand_technique_multiplier_modifiers: Dictionary = {}
 var owned_technique_ids: Array[String] = []
 var permanently_removed_card_ids: Array[String] = []
 var card_state_lifecycle
@@ -64,6 +66,7 @@ func reset(
     defense = 0
     experience = 0
     hand_limit = 8
+    base_hand_limit_modifier = 0
     stacks.clear()
     equipped_inner_skill_ids.clear()
     technique_slot_index = 0
@@ -72,6 +75,7 @@ func reset(
     hand_proficiency_fixed.clear()
     hand_technique_progression.clear()
     hand_technique_progression_active = false
+    hand_technique_multiplier_modifiers.clear()
     owned_technique_ids.clear()
     permanently_removed_card_ids.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
@@ -110,6 +114,7 @@ func current_hand_limit() -> int:
     return maxi(
         1,
         hand_limit
+        + base_hand_limit_modifier
         + status_modifier("hand_limit"))
 
 func status_modifier(modifier_id: String, context: Dictionary = {}) -> int:

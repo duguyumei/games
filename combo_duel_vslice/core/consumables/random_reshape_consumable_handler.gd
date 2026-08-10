@@ -7,8 +7,9 @@ extends "res://core/consumables/consumable_effect_handler.gd"
 func operation_ids() -> Array[String]:
 	return ["apply_random_enhancement"]
 
-func validate_effect(_effect: Dictionary, _context, _scope: String) -> void:
-	pass
+func validate_effect(effect: Dictionary, context, scope: String) -> void:
+	if effect.has("only_if_empty") and not effect.get("only_if_empty") is bool:
+		context.report_error(scope + ".only_if_empty", "必须是布尔值")
 
 func query_availability(_effect: Dictionary, context) -> Dictionary:
 	if context.formal_enhancement_ids().is_empty():
@@ -26,6 +27,10 @@ func apply(_effect: Dictionary, context) -> Dictionary:
 		return {"success": false, "reason": "随机强化缺少确定性 RNG"}
 	var targets: Array = []
 	for instance_id in context.instance_ids:
+		var card_before: Dictionary = context.card_data(str(instance_id))
+		if bool(_effect.get("only_if_empty", false)) \
+				and str(card_before.get("reshapes", {}).get("enhancement", "")) != "":
+			continue
 		var enhancement_id := candidates[
 			context.rng.randi_range(0, candidates.size() - 1)]
 		var result: Dictionary = context.apply_enhancement(
@@ -38,6 +43,17 @@ func apply(_effect: Dictionary, context) -> Dictionary:
 			"before": result.get("before", {}).duplicate(true),
 			"after": result.get("after", {}).duplicate(true),
 		})
+	if targets.is_empty():
+		return {
+			"success": true,
+			"applied": {
+				"op": "apply_random_enhancement",
+				"candidates": candidates.duplicate(),
+				"targets": [],
+				"count": 0,
+				"details": ["目标已有强化，保持不变"],
+			},
+		}
 	return {
 		"success": true,
 		"applied": {

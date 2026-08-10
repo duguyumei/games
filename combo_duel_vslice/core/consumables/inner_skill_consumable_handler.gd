@@ -10,14 +10,17 @@ func operation_ids() -> Array[String]:
 func validate_effect(effect: Dictionary, context, scope: String) -> void:
 	if effect.has("count") and not _is_one(effect.get("count")):
 		context.report_error(scope + ".count", "当前协议必须为 1")
+	if effect.has("rarity") and (not effect.get("rarity") is String \
+			or str(effect.get("rarity", "")) == ""):
+		context.report_error(scope + ".rarity", "必须是非空字符串")
 
-func query_availability(_effect: Dictionary, context) -> Dictionary:
-	if context.inner_skill_candidates().is_empty():
+func query_availability(effect: Dictionary, context) -> Dictionary:
+	if _candidates(effect, context).is_empty():
 		return {"can_use": false, "reason": "当前没有尚未习得的内功候选"}
 	return {"can_use": true, "reason": ""}
 
-func apply(_effect: Dictionary, context) -> Dictionary:
-	var candidates: Array[String] = context.inner_skill_candidates()
+func apply(effect: Dictionary, context) -> Dictionary:
+	var candidates: Array[String] = _candidates(effect, context)
 	candidates.sort()
 	if candidates.is_empty():
 		return {"success": false, "reason": "当前没有尚未习得的内功候选"}
@@ -33,6 +36,7 @@ func apply(_effect: Dictionary, context) -> Dictionary:
 		"applied": {
 			"op": "grant_random_inner_skill",
 			"inner_skill_id": inner_skill_id,
+			"rarity": str(effect.get("rarity", "")),
 			"candidates": candidates.duplicate(),
 			"automatically_equipped": false,
 			"details": ["获得内功：%s" % inner_skill_id],
@@ -42,3 +46,7 @@ func apply(_effect: Dictionary, context) -> Dictionary:
 func _is_one(value) -> bool:
 	return (value is int or value is float) \
 		and float(value) == floor(float(value)) and int(value) == 1
+
+func _candidates(effect: Dictionary, context) -> Array[String]:
+	var rarity := str(effect.get("rarity", ""))
+	return context.inner_skill_candidates_by_rarity(rarity)

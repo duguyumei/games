@@ -15,6 +15,16 @@ const ExperienceHandlerScript = preload(
 	"res://core/consumables/experience_consumable_handler.gd")
 const InnerSkillHandlerScript = preload(
 	"res://core/consumables/inner_skill_consumable_handler.gd")
+const ImprintHandlerScript = preload(
+	"res://core/consumables/imprint_consumable_handler.gd")
+const RandomBaseCardHandlerScript = preload(
+	"res://core/consumables/random_base_card_consumable_handler.gd")
+const PreparedOriginHandlerScript = preload(
+	"res://core/consumables/prepared_origin_consumable_handler.gd")
+const CurioRuleHandlerScript = preload(
+	"res://core/consumables/curio_rule_consumable_handler.gd")
+const InnerSkillCurioHandlerScript = preload(
+	"res://core/consumables/inner_skill_curio_handler.gd")
 
 var _handlers_by_operation: Dictionary = {}
 var _registration_errors: Array[String] = []
@@ -30,6 +40,11 @@ func _init(register_defaults: bool = true) -> void:
 		register_handler(ConsumableGrantHandlerScript.new())
 		register_handler(ExperienceHandlerScript.new())
 		register_handler(InnerSkillHandlerScript.new())
+		register_handler(ImprintHandlerScript.new())
+		register_handler(RandomBaseCardHandlerScript.new())
+		register_handler(PreparedOriginHandlerScript.new())
+		register_handler(CurioRuleHandlerScript.new())
+		register_handler(InnerSkillCurioHandlerScript.new())
 
 func register_handler(handler) -> bool:
 	if handler == null \
@@ -115,3 +130,10 @@ func query_availability(effect: Dictionary, context) -> Dictionary:
 	if not handler.has_method("query_availability"):
 		return {"can_use": true, "reason": ""}
 	return handler.query_availability(effect, context)
+
+func prepare(effect: Dictionary, context) -> Dictionary:
+	var operation_id := str(effect.get("op", ""))
+	var handler = _handlers_by_operation.get(operation_id)
+	if handler == null or not handler.has_method("prepare"):
+		return {"success": true, "prepared": {}}
+	return handler.prepare(effect, context)

@@ -305,6 +305,7 @@ func _initialize() -> void:
     _test_run_consumable_failed_use_keeps_randomness()
     _test_run_consumable_slot_release_order()
     _test_s2f2f1_formal_pills_and_transactions()
+    _test_s2f2f2_formal_curios_and_protocols()
     _test_run_consumable_phase_gate()
     _test_run_consumable_save_round_trip()
     _test_consumable_no_central_op_branches()
@@ -494,7 +495,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
     _assert_equal(catalog.definition("card_states")["version"], 9, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
-    _assert_equal(catalog.definition("consumables")["version"], 4, "消耗品与修习商品数据带顶层版本")
+    _assert_equal(catalog.definition("consumables")["version"], 5, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
     _assert_equal(act_progression["acts"].size(), 3, "生命成长内容完整声明三层数据")
     _assert_equal(act_progression["acts"][0]["player"]["max_life"], 100, "第一层玩家生命上限来自成长内容")
@@ -602,7 +603,9 @@ func _test_content_catalog_and_validator() -> void:
         "未知消耗品目标选择方式错误稳定定位")
 
     var none_minimum_values := _catalog_definitions(catalog)
-    none_minimum_values["consumables"]["consumables"][0]["targeting"]["minimum"] = 1
+    var none_index := _content_entry_index(
+        none_minimum_values["consumables"]["consumables"], "suyi_pill")
+    none_minimum_values["consumables"]["consumables"][none_index]["targeting"]["minimum"] = 1
     var none_minimum_catalog = ContentCatalogScript.new()
     _assert_true(
         not none_minimum_catalog.load_from_definitions(none_minimum_values),
@@ -612,7 +615,7 @@ func _test_content_catalog_and_validator() -> void:
         "none 区域 minimum 错误稳定定位")
 
     var none_maximum_values := _catalog_definitions(catalog)
-    none_maximum_values["consumables"]["consumables"][0]["targeting"]["maximum"] = 1
+    none_maximum_values["consumables"]["consumables"][none_index]["targeting"]["maximum"] = 1
     var none_maximum_catalog = ContentCatalogScript.new()
     _assert_true(
         not none_maximum_catalog.load_from_definitions(none_maximum_values),
@@ -882,7 +885,10 @@ func _test_content_catalog_and_validator() -> void:
         "重塑战斗开始异状错误稳定定位")
 
     var bad_enhancement_reference_values := _catalog_definitions(catalog)
-    bad_enhancement_reference_values["consumables"]["consumables"][1]["effects"][0]["enhancement"] = "missing_enhancement"
+    var enhancement_index := _content_entry_index(
+        bad_enhancement_reference_values["consumables"]["consumables"],
+        "jiyuan_pill")
+    bad_enhancement_reference_values["consumables"]["consumables"][enhancement_index]["effects"][0]["enhancement"] = "missing_enhancement"
     var bad_enhancement_reference_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_enhancement_reference_catalog.load_from_definitions(bad_enhancement_reference_values),
@@ -6036,11 +6042,18 @@ func _test_consumable_effect_registry_contract() -> void:
     _assert_equal(
         registry.operation_ids(),
         [
-            "apply_enhancement", "apply_origin", "apply_random_enhancement",
-            "copy_run_card", "gain_equipped_inner_skill_forget_value",
+            "apply_enhancement", "apply_imprint", "apply_origin",
+            "apply_origin_to_matching_rank", "apply_prepared_group_origin",
+            "apply_random_enhancement", "apply_random_imprint",
+            "copy_run_card", "duplicate_equipped_inner_skill",
+            "gain_equipped_inner_skill_forget_value",
             "gain_experience_capped", "gain_insight",
+            "generate_random_base_cards",
             "grant_last_used_consumable", "grant_random_consumables",
-            "grant_random_inner_skill", "remove_run_cards",
+            "grant_random_inner_skill",
+            "modify_base_hand_limit",
+            "remove_run_cards", "remove_run_cards_for_experience",
+            "rewrite_technique_progression", "set_experience",
         ],
         "默认注册正式消耗品操作")
 
@@ -6734,6 +6747,255 @@ func _test_s2f2f1_formal_pills_and_transactions() -> void:
     _assert_true(chuangong_use.get("success", false), "传功丹获得唯一未习得内功")
     _assert_true(chuangong_growth.learned_inner_skill_ids.has("forget_fixture_b"), "传功丹加入本局内功库")
     _assert_equal(chuangong_growth.equipped_inner_skill_ids.size(), equipped_count_before, "传功丹不自动装备")
+
+func _test_s2f2f2_formal_curios_and_protocols() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "F2F2 正式奇珍内容目录有效")
+    var curios: Array = []
+    for definition in catalog.all_of("consumable"):
+        if str(definition.get("kind", "")) == "curio":
+            curios.append(definition)
+    _assert_equal(curios.size(), 17, "正式内容包含 17 种奇珍")
+    for definition in curios:
+        _assert_equal(int(definition.get("price", -1)), 4, "%s 奇珍价格为 4" % definition.get("name", ""))
+        _assert_equal(bool(definition.get("unique", false)), true, "%s 使用唯一奇珍协议" % definition.get("name", ""))
+        _assert_equal(bool(definition.get("record_last_used", true)), false, "%s 不进入溯忆记录" % definition.get("name", ""))
+
+    var generation_cases := [
+        {"id": "zhenyuan_huasheng", "count": 3, "ranks": ["J", "Q", "K"], "net": 2},
+        {"id": "shuangji_huasheng", "count": 2, "ranks": ["A"], "net": 1},
+        {"id": "fanshu_huasheng", "count": 4, "ranks": ["2", "3", "4", "5", "6", "7", "8", "9", "10"], "net": 3},
+    ]
+    for generation_case in generation_cases:
+        var session: RunSession = RunSessionScript.new()
+        _assert_true(session.execute({"type": "setup_run", "seed": 99101}).success, "%s 本局建立" % generation_case["id"])
+        session.growth.consumable_ids.assign([generation_case["id"]])
+        var before_count: int = session.growth.run_deck.card_count()
+        var result := session.execute({"type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+        _assert_true(result.success, "%s 使用成功" % generation_case["id"])
+        _assert_equal(session.growth.run_deck.card_count(), before_count + int(generation_case["net"]), "%s 牌数净变化正确" % generation_case["id"])
+        var generated: Array = result.payload_value("applied")[1]["generated"]
+        _assert_equal(generated.size(), generation_case["count"], "%s 生成数量正确" % generation_case["id"])
+        for generated_card in generated:
+            var values: Dictionary = session.growth.run_deck.card_data(str(generated_card["instance_id"]))
+            _assert_true(generation_case["ranks"].has(str(values["rank_name"])), "%s 只从指定牌阶池生成" % generation_case["id"])
+            _assert_true(["wind", "forest", "fire", "mountain"].has(str(values["attribute"])), "%s 使用正式属性" % generation_case["id"])
+            _assert_true(str(values["reshapes"]["enhancement"]) != "", "%s 每张生成牌各有随机强化" % generation_case["id"])
+
+    var imprint_cases := {
+        "xiantian_fu": "innate",
+        "huixiang_fu": "echo",
+        "wudao_fu": "enlightenment",
+        "huadan_fu": "alchemy",
+    }
+    for curio_id in imprint_cases:
+        var session: RunSession = RunSessionScript.new()
+        _assert_true(session.execute({"type": "setup_run", "seed": 99102}).success, "%s 本局建立" % curio_id)
+        session.growth.consumable_ids.assign([curio_id])
+        _assert_true(session.execute({
+            "type": "use_consumable", "slot_index": 0,
+            "selected_instance_ids": ["wind_5"],
+        }).success, "%s 使用成功" % curio_id)
+        _assert_equal(session.growth.run_deck.card_data("wind_5")["reshapes"]["imprint"], imprint_cases[curio_id], "%s 印记正确" % curio_id)
+
+    for prepared_id in ["zhuanxiang_lun", "yijie_pan"]:
+        var prepared_session: RunSession = RunSessionScript.new()
+        _assert_true(prepared_session.execute({"type": "setup_run", "seed": 99103}).success, "%s 预览本局建立" % prepared_id)
+        prepared_session.growth.consumable_ids.assign([prepared_id])
+        var state_before_queries: Dictionary = (
+            prepared_session.growth.capture_mutation_state())
+        var query_a := prepared_session.execute({"type": "query_consumable_use", "slot_index": 0})
+        var query_b := prepared_session.execute({"type": "query_consumable_use", "slot_index": 0})
+        _assert_equal(query_a.payload_value("prepared_preview"), query_b.payload_value("prepared_preview"), "%s 重复查询冻结结果一致" % prepared_id)
+        _assert_equal(query_a.payload_value("preparation_token"), query_b.payload_value("preparation_token"), "%s 重复查询 token 一致" % prepared_id)
+        _assert_equal(prepared_session.growth.consumable_use_sequence, 0, "%s 查询不递增随机序号" % prepared_id)
+        _assert_equal(prepared_session.growth.capture_mutation_state(), state_before_queries, "%s 查询不修改完整本局状态" % prepared_id)
+        var token := str(query_a.payload_value("preparation_token"))
+        var preview: Dictionary = query_a.payload_value("prepared_preview")
+        var use := prepared_session.execute({
+            "type": "use_consumable", "slot_index": 0,
+            "selected_instance_ids": [],
+            "choice_payload": {"preparation_token": token},
+        })
+        _assert_true(use.success, "%s 使用冻结预览成功" % prepared_id)
+        _assert_equal(use.payload_value("prepared_preview"), preview, "%s 正式执行复用展示结果" % prepared_id)
+        var prepared_result: Dictionary = preview.get("effects", [])[0].get(
+            "result", {})
+        for target_preview in prepared_result.get("targets", []):
+            _assert_equal(
+                prepared_session.growth.run_deck.card_data(
+                    str(target_preview.get("instance_id", ""))),
+                target_preview.get("after", {}),
+                "%s 牌组实际改造与冻结预览一致" % prepared_id)
+        if prepared_id == "yijie_pan":
+            _assert_equal(prepared_session.growth.base_hand_limit_modifier, -1, "易阶盘基础手牌上限 -1")
+
+    var stale_session: RunSession = RunSessionScript.new()
+    _assert_true(stale_session.execute({"type": "setup_run", "seed": 99104}).success, "失效 token 本局建立")
+    stale_session.growth.consumable_ids.assign(["zhuanxiang_lun"])
+    var stale_query := stale_session.execute({"type": "query_consumable_use", "slot_index": 0})
+    var stale_sequence: int = stale_session.growth.consumable_use_sequence
+    stale_session.growth.experience += 1
+    var stale_state_before_use: Dictionary = stale_session.growth.capture_mutation_state()
+    var stale_use := stale_session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "choice_payload": {"preparation_token": stale_query.payload_value("preparation_token")},
+    })
+    _assert_true(not stale_use.success, "状态变化后冻结 token 明确失效")
+    _assert_equal(stale_session.growth.consumable_use_sequence, stale_sequence, "失效 token 不递增随机序号")
+    _assert_equal(stale_session.growth.consumable_ids, ["zhuanxiang_lun"], "失效 token 不消耗奇珍")
+    _assert_equal(stale_session.growth.capture_mutation_state(), stale_state_before_use, "失效 token 不修改当前本局状态")
+
+    var burn: RunSession = RunSessionScript.new()
+    _assert_true(burn.execute({"type": "setup_run", "seed": 99105}).success, "焚元祭本局建立")
+    burn.growth.consumable_ids.assign(["fenyuan_ji"])
+    var burn_before: int = burn.growth.run_deck.card_count()
+    var burn_result := burn.execute({"type": "use_consumable", "slot_index": 0})
+    _assert_true(burn_result.success, "焚元祭使用成功")
+    _assert_equal(burn.growth.run_deck.card_count(), burn_before - 5, "焚元祭最多移出 5 张")
+    _assert_equal(burn.growth.experience, 20, "焚元祭每张 4 点且最多 20 点")
+
+    var small_burn: RunSession = RunSessionScript.new()
+    _assert_true(small_burn.execute({"type": "setup_run", "seed": 991051}).success, "小牌组焚元祭本局建立")
+    _assert_true(small_burn.growth.run_deck.reset_from_card_ids(
+        ["wind_2", "forest_3", "fire_4"], "small-burn").is_empty(),
+        "小牌组焚元祭测试牌组有效")
+    small_burn.growth.consumable_ids.assign(["fenyuan_ji"])
+    _assert_true(small_burn.execute({
+        "type": "use_consumable", "slot_index": 0,
+    }).success, "小牌组焚元祭使用成功")
+    _assert_equal(small_burn.growth.run_deck.card_count(), 0, "焚元祭不足 5 张时按实际牌数移出")
+    _assert_equal(small_burn.growth.experience, 12, "焚元祭不足 5 张时按实际数量获得历练")
+
+    var mirror: RunSession = RunSessionScript.new()
+    _assert_true(mirror.execute({"type": "setup_run", "seed": 99106}).success, "衍元镜本局建立")
+    mirror.growth.run_deck.apply_card_reshape("fire_8", "enhancement", "momentum")
+    mirror.growth.run_deck.apply_card_reshape("fire_8", "imprint", "echo")
+    mirror.growth.consumable_ids.assign(["yanyuan_jing"])
+    var mirror_result := mirror.execute({"type": "use_consumable", "slot_index": 0, "selected_instance_ids": ["fire_8"]})
+    _assert_true(mirror_result.success, "衍元镜生成两个完整复制")
+    var mirror_ids: Array = mirror_result.payload_value("applied")[0]["instance_ids"]
+    _assert_equal(mirror_ids.size(), 2, "衍元镜复制数量为 2")
+    _assert_true(mirror_ids[0] != mirror_ids[1], "衍元镜副本实例 ID 各不相同")
+    for mirror_id in mirror_ids:
+        _assert_equal(mirror.growth.run_deck.card_data(str(mirror_id))["reshapes"], mirror.growth.run_deck.card_data("fire_8")["reshapes"], "衍元镜完整继承重塑")
+
+    var perfect: RunSession = RunSessionScript.new()
+    _assert_true(perfect.execute({"type": "setup_run", "seed": 99107}).success, "圆满淬炼本局建立")
+    perfect.growth.run_deck.apply_card_reshape("mountain_6", "enhancement", "momentum")
+    perfect.growth.run_deck.apply_card_reshape("mountain_6", "imprint", "echo")
+    perfect.growth.consumable_ids.assign(["yuanman_cuilian"])
+    _assert_true(perfect.execute({"type": "use_consumable", "slot_index": 0, "selected_instance_ids": ["mountain_6"]}).success, "圆满淬炼使用成功")
+    var perfect_card: Dictionary = perfect.growth.run_deck.card_data("mountain_6")
+    _assert_equal(perfect_card["reshapes"]["enhancement"], "momentum", "圆满淬炼不替换已有强化")
+    _assert_equal(perfect_card["reshapes"]["imprint"], "echo", "圆满淬炼不替换已有印记")
+    _assert_equal(perfect_card["reshapes"]["origin"]["id"], "awakening", "圆满淬炼施加觉醒")
+
+    var resonance: RunSession = RunSessionScript.new()
+    _assert_true(resonance.execute({"type": "setup_run", "seed": 99108}).success, "同阶共鸣本局建立")
+    resonance.growth.consumable_ids.assign(["tongjie_gongming"])
+    var rank_three_before: Array[String] = []
+    for values in resonance.growth.run_deck.cards_snapshot():
+        if str(values["rank_name"]) == "3":
+            rank_three_before.append(str(values["instance_id"]))
+    _assert_true(resonance.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "choice_payload": {"rank": "3"},
+    }).success, "同阶共鸣选择 3 成功")
+    for instance_id in rank_three_before:
+        _assert_equal(resonance.growth.run_deck.card_data(instance_id)["reshapes"]["origin"]["id"], "awakening", "同阶共鸣觉醒全部既有 3")
+    _assert_true(resonance.growth.run_deck.card_data("wind_4")["reshapes"]["origin"].is_empty(), "同阶共鸣不影响其他牌阶")
+
+    var guixu: RunSession = RunSessionScript.new()
+    _assert_true(guixu.execute({"type": "setup_run", "seed": 99109}).success, "归墟本局建立")
+    guixu.growth.consumable_ids.assign(["guixu"])
+    var removals: Dictionary = {}
+    for hand_id in GrowthInventoryScript.HAND_IDS:
+        removals[hand_id] = guixu.growth.hand_technique_progression[hand_id]["sequence"].duplicate()
+    var guixu_result := guixu.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "choice_payload": {"removed_technique_ids_by_hand": removals},
+    })
+    _assert_true(guixu_result.success, "归墟按玩家选择移出超槽功法")
+    var expected_modifiers := {"high_card": 1, "pair": 1, "two_pair": 1, "three_kind": 2, "straight": 2, "full_house": 2, "four_kind": 4, "five_kind": 6}
+    for hand_id in GrowthInventoryScript.HAND_IDS:
+        _assert_equal(guixu.growth.hand_technique_progression[hand_id]["slot_count"], 0, "归墟 %s 槽位可降到 0" % hand_id)
+        _assert_true(guixu.growth.hand_technique_progression[hand_id]["sequence"].is_empty(), "归墟 %s 序列按选择移出" % hand_id)
+        _assert_equal(guixu.growth.hand_technique_multiplier_modifiers[hand_id], expected_modifiers[hand_id], "归墟 %s 倍率修正正确" % hand_id)
+        for technique_id in removals[hand_id]:
+            _assert_true(guixu.growth.learned_technique_ids.has(technique_id), "归墟移出序列但保留功法库")
+
+    guixu.growth.base_hand_limit_modifier = -1
+    var battle = BattleSessionScript.new(CombatEngineScript.new(null, catalog))
+    _assert_true(battle.setup_battle({"content_seed": 99109, "battle": {"use_enemy_ai": false}}, guixu.progress_snapshot()), "奇珍本局规则可装配下一场战斗")
+    _assert_equal(battle.engine.player.current_hand_limit(), 7, "下一场战斗读取易阶盘基础手牌上限")
+    battle.engine.player.hand = [_card("5", "wind")]
+    var guixu_preview: Dictionary = battle.preview([battle.engine.player.hand[0].id])
+    _assert_equal(guixu_preview["values"]["baseline_value"], 5, "归墟不改变牌型 baseline_value")
+    _assert_equal(guixu_preview["values"]["technique_multiplier"], 2, "归墟只将 +1 加入高牌 technique_multiplier")
+
+    var no_rarity: RunSession = RunSessionScript.new()
+    _assert_true(no_rarity.execute({"type": "setup_run", "seed": 99111}).success, "稀有内功空候选本局建立")
+    no_rarity.growth.consumable_ids.assign(["qingshen_qi"])
+    _assert_true(not no_rarity.execute({"type": "query_consumable_use", "slot_index": 0}).payload_value("can_use"), "没有稀有内功候选时请神契不可用")
+
+    var fixture_values := _catalog_definitions(catalog)
+    fixture_values["inner_skills"]["inner_skills"].append_array([
+        {"id": "rare_curio_fixture", "name": "稀有奇珍测试内功", "rarity": "rare", "timing": "on_play_resolve", "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]},
+        {"id": "legendary_curio_fixture", "name": "传奇奇珍测试内功", "rarity": "legendary", "timing": "on_play_resolve", "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]},
+    ])
+    var fixture_catalog = ContentCatalogScript.new()
+    _assert_true(fixture_catalog.load_from_definitions(fixture_values), "奇珍内功 rarity fixture 有效")
+    var fixture_service = ConsumableUseServiceScript.new(
+        fixture_catalog.consumable_effect_registry, fixture_catalog,
+        ContentValidatorScript.HAND_IDS, ContentValidatorScript.POOL_IDS)
+    for rarity_case in [["qingshen_qi", "rare_curio_fixture", 0], ["tianshou_zhenjing", "legendary_curio_fixture", 9]]:
+        var rarity_growth = GrowthInventoryScript.new(fixture_catalog)
+        rarity_growth.experience = 9
+        rarity_growth.consumable_ids.assign([rarity_case[0]])
+        var rarity_use: Dictionary = fixture_service.use(
+            rarity_growth, 0, [], 99112,
+            fixture_catalog.get_by_id("consumable", rarity_case[0]))
+        _assert_true(rarity_use.get("success", false), "%s 从指定 rarity 获得内功" % rarity_case[0])
+        _assert_true(rarity_growth.learned_inner_skill_ids.has(rarity_case[1]), "%s 不跨 rarity 抽取" % rarity_case[0])
+        _assert_equal(rarity_growth.experience, rarity_case[2], "%s 历练代价正确" % rarity_case[0])
+
+    var lineage_growth = GrowthInventoryScript.new(fixture_catalog)
+    lineage_growth.learned_inner_skill_ids.assign(["extra_qi_to_defense", "rare_curio_fixture", "legendary_curio_fixture"])
+    lineage_growth.equipped_inner_skill_ids.assign(["extra_qi_to_defense"])
+    lineage_growth.consumable_ids.assign(["yimai_zhenchuan"])
+    var lineage_use: Dictionary = fixture_service.use(
+        lineage_growth, 0, [], 99113,
+        fixture_catalog.get_by_id("consumable", "yimai_zhenchuan"))
+    _assert_true(lineage_use.get("success", false), "一脉真传使用成功")
+    _assert_equal(lineage_growth.learned_inner_skill_ids, ["extra_qi_to_defense", "extra_qi_to_defense"], "一脉真传内功库使用 multiset 双副本")
+    _assert_equal(lineage_growth.equipped_inner_skill_ids, ["extra_qi_to_defense", "extra_qi_to_defense"], "一脉真传原件与副本都保持装备")
+    _assert_equal(lineage_growth.experience, 0, "一脉真传清理不产生遗忘所得")
+
+    var save = RunSaveDataScript.new().capture(guixu)
+    guixu.growth.used_unique_consumable_ids.append("yijie_pan")
+    save.capture(guixu)
+    var restored: Dictionary = save.restore_session()
+    _assert_true(restored.get("success", false), "奇珍本局字段存档恢复成功")
+    var restored_growth = restored["run_session"].growth
+    _assert_equal(restored_growth.base_hand_limit_modifier, -1, "存档保留基础手牌上限修正")
+    _assert_equal(restored_growth.hand_technique_multiplier_modifiers, expected_modifiers, "存档保留功法倍率修正")
+    _assert_true(restored_growth.used_unique_consumable_ids.has("guixu") and restored_growth.used_unique_consumable_ids.has("yijie_pan"), "存档保留已用唯一奇珍")
+    var legacy_values: Dictionary = save.to_dict()
+    legacy_values["growth"].erase("base_hand_limit_modifier")
+    legacy_values["growth"].erase("hand_technique_multiplier_modifiers")
+    legacy_values["growth"].erase("used_unique_consumable_ids")
+    var legacy := RunSaveDataScript.new(legacy_values).restore_session()
+    _assert_true(legacy.get("success", false), "旧存档缺少奇珍字段仍可载入")
+    _assert_equal(legacy["run_session"].growth.base_hand_limit_modifier, 0, "旧存档手牌上限修正默认 0")
+
+    var unique: RunSession = RunSessionScript.new()
+    _assert_true(unique.execute({"type": "setup_run", "seed": 99110}).success, "唯一奇珍本局建立")
+    unique.growth.consumable_ids.assign(["xiantian_fu", "xiantian_fu"])
+    _assert_true(unique.execute({"type": "use_consumable", "slot_index": 0, "selected_instance_ids": ["wind_2"]}).success, "唯一奇珍首次使用成功")
+    var unique_sequence: int = unique.growth.consumable_use_sequence
+    _assert_true(not unique.execute({"type": "use_consumable", "slot_index": 0, "selected_instance_ids": ["wind_3"]}).success, "同一种唯一奇珍第二次被拒绝")
+    _assert_equal(unique.growth.consumable_use_sequence, unique_sequence, "唯一奇珍重复失败不递增序号")
 
 func _target_ids(targets: Array) -> Array[String]:
     var result: Array[String] = []
@@ -7809,6 +8071,13 @@ func _install_sync_guard(engine) -> void:
     }
     engine.sequence_book.configure({"high_card": ["sync_guard"]})
     engine.enemy_sequence_book.configure({"high_card": ["sync_guard"]})
+
+func _content_entry_index(values: Array, content_id: String) -> int:
+    for index in range(values.size()):
+        if values[index] is Dictionary \
+                and str(values[index].get("id", "")) == content_id:
+            return index
+    return -1
 
 func _scripted_engine_with_player_high(rank: String = "5"):
     var engine = CombatEngineScript.new()

@@ -45,6 +45,34 @@ func apply_origin(
 		_payload: Dictionary) -> Dictionary:
 	return {"success": false, "reason": "该场景不支持本源改造"}
 
+func apply_imprint(_instance_id: String, _imprint_id: String) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持印记施加"}
+
+func add_run_card_by_definition(_definition_id: String) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持生成本局真气"}
+
+func preview_origin(_instance_id: String, _origin_id: String, _payload: Dictionary) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持本源预览"}
+
+func formal_imprint_ids() -> Array[String]:
+	return []
+
+func base_card_definition_ids(
+		_rank_ids: Array = [], _attribute_ids: Array = []) -> Array[String]:
+	return []
+
+func inner_skill_candidates_by_rarity(_rarity: String = "") -> Array[String]:
+	return inner_skill_candidates()
+
+func duplicate_equipped_inner_skill(_inner_skill_id: String) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持复制内功"}
+
+func rewrite_technique_progression(_choice_payload: Dictionary, _slot_delta: int, _modifiers: Dictionary) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持功法槽位改造"}
+
+func apply_base_hand_limit_modifier(_delta: int) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持手牌上限改造"}
+
 func technique_name(technique_id: String) -> String:
 	return technique_id
 

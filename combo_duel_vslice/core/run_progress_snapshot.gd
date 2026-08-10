@@ -22,6 +22,9 @@ var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
 var last_recallable_consumable_id: String = ""
+var base_hand_limit_modifier: int = 0
+var hand_technique_multiplier_modifiers: Dictionary = {}
+var used_unique_consumable_ids: Array[String] = []
 
 var has_consumable_ids: bool = false
 var has_learned_technique_ids: bool = false
@@ -36,6 +39,9 @@ var has_hand_technique_progression: bool = false
 var has_practice_shop_state: bool = false
 var has_consumable_use_sequence: bool = false
 var has_last_recallable_consumable_id: bool = false
+var has_base_hand_limit_modifier: bool = false
+var has_hand_technique_multiplier_modifiers: bool = false
+var has_used_unique_consumable_ids: bool = false
 
 static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     var result := RunProgressSnapshot.new()
@@ -53,6 +59,12 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_consumable_use_sequence = values.has("consumable_use_sequence")
     result.has_last_recallable_consumable_id = values.has(
         "last_recallable_consumable_id")
+    result.has_base_hand_limit_modifier = values.has(
+        "base_hand_limit_modifier")
+    result.has_hand_technique_multiplier_modifiers = values.has(
+        "hand_technique_multiplier_modifiers")
+    result.has_used_unique_consumable_ids = values.has(
+        "used_unique_consumable_ids")
 
     for consumable_id in values.get("consumable_ids", []):
         result.consumable_ids.append(str(consumable_id))
@@ -74,6 +86,12 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.consumable_use_sequence = int(values.get("consumable_use_sequence", 0))
     result.last_recallable_consumable_id = str(values.get(
         "last_recallable_consumable_id", ""))
+    result.base_hand_limit_modifier = int(values.get(
+        "base_hand_limit_modifier", 0))
+    result.hand_technique_multiplier_modifiers = values.get(
+        "hand_technique_multiplier_modifiers", {}).duplicate(true)
+    for consumable_id in values.get("used_unique_consumable_ids", []):
+        result.used_unique_consumable_ids.append(str(consumable_id))
     return result
 
 func to_dict() -> Dictionary:
@@ -104,4 +122,11 @@ func to_dict() -> Dictionary:
         result["consumable_use_sequence"] = consumable_use_sequence
     if has_last_recallable_consumable_id:
         result["last_recallable_consumable_id"] = last_recallable_consumable_id
+    if has_base_hand_limit_modifier:
+        result["base_hand_limit_modifier"] = base_hand_limit_modifier
+    if has_hand_technique_multiplier_modifiers:
+        result["hand_technique_multiplier_modifiers"] = (
+            hand_technique_multiplier_modifiers.duplicate(true))
+    if has_used_unique_consumable_ids:
+        result["used_unique_consumable_ids"] = used_unique_consumable_ids.duplicate()
     return result

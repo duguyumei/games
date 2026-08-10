@@ -67,6 +67,10 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "consumable_use_sequence": int(run_session.growth.consumable_use_sequence),
             "last_recallable_consumable_id": str(
                 run_session.growth.last_recallable_consumable_id),
+            "base_hand_limit_modifier": int(
+                run_session.growth.base_hand_limit_modifier),
+            "hand_technique_multiplier_modifiers": run_session.growth.hand_technique_multiplier_modifiers.duplicate(true),
+            "used_unique_consumable_ids": run_session.growth.used_unique_consumable_ids.duplicate(),
             "run_deck": run_session.growth.run_deck.to_snapshot(),
         },
     }
@@ -139,6 +143,18 @@ func validate(content_catalog = null) -> Array[String]:
     if growth.has("last_recallable_consumable_id") \
             and not growth["last_recallable_consumable_id"] is String:
         errors.append("last_recallable_consumable_id 必须是字符串")
+    if growth.has("base_hand_limit_modifier") \
+            and not growth["base_hand_limit_modifier"] is int:
+        errors.append("base_hand_limit_modifier 必须是整数")
+    if growth.has("hand_technique_multiplier_modifiers") \
+            and not growth["hand_technique_multiplier_modifiers"] is Dictionary:
+        errors.append("hand_technique_multiplier_modifiers 必须是对象")
+    elif growth.has("hand_technique_multiplier_modifiers"):
+        for hand_id in growth["hand_technique_multiplier_modifiers"]:
+            if str(hand_id) not in GrowthInventoryScript.HAND_IDS:
+                errors.append("hand_technique_multiplier_modifiers 包含未知牌型：%s" % str(hand_id))
+            elif not growth["hand_technique_multiplier_modifiers"][hand_id] is int:
+                errors.append("hand_technique_multiplier_modifiers.%s 必须是整数" % str(hand_id))
     _validate_life_fields(growth, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
@@ -149,6 +165,14 @@ func validate(content_catalog = null) -> Array[String]:
         if not catalog.load_all():
             errors.append("无法载入内容目录以校验存档")
             return errors
+    if growth.has("used_unique_consumable_ids"):
+        _validate_id_array(
+            growth["used_unique_consumable_ids"], "consumable", catalog, errors)
+        for consumable_id in growth["used_unique_consumable_ids"]:
+            var unique_definition: Dictionary = catalog.get_by_id(
+                "consumable", str(consumable_id))
+            if not bool(unique_definition.get("unique", false)):
+                errors.append("已用唯一消耗品记录引用非唯一内容：%s" % str(consumable_id))
     _validate_hand_progression(growth.get("hand_technique_progression", {}), catalog, errors)
     if not growth.has("life") and not growth.has("max_life") \
             and _player_max_life_for_act(catalog, int(map_state.get("act", 0))) <= 0:
@@ -212,6 +236,15 @@ func restore_session(content_catalog = null) -> Dictionary:
     if growth_state.has("last_recallable_consumable_id"):
         progress_values["last_recallable_consumable_id"] = (
             growth_state["last_recallable_consumable_id"])
+    if growth_state.has("base_hand_limit_modifier"):
+        progress_values["base_hand_limit_modifier"] = (
+            growth_state["base_hand_limit_modifier"])
+    if growth_state.has("hand_technique_multiplier_modifiers"):
+        progress_values["hand_technique_multiplier_modifiers"] = (
+            growth_state["hand_technique_multiplier_modifiers"])
+    if growth_state.has("used_unique_consumable_ids"):
+        progress_values["used_unique_consumable_ids"] = (
+            growth_state["used_unique_consumable_ids"])
     growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict(progress_values))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
@@ -238,8 +271,8 @@ func _validate_content_ids(
     _validate_id_array(growth.get("consumable_ids", []), "consumable", catalog, errors, true)
     _validate_id_array(growth.get("practice_purchase_ids", []), "consumable", catalog, errors)
     _validate_id_array(growth.get("learned_technique_ids", []), "technique", catalog, errors)
-    _validate_id_array(growth.get("learned_inner_skill_ids", []), "inner_skill", catalog, errors)
-    _validate_id_array(growth.get("equipped_inner_skill_ids", []), "inner_skill", catalog, errors)
+    _validate_id_array(growth.get("learned_inner_skill_ids", []), "inner_skill", catalog, errors, true)
+    _validate_id_array(growth.get("equipped_inner_skill_ids", []), "inner_skill", catalog, errors, true)
     var last_recallable := str(growth.get("last_recallable_consumable_id", ""))
     if last_recallable != "":
         var recall_definition: Dictionary = catalog.get_by_id(
@@ -249,9 +282,11 @@ func _validate_content_ids(
         elif str(recall_definition.get("kind", "")) not in ["pill", "insight"] \
                 or not bool(recall_definition.get("record_last_used", true)):
             errors.append("最近使用记录不是可溯忆的丹药或心得：%s" % last_recallable)
-    for inner_skill_id in growth.get("equipped_inner_skill_ids", []):
-        if not growth.get("learned_inner_skill_ids", []).has(inner_skill_id):
-            errors.append("已装备内功未包含在已习得内功中：%s" % str(inner_skill_id))
+    var learned_counts := _counts(growth.get("learned_inner_skill_ids", []))
+    var equipped_counts := _counts(growth.get("equipped_inner_skill_ids", []))
+    for inner_skill_id in equipped_counts:
+        if int(equipped_counts[inner_skill_id]) > int(learned_counts.get(inner_skill_id, 0)):
+            errors.append("已装备内功数量超过已习得内功：%s" % str(inner_skill_id))
     var equipped_count: int = growth.get("equipped_inner_skill_ids", []).size()
     var slot := int(growth.get("technique_slot_index", -1))
     if slot < 0 or slot > equipped_count:
@@ -274,6 +309,15 @@ func _validate_id_array(
         elif seen.has(content_id) and not allow_duplicates:
             errors.append("存档包含重复 %s ID：%s" % [content_type, content_id])
         seen[content_id] = true
+
+func _counts(values) -> Dictionary:
+    var result: Dictionary = {}
+    if not values is Array:
+        return result
+    for value in values:
+        var content_id := str(value)
+        result[content_id] = int(result.get(content_id, 0)) + 1
+    return result
 
 func _validate_life_fields(growth: Dictionary, errors: Array[String]) -> void:
     var has_life := growth.has("life")
@@ -310,8 +354,8 @@ func _validate_hand_progression(values, catalog, errors: Array[String]) -> void:
             continue
         var slot_count = progression.get("slot_count", 0)
         var sequence = progression.get("sequence", [])
-        if not slot_count is int or int(slot_count) < 1:
-            errors.append("growth.hand_technique_progression.%s.slot_count 必须是正整数" % hand_id)
+        if not slot_count is int or int(slot_count) < 0:
+            errors.append("growth.hand_technique_progression.%s.slot_count 必须是非负整数" % hand_id)
         if not sequence is Array or sequence.size() > int(slot_count):
             errors.append("growth.hand_technique_progression.%s.sequence 超出槽位" % hand_id)
             continue
@@ -367,6 +411,7 @@ func _normalize_v1_types() -> void:
     _normalize_optional_integer(growth, "life")
     _normalize_optional_integer(growth, "max_life")
     _normalize_optional_integer(growth, "consumable_use_sequence")
+    _normalize_optional_integer(growth, "base_hand_limit_modifier")
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
     var progression = growth.get("hand_technique_progression", {})
     if progression is Dictionary:

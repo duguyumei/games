@@ -39,6 +39,7 @@ func plan(values: Dictionary, origin_id: String, payload: Dictionary) -> Diction
         return _failure("觉醒属性必须与真气当前基础属性一致")
 
     var after := values.duplicate(true)
+    var stored_payload := resolved_payload.duplicate(true)
     match origin_id:
         "attribute_change":
             var attribute_id := str(payload["attribute"])
@@ -54,12 +55,19 @@ func plan(values: Dictionary, origin_id: String, payload: Dictionary) -> Diction
             var rank_index := _rank_index(str(values.get("rank_name", "")))
             if rank_index < 0:
                 return _failure("真气当前牌阶不在 base_deck 中：%s" % str(values.get("rank_name", "")))
-            var direction := str(payload["direction"])
-            var target_index := rank_index + (1 if direction == "up" else -1)
-            if target_index < 0:
-                return _failure("2 不能继续降阶")
-            if target_index >= ranks.size():
-                return _failure("A 不能继续升阶")
+            var target_index := -1
+            if payload.has("target_rank"):
+                target_index = _rank_index(str(payload["target_rank"]))
+                stored_payload = {
+                    "direction": "up" if target_index >= rank_index else "down",
+                }
+            else:
+                var direction := str(payload["direction"])
+                target_index = rank_index + (1 if direction == "up" else -1)
+                if target_index < 0:
+                    return _failure("2 不能继续降阶")
+                if target_index >= ranks.size():
+                    return _failure("A 不能继续升阶")
             var attribute := _attribute_definition(str(values.get("attribute", "")))
             if attribute.is_empty():
                 return _failure("真气当前属性不在 base_deck 中：%s" % str(values.get("attribute", "")))
@@ -70,7 +78,7 @@ func plan(values: Dictionary, origin_id: String, payload: Dictionary) -> Diction
     var after_reshapes: Dictionary = after.get("reshapes", {}).duplicate(true)
     after_reshapes["origin"] = {
         "id": origin_id,
-        "payload": resolved_payload,
+        "payload": stored_payload,
     }
     after["reshapes"] = after_reshapes
     return {"success": true, "after": after}
@@ -114,11 +122,21 @@ func validate_payload(origin_id: String, payload: Dictionary) -> String:
             if _attribute_definition(attribute_id).is_empty():
                 return "转属引用未知基础属性：%s" % attribute_id
         "rank_change":
-            if payload.size() != 1 or not payload.get("direction") is String:
-                return "易阶 payload 必须且只能包含字符串 direction"
-            var direction := str(payload.get("direction", ""))
-            if not RANK_DIRECTIONS.has(direction):
-                return "易阶 direction 只能为 up 或 down"
+            if payload.size() != 1:
+                return "易阶 payload 必须且只能包含 direction 或 target_rank"
+            if payload.has("direction"):
+                if not payload.get("direction") is String:
+                    return "易阶 direction 必须是字符串"
+                var direction := str(payload.get("direction", ""))
+                if not RANK_DIRECTIONS.has(direction):
+                    return "易阶 direction 只能为 up 或 down"
+            elif payload.has("target_rank"):
+                if not payload.get("target_rank") is String:
+                    return "易阶 target_rank 必须是字符串"
+                if _rank_definition(str(payload.get("target_rank", ""))).is_empty():
+                    return "易阶引用未知目标牌阶：%s" % str(payload.get("target_rank", ""))
+            else:
+                return "易阶 payload 必须提供 direction 或 target_rank"
         "awakening":
             if payload.size() != 1 or not payload.get("attribute") is String:
                 return "觉醒 payload 必须为空或只包含字符串 attribute"

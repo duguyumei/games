@@ -1,11 +1,148 @@
 {
-  "version": 4,
+  "version": 5,
   "practice_offer_ids": [
     "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
     "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight",
     "zengyuan_pill"
   ],
   "consumables": [
+    {
+      "id": "zhenyuan_huasheng", "name": "真元化生", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "随机永久移出 1 张真气，生成 3 张 J/Q/K 随机属性真元牌并各获随机强化。",
+      "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 1},
+      "effects": [
+        {"op": "remove_run_cards"},
+        {"op": "generate_random_base_cards", "count": 3, "rank_ids": ["J", "Q", "K"], "random_enhancement": true}
+      ]
+    },
+    {
+      "id": "shuangji_huasheng", "name": "双极化生", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "随机永久移出 1 张真气，生成 2 张随机属性 A 并各获随机强化。",
+      "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 1},
+      "effects": [
+        {"op": "remove_run_cards"},
+        {"op": "generate_random_base_cards", "count": 2, "rank_ids": ["A"], "random_enhancement": true}
+      ]
+    },
+    {
+      "id": "fanshu_huasheng", "name": "凡数化生", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "随机永久移出 1 张真气，生成 4 张 2～10 随机属性数字牌并各获随机强化。",
+      "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 1},
+      "effects": [
+        {"op": "remove_run_cards"},
+        {"op": "generate_random_base_cards", "count": 4, "rank_ids": ["2", "3", "4", "5", "6", "7", "8", "9", "10"], "random_enhancement": true}
+      ]
+    },
+    {
+      "id": "xiantian_fu", "name": "先天符", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择 1 张真气，为其施加先天印。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_imprint", "imprint": "innate"}]
+    },
+    {
+      "id": "qingshen_qi", "name": "请神契", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "随机获得 1 门稀有内功，然后将当前持有历练变为 0。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "grant_random_inner_skill", "count": 1, "rarity": "rare"}, {"op": "set_experience", "amount": 0}]
+    },
+    {
+      "id": "zhuanxiang_lun", "name": "转相轮", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true, "requires_preparation": true,
+      "description": "随机展示至多当前基础手牌上限张合格真气，并将整组转为同一个随机属性。",
+      "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 8, "maximum_source": "base_hand_limit", "count_mode": "maximum"},
+      "effects": [{"op": "apply_prepared_group_origin", "origin": "attribute_change", "pool": ["wind", "forest", "fire", "mountain"]}]
+    },
+    {
+      "id": "yijie_pan", "name": "易阶盘", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true, "requires_preparation": true,
+      "description": "随机展示至多当前基础手牌上限张合格真气，将整组直接易阶到同一个随机牌阶，随后基础手牌上限 -1。",
+      "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 8, "maximum_source": "base_hand_limit", "count_mode": "maximum"},
+      "effects": [
+        {"op": "apply_prepared_group_origin", "origin": "rank_change", "pool": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]},
+        {"op": "modify_base_hand_limit", "delta": -1}
+      ]
+    },
+    {
+      "id": "fenyuan_ji", "name": "焚元祭", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "确定性随机永久移出至多 5 张真气，每张获得 4 点历练，最多 20 点。",
+      "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 5, "count_mode": "maximum"},
+      "effects": [{"op": "remove_run_cards_for_experience", "experience_per_card": 4}]
+    },
+    {
+      "id": "yimai_zhenchuan", "name": "一脉真传", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "随机复制一门已装备内功，保留原件与副本并移出其余全部已获内功。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "duplicate_equipped_inner_skill", "count": 1}]
+    },
+    {
+      "id": "huixiang_fu", "name": "回响符", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择 1 张真气，为其施加回响印。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_imprint", "imprint": "echo"}]
+    },
+    {
+      "id": "wudao_fu", "name": "悟道符", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择 1 张真气，为其施加悟道印。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_imprint", "imprint": "enlightenment"}]
+    },
+    {
+      "id": "huadan_fu", "name": "化丹符", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择 1 张真气，为其施加化丹印。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_imprint", "imprint": "alchemy"}]
+    },
+    {
+      "id": "yanyuan_jing", "name": "衍元镜", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择 1 张本局真气，生成 2 张完整复制。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "copy_run_card", "count": 2}]
+    },
+    {
+      "id": "tianshou_zhenjing", "name": "天授真经", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "随机获得 1 门传奇内功并加入本局内功库。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "grant_random_inner_skill", "count": 1, "rarity": "legendary"}]
+    },
+    {
+      "id": "guixu", "name": "归墟", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "八种精确牌型槽位各 -1 至最低 0，并获得对应本局功法倍率修正。",
+      "choice_schema": {"type": "technique_sequence_removals", "field": "removed_technique_ids_by_hand", "slot_delta": -1},
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "rewrite_technique_progression", "slot_delta": -1, "modifiers": {"high_card": 1, "pair": 1, "two_pair": 1, "three_kind": 2, "straight": 2, "full_house": 2, "four_kind": 4, "five_kind": 6}}]
+    },
+    {
+      "id": "yuanman_cuilian", "name": "圆满淬炼", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择 1 张未接受本源改造的真气使其觉醒；缺少强化或印记时分别随机补足，不替换已有内容。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [
+        {"op": "apply_origin", "origin": "awakening", "payload": {}},
+        {"op": "apply_random_enhancement", "only_if_empty": true},
+        {"op": "apply_random_imprint", "only_if_empty": true}
+      ]
+    },
+    {
+      "id": "tongjie_gongming", "name": "同阶共鸣", "kind": "curio", "price": 4,
+      "record_last_used": false, "unique": true,
+      "description": "选择牌阶 2～5，使本局牌组中该牌阶所有尚未接受本源改造的普通真气觉醒。",
+      "choice_schema": {"type": "enum", "field": "rank", "options": ["2", "3", "4", "5"]},
+      "targeting": {"zone": "run_deck", "selection": "choice_filtered", "choice_field": "rank", "choice_payload_field": "rank", "minimum": 1, "maximum": 999},
+      "effects": [{"op": "apply_origin_to_matching_rank"}]
+    },
     {
       "id": "suyi_pill",
       "name": "溯忆丹",

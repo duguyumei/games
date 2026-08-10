@@ -9,6 +9,7 @@ func _initialize() -> void:
         "_test_experience_interest_node_settlement",
         "_test_formal_practice_shop_and_hand_progression",
         "_test_s2f2f1_formal_pills_and_transactions",
+        "_test_s2f2f2_formal_curios_and_protocols",
         "_test_boss_chest_flow",
         "_test_layered_life_progression_and_battle_persistence",
         "_test_run_state_battle_growth_persistence",

@@ -308,6 +308,45 @@ RunSession
 实例 ID。目标必须属于当前本局 RunDeck、不得重复，并严格满足
 `minimum/maximum`。
 
+## 6.5 结构化选择与冻结预览
+
+战斗外命令继续兼容 `selected_instance_ids`，并可额外提交 `choice_payload`。
+内容通过窄 `choice_schema` 声明枚举选择或按牌型移出超槽功法；查询返回动态
+`choice_options`，正式执行仍会按当前事务状态重新校验，不把 UI 选择直接视为可信输入。
+
+需要先展示随机目标与转化结果的内容声明 `requires_preparation=true`。查询使用由
+本局种子、`consumable_use_sequence`、内容 ID 和效果序号派生的新 RNG 计算
+`prepared_preview`，不会修改成长库存或推进随机序号；同时返回覆盖完整事务状态与冻结结果的
+`preparation_token`。正式执行必须在 `choice_payload.preparation_token` 中回传该值，
+并复用相同目标和效果载荷。任一相关状态变化都会令 token 失效，执行明确失败且不重抽。
+
+`deterministic_random` 的候选先按实例 ID 排序。`count_mode=maximum` 表示选取当前上限
+允许的全部随机目标；`maximum_source=base_hand_limit` 表示上限读取本局当前基础手牌上限。
+`choice_filtered` 则按结构化枚举值选择全部匹配目标，不接受另一组手动实例 ID。
+
+## 6.6 奇珍通用能力族
+
+奇珍继续使用 `ConsumableEffectHandlerRegistry`，当前能力包括印记施加、随机基础真气生成、
+整组冻结本源改造、按稀有度获得内功、已装备内功复制清理、按实际移出真气结算历练、
+基础手牌上限修正、牌型槽位与功法倍率修正。基础真气候选读取 `base_deck`，强化、印记与
+内功候选读取统一内容目录；中央服务不按奇珍 ID 分派。
+
+`GrowthInventory` 以数组重复项表达内功多副本。已获和已装备内功都使用 multiset 语义，
+存档校验按每个 ID 的数量检查“装备数量不超过已获数量”，战斗装配后重复 ID 会按装备顺序
+各自生效。
+
+## 6.7 本局规则字段
+
+以下字段属于成长库存的完整事务状态、`RunProgressSnapshot` 与 v1 存档 `growth` 段：
+
+- `base_hand_limit_modifier`：与基础 8 相加，最终基础手牌上限最低为 1；
+- `hand_technique_multiplier_modifiers`：按八种精确牌型保存，只加入 `multiplier_bonus`；
+- `used_unique_consumable_ids`：记录已成功使用的唯一消耗品 ID。
+
+旧存档缺省时分别按 `0`、空对象和空数组恢复。战斗装配把前两项写入 `BattleSide`；倍率修正
+不改变固定牌型倍率、`baseline_value` 或 `power_fixed`。唯一内容只在整次事务成功提交时记录，
+查询、预览和失败均不写入。
+
 ## 7. 什么时候只写 JSON
 
 满足以下条件时只写 JSON：

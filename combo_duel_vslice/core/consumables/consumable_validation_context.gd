@@ -55,6 +55,17 @@ func legal_attribute_ids() -> Array[String]:
 		result.append(str(attribute.get("id", "")))
 	return result
 
+func legal_rank_ids() -> Array[String]:
+	var result: Array[String] = []
+	var base_deck: Dictionary = {}
+	if _content_catalog != null:
+		base_deck = _content_catalog.definition("base_deck")
+	elif validator != null and validator.has_method("base_deck_definition"):
+		base_deck = validator.base_deck_definition()
+	for rank in base_deck.get("ranks", []):
+		result.append(str(rank.get("id", "")))
+	return result
+
 func content_ids_by_kind(content_type: String, kind: String) -> Array[String]:
 	var result: Array[String] = []
 	if content_type != "consumable":

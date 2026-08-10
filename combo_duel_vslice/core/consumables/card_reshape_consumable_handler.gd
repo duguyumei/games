@@ -148,12 +148,23 @@ func _validate_origin(effect: Dictionary, context, scope: String) -> void:
 				context.report_error(
 					scope + ".payload.attribute", "引用未知基础属性 %s" % str(values.get("attribute", "")))
 		"rank_change":
-			if values.size() != 1 or not values.get("direction") is String:
+			if values.size() != 1:
 				context.report_error(
-					scope + ".payload", "易阶必须且只能提供字符串 direction")
-			elif not ["up", "down"].has(str(values.get("direction", ""))):
+					scope + ".payload", "易阶必须且只能提供 direction 或 target_rank")
+			elif values.has("direction"):
+				if not values.get("direction") is String \
+						or not ["up", "down"].has(str(values.get("direction", ""))):
+					context.report_error(
+						scope + ".payload.direction", "只能为 up 或 down")
+			elif values.has("target_rank"):
+				if not values.get("target_rank") is String \
+						or context.has_method("legal_rank_ids") \
+						and not context.legal_rank_ids().has(str(values.get("target_rank", ""))):
+					context.report_error(
+						scope + ".payload.target_rank", "必须引用 base_deck 正式牌阶")
+			else:
 				context.report_error(
-					scope + ".payload.direction", "只能为 up 或 down")
+					scope + ".payload", "易阶必须提供 direction 或 target_rank")
 		"awakening":
 			if not values.is_empty() and (
 					values.size() != 1 or not values.get("attribute") is String):

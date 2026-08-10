@@ -61,6 +61,10 @@ func preview_dto(
         return _invalid_preview(str(play_check.get("reason", "此真气本回合不能打出")))
 
     var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {}).duplicate(true)
+    modifiers["multiplier_bonus"] = (
+        int(modifiers.get("multiplier_bonus", 0))
+        + int(side.hand_technique_multiplier_modifiers.get(
+            hand_result["id"], 0)))
     if cards.size() == 5 and is_same_attribute_action(cards):
         modifiers["power_amp_percent"] = int(modifiers.get("power_amp_percent", 0)) + 50
     modifiers["power_fixed"] = (

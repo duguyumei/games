@@ -203,11 +203,13 @@ func execute(command: Dictionary) -> CommandResult:
         "purchase_consumable":
             result = _purchase_consumable(str(command.get("consumable_id", "")))
         "query_consumable_use":
-            result = _query_consumable_use(int(command.get("slot_index", -1)))
+            result = _query_consumable_use(
+                int(command.get("slot_index", -1)), int(command.get("run_seed", navigation.seed)))
         "use_consumable":
             result = _use_consumable(
                 int(command.get("slot_index", -1)),
-                command.get("selected_instance_ids", []))
+                command.get("selected_instance_ids", []),
+                command.get("choice_payload", {}))
         _:
             result = {"success": false, "reason": "未知本局命令：%s" % command_type}
     if not result.get("success", false):
@@ -544,7 +546,7 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
     })
     return result
 
-func _query_consumable_use(slot_index: int) -> Dictionary:
+func _query_consumable_use(slot_index: int, run_seed: int = 0) -> Dictionary:
     if slot_index < 0 or slot_index >= growth.consumable_ids.size():
         return {
             "success": true,
@@ -563,7 +565,7 @@ func _query_consumable_use(slot_index: int) -> Dictionary:
     var consumable_id := str(growth.consumable_ids[slot_index])
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
     var result: Dictionary = _consumable_use_service.query_use(
-        growth, slot_index, definition)
+        growth, slot_index, definition, run_seed)
     if not result.get("success", false):
         return {
             "success": true,
@@ -588,7 +590,12 @@ func _query_consumable_use(slot_index: int) -> Dictionary:
     result["phase"] = navigation.phase
     return result
 
-func _use_consumable(slot_index: int, selected_instance_ids: Array) -> Dictionary:
+func _use_consumable(
+        slot_index: int,
+        selected_instance_ids: Array,
+        choice_payload = {}) -> Dictionary:
+    if not choice_payload is Dictionary:
+        return {"success": false, "reason": "choice_payload 必须是对象"}
     var gate := _consumable_use_gate()
     if not gate.get("allowed", false):
         return {"success": false, "reason": str(gate.get("reason", "当前阶段不能使用消耗品"))}
@@ -597,7 +604,8 @@ func _use_consumable(slot_index: int, selected_instance_ids: Array) -> Dictionar
     var consumable_id := str(growth.consumable_ids[slot_index])
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
     var result: Dictionary = _consumable_use_service.use(
-        growth, slot_index, selected_instance_ids, navigation.seed, definition)
+        growth, slot_index, selected_instance_ids, navigation.seed, definition,
+        choice_payload)
     if not result.get("success", false):
         return result
     _run_state.changed.emit()
@@ -712,6 +720,9 @@ func _growth_snapshot() -> Dictionary:
         "run_deck": growth.run_deck.to_snapshot(),
         "run_deck_count": growth.run_deck.card_count(),
         "last_recallable_consumable_id": growth.last_recallable_consumable_id,
+        "base_hand_limit_modifier": growth.base_hand_limit_modifier,
+        "hand_technique_multiplier_modifiers": growth.hand_technique_multiplier_modifiers.duplicate(true),
+        "used_unique_consumable_ids": growth.used_unique_consumable_ids.duplicate(),
     }
 
 func _player_max_life_for_act(act: int) -> int:

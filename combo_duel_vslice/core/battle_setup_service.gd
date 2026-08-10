@@ -155,6 +155,11 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> vo
     if progress_snapshot.has_hand_technique_progression:
         side.hand_technique_progression = progress_snapshot.hand_technique_progression.duplicate(true)
         side.hand_technique_progression_active = true
+    if progress_snapshot.has_base_hand_limit_modifier:
+        side.base_hand_limit_modifier = progress_snapshot.base_hand_limit_modifier
+    if progress_snapshot.has_hand_technique_multiplier_modifiers:
+        side.hand_technique_multiplier_modifiers = (
+            progress_snapshot.hand_technique_multiplier_modifiers.duplicate(true))
     if progress_snapshot.has_learned_technique_ids:
         for technique_id in progress_snapshot.learned_technique_ids:
             side.learn_technique(technique_id)
@@ -164,6 +169,10 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> vo
         side.life = progress_snapshot.life
     if progress_snapshot.has_experience:
         side.experience = progress_snapshot.experience
+    if progress_snapshot.has_equipped_inner_skill_ids:
+        side.configure_inner_skills(
+            progress_snapshot.equipped_inner_skill_ids,
+            progress_snapshot.technique_slot_index)
 
 func capture_progress(side, run_deck) -> RunProgressSnapshot:
     run_deck.sync_from_battle_cards(
@@ -176,5 +185,7 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "life": side.life,
         "max_life": side.max_life,
         "experience": side.experience,
+        "base_hand_limit_modifier": side.base_hand_limit_modifier,
+        "hand_technique_multiplier_modifiers": side.hand_technique_multiplier_modifiers.duplicate(true),
         "run_deck": run_deck.to_snapshot(),
     })

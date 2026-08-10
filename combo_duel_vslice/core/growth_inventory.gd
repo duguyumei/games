@@ -22,6 +22,9 @@ var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
 var last_recallable_consumable_id: String = ""
+var base_hand_limit_modifier: int = 0
+var hand_technique_multiplier_modifiers: Dictionary = {}
+var used_unique_consumable_ids: Array[String] = []
 var _content_catalog
 
 const HAND_IDS := [
@@ -59,6 +62,9 @@ func reset(
     practice_shop_state.clear()
     consumable_use_sequence = 0
     last_recallable_consumable_id = ""
+    base_hand_limit_modifier = 0
+    hand_technique_multiplier_modifiers.clear()
+    used_unique_consumable_ids.clear()
 
 func clear_practice_purchases() -> void:
     practice_purchases.clear()
@@ -83,6 +89,9 @@ func capture_mutation_state() -> Dictionary:
         "practice_shop_state": practice_shop_state.duplicate(true),
         "consumable_use_sequence": consumable_use_sequence,
         "last_recallable_consumable_id": last_recallable_consumable_id,
+        "base_hand_limit_modifier": base_hand_limit_modifier,
+        "hand_technique_multiplier_modifiers": hand_technique_multiplier_modifiers.duplicate(true),
+        "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
     }
 
 func create_mutation_copy():
@@ -119,6 +128,11 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     consumable_use_sequence = int(state.get("consumable_use_sequence", 0))
     last_recallable_consumable_id = str(
         state.get("last_recallable_consumable_id", ""))
+    base_hand_limit_modifier = int(state.get("base_hand_limit_modifier", 0))
+    hand_technique_multiplier_modifiers = state.get(
+        "hand_technique_multiplier_modifiers", {}).duplicate(true)
+    used_unique_consumable_ids.assign(
+        state.get("used_unique_consumable_ids", []))
     return []
 
 func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> void:
@@ -279,6 +293,9 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "practice_shop_state": practice_shop_state.duplicate(true),
         "consumable_use_sequence": consumable_use_sequence,
         "last_recallable_consumable_id": last_recallable_consumable_id,
+        "base_hand_limit_modifier": base_hand_limit_modifier,
+        "hand_technique_multiplier_modifiers": hand_technique_multiplier_modifiers.duplicate(true),
+        "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
     })
 
 func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
@@ -293,6 +310,14 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
     if progress_snapshot.has_last_recallable_consumable_id:
         last_recallable_consumable_id = (
             progress_snapshot.last_recallable_consumable_id)
+    if progress_snapshot.has_base_hand_limit_modifier:
+        base_hand_limit_modifier = progress_snapshot.base_hand_limit_modifier
+    if progress_snapshot.has_hand_technique_multiplier_modifiers:
+        hand_technique_multiplier_modifiers = (
+            progress_snapshot.hand_technique_multiplier_modifiers.duplicate(true))
+    if progress_snapshot.has_used_unique_consumable_ids:
+        used_unique_consumable_ids.assign(
+            progress_snapshot.used_unique_consumable_ids)
     if progress_snapshot.has_learned_technique_ids:
         learned_technique_ids.assign(progress_snapshot.learned_technique_ids)
     if progress_snapshot.has_learned_inner_skill_ids:
@@ -328,6 +353,9 @@ func apply_to_battle_side(side) -> void:
     side.configure_consumables(consumable_ids)
     side.hand_technique_progression = hand_technique_progression.duplicate(true)
     side.hand_technique_progression_active = true
+    side.base_hand_limit_modifier = base_hand_limit_modifier
+    side.hand_technique_multiplier_modifiers = (
+        hand_technique_multiplier_modifiers.duplicate(true))
     for technique_id in learned_technique_ids:
         side.learn_technique(technique_id)
     side.configure_inner_skills(equipped_inner_skill_ids, technique_slot_index)
@@ -342,6 +370,10 @@ func sync_from_battle_side(side) -> void:
         consumable_ids.append(str(consumable_id))
     if side.get("hand_technique_progression") is Dictionary:
         hand_technique_progression = side.hand_technique_progression.duplicate(true)
+    base_hand_limit_modifier = int(side.get("base_hand_limit_modifier"))
+    if side.get("hand_technique_multiplier_modifiers") is Dictionary:
+        hand_technique_multiplier_modifiers = (
+            side.hand_technique_multiplier_modifiers.duplicate(true))
     learned_technique_ids.clear()
     for technique_id in side.owned_technique_ids:
         learned_technique_ids.append(str(technique_id))
@@ -354,3 +386,6 @@ func sync_from_battle_side(side) -> void:
     run_deck.sync_from_battle_cards(
         side.all_cards_for_run_sync(),
         side.permanently_removed_card_ids)
+
+func current_base_hand_limit() -> int:
+    return maxi(1, 8 + base_hand_limit_modifier)

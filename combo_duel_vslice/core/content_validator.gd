@@ -996,6 +996,28 @@ func _validate_consumables(definition: Dictionary) -> void:
         if value.has("record_last_used") \
                 and not value.get("record_last_used") is bool:
             _error(scope + ".record_last_used", "必须是布尔值")
+        if value.has("unique") and not value.get("unique") is bool:
+            _error(scope + ".unique", "必须是布尔值")
+        if value.has("requires_preparation") and not value.get("requires_preparation") is bool:
+            _error(scope + ".requires_preparation", "必须是布尔值")
+        if value.has("choice_schema") and not value.get("choice_schema") is Dictionary:
+            _error(scope + ".choice_schema", "必须是对象")
+        elif value.has("choice_schema"):
+            var choice_schema: Dictionary = value.get("choice_schema", {})
+            var choice_type := str(choice_schema.get("type", ""))
+            if choice_type not in ["enum", "technique_sequence_removals"]:
+                _error(scope + ".choice_schema.type", "未知结构化选择类型 %s" % choice_type)
+            if not choice_schema.get("field") is String \
+                    or str(choice_schema.get("field", "")) == "":
+                _error(scope + ".choice_schema.field", "必须是非空字符串")
+            if choice_type == "enum":
+                var options = choice_schema.get("options", [])
+                if not options is Array or options.is_empty():
+                    _error(scope + ".choice_schema.options", "必须是非空数组")
+            elif choice_type == "technique_sequence_removals" \
+                    and (not _is_integer(choice_schema.get("slot_delta")) \
+                    or int(choice_schema.get("slot_delta", 0)) >= 0):
+                _error(scope + ".choice_schema.slot_delta", "必须是负整数")
         var targeting = value.get("targeting")
         if not targeting is Dictionary:
             _error(scope + ".targeting", "必须是对象")
@@ -1028,6 +1050,14 @@ func _validate_consumables(definition: Dictionary) -> void:
                         _error(targeting_scope + ".maximum", "none 区域 maximum 必须为 0")
                 elif minimum < 0 or maximum < minimum:
                     _error(targeting_scope, "目标数量范围无效")
+            if targeting.has("maximum_source") \
+                    and str(targeting.get("maximum_source", "")) != "base_hand_limit":
+                _error(targeting_scope + ".maximum_source", "未知 maximum_source")
+            if targeting.has("count_mode") \
+                    and str(targeting.get("count_mode", "")) not in ["random", "maximum"]:
+                _error(targeting_scope + ".count_mode", "未知 count_mode")
+            if targeting.has("choice_field") and not targeting.get("choice_field") is String:
+                _error(targeting_scope + ".choice_field", "必须是字符串")
         var effects = value.get("effects")
         if not effects is Array or effects.is_empty():
             _error(scope + ".effects", "必须是非空效果数组")
