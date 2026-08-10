@@ -7,7 +7,7 @@
   ],
   "consumables": [
     {
-      "id": "zhenyuan_huasheng", "name": "真元化生", "kind": "curio", "price": 4,
+      "id": "zhenyuan_huasheng", "name": "真元化生", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "随机永久移出 1 张真气，生成 3 张 J/Q/K 随机属性真元牌并各获随机强化。",
       "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 1},
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "id": "shuangji_huasheng", "name": "双极化生", "kind": "curio", "price": 4,
+      "id": "shuangji_huasheng", "name": "双极化生", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "随机永久移出 1 张真气，生成 2 张随机属性 A 并各获随机强化。",
       "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 1},
@@ -27,7 +27,7 @@
       ]
     },
     {
-      "id": "fanshu_huasheng", "name": "凡数化生", "kind": "curio", "price": 4,
+      "id": "fanshu_huasheng", "name": "凡数化生", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "随机永久移出 1 张真气，生成 4 张 2～10 随机属性数字牌并各获随机强化。",
       "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 1},
@@ -37,28 +37,28 @@
       ]
     },
     {
-      "id": "xiantian_fu", "name": "先天符", "kind": "curio", "price": 4,
+      "id": "xiantian_fu", "name": "先天符", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择 1 张真气，为其施加先天印。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
       "effects": [{"op": "apply_imprint", "imprint": "innate"}]
     },
     {
-      "id": "qingshen_qi", "name": "请神契", "kind": "curio", "price": 4,
+      "id": "qingshen_qi", "name": "请神契", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "随机获得 1 门稀有内功，然后将当前持有历练变为 0。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "grant_random_inner_skill", "count": 1, "rarity": "rare"}, {"op": "set_experience", "amount": 0}]
     },
     {
-      "id": "zhuanxiang_lun", "name": "转相轮", "kind": "curio", "price": 4,
+      "id": "zhuanxiang_lun", "name": "转相轮", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true, "requires_preparation": true,
       "description": "随机展示至多当前基础手牌上限张合格真气，并将整组转为同一个随机属性。",
       "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 8, "maximum_source": "base_hand_limit", "count_mode": "maximum"},
       "effects": [{"op": "apply_prepared_group_origin", "origin": "attribute_change", "pool": ["wind", "forest", "fire", "mountain"]}]
     },
     {
-      "id": "yijie_pan", "name": "易阶盘", "kind": "curio", "price": 4,
+      "id": "yijie_pan", "name": "易阶盘", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true, "requires_preparation": true,
       "description": "随机展示至多当前基础手牌上限张合格真气，将整组直接易阶到同一个随机牌阶，随后基础手牌上限 -1。",
       "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 8, "maximum_source": "base_hand_limit", "count_mode": "maximum"},
@@ -68,56 +68,56 @@
       ]
     },
     {
-      "id": "fenyuan_ji", "name": "焚元祭", "kind": "curio", "price": 4,
+      "id": "fenyuan_ji", "name": "焚元祭", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "确定性随机永久移出至多 5 张真气，每张获得 4 点历练，最多 20 点。",
       "targeting": {"zone": "run_deck", "selection": "deterministic_random", "minimum": 1, "maximum": 5, "count_mode": "maximum"},
       "effects": [{"op": "remove_run_cards_for_experience", "experience_per_card": 4}]
     },
     {
-      "id": "yimai_zhenchuan", "name": "一脉真传", "kind": "curio", "price": 4,
+      "id": "yimai_zhenchuan", "name": "一脉真传", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "随机复制一门已装备内功，保留原件与副本并移出其余全部已获内功。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "duplicate_equipped_inner_skill", "count": 1}]
     },
     {
-      "id": "huixiang_fu", "name": "回响符", "kind": "curio", "price": 4,
+      "id": "huixiang_fu", "name": "回响符", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择 1 张真气，为其施加回响印。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
       "effects": [{"op": "apply_imprint", "imprint": "echo"}]
     },
     {
-      "id": "wudao_fu", "name": "悟道符", "kind": "curio", "price": 4,
+      "id": "wudao_fu", "name": "悟道符", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择 1 张真气，为其施加悟道印。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
       "effects": [{"op": "apply_imprint", "imprint": "enlightenment"}]
     },
     {
-      "id": "huadan_fu", "name": "化丹符", "kind": "curio", "price": 4,
+      "id": "huadan_fu", "name": "化丹符", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择 1 张真气，为其施加化丹印。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
       "effects": [{"op": "apply_imprint", "imprint": "alchemy"}]
     },
     {
-      "id": "yanyuan_jing", "name": "衍元镜", "kind": "curio", "price": 4,
+      "id": "yanyuan_jing", "name": "衍元镜", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择 1 张本局真气，生成 2 张完整复制。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
       "effects": [{"op": "copy_run_card", "count": 2}]
     },
     {
-      "id": "tianshou_zhenjing", "name": "天授真经", "kind": "curio", "price": 4,
+      "id": "tianshou_zhenjing", "name": "天授真经", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "随机获得 1 门传奇内功并加入本局内功库。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "grant_random_inner_skill", "count": 1, "rarity": "legendary"}]
     },
     {
-      "id": "guixu", "name": "归墟", "kind": "curio", "price": 4,
+      "id": "guixu", "name": "归墟", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "八种精确牌型槽位各 -1 至最低 0，并获得对应本局功法倍率修正。",
       "choice_schema": {"type": "technique_sequence_removals", "field": "removed_technique_ids_by_hand", "slot_delta": -1},
@@ -125,7 +125,7 @@
       "effects": [{"op": "rewrite_technique_progression", "slot_delta": -1, "modifiers": {"high_card": 1, "pair": 1, "two_pair": 1, "three_kind": 2, "straight": 2, "full_house": 2, "four_kind": 4, "five_kind": 6}}]
     },
     {
-      "id": "yuanman_cuilian", "name": "圆满淬炼", "kind": "curio", "price": 4,
+      "id": "yuanman_cuilian", "name": "圆满淬炼", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择 1 张未接受本源改造的真气使其觉醒；缺少强化或印记时分别随机补足，不替换已有内容。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -136,7 +136,7 @@
       ]
     },
     {
-      "id": "tongjie_gongming", "name": "同阶共鸣", "kind": "curio", "price": 4,
+      "id": "tongjie_gongming", "name": "同阶共鸣", "kind": "curio", "status": "formal", "price": 4,
       "record_last_used": false, "unique": true,
       "description": "选择牌阶 2～5，使本局牌组中该牌阶所有尚未接受本源改造的普通真气觉醒。",
       "choice_schema": {"type": "enum", "field": "rank", "options": ["2", "3", "4", "5"]},
@@ -147,6 +147,7 @@
       "id": "suyi_pill",
       "name": "溯忆丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "record_last_used": false,
       "description": "生成本局最近一次使用的丹药或心得，不包括溯忆丹自身。没有合格使用记录时不能使用。",
@@ -157,6 +158,7 @@
       "id": "jiyuan_pill",
       "name": "机缘丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 2 张真气，使其获得机缘强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
@@ -166,6 +168,7 @@
       "id": "tongwu_pill",
       "name": "通悟丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "随机获得至多 2 份当前已启用精确牌型的心得，受消耗品栏位限制。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
@@ -175,6 +178,7 @@
       "id": "chengshi_pill",
       "name": "乘势丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 2 张真气，使其获得乘势强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
@@ -184,6 +188,7 @@
       "id": "wanhua_pill",
       "name": "万化丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "随机获得至多 2 种丹药，受消耗品栏位限制。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
@@ -193,6 +198,7 @@
       "id": "zengyuan_pill",
       "name": "增元丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 2 张真气，使其获得增元强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
@@ -202,6 +208,7 @@
       "id": "hunyuan_pill",
       "name": "混元丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张真气，使其获得混元强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -211,6 +218,7 @@
       "id": "wulou_pill",
       "name": "无漏丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张真气，使其获得无漏强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -220,6 +228,7 @@
       "id": "xubao_pill",
       "name": "虚暴丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张真气，使其获得虚暴强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -229,6 +238,7 @@
       "id": "jugong_pill",
       "name": "聚功丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "当前持有历练翻倍，但本次最多获得 20 点历练。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
@@ -238,6 +248,7 @@
       "id": "shengjie_pill",
       "name": "升阶丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 2 张尚未接受本源改造且牌阶不是 A 的普通真气，对其进行升阶：2→3→…→10→J→Q→K→A，基础真气值随牌阶同步改变。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
@@ -247,6 +258,7 @@
       "id": "jiangjie_pill",
       "name": "降阶丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 2 张尚未接受本源改造且牌阶不是 2 的普通真气，对其进行降阶：A→K→Q→J→10→9→…→2，基础真气值随牌阶同步改变；每张实际完成降阶的真气随后分别获得一种随机强化，已有强化按全局强化替换规则被新强化替换。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
@@ -259,6 +271,7 @@
       "id": "qiling_pill",
       "name": "启灵丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张尚未接受本源改造的普通真气，根据其当前基础属性进行觉醒；不改变牌阶、基础属性或基础真气值。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -268,6 +281,7 @@
       "id": "sanyuan_pill",
       "name": "散元丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 2 张我方真气，永久移出本局牌组。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
@@ -277,6 +291,7 @@
       "id": "yanyuan_pill",
       "name": "衍元丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张我方本局牌组中的真气，生成 1 张完整复制并加入我方本局牌组；源牌不改变。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -286,6 +301,7 @@
       "id": "nagong_pill",
       "name": "纳功丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "获得当前全部已装备内功的遗忘所得总和，最多获得 50 点历练；不会遗忘这些内功。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
@@ -295,6 +311,7 @@
       "id": "cangjin_pill",
       "name": "藏金丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张真气，使其获得藏金强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -304,6 +321,7 @@
       "id": "panshi_pill",
       "name": "磐石丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择 1 张真气，使其获得磐石强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
@@ -313,6 +331,7 @@
       "id": "shanxiang_pill",
       "name": "山相丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为山。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
@@ -322,6 +341,7 @@
       "id": "linxiang_pill",
       "name": "林相丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为林。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
@@ -331,6 +351,7 @@
       "id": "huoxiang_pill",
       "name": "火相丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为火。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
@@ -340,6 +361,7 @@
       "id": "chuangong_pill",
       "name": "传功丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "随机获得 1 门内功并加入本局内功库，不要求内功装备栏有空位。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
@@ -349,6 +371,7 @@
       "id": "fengxiang_pill",
       "name": "风相丹",
       "kind": "pill",
+      "status": "formal",
       "price": 3,
       "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为风。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
@@ -358,49 +381,50 @@
       "id": "high_card_insight",
       "name": "高牌心得",
       "kind": "insight",
+      "status": "formal",
       "price": 3,
       "description": "高牌功法槽位 +1，并从高牌池随机获得一门尚未加入高牌序列的正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "high_card", "pools": ["high"]}]
     },
     {
-      "id": "pair_insight", "name": "一对心得", "kind": "insight", "price": 3,
+      "id": "pair_insight", "name": "一对心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "一对功法槽位 +1，并从对子池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "pair", "pools": ["pair"]}]
     },
     {
-      "id": "two_pair_insight", "name": "两对心得", "kind": "insight", "price": 3,
+      "id": "two_pair_insight", "name": "两对心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "两对功法槽位 +1，并从对子池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "two_pair", "pools": ["pair"]}]
     },
     {
-      "id": "three_kind_insight", "name": "三条心得", "kind": "insight", "price": 3,
+      "id": "three_kind_insight", "name": "三条心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "三条功法槽位 +1，并从三条池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "three_kind", "pools": ["three"]}]
     },
     {
-      "id": "straight_insight", "name": "顺子心得", "kind": "insight", "price": 3,
+      "id": "straight_insight", "name": "顺子心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "顺子功法槽位 +1，并从顺子池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "straight", "pools": ["straight"]}]
     },
     {
-      "id": "full_house_insight", "name": "葫芦心得", "kind": "insight", "price": 3,
+      "id": "full_house_insight", "name": "葫芦心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "葫芦功法槽位 +1，并从对子池与三条池的去重并集抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "full_house", "pools": ["pair", "three"]}]
     },
     {
-      "id": "four_kind_insight", "name": "四条心得", "kind": "insight", "price": 3,
+      "id": "four_kind_insight", "name": "四条心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "四条功法槽位 +1，并从炸弹池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "four_kind", "pools": ["bomb"]}]
     },
     {
-      "id": "five_kind_insight", "name": "五条心得", "kind": "insight", "price": 3,
+      "id": "five_kind_insight", "name": "五条心得", "kind": "insight", "status": "formal", "price": 3,
       "description": "五条功法槽位 +1，并从炸弹池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
       "effects": [{"op": "gain_insight", "hand": "five_kind", "pools": ["bomb"]}]

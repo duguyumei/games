@@ -57,8 +57,9 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "life": int(run_session.growth.life),
             "max_life": int(run_session.growth.max_life),
             "consumable_ids": run_session.growth.consumable_ids.duplicate(),
+            "item_ids": run_session.growth.item_ids.duplicate(),
             "hand_technique_progression": run_session.growth.hand_technique_progression.duplicate(true),
-            "practice_shop_state": run_session.growth.practice_shop_state.duplicate(true),
+            "practice_shop_state": run_session.growth.practice_shop_snapshot(),
             "learned_technique_ids": run_session.growth.learned_technique_ids.duplicate(),
             "learned_inner_skill_ids": run_session.growth.learned_inner_skill_ids.duplicate(),
             "equipped_inner_skill_ids": run_session.growth.equipped_inner_skill_ids.duplicate(),
@@ -136,6 +137,8 @@ func validate(content_catalog = null) -> Array[String]:
             and growth.get("consumable_ids", []).size() \
             > GrowthInventoryScript.CONSUMABLE_LIMIT:
         errors.append("共享消耗品栏不能超过 %d 格" % GrowthInventoryScript.CONSUMABLE_LIMIT)
+    if not growth.get("item_ids", []) is Array:
+        errors.append("物品 ID 列表必须是数组")
     if growth.has("consumable_use_sequence") \
             and (not growth["consumable_use_sequence"] is int \
             or int(growth["consumable_use_sequence"]) < 0):
@@ -219,6 +222,7 @@ func restore_session(content_catalog = null) -> Dictionary:
         growth_state, int(map_state["act"]), catalog)
     var progress_values := {
         "consumable_ids": growth_state["consumable_ids"],
+        "item_ids": growth_state.get("item_ids", []),
         "learned_technique_ids": growth_state["learned_technique_ids"],
         "learned_inner_skill_ids": growth_state["learned_inner_skill_ids"],
         "equipped_inner_skill_ids": growth_state["equipped_inner_skill_ids"],
@@ -269,7 +273,9 @@ func _validate_content_ids(
     if starter_build_id != "" and not catalog.has_id("starter_build", starter_build_id):
         errors.append("存档引用未知初始构筑 ID：%s" % starter_build_id)
     _validate_id_array(growth.get("consumable_ids", []), "consumable", catalog, errors, true)
-    _validate_id_array(growth.get("practice_purchase_ids", []), "consumable", catalog, errors)
+    _validate_id_array(growth.get("item_ids", []), "item", catalog, errors)
+    _validate_practice_purchase_ids(
+        growth.get("practice_purchase_ids", []), catalog, errors)
     _validate_id_array(growth.get("learned_technique_ids", []), "technique", catalog, errors)
     _validate_id_array(growth.get("learned_inner_skill_ids", []), "inner_skill", catalog, errors, true)
     _validate_id_array(growth.get("equipped_inner_skill_ids", []), "inner_skill", catalog, errors, true)
@@ -308,6 +314,25 @@ func _validate_id_array(
             errors.append("存档引用未知 %s ID：%s" % [content_type, content_id])
         elif seen.has(content_id) and not allow_duplicates:
             errors.append("存档包含重复 %s ID：%s" % [content_type, content_id])
+        seen[content_id] = true
+
+func _validate_practice_purchase_ids(
+        values,
+        catalog,
+        errors: Array[String]) -> void:
+    if not values is Array:
+        errors.append("修习购买 ID 列表必须是数组")
+        return
+    var seen: Dictionary = {}
+    for value in values:
+        var content_id := str(value)
+        if content_id == "" or seen.has(content_id):
+            errors.append("修习购买记录包含空值或重复 ID：%s" % content_id)
+        elif not catalog.has_id("technique", content_id) \
+                and not catalog.has_id("inner_skill", content_id) \
+                and not catalog.has_id("consumable", content_id) \
+                and not catalog.has_id("item", content_id):
+            errors.append("修习购买记录引用未知内容 ID：%s" % content_id)
         seen[content_id] = true
 
 func _counts(values) -> Dictionary:
@@ -420,9 +445,30 @@ func _normalize_v1_types() -> void:
                 progression[hand_id]["slot_count"] = int(progression[hand_id].get("slot_count", 1))
     var shop = growth.get("practice_shop_state", {})
     if shop is Dictionary:
-        for field in ["shop_index", "act", "meditation_count", "next_meditation_cost"]:
+        if not shop.has("items") and shop.has("coupons"):
+            shop["items"] = shop["coupons"]
+        if not shop.has("item_candidates") and shop.has("coupon_candidates"):
+            shop["item_candidates"] = shop["coupon_candidates"]
+        if not shop.has("item_slots") and shop.has("coupon_slots"):
+            shop["item_slots"] = shop["coupon_slots"]
+        shop.erase("coupons")
+        shop.erase("coupon_candidates")
+        shop.erase("coupon_slots")
+        for field in [
+                "shop_index", "act", "meditation_count",
+                "next_meditation_cost", "pack_open_sequence"]:
             if shop.has(field):
                 shop[field] = int(shop[field])
+        for group in ["normal", "packs", "items"]:
+            for slot in shop.get(group, []):
+                if not slot is Dictionary or slot.is_empty():
+                    continue
+                if slot.has("price"):
+                    slot["price"] = int(slot["price"])
+                if group == "packs":
+                    for field in ["offer_count", "choose_count"]:
+                        if slot.has(field):
+                            slot[field] = int(slot[field])
     var run_deck = growth.get("run_deck", {})
     if not run_deck is Dictionary:
         return

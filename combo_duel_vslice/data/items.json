@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "gift_card",
+      "name": "礼品卡",
+      "kind": "item",
+      "status": "design_only",
+      "unique": true,
+      "description": "候选物品：依赖完整的遗忘所得与兑换价值平台，当前不进入正式商店。"
+    },
+    {
+      "id": "astronomer",
+      "name": "天文学家",
+      "kind": "item",
+      "status": "design_only",
+      "unique": true,
+      "description": "候选物品：依赖修习价格减免平台，当前不进入正式商店。"
+    }
+  ]
+}

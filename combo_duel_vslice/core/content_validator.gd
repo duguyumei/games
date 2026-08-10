@@ -32,6 +32,7 @@ const CONTENT_KEYS := [
     "techniques",
     "inner_skills",
     "consumables",
+    "items",
     "practice_shop",
     "node_rewards",
     "act_progression",
@@ -98,6 +99,10 @@ const REWARD_KINDS := [
 ]
 ## `draft` 仅供内容管线生成的未发布骨架通过批量装配；正式运行池使用前三类。
 const CONSUMABLE_KINDS := ["insight", "pill", "curio", "draft"]
+const FORMAL_CONTENT_STATUS := "formal"
+const ITEM_STATUSES := ["candidate", "design_only", "formal"]
+const PRACTICE_OFFER_KINDS := ["technique", "inner_skill", "consumable"]
+const PRACTICE_CONTENT_KINDS := ["pill", "insight", "curio"]
 const ENEMY_AI_NUMBER_FIELDS := [
     "damage_weight",
     "defense_weight",
@@ -131,6 +136,7 @@ var _actor_statuses_by_id: Dictionary = {}
 var _techniques_by_id: Dictionary = {}
 var _inner_skills_by_id: Dictionary = {}
 var _consumables_by_id: Dictionary = {}
+var _items_by_id: Dictionary = {}
 var _effect_specs: EffectSpecValidator
 var _effect_registry
 var _run_effect_registry
@@ -195,6 +201,7 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _techniques_by_id.clear()
     _inner_skills_by_id.clear()
     _consumables_by_id.clear()
+    _items_by_id.clear()
     for key in CONTENT_KEYS:
         if not _contents.has(key) or not _contents[key] is Dictionary:
             _error(key, "缺少顶层对象")
@@ -209,6 +216,7 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _validate_techniques(_contents["techniques"])
     _validate_inner_skills(_contents["inner_skills"])
     _validate_consumables(_contents["consumables"])
+    _validate_items(_contents["items"])
     _validate_practice_shop(_contents["practice_shop"])
     _validate_node_rewards(_contents["node_rewards"])
     _validate_act_progression(_contents["act_progression"])
@@ -1091,45 +1099,353 @@ func _validate_consumables(definition: Dictionary) -> void:
                 _error(scope, "重复引用消耗品 %s" % consumable_id)
             seen_offers[consumable_id] = true
 
-func _validate_practice_shop(definition: Dictionary) -> void:
-    for field in ["normal_slots", "pack_slots", "coupon_slots"]:
-        if not _is_integer(definition.get(field)) or int(definition.get(field, 0)) < 0:
-            _error("practice_shop.%s" % field, "必须是非负整数")
-    for group in ["normal_candidates", "pack_candidates", "coupon_candidates"]:
-        var values = definition.get(group)
-        if not values is Array:
-            _error("practice_shop.%s" % group, "必须是数组")
+func _validate_items(definition: Dictionary) -> void:
+    var values = definition.get("items")
+    if not values is Array:
+        _error("items.items", "必须是数组")
+        return
+    for index in range(values.size()):
+        var value = values[index]
+        var scope := "items.items[%d]" % index
+        if not value is Dictionary:
+            _error(scope, "必须是对象")
             continue
-        var seen: Dictionary = {}
-        for index in range(values.size()):
-            var value = values[index]
-            var scope := "practice_shop.%s[%d]" % [group, index]
-            if not value is Dictionary:
-                _error(scope, "必须是对象")
-                continue
-            var content_id := str(value.get("id", ""))
-            if content_id == "" or seen.has(content_id):
-                _error(scope + ".id", "ID 不能为空且不得重复")
-            seen[content_id] = true
-            var kind := str(value.get("kind", ""))
-            if kind == "technique":
-                if not _techniques_by_id.has(content_id):
-                    _error(scope, "引用未知功法 %s" % content_id)
-                elif str(_contents["techniques"].get("integration_statuses", {}).get(content_id, "")) != FORMAL_TECHNIQUE_STATUS:
-                    _error(scope, "功法 %s 不是 formal_complete" % content_id)
-            elif kind == "consumable":
-                if not _consumables_by_id.has(content_id):
-                    _error(scope, "引用未知消耗品 %s" % content_id)
-            elif kind == "insight_pack":
-                var candidate_ids = value.get("candidate_ids", [])
-                if not candidate_ids is Array or candidate_ids.is_empty():
-                    _error(scope + ".candidate_ids", "心得包必须有候选内容")
-                else:
-                    for candidate_id_value in candidate_ids:
-                        if not _consumables_by_id.has(str(candidate_id_value)):
-                            _error(scope + ".candidate_ids", "引用未知消耗品 %s" % str(candidate_id_value))
-            elif kind != "coupon":
-                _error(scope + ".kind", "未知修习商品类型 %s" % kind)
+        var content_id := _required_id(value, scope)
+        _register_unique(_items_by_id, content_id, scope, value)
+        if content_id != "" and not _is_snake_case(content_id):
+            _error(scope + ".id", "必须使用稳定 snake_case")
+        _validate_name(value, scope)
+        if str(value.get("kind", "")) != "item":
+            _error(scope + ".kind", "必须为 item")
+        var status := str(value.get("status", ""))
+        if status not in ITEM_STATUSES:
+            _error(scope + ".status", "必须为 candidate、design_only 或 formal")
+        if not value.get("unique", true) is bool:
+            _error(scope + ".unique", "必须是布尔值")
+        if not value.get("description") is String \
+                or str(value.get("description", "")) == "":
+            _error(scope + ".description", "必须是非空字符串")
+        if status == FORMAL_CONTENT_STATUS \
+                and (not _is_integer(value.get("price")) \
+                or int(value.get("price", -1)) < 0):
+            _error(scope + ".price", "正式物品必须有非负整数价格")
+
+func _validate_practice_shop(definition: Dictionary) -> void:
+    if int(definition.get("version", 0)) != 2:
+        _error("practice_shop.version", "当前正式结构必须为 version 2")
+    for retired_field in [
+            "normal_slots", "pack_slots", "coupon_slots",
+            "normal_candidates", "pack_candidates", "coupon_candidates",
+            "coupons"]:
+        if definition.has(retired_field):
+            _error("practice_shop.%s" % retired_field, "v2 正式数据不得写入旧字段")
+    var normal = definition.get("normal")
+    var packs = definition.get("packs")
+    var items = definition.get("items")
+    if not normal is Dictionary:
+        _error("practice_shop.normal", "必须是对象")
+    else:
+        _validate_practice_normal(normal)
+    if not packs is Dictionary:
+        _error("practice_shop.packs", "必须是对象")
+    else:
+        _validate_practice_packs(packs)
+    if not items is Dictionary:
+        _error("practice_shop.items", "必须是对象")
+    else:
+        _validate_practice_items(items)
+    if normal is Dictionary and packs is Dictionary and items is Dictionary:
+        _validate_practice_cross_area_ids(normal, packs, items)
+
+func _validate_practice_normal(definition: Dictionary) -> void:
+    _validate_practice_slot_count(definition, "practice_shop.normal", 2)
+    var categories = definition.get("categories")
+    if not categories is Array or categories.is_empty():
+        _error("practice_shop.normal.categories", "必须是非空数组")
+        return
+    var seen_categories: Dictionary = {}
+    var seen_content: Dictionary = {}
+    for index in range(categories.size()):
+        var category = categories[index]
+        var scope := "practice_shop.normal.categories[%d]" % index
+        if not category is Dictionary:
+            _error(scope, "必须是对象")
+            continue
+        var category_id := str(category.get("id", ""))
+        if category_id == "" or seen_categories.has(category_id):
+            _error(scope + ".id", "ID 不能为空且不得重复")
+        seen_categories[category_id] = true
+        if not _is_integer(category.get("weight")) \
+                or int(category.get("weight", 0)) <= 0:
+            _error(scope + ".weight", "必须是正整数")
+        var offer_kind := str(category.get("offer_kind", ""))
+        if offer_kind not in PRACTICE_OFFER_KINDS:
+            _error(scope + ".offer_kind", "未知普通商品类型 %s" % offer_kind)
+        var content_kind := str(category.get("content_kind", ""))
+        if offer_kind == "consumable" and content_kind not in PRACTICE_CONTENT_KINDS:
+            _error(scope + ".content_kind", "消耗品分类必须声明 pill、insight 或 curio")
+        elif offer_kind != "consumable" and category.has("content_kind"):
+            _error(scope + ".content_kind", "非消耗品分类不得声明 content_kind")
+        if offer_kind == "technique":
+            if int(category.get("fixed_price", -1)) != 3:
+                _error(scope + ".fixed_price", "正式功法统一价格必须为 3")
+        elif category.has("fixed_price"):
+            _error(scope + ".fixed_price", "非功法价格必须从内容定义读取")
+        var candidate_ids = category.get("candidate_ids")
+        if not candidate_ids is Array:
+            _error(scope + ".candidate_ids", "必须是数组")
+            continue
+        var category_seen: Dictionary = {}
+        for candidate_index in range(candidate_ids.size()):
+            var content_id := str(candidate_ids[candidate_index])
+            var candidate_scope := "%s.candidate_ids[%d]" % [scope, candidate_index]
+            if content_id == "" or category_seen.has(content_id):
+                _error(candidate_scope, "ID 不能为空且不得重复")
+            if seen_content.has(content_id):
+                _error(candidate_scope, "普通商品白名单跨分类重复 ID %s" % content_id)
+            category_seen[content_id] = true
+            seen_content[content_id] = true
+            _validate_practice_normal_candidate(
+                content_id, offer_kind, content_kind, candidate_scope)
+    _validate_practice_normal_completeness(categories)
+
+func _validate_practice_normal_completeness(categories: Array) -> void:
+    var requirements: Array = [
+        ["technique", ""],
+        ["inner_skill", ""],
+        ["consumable", "pill"],
+        ["consumable", "insight"],
+        ["consumable", "curio"],
+    ]
+    for requirement in requirements:
+        var offer_kind := str(requirement[0])
+        var content_kind := str(requirement[1])
+        var actual: Array[String] = []
+        for category in categories:
+            if category is Dictionary \
+                    and str(category.get("offer_kind", "")) == offer_kind \
+                    and str(category.get("content_kind", "")) == content_kind:
+                for value in category.get("candidate_ids", []):
+                    actual.append(str(value))
+        var expected: Array[String] = []
+        if offer_kind == "technique":
+            for content_id in _contents["techniques"].get("integration_statuses", {}):
+                if str(_contents["techniques"]["integration_statuses"][content_id]) \
+                        == FORMAL_TECHNIQUE_STATUS:
+                    expected.append(str(content_id))
+        elif offer_kind == "inner_skill":
+            for content_id in _inner_skills_by_id:
+                var definition: Dictionary = _inner_skills_by_id[content_id]
+                if str(definition.get("status", "")) == FORMAL_CONTENT_STATUS \
+                        and _is_integer(definition.get("price")):
+                    expected.append(str(content_id))
+        else:
+            for content_id in _consumables_by_id:
+                var definition: Dictionary = _consumables_by_id[content_id]
+                if str(definition.get("status", "")) == FORMAL_CONTENT_STATUS \
+                        and str(definition.get("kind", "")) == content_kind:
+                    expected.append(str(content_id))
+        actual.sort()
+        expected.sort()
+        if actual != expected:
+            var label := offer_kind if content_kind == "" else content_kind
+            _error(
+                "practice_shop.normal.categories",
+                "%s 白名单必须覆盖全部且仅覆盖正式内容" % label)
+
+func _validate_practice_normal_candidate(
+        content_id: String,
+        offer_kind: String,
+        content_kind: String,
+        scope: String) -> void:
+    if offer_kind == "technique":
+        if not _techniques_by_id.has(content_id):
+            _error(scope, "引用未知功法 %s" % content_id)
+        elif str(_contents["techniques"].get(
+                "integration_statuses", {}).get(content_id, "")) \
+                != FORMAL_TECHNIQUE_STATUS:
+            _error(scope, "功法 %s 不是 formal_complete" % content_id)
+        return
+    if offer_kind == "inner_skill":
+        if not _inner_skills_by_id.has(content_id):
+            _error(scope, "引用未知内功 %s" % content_id)
+        else:
+            var inner_skill: Dictionary = _inner_skills_by_id[content_id]
+            if str(inner_skill.get("status", "")) != FORMAL_CONTENT_STATUS:
+                _error(scope, "内功 %s 不是 formal" % content_id)
+            if not _is_integer(inner_skill.get("price")):
+                _error(scope, "内功 %s 缺少正式价格" % content_id)
+        return
+    if not _consumables_by_id.has(content_id):
+        _error(scope, "引用未知消耗品 %s" % content_id)
+        return
+    var consumable: Dictionary = _consumables_by_id[content_id]
+    if str(consumable.get("kind", "")) != content_kind:
+        _error(scope, "消耗品 %s 不属于 %s" % [content_id, content_kind])
+    if str(consumable.get("status", "")) != FORMAL_CONTENT_STATUS:
+        _error(scope, "消耗品 %s 不是 formal" % content_id)
+    if not _is_integer(consumable.get("price")):
+        _error(scope, "消耗品 %s 缺少正式价格" % content_id)
+
+func _validate_practice_packs(definition: Dictionary) -> void:
+    _validate_practice_slot_count(definition, "practice_shop.packs", 2)
+    var candidates = definition.get("candidates")
+    if not candidates is Array or candidates.size() != 9:
+        _error("practice_shop.packs.candidates", "必须恰好包含九种正式补充包")
+        return
+    var seen: Dictionary = {}
+    var tiers_by_kind: Dictionary = {}
+    for index in range(candidates.size()):
+        var pack = candidates[index]
+        var scope := "practice_shop.packs.candidates[%d]" % index
+        if not pack is Dictionary:
+            _error(scope, "必须是对象")
+            continue
+        var pack_id := str(pack.get("id", ""))
+        if pack_id == "" or seen.has(pack_id):
+            _error(scope + ".id", "ID 不能为空且不得重复")
+        seen[pack_id] = true
+        if str(pack.get("name", "")) == "":
+            _error(scope + ".name", "必须是非空字符串")
+        if str(pack.get("kind", "")) != "consumable_pack":
+            _error(scope + ".kind", "必须为 consumable_pack")
+        var content_kind := str(pack.get("content_kind", ""))
+        if content_kind not in PRACTICE_CONTENT_KINDS:
+            _error(scope + ".content_kind", "必须为 pill、insight 或 curio")
+        var price := int(pack.get("price", -1))
+        var offer_count := int(pack.get("offer_count", -1))
+        var choose_count := int(pack.get("choose_count", -1))
+        if not _is_integer(pack.get("price")) or price not in [4, 6, 8]:
+            _error(scope + ".price", "必须为 4、6 或 8")
+        if not _is_integer(pack.get("offer_count")) or offer_count <= 0:
+            _error(scope + ".offer_count", "必须是正整数")
+        if not _is_integer(pack.get("choose_count")) \
+                or choose_count <= 0 or choose_count > offer_count:
+            _error(scope + ".choose_count", "必须在 1～offer_count 之间")
+        _validate_pack_tier(content_kind, price, offer_count, choose_count, scope)
+        var tier_key := "%s:%d" % [content_kind, price]
+        if tiers_by_kind.has(tier_key):
+            _error(scope, "同类补充包价格档重复：%s" % tier_key)
+        tiers_by_kind[tier_key] = true
+        var candidate_ids = pack.get("candidate_ids")
+        if not candidate_ids is Array or candidate_ids.is_empty():
+            _error(scope + ".candidate_ids", "必须是非空数组")
+            continue
+        var candidate_seen: Dictionary = {}
+        for candidate_index in range(candidate_ids.size()):
+            var content_id := str(candidate_ids[candidate_index])
+            var candidate_scope := "%s.candidate_ids[%d]" % [scope, candidate_index]
+            if content_id == "" or candidate_seen.has(content_id):
+                _error(candidate_scope, "ID 不能为空且不得重复")
+            candidate_seen[content_id] = true
+            _validate_practice_normal_candidate(
+                content_id, "consumable", content_kind, candidate_scope)
+        var expected_ids: Array[String] = []
+        for content_id in _consumables_by_id:
+            var consumable: Dictionary = _consumables_by_id[content_id]
+            if str(consumable.get("kind", "")) == content_kind \
+                    and str(consumable.get("status", "")) == FORMAL_CONTENT_STATUS:
+                expected_ids.append(str(content_id))
+        expected_ids.sort()
+        var actual_ids: Array[String] = []
+        for value in candidate_ids:
+            actual_ids.append(str(value))
+        actual_ids.sort()
+        if actual_ids != expected_ids:
+            _error(scope + ".candidate_ids", "必须覆盖该类全部正式消耗品")
+    for content_kind in PRACTICE_CONTENT_KINDS:
+        for price in [4, 6, 8]:
+            if not tiers_by_kind.has("%s:%d" % [content_kind, price]):
+                _error("practice_shop.packs.candidates", "缺少 %s 的 %d 点档" % [content_kind, price])
+
+func _validate_pack_tier(
+        content_kind: String,
+        price: int,
+        offer_count: int,
+        choose_count: int,
+        scope: String) -> void:
+    var expected_offer := 0
+    var expected_choose := 1
+    if content_kind in ["pill", "insight"]:
+        expected_offer = 3 if price == 4 else 5
+    elif content_kind == "curio":
+        expected_offer = 2 if price == 4 else 4
+    if price == 8:
+        expected_choose = 2
+    if offer_count != expected_offer or choose_count != expected_choose:
+        _error(scope, "展示／选择数量不符合 %s 的 %d 点档" % [content_kind, price])
+
+func _validate_practice_items(definition: Dictionary) -> void:
+    _validate_practice_slot_count(definition, "practice_shop.items", 1)
+    var candidate_ids = definition.get("candidate_ids")
+    if not candidate_ids is Array:
+        _error("practice_shop.items.candidate_ids", "必须是数组")
+        return
+    var seen: Dictionary = {}
+    for index in range(candidate_ids.size()):
+        var item_id := str(candidate_ids[index])
+        var scope := "practice_shop.items.candidate_ids[%d]" % index
+        if item_id == "" or seen.has(item_id):
+            _error(scope, "ID 不能为空且不得重复")
+        seen[item_id] = true
+        if not _items_by_id.has(item_id):
+            _error(scope, "引用未知物品 %s" % item_id)
+            continue
+        var item: Dictionary = _items_by_id[item_id]
+        if str(item.get("status", "")) != FORMAL_CONTENT_STATUS:
+            _error(scope, "candidate/design_only 物品不得进入正式商店：%s" % item_id)
+        if not _is_integer(item.get("price")):
+            _error(scope, "物品 %s 缺少正式价格" % item_id)
+    var expected: Array[String] = []
+    for item_id in _items_by_id:
+        var item: Dictionary = _items_by_id[item_id]
+        if str(item.get("status", "")) == FORMAL_CONTENT_STATUS \
+                and _is_integer(item.get("price")):
+            expected.append(str(item_id))
+    var actual: Array[String] = []
+    for item_id in candidate_ids:
+        actual.append(str(item_id))
+    expected.sort()
+    actual.sort()
+    if actual != expected:
+        _error(
+            "practice_shop.items.candidate_ids",
+            "必须覆盖全部且仅覆盖具有正式价格的 formal 物品")
+
+func _validate_practice_cross_area_ids(
+        normal: Dictionary,
+        packs: Dictionary,
+        items: Dictionary) -> void:
+    var seen: Dictionary = {}
+    for category in normal.get("categories", []):
+        if not category is Dictionary:
+            continue
+        for value in category.get("candidate_ids", []):
+            seen[str(value)] = "normal"
+    for pack in packs.get("candidates", []):
+        if not pack is Dictionary:
+            continue
+        var pack_id := str(pack.get("id", ""))
+        if pack_id != "" and seen.has(pack_id):
+            _error(
+                "practice_shop.packs.candidates",
+                "跨区域重复展示 ID %s" % pack_id)
+        seen[pack_id] = "packs"
+    for value in items.get("candidate_ids", []):
+        var item_id := str(value)
+        if item_id != "" and seen.has(item_id):
+            _error(
+                "practice_shop.items.candidate_ids",
+                "跨区域重复展示 ID %s" % item_id)
+        seen[item_id] = "items"
+
+func _validate_practice_slot_count(
+        definition: Dictionary,
+        scope: String,
+        expected: int) -> void:
+    if not _is_integer(definition.get("slot_count")) \
+            or int(definition.get("slot_count", -1)) != expected:
+        _error(scope + ".slot_count", "必须为 %d" % expected)
 
 func _validate_sequences(definition: Dictionary, scope: String) -> void:
     var membership: Dictionary = _contents.get("techniques", {}).get("pool_membership", {})

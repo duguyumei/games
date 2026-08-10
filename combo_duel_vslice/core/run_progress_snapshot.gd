@@ -10,6 +10,7 @@ extends RefCounted
 const SCHEMA_VERSION := 1
 
 var consumable_ids: Array[String] = []
+var item_ids: Array[String] = []
 var learned_technique_ids: Array[String] = []
 var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
@@ -27,6 +28,7 @@ var hand_technique_multiplier_modifiers: Dictionary = {}
 var used_unique_consumable_ids: Array[String] = []
 
 var has_consumable_ids: bool = false
+var has_item_ids: bool = false
 var has_learned_technique_ids: bool = false
 var has_learned_inner_skill_ids: bool = false
 var has_equipped_inner_skill_ids: bool = false
@@ -46,6 +48,7 @@ var has_used_unique_consumable_ids: bool = false
 static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     var result := RunProgressSnapshot.new()
     result.has_consumable_ids = values.has("consumable_ids")
+    result.has_item_ids = values.has("item_ids")
     result.has_learned_technique_ids = values.has("learned_technique_ids")
     result.has_learned_inner_skill_ids = values.has("learned_inner_skill_ids")
     result.has_equipped_inner_skill_ids = values.has("equipped_inner_skill_ids")
@@ -68,6 +71,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
 
     for consumable_id in values.get("consumable_ids", []):
         result.consumable_ids.append(str(consumable_id))
+    for item_id in values.get("item_ids", []):
+        result.item_ids.append(str(item_id))
     for technique_id in values.get("learned_technique_ids", []):
         result.learned_technique_ids.append(str(technique_id))
     for inner_skill_id in values.get("learned_inner_skill_ids", []):
@@ -81,8 +86,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.experience = int(values.get("experience", 0))
     result.hand_technique_progression = values.get(
         "hand_technique_progression", {}).duplicate(true)
-    result.practice_shop_state = values.get(
-        "practice_shop_state", {}).duplicate(true)
+    result.practice_shop_state = _normalized_practice_shop_state(
+        values.get("practice_shop_state", {}))
     result.consumable_use_sequence = int(values.get("consumable_use_sequence", 0))
     result.last_recallable_consumable_id = str(values.get(
         "last_recallable_consumable_id", ""))
@@ -98,6 +103,8 @@ func to_dict() -> Dictionary:
     var result := {"schema_version": SCHEMA_VERSION}
     if has_consumable_ids:
         result["consumable_ids"] = consumable_ids.duplicate()
+    if has_item_ids:
+        result["item_ids"] = item_ids.duplicate()
     if has_learned_technique_ids:
         result["learned_technique_ids"] = learned_technique_ids.duplicate()
     if has_learned_inner_skill_ids:
@@ -117,7 +124,8 @@ func to_dict() -> Dictionary:
     if has_hand_technique_progression:
         result["hand_technique_progression"] = hand_technique_progression.duplicate(true)
     if has_practice_shop_state:
-        result["practice_shop_state"] = practice_shop_state.duplicate(true)
+        result["practice_shop_state"] = _normalized_practice_shop_state(
+            practice_shop_state)
     if has_consumable_use_sequence:
         result["consumable_use_sequence"] = consumable_use_sequence
     if has_last_recallable_consumable_id:
@@ -129,4 +137,17 @@ func to_dict() -> Dictionary:
             hand_technique_multiplier_modifiers.duplicate(true))
     if has_used_unique_consumable_ids:
         result["used_unique_consumable_ids"] = used_unique_consumable_ids.duplicate()
+    return result
+
+static func _normalized_practice_shop_state(value: Dictionary) -> Dictionary:
+    var result := value.duplicate(true)
+    if not result.has("items") and result.has("coupons"):
+        result["items"] = result["coupons"]
+    if not result.has("item_candidates") and result.has("coupon_candidates"):
+        result["item_candidates"] = result["coupon_candidates"]
+    if not result.has("item_slots") and result.has("coupon_slots"):
+        result["item_slots"] = result["coupon_slots"]
+    result.erase("coupons")
+    result.erase("coupon_candidates")
+    result.erase("coupon_slots")
     return result

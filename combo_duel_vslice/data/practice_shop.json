@@ -1,64 +1,173 @@
 {
-  "version": 1,
-  "normal_slots": 2,
-  "pack_slots": 2,
-  "coupon_slots": 1,
-  "normal_candidates": [
-    {"id": "balance_sleeves_listen_wind", "kind": "technique", "price": 3},
-    {"id": "double_gu_exchange_breath", "kind": "technique", "price": 3},
-    {"id": "three_ring_ensemble", "kind": "technique", "price": 3},
-    {"id": "three_ring_chaos_qi", "kind": "technique", "price": 3},
-    {"id": "seize_qi_return_nest", "kind": "technique", "price": 3},
-    {"id": "five_steps_echo", "kind": "technique", "price": 3},
-    {"id": "stagnant_gu_conceal_breath", "kind": "technique", "price": 3},
-    {"id": "borrow_fire_guard_heart", "kind": "technique", "price": 3},
-    {"id": "high_card_insight", "kind": "consumable", "price": 3},
-    {"id": "pair_insight", "kind": "consumable", "price": 3},
-    {"id": "two_pair_insight", "kind": "consumable", "price": 3},
-    {"id": "three_kind_insight", "kind": "consumable", "price": 3},
-    {"id": "straight_insight", "kind": "consumable", "price": 3},
-    {"id": "full_house_insight", "kind": "consumable", "price": 3},
-    {"id": "four_kind_insight", "kind": "consumable", "price": 3},
-    {"id": "five_kind_insight", "kind": "consumable", "price": 3},
-    {"id": "zengyuan_pill", "kind": "consumable", "price": 3}
-  ],
-  "pack_candidates": [
-    {
-      "id": "insight_pack_basic",
-      "name": "心得包",
-      "kind": "insight_pack",
-      "price": 4,
-      "offer_count": 3,
-      "choose_count": 1,
-      "candidate_ids": [
-        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
-        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight"
-      ]
-    },
-    {
-      "id": "large_insight_pack",
-      "name": "大型心得包",
-      "kind": "insight_pack",
-      "price": 6,
-      "offer_count": 5,
-      "choose_count": 1,
-      "candidate_ids": [
-        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
-        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight"
-      ]
-    },
-    {
-      "id": "deluxe_insight_pack",
-      "name": "豪华心得包",
-      "kind": "insight_pack",
-      "price": 8,
-      "offer_count": 5,
-      "choose_count": 2,
-      "candidate_ids": [
-        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
-        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight"
-      ]
-    }
-  ],
-  "coupon_candidates": []
+  "version": 2,
+  "normal": {
+    "slot_count": 2,
+    "categories": [
+      {
+        "id": "techniques",
+        "offer_kind": "technique",
+        "weight": 35,
+        "fixed_price": 3,
+        "candidate_ids": [
+          "balance_sleeves_listen_wind",
+          "double_gu_exchange_breath",
+          "three_ring_ensemble",
+          "three_ring_chaos_qi",
+          "seize_qi_return_nest",
+          "five_steps_echo",
+          "stagnant_gu_conceal_breath",
+          "borrow_fire_guard_heart"
+        ]
+      },
+      {
+        "id": "pills",
+        "offer_kind": "consumable",
+        "content_kind": "pill",
+        "weight": 25,
+        "candidate_ids": [
+          "suyi_pill", "jiyuan_pill", "tongwu_pill", "chengshi_pill",
+          "wanhua_pill", "zengyuan_pill", "hunyuan_pill", "wulou_pill",
+          "xubao_pill", "jugong_pill", "shengjie_pill", "jiangjie_pill",
+          "qiling_pill", "sanyuan_pill", "yanyuan_pill", "nagong_pill",
+          "cangjin_pill", "panshi_pill", "shanxiang_pill", "linxiang_pill",
+          "huoxiang_pill", "chuangong_pill", "fengxiang_pill"
+        ]
+      },
+      {
+        "id": "insights",
+        "offer_kind": "consumable",
+        "content_kind": "insight",
+        "weight": 15,
+        "candidate_ids": [
+          "high_card_insight", "pair_insight", "two_pair_insight",
+          "three_kind_insight", "straight_insight", "full_house_insight",
+          "four_kind_insight", "five_kind_insight"
+        ]
+      },
+      {
+        "id": "curios",
+        "offer_kind": "consumable",
+        "content_kind": "curio",
+        "weight": 20,
+        "candidate_ids": [
+          "zhenyuan_huasheng", "shuangji_huasheng", "fanshu_huasheng",
+          "xiantian_fu", "qingshen_qi", "zhuanxiang_lun", "yijie_pan",
+          "fenyuan_ji", "yimai_zhenchuan", "huixiang_fu", "wudao_fu",
+          "huadan_fu", "yanyuan_jing", "tianshou_zhenjing", "guixu",
+          "yuanman_cuilian", "tongjie_gongming"
+        ]
+      },
+      {
+        "id": "inner_skills",
+        "offer_kind": "inner_skill",
+        "weight": 5,
+        "candidate_ids": []
+      }
+    ]
+  },
+  "packs": {
+    "slot_count": 2,
+    "candidates": [
+      {
+        "id": "pill_pack_basic", "name": "丹药包", "kind": "consumable_pack",
+        "content_kind": "pill", "price": 4, "offer_count": 3, "choose_count": 1,
+        "candidate_ids": [
+          "suyi_pill", "jiyuan_pill", "tongwu_pill", "chengshi_pill",
+          "wanhua_pill", "zengyuan_pill", "hunyuan_pill", "wulou_pill",
+          "xubao_pill", "jugong_pill", "shengjie_pill", "jiangjie_pill",
+          "qiling_pill", "sanyuan_pill", "yanyuan_pill", "nagong_pill",
+          "cangjin_pill", "panshi_pill", "shanxiang_pill", "linxiang_pill",
+          "huoxiang_pill", "chuangong_pill", "fengxiang_pill"
+        ]
+      },
+      {
+        "id": "large_pill_pack", "name": "大型丹药包", "kind": "consumable_pack",
+        "content_kind": "pill", "price": 6, "offer_count": 5, "choose_count": 1,
+        "candidate_ids": [
+          "suyi_pill", "jiyuan_pill", "tongwu_pill", "chengshi_pill",
+          "wanhua_pill", "zengyuan_pill", "hunyuan_pill", "wulou_pill",
+          "xubao_pill", "jugong_pill", "shengjie_pill", "jiangjie_pill",
+          "qiling_pill", "sanyuan_pill", "yanyuan_pill", "nagong_pill",
+          "cangjin_pill", "panshi_pill", "shanxiang_pill", "linxiang_pill",
+          "huoxiang_pill", "chuangong_pill", "fengxiang_pill"
+        ]
+      },
+      {
+        "id": "deluxe_pill_pack", "name": "豪华丹药包", "kind": "consumable_pack",
+        "content_kind": "pill", "price": 8, "offer_count": 5, "choose_count": 2,
+        "candidate_ids": [
+          "suyi_pill", "jiyuan_pill", "tongwu_pill", "chengshi_pill",
+          "wanhua_pill", "zengyuan_pill", "hunyuan_pill", "wulou_pill",
+          "xubao_pill", "jugong_pill", "shengjie_pill", "jiangjie_pill",
+          "qiling_pill", "sanyuan_pill", "yanyuan_pill", "nagong_pill",
+          "cangjin_pill", "panshi_pill", "shanxiang_pill", "linxiang_pill",
+          "huoxiang_pill", "chuangong_pill", "fengxiang_pill"
+        ]
+      },
+      {
+        "id": "insight_pack_basic", "name": "心得包", "kind": "consumable_pack",
+        "content_kind": "insight", "price": 4, "offer_count": 3, "choose_count": 1,
+        "candidate_ids": [
+          "high_card_insight", "pair_insight", "two_pair_insight",
+          "three_kind_insight", "straight_insight", "full_house_insight",
+          "four_kind_insight", "five_kind_insight"
+        ]
+      },
+      {
+        "id": "large_insight_pack", "name": "大型心得包", "kind": "consumable_pack",
+        "content_kind": "insight", "price": 6, "offer_count": 5, "choose_count": 1,
+        "candidate_ids": [
+          "high_card_insight", "pair_insight", "two_pair_insight",
+          "three_kind_insight", "straight_insight", "full_house_insight",
+          "four_kind_insight", "five_kind_insight"
+        ]
+      },
+      {
+        "id": "deluxe_insight_pack", "name": "豪华心得包", "kind": "consumable_pack",
+        "content_kind": "insight", "price": 8, "offer_count": 5, "choose_count": 2,
+        "candidate_ids": [
+          "high_card_insight", "pair_insight", "two_pair_insight",
+          "three_kind_insight", "straight_insight", "full_house_insight",
+          "four_kind_insight", "five_kind_insight"
+        ]
+      },
+      {
+        "id": "curio_pack_basic", "name": "奇珍包", "kind": "consumable_pack",
+        "content_kind": "curio", "price": 4, "offer_count": 2, "choose_count": 1,
+        "candidate_ids": [
+          "zhenyuan_huasheng", "shuangji_huasheng", "fanshu_huasheng",
+          "xiantian_fu", "qingshen_qi", "zhuanxiang_lun", "yijie_pan",
+          "fenyuan_ji", "yimai_zhenchuan", "huixiang_fu", "wudao_fu",
+          "huadan_fu", "yanyuan_jing", "tianshou_zhenjing", "guixu",
+          "yuanman_cuilian", "tongjie_gongming"
+        ]
+      },
+      {
+        "id": "large_curio_pack", "name": "大型奇珍包", "kind": "consumable_pack",
+        "content_kind": "curio", "price": 6, "offer_count": 4, "choose_count": 1,
+        "candidate_ids": [
+          "zhenyuan_huasheng", "shuangji_huasheng", "fanshu_huasheng",
+          "xiantian_fu", "qingshen_qi", "zhuanxiang_lun", "yijie_pan",
+          "fenyuan_ji", "yimai_zhenchuan", "huixiang_fu", "wudao_fu",
+          "huadan_fu", "yanyuan_jing", "tianshou_zhenjing", "guixu",
+          "yuanman_cuilian", "tongjie_gongming"
+        ]
+      },
+      {
+        "id": "deluxe_curio_pack", "name": "豪华奇珍包", "kind": "consumable_pack",
+        "content_kind": "curio", "price": 8, "offer_count": 4, "choose_count": 2,
+        "candidate_ids": [
+          "zhenyuan_huasheng", "shuangji_huasheng", "fanshu_huasheng",
+          "xiantian_fu", "qingshen_qi", "zhuanxiang_lun", "yijie_pan",
+          "fenyuan_ji", "yimai_zhenchuan", "huixiang_fu", "wudao_fu",
+          "huadan_fu", "yanyuan_jing", "tianshou_zhenjing", "guixu",
+          "yuanman_cuilian", "tongjie_gongming"
+        ]
+      }
+    ]
+  },
+  "items": {
+    "slot_count": 1,
+    "candidate_ids": []
+  }
 }

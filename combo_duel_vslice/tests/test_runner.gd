@@ -60,6 +60,7 @@ const RunEffectHandlerRegistryScript = preload(
 const RunMutationServiceScript = preload(
     "res://core/run_effects/run_mutation_service.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
+const PracticeOverlayScript = preload("res://ui/components/practice_overlay.gd")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
@@ -306,6 +307,7 @@ func _initialize() -> void:
     _test_run_consumable_slot_release_order()
     _test_s2f2f1_formal_pills_and_transactions()
     _test_s2f2f2_formal_curios_and_protocols()
+    _test_s2f2f3_practice_shop_packs_items_and_migration()
     _test_run_consumable_phase_gate()
     _test_run_consumable_save_round_trip()
     _test_consumable_no_central_op_branches()
@@ -5870,14 +5872,15 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     _assert_equal(ordinary_insight_ids, expected_insight_ids, "八种心得全部进入普通消耗品候选")
     var practice_definition: Dictionary = catalog.definition("practice_shop")
     var shop_insight_ids: Array = []
-    for candidate in practice_definition["normal_candidates"]:
-        var candidate_id := str(candidate.get("id", ""))
-        if expected_insight_ids.has(candidate_id):
-            shop_insight_ids.append(candidate_id)
+    for category in practice_definition["normal"]["categories"]:
+        if str(category.get("content_kind", "")) == "insight":
+            shop_insight_ids.append_array(category.get("candidate_ids", []))
     shop_insight_ids.sort()
     _assert_equal(shop_insight_ids, expected_insight_ids, "普通修习商店候选包含八种心得")
-    _assert_equal(practice_definition["pack_candidates"].size(), 3, "普通、大型、豪华三种心得包仍全部存在")
-    for pack in practice_definition["pack_candidates"]:
+    var insight_packs: Array = practice_definition["packs"]["candidates"].filter(
+        func(value): return str(value.get("content_kind", "")) == "insight")
+    _assert_equal(insight_packs.size(), 3, "普通、大型、豪华三种心得包仍全部存在")
+    for pack in insight_packs:
         var pack_ids: Array = pack["candidate_ids"].duplicate()
         pack_ids.sort()
         _assert_equal(pack_ids, expected_insight_ids, "%s包含完整八种心得" % str(pack["name"]))
@@ -5892,11 +5895,15 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     var same_practice := second.snapshot().practice
     _assert_equal(practice.get("normal", []).size(), 2, "普通商品栏固定为两个槽位")
     _assert_equal(practice.get("packs", []).size(), 2, "补充包栏固定为两个槽位")
-    _assert_equal(practice.get("coupons", []).size(), 1, "优惠券栏固定为一个槽位")
+    _assert_equal(practice.get("items", []).size(), 1, "物品栏固定为一个槽位")
     _assert_equal(practice.get("normal"), same_practice.get("normal"), "相同种子普通商品稳定")
     _assert_equal(practice.get("packs"), same_practice.get("packs"), "相同种子补充包稳定")
-    _assert_equal(practice.get("coupons"), same_practice.get("coupons"), "相同种子优惠券槽稳定")
+    _assert_equal(practice.get("items"), same_practice.get("items"), "相同种子物品槽稳定")
     _assert_true(first.execute({"type": "open_practice"}).success, "production 修习入口命令成功")
+    var before_close_reopen := first.snapshot().practice.duplicate(true)
+    _assert_true(first.execute({"type": "close_practice"}).success, "关闭修习成功")
+    _assert_true(first.execute({"type": "open_practice"}).success, "重新打开修习成功")
+    _assert_equal(first.snapshot().practice, before_close_reopen, "关闭再打开不刷新任何候选")
 
     first.growth.experience = 100
     var purchase := first.execute({
@@ -5904,7 +5911,7 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     _assert_true(purchase.success, "正式普通商品可以购买")
     _assert_equal(first.snapshot().practice.get("normal", [])[0], {}, "购买后普通槽位保持为空")
     var packs_before: Array = first.snapshot().practice.get("packs", []).duplicate(true)
-    var coupons_before: Array = first.snapshot().practice.get("coupons", []).duplicate(true)
+    var items_before: Array = first.snapshot().practice.get("items", []).duplicate(true)
     var meditation_costs: Array[int] = []
     for _index in range(3):
         var meditation := first.execute({"type": "meditate"})
@@ -5913,7 +5920,7 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     _assert_equal(meditation_costs, [5, 6, 7], "同一商店冥想费用依次为5、6、7")
     _assert_equal(first.snapshot().practice.get("normal", [])[0], {}, "冥想不补回已购买普通槽位")
     _assert_equal(first.snapshot().practice.get("packs", []), packs_before, "冥想不刷新补充包")
-    _assert_equal(first.snapshot().practice.get("coupons", []), coupons_before, "冥想不刷新优惠券")
+    _assert_equal(first.snapshot().practice.get("items", []), items_before, "冥想不刷新物品")
     first.growth.experience = 0
     var practice_before_reject := first.snapshot().practice.duplicate(true)
     var rejected := first.execute({"type": "meditate"})
@@ -5946,13 +5953,13 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     direct_growth.experience = 3
     var direct_service := PracticeServiceScript.new(catalog)
     direct_service.configure({
-        "normal_slots": 1,
-        "pack_slots": 0,
-        "coupon_slots": 0,
-        "normal_candidates": [{
-            "id": "stagnant_gu_conceal_breath", "kind": "technique", "price": 3}],
-        "pack_candidates": [],
-        "coupon_candidates": [],
+        "version": 2,
+        "normal": {"slot_count": 1, "categories": [{
+            "id": "techniques", "offer_kind": "technique", "weight": 1,
+            "fixed_price": 3,
+            "candidate_ids": ["stagnant_gu_conceal_breath"]}]},
+        "packs": {"slot_count": 0, "candidates": []},
+        "items": {"slot_count": 0, "candidate_ids": []},
     })
     var direct_sequence: Array = direct_growth.hand_progression("high_card").sequence.duplicate()
     direct_service.start_new_shop(direct_growth, 21102, 1, 1)
@@ -5972,6 +5979,262 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
         restored.run_session.growth.hand_technique_progression,
         first.growth.hand_technique_progression,
         "读档保留八种牌型槽位与功法序列")
+
+func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
+    var profile = RuntimeProfileScript.production()
+    var catalog = ContentCatalogScript.new(profile)
+    _assert_true(catalog.load_all(), "F3 正式内容目录可以装载")
+    var practice: Dictionary = catalog.definition("practice_shop")
+    _assert_equal(practice.get("version"), 2, "修习商店升级为 v2")
+    _assert_equal(practice.get("normal", {}).get("slot_count"), 2, "v2 普通栏为两个槽位")
+    _assert_equal(practice.get("packs", {}).get("slot_count"), 2, "v2 补充包栏为两个槽位")
+    _assert_equal(practice.get("items", {}).get("slot_count"), 1, "v2 物品栏为一个槽位")
+    var categories: Array = practice.get("normal", {}).get("categories", [])
+    var weights: Dictionary = {}
+    var pill_ids: Array = []
+    var insight_ids: Array = []
+    var curio_ids: Array = []
+    for category in categories:
+        weights[str(category.get("id", ""))] = int(category.get("weight", 0))
+        match str(category.get("content_kind", "")):
+            "pill": pill_ids = category.get("candidate_ids", []).duplicate()
+            "insight": insight_ids = category.get("candidate_ids", []).duplicate()
+            "curio": curio_ids = category.get("candidate_ids", []).duplicate()
+    _assert_equal(weights, {
+        "techniques": 35, "pills": 25, "insights": 15,
+        "curios": 20, "inner_skills": 5,
+    }, "普通商品分类权重全部来自商店数据")
+    _assert_equal(pill_ids.size(), 23, "普通池白名单包含 23 种正式丹药")
+    _assert_equal(insight_ids.size(), 8, "普通池白名单包含 8 种正式心得")
+    _assert_equal(curio_ids.size(), 17, "普通池白名单包含 17 种正式奇珍")
+    var pack_candidates: Array = practice.get("packs", {}).get("candidates", [])
+    _assert_equal(pack_candidates.size(), 9, "九种补充包全部存在")
+    var pack_shapes: Dictionary = {}
+    for pack in pack_candidates:
+        pack_shapes[str(pack.get("id", ""))] = [
+            int(pack.get("price", 0)),
+            int(pack.get("offer_count", 0)),
+            int(pack.get("choose_count", 0)),
+        ]
+    _assert_equal(pack_shapes.get("pill_pack_basic"), [4, 3, 1], "普通丹药包规格")
+    _assert_equal(pack_shapes.get("large_pill_pack"), [6, 5, 1], "大型丹药包规格")
+    _assert_equal(pack_shapes.get("deluxe_pill_pack"), [8, 5, 2], "豪华丹药包规格")
+    _assert_equal(pack_shapes.get("insight_pack_basic"), [4, 3, 1], "普通心得包规格")
+    _assert_equal(pack_shapes.get("large_insight_pack"), [6, 5, 1], "大型心得包规格")
+    _assert_equal(pack_shapes.get("deluxe_insight_pack"), [8, 5, 2], "豪华心得包规格")
+    _assert_equal(pack_shapes.get("curio_pack_basic"), [4, 2, 1], "普通奇珍包规格")
+    _assert_equal(pack_shapes.get("large_curio_pack"), [6, 4, 1], "大型奇珍包规格")
+    _assert_equal(pack_shapes.get("deluxe_curio_pack"), [8, 4, 2], "豪华奇珍包规格")
+    _assert_equal(practice.get("items", {}).get("candidate_ids", []), [], "当前正式物品候选池为空")
+    var items_definition: Dictionary = catalog.definition("items")
+    _assert_equal(items_definition.get("items", []).size(), 2, "items.json 只登记两个候选物品")
+    for item in items_definition.get("items", []):
+        _assert_true(
+            str(item.get("status", "")) in ["candidate", "design_only"],
+            "物品候选不伪装成正式商品")
+
+    var service := PracticeServiceScript.new(catalog)
+    var growth := GrowthInventoryScript.new(catalog, false)
+    growth.experience = 100
+    var deluxe_pill: Dictionary = pack_candidates.filter(
+        func(value): return str(value.get("id", "")) == "deluxe_pill_pack")[0]
+    growth.practice_shop_state = {
+        "shop_index": 1, "act": 1, "normal": [],
+        "packs": [deluxe_pill], "items": [{}],
+        "meditation_count": 0, "next_meditation_cost": 5,
+        "pack_open_sequence": 0,
+    }
+    var state_before_preview := growth.capture_mutation_state()
+    var preview: Dictionary = service.open_pack(
+        growth, "packs", 0, [], true, 77123, 1)
+    _assert_true(preview.get("success", false), "补充包预览成功")
+    _assert_equal(preview.get("max_choose_count"), 2, "空余栏位足够时豪华包可选两项")
+    _assert_equal(growth.capture_mutation_state(), state_before_preview, "补充包预览不改变真实状态")
+    var offered: Array = preview.get("preview", [])
+    var confirmed: Dictionary = service.open_pack(
+        growth, "packs", 0, [offered[0]], true, 77123, 1,
+        str(preview.get("preparation_token", "")))
+    _assert_true(confirmed.get("success", false), "补充包确认成功")
+    _assert_equal(growth.consumable_ids, [str(offered[0])], "确认只加入玩家选择的内容")
+    _assert_equal(growth.practice_shop_state.get("packs", [])[0], {}, "补充包确认后槽位为空")
+    _assert_equal(growth.experience, 92, "补充包确认只扣除 8 点历练")
+
+    var stale_growth := GrowthInventoryScript.new(catalog, false)
+    stale_growth.experience = 100
+    stale_growth.practice_shop_state = {
+        "shop_index": 1, "act": 1, "normal": [],
+        "packs": [deluxe_pill], "items": [{}], "pack_open_sequence": 0,
+    }
+    var stale_preview: Dictionary = service.open_pack(
+        stale_growth, "packs", 0, [], true, 77123, 1)
+    stale_growth.experience += 1
+    var stale_before := stale_growth.capture_mutation_state()
+    var stale_result := service.open_pack(
+        stale_growth, "packs", 0, [stale_preview.get("preview", [])[0]], true,
+        77123, 1, str(stale_preview.get("preparation_token", "")))
+    _assert_true(not stale_result.get("success", false), "预览后历练变化令确认明确失败")
+    _assert_equal(stale_growth.capture_mutation_state(), stale_before, "失效 token 不改变状态或随机序号")
+
+    var one_slot_growth := GrowthInventoryScript.new(catalog, false)
+    one_slot_growth.experience = 100
+    one_slot_growth.consumable_ids.assign(["zengyuan_pill", "pair_insight"])
+    one_slot_growth.practice_shop_state = {
+        "shop_index": 1, "act": 1, "normal": [],
+        "packs": [deluxe_pill], "items": [{}], "pack_open_sequence": 0,
+    }
+    var one_slot_preview := service.open_pack(
+        one_slot_growth, "packs", 0, [], true, 77123, 1)
+    _assert_equal(one_slot_preview.get("max_choose_count"), 1, "豪华包在一格空位时动态限制为一项")
+    var one_slot_before := one_slot_growth.capture_mutation_state()
+    var over_selected := service.open_pack(
+        one_slot_growth, "packs", 0,
+        one_slot_preview.get("preview", []).slice(0, 2), true, 77123, 1,
+        str(one_slot_preview.get("preparation_token", "")))
+    _assert_true(not over_selected.get("success", false), "空位不足时不能确认超额选择")
+    _assert_equal(one_slot_growth.capture_mutation_state(), one_slot_before, "栏位不足失败不改变状态")
+
+    var full_growth := GrowthInventoryScript.new(catalog, false)
+    full_growth.experience = 100
+    full_growth.consumable_ids.assign(["zengyuan_pill", "pair_insight", "five_kind_insight"])
+    full_growth.practice_shop_state = {
+        "shop_index": 1, "act": 1, "normal": [],
+        "packs": [deluxe_pill], "items": [{}], "pack_open_sequence": 0,
+    }
+    var full_preview := service.open_pack(full_growth, "packs", 0, [], true, 77123, 1)
+    _assert_equal(full_preview.get("max_choose_count"), 0, "没有空余栏位时补充包不能选择")
+    var full_before := full_growth.capture_mutation_state()
+    var full_confirm := service.open_pack(
+        full_growth, "packs", 0, [full_preview.get("preview", [])[0]], true,
+        77123, 1, str(full_preview.get("preparation_token", "")))
+    _assert_true(not full_confirm.get("success", false), "没有空位时确认明确失败")
+    _assert_equal(full_growth.capture_mutation_state(), full_before, "没有空位失败不改变库存和随机序号")
+
+    var curio_pack: Dictionary = pack_candidates.filter(
+        func(value): return str(value.get("id", "")) == "curio_pack_basic")[0]
+    var unique_growth := GrowthInventoryScript.new(catalog, false)
+    unique_growth.experience = 100
+    unique_growth.used_unique_consumable_ids.append(str(curio_pack["candidate_ids"][0]))
+    unique_growth.practice_shop_state = {
+        "shop_index": 1, "act": 1, "normal": [],
+        "packs": [curio_pack], "items": [{}], "pack_open_sequence": 0,
+    }
+    var unique_preview := service.open_pack(unique_growth, "packs", 0, [], true, 77123, 1)
+    _assert_true(
+        not unique_preview.get("preview", []).has(str(curio_pack["candidate_ids"][0])),
+        "已使用唯一奇珍不会再次进入奇珍包")
+
+    var curio_service := PracticeServiceScript.new(catalog)
+    curio_service.configure({
+        "version": 2,
+        "normal": {"slot_count": 1, "categories": [{
+            "id": "curios", "offer_kind": "consumable", "content_kind": "curio",
+            "weight": 1, "candidate_ids": [str(curio_pack["candidate_ids"][0])]}]},
+        "packs": {"slot_count": 0, "candidates": []},
+        "items": {"slot_count": 0, "candidate_ids": []},
+    })
+    var used_normal_growth := GrowthInventoryScript.new(catalog, false)
+    used_normal_growth.used_unique_consumable_ids.append(str(curio_pack["candidate_ids"][0]))
+    var used_normal := curio_service.start_new_shop(used_normal_growth, 12, 1, 1)
+    _assert_equal(used_normal.get("normal", [])[0], {}, "已使用唯一奇珍不会再次进入普通商品")
+
+    var direct_consumable_growth := GrowthInventoryScript.new(catalog, false)
+    direct_consumable_growth.experience = 10
+    direct_consumable_growth.practice_shop_state = {
+        "normal": [{"id": "zengyuan_pill", "kind": "consumable", "price": 3}],
+        "packs": [], "items": [],
+    }
+    _assert_true(
+        service.purchase(direct_consumable_growth, "normal", 0, true).get("success", false),
+        "普通商品购买正式支持 consumable")
+    _assert_equal(direct_consumable_growth.consumable_ids, ["zengyuan_pill"], "普通消耗品进入共享栏")
+    var direct_inner_growth := GrowthInventoryScript.new(catalog, false)
+    direct_inner_growth.experience = 10
+    direct_inner_growth.practice_shop_state = {
+        "normal": [{"id": "extra_qi_to_defense", "kind": "inner_skill", "price": 4}],
+        "packs": [], "items": [],
+    }
+    _assert_true(
+        service.purchase(direct_inner_growth, "normal", 0, true).get("success", false),
+        "普通商品购买协议支持 inner_skill")
+    _assert_equal(direct_inner_growth.learned_inner_skill_ids, ["extra_qi_to_defense"], "内功只加入已习得库")
+    var direct_item_growth := GrowthInventoryScript.new(catalog, false)
+    direct_item_growth.experience = 10
+    direct_item_growth.practice_shop_state = {
+        "normal": [], "packs": [],
+        "items": [{"id": "item_protocol_probe", "kind": "item", "price": 4}],
+    }
+    _assert_true(
+        service.purchase(direct_item_growth, "items", 0, true).get("success", false),
+        "独立物品栏购买协议支持 item")
+    _assert_equal(direct_item_growth.item_ids, ["item_protocol_probe"], "物品只进入 item_ids")
+    _assert_true(
+        direct_item_growth.consumable_ids.is_empty() \
+            and direct_item_growth.learned_inner_skill_ids.is_empty(),
+        "物品不占消耗品栏或内功栏")
+    var purchase_fail_growth := GrowthInventoryScript.new(catalog, false)
+    purchase_fail_growth.experience = 0
+    purchase_fail_growth.practice_shop_state = {
+        "normal": [{"id": "zengyuan_pill", "kind": "consumable", "price": 3}],
+        "packs": [], "items": [], "pack_open_sequence": 4,
+    }
+    var purchase_fail_before := purchase_fail_growth.capture_mutation_state()
+    _assert_true(
+        not service.purchase(purchase_fail_growth, "normal", 0, true).get("success", false),
+        "历练不足时普通购买失败")
+    _assert_equal(
+        purchase_fail_growth.capture_mutation_state(), purchase_fail_before,
+        "购买失败时商店、库存、历练和随机序号全部不变")
+
+    var reset_growth := GrowthInventoryScript.new(catalog, false)
+    reset_growth.experience = 100
+    service.start_new_shop(reset_growth, 77125, 1, 1)
+    _assert_true(service.meditate(reset_growth, 77125, 1, true).get("success", false), "新商店内首次冥想成功")
+    service.start_new_shop(reset_growth, 77125, 1, 2)
+    _assert_equal(reset_growth.practice_shop_state.get("meditation_count"), 0, "新商店重置冥想次数")
+    _assert_equal(reset_growth.practice_shop_state.get("next_meditation_cost"), 5, "新商店冥想费用重置为 5")
+
+    var save_session: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog, null, null, null, null, profile)
+    _assert_true(save_session.execute({"type": "setup_run", "seed": 77124}).success, "F3 存档测试本局建立")
+    save_session.growth.item_ids.append("gift_card")
+    var save_data = RunSaveDataScript.new().capture(save_session)
+    var saved_dict: Dictionary = save_data.to_dict()
+    _assert_true(saved_dict["growth"].has("item_ids"), "新存档写入 item_ids")
+    _assert_true(not saved_dict["growth"]["practice_shop_state"].has("coupons"), "新存档不写 coupons")
+    var legacy_dict := saved_dict.duplicate(true)
+    var legacy_shop: Dictionary = legacy_dict["growth"]["practice_shop_state"]
+    legacy_shop["coupons"] = legacy_shop.get("items", []).duplicate(true)
+    legacy_shop.erase("items")
+    legacy_shop["coupon_slots"] = 1
+    var restored_legacy := RunSaveDataScript.new(legacy_dict)
+    _assert_true(restored_legacy.to_dict()["growth"]["practice_shop_state"].has("items"), "旧 coupons 槽位迁移为 items")
+    var legacy_result := restored_legacy.restore_session(catalog)
+    _assert_true(legacy_result.get("success", false), "旧 coupons 存档可以读回")
+    _assert_equal(legacy_result["run_session"].growth.item_ids, ["gift_card"], "物品独立存档往返")
+    _assert_true(
+        legacy_result["run_session"].growth.consumable_ids != legacy_result["run_session"].growth.item_ids,
+        "item_ids 与 consumable_ids 保持独立")
+
+    var ui_root := Node.new()
+    var overlay = PracticeOverlayScript.new()
+    ui_root.add_child(overlay)
+    overlay.present({
+        "experience": 100,
+        "growth": {"consumables": [], "items": []},
+        "practice": {
+            "normal": [{"id": "a", "kind": "technique", "name": "甲", "price": 3, "can_purchase": true}, {}],
+            "packs": [pack_candidates[0], pack_candidates[1]],
+            "items": [{}], "next_meditation_cost": 5,
+        },
+    })
+    _assert_equal(overlay._offers.get_child_count(), 2, "UI 渲染两个普通商品槽")
+    _assert_equal(overlay._packs.get_child_count(), 2, "UI 渲染两个补充包槽")
+    _assert_equal(overlay._items.get_child_count(), 1, "UI 渲染一个物品槽")
+    _assert_true(
+        str(overlay._offers.get_child(1).text).contains("空槽") \
+            and str(overlay._items.get_child(0).text).contains("空槽"),
+        "UI 将已购买普通槽和无正式物品槽明确渲染为空槽")
+    ui_root.queue_free()
 
 func _test_zengyuan_pill_enhancement_and_preview() -> void:
     var pair := [_card("7", "wind"), _card("7", "forest")]

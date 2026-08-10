@@ -450,7 +450,9 @@ func _buy_practice_offer(group: String, slot_index: int) -> void:
                 group,
                 slot_index,
                 offered,
-                int(preview.payload_value("choose_count", 1)))
+                int(preview.payload_value("minimum_choose_count", 1)),
+                int(preview.payload_value("max_choose_count", 0)),
+                str(preview.payload_value("preparation_token", "")))
         else:
             _show_toast(preview.reason_or("无法开启补充包"))
         _refresh()
@@ -466,12 +468,17 @@ func _buy_practice_offer(group: String, slot_index: int) -> void:
         _show_toast(result.reason_or("无法购买"))
     _refresh()
 
-func _confirm_pack_selection(group: String, slot_index: int, selected_ids: Array) -> void:
+func _confirm_pack_selection(
+        group: String,
+        slot_index: int,
+        selected_ids: Array,
+        preparation_token: String) -> void:
     var opened := run_session.execute({
         "type": "open_practice_pack",
         "group": group,
         "slot_index": slot_index,
         "selected_ids": selected_ids,
+        "preparation_token": preparation_token,
     })
     if opened.success:
         _show_toast("补充包已开启 · 获得 %s" % "、".join(selected_ids))

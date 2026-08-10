@@ -10,6 +10,7 @@ const EXPERIENCE_INTEREST_CAP := 5
 
 var experience: int = 0
 var consumable_ids: Array[String] = []
+var item_ids: Array[String] = []
 var learned_technique_ids: Array[String] = []
 var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
@@ -48,6 +49,7 @@ func reset(
     max_life = initial_max_life
     life = max_life
     consumable_ids.clear()
+    item_ids.clear()
     learned_technique_ids.clear()
     learned_inner_skill_ids.clear()
     equipped_inner_skill_ids.clear()
@@ -69,6 +71,25 @@ func reset(
 func clear_practice_purchases() -> void:
     practice_purchases.clear()
 
+func migrate_legacy_practice_shop_state() -> void:
+    practice_shop_state = normalized_practice_shop_state(practice_shop_state)
+
+func practice_shop_snapshot() -> Dictionary:
+    return normalized_practice_shop_state(practice_shop_state)
+
+static func normalized_practice_shop_state(value: Dictionary) -> Dictionary:
+    var result := value.duplicate(true)
+    if not result.has("items") and result.has("coupons"):
+        result["items"] = result["coupons"]
+    if not result.has("item_candidates") and result.has("coupon_candidates"):
+        result["item_candidates"] = result["coupon_candidates"]
+    if not result.has("item_slots") and result.has("coupon_slots"):
+        result["item_slots"] = result["coupon_slots"]
+    result.erase("coupons")
+    result.erase("coupon_candidates")
+    result.erase("coupon_slots")
+    return result
+
 ## 捕获本局效果事务所需的完整可变状态。
 ##
 ## 这不同于 RunProgressSnapshot 的部分快照：事务副本必须覆盖所有本局库存，
@@ -79,6 +100,7 @@ func capture_mutation_state() -> Dictionary:
         "life": life,
         "max_life": max_life,
         "consumable_ids": consumable_ids.duplicate(),
+        "item_ids": item_ids.duplicate(),
         "learned_technique_ids": learned_technique_ids.duplicate(),
         "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
@@ -86,7 +108,7 @@ func capture_mutation_state() -> Dictionary:
         "run_deck": run_deck.to_snapshot(),
         "practice_purchases": practice_purchases.duplicate(true),
         "hand_technique_progression": hand_technique_progression.duplicate(true),
-        "practice_shop_state": practice_shop_state.duplicate(true),
+        "practice_shop_state": practice_shop_snapshot(),
         "consumable_use_sequence": consumable_use_sequence,
         "last_recallable_consumable_id": last_recallable_consumable_id,
         "base_hand_limit_modifier": base_hand_limit_modifier,
@@ -117,6 +139,7 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     life = int(state["life"])
     max_life = int(state["max_life"])
     consumable_ids.assign(state["consumable_ids"])
+    item_ids.assign(state.get("item_ids", []))
     learned_technique_ids.assign(state["learned_technique_ids"])
     learned_inner_skill_ids.assign(state["learned_inner_skill_ids"])
     equipped_inner_skill_ids.assign(state["equipped_inner_skill_ids"])
@@ -124,7 +147,8 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     run_deck = replacement_deck
     practice_purchases = state["practice_purchases"].duplicate(true)
     hand_technique_progression = state["hand_technique_progression"].duplicate(true)
-    practice_shop_state = state["practice_shop_state"].duplicate(true)
+    practice_shop_state = normalized_practice_shop_state(
+        state["practice_shop_state"])
     consumable_use_sequence = int(state.get("consumable_use_sequence", 0))
     last_recallable_consumable_id = str(
         state.get("last_recallable_consumable_id", ""))
@@ -281,6 +305,7 @@ func purchase_consumable(consumable_id: String, price: int, practice_available: 
 func to_progress_snapshot() -> RunProgressSnapshot:
     return RunProgressSnapshotScript.from_dict({
         "consumable_ids": consumable_ids.duplicate(),
+        "item_ids": item_ids.duplicate(),
         "learned_technique_ids": learned_technique_ids.duplicate(),
         "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
@@ -290,7 +315,7 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "max_life": max_life,
         "experience": experience,
         "hand_technique_progression": hand_technique_progression.duplicate(true),
-        "practice_shop_state": practice_shop_state.duplicate(true),
+        "practice_shop_state": practice_shop_snapshot(),
         "consumable_use_sequence": consumable_use_sequence,
         "last_recallable_consumable_id": last_recallable_consumable_id,
         "base_hand_limit_modifier": base_hand_limit_modifier,
@@ -301,10 +326,13 @@ func to_progress_snapshot() -> RunProgressSnapshot:
 func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
     if progress_snapshot.has_consumable_ids:
         consumable_ids.assign(progress_snapshot.consumable_ids)
+    if progress_snapshot.has_item_ids:
+        item_ids.assign(progress_snapshot.item_ids)
     if progress_snapshot.has_hand_technique_progression:
         hand_technique_progression = progress_snapshot.hand_technique_progression.duplicate(true)
     if progress_snapshot.has_practice_shop_state:
-        practice_shop_state = progress_snapshot.practice_shop_state.duplicate(true)
+        practice_shop_state = normalized_practice_shop_state(
+            progress_snapshot.practice_shop_state)
     if progress_snapshot.has_consumable_use_sequence:
         consumable_use_sequence = progress_snapshot.consumable_use_sequence
     if progress_snapshot.has_last_recallable_consumable_id:

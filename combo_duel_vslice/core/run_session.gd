@@ -189,7 +189,8 @@ func execute(command: Dictionary) -> CommandResult:
             result = _open_practice_pack(
                 str(command.get("group", "packs")),
                 int(command.get("slot_index", -1)),
-                command.get("selected_ids", []))
+                command.get("selected_ids", []),
+                str(command.get("preparation_token", "")))
         "meditate":
             result = _meditate()
         "get_hand_technique_loadout":
@@ -649,11 +650,15 @@ func _purchase_practice_offer(group: String, slot_index: int) -> Dictionary:
         _run_state.changed.emit()
     return result
 
-func _open_practice_pack(group: String, slot_index: int, selected_ids: Array) -> Dictionary:
+func _open_practice_pack(
+        group: String,
+        slot_index: int,
+        selected_ids: Array,
+        preparation_token: String = "") -> Dictionary:
     var result: Dictionary = _practice_service.open_pack(
         growth, group, slot_index, selected_ids,
         navigation.can_open_practice(),
-        _practice_rng())
+        navigation.seed, navigation.act, preparation_token)
     if result.get("success", false) and not result.has("preview"):
         _run_state.changed.emit()
     return result
@@ -664,13 +669,6 @@ func _meditate() -> Dictionary:
     if result.get("success", false):
         _run_state.changed.emit()
     return result
-
-func _practice_rng() -> RandomNumberGenerator:
-    var rng := RandomNumberGenerator.new()
-    rng.seed = int(navigation.seed) * 1000003 \
-        + int(navigation.act) * 7919 \
-        + int(growth.practice_shop_state.get("shop_index", 1)) * 9176
-    return rng
 
 func _practice_snapshot() -> Dictionary:
     var shop_state: Dictionary = _practice_service.ensure_shop(
@@ -690,32 +688,66 @@ func _practice_snapshot() -> Dictionary:
             and growth.experience >= price
             and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT)
         offers.append(definition)
+    var normal := _decorate_practice_slots(
+        shop_state.get("normal", []), "normal")
+    var packs := _decorate_practice_slots(
+        shop_state.get("packs", []), "packs")
+    var items := _decorate_practice_slots(
+        shop_state.get("items", []), "items")
     return {
         "available": navigation.can_open_practice(),
         "offer_ids": offer_ids,
         "offers": offers,
         "purchased_ids": growth.practice_purchases.keys(),
         "shop": shop_state,
-        "normal": shop_state.get("normal", []).duplicate(true),
-        "packs": shop_state.get("packs", []).duplicate(true),
-        "coupons": shop_state.get("coupons", []).duplicate(true),
+        "normal": normal,
+        "packs": packs,
+        "items": items,
         "meditation_count": int(shop_state.get("meditation_count", 0)),
         "next_meditation_cost": int(shop_state.get("next_meditation_cost", 5)),
     }
+
+func _decorate_practice_slots(values: Array, group: String) -> Array:
+    var result: Array = []
+    for value in values:
+        if not value is Dictionary or value.is_empty():
+            result.append({})
+            continue
+        var definition: Dictionary = value.duplicate(true)
+        var can_purchase: bool = bool(navigation.can_open_practice()) \
+            and growth.experience >= int(definition.get("price", 0))
+        if str(definition.get("kind", "")) == "consumable":
+            can_purchase = can_purchase \
+                and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT
+        elif str(definition.get("kind", "")) == "consumable_pack":
+            can_purchase = can_purchase \
+                and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT
+        elif str(definition.get("kind", "")) == "item":
+            can_purchase = can_purchase \
+                and not growth.item_ids.has(str(definition.get("id", "")))
+        definition["can_purchase"] = can_purchase
+        definition["group"] = group
+        result.append(definition)
+    return result
 
 func _growth_snapshot() -> Dictionary:
     var consumables: Array = []
     for consumable_id in growth.consumable_ids:
         consumables.append(
             _consumable_repository.get_consumable(consumable_id).duplicate(true))
+    var items: Array = []
+    for item_id in growth.item_ids:
+        items.append(_content_catalog.get_by_id("item", item_id))
     return {
         "life": growth.life,
         "max_life": growth.max_life,
         "consumable_limit": 3,
         "consumable_ids": growth.consumable_ids.duplicate(),
         "consumables": consumables,
+        "item_ids": growth.item_ids.duplicate(),
+        "items": items,
         "hand_technique_progression": growth.hand_technique_progression.duplicate(true),
-        "practice_shop_state": growth.practice_shop_state.duplicate(true),
+        "practice_shop_state": growth.practice_shop_snapshot(),
         "learned_technique_ids": growth.learned_technique_ids.duplicate(),
         "run_deck": growth.run_deck.to_snapshot(),
         "run_deck_count": growth.run_deck.card_count(),

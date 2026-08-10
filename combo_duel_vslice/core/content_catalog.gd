@@ -21,6 +21,7 @@ const CONTENT_ORDER := [
     "techniques",
     "inner_skills",
     "consumables",
+    "items",
     "practice_shop",
     "node_rewards",
     "act_progression",
@@ -38,6 +39,7 @@ const DEFAULT_PATHS := {
     "techniques": "res://data/techniques.json",
     "inner_skills": "res://data/inner_skills.json",
     "consumables": "res://data/consumables.json",
+    "items": "res://data/items.json",
     "practice_shop": "res://data/practice_shop.json",
     "node_rewards": "res://data/node_rewards.json",
     "act_progression": "res://data/act_progression.json",
@@ -188,6 +190,7 @@ func _build_indexes() -> void:
         "technique": {},
         "inner_skill": {},
         "consumable": {},
+        "item": {},
         "node_type": {},
         "scenario": {},
         "enemy": {},
@@ -217,6 +220,7 @@ func _build_indexes() -> void:
     _index_array("technique", _definitions["techniques"]["techniques"])
     _index_array("inner_skill", _definitions["inner_skills"]["inner_skills"])
     _index_array("consumable", _definitions["consumables"]["consumables"])
+    _index_array("item", _definitions["items"]["items"])
     _index_array("enemy", _definitions["enemies"]["enemies"])
     for node_type in _definitions["node_content"]["node_types"]:
         var value: Dictionary = _definitions["node_content"]["node_types"][node_type].duplicate(true)
