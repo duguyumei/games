@@ -53,3 +53,38 @@ func enhancement_name(enhancement_id: String) -> String:
 
 func target_display_name(instance_id: String) -> String:
 	return instance_id
+
+## 以下是正式本局 Handler 的领域窄接口。基类默认返回不支持，战斗上下文
+## 可以继续只实现自己拥有的能力，不会把成长库存泄漏给战斗中央流程。
+func remove_run_cards(_instance_ids: Array) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持移出本局真气"}
+
+func copy_run_card(_source_instance_id: String, _count: int = 1) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持复制本局真气"}
+
+func add_consumable(_consumable_id: String) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持生成本局消耗品"}
+
+func consumable_candidates(_kind: String) -> Array[String]:
+	return []
+
+func consumable_capacity() -> int:
+	return 0
+
+func last_recallable_consumable_id() -> String:
+	return ""
+
+func formal_enhancement_ids() -> Array[String]:
+	return []
+
+func equipped_inner_skill_definitions() -> Array[Dictionary]:
+	return []
+
+func inner_skill_candidates() -> Array[String]:
+	return []
+
+func add_inner_skill(_inner_skill_id: String) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持获得内功"}
+
+func record_last_recallable_consumable(_consumable_id: String) -> void:
+	pass

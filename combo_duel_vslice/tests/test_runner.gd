@@ -304,6 +304,7 @@ func _initialize() -> void:
     _test_run_consumable_transaction_rollback()
     _test_run_consumable_failed_use_keeps_randomness()
     _test_run_consumable_slot_release_order()
+    _test_s2f2f1_formal_pills_and_transactions()
     _test_run_consumable_phase_gate()
     _test_run_consumable_save_round_trip()
     _test_consumable_no_central_op_branches()
@@ -493,7 +494,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
     _assert_equal(catalog.definition("card_states")["version"], 9, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
-    _assert_equal(catalog.definition("consumables")["version"], 3, "消耗品与修习商品数据带顶层版本")
+    _assert_equal(catalog.definition("consumables")["version"], 4, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
     _assert_equal(act_progression["acts"].size(), 3, "生命成长内容完整声明三层数据")
     _assert_equal(act_progression["acts"][0]["player"]["max_life"], 100, "第一层玩家生命上限来自成长内容")
@@ -4523,10 +4524,12 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     var alchemy_discard: Dictionary = alchemy_engine.player.card_zone_service.move_card(
         alchemy_engine.player, "hand", "discard_pile", alchemy, "explicit_discard")
     _assert_true(alchemy_discard.get("success", false), "化丹牌成功明确弃掉")
+    _assert_equal(alchemy_engine.player.consumable_ids.size(), 1, "化丹生成一种丹药")
     _assert_equal(
-        alchemy_engine.player.consumable_ids,
-        ["zengyuan_pill"],
-        "化丹从正式 pill 池生成当前丹药")
+        catalog.get_by_id(
+            "consumable", alchemy_engine.player.consumable_ids[0]).get("kind", ""),
+        "pill",
+        "化丹从完整正式 pill 池生成当前丹药")
 
     var normal_alchemy = _card("6", "fire")
     normal_alchemy.set_imprint("alchemy")
@@ -4565,10 +4568,12 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
         "discard_pile",
         returning_alchemy,
         "explicit_discard")
+    _assert_equal(returning_engine.player.consumable_ids.size(), 1, "回风改置后化丹仍生成一种丹药")
     _assert_equal(
-        returning_engine.player.consumable_ids,
-        ["zengyuan_pill"],
-        "回风已改置牌区后化丹仍生成丹药")
+        catalog.get_by_id(
+            "consumable", returning_engine.player.consumable_ids[0]).get("kind", ""),
+        "pill",
+        "回风已改置牌区后化丹仍从正式池生成丹药")
     _assert_true(
         returning_engine.player.draw_pile.back() == returning_alchemy,
         "化丹结算后仍保留回风置于牌库顶的结果")
@@ -4593,7 +4598,8 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     var empty_alchemy = _card("J", "fire")
     empty_alchemy.set_imprint("alchemy")
     var empty_engine = _engine_with_hand([empty_alchemy], [], 82413)
-    empty_engine.consumable_repository.consumables.erase("zengyuan_pill")
+    for pill_id in empty_engine.consumable_repository.ids_by_kind("pill"):
+        empty_engine.consumable_repository.consumables.erase(pill_id)
     var empty_rng_state: int = empty_engine.rng.state
     empty_engine.player.card_zone_service.move_card(
         empty_engine.player,
@@ -4642,6 +4648,13 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
         "discard_pile",
         alchemy_battle_card,
         "explicit_discard")
+    _assert_equal(battle_session.engine.player.consumable_ids.size(), 1, "战斗同步测试化丹生成一种丹药")
+    var battle_alchemy_id := str(
+        battle_session.engine.player.consumable_ids[0])
+    _assert_equal(
+        catalog.get_by_id("consumable", battle_alchemy_id).get("kind", ""),
+        "pill",
+        "战斗同步测试化丹奖励来自完整 pill 池")
     battle_session.engine.card_reshape_runtime.last_successful_hand_by_side[
         battle_session.engine.player.owner_id] = "pair"
     battle_session.engine.timing_system.emit_timing(
@@ -4652,13 +4665,13 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     var captured: RunProgressSnapshot = battle_session.player_progress_snapshot()
     _assert_equal(
         captured.consumable_ids,
-        ["zengyuan_pill", "pair_insight"],
+        [battle_alchemy_id, "pair_insight"],
         "悟道与化丹奖励进入玩家战斗进度快照")
     growth.apply_progress_snapshot(captured)
     growth.apply_progress_snapshot(captured)
     _assert_equal(
         growth.consumable_ids,
-        ["zengyuan_pill", "pair_insight"],
+        [battle_alchemy_id, "pair_insight"],
         "同一绝对消耗品快照同步两次不重复生成")
     for imprint_spec in [
         ["wind_2", "alchemy"],
@@ -6022,8 +6035,14 @@ func _test_consumable_effect_registry_contract() -> void:
     var registry = ConsumableEffectHandlerRegistryScript.new()
     _assert_equal(
         registry.operation_ids(),
-        ["apply_enhancement", "apply_origin", "gain_insight"],
-        "默认注册三个现有消耗品操作")
+        [
+            "apply_enhancement", "apply_origin", "apply_random_enhancement",
+            "copy_run_card", "gain_equipped_inner_skill_forget_value",
+            "gain_experience_capped", "gain_insight",
+            "grant_last_used_consumable", "grant_random_consumables",
+            "grant_random_inner_skill", "remove_run_cards",
+        ],
+        "默认注册正式消耗品操作")
 
     var duplicate_registry = ConsumableEffectHandlerRegistryScript.new(false)
     _assert_true(
@@ -6403,6 +6422,7 @@ func _test_run_consumable_transaction_rollback() -> void:
 
     session.growth.experience = 50
     session.growth.consumable_ids.append("high_card_insight")
+    session.growth.last_recallable_consumable_id = "pair_insight"
     var state_before = session.growth.capture_mutation_state()
     var crafted_failing := {
         "id": "high_card_insight",
@@ -6466,6 +6486,262 @@ func _test_run_consumable_slot_release_order() -> void:
         ["pair_insight"],
         "心得释放后剩余槽位顺序保持")
 
+func _test_s2f2f1_formal_pills_and_transactions() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "F2F1 正式丹药内容目录有效")
+    var pills: Array = []
+    var insights: Array = []
+    for definition in catalog.all_of("consumable"):
+        match str(definition.get("kind", "")):
+            "pill": pills.append(definition)
+            "insight": insights.append(definition)
+    _assert_equal(pills.size(), 23, "正式内容包含 23 种丹药")
+    _assert_equal(insights.size(), 8, "正式内容包含 8 种心得")
+    for definition in pills:
+        _assert_equal(int(definition.get("price", -1)), 3, "%s 丹药价格为 3" % definition.get("name", ""))
+        _assert_true(not str(definition.get("description", "")).is_empty(), "%s 描述非空" % definition.get("name", ""))
+        _assert_true(not definition.get("effects", []).is_empty(), "%s 具有正式效果" % definition.get("name", ""))
+        _assert_equal(str(definition.get("kind", "")), "pill", "%s 使用 pill 类型" % definition.get("name", ""))
+
+    var target_session: RunSession = RunSessionScript.new()
+    _assert_true(target_session.execute({"type": "setup_run", "seed": 880101}).success, "资格查询本局建立")
+    target_session.growth.run_deck.apply_card_origin(
+        ["wind_3"], "attribute_change", {"attribute": "mountain"})
+    target_session.growth.consumable_ids.assign(["shengjie_pill"])
+    var up_query := target_session.execute({"type": "query_consumable_use", "slot_index": 0})
+    var up_ids := _target_ids(up_query.payload_value("eligible_targets"))
+    _assert_true(up_ids.has("wind_K"), "升阶丹显示 K")
+    _assert_true(not up_ids.has("wind_A"), "升阶丹不显示 A")
+    _assert_true(not up_ids.has("wind_3"), "升阶丹不显示已有本源真气")
+    var illegal_up := target_session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["wind_A"],
+    })
+    _assert_true(not illegal_up.success, "服务端重新拒绝 A 升阶")
+    var legal_up := target_session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["wind_K"],
+    })
+    _assert_true(legal_up.success, "K 可以升阶")
+    _assert_equal(target_session.growth.run_deck.card_data("wind_K")["rank_name"], "A", "升阶实测 K→A")
+
+    var down_first: RunSession = RunSessionScript.new()
+    var down_second: RunSession = RunSessionScript.new()
+    for session in [down_first, down_second]:
+        _assert_true(session.execute({"type": "setup_run", "seed": 880102}).success, "降阶确定性本局建立")
+        session.growth.consumable_ids.assign(["jiangjie_pill"])
+    var down_query := down_first.execute({"type": "query_consumable_use", "slot_index": 0})
+    var down_ids := _target_ids(down_query.payload_value("eligible_targets"))
+    _assert_true(down_ids.has("wind_A"), "降阶丹显示 A")
+    _assert_true(not down_ids.has("wind_2"), "降阶丹不显示 2")
+    var down_targets := ["wind_A", "forest_K"]
+    var down_result_first := down_first.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": down_targets,
+    })
+    var down_result_second := down_second.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": down_targets,
+    })
+    _assert_true(down_result_first.success and down_result_second.success, "两张真气降阶成功")
+    _assert_equal(down_first.growth.run_deck.card_data("wind_A")["rank_name"], "K", "降阶实测 A→K")
+    var first_enhancements: Array[String] = []
+    var second_enhancements: Array[String] = []
+    for instance_id in down_targets:
+        first_enhancements.append(str(down_first.growth.run_deck.card_data(instance_id)["reshapes"]["enhancement"]))
+        second_enhancements.append(str(down_second.growth.run_deck.card_data(instance_id)["reshapes"]["enhancement"]))
+    _assert_true(first_enhancements.all(func(value): return value != ""), "降阶后每张牌分别获得随机强化")
+    _assert_equal(first_enhancements, second_enhancements, "相同种子降阶随机强化一致")
+
+    var qiling: RunSession = RunSessionScript.new()
+    _assert_true(qiling.execute({"type": "setup_run", "seed": 880103}).success, "启灵丹本局建立")
+    qiling.growth.consumable_ids.assign(["qiling_pill"])
+    var qiling_before: Dictionary = qiling.growth.run_deck.card_data("forest_7")
+    var qiling_use := qiling.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["forest_7"],
+    })
+    _assert_true(qiling_use.success, "启灵丹使用成功")
+    var qiling_after: Dictionary = qiling.growth.run_deck.card_data("forest_7")
+    _assert_equal(qiling_after["reshapes"]["origin"]["payload"]["attribute"], "forest", "觉醒读取目标当前基础属性")
+    for field in ["rank_name", "attribute", "qi_value"]:
+        _assert_equal(qiling_after[field], qiling_before[field], "启灵不改变基础字段 %s" % field)
+
+    var attribute_pills := {
+        "shanxiang_pill": "mountain",
+        "linxiang_pill": "forest",
+        "huoxiang_pill": "fire",
+        "fengxiang_pill": "wind",
+    }
+    for pill_id in attribute_pills:
+        var attribute_session: RunSession = RunSessionScript.new()
+        _assert_true(attribute_session.execute({"type": "setup_run", "seed": 880104}).success, "%s 本局建立" % pill_id)
+        attribute_session.growth.consumable_ids.assign([pill_id])
+        var before: Dictionary = attribute_session.growth.run_deck.card_data("wind_8")
+        var used := attribute_session.execute({
+            "type": "use_consumable", "slot_index": 0,
+            "selected_instance_ids": ["wind_8"],
+        })
+        _assert_true(used.success, "%s 使用成功" % pill_id)
+        var after: Dictionary = attribute_session.growth.run_deck.card_data("wind_8")
+        _assert_equal(after["attribute"], attribute_pills[pill_id], "%s 转属正确" % pill_id)
+        _assert_equal(after["rank_name"], before["rank_name"], "%s 不改变牌阶" % pill_id)
+        _assert_equal(after["qi_value"], before["qi_value"], "%s 不改变基础真气" % pill_id)
+
+    var collection: RunSession = RunSessionScript.new()
+    _assert_true(collection.execute({"type": "setup_run", "seed": 880105}).success, "牌组操作本局建立")
+    collection.growth.run_deck.apply_card_origin(
+        ["fire_9"], "awakening", {})
+    collection.growth.run_deck.apply_card_reshape(
+        "fire_9", "enhancement", "momentum")
+    collection.growth.run_deck.apply_card_reshape(
+        "fire_9", "imprint", "echo")
+    var source_before: Dictionary = collection.growth.run_deck.card_data("fire_9")
+    collection.growth.consumable_ids.assign(["yanyuan_pill"])
+    var copy_use := collection.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["fire_9"],
+    })
+    _assert_true(copy_use.success, "衍元丹完整复制成功")
+    var copy_id := str(copy_use.payload_value("applied")[0]["instance_ids"][0])
+    _assert_true(copy_id != "fire_9", "复制真气使用新实例 ID")
+    _assert_equal(collection.growth.run_deck.card_data(copy_id)["reshapes"], source_before["reshapes"], "复制继承全部持久重塑")
+    _assert_equal(collection.growth.run_deck.card_data("fire_9"), source_before, "复制不改变源牌")
+    collection.growth.consumable_ids.assign(["sanyuan_pill"])
+    var count_before: int = collection.growth.run_deck.card_count()
+    var remove_use := collection.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [copy_id],
+    })
+    _assert_true(remove_use.success, "散元丹永久移出成功")
+    _assert_equal(collection.growth.run_deck.card_count(), count_before - 1, "散元丹减少牌组实例")
+    _assert_true(not collection.growth.run_deck.has_card(copy_id), "被散元丹移出的实例不再存在")
+
+    for grant_case in [
+        ["wanhua_pill", "pill"],
+        ["tongwu_pill", "insight"],
+    ]:
+        var grant_session: RunSession = RunSessionScript.new()
+        _assert_true(grant_session.execute({"type": "setup_run", "seed": 880106}).success, "%s 满栏本局建立" % grant_case[0])
+        grant_session.growth.consumable_ids.assign([
+            "pair_insight", "zengyuan_pill", grant_case[0]])
+        var grant_use := grant_session.execute({
+            "type": "use_consumable", "slot_index": 2,
+            "selected_instance_ids": [],
+        })
+        _assert_true(grant_use.success, "%s 满栏时利用自身释放栏位" % grant_case[0])
+        _assert_equal(grant_session.growth.consumable_ids.size(), 3, "%s 提交后仍不超过三格" % grant_case[0])
+        var granted_id := str(grant_use.payload_value("applied")[0]["consumable_ids"][0])
+        _assert_equal(catalog.get_by_id("consumable", granted_id)["kind"], grant_case[1], "%s 只从对应正式池抽取" % grant_case[0])
+        if grant_case[0] == "wanhua_pill":
+            _assert_true(granted_id != "wanhua_pill", "万化丹排除自身")
+
+    var recall_empty: RunSession = RunSessionScript.new()
+    _assert_true(recall_empty.execute({"type": "setup_run", "seed": 880107}).success, "无溯忆记录本局建立")
+    recall_empty.growth.consumable_ids.assign(["suyi_pill"])
+    var empty_query := recall_empty.execute({"type": "query_consumable_use", "slot_index": 0})
+    _assert_true(not empty_query.payload_value("can_use"), "无最近记录时溯忆丹不可用")
+    var empty_use := recall_empty.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [],
+    })
+    _assert_true(not empty_use.success, "无记录使用溯忆丹失败")
+    _assert_equal(recall_empty.growth.consumable_ids, ["suyi_pill"], "失败不消耗溯忆丹")
+
+    var recall: RunSession = RunSessionScript.new()
+    _assert_true(recall.execute({"type": "setup_run", "seed": 880108}).success, "溯忆记录本局建立")
+    recall.growth.consumable_ids.assign(["zengyuan_pill"])
+    _assert_true(recall.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["wind_4"],
+    }).success, "先成功使用增元丹")
+    _assert_equal(recall.growth.last_recallable_consumable_id, "zengyuan_pill", "成功提交后记录最近丹药")
+    recall.growth.consumable_ids.assign(["suyi_pill"])
+    _assert_true(recall.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [],
+    }).success, "溯忆丹生成最近丹药")
+    _assert_equal(recall.growth.consumable_ids, ["zengyuan_pill"], "溯忆丹用自身释放栏位保存生成内容")
+    _assert_equal(recall.growth.last_recallable_consumable_id, "zengyuan_pill", "溯忆丹自身不覆盖最近记录")
+
+    var recall_insight: RunSession = RunSessionScript.new()
+    _assert_true(recall_insight.execute({"type": "setup_run", "seed": 880112}).success, "心得溯忆本局建立")
+    recall_insight.growth.consumable_ids.assign(["pair_insight"])
+    _assert_true(recall_insight.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [],
+    }).success, "心得成功使用并提交")
+    _assert_equal(recall_insight.growth.last_recallable_consumable_id, "pair_insight", "最近记录可以保存心得")
+    recall_insight.growth.consumable_ids.assign(["suyi_pill"])
+    _assert_true(recall_insight.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [],
+    }).success, "溯忆丹可以生成最近心得")
+    _assert_equal(recall_insight.growth.consumable_ids, ["pair_insight"], "溯忆生成最近使用心得")
+
+    for experience_case in [[7, 14], [20, 40], [35, 55]]:
+        var experience_session: RunSession = RunSessionScript.new()
+        _assert_true(experience_session.execute({"type": "setup_run", "seed": 880109}).success, "聚功丹历练样例本局建立")
+        experience_session.growth.experience = experience_case[0]
+        experience_session.growth.consumable_ids.assign(["jugong_pill"])
+        _assert_true(experience_session.execute({
+            "type": "use_consumable", "slot_index": 0,
+            "selected_instance_ids": [],
+        }).success, "聚功丹样例使用成功")
+        _assert_equal(experience_session.growth.experience, experience_case[1], "聚功丹 %d→%d" % experience_case)
+
+    var fixture_values := _catalog_definitions(catalog)
+    fixture_values["inner_skills"]["inner_skills"].append_array([
+        {
+            "id": "forget_fixture_a", "name": "遗忘甲", "timing": "on_play_resolve",
+            "forget_value": 30,
+            "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}],
+        },
+        {
+            "id": "forget_fixture_b", "name": "遗忘乙", "timing": "on_play_resolve",
+            "forget_value": 35,
+            "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}],
+        },
+    ])
+    var fixture_catalog = ContentCatalogScript.new()
+    _assert_true(fixture_catalog.load_from_definitions(fixture_values), "带遗忘所得的内功 fixture 有效")
+    var service = ConsumableUseServiceScript.new(
+        fixture_catalog.consumable_effect_registry,
+        fixture_catalog,
+        ContentValidatorScript.HAND_IDS,
+        ContentValidatorScript.POOL_IDS)
+    var nagong_growth = GrowthInventoryScript.new(fixture_catalog)
+    nagong_growth.experience = 5
+    nagong_growth.learned_inner_skill_ids.assign(["forget_fixture_a", "forget_fixture_b"])
+    nagong_growth.equipped_inner_skill_ids.assign(["forget_fixture_a", "forget_fixture_b"])
+    nagong_growth.consumable_ids.assign(["nagong_pill"])
+    var equipped_before: Array[String] = nagong_growth.equipped_inner_skill_ids.duplicate()
+    var nagong_use: Dictionary = service.use(
+        nagong_growth, 0, [], 880110,
+        fixture_catalog.get_by_id("consumable", "nagong_pill"))
+    _assert_true(nagong_use.get("success", false), "纳功丹使用成功")
+    _assert_equal(nagong_growth.experience, 55, "纳功丹遗忘所得求和后 50 封顶")
+    _assert_equal(nagong_growth.equipped_inner_skill_ids, equipped_before, "纳功丹不卸下内功")
+
+    var chuangong_growth = GrowthInventoryScript.new(fixture_catalog)
+    chuangong_growth.learned_inner_skill_ids.assign([
+        "extra_qi_to_defense", "forget_fixture_a"])
+    chuangong_growth.consumable_ids.assign(["chuangong_pill"])
+    var equipped_count_before: int = chuangong_growth.equipped_inner_skill_ids.size()
+    var chuangong_use: Dictionary = service.use(
+        chuangong_growth, 0, [], 880111,
+        fixture_catalog.get_by_id("consumable", "chuangong_pill"))
+    _assert_true(chuangong_use.get("success", false), "传功丹获得唯一未习得内功")
+    _assert_true(chuangong_growth.learned_inner_skill_ids.has("forget_fixture_b"), "传功丹加入本局内功库")
+    _assert_equal(chuangong_growth.equipped_inner_skill_ids.size(), equipped_count_before, "传功丹不自动装备")
+
+func _target_ids(targets: Array) -> Array[String]:
+    var result: Array[String] = []
+    for target in targets:
+        if target is Dictionary:
+            result.append(str(target.get("instance_id", "")))
+    return result
+
 func _test_run_consumable_phase_gate() -> void:
     var session: RunSession = RunSessionScript.new()
     _assert_true(session.execute({"type": "setup_run", "seed": 77801}).success, "阶段门禁测试本局建立")
@@ -6509,6 +6785,10 @@ func _test_run_consumable_save_round_trip() -> void:
     _assert_equal(restored.growth.consumable_ids, ["high_card_insight"], "读档保留消耗品库存")
     _assert_equal(int(restored.growth.consumable_use_sequence), 1, "读档保留 consumable_use_sequence")
     _assert_equal(
+        restored.growth.last_recallable_consumable_id,
+        "zengyuan_pill",
+        "读档保留最近一次可溯忆消耗品记录")
+    _assert_equal(
         str(restored.growth.run_deck.card_data(reshaped_id)["reshapes"]["enhancement"]),
         "momentum",
         "读档保留已修改的 RunDeck 强化")
@@ -6520,6 +6800,17 @@ func _test_run_consumable_save_round_trip() -> void:
         restored.growth.run_deck.card_count(),
         session.growth.run_deck.card_count(),
         "读档保留 RunDeck 完整牌数")
+    var legacy_values: Dictionary = save.to_dict()
+    legacy_values["growth"].erase("last_recallable_consumable_id")
+    var legacy_restore: Dictionary = RunSaveDataScript.new(
+        legacy_values).restore_session()
+    _assert_true(
+        legacy_restore.get("success", false),
+        "旧存档缺少最近使用字段仍可载入")
+    _assert_equal(
+        legacy_restore["run_session"].growth.last_recallable_consumable_id,
+        "",
+        "旧存档最近使用字段默认空字符串")
 
 func _test_consumable_no_central_op_branches() -> void:
     var battle_source: String = FileAccess.get_file_as_string(

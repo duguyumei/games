@@ -96,6 +96,8 @@ const REWARD_KINDS := [
     "experience", "card", "technique", "inner_skill",
     "consumable", "reshape", "special",
 ]
+## `draft` 仅供内容管线生成的未发布骨架通过批量装配；正式运行池使用前三类。
+const CONSUMABLE_KINDS := ["insight", "pill", "curio", "draft"]
 const ENEMY_AI_NUMBER_FIELDS := [
     "damage_weight",
     "defense_weight",
@@ -980,10 +982,20 @@ func _validate_consumables(definition: Dictionary) -> void:
             continue
         var content_id := _required_id(value, scope)
         _register_unique(_consumables_by_id, content_id, scope, value)
-        if not value.get("kind") is String or str(value.get("kind", "")) == "":
-            _error(scope, "kind 必须是非空字符串")
+        if content_id != "" and not _is_snake_case(content_id):
+            _error(scope + ".id", "必须使用稳定 snake_case")
+        _validate_name(value, scope)
+        if not value.get("description") is String \
+                or str(value.get("description", "")) == "":
+            _error(scope + ".description", "必须是非空字符串")
+        if not value.get("kind") is String \
+                or str(value.get("kind", "")) not in CONSUMABLE_KINDS:
+            _error(scope + ".kind", "只能为 insight、pill、curio 或内容骨架 draft")
         if not _is_integer(value.get("price")) or int(value.get("price", -1)) < 0:
             _error(scope, "price 必须是非负整数")
+        if value.has("record_last_used") \
+                and not value.get("record_last_used") is bool:
+            _error(scope + ".record_last_used", "必须是布尔值")
         var targeting = value.get("targeting")
         if not targeting is Dictionary:
             _error(scope + ".targeting", "必须是对象")
@@ -1033,6 +1045,8 @@ func _validate_consumables(definition: Dictionary) -> void:
                     continue
                 _consumable_effect_registry.validate_effect(
                     effect, validation_context, effect_scope)
+    if not _consumables_by_id.has("zengyuan_pill"):
+        _error("consumables.consumables", "必须保留旧存档 ID zengyuan_pill")
     var practice_offer_ids = definition.get("practice_offer_ids")
     if not practice_offer_ids is Array or practice_offer_ids.is_empty():
         _error("consumables.practice_offer_ids", "必须是非空数组")
@@ -1466,6 +1480,11 @@ func _is_number(value) -> bool:
 
 func _is_integer(value) -> bool:
     return _is_number(value) and float(value) == floor(float(value))
+
+func _is_snake_case(value: String) -> bool:
+    var pattern := RegEx.new()
+    pattern.compile("^[a-z][a-z0-9_]*$")
+    return pattern.search(value) != null
 
 func _error(scope: String, message: String) -> void:
     errors.append("%s: %s" % [scope, message])

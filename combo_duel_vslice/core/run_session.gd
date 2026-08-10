@@ -711,6 +711,7 @@ func _growth_snapshot() -> Dictionary:
         "learned_technique_ids": growth.learned_technique_ids.duplicate(),
         "run_deck": growth.run_deck.to_snapshot(),
         "run_deck_count": growth.run_deck.card_count(),
+        "last_recallable_consumable_id": growth.last_recallable_consumable_id,
     }
 
 func _player_max_life_for_act(act: int) -> int:

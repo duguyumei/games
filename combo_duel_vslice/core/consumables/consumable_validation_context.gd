@@ -54,3 +54,17 @@ func legal_attribute_ids() -> Array[String]:
 	for attribute in base_deck.get("attributes", []):
 		result.append(str(attribute.get("id", "")))
 	return result
+
+func content_ids_by_kind(content_type: String, kind: String) -> Array[String]:
+	var result: Array[String] = []
+	if content_type != "consumable":
+		return result
+	if validator != null and validator.has_method("content_ids_by_kind"):
+		return validator.content_ids_by_kind(content_type, kind)
+	if _content_catalog == null:
+		return result
+	for definition in _content_catalog.all_of("consumable"):
+		if str(definition.get("kind", "")) == kind:
+			result.append(str(definition.get("id", "")))
+	result.sort()
+	return result

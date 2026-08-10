@@ -41,6 +41,31 @@ func apply(effect: Dictionary, context) -> Dictionary:
 			return _apply_enhancement(effect, context)
 	return {"success": false, "reason": "不支持的牌面重塑消耗品效果：%s" % op}
 
+func eligible_targets(
+		effect: Dictionary,
+		_context,
+		candidates: Array) -> Array:
+	if str(effect.get("op", "")) != "apply_origin":
+		return candidates.duplicate(true)
+	var origin_id := str(effect.get("origin", ""))
+	var payload: Dictionary = effect.get("payload", {})
+	var result: Array = []
+	for candidate in candidates:
+		if not candidate is Dictionary:
+			continue
+		var origin = candidate.get("origin", {})
+		if not origin is Dictionary or not origin.is_empty():
+			continue
+		if origin_id == "rank_change":
+			var direction := str(payload.get("direction", ""))
+			var rank := str(candidate.get("rank", ""))
+			if direction == "up" and rank == "A":
+				continue
+			if direction == "down" and rank == "2":
+				continue
+		result.append(candidate.duplicate(true))
+	return result
+
 func _apply_enhancement(effect: Dictionary, context) -> Dictionary:
 	var enhancement_id := str(effect.get("enhancement", ""))
 	if context.instance_ids.is_empty():

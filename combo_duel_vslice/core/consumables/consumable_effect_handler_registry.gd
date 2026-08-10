@@ -5,6 +5,16 @@ const GainInsightHandlerScript = preload(
 	"res://core/consumables/gain_insight_consumable_handler.gd")
 const CardReshapeHandlerScript = preload(
 	"res://core/consumables/card_reshape_consumable_handler.gd")
+const CardCollectionHandlerScript = preload(
+	"res://core/consumables/card_collection_consumable_handler.gd")
+const RandomReshapeHandlerScript = preload(
+	"res://core/consumables/random_reshape_consumable_handler.gd")
+const ConsumableGrantHandlerScript = preload(
+	"res://core/consumables/consumable_grant_handler.gd")
+const ExperienceHandlerScript = preload(
+	"res://core/consumables/experience_consumable_handler.gd")
+const InnerSkillHandlerScript = preload(
+	"res://core/consumables/inner_skill_consumable_handler.gd")
 
 var _handlers_by_operation: Dictionary = {}
 var _registration_errors: Array[String] = []
@@ -15,6 +25,11 @@ func _init(register_defaults: bool = true) -> void:
 	if register_defaults:
 		register_handler(GainInsightHandlerScript.new())
 		register_handler(CardReshapeHandlerScript.new())
+		register_handler(CardCollectionHandlerScript.new())
+		register_handler(RandomReshapeHandlerScript.new())
+		register_handler(ConsumableGrantHandlerScript.new())
+		register_handler(ExperienceHandlerScript.new())
+		register_handler(InnerSkillHandlerScript.new())
 
 func register_handler(handler) -> bool:
 	if handler == null \
@@ -81,3 +96,22 @@ func apply(effect: Dictionary, context) -> Dictionary:
 			"reason": "未注册的消耗品效果操作：%s" % operation_id,
 		}
 	return handler.apply(effect, context)
+
+func eligible_targets(effect: Dictionary, context, candidates: Array) -> Array:
+	var operation_id := str(effect.get("op", ""))
+	var handler = _handlers_by_operation.get(operation_id)
+	if handler == null or not handler.has_method("eligible_targets"):
+		return candidates.duplicate(true)
+	return handler.eligible_targets(effect, context, candidates)
+
+func query_availability(effect: Dictionary, context) -> Dictionary:
+	var operation_id := str(effect.get("op", ""))
+	var handler = _handlers_by_operation.get(operation_id)
+	if handler == null:
+		return {
+			"can_use": false,
+			"reason": "未注册的消耗品效果操作：%s" % operation_id,
+		}
+	if not handler.has_method("query_availability"):
+		return {"can_use": true, "reason": ""}
+	return handler.query_availability(effect, context)

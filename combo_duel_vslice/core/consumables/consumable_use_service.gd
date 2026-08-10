@@ -77,9 +77,17 @@ func query_use(growth, slot_index: int, definition: Dictionary) -> Dictionary:
 			"can_use": false,
 			"reason_detail": "player_selected 只能用于有目标区域",
 		}
-	var eligible := _eligible_targets(growth, zone)
-	var can_use := true
-	var reason := ""
+	var eligibility := _query_effect_eligibility(
+		growth,
+		definition,
+		zone,
+		{
+			"consumable_id": consumable_id,
+			"reserved_consumable_slots": 1,
+		})
+	var eligible: Array = eligibility.get("eligible_targets", [])
+	var can_use := bool(eligibility.get("can_use", true))
+	var reason := str(eligibility.get("reason", ""))
 	if zone != "none" and eligible.size() < minimum:
 		can_use = false
 		reason = "目标不足：需要至少 %d 张真气" % minimum
@@ -123,6 +131,19 @@ func use(
 		return {"success": false, "reason": "目标选择方式不受支持：%s" % selection}
 	if zone == "none" and selection == "player_selected":
 		return {"success": false, "reason": "player_selected 只能用于有目标区域"}
+	var eligibility := _query_effect_eligibility(
+		growth,
+		definition,
+		zone,
+		{
+			"consumable_id": consumable_id,
+			"reserved_consumable_slots": 1,
+		})
+	if not eligibility.get("can_use", false):
+		return {
+			"success": false,
+			"reason": str(eligibility.get("reason", "该消耗品当前不可用")),
+		}
 	var resolved := _resolve_targets(
 		growth,
 		zone,
@@ -132,7 +153,8 @@ func use(
 		selected_instance_ids,
 		run_seed,
 		sequence,
-		consumable_id)
+		consumable_id,
+		eligibility.get("eligible_targets", []))
 	if not resolved.get("success", false):
 		return resolved
 	var instance_ids: Array = resolved["instance_ids"]
@@ -173,6 +195,7 @@ func use(
 				"consumable_use_sequence": sequence,
 				"consumable_id": consumable_id,
 				"effect_index": effect_index,
+				"reserved_consumable_slots": 1,
 			})
 		var result: Dictionary = handler_registry.apply(effect, context)
 		if not result.get("success", false):
@@ -185,6 +208,10 @@ func use(
 		applied.append(result.get("applied", {}).duplicate(true))
 
 	working.consumable_ids.remove_at(slot_index)
+	var kind := str(definition.get("kind", ""))
+	if kind in ["pill", "insight"] \
+			and bool(definition.get("record_last_used", true)):
+		working.last_recallable_consumable_id = consumable_id
 	working.consumable_use_sequence = sequence + 1
 	var state_after: Dictionary = working.capture_mutation_state()
 	var commit_errors: Array[String] = growth.replace_mutation_state(state_after)
@@ -206,6 +233,45 @@ func _eligible_targets(growth, zone: String) -> Array:
 	for values in growth.run_deck.cards_snapshot():
 		result.append(_target_summary(values))
 	return result
+
+func _query_effect_eligibility(
+		growth,
+		definition: Dictionary,
+		zone: String,
+		metadata: Dictionary) -> Dictionary:
+	var context = RunConsumableUseContextScript.new(
+		growth, [], null, _content_catalog, metadata)
+	var eligible := _eligible_targets(growth, zone)
+	var effects = definition.get("effects", [])
+	if not effects is Array or effects.is_empty():
+		return {
+			"can_use": false,
+			"reason": "消耗品没有效果",
+			"eligible_targets": [],
+		}
+	for effect_index in range(effects.size()):
+		var effect = effects[effect_index]
+		if not effect is Dictionary:
+			return {
+				"can_use": false,
+				"reason": "效果必须是对象",
+				"eligible_targets": [],
+			}
+		eligible = handler_registry.eligible_targets(effect, context, eligible)
+		var availability: Dictionary = handler_registry.query_availability(
+			effect, context)
+		if not availability.get("can_use", false):
+			return {
+				"can_use": false,
+				"reason": str(availability.get(
+					"reason", "effects[%d] 当前不可用" % effect_index)),
+				"eligible_targets": eligible,
+			}
+	return {
+		"can_use": true,
+		"reason": "",
+		"eligible_targets": eligible,
+	}
 
 func _target_summary(values: Dictionary) -> Dictionary:
 	var reshapes: Dictionary = values.get("reshapes", {})
@@ -239,7 +305,8 @@ func _resolve_targets(
 		selected_instance_ids: Array,
 		run_seed: int,
 		sequence: int,
-		consumable_id: String) -> Dictionary:
+		consumable_id: String,
+		eligible_targets: Array) -> Dictionary:
 	if zone == "none":
 		if not selected_instance_ids.is_empty():
 			return {"success": false, "reason": "该消耗品不需要选择目标"}
@@ -248,13 +315,18 @@ func _resolve_targets(
 		if not selected_instance_ids.is_empty():
 			return {"success": false, "reason": "deterministic_random 不允许手动指定目标"}
 		return _resolve_random_targets(
-			growth, zone, minimum, maximum, run_seed, sequence, consumable_id)
+			zone, minimum, maximum, run_seed, sequence, consumable_id,
+			eligible_targets)
 	if selection != "player_selected":
 		return {"success": false, "reason": "目标选择方式不受支持：%s" % selection}
 	if zone != "run_deck":
 		return {"success": false, "reason": "目标区域不受支持：%s" % zone}
 	var instance_ids: Array = []
 	var seen: Dictionary = {}
+	var eligible_ids: Dictionary = {}
+	for target in eligible_targets:
+		if target is Dictionary:
+			eligible_ids[str(target.get("instance_id", ""))] = true
 	for value in selected_instance_ids:
 		var instance_id := str(value)
 		if instance_id == "":
@@ -271,6 +343,11 @@ func _resolve_targets(
 				"success": false,
 				"reason": "目标真气不属于当前本局牌组：%s" % instance_id,
 			}
+		if not eligible_ids.has(instance_id):
+			return {
+				"success": false,
+				"reason": "目标真气不符合该消耗品资格：%s" % instance_id,
+			}
 		instance_ids.append(instance_id)
 	if instance_ids.size() < minimum or instance_ids.size() > maximum:
 		return {
@@ -280,18 +357,19 @@ func _resolve_targets(
 	return {"success": true, "instance_ids": instance_ids, "mode": "player_selected"}
 
 func _resolve_random_targets(
-		growth,
 		zone: String,
 		minimum: int,
 		maximum: int,
 		run_seed: int,
 		sequence: int,
-		consumable_id: String) -> Dictionary:
-	if zone != "run_deck" or growth == null or growth.run_deck == null:
+		consumable_id: String,
+		eligible_targets: Array) -> Dictionary:
+	if zone != "run_deck":
 		return {"success": false, "reason": "目标区域不受支持：%s" % zone}
 	var ids: Array = []
-	for values in growth.run_deck.cards_snapshot():
-		ids.append(str(values.get("instance_id", "")))
+	for values in eligible_targets:
+		if values is Dictionary:
+			ids.append(str(values.get("instance_id", "")))
 	ids.sort()
 	if ids.size() < minimum:
 		return {

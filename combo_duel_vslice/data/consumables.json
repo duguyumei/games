@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "practice_offer_ids": [
     "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
     "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight",
@@ -7,26 +7,224 @@
   ],
   "consumables": [
     {
-      "id": "high_card_insight",
-      "name": "高牌心得",
-      "kind": "insight",
+      "id": "suyi_pill",
+      "name": "溯忆丹",
+      "kind": "pill",
       "price": 3,
-      "description": "高牌功法槽位 +1，并从高牌池随机获得一门尚未加入高牌序列的正式功法。",
+      "record_last_used": false,
+      "description": "生成本局最近一次使用的丹药或心得，不包括溯忆丹自身。没有合格使用记录时不能使用。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
-      "effects": [
-        {"op": "gain_insight", "hand": "high_card", "pools": ["high"]}
-      ]
+      "effects": [{"op": "grant_last_used_consumable"}]
+    },
+    {
+      "id": "jiyuan_pill",
+      "name": "机缘丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 2 张真气，使其获得机缘强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
+      "effects": [{"op": "apply_enhancement", "enhancement": "opportunity"}]
+    },
+    {
+      "id": "tongwu_pill",
+      "name": "通悟丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "随机获得至多 2 份当前已启用精确牌型的心得，受消耗品栏位限制。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "grant_random_consumables", "kind": "insight", "maximum": 2}]
+    },
+    {
+      "id": "chengshi_pill",
+      "name": "乘势丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 2 张真气，使其获得乘势强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
+      "effects": [{"op": "apply_enhancement", "enhancement": "momentum"}]
+    },
+    {
+      "id": "wanhua_pill",
+      "name": "万化丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "随机获得至多 2 种丹药，受消耗品栏位限制。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "grant_random_consumables", "kind": "pill", "maximum": 2, "exclude_current": true}]
     },
     {
       "id": "zengyuan_pill",
       "name": "增元丹",
       "kind": "pill",
       "price": 3,
-      "description": "选择至多 2 张本局真气，使其获得增元强化。",
+      "description": "选择至多 2 张真气，使其获得增元强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
+      "effects": [{"op": "apply_enhancement", "enhancement": "qi_boost"}]
+    },
+    {
+      "id": "hunyuan_pill",
+      "name": "混元丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张真气，使其获得混元强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_enhancement", "enhancement": "hunyuan"}]
+    },
+    {
+      "id": "wulou_pill",
+      "name": "无漏丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张真气，使其获得无漏强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_enhancement", "enhancement": "flawless"}]
+    },
+    {
+      "id": "xubao_pill",
+      "name": "虚暴丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张真气，使其获得虚暴强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_enhancement", "enhancement": "void_burst"}]
+    },
+    {
+      "id": "jugong_pill",
+      "name": "聚功丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "当前持有历练翻倍，但本次最多获得 20 点历练。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_experience_capped", "cap": 20}]
+    },
+    {
+      "id": "shengjie_pill",
+      "name": "升阶丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 2 张尚未接受本源改造且牌阶不是 A 的普通真气，对其进行升阶：2→3→…→10→J→Q→K→A，基础真气值随牌阶同步改变。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
+      "effects": [{"op": "apply_origin", "origin": "rank_change", "payload": {"direction": "up"}}]
+    },
+    {
+      "id": "jiangjie_pill",
+      "name": "降阶丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 2 张尚未接受本源改造且牌阶不是 2 的普通真气，对其进行降阶：A→K→Q→J→10→9→…→2，基础真气值随牌阶同步改变；每张实际完成降阶的真气随后分别获得一种随机强化，已有强化按全局强化替换规则被新强化替换。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
       "effects": [
-        {"op": "apply_enhancement", "enhancement": "qi_boost"}
+        {"op": "apply_origin", "origin": "rank_change", "payload": {"direction": "down"}},
+        {"op": "apply_random_enhancement"}
       ]
+    },
+    {
+      "id": "qiling_pill",
+      "name": "启灵丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张尚未接受本源改造的普通真气，根据其当前基础属性进行觉醒；不改变牌阶、基础属性或基础真气值。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_origin", "origin": "awakening", "payload": {}}]
+    },
+    {
+      "id": "sanyuan_pill",
+      "name": "散元丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 2 张我方真气，永久移出本局牌组。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
+      "effects": [{"op": "remove_run_cards"}]
+    },
+    {
+      "id": "yanyuan_pill",
+      "name": "衍元丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张我方本局牌组中的真气，生成 1 张完整复制并加入我方本局牌组；源牌不改变。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "copy_run_card", "count": 1}]
+    },
+    {
+      "id": "nagong_pill",
+      "name": "纳功丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "获得当前全部已装备内功的遗忘所得总和，最多获得 50 点历练；不会遗忘这些内功。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_equipped_inner_skill_forget_value", "cap": 50}]
+    },
+    {
+      "id": "cangjin_pill",
+      "name": "藏金丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张真气，使其获得藏金强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_enhancement", "enhancement": "hidden_gold"}]
+    },
+    {
+      "id": "panshi_pill",
+      "name": "磐石丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择 1 张真气，使其获得磐石强化。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
+      "effects": [{"op": "apply_enhancement", "enhancement": "rock_solid"}]
+    },
+    {
+      "id": "shanxiang_pill",
+      "name": "山相丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为山。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
+      "effects": [{"op": "apply_origin", "origin": "attribute_change", "payload": {"attribute": "mountain"}}]
+    },
+    {
+      "id": "linxiang_pill",
+      "name": "林相丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为林。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
+      "effects": [{"op": "apply_origin", "origin": "attribute_change", "payload": {"attribute": "forest"}}]
+    },
+    {
+      "id": "huoxiang_pill",
+      "name": "火相丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为火。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
+      "effects": [{"op": "apply_origin", "origin": "attribute_change", "payload": {"attribute": "fire"}}]
+    },
+    {
+      "id": "chuangong_pill",
+      "name": "传功丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "随机获得 1 门内功并加入本局内功库，不要求内功装备栏有空位。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "grant_random_inner_skill", "count": 1}]
+    },
+    {
+      "id": "fengxiang_pill",
+      "name": "风相丹",
+      "kind": "pill",
+      "price": 3,
+      "description": "选择至多 3 张尚未接受本源改造的普通真气，对其进行转属，将基础属性改为风。",
+      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 3},
+      "effects": [{"op": "apply_origin", "origin": "attribute_change", "payload": {"attribute": "wind"}}]
+    },
+    {
+      "id": "high_card_insight",
+      "name": "高牌心得",
+      "kind": "insight",
+      "price": 3,
+      "description": "高牌功法槽位 +1，并从高牌池随机获得一门尚未加入高牌序列的正式功法。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "high_card", "pools": ["high"]}]
     },
     {
       "id": "pair_insight", "name": "一对心得", "kind": "insight", "price": 3,

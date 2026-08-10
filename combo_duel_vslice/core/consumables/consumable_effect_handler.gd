@@ -14,5 +14,17 @@ func operation_ids() -> Array[String]:
 func validate_effect(_effect: Dictionary, _context, _scope: String) -> void:
 	pass
 
+## 纯目标资格查询。`candidates` 是当前服务已经收集的候选摘要，Handler
+## 只能返回其子集；不得消费 RNG 或修改真实状态。无目标效果可以覆写
+## `query_availability()` 进行候选池/容量检查。
+func eligible_targets(
+		_effect: Dictionary,
+		_context,
+		candidates: Array) -> Array:
+	return candidates.duplicate(true)
+
+func query_availability(_effect: Dictionary, _context) -> Dictionary:
+	return {"can_use": true, "reason": ""}
+
 func apply(_effect: Dictionary, _context) -> Dictionary:
 	return {"success": false, "reason": "消耗品效果处理器尚未实现 apply()"}

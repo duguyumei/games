@@ -65,6 +65,8 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "technique_slot_index": int(run_session.growth.technique_slot_index),
             "practice_purchase_ids": run_session.growth.practice_purchases.keys(),
             "consumable_use_sequence": int(run_session.growth.consumable_use_sequence),
+            "last_recallable_consumable_id": str(
+                run_session.growth.last_recallable_consumable_id),
             "run_deck": run_session.growth.run_deck.to_snapshot(),
         },
     }
@@ -126,10 +128,17 @@ func validate(content_catalog = null) -> Array[String]:
         errors.append("非奖励边界不能保存 pending_reward")
     if int(growth.get("experience", -1)) < 0:
         errors.append("历练不能为负数")
+    if growth.get("consumable_ids", []) is Array \
+            and growth.get("consumable_ids", []).size() \
+            > GrowthInventoryScript.CONSUMABLE_LIMIT:
+        errors.append("共享消耗品栏不能超过 %d 格" % GrowthInventoryScript.CONSUMABLE_LIMIT)
     if growth.has("consumable_use_sequence") \
             and (not growth["consumable_use_sequence"] is int \
             or int(growth["consumable_use_sequence"]) < 0):
         errors.append("consumable_use_sequence 必须是非负整数")
+    if growth.has("last_recallable_consumable_id") \
+            and not growth["last_recallable_consumable_id"] is String:
+        errors.append("last_recallable_consumable_id 必须是字符串")
     _validate_life_fields(growth, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
@@ -200,6 +209,9 @@ func restore_session(content_catalog = null) -> Dictionary:
         progress_values["practice_shop_state"] = growth_state["practice_shop_state"]
     if growth_state.has("consumable_use_sequence"):
         progress_values["consumable_use_sequence"] = growth_state["consumable_use_sequence"]
+    if growth_state.has("last_recallable_consumable_id"):
+        progress_values["last_recallable_consumable_id"] = (
+            growth_state["last_recallable_consumable_id"])
     growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict(progress_values))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
@@ -223,11 +235,20 @@ func _validate_content_ids(
     var starter_build_id := str(run.get("starter_build_id", ""))
     if starter_build_id != "" and not catalog.has_id("starter_build", starter_build_id):
         errors.append("存档引用未知初始构筑 ID：%s" % starter_build_id)
-    _validate_id_array(growth.get("consumable_ids", []), "consumable", catalog, errors)
+    _validate_id_array(growth.get("consumable_ids", []), "consumable", catalog, errors, true)
     _validate_id_array(growth.get("practice_purchase_ids", []), "consumable", catalog, errors)
     _validate_id_array(growth.get("learned_technique_ids", []), "technique", catalog, errors)
     _validate_id_array(growth.get("learned_inner_skill_ids", []), "inner_skill", catalog, errors)
     _validate_id_array(growth.get("equipped_inner_skill_ids", []), "inner_skill", catalog, errors)
+    var last_recallable := str(growth.get("last_recallable_consumable_id", ""))
+    if last_recallable != "":
+        var recall_definition: Dictionary = catalog.get_by_id(
+            "consumable", last_recallable)
+        if recall_definition.is_empty():
+            errors.append("存档引用未知最近使用消耗品 ID：%s" % last_recallable)
+        elif str(recall_definition.get("kind", "")) not in ["pill", "insight"] \
+                or not bool(recall_definition.get("record_last_used", true)):
+            errors.append("最近使用记录不是可溯忆的丹药或心得：%s" % last_recallable)
     for inner_skill_id in growth.get("equipped_inner_skill_ids", []):
         if not growth.get("learned_inner_skill_ids", []).has(inner_skill_id):
             errors.append("已装备内功未包含在已习得内功中：%s" % str(inner_skill_id))
@@ -240,7 +261,8 @@ func _validate_id_array(
         values,
         content_type: String,
         catalog,
-        errors: Array[String]) -> void:
+        errors: Array[String],
+        allow_duplicates: bool = false) -> void:
     if not values is Array:
         errors.append("%s ID 列表必须是数组" % content_type)
         return
@@ -249,7 +271,7 @@ func _validate_id_array(
         var content_id := str(value)
         if content_id == "" or not catalog.has_id(content_type, content_id):
             errors.append("存档引用未知 %s ID：%s" % [content_type, content_id])
-        elif seen.has(content_id):
+        elif seen.has(content_id) and not allow_duplicates:
             errors.append("存档包含重复 %s ID：%s" % [content_type, content_id])
         seen[content_id] = true
 

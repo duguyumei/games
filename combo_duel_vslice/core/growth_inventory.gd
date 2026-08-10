@@ -21,6 +21,7 @@ var max_life: int = 100
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
+var last_recallable_consumable_id: String = ""
 var _content_catalog
 
 const HAND_IDS := [
@@ -57,6 +58,7 @@ func reset(
         _content_catalog.definition("sequences") if _content_catalog != null else {})
     practice_shop_state.clear()
     consumable_use_sequence = 0
+    last_recallable_consumable_id = ""
 
 func clear_practice_purchases() -> void:
     practice_purchases.clear()
@@ -80,6 +82,7 @@ func capture_mutation_state() -> Dictionary:
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "practice_shop_state": practice_shop_state.duplicate(true),
         "consumable_use_sequence": consumable_use_sequence,
+        "last_recallable_consumable_id": last_recallable_consumable_id,
     }
 
 func create_mutation_copy():
@@ -114,6 +117,8 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     hand_technique_progression = state["hand_technique_progression"].duplicate(true)
     practice_shop_state = state["practice_shop_state"].duplicate(true)
     consumable_use_sequence = int(state.get("consumable_use_sequence", 0))
+    last_recallable_consumable_id = str(
+        state.get("last_recallable_consumable_id", ""))
     return []
 
 func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> void:
@@ -273,6 +278,7 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "practice_shop_state": practice_shop_state.duplicate(true),
         "consumable_use_sequence": consumable_use_sequence,
+        "last_recallable_consumable_id": last_recallable_consumable_id,
     })
 
 func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
@@ -284,6 +290,9 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
         practice_shop_state = progress_snapshot.practice_shop_state.duplicate(true)
     if progress_snapshot.has_consumable_use_sequence:
         consumable_use_sequence = progress_snapshot.consumable_use_sequence
+    if progress_snapshot.has_last_recallable_consumable_id:
+        last_recallable_consumable_id = (
+            progress_snapshot.last_recallable_consumable_id)
     if progress_snapshot.has_learned_technique_ids:
         learned_technique_ids.assign(progress_snapshot.learned_technique_ids)
     if progress_snapshot.has_learned_inner_skill_ids:
