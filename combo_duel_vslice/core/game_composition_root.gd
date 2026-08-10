@@ -20,6 +20,11 @@ const RunEffectHandlerRegistryScript = preload(
     "res://core/run_effects/run_effect_handler_registry.gd")
 const RunMutationServiceScript = preload(
     "res://core/run_effects/run_mutation_service.gd")
+const ConsumableEffectHandlerRegistryScript = preload(
+    "res://core/consumables/consumable_effect_handler_registry.gd")
+const ConsumableUseServiceScript = preload(
+    "res://core/consumables/consumable_use_service.gd")
+const ContentValidatorScript = preload("res://core/content_validator.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 
 var content_catalog: ContentCatalog
@@ -32,6 +37,8 @@ var runtime_profile: RuntimeProfile
 var enemy_repository
 var run_effect_registry
 var run_mutation_service
+var consumable_effect_registry
+var consumable_use_service
 
 func _init(runtime_profile_override: RuntimeProfile = null) -> void:
     runtime_profile = (
@@ -48,9 +55,16 @@ func initialize() -> bool:
         return content_catalog.loaded
     run_effect_registry = RunEffectHandlerRegistryScript.new()
     run_mutation_service = RunMutationServiceScript.new(run_effect_registry)
+    consumable_effect_registry = ConsumableEffectHandlerRegistryScript.new()
     content_catalog = ContentCatalogScript.new(
-        runtime_profile, null, run_effect_registry)
+        runtime_profile, null, run_effect_registry, null,
+        consumable_effect_registry)
     var loaded: bool = content_catalog.load_all()
+    consumable_use_service = ConsumableUseServiceScript.new(
+        consumable_effect_registry,
+        content_catalog,
+        ContentValidatorScript.HAND_IDS,
+        ContentValidatorScript.POOL_IDS)
     game_log = GameLogScript.new()
     enemy_repository = EnemyRepositoryScript.new(content_catalog)
     if loaded:
@@ -107,6 +121,7 @@ func create_run_session() -> RunSession:
         starter_build_assembler,
         battle_factory,
         reward_service,
-        runtime_profile)
+        runtime_profile,
+        consumable_use_service)
     session.configure_ai_settings_service(ai_settings_service)
     return session

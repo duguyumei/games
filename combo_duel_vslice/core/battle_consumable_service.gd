@@ -1,10 +1,18 @@
 class_name BattleConsumableService
 extends RefCounted
 
-## 战斗内消耗品用例。
+## 战斗内消耗品用例（纵切兼容适配器）。
 ##
-## 消耗品定义来自 ContentCatalog；这里只校验目标并把已配置效果应用到玩家
-## 状态，不负责购买、共享库存或跨战斗持久化。
+## 正式消耗品内容以 RunSession 的战斗外入口为准。这里保留历史纵切能力：
+## 战斗状态门禁、当前手牌目标查找、战斗日志与 state_changed 仍由本服务负责，
+## 但效果执行全部委托统一 ConsumableEffectHandlerRegistry，不再按 op 分支。
+
+const ConsumableEffectHandlerRegistryScript = preload(
+    "res://core/consumables/consumable_effect_handler_registry.gd")
+const BattleConsumableUseContextScript = preload(
+    "res://core/consumables/battle_consumable_use_context.gd")
+const RunEffectValidationScript = preload(
+    "res://core/run_effects/run_effect_validation.gd")
 
 var player
 var consumable_repository
@@ -14,6 +22,7 @@ var trigger_queue
 var rng: RandomNumberGenerator
 var battle_state_reader: Callable
 var state_changed: Callable
+var _handler_registry := ConsumableEffectHandlerRegistryScript.new()
 
 func _init(
         player_side,
@@ -61,49 +70,66 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
 
     var consumable_id: String = player.consumable_ids[slot_index]
     var definition: Dictionary = consumable_repository.get_consumable(consumable_id)
+    if definition.is_empty():
+        return {"success": false, "reason": "消耗品不存在"}
     var cards: Array = []
+    var instance_ids: Array[String] = []
     for card_id_value in card_ids:
         var card = player.find_hand_card(str(card_id_value))
         if card == null or cards.has(card):
             return {"success": false, "reason": "目标包含不在当前手牌中的真气"}
         cards.append(card)
+        instance_ids.append(str(card.id))
     var target_check: Dictionary = consumable_repository.validate_targets(consumable_id, cards)
     if not target_check["ok"]:
         return {"success": false, "reason": target_check["reason"]}
 
     var details: Array[String] = []
-    var acquired_technique_id: String = ""
-    for effect in definition.get("effects", []):
-        var op: String = effect.get("op", "")
-        match op:
-            "gain_insight":
-                var hand_id: String = effect.get("hand", "")
-                var candidates := _formal_candidates_for_hand(hand_id)
-                var insight_result: Dictionary = player.apply_insight_growth(
-                    hand_id, candidates, rng)
-                if not insight_result.get("success", false):
-                    return insight_result
-                details.append("%s功法槽位 +1" % hand_id)
-                acquired_technique_id = str(insight_result.get("acquired_technique_id", ""))
-                if acquired_technique_id != "":
-                    details.append("获得功法：%s" % _technique_name(acquired_technique_id))
-                else:
-                    details.append("合格池暂无可抽功法，保留新增槽位")
-            "apply_enhancement":
-                var enhancement_id: String = effect.get("enhancement", "")
-                for card in cards:
-                    card.set_enhancement(enhancement_id)
-                details.append("%d 张真气获得%s强化" % [cards.size(), _enhancement_name(enhancement_id)])
-            "apply_random_finish":
-                var finishes: Array = effect.get("finishes", [])
-                for card in cards:
-                    var finish_id: String = str(finishes[rng.randi_range(0, finishes.size() - 1)])
-                    card.set_finish(finish_id)
-                    details.append("%s获得%s品相" % [card.display_name(), _finish_name(finish_id)])
-            _:
-                return {"success": false, "reason": "不支持的消耗品效果：%s" % op}
+    var acquired_technique_id := ""
+    var effects: Array = definition.get("effects", [])
+    if not effects is Array or effects.is_empty():
+        return {"success": false, "reason": "消耗品没有效果"}
 
-    player.consume_at(slot_index)
+    ## 先完成全部静态校验，再触碰真实战斗状态。
+    for effect_index in range(effects.size()):
+        var effect = effects[effect_index]
+        if not effect is Dictionary:
+            return {"success": false, "reason": "效果必须是对象"}
+        var validation := RunEffectValidationScript.new()
+        _handler_registry.validate_effect(
+            effect, validation, "effects[%d]" % effect_index)
+        if not validation.is_valid():
+            return {"success": false, "reason": "；".join(validation.errors)}
+
+    var context = BattleConsumableUseContextScript.new(
+        player, instance_ids, rng, technique_repository, {
+            "consumable_id": consumable_id,
+        })
+    var state_before: Dictionary = context.capture_transaction_state()
+    var rng_state_before := rng.state
+    for effect_index in range(effects.size()):
+        var effect: Dictionary = effects[effect_index]
+        context.metadata["effect_index"] = effect_index
+        var result: Dictionary = _handler_registry.apply(effect, context)
+        if not result.get("success", false):
+            var restored: bool = context.restore_transaction_state(state_before)
+            rng.state = rng_state_before
+            result["rolled_back"] = restored
+            result["failed_effect_index"] = effect_index
+            if not restored:
+                result["reason"] = "%s；战斗消耗品事务状态恢复不完整" % str(
+                    result.get("reason", "消耗品效果执行失败"))
+            return result
+        var applied: Dictionary = result.get("applied", {})
+        if applied.has("acquired_technique_id"):
+            acquired_technique_id = str(applied.get("acquired_technique_id", ""))
+        details.append_array(applied.get("details", []))
+
+    var consumed_id: String = str(player.consume_at(slot_index))
+    if consumed_id != consumable_id:
+        context.restore_transaction_state(state_before)
+        rng.state = rng_state_before
+        return {"success": false, "reason": "消耗品槽位在事务期间发生变化", "rolled_back": true}
     trigger_queue.add_history(
         "consumable_use", definition.get("name", consumable_id), "纵切调试构筑台", "成功",
         "；".join(details))
@@ -115,15 +141,3 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
         "acquired_technique_id": acquired_technique_id,
         "detail": "；".join(details),
     }
-
-func _formal_candidates_for_hand(hand_id: String) -> Array[String]:
-    return technique_repository.formal_technique_ids_for_hand(hand_id)
-
-func _technique_name(technique_id: String) -> String:
-    return technique_repository.get_technique(technique_id).get("name", "空序列")
-
-func _enhancement_name(enhancement_id: String) -> String:
-    return {"bonus": "奖励牌", "multiplier": "倍率牌"}.get(enhancement_id, enhancement_id)
-
-func _finish_name(finish_id: String) -> String:
-    return {"foil": "箔面", "holographic": "镭射", "polychrome": "多彩"}.get(finish_id, finish_id)

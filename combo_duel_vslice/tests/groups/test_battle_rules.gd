@@ -15,6 +15,7 @@ func _initialize() -> void:
         "_test_inner_skill_preview_and_enemy_plan",
         "_test_inner_skill_and_technique_left_to_right",
         "_test_consumable_shared_slots_and_generation_limit",
+        "_test_battle_consumable_multi_effect_rollback",
         "_test_insight_growth_and_technique_acquisition",
         "_test_hierophant_bonus_enhancement_and_preview",
         "_test_aura_seeded_finish_and_preview",

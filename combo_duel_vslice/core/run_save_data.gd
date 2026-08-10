@@ -64,6 +64,7 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "equipped_inner_skill_ids": run_session.growth.equipped_inner_skill_ids.duplicate(),
             "technique_slot_index": int(run_session.growth.technique_slot_index),
             "practice_purchase_ids": run_session.growth.practice_purchases.keys(),
+            "consumable_use_sequence": int(run_session.growth.consumable_use_sequence),
             "run_deck": run_session.growth.run_deck.to_snapshot(),
         },
     }
@@ -125,6 +126,10 @@ func validate(content_catalog = null) -> Array[String]:
         errors.append("非奖励边界不能保存 pending_reward")
     if int(growth.get("experience", -1)) < 0:
         errors.append("历练不能为负数")
+    if growth.has("consumable_use_sequence") \
+            and (not growth["consumable_use_sequence"] is int \
+            or int(growth["consumable_use_sequence"]) < 0):
+        errors.append("consumable_use_sequence 必须是非负整数")
     _validate_life_fields(growth, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
@@ -193,6 +198,8 @@ func restore_session(content_catalog = null) -> Dictionary:
         progress_values["hand_technique_progression"] = growth_state["hand_technique_progression"]
     if growth_state.has("practice_shop_state"):
         progress_values["practice_shop_state"] = growth_state["practice_shop_state"]
+    if growth_state.has("consumable_use_sequence"):
+        progress_values["consumable_use_sequence"] = growth_state["consumable_use_sequence"]
     growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict(progress_values))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
@@ -337,6 +344,7 @@ func _normalize_v1_types() -> void:
     growth["experience"] = int(growth.get("experience", 0))
     _normalize_optional_integer(growth, "life")
     _normalize_optional_integer(growth, "max_life")
+    _normalize_optional_integer(growth, "consumable_use_sequence")
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
     var progression = growth.get("hand_technique_progression", {})
     if progression is Dictionary:

@@ -153,7 +153,7 @@ static func is_same_attribute_action(cards: Array) -> bool:
     for attribute in ["wind", "forest", "fire", "mountain"]:
         var all_match := true
         for card in cards:
-            if card.reshape_enhancement == "stone":
+            if card.is_card_kind("stone"):
                 continue
             if not card.is_attribute(attribute):
                 all_match = false

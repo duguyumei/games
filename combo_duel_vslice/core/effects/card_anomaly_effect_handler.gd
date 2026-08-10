@@ -39,7 +39,7 @@ func execute(effect: Dictionary, context):
         else _zone_cards(target, zone))
     var candidates: Array = []
     for card in source_cards:
-        if card.reshape_enhancement != "stone":
+        if card.can_apply_anomaly().get("allowed", true):
             candidates.append(card)
     var applied: Array = []
     var wanted := mini(value_resolver.resolve(effect.get("count", 1), runtime), candidates.size())
@@ -74,7 +74,7 @@ func _apply_to_captured(effect: Dictionary, runtime):
     var cards: Array = runtime.captures.get(str(effect.get("capture", "")), [])
     var applied: Array = []
     for card in cards:
-        if card.reshape_enhancement == "stone":
+        if not card.can_apply_anomaly().get("allowed", true):
             continue
         var anomaly_id := str(effect.get("anomaly", ""))
         var category := str(effect.get("category", ""))

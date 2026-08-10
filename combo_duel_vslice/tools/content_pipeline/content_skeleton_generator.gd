@@ -37,7 +37,12 @@ func build(content_type: String, content_id: String, display_name: String) -> Di
             content = {
                 "id": content_id, "name": display_name, "kind": "draft", "price": 0,
                 "description": "TODO：替换为已确认规则。",
-                "targeting": {"zone": "none", "minimum": 0, "maximum": 0},
+                "targeting": {
+                    "zone": "none",
+                    "selection": "deterministic_random",
+                    "minimum": 0,
+                    "maximum": 0,
+                },
                 "effects": [{"op": "gain_insight", "hand": "high_card", "multiplier": 1, "pools": ["high"]}],
             }
         "enemy":

@@ -25,6 +25,8 @@ const BattleSessionFactoryScript = preload("res://core/battle_session_factory.gd
 const NodeRewardServiceScript = preload("res://core/node_reward_service.gd")
 const RunMutationServiceScript = preload(
     "res://core/run_effects/run_mutation_service.gd")
+const ConsumableUseServiceScript = preload(
+    "res://core/consumables/consumable_use_service.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
 
@@ -43,6 +45,7 @@ var _starter_build_assembler
 var _battle_session_factory
 var _node_reward_service
 var _practice_service
+var _consumable_use_service
 var _pending_reward = null
 var selected_starter_build_id: String = ""
 var runtime_profile
@@ -57,7 +60,8 @@ func _init(
         starter_build_assembler_override = null,
         battle_session_factory_override = null,
         node_reward_service_override = null,
-        runtime_profile_override = null) -> void:
+        runtime_profile_override = null,
+        consumable_use_service_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
@@ -116,6 +120,14 @@ func _init(
             RunMutationServiceScript.new(
                 _content_catalog.run_effect_registry)))
     _practice_service = PracticeServiceScript.new(_content_catalog)
+    _consumable_use_service = (
+        consumable_use_service_override
+        if consumable_use_service_override != null
+        else ConsumableUseServiceScript.new(
+            _content_catalog.consumable_effect_registry,
+            _content_catalog,
+            ContentValidator.HAND_IDS,
+            ContentValidator.POOL_IDS))
     if not _content_catalog.loaded:
         game_log.record_system(
             "error",
@@ -190,6 +202,12 @@ func execute(command: Dictionary) -> CommandResult:
                 _run_state.changed.emit()
         "purchase_consumable":
             result = _purchase_consumable(str(command.get("consumable_id", "")))
+        "query_consumable_use":
+            result = _query_consumable_use(int(command.get("slot_index", -1)))
+        "use_consumable":
+            result = _use_consumable(
+                int(command.get("slot_index", -1)),
+                command.get("selected_instance_ids", []))
         _:
             result = {"success": false, "reason": "未知本局命令：%s" % command_type}
     if not result.get("success", false):
@@ -525,6 +543,94 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
         "remaining_experience": growth.experience,
     })
     return result
+
+func _query_consumable_use(slot_index: int) -> Dictionary:
+    if slot_index < 0 or slot_index >= growth.consumable_ids.size():
+        return {
+            "success": true,
+            "consumable_id": "",
+            "name": "",
+            "description": "",
+            "targeting": {"zone": "none", "selection": "deterministic_random"},
+            "zone": "none",
+            "selection": "deterministic_random",
+            "minimum": 0,
+            "maximum": 0,
+            "eligible_targets": [],
+            "can_use": false,
+            "reason": "消耗品槽位无效",
+        }
+    var consumable_id := str(growth.consumable_ids[slot_index])
+    var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
+    var result: Dictionary = _consumable_use_service.query_use(
+        growth, slot_index, definition)
+    if not result.get("success", false):
+        return {
+            "success": true,
+            "consumable_id": consumable_id,
+            "name": str(definition.get("name", "")),
+            "description": str(definition.get("description", "")),
+            "targeting": {
+                "zone": str(definition.get("targeting", {}).get("zone", "none")),
+                "selection": str(definition.get("targeting", {}).get("selection", "")),
+            },
+            "zone": str(definition.get("targeting", {}).get("zone", "none")),
+            "selection": str(definition.get("targeting", {}).get("selection", "")),
+            "minimum": int(definition.get("targeting", {}).get("minimum", 0)),
+            "maximum": int(definition.get("targeting", {}).get("maximum", 0)),
+            "eligible_targets": [],
+            "can_use": false,
+            "reason": str(result.get("reason", "消耗品不可用")),
+        }
+    if not navigation.can_open_practice():
+        result["can_use"] = false
+        result["reason"] = "节点执行中、战斗中或奖励流程未完成，不能使用消耗品"
+    result["phase"] = navigation.phase
+    return result
+
+func _use_consumable(slot_index: int, selected_instance_ids: Array) -> Dictionary:
+    var gate := _consumable_use_gate()
+    if not gate.get("allowed", false):
+        return {"success": false, "reason": str(gate.get("reason", "当前阶段不能使用消耗品"))}
+    if slot_index < 0 or slot_index >= growth.consumable_ids.size():
+        return {"success": false, "reason": "消耗品槽位无效"}
+    var consumable_id := str(growth.consumable_ids[slot_index])
+    var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
+    var result: Dictionary = _consumable_use_service.use(
+        growth, slot_index, selected_instance_ids, navigation.seed, definition)
+    if not result.get("success", false):
+        return result
+    _run_state.changed.emit()
+    var details: Array[String] = []
+    for applied in result.get("applied", []):
+        if applied is Dictionary:
+            details.append_array(applied.get("details", []))
+    result["definition"] = definition.duplicate(true)
+    result["detail"] = "；".join(details)
+    var entry: Dictionary = game_log.record_run(
+        "consumable_use",
+        "使用消耗品",
+        "%s · %s" % [definition.get("name", consumable_id), "；".join(details)],
+        {
+            "act": navigation.act,
+            "consumable_id": consumable_id,
+            "slot_index": slot_index,
+            "consumable_use_sequence": growth.consumable_use_sequence,
+        })
+    _queue_event("consumable_used", entry, {
+        "consumable_id": consumable_id,
+        "slot_index": slot_index,
+        "consumable_use_sequence": growth.consumable_use_sequence,
+        "detail": "；".join(details),
+    })
+    return result
+
+func _consumable_use_gate() -> Dictionary:
+    if not navigation.can_open_practice():
+        return {"allowed": false, "reason": "节点执行中、战斗中或奖励流程未完成，不能使用消耗品"}
+    if _pending_reward != null:
+        return {"allowed": false, "reason": "奖励尚未领取完成，不能使用消耗品"}
+    return {"allowed": true, "reason": ""}
 
 func _purchase_practice_offer(group: String, slot_index: int) -> Dictionary:
     if not navigation.can_open_practice():

@@ -1,6 +1,9 @@
 class_name QiCard
 extends RefCounted
 
+const CardReshapeRuleServiceScript = preload(
+    "res://core/card_reshapes/card_reshape_rule_service.gd")
+
 const ANOMALY_CATEGORIES := ["mark", "poison", "state", "other"]
 
 var id: String
@@ -24,6 +27,7 @@ var anomaly_others: Dictionary = {}
 var suppressed_reshapes: Dictionary = {}
 var original_owner_id: String = ""
 var temporary_card: bool = false
+var reshape_rule_service
 
 func _init(
         card_id: String = "",
@@ -45,9 +49,10 @@ func display_name() -> String:
     return "%s·%s" % [attribute_name, rank_name]
 
 func is_attribute(attribute_id: String) -> bool:
-    if reshape_enhancement == "wild":
-        return attribute_id in ["wind", "forest", "fire", "mountain"]
     if attribute == attribute_id:
+        return true
+    var rules = _reshape_rules()
+    if rules.matches_attribute(self, attribute_id):
         return true
     for payload_value in anomaly_marks.values():
         var payload: Dictionary = payload_value
@@ -58,16 +63,17 @@ func is_attribute(attribute_id: String) -> bool:
 func set_enhancement(enhancement_id: String) -> void:
     suppressed_reshapes.erase("enhancement")
     reshape_enhancement = enhancement_id
-    if enhancement_id == "stone":
-        clear_anomalies()
+    _reshape_rules().apply_reshape(self, "enhancement", enhancement_id)
 
 func set_finish(finish_id: String) -> void:
     suppressed_reshapes.erase("finish")
     reshape_finish = finish_id
+    _reshape_rules().apply_reshape(self, "finish", finish_id)
 
 func set_imprint(imprint_id: String) -> void:
     suppressed_reshapes.erase("imprint")
     reshape_imprint = imprint_id
+    _reshape_rules().apply_reshape(self, "imprint", imprint_id)
 
 func set_other_reshape(reshape_id: String, payload: Dictionary = {}) -> bool:
     if reshape_id == "":
@@ -79,6 +85,10 @@ func set_other_reshape(reshape_id: String, payload: Dictionary = {}) -> bool:
     else:
         suppressed_reshapes["others"] = suppressed_others
     reshape_others[reshape_id] = payload.duplicate(true)
+    var result: Dictionary = _reshape_rules().apply_reshape(self, "other", reshape_id, payload)
+    if not bool(result.get("success", false)):
+        reshape_others.erase(reshape_id)
+        return false
     return true
 
 func remove_other_reshape(reshape_id: String) -> Dictionary:
@@ -95,7 +105,10 @@ func remove_other_reshape(reshape_id: String) -> Dictionary:
     return previous
 
 func set_anomaly(category: String, anomaly_id: String, payload: Dictionary = {}) -> bool:
-    if not ANOMALY_CATEGORIES.has(category) or anomaly_id == "" or reshape_enhancement == "stone":
+    if not ANOMALY_CATEGORIES.has(category) or anomaly_id == "":
+        return false
+    var anomaly_check: Dictionary = _reshape_rules().can_apply_anomaly(self)
+    if not bool(anomaly_check.get("allowed", true)):
         return false
     match category:
         "poison": anomaly_poison = anomaly_id
@@ -103,6 +116,35 @@ func set_anomaly(category: String, anomaly_id: String, payload: Dictionary = {})
         "mark": anomaly_marks[anomaly_id] = payload.duplicate(true)
         "other": anomaly_others[anomaly_id] = payload.duplicate(true)
     return true
+
+func configure_reshape_rule_service(service) -> void:
+    reshape_rule_service = service
+
+func effective_qi_value(include_contribution: bool = false) -> int:
+    var value: int = int(_reshape_rules().effective_qi_value(self))
+    if include_contribution:
+        value = _reshape_rules().card_contribution(self, value)
+    return value
+
+func reshape_card_contribution(base_value: int) -> int:
+    return _reshape_rules().card_contribution(self, base_value)
+
+func reshape_multiplier_bonus() -> int:
+    return _reshape_rules().technique_multiplier_bonus(self)
+
+func reshape_power_amp_percent() -> int:
+    return _reshape_rules().power_amp_percent(self)
+
+func is_card_kind(kind: String) -> bool:
+    return _reshape_rules().has_card_kind(self, kind)
+
+func can_apply_anomaly() -> Dictionary:
+    return _reshape_rules().can_apply_anomaly(self)
+
+func _reshape_rules():
+    if reshape_rule_service == null:
+        reshape_rule_service = CardReshapeRuleServiceScript.fallback()
+    return reshape_rule_service
 
 func has_anomaly(category: String, anomaly_id: String = "") -> bool:
     match category:

@@ -41,7 +41,8 @@ func configure_repositories(
 func create_standard_deck(instance_namespace: String = "") -> Array:
     return DeckFactoryScript.namespace_instance_ids(
         DeckFactoryScript.create_standard_deck_from_definition(
-            _content_catalog.definition("base_deck")),
+            _content_catalog.definition("base_deck"),
+            _content_catalog.card_reshape_rules),
         instance_namespace)
 
 func seed_owned_techniques(side, book) -> void:

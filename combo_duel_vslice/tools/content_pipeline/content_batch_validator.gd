@@ -5,6 +5,8 @@ const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueDefinitionScript = preload("res://core/technique_definition.gd")
 const EffectHandlerRegistryScript = preload("res://core/effects/effect_handler_registry.gd")
 const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
+const ConsumableEffectHandlerRegistryScript = preload(
+    "res://core/consumables/consumable_effect_handler_registry.gd")
 
 const REPORT_SCHEMA_VERSION := 1
 const TECHNIQUE_SCHEMA_VERSION := 1
@@ -22,9 +24,11 @@ var _tres_resources: Dictionary = {}
 var _anomaly_categories: Dictionary = {}
 var _actor_status_ids: Dictionary = {}
 var _id_regex := RegEx.new()
+var _consumable_effect_ops: Array[String] = []
 
 func _init() -> void:
     _id_regex.compile(STABLE_ID_PATTERN)
+    _consumable_effect_ops = ConsumableEffectHandlerRegistryScript.new().operation_ids()
 
 func validate_project(data_root: String = "res://data") -> Dictionary:
     _reset()
@@ -219,7 +223,7 @@ func _audit_definitions(definitions: Dictionary) -> void:
     var consumables: Array = definitions.get("consumables", {}).get("consumables", [])
     for index in range(consumables.size()):
         if consumables[index] is Dictionary:
-            _audit_effects(consumables[index].get("effects", []), ContentValidatorScript.CONSUMABLE_EFFECT_OPS,
+            _audit_effects(consumables[index].get("effects", []), _consumable_effect_ops,
                 "consumables.consumables[%d].effects" % index)
 
 func _audit_runtime_operation_registry() -> void:

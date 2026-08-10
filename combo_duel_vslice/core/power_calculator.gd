@@ -11,17 +11,14 @@ static func calculate(
     var card_multiplier_bonus := 0
     var card_amp_percent := 0
     for card in hand_result["contributing"]:
-        var contribution: int = card.qi_value
-        if card.reshape_enhancement == "bonus":
-            contribution += 2
-        if card.reshape_finish == "foil":
-            contribution += 3
-        if card.reshape_enhancement == "multiplier":
-            card_multiplier_bonus += 2
-        if card.reshape_finish == "holographic":
-            card_multiplier_bonus += 1
-        if card.reshape_finish == "polychrome":
-            card_amp_percent += 20
+        var contribution: int = (
+            card.effective_qi_value() if card.has_method("effective_qi_value") else card.qi_value)
+        if card.has_method("reshape_card_contribution"):
+            contribution = card.reshape_card_contribution(contribution)
+        if card.has_method("reshape_multiplier_bonus"):
+            card_multiplier_bonus += card.reshape_multiplier_bonus()
+        if card.has_method("reshape_power_amp_percent"):
+            card_amp_percent += card.reshape_power_amp_percent()
         if contribution_modifier.is_valid():
             contribution = int(contribution_modifier.call(card, contribution))
         card_total += contribution

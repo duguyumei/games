@@ -104,9 +104,9 @@ func _zone_cards(context, side) -> Array:
 
 func _matches(card) -> bool:
     var card_kind := str(filters.get("card_kind", "any"))
-    if card_kind == "stone" and str(card.reshape_enhancement) != "stone":
+    if card_kind == "stone" and not card.is_card_kind("stone"):
         return false
-    if card_kind == "normal" and str(card.reshape_enhancement) == "stone":
+    if card_kind == "normal" and not card.is_card_kind("normal"):
         return false
     if filters.has("attributes"):
         var matches_attribute := false

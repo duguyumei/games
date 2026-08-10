@@ -371,7 +371,7 @@ func status_modifier_per_stack(
     return 0
 
 func effective_qi_value(card) -> int:
-    return _effective_qi_value(card)
+    return card.effective_qi_value(true) if card.has_method("effective_qi_value") else int(card.qi_value)
 
 func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
     var entries: Array = []
@@ -843,12 +843,7 @@ func _card_anomaly_value(card, category: String, anomaly_id: String):
     return null
 
 func _effective_qi_value(card) -> int:
-    var value := maxi(0, int(card.qi_value))
-    match str(card.reshape_enhancement):
-        "bonus": value += 2
-        "glass": value *= 2
-        "stone": value = 0
-    return value
+    return effective_qi_value(card)
 
 func _effect_ports():
     return _effect_ports_ref.get_ref() if _effect_ports_ref != null else null

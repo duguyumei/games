@@ -14,6 +14,14 @@ const RunEffectHandlerRegistryScript = preload(
     "res://core/run_effects/run_effect_handler_registry.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
+const CardReshapeBehaviorRegistryScript = preload(
+    "res://core/card_reshapes/card_reshape_behavior_registry.gd")
+const ConsumableEffectHandlerRegistryScript = preload(
+    "res://core/consumables/consumable_effect_handler_registry.gd")
+const ConsumableValidationContextScript = preload(
+    "res://core/consumables/consumable_validation_context.gd")
+const ConsumableTargetingProtocolScript = preload(
+    "res://core/consumables/consumable_targeting_protocol.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 
 const CONTENT_KEYS := [
@@ -79,9 +87,6 @@ const RANK_SPECS := [
     ["10", 10, 10], ["J", 11, 11], ["Q", 12, 11], ["K", 13, 11],
     ["A", 14, 12],
 ]
-const CONSUMABLE_EFFECT_OPS := [
-    "gain_insight", "apply_enhancement", "apply_random_finish",
-]
 const ROUTES := ["battle", "placeholder"]
 const REWARD_KINDS := [
     "experience", "card", "technique", "inner_skill",
@@ -123,9 +128,15 @@ var _consumables_by_id: Dictionary = {}
 var _effect_specs: EffectSpecValidator
 var _effect_registry
 var _run_effect_registry
+var _card_reshape_registry
+var _consumable_effect_registry
 var _status_behavior_ids: Array[String] = []
 
-func _init(effect_registry_override = null, run_effect_registry_override = null) -> void:
+func _init(
+        effect_registry_override = null,
+        run_effect_registry_override = null,
+        card_reshape_registry_override = null,
+        consumable_effect_registry_override = null) -> void:
     _status_behavior_ids = StatusBehaviorRegistryScript.new().behavior_ids()
     _effect_registry = effect_registry_override
     if _effect_registry == null:
@@ -133,6 +144,12 @@ func _init(effect_registry_override = null, run_effect_registry_override = null)
     _run_effect_registry = run_effect_registry_override
     if _run_effect_registry == null:
         _run_effect_registry = RunEffectHandlerRegistryScript.new()
+    _card_reshape_registry = card_reshape_registry_override
+    if _card_reshape_registry == null:
+        _card_reshape_registry = CardReshapeBehaviorRegistryScript.new()
+    _consumable_effect_registry = consumable_effect_registry_override
+    if _consumable_effect_registry == null:
+        _consumable_effect_registry = ConsumableEffectHandlerRegistryScript.new()
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {
@@ -154,6 +171,12 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
         _error("effects.registry", str(message))
     for message in _run_effect_registry.registration_errors():
         _error("run_effects.registry", str(message))
+    for message in _card_reshape_registry.registration_errors():
+        _error(
+            "card_reshapes.registry.%s" % str(message.get("behavior_id", "")),
+            str(message.get("message", "重塑行为注册失败")))
+    for message in _consumable_effect_registry.registration_errors():
+        _error("consumables.registry", str(message))
     _contents = contents
     _paths = paths
     _card_ids.clear()
@@ -548,6 +571,8 @@ func _validate_card_states(definition: Dictionary) -> void:
         REQUIRED_ENHANCEMENT_IDS,
         _enhancements_by_id,
         "card_states.enhancements")
+    _validate_card_reshape_behaviors(
+        definition.get("enhancements"), "card_states.enhancements")
     _validate_named_definitions(
         definition.get("imprints"),
         REQUIRED_IMPRINT_IDS,
@@ -558,6 +583,10 @@ func _validate_card_states(definition: Dictionary) -> void:
         [],
         _other_reshapes_by_id,
         "card_states.other_reshapes")
+    _validate_card_reshape_behaviors(
+        definition.get("other_reshapes"), "card_states.other_reshapes")
+    _validate_card_reshape_behaviors(
+        definition.get("imprints"), "card_states.imprints")
 
     var finishes = definition.get("finishes")
     if not finishes is Array:
@@ -580,6 +609,7 @@ func _validate_card_states(definition: Dictionary) -> void:
                     if not CARD_STATE_CARRIER_IDS.has(str(carrier)):
                         _error(scope + ".allowed_carriers", "未知载体 %s" % str(carrier))
         _validate_required_ids(_finishes_by_id, REQUIRED_FINISH_IDS, "card_states.finishes")
+        _validate_card_reshape_behaviors(finishes, "card_states.finishes")
         if _finishes_by_id.has("negative") and _finishes_by_id["negative"].get("allowed_carriers", []).has("card"):
             _error("card_states.finishes.negative", "负片不能用于真气")
 
@@ -629,6 +659,30 @@ func _validate_card_states(definition: Dictionary) -> void:
             _validate_card_status_modifiers(value, scope)
         _validate_card_status_behavior_references()
     _validate_other_reshape_battle_start_anomalies()
+
+func _validate_card_reshape_behaviors(values, scope: String) -> void:
+    if not values is Array:
+        return
+    for index in range(values.size()):
+        var definition = values[index]
+        if not definition is Dictionary:
+            continue
+        var definition_scope := "%s[%d]" % [scope, index]
+        var behaviors = definition.get("behaviors", [])
+        if not behaviors is Array:
+            _error(definition_scope + ".behaviors", "必须是数组")
+            continue
+        for behavior_index in range(behaviors.size()):
+            var behavior = behaviors[behavior_index]
+            var behavior_scope := "%s.behaviors[%d]" % [definition_scope, behavior_index]
+            if not behavior is Dictionary:
+                _error(behavior_scope, "必须是对象")
+                continue
+            var trigger := str(behavior.get("trigger", ""))
+            if not CardReshapeBehaviorRegistryScript.TRIGGERS.has(trigger):
+                _error(behavior_scope + ".trigger", "未知重塑行为触发时点 %s" % trigger)
+                continue
+            _card_reshape_registry.validate_behavior(behavior, self, behavior_scope)
 
 func _validate_status_behaviors(
         definition: Dictionary,
@@ -879,44 +933,51 @@ func _validate_consumables(definition: Dictionary) -> void:
         if not targeting is Dictionary:
             _error(scope + ".targeting", "必须是对象")
         else:
-            if not targeting.get("zone") is String:
+            var targeting_scope := scope + ".targeting"
+            var zone = targeting.get("zone")
+            if not zone is String:
                 _error(scope + ".targeting", "zone 必须是字符串")
-            if not _is_integer(targeting.get("minimum")) or not _is_integer(targeting.get("maximum")):
-                _error(scope + ".targeting", "minimum/maximum 必须是整数")
-            elif int(targeting["minimum"]) < 0 or int(targeting["maximum"]) < int(targeting["minimum"]):
-                _error(scope + ".targeting", "目标数量范围无效")
-        _effect_specs.validate_effects(value.get("effects"), CONSUMABLE_EFFECT_OPS, scope + ".effects")
-        if value.get("effects") is Array:
-            for effect_index in range(value["effects"].size()):
-                var effect = value["effects"][effect_index]
+            elif not ConsumableTargetingProtocolScript.TARGET_ZONES.has(zone):
+                _error(targeting_scope + ".zone", "未知目标区域 %s" % zone)
+            var selection = targeting.get("selection")
+            if not selection is String \
+                    or not ConsumableTargetingProtocolScript.TARGET_SELECTIONS.has(selection):
+                _error(targeting_scope + ".selection", "未知目标选择方式 %s" % selection)
+            elif zone == "none" and selection == "player_selected":
+                _error(
+                    targeting_scope + ".selection",
+                    "player_selected 只能用于有目标区域")
+            var minimum_valid := _is_integer(targeting.get("minimum"))
+            var maximum_valid := _is_integer(targeting.get("maximum"))
+            if not minimum_valid or not maximum_valid:
+                _error(targeting_scope, "minimum/maximum 必须是整数")
+            elif zone is String and ConsumableTargetingProtocolScript.TARGET_ZONES.has(zone):
+                var minimum := int(targeting["minimum"])
+                var maximum := int(targeting["maximum"])
+                if zone == "none":
+                    if minimum != 0:
+                        _error(targeting_scope + ".minimum", "none 区域 minimum 必须为 0")
+                    if maximum != 0:
+                        _error(targeting_scope + ".maximum", "none 区域 maximum 必须为 0")
+                elif minimum < 0 or maximum < minimum:
+                    _error(targeting_scope, "目标数量范围无效")
+        var effects = value.get("effects")
+        if not effects is Array or effects.is_empty():
+            _error(scope + ".effects", "必须是非空效果数组")
+        else:
+            var validation_context = ConsumableValidationContextScript.new(
+                self,
+                HAND_IDS,
+                POOL_IDS,
+                _contents.get("techniques", {}).get("pool_membership", {}))
+            for effect_index in range(effects.size()):
+                var effect = effects[effect_index]
+                var effect_scope := "%s.effects[%d]" % [scope, effect_index]
                 if not effect is Dictionary:
+                    _error(effect_scope, "必须是对象")
                     continue
-                if effect.get("op") == "gain_insight":
-                    var hand_id := str(effect.get("hand", ""))
-                    if not HAND_IDS.has(hand_id):
-                        _error("%s.effects[%d]" % [scope, effect_index], "引用未知精确牌型 %s" % hand_id)
-                    var pools = effect.get("pools")
-                    if not pools is Array:
-                        _error("%s.effects[%d]" % [scope, effect_index], "pools 必须是数组")
-                    else:
-                        for pool_id in pools:
-                            if not POOL_IDS.has(str(pool_id)):
-                                _error("%s.effects[%d]" % [scope, effect_index], "引用未知功法池 %s" % str(pool_id))
-                elif effect.get("op") == "apply_enhancement":
-                    var enhancement_id := str(effect.get("enhancement", ""))
-                    if not _enhancements_by_id.has(enhancement_id):
-                        _error("%s.effects[%d]" % [scope, effect_index], "引用未知强化 %s" % enhancement_id)
-                elif effect.get("op") == "apply_random_finish":
-                    var finish_ids = effect.get("finishes")
-                    if not finish_ids is Array or finish_ids.is_empty():
-                        _error("%s.effects[%d]" % [scope, effect_index], "finishes 必须是非空数组")
-                    else:
-                        for finish_id_value in finish_ids:
-                            var finish_id := str(finish_id_value)
-                            if not _finishes_by_id.has(finish_id):
-                                _error("%s.effects[%d]" % [scope, effect_index], "引用未知品相 %s" % finish_id)
-                            elif not _finishes_by_id[finish_id].get("allowed_carriers", []).has("card"):
-                                _error("%s.effects[%d]" % [scope, effect_index], "品相 %s 不能用于真气" % finish_id)
+                _consumable_effect_registry.validate_effect(
+                    effect, validation_context, effect_scope)
     var practice_offer_ids = definition.get("practice_offer_ids")
     if not practice_offer_ids is Array or practice_offer_ids.is_empty():
         _error("consumables.practice_offer_ids", "必须是非空数组")

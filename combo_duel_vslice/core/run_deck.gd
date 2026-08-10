@@ -47,7 +47,8 @@ func reset_from_card_ids(card_ids: Array, namespace_value: String = "run") -> Ar
         if used_ids.has(definition_id):
             instance_id = _id_factory.next_id(definition_id)
         used_ids[definition_id] = true
-        var card = DeckFactoryScript.create_card_instance(definition, instance_id)
+        var card = DeckFactoryScript.create_card_instance(
+            definition, instance_id, _reshape_rules())
         _cards.append(QiCardInstanceDataScript.capture(card))
     return errors
 
@@ -90,7 +91,7 @@ func content_definition(content_type: String, content_id: String) -> Dictionary:
 func create_battle_cards() -> Array:
     var result: Array = []
     for values in _cards:
-        result.append(QiCardInstanceDataScript.restore(values))
+        result.append(QiCardInstanceDataScript.restore(values, _reshape_rules()))
     return result
 
 func add_card(card) -> Dictionary:
@@ -115,7 +116,8 @@ func add_card_by_definition(definition_id: String) -> Dictionary:
         return {"success": false, "reason": "未知基础真气定义：%s" % definition_id}
     var serial_before := _id_factory.next_serial()
     var instance_id := _next_unique_instance_id(definition_id)
-    var card = DeckFactoryScript.create_card_instance(definition, instance_id)
+    var card = DeckFactoryScript.create_card_instance(
+        definition, instance_id, _reshape_rules())
     var values: Dictionary = QiCardInstanceDataScript.capture(card)
     var errors := _validate(values)
     if not errors.is_empty():
@@ -166,7 +168,8 @@ func replace_card_definition(
     if definition.is_empty():
         return {"success": false, "reason": "未知基础真气定义：%s" % definition_id}
     var before: Dictionary = _cards[index].duplicate(true)
-    var card = DeckFactoryScript.create_card_instance(definition, instance_id)
+    var card = DeckFactoryScript.create_card_instance(
+        definition, instance_id, _reshape_rules())
     if preserve_reshapes:
         var reshapes: Dictionary = before.get("reshapes", {})
         card.reshape_enhancement = str(reshapes.get("enhancement", ""))
@@ -231,7 +234,7 @@ func apply_card_reshape(
             "reason": "重塑 %s 不允许施加给真气" % reshape_id,
         }
     var before: Dictionary = _cards[index].duplicate(true)
-    var card = QiCardInstanceDataScript.restore(before)
+    var card = QiCardInstanceDataScript.restore(before, _reshape_rules())
     match category:
         "enhancement": card.set_enhancement(reshape_id)
         "finish": card.set_finish(reshape_id)
@@ -328,6 +331,9 @@ func _validate(values: Dictionary) -> Array[String]:
     if _content_catalog == null:
         return []
     return QiCardInstanceDataScript.validate(values, _content_catalog)
+
+func _reshape_rules():
+    return _content_catalog.card_reshape_rules if _content_catalog != null else null
 
 func _find_index(instance_id: String) -> int:
     for index in range(_cards.size()):

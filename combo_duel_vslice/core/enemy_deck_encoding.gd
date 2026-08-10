@@ -31,8 +31,10 @@ static func parse(
             continue
         for _copy in range(int(parsed["count"])):
             var card = DeckFactoryScript.create_card_instance(
-                definition, factory.next_id(definition_id))
-            _apply_reshapes(card, parsed["reshapes"])
+                definition,
+                factory.next_id(definition_id),
+                content_catalog.card_reshape_rules if content_catalog != null else null)
+            _apply_reshapes(card, parsed["reshapes"], content_catalog)
             cards.append(card)
     return {"success": errors.is_empty(), "cards": cards, "errors": errors}
 
@@ -103,9 +105,10 @@ static func _validate_token_reshapes(
     for reshape in reshapes:
         var reshape_id := str(reshape)
         var category := ""
-        if reshape_id == "gold" and enhancement_ids.has("gold") \
-                and imprint_ids.has("gold"):
-            category = "imprint" if seen.has("enhancement") else "enhancement"
+        if enhancement_ids.has(reshape_id) and not seen.has("enhancement"):
+            category = "enhancement"
+        elif imprint_ids.has(reshape_id) and not seen.has("imprint"):
+            category = "imprint"
         elif enhancement_ids.has(reshape_id):
             category = "enhancement"
         elif finish_ids.has(reshape_id):
@@ -126,9 +129,12 @@ static func _validate_reshapes(reshapes: Array, content_catalog, scope: String) 
     for reshape in reshapes:
         var reshape_id := str(reshape)
         var category := ""
-        if reshape_id == "gold" and content_catalog.has_id("enhancement", "gold") \
-                and content_catalog.has_id("imprint", "gold"):
-            category = "imprint" if seen_categories.has("enhancement") else "enhancement"
+        if content_catalog.has_id("enhancement", reshape_id) \
+                and not seen_categories.has("enhancement"):
+            category = "enhancement"
+        elif content_catalog.has_id("imprint", reshape_id) \
+                and not seen_categories.has("imprint"):
+            category = "imprint"
         elif content_catalog.has_id("enhancement", reshape_id):
             category = "enhancement"
         elif content_catalog.has_id("finish", reshape_id):
@@ -146,17 +152,19 @@ static func _validate_reshapes(reshapes: Array, content_catalog, scope: String) 
         seen_categories[category] = true
     return errors
 
-static func _apply_reshapes(card, reshapes: Array) -> void:
+static func _apply_reshapes(card, reshapes: Array, content_catalog) -> void:
+    if content_catalog != null and content_catalog.card_reshape_rules != null:
+        content_catalog.card_reshape_rules.bind_card(card)
     for reshape in reshapes:
         var reshape_id := str(reshape)
-        if reshape_id == "gold":
-            if card.reshape_enhancement == "":
-                card.set_enhancement(reshape_id)
-            else:
-                card.set_imprint(reshape_id)
-        elif reshape_id in ["bonus", "multiplier", "wild", "glass", "steel", "stone", "lucky"]:
+        if content_catalog.has_id("enhancement", reshape_id) \
+                and card.reshape_enhancement == "":
             card.set_enhancement(reshape_id)
-        elif reshape_id in ["foil", "holographic", "polychrome", "negative"]:
+        elif content_catalog.has_id("imprint", reshape_id):
+            card.set_imprint(reshape_id)
+        elif content_catalog.has_id("enhancement", reshape_id):
+            card.set_enhancement(reshape_id)
+        elif content_catalog.has_id("finish", reshape_id):
             card.set_finish(reshape_id)
         else:
             card.set_imprint(reshape_id)

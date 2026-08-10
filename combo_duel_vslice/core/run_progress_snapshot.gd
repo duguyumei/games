@@ -19,6 +19,7 @@ var life: int = 0
 var max_life: int = 0
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
+var consumable_use_sequence: int = 0
 
 var has_consumable_ids: bool = false
 var has_learned_technique_ids: bool = false
@@ -30,6 +31,7 @@ var has_life: bool = false
 var has_max_life: bool = false
 var has_hand_technique_progression: bool = false
 var has_practice_shop_state: bool = false
+var has_consumable_use_sequence: bool = false
 
 static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     var result := RunProgressSnapshot.new()
@@ -43,6 +45,7 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_max_life = values.has("max_life")
     result.has_hand_technique_progression = values.has("hand_technique_progression")
     result.has_practice_shop_state = values.has("practice_shop_state")
+    result.has_consumable_use_sequence = values.has("consumable_use_sequence")
 
     for consumable_id in values.get("consumable_ids", []):
         result.consumable_ids.append(str(consumable_id))
@@ -60,6 +63,7 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
         "hand_technique_progression", {}).duplicate(true)
     result.practice_shop_state = values.get(
         "practice_shop_state", {}).duplicate(true)
+    result.consumable_use_sequence = int(values.get("consumable_use_sequence", 0))
     return result
 
 func to_dict() -> Dictionary:
@@ -84,4 +88,6 @@ func to_dict() -> Dictionary:
         result["hand_technique_progression"] = hand_technique_progression.duplicate(true)
     if has_practice_shop_state:
         result["practice_shop_state"] = practice_shop_state.duplicate(true)
+    if has_consumable_use_sequence:
+        result["consumable_use_sequence"] = consumable_use_sequence
     return result

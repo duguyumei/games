@@ -8,7 +8,7 @@
 
 v1 保存种子、初始构筑稳定 ID、层数、完整生成地图、当前/已完成节点、待领取奖励、历练、当前生命与生命上限、消耗品、八种牌型的功法槽位与序列、当前修习商店、功法 ID、持有/装备内功 ID、功法结算槽位、修习购买和完整 `RunDeck`/`QiCardInstanceData` 持久状态。显示名称不进入身份字段。
 
-`growth` 段字段为 `experience`、`life`、`max_life`、`consumable_ids`、`hand_technique_progression`、`practice_shop_state`、`learned_technique_ids`、`learned_inner_skill_ids`、`equipped_inner_skill_ids`、`technique_slot_index`、`practice_purchase_ids` 与 `run_deck`。`hand_technique_progression` 分别保存八种具体牌型的 `slot_count` 与 `sequence`；`practice_shop_state` 保存当前普通商品、补充包、优惠券空位以及商店序号和冥想次数。`life`、`max_life` 两者存在时必须是正整数，且当前生命不得大于上限；损坏值不会被静默修正。
+`growth` 段字段为 `experience`、`life`、`max_life`、`consumable_ids`、`hand_technique_progression`、`practice_shop_state`、`learned_technique_ids`、`learned_inner_skill_ids`、`equipped_inner_skill_ids`、`technique_slot_index`、`practice_purchase_ids`、`consumable_use_sequence` 与 `run_deck`。`hand_technique_progression` 分别保存八种具体牌型的 `slot_count` 与 `sequence`；`practice_shop_state` 保存当前普通商品、补充包、物品空位以及商店序号和冥想次数。当前实现仍可能使用 `coupon` 作为兼容字段名，商品协议迁移后统一改为 `item`；这不改变存档中物品的全局生效语义。`life`、`max_life` 两者存在时必须是正整数，且当前生命不得大于上限；损坏值不会被静默修正。`consumable_use_sequence` 存在时必须是非负整数，它决定消耗品随机效果的确定性种子，旧存档缺省为 0。
 
 存档只允许以下节点边界：`awaiting_node`、`node_in_progress`、`awaiting_reward`、`boss_chest`、`run_complete`。`node_in_progress` 只表示已经进入节点；存档不包含手牌、牌堆顺序、战斗异状、行动队列或 AI 会话，载入结果明确返回 `restart_node_from_start`，由调用方重新创建战斗。这里保存的是战斗结束后已同步回本局的生命，不保存战斗中间态。
 

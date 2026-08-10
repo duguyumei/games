@@ -1,6 +1,6 @@
 # 本局内容效果扩展指南
 
-- 状态：S2-F1B 平台契约
+- 状态：S2-F2A 消耗品统一执行平台
 - 适用范围：战斗外、会改变本局成长库存的内容效果
 - 不适用范围：战斗功法效果、地图推进、UI 流程和功行计算
 
@@ -16,9 +16,20 @@
 | `CardWorkshopService` | Domain Service | 校验明确实例并编排牌组改造，不建立第二套事务 |
 | `ContentValidator` | 启动期 Bean/配置校验 | 内容加载时通过同一注册表验证操作是否存在及参数是否合法 |
 | JSON 内容文件 | 运行时配置 | 选择已注册能力并提供参数，不承担程序控制流 |
+| `CardReshapeBehaviorHandler` | Strategy / SPI | 校验并执行一个真气重塑行为，不持有战斗引擎 |
+| `CardReshapeBehaviorRegistry` | Strategy 注册中心 | 维护稳定行为 ID，校验触发时点并支持测试注入 |
+| `CardReshapeBehaviorContext` | Narrow Domain Context | 只提供当前真气、数值累加器和必要查询 |
+| `CardReshapeRuleService` | Domain Rule Service | 按 `card_states.json` 查找行为并编排数值、属性和生命周期规则 |
+| `ConsumableEffectHandler` | SPI | 声明稳定操作 ID，校验专属参数，在事务工作副本上执行一个小能力 |
+| `ConsumableEffectHandlerRegistry` | Strategy 注册中心 | 维护 `op -> Handler` 唯一映射，拒绝非法或重复 ID |
+| `ConsumableUseContext` | Narrow Port | 向 Handler 提供已解析目标、确定性随机源与查询端口 |
+| `ConsumableUseService` | Application Service | 解析目标、维护原子事务边界并派生确定性随机种子 |
+| `ConsumableValidationContext` | 启动期校验上下文 | 向 Handler 暴露校验器窄表面与消耗品专属词表 |
 
 战斗内的 `EffectHandlerRegistry` 与本局的 `RunEffectHandlerRegistry` 采用相似模式，
 但上下文和生命周期不同。两者保持独立，避免本局库存能力反向依赖战斗引擎。
+消耗品效果注册表是第三套独立平台：正式本局入口与战斗纵切兼容入口共用同一注册表，
+通过两个窄 Context 适配目标区域（RunDeck 实例 vs 当前手牌 QiCard）。
 
 ## 2. 调用与事务边界
 
@@ -50,6 +61,11 @@ RunSession
 牌组改造 Handler 从 `context.growth.run_deck` 取得事务工作副本，只负责参数校验、调用
 `CardWorkshopService` 和整理 `applied` 结果。工坊通过 `RunDeck` 窄接口修改实例；Handler
 与工坊都不会接触真实 `GrowthInventory`。
+
+真气重塑行为使用独立的 `CardReshapeBehaviorRegistry`。内容校验和真实战斗都通过同一注册表
+解析 `card_states.json` 的 `behaviors`；上下文不会暴露 `CombatEngine`、`BattleSession` 或
+`RunSession`。注册表拒绝空 ID、非法 snake_case ID、重复注册和未知触发时点，处理器负责自己的
+参数校验与执行。
 
 ## 3. 当前正式操作
 
@@ -160,6 +176,35 @@ RunSession
 运行 Handler 只接受明确 ID，因此事务可以在执行前校验目标，不需要理解 UI 生命周期，也不
 会把随机性或查询语言混入领域服务。
 
+## 5.1 新增一个重塑行为 Handler
+
+先判断现有 Handler 是否已经能表达需求：
+
+1. 若只是已有数值累加、属性别名、有效真气变换或已有生命周期动作，新增一条 JSON
+   `behaviors` 绑定并填写该 Handler 的参数。
+2. 若出现新的规则语义，新增一个小型 `CardReshapeBehaviorHandler`，声明稳定的
+   snake_case `behavior_id()` 和有限的 `triggers()`，在 `validate_behavior()` 中校验专属参数，
+   在 `execute()` 中只操作 `CardReshapeBehaviorContext`。
+3. 在 `CardReshapeBehaviorRegistry` 注册 Handler，并补内容加载、参数失败、预览／结算贯通和
+   持久重塑回归测试。不要向 `PowerCalculator`、`ActionResolver` 或 `CombatEngine` 增加内容 ID 分支。
+
+行为时点目前只包括 `card_contribution`、`technique_multiplier`、`power_amp`、
+`attribute_check`、`effective_qi`、`anomaly_apply` 和 `reshape_applied`。需要条件、循环、
+查询或流程跳转时，建立新的窄协议，不把它们扩张成 JSON DSL。
+
+## 5.2 只改 JSON 与必须新增 Handler 的边界
+
+只要行为 ID 已注册、参数形状已定义、现有上下文能力足够，新增内容 ID 可以只修改
+`card_states.json`。例如两个不同品相都可以绑定同一个数值 Handler，只通过 `amount` 或
+`factor` 产生不同结果。
+
+以下情况必须新增 Handler：现有触发时点无法表达；参数含义会改变；需要新的战斗端口、随机源、
+选择协议或本局奖励账本。新增 Handler 后仍由注册表统一校验和分发，不在中央流程按名称分支。
+
+当前仍未完成的重塑／相关行为包括：玻璃牌战后损毁、钢铁牌留手防御、黄金牌和幸运牌的历练效果、
+金印／赤印／蓝印／紫印、负片内功，以及任何新的战斗奖励账本。已有定义或槽位不代表这些行为
+已经语义完整；它们须在后续任务补齐对应时点和确定性测试。
+
 ## 6. 新增一种简单库存操作
 
 以 `grant_consumable` 为假设名称，准确步骤是：
@@ -184,6 +229,84 @@ RunSession
 4. 在对应能力组 Handler 中声明新 `op`、校验专属载荷并转换结构化结果。
 5. 注册 Handler 后补齐内容加载、运行执行、事务回滚和存档往返测试；中央事务、会话和节点
    奖励服务不增加分支。
+
+## 6.1 新增一种消耗品效果操作
+
+心得、丹药、奇珍共用 `GrowthInventory.consumable_ids` 的三个槽位。正式构筑修改
+以完整 RunDeck 中的稳定真气实例为目标，入口是 `RunSession` 的战斗外命令
+`query_consumable_use` / `use_consumable`；战斗内 `BattleConsumableService` 只作为
+纵切兼容适配器，效果执行委托同一注册表，不再按操作码写中央分支。
+
+新增操作步骤：
+
+1. 在 `core/consumables/` 新建一个小型 Handler，继承 `ConsumableEffectHandler`。
+2. `operation_ids()` 返回稳定 snake_case ID；`validate_effect()` 只校验自己的
+   参数和内容引用；`apply()` 只通过 `ConsumableUseContext` 窄端口修改工作副本，
+   并返回包含 `op` 与 `details` 的结构化 `applied`。
+3. 在 `ConsumableEffectHandlerRegistry._init()` 注册；不要修改
+   `ConsumableUseService`、`RunSession` 或 `BattleConsumableService` 的分支。
+4. 内容文件使用新 `op`，并补齐内容加载、正式使用、失败回滚、随机确定性和
+   存档往返测试。
+5. 需要随机时，从 `context.rng` 顺序抽取：种子由 run seed、
+   `consumable_use_sequence`、消耗品 ID 与效果序号派生，失败不递增序号，因此
+   不会消费下一次成功操作的随机结果。
+6. 需要新的目标区域或选择协议时扩展 `ConsumableUseService` 的目标解析，不要
+   让 Handler 理解 UI 或战斗引擎。
+
+测试专用 Handler 可以通过 `register_handler()` 注入独立注册表。
+
+## 6.2 消耗品事务与随机序号
+
+一次消耗品使用是完整原子事务：校验槽位、定义与目标 → 建立
+`GrowthInventory` 工作副本 → 顺序执行全部效果 → 全部成功后按 `slot_index`
+删除消耗品并递增 `consumable_use_sequence` → 一次性提交。任一步失败都不提交，
+`experience`、`life/max_life`、`consumable_ids`、功法槽位与序列、内功、
+`run_deck`、`permanently_removed_card_ids`、`practice_shop_state` 与
+`consumable_use_sequence` 全部保持不变；Handler 不需要写补偿或回滚代码。
+
+`consumable_use_sequence` 属于 `GrowthInventory` 的 mutation state、
+`RunProgressSnapshot` 与 v1 存档的 `growth` 段。存档读档后继续使用，随机结果
+与未读档路径一致。查询可用目标不消费随机数。
+
+## 6.3 当前消耗品操作
+
+### `gain_insight`
+
+```json
+{"op": "gain_insight", "hand": "high_card", "pools": ["high"]}
+```
+
+`hand` 必须是八种精确牌型之一，`pools` 必须是非空且属于该牌型成员资格的功法池。
+效果使该牌型功法槽位 +1，并从正式白名单（`formal_complete` 且属于指定池）中
+确定性抽取尚未进入该牌型序列的功法；没有合格功法时仍成功增加槽位，不跨池抽取。
+五条与四条可以共用功法候选池，但槽位与序列相互独立。
+
+### `apply_enhancement`
+
+```json
+{"op": "apply_enhancement", "enhancement": "bonus"}
+```
+
+对已解析的全部目标真气施加指定强化，替换旧强化。内容加载阶段校验强化引用及其
+真气承载资格。
+
+### `apply_random_finish`
+
+```json
+{"op": "apply_random_finish", "finishes": ["foil", "holographic", "polychrome"]}
+```
+
+对每个已解析目标依次从 `finishes` 确定性抽取品相并替换旧品相。品相引用及其
+真气承载资格在内容加载阶段校验。
+
+## 6.4 目标区域与选择方式
+
+`targeting.zone` 是目标区域：心得为 `none`（无目标，传空数组），丹药与奇珍为
+`run_deck`（正式目标统一为完整 RunDeck 的稳定 `instance_id`，不再使用战斗
+手牌）。`targeting.selection` 缺省为 `player_selected`，第一阶段还支持
+`deterministic_random`，由 `ConsumableUseService` 解析后向 Handler 传入明确
+实例 ID。目标必须属于当前本局 RunDeck、不得重复，并严格满足
+`minimum/maximum`。
 
 ## 7. 什么时候只写 JSON
 

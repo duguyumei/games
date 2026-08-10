@@ -27,7 +27,7 @@ static func capture(card, include_combat_state: bool = false) -> Dictionary:
         values["suppressed_reshapes"] = card.suppressed_reshapes.duplicate(true)
     return values
 
-static func restore(values: Dictionary):
+static func restore(values: Dictionary, reshape_rules = null):
     var card = QiCardScript.new(
         str(values.get("instance_id", "")),
         str(values.get("rank_name", "")),
@@ -36,6 +36,8 @@ static func restore(values: Dictionary):
         str(values.get("attribute", "")),
         str(values.get("attribute_name", "")),
         str(values.get("definition_id", "")))
+    if reshape_rules != null:
+        card.configure_reshape_rule_service(reshape_rules)
     var reshapes: Dictionary = values.get("reshapes", {})
     card.reshape_enhancement = str(reshapes.get("enhancement", ""))
     card.reshape_finish = str(reshapes.get("finish", ""))

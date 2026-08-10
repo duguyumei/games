@@ -16,8 +16,13 @@ func apply_anomaly(
         return {"success": false, "reason": "未知真气异状：%s" % anomaly_id}
     if str(definition.get("category", "")) != category:
         return {"success": false, "reason": "异状 %s 不属于类别 %s" % [anomaly_id, category]}
-    if card.reshape_enhancement == "stone":
-        return {"success": false, "reason": "石头牌不能获得异状"}
+    var anomaly_permission: Dictionary = card.can_apply_anomaly() \
+        if card.has_method("can_apply_anomaly") else {"allowed": true}
+    if not bool(anomaly_permission.get("allowed", true)):
+        return {
+            "success": false,
+            "reason": str(anomaly_permission.get("reason", "此真气不能获得异状")),
+        }
     var removed := {"reshapes": {}, "anomalies": {}}
     if str(definition.get("on_apply", "")) == "suppress_existing_effects":
         if card.has_anomaly("mark", anomaly_id):

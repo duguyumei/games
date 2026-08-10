@@ -6,6 +6,12 @@ const TechniqueDefinitionScript = preload("res://core/technique_definition.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const RunEffectHandlerRegistryScript = preload(
     "res://core/run_effects/run_effect_handler_registry.gd")
+const CardReshapeBehaviorRegistryScript = preload(
+    "res://core/card_reshapes/card_reshape_behavior_registry.gd")
+const CardReshapeRuleServiceScript = preload(
+    "res://core/card_reshapes/card_reshape_rule_service.gd")
+const ConsumableEffectHandlerRegistryScript = preload(
+    "res://core/consumables/consumable_effect_handler_registry.gd")
 
 const CONTENT_ORDER := [
     "base_deck",
@@ -51,12 +57,17 @@ var _indexes: Dictionary = {}
 var runtime_profile
 var effect_registry
 var run_effect_registry
+var card_reshape_registry
+var consumable_effect_registry
+var card_reshape_rules
 var enemy_repository_ref: WeakRef = null
 
 func _init(
         runtime_profile_override = null,
         effect_registry_override = null,
-        run_effect_registry_override = null) -> void:
+        run_effect_registry_override = null,
+        card_reshape_registry_override = null,
+        consumable_effect_registry_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
@@ -66,6 +77,14 @@ func _init(
         run_effect_registry_override
         if run_effect_registry_override != null
         else RunEffectHandlerRegistryScript.new())
+    card_reshape_registry = (
+        card_reshape_registry_override
+        if card_reshape_registry_override != null
+        else CardReshapeBehaviorRegistryScript.new())
+    consumable_effect_registry = (
+        consumable_effect_registry_override
+        if consumable_effect_registry_override != null
+        else ConsumableEffectHandlerRegistryScript.new())
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()
@@ -124,7 +143,8 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
         _indexes.clear()
         return false
     var validator = ContentValidatorScript.new(
-        effect_registry, run_effect_registry)
+        effect_registry, run_effect_registry, card_reshape_registry,
+        consumable_effect_registry)
     var validation: Dictionary = validator.validate(_definitions, paths)
     errors.assign(validation.get("errors", []))
     warnings.assign(validation.get("warnings", []))
@@ -132,6 +152,8 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
         _indexes.clear()
         return false
     _build_indexes()
+    card_reshape_rules = CardReshapeRuleServiceScript.new(
+        self, card_reshape_registry)
     loaded = true
     return true
 

@@ -65,6 +65,16 @@ const BattleScene = preload("res://ui/main.tscn")
 const RunScene = preload("res://ui/run_main.tscn")
 const FrontScene = preload("res://ui/front_main.tscn")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
+const CardReshapeBehaviorRegistryScript = preload(
+    "res://core/card_reshapes/card_reshape_behavior_registry.gd")
+const CardReshapeBehaviorContextScript = preload(
+    "res://core/card_reshapes/card_reshape_behavior_context.gd")
+const CardReshapeBehaviorHandlerScript = preload(
+    "res://core/card_reshapes/card_reshape_behavior_handler.gd")
+const ConsumableEffectHandlerRegistryScript = preload(
+    "res://core/consumables/consumable_effect_handler_registry.gd")
+const ConsumableUseServiceScript = preload(
+    "res://core/consumables/consumable_use_service.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 const ProbeStatusBehaviorHandlerScript = preload(
@@ -110,6 +120,60 @@ class RunEffectProbeHandler:
             },
         }
 
+class CardReshapeProbeHandler:
+    extends "res://core/card_reshapes/card_reshape_behavior_handler.gd"
+
+    var id: String
+
+    func _init(id_value: String = "probe_add_value") -> void:
+        id = id_value
+
+    func behavior_id() -> String:
+        return id
+
+    func triggers() -> Array[String]:
+        return ["card_contribution"]
+
+    func validate_behavior(behavior: Dictionary, validator, scope: String) -> void:
+        if not behavior.get("amount") is int:
+            validator.report_error(scope + ".amount", "探针 amount 必须是整数")
+
+    func execute(behavior: Dictionary, context) -> Dictionary:
+        context.value += int(behavior.get("amount", 0))
+        return {"success": true, "value": context.value}
+
+class ConsumableProbeHandler:
+    extends RefCounted
+
+    var _operation_ids: Array
+    var _fail_on_apply: bool
+
+    func _init(operation_ids_value: Array, fail_on_apply: bool = false) -> void:
+        _operation_ids = operation_ids_value.duplicate()
+        _fail_on_apply = fail_on_apply
+
+    func operation_ids() -> Array:
+        return _operation_ids.duplicate()
+
+    func validate_effect(effect: Dictionary, context, scope: String) -> void:
+        if not effect.get("amount") is int:
+            context.report_error(scope + ".amount", "探针 amount 必须是整数")
+
+    func apply(effect: Dictionary, context) -> Dictionary:
+        if _fail_on_apply:
+            return {"success": false, "reason": "探针按约定失败"}
+        var amount := int(effect["amount"])
+        context.growth.experience += amount
+        return {
+            "success": true,
+            "applied": {
+                "op": str(effect["op"]),
+                "kind": "consumable_probe",
+                "amount": amount,
+                "details": ["探针消耗品效果 +%d" % amount],
+            },
+        }
+
 var failures: Array[String] = []
 var assertions: int = 0
 var card_serial: int = 0
@@ -120,6 +184,7 @@ func _initialize() -> void:
         quit(2)
         return
     _test_content_catalog_and_validator()
+    _test_card_reshape_behavior_registry()
     _test_enemy_pool_content_and_repository()
     _test_production_formal_sequences_and_damage()
     _test_formal_enemy_pool_battle_setup()
@@ -164,11 +229,25 @@ func _initialize() -> void:
     _test_inner_skill_preview_and_enemy_plan()
     _test_inner_skill_and_technique_left_to_right()
     _test_consumable_shared_slots_and_generation_limit()
+    _test_battle_consumable_multi_effect_rollback()
     _test_insight_growth_and_technique_acquisition()
     _test_formal_practice_shop_and_hand_progression()
     _test_hierophant_bonus_enhancement_and_preview()
     _test_aura_seeded_finish_and_preview()
     _test_battle_consumable_reshape_persists_via_run_deck()
+    _test_consumable_effect_registry_contract()
+    _test_consumable_effect_validation_scope()
+    _test_run_consumable_high_card_insight()
+    _test_run_consumable_insight_exhausted_pool()
+    _test_run_consumable_hierophant_run_deck()
+    _test_run_consumable_aura_determinism_and_save()
+    _test_run_consumable_invalid_targets()
+    _test_run_consumable_transaction_rollback()
+    _test_run_consumable_failed_use_keeps_randomness()
+    _test_run_consumable_slot_release_order()
+    _test_run_consumable_phase_gate()
+    _test_run_consumable_save_round_trip()
+    _test_consumable_no_central_op_branches()
     _test_run_save_life_round_trip_legacy_defaults_and_validation()
     _test_battle_session_commands_snapshots_and_events()
     _test_snapshot_boundaries_are_typed()
@@ -227,6 +306,99 @@ func _assert_true(value: bool, label: String) -> void:
     if not value:
         failures.append("%s：期望为 true" % label)
 
+func _test_card_reshape_behavior_registry() -> void:
+    var registry = CardReshapeBehaviorRegistryScript.new()
+    var probe = CardReshapeProbeHandler.new()
+    _assert_true(registry.register_handler(probe), "测试重塑行为可以注入注册表")
+    var invalid_registry = CardReshapeBehaviorRegistryScript.new()
+    invalid_registry.register_handler(CardReshapeProbeHandler.new())
+    _assert_true(
+        not invalid_registry.register_handler(CardReshapeProbeHandler.new()),
+        "重复重塑行为 ID 注册失败")
+    _assert_true(
+        not invalid_registry.register_handler(CardReshapeProbeHandler.new("Bad-ID")),
+        "非法重塑行为 ID 注册失败")
+    _assert_true(
+        not invalid_registry.register_handler(CardReshapeProbeHandler.new("")),
+        "空重塑行为 ID 注册失败")
+
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, registry)
+    var base_catalog = ContentCatalogScript.new()
+    _assert_true(base_catalog.load_all(), "建立重塑行为测试基线内容目录")
+    var values := _catalog_definitions(base_catalog)
+    values["card_states"]["enhancements"][0]["behaviors"] = [{
+        "trigger": "card_contribution",
+        "handler": "probe_add_value",
+        "amount": 5,
+    }]
+    _assert_true(
+        catalog.load_from_definitions(values, base_catalog.paths),
+        "内容定义可以绑定测试重塑行为")
+    var probe_card = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_7"), "probe:wind_7")
+    catalog.card_reshape_rules.bind_card(probe_card)
+    probe_card.set_enhancement("bonus")
+    var preview_values := PowerCalculatorScript.calculate(
+        HandEvaluatorScript.evaluate([probe_card]))
+    _assert_equal(
+        preview_values["card_total"], 12,
+        "测试重塑 Handler 可以改变真实功法值而不改 PowerCalculator")
+
+    var wild_card = DeckFactoryScript.create_card_instance(
+        base_catalog.get_by_id("card", "wind_7"), "reshape:wild")
+    base_catalog.card_reshape_rules.bind_card(wild_card)
+    wild_card.set_enhancement("wild")
+    _assert_true(
+        wild_card.is_attribute("wind") and wild_card.is_attribute("fire"),
+        "万能牌通过行为绑定同时识别所有属性")
+    var glass_card = DeckFactoryScript.create_card_instance(
+        base_catalog.get_by_id("card", "wind_7"), "reshape:glass")
+    base_catalog.card_reshape_rules.bind_card(glass_card)
+    glass_card.set_enhancement("glass")
+    _assert_equal(glass_card.effective_qi_value(), 14, "玻璃牌通过行为绑定加倍有效真气")
+    var stone_card = DeckFactoryScript.create_card_instance(
+        base_catalog.get_by_id("card", "wind_7"), "reshape:stone")
+    base_catalog.card_reshape_rules.bind_card(stone_card)
+    stone_card.set_anomaly("mark", "wind_mark")
+    stone_card.set_enhancement("stone")
+    _assert_equal(stone_card.effective_qi_value(), 0, "石头牌通过行为绑定固定为零真气")
+    _assert_true(
+        not stone_card.can_apply_anomaly().get("allowed", true)
+        and stone_card.anomaly_marks.is_empty(),
+        "石头牌行为禁止异状并在获得时清除既有异状")
+
+    var unknown_values := _catalog_definitions(base_catalog)
+    unknown_values["card_states"]["enhancements"][0]["behaviors"] = [{
+        "trigger": "card_contribution",
+        "handler": "missing_reshape_handler",
+        "amount": 1,
+    }]
+    var unknown_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_catalog.load_from_definitions(unknown_values, base_catalog.paths),
+        "未知重塑行为处理器在内容加载阶段失败")
+    _assert_true(
+        _array_contains_text(unknown_catalog.errors, "card_states.enhancements[0].behaviors[0].handler"),
+        "未知重塑行为错误报告内容路径")
+
+    var bad_parameter_values := _catalog_definitions(base_catalog)
+    bad_parameter_values["card_states"]["enhancements"][0]["behaviors"] = [{
+        "trigger": "card_contribution",
+        "handler": "add_card_contribution",
+        "amount": "two",
+    }]
+    var bad_parameter_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_parameter_catalog.load_from_definitions(
+            bad_parameter_values, base_catalog.paths),
+        "重塑行为参数错误在内容加载阶段失败")
+    _assert_true(
+        _array_contains_text(
+            bad_parameter_catalog.errors,
+            "card_states.enhancements[0].behaviors[0].amount"),
+        "重塑行为参数错误报告内容路径")
+
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
@@ -283,6 +455,56 @@ func _test_content_catalog_and_validator() -> void:
     var missing_version_catalog = ContentCatalogScript.new()
     _assert_true(not missing_version_catalog.load_from_definitions(missing_version_values), "缺少内容版本被拒绝")
     _assert_true(_array_contains_text(missing_version_catalog.errors, "缺少版本字段 version"), "版本错误稳定定位")
+
+    var unknown_target_zone_values := _catalog_definitions(catalog)
+    unknown_target_zone_values["consumables"]["consumables"][0]["targeting"]["zone"] = "hand"
+    var unknown_target_zone_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_target_zone_catalog.load_from_definitions(unknown_target_zone_values),
+        "未知消耗品目标区域在加载阶段失败")
+    _assert_true(
+        _array_contains_text(unknown_target_zone_catalog.errors, "未知目标区域 hand"),
+        "未知消耗品目标区域错误稳定定位")
+
+    var unknown_target_selection_values := _catalog_definitions(catalog)
+    unknown_target_selection_values["consumables"]["consumables"][0]["targeting"]["selection"] = "manual"
+    var unknown_target_selection_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_target_selection_catalog.load_from_definitions(unknown_target_selection_values),
+        "未知消耗品目标选择方式在加载阶段失败")
+    _assert_true(
+        _array_contains_text(unknown_target_selection_catalog.errors, "未知目标选择方式 manual"),
+        "未知消耗品目标选择方式错误稳定定位")
+
+    var none_minimum_values := _catalog_definitions(catalog)
+    none_minimum_values["consumables"]["consumables"][0]["targeting"]["minimum"] = 1
+    var none_minimum_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not none_minimum_catalog.load_from_definitions(none_minimum_values),
+        "none 区域 minimum 非零在加载阶段失败")
+    _assert_true(
+        _array_contains_text(none_minimum_catalog.errors, "none 区域 minimum 必须为 0"),
+        "none 区域 minimum 错误稳定定位")
+
+    var none_maximum_values := _catalog_definitions(catalog)
+    none_maximum_values["consumables"]["consumables"][0]["targeting"]["maximum"] = 1
+    var none_maximum_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not none_maximum_catalog.load_from_definitions(none_maximum_values),
+        "none 区域 maximum 非零在加载阶段失败")
+    _assert_true(
+        _array_contains_text(none_maximum_catalog.errors, "none 区域 maximum 必须为 0"),
+        "none 区域 maximum 错误稳定定位")
+
+    var run_deck_selection_values := _catalog_definitions(catalog)
+    run_deck_selection_values["consumables"]["consumables"][1]["targeting"]["selection"] = "first"
+    var run_deck_selection_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not run_deck_selection_catalog.load_from_definitions(run_deck_selection_values),
+        "run_deck 非法选择方式在加载阶段失败")
+    _assert_true(
+        _array_contains_text(run_deck_selection_catalog.errors, "未知目标选择方式 first"),
+        "run_deck 非法选择方式错误稳定定位")
 
     var missing_life_values := _catalog_definitions(catalog)
     missing_life_values["act_progression"]["acts"][0]["player"].erase("max_life")
@@ -3758,6 +3980,48 @@ func _test_consumable_shared_slots_and_generation_limit() -> void:
     _assert_true(engine.grant_consumable(engine.player, "hierophant", "测试"), "释放槽位后可以生成消耗品")
     _assert_equal(engine.player.consumable_ids.size(), 3, "重新生成后占满三格")
 
+func _test_battle_consumable_multi_effect_rollback() -> void:
+    var target = _card("9", "wind")
+    target.set_enhancement("multiplier")
+    var engine = _engine_with_hand([target], [], 7901)
+    var configured: bool = bool(engine.consumable_repository.configure({
+        "practice_offer_ids": ["battle_transaction_probe"],
+        "consumables": [{
+            "id": "battle_transaction_probe",
+            "name": "战斗事务探针",
+            "targeting": {"zone": "hand", "minimum": 1, "maximum": 1},
+            "effects": [
+                {"op": "gain_insight", "hand": "high_card", "pools": ["high"]},
+                {"op": "apply_enhancement", "enhancement": "bonus"},
+                {"op": "battle_transaction_fail", "amount": 0},
+            ],
+        }],
+    }))
+    _assert_true(configured, "战斗事务探针消耗品仓库配置成功")
+    _assert_true(
+        engine.consumable_service._handler_registry.register_handler(
+            ConsumableProbeHandler.new(["battle_transaction_fail"], true)),
+        "战斗事务失败探针注册成功")
+    engine.player.configure_consumables(["battle_transaction_probe"])
+    var card_before: Dictionary = target.persistent_reshape_state()
+    var progression_before: Dictionary = engine.player.hand_technique_progression.duplicate(true)
+    var owned_before: Array[String] = engine.player.owned_technique_ids.duplicate()
+    var consumables_before: Array[String] = engine.player.consumable_ids.duplicate()
+    var rng_state_before: int = int(engine.rng.state)
+
+    var result := engine.use_player_consumable(0, [target.id])
+
+    _assert_true(not result.get("success", false), "战斗多效果第二阶段后失败时整体失败")
+    _assert_true(result.get("rolled_back", false), "战斗多效果失败报告已完成事务回滚")
+    _assert_equal(target.persistent_reshape_state(), card_before, "失败恢复目标真气持久重塑状态")
+    _assert_equal(
+        engine.player.hand_technique_progression,
+        progression_before,
+        "失败恢复牌型功法成长")
+    _assert_equal(engine.player.owned_technique_ids, owned_before, "失败恢复已拥有功法")
+    _assert_equal(engine.player.consumable_ids, consumables_before, "失败不消费指定消耗品槽")
+    _assert_equal(engine.rng.state, rng_state_before, "失败恢复战斗消耗品随机状态")
+
 func _test_insight_growth_and_technique_acquisition() -> void:
     var high = _card("9", "wind")
     var pair := [_card("7", "forest"), _card("7", "fire")]
@@ -3994,6 +4258,475 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     _assert_true(restored != null, "下一场战斗保留被消耗品重塑的真气实例")
     _assert_equal(restored.reshape_finish, applied_finish, "战斗中施加的品相通过 RunDeck 跨战斗保存")
     _assert_true(restored.anomaly_snapshot()["marks"].is_empty(), "跨战斗重塑同步不会附带战斗异状")
+
+func _test_consumable_effect_registry_contract() -> void:
+    var registry = ConsumableEffectHandlerRegistryScript.new()
+    _assert_equal(
+        registry.operation_ids(),
+        ["apply_enhancement", "apply_random_finish", "gain_insight"],
+        "默认注册三个现有消耗品操作")
+
+    var duplicate_registry = ConsumableEffectHandlerRegistryScript.new(false)
+    _assert_true(
+        duplicate_registry.register_handler(ConsumableProbeHandler.new(["gain_insight"])),
+        "空注册表可以注册首个探针")
+    _assert_equal(
+        duplicate_registry.register_handler(ConsumableProbeHandler.new(["gain_insight"])),
+        false,
+        "重复 op 注册被拒绝")
+    _assert_true(
+        _array_contains_text(duplicate_registry.registration_errors(), "重复注册：gain_insight"),
+        "重复注册错误报告实际操作 ID")
+
+    var invalid_registry = ConsumableEffectHandlerRegistryScript.new(false)
+    _assert_equal(
+        invalid_registry.register_handler(ConsumableProbeHandler.new(["Bad-ID"])),
+        false,
+        "非法 snake_case 操作 ID 被拒绝")
+    _assert_true(
+        _array_contains_text(invalid_registry.registration_errors(), "稳定 snake_case"),
+        "非法 ID 错误说明稳定命名要求")
+
+    var empty_registry = ConsumableEffectHandlerRegistryScript.new(false)
+    _assert_equal(
+        empty_registry.register_handler(ConsumableProbeHandler.new([])),
+        false,
+        "空操作列表被拒绝")
+
+func _test_consumable_effect_validation_scope() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "消耗品校验测试基准内容有效")
+
+    var unknown_op_values := _catalog_definitions(catalog)
+    unknown_op_values["consumables"]["consumables"][0]["effects"] = [{"op": "unknown_op"}]
+    var unknown_op_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_op_catalog.load_from_definitions(unknown_op_values),
+        "未注册 op 使内容加载阶段明确失败")
+    _assert_true(
+        _array_contains_text(
+            unknown_op_catalog.errors,
+            "consumables.consumables[0].effects[0].op"),
+        "未注册 op 错误报告完整 scope")
+    _assert_true(
+        _array_contains_text(unknown_op_catalog.errors, "unknown_op"),
+        "未注册 op 错误包含操作名")
+
+    var bad_hand_values := _catalog_definitions(catalog)
+    bad_hand_values["consumables"]["consumables"][0]["effects"] = [
+        {"op": "gain_insight", "hand": "not_a_hand", "pools": ["high"]}]
+    var bad_hand_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_hand_catalog.load_from_definitions(bad_hand_values),
+        "非法精确牌型引用在加载阶段失败")
+    _assert_true(
+        _array_contains_text(bad_hand_catalog.errors, "引用未知精确牌型 not_a_hand"),
+        "非法牌型错误稳定定位")
+
+    var bad_pool_values := _catalog_definitions(catalog)
+    bad_pool_values["consumables"]["consumables"][0]["effects"] = [
+        {"op": "gain_insight", "hand": "high_card", "pools": ["not_a_pool"]}]
+    var bad_pool_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_pool_catalog.load_from_definitions(bad_pool_values),
+        "非法功法池引用在加载阶段失败")
+    _assert_true(
+        _array_contains_text(bad_pool_catalog.errors, "引用未知功法池 not_a_pool"),
+        "非法功法池错误稳定定位")
+
+    var bad_enhancement_values := _catalog_definitions(catalog)
+    bad_enhancement_values["consumables"]["consumables"][0]["effects"] = [
+        {"op": "apply_enhancement", "enhancement": "not_real"}]
+    var bad_enhancement_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_enhancement_catalog.load_from_definitions(bad_enhancement_values),
+        "非法强化引用在加载阶段失败")
+    _assert_true(
+        _array_contains_text(bad_enhancement_catalog.errors, "引用未知强化 not_real"),
+        "非法强化错误稳定定位")
+
+    var bad_finish_values := _catalog_definitions(catalog)
+    bad_finish_values["consumables"]["consumables"][0]["effects"] = [
+        {"op": "apply_random_finish", "finishes": ["negative"]}]
+    var bad_finish_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_finish_catalog.load_from_definitions(bad_finish_values),
+        "不能承载真气的品相引用在加载阶段失败")
+    _assert_true(
+        _array_contains_text(bad_finish_catalog.errors, "品相 negative 不能用于真气"),
+        "非法品相错误稳定定位")
+
+func _test_run_consumable_high_card_insight() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(
+        session.execute({"type": "setup_run", "seed": 77123}).success,
+        "心得测试本局建立")
+    session.growth.consumable_ids.append("high_card_insight")
+    var query := session.execute({"type": "query_consumable_use", "slot_index": 0})
+    _assert_true(query.success, "心得使用查询成功")
+    _assert_equal(query.payload_value("consumable_id"), "high_card_insight", "查询返回槽位消耗品 ID")
+    _assert_equal(query.payload_value("name"), "高牌心得", "查询返回消耗品名称")
+    _assert_equal(
+        query.payload_value("targeting"),
+        {"zone": "none", "selection": "deterministic_random"},
+        "心得目标协议为 none/deterministic_random")
+    _assert_equal(query.payload_value("selection"), "deterministic_random", "心得查询返回 selection")
+    _assert_equal(query.payload_value("minimum"), 0, "心得最少目标数为 0")
+    _assert_equal(query.payload_value("maximum"), 0, "心得最多目标数为 0")
+    _assert_equal(query.payload_value("eligible_targets"), [], "心得没有可选真气目标")
+    _assert_true(query.payload_value("can_use"), "心得可以无目标使用")
+
+    var before := int(session.growth.hand_progression("high_card")["slot_count"])
+    var use := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(use.success, "高牌心得无目标使用成功")
+    _assert_equal(
+        int(session.growth.hand_progression("high_card")["slot_count"]),
+        before + 1,
+        "高牌功法槽位 +1")
+    var applied: Array = use.payload_value("applied")
+    var acquired_id := str(applied[0]["acquired_technique_id"])
+    _assert_true(acquired_id != "", "高牌心得从合格池获得功法")
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "功法池校验内容目录有效")
+    var technique: Dictionary = catalog.get_by_id("technique", acquired_id)
+    _assert_equal(technique.get("pool"), "high", "只从高牌正式池获得功法")
+    _assert_equal(session.growth.consumable_ids, [], "使用后消耗品槽释放")
+    _assert_equal(int(session.growth.consumable_use_sequence), 1, "成功使用递增随机序号")
+
+func _test_run_consumable_insight_exhausted_pool() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77124}).success, "候选耗尽测试本局建立")
+    session.growth.consumable_ids.append("high_card_insight")
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "候选池内容目录有效")
+    var techniques: Dictionary = catalog.definition("techniques")
+    var high_ids: Array[String] = []
+    for value in techniques["techniques"]:
+        var technique_id := str(value["id"])
+        if str(value.get("pool", "")) == "high" \
+                and str(techniques["integration_statuses"].get(technique_id, "")) == "formal_complete":
+            high_ids.append(technique_id)
+    _assert_equal(high_ids.size(), 2, "高牌正式池当前共两门")
+    session.growth.hand_technique_progression["high_card"] = {
+        "slot_count": 1,
+        "sequence": high_ids,
+    }
+    var use := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(use.success, "功法池无候选时心得仍成功")
+    var applied: Array = use.payload_value("applied")
+    _assert_equal(str(applied[0]["acquired_technique_id"]), "", "候选耗尽时不跨池抽取")
+    _assert_equal(
+        int(session.growth.hand_progression("high_card")["slot_count"]),
+        2,
+        "候选耗尽时槽位仍 +1")
+    _assert_equal(session.growth.consumable_ids, [], "候选耗尽时消耗品仍释放")
+
+func _test_run_consumable_hierophant_run_deck() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77201}).success, "教皇测试本局建立")
+    session.growth.consumable_ids.append("hierophant")
+    var query := session.execute({"type": "query_consumable_use", "slot_index": 0})
+    _assert_true(query.success, "教皇使用查询成功")
+    _assert_equal(
+        query.payload_value("targeting"),
+        {"zone": "run_deck", "selection": "player_selected"},
+        "教皇目标协议为 run_deck/player_selected")
+    _assert_equal(query.payload_value("selection"), "player_selected", "教皇查询返回 selection")
+    _assert_equal(query.payload_value("minimum"), 1, "教皇最少选择一张")
+    _assert_equal(query.payload_value("maximum"), 2, "教皇至多选择两张")
+    var targets: Array = query.payload_value("eligible_targets")
+    _assert_equal(targets.size(), 52, "教皇可选目标为完整 RunDeck")
+    var first_target: Dictionary = targets[0]
+    for field in ["instance_id", "card_id", "rank", "suit", "enhancement", "finish", "seal", "display_name"]:
+        _assert_true(first_target.has(field), "教皇可选目标包含字段 %s" % field)
+    _assert_true(str(first_target["instance_id"]) != "", "可选目标携带稳定实例 ID")
+    _assert_true(str(first_target["card_id"]) != "", "可选目标携带牌型 ID")
+    _assert_equal(str(first_target["rank"]), "2", "可选目标携带点数")
+    _assert_true(str(first_target["suit"]) != "", "可选目标携带属性")
+    _assert_true(str(first_target["display_name"]) != "", "可选目标携带显示名称")
+
+    var ids: Array = [first_target["instance_id"], targets[1]["instance_id"]]
+    var use := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": ids})
+    _assert_true(use.success, "教皇选择两张真气成功")
+    _assert_equal(
+        str(session.growth.run_deck.card_data(str(ids[0]))["reshapes"]["enhancement"]),
+        "bonus",
+        "奖励牌写入 RunDeck 第一张")
+    _assert_equal(
+        str(session.growth.run_deck.card_data(str(ids[1]))["reshapes"]["enhancement"]),
+        "bonus",
+        "奖励牌写入 RunDeck 第二张")
+    _assert_equal(session.growth.consumable_ids, [], "教皇使用后释放槽位")
+
+    var progress = session.progress_snapshot()
+    var battle: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+    _assert_true(battle.setup_battle({"content_seed": 77201}, progress), "携带奖励牌的本局牌组进入战斗")
+    battle.execute({"type": "start_turn"})
+    var seen := false
+    for card in battle.engine.player.all_zone_cards():
+        if card.id != str(ids[0]):
+            continue
+        seen = true
+        _assert_equal(card.reshape_enhancement, "bonus", "后续战斗装配能看到强化")
+    _assert_true(seen, "被强化真气实例在战斗中出现")
+
+func _test_run_consumable_aura_determinism_and_save() -> void:
+    var target_a := ""
+    var first_a := ""
+    var first_b := ""
+    var second_a := ""
+    var second_b := ""
+
+    var session_a: RunSession = RunSessionScript.new()
+    _assert_true(session_a.execute({"type": "setup_run", "seed": 77301}).success, "光环甲本局建立")
+    session_a.growth.consumable_ids.assign(["aura", "aura"])
+    var cards_a: Array = session_a.growth.run_deck.cards_snapshot()
+    target_a = str(cards_a[0]["instance_id"])
+    var use_a := session_a.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [target_a]})
+    _assert_true(use_a.success, "甲第一次光环使用成功")
+    first_a = str(session_a.growth.run_deck.card_data(target_a)["reshapes"]["finish"])
+    _assert_true(first_a in ["foil", "holographic", "polychrome"], "光环只产生三种合格品相")
+
+    var session_b: RunSession = RunSessionScript.new()
+    _assert_true(session_b.execute({"type": "setup_run", "seed": 77301}).success, "光环乙本局建立")
+    session_b.growth.consumable_ids.assign(["aura", "aura"])
+    var use_b := session_b.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [target_a]})
+    _assert_true(use_b.success, "乙第一次光环使用成功")
+    first_b = str(session_b.growth.run_deck.card_data(target_a)["reshapes"]["finish"])
+    _assert_equal(first_b, first_a, "相同 seed 与 sequence 得到相同品相")
+
+    var save = RunSaveDataScript.new().capture(session_a)
+    var restored_dict: Dictionary = save.restore_session()
+    _assert_true(restored_dict.get("success", false), "使用后的存档可以恢复")
+    var restored: RunSession = restored_dict["run_session"]
+    _assert_equal(restored.growth.consumable_use_sequence, 1, "读档保留使用序号")
+    var cards_restored: Array = restored.growth.run_deck.cards_snapshot()
+    var target_restored := str(cards_restored[1]["instance_id"])
+    var use_restored := restored.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [target_restored]})
+    _assert_true(use_restored.success, "读档后继续使用光环成功")
+    second_a = str(restored.growth.run_deck.card_data(target_restored)["reshapes"]["finish"])
+
+    var target_b := str(session_b.growth.run_deck.cards_snapshot()[1]["instance_id"])
+    var use_b2 := session_b.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [target_b]})
+    _assert_true(use_b2.success, "乙第二次光环使用成功")
+    second_b = str(session_b.growth.run_deck.card_data(target_b)["reshapes"]["finish"])
+    _assert_equal(second_b, second_a, "存档读档前后结果一致")
+
+func _test_run_consumable_invalid_targets() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77401}).success, "非法目标测试本局建立")
+    session.growth.consumable_ids.append("aura")
+    var deck_ids: Array = session.growth.run_deck.cards_snapshot()
+    var first_id := str(deck_ids[0]["instance_id"])
+    var second_id := str(deck_ids[1]["instance_id"])
+
+    var not_in_deck := session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["ghost_card"]})
+    _assert_true(not not_in_deck.success, "不属于 RunDeck 的目标明确失败")
+    var duplicate := session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [first_id, first_id]})
+    _assert_true(not duplicate.success, "重复实例 ID 明确失败")
+    var too_few := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(not too_few.success, "少于 minimum 明确失败")
+    var too_many := session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [first_id, second_id]})
+    _assert_true(not too_many.success, "多于 maximum 明确失败")
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "随机目标拒绝手选测试内容目录有效")
+    var service = ConsumableUseServiceScript.new(
+        null, catalog, ContentValidatorScript.HAND_IDS, ContentValidatorScript.POOL_IDS)
+    var random_definition: Dictionary = catalog.get_by_id("consumable", "aura")
+    random_definition["targeting"]["selection"] = "deterministic_random"
+    var manual_random := service.use(
+        session.growth, 0, [first_id], 77401, random_definition)
+    _assert_true(
+        not manual_random.get("success", false),
+        "deterministic_random 传入手动目标明确失败")
+    _assert_true(
+        str(manual_random.get("reason", "")).contains("不允许手动指定目标"),
+        "deterministic_random 手动目标失败原因明确")
+    _assert_equal(int(session.growth.consumable_use_sequence), 0, "非法目标失败不递增使用序号")
+    _assert_equal(session.growth.consumable_ids, ["aura"], "非法目标失败不删除消耗品")
+    for card in session.growth.run_deck.cards_snapshot():
+        _assert_equal(str(card["reshapes"]["finish"]), "", "非法目标失败不改动牌组")
+
+func _test_run_consumable_transaction_rollback() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77501}).success, "回滚测试本局建立")
+    session.growth.experience = 50
+    session.growth.consumable_ids.append("high_card_insight")
+    session.growth.consumable_use_sequence = 3
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "回滚测试内容目录有效")
+
+    var registry = ConsumableEffectHandlerRegistryScript.new()
+    _assert_true(
+        registry.register_handler(ConsumableProbeHandler.new(["test_gain"])),
+        "成功探针注册")
+    _assert_true(
+        registry.register_handler(ConsumableProbeHandler.new(["test_fail"], true)),
+        "失败探针注册")
+    var service = ConsumableUseServiceScript.new(
+        registry, catalog, ContentValidatorScript.HAND_IDS, ContentValidatorScript.POOL_IDS)
+
+    var crafted_success := {
+        "id": "high_card_insight",
+        "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+        "effects": [{"op": "test_gain", "amount": 5}],
+    }
+    var ok := service.use(session.growth, 0, [], 77501, crafted_success)
+    _assert_true(ok.get("success", false), "探针效果成功路径通过事务")
+    _assert_equal(session.growth.experience, 55, "探针效果按工作副本应用")
+    _assert_equal(session.growth.consumable_ids, [], "成功后删除消耗品")
+    _assert_equal(int(session.growth.consumable_use_sequence), 4, "成功后递增序号")
+
+    session.growth.experience = 50
+    session.growth.consumable_ids.append("high_card_insight")
+    var state_before = session.growth.capture_mutation_state()
+    var crafted_failing := {
+        "id": "high_card_insight",
+        "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+        "effects": [
+            {"op": "test_gain", "amount": 5},
+            {"op": "test_fail", "amount": 7},
+        ],
+    }
+    var failed := service.use(session.growth, 0, [], 77501, crafted_failing)
+    _assert_true(not failed.get("success", false), "第一个效果成功、第二个效果失败时事务失败")
+    _assert_equal(
+        session.growth.capture_mutation_state(),
+        state_before,
+        "失败后历练、生命、库存、功法、牌组与随机序号全部不变")
+
+func _test_run_consumable_failed_use_keeps_randomness() -> void:
+    var session_a: RunSession = RunSessionScript.new()
+    _assert_true(session_a.execute({"type": "setup_run", "seed": 77601}).success, "随机保持甲本局建立")
+    session_a.growth.consumable_ids.append("aura")
+    var target := str(session_a.growth.run_deck.cards_snapshot()[0]["instance_id"])
+    var use_a := session_a.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [target]})
+    _assert_true(use_a.success, "甲直接成功使用光环")
+    var finish_a := str(session_a.growth.run_deck.card_data(target)["reshapes"]["finish"])
+
+    var session_b: RunSession = RunSessionScript.new()
+    _assert_true(session_b.execute({"type": "setup_run", "seed": 77601}).success, "随机保持乙本局建立")
+    session_b.growth.consumable_ids.append("aura")
+    var failed := session_b.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": ["not_in_deck"]})
+    _assert_true(not failed.success, "乙先发生一次失败操作")
+    _assert_equal(int(session_b.growth.consumable_use_sequence), 0, "失败不递增序号")
+    var use_b := session_b.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [target]})
+    _assert_true(use_b.success, "乙随后合法使用成功")
+    var finish_b := str(session_b.growth.run_deck.card_data(target)["reshapes"]["finish"])
+    _assert_equal(finish_b, finish_a, "失败后随机结果与没有发生失败操作时一致")
+
+func _test_run_consumable_slot_release_order() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77701}).success, "槽位顺序测试本局建立")
+    session.growth.consumable_ids.assign(["aura", "hierophant", "high_card_insight"])
+    var first_id := str(session.growth.run_deck.cards_snapshot()[0]["instance_id"])
+    var use_zero := session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [first_id]})
+    _assert_true(use_zero.success, "使用 0 号槽成功")
+    _assert_equal(
+        session.growth.consumable_ids,
+        ["hierophant", "high_card_insight"],
+        "0 号槽释放后其余槽位顺序保持")
+    var use_one := session.execute({
+        "type": "use_consumable", "slot_index": 1, "selected_instance_ids": []})
+    _assert_true(use_one.success, "使用释放后的新 1 号槽成功")
+    _assert_equal(
+        session.growth.consumable_ids,
+        ["hierophant"],
+        "心得释放后剩余槽位顺序保持")
+
+func _test_run_consumable_phase_gate() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77801}).success, "阶段门禁测试本局建立")
+    session.growth.consumable_ids.append("high_card_insight")
+    var available: Array = session.snapshot().available_node_ids
+    _assert_true(
+        session.execute({"type": "begin_node", "node_id": str(available[0])}).success,
+        "进入节点")
+    var in_progress := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(not in_progress.success, "节点执行中不能使用消耗品")
+    _assert_true(session.execute({"type": "complete_node"}).success, "完成节点进入奖励")
+    var reward_phase := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(not reward_phase.success, "奖励阶段不能使用消耗品")
+    _assert_true(session.execute({"type": "claim_reward", "bundle_id": ""}).success, "领取奖励")
+    var ready := session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(ready.success, "地图待选阶段可以使用消耗品")
+
+func _test_run_consumable_save_round_trip() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77901}).success, "存档往返测试本局建立")
+    session.growth.consumable_ids.assign(["aura", "high_card_insight"])
+    var deck_snapshot: Array = session.growth.run_deck.cards_snapshot()
+    var reshaped_id := str(deck_snapshot[3]["instance_id"])
+    var applied = session.growth.run_deck.apply_card_reshape(
+        reshaped_id, "enhancement", "multiplier")
+    _assert_true(applied.get("success", false), "测试牌组先完成一次重塑")
+    var aura_id := str(deck_snapshot[0]["instance_id"])
+    var use := session.execute({
+        "type": "use_consumable", "slot_index": 0,
+        "selected_instance_ids": [aura_id]})
+    _assert_true(use.success, "存档前完成一次光环使用")
+    _assert_equal(int(session.growth.consumable_use_sequence), 1, "存档前使用序号为 1")
+
+    var save = RunSaveDataScript.new().capture(session)
+    var restored_dict: Dictionary = save.restore_session()
+    _assert_true(restored_dict.get("success", false), "存档恢复成功")
+    var restored: RunSession = restored_dict["run_session"]
+    _assert_equal(restored.growth.consumable_ids, ["high_card_insight"], "读档保留消耗品库存")
+    _assert_equal(int(restored.growth.consumable_use_sequence), 1, "读档保留 consumable_use_sequence")
+    _assert_equal(
+        str(restored.growth.run_deck.card_data(reshaped_id)["reshapes"]["enhancement"]),
+        "multiplier",
+        "读档保留已修改的 RunDeck 强化")
+    _assert_equal(
+        str(restored.growth.run_deck.card_data(aura_id)["reshapes"]["finish"]),
+        str(session.growth.run_deck.card_data(aura_id)["reshapes"]["finish"]),
+        "读档保留光环品相")
+    _assert_equal(
+        restored.growth.run_deck.card_count(),
+        session.growth.run_deck.card_count(),
+        "读档保留 RunDeck 完整牌数")
+
+func _test_consumable_no_central_op_branches() -> void:
+    var battle_source: String = FileAccess.get_file_as_string(
+        "res://core/battle_consumable_service.gd")
+    var validator_source: String = FileAccess.get_file_as_string(
+        "res://core/content_validator.gd")
+    for op in ["gain_insight", "apply_enhancement", "apply_random_finish"]:
+        _assert_true(
+            not battle_source.contains(op),
+            "战斗兼容适配器不再按 op 写中央分支：%s" % op)
+        _assert_true(
+            not validator_source.contains(op),
+            "内容校验器不再按 op 写中央分支：%s" % op)
 
 func _test_battle_session_commands_snapshots_and_events() -> void:
     var configuration := {

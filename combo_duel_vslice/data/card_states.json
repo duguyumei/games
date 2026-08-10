@@ -13,19 +13,23 @@
     {"id": "other", "capacity": -1, "lifecycle": "definition"}
   ],
   "enhancements": [
-    {"id": "bonus", "name": "奖励牌"},
-    {"id": "multiplier", "name": "倍率牌"},
-    {"id": "wild", "name": "万能牌"},
-    {"id": "glass", "name": "玻璃牌"},
+    {"id": "bonus", "name": "奖励牌", "behaviors": [{"trigger": "card_contribution", "handler": "add_card_contribution", "amount": 2}]},
+    {"id": "multiplier", "name": "倍率牌", "behaviors": [{"trigger": "technique_multiplier", "handler": "add_technique_multiplier", "amount": 2}]},
+    {"id": "wild", "name": "万能牌", "behaviors": [{"trigger": "attribute_check", "handler": "attribute_alias", "attributes": ["wind", "forest", "fire", "mountain"]}]},
+    {"id": "glass", "name": "玻璃牌", "behaviors": [{"trigger": "effective_qi", "handler": "multiply_effective_qi", "factor": 2}]},
     {"id": "steel", "name": "钢铁牌"},
-    {"id": "stone", "name": "石头牌"},
+    {"id": "stone", "name": "石头牌", "behaviors": [
+      {"trigger": "effective_qi", "handler": "set_effective_qi", "value": 0},
+      {"trigger": "anomaly_apply", "handler": "block_anomaly_application", "reason": "石头牌不能获得异状"},
+      {"trigger": "reshape_applied", "handler": "clear_anomalies_on_apply"}
+    ]},
     {"id": "gold", "name": "黄金牌"},
     {"id": "lucky", "name": "幸运牌"}
   ],
   "finishes": [
-    {"id": "foil", "name": "箔面", "allowed_carriers": ["card", "inner_skill"]},
-    {"id": "holographic", "name": "镭射", "allowed_carriers": ["card", "inner_skill"]},
-    {"id": "polychrome", "name": "多彩", "allowed_carriers": ["card", "inner_skill"]},
+    {"id": "foil", "name": "箔面", "allowed_carriers": ["card", "inner_skill"], "behaviors": [{"trigger": "card_contribution", "handler": "add_card_contribution", "amount": 3}]},
+    {"id": "holographic", "name": "镭射", "allowed_carriers": ["card", "inner_skill"], "behaviors": [{"trigger": "technique_multiplier", "handler": "add_technique_multiplier", "amount": 1}]},
+    {"id": "polychrome", "name": "多彩", "allowed_carriers": ["card", "inner_skill"], "behaviors": [{"trigger": "power_amp", "handler": "add_power_amp_percent", "amount": 20}]},
     {"id": "negative", "name": "负片", "allowed_carriers": ["inner_skill"]}
   ],
   "imprints": [
