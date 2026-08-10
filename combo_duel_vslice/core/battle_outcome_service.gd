@@ -94,11 +94,15 @@ func set_scenario_error(error_detail: String) -> void:
 func on_battle_end_timing(_event) -> Dictionary:
     var cleared_power_modifiers: int = power_modifiers.size()
     var cleared_round_actors: int = round_service.current_round_actors.size()
+    var cleared_defense: int = player.defense + enemy.defense
+    player.defense = 0
+    enemy.defense = 0
     power_modifiers.clear()
     round_service.current_round_actors.clear()
     return {
         "success": true,
-        "detail": "清理 %d 项功法修正与 %d 个回合行动方引用" % [
+        "detail": "清理 %d 点防御、%d 项功法修正与 %d 个回合行动方引用" % [
+            cleared_defense,
             cleared_power_modifiers,
             cleared_round_actors],
     }

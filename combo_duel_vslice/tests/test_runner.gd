@@ -12,6 +12,8 @@ const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSideScript = preload("res://core/battle_side.gd")
 const BattleFlowCoordinatorScript = preload("res://core/battle_flow_coordinator.gd")
 const BattleTimingSystemScript = preload("res://core/battle_timing_system.gd")
+const DefenseRetentionPolicyScript = preload(
+    "res://core/defense_retention_policy.gd")
 const StatusSystemScript = preload("res://core/status_system.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
@@ -90,6 +92,29 @@ class TimingProbe:
     func record(event, label: String) -> Dictionary:
         calls.append("%s:%s:%d" % [event.timing, label, event.serial])
         return {"success": true, "detail": label}
+
+class DefenseRetentionProbe:
+    extends RefCounted
+
+    var target
+    var additional_percent: int
+    var prevents_decay: bool
+
+    func _init(
+            target_value,
+            additional_percent_value: int = 0,
+            prevents_decay_value: bool = false) -> void:
+        target = target_value
+        additional_percent = additional_percent_value
+        prevents_decay = prevents_decay_value
+
+    func defense_retention_modifier(side, _context: Dictionary) -> Dictionary:
+        if side != target:
+            return {}
+        return {
+            "additional_retention_percent": additional_percent,
+            "prevent_decay": prevents_decay,
+        }
 
 class RunEffectProbeHandler:
     extends RefCounted
@@ -202,6 +227,7 @@ func _initialize() -> void:
     _test_card_zone_service_contract()
     _test_battle_flow_coordinator_contract()
     _test_battle_timing_system_contract_and_integration()
+    _test_defense_retention_policy_and_round_decay()
     _test_awakening_battle_runtime()
     _test_awakening_group_completion_paths()
     _test_f2d2_formal_enhancement_runtime()
@@ -2904,8 +2930,12 @@ func _test_battle_timing_system_contract_and_integration() -> void:
         "action_window_start",
     ], "单方战斗以统一顺序进入战斗、回合、补牌和行动窗口时点")
     engine.end_player_turn()
-    _assert_equal(engine.timing_system.history[-2]["timing"], "action_window_end", "结束回合先关闭行动窗口")
-    _assert_equal(engine.timing_system.history[-1]["timing"], "turn_end", "行动窗口关闭后进入行动方回合结束")
+    _assert_equal(engine.timing_system.history[-3]["timing"], "action_window_end", "结束回合先关闭行动窗口")
+    _assert_equal(
+        engine.timing_system.history.slice(-2).map(
+            func(entry): return entry["actor_id"]),
+        ["player", "enemy"],
+        "行动窗口关闭后双方依次进入回合结束")
     engine.start_player_turn()
     var battle_start_count := 0
     for entry in engine.timing_system.history:
@@ -2935,6 +2965,7 @@ func _test_battle_timing_system_contract_and_integration() -> void:
     _assert_equal(ending_card.anomaly_poison, "", "战斗结束时点清除真气异状")
     _assert_true(engine.player.stacks.is_empty() and engine.enemy.stacks.is_empty(), "战斗结束时点清除敌我临时层数")
     _assert_equal(engine.delayed_effects.size(), 0, "战斗结束时点清除未到期延迟记录")
+    _assert_equal(engine.player.defense + engine.enemy.defense, 0, "战斗结束时点清除双方防御")
 
     var scripted = CombatEngineScript.new()
     _assert_true(scripted.setup_scripted_battle(2308), "双方时点集成测试载入脚本战斗")
@@ -2944,6 +2975,130 @@ func _test_battle_timing_system_contract_and_integration() -> void:
         if entry["timing"] == "turn_start":
             turn_start_actor_ids.append(entry["actor_id"])
     _assert_equal(turn_start_actor_ids, ["player", "enemy"], "敌我通过同一种行动方回合开始时点进入正常补牌")
+
+func _test_defense_retention_policy_and_round_decay() -> void:
+    var side = BattleSideScript.new("保留规则测试", "retention_probe")
+    var policy = DefenseRetentionPolicyScript.new()
+    for test_case in [
+        {"before": 1, "after": 0},
+        {"before": 3, "after": 1},
+        {"before": 20, "after": 10},
+    ]:
+        side.defense = int(test_case["before"])
+        var result: Dictionary = policy.apply_decay(side)
+        _assert_equal(result["before"], test_case["before"], "默认衰减记录衰减前防御")
+        _assert_equal(result["after"], test_case["after"], "默认 50% 保留比例显式向下取整")
+        _assert_equal(result["lost"], test_case["before"] - test_case["after"], "默认衰减记录失去防御")
+        _assert_equal(result["retention_percent"], 50, "默认防御保留比例为 50%")
+        _assert_true(not result["prevented"], "默认防御衰减未被阻止")
+        _assert_true(result["side"] == side, "结构化衰减结果保留战斗方")
+
+    var bonus_provider = DefenseRetentionProbe.new(side, 25)
+    _assert_true(policy.register_provider("test.retention_bonus", bonus_provider), "保留比例提供者可以注册")
+    _assert_true(
+        not policy.register_provider("test.retention_bonus", bonus_provider),
+        "保留比例提供者 ID 不可重复注册")
+    side.defense = 20
+    var bonus_result: Dictionary = policy.apply_decay(side)
+    _assert_equal(bonus_result["retention_percent"], 75, "额外保留比例与默认比例相加")
+    _assert_equal(bonus_result["after"], 15, "合并全部比例后只取整一次")
+
+    var lower_provider = DefenseRetentionProbe.new(side, -200)
+    _assert_true(policy.register_provider("test.retention_lower", lower_provider), "负向保留比例提供者可以注册")
+    side.defense = 20
+    var clamped_result: Dictionary = policy.apply_decay(side)
+    _assert_equal(clamped_result["retention_percent"], 0, "最终保留比例下限为 0%")
+    _assert_equal(clamped_result["after"], 0, "0% 保留不会产生负防御")
+    _assert_true(policy.unregister_provider("test.retention_lower"), "负向保留比例提供者可以注销")
+
+    var upper_provider = DefenseRetentionProbe.new(side, 200)
+    _assert_true(policy.register_provider("test.retention_upper", upper_provider), "正向保留比例提供者可以注册")
+    side.defense = 20
+    var upper_result: Dictionary = policy.apply_decay(side)
+    _assert_equal(upper_result["retention_percent"], 100, "最终保留比例上限为 100%")
+    _assert_equal(upper_result["after"], 20, "比例上限保证防御不会增长")
+    _assert_true(not upper_result["prevented"], "比例达到 100% 不伪装为不衰减覆盖")
+    _assert_true(policy.unregister_provider("test.retention_upper"), "正向保留比例提供者可以注销")
+
+    var prevent_provider = DefenseRetentionProbe.new(side, 0, true)
+    _assert_true(policy.register_provider("test.retention_prevent", prevent_provider), "不衰减覆盖提供者可以注册")
+    side.defense = 20
+    var prevented_result: Dictionary = policy.apply_decay(side)
+    _assert_equal(prevented_result["retention_percent"], 100, "不衰减覆盖最终比例为 100%")
+    _assert_equal(prevented_result["after"], 20, "不衰减覆盖完整保留防御")
+    _assert_true(prevented_result["prevented"], "结构化结果记录衰减被阻止")
+    _assert_true(policy.unregister_provider("test.retention_prevent"), "保留比例提供者可以注销")
+    _assert_true(not policy.unregister_provider("test.retention_prevent"), "重复注销提供者返回失败")
+
+    var engine = CombatEngineScript.new()
+    engine.setup(82301, false)
+    engine.start_player_turn()
+    _assert_equal(engine.current_round_actors, [engine.player], "非脚本模式敌方没有本回合行动资格")
+    engine.player.defense = 20
+    engine.enemy.defense = 5
+    var lifecycle_observations: Array[String] = []
+    engine.timing_system.register_handler(
+        BattleTimingSystemScript.ACTION_WINDOW_END,
+        "test.capture_defense_before_decay",
+        1,
+        func(_event):
+            lifecycle_observations.append("action_window:%d:%d" % [
+                engine.player.defense, engine.enemy.defense])
+            return {"success": true})
+    engine.timing_system.register_handler(
+        BattleTimingSystemScript.TURN_END,
+        "test.capture_defense_after_decay",
+        1,
+        func(event):
+            lifecycle_observations.append("turn_end:%s:%d" % [
+                event.actor.owner_id, event.actor.defense])
+            if event.actor == engine.player:
+                event.actor.add_defense(8)
+            return {"success": true})
+    engine.end_player_turn()
+    _assert_equal(lifecycle_observations, [
+        "action_window:20:5",
+        "turn_end:player:10",
+        "turn_end:enemy:2",
+    ], "防御衰减位于行动窗口结束后、双方所有 TURN_END 效果前")
+    _assert_equal(engine.player.defense, 18, "回合结束新获得防御不参与已完成的衰减")
+    _assert_equal(engine.enemy.defense, 2, "无行动资格的一方同样完成一次衰减")
+    _assert_equal(engine.last_defense_decay_results[0]["lost"], 10, "回合服务保留我方结构化衰减结果")
+    _assert_equal(engine.last_defense_decay_results[1]["side_id"], "enemy", "回合服务保留敌方结构化衰减结果")
+    var timing_count_after_round: int = engine.timing_system.history.size()
+    engine.round_service.finish_round_end()
+    _assert_equal(engine.player.defense, 18, "同一完整回合重复结束不会再次衰减")
+    _assert_equal(engine.timing_system.history.size(), timing_count_after_round, "同一完整回合重复结束不重发 TURN_END")
+
+    engine.timing_system.unregister_handler(
+        BattleTimingSystemScript.TURN_END,
+        "test.capture_defense_after_decay")
+    engine.start_player_turn()
+    engine.player.defense = 20
+    engine.enemy.defense = 20
+    var engine_provider = DefenseRetentionProbe.new(engine.player, 25)
+    _assert_true(
+        engine.register_defense_retention_provider(
+            "test.engine_retention_bonus", engine_provider),
+        "战斗引擎公开统一保留比例提供者入口")
+    engine.end_player_turn()
+    _assert_equal(engine.player.defense, 15, "引擎提供者入口只修改命中的持有方")
+    _assert_equal(engine.enemy.defense, 10, "提供者默认不影响另一方")
+    _assert_true(
+        engine.unregister_defense_retention_provider(
+            "test.engine_retention_bonus"),
+        "战斗引擎公开统一保留比例提供者注销入口")
+    _assert_true(
+        engine.timing_system.unregister_handler(
+            BattleTimingSystemScript.ACTION_WINDOW_END,
+            "test.capture_defense_before_decay"),
+        "时点测试完成后注销捕获处理器")
+
+    engine.player.defense = 7
+    engine.enemy.defense = 9
+    engine.enemy.life = 0
+    engine._update_battle_state()
+    _assert_equal(engine.player.defense + engine.enemy.defense, 0, "战斗结束时双方防御清空")
 
 func _test_status_behavior_registry_contract() -> void:
     var registry = StatusBehaviorRegistryScript.new()
@@ -5035,6 +5190,7 @@ func _test_delayed_power_snapshot() -> void:
     engine.power_modifiers["straight"] = {"power_amp_percent": 500}
     engine.end_player_turn()
     _assert_equal(engine.enemy.life, 80, "第一个回合结束尚未结算延迟")
+    engine.start_player_turn()
     engine.end_player_turn()
     _assert_equal(engine.enemy.life, 74, "第二个回合结束按旧快照造成一段 6 伤害")
     _assert_equal(engine.delayed_effects.size(), 0, "延迟结算后移除记录")

@@ -137,6 +137,10 @@ var battle_start_card_effects_applied: bool:
 var current_round_actors: Array:
     get: return round_service.current_round_actors
     set(value): round_service.current_round_actors = value
+var defense_retention_policy:
+    get: return round_service.defense_retention_policy
+var last_defense_decay_results: Array[Dictionary]:
+    get: return round_service.last_defense_decay_results
 
 func _init(game_log_override = null, content_catalog_override = null) -> void:
     if game_log_override != null:
@@ -462,6 +466,12 @@ func start_player_turn() -> Array:
 func end_player_turn() -> void:
     round_service.end_player_turn()
 
+func register_defense_retention_provider(provider_id: String, provider) -> bool:
+    return defense_retention_policy.register_provider(provider_id, provider)
+
+func unregister_defense_retention_provider(provider_id: String) -> bool:
+    return defense_retention_policy.unregister_provider(provider_id)
+
 func _finish_round_end() -> void:
     round_service.finish_round_end()
 
@@ -563,6 +573,7 @@ func resolve_external_enemy_action() -> Dictionary:
     _sync_action_service_modes()
     var result: Dictionary = action_service.resolve_locked_enemy_action_once()
     if result.get("success", false) \
+            and battle_state == "active" \
             and external_round_end_requested \
             and not battle_flow.can_act(enemy):
         _finish_round_end()

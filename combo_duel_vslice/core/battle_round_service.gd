@@ -8,12 +8,15 @@ extends RefCounted
 ## CombatEngine 通过回调接入，避免回合服务复制一份敌方 AI 规则。
 
 const BattleTimingSystemScript = preload("res://core/battle_timing_system.gd")
+const DefenseRetentionPolicyScript = preload(
+    "res://core/defense_retention_policy.gd")
 
 var player
 var enemy
 var battle_flow
 var timing_system
 var trigger_queue
+var defense_retention_policy := DefenseRetentionPolicyScript.new()
 
 var scripted_mode: bool = false
 var external_enemy_action_mode: bool = false
@@ -23,6 +26,7 @@ var round_ended: bool = false
 var external_round_end_requested: bool = false
 var battle_start_card_effects_applied: bool = false
 var current_round_actors: Array = []
+var last_defense_decay_results: Array[Dictionary] = []
 
 var _battle_state: Callable
 var _lock_enemy_action: Callable
@@ -59,6 +63,7 @@ func reset() -> void:
     external_round_end_requested = false
     battle_start_card_effects_applied = false
     current_round_actors.clear()
+    last_defense_decay_results.clear()
 
 func set_modes(is_scripted: bool, uses_external_enemy_actions: bool) -> void:
     scripted_mode = is_scripted
@@ -156,7 +161,7 @@ func start_player_turn() -> Array:
     return drawn
 
 func end_player_turn() -> void:
-    if round_ended and scripted_mode:
+    if round_ended or _battle_state.call() != "active":
         return
     battle_flow.forfeit_remaining(player, "玩家结束当前回合")
     if external_enemy_action_mode:
@@ -167,18 +172,34 @@ func end_player_turn() -> void:
         return
     if _battle_state.call() == "active" and battle_flow.can_act(enemy):
         _resolve_enemy_only_actions.call()
-    finish_round_end()
+    if _battle_state.call() == "active":
+        finish_round_end()
     _state_changed.call()
 
-func finish_round_end() -> void:
-    if round_ended and scripted_mode:
-        return
+func finish_round_end() -> Array[Dictionary]:
+    if round_ended or _battle_state.call() != "active":
+        return last_defense_decay_results.duplicate(true)
     round_ended = true
-    var ending_actors: Array = current_round_actors if not current_round_actors.is_empty() else [player]
+    var ending_actors: Array = [player, enemy]
     timing_system.emit_timing(BattleTimingSystemScript.ACTION_WINDOW_END, {
         "round_number": turn_number,
         "actors": ending_actors,
     })
+    last_defense_decay_results.clear()
+    for side in ending_actors:
+        last_defense_decay_results.append(
+            defense_retention_policy.apply_decay(side, {
+                "timing": "round_end_defense_decay",
+                "round_number": turn_number,
+                "actor": side,
+                "actors": ending_actors,
+            }))
+    trigger_queue.add_history(
+        "defense_decay",
+        "双方防御衰减",
+        "完整回合规则",
+        "成功",
+        _defense_decay_detail(last_defense_decay_results))
     for side in ending_actors:
         timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
             "round_number": turn_number,
@@ -187,3 +208,16 @@ func finish_round_end() -> void:
         })
     trigger_queue.add_history("player_turn_end", "玩家回合结束", "规则", "成功")
     _update_battle_state.call()
+    return last_defense_decay_results.duplicate(true)
+
+func _defense_decay_detail(results: Array[Dictionary]) -> String:
+    var details: Array[String] = []
+    for result in results:
+        details.append("%s %d→%d（保留 %d%%%s）" % [
+            result["side"].name,
+            int(result["before"]),
+            int(result["after"]),
+            int(result["retention_percent"]),
+            "，阻止衰减" if bool(result["prevented"]) else "",
+        ])
+    return "｜".join(details)
