@@ -2,13 +2,13 @@
   "version": 3,
   "pool_membership": {
     "high_card": ["high"],
-    "pair": ["pair_two_pair"],
-    "two_pair": ["pair_two_pair"],
-    "three_kind": ["three_full_house"],
-    "full_house": ["three_full_house"],
-    "four_kind": ["four_five"],
-    "five_kind": ["four_five"],
-    "straight": ["straight"]
+    "pair": ["pair"],
+    "two_pair": ["pair"],
+    "three_kind": ["three"],
+    "straight": ["straight"],
+    "full_house": ["pair", "three"],
+    "four_kind": ["bomb"],
+    "five_kind": ["bomb"]
   },
   "integration_statuses": {
     "fire_sparks": "regression_fixture",

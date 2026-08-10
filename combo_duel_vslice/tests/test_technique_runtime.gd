@@ -68,6 +68,10 @@ func _test_technique_entities_are_individual_resources() -> void:
         repository.configure(catalog.definition("techniques"), true),
         "功法仓库建立统一实体索引")
     _assert_equal(repository.definitions.size(), 47, "七门纵切夹具、三十八门风功法与两门产线探针均建立实体")
+    var retired_pool_ids := ["pair_two_pair", "three_full_house", "four_five"]
+    for technique_id in repository.definitions:
+        var pool_id := str(repository.get_definition(str(technique_id)).pool)
+        _assert_true(not retired_pool_ids.has(pool_id), "%s 正式功法资源不再使用旧池 ID" % str(technique_id))
     var wind_ids := [
         "sweeping_wind_sleeve", "full_sleeve_wind", "wind_transforms_force",
         "layered_leaves_return_tide", "long_wind_full_sleeve", "double_wind_continue_form",
@@ -86,9 +90,9 @@ func _test_technique_entities_are_individual_resources() -> void:
     ]
     var wind_pool_counts := {
         "high": 0,
-        "pair_two_pair": 0,
-        "three_full_house": 0,
-        "four_five": 0,
+        "pair": 0,
+        "three": 0,
+        "bomb": 0,
         "straight": 0,
     }
     for wind_id in wind_ids:
@@ -99,9 +103,9 @@ func _test_technique_entities_are_individual_resources() -> void:
     _assert_equal(wind_ids.size(), 38, "风运转功法清单固定为38门")
     _assert_equal(wind_pool_counts, {
         "high": 10,
-        "pair_two_pair": 8,
-        "three_full_house": 8,
-        "four_five": 8,
+        "pair": 8,
+        "three": 8,
+        "bomb": 8,
         "straight": 4,
     }, "风功法五个共用池数量为10/8/8/8/4")
     for technique_id in repository.definitions:

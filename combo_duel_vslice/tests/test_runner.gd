@@ -450,6 +450,21 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(not duplicate_catalog.load_from_definitions(duplicate_values), "重复内容 ID 被拒绝")
     _assert_true(_array_contains_text(duplicate_catalog.errors, "ID 重复：fire_sparks"), "重复 ID 错误稳定定位")
 
+    _assert_equal(
+        ContentValidatorScript.POOL_IDS,
+        ["high", "pair", "three", "straight", "bomb"],
+        "运行内容只承认五个新基础功法池 ID")
+    for old_pool_id in ["pair_two_pair", "three_full_house", "four_five"]:
+        var legacy_pool_values := _catalog_definitions(catalog)
+        legacy_pool_values["techniques"]["techniques"][0]["pool"] = old_pool_id
+        var legacy_pool_catalog = ContentCatalogScript.new()
+        _assert_true(
+            not legacy_pool_catalog.load_from_definitions(legacy_pool_values),
+            "旧功法池 ID %s 在正式内容加载时失败" % old_pool_id)
+        _assert_true(
+            _array_contains_text(legacy_pool_catalog.errors, "引用未知功法池 %s" % old_pool_id),
+            "旧功法池 ID %s 报告明确错误" % old_pool_id)
+
     var missing_version_values := _catalog_definitions(catalog)
     missing_version_values["consumables"].erase("version")
     var missing_version_catalog = ContentCatalogScript.new()
@@ -1060,6 +1075,144 @@ func _test_formal_production_technique_behaviors() -> void:
     _test_three_ring_chaos_qi_formal_behavior()
     _test_five_steps_echo_formal_behavior()
     _test_seize_qi_return_nest_formal_behavior()
+    _test_full_house_pool_branch_protocol()
+
+func _test_full_house_pool_branch_protocol() -> void:
+    var pair_cards := [
+        _card("6", "wind"), _card("6", "forest"), _card("6", "fire"),
+        _card("3", "wind"), _card("3", "mountain"),
+    ]
+    var pair_engine = _engine_with_hand(pair_cards, [], 9211)
+    pair_engine.repository.techniques["probe_full_house_pair_branch"] = {
+        "id": "probe_full_house_pair_branch",
+        "name": "葫芦对子分支探针",
+        "pool": "pair",
+        "special": false,
+        "effects": [
+            {"op": "damage", "amount": {"kind": "hand_map", "values": {"pair": 7}}},
+            {"op": "damage", "amount": 3, "when": {"hand_id": "pair"}},
+        ],
+    }
+    pair_engine.inner_skill_repository.inner_skills["probe_inner_actual_hand_only"] = {
+        "id": "probe_inner_actual_hand_only",
+        "name": "内功实际牌型探针",
+        "timing": "on_play_resolve",
+        "effects": [{
+            "op": "defense",
+            "amount": {"kind": "hand_map", "values": {"pair": 20}},
+        }],
+    }
+    pair_engine.player.configure_inner_skills(["probe_inner_actual_hand_only"], 1)
+    pair_engine.sequence_book.configure({"full_house": ["probe_full_house_pair_branch"]})
+    var pair_preview: Dictionary = pair_engine.preview(_ids(pair_cards))
+    var pair_life_before: int = pair_engine.enemy.life
+    var pair_result: Dictionary = pair_engine.confirm_play(_ids(pair_cards))
+    _assert_equal(pair_preview.intent.damage, 10, "葫芦预览读取对子池的 pair 数值与条件分支")
+    _assert_equal(pair_life_before - pair_engine.enemy.life, 10, "葫芦真实结算读取同一 pair 默认分支")
+    _assert_true(pair_result.technique_triggered, "葫芦对子池功法正常触发")
+    _assert_equal(pair_preview.intent.inner_skill_defense, 0, "内功预览不继承对子池默认分支")
+    _assert_equal(pair_engine.player.defense, 0, "内功真实结算只读取实际葫芦牌型")
+
+    var three_cards := [
+        _card("7", "wind"), _card("7", "forest"), _card("7", "fire"),
+        _card("4", "wind"), _card("4", "mountain"),
+    ]
+    var three_engine = _engine_with_hand(three_cards, [], 9212)
+    three_engine.repository.techniques["probe_full_house_three_branch"] = {
+        "id": "probe_full_house_three_branch",
+        "name": "葫芦三条分支探针",
+        "pool": "three",
+        "special": false,
+        "effects": [
+            {"op": "damage", "amount": {"kind": "hand_map", "values": {"three_kind": 9}}},
+            {"op": "damage", "amount": 2, "when": {"hand_id": "three_kind"}},
+        ],
+    }
+    three_engine.sequence_book.configure({"full_house": ["probe_full_house_three_branch"]})
+    var three_preview: Dictionary = three_engine.preview(_ids(three_cards))
+    var three_life_before: int = three_engine.enemy.life
+    three_engine.confirm_play(_ids(three_cards))
+    _assert_equal(three_preview.intent.damage, 11, "葫芦预览读取三条池的 three_kind 分支")
+    _assert_equal(three_life_before - three_engine.enemy.life, 11, "葫芦真实结算读取同一 three_kind 默认分支")
+
+    var exact_cards := [
+        _card("8", "wind"), _card("8", "forest"), _card("8", "fire"),
+        _card("5", "wind"), _card("5", "mountain"),
+    ]
+    var exact_engine = _engine_with_hand(exact_cards, [], 9213)
+    exact_engine.repository.techniques["probe_full_house_exact_branch"] = {
+        "id": "probe_full_house_exact_branch",
+        "name": "葫芦精确分支探针",
+        "pool": "pair",
+        "special": false,
+        "effects": [{
+            "op": "damage",
+            "amount": {"kind": "hand_map", "values": {"pair": 5, "full_house": 13}},
+        }],
+    }
+    exact_engine.sequence_book.configure({"full_house": ["probe_full_house_exact_branch"]})
+    var exact_preview: Dictionary = exact_engine.preview(_ids(exact_cards))
+    var exact_life_before: int = exact_engine.enemy.life
+    exact_engine.confirm_play(_ids(exact_cards))
+    _assert_equal(exact_preview.intent.damage, 13, "显式 full_house 数值在预览中优先于 pair 默认分支")
+    _assert_equal(exact_life_before - exact_engine.enemy.life, 13, "显式 full_house 数值在真实结算中优先")
+
+    var delayed_cards := [
+        _card("9", "wind"), _card("9", "forest"), _card("9", "fire"),
+        _card("2", "wind"), _card("2", "mountain"),
+    ]
+    var delayed_engine = _engine_with_hand(delayed_cards, [], 9214)
+    delayed_engine.repository.techniques["probe_full_house_delayed_branch"] = {
+        "id": "probe_full_house_delayed_branch",
+        "name": "葫芦延迟分支探针",
+        "pool": "pair",
+        "special": false,
+        "effects": [{
+            "op": "register_delayed_effects",
+            "timing": "turn_end",
+            "occurrences": 1,
+            "effects": [{
+                "op": "add_stack",
+                "stack": "momentum",
+                "amount": {"kind": "hand_map", "values": {"pair": 4}},
+                "when": {"hand_id": "pair"},
+            }],
+        }],
+    }
+    delayed_engine.sequence_book.configure({"full_house": ["probe_full_house_delayed_branch"]})
+    delayed_engine.confirm_play(_ids(delayed_cards))
+    _assert_equal(delayed_engine.delayed_effects[0].actual_hand_id, "full_house", "延迟记录保存实际葫芦牌型")
+    _assert_equal(delayed_engine.delayed_effects[0].branch_hand_id, "pair", "延迟记录保存对子池默认分支")
+    _assert_equal(delayed_engine.delayed_effects[0].technique_pool, "pair", "延迟记录保存原功法池")
+    delayed_engine.end_player_turn()
+    _assert_equal(delayed_engine.player.stacks.get("momentum", 0), 4, "延迟结算保持 pair 数值与条件语义")
+
+    var retrigger_cards := [
+        _card("10", "wind"), _card("10", "forest"), _card("10", "fire"),
+        _card("4", "wind"), _card("4", "mountain"),
+    ]
+    var retrigger_engine = _engine_with_hand(retrigger_cards, [], 9215)
+    retrigger_engine.repository.techniques["probe_full_house_retrigger_branch"] = {
+        "id": "probe_full_house_retrigger_branch",
+        "name": "葫芦重触分支探针",
+        "pool": "pair",
+        "special": false,
+        "effects": [{
+            "op": "damage",
+            "amount": {"kind": "hand_map", "values": {"pair": 6}},
+        }],
+    }
+    retrigger_engine.sequence_book.configure({"full_house": ["probe_full_house_retrigger_branch"]})
+    var retrigger_life_before: int = retrigger_engine.enemy.life
+    var retrigger_result: Dictionary = retrigger_engine.action_resolver.retrigger_current_hand_technique(
+        retrigger_engine.player,
+        retrigger_engine.enemy,
+        retrigger_engine.sequence_book,
+        1,
+        6,
+        [])
+    _assert_true(retrigger_result.triggered, "葫芦重触功法正常触发")
+    _assert_equal(retrigger_life_before - retrigger_engine.enemy.life, 6, "葫芦重触保持 pair 默认分支")
 
 func _assert_preview_damage_matches(
         engine,
@@ -3453,11 +3606,19 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
         for pool_id in engine.repository.pool_membership[hand_id]:
             unique_pools[pool_id] = true
     _assert_equal(unique_pools.size(), 5, "五类共用功法池")
-    _assert_equal(engine.repository.pool_membership.size(), 8, "八种有效精确牌型均配置合格池")
     _assert_equal(
-        engine.repository.pool_membership["five_kind"],
-        ["four_five"],
-        "五条沿用四条五条共用功法池")
+        engine.repository.pool_membership,
+        {
+            "high_card": ["high"],
+            "pair": ["pair"],
+            "two_pair": ["pair"],
+            "three_kind": ["three"],
+            "straight": ["straight"],
+            "full_house": ["pair", "three"],
+            "four_kind": ["bomb"],
+            "five_kind": ["bomb"],
+        },
+        "八种精确牌型的功法池成员资格与权威表完全一致")
     _assert_equal(
         engine.sequence_book.sequences["straight"],
         ["five_yang_chase"],
@@ -3759,7 +3920,7 @@ func _test_sequence_progression_and_condition_failure() -> void:
     engine.repository.techniques["pure_wind_gate"] = {
         "id": "pure_wind_gate",
         "name": "测试纯风门",
-        "pool": "pair_two_pair",
+        "pool": "pair",
         "condition": {"pure_attribute": "wind"},
         "effects": [{"op": "defense", "amount": {"kind": "power"}}],
     }
@@ -4063,16 +4224,40 @@ func _test_insight_growth_and_technique_acquisition() -> void:
             if effect.get("op", "") == "gain_insight" \
                     and effect.get("hand", "") == "five_kind":
                 five_kind_insight_ids.append(str(consumable.get("id", "")))
-    _assert_equal(five_kind_insight_ids, [], "五条心得定义继续保持禁用")
-    for offer_id in consumable_definition["practice_offer_ids"]:
-        _assert_true(
-            not five_kind_insight_ids.has(str(offer_id)),
-            "普通修习随机池不包含五条心得")
+    _assert_equal(five_kind_insight_ids, ["five_kind_insight"], "五条心得已作为正式心得定义")
+    _assert_true(
+        consumable_definition["practice_offer_ids"].has("five_kind_insight"),
+        "普通修习随机池包含五条心得")
 
 func _test_formal_practice_shop_and_hand_progression() -> void:
     var production_profile = RuntimeProfileScript.production()
     var catalog = ContentCatalogScript.new(production_profile)
     _assert_true(catalog.load_all(), "production 内容目录可以装载正式修习配置")
+    var expected_insight_ids := [
+        "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
+        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight",
+    ]
+    expected_insight_ids.sort()
+    var consumable_definition: Dictionary = catalog.definition("consumables")
+    var ordinary_insight_ids: Array = []
+    for consumable_id in consumable_definition["practice_offer_ids"]:
+        if expected_insight_ids.has(str(consumable_id)):
+            ordinary_insight_ids.append(str(consumable_id))
+    ordinary_insight_ids.sort()
+    _assert_equal(ordinary_insight_ids, expected_insight_ids, "八种心得全部进入普通消耗品候选")
+    var practice_definition: Dictionary = catalog.definition("practice_shop")
+    var shop_insight_ids: Array = []
+    for candidate in practice_definition["normal_candidates"]:
+        var candidate_id := str(candidate.get("id", ""))
+        if expected_insight_ids.has(candidate_id):
+            shop_insight_ids.append(candidate_id)
+    shop_insight_ids.sort()
+    _assert_equal(shop_insight_ids, expected_insight_ids, "普通修习商店候选包含八种心得")
+    _assert_equal(practice_definition["pack_candidates"].size(), 3, "普通、大型、豪华三种心得包仍全部存在")
+    for pack in practice_definition["pack_candidates"]:
+        var pack_ids: Array = pack["candidate_ids"].duplicate()
+        pack_ids.sort()
+        _assert_equal(pack_ids, expected_insight_ids, "%s包含完整八种心得" % str(pack["name"]))
     var first: RunSession = RunSessionScript.new(
         null, null, null, null, catalog, null, null, null, null, production_profile)
     var second: RunSession = RunSessionScript.new(
@@ -4119,8 +4304,8 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     _assert_equal(five_initial.get("slot_count"), 1, "五条初始功法槽位为1")
     _assert_equal(five_initial.get("sequence", []), [], "五条初始序列允许为空")
     var membership: Dictionary = catalog.definition("techniques").get("pool_membership", {})
-    _assert_equal(membership.get("four_kind"), ["four_five"], "四条读取四条五条共用功法池")
-    _assert_equal(membership.get("five_kind"), ["four_five"], "五条读取四条五条共用功法池")
+    _assert_equal(membership.get("four_kind"), ["bomb"], "四条读取炸弹池")
+    _assert_equal(membership.get("five_kind"), ["bomb"], "五条读取炸弹池")
     var four_before: Dictionary = first.growth.hand_progression("four_kind")
     var four_result: Dictionary = first.growth.apply_insight_growth(
         "four_kind", ["seize_qi_return_nest"])
@@ -4130,7 +4315,7 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
     var five_result: Dictionary = first.growth.apply_insight_growth(
         "five_kind", ["seize_qi_return_nest"])
     _assert_true(five_result.success, "五条心得成长成功")
-    _assert_equal(five_result.acquired_technique_id, "seize_qi_return_nest", "五条从四条五条池获得正式功法")
+    _assert_equal(five_result.acquired_technique_id, "seize_qi_return_nest", "五条从炸弹池获得正式功法")
     _assert_equal(first.growth.hand_progression("five_kind").slot_count, 2, "五条心得增加五条槽位")
     _assert_equal(first.growth.hand_progression("four_kind").slot_count, 2, "五条成长不改变四条槽位")
 
@@ -4394,6 +4579,43 @@ func _test_run_consumable_high_card_insight() -> void:
     _assert_equal(session.growth.consumable_ids, [], "使用后消耗品槽释放")
     _assert_equal(int(session.growth.consumable_use_sequence), 1, "成功使用递增随机序号")
 
+    var full_first: RunSession = RunSessionScript.new()
+    var full_second: RunSession = RunSessionScript.new()
+    _assert_true(full_first.execute({"type": "setup_run", "seed": 77125}).success, "首个葫芦心得本局建立")
+    _assert_true(full_second.execute({"type": "setup_run", "seed": 77125}).success, "同种子葫芦心得本局建立")
+    var full_sequence_before: Array = full_first.growth.hand_progression("full_house").sequence.duplicate()
+    full_first.growth.consumable_ids.append("full_house_insight")
+    full_second.growth.consumable_ids.append("full_house_insight")
+    var full_use_first := full_first.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    var full_use_second := full_second.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(full_use_first.success and full_use_second.success, "葫芦心得在相同种子本局均使用成功")
+    var full_applied_first: Dictionary = full_use_first.payload_value("applied")[0]
+    var full_applied_second: Dictionary = full_use_second.payload_value("applied")[0]
+    var full_candidates: Array = full_applied_first["candidates"].duplicate()
+    var sorted_full_candidates: Array = full_candidates.duplicate()
+    sorted_full_candidates.sort()
+    _assert_equal(full_candidates, sorted_full_candidates, "葫芦心得候选按功法 ID 排序后进入随机抽取")
+    var unique_full_candidates: Dictionary = {}
+    var candidate_pools: Dictionary = {}
+    for candidate_id in full_candidates:
+        unique_full_candidates[str(candidate_id)] = true
+        _assert_true(not full_sequence_before.has(str(candidate_id)), "葫芦当前序列功法不再进入心得候选")
+        var candidate_definition: Dictionary = catalog.get_by_id("technique", str(candidate_id))
+        candidate_pools[str(candidate_definition.get("pool", ""))] = true
+        _assert_equal(
+            catalog.definition("techniques")["integration_statuses"].get(str(candidate_id)),
+            "formal_complete",
+            "葫芦心得只汇总 formal_complete 功法")
+    _assert_equal(unique_full_candidates.size(), full_candidates.size(), "葫芦跨池候选按功法 ID 去重")
+    _assert_true(candidate_pools.has("pair") and candidate_pools.has("three"), "葫芦心得同时汇总对子池与三条池")
+    _assert_equal(full_applied_first["candidates"], full_applied_second["candidates"], "相同种子使用同一有序葫芦候选")
+    _assert_equal(
+        full_applied_first["acquired_technique_id"],
+        full_applied_second["acquired_technique_id"],
+        "葫芦跨池候选使用现有确定性随机源")
+
 func _test_run_consumable_insight_exhausted_pool() -> void:
     var session: RunSession = RunSessionScript.new()
     _assert_true(session.execute({"type": "setup_run", "seed": 77124}).success, "候选耗尽测试本局建立")
@@ -4422,6 +4644,29 @@ func _test_run_consumable_insight_exhausted_pool() -> void:
         2,
         "候选耗尽时槽位仍 +1")
     _assert_equal(session.growth.consumable_ids, [], "候选耗尽时消耗品仍释放")
+
+    var five_session: RunSession = RunSessionScript.new()
+    _assert_true(five_session.execute({"type": "setup_run", "seed": 77126}).success, "五条候选耗尽本局建立")
+    five_session.growth.hand_technique_progression["five_kind"] = {
+        "slot_count": 1,
+        "sequence": ["seize_qi_return_nest"],
+    }
+    if not five_session.growth.learned_technique_ids.has("seize_qi_return_nest"):
+        five_session.growth.learned_technique_ids.append("seize_qi_return_nest")
+    five_session.growth.consumable_ids.append("five_kind_insight")
+    var four_slots_before: int = int(five_session.growth.hand_progression("four_kind").slot_count)
+    var five_use := five_session.execute({
+        "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
+    _assert_true(five_use.success, "五条心得无合格功法时仍使用成功")
+    _assert_equal(
+        str(five_use.payload_value("applied")[0]["acquired_technique_id"]),
+        "",
+        "五条炸弹池耗尽时不重复获得当前序列功法")
+    _assert_equal(five_session.growth.hand_progression("five_kind").slot_count, 2, "五条心得仍增加五条槽位")
+    _assert_equal(
+        five_session.growth.hand_progression("four_kind").slot_count,
+        four_slots_before,
+        "五条心得不改变四条槽位")
 
 func _test_run_consumable_hierophant_run_deck() -> void:
     var session: RunSession = RunSessionScript.new()
@@ -5047,7 +5292,20 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     _assert_equal(initial.act, 1, "本局快照提供当前层数")
     _assert_equal(initial.phase, "awaiting_node", "本局快照提供当前流程阶段")
     _assert_true(initial.can_open_practice, "本局快照提供修习可用状态")
-    _assert_equal(initial.practice.get("offers", []).size(), 3, "修习代表选项由本局快照提供")
+    _assert_equal(initial.practice.get("offers", []).size(), 10, "修习快照提供八心得与原有两项普通消耗品")
+    var snapshot_insight_ids: Array = []
+    for offer in initial.practice.get("offers", []):
+        if str(offer.get("kind", "")) == "insight":
+            snapshot_insight_ids.append(str(offer.get("id", "")))
+    snapshot_insight_ids.sort()
+    _assert_equal(
+        snapshot_insight_ids,
+        [
+            "five_kind_insight", "four_kind_insight", "full_house_insight",
+            "high_card_insight", "pair_insight", "straight_insight",
+            "three_kind_insight", "two_pair_insight",
+        ],
+        "本局修习快照公开全部八种心得")
     var copied_graph: Dictionary = initial.graph
     copied_graph["act"] = 99
     _assert_equal(session.snapshot().graph.get("act"), 1, "修改地图快照不会污染本局核心")

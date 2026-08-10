@@ -6,6 +6,6 @@
 script = ExtResource("1")
 id = "double_gu_bind"
 display_name = "双蛊缠脉"
-pool = "pair_two_pair"
+pool = "pair"
 description = "获得 floor(P/2) 点防御；一对施加 1 层蛊印，两对施加 2 层。"
 effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":1}},{"op":"add_target_stack","stack":"gu_mark","amount":{"kind":"hand_map","values":{"pair":1,"two_pair":2}}}]

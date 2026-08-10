@@ -19,6 +19,7 @@
     {"id": "straight_insight", "kind": "consumable", "price": 3},
     {"id": "full_house_insight", "kind": "consumable", "price": 3},
     {"id": "four_kind_insight", "kind": "consumable", "price": 3},
+    {"id": "five_kind_insight", "kind": "consumable", "price": 3},
     {"id": "hierophant", "kind": "consumable", "price": 3},
     {"id": "aura", "kind": "consumable", "price": 4}
   ],
@@ -32,7 +33,7 @@
       "choose_count": 1,
       "candidate_ids": [
         "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
-        "straight_insight", "full_house_insight", "four_kind_insight"
+        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight"
       ]
     },
     {
@@ -44,7 +45,7 @@
       "choose_count": 1,
       "candidate_ids": [
         "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
-        "straight_insight", "full_house_insight", "four_kind_insight"
+        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight"
       ]
     },
     {
@@ -56,7 +57,7 @@
       "choose_count": 2,
       "candidate_ids": [
         "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
-        "straight_insight", "full_house_insight", "four_kind_insight"
+        "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight"
       ]
     }
   ],

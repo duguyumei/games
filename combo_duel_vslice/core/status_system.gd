@@ -582,6 +582,9 @@ func register_delayed_effects(
         "played_cards": runtime.played_cards.duplicate(),
         "technique_id": runtime.technique_id,
         "technique_name": runtime.technique_name,
+        "actual_hand_id": runtime.actual_hand_id,
+        "branch_hand_id": runtime.branch_hand_id,
+        "technique_pool": runtime.technique_pool,
         "sequence_book": runtime.sequence_book,
     }
     _delay_serial += 1
@@ -727,6 +730,9 @@ func _resolve_delayed_effect_chain(record: Dictionary) -> Dictionary:
         "power": int(record["power"]),
         "technique_id": str(record["technique_id"]),
         "technique_name": str(record["technique_name"]),
+        "actual_hand_id": str(record.get("actual_hand_id", "")),
+        "branch_hand_id": str(record.get("branch_hand_id", "")),
+        "technique_pool": str(record.get("technique_pool", "")),
         "sequence_book": record.get("sequence_book"),
         "source_kind": "delayed_technique",
         "captures": {},

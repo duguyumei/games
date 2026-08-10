@@ -48,7 +48,21 @@ func validate_effect(effect: Dictionary, context, scope: String) -> void:
 func apply(effect: Dictionary, context) -> Dictionary:
 	var hand_id := str(effect.get("hand", ""))
 	var pools: Array = effect.get("pools", [])
-	var candidates: Array = context.insight_candidates(hand_id, pools)
+	var current_sequence: Array = []
+	if context.growth != null:
+		var progressions = context.growth.get("hand_technique_progression")
+		if progressions is Dictionary:
+			var progression = progressions.get(hand_id, {})
+			if progression is Dictionary:
+				current_sequence = progression.get("sequence", [])
+	var candidates: Array[String] = []
+	for candidate_value in context.insight_candidates(hand_id, pools):
+		var candidate := str(candidate_value)
+		if candidate != "" \
+				and not current_sequence.has(candidate) \
+				and not candidates.has(candidate):
+			candidates.append(candidate)
+	candidates.sort()
 	var result: Dictionary = context.apply_insight(hand_id, candidates)
 	if not result.get("success", false):
 		return result

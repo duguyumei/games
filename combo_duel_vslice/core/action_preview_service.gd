@@ -88,11 +88,14 @@ func preview_dto(
         "technique_combo": false,
         "inner_skill_defense": 0,
     }
-    var intent_context = EffectContextScript.new().configure({
+    var technique_intent_context = EffectContextScript.new().configure({
         "actor": side,
         "hand_result": hand_result,
         "played_cards": cards,
         "power": values["technique_value"],
+        "technique_id": str(technique.get("id", "")),
+        "technique_name": str(technique.get("name", "")),
+        "technique_pool": str(technique.get("pool", "")),
         "captures": {},
         "source_kind": "preview",
     })
@@ -107,15 +110,26 @@ func preview_dto(
     if technique_definition != null and condition["ok"]:
         _merge_intent(intent, effect_executor.summarize_intent(
             technique_definition.effects,
-            intent_context,
+            technique_intent_context,
             damage_percent))
     for inner_skill_id in side.equipped_inner_skill_ids:
         var inner_skill: Dictionary = inner_skill_repository.get_inner_skill(inner_skill_id)
         if inner_skill.get("timing", "") != "on_play_resolve":
             continue
+        # 内功只读取实际牌型，不能继承当前功法的池分支。
+        var inner_intent_context = EffectContextScript.new().configure({
+            "actor": side,
+            "hand_result": hand_result,
+            "played_cards": cards,
+            "power": values["technique_value"],
+            "technique_id": str(inner_skill.get("id", "")),
+            "technique_name": str(inner_skill.get("name", "")),
+            "captures": {},
+            "source_kind": "preview",
+        })
         var inner_intent: Dictionary = effect_executor.summarize_intent(
             inner_skill.get("effects", []),
-            intent_context,
+            inner_intent_context,
             damage_percent)
         intent["inner_skill_defense"] = (
             int(intent["inner_skill_defense"])

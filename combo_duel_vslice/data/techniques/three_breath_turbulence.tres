@@ -4,6 +4,6 @@
 script = ExtResource("1")
 id = "three_breath_turbulence"
 display_name = "三息乱流"
-pool = "three_full_house"
+pool = "three"
 description = "获得floor(P/2)防御；展示敌方牌库顶3张，葫芦5张；选择至多2张置顶并附乱流，其余展示牌按原相对顺序置底。"
 effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"select_cards","choice_id":"turbulence_top","prompt":"选择至多2张展示牌置顶并附乱流","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"target","zone":"draw_pile","order":"top","limit":{"kind":"hand_map","values":{"three_kind":3,"full_house":5}},"filters":{"card_kind":"normal"}},"capture":"turbulence_cards"},{"op":"move_captured","capture":"turbulence_cards","from_side":"target","from_zone":"draw_pile","to_side":"target","to_zone":"draw_pile","placement":"top","preserve_selection_order":true},{"op":"apply_card_anomaly_to_captured","capture":"turbulence_cards","category":"mark","anomaly":"turbulence"},{"op":"move_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":{"kind":"hand_map","values":{"three_kind":3,"full_house":5}},"exclude_capture":"turbulence_cards"},"to_side":"target","to_zone":"draw_pile","placement":"bottom"}]

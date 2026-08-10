@@ -47,7 +47,7 @@ const HAND_IDS := [
 ]
 const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS
 const POOL_IDS := [
-    "high", "pair_two_pair", "three_full_house", "four_five", "straight",
+    "high", "pair", "three", "straight", "bomb",
 ]
 const TECHNIQUE_INTEGRATION_STATUSES := [
     "formal_complete", "partial_integration", "regression_fixture",

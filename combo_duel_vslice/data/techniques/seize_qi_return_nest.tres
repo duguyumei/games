@@ -4,6 +4,6 @@
 script = ExtResource("1")
 id = "seize_qi_return_nest"
 display_name = "夺气归巢"
-pool = "four_five"
+pool = "bomb"
 description = "造成floor(P/2)伤害并获得10层夺风；五条在回合结束时将敌方全部手牌洗入我方牌库。"
 effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"add_stack","stack":"steal_wind","amount":10},{"op":"register_delayed_effects","timing":"turn_end","occurrences":1,"effects":[{"op":"move_query","query":{"side":"target","zone":"hand","order":"zone"},"to_side":"actor","to_zone":"draw_pile","reason":"effect","shuffle_destination":true}],"when":{"hand_id":"five_kind"}}]

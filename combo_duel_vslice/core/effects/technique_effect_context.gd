@@ -10,6 +10,9 @@ var played_cards: Array = []
 var power: int = 0
 var technique_id: String = ""
 var technique_name: String = ""
+var actual_hand_id: String = ""
+var branch_hand_id: String = ""
+var technique_pool: String = ""
 var action_token: String = ""
 var source_kind: String = ""
 var captures: Dictionary = {}
@@ -26,6 +29,14 @@ func configure(values: Dictionary):
     power = int(values.get("power", 0))
     technique_id = str(values.get("technique_id", ""))
     technique_name = str(values.get("technique_name", ""))
+    actual_hand_id = str(values.get(
+        "actual_hand_id", hand_result.get("id", "")))
+    if actual_hand_id == "":
+        actual_hand_id = str(hand_result.get("id", ""))
+    technique_pool = str(values.get("technique_pool", ""))
+    branch_hand_id = str(values.get("branch_hand_id", ""))
+    if branch_hand_id == "":
+        branch_hand_id = _default_branch_hand_id(actual_hand_id, technique_pool)
     action_token = str(values.get("action_token", ""))
     source_kind = str(values.get("source_kind", ""))
     captures = values.get("captures", {})
@@ -37,6 +48,16 @@ func configure(values: Dictionary):
     if ports == null and values.get("engine") != null:
         ports = values["engine"].action_resolver.effect_ports
     return self
+
+static func _default_branch_hand_id(actual_hand: String, pool_id: String) -> String:
+    if actual_hand != "full_house":
+        return actual_hand
+    match pool_id:
+        "pair":
+            return "pair"
+        "three":
+            return "three_kind"
+    return actual_hand
 
 func choice_request_id(choice_id: String) -> String:
     var prefix := action_token
@@ -57,6 +78,9 @@ func public_metadata() -> Dictionary:
         "power": power,
         "technique_id": technique_id,
         "technique_name": technique_name,
+        "actual_hand_id": actual_hand_id,
+        "branch_hand_id": branch_hand_id,
+        "technique_pool": technique_pool,
         "action_token": action_token,
         "source_kind": source_kind,
         "hand_id": str(hand_result.get("id", "")),

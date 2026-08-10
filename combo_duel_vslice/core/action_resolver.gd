@@ -159,6 +159,9 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
             var captures_by_source: Dictionary = record["captures_by_source"]
             if not captures_by_source.has(capture_key):
                 captures_by_source[capture_key] = {}
+            var technique_pool := ""
+            if source_spec["kind"] == "technique":
+                technique_pool = str(source_spec["definition"].get("pool", ""))
             var context = EffectContextScript.new().configure({
                 "ports": effect_ports,
                 "actor": record["actor"],
@@ -168,6 +171,7 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "power": record["preview"]["values"]["technique_value"],
                 "technique_id": source_spec["definition"].get("id", ""),
                 "technique_name": source_spec["definition"].get("name", ""),
+                "technique_pool": technique_pool,
                 "action_token": record["token"],
                 "source_kind": source_spec["kind"],
                 "captures": captures_by_source[capture_key],
@@ -296,6 +300,7 @@ func retrigger_current_hand_technique(
         "power": snapshot_power,
         "technique_id": technique_id,
         "technique_name": definition.display_name,
+        "technique_pool": definition.pool,
         "source_kind": "technique_retrigger",
         "sequence_book": sequence_book,
         "captures": {},

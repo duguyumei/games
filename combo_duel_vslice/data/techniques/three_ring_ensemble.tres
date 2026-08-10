@@ -4,7 +4,7 @@
 script = ExtResource("1")
 id = "three_ring_ensemble"
 display_name = "三环并奏"
-pool = "three_full_house"
+pool = "three"
 special = true
 description = "造成floor(P/2)伤害；可协同1个合法一对组，主牌型组与协同组使用协同共享功法值。"
 cooperation = {"hand_id":"pair","max_groups":1,"power_rule":"shared_half","post_commit":{"destination":"own_discard"}}

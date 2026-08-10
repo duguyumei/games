@@ -4,6 +4,6 @@
 script = ExtResource("1")
 id = "three_ring_breathing"
 display_name = "三环吐纳"
-pool = "three_full_house"
+pool = "three"
 description = "造成floor(P/2)伤害；三条抽3张、葫芦抽5张，再选择2张手牌明确弃掉；每张本功法实际抽到的风牌按当前有效真气值追加伤害。"
 effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"draw","count":{"kind":"hand_map","values":{"three_kind":3,"full_house":5}},"capture":"direct_draw"},{"op":"select_cards","choice_id":"discard_two","prompt":"选择2张手牌明确弃掉","chooser":"actor","minimum":2,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected"},{"op":"move_captured","capture":"selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard"},{"op":"damage","amount":{"kind":"capture_attribute_qi_sum","capture":"direct_draw","attribute":"wind"},"phase":"zones"}]

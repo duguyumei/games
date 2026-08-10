@@ -6,6 +6,6 @@
 script = ExtResource("1")
 id = "three_corpses_gu"
 display_name = "三尸种蛊"
-pool = "three_full_house"
+pool = "three"
 description = "获得 floor(P/3) 点防御；三条施加 3 层蛊印，葫芦施加 4 层；纯风再加 1 层。"
 effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":3,"minimum":1}},{"op":"add_target_stack","stack":"gu_mark","amount":{"kind":"hand_map","values":{"three_kind":3,"full_house":4}}},{"op":"add_target_stack","stack":"gu_mark","amount":{"kind":"constant","value":1},"when":{"pure_attribute":"wind"}}]

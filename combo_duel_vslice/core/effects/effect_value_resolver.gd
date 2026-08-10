@@ -23,8 +23,12 @@ func resolve(spec, context) -> int:
         "n60":
             return maxi(1, int(floor(runtime.power / 60.0)))
         "hand_map":
-            var hand_id := str(runtime.hand_result.get("id", ""))
-            return int(spec.get("values", {}).get(hand_id, 0))
+            var values: Dictionary = spec.get("values", {})
+            if values.has(runtime.actual_hand_id):
+                return int(values[runtime.actual_hand_id])
+            if values.has(runtime.branch_hand_id):
+                return int(values[runtime.branch_hand_id])
+            return 0
         "max":
             var maximum := 0
             for child in spec.get("values", []):
@@ -131,9 +135,11 @@ func condition_met(condition: Dictionary, context) -> bool:
     if condition.has("capture_empty") \
             and not runtime.captures.get(condition["capture_empty"], []).is_empty():
         return false
-    if condition.has("hand_id") \
-            and str(runtime.hand_result.get("id", "")) != str(condition["hand_id"]):
-        return false
+    if condition.has("hand_id"):
+        var wanted_hand_id := str(condition["hand_id"])
+        if runtime.actual_hand_id != wanted_hand_id \
+                and runtime.branch_hand_id != wanted_hand_id:
+            return false
     if condition.has("capture_count_equals"):
         var spec: Dictionary = condition["capture_count_equals"]
         if runtime.captures.get(spec.get("capture", ""), []).size() != int(spec.get("value", 0)):

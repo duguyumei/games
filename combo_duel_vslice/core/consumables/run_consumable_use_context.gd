@@ -33,7 +33,8 @@ func insight_candidates(hand_id: String, pools: Array) -> Array[String]:
 			continue
 		if not membership.has(pool_id):
 			continue
-		result.append(technique_id)
+		if not result.has(technique_id):
+			result.append(technique_id)
 	result.sort()
 	return result
 

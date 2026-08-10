@@ -4,6 +4,6 @@
 script = ExtResource("1")
 id = "twin_swallows_press_sleeve"
 display_name = "双燕逼袖"
-pool = "pair_two_pair"
+pool = "pair"
 description = "选择并明确弃掉我方至多floor(P/10)张手牌；每实际弃2张，敌方随机弃1张；敌方受到弃牌有效真气值总和伤害；两对额外弃敌方1张。"
 effects = [{"op":"select_cards","choice_id":"discard_by_power","prompt":"选择要明确弃掉的手牌","chooser":"actor","minimum":0,"maximum":{"kind":"power_fraction","numerator":1,"denominator":10},"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected"},{"op":"move_captured","capture":"selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"discard_random","side":"target","count":{"kind":"divide_floor","value":{"kind":"capture_count","capture":"discarded"},"divisor":{"kind":"constant","value":2}}},{"op":"discard_random","side":"target","count":1,"when":{"hand_id":"two_pair"}},{"op":"damage","amount":{"kind":"capture_qi_sum","capture":"discarded"},"phase":"zones"}]

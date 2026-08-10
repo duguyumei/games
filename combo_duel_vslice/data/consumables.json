@@ -1,6 +1,10 @@
 {
   "version": 2,
-  "practice_offer_ids": ["high_card_insight", "hierophant", "aura"],
+  "practice_offer_ids": [
+    "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
+    "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight",
+    "hierophant", "aura"
+  ],
   "consumables": [
     {
       "id": "high_card_insight",
@@ -37,21 +41,21 @@
     },
     {
       "id": "pair_insight", "name": "一对心得", "kind": "insight", "price": 3,
-      "description": "一对功法槽位 +1，并从一对、两对池抽取正式功法。",
+      "description": "一对功法槽位 +1，并从对子池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
-      "effects": [{"op": "gain_insight", "hand": "pair", "pools": ["pair_two_pair"]}]
+      "effects": [{"op": "gain_insight", "hand": "pair", "pools": ["pair"]}]
     },
     {
       "id": "two_pair_insight", "name": "两对心得", "kind": "insight", "price": 3,
-      "description": "两对功法槽位 +1，并从一对、两对池抽取正式功法。",
+      "description": "两对功法槽位 +1，并从对子池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
-      "effects": [{"op": "gain_insight", "hand": "two_pair", "pools": ["pair_two_pair"]}]
+      "effects": [{"op": "gain_insight", "hand": "two_pair", "pools": ["pair"]}]
     },
     {
       "id": "three_kind_insight", "name": "三条心得", "kind": "insight", "price": 3,
-      "description": "三条功法槽位 +1，并从三条、葫芦池抽取正式功法。",
+      "description": "三条功法槽位 +1，并从三条池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
-      "effects": [{"op": "gain_insight", "hand": "three_kind", "pools": ["three_full_house"]}]
+      "effects": [{"op": "gain_insight", "hand": "three_kind", "pools": ["three"]}]
     },
     {
       "id": "straight_insight", "name": "顺子心得", "kind": "insight", "price": 3,
@@ -61,15 +65,21 @@
     },
     {
       "id": "full_house_insight", "name": "葫芦心得", "kind": "insight", "price": 3,
-      "description": "葫芦功法槽位 +1，并从三条、葫芦池抽取正式功法。",
+      "description": "葫芦功法槽位 +1，并从对子池与三条池的去重并集抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
-      "effects": [{"op": "gain_insight", "hand": "full_house", "pools": ["three_full_house"]}]
+      "effects": [{"op": "gain_insight", "hand": "full_house", "pools": ["pair", "three"]}]
     },
     {
       "id": "four_kind_insight", "name": "四条心得", "kind": "insight", "price": 3,
-      "description": "四条功法槽位 +1，并从四条、五条池抽取正式功法。",
+      "description": "四条功法槽位 +1，并从炸弹池抽取正式功法。",
       "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
-      "effects": [{"op": "gain_insight", "hand": "four_kind", "pools": ["four_five"]}]
+      "effects": [{"op": "gain_insight", "hand": "four_kind", "pools": ["bomb"]}]
+    },
+    {
+      "id": "five_kind_insight", "name": "五条心得", "kind": "insight", "price": 3,
+      "description": "五条功法槽位 +1，并从炸弹池抽取正式功法。",
+      "targeting": {"zone": "none", "selection": "deterministic_random", "minimum": 0, "maximum": 0},
+      "effects": [{"op": "gain_insight", "hand": "five_kind", "pools": ["bomb"]}]
     }
   ]
 }

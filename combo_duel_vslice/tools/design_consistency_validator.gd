@@ -9,11 +9,11 @@ extends RefCounted
 
 ## 池标题中文名 → techniques.json 使用的池代码。
 const POOL_LABEL_TO_CODE := {
-    "高牌": "high",
-    "一对、两对": "pair_two_pair",
-    "三条、葫芦": "three_full_house",
-    "四条、五条": "four_five",
-    "顺子": "straight",
+    "高牌池": "high",
+    "对子池": "pair",
+    "三条池": "three",
+    "顺子池": "straight",
+    "炸弹池": "bomb",
 }
 
 ## 设计文档已明确废弃、不得作为活跃内容出现在数据或规则中的牌型。
