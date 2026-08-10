@@ -53,8 +53,24 @@ func technique_multiplier_bonus(card) -> int:
 func power_amp_percent(card) -> int:
     return _run_numeric(card, "power_amp", 0)
 
-func effective_qi_value(card) -> int:
-    return maxi(0, _run_numeric(card, "effective_qi", int(card.qi_value)))
+func effective_qi_value(card, calculation_context: Dictionary = {}) -> int:
+    return maxi(0, _run_numeric(
+        card, "effective_qi", int(card.qi_value), calculation_context))
+
+func dispatch_battle_event(
+        card,
+        trigger: String,
+        values: Dictionary = {}) -> Array[Dictionary]:
+    var results: Array[Dictionary] = []
+    for entry in _behavior_entries(card, trigger):
+        var context_values := values.duplicate()
+        context_values.merge({
+            "card": card,
+            "trigger": trigger,
+        }, true)
+        results.append(registry.execute(
+            entry["behavior"], ContextScript.new().configure(context_values)))
+    return results
 
 func matches_attribute(card, attribute_id: String) -> bool:
     for definition_value in _active_definitions(card):
@@ -84,23 +100,52 @@ func has_card_kind(card, kind: String) -> bool:
         return effective_qi_value(card) != 0
     return true
 
-func _run_numeric(card, trigger: String, initial: int) -> int:
+func _run_numeric(
+        card,
+        trigger: String,
+        initial: int,
+        calculation_context: Dictionary = {}) -> int:
     var value := initial
-    for definition_value in _active_definitions(card):
-        for behavior_value in definition_value.get("behaviors", []):
-            var behavior: Dictionary = behavior_value
-            if str(behavior.get("trigger", "")) == trigger:
-                value = int(_execute(behavior, card, value).get("value", value))
+    for entry in _behavior_entries(card, trigger):
+        var behavior: Dictionary = entry["behavior"]
+        value = int(_execute(
+            behavior, card, value, "", {}, calculation_context).get("value", value))
     return value
 
-func _execute(behavior: Dictionary, card, value: int = 0, attribute_id: String = "", payload: Dictionary = {}) -> Dictionary:
+func _execute(
+        behavior: Dictionary,
+        card,
+        value: int = 0,
+        attribute_id: String = "",
+        payload: Dictionary = {},
+        calculation_context: Dictionary = {}) -> Dictionary:
     var context := ContextScript.new().configure({
         "card": card,
         "value": value,
         "attribute_id": attribute_id,
         "payload": payload,
+        "calculation_context": calculation_context,
     })
     return registry.execute(behavior, context)
+
+func _behavior_entries(card, trigger: String) -> Array:
+    var entries: Array = []
+    var serial := 0
+    for definition_value in _active_definitions(card):
+        for behavior_value in definition_value.get("behaviors", []):
+            var behavior: Dictionary = behavior_value
+            if str(behavior.get("trigger", "")) == trigger:
+                entries.append({
+                    "priority": int(behavior.get("priority", 500)),
+                    "serial": serial,
+                    "behavior": behavior,
+                })
+            serial += 1
+    entries.sort_custom(func(left, right):
+        if int(left["priority"]) != int(right["priority"]):
+            return int(left["priority"]) < int(right["priority"])
+        return int(left["serial"]) < int(right["serial"]))
+    return entries
 
 func _reshape_id(card, category: String) -> String:
     match category:

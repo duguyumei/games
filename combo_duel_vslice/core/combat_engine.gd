@@ -29,6 +29,8 @@ const BattleOutcomeServiceScript = preload("res://core/battle_outcome_service.gd
 const EnemyActionPlanningServiceScript = preload("res://core/enemy_action_planning_service.gd")
 const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 const BattleLoadoutServiceScript = preload("res://core/battle_loadout_service.gd")
+const CardReshapeBattleRuntimeScript = preload(
+    "res://core/card_reshapes/card_reshape_battle_runtime.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -61,6 +63,7 @@ var outcome_service
 var enemy_planning_service
 var battle_setup_service
 var loadout_service: BattleLoadoutService
+var card_reshape_runtime
 
 var turn_number: int:
     get: return round_service.turn_number
@@ -170,12 +173,19 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         trigger_queue)
     effect_ports.use_sides(player, enemy)
     status_system.use_effect_ports(effect_ports)
+    card_reshape_runtime = CardReshapeBattleRuntimeScript.new(
+        content_catalog.card_reshape_rules,
+        effect_ports,
+        rng,
+        timing_system)
     delayed_effects = status_system.delayed_records
     card_state_lifecycle = status_system.lifecycle
     player.use_card_state_lifecycle(card_state_lifecycle)
     enemy.use_card_state_lifecycle(card_state_lifecycle)
     player.use_status_system(status_system)
     enemy.use_status_system(status_system)
+    player.use_card_reshape_runtime(card_reshape_runtime)
+    enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)
     status_system.use_effect_executor(effect_executor)
     enemy_action_controller = EnemyActionControllerScript.new(rng)

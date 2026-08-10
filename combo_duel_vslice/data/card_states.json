@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "reshape_categories": [
     {"id": "origin", "capacity": 1, "replaceable": false},
     {"id": "enhancement", "capacity": 1, "replaceable": true},
@@ -14,11 +14,52 @@
   ],
   "origins": [
     {"id": "attribute_change", "name": "转属"},
-    {"id": "rank_change", "name": "易阶"}
+    {"id": "rank_change", "name": "易阶"},
+    {
+      "id": "awakening",
+      "name": "觉醒",
+      "behaviors": [
+        {
+          "trigger": "card_drawn",
+          "priority": 500,
+          "handler": "draw_cards",
+          "origin_attribute": "wind",
+          "count": 1
+        },
+        {
+          "trigger": "card_entered_discard",
+          "priority": 500,
+          "handler": "recycle_discarded_card",
+          "origin_attribute": "forest"
+        },
+        {
+          "trigger": "effective_qi",
+          "priority": 300,
+          "handler": "multiply_effective_qi",
+          "origin_attribute": "fire",
+          "requires_participating": true,
+          "factor": 2
+        },
+        {
+          "trigger": "group_resolved",
+          "priority": 500,
+          "handler": "apply_anomaly",
+          "origin_attribute": "fire",
+          "category": "mark",
+          "anomaly": "burned_out"
+        },
+        {
+          "trigger": "turn_end",
+          "priority": 500,
+          "handler": "add_defense_from_effective_qi",
+          "origin_attribute": "mountain"
+        }
+      ]
+    }
   ],
   "enhancements": [
-    {"id": "qi_boost", "name": "增元", "behaviors": [{"trigger": "effective_qi", "handler": "add_effective_qi", "amount": 8}]},
-    {"id": "momentum", "name": "乘势", "behaviors": [{"trigger": "technique_multiplier", "handler": "add_technique_multiplier", "amount": 1}]},
+    {"id": "qi_boost", "name": "增元", "behaviors": [{"trigger": "effective_qi", "priority": 100, "handler": "add_effective_qi", "amount": 8}]},
+    {"id": "momentum", "name": "乘势", "behaviors": [{"trigger": "technique_multiplier", "priority": 100, "handler": "add_technique_multiplier", "amount": 1}]},
     {"id": "hunyuan", "name": "混元", "behaviors": [{"trigger": "attribute_check", "handler": "attribute_alias", "attributes": ["wind", "forest", "fire", "mountain"]}]}
   ],
   "imprints": [],
@@ -176,6 +217,17 @@
           "reason": "qi_severance",
           "apply_anomaly": {"category": "state", "id": "forbidden"}
         }
+      ]
+    },
+    {
+      "id": "burned_out",
+      "name": "燃尽",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["battle_end"],
+      "modifiers": [
+        {"id": "qi_contribution_percent", "value": -100}
       ]
     },
     {

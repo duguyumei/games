@@ -62,7 +62,9 @@ static func validate_tokens(
             errors.append("牌组[%d]：引用未知真气 %s" % [index, definition_id])
         errors.append_array(_validate_parsed_reshapes(
             parsed, origin_ids, enhancement_ids, imprint_ids,
-            attribute_ids, "牌组[%d]" % index))
+            attribute_ids,
+            definition_id.get_slice("_", 0),
+            "牌组[%d]" % index))
         expanded_count += int(parsed["count"])
     return {"errors": errors, "expanded_count": expanded_count}
 
@@ -130,6 +132,7 @@ static func _validate_parsed_reshapes(
         enhancement_ids: Dictionary,
         imprint_ids: Dictionary,
         attribute_ids: Array,
+        base_attribute: String,
         scope: String) -> Array[String]:
     var errors: Array[String] = []
     if bool(parsed.get("structured", false)):
@@ -138,7 +141,8 @@ static func _validate_parsed_reshapes(
             if not ["origin", "enhancement", "imprint", "others"].has(str(field)):
                 errors.append("%s：未知预置重塑字段 %s" % [scope, str(field)])
         errors.append_array(_validate_origin(
-            reshapes.get("origin", {}), origin_ids, attribute_ids, scope))
+            reshapes.get("origin", {}), origin_ids, attribute_ids,
+            base_attribute, scope))
         _validate_optional_id(
             reshapes.get("enhancement", ""), enhancement_ids, "强化", scope, errors)
         _validate_optional_id(
@@ -171,6 +175,7 @@ static func _validate_origin(
         origin,
         origin_ids: Dictionary,
         attribute_ids: Array,
+        base_attribute: String,
         scope: String) -> Array[String]:
     var errors: Array[String] = []
     if not origin is Dictionary:
@@ -199,6 +204,13 @@ static func _validate_origin(
                 errors.append("%s：易阶 payload 必须且只能包含字符串 direction" % scope)
             elif not ["up", "down"].has(str(payload.get("direction", ""))):
                 errors.append("%s：易阶 direction 只能为 up 或 down" % scope)
+        "awakening":
+            if not payload.is_empty() and (
+                    payload.size() != 1 or not payload.get("attribute") is String):
+                errors.append("%s：觉醒 payload 必须为空或只包含字符串 attribute" % scope)
+            elif payload.has("attribute") \
+                    and str(payload.get("attribute", "")) != base_attribute:
+                errors.append("%s：觉醒属性必须与真气当前基础属性一致" % scope)
     return errors
 
 static func _validate_optional_id(
@@ -231,7 +243,14 @@ static func _normalize_runtime_reshapes(
     for attribute in content_catalog.definition("base_deck").get("attributes", []):
         attributes.append(str(attribute.get("id", "")))
     var errors := _validate_parsed_reshapes(
-        parsed, origin_ids, enhancement_ids, imprint_ids, attributes, scope)
+        parsed,
+        origin_ids,
+        enhancement_ids,
+        imprint_ids,
+        attributes,
+        str(content_catalog.get_by_id(
+            "card", str(parsed.get("definition_id", ""))).get("attribute", "")),
+        scope)
     if not errors.is_empty():
         return {"errors": errors, "reshapes": {}}
     if bool(parsed.get("structured", false)):

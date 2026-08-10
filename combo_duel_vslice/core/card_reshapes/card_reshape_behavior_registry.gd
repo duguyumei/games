@@ -12,10 +12,20 @@ const MultiplyQiScript = preload("res://core/card_reshapes/multiply_effective_qi
 const SetQiScript = preload("res://core/card_reshapes/set_effective_qi_handler.gd")
 const BlockAnomalyScript = preload("res://core/card_reshapes/block_anomaly_handler.gd")
 const ClearAnomaliesScript = preload("res://core/card_reshapes/clear_anomalies_handler.gd")
+const DrawCardsScript = preload("res://core/card_reshapes/draw_cards_handler.gd")
+const RecycleDiscardedCardScript = preload(
+    "res://core/card_reshapes/recycle_discarded_card_handler.gd")
+const ApplyAnomalyScript = preload("res://core/card_reshapes/apply_anomaly_handler.gd")
+const AddDefenseFromQiScript = preload(
+    "res://core/card_reshapes/add_defense_from_effective_qi_handler.gd")
 
 const TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp",
     "attribute_check", "effective_qi", "anomaly_apply", "reshape_applied",
+    "card_drawn", "card_entered_discard", "group_resolved", "turn_end",
+]
+const NUMERIC_TRIGGERS := [
+    "card_contribution", "technique_multiplier", "power_amp", "effective_qi",
 ]
 
 var _handlers: Dictionary = {}
@@ -34,6 +44,10 @@ func _init(register_defaults: bool = true) -> void:
         register_handler(SetQiScript.new())
         register_handler(BlockAnomalyScript.new())
         register_handler(ClearAnomaliesScript.new())
+        register_handler(DrawCardsScript.new())
+        register_handler(RecycleDiscardedCardScript.new())
+        register_handler(ApplyAnomalyScript.new())
+        register_handler(AddDefenseFromQiScript.new())
 
 func register_handler(handler) -> bool:
     if not (handler is HandlerScript):
@@ -84,6 +98,8 @@ func validate_behavior(behavior: Dictionary, validator, scope: String) -> void:
         validator.report_error(
             scope + ".trigger", "行为 %s 不支持触发时点 %s" % [handler_id, trigger])
         return
+    if NUMERIC_TRIGGERS.has(trigger) and not _is_integer(behavior.get("priority")):
+        validator.report_error(scope + ".priority", "数值重塑行为必须声明整数 priority")
     handler.validate_behavior(behavior, validator, scope)
 
 func execute(behavior: Dictionary, context) -> Dictionary:
@@ -94,3 +110,6 @@ func execute(behavior: Dictionary, context) -> Dictionary:
 
 func _error(code: String, message: String, behavior_id: String) -> void:
     _errors.append({"code": code, "behavior_id": behavior_id, "message": message})
+
+func _is_integer(value) -> bool:
+    return value is int or value is float and float(value) == floor(float(value))

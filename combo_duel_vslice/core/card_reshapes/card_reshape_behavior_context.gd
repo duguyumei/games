@@ -10,6 +10,10 @@ var attribute_id: String = ""
 var holder
 var payload: Dictionary = {}
 var result: Dictionary = {}
+var effect_ports
+var rng: RandomNumberGenerator
+var trigger: String = ""
+var calculation_context: Dictionary = {}
 
 func configure(values: Dictionary) -> CardReshapeBehaviorContext:
     card = values.get("card")
@@ -18,4 +22,17 @@ func configure(values: Dictionary) -> CardReshapeBehaviorContext:
     holder = values.get("holder")
     payload = values.get("payload", {}).duplicate(true)
     result = values.get("result", {}).duplicate(true)
+    effect_ports = values.get("effect_ports")
+    rng = values.get("rng")
+    trigger = str(values.get("trigger", ""))
+    calculation_context = values.get("calculation_context", {}).duplicate(true)
     return self
+
+func matches_origin_attribute(behavior: Dictionary) -> bool:
+    var expected := str(behavior.get("origin_attribute", ""))
+    if expected == "":
+        return true
+    var origin = card.reshape_origin if card != null else {}
+    if not origin is Dictionary:
+        return false
+    return str(origin.get("payload", {}).get("attribute", "")) == expected

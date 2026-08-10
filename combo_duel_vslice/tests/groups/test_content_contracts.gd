@@ -13,6 +13,7 @@ func _initialize() -> void:
         "_test_node_reward_service_contract",
         "_test_run_effect_platform_contract",
         "_test_run_card_workshop_effects",
+        "_test_awakening_origin_persistence_contract",
         "_test_effect_handler_registry_contract",
         "_test_effect_extension_entry_contract",
         "_test_consumable_effect_registry_contract",

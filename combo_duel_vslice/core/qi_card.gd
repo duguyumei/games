@@ -121,8 +121,11 @@ func set_anomaly(category: String, anomaly_id: String, payload: Dictionary = {})
 func configure_reshape_rule_service(service) -> void:
     reshape_rule_service = service
 
-func effective_qi_value(include_contribution: bool = false) -> int:
-    var value: int = int(_reshape_rules().effective_qi_value(self))
+func effective_qi_value(
+        include_contribution: bool = false,
+        calculation_context: Dictionary = {}) -> int:
+    var value: int = int(_reshape_rules().effective_qi_value(
+        self, calculation_context))
     if include_contribution:
         value = _reshape_rules().card_contribution(self, value)
     return value

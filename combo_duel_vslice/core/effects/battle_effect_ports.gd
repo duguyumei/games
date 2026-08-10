@@ -96,6 +96,19 @@ func draw(side: BattleSide, count: int, source_kind: String = "") -> Array:
         _status_system.record_technique_card_flow(side, "draw", drawn.size())
     return drawn
 
+func shuffle_zone(
+        side: BattleSide,
+        zone: String,
+        rng: RandomNumberGenerator) -> void:
+    side.card_zone_service.shuffle(side.card_zone_service.zone(side, zone), rng)
+
+func current_effective_qi(side: BattleSide, card) -> int:
+    var reshape_value: int = (
+        card.effective_qi_value()
+        if card.has_method("effective_qi_value") else int(card.qi_value))
+    return maxi(0, _status_system.modify_card_contribution(
+        card, reshape_value, side))
+
 func discard_random(side: BattleSide, count: int, rng: RandomNumberGenerator) -> Array:
     var discarded: Array = side.random_discard(count, rng)
     _status_system.record_technique_card_flow(side, "discard", discarded.size())

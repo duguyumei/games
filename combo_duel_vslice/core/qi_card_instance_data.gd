@@ -68,21 +68,35 @@ static func validate(values: Dictionary, content_catalog, include_combat_state: 
         errors.append("真气实例引用未知 definition_id：%s" % definition_id)
     else:
         _validate_base_identity(values, content_catalog.get_by_id("card", definition_id), errors)
-    _validate_reshapes(values.get("reshapes", {}), content_catalog, errors)
+    _validate_reshapes(
+        values.get("reshapes", {}),
+        str(values.get("attribute", "")),
+        content_catalog,
+        errors)
     if include_combat_state:
         _validate_anomalies(values.get("anomalies", {}), content_catalog, errors)
-        _validate_reshapes(values.get("suppressed_reshapes", {}), content_catalog, errors, true)
+        _validate_reshapes(
+            values.get("suppressed_reshapes", {}),
+            str(values.get("attribute", "")),
+            content_catalog,
+            errors,
+            true)
     return errors
 
 static func _validate_reshapes(
         values,
+        base_attribute: String,
         content_catalog,
         errors: Array[String],
         partial: bool = false) -> void:
     if not values is Dictionary:
         errors.append("reshapes 必须是对象")
         return
-    _validate_origin(values.get("origin", {}), content_catalog, errors)
+    _validate_origin(
+        values.get("origin", {}),
+        base_attribute,
+        content_catalog,
+        errors)
     _validate_optional_reference(values, "enhancement", "enhancement", content_catalog, errors)
     _validate_optional_reference(values, "imprint", "imprint", content_catalog, errors)
     var others = values.get("others", {})
@@ -100,7 +114,11 @@ static func _validate_reshapes(
         if not ["origin", "enhancement", "imprint", "others"].has(str(field)):
             errors.append("reshapes 包含旧版或未知字段 %s" % str(field))
 
-static func _validate_origin(values, content_catalog, errors: Array[String]) -> void:
+static func _validate_origin(
+        values,
+        base_attribute: String,
+        content_catalog,
+        errors: Array[String]) -> void:
     if not values is Dictionary:
         errors.append("重塑·本源必须是对象")
         return
@@ -132,6 +150,11 @@ static func _validate_origin(values, content_catalog, errors: Array[String]) -> 
                 errors.append("易阶 payload 必须且只能包含字符串 direction")
             elif not ["up", "down"].has(str(payload_values.get("direction", ""))):
                 errors.append("易阶 direction 只能为 up 或 down")
+        "awakening":
+            if payload_values.size() != 1 or not payload_values.get("attribute") is String:
+                errors.append("觉醒 payload 必须且只能包含字符串 attribute")
+            elif str(payload_values.get("attribute", "")) != base_attribute:
+                errors.append("觉醒属性必须与真气当前基础属性一致")
 
 static func _validate_base_identity(
         values: Dictionary,

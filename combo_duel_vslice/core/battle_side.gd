@@ -50,6 +50,9 @@ func use_status_system(system) -> void:
     status_system = system
     card_zone_service.use_status_system(system)
 
+func use_card_reshape_runtime(runtime) -> void:
+    card_zone_service.use_card_reshape_runtime(runtime)
+
 func reset(
         cards: Array,
         rng: RandomNumberGenerator,

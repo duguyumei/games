@@ -12,7 +12,8 @@ static func calculate(
     var card_amp_percent := 0
     for card in hand_result["contributing"]:
         var contribution: int = (
-            card.effective_qi_value() if card.has_method("effective_qi_value") else card.qi_value)
+            card.effective_qi_value(false, {"participating": true})
+            if card.has_method("effective_qi_value") else card.qi_value)
         if card.has_method("reshape_card_contribution"):
             contribution = card.reshape_card_contribution(contribution)
         if card.has_method("reshape_multiplier_bonus"):

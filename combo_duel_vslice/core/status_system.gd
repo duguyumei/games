@@ -371,7 +371,10 @@ func status_modifier_per_stack(
     return 0
 
 func effective_qi_value(card) -> int:
-    return card.effective_qi_value(true) if card.has_method("effective_qi_value") else int(card.qi_value)
+    var value: int = (
+        card.effective_qi_value(true)
+        if card.has_method("effective_qi_value") else int(card.qi_value))
+    return maxi(0, modify_card_contribution(card, value))
 
 func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
     var entries: Array = []

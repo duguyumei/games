@@ -196,11 +196,14 @@ func _initialize() -> void:
     _test_node_reward_service_contract()
     _test_run_effect_platform_contract()
     _test_run_card_workshop_effects()
+    _test_awakening_origin_persistence_contract()
     _test_qi_instance_state_contract()
     _test_run_deck_contract()
     _test_card_zone_service_contract()
     _test_battle_flow_coordinator_contract()
     _test_battle_timing_system_contract_and_integration()
+    _test_awakening_battle_runtime()
+    _test_awakening_group_completion_paths()
     _test_status_behavior_registry_contract()
     _test_status_system_contract()
     _test_declared_card_status_runtime_semantics()
@@ -331,6 +334,7 @@ func _test_card_reshape_behavior_registry() -> void:
     var values := _catalog_definitions(base_catalog)
     values["card_states"]["enhancements"][0]["behaviors"] = [{
         "trigger": "card_contribution",
+        "priority": 100,
         "handler": "probe_add_value",
         "amount": 5,
     }]
@@ -396,12 +400,44 @@ func _test_card_reshape_behavior_registry() -> void:
             "card_states.enhancements[0].behaviors[0].amount"),
         "重塑行为参数错误报告内容路径")
 
+    var missing_priority_values := _catalog_definitions(base_catalog)
+    missing_priority_values["card_states"]["enhancements"][0]["behaviors"] = [{
+        "trigger": "effective_qi",
+        "handler": "add_effective_qi",
+        "amount": 2,
+    }]
+    var missing_priority_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not missing_priority_catalog.load_from_definitions(
+            missing_priority_values, base_catalog.paths),
+        "数值重塑行为缺少 priority 时内容加载失败")
+    _assert_true(
+        _array_contains_text(
+            missing_priority_catalog.errors,
+            "card_states.enhancements[0].behaviors[0].priority"),
+        "数值优先级错误稳定报告内容路径")
+
+    var unknown_anomaly_values := _catalog_definitions(base_catalog)
+    for behavior in unknown_anomaly_values["card_states"]["origins"][2]["behaviors"]:
+        if behavior.get("handler", "") == "apply_anomaly":
+            behavior["anomaly"] = "missing_anomaly"
+    var unknown_anomaly_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_anomaly_catalog.load_from_definitions(
+            unknown_anomaly_values, base_catalog.paths),
+        "重塑行为引用未知异状时内容加载失败")
+    _assert_true(
+        _array_contains_text(
+            unknown_anomaly_catalog.errors,
+            "card_states.origins[2].behaviors[3].anomaly"),
+        "重塑异状引用错误稳定报告内容路径")
+
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
     _assert_equal(catalog.errors, [], "当前内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
-    _assert_equal(catalog.definition("card_states")["version"], 5, "真气重塑与异状数据带顶层版本")
+    _assert_equal(catalog.definition("card_states")["version"], 6, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
     _assert_equal(catalog.definition("consumables")["version"], 3, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
@@ -416,10 +452,10 @@ func _test_content_catalog_and_validator() -> void:
         52,
         "标准初始构筑显式声明 52 个真气 ID")
     _assert_equal(catalog.all_of("card").size(), 52, "内容目录建立 52 张唯一基础真气索引")
-    _assert_equal(catalog.all_of("origin").size(), 2, "内容目录建立转属与易阶本源索引")
+    _assert_equal(catalog.all_of("origin").size(), 3, "内容目录建立三种正式本源索引")
     _assert_equal(catalog.all_of("enhancement").size(), 3, "内容目录只建立三种已实现强化索引")
     _assert_equal(catalog.all_of("imprint").size(), 0, "四种正式印记留待后续批次")
-    _assert_equal(catalog.all_of("anomaly").size(), 12, "内容目录建立十二种战斗异状索引")
+    _assert_equal(catalog.all_of("anomaly").size(), 13, "内容目录建立十三种战斗异状索引")
     _assert_equal(catalog.all_of("actor_status").size(), 8, "内容目录建立八种角色战斗状态索引")
     _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
     _assert_equal(
@@ -3414,6 +3450,326 @@ func _test_run_deck_contract() -> void:
             break
     _assert_equal(synced_source["reshapes"]["enhancement"], "momentum", "战斗中的强化替换同步回 RunDeck")
     _assert_true(not synced_source.has("anomalies"), "战斗同步不会把状态异状带到下一场")
+
+func _test_awakening_origin_persistence_contract() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "觉醒本源契约载入统一内容目录")
+    _assert_equal(catalog.all_of("origin").size(), 3, "正式内容包含转属、易阶、觉醒三种本源")
+    _assert_equal(catalog.all_of("enhancement").size(), 3, "F2D1 仍只包含三种正式强化")
+    _assert_equal(catalog.all_of("imprint").size(), 0, "F2D1 不提前录入正式印记")
+
+    var card = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_7"), "awakening:wind_7",
+        catalog.card_reshape_rules)
+    var identity_before := {
+        "id": card.id,
+        "definition_id": card.definition_id,
+        "rank_name": card.rank_name,
+        "rank_order": card.rank_order,
+        "qi_value": card.qi_value,
+        "attribute": card.attribute,
+        "attribute_name": card.attribute_name,
+    }
+    var awakened: Dictionary = CardOriginServiceScript.new(catalog).apply_to_card(
+        card, "awakening", {})
+    _assert_true(awakened.get("success", false), "空 payload 觉醒读取当前基础属性")
+    _assert_equal(
+        card.reshape_origin,
+        {"id": "awakening", "payload": {"attribute": "wind"}},
+        "风牌觉醒持久保存 payload.attribute=wind")
+    _assert_equal({
+        "id": card.id,
+        "definition_id": card.definition_id,
+        "rank_name": card.rank_name,
+        "rank_order": card.rank_order,
+        "qi_value": card.qi_value,
+        "attribute": card.attribute,
+        "attribute_name": card.attribute_name,
+    }, identity_before, "觉醒不改变实例、牌阶、基础属性或基础真气值")
+    _assert_true(
+        not CardOriginServiceScript.new(catalog).apply_to_card(
+            card, "attribute_change", {"attribute": "fire"}).get("success", false),
+        "觉醒后本源槽锁定并拒绝再次改造")
+
+    var mismatch = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_7"), "awakening:mismatch",
+        catalog.card_reshape_rules)
+    _assert_true(
+        not CardOriginServiceScript.new(catalog).apply_to_card(
+            mismatch, "awakening", {"attribute": "fire"}).get("success", false),
+        "风牌不能通过 payload 强制写成火觉醒")
+
+    var captured: Dictionary = QiCardInstanceDataScript.capture(card)
+    _assert_equal(
+        QiCardInstanceDataScript.validate(captured, catalog), [],
+        "觉醒真气实例通过统一持久化校验")
+    var restored = QiCardInstanceDataScript.restore(captured, catalog.card_reshape_rules)
+    _assert_equal(restored.reshape_origin, card.reshape_origin, "真气 DTO 往返保留觉醒属性")
+
+    var run_deck = RunDeckScript.new(catalog)
+    run_deck.reset_standard("awakening-run")
+    _assert_true(
+        run_deck.apply_card_origin(["wind_7"], "awakening", {}).get("success", false),
+        "RunDeck 通过本源边界施加觉醒")
+    var copied: Dictionary = run_deck.copy_card("wind_7")
+    _assert_true(copied.get("success", false), "完整复制觉醒真气成功")
+    _assert_equal(
+        run_deck.card_data(str(copied["instance_ids"][0]))["reshapes"]["origin"],
+        run_deck.card_data("wind_7")["reshapes"]["origin"],
+        "完整复制保留觉醒属性与本源锁")
+    var battle_cards: Array = run_deck.create_battle_cards()
+    run_deck.sync_from_battle_cards(battle_cards)
+    _assert_equal(
+        run_deck.card_data("wind_7")["reshapes"]["origin"]["payload"]["attribute"],
+        "wind",
+        "战斗装配与战后同步保留觉醒属性")
+
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 82101}).success, "觉醒存档测试建立本局")
+    _assert_true(
+        session.growth.run_deck.apply_card_origin(
+            ["forest_7"], "awakening", {}).get("success", false),
+        "本局牌组施加林觉醒")
+    var save = RunSaveDataScript.new().capture(session)
+    var save_restored: Dictionary = save.restore_session(catalog)
+    _assert_true(save_restored.get("success", false), "带觉醒的本局存档可以恢复")
+    _assert_equal(
+        save_restored["run_session"].growth.run_deck.card_data(
+            "forest_7")["reshapes"]["origin"]["payload"]["attribute"],
+        "forest",
+        "存档—读档保留觉醒属性")
+
+    var enemy_awakened: Dictionary = EnemyDeckEncodingScript.parse([{
+        "definition_id": "mountain_7",
+        "reshapes": {
+            "origin": {"id": "awakening", "payload": {"attribute": "mountain"}},
+        },
+    }], catalog, "awakening-enemy")
+    _assert_true(enemy_awakened.get("success", false), "敌人可预置与基础属性一致的觉醒")
+    _assert_equal(
+        enemy_awakened["cards"][0].reshape_origin["payload"]["attribute"],
+        "mountain",
+        "敌人预置保留觉醒属性")
+    var bad_enemy: Dictionary = EnemyDeckEncodingScript.parse([{
+        "definition_id": "wind_7",
+        "reshapes": {
+            "origin": {"id": "awakening", "payload": {"attribute": "fire"}},
+        },
+    }], catalog, "awakening-enemy-bad")
+    _assert_true(not bad_enemy.get("success", false), "敌人预置同样拒绝伪造觉醒属性")
+    var inferred_enemy: Dictionary = EnemyDeckEncodingScript.parse([{
+        "definition_id": "fire_7",
+        "reshapes": {
+            "origin": {"id": "awakening", "payload": {}},
+        },
+    }], catalog, "awakening-enemy-inferred")
+    _assert_true(inferred_enemy.get("success", false), "敌人预置可用空 payload 读取基础属性")
+    _assert_equal(
+        inferred_enemy["cards"][0].reshape_origin["payload"]["attribute"],
+        "fire",
+        "敌人空 payload 觉醒在装配时持久化实际属性")
+
+func _test_awakening_battle_runtime() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "觉醒战斗运行时载入统一内容目录")
+    var origin = CardOriginServiceScript.new(catalog)
+
+    var wind_a = _card("7", "wind")
+    var wind_b = _card("6", "wind")
+    var wind_tail = _card("5", "forest")
+    origin.apply_to_card(wind_a, "awakening", {})
+    origin.apply_to_card(wind_b, "awakening", {})
+    var wind_engine = _engine_with_hand([], [wind_tail, wind_b, wind_a], 82111)
+    var wind_drawn: Array = wind_engine.player.draw(1)
+    _assert_equal(wind_drawn.size(), 1, "最外层抽牌仍只报告请求抽到的一张")
+    _assert_equal(wind_engine.player.hand.size(), 3, "连续风觉醒链式额外抽牌直到普通尾牌")
+    _assert_equal(wind_engine.player.draw_pile.size(), 0, "风觉醒遇到空牌库自然停止")
+
+    var forest_play = _card("7", "forest")
+    var forest_discard = _card("6", "forest")
+    var forest_effect = _card("5", "forest")
+    var forest_direct = _card("4", "forest")
+    for card in [forest_play, forest_discard, forest_effect, forest_direct]:
+        origin.apply_to_card(card, "awakening", {})
+    var forest_engine = _engine_with_hand([], [], 82112)
+    forest_engine.player.staging = [forest_play]
+    forest_engine.player.hand = [forest_discard, forest_effect]
+    forest_engine.player.draw_pile = [forest_direct]
+    forest_engine.player.card_zone_service.move_card(
+        forest_engine.player, "staging", "discard_pile", forest_play, "normal_play")
+    forest_engine.player.card_zone_service.move_card(
+        forest_engine.player, "hand", "discard_pile", forest_discard, "explicit_discard")
+    forest_engine.effect_ports.move_card(
+        forest_engine.player, "hand", forest_engine.player, "discard_pile",
+        forest_effect, "effect")
+    _assert_true(
+        forest_engine.player.draw_pile.has(forest_play)
+        and forest_engine.player.draw_pile.has(forest_discard)
+        and forest_engine.player.draw_pile.has(forest_effect),
+        "林觉醒在正常打出、明确弃牌和效果入弃牌堆后回库并洗牌")
+    forest_engine.player.card_zone_service.move_card(
+        forest_engine.player, "draw_pile", "draw_pile", forest_direct, "gu_recycle")
+    _assert_true(
+        forest_engine.player.draw_pile.has(forest_direct),
+        "未实际进入弃牌堆的直接回库不触发林觉醒改置")
+
+    var fire_main = _card("7", "fire")
+    var fire_extra = _card("2", "fire")
+    origin.apply_to_card(fire_main, "awakening", {})
+    origin.apply_to_card(fire_extra, "awakening", {})
+    fire_main.set_enhancement("qi_boost")
+    var fire_engine = _engine_with_hand([fire_main, fire_extra], [], 82113)
+    fire_engine.sequence_book.configure({"high_card": ["stagnant_gu_conceal_breath"]})
+    var fire_preview: Dictionary = fire_engine.preview(_ids([fire_main, fire_extra]))
+    _assert_equal(fire_preview["values"]["card_total"], 30, "增元火觉醒按(7+8)×2参与数值计算")
+    _assert_true(
+        not fire_main.has_anomaly("mark", "burned_out"),
+        "预览保持纯计算且不施加燃尽")
+    var fire_result: Dictionary = fire_engine.confirm_play(_ids([fire_main, fire_extra]))
+    _assert_true(fire_result.get("success", false), "火觉醒真实功法组完成结算")
+    _assert_true(fire_main.has_anomaly("mark", "burned_out"), "参与最高牌型的火觉醒在组结束后燃尽")
+    _assert_true(not fire_extra.has_anomaly("mark", "burned_out"), "额外打出但未贡献的火觉醒不翻倍且不燃尽")
+    _assert_equal(
+        PowerCalculatorScript.calculate(
+            HandEvaluatorScript.evaluate([fire_main]),
+            {},
+            Callable(fire_engine.status_system, "modify_card_contribution").bind(
+                fire_engine.player))["card_total"],
+        0,
+        "燃尽令当前真气贡献为零")
+    _assert_equal(
+        fire_engine.status_system.effective_qi_value(fire_main),
+        0,
+        "战斗异状与效果读取同样把燃尽视为零有效真气")
+    _assert_equal(
+        _count_status_changes(fire_engine.status_system.history, "burned_out"),
+        1,
+        "一个功法组只为参与真气施加一次燃尽")
+    _assert_equal(
+        fire_engine.timing_system.history[-1]["handler_results"][-1]["handler_id"],
+        "card_reshape_runtime.group_resolved",
+        "火觉醒在功法与内功完成、序列推进之后响应组结束")
+    fire_engine.status_system.apply_card_anomaly(
+        fire_main, "mark", "purification", {}, "觉醒测试净化")
+    _assert_true(not fire_main.has_anomaly("mark", "burned_out"), "净化可清除燃尽")
+    fire_engine.status_system.apply_card_anomaly(
+        fire_extra, "mark", "burned_out", {}, "觉醒测试战斗结束")
+    fire_engine.timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
+        "actors": [fire_engine.player, fire_engine.enemy],
+    })
+    _assert_true(not fire_extra.has_anomaly("mark", "burned_out"), "战斗结束自动移除燃尽")
+
+    var mountain_hand = _card("7", "mountain")
+    var mountain_discard = _card("6", "mountain")
+    var mountain_staging = _card("5", "mountain")
+    var mountain_draw = _card("4", "mountain")
+    for card in [mountain_hand, mountain_discard, mountain_staging, mountain_draw]:
+        origin.apply_to_card(card, "awakening", {})
+    mountain_hand.set_enhancement("qi_boost")
+    var mountain_engine = _engine_with_hand([mountain_hand], [], 82114)
+    mountain_engine.player.discard_pile = [mountain_discard]
+    mountain_engine.player.staging = [mountain_staging]
+    mountain_engine.player.draw_pile = [mountain_draw]
+    var turn_end_result: Dictionary = mountain_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.TURN_END, {
+            "actor": mountain_engine.player,
+            "actors": [mountain_engine.player],
+        })
+    _assert_equal(mountain_engine.player.defense, 15, "山觉醒读取增元后的当前有效真气获得防御")
+    _assert_equal(
+        turn_end_result["results"][-1]["handler_id"],
+        "card_reshape_runtime.turn_end",
+        "山觉醒排在现有回合结束状态与延迟效果之后")
+    mountain_engine.status_system.apply_card_anomaly(
+        mountain_hand, "mark", "burned_out", {}, "觉醒测试燃尽")
+    mountain_engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
+        "actor": mountain_engine.player,
+        "actors": [mountain_engine.player],
+    })
+    _assert_equal(mountain_engine.player.defense, 15, "山觉醒读取燃尽后的零有效真气")
+
+func _test_awakening_group_completion_paths() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "觉醒组结束路径测试载入内容")
+    var origin = CardOriginServiceScript.new(catalog)
+
+    var synchronized_card = _card("7", "fire")
+    origin.apply_to_card(synchronized_card, "awakening", {})
+    var synchronized_engine = CombatEngineScript.new(null, catalog)
+    _assert_true(synchronized_engine.setup_scripted_battle(2308), "同步觉醒测试载入脚本战斗")
+    synchronized_engine.start_player_turn()
+    synchronized_engine.player.hand = [synchronized_card, _card("3", "forest")]
+    synchronized_engine.player.draw_pile.clear()
+    synchronized_engine.sequence_book.configure({
+        "high_card": ["stagnant_gu_conceal_breath"],
+    })
+    var synchronized_result: Dictionary = synchronized_engine.confirm_play(
+        [synchronized_card.id])
+    _assert_true(synchronized_result.get("success", false), "同步行动完成火觉醒功法组")
+    _assert_true(synchronized_card.has_anomaly("mark", "burned_out"), "同步行动组结束施加燃尽")
+    _assert_equal(
+        _count_status_changes(synchronized_engine.status_system.history, "burned_out"),
+        1,
+        "同步行动的火觉醒只结算一次")
+
+    var main_cards := [
+        _card("7", "fire"), _card("7", "fire"), _card("7", "fire")]
+    var cooperation_cards := [_card("5", "fire"), _card("5", "fire")]
+    for card in main_cards + cooperation_cards:
+        origin.apply_to_card(card, "awakening", {})
+    var cooperation_engine = _engine_with_hand(
+        main_cards + cooperation_cards, [], 82115)
+    cooperation_engine.sequence_book.configure({
+        "three_kind": ["three_ring_ensemble"],
+        "pair": ["double_gu_exchange_breath"],
+    })
+    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
+        _ids(main_cards), _ids(cooperation_cards))
+    _assert_true(cooperation_result.get("success", false), "主组与协同组完成各自功法结算")
+    for card in main_cards + cooperation_cards:
+        _assert_true(card.has_anomaly("mark", "burned_out"), "协同路径每张参与真气在自己的组结束后燃尽")
+    _assert_equal(
+        _count_status_changes(cooperation_engine.status_system.history, "burned_out"),
+        5,
+        "主组三张与协同组两张各只结算一次燃尽")
+
+    var pending_card = _card("8", "fire")
+    var pending_target = _card("3", "forest")
+    var pending_target_other = _card("4", "mountain")
+    origin.apply_to_card(pending_card, "awakening", {})
+    var pending_engine = _engine_with_hand(
+        [pending_card, pending_target, pending_target_other], [], 82116)
+    pending_engine.sequence_book.configure({"high_card": ["discard_gu_exchange_breath"]})
+    var pending_result: Dictionary = pending_engine.confirm_play([pending_card.id])
+    _assert_true(pending_result.get("pending_choice", false), "等待选择路径在组完成前暂停")
+    _assert_true(
+        not pending_card.has_anomaly("mark", "burned_out"),
+        "等待选择期间不会提前施加燃尽")
+    var request: Dictionary = pending_engine.action_resolver.pending_choice_snapshot()
+    var resumed: Dictionary = pending_engine.resolve_effect_choice(
+        str(request.get("request_id", "")), [pending_target.id])
+    while resumed.get("pending_choice", false):
+        request = pending_engine.action_resolver.pending_choice_snapshot()
+        var candidates: Array = request.get("candidate_ids", [])
+        resumed = pending_engine.resolve_effect_choice(
+            str(request.get("request_id", "")),
+            candidates.slice(0, 1))
+    _assert_true(resumed.get("success", false), "等待选择恢复后完成功法组")
+    _assert_true(
+        pending_card.has_anomaly("mark", "burned_out"),
+        "等待选择恢复后才为参与真气施加燃尽")
+    _assert_equal(
+        _count_status_changes(pending_engine.status_system.history, "burned_out"),
+        1,
+        "等待选择恢复不会重复触发组结束燃尽")
+
+func _count_status_changes(history: Array, status_id: String) -> int:
+    var count := 0
+    for change in history:
+        if str(change.get("status_id", "")) == status_id \
+                and str(change.get("change_type", "")) == "card_anomaly_apply":
+            count += 1
+    return count
 
 func _test_standard_deck() -> void:
     var deck := DeckFactoryScript.create_standard_deck()

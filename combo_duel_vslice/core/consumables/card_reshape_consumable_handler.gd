@@ -129,3 +129,13 @@ func _validate_origin(effect: Dictionary, context, scope: String) -> void:
 			elif not ["up", "down"].has(str(values.get("direction", ""))):
 				context.report_error(
 					scope + ".payload.direction", "只能为 up 或 down")
+		"awakening":
+			if not values.is_empty() and (
+					values.size() != 1 or not values.get("attribute") is String):
+				context.report_error(
+					scope + ".payload", "觉醒只能使用空 payload 或单一字符串 attribute")
+			elif values.has("attribute") \
+					and context.has_method("legal_attribute_ids") \
+					and not context.legal_attribute_ids().has(str(values.get("attribute", ""))):
+				context.report_error(
+					scope + ".payload.attribute", "引用未知基础属性 %s" % str(values.get("attribute", "")))

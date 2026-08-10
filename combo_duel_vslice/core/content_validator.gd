@@ -57,7 +57,7 @@ const PRODUCTION_SEQUENCES_PATH := "res://data/production_sequences.json"
 const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
 const RESHAPE_CATEGORY_IDS := ["origin", "enhancement", "imprint", "other"]
 const ANOMALY_CATEGORY_IDS := ["mark", "poison", "state", "other"]
-const REQUIRED_ORIGIN_IDS := ["attribute_change", "rank_change"]
+const REQUIRED_ORIGIN_IDS := ["attribute_change", "rank_change", "awakening"]
 const REQUIRED_ENHANCEMENT_IDS := ["qi_boost", "momentum", "hunyuan"]
 const RETIRED_RESHAPE_IDS := [
     "bonus", "multiplier", "wild", "glass", "steel", "stone", "gold", "lucky",
@@ -645,6 +645,7 @@ func _validate_card_states(definition: Dictionary) -> void:
             _validate_status_behaviors(value, CARD_STATUS_TRIGGERS, scope)
             _validate_card_status_modifiers(value, scope)
         _validate_card_status_behavior_references()
+        _validate_card_reshape_behavior_references()
     _validate_other_reshape_battle_start_anomalies()
 
 func _validate_card_reshape_behaviors(values, scope: String) -> void:
@@ -670,6 +671,32 @@ func _validate_card_reshape_behaviors(values, scope: String) -> void:
                 _error(behavior_scope + ".trigger", "未知重塑行为触发时点 %s" % trigger)
                 continue
             _card_reshape_registry.validate_behavior(behavior, self, behavior_scope)
+
+func _validate_card_reshape_behavior_references() -> void:
+    for source in [
+        [_contents["card_states"].get("origins", []), "card_states.origins"],
+        [_contents["card_states"].get("enhancements", []), "card_states.enhancements"],
+        [_contents["card_states"].get("imprints", []), "card_states.imprints"],
+        [_contents["card_states"].get("other_reshapes", []), "card_states.other_reshapes"],
+    ]:
+        var definitions: Array = source[0]
+        for definition_index in range(definitions.size()):
+            var definition = definitions[definition_index]
+            if not definition is Dictionary:
+                continue
+            for behavior_index in range(definition.get("behaviors", []).size()):
+                var behavior = definition.get("behaviors", [])[behavior_index]
+                if not behavior is Dictionary \
+                        or str(behavior.get("handler", "")) != "apply_anomaly":
+                    continue
+                var scope := "%s[%d].behaviors[%d]" % [
+                    str(source[1]), definition_index, behavior_index]
+                var anomaly_id := str(behavior.get("anomaly", ""))
+                var anomaly: Dictionary = _anomalies_by_id.get(anomaly_id, {})
+                if anomaly.is_empty():
+                    _error(scope + ".anomaly", "引用未知真气异状 %s" % anomaly_id)
+                elif str(anomaly.get("category", "")) != str(behavior.get("category", "")):
+                    _error(scope + ".category", "异状 %s 的类别不匹配" % anomaly_id)
 
 func _validate_status_behaviors(
         definition: Dictionary,

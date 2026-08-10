@@ -10,6 +10,7 @@ const ACTIVE_ZONES := ["draw_pile", "hand", "staging", "discard_pile"]
 
 var card_state_lifecycle
 var status_system
+var card_reshape_runtime
 
 func _init(lifecycle = null) -> void:
     card_state_lifecycle = lifecycle
@@ -19,6 +20,9 @@ func use_card_state_lifecycle(lifecycle) -> void:
 
 func use_status_system(system) -> void:
     status_system = system
+
+func use_card_reshape_runtime(runtime) -> void:
+    card_reshape_runtime = runtime
 
 func reset_zones(side, cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
     side.hand.clear()
@@ -272,8 +276,13 @@ func move_card(
             card_state_lifecycle.on_enter_discard(card)
         if reason == "explicit_discard" and status_system != null:
             status_system.on_card_explicit_discard(side, card)
-    elif destination_zone == "hand" and reason == "draw" and status_system != null:
-        status_system.on_card_drawn(side, card)
+        if card_reshape_runtime != null:
+            card_reshape_runtime.on_card_entered_discard(side, card)
+    elif destination_zone == "hand" and reason == "draw":
+        if status_system != null:
+            status_system.on_card_drawn(side, card)
+        if card_reshape_runtime != null:
+            card_reshape_runtime.on_card_drawn(side, card)
     return {
         "success": true,
         "card": card,

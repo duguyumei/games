@@ -6,7 +6,7 @@ extends RefCounted
 ## 牌阶、真气值与属性名称全部从 base_deck 定义读取。调用方先取得完整 after
 ## 候选，再决定事务提交，因此这里不直接持有 RunDeck 或战斗中央流程。
 
-const ORIGIN_IDS := ["attribute_change", "rank_change"]
+const ORIGIN_IDS := ["attribute_change", "rank_change", "awakening"]
 const RANK_DIRECTIONS := ["up", "down"]
 
 var _content_catalog
@@ -28,9 +28,15 @@ func plan(values: Dictionary, origin_id: String, payload: Dictionary) -> Diction
         return _failure("本源槽必须是对象")
     if not current_origin.is_empty():
         return _failure("该真气已经接受过本源改造，本源不可替换")
-    var payload_error := validate_payload(origin_id, payload)
+    var resolved_payload := payload.duplicate(true)
+    if origin_id == "awakening" and resolved_payload.is_empty():
+        resolved_payload = {"attribute": str(values.get("attribute", ""))}
+    var payload_error := validate_payload(origin_id, resolved_payload)
     if payload_error != "":
         return _failure(payload_error)
+    if origin_id == "awakening" \
+            and str(resolved_payload.get("attribute", "")) != str(values.get("attribute", "")):
+        return _failure("觉醒属性必须与真气当前基础属性一致")
 
     var after := values.duplicate(true)
     match origin_id:
@@ -58,11 +64,13 @@ func plan(values: Dictionary, origin_id: String, payload: Dictionary) -> Diction
             if attribute.is_empty():
                 return _failure("真气当前属性不在 base_deck 中：%s" % str(values.get("attribute", "")))
             _apply_base_identity(after, attribute, ranks[target_index])
+        "awakening":
+            pass
 
     var after_reshapes: Dictionary = after.get("reshapes", {}).duplicate(true)
     after_reshapes["origin"] = {
         "id": origin_id,
-        "payload": payload.duplicate(true),
+        "payload": resolved_payload,
     }
     after["reshapes"] = after_reshapes
     return {"success": true, "after": after}
@@ -111,6 +119,12 @@ func validate_payload(origin_id: String, payload: Dictionary) -> String:
             var direction := str(payload.get("direction", ""))
             if not RANK_DIRECTIONS.has(direction):
                 return "易阶 direction 只能为 up 或 down"
+        "awakening":
+            if payload.size() != 1 or not payload.get("attribute") is String:
+                return "觉醒 payload 必须为空或只包含字符串 attribute"
+            var attribute_id := str(payload.get("attribute", ""))
+            if _attribute_definition(attribute_id).is_empty():
+                return "觉醒引用未知基础属性：%s" % attribute_id
     return ""
 
 func _apply_base_identity(values: Dictionary, attribute: Dictionary, rank: Dictionary) -> void:
