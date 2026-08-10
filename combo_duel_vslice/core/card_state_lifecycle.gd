@@ -16,7 +16,7 @@ func apply_anomaly(
         return {"success": false, "reason": "未知真气异状：%s" % anomaly_id}
     if str(definition.get("category", "")) != category:
         return {"success": false, "reason": "异状 %s 不属于类别 %s" % [anomaly_id, category]}
-    var anomaly_permission: Dictionary = card.can_apply_anomaly() \
+    var anomaly_permission: Dictionary = card.can_apply_anomaly(category, anomaly_id) \
         if card.has_method("can_apply_anomaly") else {"allowed": true}
     if not bool(anomaly_permission.get("allowed", true)):
         return {

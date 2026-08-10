@@ -108,7 +108,8 @@ func remove_other_reshape(reshape_id: String) -> Dictionary:
 func set_anomaly(category: String, anomaly_id: String, payload: Dictionary = {}) -> bool:
     if not ANOMALY_CATEGORIES.has(category) or anomaly_id == "":
         return false
-    var anomaly_check: Dictionary = _reshape_rules().can_apply_anomaly(self)
+    var anomaly_check: Dictionary = _reshape_rules().can_apply_anomaly(
+        self, category, anomaly_id)
     if not bool(anomaly_check.get("allowed", true)):
         return false
     match category:
@@ -142,8 +143,11 @@ func reshape_power_amp_percent() -> int:
 func is_card_kind(kind: String) -> bool:
     return _reshape_rules().has_card_kind(self, kind)
 
-func can_apply_anomaly() -> Dictionary:
-    return _reshape_rules().can_apply_anomaly(self)
+func can_apply_anomaly(category: String = "", anomaly_id: String = "") -> Dictionary:
+    return _reshape_rules().can_apply_anomaly(self, category, anomaly_id)
+
+func can_explicit_discard() -> Dictionary:
+    return _reshape_rules().can_explicit_discard(self)
 
 func _reshape_rules():
     if reshape_rule_service == null:

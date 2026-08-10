@@ -106,9 +106,15 @@ func on_battle_end_timing(_event) -> Dictionary:
 func _finish_once() -> void:
     if cleanup_completed:
         return
+    var winner = null
+    if state == "player_victory":
+        winner = player
+    elif state == "player_defeat":
+        winner = enemy
     timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
         "round_number": turn_number_reader.call(),
         "actors": [player, enemy],
+        "winner": winner,
         "metadata": {
             "battle_state": state,
             "battle_state_detail": detail,

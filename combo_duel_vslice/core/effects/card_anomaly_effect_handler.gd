@@ -39,7 +39,7 @@ func execute(effect: Dictionary, context):
         else _zone_cards(target, zone))
     var candidates: Array = []
     for card in source_cards:
-        if card.can_apply_anomaly().get("allowed", true):
+        if card.can_apply_anomaly(category, anomaly_id).get("allowed", true):
             candidates.append(card)
     var applied: Array = []
     var wanted := mini(value_resolver.resolve(effect.get("count", 1), runtime), candidates.size())
@@ -74,17 +74,24 @@ func _apply_to_captured(effect: Dictionary, runtime):
     var cards: Array = runtime.captures.get(str(effect.get("capture", "")), [])
     var applied: Array = []
     for card in cards:
-        if not card.can_apply_anomaly().get("allowed", true):
-            continue
         var anomaly_id := str(effect.get("anomaly", ""))
         var category := str(effect.get("category", ""))
         if effect.has("random_options"):
-            var options: Array = effect["random_options"]
+            var options: Array = []
+            for option_value in effect["random_options"]:
+                var option: Dictionary = option_value
+                var option_category := str(option.get("category", category))
+                var option_id := str(option.get("anomaly", ""))
+                if card.can_apply_anomaly(
+                        option_category, option_id).get("allowed", true):
+                    options.append(option)
             if options.is_empty():
                 continue
             var option: Dictionary = options[rng.randi_range(0, options.size() - 1)]
             anomaly_id = str(option.get("anomaly", ""))
             category = str(option.get("category", category))
+        elif not card.can_apply_anomaly(category, anomaly_id).get("allowed", true):
+            continue
         var result: Dictionary = runtime.ports.apply_card_anomaly(
             card,
             category,

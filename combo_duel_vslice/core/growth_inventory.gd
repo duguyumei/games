@@ -269,6 +269,7 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "run_deck": run_deck.to_snapshot(),
         "life": life,
         "max_life": max_life,
+        "experience": experience,
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "practice_shop_state": practice_shop_state.duplicate(true),
         "consumable_use_sequence": consumable_use_sequence,
@@ -303,6 +304,8 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
         max_life = progress_snapshot.max_life
     if progress_snapshot.has_life:
         life = progress_snapshot.life
+    if progress_snapshot.has_experience:
+        experience = progress_snapshot.experience
 
 func grow_life_to(new_max_life: int) -> void:
     var increase := new_max_life - max_life
@@ -312,6 +315,7 @@ func grow_life_to(new_max_life: int) -> void:
 func apply_to_battle_side(side) -> void:
     side.max_life = max_life
     side.life = life
+    side.experience = experience
     side.configure_consumables(consumable_ids)
     side.hand_technique_progression = hand_technique_progression.duplicate(true)
     side.hand_technique_progression_active = true

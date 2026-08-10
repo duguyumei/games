@@ -178,6 +178,8 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         effect_ports,
         rng,
         timing_system)
+    effect_ports.use_card_reshape_runtime(card_reshape_runtime)
+    effect_ports.use_consumable_repository(consumable_repository)
     delayed_effects = status_system.delayed_records
     card_state_lifecycle = status_system.lifecycle
     player.use_card_state_lifecycle(card_state_lifecycle)

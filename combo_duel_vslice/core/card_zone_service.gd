@@ -43,6 +43,18 @@ func draw(side, count: int) -> Array:
         drawn.append(card)
     return drawn
 
+func place_on_draw_pile_top(side, card) -> Dictionary:
+    if not side.draw_pile.has(card):
+        return {"success": false, "reason": "目标真气不在抽牌堆"}
+    side.draw_pile.erase(card)
+    side.draw_pile.append(card)
+    return {
+        "success": true,
+        "card": card,
+        "from": "draw_pile",
+        "to": "draw_pile_top",
+    }
+
 func stage_cards(side, card_ids: Array) -> bool:
     var found: Array = []
     for card_id in card_ids:
@@ -118,17 +130,24 @@ func commit_selected_staging_with_recycles(
 func random_discard(side, count: int, rng: RandomNumberGenerator) -> Array:
     var discarded: Array = []
     for _index in range(maxi(0, count)):
-        if side.hand.is_empty():
+        var candidates: Array = side.hand.filter(
+            func(card): return _can_explicit_discard(side, card))
+        if candidates.is_empty():
             break
-        var card = side.hand[rng.randi_range(0, side.hand.size() - 1)]
-        move_card(side, "hand", "discard_pile", card, "explicit_discard")
-        discarded.append(card)
+        var card = candidates[rng.randi_range(0, candidates.size() - 1)]
+        var result := move_card(
+            side, "hand", "discard_pile", card, "explicit_discard")
+        if result.get("success", false):
+            discarded.append(card)
     return discarded
 
 func discard_all(side) -> Array:
-    var discarded: Array = side.hand.duplicate()
-    for card in discarded:
-        move_card(side, "hand", "discard_pile", card, "explicit_discard")
+    var discarded: Array = []
+    for card in side.hand.duplicate():
+        var result := move_card(
+            side, "hand", "discard_pile", card, "explicit_discard")
+        if result.get("success", false):
+            discarded.append(card)
     return discarded
 
 func recover_from_discard(
@@ -267,6 +286,13 @@ func move_card(
     var source: Array = zone(side, source_zone)
     if not source.has(card):
         return {"success": false, "reason": "来源牌区没有目标真气"}
+    if reason == "explicit_discard":
+        var permission := _explicit_discard_permission(side, card)
+        if not permission.get("allowed", true):
+            return {
+                "success": false,
+                "reason": str(permission.get("reason", "此真气不能被明确弃掉")),
+            }
     source.erase(card)
     zone(side, destination_zone).append(card)
     if destination_zone == "discard_pile":
@@ -277,7 +303,7 @@ func move_card(
         if reason == "explicit_discard" and status_system != null:
             status_system.on_card_explicit_discard(side, card)
         if card_reshape_runtime != null:
-            card_reshape_runtime.on_card_entered_discard(side, card)
+            card_reshape_runtime.on_card_entered_discard(side, card, reason)
     elif destination_zone == "hand" and reason == "draw":
         if status_system != null:
             status_system.on_card_drawn(side, card)
@@ -290,6 +316,16 @@ func move_card(
         "to": destination_zone,
         "reason": reason,
     }
+
+func _can_explicit_discard(side, card) -> bool:
+    return bool(_explicit_discard_permission(side, card).get("allowed", true))
+
+func _explicit_discard_permission(side, card) -> Dictionary:
+    if card_reshape_runtime != null:
+        return card_reshape_runtime.can_explicit_discard(side, card)
+    if card.has_method("can_explicit_discard"):
+        return card.can_explicit_discard()
+    return {"allowed": true}
 
 func find_card(side, zone_name: String, instance_id: String):
     for card in zone(side, zone_name):

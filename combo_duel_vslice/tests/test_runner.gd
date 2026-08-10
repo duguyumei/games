@@ -204,6 +204,9 @@ func _initialize() -> void:
     _test_battle_timing_system_contract_and_integration()
     _test_awakening_battle_runtime()
     _test_awakening_group_completion_paths()
+    _test_f2d2_formal_enhancement_runtime()
+    _test_f2d2_opportunity_freeze_and_progress_sync()
+    _test_f2e1_formal_imprint_runtime_and_persistence()
     _test_status_behavior_registry_contract()
     _test_status_system_contract()
     _test_declared_card_status_runtime_semantics()
@@ -437,7 +440,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
     _assert_equal(catalog.errors, [], "当前内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
-    _assert_equal(catalog.definition("card_states")["version"], 6, "真气重塑与异状数据带顶层版本")
+    _assert_equal(catalog.definition("card_states")["version"], 8, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
     _assert_equal(catalog.definition("consumables")["version"], 3, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
@@ -453,8 +456,8 @@ func _test_content_catalog_and_validator() -> void:
         "标准初始构筑显式声明 52 个真气 ID")
     _assert_equal(catalog.all_of("card").size(), 52, "内容目录建立 52 张唯一基础真气索引")
     _assert_equal(catalog.all_of("origin").size(), 3, "内容目录建立三种正式本源索引")
-    _assert_equal(catalog.all_of("enhancement").size(), 3, "内容目录只建立三种已实现强化索引")
-    _assert_equal(catalog.all_of("imprint").size(), 0, "四种正式印记留待后续批次")
+    _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种正式强化索引")
+    _assert_equal(catalog.all_of("imprint").size(), 3, "内容目录建立三种正式印记索引")
     _assert_equal(catalog.all_of("anomaly").size(), 13, "内容目录建立十三种战斗异状索引")
     _assert_equal(catalog.all_of("actor_status").size(), 8, "内容目录建立八种角色战斗状态索引")
     _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
@@ -1734,8 +1737,6 @@ func _test_run_card_workshop_effects() -> void:
     var base_catalog = ContentCatalogScript.new()
     _assert_true(base_catalog.load_all(), "真气工坊测试载入统一内容目录")
     var content_values := _catalog_definitions(base_catalog)
-    content_values["card_states"]["imprints"].append({
-        "id": "test_imprint", "name": "测试印记"})
     content_values["card_states"]["other_reshapes"].append({
         "id": "echo_reshape", "name": "回响重塑"})
     var catalog = ContentCatalogScript.new()
@@ -1793,7 +1794,7 @@ func _test_run_card_workshop_effects() -> void:
         growth.run_deck, ["wind_7"], "enhancement", "qi_boost").get("success", false),
         "本源改造后仍可获得强化")
     _assert_true(workshop.apply_run_card_reshape(
-        growth.run_deck, ["wind_7"], "imprint", "test_imprint").get("success", false),
+        growth.run_deck, ["wind_7"], "imprint", "enlightenment").get("success", false),
         "印记占用独立单值槽")
     _assert_true(workshop.apply_run_card_reshape(
         growth.run_deck, ["wind_7"], "other", "echo_reshape", {"amount": 2}
@@ -1844,7 +1845,7 @@ func _test_run_card_workshop_effects() -> void:
     workshop.apply_run_card_reshape(
         save_session.growth.run_deck, ["wind_7"], "enhancement", "qi_boost")
     workshop.apply_run_card_reshape(
-        save_session.growth.run_deck, ["wind_7"], "imprint", "test_imprint")
+        save_session.growth.run_deck, ["wind_7"], "imprint", "enlightenment")
     var saved_deck: Dictionary = save_session.growth.run_deck.to_snapshot()
     var restored: Dictionary = RunSaveDataScript.new().capture(
         save_session).restore_session(catalog)
@@ -1855,7 +1856,6 @@ func _test_qi_instance_state_contract() -> void:
     var base_catalog = ContentCatalogScript.new()
     _assert_true(base_catalog.load_all(), "真气实例契约测试载入统一目录")
     var values := _catalog_definitions(base_catalog)
-    values["card_states"]["imprints"].append({"id": "test_imprint", "name": "测试印记"})
     values["card_states"]["other_reshapes"].append({"id": "battle_curse", "name": "战斗诅咒"})
     values["card_states"]["other_reshapes"].append({"id": "scar", "name": "伤痕"})
     var catalog = ContentCatalogScript.new()
@@ -1873,7 +1873,7 @@ func _test_qi_instance_state_contract() -> void:
     _assert_equal(card.id, first_id, "真气运行时ID使用唯一实例ID")
     _assert_equal(card.definition_id, "wind_7", "真气实例保留基础定义ID")
     card.set_enhancement("qi_boost")
-    card.set_imprint("test_imprint")
+    card.set_imprint("enlightenment")
     _assert_true(card.set_anomaly("poison", "stagnant_poison"), "可以建立毒异状")
     _assert_true(card.set_anomaly("poison", "lethal_poison"), "新毒替换唯一毒槽中的旧毒")
     _assert_equal(card.anomaly_poison, "lethal_poison", "唯一毒槽只保留新毒")
@@ -1890,7 +1890,7 @@ func _test_qi_instance_state_contract() -> void:
     _assert_true(not run_data.has("anomalies"), "本局实例DTO默认不保存战斗异状")
     _assert_equal(
         run_data["reshapes"],
-        {"origin": {}, "enhancement": "qi_boost", "imprint": "test_imprint", "others": {}},
+        {"origin": {}, "enhancement": "qi_boost", "imprint": "enlightenment", "others": {}},
         "本局实例 DTO 使用新四字段且不含旧品相字段")
     _assert_equal(
         QiCardInstanceDataScript.validate(run_data, catalog),
@@ -1912,7 +1912,7 @@ func _test_qi_instance_state_contract() -> void:
     var restored = QiCardInstanceDataScript.restore(battle_data)
     _assert_equal(restored.id, first_id, "版本化DTO恢复唯一实例ID")
     _assert_equal(restored.definition_id, "wind_7", "版本化DTO恢复基础定义ID")
-    _assert_equal(restored.reshape_imprint, "test_imprint", "版本化DTO恢复印记")
+    _assert_equal(restored.reshape_imprint, "enlightenment", "版本化DTO恢复印记")
     _assert_equal(restored.anomaly_poison, "lethal_poison", "版本化DTO恢复毒异状")
     _assert_true(restored.has_anomaly("mark", "wind_lure"), "版本化DTO恢复多个标记")
     restored.set_anomaly("other", "temporary_a", {"amount": 1})
@@ -1950,7 +1950,7 @@ func _test_qi_instance_state_contract() -> void:
         purified, "attribute_change", {"attribute": "mountain"}).get("success", false),
         "净化测试牌先接受转属本源")
     purified.set_enhancement("qi_boost")
-    purified.set_imprint("test_imprint")
+    purified.set_imprint("enlightenment")
     purified.set_other_reshape("battle_curse", {"poison": "lethal_poison"})
     purified.set_other_reshape("scar", {"stacks": 1})
     purified.set_anomaly("poison", "lethal_poison")
@@ -2000,7 +2000,7 @@ func _test_qi_instance_state_contract() -> void:
     var restored_after_purification: Dictionary = lifecycle.on_battle_end(purified)
     _assert_equal(purified.reshape_origin["id"], "attribute_change", "战斗结束恢复净化前本源")
     _assert_equal(purified.reshape_enhancement, "momentum", "后来强化替换净化前强化")
-    _assert_equal(purified.reshape_imprint, "test_imprint", "战斗结束恢复净化前印记")
+    _assert_equal(purified.reshape_imprint, "enlightenment", "战斗结束恢复净化前印记")
     _assert_true(purified.reshape_others.has("battle_curse"), "战斗结束恢复未被替换的重塑其他")
     _assert_true(purified.reshape_others.has("scar"), "多个重塑其他分别恢复")
     _assert_true(purified.anomaly_snapshot()["marks"].is_empty(), "战斗结束移除净化与后来标记")
@@ -2926,11 +2926,12 @@ func _test_battle_timing_system_contract_and_integration() -> void:
     _assert_equal(
         battle_end_entry["handler_results"].map(func(result): return result["handler_id"]),
         [
+            "card_reshape_runtime.battle_victory",
             "status_system.card_battle_end",
             "status_system.transient_battle_end",
             "combat_engine.flow_cleanup",
         ],
-        "战斗结束按固定顺序先清真气异状再清临时战斗状态")
+        "战斗结束先结算胜利重塑，再清真气异状与临时战斗状态")
     _assert_equal(ending_card.anomaly_poison, "", "战斗结束时点清除真气异状")
     _assert_true(engine.player.stacks.is_empty() and engine.enemy.stacks.is_empty(), "战斗结束时点清除敌我临时层数")
     _assert_equal(engine.delayed_effects.size(), 0, "战斗结束时点清除未到期延迟记录")
@@ -3455,8 +3456,8 @@ func _test_awakening_origin_persistence_contract() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "觉醒本源契约载入统一内容目录")
     _assert_equal(catalog.all_of("origin").size(), 3, "正式内容包含转属、易阶、觉醒三种本源")
-    _assert_equal(catalog.all_of("enhancement").size(), 3, "F2D1 仍只包含三种正式强化")
-    _assert_equal(catalog.all_of("imprint").size(), 0, "F2D1 不提前录入正式印记")
+    _assert_equal(catalog.all_of("enhancement").size(), 8, "F2D2 包含八种正式强化")
+    _assert_equal(catalog.all_of("imprint").size(), 3, "F2E1 录入三种正式印记")
 
     var card = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "wind_7"), "awakening:wind_7",
@@ -3677,7 +3678,7 @@ func _test_awakening_battle_runtime() -> void:
         })
     _assert_equal(mountain_engine.player.defense, 15, "山觉醒读取增元后的当前有效真气获得防御")
     _assert_equal(
-        turn_end_result["results"][-1]["handler_id"],
+        turn_end_result["results"][-2]["handler_id"],
         "card_reshape_runtime.turn_end",
         "山觉醒排在现有回合结束状态与延迟效果之后")
     mountain_engine.status_system.apply_card_anomaly(
@@ -3762,6 +3763,790 @@ func _test_awakening_group_completion_paths() -> void:
         _count_status_changes(pending_engine.status_system.history, "burned_out"),
         1,
         "等待选择恢复不会重复触发组结束燃尽")
+
+func _test_f2d2_formal_enhancement_runtime() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "F2D2 正式强化测试载入内容目录")
+    var enhancement_ids: Array = catalog.all_of("enhancement").map(
+        func(value): return str(value.get("id", "")))
+    enhancement_ids.sort()
+    _assert_equal(
+        enhancement_ids,
+        ["flawless", "hidden_gold", "hunyuan", "momentum", "opportunity",
+            "qi_boost", "rock_solid", "void_burst"],
+        "八种正式强化集合完整且无额外内容")
+
+    var void_main = _card("7", "fire")
+    var void_extra = _card("2", "forest")
+    void_main.set_enhancement("void_burst")
+    void_extra.set_enhancement("void_burst")
+    var void_hand: Dictionary = HandEvaluatorScript.evaluate([void_main, void_extra])
+    var void_values: Dictionary = PowerCalculatorScript.calculate(void_hand)
+    _assert_equal(void_values["card_total"], 14, "虚暴只翻倍参与最高牌型的真气")
+    _assert_equal(
+        void_extra.effective_qi_value(false, {"participating": false}),
+        2,
+        "额外打出但未参与的虚暴真气保持原有效值")
+    CardOriginServiceScript.new(catalog).apply_to_card(void_main, "awakening", {})
+    _assert_equal(
+        void_main.effective_qi_value(false, {"participating": true}),
+        28,
+        "虚暴 priority 200 先于火觉醒 priority 300 连续翻倍")
+
+    var mountain_void = _card("7", "mountain")
+    CardOriginServiceScript.new(catalog).apply_to_card(
+        mountain_void, "awakening", {})
+    mountain_void.set_enhancement("void_burst")
+    var mountain_engine = _engine_with_hand([mountain_void], [], 82201)
+    var end_result: Dictionary = mountain_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.TURN_END, {
+            "actor": mountain_engine.player,
+            "actors": [mountain_engine.player],
+        })
+    _assert_equal(mountain_engine.player.defense, 7, "山觉醒先按当前有效真气获得防御")
+    _assert_true(
+        mountain_engine.player.temporarily_removed_cards.has(mountain_void),
+        "普通回合结束重塑完成后虚无牌消散")
+    _assert_equal(
+        end_result["results"][-2]["handler_id"],
+        "card_reshape_runtime.turn_end",
+        "山觉醒位于普通重塑 order 900")
+    _assert_equal(
+        end_result["results"][-1]["handler_id"],
+        "card_reshape_runtime.turn_end_final",
+        "虚无消散位于最终回合结束 order 1000")
+
+    var flawless = _card("6", "wind")
+    flawless.set_enhancement("flawless")
+    var permission_engine = _engine_with_hand([flawless], [], 82202)
+    for blocked in [
+        ["poison", "lethal_poison"],
+        ["poison", "stagnant_poison"],
+        ["state", "vulnerability"],
+        ["state", "acupoint_block"],
+    ]:
+        _assert_true(
+            not permission_engine.status_system.apply_card_anomaly(
+                flawless, blocked[0], blocked[1], {}, "无漏测试").get(
+                    "success", false),
+            "无漏拒绝 %s" % blocked[1])
+    _assert_true(
+        permission_engine.status_system.apply_card_anomaly(
+            flawless, "state", "qi_dissipation", {}, "无漏测试").get(
+                "success", false),
+        "无漏允许散气")
+    _assert_true(
+        permission_engine.status_system.apply_card_anomaly(
+            flawless, "mark", "wind_mark", {}, "无漏测试").get(
+                "success", false),
+        "无漏允许普通标记")
+
+    var random_flawless = _card("5", "wind")
+    var random_ordinary = _card("4", "forest")
+    random_flawless.set_enhancement("flawless")
+    var random_target = BattleSideScript.new("随机异状目标")
+    random_target.hand = [random_flawless, random_ordinary]
+    var random_executor = EffectExecutorScript.new(
+        RandomNumberGenerator.new(), null, catalog)
+    var random_result: Dictionary = random_executor.execute_all([{
+        "op": "apply_random_card_anomaly",
+        "zone": "hand",
+        "category": "poison",
+        "anomaly": "lethal_poison",
+        "count": 2,
+    }], {"target": random_target, "captures": {}})
+    _assert_true(random_result.get("success", false), "随机异状先过滤无漏非法目标")
+    _assert_equal(random_flawless.anomaly_poison, "", "无漏不进入随机毒目标集合")
+    _assert_equal(random_ordinary.anomaly_poison, "lethal_poison", "随机毒只施加给合法目标")
+    var random_option_result: Dictionary = permission_engine.effect_executor.execute_all([{
+        "op": "apply_card_anomaly_to_captured",
+        "capture": "flawless_target",
+        "random_options": [
+            {"category": "poison", "anomaly": "lethal_poison"},
+            {"category": "state", "anomaly": "qi_dissipation"},
+        ],
+    }], {
+        "ports": permission_engine.effect_ports,
+        "actor": permission_engine.player,
+        "target": permission_engine.enemy,
+        "captures": {"flawless_target": [random_flawless]},
+    })
+    _assert_true(random_option_result.get("success", false), "随机异状选项过滤后正常结算")
+    _assert_equal(
+        random_flawless.anomaly_state,
+        "qi_dissipation",
+        "随机异状先排除无漏拒绝项再抽取")
+
+    var flawless_extra = _card("2", "forest")
+    flawless_extra.set_enhancement("flawless")
+    var flawless_main = _card("A", "wind")
+    var flawless_engine = _engine_with_hand(
+        [flawless_main, flawless_extra], [], 82203)
+    var direct_flawless: Array = flawless_engine.card_reshape_runtime.on_card_played(
+        flawless_engine.player, [flawless_extra])
+    _assert_equal(direct_flawless.size(), 1, "无漏行为由正式运行时注册")
+    _assert_equal(flawless_engine.player.defense, 2, "无漏 Handler 通过窄端口增加防御")
+    flawless_engine.player.defense = 0
+    flawless_engine.sequence_book.configure({"high_card": []})
+    var flawless_result: Dictionary = flawless_engine.confirm_play(
+        _ids([flawless_main, flawless_extra]))
+    _assert_true(flawless_result.get("success", false), "无漏额外牌正常打出")
+    _assert_equal(
+        flawless_engine.player.defense,
+        2,
+        "无漏打出效果覆盖未参与最高牌型的额外真气")
+
+    var rock = _card("6", "mountain")
+    var ordinary_a = _card("4", "wind")
+    var ordinary_b = _card("3", "forest")
+    rock.set_enhancement("rock_solid")
+    var discard_engine = _engine_with_hand(
+        [rock, ordinary_a, ordinary_b], [], 82204)
+    var random_discarded: Array = discard_engine.player.random_discard(
+        3, discard_engine.rng)
+    _assert_equal(random_discarded.size(), 2, "随机弃牌只处理可明确弃掉的真气")
+    _assert_true(discard_engine.player.hand.has(rock), "磐石不进入随机弃牌候选")
+    discard_engine.player.hand.append(_card("5", "fire"))
+    _assert_equal(discard_engine.player.discard_all().size(), 1, "全部弃牌跳过磐石")
+    _assert_true(discard_engine.player.hand.has(rock), "全部弃牌后磐石仍留手")
+    var direct_discard: Dictionary = discard_engine.player.card_zone_service.move_card(
+        discard_engine.player,
+        "hand",
+        "discard_pile",
+        rock,
+        "explicit_discard")
+    _assert_true(not direct_discard.get("success", false), "统一移动入口拒绝明确弃掉磐石")
+
+    var choice_main = _card("A", "wind")
+    var choice_rock = _card("6", "mountain")
+    var choice_a = _card("4", "forest")
+    var choice_b = _card("3", "fire")
+    choice_rock.set_enhancement("rock_solid")
+    var choice_engine = _engine_with_hand(
+        [choice_main, choice_rock, choice_a, choice_b], [], 82205)
+    choice_engine.enemy.hand = [_card("2", "wind"), _card("3", "wind")]
+    choice_engine.sequence_book.configure({
+        "high_card": ["discard_gu_exchange_breath"],
+    })
+    var choice_result: Dictionary = choice_engine.confirm_play([choice_main.id])
+    _assert_true(choice_result.get("pending_choice", false), "明确弃牌功法建立选择请求")
+    var candidate_ids: Array = choice_result.get("choice_request", {}).get(
+        "candidate_ids", [])
+    _assert_true(not candidate_ids.has(choice_rock.id), "手动明确弃牌候选自动排除磐石")
+    _assert_true(
+        _resolve_all_pending_choices(choice_engine).get("success", false),
+        "明确弃牌候选测试完成并释放等待事务")
+
+    var rock_extra = _card("2", "mountain")
+    rock_extra.set_enhancement("rock_solid")
+    var rock_main = _card("A", "wind")
+    var rock_engine = _engine_with_hand([rock_main, rock_extra], [], 82206)
+    rock_engine.sequence_book.configure({"high_card": []})
+    var enemy_life_before: int = rock_engine.enemy.life
+    var rock_play: Dictionary = rock_engine.confirm_play(
+        _ids([rock_main, rock_extra]))
+    _assert_true(rock_play.get("success", false), "磐石额外牌正常打出")
+    _assert_equal(
+        rock_engine.enemy.life,
+        enemy_life_before - 2,
+        "磐石打出效果覆盖未参与最高牌型的额外真气")
+    _assert_true(rock_engine.player.discard_pile.has(rock_extra), "磐石正常打出后进入弃牌堆")
+
+    var hidden_hand = _card("2", "wind")
+    var hidden_draw = _card("3", "forest")
+    var hidden_discard = _card("4", "fire")
+    var hidden_staging = _card("5", "mountain")
+    var hidden_removed = _card("6", "wind")
+    for card in [hidden_hand, hidden_draw, hidden_discard, hidden_staging, hidden_removed]:
+        card.set_enhancement("hidden_gold")
+    var gold_engine = _engine_with_hand([hidden_hand], [hidden_draw], 82207)
+    gold_engine.player.discard_pile = [hidden_discard]
+    gold_engine.player.staging = [hidden_staging]
+    gold_engine.player.temporarily_removed_cards = [hidden_removed]
+    gold_engine.player.experience = 10
+    gold_engine.enemy.life = 0
+    gold_engine.outcome_service.update()
+    _assert_equal(
+        gold_engine.player.experience,
+        16,
+        "藏金胜利只统计手牌与抽牌堆各三点历练")
+
+    var losing_gold = _card("7", "wind")
+    losing_gold.set_enhancement("hidden_gold")
+    var loss_engine = _engine_with_hand([losing_gold], [], 82208)
+    loss_engine.player.experience = 10
+    loss_engine.player.life = 0
+    loss_engine.outcome_service.update()
+    _assert_equal(loss_engine.player.experience, 10, "藏金在玩家战败时不奖励")
+
+func _test_f2d2_opportunity_freeze_and_progress_sync() -> void:
+    var first = _card("7", "wind")
+    var second = _card("7", "forest")
+    first.set_enhancement("opportunity")
+    second.set_enhancement("opportunity")
+    var engine = _engine_with_hand([first, second], [], 82301)
+    engine.sequence_book.configure({"pair": []})
+    engine.player.experience = 5
+    var preview_state: int = engine.rng.state
+    var pure_preview: Dictionary = engine.preview(_ids([first, second]))
+    var repeated_preview: Dictionary = engine.preview(_ids([first, second]))
+    _assert_equal(repeated_preview, pure_preview, "重复预览保持完全一致")
+    _assert_equal(engine.rng.state, preview_state, "重复预览不推进随机源")
+    _assert_equal(engine.player.experience, 5, "重复预览不增加历练")
+
+    var pattern := [true, false, false, true]
+    var seed := _find_opportunity_seed(pattern)
+    _assert_true(seed > 0, "找到机缘两张牌独立判定的确定性种子")
+    engine.rng.seed = seed
+    var result: Dictionary = engine.confirm_play(_ids([first, second]))
+    _assert_true(result.get("success", false), "机缘牌正式确认行动成功")
+    var frozen: Dictionary = result["preview"].get("reshape_action_results", {})
+    _assert_equal(frozen[first.id]["multiplier_success"], true, "第一张机缘倍率判定成功")
+    _assert_equal(frozen[first.id]["experience_success"], false, "第一张机缘历练判定失败")
+    _assert_equal(frozen[second.id]["multiplier_success"], false, "第二张机缘倍率判定失败")
+    _assert_equal(frozen[second.id]["experience_success"], true, "第二张机缘历练判定成功")
+    _assert_equal(engine.player.experience, 25, "多张机缘历练结果独立累加")
+    var expected_values: Dictionary = PowerCalculatorScript.apply_frozen_card_multiplier_bonus(
+        pure_preview["values"], 1)
+    for field in [
+        "card_multiplier_bonus", "technique_multiplier",
+        "unamplified_technique_value", "technique_value"]:
+        _assert_equal(
+            result["preview"]["values"][field],
+            expected_values[field],
+            "机缘冻结后纯函数更新 %s" % field)
+    _assert_equal(
+        result["preview"]["values"]["baseline_value"],
+        pure_preview["values"]["baseline_value"],
+        "机缘不修改 baseline_value")
+
+    var pending_card = _card("8", "fire")
+    pending_card.set_enhancement("opportunity")
+    var pending_a = _card("3", "forest")
+    var pending_b = _card("4", "mountain")
+    var pending_engine = _engine_with_hand(
+        [pending_card, pending_a, pending_b], [], 82302)
+    pending_engine.enemy.hand = [_card("2", "wind"), _card("3", "wind")]
+    pending_engine.sequence_book.configure({
+        "high_card": ["discard_gu_exchange_breath"],
+    })
+    pending_engine.rng.seed = _find_opportunity_seed([false, true])
+    var pending_result: Dictionary = pending_engine.confirm_play([pending_card.id])
+    _assert_true(pending_result.get("pending_choice", false), "机缘行动可以进入等待选择")
+    var frozen_before: Dictionary = pending_result["preview"].get(
+        "reshape_action_results", {}).duplicate(true)
+    var experience_before_resume: int = pending_engine.player.experience
+    var repeated_finalize: Dictionary = pending_engine.action_resolver \
+        .finalize_action_preview(pending_engine.player, pending_result["preview"])
+    _assert_true(repeated_finalize.get("reused", false), "同一行动重复 finalizer 复用冻结结果")
+    _assert_equal(
+        pending_engine.player.experience,
+        experience_before_resume,
+        "同一行动重复 finalizer 不重复发放机缘历练")
+    var pending_snapshot: Dictionary = pending_engine.action_service \
+        .pending_action_transaction_snapshot()
+    _assert_equal(
+        pending_snapshot["record"]["reshape_action_results"],
+        frozen_before,
+        "BattleActionRecord 快照保存机缘冻结结果")
+    var resumed: Dictionary = _resolve_all_pending_choices(pending_engine)
+    _assert_true(resumed.get("success", false), "等待选择恢复后行动完成")
+    _assert_equal(
+        pending_engine.player.experience,
+        experience_before_resume,
+        "等待选择恢复不重复增加机缘历练")
+    _assert_equal(
+        resumed["preview"].get("reshape_action_results", {}),
+        frozen_before,
+        "等待选择恢复复用原冻结结果")
+
+    var main_cards := [
+        _card("7", "wind"), _card("7", "forest"), _card("7", "fire")]
+    var cooperation_cards := [_card("5", "wind"), _card("5", "mountain")]
+    main_cards[0].set_enhancement("opportunity")
+    cooperation_cards[0].set_enhancement("opportunity")
+    var cooperation_engine = _engine_with_hand(
+        main_cards + cooperation_cards, [], 82303)
+    cooperation_engine.sequence_book.configure({
+        "three_kind": ["three_ring_ensemble"],
+        "pair": ["double_gu_exchange_breath"],
+    })
+    var main_pure: Dictionary = cooperation_engine.preview(_ids(main_cards))
+    var cooperation_pure: Dictionary = cooperation_engine.preview(
+        _ids(cooperation_cards))
+    cooperation_engine.rng.seed = _find_opportunity_seed(pattern)
+    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
+        _ids(main_cards), _ids(cooperation_cards))
+    _assert_true(cooperation_result.get("success", false), "主组与协同组机缘行动成功")
+    var expected_main: Dictionary = PowerCalculatorScript.apply_frozen_card_multiplier_bonus(
+        main_pure["values"], 1)
+    var expected_cooperation: Dictionary = PowerCalculatorScript.apply_frozen_card_multiplier_bonus(
+        cooperation_pure["values"], 0)
+    var expected_shared := int(floor(
+        int(expected_main["technique_value"])
+        + int(expected_cooperation["technique_value"]) * 0.5))
+    _assert_equal(
+        cooperation_result["preview"]["values"]["technique_value"],
+        expected_shared,
+        "主组先冻结机缘再计算共享功法值")
+    _assert_equal(
+        cooperation_result["cooperation_preview"]["values"]["technique_value"],
+        expected_shared,
+        "协同组先冻结机缘再取得同一共享功法值")
+    _assert_true(
+        cooperation_result["preview"]["reshape_action_results"].has(
+            main_cards[0].id),
+        "主组按实例 ID 保存机缘结果")
+    _assert_true(
+        cooperation_result["cooperation_preview"]["reshape_action_results"].has(
+            cooperation_cards[0].id),
+        "协同组按实例 ID 保存机缘结果")
+
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "战斗历练同步测试载入内容目录")
+    var growth = GrowthInventoryScript.new(catalog)
+    growth.experience = 7
+    var battle_session: BattleSession = BattleSessionScript.new(
+        CombatEngineScript.new(null, catalog))
+    _assert_true(
+        battle_session.setup_battle(
+            {"content_seed": 82304}, growth.to_progress_snapshot()),
+        "带历练的本局进度建立正式战斗")
+    _assert_equal(battle_session.engine.player.experience, 7, "战斗装配读取本局绝对历练")
+    battle_session.engine.effect_ports.gain_battle_experience(
+        battle_session.engine.player, 20)
+    var captured: RunProgressSnapshot = battle_session.player_progress_snapshot()
+    _assert_equal(captured.experience, 27, "战斗快照捕获奖励后的绝对历练")
+    growth.apply_progress_snapshot(captured)
+    growth.apply_progress_snapshot(captured)
+    _assert_equal(growth.experience, 27, "同一战斗历练快照同步两次不重复增加")
+    var old_snapshot: RunProgressSnapshot = RunProgressSnapshotScript.from_dict({
+        "life": 100,
+        "max_life": 100,
+    })
+    growth.experience = 11
+    growth.apply_progress_snapshot(old_snapshot)
+    _assert_equal(growth.experience, 11, "旧快照不带 experience 时保持现有历练")
+
+func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "F2E1 正式印记测试载入内容目录")
+    var imprint_ids: Array = catalog.all_of("imprint").map(
+        func(value): return str(value.get("id", "")))
+    imprint_ids.sort()
+    _assert_equal(
+        imprint_ids,
+        ["alchemy", "enlightenment", "innate"],
+        "正式印记只包含悟道、化丹与先天")
+
+    var invalid_missing := _catalog_definitions(catalog)
+    invalid_missing["card_states"]["imprints"].remove_at(0)
+    var missing_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not missing_catalog.load_from_definitions(invalid_missing),
+        "缺少正式印记时内容加载失败")
+    _assert_true(
+        _array_contains_text(missing_catalog.errors, "缺少定义 enlightenment"),
+        "缺失印记错误准确报告 ID")
+
+    var invalid_mapping := _catalog_definitions(catalog)
+    invalid_mapping["card_states"]["imprints"][0]["behaviors"][0]["mapping"][
+        "pair"] = "zengyuan_pill"
+    var mapping_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not mapping_catalog.load_from_definitions(invalid_mapping),
+        "悟道映射到非心得时启动校验失败")
+    _assert_true(
+        _array_contains_text(mapping_catalog.errors, "pair")
+        and _array_contains_text(mapping_catalog.errors, "不是心得"),
+        "错误悟道映射报告准确内容路径和类型")
+
+    var unknown_mapping := _catalog_definitions(catalog)
+    unknown_mapping["card_states"]["imprints"][0]["behaviors"][0]["mapping"][
+        "pair"] = "missing_insight"
+    unknown_mapping["card_states"]["imprints"][0]["behaviors"][0]["mapping"][
+        "flush"] = "pair_insight"
+    var unknown_mapping_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_mapping_catalog.load_from_definitions(unknown_mapping),
+        "悟道未知消耗品或牌型在启动期失败")
+    _assert_true(
+        _array_contains_text(unknown_mapping_catalog.errors, "missing_insight")
+        and _array_contains_text(unknown_mapping_catalog.errors, "未知牌型 flush"),
+        "悟道未知引用分别具名报告")
+
+    var invalid_kind := _catalog_definitions(catalog)
+    invalid_kind["card_states"]["imprints"][1]["behaviors"][0]["kind"] = "relic"
+    var kind_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not kind_catalog.load_from_definitions(invalid_kind),
+        "化丹引用空内容类别时启动校验失败")
+    _assert_true(
+        _array_contains_text(kind_catalog.errors, "kind=relic"),
+        "化丹错误 kind 具名报告")
+
+    var invalid_opening := _catalog_definitions(catalog)
+    invalid_opening["card_states"]["imprints"][2]["behaviors"][0]["count"] = 1
+    var opening_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not opening_catalog.load_from_definitions(invalid_opening),
+        "先天行为携带无关参数时启动校验失败")
+    _assert_true(
+        _array_contains_text(opening_catalog.errors, "不接受额外参数"),
+        "先天额外参数错误具名报告")
+
+    var extra_imprint := _catalog_definitions(catalog)
+    extra_imprint["card_states"]["imprints"].append({
+        "id": "echo", "name": "未实现回响占位"})
+    var extra_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not extra_catalog.load_from_definitions(extra_imprint),
+        "正式印记集合拒绝额外回响空壳")
+
+    var normal_bottom = _card("2", "wind")
+    var innate_second = _card("3", "forest")
+    var normal_top = _card("4", "fire")
+    var innate_first = _card("5", "mountain")
+    innate_first.set_imprint("innate")
+    innate_second.set_imprint("innate")
+    var opening_engine = _engine_with_hand(
+        [], [normal_bottom, innate_second, normal_top, innate_first], 82401)
+    opening_engine.player.hand_limit = 4
+    var opening_drawn: Array = opening_engine.start_player_turn()
+    _assert_equal(opening_drawn.size(), 4, "先天不足手牌上限时由普通牌补足")
+    _assert_equal(
+        _ids(opening_drawn).slice(0, 2),
+        [innate_first.id, innate_second.id],
+        "多张先天按洗牌后原抽取顺序优先进入起始手牌")
+
+    var many_innates: Array = []
+    for rank in ["2", "3", "4", "5", "6"]:
+        var innate_card = _card(rank, "wind")
+        innate_card.set_imprint("innate")
+        many_innates.append(innate_card)
+    var overflow_normal = _card("A", "forest")
+    var overflow_engine = _engine_with_hand(
+        [], [overflow_normal] + many_innates.duplicate(), 82402)
+    overflow_engine.player.hand_limit = 3
+    var overflow_drawn: Array = overflow_engine.start_player_turn()
+    _assert_equal(overflow_drawn.size(), 3, "先天超过上限时只抽到手牌上限")
+    _assert_true(
+        overflow_engine.player.draw_pile.back().reshape_imprint == "innate",
+        "未抽到的先天继续留在牌库顶")
+    var second_turn_innate = _card("7", "wind")
+    second_turn_innate.set_imprint("innate")
+    var second_turn_normal = _card("8", "forest")
+    overflow_engine.player.hand.clear()
+    overflow_engine.player.hand_limit = 1
+    overflow_engine.player.draw_pile = [second_turn_innate, second_turn_normal]
+    var second_turn_drawn: Array = overflow_engine.start_player_turn()
+    _assert_equal(
+        second_turn_drawn[0].id,
+        second_turn_normal.id,
+        "第二回合不重新执行先天置顶")
+
+    var pair_cards := [_card("7", "wind"), _card("7", "forest")]
+    var enlightenment_hand = _card("3", "fire")
+    var enlightenment_draw = _card("4", "mountain")
+    enlightenment_hand.set_imprint("enlightenment")
+    enlightenment_draw.set_imprint("enlightenment")
+    var enlightenment_engine = _engine_with_hand(
+        pair_cards + [enlightenment_hand], [enlightenment_draw], 82403)
+    enlightenment_engine.sequence_book.configure({
+        "pair": ["double_gu_exchange_breath"],
+    })
+    var pair_result: Dictionary = enlightenment_engine.confirm_play(_ids(pair_cards))
+    _assert_true(pair_result.get("success", false), "成功对子出招建立悟道记录")
+    enlightenment_engine.repository.techniques["f2e1_failed_gate"] = {
+        "id": "f2e1_failed_gate",
+        "name": "悟道失败条件探针",
+        "pool": "high",
+        "condition": {"pure_attribute": "wind"},
+        "effects": [{"op": "defense", "amount": 1}],
+    }
+    var failed_card = _card("9", "fire")
+    enlightenment_engine.player.hand.append(failed_card)
+    enlightenment_engine.actions_available = 1
+    enlightenment_engine.sequence_book.configure({
+        "high_card": ["f2e1_failed_gate"],
+    })
+    var failed_result: Dictionary = enlightenment_engine.confirm_play([failed_card.id])
+    _assert_true(failed_result.get("success", false), "条件失败组仍完成行动")
+    _assert_true(
+        not failed_result.get("technique_triggered", true),
+        "条件失败组不覆盖最后成功牌型")
+    enlightenment_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.BATTLE_END, {
+            "actors": [enlightenment_engine.player, enlightenment_engine.enemy],
+            "winner": enlightenment_engine.player,
+        })
+    _assert_equal(
+        enlightenment_engine.player.consumable_ids,
+        ["pair_insight"],
+        "最后成功对子为手牌中的悟道印生成 pair_insight")
+    _assert_equal(
+        enlightenment_engine.player.consumable_ids.size(),
+        1,
+        "抽牌堆中的悟道印不触发")
+
+    var cooperation_main := [
+        _card("6", "wind"), _card("6", "forest"), _card("6", "fire")]
+    var cooperation_cards := [_card("4", "wind"), _card("4", "mountain")]
+    var cooperation_mark = _card("A", "forest")
+    cooperation_mark.set_imprint("enlightenment")
+    var cooperation_engine = _engine_with_hand(
+        cooperation_main + cooperation_cards + [cooperation_mark], [], 82404)
+    cooperation_engine.sequence_book.configure({
+        "three_kind": ["three_ring_ensemble"],
+        "pair": ["double_gu_exchange_breath"],
+    })
+    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
+        _ids(cooperation_main), _ids(cooperation_cards))
+    _assert_true(cooperation_result.get("success", false), "悟道记录覆盖协同组成功路径")
+    _assert_equal(
+        cooperation_engine.card_reshape_runtime.last_successful_hand_by_side[
+            cooperation_engine.player.owner_id],
+        "pair",
+        "后完成的协同对子成为最后成功牌型")
+
+    var no_success_mark = _card("2", "wind")
+    no_success_mark.set_imprint("enlightenment")
+    var no_success_engine = _engine_with_hand([no_success_mark], [], 82405)
+    no_success_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.BATTLE_END, {
+            "actors": [no_success_engine.player, no_success_engine.enemy],
+            "winner": no_success_engine.player,
+        })
+    _assert_true(
+        no_success_engine.player.consumable_ids.is_empty(),
+        "没有成功出招记录时悟道印不生成心得")
+
+    var full_mark = _card("2", "forest")
+    full_mark.set_imprint("enlightenment")
+    var full_engine = _engine_with_hand([full_mark], [], 82406)
+    full_engine.player.configure_consumables(["a", "b", "c"])
+    full_engine.card_reshape_runtime.last_successful_hand_by_side[
+        full_engine.player.owner_id] = "pair"
+    full_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.BATTLE_END, {
+            "actors": [full_engine.player, full_engine.enemy],
+            "winner": full_engine.player,
+        })
+    _assert_equal(
+        full_engine.player.consumable_ids,
+        ["a", "b", "c"],
+        "悟道印满三格时不生成也不覆盖")
+
+    var alchemy = _card("5", "fire")
+    alchemy.set_imprint("alchemy")
+    var alchemy_engine = _engine_with_hand([alchemy], [], 82407)
+    var alchemy_discard: Dictionary = alchemy_engine.player.card_zone_service.move_card(
+        alchemy_engine.player, "hand", "discard_pile", alchemy, "explicit_discard")
+    _assert_true(alchemy_discard.get("success", false), "化丹牌成功明确弃掉")
+    _assert_equal(
+        alchemy_engine.player.consumable_ids,
+        ["zengyuan_pill"],
+        "化丹从正式 pill 池生成当前丹药")
+
+    var normal_alchemy = _card("6", "fire")
+    normal_alchemy.set_imprint("alchemy")
+    var normal_engine = _engine_with_hand([normal_alchemy], [], 82408)
+    normal_engine.player.card_zone_service.move_card(
+        normal_engine.player, "hand", "discard_pile", normal_alchemy, "normal_play")
+    _assert_true(normal_engine.player.consumable_ids.is_empty(), "正常打出不触发化丹")
+
+    var void_alchemy = _card("7", "fire")
+    void_alchemy.set_imprint("alchemy")
+    void_alchemy.set_enhancement("void_burst")
+    var void_engine = _engine_with_hand([void_alchemy], [], 82409)
+    void_engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
+        "actor": void_engine.player,
+        "actors": [void_engine.player],
+    })
+    _assert_true(void_engine.player.consumable_ids.is_empty(), "虚无消散不触发化丹")
+
+    var rock_alchemy = _card("8", "mountain")
+    rock_alchemy.set_imprint("alchemy")
+    rock_alchemy.set_enhancement("rock_solid")
+    var rock_engine = _engine_with_hand([rock_alchemy], [], 82410)
+    var rejected: Dictionary = rock_engine.player.card_zone_service.move_card(
+        rock_engine.player, "hand", "discard_pile", rock_alchemy, "explicit_discard")
+    _assert_true(not rejected.get("success", false), "磐石拒绝明确弃牌")
+    _assert_true(rock_engine.player.consumable_ids.is_empty(), "未成功弃牌不触发化丹")
+
+    var returning_alchemy = _card("9", "wind")
+    returning_alchemy.set_imprint("alchemy")
+    var returning_engine = _engine_with_hand([returning_alchemy], [], 82411)
+    returning_engine.status_system.apply_card_anomaly(
+        returning_alchemy, "mark", "returning_wind", {}, "化丹回风测试")
+    returning_engine.player.card_zone_service.move_card(
+        returning_engine.player,
+        "hand",
+        "discard_pile",
+        returning_alchemy,
+        "explicit_discard")
+    _assert_equal(
+        returning_engine.player.consumable_ids,
+        ["zengyuan_pill"],
+        "回风已改置牌区后化丹仍生成丹药")
+    _assert_true(
+        returning_engine.player.draw_pile.back() == returning_alchemy,
+        "化丹结算后仍保留回风置于牌库顶的结果")
+
+    var full_alchemy = _card("10", "fire")
+    full_alchemy.set_imprint("alchemy")
+    var full_alchemy_engine = _engine_with_hand([full_alchemy], [], 82412)
+    full_alchemy_engine.player.configure_consumables(["a", "b", "c"])
+    var full_rng_state: int = full_alchemy_engine.rng.state
+    full_alchemy_engine.player.card_zone_service.move_card(
+        full_alchemy_engine.player,
+        "hand",
+        "discard_pile",
+        full_alchemy,
+        "explicit_discard")
+    _assert_equal(full_alchemy_engine.rng.state, full_rng_state, "化丹满栏不推进 RNG")
+    _assert_equal(
+        full_alchemy_engine.player.consumable_ids,
+        ["a", "b", "c"],
+        "化丹满栏不覆盖已有消耗品")
+
+    var empty_alchemy = _card("J", "fire")
+    empty_alchemy.set_imprint("alchemy")
+    var empty_engine = _engine_with_hand([empty_alchemy], [], 82413)
+    empty_engine.consumable_repository.consumables.erase("zengyuan_pill")
+    var empty_rng_state: int = empty_engine.rng.state
+    empty_engine.player.card_zone_service.move_card(
+        empty_engine.player,
+        "hand",
+        "discard_pile",
+        empty_alchemy,
+        "explicit_discard")
+    _assert_equal(empty_engine.rng.state, empty_rng_state, "化丹空候选池不推进 RNG")
+    _assert_true(empty_engine.player.consumable_ids.is_empty(), "化丹空候选池不生成")
+
+    var workshop = CardWorkshopServiceScript.new()
+    var growth = GrowthInventoryScript.new(catalog)
+    growth.run_deck.reset_standard("f2e1-sync")
+    workshop.apply_run_card_reshape(
+        growth.run_deck, ["wind_2"], "imprint", "alchemy")
+    workshop.apply_run_card_reshape(
+        growth.run_deck, ["forest_3"], "imprint", "enlightenment")
+    workshop.apply_run_card_reshape(
+        growth.run_deck, ["fire_4"], "imprint", "innate")
+    var battle_session: BattleSession = BattleSessionScript.new(
+        CombatEngineScript.new(null, catalog))
+    _assert_true(
+        battle_session.setup_battle(
+            {"content_seed": 82414}, growth.to_progress_snapshot()),
+        "三种印记本局牌组装配进战斗")
+    var alchemy_battle_card = null
+    var enlightenment_battle_card = null
+    for card in battle_session.engine.player.all_zone_cards():
+        if card.id == "wind_2":
+            alchemy_battle_card = card
+        elif card.id == "forest_3":
+            enlightenment_battle_card = card
+    for card in [alchemy_battle_card, enlightenment_battle_card]:
+        var location: Dictionary = battle_session.engine.player.card_zone_service \
+            .find_active_location(battle_session.engine.player, str(card.id))
+        if str(location.get("zone", "")) != "hand":
+            battle_session.engine.player.card_zone_service.move_card(
+                battle_session.engine.player,
+                str(location["zone"]),
+                "hand",
+                card,
+                "test_setup")
+    battle_session.engine.player.card_zone_service.move_card(
+        battle_session.engine.player,
+        "hand",
+        "discard_pile",
+        alchemy_battle_card,
+        "explicit_discard")
+    battle_session.engine.card_reshape_runtime.last_successful_hand_by_side[
+        battle_session.engine.player.owner_id] = "pair"
+    battle_session.engine.timing_system.emit_timing(
+        BattleTimingSystemScript.BATTLE_END, {
+            "actors": [battle_session.engine.player, battle_session.engine.enemy],
+            "winner": battle_session.engine.player,
+        })
+    var captured: RunProgressSnapshot = battle_session.player_progress_snapshot()
+    _assert_equal(
+        captured.consumable_ids,
+        ["zengyuan_pill", "pair_insight"],
+        "悟道与化丹奖励进入玩家战斗进度快照")
+    growth.apply_progress_snapshot(captured)
+    growth.apply_progress_snapshot(captured)
+    _assert_equal(
+        growth.consumable_ids,
+        ["zengyuan_pill", "pair_insight"],
+        "同一绝对消耗品快照同步两次不重复生成")
+    for imprint_spec in [
+        ["wind_2", "alchemy"],
+        ["forest_3", "enlightenment"],
+        ["fire_4", "innate"],
+    ]:
+        _assert_equal(
+            growth.run_deck.card_data(imprint_spec[0])["reshapes"]["imprint"],
+            imprint_spec[1],
+            "战斗同步保留 %s" % imprint_spec[1])
+
+    var save_session = RunSessionScript.new(null, null, null, null, catalog)
+    _assert_true(
+        save_session.execute({"type": "setup_run", "seed": 82415}).success,
+        "三印记存档测试建立本局")
+    for imprint_spec in [
+        ["wind_2", "alchemy"],
+        ["forest_3", "enlightenment"],
+        ["fire_4", "innate"],
+    ]:
+        workshop.apply_run_card_reshape(
+            save_session.growth.run_deck,
+            [imprint_spec[0]],
+            "imprint",
+            imprint_spec[1])
+    var restored: Dictionary = RunSaveDataScript.new().capture(
+        save_session).restore_session(catalog)
+    _assert_true(restored.get("success", false), "三种印记存档后可以读回")
+    for imprint_spec in [
+        ["wind_2", "alchemy"],
+        ["forest_3", "enlightenment"],
+        ["fire_4", "innate"],
+    ]:
+        _assert_equal(
+            restored["run_session"].growth.run_deck.card_data(
+                imprint_spec[0])["reshapes"]["imprint"],
+            imprint_spec[1],
+            "存档读档保留 %s" % imprint_spec[1])
+    var no_imprint_deck = RunDeckScript.new(catalog)
+    no_imprint_deck.reset_standard("f2e1-old")
+    var no_imprint_snapshot: Dictionary = no_imprint_deck.to_snapshot()
+    _assert_equal(
+        RunDeckScript.new(catalog).restore_snapshot(no_imprint_snapshot),
+        [],
+        "不含印记的旧本局牌组快照继续兼容")
+
+func _find_opportunity_seed(pattern: Array) -> int:
+    var probe := RandomNumberGenerator.new()
+    for seed in range(1, 100000):
+        probe.seed = seed
+        var actual: Array = []
+        for index in range(pattern.size() / 2):
+            actual.append(probe.randi_range(1, 5) == 1)
+            actual.append(probe.randi_range(1, 10) == 1)
+        if actual == pattern:
+            return seed
+    return -1
+
+func _resolve_all_pending_choices(engine) -> Dictionary:
+    var result: Dictionary = {}
+    while engine.has_pending_effect_choice():
+        var request: Dictionary = engine.pending_effect_choice_snapshot()
+        var minimum := int(request.get("minimum", 0))
+        var candidates: Array = request.get("candidate_ids", [])
+        result = engine.resolve_effect_choice(
+            str(request.get("request_id", "")),
+            candidates.slice(0, minimum))
+    return result
 
 func _count_status_changes(history: Array, status_id: String) -> int:
     var count := 0

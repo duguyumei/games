@@ -28,6 +28,7 @@ const QUERY_ORDERS := ["zone", "top", "bottom", "random"]
 const QUERY_SIDES := ["actor", "target"]
 const CARD_KINDS := ["any", "normal"]
 const INSUFFICIENT_POLICIES := ["use_available", "skip", "fail"]
+const SELECTION_PURPOSES := ["", "explicit_discard"]
 
 var _report_error: Callable
 var _attribute_ids: Array
@@ -170,6 +171,8 @@ func validate_choice_effect(effect: Dictionary, scope: String) -> void:
         _error(scope + ".insufficient_policy", "必须明确为 use_available、skip 或 fail")
     if effect.has("chooser") and str(effect.get("chooser")) not in QUERY_SIDES:
         _error(scope + ".chooser", "必须为 actor 或 target")
+    if str(effect.get("selection_purpose", "")) not in SELECTION_PURPOSES:
+        _error(scope + ".selection_purpose", "必须为空或 explicit_discard")
 
 func validate_nested_battle_effects(values, scope: String) -> void:
     validate_effects(values, "battle", scope)

@@ -17,6 +17,7 @@ var technique_slot_index: int = 0
 var run_deck: Dictionary = {}
 var life: int = 0
 var max_life: int = 0
+var experience: int = 0
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
@@ -29,6 +30,7 @@ var has_technique_slot_index: bool = false
 var has_run_deck: bool = false
 var has_life: bool = false
 var has_max_life: bool = false
+var has_experience: bool = false
 var has_hand_technique_progression: bool = false
 var has_practice_shop_state: bool = false
 var has_consumable_use_sequence: bool = false
@@ -43,6 +45,7 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_run_deck = values.has("run_deck")
     result.has_life = values.has("life")
     result.has_max_life = values.has("max_life")
+    result.has_experience = values.has("experience")
     result.has_hand_technique_progression = values.has("hand_technique_progression")
     result.has_practice_shop_state = values.has("practice_shop_state")
     result.has_consumable_use_sequence = values.has("consumable_use_sequence")
@@ -59,6 +62,7 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.run_deck = values.get("run_deck", {}).duplicate(true)
     result.life = int(values.get("life", 0))
     result.max_life = int(values.get("max_life", 0))
+    result.experience = int(values.get("experience", 0))
     result.hand_technique_progression = values.get(
         "hand_technique_progression", {}).duplicate(true)
     result.practice_shop_state = values.get(
@@ -84,6 +88,8 @@ func to_dict() -> Dictionary:
         result["life"] = life
     if has_max_life:
         result["max_life"] = max_life
+    if has_experience:
+        result["experience"] = experience
     if has_hand_technique_progression:
         result["hand_technique_progression"] = hand_technique_progression.duplicate(true)
     if has_practice_shop_state:

@@ -18,6 +18,7 @@ var owner_id: String
 var max_life: int = 100
 var life: int = 100
 var defense: int = 0
+var experience: int = 0
 var hand_limit: int = 8
 var draw_pile: Array = []
 var hand: Array = []
@@ -61,6 +62,7 @@ func reset(
     if restore_life:
         life = max_life
     defense = 0
+    experience = 0
     hand_limit = 8
     stacks.clear()
     equipped_inner_skill_ids.clear()

@@ -14,6 +14,8 @@ var _trigger_queue: VisibleTriggerQueue
 var _sides: Array[BattleSide] = []
 var _played_return_callback: Callable
 var _hand_retrigger_callback: Callable
+var _card_reshape_runtime_ref: WeakRef
+var _consumable_repository
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -36,6 +38,12 @@ func use_played_return_callback(callback: Callable) -> void:
 
 func use_hand_retrigger_callback(callback: Callable) -> void:
     _hand_retrigger_callback = callback
+
+func use_card_reshape_runtime(runtime) -> void:
+    _card_reshape_runtime_ref = weakref(runtime)
+
+func use_consumable_repository(repository) -> void:
+    _consumable_repository = repository
 
 func opponent_of(side: BattleSide) -> BattleSide:
     for candidate in _sides:
@@ -89,6 +97,45 @@ func flush_synchronized_damage() -> void:
 
 func add_defense(side: BattleSide, amount: int) -> int:
     return side.add_defense(amount)
+
+func gain_battle_experience(side: BattleSide, amount: int) -> int:
+    var gained := maxi(0, amount)
+    side.experience += gained
+    return gained
+
+func can_grant_battle_consumable(side: BattleSide) -> bool:
+    return side.consumable_ids.size() < side.consumable_limit
+
+func grant_battle_consumable(side: BattleSide, consumable_id: String) -> bool:
+    return side.grant_consumable(consumable_id)
+
+func consumable_ids_by_kind(kind: String) -> Array[String]:
+    return _consumable_repository.ids_by_kind(kind)
+
+func place_on_draw_pile_top(side: BattleSide, card) -> Dictionary:
+    return side.card_zone_service.place_on_draw_pile_top(side, card)
+
+func temporarily_remove_card(
+        side: BattleSide,
+        instance_id: String,
+        reason: String) -> Dictionary:
+    return side.temporarily_remove_card(instance_id, reason)
+
+func can_explicit_discard(side: BattleSide, card) -> Dictionary:
+    var runtime = _card_reshape_runtime()
+    if runtime == null:
+        return {"allowed": true}
+    return runtime.can_explicit_discard(side, card)
+
+func notify_cards_played(side: BattleSide, cards: Array) -> Array[Dictionary]:
+    var runtime = _card_reshape_runtime()
+    return runtime.on_card_played(side, cards) if runtime != null else []
+
+func finalize_reshape_action(side: BattleSide, preview: Dictionary) -> Dictionary:
+    var runtime = _card_reshape_runtime()
+    if runtime == null:
+        return {"success": true, "reused": false}
+    return runtime.finalize_action_preview(side, preview)
 
 func draw(side: BattleSide, count: int, source_kind: String = "") -> Array:
     var drawn: Array = side.draw(count)
@@ -167,8 +214,15 @@ func apply_card_anomaly(
     return _status_system.apply_card_anomaly(
         card, category, anomaly_id, payload, source)
 
+func _card_reshape_runtime():
+    return (
+        _card_reshape_runtime_ref.get_ref()
+        if _card_reshape_runtime_ref != null else null)
+
 func resolve_played_card_anomalies(holder: BattleSide, cards: Array) -> Array:
-    return _status_system.resolve_played_card_anomalies(holder, cards)
+    var results: Array = _status_system.resolve_played_card_anomalies(holder, cards)
+    notify_cards_played(holder, cards)
+    return results
 
 func gain_extra_actions(side: BattleSide, amount: int, source: String) -> int:
     var gained: int = _battle_flow.grant_actions(side, amount)

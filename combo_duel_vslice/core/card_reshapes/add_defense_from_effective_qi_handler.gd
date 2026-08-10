@@ -5,16 +5,18 @@ func behavior_id() -> String:
     return "add_defense_from_effective_qi"
 
 func triggers() -> Array[String]:
-    return ["turn_end"]
+    return ["card_played", "turn_end"]
 
 func validate_behavior(behavior: Dictionary, validator, scope: String) -> void:
-    if not ["wind", "forest", "fire", "mountain"].has(
+    if behavior.has("origin_attribute") \
+            and not ["wind", "forest", "fire", "mountain"].has(
             str(behavior.get("origin_attribute", ""))):
         validator.report_error(scope + ".origin_attribute", "必须是正式基础属性")
 
 func execute(behavior: Dictionary, context) -> Dictionary:
     if not context.matches_origin_attribute(behavior) \
-            or not context.holder.hand.has(context.card):
+            or context.trigger == "turn_end" \
+            and not context.holder.hand.has(context.card):
         return {"success": true, "defense": 0, "applied": false}
     var amount: int = context.effect_ports.current_effective_qi(
         context.holder, context.card)

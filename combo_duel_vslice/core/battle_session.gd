@@ -576,6 +576,9 @@ func _safe_preview_snapshot(preview: Dictionary) -> Dictionary:
         "hand": _hand_result_snapshot(preview.get("hand", {})),
         "cards": _card_snapshots(preview.get("cards", [])),
         "values": preview.get("values", {}).duplicate(true),
+        "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
+        "reshape_action_results": preview.get(
+            "reshape_action_results", {}).duplicate(true),
         "condition": preview.get("condition", {}).duplicate(true),
         "intent": preview.get("intent", {}).duplicate(true),
         "technique_id": str(preview.get("technique_id", "")),

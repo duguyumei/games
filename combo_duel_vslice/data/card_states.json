@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 8,
   "reshape_categories": [
     {"id": "origin", "capacity": 1, "replaceable": false},
     {"id": "enhancement", "capacity": 1, "replaceable": true},
@@ -60,9 +60,132 @@
   "enhancements": [
     {"id": "qi_boost", "name": "增元", "behaviors": [{"trigger": "effective_qi", "priority": 100, "handler": "add_effective_qi", "amount": 8}]},
     {"id": "momentum", "name": "乘势", "behaviors": [{"trigger": "technique_multiplier", "priority": 100, "handler": "add_technique_multiplier", "amount": 1}]},
-    {"id": "hunyuan", "name": "混元", "behaviors": [{"trigger": "attribute_check", "handler": "attribute_alias", "attributes": ["wind", "forest", "fire", "mountain"]}]}
+    {"id": "hunyuan", "name": "混元", "behaviors": [{"trigger": "attribute_check", "handler": "attribute_alias", "attributes": ["wind", "forest", "fire", "mountain"]}]},
+    {
+      "id": "void_burst",
+      "name": "虚暴",
+      "behaviors": [
+        {
+          "trigger": "effective_qi",
+          "priority": 200,
+          "handler": "multiply_effective_qi",
+          "requires_participating": true,
+          "factor": 2
+        },
+        {
+          "trigger": "turn_end_final",
+          "priority": 1000,
+          "handler": "temporarily_remove_if_in_hand",
+          "reason": "void"
+        }
+      ]
+    },
+    {
+      "id": "flawless",
+      "name": "无漏",
+      "behaviors": [
+        {
+          "trigger": "anomaly_apply",
+          "handler": "block_anomaly_application",
+          "categories": ["poison"],
+          "anomaly_ids": ["vulnerability", "acupoint_block"],
+          "reason": "无漏拒绝毒、破绽与封穴"
+        },
+        {
+          "trigger": "card_played",
+          "priority": 500,
+          "handler": "add_defense_from_effective_qi"
+        }
+      ]
+    },
+    {
+      "id": "rock_solid",
+      "name": "磐石",
+      "behaviors": [
+        {
+          "trigger": "explicit_discard_attempt",
+          "priority": 500,
+          "handler": "block_explicit_discard",
+          "reason": "磐石不能被明确弃掉"
+        },
+        {
+          "trigger": "card_played",
+          "priority": 500,
+          "handler": "deal_damage_from_effective_qi",
+          "source_kind": "磐石"
+        }
+      ]
+    },
+    {
+      "id": "hidden_gold",
+      "name": "藏金",
+      "behaviors": [
+        {
+          "trigger": "battle_victory",
+          "priority": 50,
+          "handler": "gain_battle_experience",
+          "amount": 3
+        }
+      ]
+    },
+    {
+      "id": "opportunity",
+      "name": "机缘",
+      "behaviors": [
+        {
+          "trigger": "action_confirmed",
+          "priority": 500,
+          "handler": "freeze_independent_chances",
+          "multiplier_chance": {"numerator": 1, "denominator": 5, "bonus": 1},
+          "experience_chance": {"numerator": 1, "denominator": 10, "amount": 20}
+        }
+      ]
+    }
   ],
-  "imprints": [],
+  "imprints": [
+    {
+      "id": "enlightenment",
+      "name": "悟道印",
+      "behaviors": [
+        {
+          "trigger": "battle_victory",
+          "handler": "grant_mapped_consumable",
+          "required_zone": "hand",
+          "mapping": {
+            "high_card": "high_card_insight",
+            "pair": "pair_insight",
+            "two_pair": "two_pair_insight",
+            "three_kind": "three_kind_insight",
+            "straight": "straight_insight",
+            "full_house": "full_house_insight",
+            "four_kind": "four_kind_insight",
+            "five_kind": "five_kind_insight"
+          }
+        }
+      ]
+    },
+    {
+      "id": "alchemy",
+      "name": "化丹印",
+      "behaviors": [
+        {
+          "trigger": "card_explicitly_discarded",
+          "handler": "grant_random_consumable",
+          "kind": "pill"
+        }
+      ]
+    },
+    {
+      "id": "innate",
+      "name": "先天印",
+      "behaviors": [
+        {
+          "trigger": "battle_start_hand_priority",
+          "handler": "opening_draw_priority"
+        }
+      ]
+    }
+  ],
   "other_reshapes": [],
   "anomalies": [
     {

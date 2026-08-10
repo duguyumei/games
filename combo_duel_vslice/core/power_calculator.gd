@@ -48,3 +48,25 @@ static func calculate(
         "card_amp_percent": card_amp_percent,
         "technique_value": technique_value,
     }
+
+static func apply_frozen_card_multiplier_bonus(
+        values: Dictionary,
+        bonus: int) -> Dictionary:
+    var result := values.duplicate(true)
+    var applied_bonus := maxi(0, bonus)
+    if applied_bonus == 0:
+        return result
+    var base_value := int(result.get("base_value", 0))
+    var previous_multiplier := int(result.get("technique_multiplier", 0))
+    var fixed_power := (
+        int(result.get("unamplified_technique_value", 0))
+        - base_value * previous_multiplier)
+    result["card_multiplier_bonus"] = (
+        int(result.get("card_multiplier_bonus", 0)) + applied_bonus)
+    result["technique_multiplier"] = previous_multiplier + applied_bonus
+    result["unamplified_technique_value"] = (
+        base_value * int(result["technique_multiplier"]) + fixed_power)
+    result["technique_value"] = maxi(0, int(floor(
+        int(result["unamplified_technique_value"])
+        * (1.0 + int(result.get("power_amp_percent", 0)) / 100.0))))
+    return result

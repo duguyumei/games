@@ -14,6 +14,9 @@ var effect_ports
 var rng: RandomNumberGenerator
 var trigger: String = ""
 var calculation_context: Dictionary = {}
+var anomaly_category: String = ""
+var anomaly_id: String = ""
+var zone_name: String = ""
 
 func configure(values: Dictionary) -> CardReshapeBehaviorContext:
     card = values.get("card")
@@ -26,6 +29,9 @@ func configure(values: Dictionary) -> CardReshapeBehaviorContext:
     rng = values.get("rng")
     trigger = str(values.get("trigger", ""))
     calculation_context = values.get("calculation_context", {}).duplicate(true)
+    anomaly_category = str(values.get("anomaly_category", ""))
+    anomaly_id = str(values.get("anomaly_id", ""))
+    zone_name = str(values.get("zone_name", ""))
     return self
 
 func matches_origin_attribute(behavior: Dictionary) -> bool:

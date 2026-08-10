@@ -83,16 +83,34 @@ func matches_attribute(card, attribute_id: String) -> bool:
                 return true
     return false
 
-func can_apply_anomaly(card) -> Dictionary:
+func can_apply_anomaly(
+        card,
+        anomaly_category: String = "",
+        anomaly_id: String = "") -> Dictionary:
     for definition_value in _active_definitions(card):
         for behavior_value in definition_value.get("behaviors", []):
             var behavior: Dictionary = behavior_value
             if str(behavior.get("trigger", "")) != "anomaly_apply":
                 continue
-            var result := _execute(behavior, card)
+            var result: Dictionary = registry.execute(
+                behavior,
+                ContextScript.new().configure({
+                    "card": card,
+                    "anomaly_category": anomaly_category,
+                    "anomaly_id": anomaly_id,
+                }))
             if bool(result.get("blocked", false)):
                 result["allowed"] = false
                 return result
+    return {"allowed": true}
+
+func can_explicit_discard(card) -> Dictionary:
+    for result in dispatch_battle_event(card, "explicit_discard_attempt"):
+        if bool(result.get("blocked", false)):
+            return {
+                "allowed": false,
+                "reason": str(result.get("reason", "此真气不能被明确弃掉")),
+            }
     return {"allowed": true}
 
 func has_card_kind(card, kind: String) -> bool:

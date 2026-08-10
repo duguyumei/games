@@ -47,6 +47,9 @@ func snapshot() -> Dictionary:
         "failed": failed,
         "hand_id": str(preview.get("hand", {}).get("id", "")),
         "technique_id": str(preview.get("technique_id", "")),
+        "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
+        "reshape_action_results": preview.get(
+            "reshape_action_results", {}).duplicate(true),
         "cooperation_group_count": cooperation_groups.size(),
     }
 

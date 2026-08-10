@@ -18,11 +18,30 @@ const RecycleDiscardedCardScript = preload(
 const ApplyAnomalyScript = preload("res://core/card_reshapes/apply_anomaly_handler.gd")
 const AddDefenseFromQiScript = preload(
     "res://core/card_reshapes/add_defense_from_effective_qi_handler.gd")
+const DealDamageFromQiScript = preload(
+    "res://core/card_reshapes/deal_damage_from_effective_qi_handler.gd")
+const TemporarilyRemoveInHandScript = preload(
+    "res://core/card_reshapes/temporarily_remove_if_in_hand_handler.gd")
+const BlockExplicitDiscardScript = preload(
+    "res://core/card_reshapes/block_explicit_discard_handler.gd")
+const GainBattleExperienceScript = preload(
+    "res://core/card_reshapes/gain_battle_experience_handler.gd")
+const FreezeIndependentChancesScript = preload(
+    "res://core/card_reshapes/freeze_independent_chances_handler.gd")
+const OpeningDrawPriorityScript = preload(
+    "res://core/card_reshapes/opening_draw_priority_handler.gd")
+const GrantMappedConsumableScript = preload(
+    "res://core/card_reshapes/grant_mapped_consumable_handler.gd")
+const GrantRandomConsumableScript = preload(
+    "res://core/card_reshapes/grant_random_consumable_handler.gd")
 
 const TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp",
     "attribute_check", "effective_qi", "anomaly_apply", "reshape_applied",
     "card_drawn", "card_entered_discard", "group_resolved", "turn_end",
+    "card_played", "explicit_discard_attempt", "turn_end_final",
+    "battle_victory", "action_confirmed", "battle_start_hand_priority",
+    "card_explicitly_discarded",
 ]
 const NUMERIC_TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp", "effective_qi",
@@ -48,6 +67,14 @@ func _init(register_defaults: bool = true) -> void:
         register_handler(RecycleDiscardedCardScript.new())
         register_handler(ApplyAnomalyScript.new())
         register_handler(AddDefenseFromQiScript.new())
+        register_handler(DealDamageFromQiScript.new())
+        register_handler(TemporarilyRemoveInHandScript.new())
+        register_handler(BlockExplicitDiscardScript.new())
+        register_handler(GainBattleExperienceScript.new())
+        register_handler(FreezeIndependentChancesScript.new())
+        register_handler(OpeningDrawPriorityScript.new())
+        register_handler(GrantMappedConsumableScript.new())
+        register_handler(GrantRandomConsumableScript.new())
 
 func register_handler(handler) -> bool:
     if not (handler is HandlerScript):

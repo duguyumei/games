@@ -183,6 +183,11 @@ func resolve_locked_enemy_action_once() -> Dictionary:
         var detail := "对手锁定出牌失效"
         set_scenario_error.call(detail)
         return {"success": false, "reason": detail}
+    var finalize_result: Dictionary = action_resolver.finalize_action_preview(
+        enemy, action_preview)
+    if not finalize_result.get("success", false):
+        enemy.rollback_staging()
+        return finalize_result
 
     battle_flow.lock_intent(enemy, action_preview)
     battle_flow.consume_action(enemy)
@@ -219,6 +224,10 @@ func _confirm_solo_player(proposal) -> Dictionary:
         staged_ids.append_array(group.get("card_ids", []))
     if not player.stage_cards(staged_ids):
         return {"success": false, "reason": "真气无法进入待出区"}
+    var finalize_result := _finalize_staged_proposal(player, proposal)
+    if not finalize_result.get("success", false):
+        player.rollback_staging()
+        return finalize_result
     battle_flow.lock_intent(player, action_preview)
     battle_flow.consume_action(player)
     action_resolver.log_calculation(player, action_preview)
@@ -367,9 +376,12 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
             "reason": "协同组必须组成%s" % str(cooperation["hand_id"]),
         }
 
+    var main_individual_power := int(
+        proposal.preview["values"]["technique_value"])
+    var cooperation_individual_power := int(
+        cooperation_preview["values"]["technique_value"])
     var shared_power: int = int(floor(
-        int(proposal.preview["values"]["technique_value"])
-        + int(cooperation_preview["values"]["technique_value"]) * 0.5))
+        main_individual_power + cooperation_individual_power * 0.5))
     proposal.preview["values"]["technique_value"] = shared_power
     cooperation_preview["values"]["technique_value"] = shared_power
     proposal.groups.append({
@@ -379,6 +391,8 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
         "preview": cooperation_preview,
         "cooperation": cooperation.duplicate(true),
         "shared_power": shared_power,
+        "main_individual_power": main_individual_power,
+        "cooperation_individual_power": cooperation_individual_power,
     })
     return {"success": true, "shared_power": shared_power}
 
@@ -406,6 +420,20 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         var staging_error := "对手锁定真气无法进入待出区"
         set_scenario_error.call(staging_error)
         return {"success": false, "reason": staging_error}
+
+    var player_finalize := _finalize_staged_proposal(player, player_proposal)
+    if not player_finalize.get("success", false):
+        player.rollback_staging()
+        if enemy_will_act:
+            enemy.rollback_staging()
+        return player_finalize
+    if enemy_will_act:
+        var enemy_finalize: Dictionary = action_resolver.finalize_action_preview(
+            enemy, enemy_preview)
+        if not enemy_finalize.get("success", false):
+            player.rollback_staging()
+            enemy.rollback_staging()
+            return enemy_finalize
 
     battle_flow.lock_intent(player, player_preview)
     if enemy_will_act:
@@ -643,6 +671,47 @@ func _grant_extra_actions(side, amount: int, source: String) -> void:
         source,
         "成功",
         "+%d（连击不自动补牌）" % gained)
+
+func _finalize_staged_proposal(side, proposal) -> Dictionary:
+    _restore_individual_cooperation_power(proposal)
+    var main_result: Dictionary = action_resolver.finalize_action_preview(
+        side, proposal.preview)
+    if not main_result.get("success", false):
+        return main_result
+    for group in proposal.groups.slice(1):
+        var group_preview: Dictionary = group.get("preview", {})
+        var group_result: Dictionary = action_resolver.finalize_action_preview(
+            side, group_preview)
+        if not group_result.get("success", false):
+            return group_result
+    _refresh_cooperation_shared_power(proposal)
+    return {"success": true}
+
+func _refresh_cooperation_shared_power(proposal) -> void:
+    if proposal.groups.size() < 2:
+        return
+    var cooperation_group: Dictionary = proposal.groups[1]
+    var cooperation_preview: Dictionary = cooperation_group.get("preview", {})
+    var shared_power: int = int(floor(
+        int(proposal.preview.get("values", {}).get("technique_value", 0))
+        + int(cooperation_preview.get("values", {}).get("technique_value", 0)) * 0.5))
+    proposal.preview["values"]["technique_value"] = shared_power
+    cooperation_preview["values"]["technique_value"] = shared_power
+    cooperation_group["shared_power"] = shared_power
+
+func _restore_individual_cooperation_power(proposal) -> void:
+    if proposal.groups.size() < 2:
+        return
+    var cooperation_group: Dictionary = proposal.groups[1]
+    proposal.preview["values"]["technique_value"] = int(
+        cooperation_group.get(
+            "main_individual_power",
+            proposal.preview["values"].get("technique_value", 0)))
+    var cooperation_preview: Dictionary = cooperation_group.get("preview", {})
+    cooperation_preview["values"]["technique_value"] = int(
+        cooperation_group.get(
+            "cooperation_individual_power",
+            cooperation_preview.get("values", {}).get("technique_value", 0)))
 
 func _reveal_detail(player_preview: Dictionary, enemy_preview: Dictionary) -> String:
     var player_name: String = player_preview["hand"]["name"]

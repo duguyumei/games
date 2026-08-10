@@ -61,6 +61,9 @@ func make_action_record(
         order,
         turn_number)
 
+func finalize_action_preview(actor, action_preview: Dictionary) -> Dictionary:
+    return effect_ports.finalize_reshape_action(actor, action_preview)
+
 func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
     if not _pending_resolution.is_empty():
         return {
@@ -444,9 +447,14 @@ func _action_trigger_sources(record) -> Array:
 func _resolve_played_card_anomalies(records: Array) -> void:
     for record in records:
         var holder = record["actor"]
+        var played_ids: Dictionary = {}
+        for card in record["preview"].get("cards", []):
+            played_ids[str(card.id)] = true
+        var played_cards: Array = holder.staging.filter(
+            func(card): return played_ids.has(str(card.id)))
         var resolutions: Array = effect_ports.resolve_played_card_anomalies(
             holder,
-            holder.staging)
+            played_cards)
         for resolution in resolutions:
             var card = resolution["card"]
             var anomaly_name := str(resolution.get(

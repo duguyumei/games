@@ -29,6 +29,14 @@ func get_consumable(consumable_id: String) -> Dictionary:
 func practice_offers() -> Array[String]:
     return practice_offer_ids.duplicate()
 
+func ids_by_kind(kind: String) -> Array[String]:
+    var result: Array[String] = []
+    for consumable_id in consumables:
+        if str(consumables[consumable_id].get("kind", "")) == kind:
+            result.append(str(consumable_id))
+    result.sort()
+    return result
+
 func target_limits(consumable_id: String) -> Dictionary:
     var definition := get_consumable(consumable_id)
     var targeting: Dictionary = definition.get("targeting", {})

@@ -58,7 +58,11 @@ const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
 const RESHAPE_CATEGORY_IDS := ["origin", "enhancement", "imprint", "other"]
 const ANOMALY_CATEGORY_IDS := ["mark", "poison", "state", "other"]
 const REQUIRED_ORIGIN_IDS := ["attribute_change", "rank_change", "awakening"]
-const REQUIRED_ENHANCEMENT_IDS := ["qi_boost", "momentum", "hunyuan"]
+const REQUIRED_ENHANCEMENT_IDS := [
+    "qi_boost", "momentum", "hunyuan", "void_burst", "flawless",
+    "rock_solid", "hidden_gold", "opportunity",
+]
+const REQUIRED_IMPRINT_IDS := ["enlightenment", "alchemy", "innate"]
 const RETIRED_RESHAPE_IDS := [
     "bonus", "multiplier", "wild", "glass", "steel", "stone", "gold", "lucky",
     "foil", "holographic", "polychrome", "negative", "red", "blue", "purple",
@@ -583,9 +587,11 @@ func _validate_card_states(definition: Dictionary) -> void:
         definition.get("enhancements"), "card_states.enhancements")
     _validate_named_definitions(
         definition.get("imprints"),
-        [],
+        REQUIRED_IMPRINT_IDS,
         _imprints_by_id,
         "card_states.imprints")
+    _validate_only_ids(
+        _imprints_by_id, REQUIRED_IMPRINT_IDS, "card_states.imprints")
     _validate_named_definitions(
         definition.get("other_reshapes"),
         [],
@@ -686,11 +692,22 @@ func _validate_card_reshape_behavior_references() -> void:
                 continue
             for behavior_index in range(definition.get("behaviors", []).size()):
                 var behavior = definition.get("behaviors", [])[behavior_index]
-                if not behavior is Dictionary \
-                        or str(behavior.get("handler", "")) != "apply_anomaly":
+                if not behavior is Dictionary:
                     continue
                 var scope := "%s[%d].behaviors[%d]" % [
                     str(source[1]), definition_index, behavior_index]
+                if str(behavior.get("handler", "")) == "block_anomaly_application":
+                    for category in behavior.get("categories", []):
+                        if str(category) not in ANOMALY_CATEGORY_IDS:
+                            _error(scope + ".categories", "引用未知异状类别 %s" % category)
+                    for blocked_id in behavior.get("anomaly_ids", []):
+                        if not _anomalies_by_id.has(str(blocked_id)):
+                            _error(
+                                scope + ".anomaly_ids",
+                                "引用未知真气异状 %s" % blocked_id)
+                    continue
+                if str(behavior.get("handler", "")) != "apply_anomaly":
+                    continue
                 var anomaly_id := str(behavior.get("anomaly", ""))
                 var anomaly: Dictionary = _anomalies_by_id.get(anomaly_id, {})
                 if anomaly.is_empty():
@@ -1447,7 +1464,23 @@ func content_definition(content_type: String, content_id: String) -> Dictionary:
             return _imprints_by_id.get(content_id, {}).duplicate(true)
         "other_reshape":
             return _other_reshapes_by_id.get(content_id, {}).duplicate(true)
+        "consumable":
+            if _consumables_by_id.has(content_id):
+                return _consumables_by_id[content_id].duplicate(true)
+            for value in _contents.get("consumables", {}).get("consumables", []):
+                if value is Dictionary and str(value.get("id", "")) == content_id:
+                    return value.duplicate(true)
     return {}
+
+func content_ids_by_kind(content_type: String, kind: String) -> Array[String]:
+    var result: Array[String] = []
+    if content_type != "consumable":
+        return result
+    for value in _contents.get("consumables", {}).get("consumables", []):
+        if value is Dictionary and str(value.get("kind", "")) == kind:
+            result.append(str(value.get("id", "")))
+    result.sort()
+    return result
 
 func base_deck_definition() -> Dictionary:
     return _contents.get("base_deck", {}).duplicate(true)

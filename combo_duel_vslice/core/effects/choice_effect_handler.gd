@@ -62,6 +62,12 @@ func execute(effect: Dictionary, context):
     var query_result: Dictionary = query.resolve(runtime, rng)
     if not query_result.get("success", false):
         return EffectResultScript.failed(str(query_result.get("reason", "目标查询失败")))
+    if str(effect.get("selection_purpose", "")) == "explicit_discard":
+        query_result["cards"] = query_result["cards"].filter(
+            func(card):
+                return runtime.ports == null \
+                    or runtime.ports.can_explicit_discard(
+                        query_result["side"], card).get("allowed", true))
     var request = ChoiceRequestScript.new().configure({
         "request_id": request_id,
         "prompt": effect.get("prompt", "请选择真气"),
