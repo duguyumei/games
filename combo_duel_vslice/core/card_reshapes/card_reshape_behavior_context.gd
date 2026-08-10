@@ -17,6 +17,12 @@ var calculation_context: Dictionary = {}
 var anomaly_category: String = ""
 var anomaly_id: String = ""
 var zone_name: String = ""
+var qualified_trigger: String = ""
+var source_card_instance_id: String = ""
+var source_trigger: String = ""
+var action_token: String = ""
+var replay_depth: int = 0
+var trigger_sequence: int = 0
 
 func configure(values: Dictionary) -> CardReshapeBehaviorContext:
     card = values.get("card")
@@ -32,6 +38,12 @@ func configure(values: Dictionary) -> CardReshapeBehaviorContext:
     anomaly_category = str(values.get("anomaly_category", ""))
     anomaly_id = str(values.get("anomaly_id", ""))
     zone_name = str(values.get("zone_name", ""))
+    qualified_trigger = str(values.get("qualified_trigger", ""))
+    source_card_instance_id = str(values.get("source_card_instance_id", ""))
+    source_trigger = str(values.get("source_trigger", ""))
+    action_token = str(values.get("action_token", ""))
+    replay_depth = int(values.get("replay_depth", 0))
+    trigger_sequence = int(values.get("trigger_sequence", 0))
     return self
 
 func matches_origin_attribute(behavior: Dictionary) -> bool:

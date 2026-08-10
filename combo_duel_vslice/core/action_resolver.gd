@@ -454,7 +454,8 @@ func _resolve_played_card_anomalies(records: Array) -> void:
             func(card): return played_ids.has(str(card.id)))
         var resolutions: Array = effect_ports.resolve_played_card_anomalies(
             holder,
-            played_cards)
+            played_cards,
+            {"action_token": str(record["token"])})
         for resolution in resolutions:
             var card = resolution["card"]
             var anomaly_name := str(resolution.get(

@@ -28,7 +28,9 @@ func configure(
     book = sequence_book
     order = action_order
     turn_number = action_turn_number
-    token = "%s-%d-%d" % [actor.name, turn_number, order]
+    token = str(action_preview.get("reshape_action_token", ""))
+    if token == "":
+        token = "%s-%d-%d" % [actor.name, turn_number, order]
     captures_by_source.clear()
     cooperation_groups.clear()
     triggered = false

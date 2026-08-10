@@ -127,9 +127,25 @@ func can_explicit_discard(side: BattleSide, card) -> Dictionary:
         return {"allowed": true}
     return runtime.can_explicit_discard(side, card)
 
-func notify_cards_played(side: BattleSide, cards: Array) -> Array[Dictionary]:
+func notify_cards_played(
+        side: BattleSide,
+        cards: Array,
+        source_values: Dictionary = {}) -> Array[Dictionary]:
     var runtime = _card_reshape_runtime()
-    return runtime.on_card_played(side, cards) if runtime != null else []
+    return runtime.on_card_played(
+        side, cards, source_values) if runtime != null else []
+
+func register_direct_card_trigger_listener(
+        listener_id: String,
+        listener) -> bool:
+    var runtime = _card_reshape_runtime()
+    return runtime != null and runtime.trigger_replay_service \
+        .register_direct_listener(listener_id, listener)
+
+func unregister_direct_card_trigger_listener(listener_id: String) -> bool:
+    var runtime = _card_reshape_runtime()
+    return runtime != null and runtime.trigger_replay_service \
+        .unregister_direct_listener(listener_id)
 
 func finalize_reshape_action(side: BattleSide, preview: Dictionary) -> Dictionary:
     var runtime = _card_reshape_runtime()
@@ -219,9 +235,13 @@ func _card_reshape_runtime():
         _card_reshape_runtime_ref.get_ref()
         if _card_reshape_runtime_ref != null else null)
 
-func resolve_played_card_anomalies(holder: BattleSide, cards: Array) -> Array:
-    var results: Array = _status_system.resolve_played_card_anomalies(holder, cards)
-    notify_cards_played(holder, cards)
+func resolve_played_card_anomalies(
+        holder: BattleSide,
+        cards: Array,
+        source_values: Dictionary = {}) -> Array:
+    var results: Array = _status_system.resolve_played_card_anomalies(
+        holder, cards, source_values)
+    notify_cards_played(holder, cards, source_values)
     return results
 
 func gain_extra_actions(side: BattleSide, amount: int, source: String) -> int:

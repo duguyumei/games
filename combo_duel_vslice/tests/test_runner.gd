@@ -116,6 +116,30 @@ class DefenseRetentionProbe:
             "prevent_decay": prevents_decay,
         }
 
+class DirectCardTriggerProbe:
+    extends RefCounted
+
+    var target_card
+    var calls: Array[Dictionary] = []
+
+    func _init(card_value) -> void:
+        target_card = card_value
+
+    func on_qualified_card_trigger(source: Dictionary) -> Dictionary:
+        if source.get("source_card") != target_card \
+                or str(source.get("source_trigger", "")) != "card_played":
+            return {"success": true, "applied": false}
+        calls.append({
+            "source_card_instance_id": str(
+                source.get("source_card_instance_id", "")),
+            "source_trigger": str(source.get("source_trigger", "")),
+            "action_token": str(source.get("action_token", "")),
+            "replay_depth": int(source.get("replay_depth", 0)),
+            "trigger_sequence": int(source.get("trigger_sequence", 0)),
+        })
+        source["holder"].add_defense(2)
+        return {"success": true, "applied": true, "defense": 2}
+
 class RunEffectProbeHandler:
     extends RefCounted
 
@@ -233,6 +257,7 @@ func _initialize() -> void:
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
     _test_f2e1_formal_imprint_runtime_and_persistence()
+    _test_f2e2_echo_qualified_trigger_replay()
     _test_status_behavior_registry_contract()
     _test_status_system_contract()
     _test_declared_card_status_runtime_semantics()
@@ -466,7 +491,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
     _assert_equal(catalog.errors, [], "当前内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
-    _assert_equal(catalog.definition("card_states")["version"], 8, "真气重塑与异状数据带顶层版本")
+    _assert_equal(catalog.definition("card_states")["version"], 9, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
     _assert_equal(catalog.definition("consumables")["version"], 3, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
@@ -483,7 +508,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.all_of("card").size(), 52, "内容目录建立 52 张唯一基础真气索引")
     _assert_equal(catalog.all_of("origin").size(), 3, "内容目录建立三种正式本源索引")
     _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种正式强化索引")
-    _assert_equal(catalog.all_of("imprint").size(), 3, "内容目录建立三种正式印记索引")
+    _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种正式印记索引")
     _assert_equal(catalog.all_of("anomaly").size(), 13, "内容目录建立十三种战斗异状索引")
     _assert_equal(catalog.all_of("actor_status").size(), 8, "内容目录建立八种角色战斗状态索引")
     _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
@@ -3612,7 +3637,7 @@ func _test_awakening_origin_persistence_contract() -> void:
     _assert_true(catalog.load_all(), "觉醒本源契约载入统一内容目录")
     _assert_equal(catalog.all_of("origin").size(), 3, "正式内容包含转属、易阶、觉醒三种本源")
     _assert_equal(catalog.all_of("enhancement").size(), 8, "F2D2 包含八种正式强化")
-    _assert_equal(catalog.all_of("imprint").size(), 3, "F2E1 录入三种正式印记")
+    _assert_equal(catalog.all_of("imprint").size(), 4, "正式内容录入四种印记")
 
     var card = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "wind_7"), "awakening:wind_7",
@@ -4291,8 +4316,8 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     imprint_ids.sort()
     _assert_equal(
         imprint_ids,
-        ["alchemy", "enlightenment", "innate"],
-        "正式印记只包含悟道、化丹与先天")
+        ["alchemy", "echo", "enlightenment", "innate"],
+        "正式印记只包含悟道、化丹、先天与回响")
 
     var invalid_missing := _catalog_definitions(catalog)
     invalid_missing["card_states"]["imprints"].remove_at(0)
@@ -4352,11 +4377,11 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
 
     var extra_imprint := _catalog_definitions(catalog)
     extra_imprint["card_states"]["imprints"].append({
-        "id": "echo", "name": "未实现回响占位"})
+        "id": "red", "name": "旧赤印"})
     var extra_catalog = ContentCatalogScript.new()
     _assert_true(
         not extra_catalog.load_from_definitions(extra_imprint),
-        "正式印记集合拒绝额外回响空壳")
+        "正式印记集合继续拒绝旧赤印")
 
     var normal_bottom = _card("2", "wind")
     var innate_second = _card("3", "forest")
@@ -4679,6 +4704,443 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
         RunDeckScript.new(catalog).restore_snapshot(no_imprint_snapshot),
         [],
         "不含印记的旧本局牌组快照继续兼容")
+
+func _test_f2e2_echo_qualified_trigger_replay() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "F2E2 回响印测试载入正式内容")
+    var echo_definition: Dictionary = catalog.get_by_id("imprint", "echo")
+    _assert_equal(echo_definition["name"], "回响印", "回响印进入正式内容索引")
+    _assert_true(
+        catalog.card_reshape_registry.has_handler(
+            "replay_qualified_card_trigger"),
+        "回响印引用已注册的小型重演 Handler")
+
+    var missing_echo := _catalog_definitions(catalog)
+    missing_echo["card_states"]["imprints"].remove_at(3)
+    var missing_echo_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not missing_echo_catalog.load_from_definitions(missing_echo),
+        "缺少回响印时内容加载失败")
+    _assert_true(
+        _array_contains_text(missing_echo_catalog.errors, "缺少定义 echo"),
+        "缺少回响印准确报告正式 ID")
+
+    var empty_echo := _catalog_definitions(catalog)
+    empty_echo["card_states"]["imprints"][3]["behaviors"] = []
+    var empty_echo_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not empty_echo_catalog.load_from_definitions(empty_echo),
+        "回响空壳定义不能通过校验")
+    _assert_true(
+        _array_contains_text(
+            empty_echo_catalog.errors, "必须且只能声明一个合格触发重演"),
+        "回响空壳报告缺少重演 Handler")
+
+    var wrong_handler_echo := _catalog_definitions(catalog)
+    wrong_handler_echo["card_states"]["imprints"][3]["behaviors"] = [{
+        "trigger": "battle_start_hand_priority",
+        "handler": "opening_draw_priority",
+    }]
+    var wrong_handler_echo_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not wrong_handler_echo_catalog.load_from_definitions(
+            wrong_handler_echo),
+        "回响不能用其他已注册 Handler 冒充正式重演行为")
+    _assert_true(
+        _array_contains_text(
+            wrong_handler_echo_catalog.errors,
+            "必须且只能声明一个合格触发重演"),
+        "回响缺少指定重演 Handler 时准确报告协议错误")
+
+    for invalid_count in [0, -1, 2, 1.5]:
+        var invalid_replays := _catalog_definitions(catalog)
+        invalid_replays["card_states"]["imprints"][3]["behaviors"][0][
+            "additional_replays"] = invalid_count
+        var invalid_replays_catalog = ContentCatalogScript.new()
+        _assert_true(
+            not invalid_replays_catalog.load_from_definitions(invalid_replays),
+            "回响额外次数 %s 在加载期失败" % str(invalid_count))
+        _assert_true(
+            _array_contains_text(
+                invalid_replays_catalog.errors,
+                "additional_replays"),
+            "回响额外次数错误稳定报告字段")
+
+    var normal_trigger := _catalog_definitions(catalog)
+    normal_trigger["card_states"]["imprints"][3]["behaviors"][0][
+        "trigger"] = "card_played"
+    var normal_trigger_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not normal_trigger_catalog.load_from_definitions(normal_trigger),
+        "回响 Handler 不能绑定普通战斗触发")
+    _assert_true(
+        _array_contains_text(
+            normal_trigger_catalog.errors,
+            "不支持触发时点 card_played"),
+        "回响普通触发绑定报告 Handler 协议错误")
+
+    var unknown_trigger := _catalog_definitions(catalog)
+    unknown_trigger["card_states"]["imprints"][3]["behaviors"][0][
+        "trigger"] = "unknown_replay_trigger"
+    var unknown_trigger_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not unknown_trigger_catalog.load_from_definitions(unknown_trigger),
+        "回响未知触发不能通过校验")
+    _assert_true(
+        _array_contains_text(unknown_trigger_catalog.errors, "未知重塑行为触发时点"),
+        "回响未知触发报告内容路径")
+
+    var simple_echo = _card("5", "wind")
+    simple_echo.set_imprint("echo")
+    var simple_values: Dictionary = PowerCalculatorScript.calculate(
+        HandEvaluatorScript.evaluate([simple_echo]))
+    _assert_equal(simple_values["card_total"], 10, "普通五点真气回响为 5+5")
+    _assert_equal(
+        simple_values["card_trigger_bundles"][simple_echo.id]["replay_count"],
+        1,
+        "单牌数值包记录一次额外重演")
+
+    var boosted_echo = _card("5", "wind")
+    boosted_echo.set_enhancement("qi_boost")
+    boosted_echo.set_imprint("echo")
+    var boosted_values: Dictionary = PowerCalculatorScript.calculate(
+        HandEvaluatorScript.evaluate([boosted_echo]))
+    _assert_equal(
+        boosted_values["card_total"],
+        26,
+        "增元回响从相同原始输入计算为 (5+8)+(5+8)")
+    _assert_equal(
+        boosted_values["card_trigger_bundles"][boosted_echo.id]["passes"].map(
+            func(bundle_pass): return bundle_pass["contribution"]),
+        [13, 13],
+        "增元两次数值包互不把前次结果当输入")
+
+    var void_echo = _card("5", "fire")
+    void_echo.set_enhancement("void_burst")
+    void_echo.set_imprint("echo")
+    _assert_equal(
+        PowerCalculatorScript.calculate(
+            HandEvaluatorScript.evaluate([void_echo]))["card_total"],
+        20,
+        "虚暴回响为 (5×2)+(5×2) 而不是连续乘算")
+
+    var origin = CardOriginServiceScript.new(catalog)
+    var fire_echo = _card("5", "fire")
+    origin.apply_to_card(fire_echo, "awakening", {})
+    fire_echo.set_imprint("echo")
+    var fire_engine = _engine_with_hand([fire_echo], [], 82514)
+    fire_engine.repository.techniques["echo_fire_probe"] = {
+        "id": "echo_fire_probe",
+        "name": "回响火觉醒功法探针",
+        "pool": "high",
+        "effects": [{
+            "op": "add_target_stack",
+            "stack": "gu_mark",
+            "amount": {"kind": "constant", "value": 1},
+        }],
+    }
+    fire_engine.sequence_book.configure({
+        "high_card": ["echo_fire_probe", "test_next_high_card"],
+    })
+    var fire_result: Dictionary = fire_engine.confirm_play([fire_echo.id])
+    _assert_equal(
+        fire_result["preview"]["values"]["card_total"],
+        20,
+        "火觉醒回响从同一五点输入分别翻倍并贡献十加十")
+    _assert_equal(
+        fire_engine.enemy.stacks.get("gu_mark", 0),
+        1,
+        "火觉醒回响不重复执行整门功法")
+    _assert_equal(
+        fire_engine.sequence_book.position("high_card"),
+        1,
+        "火觉醒回响只推进一次功法序列")
+    _assert_true(
+        fire_echo.has_anomaly("mark", "burned_out"),
+        "回响火觉醒在牌型组完整结算后正常燃尽")
+
+    var momentum_echo = _card("5", "mountain")
+    momentum_echo.set_enhancement("momentum")
+    momentum_echo.set_imprint("echo")
+    var momentum_values: Dictionary = PowerCalculatorScript.calculate(
+        HandEvaluatorScript.evaluate([momentum_echo]))
+    _assert_equal(momentum_values["card_multiplier_bonus"], 2, "乘势回响提供 +1+1 倍率")
+
+    var hunyuan_echo = _card("5", "wind")
+    hunyuan_echo.set_enhancement("hunyuan")
+    hunyuan_echo.set_imprint("echo")
+    for attribute in ["wind", "forest", "fire", "mountain"]:
+        _assert_true(
+            hunyuan_echo.is_attribute(attribute),
+            "混元回响仍只返回一次属性身份查询结果：%s" % attribute)
+
+    var wind_echo = _card("7", "wind")
+    origin.apply_to_card(wind_echo, "awakening", {})
+    wind_echo.set_imprint("echo")
+    var wind_tail_a = _card("3", "forest")
+    var wind_tail_b = _card("4", "fire")
+    var wind_engine = _engine_with_hand(
+        [], [wind_tail_b, wind_tail_a, wind_echo], 82501)
+    var wind_drawn: Array = wind_engine.player.draw(1)
+    _assert_equal(wind_drawn, [wind_echo], "最外层抽牌仍只报告请求的回响风觉醒牌")
+    _assert_equal(wind_engine.player.hand.size(), 3, "回响风觉醒分别额外抽一张，共额外两张")
+
+    var forest_echo = _card("6", "forest")
+    origin.apply_to_card(forest_echo, "awakening", {})
+    forest_echo.set_imprint("echo")
+    var forest_engine = _engine_with_hand([forest_echo], [], 82502)
+    forest_engine.player.card_zone_service.move_card(
+        forest_engine.player,
+        "hand",
+        "discard_pile",
+        forest_echo,
+        "explicit_discard")
+    _assert_true(forest_engine.player.draw_pile.has(forest_echo), "林觉醒首次触发将实例洗回牌库")
+    _assert_equal(
+        forest_engine.player.all_cards_for_run_sync().count(forest_echo),
+        1,
+        "林觉醒回响第二次移动自然无效且不复制实例")
+
+    var flawless_echo = _card("6", "wind")
+    flawless_echo.set_enhancement("flawless")
+    flawless_echo.set_imprint("echo")
+    var flawless_engine = _engine_with_hand([flawless_echo], [], 82503)
+    flawless_engine.sequence_book.configure({"high_card": []})
+    _assert_true(
+        flawless_engine.confirm_play([flawless_echo.id]).get("success", false),
+        "回响无漏牌可以正常打出")
+    _assert_equal(flawless_engine.player.defense, 12, "无漏自身打出效果因回响获得两次六点防御")
+
+    var rock_echo = _card("5", "mountain")
+    rock_echo.set_enhancement("rock_solid")
+    rock_echo.set_imprint("echo")
+    var rock_engine = _engine_with_hand([rock_echo], [], 82504)
+    rock_engine.sequence_book.configure({"high_card": []})
+    rock_engine.confirm_play([rock_echo.id])
+    _assert_equal(rock_engine.enemy.life, 90, "磐石回响产生两个独立五点伤害段")
+
+    var mountain_echo = _card("8", "mountain")
+    origin.apply_to_card(mountain_echo, "awakening", {})
+    mountain_echo.set_imprint("echo")
+    var mountain_engine = _engine_with_hand([mountain_echo], [], 82505)
+    mountain_engine.player.defense = 20
+    mountain_engine.round_service.finish_round_end()
+    _assert_equal(
+        mountain_engine.player.defense,
+        26,
+        "D3 先将二十防御衰减到十，再结算两次八点山觉醒")
+
+    var hidden_echo = _card("5", "forest")
+    hidden_echo.set_enhancement("hidden_gold")
+    hidden_echo.set_imprint("echo")
+    var hidden_engine = _engine_with_hand([hidden_echo], [], 82506)
+    hidden_engine.enemy.life = 0
+    hidden_engine.outcome_service.update()
+    _assert_equal(hidden_engine.player.experience, 6, "藏金回响在胜利时获得三点加三点历练")
+
+    var defeated_hidden_echo = _card("5", "forest")
+    defeated_hidden_echo.set_enhancement("hidden_gold")
+    defeated_hidden_echo.set_imprint("echo")
+    var defeated_hidden_engine = _engine_with_hand(
+        [defeated_hidden_echo], [], 82515)
+    defeated_hidden_engine.player.life = 0
+    defeated_hidden_engine.outcome_service.update()
+    _assert_equal(
+        defeated_hidden_engine.player.experience,
+        0,
+        "藏金回响在战败时不产生胜利奖励")
+
+    var disappearing_echo = _card("5", "fire")
+    disappearing_echo.set_enhancement("void_burst")
+    disappearing_echo.set_imprint("echo")
+    var disappearing_engine = _engine_with_hand([disappearing_echo], [], 82507)
+    disappearing_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.TURN_END, {
+            "actor": disappearing_engine.player,
+            "actors": [disappearing_engine.player],
+        })
+    _assert_equal(
+        disappearing_engine.player.temporarily_removed_cards.count(
+            disappearing_echo),
+        1,
+        "虚无首次移出后回响重演自然无效且不复制")
+
+    var poison_echo = _card("7", "fire")
+    poison_echo.set_imprint("echo")
+    var poison_engine = _engine_with_hand([poison_echo], [], 82508)
+    poison_engine.sequence_book.configure({"high_card": []})
+    poison_engine.status_system.apply_card_anomaly(
+        poison_echo, "poison", "lethal_poison", {}, "回响烈毒测试")
+    poison_engine.confirm_play([poison_echo.id])
+    _assert_equal(poison_engine.player.life, 86, "烈毒首次移除后仍按执行记录重演第二段七点伤害")
+    _assert_true(not poison_echo.has_anomaly("poison"), "回响烈毒结算后保持异状已移除")
+
+    var direct_echo = _card("4", "wind")
+    direct_echo.set_imprint("echo")
+    var direct_engine = _engine_with_hand([direct_echo], [], 82509)
+    direct_engine.sequence_book.configure({"high_card": []})
+    var direct_probe = DirectCardTriggerProbe.new(direct_echo)
+    _assert_true(
+        direct_engine.effect_ports.register_direct_card_trigger_listener(
+            "test.direct_inner_skill", direct_probe),
+        "未来直接内功可注册到单牌触发监听窄接口")
+    direct_engine.confirm_play([direct_echo.id])
+    _assert_equal(direct_engine.player.defense, 4, "归因到回响牌的直接内功监听执行两次")
+    _assert_equal(
+        direct_probe.calls.map(func(call): return call["replay_depth"]),
+        [0, 1],
+        "直接内功来源明确区分正常触发与一层回响")
+    _assert_true(
+        str(direct_probe.calls[0]["action_token"]) != ""
+        and direct_probe.calls[0]["action_token"] == direct_probe.calls[1]["action_token"],
+        "直接内功两次执行共享稳定行动 token")
+    _assert_true(
+        direct_engine.effect_ports.unregister_direct_card_trigger_listener(
+            "test.direct_inner_skill"),
+        "直接内功监听器可以注销")
+
+    var inner_echo = _card("5", "wind")
+    inner_echo.set_imprint("echo")
+    var inner_pair = _card("5", "forest")
+    var inner_extra = _card("2", "fire")
+    var inner_engine = _engine_with_hand(
+        [inner_echo, inner_pair, inner_extra], [], 82510)
+    inner_engine.sequence_book.configure({"pair": []})
+    inner_engine.player.configure_inner_skills(["extra_qi_to_defense"], 1)
+    inner_engine.confirm_play(_ids([inner_echo, inner_pair, inner_extra]))
+    _assert_equal(
+        inner_engine.player.defense,
+        2,
+        "行动级额外真气内功队列不因某张牌回响而重复")
+
+    var chance_echo = _card("8", "wind")
+    chance_echo.set_enhancement("opportunity")
+    chance_echo.set_imprint("echo")
+    var chance_engine = _engine_with_hand([chance_echo], [], 82511)
+    chance_engine.sequence_book.configure({"high_card": []})
+    var chance_preview_state: int = chance_engine.rng.state
+    var chance_preview: Dictionary = chance_engine.preview([chance_echo.id])
+    _assert_equal(chance_engine.preview([chance_echo.id]), chance_preview, "回响机缘重复预览保持纯计算")
+    _assert_equal(chance_engine.rng.state, chance_preview_state, "回响机缘预览不推进四次随机判定")
+    chance_engine.rng.seed = _find_opportunity_seed([true, false, false, true])
+    var chance_result: Dictionary = chance_engine.confirm_play([chance_echo.id])
+    var chance_frozen: Array = chance_result["preview"][
+        "reshape_action_results"][chance_echo.id]
+    _assert_equal(chance_frozen.size(), 2, "回响机缘按实例 ID 保存两次触发冻结结果")
+    _assert_equal(
+        chance_frozen.map(func(value): return value["trigger_sequence"]),
+        [0, 1],
+        "回响机缘冻结元数据保存触发序号")
+    _assert_equal(
+        chance_frozen.map(func(value): return value["replay_depth"]),
+        [0, 1],
+        "回响机缘冻结元数据保存非递归深度")
+    _assert_equal(chance_engine.player.experience, 20, "两次机缘历练判定只发放冻结成功的一次")
+    _assert_equal(chance_result["preview"]["values"]["card_multiplier_bonus"], 1, "两次机缘倍率判定独立累加")
+
+    var pending_echo = _card("8", "fire")
+    pending_echo.set_enhancement("opportunity")
+    pending_echo.set_imprint("echo")
+    var pending_a = _card("3", "forest")
+    var pending_b = _card("4", "mountain")
+    var pending_engine = _engine_with_hand(
+        [pending_echo, pending_a, pending_b], [], 82512)
+    pending_engine.enemy.hand = [_card("2", "wind"), _card("3", "wind")]
+    pending_engine.sequence_book.configure({
+        "high_card": ["discard_gu_exchange_breath"],
+    })
+    pending_engine.rng.seed = _find_opportunity_seed([false, true, true, false])
+    var pending_result: Dictionary = pending_engine.confirm_play([pending_echo.id])
+    _assert_true(pending_result.get("pending_choice", false), "回响不复制功法的等待选择请求")
+    var pending_frozen: Dictionary = pending_result["preview"].get(
+        "reshape_action_results", {}).duplicate(true)
+    var pending_experience: int = pending_engine.player.experience
+    _assert_true(
+        pending_engine.action_resolver.finalize_action_preview(
+            pending_engine.player,
+            pending_result["preview"]).get("reused", false),
+        "回响机缘重复 finalizer 复用两次冻结结果")
+    _assert_equal(pending_engine.player.experience, pending_experience, "重复 finalizer 不重复发放回响历练")
+    _assert_equal(
+        pending_engine.action_service.pending_action_transaction_snapshot()[
+            "record"]["reshape_action_results"],
+        pending_frozen,
+        "BattleActionRecord 快照保存回响机缘两次冻结元数据")
+    var resumed: Dictionary = _resolve_all_pending_choices(pending_engine)
+    _assert_true(resumed.get("success", false), "回响行动等待选择后正常恢复")
+    _assert_equal(resumed["preview"]["reshape_action_results"], pending_frozen, "选择恢复不重掷回响机缘")
+    _assert_equal(pending_engine.player.experience, pending_experience, "选择恢复不重复发放回响历练")
+
+    var main_cards := [
+        _card("7", "wind"), _card("7", "forest"), _card("7", "fire")]
+    var cooperation_cards := [_card("5", "wind"), _card("5", "mountain")]
+    main_cards[0].set_imprint("echo")
+    cooperation_cards[0].set_imprint("echo")
+    var cooperation_engine = _engine_with_hand(
+        main_cards + cooperation_cards, [], 82513)
+    cooperation_engine.sequence_book.configure({
+        "three_kind": ["three_ring_ensemble"],
+        "pair": ["double_gu_exchange_breath"],
+    })
+    var main_preview: Dictionary = cooperation_engine.preview(_ids(main_cards))
+    var cooperation_preview: Dictionary = cooperation_engine.preview(
+        _ids(cooperation_cards))
+    _assert_equal(main_preview["values"]["card_total"], 28, "主组只重演主组中的七点回响牌")
+    _assert_equal(cooperation_preview["values"]["card_total"], 15, "协同组只重演协同组中的五点回响牌")
+    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
+        _ids(main_cards), _ids(cooperation_cards))
+    var expected_shared := int(floor(
+        int(main_preview["values"]["technique_value"])
+        + int(cooperation_preview["values"]["technique_value"]) * 0.5))
+    _assert_equal(
+        cooperation_result["preview"]["values"]["technique_value"],
+        expected_shared,
+        "主组和协同组分别完成回响后再计算共享功法值")
+    _assert_equal(
+        cooperation_result["cooperation_preview"]["values"]["technique_value"],
+        expected_shared,
+        "协同记录取得同一共享功法值且不重演其他组")
+
+    var purified_echo = _card("5", "wind")
+    purified_echo.set_imprint("echo")
+    var purified_engine = _engine_with_hand([purified_echo], [], 82516)
+    _assert_true(
+        purified_engine.status_system.apply_card_anomaly(
+            purified_echo,
+            "mark",
+            "purification",
+            {},
+            "回响净化测试").get("success", false),
+        "净化可以暂时屏蔽回响印")
+    _assert_equal(
+        PowerCalculatorScript.calculate(
+            HandEvaluatorScript.evaluate([purified_echo]))["card_total"],
+        5,
+        "净化期间回响印失效且单牌只贡献一次")
+    purified_engine.timing_system.emit_timing(
+        BattleTimingSystemScript.BATTLE_END,
+        {"actors": [purified_engine.player, purified_engine.enemy]})
+    _assert_equal(
+        PowerCalculatorScript.calculate(
+            HandEvaluatorScript.evaluate([purified_echo]))["card_total"],
+        10,
+        "战斗结束移除净化后原有回响印恢复")
+
+    var echo_deck = RunDeckScript.new(catalog)
+    echo_deck.reset_standard("f2e2-echo-save")
+    _assert_true(
+        CardWorkshopServiceScript.new().apply_run_card_reshape(
+            echo_deck, ["wind_2"], "imprint", "echo").get("success", false),
+        "回响印可通过正式工坊接口写入本局牌组")
+    var restored_echo_deck = RunDeckScript.new(catalog)
+    _assert_equal(
+        restored_echo_deck.restore_snapshot(echo_deck.to_snapshot()),
+        [],
+        "回响印本局牌组快照可无错误恢复")
+    _assert_equal(
+        restored_echo_deck.card_data("wind_2")["reshapes"]["imprint"],
+        "echo",
+        "回响印持久化后仍保持正式 ID")
 
 func _find_opportunity_seed(pattern: Array) -> int:
     var probe := RandomNumberGenerator.new()

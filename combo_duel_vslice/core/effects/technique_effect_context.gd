@@ -20,6 +20,10 @@ var ports = null
 var choice_responses: Dictionary = {}
 var choice_candidates: Dictionary = {}
 var sequence_book = null
+var source_card = null
+var source_card_instance_id: String = ""
+var source_trigger: String = ""
+var replay_depth: int = 0
 
 func configure(values: Dictionary):
     actor = values.get("actor")
@@ -44,6 +48,10 @@ func configure(values: Dictionary):
     choice_responses = values.get("choice_responses", {})
     choice_candidates = values.get("choice_candidates", {})
     sequence_book = values.get("sequence_book")
+    source_card = values.get("source_card")
+    source_card_instance_id = str(values.get("source_card_instance_id", ""))
+    source_trigger = str(values.get("source_trigger", ""))
+    replay_depth = int(values.get("replay_depth", 0))
     # 旧测试字典仍可传 engine，但上下文只保存它已经装配好的窄效果端口。
     if ports == null and values.get("engine") != null:
         ports = values["engine"].action_resolver.effect_ports
@@ -83,6 +91,9 @@ func public_metadata() -> Dictionary:
         "technique_pool": technique_pool,
         "action_token": action_token,
         "source_kind": source_kind,
+        "source_card_instance_id": source_card_instance_id,
+        "source_trigger": source_trigger,
+        "replay_depth": replay_depth,
         "hand_id": str(hand_result.get("id", "")),
         "played_card_count": played_cards.size(),
         "capture_keys": captures.keys(),

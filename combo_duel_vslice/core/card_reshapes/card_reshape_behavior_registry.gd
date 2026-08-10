@@ -34,6 +34,8 @@ const GrantMappedConsumableScript = preload(
     "res://core/card_reshapes/grant_mapped_consumable_handler.gd")
 const GrantRandomConsumableScript = preload(
     "res://core/card_reshapes/grant_random_consumable_handler.gd")
+const ReplayQualifiedTriggerScript = preload(
+    "res://core/card_reshapes/replay_qualified_card_trigger_handler.gd")
 
 const TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp",
@@ -41,7 +43,7 @@ const TRIGGERS := [
     "card_drawn", "card_entered_discard", "group_resolved", "turn_end",
     "card_played", "explicit_discard_attempt", "turn_end_final",
     "battle_victory", "action_confirmed", "battle_start_hand_priority",
-    "card_explicitly_discarded",
+    "card_explicitly_discarded", "qualified_trigger_replay",
 ]
 const NUMERIC_TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp", "effective_qi",
@@ -75,6 +77,7 @@ func _init(register_defaults: bool = true) -> void:
         register_handler(OpeningDrawPriorityScript.new())
         register_handler(GrantMappedConsumableScript.new())
         register_handler(GrantRandomConsumableScript.new())
+        register_handler(ReplayQualifiedTriggerScript.new())
 
 func register_handler(handler) -> bool:
     if not (handler is HandlerScript):

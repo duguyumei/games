@@ -12,11 +12,14 @@ var _rules
 var _effect_ports_ref: WeakRef
 var _rng: RandomNumberGenerator
 var last_successful_hand_by_side: Dictionary = {}
+var trigger_replay_service
+var _action_serial: int = 0
 
 func _init(rules, effect_ports, rng: RandomNumberGenerator, timing_system) -> void:
     _rules = rules
     _effect_ports_ref = weakref(effect_ports)
     _rng = rng
+    trigger_replay_service = _rules.trigger_replay_service
     timing_system.register_weak_handler(
         timing_system.BATTLE_START,
         "card_reshape_runtime.opening_draw_priority",
@@ -62,10 +65,14 @@ func on_card_entered_discard(
     results.append_array(_dispatch(card, "card_entered_discard", holder))
     return results
 
-func on_card_played(holder, cards: Array) -> Array[Dictionary]:
+func on_card_played(
+        holder,
+        cards: Array,
+        source_values: Dictionary = {}) -> Array[Dictionary]:
     var results: Array[Dictionary] = []
     for card in cards:
-        results.append_array(_dispatch(card, "card_played", holder))
+        results.append_array(_dispatch(
+            card, "card_played", holder, source_values))
     return results
 
 func can_explicit_discard(holder, card) -> Dictionary:
@@ -81,14 +88,25 @@ func can_explicit_discard(holder, card) -> Dictionary:
 func finalize_action_preview(holder, preview: Dictionary) -> Dictionary:
     if bool(preview.get("reshape_action_confirmed", false)):
         return {"success": true, "reused": true}
+    if str(preview.get("reshape_action_token", "")) == "":
+        preview["reshape_action_token"] = "%s:card-trigger:%06d" % [
+            holder.owner_id, _action_serial]
+        _action_serial += 1
+    var action_token := str(preview["reshape_action_token"])
     var frozen_by_card: Dictionary = {}
     var multiplier_bonus := 0
     for card in preview.get("hand", {}).get("contributing", []):
         var frozen_results: Array = []
-        for result in _dispatch(card, "action_confirmed", holder):
+        for result in _dispatch(card, "action_confirmed", holder, {
+                "action_token": action_token}):
             multiplier_bonus += int(result.get("card_multiplier_bonus", 0))
             if result.has("frozen"):
-                frozen_results.append(result["frozen"].duplicate(true))
+                var frozen: Dictionary = result["frozen"].duplicate(true)
+                for field in [
+                        "source_card_instance_id", "source_trigger",
+                        "action_token", "replay_depth", "trigger_sequence"]:
+                    frozen[field] = result.get(field)
+                frozen_results.append(frozen)
         if not frozen_results.is_empty():
             frozen_by_card[str(card.id)] = (
                 frozen_results[0]
@@ -113,7 +131,9 @@ func _on_group_end(event) -> Dictionary:
     var contributing: Array = record.preview["hand"].get("contributing", [])
     var applied := 0
     for card in contributing:
-        applied += _applied_count(_dispatch(card, "group_resolved", record.actor))
+        applied += _applied_count(_dispatch(
+            card, "group_resolved", record.actor, {
+                "action_token": str(record.token)}))
     return {"success": true, "detail": "结算 %d 张参与真气的重塑行为" % applied}
 
 func _on_turn_end(event) -> Dictionary:
@@ -152,6 +172,7 @@ func _on_battle_victory(event) -> Dictionary:
 
 func _on_battle_start(event) -> Dictionary:
     last_successful_hand_by_side.clear()
+    _action_serial = 0
     var applied := 0
     for side in event.context.get("actors", []):
         # 牌库尾部是顶。按数组正序逐张置顶，恰好保持原本从顶到底的抽取顺序。
@@ -171,7 +192,7 @@ func _dispatch(
         "rng": _rng,
     }
     values.merge(extra_values, true)
-    return _rules.dispatch_battle_event(card, trigger, values)
+    return _rules.dispatch_qualified_event(card, trigger, values)
 
 func _side_key(side) -> String:
     return str(side.owner_id)

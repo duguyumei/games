@@ -182,6 +182,8 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         effect_ports,
         rng,
         timing_system)
+    status_system.use_card_trigger_replay_service(
+        card_reshape_runtime.trigger_replay_service)
     effect_ports.use_card_reshape_runtime(card_reshape_runtime)
     effect_ports.use_consumable_repository(consumable_repository)
     delayed_effects = status_system.delayed_records

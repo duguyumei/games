@@ -23,6 +23,11 @@ var defense_lost: int = 0
 var life_lost: int = 0
 var status_system = null
 var effect_ports = null
+var source_card_instance_id: String = ""
+var source_trigger: String = ""
+var action_token: String = ""
+var replay_depth: int = 0
+var trigger_sequence: int = 0
 
 func configure(values: Dictionary):
     trigger = str(values.get("trigger", ""))
@@ -43,4 +48,9 @@ func configure(values: Dictionary):
     life_lost = int(values.get("life_lost", 0))
     status_system = values.get("status_system")
     effect_ports = values.get("effect_ports")
+    source_card_instance_id = str(values.get("source_card_instance_id", ""))
+    source_trigger = str(values.get("source_trigger", ""))
+    action_token = str(values.get("action_token", ""))
+    replay_depth = int(values.get("replay_depth", 0))
+    trigger_sequence = int(values.get("trigger_sequence", 0))
     return self

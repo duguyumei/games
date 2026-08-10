@@ -21,6 +21,7 @@ var _effect_ports_ref
 var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
 var behavior_registry
+var _card_trigger_replay_service = null
 
 func _init(
         catalog,
@@ -85,6 +86,9 @@ func use_effect_ports(effect_ports) -> void:
 
 func use_effect_executor(executor) -> void:
     _effect_executor = executor
+
+func use_card_trigger_replay_service(service) -> void:
+    _card_trigger_replay_service = service
 
 func reset() -> void:
     delayed_records.clear()
@@ -326,11 +330,14 @@ func _on_after_normal_draw(event) -> Dictionary:
         event.actor, "after_normal_draw", {"event": event})
     return {"success": true, "detail": str(result.get("detail", ""))}
 
-func resolve_played_card_anomalies(holder, cards: Array) -> Array:
+func resolve_played_card_anomalies(
+        holder,
+        cards: Array,
+        source_values: Dictionary = {}) -> Array:
     var resolutions: Array = []
     for card in cards:
-        for resolution in _dispatch_card_behaviors("played", holder, card).get(
-                "resolutions", []):
+        for resolution in _dispatch_card_behaviors(
+                "played", holder, card, source_values).get("resolutions", []):
             _dispatch_actor_behaviors(holder, "played_card_anomaly_resolved", {
                 "card": card,
                 "resolution": resolution,
@@ -376,7 +383,11 @@ func effective_qi_value(card) -> int:
         if card.has_method("effective_qi_value") else int(card.qi_value))
     return maxi(0, modify_card_contribution(card, value))
 
-func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
+func _dispatch_card_behaviors(
+        trigger: String,
+        holder,
+        card,
+        source_values: Dictionary = {}) -> Dictionary:
     var entries: Array = []
     var snapshot: Dictionary = card.anomaly_snapshot()
     _append_card_behavior_entries(entries, trigger, "poison", str(snapshot.get("poison", "")))
@@ -391,15 +402,61 @@ func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
         if str(left["status_id"]) != str(right["status_id"]):
             return str(left["status_id"]) < str(right["status_id"])
         return int(left["behavior_index"]) < int(right["behavior_index"]))
-    var resolutions: Array = []
-    var stopped := false
-    var blocked := false
-    var block_reason := ""
+    var source_trigger := _qualified_card_trigger(trigger)
+    var replay_count := 0
+    if source_trigger != "" and _card_trigger_replay_service != null:
+        replay_count = _card_trigger_replay_service.qualified_replay_count(
+            card, source_trigger, source_values)
+    var normal := _execute_card_behavior_entries(
+        entries,
+        trigger,
+        source_trigger,
+        holder,
+        card,
+        source_values,
+        0,
+        0,
+        true)
+    var aggregate: Dictionary = normal["aggregate"]
+    for replay_index in range(replay_count):
+        var replayed := _execute_card_behavior_entries(
+            normal["executed_entries"],
+            trigger,
+            source_trigger,
+            holder,
+            card,
+            source_values,
+            1,
+            replay_index + 1,
+            false)
+        _merge_card_behavior_aggregate(
+            aggregate, replayed["aggregate"])
+    return aggregate
+
+func _execute_card_behavior_entries(
+        entries: Array,
+        trigger: String,
+        source_trigger: String,
+        holder,
+        card,
+        source_values: Dictionary,
+        replay_depth: int,
+        trigger_sequence: int,
+        require_current_anomaly: bool) -> Dictionary:
+    var aggregate := {
+        "resolutions": [],
+        "stop_card_behaviors": false,
+        "blocked": false,
+        "reason": "",
+    }
+    var executed_entries: Array = []
     for entry_value in entries:
         var entry: Dictionary = entry_value
-        if not card.has_anomaly(str(entry["category"]), str(entry["status_id"])):
+        if require_current_anomaly and not card.has_anomaly(
+                str(entry["category"]), str(entry["status_id"])):
             continue
-        var context = StatusBehaviorContextScript.new().configure({
+        var context_values := source_values.duplicate()
+        context_values.merge({
             "trigger": trigger,
             "status_id": entry["status_id"],
             "category": entry["category"],
@@ -409,22 +466,60 @@ func _dispatch_card_behaviors(trigger: String, holder, card) -> Dictionary:
             "card": card,
             "status_system": self,
             "effect_ports": _effect_ports(),
-        })
+            "source_card_instance_id": str(card.id),
+            "source_trigger": source_trigger,
+            "action_token": str(source_values.get("action_token", "")),
+            "replay_depth": replay_depth,
+            "trigger_sequence": trigger_sequence,
+        }, true)
+        var context = StatusBehaviorContextScript.new().configure(
+            context_values)
         var result: Dictionary = behavior_registry.execute(entry["behavior"], context)
+        if not bool(result.get("success", false)):
+            continue
+        executed_entries.append(entry)
         if result.has("resolution"):
-            resolutions.append(result["resolution"])
+            var resolution: Dictionary = result["resolution"]
+            resolution.merge({
+                "source_card_instance_id": str(card.id),
+                "source_trigger": source_trigger,
+                "action_token": str(source_values.get("action_token", "")),
+                "replay_depth": replay_depth,
+                "trigger_sequence": trigger_sequence,
+            }, false)
+            aggregate["resolutions"].append(resolution)
         if bool(result.get("blocked", false)):
-            blocked = true
-            block_reason = str(result.get("reason", ""))
+            aggregate["blocked"] = true
+            aggregate["reason"] = str(result.get("reason", ""))
         if bool(result.get("stop_card_behaviors", false)):
-            stopped = true
+            aggregate["stop_card_behaviors"] = true
             break
     return {
-        "resolutions": resolutions,
-        "stop_card_behaviors": stopped,
-        "blocked": blocked,
-        "reason": block_reason,
+        "aggregate": aggregate,
+        "executed_entries": executed_entries,
     }
+
+func _merge_card_behavior_aggregate(
+        target: Dictionary,
+        addition: Dictionary) -> void:
+    target["resolutions"].append_array(addition.get("resolutions", []))
+    target["stop_card_behaviors"] = (
+        bool(target.get("stop_card_behaviors", false))
+        or bool(addition.get("stop_card_behaviors", false)))
+    target["blocked"] = (
+        bool(target.get("blocked", false))
+        or bool(addition.get("blocked", false)))
+    if str(target.get("reason", "")) == "":
+        target["reason"] = str(addition.get("reason", ""))
+
+func _qualified_card_trigger(status_trigger: String) -> String:
+    match status_trigger:
+        "played": return "card_played"
+        "draw": return "card_drawn"
+        "explicit_discard": return "card_explicitly_discarded"
+        "enter_discard": return "card_entered_discard"
+        "turn_end": return "turn_end"
+    return ""
 
 func _append_card_behavior_entries(
         entries: Array,

@@ -12,6 +12,7 @@ func _initialize() -> void:
         "_test_f2d2_formal_enhancement_runtime",
         "_test_f2d2_opportunity_freeze_and_progress_sync",
         "_test_f2e1_formal_imprint_runtime_and_persistence",
+        "_test_f2e2_echo_qualified_trigger_replay",
         "_test_status_behavior_registry_contract",
         "_test_status_system_contract",
         "_test_declared_card_status_runtime_semantics",

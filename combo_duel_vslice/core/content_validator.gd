@@ -62,7 +62,7 @@ const REQUIRED_ENHANCEMENT_IDS := [
     "qi_boost", "momentum", "hunyuan", "void_burst", "flawless",
     "rock_solid", "hidden_gold", "opportunity",
 ]
-const REQUIRED_IMPRINT_IDS := ["enlightenment", "alchemy", "innate"]
+const REQUIRED_IMPRINT_IDS := ["echo", "enlightenment", "alchemy", "innate"]
 const RETIRED_RESHAPE_IDS := [
     "bonus", "multiplier", "wild", "glass", "steel", "stone", "gold", "lucky",
     "foil", "holographic", "polychrome", "negative", "red", "blue", "purple",
@@ -601,6 +601,7 @@ func _validate_card_states(definition: Dictionary) -> void:
         definition.get("other_reshapes"), "card_states.other_reshapes")
     _validate_card_reshape_behaviors(
         definition.get("imprints"), "card_states.imprints")
+    _validate_echo_imprint()
 
     if definition.has("finishes"):
         _error("card_states.finishes", "旧品相字段已废弃，正式内容必须使用本源/强化/印记/其他")
@@ -677,6 +678,29 @@ func _validate_card_reshape_behaviors(values, scope: String) -> void:
                 _error(behavior_scope + ".trigger", "未知重塑行为触发时点 %s" % trigger)
                 continue
             _card_reshape_registry.validate_behavior(behavior, self, behavior_scope)
+
+func _validate_echo_imprint() -> void:
+    var echo: Dictionary = _imprints_by_id.get("echo", {})
+    if echo.is_empty():
+        return
+    var replay_behaviors: Array = []
+    for behavior_value in echo.get("behaviors", []):
+        if not behavior_value is Dictionary:
+            continue
+        var behavior: Dictionary = behavior_value
+        if str(behavior.get("handler", "")) == \
+                "replay_qualified_card_trigger":
+            replay_behaviors.append(behavior)
+    if replay_behaviors.size() != 1:
+        _error(
+            "card_states.imprints.echo.behaviors",
+            "回响印必须且只能声明一个合格触发重演 Handler")
+        return
+    if str(replay_behaviors[0].get("trigger", "")) != \
+            "qualified_trigger_replay":
+        _error(
+            "card_states.imprints.echo.behaviors",
+            "回响重演 Handler 只能绑定 qualified_trigger_replay")
 
 func _validate_card_reshape_behavior_references() -> void:
     for source in [

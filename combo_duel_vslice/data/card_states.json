@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 9,
   "reshape_categories": [
     {"id": "origin", "capacity": 1, "replaceable": false},
     {"id": "enhancement", "capacity": 1, "replaceable": true},
@@ -182,6 +182,17 @@
         {
           "trigger": "battle_start_hand_priority",
           "handler": "opening_draw_priority"
+        }
+      ]
+    },
+    {
+      "id": "echo",
+      "name": "回响印",
+      "behaviors": [
+        {
+          "trigger": "qualified_trigger_replay",
+          "handler": "replay_qualified_card_trigger",
+          "additional_replays": 1
         }
       ]
     }

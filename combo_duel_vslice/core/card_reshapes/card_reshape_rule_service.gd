@@ -3,14 +3,18 @@ extends RefCounted
 
 const RegistryScript = preload("res://core/card_reshapes/card_reshape_behavior_registry.gd")
 const ContextScript = preload("res://core/card_reshapes/card_reshape_behavior_context.gd")
+const TriggerReplayServiceScript = preload(
+    "res://core/card_reshapes/card_trigger_replay_service.gd")
 
 var content_catalog_ref: WeakRef
 var registry
+var trigger_replay_service
 var _definitions: Dictionary = {}
 
 func _init(catalog = null, registry_override = null) -> void:
     content_catalog_ref = weakref(catalog) if catalog != null else null
     registry = registry_override if registry_override != null else RegistryScript.new()
+    trigger_replay_service = TriggerReplayServiceScript.new(self)
     if catalog == null:
         _load_fallback_definitions()
 
@@ -62,15 +66,65 @@ func dispatch_battle_event(
         trigger: String,
         values: Dictionary = {}) -> Array[Dictionary]:
     var results: Array[Dictionary] = []
-    for entry in _behavior_entries(card, trigger):
-        var context_values := values.duplicate()
-        context_values.merge({
-            "card": card,
-            "trigger": trigger,
-        }, true)
-        results.append(registry.execute(
-            entry["behavior"], ContextScript.new().configure(context_values)))
+    for entry in behavior_entries_for(card, trigger):
+        results.append(execute_behavior_entry(entry, card, trigger, values))
     return results
+
+func dispatch_qualified_event(
+        card,
+        trigger: String,
+        values: Dictionary = {}) -> Array[Dictionary]:
+    return trigger_replay_service.dispatch_qualified_event(card, trigger, values)
+
+func qualified_replay_count(
+        card,
+        trigger: String,
+        context: Dictionary = {}) -> int:
+    return trigger_replay_service.qualified_replay_count(card, trigger, context)
+
+func calculate_qualified_numeric_bundle(
+        card,
+        calculation_context: Dictionary = {},
+        contribution_modifier: Callable = Callable()) -> Dictionary:
+    return trigger_replay_service.calculate_qualified_numeric_bundle(
+        card, calculation_context, contribution_modifier)
+
+func calculate_numeric_bundle_once(
+        card,
+        calculation_context: Dictionary = {},
+        contribution_modifier: Callable = Callable()) -> Dictionary:
+    var effective_qi := maxi(0, _run_numeric(
+        card, "effective_qi", int(card.qi_value), calculation_context))
+    var contribution := _run_numeric(
+        card, "card_contribution", effective_qi, calculation_context)
+    if contribution_modifier.is_valid():
+        contribution = int(contribution_modifier.call(card, contribution))
+    return {
+        "effective_qi": effective_qi,
+        "contribution": contribution,
+        "technique_multiplier_bonus": _run_numeric(
+            card, "technique_multiplier", 0, calculation_context),
+        "power_amp_percent": _run_numeric(
+            card, "power_amp", 0, calculation_context),
+        "replay_depth": int(calculation_context.get("replay_depth", 0)),
+        "trigger_sequence": int(calculation_context.get("trigger_sequence", 0)),
+    }
+
+func behavior_entries_for(card, trigger: String) -> Array:
+    return _behavior_entries(card, trigger)
+
+func execute_behavior_entry(
+        entry: Dictionary,
+        card,
+        trigger: String,
+        values: Dictionary = {}) -> Dictionary:
+    var context_values := values.duplicate()
+    context_values.merge({
+        "card": card,
+        "trigger": trigger,
+    }, true)
+    return registry.execute(
+        entry["behavior"], ContextScript.new().configure(context_values))
 
 func matches_attribute(card, attribute_id: String) -> bool:
     for definition_value in _active_definitions(card):
