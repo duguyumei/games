@@ -116,6 +116,9 @@ func apply_run_card_reshape(
         category: String,
         reshape_id: String,
         payload: Dictionary = {}) -> Dictionary:
+    if category == "origin":
+        return apply_run_card_origin(
+            run_deck, instance_ids, reshape_id, payload)
     var id_error := _validate_unique_instance_ids(instance_ids)
     if id_error != "":
         return {"success": false, "reason": id_error}
@@ -136,6 +139,16 @@ func apply_run_card_reshape(
             "after": result["after"].get("reshapes", {}).duplicate(true),
         })
     return {"success": true, "changed": changed}
+
+func apply_run_card_origin(
+        run_deck,
+        instance_ids: Array,
+        origin_id: String,
+        payload: Dictionary) -> Dictionary:
+    var id_error := _validate_unique_instance_ids(instance_ids)
+    if id_error != "":
+        return {"success": false, "reason": id_error}
+    return run_deck.apply_card_origin(instance_ids, origin_id, payload)
 
 func _validate_unique_instance_ids(instance_ids: Array) -> String:
     if instance_ids.is_empty():

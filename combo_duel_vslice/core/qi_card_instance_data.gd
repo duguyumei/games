@@ -3,7 +3,7 @@ extends RefCounted
 
 const QiCardScript = preload("res://core/qi_card.gd")
 
-const VERSION := 3
+const VERSION := 4
 
 static func capture(card, include_combat_state: bool = false) -> Dictionary:
     var values := {
@@ -39,8 +39,9 @@ static func restore(values: Dictionary, reshape_rules = null):
     if reshape_rules != null:
         card.configure_reshape_rule_service(reshape_rules)
     var reshapes: Dictionary = values.get("reshapes", {})
+    var origin = reshapes.get("origin", {})
+    card.reshape_origin = origin.duplicate(true) if origin is Dictionary else {}
     card.reshape_enhancement = str(reshapes.get("enhancement", ""))
-    card.reshape_finish = str(reshapes.get("finish", ""))
     card.reshape_imprint = str(reshapes.get("imprint", ""))
     card.reshape_others = reshapes.get("others", {}).duplicate(true)
     var anomalies: Dictionary = values.get("anomalies", {})
@@ -65,6 +66,8 @@ static func validate(values: Dictionary, content_catalog, include_combat_state: 
     var definition_id := str(values.get("definition_id", ""))
     if definition_id == "" or not content_catalog.has_id("card", definition_id):
         errors.append("真气实例引用未知 definition_id：%s" % definition_id)
+    else:
+        _validate_base_identity(values, content_catalog.get_by_id("card", definition_id), errors)
     _validate_reshapes(values.get("reshapes", {}), content_catalog, errors)
     if include_combat_state:
         _validate_anomalies(values.get("anomalies", {}), content_catalog, errors)
@@ -79,8 +82,8 @@ static func _validate_reshapes(
     if not values is Dictionary:
         errors.append("reshapes 必须是对象")
         return
+    _validate_origin(values.get("origin", {}), content_catalog, errors)
     _validate_optional_reference(values, "enhancement", "enhancement", content_catalog, errors)
-    _validate_optional_reference(values, "finish", "finish", content_catalog, errors)
     _validate_optional_reference(values, "imprint", "imprint", content_catalog, errors)
     var others = values.get("others", {})
     if not others is Dictionary:
@@ -90,9 +93,60 @@ static func _validate_reshapes(
             if not content_catalog.has_id("other_reshape", str(reshape_id)):
                 errors.append("真气实例引用未知重塑·其他：%s" % str(reshape_id))
     if not partial:
-        for field in ["enhancement", "finish", "imprint", "others"]:
+        for field in ["origin", "enhancement", "imprint", "others"]:
             if not values.has(field):
                 errors.append("reshapes 缺少字段 %s" % field)
+    for field in values:
+        if not ["origin", "enhancement", "imprint", "others"].has(str(field)):
+            errors.append("reshapes 包含旧版或未知字段 %s" % str(field))
+
+static func _validate_origin(values, content_catalog, errors: Array[String]) -> void:
+    if not values is Dictionary:
+        errors.append("重塑·本源必须是对象")
+        return
+    if values.is_empty():
+        return
+    if values.size() != 2 or not values.has("id") or not values.has("payload"):
+        errors.append("本源必须且只能包含 id 与 payload")
+        return
+    var origin_id := str(values.get("id", ""))
+    if origin_id == "" or not content_catalog.has_id("origin", origin_id):
+        errors.append("真气实例引用未知本源：%s" % origin_id)
+    var payload = values.get("payload")
+    if not payload is Dictionary:
+        errors.append("本源 payload 必须是对象")
+        return
+    var payload_values: Dictionary = payload
+    match origin_id:
+        "attribute_change":
+            if payload_values.size() != 1 or not payload_values.get("attribute") is String:
+                errors.append("转属 payload 必须且只能包含字符串 attribute")
+            else:
+                var legal_attributes: Array[String] = []
+                for attribute in content_catalog.definition("base_deck").get("attributes", []):
+                    legal_attributes.append(str(attribute.get("id", "")))
+                if not legal_attributes.has(str(payload_values.get("attribute", ""))):
+                    errors.append("转属引用未知基础属性：%s" % str(payload_values.get("attribute", "")))
+        "rank_change":
+            if payload_values.size() != 1 or not payload_values.get("direction") is String:
+                errors.append("易阶 payload 必须且只能包含字符串 direction")
+            elif not ["up", "down"].has(str(payload_values.get("direction", ""))):
+                errors.append("易阶 direction 只能为 up 或 down")
+
+static func _validate_base_identity(
+        values: Dictionary,
+        definition: Dictionary,
+        errors: Array[String]) -> void:
+    var expected := {
+        "rank_name": str(definition.get("rank", "")),
+        "rank_order": int(definition.get("order", 0)),
+        "qi_value": int(definition.get("qi", 0)),
+        "attribute": str(definition.get("attribute", "")),
+        "attribute_name": str(definition.get("attribute_name", "")),
+    }
+    for field in expected:
+        if values.get(field) != expected[field]:
+            errors.append("真气实例 %s 与 definition_id 的基础定义不一致" % field)
 
 static func _validate_anomalies(values, content_catalog, errors: Array[String]) -> void:
     if not values is Dictionary:

@@ -1,9 +1,9 @@
 {
-  "version": 2,
+  "version": 3,
   "practice_offer_ids": [
     "high_card_insight", "pair_insight", "two_pair_insight", "three_kind_insight",
     "straight_insight", "full_house_insight", "four_kind_insight", "five_kind_insight",
-    "hierophant", "aura"
+    "zengyuan_pill"
   ],
   "consumables": [
     {
@@ -18,25 +18,14 @@
       ]
     },
     {
-      "id": "hierophant",
-      "name": "教皇",
+      "id": "zengyuan_pill",
+      "name": "增元丹",
       "kind": "pill",
       "price": 3,
-      "description": "选择至多 2 张真气，使其获得奖励牌强化。",
+      "description": "选择至多 2 张本局真气，使其获得增元强化。",
       "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 2},
       "effects": [
-        {"op": "apply_enhancement", "enhancement": "bonus"}
-      ]
-    },
-    {
-      "id": "aura",
-      "name": "光环",
-      "kind": "treasure",
-      "price": 4,
-      "description": "选择 1 张真气，为其随机施加箔面、镭射或多彩品相。",
-      "targeting": {"zone": "run_deck", "selection": "player_selected", "minimum": 1, "maximum": 1},
-      "effects": [
-        {"op": "apply_random_finish", "finishes": ["foil", "holographic", "polychrome"]}
+        {"op": "apply_enhancement", "enhancement": "qi_boost"}
       ]
     },
     {

@@ -66,7 +66,7 @@ func _test_round_trip_and_complete_run_deck() -> void:
         expected.to_dict(),
         "本局存档往返保持全部状态一致")
     _assert_equal(restored.growth.experience, 12, "往返保留历练")
-    _assert_equal(restored.growth.consumable_ids, ["aura"], "往返保留消耗品稳定 ID")
+    _assert_equal(restored.growth.consumable_ids, ["zengyuan_pill"], "往返保留消耗品稳定 ID")
     _assert_equal(
         restored.growth.hand_progression("high_card")["slot_count"],
         2,
@@ -79,12 +79,12 @@ func _test_round_trip_and_complete_run_deck() -> void:
     _assert_equal(deck_snapshot["cards"].size(), 53, "完整 RunDeck 保留永久复制后的牌数")
     _assert_equal(deck_snapshot["next_serial"], 2, "完整 RunDeck 保留实例 ID 序列")
     var wind_seven: Dictionary = restored.growth.run_deck.card_data("wind_7")
-    _assert_equal(wind_seven["definition_id"], "wind_7", "QiCardInstanceData 保留稳定定义 ID")
+    _assert_equal(wind_seven["definition_id"], "mountain_7", "QiCardInstanceData 保留本源后的定义 ID")
     _assert_equal(wind_seven["rank_name"], "7", "QiCardInstanceData 保留点数")
-    _assert_equal(wind_seven["attribute"], "wind", "QiCardInstanceData 保留属性 ID")
-    _assert_equal(wind_seven["reshapes"]["enhancement"], "bonus", "QiCardInstanceData 保留强化")
-    _assert_equal(wind_seven["reshapes"]["finish"], "foil", "QiCardInstanceData 保留品相")
-    _assert_equal(wind_seven["reshapes"]["imprint"], "red", "QiCardInstanceData 保留印记")
+    _assert_equal(wind_seven["attribute"], "mountain", "QiCardInstanceData 保留转属后的属性 ID")
+    _assert_equal(wind_seven["reshapes"]["origin"]["id"], "attribute_change", "QiCardInstanceData 保留本源锁")
+    _assert_equal(wind_seven["reshapes"]["enhancement"], "qi_boost", "QiCardInstanceData 保留强化")
+    _assert_equal(wind_seven["reshapes"]["imprint"], "", "QiCardInstanceData 保留空印记槽")
     _assert_true(not wind_seven.has("anomalies"), "本局存档不保存战斗异状")
     _assert_true(not repository.encode(expected.to_dict()).contains("battle_state"), "磁盘 payload 不包含战斗中间状态")
 
@@ -191,7 +191,7 @@ func _configured_session(seed_value: int, experience: int):
     _assert_true(setup.success, "测试本局建立成功")
     session.growth.experience = experience
     session.growth.consumable_ids.clear()
-    session.growth.consumable_ids.append("aura")
+    session.growth.consumable_ids.append("zengyuan_pill")
     session.growth.hand_technique_progression["high_card"] = {
         "slot_count": 2,
         "sequence": [],
@@ -203,16 +203,17 @@ func _configured_session(seed_value: int, experience: int):
     session.growth.equipped_inner_skill_ids.clear()
     session.growth.equipped_inner_skill_ids.append("extra_qi_to_defense")
     session.growth.technique_slot_index = 1
-    session.growth.practice_purchases = {"aura": true}
+    session.growth.practice_purchases = {"zengyuan_pill": true}
     var cards: Array = session.growth.run_deck.create_battle_cards()
     for card in cards:
         if card.id != "wind_7":
             continue
-        card.set_enhancement("bonus")
-        card.set_finish("foil")
-        card.set_imprint("red")
+        card.set_enhancement("qi_boost")
         card.set_anomaly("poison", "lethal_poison")
     session.growth.run_deck.sync_from_battle_cards(cards)
+    _assert_true(session.growth.run_deck.apply_card_origin(
+        ["wind_7"], "attribute_change", {"attribute": "mountain"}
+    ).get("success", false), "测试本局为真气施加转属本源")
     var copied: Dictionary = session.growth.run_deck.copy_card("wind_7")
     _assert_true(copied.get("success", false), "测试本局永久复制真气")
     return session

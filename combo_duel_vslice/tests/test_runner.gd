@@ -75,6 +75,8 @@ const ConsumableEffectHandlerRegistryScript = preload(
     "res://core/consumables/consumable_effect_handler_registry.gd")
 const ConsumableUseServiceScript = preload(
     "res://core/consumables/consumable_use_service.gd")
+const CardWorkshopServiceScript = preload("res://core/card_workshop_service.gd")
+const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 const ProbeStatusBehaviorHandlerScript = preload(
@@ -232,15 +234,15 @@ func _initialize() -> void:
     _test_battle_consumable_multi_effect_rollback()
     _test_insight_growth_and_technique_acquisition()
     _test_formal_practice_shop_and_hand_progression()
-    _test_hierophant_bonus_enhancement_and_preview()
-    _test_aura_seeded_finish_and_preview()
+    _test_zengyuan_pill_enhancement_and_preview()
+    _test_simple_reshape_behaviors()
     _test_battle_consumable_reshape_persists_via_run_deck()
     _test_consumable_effect_registry_contract()
     _test_consumable_effect_validation_scope()
     _test_run_consumable_high_card_insight()
     _test_run_consumable_insight_exhausted_pool()
-    _test_run_consumable_hierophant_run_deck()
-    _test_run_consumable_aura_determinism_and_save()
+    _test_run_consumable_zengyuan_pill()
+    _test_run_consumable_origin_and_save()
     _test_run_consumable_invalid_targets()
     _test_run_consumable_transaction_rollback()
     _test_run_consumable_failed_use_keeps_randomness()
@@ -338,7 +340,7 @@ func _test_card_reshape_behavior_registry() -> void:
     var probe_card = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "wind_7"), "probe:wind_7")
     catalog.card_reshape_rules.bind_card(probe_card)
-    probe_card.set_enhancement("bonus")
+    probe_card.set_enhancement("qi_boost")
     var preview_values := PowerCalculatorScript.calculate(
         HandEvaluatorScript.evaluate([probe_card]))
     _assert_equal(
@@ -346,27 +348,22 @@ func _test_card_reshape_behavior_registry() -> void:
         "测试重塑 Handler 可以改变真实功法值而不改 PowerCalculator")
 
     var wild_card = DeckFactoryScript.create_card_instance(
-        base_catalog.get_by_id("card", "wind_7"), "reshape:wild")
+        base_catalog.get_by_id("card", "wind_7"), "reshape:hunyuan")
     base_catalog.card_reshape_rules.bind_card(wild_card)
-    wild_card.set_enhancement("wild")
+    wild_card.set_enhancement("hunyuan")
     _assert_true(
         wild_card.is_attribute("wind") and wild_card.is_attribute("fire"),
-        "万能牌通过行为绑定同时识别所有属性")
-    var glass_card = DeckFactoryScript.create_card_instance(
-        base_catalog.get_by_id("card", "wind_7"), "reshape:glass")
-    base_catalog.card_reshape_rules.bind_card(glass_card)
-    glass_card.set_enhancement("glass")
-    _assert_equal(glass_card.effective_qi_value(), 14, "玻璃牌通过行为绑定加倍有效真气")
-    var stone_card = DeckFactoryScript.create_card_instance(
-        base_catalog.get_by_id("card", "wind_7"), "reshape:stone")
-    base_catalog.card_reshape_rules.bind_card(stone_card)
-    stone_card.set_anomaly("mark", "wind_mark")
-    stone_card.set_enhancement("stone")
-    _assert_equal(stone_card.effective_qi_value(), 0, "石头牌通过行为绑定固定为零真气")
-    _assert_true(
-        not stone_card.can_apply_anomaly().get("allowed", true)
-        and stone_card.anomaly_marks.is_empty(),
-        "石头牌行为禁止异状并在获得时清除既有异状")
+        "混元通过行为绑定同时识别所有属性")
+    var boosted_card = DeckFactoryScript.create_card_instance(
+        base_catalog.get_by_id("card", "wind_7"), "reshape:qi_boost")
+    base_catalog.card_reshape_rules.bind_card(boosted_card)
+    boosted_card.set_enhancement("qi_boost")
+    _assert_equal(boosted_card.effective_qi_value(), 15, "增元通过行为绑定增加八点有效真气")
+    var momentum_card = DeckFactoryScript.create_card_instance(
+        base_catalog.get_by_id("card", "wind_7"), "reshape:momentum")
+    base_catalog.card_reshape_rules.bind_card(momentum_card)
+    momentum_card.set_enhancement("momentum")
+    _assert_equal(momentum_card.reshape_multiplier_bonus(), 1, "乘势通过行为绑定增加一点功法倍率")
 
     var unknown_values := _catalog_definitions(base_catalog)
     unknown_values["card_states"]["enhancements"][0]["behaviors"] = [{
@@ -404,9 +401,9 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
     _assert_equal(catalog.errors, [], "当前内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
-    _assert_equal(catalog.definition("card_states")["version"], 4, "真气重塑与异状数据带顶层版本")
+    _assert_equal(catalog.definition("card_states")["version"], 5, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
-    _assert_equal(catalog.definition("consumables")["version"], 2, "消耗品与修习商品数据带顶层版本")
+    _assert_equal(catalog.definition("consumables")["version"], 3, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
     _assert_equal(act_progression["acts"].size(), 3, "生命成长内容完整声明三层数据")
     _assert_equal(act_progression["acts"][0]["player"]["max_life"], 100, "第一层玩家生命上限来自成长内容")
@@ -419,9 +416,9 @@ func _test_content_catalog_and_validator() -> void:
         52,
         "标准初始构筑显式声明 52 个真气 ID")
     _assert_equal(catalog.all_of("card").size(), 52, "内容目录建立 52 张唯一基础真气索引")
-    _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种强化索引")
-    _assert_equal(catalog.all_of("finish").size(), 4, "内容目录建立四种品相索引")
-    _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种印记索引")
+    _assert_equal(catalog.all_of("origin").size(), 2, "内容目录建立转属与易阶本源索引")
+    _assert_equal(catalog.all_of("enhancement").size(), 3, "内容目录只建立三种已实现强化索引")
+    _assert_equal(catalog.all_of("imprint").size(), 0, "四种正式印记留待后续批次")
     _assert_equal(catalog.all_of("anomaly").size(), 12, "内容目录建立十二种战斗异状索引")
     _assert_equal(catalog.all_of("actor_status").size(), 8, "内容目录建立八种角色战斗状态索引")
     _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
@@ -432,6 +429,28 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.get_by_id("technique", "fire_sparks")["name"], "火星连点", "可按类型与 ID 查询功法")
     _assert_equal(catalog.get_by_id("technique", "stagnant_gu_conceal_breath")["name"], "郁蛊敛息", "郁蛊敛息进入统一功法目录")
     _assert_equal(catalog.get_by_id("technique", "borrow_fire_guard_heart")["name"], "借火护心", "借火护心进入统一功法目录")
+
+    var legacy_finish_values := _catalog_definitions(catalog)
+    legacy_finish_values["card_states"]["reshape_categories"][0] = {
+        "id": "finish", "capacity": 1, "replaceable": true}
+    legacy_finish_values["card_states"]["finishes"] = [{"id": "foil", "name": "旧品相"}]
+    var legacy_finish_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not legacy_finish_catalog.load_from_definitions(legacy_finish_values),
+        "旧 finish/finishes/foil 内容被明确拒绝")
+    _assert_true(
+        _array_contains_text(legacy_finish_catalog.errors, "旧品相字段已废弃"),
+        "旧品相拒绝报告明确迁移原因")
+    var legacy_consumable_values := _catalog_definitions(catalog)
+    legacy_consumable_values["consumables"]["consumables"][1]["effects"] = [{
+        "op": "apply_random_finish", "finishes": ["foil"]}]
+    var legacy_consumable_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not legacy_consumable_catalog.load_from_definitions(legacy_consumable_values),
+        "旧随机品相消耗品语法被拒绝")
+    _assert_true(
+        _array_contains_text(legacy_consumable_catalog.errors, "未注册的消耗品效果操作：apply_random_finish"),
+        "旧消耗品操作报告具名错误")
 
     var changed_query: Dictionary = catalog.get_by_id("technique", "fire_sparks")
     changed_query["name"] = "外部篡改"
@@ -811,6 +830,30 @@ func _test_enemy_pool_content_and_repository() -> void:
     _assert_true(
         one_card_catalog.load_from_definitions(one_card_values),
         "一张牌的敌人牌组可以通过内容校验")
+    var preset_origin := EnemyDeckEncodingScript.parse([{
+        "definition_id": "wind_7",
+        "reshapes": {
+            "origin": {
+                "id": "attribute_change",
+                "payload": {"attribute": "mountain"},
+            },
+            "enhancement": "qi_boost",
+        },
+    }], catalog, "enemy-origin-test")
+    _assert_true(preset_origin.get("success", false), "敌人可通过显式对象预置带参数本源")
+    _assert_equal(preset_origin["cards"][0].definition_id, "mountain_7", "敌人预置转属更新基础定义")
+    _assert_equal(preset_origin["cards"][0].reshape_origin["id"], "attribute_change", "敌人预置保存本源身份")
+    _assert_equal(preset_origin["cards"][0].reshape_enhancement, "qi_boost", "敌人预置可同时声明强化")
+    var ambiguous_origin_values := _catalog_definitions(catalog)
+    ambiguous_origin_values["enemies"]["enemies"][0]["deck"] = [
+        "wind_7+attribute_change"]
+    var ambiguous_origin_catalog := ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(
+        not ambiguous_origin_catalog.load_from_definitions(ambiguous_origin_values),
+        "敌人不能用无 payload 的字符串预置本源")
+    _assert_true(
+        _array_contains_text(ambiguous_origin_catalog.errors, "必须显式提供 origin 与 payload 对象"),
+        "敌人模糊本源编码报告明确错误")
     var no_match := repository.select(3, "event", 7301)
     _assert_true(not no_match.get("success", false), "敌人池无匹配节点组合时明确失败")
     _assert_true(
@@ -1655,358 +1698,132 @@ func _test_run_card_workshop_effects() -> void:
     var base_catalog = ContentCatalogScript.new()
     _assert_true(base_catalog.load_all(), "真气工坊测试载入统一内容目录")
     var content_values := _catalog_definitions(base_catalog)
+    content_values["card_states"]["imprints"].append({
+        "id": "test_imprint", "name": "测试印记"})
     content_values["card_states"]["other_reshapes"].append({
-        "id": "echo_reshape",
-        "name": "回响重塑",
-    })
+        "id": "echo_reshape", "name": "回响重塑"})
     var catalog = ContentCatalogScript.new()
-    _assert_true(
-        catalog.load_from_definitions(content_values),
-        "真气工坊测试目录可以扩展一项重塑·其他定义")
-    var registry = RunEffectHandlerRegistryScript.new()
-    var mutation = RunMutationServiceScript.new(registry)
-
-    var first_growth = GrowthInventoryScript.new(catalog, false)
-    _assert_equal(
-        first_growth.run_deck.reset_from_card_ids(["wind_2"], "workshop"),
-        [],
-        "只有一张牌的本局牌组可以建立")
-    var one_card_snapshot: Dictionary = first_growth.run_deck.to_snapshot()
-    var one_card_restored = RunDeckScript.new(catalog)
-    _assert_equal(
-        one_card_restored.restore_snapshot(one_card_snapshot),
-        [],
-        "只有一张牌的本局牌组通过快照校验")
-    var empty_growth = GrowthInventoryScript.new(catalog, false)
-    empty_growth.run_deck.reset_from_card_ids(["wind_2"], "empty-workshop")
-    _assert_true(mutation.apply_effects([{
-        "op": "remove_run_cards",
-        "instance_ids": ["wind_2"],
-    }], empty_growth).get("success", false), "工坊允许移除本局最后一张真气")
-    _assert_equal(empty_growth.run_deck.card_count(), 0, "本局牌组没有任意最小张数")
-    var second_growth = GrowthInventoryScript.new(catalog, false)
-    second_growth.run_deck.reset_from_card_ids(["wind_2"], "workshop")
-    var add_effects := [{
-        "op": "add_run_cards",
-        "definition_ids": ["wind_2", "fire_A"],
-    }]
-    var first_add: Dictionary = mutation.apply_effects(add_effects, first_growth)
-    var second_add: Dictionary = mutation.apply_effects(add_effects, second_growth)
-    _assert_true(first_add.get("success", false), "新增真气效果执行成功")
-    _assert_equal(
-        first_add.get("applied", [])[0].get("added"),
-        second_add.get("applied", [])[0].get("added"),
-        "相同初始状态与输入产生相同实例 ID")
-    _assert_equal(first_growth.run_deck.card_count(), 3, "新增两张真气按输入顺序追加")
-    _assert_equal(
-        first_growth.run_deck.card_data("wind_2")["definition_id"],
-        "wind_2",
-        "新增同定义真气不会覆盖已有基础实例")
-    var deterministic_added: Array = first_add.get("applied", [])[0].get("added", [])
-    _assert_equal(
-        deterministic_added[0]["instance_id"],
-        "workshop:000001:wind_2",
-        "新增实例统一使用命名空间、序号和定义 ID")
-
-    var invalid_content_values := _catalog_definitions(base_catalog)
-    invalid_content_values["node_rewards"]["node_rewards"]["event"] = [{
-        "kind": "card",
-        "op": "add_run_cards",
-        "definition_ids": ["missing_card_definition"],
-    }]
-    var invalid_content_catalog = ContentCatalogScript.new()
-    _assert_true(
-        not invalid_content_catalog.load_from_definitions(invalid_content_values),
-        "未知基础真气在内容加载阶段失败")
-    _assert_true(
-        _array_contains_text(
-            invalid_content_catalog.errors,
-            "引用未知基础真气定义：missing_card_definition"),
-        "内容加载错误包含未知真气定义 ID")
-    var invalid_carrier_values := _catalog_definitions(base_catalog)
-    invalid_carrier_values["node_rewards"]["node_rewards"]["event"] = [{
-        "kind": "reshape",
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["wind_2"],
-        "category": "finish",
-        "reshape_id": "negative",
-    }]
-    var invalid_carrier_catalog = ContentCatalogScript.new()
-    _assert_true(
-        not invalid_carrier_catalog.load_from_definitions(invalid_carrier_values),
-        "不允许真气承载的品相在内容加载阶段失败")
-    _assert_true(
-        _array_contains_text(
-            invalid_carrier_catalog.errors,
-            "重塑 negative 不允许施加给真气"),
-        "内容加载载体错误包含重塑 ID")
-
+    _assert_true(catalog.load_from_definitions(content_values), "测试目录扩展印记与其他定义")
     var growth = GrowthInventoryScript.new(catalog)
     growth.run_deck.reset_standard("craft")
+    var workshop = CardWorkshopServiceScript.new()
+
+    var wind_seven_before: Dictionary = growth.run_deck.card_data("wind_7")
+    var attribute_change: Dictionary = workshop.apply_run_card_origin(
+        growth.run_deck, ["wind_7"], "attribute_change", {"attribute": "mountain"})
+    _assert_true(attribute_change.get("success", false), "风7可以转属为山")
+    var mountain_seven: Dictionary = growth.run_deck.card_data("wind_7")
+    _assert_equal(mountain_seven["attribute"], "mountain", "转属改变基础属性")
+    _assert_equal(mountain_seven["rank_name"], "7", "转属保持牌阶")
+    _assert_equal(mountain_seven["qi_value"], wind_seven_before["qi_value"], "转属保持基础真气值")
+    _assert_equal(mountain_seven["definition_id"], "mountain_7", "转属更新正式定义 ID")
+    _assert_equal(mountain_seven["instance_id"], "wind_7", "转属保持实例 ID")
+    _assert_true(
+        not workshop.apply_run_card_origin(
+            growth.run_deck, ["wind_7"], "rank_change", {"direction": "up"}
+        ).get("success", false),
+        "已有本源的真气不能再次易阶")
+
+    _assert_true(workshop.apply_run_card_origin(
+        growth.run_deck, ["wind_K"], "rank_change", {"direction": "up"}
+    ).get("success", false), "风K可以升为风A")
+    var wind_ace: Dictionary = growth.run_deck.card_data("wind_K")
+    var ace_definition: Dictionary = catalog.get_by_id("card", "wind_A")
+    _assert_equal(wind_ace["definition_id"], "wind_A", "易阶更新定义 ID")
+    _assert_equal(wind_ace["qi_value"], ace_definition["qi"], "易阶真气值读取 base_deck")
+    _assert_true(not workshop.apply_run_card_origin(
+        growth.run_deck, ["forest_A"], "rank_change", {"direction": "up"}
+    ).get("success", false), "A 不能升阶")
+    _assert_true(not workshop.apply_run_card_origin(
+        growth.run_deck, ["forest_2"], "rank_change", {"direction": "down"}
+    ).get("success", false), "2 不能降阶")
+    _assert_true(workshop.apply_run_card_origin(
+        growth.run_deck, ["fire_6"], "rank_change", {"direction": "down"}
+    ).get("success", false), "火6可以降阶")
+    _assert_true(not workshop.apply_run_card_origin(
+        growth.run_deck, ["fire_6"], "attribute_change", {"attribute": "wind"}
+    ).get("success", false), "易阶后不能再次转属")
+
+    var atomic_before_k: Dictionary = growth.run_deck.card_data("mountain_K")
+    var atomic_before_a: Dictionary = growth.run_deck.card_data("mountain_A")
+    var atomic_failure: Dictionary = workshop.apply_run_card_origin(
+        growth.run_deck, ["mountain_K", "mountain_A"],
+        "rank_change", {"direction": "up"})
+    _assert_true(not atomic_failure.get("success", false), "多目标含非法本源目标时失败")
+    _assert_equal(growth.run_deck.card_data("mountain_K"), atomic_before_k, "原子失败不修改前置合法目标")
+    _assert_equal(growth.run_deck.card_data("mountain_A"), atomic_before_a, "原子失败不修改非法目标")
+
+    _assert_true(workshop.apply_run_card_reshape(
+        growth.run_deck, ["wind_7"], "enhancement", "qi_boost").get("success", false),
+        "本源改造后仍可获得强化")
+    _assert_true(workshop.apply_run_card_reshape(
+        growth.run_deck, ["wind_7"], "imprint", "test_imprint").get("success", false),
+        "印记占用独立单值槽")
+    _assert_true(workshop.apply_run_card_reshape(
+        growth.run_deck, ["wind_7"], "other", "echo_reshape", {"amount": 2}
+    ).get("success", false), "其他重塑保存 payload")
+    var source: Dictionary = growth.run_deck.card_data("wind_7")
+    var copied: Dictionary = workshop.copy_run_card(growth.run_deck, "wind_7", 1)
+    _assert_true(copied.get("success", false), "完整复制成功")
+    var copied_id := str(copied.get("instance_ids", [""])[0])
+    var copied_data: Dictionary = growth.run_deck.card_data(copied_id)
+    _assert_true(copied_id != "wind_7", "复制品使用新实例 ID")
+    _assert_equal(copied_data["definition_id"], source["definition_id"], "复制继承当前基础身份")
+    _assert_equal(copied_data["reshapes"], source["reshapes"], "复制继承本源锁与全部本局重塑")
+    _assert_true(not workshop.apply_run_card_origin(
+        growth.run_deck, [copied_id], "rank_change", {"direction": "up"}
+    ).get("success", false), "复制品继承本源锁")
+
     var battle_cards: Array = growth.run_deck.create_battle_cards()
+    var qi_boost_card = null
     for card in battle_cards:
         if card.id == "wind_7":
-            card.set_anomaly("poison", "lethal_poison")
+            qi_boost_card = card
             break
-    growth.run_deck.sync_from_battle_cards(battle_cards)
-    var reshape_result: Dictionary = mutation.apply_effects([
-        {
-            "op": "apply_run_card_reshape",
-            "instance_ids": ["wind_7"],
-            "category": "enhancement",
-            "reshape_id": "bonus",
-        },
-        {
-            "op": "apply_run_card_reshape",
-            "instance_ids": ["wind_7"],
-            "category": "finish",
-            "reshape_id": "foil",
-        },
-        {
-            "op": "apply_run_card_reshape",
-            "instance_ids": ["wind_7"],
-            "category": "imprint",
-            "reshape_id": "red",
-        },
-        {
-            "op": "apply_run_card_reshape",
-            "instance_ids": ["wind_7"],
-            "category": "other",
-            "reshape_id": "echo_reshape",
-            "payload": {"amount": 2},
-        },
-    ], growth)
-    _assert_true(reshape_result.get("success", false), "四类持久重塑由统一工坊执行")
-    _assert_equal(
-        reshape_result.get("applied", []).size(),
-        4,
-        "成功多效果事务按数据顺序只返回一次提交后的四项结果")
-    var reshaped_source: Dictionary = growth.run_deck.card_data("wind_7")
-    _assert_equal(reshaped_source["reshapes"]["enhancement"], "bonus", "强化写入单值槽")
-    _assert_equal(reshaped_source["reshapes"]["finish"], "foil", "品相写入单值槽")
-    _assert_equal(reshaped_source["reshapes"]["imprint"], "red", "印记写入单值槽")
-    _assert_equal(
-        reshaped_source["reshapes"]["others"]["echo_reshape"],
-        {"amount": 2},
-        "重塑·其他按稳定 ID 保存 payload")
-    _assert_true(not reshaped_source.has("anomalies"), "工坊牌组不保存战斗异状")
-
-    var copy_result: Dictionary = mutation.apply_effects([{
-        "op": "copy_run_card",
-        "source_instance_id": "wind_7",
-        "count": 2,
-    }], growth)
-    _assert_true(copy_result.get("success", false), "复制本局真气成功")
-    var copied_ids: Array = copy_result.get("applied", [])[0].get("instance_ids", [])
-    _assert_equal(copied_ids.size(), 2, "复制返回全部新实例 ID")
-    for copied_id in copied_ids:
-        var copied_data: Dictionary = growth.run_deck.card_data(str(copied_id))
-        _assert_equal(copied_data["reshapes"], reshaped_source["reshapes"], "复制保留全部持久重塑")
-        _assert_true(not copied_data.has("anomalies"), "复制不包含战斗异状")
-
-    var before_transform_cards: Array = growth.run_deck.cards_snapshot()
-    var target_index := -1
-    for index in range(before_transform_cards.size()):
-        if before_transform_cards[index]["instance_id"] == "forest_3":
-            target_index = index
-            break
-    _assert_true(mutation.apply_effects([{
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["forest_3"],
-        "category": "finish",
-        "reshape_id": "holographic",
-    }], growth).get("success", false), "转换前可为目标施加持久重塑")
-    var preserved_transform: Dictionary = mutation.apply_effects([{
-        "op": "transform_run_card",
-        "instance_id": "forest_3",
-        "definition_id": "fire_A",
-    }], growth)
-    _assert_true(preserved_transform.get("success", false), "转换定义默认保留重塑")
-    var transformed: Dictionary = growth.run_deck.card_data("forest_3")
-    _assert_equal(transformed["instance_id"], "forest_3", "转换保持实例 ID")
-    _assert_equal(transformed["definition_id"], "fire_A", "转换采用明确目标定义")
-    _assert_equal(transformed["reshapes"]["finish"], "holographic", "默认转换保留重塑")
-    _assert_equal(
-        growth.run_deck.cards_snapshot()[target_index]["instance_id"],
-        "forest_3",
-        "转换保持牌组位置")
-    _assert_true(mutation.apply_effects([{
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["forest_4"],
-        "category": "enhancement",
-        "reshape_id": "steel",
-    }], growth).get("success", false), "清空重塑转换前可建立强化状态")
-    _assert_true(mutation.apply_effects([{
-        "op": "transform_run_card",
-        "instance_id": "forest_4",
-        "definition_id": "mountain_K",
-        "preserve_reshapes": false,
-    }], growth).get("success", false), "转换可显式清除持久重塑")
-    _assert_equal(
-        growth.run_deck.card_data("forest_4")["reshapes"],
-        {"enhancement": "", "finish": "", "imprint": "", "others": {}},
-        "preserve_reshapes=false 清除全部持久重塑")
-
-    var state_copy_before: Array = growth.run_deck.cards_snapshot()
-    var state_copy_positions := {}
-    for index in range(state_copy_before.size()):
-        var instance_id := str(state_copy_before[index]["instance_id"])
-        if instance_id in ["forest_5", "fire_6"]:
-            state_copy_positions[instance_id] = index
-    var state_copy: Dictionary = mutation.apply_effects([{
-        "op": "copy_run_card_state",
-        "source_instance_id": "wind_7",
-        "target_instance_ids": ["forest_5", "fire_6"],
-    }], growth)
-    _assert_true(state_copy.get("success", false), "完整牌面状态可复制到多个明确目标")
-    for target_id in ["forest_5", "fire_6"]:
-        var target_data: Dictionary = growth.run_deck.card_data(target_id)
-        _assert_equal(target_data["instance_id"], target_id, "状态复制保持目标实例 ID")
-        _assert_equal(target_data["definition_id"], "wind_7", "状态复制替换目标印刷定义")
-        _assert_equal(target_data["reshapes"], reshaped_source["reshapes"], "状态复制替换全部持久重塑")
-        _assert_equal(
-            growth.run_deck.cards_snapshot()[state_copy_positions[target_id]]["instance_id"],
-            target_id,
-            "状态复制保持目标牌组位置")
-    _assert_true(not mutation.apply_effects([{
-        "op": "copy_run_card_state",
-        "source_instance_id": "wind_7",
-        "target_instance_ids": ["wind_7"],
-    }], growth).get("success", false), "来源实例不能同时出现在目标数组")
-
-    var ordered_reshape: Dictionary = mutation.apply_effects([{
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["wind_2", "fire_A"],
-        "category": "imprint",
-        "reshape_id": "blue",
-    }], growth)
-    _assert_equal(
-        [
-            ordered_reshape.get("applied", [])[0]["changed"][0]["instance_id"],
-            ordered_reshape.get("applied", [])[0]["changed"][1]["instance_id"],
-        ],
-        ["wind_2", "fire_A"],
-        "多个目标按输入顺序返回重塑结果")
-    var negative_result: Dictionary = mutation.apply_effects([{
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["wind_2"],
-        "category": "finish",
-        "reshape_id": "negative",
-    }], growth)
-    _assert_true(not negative_result.get("success", false), "负片品相不能施加给真气")
-    _assert_true(str(negative_result.get("reason", "")).contains("negative"), "负片失败包含具名重塑 ID")
-    var mismatch_result: Dictionary = mutation.apply_effects([{
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["wind_2"],
-        "category": "finish",
-        "reshape_id": "bonus",
-    }], growth)
-    _assert_true(not mismatch_result.get("success", false), "重塑类别不匹配时明确失败")
-    _assert_true(str(mismatch_result.get("reason", "")).contains("bonus"), "类别错误包含具名重塑 ID")
-    var unknown_reshape_result: Dictionary = mutation.apply_effects([{
-        "op": "apply_run_card_reshape",
-        "instance_ids": ["wind_2"],
-        "category": "other",
-        "reshape_id": "missing_reshape",
-    }], growth)
-    _assert_true(not unknown_reshape_result.get("success", false), "未知重塑在运行时最终校验失败")
-    _assert_true(str(unknown_reshape_result.get("reason", "")).contains("missing_reshape"), "未知重塑错误包含 ID")
-    var unknown_definition_result: Dictionary = mutation.apply_effects([{
-        "op": "transform_run_card",
-        "instance_id": "wind_2",
-        "definition_id": "missing_definition",
-    }], growth)
-    _assert_true(not unknown_definition_result.get("success", false), "未知转换定义在运行时最终校验失败")
-    _assert_true(str(unknown_definition_result.get("reason", "")).contains("missing_definition"), "未知定义错误包含 ID")
-
-    var remove_rollback_before: Dictionary = growth.capture_mutation_state()
-    var remove_missing_result: Dictionary = mutation.apply_effects([{
-        "op": "remove_run_cards",
-        "instance_ids": ["wind_2", "missing_remove_target"],
-    }], growth)
-    _assert_true(not remove_missing_result.get("success", false), "移除列表包含未知实例时整组失败")
-    _assert_equal(growth.capture_mutation_state(), remove_rollback_before, "移除不存在实例不会留下部分删除")
-
-    growth.experience = 17
-    growth.life = 73
-    growth.consumable_ids.append("rollback_probe")
-    var rollback_state: Dictionary = growth.capture_mutation_state()
-    var rollback_deck: Dictionary = growth.run_deck.to_snapshot()
-    var rollback_result: Dictionary = mutation.apply_effects([
-        {
-            "op": "add_run_cards",
-            "definition_ids": ["mountain_A"],
-        },
-        {
-            "op": "transform_run_card",
-            "instance_id": "missing_instance",
-            "definition_id": "fire_2",
-        },
-    ], growth)
-    _assert_true(not rollback_result.get("success", false), "新增后非法转换使整组事务失败")
-    _assert_equal(rollback_result.get("failed_effect_index"), 1, "回滚结果定位第二个非法效果")
-    _assert_equal(growth.run_deck.to_snapshot(), rollback_deck, "失败前后牌组快照与 next_serial 逐项相等")
-    _assert_equal(growth.capture_mutation_state(), rollback_state, "失败后历练、生命与其他库存同样不变")
+    _assert_equal(qi_boost_card.effective_qi_value(), 15, "增元由配置令有效真气值+8")
+    var pair_cards := []
+    for card in battle_cards:
+        if card.id in ["forest_8", "fire_8"]:
+            card.set_enhancement("momentum")
+            pair_cards.append(card)
+    var momentum_values := PowerCalculatorScript.calculate(HandEvaluatorScript.evaluate(pair_cards))
+    _assert_equal(momentum_values["card_multiplier_bonus"], 2, "两张乘势分别令功法倍率合计+2")
+    var mixed = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_9"), "hunyuan:test", catalog.card_reshape_rules)
+    mixed.set_enhancement("hunyuan")
+    _assert_true(
+        mixed.is_attribute("wind") and mixed.is_attribute("forest")
+        and mixed.is_attribute("fire") and mixed.is_attribute("mountain"),
+        "混元同时满足四种属性识别")
+    _assert_equal(mixed.attribute, "wind", "混元不改变基础属性")
+    mixed.set_enhancement("momentum")
+    _assert_equal(mixed.reshape_enhancement, "momentum", "新强化替换旧强化")
 
     var save_session = RunSessionScript.new(null, null, null, null, catalog)
-    _assert_true(
-        save_session.execute({"type": "setup_run", "seed": 7112}).success,
-        "牌组改造存档探针建立正式本局")
-    var save_effects := [
-        {"op": "add_run_cards", "definition_ids": ["mountain_A"]},
-        {
-            "op": "apply_run_card_reshape",
-            "instance_ids": ["wind_7"],
-            "category": "other",
-            "reshape_id": "echo_reshape",
-            "payload": {"saved": true},
-        },
-        {
-            "op": "copy_run_card",
-            "source_instance_id": "wind_7",
-            "count": 1,
-        },
-        {
-            "op": "transform_run_card",
-            "instance_id": "forest_3",
-            "definition_id": "fire_A",
-            "preserve_reshapes": true,
-        },
-        {"op": "remove_run_cards", "instance_ids": ["wind_2"]},
-    ]
-    var save_result: Dictionary = mutation.apply_effects(
-        save_effects, save_session.growth)
-    _assert_true(save_result.get("success", false), "存档前六类能力代表组合执行成功")
+    _assert_true(save_session.execute({"type": "setup_run", "seed": 7112}).success, "建立存档测试本局")
+    _assert_true(workshop.apply_run_card_origin(
+        save_session.growth.run_deck, ["wind_7"],
+        "attribute_change", {"attribute": "mountain"}).get("success", false),
+        "存档前施加本源")
+    workshop.apply_run_card_reshape(
+        save_session.growth.run_deck, ["wind_7"], "enhancement", "qi_boost")
+    workshop.apply_run_card_reshape(
+        save_session.growth.run_deck, ["wind_7"], "imprint", "test_imprint")
     var saved_deck: Dictionary = save_session.growth.run_deck.to_snapshot()
     var restored: Dictionary = RunSaveDataScript.new().capture(
         save_session).restore_session(catalog)
-    _assert_true(restored.get("success", false), "牌组改造结果通过现有存档边界读回")
-    _assert_equal(
-        restored["run_session"].growth.run_deck.to_snapshot(),
-        saved_deck,
-        "读档保留新增、移除、复制、转换、重塑、顺序、实例 ID 与 next_serial")
-
-    var central_sources := [
-        FileAccess.get_file_as_string("res://core/run_effects/run_mutation_service.gd"),
-        FileAccess.get_file_as_string("res://core/run_session.gd"),
-        FileAccess.get_file_as_string("res://core/node_reward_service.gd"),
-    ]
-    for source in central_sources:
-        for operation_id in [
-            "add_run_cards",
-            "remove_run_cards",
-            "copy_run_card",
-            "transform_run_card",
-            "copy_run_card_state",
-            "apply_run_card_reshape",
-        ]:
-            _assert_true(
-                not source.contains(operation_id),
-                "中央流程不包含牌组改造操作分支：%s" % operation_id)
+    _assert_true(restored.get("success", false), "新 DTO 本局存档可以读回")
+    _assert_equal(restored["run_session"].growth.run_deck.to_snapshot(), saved_deck, "读档保留本源、锁、强化与印记")
 
 func _test_qi_instance_state_contract() -> void:
+    var base_catalog = ContentCatalogScript.new()
+    _assert_true(base_catalog.load_all(), "真气实例契约测试载入统一目录")
+    var values := _catalog_definitions(base_catalog)
+    values["card_states"]["imprints"].append({"id": "test_imprint", "name": "测试印记"})
+    values["card_states"]["other_reshapes"].append({"id": "battle_curse", "name": "战斗诅咒"})
+    values["card_states"]["other_reshapes"].append({"id": "scar", "name": "伤痕"})
     var catalog = ContentCatalogScript.new()
-    _assert_true(catalog.load_all(), "真气实例契约测试载入统一目录")
+    _assert_true(catalog.load_from_definitions(values), "实例测试目录扩展印记和其他重塑")
     var id_factory = CardInstanceIdFactoryScript.new("run-815")
     var first_id: String = id_factory.next_id("wind_7")
     var second_id: String = id_factory.next_id("wind_7")
@@ -2019,9 +1836,8 @@ func _test_qi_instance_state_contract() -> void:
         first_id)
     _assert_equal(card.id, first_id, "真气运行时ID使用唯一实例ID")
     _assert_equal(card.definition_id, "wind_7", "真气实例保留基础定义ID")
-    card.set_enhancement("bonus")
-    card.set_finish("foil")
-    card.set_imprint("red")
+    card.set_enhancement("qi_boost")
+    card.set_imprint("test_imprint")
     _assert_true(card.set_anomaly("poison", "stagnant_poison"), "可以建立毒异状")
     _assert_true(card.set_anomaly("poison", "lethal_poison"), "新毒替换唯一毒槽中的旧毒")
     _assert_equal(card.anomaly_poison, "lethal_poison", "唯一毒槽只保留新毒")
@@ -2036,11 +1852,22 @@ func _test_qi_instance_state_contract() -> void:
 
     var run_data: Dictionary = QiCardInstanceDataScript.capture(card)
     _assert_true(not run_data.has("anomalies"), "本局实例DTO默认不保存战斗异状")
-    _assert_equal(run_data["reshapes"]["finish"], "foil", "本局实例DTO保存品相重塑")
+    _assert_equal(
+        run_data["reshapes"],
+        {"origin": {}, "enhancement": "qi_boost", "imprint": "test_imprint", "others": {}},
+        "本局实例 DTO 使用新四字段且不含旧品相字段")
     _assert_equal(
         QiCardInstanceDataScript.validate(run_data, catalog),
         [],
         "本局实例DTO通过内容引用校验")
+    var legacy_instance: Dictionary = run_data.duplicate(true)
+    legacy_instance["version"] = QiCardInstanceDataScript.VERSION - 1
+    legacy_instance["reshapes"]["finish"] = "foil"
+    _assert_true(
+        _array_contains_text(
+            QiCardInstanceDataScript.validate(legacy_instance, catalog),
+            "真气实例版本不受支持"),
+        "旧真气实例版本被明确拒绝而不迁移品相")
     var battle_data: Dictionary = QiCardInstanceDataScript.capture(card, true)
     _assert_equal(
         QiCardInstanceDataScript.validate(battle_data, catalog, true),
@@ -2049,7 +1876,7 @@ func _test_qi_instance_state_contract() -> void:
     var restored = QiCardInstanceDataScript.restore(battle_data)
     _assert_equal(restored.id, first_id, "版本化DTO恢复唯一实例ID")
     _assert_equal(restored.definition_id, "wind_7", "版本化DTO恢复基础定义ID")
-    _assert_equal(restored.reshape_imprint, "red", "版本化DTO恢复印记")
+    _assert_equal(restored.reshape_imprint, "test_imprint", "版本化DTO恢复印记")
     _assert_equal(restored.anomaly_poison, "lethal_poison", "版本化DTO恢复毒异状")
     _assert_true(restored.has_anomaly("mark", "wind_lure"), "版本化DTO恢复多个标记")
     restored.set_anomaly("other", "temporary_a", {"amount": 1})
@@ -2082,9 +1909,12 @@ func _test_qi_instance_state_contract() -> void:
     var purified = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "fire_9"),
         id_factory.next_id("fire_9"))
-    purified.set_enhancement("bonus")
-    purified.set_finish("foil")
-    purified.set_imprint("gold")
+    catalog.card_reshape_rules.bind_card(purified)
+    _assert_true(CardOriginServiceScript.new(catalog).apply_to_card(
+        purified, "attribute_change", {"attribute": "mountain"}).get("success", false),
+        "净化测试牌先接受转属本源")
+    purified.set_enhancement("qi_boost")
+    purified.set_imprint("test_imprint")
     purified.set_other_reshape("battle_curse", {"poison": "lethal_poison"})
     purified.set_other_reshape("scar", {"stacks": 1})
     purified.set_anomaly("poison", "lethal_poison")
@@ -2095,8 +1925,8 @@ func _test_qi_instance_state_contract() -> void:
     var purification_result: Dictionary = lifecycle.apply_anomaly(
         purified, "mark", "purification")
     _assert_true(purification_result["success"], "可以通过统一生命周期施加净化")
+    _assert_true(purified.reshape_origin.is_empty(), "净化令本源在当前战斗失效")
     _assert_equal(purified.reshape_enhancement, "", "净化令已有强化失效")
-    _assert_equal(purified.reshape_finish, "", "净化令已有品相失效")
     _assert_equal(purified.reshape_imprint, "", "净化令已有印记失效")
     _assert_true(purified.reshape_others.is_empty(), "净化令已有重塑其他失效")
     _assert_equal(purified.anomaly_poison, "", "净化清除已有毒")
@@ -2105,13 +1935,19 @@ func _test_qi_instance_state_contract() -> void:
     _assert_true(purified.anomaly_others.is_empty(), "净化清除已有异状其他")
 
     var purified_run_data: Dictionary = QiCardInstanceDataScript.capture(purified)
-    _assert_equal(purified_run_data["reshapes"]["enhancement"], "bonus", "净化期间本局DTO仍保存暂存强化")
+    _assert_equal(purified_run_data["reshapes"]["origin"]["id"], "attribute_change", "净化期间本局DTO仍保存暂存本源")
+    _assert_equal(purified_run_data["reshapes"]["enhancement"], "qi_boost", "净化期间本局DTO仍保存暂存强化")
     _assert_equal(purified_run_data["reshapes"]["others"]["battle_curse"]["poison"], "lethal_poison", "净化期间本局DTO仍保存暂存重塑其他")
     var purified_battle_data: Dictionary = QiCardInstanceDataScript.capture(purified, true)
+    _assert_true(purified_battle_data["reshapes"]["origin"].is_empty(), "战斗 DTO 记录本源实际失效状态")
     _assert_equal(purified_battle_data["reshapes"]["enhancement"], "", "战斗DTO保留净化期间的实际失效状态")
     _assert_true(purified_battle_data["suppressed_reshapes"].has("enhancement"), "战斗DTO记录待恢复重塑")
 
-    purified.set_enhancement("multiplier")
+    _assert_true(purified.origin_locked(), "本源被净化屏蔽期间锁仍存在")
+    _assert_true(not CardOriginServiceScript.new(catalog).apply_to_card(
+        purified, "rank_change", {"direction": "up"}).get("success", false),
+        "净化屏蔽期间不能绕过本源锁")
+    purified.set_enhancement("momentum")
     purified.set_anomaly("poison", "stagnant_poison")
     purified.set_anomaly("state", "qi_dissipation")
     purified.set_anomaly("mark", "returning_wind")
@@ -2119,28 +1955,28 @@ func _test_qi_instance_state_contract() -> void:
     var refreshed: Dictionary = lifecycle.apply_anomaly(
         purified, "mark", "purification")
     _assert_true(refreshed["refreshed"], "重复获得净化只刷新而不清除后来内容")
-    _assert_equal(purified.reshape_enhancement, "multiplier", "净化后新强化正常生效")
+    _assert_equal(purified.reshape_enhancement, "momentum", "净化后新强化正常生效")
     _assert_true(purified.has_anomaly("poison", "stagnant_poison"), "净化后新毒正常生效")
     _assert_true(purified.has_anomaly("state", "qi_dissipation"), "净化后新状态正常生效")
     _assert_true(purified.has_anomaly("mark", "returning_wind"), "净化后新标记正常生效")
     _assert_true(purified.has_anomaly("other", "temporary_b"), "净化后新异状其他正常生效")
 
     var restored_after_purification: Dictionary = lifecycle.on_battle_end(purified)
-    _assert_equal(purified.reshape_enhancement, "multiplier", "后来强化替换净化前强化")
-    _assert_equal(purified.reshape_finish, "foil", "战斗结束恢复净化前品相")
-    _assert_equal(purified.reshape_imprint, "gold", "战斗结束恢复净化前印记")
+    _assert_equal(purified.reshape_origin["id"], "attribute_change", "战斗结束恢复净化前本源")
+    _assert_equal(purified.reshape_enhancement, "momentum", "后来强化替换净化前强化")
+    _assert_equal(purified.reshape_imprint, "test_imprint", "战斗结束恢复净化前印记")
     _assert_true(purified.reshape_others.has("battle_curse"), "战斗结束恢复未被替换的重塑其他")
     _assert_true(purified.reshape_others.has("scar"), "多个重塑其他分别恢复")
     _assert_true(purified.anomaly_snapshot()["marks"].is_empty(), "战斗结束移除净化与后来标记")
     _assert_equal(purified.anomaly_poison, "", "净化后新毒不跨战斗")
     _assert_equal(purified.anomaly_state, "", "净化后新状态不跨战斗")
     _assert_true(purified.anomaly_others.is_empty(), "净化后新异状其他不跨战斗")
-    _assert_equal(restored_after_purification["finish"], "foil", "生命周期返回实际恢复品相用于日志或回放")
+    _assert_equal(restored_after_purification["origin"]["id"], "attribute_change", "生命周期返回恢复的本源")
 
     var handler_card = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "mountain_6"),
         id_factory.next_id("mountain_6"))
-    handler_card.set_enhancement("glass")
+    handler_card.set_enhancement("qi_boost")
     handler_card.set_anomaly("poison", "lethal_poison")
     var handler_target = BattleSideScript.new("净化目标")
     handler_target.hand = [handler_card]
@@ -2863,7 +2699,7 @@ func _test_card_zone_service_contract() -> void:
     _assert_true(discard_target.has_anomaly("poison", "lethal_poison"), "未实际进入弃牌堆的回库牌保持续毒")
 
     var temporary_target = side.draw_pile[0]
-    temporary_target.set_finish("foil")
+    temporary_target.set_enhancement("qi_boost")
     var temp_remove: Dictionary = side.temporarily_remove_card(str(temporary_target.id), "burn")
     _assert_true(temp_remove["success"], "燃尽使用统一临时移出接口")
     _assert_equal(temp_remove["to"], "temporarily_removed", "临时移出进入独立牌区而不是弃牌堆")
@@ -3128,7 +2964,7 @@ func _test_status_system_contract() -> void:
     _assert_equal(engine.player.current_hand_limit(), 10, "纳气、盈袖与束袖统一计算当前手牌上限")
 
     var card = _card("9", "fire")
-    card.set_finish("foil")
+    card.set_enhancement("qi_boost")
     engine.player.hand = [card]
     _assert_true(system.apply_card_anomaly(card, "poison", "lethal_poison", {}, "状态契约")["success"], "状态系统施加烈毒")
     _assert_true(system.apply_card_anomaly(card, "poison", "stagnant_poison", {}, "状态契约")["success"], "新毒通过状态系统替换唯一毒槽")
@@ -3142,21 +2978,21 @@ func _test_status_system_contract() -> void:
     system.apply_card_anomaly(card, "mark", "qi_severance", {}, "状态契约")
     _assert_equal(card.anomaly_marks.size(), 3, "不同标记可通过状态系统共存")
     system.apply_card_anomaly(card, "mark", "purification", {}, "状态契约")
-    _assert_equal(card.reshape_finish, "", "净化通过状态系统屏蔽既有重塑")
+    _assert_equal(card.reshape_enhancement, "", "净化通过状态系统屏蔽既有强化")
     _assert_equal(card.anomaly_marks.keys(), ["purification"], "净化清除既有异状后保留自身")
     system.apply_card_anomaly(card, "state", "qi_dissipation", {}, "净化后施加")
     _assert_true(card.has_anomaly("state", "qi_dissipation"), "净化不阻止后来施加的异状")
 
     system.consume_actor_status(engine.player, "gu_mark", 99, "状态契约")
     var poison_card = _card("7", "forest")
-    poison_card.set_enhancement("bonus")
+    poison_card.set_enhancement("qi_boost")
     engine.player.staging = [poison_card]
     system.apply_card_anomaly(poison_card, "poison", "lethal_poison", {}, "状态契约")
     var poison_resolutions: Array = system.resolve_played_card_anomalies(
         engine.player,
         engine.player.staging)
-    _assert_equal(poison_resolutions[0]["damage"], 9, "烈毒读取奖励牌的当前有效真气值")
-    _assert_equal(engine.player.life, 91, "烈毒通过统一伤害入口作用于持有者")
+    _assert_equal(poison_resolutions[0]["damage"], 15, "烈毒读取增元后的当前有效真气值")
+    _assert_equal(engine.player.life, 85, "烈毒通过统一伤害入口作用于持有者")
     _assert_true(not poison_card.has_anomaly("poison"), "没有蛊印时烈毒触发后移除")
 
     system.register_attack_counter_delay("状态契约延迟", 1, 120, 6, engine.player, engine.enemy)
@@ -3181,7 +3017,7 @@ func _test_status_system_contract() -> void:
     engine.timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
         "actors": [engine.player, engine.enemy],
     })
-    _assert_equal(card.reshape_finish, "foil", "战斗结束移除净化并恢复未替换的整局重塑")
+    _assert_equal(card.reshape_enhancement, "qi_boost", "战斗结束移除净化并恢复未替换的强化")
     _assert_true(card.anomaly_snapshot()["marks"].is_empty(), "战斗结束清除全部战斗异状")
     _assert_true(engine.player.stacks.is_empty() and engine.enemy.stacks.is_empty(), "战斗结束统一清除敌我角色状态")
     _assert_true(not system.history.is_empty(), "状态系统公开结构化变化历史")
@@ -3507,15 +3343,16 @@ func _test_run_deck_contract() -> void:
             source = card
             break
     _assert_true(source != null, "RunDeck 可以创建独立战斗实例")
-    source.set_enhancement("bonus")
-    source.set_finish("foil")
-    source.set_imprint("red")
+    _assert_true(CardOriginServiceScript.new(catalog).apply_to_card(
+        source, "attribute_change", {"attribute": "mountain"}).get("success", false),
+        "战斗实例可通过共享本源规划器转属")
+    source.set_enhancement("qi_boost")
     source.set_anomaly("poison", "lethal_poison")
     run_deck.sync_from_battle_cards(battle_cards)
     var persistent: Dictionary = run_deck.card_data("wind_7")
-    _assert_equal(persistent["reshapes"]["enhancement"], "bonus", "战斗中的强化同步为本局重塑")
-    _assert_equal(persistent["reshapes"]["finish"], "foil", "战斗中的品相同步为本局重塑")
-    _assert_equal(persistent["reshapes"]["imprint"], "red", "战斗中的印记同步为本局重塑")
+    _assert_equal(persistent["reshapes"]["origin"]["id"], "attribute_change", "战斗中的本源同步为本局重塑")
+    _assert_equal(persistent["reshapes"]["enhancement"], "qi_boost", "战斗中的强化同步为本局重塑")
+    _assert_equal(persistent["reshapes"]["imprint"], "", "未实现印记槽保持为空")
     _assert_true(persistent["reshapes"]["others"].is_empty(), "未配置的重塑其他不会被测试擅自补入内容库")
     _assert_true(not persistent.has("anomalies"), "RunDeck 永不保存战斗异状")
 
@@ -3539,9 +3376,16 @@ func _test_run_deck_contract() -> void:
     var restored_deck = RunDeckScript.new(catalog)
     _assert_equal(restored_deck.restore_snapshot(run_deck.to_snapshot()), [], "RunDeck 版本化快照可以通过校验恢复")
     _assert_equal(restored_deck.to_snapshot(), run_deck.to_snapshot(), "RunDeck 快照恢复保持完整实例状态和 ID 序列")
+    var legacy_deck_snapshot: Dictionary = run_deck.to_snapshot()
+    legacy_deck_snapshot["version"] = RunDeckScript.VERSION - 1
+    _assert_true(
+        _array_contains_text(
+            RunDeckScript.new(catalog).restore_snapshot(legacy_deck_snapshot),
+            "本局牌组版本不受支持"),
+        "旧 RunDeck 版本明确拒绝而不静默迁移")
 
     var progress = RunProgressSnapshotScript.from_dict({
-        "consumable_ids": ["aura"],
+        "consumable_ids": ["zengyuan_pill"],
         "learned_technique_ids": ["long_wind_full_sleeve"],
         "run_deck": run_deck.to_snapshot(),
     })
@@ -3555,9 +3399,9 @@ func _test_run_deck_contract() -> void:
             battle_source = card
             break
     _assert_true(battle_source != null, "战斗装配保留本局真气实例 ID")
-    _assert_equal(battle_source.reshape_imprint, "red", "战斗装配恢复印记与其他完整重塑字段")
+    _assert_equal(battle_source.reshape_origin["id"], "attribute_change", "战斗装配恢复本源字段")
     _assert_equal(battle_source.anomaly_poison, "", "新战斗不会从 RunDeck 恢复上场异状")
-    battle_source.set_finish("polychrome")
+    battle_source.set_enhancement("momentum")
     battle_source.set_anomaly("state", "qi_dissipation")
     battle_session.engine.player.mark_permanently_removed("wind_2")
     var synced_progress = battle_session.player_progress_snapshot()
@@ -3568,7 +3412,7 @@ func _test_run_deck_contract() -> void:
         if values["instance_id"] == "wind_7":
             synced_source = values
             break
-    _assert_equal(synced_source["reshapes"]["finish"], "polychrome", "战斗中的本局重塑替换同步回 RunDeck")
+    _assert_equal(synced_source["reshapes"]["enhancement"], "momentum", "战斗中的强化替换同步回 RunDeck")
     _assert_true(not synced_source.has("anomalies"), "战斗同步不会把状态异状带到下一场")
 
 func _test_standard_deck() -> void:
@@ -4131,19 +3975,20 @@ func _test_inner_skill_and_technique_left_to_right() -> void:
 func _test_consumable_shared_slots_and_generation_limit() -> void:
     var engine = CombatEngineScript.new()
     engine.setup(77, false)
-    engine.player.configure_consumables(["high_card_insight", "hierophant", "aura", "hierophant"])
+    engine.player.configure_consumables([
+        "high_card_insight", "zengyuan_pill", "pair_insight", "zengyuan_pill"])
     _assert_equal(engine.player.consumable_ids.size(), 3, "三类消耗品共用三格容量")
-    _assert_equal(engine.player.consumable_ids, ["high_card_insight", "hierophant", "aura"], "共享槽保留三种代表消耗品")
-    _assert_equal(engine.grant_consumable(engine.player, "hierophant", "测试"), false, "没有空位时不生成消耗品")
+    _assert_equal(engine.player.consumable_ids, ["high_card_insight", "zengyuan_pill", "pair_insight"], "共享槽保留三种代表消耗品")
+    _assert_equal(engine.grant_consumable(engine.player, "straight_insight", "测试"), false, "没有空位时不生成消耗品")
     var used := engine.use_player_consumable(0, [])
     _assert_true(used["success"], "无目标心得可以直接使用")
     _assert_equal(engine.player.consumable_ids.size(), 2, "使用后立即释放共享槽位")
-    _assert_true(engine.grant_consumable(engine.player, "hierophant", "测试"), "释放槽位后可以生成消耗品")
+    _assert_true(engine.grant_consumable(engine.player, "straight_insight", "测试"), "释放槽位后可以生成消耗品")
     _assert_equal(engine.player.consumable_ids.size(), 3, "重新生成后占满三格")
 
 func _test_battle_consumable_multi_effect_rollback() -> void:
     var target = _card("9", "wind")
-    target.set_enhancement("multiplier")
+    target.set_enhancement("momentum")
     var engine = _engine_with_hand([target], [], 7901)
     var configured: bool = bool(engine.consumable_repository.configure({
         "practice_offer_ids": ["battle_transaction_probe"],
@@ -4153,7 +3998,7 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
             "targeting": {"zone": "hand", "minimum": 1, "maximum": 1},
             "effects": [
                 {"op": "gain_insight", "hand": "high_card", "pools": ["high"]},
-                {"op": "apply_enhancement", "enhancement": "bonus"},
+                {"op": "apply_enhancement", "enhancement": "qi_boost"},
                 {"op": "battle_transaction_fail", "amount": 0},
             ],
         }],
@@ -4350,76 +4195,47 @@ func _test_formal_practice_shop_and_hand_progression() -> void:
         first.growth.hand_technique_progression,
         "读档保留八种牌型槽位与功法序列")
 
-func _test_hierophant_bonus_enhancement_and_preview() -> void:
+func _test_zengyuan_pill_enhancement_and_preview() -> void:
     var pair := [_card("7", "wind"), _card("7", "forest")]
-    pair[0].set_enhancement("multiplier")
+    pair[0].set_enhancement("momentum")
     var third = _card("3", "fire")
     var engine = _engine_with_hand(pair + [third])
-    engine.player.configure_consumables(["hierophant"])
+    engine.player.configure_consumables(["zengyuan_pill"])
     var no_target := engine.use_player_consumable(0, [])
-    _assert_equal(no_target["success"], false, "教皇至少需要一张目标真气")
+    _assert_equal(no_target["success"], false, "增元丹至少需要一张目标真气")
     var too_many := engine.use_player_consumable(0, _ids(pair + [third]))
-    _assert_equal(too_many["success"], false, "教皇不能选择超过两张真气")
+    _assert_equal(too_many["success"], false, "增元丹不能选择超过两张真气")
     var result := engine.use_player_consumable(0, _ids(pair))
-    _assert_true(result["success"], "教皇可以强化至多两张真气")
-    _assert_equal(pair[0].reshape_enhancement, "bonus", "新强化替换同一张真气的旧强化")
-    _assert_equal(pair[1].reshape_enhancement, "bonus", "第二张目标获得奖励牌强化")
+    _assert_true(result["success"], "增元丹可以强化至多两张真气")
+    _assert_equal(pair[0].reshape_enhancement, "qi_boost", "新强化替换同一张真气的旧强化")
+    _assert_equal(pair[1].reshape_enhancement, "qi_boost", "第二张目标获得增元强化")
     var preview := engine.preview(_ids(pair))
-    _assert_equal(preview["values"]["base_value"], 18, "两张奖励七的有效真气值各加二")
-    _assert_equal(preview["values"]["baseline_value"], 36, "奖励牌同时进入牌型基准值")
-    _assert_equal(preview["values"]["technique_value"], 36, "奖励牌立即进入功法值预览")
+    _assert_equal(preview["values"]["base_value"], 30, "两张增元七的有效真气值各加八")
+    _assert_equal(preview["values"]["baseline_value"], 60, "增元同时进入牌型基准值")
+    _assert_equal(preview["values"]["technique_value"], 60, "增元立即进入功法值预览")
 
-func _test_aura_seeded_finish_and_preview() -> void:
-    var first_card = _card("8", "mountain")
-    var second_card = _card("8", "mountain")
-    first_card.set_finish("foil")
-    second_card.set_finish("foil")
-    var first = _engine_with_hand([first_card], [], 4404)
-    var second = _engine_with_hand([second_card], [], 4404)
-    first.player.configure_consumables(["aura"])
-    second.player.configure_consumables(["aura"])
-    var first_result := first.use_player_consumable(0, [first_card.id])
-    var second_result := second.use_player_consumable(0, [second_card.id])
-    _assert_true(first_result["success"] and second_result["success"], "光环选择一张真气使用成功")
-    _assert_true(first_card.reshape_finish in ["foil", "holographic", "polychrome"], "光环只产生三种合格品相")
-    _assert_equal(first_card.reshape_finish, second_card.reshape_finish, "相同固定种子产生相同光环品相")
-    _assert_true(first_card.reshape_finish != "", "新品相替换旧品相且不会清空")
-    var preview := first.preview([first_card.id])
-    match first_card.reshape_finish:
-        "foil":
-            _assert_equal(preview["values"]["base_value"], 11, "箔面使自身贡献加三")
-            _assert_equal(preview["values"]["technique_value"], 11, "箔面贡献进入功法值")
-        "holographic":
-            _assert_equal(preview["values"]["technique_multiplier"], 2, "镭射使功法倍率加一")
-            _assert_equal(preview["values"]["technique_value"], 16, "镭射立即影响功法值")
-        "polychrome":
-            _assert_equal(preview["values"]["power_amp_percent"], 20, "多彩加入功法值增幅加法池")
-            _assert_equal(preview["values"]["technique_value"], 9, "多彩增幅后功法值向下取整")
-    var foil = _card("8", "wind")
-    foil.set_finish("foil")
-    var foil_values := PowerCalculatorScript.calculate(HandEvaluatorScript.evaluate([foil]))
-    _assert_equal(foil_values["base_value"], 11, "箔面品相固定增加三点自身贡献")
-    var holographic = _card("8", "wind")
-    holographic.set_finish("holographic")
-    var holographic_values := PowerCalculatorScript.calculate(HandEvaluatorScript.evaluate([holographic]))
-    _assert_equal(holographic_values["technique_multiplier"], 2, "镭射品相使功法倍率加一")
-    _assert_equal(holographic_values["technique_value"], 16, "镭射品相进入功法值计算")
-    var polychrome = _card("8", "wind")
-    polychrome.set_finish("polychrome")
-    var polychrome_values := PowerCalculatorScript.calculate(HandEvaluatorScript.evaluate([polychrome]))
-    _assert_equal(polychrome_values["power_amp_percent"], 20, "多彩品相提供百分之二十功法值增幅")
-    _assert_equal(polychrome_values["technique_value"], 9, "多彩品相统一乘算并向下取整")
+func _test_simple_reshape_behaviors() -> void:
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "简单强化测试载入正式目录")
+    var card = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_8"), "simple:hunyuan", catalog.card_reshape_rules)
+    card.set_enhancement("hunyuan")
+    _assert_true(card.is_attribute("wind") and card.is_attribute("forest"), "混元可同时满足不同属性条件")
+    _assert_true(card.is_attribute("fire") and card.is_attribute("mountain"), "混元覆盖火山属性条件")
+    _assert_equal(card.attribute, "wind", "混元不改变基础属性身份")
 
 func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
-    var run_deck = RunDeckScript.new()
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "跨战斗强化测试载入内容目录")
+    var run_deck = RunDeckScript.new(catalog)
     run_deck.reset_standard("consumable-reshape")
     var progress = RunProgressSnapshotScript.from_dict({
-        "consumable_ids": ["aura"],
+        "consumable_ids": ["zengyuan_pill"],
         "learned_technique_ids": [],
         "run_deck": run_deck.to_snapshot(),
     })
     var first_battle: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
-    _assert_true(first_battle.setup_battle({"content_seed": 4404}, progress), "带光环的本局牌组可以进入战斗")
+    _assert_true(first_battle.setup_battle({"content_seed": 4404}, progress), "带增元丹的本局牌组可以进入战斗")
     first_battle.execute({"type": "start_turn"})
     var target = first_battle.engine.player.hand[0]
     var target_id := str(target.id)
@@ -4429,8 +4245,7 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
         "card_ids": [target_id],
     })
     _assert_true(reshape_result.success, "战斗中可以使用消耗品重塑真气")
-    var applied_finish := str(target.reshape_finish)
-    _assert_true(applied_finish in ["foil", "holographic", "polychrome"], "战斗消耗品产生合格品相重塑")
+    _assert_equal(target.reshape_enhancement, "qi_boost", "战斗消耗品施加增元强化")
     var after_progress = first_battle.player_progress_snapshot()
     _assert_true(after_progress.consumable_ids.is_empty(), "战斗中使用消耗品后释放本局槽位")
     var second_battle = BattleSessionScript.new(CombatEngineScript.new())
@@ -4441,14 +4256,14 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
             restored = card
             break
     _assert_true(restored != null, "下一场战斗保留被消耗品重塑的真气实例")
-    _assert_equal(restored.reshape_finish, applied_finish, "战斗中施加的品相通过 RunDeck 跨战斗保存")
+    _assert_equal(restored.reshape_enhancement, "qi_boost", "战斗中施加的强化通过 RunDeck 跨战斗保存")
     _assert_true(restored.anomaly_snapshot()["marks"].is_empty(), "跨战斗重塑同步不会附带战斗异状")
 
 func _test_consumable_effect_registry_contract() -> void:
     var registry = ConsumableEffectHandlerRegistryScript.new()
     _assert_equal(
         registry.operation_ids(),
-        ["apply_enhancement", "apply_random_finish", "gain_insight"],
+        ["apply_enhancement", "apply_origin", "gain_insight"],
         "默认注册三个现有消耗品操作")
 
     var duplicate_registry = ConsumableEffectHandlerRegistryScript.new(false)
@@ -4530,16 +4345,19 @@ func _test_consumable_effect_validation_scope() -> void:
         _array_contains_text(bad_enhancement_catalog.errors, "引用未知强化 not_real"),
         "非法强化错误稳定定位")
 
-    var bad_finish_values := _catalog_definitions(catalog)
-    bad_finish_values["consumables"]["consumables"][0]["effects"] = [
-        {"op": "apply_random_finish", "finishes": ["negative"]}]
-    var bad_finish_catalog = ContentCatalogScript.new()
+    var bad_origin_values := _catalog_definitions(catalog)
+    bad_origin_values["consumables"]["consumables"][0]["effects"] = [{
+        "op": "apply_origin",
+        "origin": "attribute_change",
+        "payload": {"attribute": "not_real"},
+    }]
+    var bad_origin_catalog = ContentCatalogScript.new()
     _assert_true(
-        not bad_finish_catalog.load_from_definitions(bad_finish_values),
-        "不能承载真气的品相引用在加载阶段失败")
+        not bad_origin_catalog.load_from_definitions(bad_origin_values),
+        "转属引用非法基础属性时加载失败")
     _assert_true(
-        _array_contains_text(bad_finish_catalog.errors, "品相 negative 不能用于真气"),
-        "非法品相错误稳定定位")
+        _array_contains_text(bad_origin_catalog.errors, "引用未知基础属性 not_real"),
+        "非法本源 payload 错误稳定定位")
 
 func _test_run_consumable_high_card_insight() -> void:
     var session: RunSession = RunSessionScript.new()
@@ -4668,24 +4486,24 @@ func _test_run_consumable_insight_exhausted_pool() -> void:
         four_slots_before,
         "五条心得不改变四条槽位")
 
-func _test_run_consumable_hierophant_run_deck() -> void:
+func _test_run_consumable_zengyuan_pill() -> void:
     var session: RunSession = RunSessionScript.new()
-    _assert_true(session.execute({"type": "setup_run", "seed": 77201}).success, "教皇测试本局建立")
-    session.growth.consumable_ids.append("hierophant")
+    _assert_true(session.execute({"type": "setup_run", "seed": 77201}).success, "增元丹测试本局建立")
+    session.growth.consumable_ids.append("zengyuan_pill")
     var query := session.execute({"type": "query_consumable_use", "slot_index": 0})
-    _assert_true(query.success, "教皇使用查询成功")
+    _assert_true(query.success, "增元丹使用查询成功")
     _assert_equal(
         query.payload_value("targeting"),
         {"zone": "run_deck", "selection": "player_selected"},
-        "教皇目标协议为 run_deck/player_selected")
-    _assert_equal(query.payload_value("selection"), "player_selected", "教皇查询返回 selection")
-    _assert_equal(query.payload_value("minimum"), 1, "教皇最少选择一张")
-    _assert_equal(query.payload_value("maximum"), 2, "教皇至多选择两张")
+        "增元丹目标协议为 run_deck/player_selected")
+    _assert_equal(query.payload_value("selection"), "player_selected", "增元丹查询返回 selection")
+    _assert_equal(query.payload_value("minimum"), 1, "增元丹最少选择一张")
+    _assert_equal(query.payload_value("maximum"), 2, "增元丹至多选择两张")
     var targets: Array = query.payload_value("eligible_targets")
-    _assert_equal(targets.size(), 52, "教皇可选目标为完整 RunDeck")
+    _assert_equal(targets.size(), 52, "增元丹可选目标为完整 RunDeck")
     var first_target: Dictionary = targets[0]
-    for field in ["instance_id", "card_id", "rank", "suit", "enhancement", "finish", "seal", "display_name"]:
-        _assert_true(first_target.has(field), "教皇可选目标包含字段 %s" % field)
+    for field in ["instance_id", "card_id", "rank", "suit", "origin", "enhancement", "imprint", "others", "display_name"]:
+        _assert_true(first_target.has(field), "增元丹可选目标包含字段 %s" % field)
     _assert_true(str(first_target["instance_id"]) != "", "可选目标携带稳定实例 ID")
     _assert_true(str(first_target["card_id"]) != "", "可选目标携带牌型 ID")
     _assert_equal(str(first_target["rank"]), "2", "可选目标携带点数")
@@ -4695,83 +4513,67 @@ func _test_run_consumable_hierophant_run_deck() -> void:
     var ids: Array = [first_target["instance_id"], targets[1]["instance_id"]]
     var use := session.execute({
         "type": "use_consumable", "slot_index": 0, "selected_instance_ids": ids})
-    _assert_true(use.success, "教皇选择两张真气成功")
+    _assert_true(use.success, "增元丹选择两张真气成功")
     _assert_equal(
         str(session.growth.run_deck.card_data(str(ids[0]))["reshapes"]["enhancement"]),
-        "bonus",
-        "奖励牌写入 RunDeck 第一张")
+        "qi_boost",
+        "增元写入 RunDeck 第一张")
     _assert_equal(
         str(session.growth.run_deck.card_data(str(ids[1]))["reshapes"]["enhancement"]),
-        "bonus",
-        "奖励牌写入 RunDeck 第二张")
-    _assert_equal(session.growth.consumable_ids, [], "教皇使用后释放槽位")
+        "qi_boost",
+        "增元写入 RunDeck 第二张")
+    _assert_equal(session.growth.consumable_ids, [], "增元丹使用后释放槽位")
 
     var progress = session.progress_snapshot()
     var battle: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
-    _assert_true(battle.setup_battle({"content_seed": 77201}, progress), "携带奖励牌的本局牌组进入战斗")
+    _assert_true(battle.setup_battle({"content_seed": 77201}, progress), "携带增元的本局牌组进入战斗")
     battle.execute({"type": "start_turn"})
     var seen := false
     for card in battle.engine.player.all_zone_cards():
         if card.id != str(ids[0]):
             continue
         seen = true
-        _assert_equal(card.reshape_enhancement, "bonus", "后续战斗装配能看到强化")
+        _assert_equal(card.reshape_enhancement, "qi_boost", "后续战斗装配能看到强化")
     _assert_true(seen, "被强化真气实例在战斗中出现")
 
-func _test_run_consumable_aura_determinism_and_save() -> void:
-    var target_a := ""
-    var first_a := ""
-    var first_b := ""
-    var second_a := ""
-    var second_b := ""
-
-    var session_a: RunSession = RunSessionScript.new()
-    _assert_true(session_a.execute({"type": "setup_run", "seed": 77301}).success, "光环甲本局建立")
-    session_a.growth.consumable_ids.assign(["aura", "aura"])
-    var cards_a: Array = session_a.growth.run_deck.cards_snapshot()
-    target_a = str(cards_a[0]["instance_id"])
-    var use_a := session_a.execute({
-        "type": "use_consumable", "slot_index": 0,
-        "selected_instance_ids": [target_a]})
-    _assert_true(use_a.success, "甲第一次光环使用成功")
-    first_a = str(session_a.growth.run_deck.card_data(target_a)["reshapes"]["finish"])
-    _assert_true(first_a in ["foil", "holographic", "polychrome"], "光环只产生三种合格品相")
-
-    var session_b: RunSession = RunSessionScript.new()
-    _assert_true(session_b.execute({"type": "setup_run", "seed": 77301}).success, "光环乙本局建立")
-    session_b.growth.consumable_ids.assign(["aura", "aura"])
-    var use_b := session_b.execute({
-        "type": "use_consumable", "slot_index": 0,
-        "selected_instance_ids": [target_a]})
-    _assert_true(use_b.success, "乙第一次光环使用成功")
-    first_b = str(session_b.growth.run_deck.card_data(target_a)["reshapes"]["finish"])
-    _assert_equal(first_b, first_a, "相同 seed 与 sequence 得到相同品相")
-
-    var save = RunSaveDataScript.new().capture(session_a)
-    var restored_dict: Dictionary = save.restore_session()
-    _assert_true(restored_dict.get("success", false), "使用后的存档可以恢复")
+func _test_run_consumable_origin_and_save() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(session.execute({"type": "setup_run", "seed": 77301}).success, "通用本源消耗品测试本局建立")
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "通用本源消耗品测试载入目录")
+    session.growth.consumable_ids.append("high_card_insight")
+    var service = ConsumableUseServiceScript.new(
+        null, catalog, ContentValidatorScript.HAND_IDS, ContentValidatorScript.POOL_IDS)
+    var definition := {
+        "id": "high_card_insight",
+        "targeting": {
+            "zone": "run_deck", "selection": "player_selected",
+            "minimum": 1, "maximum": 1},
+        "effects": [{
+            "op": "apply_origin",
+            "origin": "attribute_change",
+            "payload": {"attribute": "mountain"},
+        }],
+    }
+    var used: Dictionary = service.use(
+        session.growth, 0, ["wind_7"], 77301, definition)
+    _assert_true(used.get("success", false), "统一消耗品 Handler 可施加转属本源")
+    var changed: Dictionary = session.growth.run_deck.card_data("wind_7")
+    _assert_equal(changed["definition_id"], "mountain_7", "消耗品转属更新基础定义")
+    _assert_equal(changed["reshapes"]["origin"]["payload"], {"attribute": "mountain"}, "消耗品保存本源参数")
+    var save = RunSaveDataScript.new().capture(session)
+    var restored_dict: Dictionary = save.restore_session(catalog)
+    _assert_true(restored_dict.get("success", false), "本源消耗品结果可以存档恢复")
     var restored: RunSession = restored_dict["run_session"]
-    _assert_equal(restored.growth.consumable_use_sequence, 1, "读档保留使用序号")
-    var cards_restored: Array = restored.growth.run_deck.cards_snapshot()
-    var target_restored := str(cards_restored[1]["instance_id"])
-    var use_restored := restored.execute({
-        "type": "use_consumable", "slot_index": 0,
-        "selected_instance_ids": [target_restored]})
-    _assert_true(use_restored.success, "读档后继续使用光环成功")
-    second_a = str(restored.growth.run_deck.card_data(target_restored)["reshapes"]["finish"])
-
-    var target_b := str(session_b.growth.run_deck.cards_snapshot()[1]["instance_id"])
-    var use_b2 := session_b.execute({
-        "type": "use_consumable", "slot_index": 0,
-        "selected_instance_ids": [target_b]})
-    _assert_true(use_b2.success, "乙第二次光环使用成功")
-    second_b = str(session_b.growth.run_deck.card_data(target_b)["reshapes"]["finish"])
-    _assert_equal(second_b, second_a, "存档读档前后结果一致")
+    _assert_equal(
+        restored.growth.run_deck.card_data("wind_7")["reshapes"]["origin"],
+        changed["reshapes"]["origin"],
+        "读档保留本源身份和锁定状态")
 
 func _test_run_consumable_invalid_targets() -> void:
     var session: RunSession = RunSessionScript.new()
     _assert_true(session.execute({"type": "setup_run", "seed": 77401}).success, "非法目标测试本局建立")
-    session.growth.consumable_ids.append("aura")
+    session.growth.consumable_ids.append("zengyuan_pill")
     var deck_ids: Array = session.growth.run_deck.cards_snapshot()
     var first_id := str(deck_ids[0]["instance_id"])
     var second_id := str(deck_ids[1]["instance_id"])
@@ -4789,13 +4591,13 @@ func _test_run_consumable_invalid_targets() -> void:
     _assert_true(not too_few.success, "少于 minimum 明确失败")
     var too_many := session.execute({
         "type": "use_consumable", "slot_index": 0,
-        "selected_instance_ids": [first_id, second_id]})
+        "selected_instance_ids": [first_id, second_id, str(deck_ids[2]["instance_id"])]})
     _assert_true(not too_many.success, "多于 maximum 明确失败")
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "随机目标拒绝手选测试内容目录有效")
     var service = ConsumableUseServiceScript.new(
         null, catalog, ContentValidatorScript.HAND_IDS, ContentValidatorScript.POOL_IDS)
-    var random_definition: Dictionary = catalog.get_by_id("consumable", "aura")
+    var random_definition: Dictionary = catalog.get_by_id("consumable", "zengyuan_pill")
     random_definition["targeting"]["selection"] = "deterministic_random"
     var manual_random := service.use(
         session.growth, 0, [first_id], 77401, random_definition)
@@ -4806,9 +4608,9 @@ func _test_run_consumable_invalid_targets() -> void:
         str(manual_random.get("reason", "")).contains("不允许手动指定目标"),
         "deterministic_random 手动目标失败原因明确")
     _assert_equal(int(session.growth.consumable_use_sequence), 0, "非法目标失败不递增使用序号")
-    _assert_equal(session.growth.consumable_ids, ["aura"], "非法目标失败不删除消耗品")
+    _assert_equal(session.growth.consumable_ids, ["zengyuan_pill"], "非法目标失败不删除消耗品")
     for card in session.growth.run_deck.cards_snapshot():
-        _assert_equal(str(card["reshapes"]["finish"]), "", "非法目标失败不改动牌组")
+        _assert_equal(str(card["reshapes"]["enhancement"]), "", "非法目标失败不改动牌组")
 
 func _test_run_consumable_transaction_rollback() -> void:
     var session: RunSession = RunSessionScript.new()
@@ -4861,17 +4663,17 @@ func _test_run_consumable_transaction_rollback() -> void:
 func _test_run_consumable_failed_use_keeps_randomness() -> void:
     var session_a: RunSession = RunSessionScript.new()
     _assert_true(session_a.execute({"type": "setup_run", "seed": 77601}).success, "随机保持甲本局建立")
-    session_a.growth.consumable_ids.append("aura")
+    session_a.growth.consumable_ids.append("zengyuan_pill")
     var target := str(session_a.growth.run_deck.cards_snapshot()[0]["instance_id"])
     var use_a := session_a.execute({
         "type": "use_consumable", "slot_index": 0,
         "selected_instance_ids": [target]})
-    _assert_true(use_a.success, "甲直接成功使用光环")
-    var finish_a := str(session_a.growth.run_deck.card_data(target)["reshapes"]["finish"])
+    _assert_true(use_a.success, "甲直接成功使用增元丹")
+    var result_a := str(session_a.growth.run_deck.card_data(target)["reshapes"]["enhancement"])
 
     var session_b: RunSession = RunSessionScript.new()
     _assert_true(session_b.execute({"type": "setup_run", "seed": 77601}).success, "随机保持乙本局建立")
-    session_b.growth.consumable_ids.append("aura")
+    session_b.growth.consumable_ids.append("zengyuan_pill")
     var failed := session_b.execute({
         "type": "use_consumable", "slot_index": 0,
         "selected_instance_ids": ["not_in_deck"]})
@@ -4881,13 +4683,13 @@ func _test_run_consumable_failed_use_keeps_randomness() -> void:
         "type": "use_consumable", "slot_index": 0,
         "selected_instance_ids": [target]})
     _assert_true(use_b.success, "乙随后合法使用成功")
-    var finish_b := str(session_b.growth.run_deck.card_data(target)["reshapes"]["finish"])
-    _assert_equal(finish_b, finish_a, "失败后随机结果与没有发生失败操作时一致")
+    var result_b := str(session_b.growth.run_deck.card_data(target)["reshapes"]["enhancement"])
+    _assert_equal(result_b, result_a, "失败后合法操作结果与没有发生失败操作时一致")
 
 func _test_run_consumable_slot_release_order() -> void:
     var session: RunSession = RunSessionScript.new()
     _assert_true(session.execute({"type": "setup_run", "seed": 77701}).success, "槽位顺序测试本局建立")
-    session.growth.consumable_ids.assign(["aura", "hierophant", "high_card_insight"])
+    session.growth.consumable_ids.assign(["zengyuan_pill", "pair_insight", "high_card_insight"])
     var first_id := str(session.growth.run_deck.cards_snapshot()[0]["instance_id"])
     var use_zero := session.execute({
         "type": "use_consumable", "slot_index": 0,
@@ -4895,14 +4697,14 @@ func _test_run_consumable_slot_release_order() -> void:
     _assert_true(use_zero.success, "使用 0 号槽成功")
     _assert_equal(
         session.growth.consumable_ids,
-        ["hierophant", "high_card_insight"],
+        ["pair_insight", "high_card_insight"],
         "0 号槽释放后其余槽位顺序保持")
     var use_one := session.execute({
         "type": "use_consumable", "slot_index": 1, "selected_instance_ids": []})
     _assert_true(use_one.success, "使用释放后的新 1 号槽成功")
     _assert_equal(
         session.growth.consumable_ids,
-        ["hierophant"],
+        ["pair_insight"],
         "心得释放后剩余槽位顺序保持")
 
 func _test_run_consumable_phase_gate() -> void:
@@ -4928,17 +4730,17 @@ func _test_run_consumable_phase_gate() -> void:
 func _test_run_consumable_save_round_trip() -> void:
     var session: RunSession = RunSessionScript.new()
     _assert_true(session.execute({"type": "setup_run", "seed": 77901}).success, "存档往返测试本局建立")
-    session.growth.consumable_ids.assign(["aura", "high_card_insight"])
+    session.growth.consumable_ids.assign(["zengyuan_pill", "high_card_insight"])
     var deck_snapshot: Array = session.growth.run_deck.cards_snapshot()
     var reshaped_id := str(deck_snapshot[3]["instance_id"])
     var applied = session.growth.run_deck.apply_card_reshape(
-        reshaped_id, "enhancement", "multiplier")
+        reshaped_id, "enhancement", "momentum")
     _assert_true(applied.get("success", false), "测试牌组先完成一次重塑")
-    var aura_id := str(deck_snapshot[0]["instance_id"])
+    var boosted_id := str(deck_snapshot[0]["instance_id"])
     var use := session.execute({
         "type": "use_consumable", "slot_index": 0,
-        "selected_instance_ids": [aura_id]})
-    _assert_true(use.success, "存档前完成一次光环使用")
+        "selected_instance_ids": [boosted_id]})
+    _assert_true(use.success, "存档前完成一次增元丹使用")
     _assert_equal(int(session.growth.consumable_use_sequence), 1, "存档前使用序号为 1")
 
     var save = RunSaveDataScript.new().capture(session)
@@ -4949,12 +4751,12 @@ func _test_run_consumable_save_round_trip() -> void:
     _assert_equal(int(restored.growth.consumable_use_sequence), 1, "读档保留 consumable_use_sequence")
     _assert_equal(
         str(restored.growth.run_deck.card_data(reshaped_id)["reshapes"]["enhancement"]),
-        "multiplier",
+        "momentum",
         "读档保留已修改的 RunDeck 强化")
     _assert_equal(
-        str(restored.growth.run_deck.card_data(aura_id)["reshapes"]["finish"]),
-        str(session.growth.run_deck.card_data(aura_id)["reshapes"]["finish"]),
-        "读档保留光环品相")
+        str(restored.growth.run_deck.card_data(boosted_id)["reshapes"]["enhancement"]),
+        "qi_boost",
+        "读档保留增元丹强化")
     _assert_equal(
         restored.growth.run_deck.card_count(),
         session.growth.run_deck.card_count(),
@@ -4965,7 +4767,7 @@ func _test_consumable_no_central_op_branches() -> void:
         "res://core/battle_consumable_service.gd")
     var validator_source: String = FileAccess.get_file_as_string(
         "res://core/content_validator.gd")
-    for op in ["gain_insight", "apply_enhancement", "apply_random_finish"]:
+    for op in ["gain_insight", "apply_enhancement", "apply_origin"]:
         _assert_true(
             not battle_source.contains(op),
             "战斗兼容适配器不再按 op 写中央分支：%s" % op)
@@ -5205,18 +5007,18 @@ func _test_run_state_node_and_practice_gate() -> void:
     var begin := state.begin_node(first_node_id)
     _assert_true(begin["success"], "可以进入当前可达节点")
     _assert_true(not state.can_open_practice(), "节点进行中锁定修习入口")
-    _assert_equal(state.purchase_consumable("hierophant", 3)["success"], false, "节点未完成时不能购买修习内容")
+    _assert_equal(state.purchase_consumable("zengyuan_pill", 3)["success"], false, "节点未完成时不能购买修习内容")
     var completion := state.complete_current_node()
     _assert_true(completion["success"], "节点可以完成并返回地图")
     _assert_equal(completion["reward"], 3, "普通战斗节点奖励三点历练")
     _assert_equal(state.experience, 3, "节点奖励进入本局历练")
     _assert_true(state.can_open_practice(), "节点完成到选择下一节点前重新开放修习")
     _assert_true(not state.available_node_ids().is_empty(), "返回地图后只开放相连下一节点")
-    var purchase := state.purchase_consumable("hierophant", 3)
+    var purchase := state.purchase_consumable("zengyuan_pill", 3)
     _assert_true(purchase["success"], "待选节点期间可以消耗历练修习")
     _assert_equal(state.experience, 0, "修习购买扣除对应历练")
-    _assert_equal(state.consumable_ids, ["hierophant"], "修习所得进入共享消耗品栏")
-    _assert_equal(state.purchase_consumable("hierophant", 3)["success"], false, "同一地图待选阶段固定选项不能重复购买")
+    _assert_equal(state.consumable_ids, ["zengyuan_pill"], "修习所得进入共享消耗品栏")
+    _assert_equal(state.purchase_consumable("zengyuan_pill", 3)["success"], false, "同一地图待选阶段固定选项不能重复购买")
 
 func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var navigation = MapNavigationServiceScript.new()
@@ -5234,11 +5036,11 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var growth = GrowthInventoryScript.new()
     growth.experience = 3
     _assert_equal(
-        growth.purchase_consumable("hierophant", 3, false)["success"],
+        growth.purchase_consumable("zengyuan_pill", 3, false)["success"],
         false,
         "成长库存不绕过地图导航的修习时机限制")
     _assert_true(
-        growth.purchase_consumable("hierophant", 3, true)["success"],
+        growth.purchase_consumable("zengyuan_pill", 3, true)["success"],
         "成长库存独立处理历练和消耗品购买")
     _assert_equal(growth.experience, 0, "成长库存独立扣除历练")
     growth.learned_inner_skill_ids.assign(["extra_qi_to_defense"])
@@ -5247,16 +5049,16 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var progress = growth.to_progress_snapshot()
     var progress_copy: Dictionary = progress.to_dict()
     progress_copy["consumable_ids"].clear()
-    _assert_equal(progress.consumable_ids, ["hierophant"], "成长快照对外提供深复制")
+    _assert_equal(progress.consumable_ids, ["zengyuan_pill"], "成长快照对外提供深复制")
     var manual_deck = RunDeckScript.new()
     manual_deck.reset_standard("manual")
     var manual_cards := manual_deck.create_battle_cards()
     for card in manual_cards:
         if card.id == "wind_8":
-            card.set_finish("foil")
+            card.set_enhancement("qi_boost")
     manual_deck.sync_from_battle_cards(manual_cards)
     var manual_progress = RunProgressSnapshotScript.from_dict({
-        "consumable_ids": ["aura"],
+        "consumable_ids": ["zengyuan_pill"],
         "hand_technique_progression": {
             "high_card": {"slot_count": 2, "sequence": []},
         },
@@ -5265,13 +5067,13 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     })
     growth.life = 41
     growth.apply_progress_snapshot(manual_progress)
-    _assert_equal(growth.consumable_ids, ["aura"], "成长库存可以从进度快照导入消耗品")
+    _assert_equal(growth.consumable_ids, ["zengyuan_pill"], "成长库存可以从进度快照导入消耗品")
     _assert_equal(
         growth.hand_progression("high_card")["slot_count"],
         2,
         "成长库存可以从进度快照导入牌型功法槽位")
     _assert_equal(growth.life, 41, "局部战斗进度不清空未携带的当前生命")
-    _assert_equal(growth.run_deck.card_data("wind_8")["reshapes"]["finish"], "foil", "成长库存可以从进度快照导入完整本局牌组")
+    _assert_equal(growth.run_deck.card_data("wind_8")["reshapes"]["enhancement"], "qi_boost", "成长库存可以从进度快照导入完整本局牌组")
     _assert_equal(
         growth.equipped_inner_skill_ids,
         ["extra_qi_to_defense"],
@@ -5292,7 +5094,7 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     _assert_equal(initial.act, 1, "本局快照提供当前层数")
     _assert_equal(initial.phase, "awaiting_node", "本局快照提供当前流程阶段")
     _assert_true(initial.can_open_practice, "本局快照提供修习可用状态")
-    _assert_equal(initial.practice.get("offers", []).size(), 10, "修习快照提供八心得与原有两项普通消耗品")
+    _assert_equal(initial.practice.get("offers", []).size(), 9, "修习快照提供八心得与增元丹")
     var snapshot_insight_ids: Array = []
     for offer in initial.practice.get("offers", []):
         if str(offer.get("kind", "")) == "insight":
@@ -5337,13 +5139,13 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     _assert_true(session.execute({"type": "open_practice"}).success, "领取奖励返回待选状态后可以打开修习")
     var purchase := session.execute({
         "type": "purchase_consumable",
-        "consumable_id": "hierophant",
+        "consumable_id": "zengyuan_pill",
         "price": 0,
     })
     _assert_true(purchase.success, "修习购买通过本局命令完成")
     _assert_equal(purchase.payload_value("price"), 3, "修习价格由核心内容定义决定而不信任 UI 参数")
     _assert_equal(session.snapshot().experience, 0, "修习购买后的历练进入只读快照")
-    _assert_equal(session.snapshot().growth.get("consumable_ids"), ["hierophant"], "本局成长快照包含共享消耗品")
+    _assert_equal(session.snapshot().growth.get("consumable_ids"), ["zengyuan_pill"], "本局成长快照包含共享消耗品")
 
     var run_log: Array = session.snapshot().run_log
     var system_log: Array = session.snapshot().system_log
@@ -5584,7 +5386,7 @@ func _test_layered_life_progression_and_battle_persistence() -> void:
 func _test_run_state_battle_growth_persistence() -> void:
     var state = RunStateScript.new()
     state.setup(420)
-    state.consumable_ids.append("aura")
+    state.consumable_ids.append("zengyuan_pill")
     state.hand_technique_progression["high_card"] = {
         "slot_count": 2,
         "sequence": [],
@@ -5592,8 +5394,7 @@ func _test_run_state_battle_growth_persistence() -> void:
     var run_cards: Array = state.run_deck.create_battle_cards()
     for card in run_cards:
         if card.id == "wind_8":
-            card.set_enhancement("bonus")
-            card.set_finish("foil")
+            card.set_enhancement("qi_boost")
     state.run_deck.sync_from_battle_cards(run_cards)
     var engine = CombatEngineScript.new()
     engine.setup(420, false)
@@ -5604,17 +5405,16 @@ func _test_run_state_battle_growth_persistence() -> void:
             modified = card
             break
     _assert_true(modified != null, "本局牌组改造能应用到下一场战斗")
-    _assert_equal(modified.reshape_enhancement, "bonus", "跨战斗保留真气强化")
-    _assert_equal(modified.reshape_finish, "foil", "跨战斗保留真气品相")
+    _assert_equal(modified.reshape_enhancement, "qi_boost", "跨战斗保留真气强化")
     _assert_equal(
         engine.player.hand_technique_progression.get("high_card", {}).get("slot_count", 0),
         2,
         "跨战斗保留高牌功法槽位")
-    _assert_equal(engine.player.consumable_ids, ["aura"], "跨战斗保留共享消耗品")
-    modified.set_finish("polychrome")
+    _assert_equal(engine.player.consumable_ids, ["zengyuan_pill"], "跨战斗保留共享消耗品")
+    modified.set_enhancement("momentum")
     engine.player.consume_at(0)
     state.sync_from_battle_side(engine.player)
-    _assert_equal(state.run_deck.card_data("wind_8")["reshapes"]["finish"], "polychrome", "战斗中的品相替换同步回本局 RunDeck")
+    _assert_equal(state.run_deck.card_data("wind_8")["reshapes"]["enhancement"], "momentum", "战斗中的强化替换同步回本局 RunDeck")
     _assert_equal(state.consumable_ids.size(), 0, "战斗中使用消耗品后同步释放本局槽位")
 
 func _test_run_save_life_round_trip_legacy_defaults_and_validation() -> void:
@@ -5651,11 +5451,11 @@ func _test_run_save_life_round_trip_legacy_defaults_and_validation() -> void:
             RunSaveDataScript.new(over_max).validate(),
             "growth.life 不能大于 growth.max_life"),
         "当前生命高于上限时校验报出具名错误")
-    var negative: Dictionary = saved.duplicate(true)
-    negative["growth"]["life"] = -1
+    var invalid_life: Dictionary = saved.duplicate(true)
+    invalid_life["growth"]["life"] = -1
     _assert_true(
         _array_contains_text(
-            RunSaveDataScript.new(negative).validate(),
+            RunSaveDataScript.new(invalid_life).validate(),
             "growth.life 必须是正整数"),
         "负数当前生命被具名拒绝")
     var fractional: Dictionary = saved.duplicate(true)

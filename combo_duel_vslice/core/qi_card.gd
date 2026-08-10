@@ -14,8 +14,8 @@ var qi_value: int
 var attribute: String
 var attribute_name: String
 
+var reshape_origin: Dictionary = {}
 var reshape_enhancement: String = ""
-var reshape_finish: String = ""
 var reshape_imprint: String = ""
 var reshape_others: Dictionary = {}
 
@@ -65,15 +65,16 @@ func set_enhancement(enhancement_id: String) -> void:
     reshape_enhancement = enhancement_id
     _reshape_rules().apply_reshape(self, "enhancement", enhancement_id)
 
-func set_finish(finish_id: String) -> void:
-    suppressed_reshapes.erase("finish")
-    reshape_finish = finish_id
-    _reshape_rules().apply_reshape(self, "finish", finish_id)
-
 func set_imprint(imprint_id: String) -> void:
     suppressed_reshapes.erase("imprint")
     reshape_imprint = imprint_id
     _reshape_rules().apply_reshape(self, "imprint", imprint_id)
+
+func origin_locked() -> bool:
+    if not reshape_origin.is_empty():
+        return true
+    var suppressed_origin = suppressed_reshapes.get("origin", {})
+    return suppressed_origin is Dictionary and not suppressed_origin.is_empty()
 
 func set_other_reshape(reshape_id: String, payload: Dictionary = {}) -> bool:
     if reshape_id == "":
@@ -209,28 +210,31 @@ func suppress_existing_reshapes_and_clear_anomalies() -> Dictionary:
         return {"reshapes": {}, "anomalies": {}}
     var removed_reshapes := active_reshape_state()
     suppressed_reshapes = {}
+    if not reshape_origin.is_empty():
+        suppressed_reshapes["origin"] = reshape_origin.duplicate(true)
     if reshape_enhancement != "":
         suppressed_reshapes["enhancement"] = reshape_enhancement
-    if reshape_finish != "":
-        suppressed_reshapes["finish"] = reshape_finish
     if reshape_imprint != "":
         suppressed_reshapes["imprint"] = reshape_imprint
     if not reshape_others.is_empty():
         suppressed_reshapes["others"] = reshape_others.duplicate(true)
+    reshape_origin.clear()
     reshape_enhancement = ""
-    reshape_finish = ""
     reshape_imprint = ""
     reshape_others.clear()
     return {"reshapes": removed_reshapes, "anomalies": clear_anomalies()}
 
 func restore_suppressed_reshapes() -> Dictionary:
-    var restored := {"enhancement": "", "finish": "", "imprint": "", "others": {}}
+    var restored := {"origin": {}, "enhancement": "", "imprint": "", "others": {}}
+    var suppressed_origin = suppressed_reshapes.get("origin", {})
+    if reshape_origin.is_empty() \
+            and suppressed_origin is Dictionary \
+            and not suppressed_origin.is_empty():
+        reshape_origin = suppressed_origin.duplicate(true)
+        restored["origin"] = reshape_origin.duplicate(true)
     if reshape_enhancement == "" and suppressed_reshapes.has("enhancement"):
         reshape_enhancement = str(suppressed_reshapes["enhancement"])
         restored["enhancement"] = reshape_enhancement
-    if reshape_finish == "" and suppressed_reshapes.has("finish"):
-        reshape_finish = str(suppressed_reshapes["finish"])
-        restored["finish"] = reshape_finish
     if reshape_imprint == "" and suppressed_reshapes.has("imprint"):
         reshape_imprint = str(suppressed_reshapes["imprint"])
         restored["imprint"] = reshape_imprint
@@ -244,23 +248,26 @@ func restore_suppressed_reshapes() -> Dictionary:
 
 func active_reshape_state() -> Dictionary:
     return {
+        "origin": reshape_origin.duplicate(true),
         "enhancement": reshape_enhancement,
-        "finish": reshape_finish,
         "imprint": reshape_imprint,
         "others": reshape_others.duplicate(true),
     }
 
 func persistent_reshape_state() -> Dictionary:
+    var suppressed_origin = suppressed_reshapes.get("origin", {})
     var values := {
+        "origin": (
+            suppressed_origin.duplicate(true)
+            if suppressed_origin is Dictionary else {}),
         "enhancement": str(suppressed_reshapes.get("enhancement", "")),
-        "finish": str(suppressed_reshapes.get("finish", "")),
         "imprint": str(suppressed_reshapes.get("imprint", "")),
         "others": suppressed_reshapes.get("others", {}).duplicate(true),
     }
+    if not reshape_origin.is_empty():
+        values["origin"] = reshape_origin.duplicate(true)
     if reshape_enhancement != "":
         values["enhancement"] = reshape_enhancement
-    if reshape_finish != "":
-        values["finish"] = reshape_finish
     if reshape_imprint != "":
         values["imprint"] = reshape_imprint
     for reshape_id in reshape_others:

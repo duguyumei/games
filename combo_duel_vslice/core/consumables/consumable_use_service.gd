@@ -215,9 +215,10 @@ func _target_summary(values: Dictionary) -> Dictionary:
 		"rank": str(values.get("rank_name", "")),
 		"suit": str(values.get("attribute", "")),
 		"attribute": str(values.get("attribute", "")),
+		"origin": reshapes.get("origin", {}).duplicate(true),
 		"enhancement": str(reshapes.get("enhancement", "")),
-		"finish": str(reshapes.get("finish", "")),
-		"seal": str(reshapes.get("imprint", "")),
+		"imprint": str(reshapes.get("imprint", "")),
+		"others": reshapes.get("others", {}).duplicate(true),
 		"display_name": _display_name(values),
 	}
 

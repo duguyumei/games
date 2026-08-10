@@ -5,6 +5,7 @@ const HandlerScript = preload("res://core/card_reshapes/card_reshape_behavior_ha
 const ContextScript = preload("res://core/card_reshapes/card_reshape_behavior_context.gd")
 const AddContributionScript = preload("res://core/card_reshapes/add_card_contribution_handler.gd")
 const AddMultiplierScript = preload("res://core/card_reshapes/add_technique_multiplier_handler.gd")
+const AddEffectiveQiScript = preload("res://core/card_reshapes/add_effective_qi_handler.gd")
 const AddPowerAmpScript = preload("res://core/card_reshapes/add_power_amp_handler.gd")
 const AttributeAliasScript = preload("res://core/card_reshapes/attribute_alias_handler.gd")
 const MultiplyQiScript = preload("res://core/card_reshapes/multiply_effective_qi_handler.gd")
@@ -26,6 +27,7 @@ func _init(register_defaults: bool = true) -> void:
     if register_defaults:
         register_handler(AddContributionScript.new())
         register_handler(AddMultiplierScript.new())
+        register_handler(AddEffectiveQiScript.new())
         register_handler(AddPowerAmpScript.new())
         register_handler(AttributeAliasScript.new())
         register_handler(MultiplyQiScript.new())

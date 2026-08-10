@@ -2,7 +2,7 @@ class_name RunCardReshapeEffectHandler
 extends "res://core/run_effects/run_effect_handler.gd"
 
 const CardWorkshopServiceScript = preload("res://core/card_workshop_service.gd")
-const CATEGORIES := ["enhancement", "finish", "imprint", "other"]
+const CATEGORIES := ["origin", "enhancement", "imprint", "other"]
 
 var _workshop := CardWorkshopServiceScript.new()
 
@@ -42,9 +42,11 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                     "重塑 %s 不允许施加给真气" % reshape_id)
     if effect.has("payload") and not effect["payload"] is Dictionary:
         validator.report_error(scope + ".payload", "必须是对象")
-    elif effect.has("payload") and category != "other":
+    elif effect.has("payload") and category not in ["origin", "other"]:
         validator.report_error(
-            scope + ".payload", "只有重塑·其他可以携带 payload")
+            scope + ".payload", "只有本源和重塑·其他可以携带 payload")
+    elif category == "origin":
+        _validate_origin_payload(reshape_id, effect.get("payload", {}), validator, scope)
 
 func apply(effect: Dictionary, context) -> Dictionary:
     var result: Dictionary = _workshop.apply_run_card_reshape(
@@ -83,3 +85,29 @@ func _find_category(validator, reshape_id: String) -> String:
         if validator.has_content_id(_content_type(category), reshape_id):
             return category
     return ""
+
+func _validate_origin_payload(
+        origin_id: String,
+        payload: Dictionary,
+        validator,
+        scope: String) -> void:
+    match origin_id:
+        "attribute_change":
+            if payload.size() != 1 or not payload.get("attribute") is String:
+                validator.report_error(
+                    scope + ".payload", "转属必须且只能提供字符串 attribute")
+            elif validator.has_method("base_deck_definition"):
+                var legal_attributes: Array[String] = []
+                for attribute in validator.base_deck_definition().get("attributes", []):
+                    legal_attributes.append(str(attribute.get("id", "")))
+                if not legal_attributes.has(str(payload.get("attribute", ""))):
+                    validator.report_error(
+                        scope + ".payload.attribute",
+                        "引用未知基础属性 %s" % str(payload.get("attribute", "")))
+        "rank_change":
+            if payload.size() != 1 or not payload.get("direction") is String:
+                validator.report_error(
+                    scope + ".payload", "易阶必须且只能提供字符串 direction")
+            elif not ["up", "down"].has(str(payload.get("direction", ""))):
+                validator.report_error(
+                    scope + ".payload.direction", "只能为 up 或 down")

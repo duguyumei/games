@@ -55,14 +55,14 @@ const TECHNIQUE_INTEGRATION_STATUSES := [
 const FORMAL_TECHNIQUE_STATUS := "formal_complete"
 const PRODUCTION_SEQUENCES_PATH := "res://data/production_sequences.json"
 const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
-const RESHAPE_CATEGORY_IDS := ["enhancement", "finish", "imprint", "other"]
+const RESHAPE_CATEGORY_IDS := ["origin", "enhancement", "imprint", "other"]
 const ANOMALY_CATEGORY_IDS := ["mark", "poison", "state", "other"]
-const CARD_STATE_CARRIER_IDS := ["card", "inner_skill"]
-const REQUIRED_ENHANCEMENT_IDS := [
+const REQUIRED_ORIGIN_IDS := ["attribute_change", "rank_change"]
+const REQUIRED_ENHANCEMENT_IDS := ["qi_boost", "momentum", "hunyuan"]
+const RETIRED_RESHAPE_IDS := [
     "bonus", "multiplier", "wild", "glass", "steel", "stone", "gold", "lucky",
+    "foil", "holographic", "polychrome", "negative", "red", "blue", "purple",
 ]
-const REQUIRED_FINISH_IDS := ["foil", "holographic", "polychrome", "negative"]
-const REQUIRED_IMPRINT_IDS := ["gold", "red", "blue", "purple"]
 const ANOMALY_ON_APPLY_POLICIES := ["", "suppress_existing_effects"]
 const MARK_LIFECYCLE_EVENTS := ["draw", "explicit_discard", "enter_discard", "turn_end", "battle_end"]
 const CARD_STATUS_TRIGGERS := [
@@ -116,8 +116,8 @@ var warnings: Array[String] = []
 var _contents: Dictionary = {}
 var _paths: Dictionary = {}
 var _card_ids: Dictionary = {}
+var _origins_by_id: Dictionary = {}
 var _enhancements_by_id: Dictionary = {}
-var _finishes_by_id: Dictionary = {}
 var _imprints_by_id: Dictionary = {}
 var _other_reshapes_by_id: Dictionary = {}
 var _anomalies_by_id: Dictionary = {}
@@ -180,8 +180,8 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _contents = contents
     _paths = paths
     _card_ids.clear()
+    _origins_by_id.clear()
     _enhancements_by_id.clear()
-    _finishes_by_id.clear()
     _imprints_by_id.clear()
     _other_reshapes_by_id.clear()
     _anomalies_by_id.clear()
@@ -324,7 +324,8 @@ func _validate_enemies(definition: Dictionary) -> void:
             _error(entry_scope + ".deck", "必须是非空数组")
         else:
             var deck_report := EnemyDeckEncodingScript.validate_tokens(
-                deck, _card_ids, _enhancements_by_id, _finishes_by_id, _imprints_by_id)
+                deck, _card_ids, _origins_by_id, _enhancements_by_id,
+                _imprints_by_id, ATTRIBUTE_IDS)
             for deck_error in deck_report.get("errors", []):
                 _error(entry_scope + ".deck", str(deck_error))
         var inner_skill_ids = entry.get("equipped_inner_skill_ids")
@@ -556,26 +557,33 @@ func _validate_battle_statuses(definition: Dictionary) -> void:
         _validate_status_modifiers(value, scope)
 
 func _validate_card_states(definition: Dictionary) -> void:
-    _validate_categories(
-        definition.get("reshape_categories"),
-        RESHAPE_CATEGORY_IDS,
-        {"enhancement": 1, "finish": 1, "imprint": 1, "other": -1},
-        "card_states.reshape_categories")
+    _validate_reshape_categories(definition.get("reshape_categories"))
     _validate_categories(
         definition.get("anomaly_categories"),
         ANOMALY_CATEGORY_IDS,
         {"mark": -1, "poison": 1, "state": 1, "other": -1},
         "card_states.anomaly_categories")
     _validate_named_definitions(
+        definition.get("origins"),
+        REQUIRED_ORIGIN_IDS,
+        _origins_by_id,
+        "card_states.origins")
+    _validate_only_ids(
+        _origins_by_id, REQUIRED_ORIGIN_IDS, "card_states.origins")
+    _validate_card_reshape_behaviors(
+        definition.get("origins"), "card_states.origins")
+    _validate_named_definitions(
         definition.get("enhancements"),
         REQUIRED_ENHANCEMENT_IDS,
         _enhancements_by_id,
         "card_states.enhancements")
+    _validate_only_ids(
+        _enhancements_by_id, REQUIRED_ENHANCEMENT_IDS, "card_states.enhancements")
     _validate_card_reshape_behaviors(
         definition.get("enhancements"), "card_states.enhancements")
     _validate_named_definitions(
         definition.get("imprints"),
-        REQUIRED_IMPRINT_IDS,
+        [],
         _imprints_by_id,
         "card_states.imprints")
     _validate_named_definitions(
@@ -588,30 +596,9 @@ func _validate_card_states(definition: Dictionary) -> void:
     _validate_card_reshape_behaviors(
         definition.get("imprints"), "card_states.imprints")
 
-    var finishes = definition.get("finishes")
-    if not finishes is Array:
-        _error("card_states.finishes", "必须是数组")
-    else:
-        for index in range(finishes.size()):
-            var value = finishes[index]
-            var scope := "card_states.finishes[%d]" % index
-            if not value is Dictionary:
-                _error(scope, "必须是对象")
-                continue
-            var content_id := _required_id(value, scope)
-            _register_unique(_finishes_by_id, content_id, scope, value)
-            _validate_name(value, scope)
-            var carriers = value.get("allowed_carriers")
-            if not carriers is Array or carriers.is_empty():
-                _error(scope + ".allowed_carriers", "必须是非空数组")
-            else:
-                for carrier in carriers:
-                    if not CARD_STATE_CARRIER_IDS.has(str(carrier)):
-                        _error(scope + ".allowed_carriers", "未知载体 %s" % str(carrier))
-        _validate_required_ids(_finishes_by_id, REQUIRED_FINISH_IDS, "card_states.finishes")
-        _validate_card_reshape_behaviors(finishes, "card_states.finishes")
-        if _finishes_by_id.has("negative") and _finishes_by_id["negative"].get("allowed_carriers", []).has("card"):
-            _error("card_states.finishes.negative", "负片不能用于真气")
+    if definition.has("finishes"):
+        _error("card_states.finishes", "旧品相字段已废弃，正式内容必须使用本源/强化/印记/其他")
+    _validate_no_retired_reshape_ids(definition)
 
     var anomalies = definition.get("anomalies")
     if not anomalies is Array:
@@ -1327,6 +1314,26 @@ func _validate_categories(values, required_ids: Array, capacities: Dictionary, s
             _error(item_scope, "capacity 必须为 %d" % int(capacities[category_id]))
     _validate_required_ids(seen, required_ids, scope)
 
+func _validate_reshape_categories(values) -> void:
+    var scope := "card_states.reshape_categories"
+    var capacities := {"origin": 1, "enhancement": 1, "imprint": 1, "other": -1}
+    var replaceable := {"origin": false, "enhancement": true, "imprint": true, "other": true}
+    _validate_categories(values, RESHAPE_CATEGORY_IDS, capacities, scope)
+    if not values is Array:
+        return
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary:
+            continue
+        var category_id := str(value.get("id", ""))
+        if not replaceable.has(category_id):
+            continue
+        if not value.get("replaceable") is bool \
+                or bool(value.get("replaceable", false)) != bool(replaceable[category_id]):
+            _error(
+                "%s[%d].replaceable" % [scope, index],
+                "必须为 %s" % str(replaceable[category_id]))
+
 func _validate_named_definitions(values, required_ids: Array, index: Dictionary, scope: String) -> void:
     if not values is Array:
         _error(scope, "必须是数组")
@@ -1341,6 +1348,23 @@ func _validate_named_definitions(values, required_ids: Array, index: Dictionary,
         _register_unique(index, content_id, item_scope, value)
         _validate_name(value, item_scope)
     _validate_required_ids(index, required_ids, scope)
+
+func _validate_only_ids(index: Dictionary, allowed_ids: Array, scope: String) -> void:
+    for content_id in index:
+        if not allowed_ids.has(str(content_id)):
+            _error(scope, "当前批次不允许未实现定义 %s" % str(content_id))
+
+func _validate_no_retired_reshape_ids(definition: Dictionary) -> void:
+    for field in ["origins", "enhancements", "imprints", "other_reshapes"]:
+        var values = definition.get(field, [])
+        if not values is Array:
+            continue
+        for index in range(values.size()):
+            var value = values[index]
+            if value is Dictionary and RETIRED_RESHAPE_IDS.has(str(value.get("id", ""))):
+                _error(
+                    "card_states.%s[%d].id" % [field, index],
+                    "旧重塑 ID 已废弃：%s" % str(value.get("id", "")))
 
 func _validate_required_ids(index: Dictionary, required_ids: Array, scope: String) -> void:
     for content_id in required_ids:
@@ -1388,12 +1412,15 @@ func content_definition(content_type: String, content_id: String) -> Dictionary:
     match content_type:
         "card":
             return {"id": content_id} if _card_ids.has(content_id) else {}
+        "origin":
+            return _origins_by_id.get(content_id, {}).duplicate(true)
         "enhancement":
             return _enhancements_by_id.get(content_id, {}).duplicate(true)
-        "finish":
-            return _finishes_by_id.get(content_id, {}).duplicate(true)
         "imprint":
             return _imprints_by_id.get(content_id, {}).duplicate(true)
         "other_reshape":
             return _other_reshapes_by_id.get(content_id, {}).duplicate(true)
     return {}
+
+func base_deck_definition() -> Dictionary:
+    return _contents.get("base_deck", {}).duplicate(true)

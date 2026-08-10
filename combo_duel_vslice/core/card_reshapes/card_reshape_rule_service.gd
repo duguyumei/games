@@ -80,8 +80,6 @@ func can_apply_anomaly(card) -> Dictionary:
     return {"allowed": true}
 
 func has_card_kind(card, kind: String) -> bool:
-    if kind == "stone":
-        return effective_qi_value(card) == 0
     if kind == "normal":
         return effective_qi_value(card) != 0
     return true
@@ -106,15 +104,15 @@ func _execute(behavior: Dictionary, card, value: int = 0, attribute_id: String =
 
 func _reshape_id(card, category: String) -> String:
     match category:
+        "origin": return str(card.reshape_origin.get("id", ""))
         "enhancement": return str(card.reshape_enhancement)
-        "finish": return str(card.reshape_finish)
         "imprint": return str(card.reshape_imprint)
         "other": return ""
     return ""
 
 func _active_definitions(card) -> Array:
     var result: Array = []
-    for category in ["enhancement", "finish", "imprint"]:
+    for category in ["origin", "enhancement", "imprint"]:
         var definition_value := definition(category, _reshape_id(card, category))
         if not definition_value.is_empty():
             result.append(definition_value)
@@ -134,7 +132,7 @@ func _load_fallback_definitions() -> void:
     var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://data/card_states.json"))
     if not parsed is Dictionary:
         return
-    for pair in [["enhancement", "enhancements"], ["finish", "finishes"], ["imprint", "imprints"], ["other", "other_reshapes"]]:
+    for pair in [["origin", "origins"], ["enhancement", "enhancements"], ["imprint", "imprints"], ["other", "other_reshapes"]]:
         var values: Dictionary = {}
         for value in parsed.get(pair[1], []):
             values[str(value.get("id", ""))] = value.duplicate(true)

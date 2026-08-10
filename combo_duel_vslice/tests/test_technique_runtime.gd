@@ -330,9 +330,9 @@ func _test_stagnant_gu_conceal_breath_pipeline() -> void:
 
     var deck_fallback = _wind_high_engine(
         "stagnant_gu_conceal_breath", "forest_10", [], [], 8732)
-    var hand_stone = _catalog_card(deck_fallback, "mountain_2", "stagnant:fallback:hand-stone")
-    hand_stone.set_enhancement("stone")
-    deck_fallback.enemy.hand = [hand_stone]
+    var hand_zero_qi = _catalog_card(deck_fallback, "mountain_2", "stagnant:fallback:hand-zero-qi")
+    hand_zero_qi.qi_value = 0
+    deck_fallback.enemy.hand = [hand_zero_qi]
     var lower = _catalog_card(deck_fallback, "wind_3", "stagnant:fallback:lower")
     var top = _catalog_card(deck_fallback, "fire_4", "stagnant:fallback:top")
     deck_fallback.enemy.draw_pile = [lower, top]
@@ -344,8 +344,8 @@ func _test_stagnant_gu_conceal_breath_pipeline() -> void:
         "stagnant_gu_conceal_breath", "forest_10", [], [], 8733)
     var no_hand = _catalog_card(no_target, "mountain_2", "stagnant:none:hand")
     var no_deck = _catalog_card(no_target, "mountain_3", "stagnant:none:deck")
-    no_hand.set_enhancement("stone")
-    no_deck.set_enhancement("stone")
+    no_hand.qi_value = 0
+    no_deck.qi_value = 0
     no_target.enemy.hand = [no_hand]
     no_target.enemy.draw_pile = [no_deck]
     var no_result: Dictionary = no_target.confirm_play([no_target.player.hand[0].id])
@@ -704,7 +704,7 @@ func _test_target_query_filters_and_order() -> void:
     var fire_four = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "fire_4"), "query:fire_4")
     wind_three.set_anomaly("poison", "lethal_poison")
-    fire_four.set_enhancement("stone")
+    fire_four.qi_value = 0
     target.draw_pile = [wind_two, wind_three, fire_four]
     var context = EffectContextScript.new().configure({
         "actor": actor,
@@ -722,7 +722,7 @@ func _test_target_query_filters_and_order() -> void:
     })
     var result: Dictionary = query.resolve(context)
     _assert_true(result["success"], "目标查询接受阵营、牌区与组合筛选")
-    _assert_equal(result["cards"].size(), 1, "目标查询排除毒牌与石头牌")
+    _assert_equal(result["cards"].size(), 1, "目标查询排除毒牌与零有效真气牌")
     _assert_equal(result["cards"][0].id, wind_two.id, "目标查询返回正确实例")
 
     var top_query = TargetQueryScript.new().configure({

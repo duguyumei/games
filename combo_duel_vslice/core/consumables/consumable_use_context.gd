@@ -39,17 +39,17 @@ func apply_insight(hand_id: String, candidates: Array) -> Dictionary:
 func apply_enhancement(_instance_id: String, _enhancement_id: String) -> Dictionary:
 	return {"success": false, "reason": "该场景不支持强化施加"}
 
-func apply_finish(_instance_id: String, _finish_id: String) -> Dictionary:
-	return {"success": false, "reason": "该场景不支持品相施加"}
+func apply_origin(
+		_instance_ids: Array,
+		_origin_id: String,
+		_payload: Dictionary) -> Dictionary:
+	return {"success": false, "reason": "该场景不支持本源改造"}
 
 func technique_name(technique_id: String) -> String:
 	return technique_id
 
 func enhancement_name(enhancement_id: String) -> String:
 	return enhancement_id
-
-func finish_name(finish_id: String) -> String:
-	return finish_id
 
 func target_display_name(instance_id: String) -> String:
 	return instance_id

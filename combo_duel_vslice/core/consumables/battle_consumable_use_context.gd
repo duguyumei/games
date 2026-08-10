@@ -7,12 +7,7 @@ extends "res://core/consumables/consumable_use_context.gd"
 ## 功法仓库的正式白名单（与历史纵切行为一致，不按效果的功法池过滤）；随机数
 ## 沿用战斗引擎的 rng，保证已有纵切确定性测试继续成立。
 
-const ENHANCEMENT_NAMES := {"bonus": "奖励牌", "multiplier": "倍率牌"}
-const FINISH_NAMES := {
-	"foil": "箔面",
-	"holographic": "镭射",
-	"polychrome": "多彩",
-}
+const ENHANCEMENT_NAMES := {"qi_boost": "增元", "momentum": "乘势", "hunyuan": "混元"}
 
 var _technique_repository
 
@@ -40,16 +35,6 @@ func apply_enhancement(instance_id: String, enhancement_id: String) -> Dictionar
 	card.set_enhancement(enhancement_id)
 	return {"success": true, "instance_id": instance_id, "enhancement": enhancement_id}
 
-func apply_finish(instance_id: String, finish_id: String) -> Dictionary:
-	var card = _find_card(instance_id)
-	if card == null:
-		return {
-			"success": false,
-			"reason": "目标不在当前手牌中：%s" % instance_id,
-		}
-	card.set_finish(finish_id)
-	return {"success": true, "instance_id": instance_id, "finish": finish_id}
-
 func technique_name(technique_id: String) -> String:
 	if _technique_repository == null:
 		return technique_id
@@ -57,9 +42,6 @@ func technique_name(technique_id: String) -> String:
 
 func enhancement_name(enhancement_id: String) -> String:
 	return ENHANCEMENT_NAMES.get(enhancement_id, enhancement_id)
-
-func finish_name(finish_id: String) -> String:
-	return FINISH_NAMES.get(finish_id, finish_id)
 
 func target_display_name(instance_id: String) -> String:
 	var card = _find_card(instance_id)
@@ -74,8 +56,8 @@ func capture_transaction_state() -> Dictionary:
 		if card == null:
 			continue
 		card_states[instance_id] = {
+			"origin": card.reshape_origin.duplicate(true),
 			"enhancement": str(card.reshape_enhancement),
-			"finish": str(card.reshape_finish),
 			"imprint": str(card.reshape_imprint),
 			"others": card.reshape_others.duplicate(true),
 			"suppressed_reshapes": card.suppressed_reshapes.duplicate(true),
@@ -98,8 +80,8 @@ func restore_transaction_state(snapshot: Dictionary) -> bool:
 			restored = false
 			continue
 		var values: Dictionary = snapshot["cards"][instance_id]
+		card.reshape_origin = values.get("origin", {}).duplicate(true)
 		card.reshape_enhancement = str(values.get("enhancement", ""))
-		card.reshape_finish = str(values.get("finish", ""))
 		card.reshape_imprint = str(values.get("imprint", ""))
 		card.reshape_others = values.get("others", {}).duplicate(true)
 		card.suppressed_reshapes = values.get("suppressed_reshapes", {}).duplicate(true)

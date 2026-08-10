@@ -39,12 +39,24 @@ func insight_candidates(hand_id: String, pools: Array) -> Array[String]:
 	return result
 
 func apply_enhancement(instance_id: String, enhancement_id: String) -> Dictionary:
-	return _workshop.apply_run_card_reshape(
+	var result: Dictionary = _workshop.apply_run_card_reshape(
 		growth.run_deck, [instance_id], "enhancement", enhancement_id)
+	if not result.get("success", false):
+		return result
+	var change: Dictionary = result.get("changed", [{}])[0]
+	return {
+		"success": true,
+		"instance_id": instance_id,
+		"before": change.get("before", {}).duplicate(true),
+		"after": change.get("after", {}).duplicate(true),
+	}
 
-func apply_finish(instance_id: String, finish_id: String) -> Dictionary:
-	return _workshop.apply_run_card_reshape(
-		growth.run_deck, [instance_id], "finish", finish_id)
+func apply_origin(
+		instance_ids: Array,
+		origin_id: String,
+		payload: Dictionary) -> Dictionary:
+	return _workshop.apply_run_card_origin(
+		growth.run_deck, instance_ids, origin_id, payload)
 
 func technique_name(technique_id: String) -> String:
 	var definition: Dictionary = _content_definition("technique", technique_id)
@@ -53,10 +65,6 @@ func technique_name(technique_id: String) -> String:
 func enhancement_name(enhancement_id: String) -> String:
 	var definition: Dictionary = _content_definition("enhancement", enhancement_id)
 	return str(definition.get("name", enhancement_id))
-
-func finish_name(finish_id: String) -> String:
-	var definition: Dictionary = _content_definition("finish", finish_id)
-	return str(definition.get("name", finish_id))
 
 func target_display_name(instance_id: String) -> String:
 	var values := card_data(instance_id)

@@ -4,7 +4,7 @@
   "name": "试炼对手",
   "player": {
     "inner_skills": ["extra_qi_to_defense"],
-    "consumables": ["high_card_insight", "hierophant", "aura"],
+    "consumables": ["high_card_insight", "zengyuan_pill"],
     "technique_slot_index": 1,
     "loadout_status": "vertical_slice_debug"
   },

@@ -26,7 +26,7 @@ const AMOUNT_KINDS := [
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const QUERY_ORDERS := ["zone", "top", "bottom", "random"]
 const QUERY_SIDES := ["actor", "target"]
-const CARD_KINDS := ["any", "normal", "stone"]
+const CARD_KINDS := ["any", "normal"]
 const INSUFFICIENT_POLICIES := ["use_available", "skip", "fail"]
 
 var _report_error: Callable
@@ -208,7 +208,7 @@ func validate_target_query(query: Dictionary, scope: String) -> void:
 
 func _validate_query_filters(filters: Dictionary, scope: String) -> void:
     if str(filters.get("card_kind", "any")) not in CARD_KINDS:
-        _error(scope + ".card_kind", "必须为 any、normal 或 stone")
+        _error(scope + ".card_kind", "必须为 any 或 normal")
     for field in [
             "attributes", "exclude_attributes", "rank_names",
             "rank_orders", "definition_ids"]:

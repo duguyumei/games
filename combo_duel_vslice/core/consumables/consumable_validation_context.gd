@@ -43,3 +43,14 @@ func content_definition(content_type: String, content_id: String) -> Dictionary:
 
 func membership_for(hand_id: String) -> Array:
 	return pool_membership.get(hand_id, [])
+
+func legal_attribute_ids() -> Array[String]:
+	var result: Array[String] = []
+	var base_deck: Dictionary = {}
+	if _content_catalog != null:
+		base_deck = _content_catalog.definition("base_deck")
+	elif validator != null and validator.has_method("base_deck_definition"):
+		base_deck = validator.base_deck_definition()
+	for attribute in base_deck.get("attributes", []):
+		result.append(str(attribute.get("id", "")))
+	return result

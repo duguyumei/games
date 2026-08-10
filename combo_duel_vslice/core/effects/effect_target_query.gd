@@ -4,7 +4,7 @@ extends RefCounted
 const SIDE_IDS := ["actor", "target"]
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const ORDER_IDS := ["zone", "top", "bottom", "random"]
-const CARD_KIND_IDS := ["any", "normal", "stone"]
+const CARD_KIND_IDS := ["any", "normal"]
 
 var side_id: String = "actor"
 var zone_id: String = "hand"
@@ -50,7 +50,7 @@ func validate() -> Dictionary:
         var reshape = filters["reshape"]
         if not reshape is Dictionary:
             return _invalid("重塑筛选必须是对象")
-        if str(reshape.get("category", "")) not in ["enhancement", "finish", "imprint", "other"]:
+        if str(reshape.get("category", "")) not in ["origin", "enhancement", "imprint", "other"]:
             return _invalid("重塑筛选缺少合法 category")
     return {"ok": true, "reason": ""}
 
@@ -104,8 +104,6 @@ func _zone_cards(context, side) -> Array:
 
 func _matches(card) -> bool:
     var card_kind := str(filters.get("card_kind", "any"))
-    if card_kind == "stone" and not card.is_card_kind("stone"):
-        return false
     if card_kind == "normal" and not card.is_card_kind("normal"):
         return false
     if filters.has("attributes"):
@@ -130,8 +128,8 @@ func _matches(card) -> bool:
         return false
     if filters.has("has_any_reshape"):
         var has_reshape: bool = (
-            card.reshape_enhancement != ""
-            or card.reshape_finish != ""
+            not card.reshape_origin.is_empty()
+            or card.reshape_enhancement != ""
             or card.reshape_imprint != ""
             or not card.reshape_others.is_empty())
         if has_reshape != bool(filters["has_any_reshape"]):
@@ -154,12 +152,12 @@ func _matches_reshape(card, spec: Dictionary) -> bool:
     var reshape_id: String = str(spec.get("id", ""))
     var actual: bool = false
     match category:
+        "origin":
+            actual = not card.reshape_origin.is_empty() \
+                and (reshape_id == "" or str(card.reshape_origin.get("id", "")) == reshape_id)
         "enhancement":
             actual = card.reshape_enhancement != "" \
                 and (reshape_id == "" or card.reshape_enhancement == reshape_id)
-        "finish":
-            actual = card.reshape_finish != "" \
-                and (reshape_id == "" or card.reshape_finish == reshape_id)
         "imprint":
             actual = card.reshape_imprint != "" \
                 and (reshape_id == "" or card.reshape_imprint == reshape_id)

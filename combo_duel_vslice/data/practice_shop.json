@@ -20,8 +20,7 @@
     {"id": "full_house_insight", "kind": "consumable", "price": 3},
     {"id": "four_kind_insight", "kind": "consumable", "price": 3},
     {"id": "five_kind_insight", "kind": "consumable", "price": 3},
-    {"id": "hierophant", "kind": "consumable", "price": 3},
-    {"id": "aura", "kind": "consumable", "price": 4}
+    {"id": "zengyuan_pill", "kind": "consumable", "price": 3}
   ],
   "pack_candidates": [
     {

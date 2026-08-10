@@ -4,8 +4,9 @@ extends RefCounted
 const DeckFactoryScript = preload("res://core/deck_factory.gd")
 const QiCardInstanceDataScript = preload("res://core/qi_card_instance_data.gd")
 const CardInstanceIdFactoryScript = preload("res://core/card_instance_id_factory.gd")
+const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
 
-const VERSION := 1
+const VERSION := 2
 
 var _content_catalog
 var _base_deck_definition: Dictionary = {}
@@ -172,8 +173,8 @@ func replace_card_definition(
         definition, instance_id, _reshape_rules())
     if preserve_reshapes:
         var reshapes: Dictionary = before.get("reshapes", {})
+        card.reshape_origin = reshapes.get("origin", {}).duplicate(true)
         card.reshape_enhancement = str(reshapes.get("enhancement", ""))
-        card.reshape_finish = str(reshapes.get("finish", ""))
         card.reshape_imprint = str(reshapes.get("imprint", ""))
         card.reshape_others = reshapes.get("others", {}).duplicate(true)
     var after: Dictionary = QiCardInstanceDataScript.capture(card)
@@ -211,6 +212,16 @@ func apply_card_reshape(
     var index := _find_index(instance_id)
     if index < 0:
         return {"success": false, "reason": "找不到要重塑的真气：%s" % instance_id}
+    if category == "origin":
+        var origin_result := apply_card_origin([instance_id], reshape_id, payload)
+        if not origin_result.get("success", false):
+            return origin_result
+        var origin_change: Dictionary = origin_result["changed"][0]
+        return {
+            "success": true,
+            "before": origin_change["before"].duplicate(true),
+            "after": origin_change["after"].duplicate(true),
+        }
     var content_type := _reshape_content_type(category)
     if content_type == "":
         return {"success": false, "reason": "未知重塑类别：%s" % category}
@@ -237,7 +248,6 @@ func apply_card_reshape(
     var card = QiCardInstanceDataScript.restore(before, _reshape_rules())
     match category:
         "enhancement": card.set_enhancement(reshape_id)
-        "finish": card.set_finish(reshape_id)
         "imprint": card.set_imprint(reshape_id)
         "other": card.set_other_reshape(reshape_id, payload)
     var after: Dictionary = QiCardInstanceDataScript.capture(card)
@@ -246,6 +256,49 @@ func apply_card_reshape(
         return {"success": false, "reason": "；".join(errors)}
     _cards[index] = after
     return {"success": true, "before": before, "after": after.duplicate(true)}
+
+func apply_card_origin(
+        instance_ids: Array,
+        origin_id: String,
+        payload: Dictionary) -> Dictionary:
+    if instance_ids.is_empty():
+        return {"success": false, "reason": "instance_ids 必须是非空数组"}
+    var seen: Dictionary = {}
+    var candidates: Array[Dictionary] = []
+    var service = CardOriginServiceScript.new(_content_catalog, _base_deck_definition)
+    for instance_id_value in instance_ids:
+        var instance_id := str(instance_id_value)
+        if instance_id == "":
+            return {"success": false, "reason": "真气实例 ID 不能为空"}
+        if seen.has(instance_id):
+            return {"success": false, "reason": "真气实例 ID 不能重复：%s" % instance_id}
+        seen[instance_id] = true
+        var index := _find_index(instance_id)
+        if index < 0:
+            return {"success": false, "reason": "找不到要改造本源的真气：%s" % instance_id}
+        var before: Dictionary = _cards[index].duplicate(true)
+        var planned: Dictionary = service.plan(before, origin_id, payload)
+        if not planned.get("success", false):
+            return planned
+        var after: Dictionary = planned["after"]
+        var errors := _validate(after)
+        if not errors.is_empty():
+            return {"success": false, "reason": "；".join(errors)}
+        candidates.append({
+            "index": index,
+            "instance_id": instance_id,
+            "before": before,
+            "after": after,
+        })
+    var changed: Array[Dictionary] = []
+    for candidate in candidates:
+        _cards[int(candidate["index"])] = candidate["after"].duplicate(true)
+        changed.append({
+            "instance_id": str(candidate["instance_id"]),
+            "before": candidate["before"].duplicate(true),
+            "after": candidate["after"].duplicate(true),
+        })
+    return {"success": true, "changed": changed}
 
 func remove_card(instance_id: String) -> Dictionary:
     var index := _find_index(instance_id)
@@ -351,14 +404,14 @@ func _next_unique_instance_id(
 
 func _reshape_content_type(category: String) -> String:
     match category:
+        "origin": return "origin"
         "enhancement": return "enhancement"
-        "finish": return "finish"
         "imprint": return "imprint"
         "other": return "other_reshape"
     return ""
 
 func _reshape_category_for_id(reshape_id: String) -> String:
-    for category in ["enhancement", "finish", "imprint", "other"]:
+    for category in ["origin", "enhancement", "imprint", "other"]:
         if not content_definition(
                 _reshape_content_type(category), reshape_id).is_empty():
             return category
