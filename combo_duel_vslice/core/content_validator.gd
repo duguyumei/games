@@ -975,6 +975,13 @@ func _validate_inner_skills(definition: Dictionary) -> void:
         _register_unique(_inner_skills_by_id, content_id, scope, value)
         if not value.get("name") is String or str(value.get("name", "")) == "":
             _error(scope, "name 必须是非空字符串")
+        var status := str(value.get("status", ""))
+        if value.has("forget_value") \
+                and (not _is_integer(value.get("forget_value")) \
+                or int(value.get("forget_value", -1)) < 0):
+            _error(scope + ".forget_value", "必须是非负整数")
+        if status == FORMAL_CONTENT_STATUS and not value.has("forget_value"):
+            _error(scope + ".forget_value", "正式内功必须配置非负整数遗忘所得")
         _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
 
 func _validate_consumables(definition: Dictionary) -> void:

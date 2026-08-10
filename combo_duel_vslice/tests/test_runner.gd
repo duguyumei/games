@@ -47,6 +47,9 @@ const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const RunSaveDataScript = preload("res://core/run_save_data.gd")
+const InnerSkillRepositoryScript = preload("res://core/inner_skill_repository.gd")
+const InnerSkillLoadoutServiceScript = preload(
+    "res://core/inner_skill_loadout_service.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
@@ -116,6 +119,17 @@ class DefenseRetentionProbe:
             "additional_retention_percent": additional_percent,
             "prevent_decay": prevents_decay,
         }
+
+class InnerSkillForgetValueProbe:
+    extends RefCounted
+
+    var additional_value: int
+
+    func _init(additional_value_override: int) -> void:
+        additional_value = additional_value_override
+
+    func resolve(definition: Dictionary, _growth) -> int:
+        return int(definition.get("forget_value", 0)) + additional_value
 
 class DirectCardTriggerProbe:
     extends RefCounted
@@ -320,6 +334,7 @@ func _initialize() -> void:
     _test_run_state_node_and_practice_gate()
     _test_run_service_boundaries_and_progress_snapshot()
     _test_run_session_commands_snapshots_events_and_logs()
+    _test_inner_skill_loadout_and_forgetting()
     _test_experience_interest_node_settlement()
     _test_boss_chest_flow()
     _test_layered_life_progression_and_battle_persistence()
@@ -7234,6 +7249,7 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
     _assert_equal(lineage_growth.learned_inner_skill_ids, ["extra_qi_to_defense", "extra_qi_to_defense"], "一脉真传内功库使用 multiset 双副本")
     _assert_equal(lineage_growth.equipped_inner_skill_ids, ["extra_qi_to_defense", "extra_qi_to_defense"], "一脉真传原件与副本都保持装备")
     _assert_equal(lineage_growth.experience, 0, "一脉真传清理不产生遗忘所得")
+    _assert_equal(lineage_growth.forgotten_inner_skill_count, 0, "一脉真传永久清理不计入普通遗忘累计")
 
     var save = RunSaveDataScript.new().capture(guixu)
     guixu.growth.used_unique_consumable_ids.append("yijie_pan")
@@ -7755,6 +7771,309 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     _assert_true(boss_session.execute({"type": "complete_boss_chest"}).success, "Boss 宝箱流程通过本局命令完成")
     _assert_equal(boss_session.snapshot().act, 2, "Boss 宝箱命令推进到下一层")
     _assert_equal(boss_session.snapshot().run_log.size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
+
+func _test_inner_skill_loadout_and_forgetting() -> void:
+    var production_catalog = ContentCatalogScript.new()
+    _assert_true(production_catalog.load_all(), "内功配装测试载入正式内容目录")
+    var fixture_values := _catalog_definitions(production_catalog)
+    fixture_values["inner_skills"]["inner_skills"].append_array([
+        {
+            "id": "loadout_fixture_a",
+            "name": "配装测试甲",
+            "status": "formal",
+            "timing": "on_play_resolve",
+            "forget_value": 7,
+            "effects": [{
+                "op": "defense",
+                "amount": {"kind": "constant", "value": 1},
+            }],
+        },
+        {
+            "id": "loadout_fixture_b",
+            "name": "配装测试乙",
+            "status": "formal",
+            "timing": "on_play_resolve",
+            "forget_value": 11,
+            "effects": [{
+                "op": "defense",
+                "amount": {"kind": "constant", "value": 1},
+            }],
+        },
+    ])
+    var fixture_catalog = ContentCatalogScript.new()
+    _assert_true(
+        fixture_catalog.load_from_definitions(fixture_values),
+        "正式内功配置遗忘所得后通过内容校验")
+
+    var missing_values := fixture_values.duplicate(true)
+    missing_values["inner_skills"]["inner_skills"].append({
+        "id": "formal_missing_forget_value",
+        "name": "缺失遗忘所得",
+        "status": "formal",
+        "timing": "on_play_resolve",
+        "effects": [{
+            "op": "defense",
+            "amount": {"kind": "constant", "value": 1},
+        }],
+    })
+    var missing_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not missing_catalog.load_from_definitions(missing_values),
+        "正式内功缺少 forget_value 时启动校验拒绝")
+    _assert_true(
+        "\n".join(missing_catalog.errors).contains("正式内功必须配置"),
+        "正式内功缺少遗忘所得的诊断明确")
+    var negative_values := fixture_values.duplicate(true)
+    negative_values["inner_skills"]["inner_skills"][1]["forget_value"] = -1
+    _assert_true(
+        not ContentCatalogScript.new().load_from_definitions(negative_values),
+        "内功 forget_value 不能为负数")
+
+    var session: RunSession = RunSessionScript.new(
+        null, null, null, null, fixture_catalog)
+    _assert_true(
+        session.execute({"type": "setup_run", "seed": 30301}).success,
+        "内功配装测试建立本局")
+    session.growth.experience = 5
+    session.growth.learned_inner_skill_ids.assign([
+        "loadout_fixture_a",
+        "loadout_fixture_a",
+        "loadout_fixture_b",
+        "extra_qi_to_defense",
+    ])
+    session.growth.equipped_inner_skill_ids.assign([
+        "loadout_fixture_a",
+        "loadout_fixture_a",
+    ])
+    session.growth.technique_slot_index = 1
+
+    var queried := session.execute({"type": "get_inner_skill_loadout"})
+    _assert_true(queried.success, "内功配装查询命令成功")
+    var loadout: Dictionary = queried.payload_value("loadout")
+    _assert_equal(loadout.get("schema_version"), 1, "内功配装 DTO schema_version 为 1")
+    _assert_equal(loadout.get("inner_skill_limit"), 6, "内功配装 DTO 公开六格上限")
+    _assert_true(loadout.get("editable", false), "地图待选状态 DTO 可编辑")
+    var learned_a: Dictionary = {}
+    var learned_candidate: Dictionary = {}
+    for learned_entry in loadout.get("learned", []):
+        if str(learned_entry.get("id", "")) == "loadout_fixture_a":
+            learned_a = learned_entry
+        if str(learned_entry.get("id", "")) == "extra_qi_to_defense":
+            learned_candidate = learned_entry
+    _assert_equal(learned_a.get("total_count"), 2, "DTO 汇总相同 ID 的两个已获副本")
+    _assert_equal(learned_a.get("equipped_count"), 2, "DTO 汇总相同 ID 的两个装备副本")
+    _assert_equal(learned_a.get("unequipped_count"), 0, "DTO 正确计算未装备副本数")
+    _assert_equal(learned_a.get("base_forget_value"), 7, "DTO 公开基础遗忘所得")
+    _assert_true(not learned_candidate.get("can_forget", true), "缺少遗忘所得的候选不可普通遗忘")
+    _assert_equal(learned_candidate.get("base_forget_value"), null, "候选缺失所得不静默解释为 0")
+    _assert_equal(loadout["equipped"][0]["occurrence_index"], 1, "首个同 ID 装备副本序号为 1")
+    _assert_equal(loadout["equipped"][1]["occurrence_index"], 2, "第二个同 ID 装备副本序号为 2")
+    _assert_equal(loadout["equipped"][0]["combat_source_order"], 0, "功法位前的内功战斗顺序正确")
+    _assert_equal(loadout["equipped"][1]["combat_source_order"], 2, "功法位后的内功战斗顺序正确")
+
+    var set_duplicates := session.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": [
+            "loadout_fixture_b", "loadout_fixture_a", "loadout_fixture_a"],
+        "technique_slot_index": 2,
+    })
+    _assert_true(set_duplicates.success, "两个相同 ID 副本可以同时装备")
+    _assert_equal(
+        session.growth.equipped_inner_skill_ids,
+        ["loadout_fixture_b", "loadout_fixture_a", "loadout_fixture_a"],
+        "完整配装按提交顺序保存")
+    _assert_equal(set_duplicates.payload_value("technique_slot_index"), 2, "配装返回新的功法位置")
+    _assert_true(
+        set_duplicates.payload_value("before", {}).has("schema_version")
+        and set_duplicates.payload_value("after", {}).has("schema_version"),
+        "完整配装返回结构化 before 与 after")
+
+    var battle = session.create_battle_session()
+    _assert_true(
+        battle.setup_battle(
+            {"content_seed": 30301, "battle": {"use_enemy_ai": false}},
+            session.progress_snapshot()),
+        "永久内功配装可以建立下一场战斗")
+    _assert_equal(
+        battle.engine.player.equipped_inner_skill_ids,
+        ["loadout_fixture_b", "loadout_fixture_a", "loadout_fixture_a"],
+        "下一场战斗严格按永久配装顺序装配同 ID 副本")
+    _assert_equal(battle.engine.player.technique_slot_index, 2, "下一场战斗按永久功法位置装配")
+    var persistent_before_battle_sync: Array[String] = (
+        session.growth.equipped_inner_skill_ids.duplicate())
+    var forgotten_before_battle_sync: int = (
+        session.growth.forgotten_inner_skill_count)
+    session.sync_progress_snapshot(battle.player_progress_snapshot())
+    _assert_equal(
+        session.growth.learned_inner_skill_ids,
+        [
+            "loadout_fixture_a", "loadout_fixture_a",
+            "loadout_fixture_b", "extra_qi_to_defense"],
+        "战斗快照同步不清空本局已获内功库")
+    _assert_equal(
+        session.growth.equipped_inner_skill_ids,
+        persistent_before_battle_sync,
+        "战斗快照同步不清空或写回永久内功顺序")
+    _assert_equal(
+        session.growth.forgotten_inner_skill_count,
+        forgotten_before_battle_sync,
+        "战斗局部快照不清空普通遗忘累计")
+
+    var stable_state: Dictionary = session.growth.capture_mutation_state()
+    for invalid_case in [
+        {
+            "label": "装备数量超过已获数量被拒绝",
+            "ids": ["loadout_fixture_a", "loadout_fixture_a", "loadout_fixture_a"],
+            "slot": 0,
+        },
+        {
+            "label": "未知内功 ID 被拒绝",
+            "ids": ["unknown_inner_skill"],
+            "slot": 0,
+        },
+        {
+            "label": "空内功 ID 被拒绝",
+            "ids": [""],
+            "slot": 0,
+        },
+        {
+            "label": "非法 technique_slot_index 被拒绝",
+            "ids": ["loadout_fixture_a"],
+            "slot": 2,
+        },
+        {
+            "label": "超过六门内功被拒绝且不截断",
+            "ids": [
+                "loadout_fixture_a", "loadout_fixture_a", "loadout_fixture_a",
+                "loadout_fixture_a", "loadout_fixture_a", "loadout_fixture_a",
+                "loadout_fixture_a"],
+            "slot": 0,
+        },
+    ]:
+        var rejected := session.execute({
+            "type": "set_inner_skill_loadout",
+            "equipped_inner_skill_ids": invalid_case["ids"],
+            "technique_slot_index": invalid_case["slot"],
+        })
+        _assert_true(not rejected.success, invalid_case["label"])
+        _assert_equal(
+            session.growth.capture_mutation_state(),
+            stable_state,
+            "%s且不会部分修改旧状态" % invalid_case["label"])
+
+    var repository = InnerSkillRepositoryScript.new()
+    repository.configure(fixture_values["inner_skills"])
+    var policy_service = InnerSkillLoadoutServiceScript.new(
+        session.growth, repository, InnerSkillForgetValueProbe.new(3))
+    _assert_equal(
+        policy_service.query_forget_value("loadout_fixture_a").get("forget_value"),
+        10,
+        "可注入遗忘所得策略统一修改当前有效值")
+
+    _assert_true(session.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": ["loadout_fixture_a"],
+        "technique_slot_index": 0,
+    }).success, "遗忘前卸下一份同 ID 副本")
+    var forget := session.execute({
+        "type": "forget_inner_skill",
+        "inner_skill_id": "loadout_fixture_a",
+    })
+    _assert_true(forget.success, "普通遗忘一个未装备内功副本")
+    _assert_equal(forget.payload_value("forget_value"), 7, "普通遗忘按默认策略结算 forget_value")
+    _assert_equal(forget.payload_value("experience_before"), 5, "普通遗忘返回历练前值")
+    _assert_equal(session.growth.experience, 12, "普通遗忘所得加入历练")
+    _assert_equal(forget.payload_value("remaining_count"), 1, "普通遗忘只移除一个匹配副本")
+    _assert_equal(session.growth.learned_inner_skill_ids.count("loadout_fixture_a"), 1, "其他同 ID 副本保持不变")
+    _assert_equal(session.growth.equipped_inner_skill_ids, ["loadout_fixture_a"], "普通遗忘不改变装备顺序")
+    _assert_equal(session.growth.forgotten_inner_skill_count, 1, "普通遗忘累计增加一次")
+    _assert_equal(
+        session.growth.create_mutation_copy().forgotten_inner_skill_count,
+        1,
+        "普通遗忘累计进入 GrowthInventory mutation copy")
+    var failed_forget_state: Dictionary = session.growth.capture_mutation_state()
+    _assert_true(not session.execute({
+        "type": "forget_inner_skill",
+        "inner_skill_id": "loadout_fixture_a",
+    }).success, "同 ID 所有剩余副本均装备时不能遗忘")
+    _assert_equal(session.growth.capture_mutation_state(), failed_forget_state, "失败遗忘保持全部成长状态不变")
+    var missing_forget := session.execute({
+        "type": "forget_inner_skill",
+        "inner_skill_id": "extra_qi_to_defense",
+    })
+    _assert_true(not missing_forget.success, "缺少 forget_value 的 candidate 不能普通遗忘")
+    _assert_true(missing_forget.reason.contains("尚未配置遗忘所得"), "候选遗忘拒绝原因明确")
+    _assert_equal(session.growth.forgotten_inner_skill_count, 1, "查询与失败不增加普通遗忘累计")
+
+    var save = RunSaveDataScript.new().capture(session)
+    var restored: Dictionary = save.restore_session(fixture_catalog)
+    _assert_true(restored.get("success", false), "内功配装和遗忘累计可存档恢复")
+    var restored_growth = restored["run_session"].growth
+    _assert_equal(restored_growth.equipped_inner_skill_ids, ["loadout_fixture_a"], "存档保留内功装备顺序")
+    _assert_equal(restored_growth.technique_slot_index, 0, "存档保留功法插入位置")
+    _assert_equal(restored_growth.forgotten_inner_skill_count, 1, "存档保留普通遗忘累计")
+    var legacy_values: Dictionary = save.to_dict()
+    legacy_values["growth"].erase("forgotten_inner_skill_count")
+    var legacy_restored := RunSaveDataScript.new(legacy_values).restore_session(
+        fixture_catalog)
+    _assert_true(legacy_restored.get("success", false), "旧存档缺少普通遗忘累计仍可恢复")
+    _assert_equal(
+        legacy_restored["run_session"].growth.forgotten_inner_skill_count,
+        0,
+        "旧存档缺少 forgotten_inner_skill_count 时默认为 0")
+    var invalid_save_values: Dictionary = save.to_dict()
+    invalid_save_values["growth"]["forgotten_inner_skill_count"] = -1
+    _assert_true(
+        not RunSaveDataScript.new(invalid_save_values).validate(fixture_catalog).is_empty(),
+        "存档拒绝负数 forgotten_inner_skill_count")
+
+    var gate_session: RunSession = RunSessionScript.new(
+        null, null, null, null, fixture_catalog)
+    _assert_true(gate_session.execute({"type": "setup_run", "seed": 30302}).success, "构筑门禁测试建立本局")
+    gate_session.growth.learned_inner_skill_ids.assign(["loadout_fixture_a"])
+    _assert_true(gate_session.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": ["loadout_fixture_a"],
+        "technique_slot_index": 1,
+    }).success, "地图待选状态可以修改内功配装")
+    _assert_true(gate_session.execute({
+        "type": "set_hand_technique_loadout",
+        "hand_id": "high_card",
+        "technique_ids": [],
+    }).success, "地图待选状态可以修改永久功法序列")
+    var first_node_id := str(gate_session.snapshot().available_node_ids[0])
+    _assert_true(gate_session.execute({
+        "type": "begin_node", "node_id": first_node_id,
+    }).success, "构筑门禁测试进入节点")
+    _assert_true(not gate_session.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": [],
+        "technique_slot_index": 0,
+    }).success, "节点中及战斗中不能修改永久内功配装")
+    _assert_true(not gate_session.execute({
+        "type": "set_hand_technique_loadout",
+        "hand_id": "high_card",
+        "technique_ids": [],
+    }).success, "set_hand_technique_loadout 使用相同构筑门禁")
+    var node_query := gate_session.execute({"type": "get_inner_skill_loadout"})
+    _assert_true(node_query.success, "节点中仍可查询内功配装")
+    _assert_true(not node_query.payload_value("loadout").get("editable", true), "节点中 DTO 标记不可编辑")
+    _assert_true(str(node_query.payload_value("loadout").get("blocked_reason", "")) != "", "不可编辑 DTO 提供门禁原因")
+    _assert_true(gate_session.execute({"type": "get_hand_technique_loadout", "hand_id": "high_card"}).success, "功法序列查询不受修改门禁影响")
+    _assert_true(gate_session.execute({"type": "complete_node"}).success, "构筑门禁测试进入待领奖励阶段")
+    _assert_true(not gate_session.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": [],
+        "technique_slot_index": 0,
+    }).success, "奖励未领取时不能修改永久配装")
+    gate_session.navigation.phase = "boss_chest"
+    gate_session._pending_reward = null
+    _assert_true(not gate_session.execute({
+        "type": "forget_inner_skill",
+        "inner_skill_id": "loadout_fixture_a",
+    }).success, "Boss 宝箱阶段不能普通遗忘内功")
+    _assert_true(gate_session.execute({"type": "get_inner_skill_loadout"}).success, "Boss 宝箱阶段仍可查询配装")
+
 
 func _test_experience_interest_node_settlement() -> void:
     var combat := _interest_test_session("combat", 0)

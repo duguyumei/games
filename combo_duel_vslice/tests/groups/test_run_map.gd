@@ -6,6 +6,7 @@ func _initialize() -> void:
         "_test_run_state_node_and_practice_gate",
         "_test_run_service_boundaries_and_progress_snapshot",
         "_test_run_session_commands_snapshots_events_and_logs",
+        "_test_inner_skill_loadout_and_forgetting",
         "_test_experience_interest_node_settlement",
         "_test_formal_practice_shop_and_hand_progression",
         "_test_s2f2f1_formal_pills_and_transactions",

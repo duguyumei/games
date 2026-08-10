@@ -64,6 +64,8 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "learned_inner_skill_ids": run_session.growth.learned_inner_skill_ids.duplicate(),
             "equipped_inner_skill_ids": run_session.growth.equipped_inner_skill_ids.duplicate(),
             "technique_slot_index": int(run_session.growth.technique_slot_index),
+            "forgotten_inner_skill_count": int(
+                run_session.growth.forgotten_inner_skill_count),
             "practice_purchase_ids": run_session.growth.practice_purchases.keys(),
             "consumable_use_sequence": int(run_session.growth.consumable_use_sequence),
             "last_recallable_consumable_id": str(
@@ -143,6 +145,10 @@ func validate(content_catalog = null) -> Array[String]:
             and (not growth["consumable_use_sequence"] is int \
             or int(growth["consumable_use_sequence"]) < 0):
         errors.append("consumable_use_sequence 必须是非负整数")
+    if growth.has("forgotten_inner_skill_count") \
+            and (not growth["forgotten_inner_skill_count"] is int \
+            or int(growth["forgotten_inner_skill_count"]) < 0):
+        errors.append("forgotten_inner_skill_count 必须是非负整数")
     if growth.has("last_recallable_consumable_id") \
             and not growth["last_recallable_consumable_id"] is String:
         errors.append("last_recallable_consumable_id 必须是字符串")
@@ -227,6 +233,8 @@ func restore_session(content_catalog = null) -> Dictionary:
         "learned_inner_skill_ids": growth_state["learned_inner_skill_ids"],
         "equipped_inner_skill_ids": growth_state["equipped_inner_skill_ids"],
         "technique_slot_index": growth_state["technique_slot_index"],
+        "forgotten_inner_skill_count": growth_state.get(
+            "forgotten_inner_skill_count", 0),
         "run_deck": growth_state["run_deck"],
         "life": restored_life["life"],
         "max_life": restored_life["max_life"],
@@ -294,6 +302,8 @@ func _validate_content_ids(
         if int(equipped_counts[inner_skill_id]) > int(learned_counts.get(inner_skill_id, 0)):
             errors.append("已装备内功数量超过已习得内功：%s" % str(inner_skill_id))
     var equipped_count: int = growth.get("equipped_inner_skill_ids", []).size()
+    if equipped_count > 6:
+        errors.append("已装备内功不能超过 6 门")
     var slot := int(growth.get("technique_slot_index", -1))
     if slot < 0 or slot > equipped_count:
         errors.append("功法结算槽位超出已装备内功范围")
@@ -436,6 +446,7 @@ func _normalize_v1_types() -> void:
     _normalize_optional_integer(growth, "life")
     _normalize_optional_integer(growth, "max_life")
     _normalize_optional_integer(growth, "consumable_use_sequence")
+    _normalize_optional_integer(growth, "forgotten_inner_skill_count")
     _normalize_optional_integer(growth, "base_hand_limit_modifier")
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
     var progression = growth.get("hand_technique_progression", {})

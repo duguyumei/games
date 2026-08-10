@@ -347,6 +347,24 @@ RunSession
 不改变固定牌型倍率、`baseline_value` 或 `power_fixed`。唯一内容只在整次事务成功提交时记录，
 查询、预览和失败均不写入。
 
+## 6.8 内功配装与普通遗忘
+
+永久内功配装通过 `InnerSkillLoadoutService` 一次性提交完整的
+`equipped_inner_skill_ids` 和 `technique_slot_index`。服务按 ID 统计已获与请求数量，允许同 ID
+多副本，但任何 ID 的装备数不能超过内功库中的副本数；总装备数上限为 6。非法提交在修改前
+完整拒绝，不依赖 `BattleSide` 的战斗侧防御性截断。永久功法序列与内功配装共用地图待选门禁，
+进行中的节点、战斗、待领奖励和 Boss 宝箱流程均不可修改，查询始终可用。
+
+普通遗忘每次只删除一个未装备副本。遗忘所得由可注入的
+`InnerSkillForgetValuePolicy.resolve(definition, growth)` 解析；默认返回 `forget_value`，中央流程
+不识别内功或物品 ID。正式内功必须配置非负整数 `forget_value`；候选或仅设计内容缺少该字段时
+可以载入，但普通遗忘会明确拒绝，不按 0 处理。成功的普通遗忘同时增加历练和
+`forgotten_inner_skill_count`；奇珍清理、替换、自动消失及其他永久移除不增加该计数。
+
+`forgotten_inner_skill_count` 属于 `GrowthInventory` 的完整 mutation state、
+`RunProgressSnapshot`、v1 存档 `growth` 段与本局成长快照。战斗返回的局部快照不携带该字段，
+因此不会清空本局累计；旧存档缺省时恢复为 0。
+
 ## 7. 什么时候只写 JSON
 
 满足以下条件时只写 JSON：

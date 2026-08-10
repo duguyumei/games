@@ -23,3 +23,6 @@ func configure(value: Dictionary) -> bool:
 
 func get_inner_skill(inner_skill_id: String) -> Dictionary:
     return inner_skills.get(inner_skill_id, {}).duplicate(true)
+
+func has_inner_skill(inner_skill_id: String) -> bool:
+    return inner_skills.has(inner_skill_id)

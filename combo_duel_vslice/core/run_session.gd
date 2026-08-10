@@ -29,6 +29,10 @@ const ConsumableUseServiceScript = preload(
     "res://core/consumables/consumable_use_service.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
+const InnerSkillRepositoryScript = preload(
+    "res://core/inner_skill_repository.gd")
+const InnerSkillLoadoutServiceScript = preload(
+    "res://core/inner_skill_loadout_service.gd")
 
 var game_log
 var _run_state
@@ -46,6 +50,8 @@ var _battle_session_factory
 var _node_reward_service
 var _practice_service
 var _consumable_use_service
+var _inner_skill_repository
+var _inner_skill_loadout_service
 var _pending_reward = null
 var selected_starter_build_id: String = ""
 var runtime_profile
@@ -120,6 +126,12 @@ func _init(
             RunMutationServiceScript.new(
                 _content_catalog.run_effect_registry)))
     _practice_service = PracticeServiceScript.new(_content_catalog)
+    _inner_skill_repository = InnerSkillRepositoryScript.new()
+    if _content_catalog.loaded:
+        _inner_skill_repository.configure(
+            _content_catalog.definition("inner_skills"))
+    _inner_skill_loadout_service = InnerSkillLoadoutServiceScript.new(
+        growth, _inner_skill_repository)
     _consumable_use_service = (
         consumable_use_service_override
         if consumable_use_service_override != null
@@ -197,10 +209,17 @@ func execute(command: Dictionary) -> CommandResult:
             result = {"success": true, "loadout": growth.get_hand_technique_loadout(
                 str(command.get("hand_id", "")))}
         "set_hand_technique_loadout":
-            result = growth.set_hand_technique_loadout(
+            result = _set_hand_technique_loadout(
                 str(command.get("hand_id", "")), command.get("technique_ids", []))
-            if result.get("success", false):
-                _run_state.changed.emit()
+        "get_inner_skill_loadout":
+            result = _get_inner_skill_loadout()
+        "set_inner_skill_loadout":
+            result = _set_inner_skill_loadout(
+                command.get("equipped_inner_skill_ids", []),
+                command.get("technique_slot_index", -1))
+        "forget_inner_skill":
+            result = _forget_inner_skill(
+                str(command.get("inner_skill_id", "")))
         "purchase_consumable":
             result = _purchase_consumable(str(command.get("consumable_id", "")))
         "query_consumable_use":
@@ -641,6 +660,66 @@ func _consumable_use_gate() -> Dictionary:
         return {"allowed": false, "reason": "奖励尚未领取完成，不能使用消耗品"}
     return {"allowed": true, "reason": ""}
 
+func _run_build_edit_gate() -> Dictionary:
+    if _pending_reward != null or navigation.phase == "awaiting_reward":
+        return {
+            "allowed": false,
+            "reason": "奖励尚未领取完成，不能修改本局构筑",
+        }
+    if navigation.phase == "boss_chest":
+        return {
+            "allowed": false,
+            "reason": "Boss 宝箱流程中不能修改本局构筑",
+        }
+    if not navigation.can_open_practice():
+        return {
+            "allowed": false,
+            "reason": "节点执行中或战斗中不能修改本局构筑",
+        }
+    return {"allowed": true, "reason": ""}
+
+func _get_inner_skill_loadout() -> Dictionary:
+    var gate := _run_build_edit_gate()
+    var loadout = _inner_skill_loadout_service.get_loadout(
+        bool(gate.get("allowed", false)), str(gate.get("reason", "")))
+    return {"success": true, "loadout": loadout.to_dict()}
+
+func _set_inner_skill_loadout(
+        equipped_inner_skill_ids,
+        technique_slot_index) -> Dictionary:
+    var gate := _run_build_edit_gate()
+    if not gate.get("allowed", false):
+        return {"success": false, "reason": str(gate.get("reason", ""))}
+    var result: Dictionary = _inner_skill_loadout_service.set_loadout(
+        equipped_inner_skill_ids, technique_slot_index)
+    if result.get("success", false):
+        _run_state.changed.emit()
+    return result
+
+func _forget_inner_skill(inner_skill_id: String) -> Dictionary:
+    var gate := _run_build_edit_gate()
+    if not gate.get("allowed", false):
+        return {"success": false, "reason": str(gate.get("reason", ""))}
+    var result: Dictionary = _inner_skill_loadout_service.forget_inner_skill(
+        inner_skill_id)
+    if result.get("success", false):
+        _run_state.changed.emit()
+    return result
+
+func _set_hand_technique_loadout(
+        hand_id: String,
+        technique_ids) -> Dictionary:
+    var gate := _run_build_edit_gate()
+    if not gate.get("allowed", false):
+        return {"success": false, "reason": str(gate.get("reason", ""))}
+    if not technique_ids is Array:
+        return {"success": false, "reason": "technique_ids 必须是数组"}
+    var result: Dictionary = growth.set_hand_technique_loadout(
+        hand_id, technique_ids)
+    if result.get("success", false):
+        _run_state.changed.emit()
+    return result
+
 func _purchase_practice_offer(group: String, slot_index: int) -> Dictionary:
     if not navigation.can_open_practice():
         return {"success": false, "reason": "当前节点尚未完成，不能修习"}
@@ -749,6 +828,7 @@ func _growth_snapshot() -> Dictionary:
         "hand_technique_progression": growth.hand_technique_progression.duplicate(true),
         "practice_shop_state": growth.practice_shop_snapshot(),
         "learned_technique_ids": growth.learned_technique_ids.duplicate(),
+        "forgotten_inner_skill_count": growth.forgotten_inner_skill_count,
         "run_deck": growth.run_deck.to_snapshot(),
         "run_deck_count": growth.run_deck.card_count(),
         "last_recallable_consumable_id": growth.last_recallable_consumable_id,

@@ -15,6 +15,7 @@ var learned_technique_ids: Array[String] = []
 var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
+var forgotten_inner_skill_count: int = 0
 var run_deck
 var practice_purchases: Dictionary = {}
 var life: int = 100
@@ -54,6 +55,7 @@ func reset(
     learned_inner_skill_ids.clear()
     equipped_inner_skill_ids.clear()
     technique_slot_index = 0
+    forgotten_inner_skill_count = 0
     if run_deck_override != null:
         run_deck = run_deck_override
     else:
@@ -105,6 +107,7 @@ func capture_mutation_state() -> Dictionary:
         "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
         "technique_slot_index": technique_slot_index,
+        "forgotten_inner_skill_count": forgotten_inner_skill_count,
         "run_deck": run_deck.to_snapshot(),
         "practice_purchases": practice_purchases.duplicate(true),
         "hand_technique_progression": hand_technique_progression.duplicate(true),
@@ -144,6 +147,8 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     learned_inner_skill_ids.assign(state["learned_inner_skill_ids"])
     equipped_inner_skill_ids.assign(state["equipped_inner_skill_ids"])
     technique_slot_index = int(state["technique_slot_index"])
+    forgotten_inner_skill_count = int(
+        state.get("forgotten_inner_skill_count", 0))
     run_deck = replacement_deck
     practice_purchases = state["practice_purchases"].duplicate(true)
     hand_technique_progression = state["hand_technique_progression"].duplicate(true)
@@ -310,6 +315,7 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
         "technique_slot_index": technique_slot_index,
+        "forgotten_inner_skill_count": forgotten_inner_skill_count,
         "run_deck": run_deck.to_snapshot(),
         "life": life,
         "max_life": max_life,
@@ -354,6 +360,8 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
         equipped_inner_skill_ids.assign(progress_snapshot.equipped_inner_skill_ids)
     if progress_snapshot.has_technique_slot_index:
         technique_slot_index = progress_snapshot.technique_slot_index
+    if progress_snapshot.has_forgotten_inner_skill_count:
+        forgotten_inner_skill_count = progress_snapshot.forgotten_inner_skill_count
     if progress_snapshot.has_equipped_inner_skill_ids \
             or progress_snapshot.has_technique_slot_index:
         technique_slot_index = clampi(

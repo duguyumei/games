@@ -15,6 +15,7 @@ var learned_technique_ids: Array[String] = []
 var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
+var forgotten_inner_skill_count: int = 0
 var run_deck: Dictionary = {}
 var life: int = 0
 var max_life: int = 0
@@ -33,6 +34,7 @@ var has_learned_technique_ids: bool = false
 var has_learned_inner_skill_ids: bool = false
 var has_equipped_inner_skill_ids: bool = false
 var has_technique_slot_index: bool = false
+var has_forgotten_inner_skill_count: bool = false
 var has_run_deck: bool = false
 var has_life: bool = false
 var has_max_life: bool = false
@@ -53,6 +55,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_learned_inner_skill_ids = values.has("learned_inner_skill_ids")
     result.has_equipped_inner_skill_ids = values.has("equipped_inner_skill_ids")
     result.has_technique_slot_index = values.has("technique_slot_index")
+    result.has_forgotten_inner_skill_count = values.has(
+        "forgotten_inner_skill_count")
     result.has_run_deck = values.has("run_deck")
     result.has_life = values.has("life")
     result.has_max_life = values.has("max_life")
@@ -80,6 +84,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     for inner_skill_id in values.get("equipped_inner_skill_ids", []):
         result.equipped_inner_skill_ids.append(str(inner_skill_id))
     result.technique_slot_index = int(values.get("technique_slot_index", 0))
+    result.forgotten_inner_skill_count = int(values.get(
+        "forgotten_inner_skill_count", 0))
     result.run_deck = values.get("run_deck", {}).duplicate(true)
     result.life = int(values.get("life", 0))
     result.max_life = int(values.get("max_life", 0))
@@ -113,6 +119,8 @@ func to_dict() -> Dictionary:
         result["equipped_inner_skill_ids"] = equipped_inner_skill_ids.duplicate()
     if has_technique_slot_index:
         result["technique_slot_index"] = technique_slot_index
+    if has_forgotten_inner_skill_count:
+        result["forgotten_inner_skill_count"] = forgotten_inner_skill_count
     if has_run_deck:
         result["run_deck"] = run_deck.duplicate(true)
     if has_life:
