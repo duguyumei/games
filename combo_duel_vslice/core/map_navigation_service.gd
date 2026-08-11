@@ -63,7 +63,6 @@ func complete_current_node() -> Dictionary:
     var claimed := claim_current_node_reward()
     if not claimed.get("success", false):
         return claimed
-    claimed["reward"] = _reward_for_type(str(prepared["node"].get("type", "")))
     return claimed
 
 func complete_current_node_to_reward() -> Dictionary:
@@ -78,7 +77,6 @@ func claim_current_node_reward() -> Dictionary:
     if phase != "awaiting_reward" or current_node_id == "":
         return {"success": false, "reason": "当前没有待领取的节点奖励"}
     var node := node_definition(current_node_id)
-    var reward := _reward_for_type(str(node.get("type", "")))
     if str(node.get("type", "")) == "boss":
         if _act_has_boss_chest():
             phase = "boss_chest"
@@ -88,7 +86,7 @@ func claim_current_node_reward() -> Dictionary:
             _advance_act()
     else:
         phase = "awaiting_node"
-    return {"success": true, "reward": reward, "node": node, "phase": phase}
+    return {"success": true, "node": node, "phase": phase}
 
 func complete_boss_chest() -> Dictionary:
     if phase != "boss_chest":
@@ -111,9 +109,6 @@ func node_dispatch_context() -> Dictionary:
 
 func can_open_practice() -> bool:
     return phase == "awaiting_node"
-
-func _reward_for_type(type_id: String) -> int:
-    return {"combat": 3, "elite": 4, "boss": 5}.get(type_id, 0)
 
 func _advance_act() -> void:
     act += 1

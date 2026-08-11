@@ -1,6 +1,6 @@
 # 本局内容效果扩展指南
 
-- 状态：S2-F2A 消耗品统一执行平台
+- 状态：S2-F4A 非战斗节点统一交互与通用奖励能力
 - 适用范围：战斗外、会改变本局成长库存的内容效果
 - 不适用范围：战斗功法效果、地图推进、UI 流程和功行计算
 
@@ -25,6 +25,11 @@
 | `ConsumableUseContext` | Narrow Port | 向 Handler 提供已解析目标、确定性随机源与查询端口 |
 | `ConsumableUseService` | Application Service | 解析目标、维护原子事务边界并派生确定性随机种子 |
 | `ConsumableValidationContext` | 启动期校验上下文 | 向 Handler 暴露校验器窄表面与消耗品专属词表 |
+| `NodeInteractionHandler` | 非战斗节点 SPI | 纯准备冻结选项，并把一次选择翻译为明确 `effects` 与展示结果 |
+| `NodeInteractionHandlerRegistry` | kind 注册中心 | 维护 `interaction_kind -> Handler` 唯一映射，支持测试注入 |
+| `NodeInteractionContext` | 只读交互上下文 | 提供来源、稳定种子、冻结配置、成长快照、内容查询端口与独立 RNG |
+| `NodeInteractionDTO` | Frozen Envelope | 在领域、UI 和存档之间传递可 JSON 序列化的冻结选择 |
+| `NodeInteractionService` | 生命周期服务 | 编排 `prepare/query/commit/cancel`，提交时复用成长事务 |
 
 战斗内的 `EffectHandlerRegistry` 与本局的 `RunEffectHandlerRegistry` 采用相似模式，
 但上下文和生命周期不同。两者保持独立，避免本局库存能力反向依赖战斗引擎。
@@ -44,6 +49,20 @@ RunSession
 
 `NodeRewardService` 只创建奖励包并把整包交给一次事务。它不识别 `gain_experience`、
 `heal_life` 或任何内容 ID。操作分派只发生在注册表中。
+
+非战斗节点自身结果使用同一事务边界：
+
+```text
+RunSession
+  -> NodeInteractionService
+    -> NodeInteractionHandlerRegistry -> NodeInteractionHandler
+    -> RunMutationService -> GrowthInventory 工作副本
+  -> NodeRewardService（节点自身结果成功后才创建基础奖励）
+```
+
+`MapNavigationService` 只维护阶段与路线，不再保存或返回 combat／elite／boss 的
+`3／4／5` 奖励整数；基础节点奖励的唯一数据源是 `node_rewards.json`，唯一应用入口是
+`NodeRewardService + RunMutationService`。
 
 事务流程如下：
 
@@ -98,6 +117,70 @@ RunSession
 
 两个参数必须且只能提供一个。百分比回复向下取整，实际生命不超过最大生命。当前操作只作为
 平台契约探针存在，尚未接入正式休息或其他节点内容。
+
+### 通用本局内容获得
+
+以下操作都只接受已经决定好的稳定 ID，不负责随机抽取：
+
+```json
+{"op": "grant_techniques", "technique_ids": ["technique_a"]}
+{"op": "grant_inner_skills", "inner_skill_ids": ["inner_a", "inner_a"]}
+{"op": "grant_consumables", "consumable_ids": ["pill_a"]}
+{"op": "grant_items", "item_ids": ["item_a"]}
+```
+
+- 功法是集合：只允许 `formal_complete`，已经拥有或同一效果内重复发放会失败。
+- 内功是 multiset：只允许 `formal`，同 ID 多副本合法，只加入已获库而不自动装备。
+- 心得、丹药、奇珍共用三格消耗品栏：整组加入后超容量会让整个效果失败。
+- 物品当前唯一持有：只允许 `formal`，重复、`candidate` 或 `design_only` 发放会失败。
+
+内容加载期先校验引用和正式状态，运行时再校验当前库存；多个操作中的任一个失败时，
+`RunMutationService` 丢弃整个工作副本。
+
+## 3.1 非战斗节点 Handler 协议
+
+稳定接口为：
+
+```gdscript
+interaction_kind() -> String
+validate_configuration(configuration: Dictionary, validation) -> void
+prepare(context) -> Dictionary
+commit(context, prepared_interaction, choice_id, choice_payload) -> Dictionary
+```
+
+`prepare` 是纯准备过程，只能从 `context.rng` 取得由 `content_seed` 派生的确定性随机值，
+并把 UI 与恢复所需结果冻结进 DTO。`commit` 必须重新校验选项，返回：
+
+```gdscript
+{
+    "success": true,
+    "effects": [{"op": "heal_life", "max_life_percent": 30}],
+    "result": {"choice_id": "rest", "description": "..."},
+}
+```
+
+Handler 不得持有 `RunSession`、地图服务或 UI，不得修改真实成长、推进地图、建立基础奖励
+或计算功行。条件、循环和概率使用具体 Handler 的普通代码，不写进 JSON，也不建立事件 DSL。
+
+生命周期为：
+
+1. `prepare(dispatch, growth, source_context)` 校验 route、生成稳定 token、调用一次 Handler 并冻结 DTO。
+2. `query_active()` 只返回 DTO 深复制，不重跑 prepare、不推进随机源。
+3. `commit(token, choice_id, payload, growth)` 校验 token 和 enabled 选项，重新调用 Handler 校验，
+   再把完整 effects 交给一次 `RunMutationService.apply_effects`。
+4. `cancel(token)` 只放弃 UI 草稿；冻结交互、节点阶段与成长均保持不变。
+5. 成功提交后同一 token 不能重放；`RunSession` 随后完成节点、创建基础奖励并清除 pending。
+
+token 稳定字段依次为 `run_seed`、`act`、`source_kind`、`source_id`、`content_id`、
+`content_seed`、`interaction_kind`。地图节点使用 `source_kind=map_node`；以后 Boss 隐藏宝箱
+使用 `source_kind=boss_chest`，无需另建交互协议。
+
+进行中 interaction 的存档位于 `node_state.pending_node_interaction`，包含 token、来源、节点、
+kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_interaction`。恢复直接装入冻结
+信封，不调用 prepare。旧存档缺少该可选字段时仍按 `restart_node_from_start` 兼容。
+
+当前生产 `event/rest/treasure` 仍是 placeholder，Registry 允许为空。后续每类正式内容只新增
+小型 Handler 并逐个迁移 route；本阶段没有提前实现 Rest/Event/Treasure Handler。
 
 ## 4. 本局真气工坊操作
 

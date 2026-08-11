@@ -92,6 +92,10 @@ const ConsumableUseServiceScript = preload(
     "res://core/consumables/consumable_use_service.gd")
 const CardWorkshopServiceScript = preload("res://core/card_workshop_service.gd")
 const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
+const NodeInteractionHandlerRegistryScript = preload(
+    "res://core/node_interactions/node_interaction_handler_registry.gd")
+const NodeInteractionServiceScript = preload(
+    "res://core/node_interactions/node_interaction_service.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 const ProbeStatusBehaviorHandlerScript = preload(
@@ -249,6 +253,97 @@ class ConsumableProbeHandler:
             },
         }
 
+class NodeInteractionProbeHandler:
+    extends RefCounted
+
+    var kind: String
+    var effects: Array
+    var prepare_calls: int = 0
+    var commit_calls: int = 0
+    var duplicate_choices: bool = false
+    var invalid_configuration: bool = false
+
+    func _init(kind_value: String = "probe_interaction", effects_value: Array = []) -> void:
+        kind = kind_value
+        effects = effects_value.duplicate(true)
+
+    func interaction_kind() -> String:
+        return kind
+
+    func validate_configuration(configuration: Dictionary, validation) -> void:
+        if invalid_configuration or bool(configuration.get("invalid", false)):
+            validation.report_error(
+                "node_content.interaction.configuration",
+                "测试交互配置无效")
+
+    func prepare(context) -> Dictionary:
+        prepare_calls += 1
+        var frozen_roll: int = context.rng.randi_range(1, 1000000)
+        var choices: Array = [{
+            "id": "accept",
+            "label": "接受",
+            "description": "应用测试交互",
+            "enabled": true,
+            "metadata": {"frozen_roll": frozen_roll},
+        }, {
+            "id": "disabled",
+            "label": "不可选",
+            "description": "测试禁用项",
+            "enabled": false,
+            "disabled_reason": "测试选项已禁用",
+            "metadata": {},
+        }]
+        if duplicate_choices:
+            choices.append(choices[0].duplicate(true))
+        return {
+            "success": true,
+            "title": "测试交互",
+            "description": "冻结一次选择",
+            "choices": choices,
+            "minimum_choices": 1,
+            "maximum_choices": 1,
+            "metadata": {"frozen_roll": frozen_roll},
+        }
+
+    func commit(
+            _context,
+            prepared_interaction: Dictionary,
+            choice_id: String,
+            choice_payload: Dictionary) -> Dictionary:
+        commit_calls += 1
+        if choice_id != "accept" or not bool(choice_payload.get("confirmed", false)):
+            return {"success": false, "reason": "测试提交重新校验失败"}
+        return {
+            "success": true,
+            "effects": effects.duplicate(true),
+            "result": {
+                "choice_id": choice_id,
+                "description": "测试交互已提交",
+                "frozen_roll": prepared_interaction.get("metadata", {}).get(
+                    "frozen_roll", -1),
+            },
+        }
+
+class RunContentProbeCatalog:
+    extends RefCounted
+
+    var formal_ids := {
+        "technique": ["formal_technique"],
+        "inner_skill": ["formal_inner_skill"],
+        "consumable": ["formal_consumable"],
+        "item": ["formal_item"],
+    }
+    var known_non_formal_ids := {
+        "item": ["design_only_item"],
+    }
+
+    func has_id(content_type: String, content_id: String) -> bool:
+        return formal_ids.get(content_type, []).has(content_id) \
+            or known_non_formal_ids.get(content_type, []).has(content_id)
+
+    func is_formally_obtainable(content_type: String, content_id: String) -> bool:
+        return formal_ids.get(content_type, []).has(content_id)
+
 var failures: Array[String] = []
 var assertions: int = 0
 var card_serial: int = 0
@@ -326,6 +421,7 @@ func _initialize() -> void:
     _test_node_dispatcher_is_data_driven_and_deterministic()
     _test_run_state_node_and_practice_gate()
     _test_run_service_boundaries_and_progress_snapshot()
+    _test_node_interaction_platform_contract()
     _test_run_session_commands_snapshots_events_and_logs()
     _test_inner_skill_loadout_and_forgetting()
     _test_experience_interest_node_settlement()
@@ -1312,11 +1408,15 @@ func _test_run_effect_platform_contract() -> void:
             "copy_run_card",
             "copy_run_card_state",
             "gain_experience",
+            "grant_consumables",
+            "grant_inner_skills",
+            "grant_items",
+            "grant_techniques",
             "heal_life",
             "remove_run_cards",
             "transform_run_card",
         ],
-        "本局效果默认注册表按稳定顺序公开八个正式操作")
+        "本局效果默认注册表按稳定顺序公开十二个正式操作")
     _assert_true(registry.has_handler("gain_experience"), "历练增加操作已注册")
     _assert_true(registry.has_handler("heal_life"), "生命回复操作已注册")
 
@@ -5894,15 +5994,13 @@ func _test_run_state_node_and_practice_gate() -> void:
     _assert_equal(state.purchase_consumable("zengyuan_pill", 3)["success"], false, "节点未完成时不能购买修习内容")
     var completion := state.complete_current_node()
     _assert_true(completion["success"], "节点可以完成并返回地图")
-    _assert_equal(completion["reward"], 3, "普通战斗节点奖励三点历练")
-    _assert_equal(state.experience, 3, "节点奖励进入本局历练")
+    _assert_true(not completion.has("reward"), "兼容状态门面不再从地图导航取得奖励整数")
+    _assert_equal(state.experience, 0, "地图导航不再直接修改本局历练")
     _assert_true(state.can_open_practice(), "节点完成到选择下一节点前重新开放修习")
     _assert_true(not state.available_node_ids().is_empty(), "返回地图后只开放相连下一节点")
-    var purchase := state.purchase_consumable("zengyuan_pill", 3)
-    _assert_true(purchase["success"], "待选节点期间可以消耗历练修习")
-    _assert_equal(state.experience, 0, "修习购买扣除对应历练")
-    _assert_equal(state.consumable_ids, ["zengyuan_pill"], "修习所得进入共享消耗品栏")
-    _assert_equal(state.purchase_consumable("zengyuan_pill", 3)["success"], false, "同一地图待选阶段固定选项不能重复购买")
+    _assert_equal(
+        state.purchase_consumable("zengyuan_pill", 3)["success"], false,
+        "没有经 NodeRewardService 领取奖励时不能消费不存在的历练")
 
 func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var navigation = MapNavigationServiceScript.new()
@@ -5915,7 +6013,7 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var completed := navigation.complete_current_node()
     _assert_true(completed["success"], "地图导航服务独立完成节点")
     _assert_equal(navigation.phase, "awaiting_node", "地图导航服务完成普通节点后回到待选阶段")
-    _assert_equal(completed["reward"], 3, "地图导航服务只返回节点基础奖励，不持有历练")
+    _assert_true(not completed.has("reward"), "地图导航服务不再返回基础奖励整数")
 
     var growth = GrowthInventoryScript.new()
     growth.experience = 3
@@ -5969,6 +6067,395 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     _assert_true(
         not manual_progress.to_dict().has("equipped_inner_skill_ids"),
         "局部快照序列化保留字段缺失语义")
+
+func _test_node_interaction_platform_contract() -> void:
+    var invalid_registry = NodeInteractionHandlerRegistryScript.new()
+    _assert_true(
+        not invalid_registry.register_handler(NodeInteractionProbeHandler.new("")),
+        "节点交互 Registry 拒绝空 kind")
+    _assert_true(
+        not invalid_registry.register_handler(NodeInteractionProbeHandler.new("Bad-Kind")),
+        "节点交互 Registry 拒绝非法 snake_case kind")
+    var registry = NodeInteractionHandlerRegistryScript.new()
+    var handler = NodeInteractionProbeHandler.new(
+        "probe_interaction", [{"op": "heal_life", "amount": 10}])
+    _assert_true(registry.register_handler(handler), "测试节点交互 Handler 可注入 Registry")
+    var duplicate_registration_registry = NodeInteractionHandlerRegistryScript.new()
+    duplicate_registration_registry.register_handler(
+        NodeInteractionProbeHandler.new())
+    _assert_true(
+        not duplicate_registration_registry.register_handler(
+            NodeInteractionProbeHandler.new()),
+        "节点交互 Registry 拒绝重复 kind")
+    _assert_true(
+        not registry.require_handler("missing_interaction").get("success", false),
+        "节点交互 Registry 对未知 kind 明确失败")
+
+    var base_catalog = ContentCatalogScript.new()
+    _assert_true(base_catalog.load_all(), "节点交互测试载入内容基线")
+    var fixture_values := _catalog_definitions(base_catalog)
+    fixture_values["node_content"]["node_types"]["event"] = {
+        "route": "interaction",
+        "content_id": "probe_event",
+        "content_status": "test_fixture",
+        "title": "测试事件",
+        "description": "测试统一非战斗交互",
+        "interaction": {
+            "kind": "probe_interaction",
+            "configuration": {"mode": "test"},
+        },
+    }
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, registry)
+    _assert_true(
+        catalog.load_from_definitions(fixture_values, base_catalog.paths),
+        "注册 Handler 后 interaction 节点内容通过加载校验：%s" % "；".join(catalog.errors))
+    var dispatcher = NodeDispatcherScript.new(fixture_values["node_content"])
+    var event_node := {
+        "id": "event-1", "type": "event", "generation_type": "event",
+        "row": 0, "column": 0,
+    }
+    var dispatch: Dictionary = dispatcher.dispatch(
+        event_node, {"seed": 9917, "act": 2})
+    _assert_true(dispatch.get("success", false), "interaction 路由可由节点调度器解析")
+    _assert_equal(dispatch.get("route"), "interaction", "节点调度结果公开 interaction route")
+    _assert_equal(
+        dispatch.get("interaction", {}).get("kind"),
+        "probe_interaction",
+        "NodeDispatchResult 完整透传 interaction 配置")
+
+    var missing_values := fixture_values.duplicate(true)
+    missing_values["node_content"]["node_types"]["event"].erase("interaction")
+    _assert_true(
+        not ContentCatalogScript.new(
+            RuntimeProfileScript.test(), null, null, null, null,
+            registry).load_from_definitions(missing_values, base_catalog.paths),
+        "interaction route 缺少 interaction 对象时加载失败")
+    var unknown_values := fixture_values.duplicate(true)
+    unknown_values["node_content"]["node_types"]["event"]["interaction"]["kind"] = "missing_kind"
+    _assert_true(
+        not ContentCatalogScript.new(
+            RuntimeProfileScript.test(), null, null, null, null,
+            registry).load_from_definitions(unknown_values, base_catalog.paths),
+        "interaction.kind 未注册时加载失败")
+    var bad_configuration_values := fixture_values.duplicate(true)
+    bad_configuration_values["node_content"]["node_types"]["event"]["interaction"]["configuration"] = {
+        "invalid": true,
+    }
+    _assert_true(
+        not ContentCatalogScript.new(
+            RuntimeProfileScript.test(), null, null, null, null,
+            registry).load_from_definitions(
+                bad_configuration_values, base_catalog.paths),
+        "Handler configuration 校验失败会阻止内容加载")
+    _assert_equal(
+        base_catalog.get_by_id("node_type", "combat").get("route"),
+        "battle",
+        "既有 battle 路由保持不变")
+    _assert_equal(
+        base_catalog.get_by_id("node_type", "rest").get("route"),
+        "placeholder",
+        "未迁移的 placeholder 路由保持不变")
+
+    var growth = GrowthInventoryScript.new(catalog)
+    growth.life = 50
+    var mutation = RunMutationServiceScript.new(
+        catalog.run_effect_registry, catalog)
+    var service = NodeInteractionServiceScript.new(registry, mutation, catalog)
+    var growth_before: Dictionary = growth.capture_mutation_state()
+    var prepared: Dictionary = service.prepare(dispatch, growth, {
+        "source_kind": "map_node",
+        "source_id": "event-1",
+        "run_seed": 9917,
+    })
+    _assert_true(prepared.get("success", false), "节点交互 prepare 成功冻结 DTO")
+    var frozen: Dictionary = prepared.get("interaction", {})
+    _assert_true(str(frozen.get("interaction_token", "")).begins_with("interaction-"), "交互 token 使用稳定信封前缀")
+    var repeated: Dictionary = service.prepare(dispatch, growth, {
+        "source_kind": "map_node",
+        "source_id": "event-1",
+        "run_seed": 9917,
+    })
+    _assert_equal(repeated.get("interaction"), frozen, "相同状态重复 prepare 返回完全相同 DTO")
+    _assert_equal(handler.prepare_calls, 1, "重复 prepare 与 query 都不会再次调用 Handler.prepare")
+    _assert_equal(service.query_active(), frozen, "query 只读取已冻结 DTO")
+    _assert_equal(growth.capture_mutation_state(), growth_before, "prepare/query 不修改真实成长")
+    var edited_query := service.query_active()
+    edited_query["choices"][0]["label"] = "污染"
+    _assert_equal(service.query_active()["choices"][0]["label"], "接受", "DTO 查询返回深复制")
+    _assert_true(JSON.stringify(frozen) != "", "冻结 DTO 可直接 JSON 序列化")
+
+    var token := str(frozen["interaction_token"])
+    _assert_true(
+        not service.commit("wrong-token", "accept", {"confirmed": true}, growth).get("success", false),
+        "错误 interaction token 被拒绝")
+    _assert_true(
+        not service.commit(token, "missing", {"confirmed": true}, growth).get("success", false),
+        "未知 choice 被拒绝")
+    _assert_true(
+        not service.commit(token, "disabled", {"confirmed": true}, growth).get("success", false),
+        "disabled choice 被拒绝")
+    _assert_true(
+        not service.commit(token, "accept", [], growth).get("success", false),
+        "非对象 choice_payload 被拒绝")
+    _assert_true(
+        service.cancel(token).get("success", false),
+        "cancel 只放弃 UI 选择草稿")
+    _assert_equal(service.query_active(), frozen, "cancel 后仍查询到同一冻结交互")
+    _assert_equal(growth.capture_mutation_state(), growth_before, "cancel 不修改成长")
+    _assert_true(
+        not service.commit(token, "accept", {}, growth).get("success", false),
+        "Handler 在 commit 阶段重新校验 choice_payload")
+    _assert_equal(service.query_active(), frozen, "Handler 重新校验失败后 pending 保留")
+    _assert_true(
+        service.commit(
+            token, "accept", {"confirmed": true}, growth
+        ).get("success", false),
+        "合法节点交互通过共享事务成功提交")
+    _assert_equal(growth.life, 60, "成功提交一次应用节点自身效果")
+    _assert_true(
+        not service.commit(
+            token, "accept", {"confirmed": true}, growth
+        ).get("success", false),
+        "NodeInteractionService 拒绝同一 token 成功提交第二次")
+    service.clear()
+
+    var fail_registry = RunEffectHandlerRegistryScript.new()
+    _assert_true(
+        fail_registry.register_handler(
+            RunEffectProbeHandler.new(["fail_node_interaction"], true)),
+        "节点交互回滚测试注册失败探针")
+    var failing_handler = NodeInteractionProbeHandler.new(
+        "failing_interaction", [
+            {"op": "gain_experience", "amount": 7},
+            {"op": "fail_node_interaction", "amount": 1},
+        ])
+    var failing_registry = NodeInteractionHandlerRegistryScript.new()
+    failing_registry.register_handler(failing_handler)
+    var failing_service = NodeInteractionServiceScript.new(
+        failing_registry,
+        RunMutationServiceScript.new(fail_registry, catalog),
+        catalog)
+    var failing_dispatch := dispatch.duplicate(true)
+    failing_dispatch["interaction"]["kind"] = "failing_interaction"
+    var failing_growth = GrowthInventoryScript.new(catalog)
+    failing_growth.experience = 3
+    var failing_before := failing_growth.capture_mutation_state()
+    var failing_prepared := failing_service.prepare(
+        failing_dispatch, failing_growth, {
+            "source_kind": "map_node", "source_id": "event-1", "run_seed": 9917,
+        })
+    var failing_token := str(failing_prepared.get("interaction", {}).get(
+        "interaction_token", ""))
+    _assert_true(
+        not failing_service.commit(
+            failing_token, "accept", {"confirmed": true}, failing_growth
+        ).get("success", false),
+        "节点自身多个 effect 中途失败时提交失败")
+    _assert_equal(failing_growth.capture_mutation_state(), failing_before, "节点 effect 中途失败时全部成长回滚")
+    _assert_equal(
+        failing_service.query_active(), failing_prepared.get("interaction"),
+        "事务失败后 pending interaction 与 token 保留")
+
+    var duplicate_handler = NodeInteractionProbeHandler.new("duplicate_choice")
+    duplicate_handler.duplicate_choices = true
+    var duplicate_registry = NodeInteractionHandlerRegistryScript.new()
+    duplicate_registry.register_handler(duplicate_handler)
+    var duplicate_dispatch := dispatch.duplicate(true)
+    duplicate_dispatch["interaction"]["kind"] = "duplicate_choice"
+    _assert_true(
+        not NodeInteractionServiceScript.new(
+            duplicate_registry, mutation, catalog).prepare(
+                duplicate_dispatch, growth, {
+                    "source_kind": "map_node", "source_id": "event-1", "run_seed": 9917,
+                }).get("success", false),
+        "prepare 拒绝重复 choice.id")
+
+    var content_probe = RunContentProbeCatalog.new()
+    var grant_mutation = RunMutationServiceScript.new(
+        RunEffectHandlerRegistryScript.new(), content_probe)
+    var grant_growth = GrowthInventoryScript.new(catalog)
+    var grant_technique := grant_mutation.apply_effects([{
+        "op": "grant_techniques", "technique_ids": ["formal_technique"],
+    }], grant_growth)
+    _assert_true(grant_technique.get("success", false), "通用功法获得操作成功")
+    var technique_state := grant_growth.capture_mutation_state()
+    _assert_true(
+        not grant_mutation.apply_effects([{
+            "op": "grant_techniques", "technique_ids": ["formal_technique"],
+        }], grant_growth).get("success", false),
+        "已拥有功法再次明确发放被拒绝")
+    _assert_equal(grant_growth.capture_mutation_state(), technique_state, "重复功法发放不改变成长")
+    _assert_true(grant_mutation.apply_effects([{
+        "op": "grant_inner_skills",
+        "inner_skill_ids": ["formal_inner_skill", "formal_inner_skill"],
+    }], grant_growth).get("success", false), "内功获得允许同 ID 多副本")
+    _assert_equal(grant_growth.learned_inner_skill_ids.count("formal_inner_skill"), 2, "两份同 ID 内功进入已获库")
+    _assert_true(grant_growth.equipped_inner_skill_ids.is_empty(), "获得内功不会自动装备")
+    grant_growth.consumable_ids.assign(["slot_a", "slot_b"])
+    var consumables_before := grant_growth.capture_mutation_state()
+    _assert_true(
+        not grant_mutation.apply_effects([{
+            "op": "grant_consumables",
+            "consumable_ids": ["formal_consumable", "formal_consumable"],
+        }], grant_growth).get("success", false),
+        "消耗品整组超过三格容量时失败")
+    _assert_equal(grant_growth.capture_mutation_state(), consumables_before, "消耗品容量失败不静默丢弃部分内容")
+    grant_growth.consumable_ids.clear()
+    _assert_true(grant_mutation.apply_effects([{
+        "op": "grant_items", "item_ids": ["formal_item"],
+    }], grant_growth).get("success", false), "通用物品获得操作成功")
+    var item_state := grant_growth.capture_mutation_state()
+    _assert_true(
+        not grant_mutation.apply_effects([{
+            "op": "grant_items", "item_ids": ["formal_item"],
+        }], grant_growth).get("success", false),
+        "重复物品发放被拒绝")
+    _assert_equal(grant_growth.capture_mutation_state(), item_state, "重复物品不修改库存")
+    _assert_true(
+        not grant_mutation.apply_effects([{
+            "op": "grant_items", "item_ids": ["design_only_item"],
+        }], grant_growth).get("success", false),
+        "design_only 物品不能通过正式获得操作发放")
+    var mixed_before := grant_growth.capture_mutation_state()
+    _assert_true(
+        not grant_mutation.apply_effects([
+            {"op": "grant_consumables", "consumable_ids": ["formal_consumable"]},
+            {"op": "grant_items", "item_ids": ["formal_item"]},
+        ], grant_growth).get("success", false),
+        "多种获得操作中任一失败时整组事务失败")
+    _assert_equal(grant_growth.capture_mutation_state(), mixed_before, "混合获得操作失败时全部回滚")
+
+    for invalid_spec in [
+        ["grant_techniques", "technique_ids", "technique"],
+        ["grant_inner_skills", "inner_skill_ids", "inner_skill"],
+        ["grant_consumables", "consumable_ids", "consumable"],
+        ["grant_items", "item_ids", "item"],
+    ]:
+        var invalid_grant_values := _catalog_definitions(base_catalog)
+        invalid_grant_values["node_rewards"]["node_rewards"]["event"] = [{
+            "op": invalid_spec[0],
+            invalid_spec[1]: ["missing_content_id"],
+            "kind": invalid_spec[2],
+        }]
+        _assert_true(
+            not ContentCatalogScript.new().load_from_definitions(invalid_grant_values),
+            "%s 未知内容 ID 在加载期失败" % invalid_spec[0])
+
+    var navigation = MapNavigationServiceScript.new()
+    navigation.seed = 9917
+    navigation.act = 2
+    navigation.phase = "awaiting_node"
+    navigation.graph = {
+        "start_id": "start",
+        "nodes": [event_node.duplicate(true)],
+        "edges": [{"from": "start", "to": "event-1"}],
+    }
+    var session_growth = GrowthInventoryScript.new(catalog)
+    session_growth.life = 50
+    var state = RunStateScript.new(navigation, session_growth)
+    var reward_service = NodeRewardServiceScript.new(
+        fixture_values["node_rewards"], mutation)
+    var session_service = NodeInteractionServiceScript.new(
+        registry, mutation, catalog)
+    var session: RunSession = RunSessionScript.new(
+        state, dispatcher, null, null, catalog, null, null, null,
+        reward_service, RuntimeProfileScript.test(), null, session_service)
+    var begin = session.execute({"type": "begin_node", "node_id": "event-1"})
+    _assert_true(begin.success, "RunSession 统一按 interaction route 进入节点")
+    var session_interaction: Dictionary = begin.payload_value("interaction", {})
+    var session_token := str(session_interaction.get("interaction_token", ""))
+    _assert_equal(session.snapshot().phase, "node_in_progress", "prepare 成功后才进入 node_in_progress")
+    _assert_true(
+        not session.execute({"type": "complete_node"}).success,
+        "interaction 未提交前直接 complete_node 被拒绝")
+    var session_query = session.execute({"type": "query_node_interaction"})
+    _assert_equal(session_query.payload_value("interaction"), session_interaction, "RunSession query 返回同一冻结 DTO")
+    _assert_true(session.execute({
+        "type": "cancel_node_interaction", "interaction_token": session_token,
+    }).success, "RunSession cancel 不退出当前地图节点")
+    _assert_equal(session.snapshot().phase, "node_in_progress", "cancel 后仍停留进行中节点")
+
+    var prepare_calls_before_save: int = handler.prepare_calls
+    var pending_save = RunSaveDataScript.new().capture(session)
+    var pending_values: Dictionary = pending_save.to_dict()
+    _assert_equal(
+        pending_values["node_state"]["resume_policy"],
+        "resume_interaction",
+        "pending interaction 存档使用 resume_interaction")
+    _assert_equal(
+        pending_values["node_state"]["pending_node_interaction"]["interaction"],
+        session_interaction,
+        "存档保存完整冻结 DTO 与 metadata")
+    var restored: Dictionary = pending_save.restore_session(catalog)
+    _assert_true(
+        restored.get("success", false),
+        "pending interaction 可以存档恢复：%s" % str(restored.get("reason", "")))
+    _assert_equal(restored.get("resume_policy"), "resume_interaction", "恢复结果公开交互恢复策略")
+    if not restored.get("success", false):
+        return
+    var restored_session: RunSession = restored["run_session"]
+    _assert_equal(
+        restored_session.execute({"type": "query_node_interaction"}).payload_value("interaction"),
+        session_interaction,
+        "恢复后 query 与保存前 DTO 完全一致")
+    _assert_equal(handler.prepare_calls, prepare_calls_before_save, "恢复 pending interaction 不重新调用 prepare 或抽随机")
+    var committed = restored_session.execute({
+        "type": "commit_node_interaction",
+        "interaction_token": session_token,
+        "choice_id": "accept",
+        "choice_payload": {"confirmed": true},
+    })
+    _assert_true(committed.success, "恢复后的节点交互可以成功提交一次")
+    _assert_equal(restored_session.growth.life, 60, "节点自身 effect 在共享成长事务中提交")
+    _assert_equal(restored_session.snapshot().phase, "awaiting_reward", "交互成功后建立基础奖励并进入 awaiting_reward")
+    _assert_equal(restored_session.snapshot().experience, 0, "奖励领取前不计算功行或写入基础奖励")
+    _assert_true(restored_session.snapshot().reward.get("available", false), "节点自身结果成功后才建立 NodeRewardService 奖励包")
+    _assert_true(
+        not restored_session.execute({
+            "type": "commit_node_interaction",
+            "interaction_token": session_token,
+            "choice_id": "accept",
+            "choice_payload": {"confirmed": true},
+        }).success,
+        "同一 token 成功提交第二次被拒绝")
+    _assert_true(
+        RunSaveDataScript.new().capture(restored_session).to_dict()["node_state"][
+            "pending_node_interaction"].is_empty(),
+        "interaction commit 后存档不再包含 pending interaction")
+    var legacy_values: Dictionary = pending_values.duplicate(true)
+    legacy_values["node_state"].erase("pending_node_interaction")
+    legacy_values["node_state"]["resume_policy"] = "restart_node_from_start"
+    _assert_true(
+        RunSaveDataScript.new(legacy_values).restore_session(catalog).get("success", false),
+        "旧存档缺少 pending_node_interaction 仍可加载")
+
+    var map_source := FileAccess.get_file_as_string(
+        "res://core/map_navigation_service.gd")
+    _assert_true(
+        not map_source.contains("_reward_for_type") \
+            and not map_source.contains('"combat": 3') \
+            and not map_source.contains('"elite": 4') \
+            and not map_source.contains('"boss": 5'),
+        "MapNavigationService 不再维护或返回 3/4/5 奖励表")
+    var composition_root = GameCompositionRootScript.new(
+        RuntimeProfileScript.test())
+    _assert_true(composition_root.initialize(), "组合根可装配空生产交互 Registry")
+    var composed_session: RunSession = composition_root.create_run_session()
+    _assert_true(
+        composition_root.content_catalog.node_interaction_registry \
+            == composition_root.node_interaction_registry \
+            and composition_root.node_interaction_service.handler_registry \
+            == composition_root.node_interaction_registry \
+            and composed_session._node_interaction_service \
+            == composition_root.node_interaction_service,
+        "ContentValidator、ContentCatalog、RunSession 与交互服务复用组合根 Registry")
+    _assert_true(
+        composed_session._node_interaction_service.mutation_service \
+            == composition_root.run_mutation_service \
+            and composed_session._node_reward_service.mutation_service \
+            == composition_root.run_mutation_service,
+        "节点交互与基础奖励复用组合根的同一成长事务边界")
 
 func _test_run_session_commands_snapshots_events_and_logs() -> void:
     var session: RunSession = RunSessionScript.new()

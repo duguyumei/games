@@ -22,6 +22,8 @@ const ConsumableValidationContextScript = preload(
     "res://core/consumables/consumable_validation_context.gd")
 const ConsumableTargetingProtocolScript = preload(
     "res://core/consumables/consumable_targeting_protocol.gd")
+const NodeInteractionHandlerRegistryScript = preload(
+    "res://core/node_interactions/node_interaction_handler_registry.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 
 const CONTENT_KEYS := [
@@ -128,7 +130,7 @@ const RANK_SPECS := [
     ["10", 10, 10], ["J", 11, 11], ["Q", 12, 11], ["K", 13, 11],
     ["A", 14, 12],
 ]
-const ROUTES := ["battle", "placeholder"]
+const ROUTES := ["battle", "interaction", "placeholder"]
 const REWARD_KINDS := [
     "experience", "card", "technique", "inner_skill",
     "consumable", "reshape", "special",
@@ -177,13 +179,15 @@ var _effect_registry
 var _run_effect_registry
 var _card_reshape_registry
 var _consumable_effect_registry
+var _node_interaction_registry
 var _status_behavior_ids: Array[String] = []
 
 func _init(
         effect_registry_override = null,
         run_effect_registry_override = null,
         card_reshape_registry_override = null,
-        consumable_effect_registry_override = null) -> void:
+        consumable_effect_registry_override = null,
+        node_interaction_registry_override = null) -> void:
     _status_behavior_ids = StatusBehaviorRegistryScript.new().behavior_ids()
     _effect_registry = effect_registry_override
     if _effect_registry == null:
@@ -197,6 +201,9 @@ func _init(
     _consumable_effect_registry = consumable_effect_registry_override
     if _consumable_effect_registry == null:
         _consumable_effect_registry = ConsumableEffectHandlerRegistryScript.new()
+    _node_interaction_registry = node_interaction_registry_override
+    if _node_interaction_registry == null:
+        _node_interaction_registry = NodeInteractionHandlerRegistryScript.new()
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {
@@ -223,6 +230,8 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
             str(message.get("message", "重塑行为注册失败")))
     for message in _consumable_effect_registry.registration_errors():
         _error("consumables.registry", str(message))
+    for message in _node_interaction_registry.registration_errors():
+        _error("node_interactions.registry", str(message))
     _contents = contents
     _paths = paths
     _card_ids.clear()
@@ -1646,6 +1655,8 @@ func _validate_node_content(definition: Dictionary) -> void:
         if not value.get("title") is String or str(value.get("title", "")) == "":
             _error(scope, "title 必须是非空字符串")
         if route == "battle":
+            if value.has("interaction"):
+                _error(scope + ".interaction", "battle 路由不得携带 interaction 配置")
             var battle = value.get("battle")
             if not battle is Dictionary:
                 _error(scope + ".battle", "战斗路由必须包含 battle 对象")
@@ -1663,6 +1674,27 @@ func _validate_node_content(definition: Dictionary) -> void:
                 _error(scope + ".battle", "场景路径未纳入统一内容目录：%s" % scenario_path)
             if not battle.get("use_enemy_ai") is bool:
                 _error(scope + ".battle", "use_enemy_ai 必须是布尔值")
+        elif route == "interaction":
+            if value.has("battle"):
+                _error(scope + ".battle", "interaction 路由不得携带 battle 配置")
+            var interaction = value.get("interaction")
+            if not interaction is Dictionary:
+                _error(scope + ".interaction", "interaction 路由必须包含 interaction 对象")
+                continue
+            var kind := str(interaction.get("kind", ""))
+            if kind == "" or not _is_snake_case(kind):
+                _error(scope + ".interaction.kind", "必须是非空稳定 snake_case ID")
+            elif not _node_interaction_registry.has_handler(kind):
+                _error(scope + ".interaction.kind", "未注册的节点交互 kind：%s" % kind)
+            var configuration = interaction.get("configuration")
+            if not configuration is Dictionary:
+                _error(scope + ".interaction.configuration", "必须是对象")
+            elif _node_interaction_registry.has_handler(kind):
+                _node_interaction_registry.handler_for(kind).validate_configuration(
+                    configuration.duplicate(true), self)
+        elif route == "placeholder":
+            if value.has("interaction"):
+                _error(scope + ".interaction", "placeholder 路由不得携带 interaction 执行配置")
 
 func _validate_map_rules(definition: Dictionary, node_content: Dictionary) -> void:
     var positive_fields := [
@@ -1947,7 +1979,24 @@ func content_definition(content_type: String, content_id: String) -> Dictionary:
             for value in _contents.get("consumables", {}).get("consumables", []):
                 if value is Dictionary and str(value.get("id", "")) == content_id:
                     return value.duplicate(true)
+        "technique":
+            return _techniques_by_id.get(content_id, {}).duplicate(true)
+        "inner_skill":
+            return _inner_skills_by_id.get(content_id, {}).duplicate(true)
+        "item":
+            return _items_by_id.get(content_id, {}).duplicate(true)
     return {}
+
+func is_formally_obtainable(content_type: String, content_id: String) -> bool:
+    match content_type:
+        "technique":
+            return str(_contents.get("techniques", {}).get(
+                "integration_statuses", {}).get(content_id, "")) \
+                == FORMAL_TECHNIQUE_STATUS
+        "inner_skill", "consumable", "item":
+            return str(content_definition(content_type, content_id).get(
+                "status", "")) == FORMAL_CONTENT_STATUS
+    return false
 
 func content_ids_by_kind(content_type: String, kind: String) -> Array[String]:
     var result: Array[String] = []

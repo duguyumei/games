@@ -8,6 +8,8 @@ const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const RewardBundleScript = preload("res://core/reward_bundle.gd")
+const NodeInteractionServiceScript = preload(
+    "res://core/node_interactions/node_interaction_service.gd")
 
 const SCHEMA_VERSION := 1
 const CONTENT_VERSION := 1
@@ -32,6 +34,9 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
         reward.get("bundle", {}).duplicate(true)
         if reward.get("available", false) else {})
     var phase := str(run_session.navigation.phase)
+    var pending_interaction: Dictionary = (
+        run_session._node_interaction_service.capture_pending()
+        if run_session._node_interaction_service != null else {})
     _data = {
         "schema_version": SCHEMA_VERSION,
         "content_version": content_version_value,
@@ -48,9 +53,13 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "current_node_id": str(run_session.navigation.current_node_id),
             "completed_node_ids": run_session.navigation.completed_node_ids.keys(),
             "pending_reward": pending_reward,
+            "pending_node_interaction": pending_interaction,
             "resume_policy": (
-                "restart_node_from_start"
-                if phase == "node_in_progress" else "resume_boundary"),
+                "resume_interaction"
+                if phase == "node_in_progress" and not pending_interaction.is_empty()
+                else (
+                    "restart_node_from_start"
+                    if phase == "node_in_progress" else "resume_boundary")),
         },
         "growth": {
             "experience": int(run_session.growth.experience),
@@ -122,9 +131,19 @@ func validate(content_catalog = null) -> Array[String]:
         errors.append("当前节点 ID 不在已保存地图中：%s" % current_node_id)
     if phase in ["node_in_progress", "awaiting_reward"] and current_node_id == "":
         errors.append("阶段 %s 缺少 current_node_id" % phase)
-    if phase == "node_in_progress" \
-            and str(node_state.get("resume_policy", "")) != "restart_node_from_start":
-        errors.append("进行中节点必须声明从节点开头恢复")
+    var pending_interaction = node_state.get("pending_node_interaction", {})
+    if not pending_interaction is Dictionary:
+        errors.append("pending_node_interaction 必须是对象")
+        pending_interaction = {}
+    if phase == "node_in_progress":
+        var expected_policy := (
+            "resume_interaction"
+            if not pending_interaction.is_empty()
+            else "restart_node_from_start")
+        if str(node_state.get("resume_policy", "")) != expected_policy:
+            errors.append("进行中节点 resume_policy 必须为 %s" % expected_policy)
+    elif not pending_interaction.is_empty():
+        errors.append("只有 node_in_progress 可以保存 pending_node_interaction")
     for completed_id in node_state.get("completed_node_ids", []):
         if not node_ids.has(str(completed_id)):
             errors.append("已完成节点 ID 不在已保存地图中：%s" % str(completed_id))
@@ -174,6 +193,8 @@ func validate(content_catalog = null) -> Array[String]:
         if not catalog.load_all():
             errors.append("无法载入内容目录以校验存档")
             return errors
+    _validate_pending_interaction(
+        pending_interaction, phase, current_node_id, graph, catalog, errors)
     if growth.has("used_unique_consumable_ids"):
         _validate_id_array(
             growth["used_unique_consumable_ids"], "consumable", catalog, errors)
@@ -267,11 +288,81 @@ func restore_session(content_catalog = null) -> Dictionary:
     session.selected_starter_build_id = str(run["starter_build_id"])
     if navigation.phase == "awaiting_reward":
         session._pending_reward = RewardBundleScript.new(node_state["pending_reward"])
+    var pending_interaction: Dictionary = node_state.get(
+        "pending_node_interaction", {})
+    if not pending_interaction.is_empty():
+        var pending_restore: Dictionary = session._node_interaction_service.restore_pending(
+            pending_interaction)
+        if not pending_restore.get("success", false):
+            return pending_restore
     return {
         "success": true,
         "run_session": session,
         "resume_policy": str(node_state["resume_policy"]),
     }
+
+func _validate_pending_interaction(
+        pending: Dictionary,
+        phase: String,
+        current_node_id: String,
+        graph: Dictionary,
+        catalog,
+        errors: Array[String]) -> void:
+    if pending.is_empty():
+        return
+    if phase != "node_in_progress":
+        return
+    if int(pending.get("schema_version", 0)) \
+            != NodeInteractionServiceScript.SCHEMA_VERSION:
+        errors.append("pending_node_interaction schema_version 不受支持")
+    if str(pending.get("node_id", "")) != current_node_id:
+        errors.append("pending_node_interaction.node_id 与当前节点不一致")
+    if str(pending.get("source_kind", "")) not in ["map_node", "boss_chest"]:
+        errors.append("pending_node_interaction.source_kind 无效")
+    if str(pending.get("source_id", "")) == "":
+        errors.append("pending_node_interaction.source_id 不能为空")
+    elif str(pending.get("source_kind", "")) == "map_node" \
+            and str(pending.get("source_id", "")) != current_node_id:
+        errors.append("map_node pending interaction 的 source_id 必须是当前节点")
+    if not pending.get("configuration") is Dictionary:
+        errors.append("pending_node_interaction.configuration 必须是对象")
+    var dto = pending.get("interaction")
+    if not dto is Dictionary:
+        errors.append("pending_node_interaction 缺少冻结 interaction DTO")
+    else:
+        var dto_error := NodeInteractionServiceScript.validate_frozen_dto(dto)
+        if dto_error != "":
+            errors.append(dto_error)
+        if str(dto.get("node_id", "")) != current_node_id:
+            errors.append("冻结 interaction DTO 与当前节点不一致")
+        if str(dto.get("interaction_token", "")) != str(pending.get("token", "")):
+            errors.append("pending_node_interaction token 与 DTO 不一致")
+        for field in [
+                "source_kind", "source_id", "node_type", "content_id",
+                "interaction_kind", "act", "content_seed"]:
+            if dto.get(field) != pending.get(field):
+                errors.append("pending_node_interaction.%s 与 DTO 不一致" % field)
+    var current_node: Dictionary = {}
+    for node_value in graph.get("nodes", []):
+        if node_value is Dictionary \
+                and str(node_value.get("id", "")) == current_node_id:
+            current_node = node_value
+            break
+    var node_type := str(current_node.get("type", ""))
+    if str(pending.get("node_type", "")) != node_type:
+        errors.append("pending_node_interaction.node_type 与当前节点不一致")
+    var content: Dictionary = catalog.get_by_id("node_type", node_type)
+    if str(content.get("route", "")) != "interaction":
+        errors.append("pending_node_interaction 当前节点不是 interaction 路由")
+        return
+    if str(pending.get("content_id", "")) != str(content.get("content_id", "")):
+        errors.append("pending_node_interaction.content_id 与当前内容配置不一致")
+    var interaction: Dictionary = content.get("interaction", {})
+    if str(interaction.get("kind", "")) != str(pending.get("interaction_kind", "")):
+        errors.append("pending_node_interaction kind 与当前内容配置不一致")
+    if not catalog.node_interaction_registry.has_handler(
+            str(pending.get("interaction_kind", ""))):
+        errors.append("pending_node_interaction kind 未注册")
 
 func _validate_content_ids(
         run: Dictionary,

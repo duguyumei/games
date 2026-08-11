@@ -36,7 +36,7 @@ func dispatch_dto(node: Dictionary, context: Dictionary = {}):
         return _failure("节点类型没有调度配置：%s" % type_id)
     var content: Dictionary = node_types[type_id]
     var route := str(content.get("route", ""))
-    if route not in ["battle", "placeholder"]:
+    if route not in ["battle", "interaction", "placeholder"]:
         return _failure("节点调度路由无效：%s" % route)
 
     var act := int(context.get("act", 1))
@@ -68,6 +68,11 @@ func dispatch_dto(node: Dictionary, context: Dictionary = {}):
             "use_enemy_ai": bool(battle.get("use_enemy_ai", true)),
             "use_remote_ai": bool(battle.get("use_remote_ai", false)),
         }
+    elif route == "interaction":
+        var interaction = content.get("interaction")
+        if not interaction is Dictionary:
+            return _failure("交互节点缺少 interaction 配置：%s" % type_id)
+        result["interaction"] = interaction.duplicate(true)
     return NodeDispatchResultScript.new().configure(result)
 
 func _content_seed(node: Dictionary, context: Dictionary, seed_offset: int) -> int:

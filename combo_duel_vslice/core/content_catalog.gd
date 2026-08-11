@@ -12,6 +12,8 @@ const CardReshapeRuleServiceScript = preload(
     "res://core/card_reshapes/card_reshape_rule_service.gd")
 const ConsumableEffectHandlerRegistryScript = preload(
     "res://core/consumables/consumable_effect_handler_registry.gd")
+const NodeInteractionHandlerRegistryScript = preload(
+    "res://core/node_interactions/node_interaction_handler_registry.gd")
 
 const CONTENT_ORDER := [
     "base_deck",
@@ -61,6 +63,7 @@ var effect_registry
 var run_effect_registry
 var card_reshape_registry
 var consumable_effect_registry
+var node_interaction_registry
 var card_reshape_rules
 var enemy_repository_ref: WeakRef = null
 
@@ -69,7 +72,8 @@ func _init(
         effect_registry_override = null,
         run_effect_registry_override = null,
         card_reshape_registry_override = null,
-        consumable_effect_registry_override = null) -> void:
+        consumable_effect_registry_override = null,
+        node_interaction_registry_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
@@ -87,6 +91,10 @@ func _init(
         consumable_effect_registry_override
         if consumable_effect_registry_override != null
         else ConsumableEffectHandlerRegistryScript.new())
+    node_interaction_registry = (
+        node_interaction_registry_override
+        if node_interaction_registry_override != null
+        else NodeInteractionHandlerRegistryScript.new())
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()
@@ -146,7 +154,7 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
         return false
     var validator = ContentValidatorScript.new(
         effect_registry, run_effect_registry, card_reshape_registry,
-        consumable_effect_registry)
+        consumable_effect_registry, node_interaction_registry)
     var validation: Dictionary = validator.validate(_definitions, paths)
     errors.assign(validation.get("errors", []))
     warnings.assign(validation.get("warnings", []))
@@ -170,6 +178,16 @@ func get_by_id(content_type: String, content_id: String) -> Dictionary:
 
 func has_id(content_type: String, content_id: String) -> bool:
     return _indexes.get(content_type, {}).has(content_id)
+
+func is_formally_obtainable(content_type: String, content_id: String) -> bool:
+    if not has_id(content_type, content_id):
+        return false
+    if content_type == "technique":
+        return str(_definitions.get("techniques", {}).get(
+            "integration_statuses", {}).get(content_id, "")) == "formal_complete"
+    if content_type in ["inner_skill", "consumable", "item"]:
+        return str(get_by_id(content_type, content_id).get("status", "")) == "formal"
+    return false
 
 func all_of(content_type: String) -> Array:
     var result: Array = []

@@ -9,12 +9,14 @@ const RunEffectHandlerRegistryScript = preload(
     "res://core/run_effects/run_effect_handler_registry.gd")
 
 var handler_registry
+var content_catalog
 
-func _init(registry_override = null) -> void:
+func _init(registry_override = null, content_catalog_override = null) -> void:
     handler_registry = (
         registry_override
         if registry_override != null
         else RunEffectHandlerRegistryScript.new())
+    content_catalog = content_catalog_override
 
 func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictionary:
     for registration_error in handler_registry.registration_errors():
@@ -37,7 +39,8 @@ func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictiona
     var working_growth = growth.create_mutation_copy()
     if working_growth == null:
         return _failure("无法建立本局事务工作副本", -1, "")
-    var runtime_context = RunEffectContextScript.new(working_growth, context)
+    var runtime_context = RunEffectContextScript.new(
+        working_growth, context, content_catalog)
     var applied: Array = []
     for index in range(effects.size()):
         var effect: Dictionary = effects[index]

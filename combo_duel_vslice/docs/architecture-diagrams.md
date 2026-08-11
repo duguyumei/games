@@ -137,6 +137,11 @@ classDiagram
     class BattleSessionFactory
     class NodeDispatcher
     class NodeRewardService
+    class NodeInteractionService
+    class NodeInteractionHandlerRegistry
+    class NodeInteractionHandler
+    class NodeInteractionDTO
+    class RunMutationService
     class StarterBuildRepository
     class StarterBuildAssembler
     class PracticeService
@@ -147,9 +152,16 @@ classDiagram
     GameCompositionRoot --> StarterBuildRepository
     GameCompositionRoot --> StarterBuildAssembler
     GameCompositionRoot --> NodeRewardService
+    GameCompositionRoot --> NodeInteractionService
+    GameCompositionRoot --> NodeInteractionHandlerRegistry
     RunSession --> MapNavigationService
     RunSession --> GrowthInventory
     RunSession --> NodeDispatcher
+    RunSession --> NodeInteractionService
+    NodeInteractionService --> NodeInteractionHandlerRegistry
+    NodeInteractionHandlerRegistry --> NodeInteractionHandler
+    NodeInteractionService ..> NodeInteractionDTO : 冻结/恢复
+    NodeInteractionService --> RunMutationService : 节点自身 effects
     RunSession --> PracticeService
     RunSession --> BattleSessionFactory : 创建战斗
     RunState --> MapNavigationService
@@ -271,7 +283,7 @@ classDiagram
 stateDiagram-v2
     [*] --> awaiting_node : 建局(setup_run)
     awaiting_node --> node_in_progress : 进入节点(begin_node)
-    node_in_progress --> awaiting_reward : 节点完成(complete_node)
+    node_in_progress --> awaiting_reward : 战斗/占位完成，或 interaction commit 成功
     awaiting_reward --> awaiting_node : 领取普通/精英奖励
     awaiting_reward --> boss_chest : 第1、2层领取 Boss 奖励
     boss_chest --> awaiting_node : 完成 Boss 宝箱并进入下一层
@@ -279,7 +291,41 @@ stateDiagram-v2
     run_complete --> [*]
 ```
 
-### 4.2 战斗核心状态机（回合与行动窗口）
+interaction 路由在进入 `node_in_progress` 之前完成纯 `prepare`。未提交时不能直接
+`complete_node`；`cancel` 只取消 UI 草稿，不离开节点。
+
+### 4.2 非战斗节点交互生命周期
+
+```mermaid
+sequenceDiagram
+    participant RS as RunSession
+    participant NIS as NodeInteractionService
+    participant H as NodeInteractionHandler
+    participant RMS as RunMutationService
+    participant NRS as NodeRewardService
+    participant NAV as MapNavigationService
+
+    RS->>NIS: prepare(dispatch, growth, source)
+    NIS->>H: prepare(read-only context + independent RNG)
+    H-->>NIS: frozen title / choices / metadata
+    NIS-->>RS: NodeInteractionDTO + stable token
+    RS->>NAV: begin_node
+    RS->>NIS: query_active()
+    NIS-->>RS: DTO deep copy
+    RS->>NIS: commit(token, choice, payload, growth)
+    NIS->>H: commit(context, frozen DTO, choice, payload)
+    H-->>NIS: effects + interaction result
+    NIS->>RMS: apply_effects once
+    RMS-->>NIS: atomic applied / rollback
+    NIS-->>RS: committed result
+    RS->>NAV: complete_current_node_to_reward
+    RS->>NRS: create_bundle(node)
+```
+
+`NodeInteractionService` 不推进地图；`NodeRewardService` 不识别交互 kind；
+`MapNavigationService` 不再计算奖励数值。
+
+### 4.3 战斗核心状态机（回合与行动窗口）
 
 ```mermaid
 stateDiagram-v2
@@ -306,7 +352,7 @@ stateDiagram-v2
     BothDown --> [*]
 ```
 
-### 4.3 远程 AI 行动窗口状态机（ActionWindowAiCoordinator）
+### 4.4 远程 AI 行动窗口状态机（ActionWindowAiCoordinator）
 
 ```mermaid
 stateDiagram-v2
@@ -371,7 +417,9 @@ flowchart LR
     C --> D[地图选择节点 map_view]
     D --> E[节点派发 node_dispatcher]
     E --> F[战斗 main.gd<br>BattleSession]
-    E --> G[占位路由/占位页<br>event / rest / treasure 尚未正式实现]
+    E --> G[占位路由/占位页<br>event / rest / treasure 尚未迁移正式内容]
+    E -. 已具备统一协议 .-> O[interaction route<br>prepare/query/commit/cancel]
+    O --> H
     F --> H[胜利 → 奖励包 reward_overlay]
     F --> I[失败后的本局终止推进尚未正式接入]
     H --> J[领取奖励 → 历练 + 修习开放]

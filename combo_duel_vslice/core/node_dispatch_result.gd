@@ -20,6 +20,7 @@ var column: int = -1
 var content_seed: int = 0
 var boss_variant: int = -1
 var battle: Dictionary = {}
+var interaction: Dictionary = {}
 
 func configure(values: Dictionary):
     success = bool(values.get("success", false))
@@ -39,6 +40,7 @@ func configure(values: Dictionary):
     content_seed = int(values.get("content_seed", 0))
     boss_variant = int(values.get("boss_variant", -1))
     battle = values.get("battle", {}).duplicate(true)
+    interaction = values.get("interaction", {}).duplicate(true)
     return self
 
 func snapshot() -> Dictionary:
@@ -63,6 +65,8 @@ func snapshot() -> Dictionary:
     }
     if not battle.is_empty():
         result["battle"] = battle.duplicate(true)
+    if not interaction.is_empty():
+        result["interaction"] = interaction.duplicate(true)
     return result
 
 func to_dict() -> Dictionary:

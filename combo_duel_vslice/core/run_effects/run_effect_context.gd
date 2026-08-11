@@ -7,7 +7,12 @@ extends RefCounted
 
 var growth
 var metadata: Dictionary
+var content_catalog
 
-func _init(growth_override, metadata_override: Dictionary = {}) -> void:
+func _init(
+        growth_override,
+        metadata_override: Dictionary = {},
+        content_catalog_override = null) -> void:
     growth = growth_override
     metadata = metadata_override.duplicate(true)
+    content_catalog = content_catalog_override

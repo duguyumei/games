@@ -253,6 +253,7 @@ S0 已在基线提交 `0555d0f` 完成最终验收，S1.1～S1.5 的平台建设
 | 2.F1A（已完成） | 建立本局效果注册表与原子事务骨架，迁移基础节点历练奖励 | 1 天 |
 | 2.F1B（已完成） | 建立本局真气工坊与六种牌组改造 Handler | 1 天 |
 | 2.F1C（已完成） | 建立真气重塑行为注册平台并迁移现有纯规则行为 | 1 天 |
+| 2.F4A（已完成） | 建立非战斗节点统一交互协议与通用本局获得操作 | 1 天 |
 | 2.4（已完成） | 完成 `2 普通商品 + 2 补充包 + 1 物品`、空位与 `5、6、7……` 冥想刷新 | 3 天 |
 | 2.5（已完成） | 将心得接入具体牌型功法槽位与序列成长；五条心得保留为禁用定义 | 1 天 |
 | 2.6 | 接入 6 门代表性丹药及战斗外牌组改造操作 | 4 天 |
@@ -308,6 +309,21 @@ S0 已在基线提交 `0555d0f` 完成最终验收，S1.1～S1.5 的平台建设
   奖励行为；这些内容仍由后续能力批次接入，数据定义存在不等于语义完整。
 - 重塑平台扩展说明、Java 对照和“只改 JSON／必须新增 Handler”的边界见
   `run-content-extension-guide.md`；本次不改变战斗胜负、地图推进或存档结构。
+
+**S2-F4A 完成记录（2026-08-11）**
+
+- 新增 `NodeInteractionHandler` SPI、kind Registry、只读 Context、冻结 DTO 与
+  `prepare/query/commit/cancel` 服务；相同状态不重抽随机，成功 token 不能重放。
+- interaction 只作为第三种 route 接入 `RunSession`。节点自身 effects 原子成功后才完成节点并
+  建立 `NodeRewardService` 基础奖励；取消只保留冻结交互，不返回地图。
+- `grant_techniques`、`grant_inner_skills`、`grant_consumables`、`grant_items` 统一复用
+  `RunMutationService` 工作副本与回滚边界，内容引用在加载期及运行时双重校验。
+- `MapNavigationService` 删除 combat／elite／boss 的重复奖励整数表；基础奖励仍只来自
+  `node_rewards.json`，功行仍只在奖励领取成功后结算。
+- v1 存档以可选 `pending_node_interaction` 和 `resume_interaction` 恢复冻结选择，不提高 schema；
+  恢复不调用 Handler.prepare，旧存档缺少字段继续兼容。
+- 本阶段只建立协议，生产 Registry 保持为空，`event/rest/treasure` 继续 placeholder；正式休息、
+  事件、普通宝箱及 Boss 隐藏宝箱内容分别留给后续小型 Handler 任务。
 
 **验收**
 

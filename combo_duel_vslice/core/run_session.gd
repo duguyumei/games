@@ -35,6 +35,8 @@ const InnerSkillLoadoutServiceScript = preload(
     "res://core/inner_skill_loadout_service.gd")
 const RunBuildQueryServiceScript = preload(
     "res://core/run_build_query_service.gd")
+const NodeInteractionServiceScript = preload(
+    "res://core/node_interactions/node_interaction_service.gd")
 
 var game_log
 var _run_state
@@ -55,6 +57,7 @@ var _consumable_use_service
 var _inner_skill_repository
 var _inner_skill_loadout_service
 var _run_build_query_service
+var _node_interaction_service
 var _pending_reward = null
 var selected_starter_build_id: String = ""
 var runtime_profile
@@ -70,7 +73,8 @@ func _init(
         battle_session_factory_override = null,
         node_reward_service_override = null,
         runtime_profile_override = null,
-        consumable_use_service_override = null) -> void:
+        consumable_use_service_override = null,
+        node_interaction_service_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
@@ -127,7 +131,7 @@ func _init(
             _content_catalog.definition("node_rewards")
             if _content_catalog.loaded else {},
             RunMutationServiceScript.new(
-                _content_catalog.run_effect_registry)))
+                _content_catalog.run_effect_registry, _content_catalog)))
     _practice_service = PracticeServiceScript.new(_content_catalog)
     _inner_skill_repository = InnerSkillRepositoryScript.new()
     if _content_catalog.loaded:
@@ -145,6 +149,13 @@ func _init(
             _content_catalog,
             ContentValidator.HAND_IDS,
             ContentValidator.POOL_IDS))
+    _node_interaction_service = (
+        node_interaction_service_override
+        if node_interaction_service_override != null
+        else NodeInteractionServiceScript.new(
+            _content_catalog.node_interaction_registry,
+            _node_reward_service.mutation_service,
+            _content_catalog))
     if not _content_catalog.loaded:
         game_log.record_system(
             "error",
@@ -190,6 +201,16 @@ func execute(command: Dictionary) -> CommandResult:
             result = _begin_node(str(command.get("node_id", "")))
         "complete_node":
             result = _complete_node()
+        "query_node_interaction":
+            result = _query_node_interaction()
+        "commit_node_interaction":
+            result = _commit_node_interaction(
+                str(command.get("interaction_token", command.get("token", ""))),
+                str(command.get("choice_id", "")),
+                command.get("choice_payload", {}))
+        "cancel_node_interaction":
+            result = _cancel_node_interaction(
+                str(command.get("interaction_token", command.get("token", ""))))
         "claim_reward":
             result = _claim_reward(str(command.get("bundle_id", "")))
         "complete_boss_chest":
@@ -321,6 +342,7 @@ func _setup_run(seed_value: int, starter_build_id: String) -> Dictionary:
     _event_queue.clear()
     _event_serial = 0
     _pending_reward = null
+    _node_interaction_service.clear()
     growth.reset(
         "run-%d" % seed_value,
         assembled["run_deck"],
@@ -359,11 +381,27 @@ func _begin_node(node_id: String) -> Dictionary:
         navigation.node_dispatch_context())
     if not dispatch.get("success", false):
         return dispatch
+    var interaction_result: Dictionary = {}
+    if str(dispatch.get("route", "")) == "interaction":
+        interaction_result = _node_interaction_service.prepare(
+            dispatch, growth, {
+                "source_kind": "map_node",
+                "source_id": node_id,
+                "run_seed": navigation.seed,
+            })
+        if not interaction_result.get("success", false):
+            return interaction_result
     var result: Dictionary = navigation.begin_node(node_id)
     if not result.get("success", false):
+        if not interaction_result.is_empty() \
+                and not interaction_result.get("reused", false):
+            _node_interaction_service.clear()
         return result
     _run_state.changed.emit()
     result["dispatch"] = dispatch.duplicate(true)
+    if not interaction_result.is_empty():
+        result["interaction"] = interaction_result.get(
+            "interaction", {}).duplicate(true)
     var entry: Dictionary = game_log.record_run(
         "node_lifecycle",
         "进入节点",
@@ -384,6 +422,14 @@ func _begin_node(node_id: String) -> Dictionary:
     return result
 
 func _complete_node() -> Dictionary:
+    var dispatch := _current_node_dispatch()
+    if not dispatch.get("success", false):
+        return dispatch
+    if str(dispatch.get("route", "")) == "interaction":
+        return {"success": false, "reason": "节点交互尚未成功提交"}
+    return _complete_node_to_reward()
+
+func _complete_node_to_reward() -> Dictionary:
     var act_before: int = navigation.act
     var result: Dictionary = navigation.complete_current_node_to_reward()
     if not result.get("success", false):
@@ -414,6 +460,68 @@ func _complete_node() -> Dictionary:
     })
     result["reward"] = _pending_reward.to_dict()
     return result
+
+func _query_node_interaction() -> Dictionary:
+    var gate := _node_interaction_gate()
+    if not gate.get("success", false):
+        return gate
+    var interaction: Dictionary = _node_interaction_service.query_active()
+    if interaction.is_empty():
+        return {"success": false, "reason": "当前没有待选择的节点交互"}
+    return {"success": true, "interaction": interaction}
+
+func _commit_node_interaction(
+        token: String,
+        choice_id: String,
+        choice_payload) -> Dictionary:
+    var gate := _node_interaction_gate()
+    if not gate.get("success", false):
+        return gate
+    var pending: Dictionary = _node_interaction_service.capture_pending()
+    if str(pending.get("node_id", "")) != navigation.current_node_id:
+        return {"success": false, "reason": "待提交交互与当前节点不一致"}
+    if token != str(pending.get("token", "")):
+        return {"success": false, "reason": "interaction_token 不匹配"}
+    var interaction_result: Dictionary = _node_interaction_service.commit(
+        token, choice_id, choice_payload, growth)
+    if not interaction_result.get("success", false):
+        return interaction_result
+    var completion: Dictionary = _complete_node_to_reward()
+    if not completion.get("success", false):
+        return completion
+    _node_interaction_service.clear()
+    completion["interaction_result"] = interaction_result.get(
+        "interaction_result", {}).duplicate(true)
+    completion["applied"] = interaction_result.get("applied", []).duplicate(true)
+    completion["changed"] = bool(interaction_result.get("changed", false))
+    completion["interaction_token"] = token
+    return completion
+
+func _cancel_node_interaction(token: String) -> Dictionary:
+    var gate := _node_interaction_gate()
+    if not gate.get("success", false):
+        return gate
+    var pending: Dictionary = _node_interaction_service.capture_pending()
+    if str(pending.get("node_id", "")) != navigation.current_node_id:
+        return {"success": false, "reason": "待取消交互与当前节点不一致"}
+    return _node_interaction_service.cancel(token)
+
+func _node_interaction_gate() -> Dictionary:
+    if navigation.phase != "node_in_progress":
+        return {"success": false, "reason": "当前阶段没有进行中的节点交互"}
+    var dispatch := _current_node_dispatch()
+    if not dispatch.get("success", false):
+        return dispatch
+    if str(dispatch.get("route", "")) != "interaction":
+        return {"success": false, "reason": "当前节点不是 interaction 路由"}
+    return {"success": true, "dispatch": dispatch}
+
+func _current_node_dispatch() -> Dictionary:
+    if navigation.current_node_id == "":
+        return {"success": false, "reason": "当前没有节点"}
+    return _node_dispatcher.dispatch(
+        navigation.node_definition(navigation.current_node_id),
+        navigation.node_dispatch_context())
 
 func _claim_reward(bundle_id: String) -> Dictionary:
     if navigation.phase != "awaiting_reward" or _pending_reward == null:

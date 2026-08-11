@@ -26,6 +26,10 @@ const ConsumableUseServiceScript = preload(
     "res://core/consumables/consumable_use_service.gd")
 const ContentValidatorScript = preload("res://core/content_validator.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
+const NodeInteractionHandlerRegistryScript = preload(
+    "res://core/node_interactions/node_interaction_handler_registry.gd")
+const NodeInteractionServiceScript = preload(
+    "res://core/node_interactions/node_interaction_service.gd")
 
 var content_catalog: ContentCatalog
 var game_log: StructuredGameLog
@@ -39,6 +43,8 @@ var run_effect_registry
 var run_mutation_service
 var consumable_effect_registry
 var consumable_use_service
+var node_interaction_registry
+var node_interaction_service
 
 func _init(runtime_profile_override: RuntimeProfile = null) -> void:
     runtime_profile = (
@@ -56,10 +62,14 @@ func initialize() -> bool:
     run_effect_registry = RunEffectHandlerRegistryScript.new()
     run_mutation_service = RunMutationServiceScript.new(run_effect_registry)
     consumable_effect_registry = ConsumableEffectHandlerRegistryScript.new()
+    node_interaction_registry = NodeInteractionHandlerRegistryScript.new()
     content_catalog = ContentCatalogScript.new(
         runtime_profile, null, run_effect_registry, null,
-        consumable_effect_registry)
+        consumable_effect_registry, node_interaction_registry)
     var loaded: bool = content_catalog.load_all()
+    run_mutation_service.content_catalog = content_catalog
+    node_interaction_service = NodeInteractionServiceScript.new(
+        node_interaction_registry, run_mutation_service, content_catalog)
     consumable_use_service = ConsumableUseServiceScript.new(
         consumable_effect_registry,
         content_catalog,
@@ -122,6 +132,7 @@ func create_run_session() -> RunSession:
         battle_factory,
         reward_service,
         runtime_profile,
-        consumable_use_service)
+        consumable_use_service,
+        node_interaction_service)
     session.configure_ai_settings_service(ai_settings_service)
     return session
