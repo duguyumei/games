@@ -4,6 +4,8 @@ extends RefCounted
 const HandlerScript = preload("res://core/passives/passive_rule_handler.gd")
 const OnPlayEffectsHandlerScript = preload(
     "res://core/passives/on_play_effects_passive_handler.gd")
+const CounterDefinitionScript = preload(
+    "res://core/passives/passive_counter_definition.gd")
 
 const HOOKS := [
     "action_preview",
@@ -100,6 +102,60 @@ func validate_configuration(behavior_id: String, configuration: Dictionary) -> A
     if current == null:
         return ["未注册的被动行为：%s" % behavior_id] as Array[String]
     return current.validate_configuration(configuration)
+
+func counter_definitions(
+        behavior_id: String,
+        configuration: Dictionary) -> Array:
+    var current = handler(behavior_id)
+    if current == null:
+        return []
+    var result: Array = []
+    var values = current.counter_definitions(configuration)
+    if not values is Array:
+        return result
+    for value in values:
+        if value is CounterDefinitionScript:
+            result.append(value)
+        elif value is Dictionary:
+            result.append(CounterDefinitionScript.new().configure(value))
+    return result
+
+func validate_counter_definitions(
+        behavior_id: String,
+        configuration: Dictionary) -> Array[String]:
+    var current = handler(behavior_id)
+    if current == null:
+        return ["未注册的被动行为：%s" % behavior_id] as Array[String]
+    var values = current.counter_definitions(configuration)
+    if not values is Array:
+        return ["counter_definitions 必须返回数组"] as Array[String]
+    var errors: Array[String] = []
+    var seen: Dictionary = {}
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary and not value is CounterDefinitionScript:
+            errors.append("counter_definitions[%d] 必须是对象或 PassiveCounterDefinition" % index)
+            continue
+        if value is Dictionary:
+            for required_field in ["counter_id", "default_value", "minimum", "retention_policy"]:
+                if not value.has(required_field):
+                    errors.append("counter_definitions[%d] 缺少 %s" % [index, required_field])
+            if value.has("default_value") and not value["default_value"] is int:
+                errors.append("counter_definitions[%d].default_value 必须是整数" % index)
+            if value.has("minimum") and not value["minimum"] is int:
+                errors.append("counter_definitions[%d].minimum 必须是整数" % index)
+            if value.has("maximum") and not value["maximum"] is int:
+                errors.append("counter_definitions[%d].maximum 必须是整数" % index)
+        var definition = (
+            value
+            if value is CounterDefinitionScript
+            else CounterDefinitionScript.new().configure(value))
+        for message in definition.validation_errors():
+            errors.append("counter_definitions[%d]：%s" % [index, message])
+        if seen.has(definition.counter_id):
+            errors.append("重复声明 counter_id：%s" % definition.counter_id)
+        seen[definition.counter_id] = true
+    return errors
 
 func execute(behavior_id: String, hook: String, context, configuration: Dictionary) -> Dictionary:
     var current = handler(behavior_id)

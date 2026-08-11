@@ -27,6 +27,7 @@ var last_recallable_consumable_id: String = ""
 var base_hand_limit_modifier: int = 0
 var hand_technique_multiplier_modifiers: Dictionary = {}
 var used_unique_consumable_ids: Array[String] = []
+var passive_counter_state: Dictionary = {}
 
 var has_consumable_ids: bool = false
 var has_item_ids: bool = false
@@ -46,6 +47,7 @@ var has_last_recallable_consumable_id: bool = false
 var has_base_hand_limit_modifier: bool = false
 var has_hand_technique_multiplier_modifiers: bool = false
 var has_used_unique_consumable_ids: bool = false
+var has_passive_counter_state: bool = false
 
 static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     var result := RunProgressSnapshot.new()
@@ -72,6 +74,7 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
         "hand_technique_multiplier_modifiers")
     result.has_used_unique_consumable_ids = values.has(
         "used_unique_consumable_ids")
+    result.has_passive_counter_state = values.has("passive_counter_state")
 
     for consumable_id in values.get("consumable_ids", []):
         result.consumable_ids.append(str(consumable_id))
@@ -103,6 +106,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
         "hand_technique_multiplier_modifiers", {}).duplicate(true)
     for consumable_id in values.get("used_unique_consumable_ids", []):
         result.used_unique_consumable_ids.append(str(consumable_id))
+    result.passive_counter_state = values.get(
+        "passive_counter_state", {}).duplicate(true)
     return result
 
 func to_dict() -> Dictionary:
@@ -145,6 +150,8 @@ func to_dict() -> Dictionary:
             hand_technique_multiplier_modifiers.duplicate(true))
     if has_used_unique_consumable_ids:
         result["used_unique_consumable_ids"] = used_unique_consumable_ids.duplicate()
+    if has_passive_counter_state:
+        result["passive_counter_state"] = passive_counter_state.duplicate(true)
     return result
 
 static func _normalized_practice_shop_state(value: Dictionary) -> Dictionary:

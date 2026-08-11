@@ -3,6 +3,8 @@ extends RefCounted
 
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const RunDeckScript = preload("res://core/run_deck.gd")
+const PassiveCounterStoreScript = preload(
+    "res://core/passives/run_passive_counter_store.gd")
 
 const CONSUMABLE_LIMIT := 3
 const EXPERIENCE_INTEREST_STEP := 5
@@ -27,6 +29,7 @@ var last_recallable_consumable_id: String = ""
 var base_hand_limit_modifier: int = 0
 var hand_technique_multiplier_modifiers: Dictionary = {}
 var used_unique_consumable_ids: Array[String] = []
+var passive_counter_store
 var _content_catalog
 
 const HAND_IDS := [
@@ -36,6 +39,7 @@ const HAND_IDS := [
 
 func _init(content_catalog = null, initialize_standard_deck: bool = true) -> void:
     _content_catalog = content_catalog
+    passive_counter_store = PassiveCounterStoreScript.new(content_catalog)
     run_deck = RunDeckScript.new(content_catalog)
     _initialize_hand_technique_progression(
         content_catalog.definition("sequences") if content_catalog != null else {})
@@ -69,6 +73,7 @@ func reset(
     base_hand_limit_modifier = 0
     hand_technique_multiplier_modifiers.clear()
     used_unique_consumable_ids.clear()
+    passive_counter_store.clear()
 
 func clear_practice_purchases() -> void:
     practice_purchases.clear()
@@ -117,6 +122,7 @@ func capture_mutation_state() -> Dictionary:
         "base_hand_limit_modifier": base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": hand_technique_multiplier_modifiers.duplicate(true),
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
+        "passive_counter_state": passive_counter_store.capture_state(),
     }
 
 func create_mutation_copy():
@@ -138,6 +144,15 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         state["run_deck"])
     if not deck_errors.is_empty():
         return deck_errors
+    var replacement_counter_store = PassiveCounterStoreScript.new(
+        _content_catalog)
+    var counter_errors: Array[String] = replacement_counter_store.replace_state(
+        state.get("passive_counter_state", {
+            "version": PassiveCounterStoreScript.SCHEMA_VERSION,
+            "entries": [],
+        }))
+    if not counter_errors.is_empty():
+        return counter_errors
     experience = int(state["experience"])
     life = int(state["life"])
     max_life = int(state["max_life"])
@@ -162,6 +177,9 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         "hand_technique_multiplier_modifiers", {}).duplicate(true)
     used_unique_consumable_ids.assign(
         state.get("used_unique_consumable_ids", []))
+    passive_counter_store = replacement_counter_store
+    passive_counter_store.clear_unowned(
+        learned_inner_skill_ids, item_ids)
     return []
 
 func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> void:
@@ -327,6 +345,7 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "base_hand_limit_modifier": base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": hand_technique_multiplier_modifiers.duplicate(true),
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
+        "passive_counter_state": passive_counter_store.capture_state(),
     })
 
 func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
@@ -352,6 +371,11 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
     if progress_snapshot.has_used_unique_consumable_ids:
         used_unique_consumable_ids.assign(
             progress_snapshot.used_unique_consumable_ids)
+    if progress_snapshot.has_passive_counter_state:
+        var counter_errors: Array[String] = passive_counter_store.replace_state(
+            progress_snapshot.passive_counter_state)
+        if not counter_errors.is_empty():
+            push_error("无法导入本局被动计数器：%s" % "；".join(counter_errors))
     if progress_snapshot.has_learned_technique_ids:
         learned_technique_ids.assign(progress_snapshot.learned_technique_ids)
     if progress_snapshot.has_learned_inner_skill_ids:
@@ -376,6 +400,11 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
         life = progress_snapshot.life
     if progress_snapshot.has_experience:
         experience = progress_snapshot.experience
+    if progress_snapshot.has_passive_counter_state \
+            or progress_snapshot.has_learned_inner_skill_ids \
+            or progress_snapshot.has_item_ids:
+        passive_counter_store.clear_unowned(
+            learned_inner_skill_ids, item_ids)
 
 func grow_life_to(new_max_life: int) -> void:
     var increase := new_max_life - max_life

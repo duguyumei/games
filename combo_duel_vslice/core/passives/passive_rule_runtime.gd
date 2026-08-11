@@ -14,6 +14,10 @@ const ExecutionPlanScript = preload(
     "res://core/passives/passive_rule_execution_plan.gd")
 const CapacityPolicyScript = preload(
     "res://core/passives/inner_skill_capacity_policy.gd")
+const CounterReadPortScript = preload(
+    "res://core/passives/passive_counter_read_port.gd")
+const CounterMutationPortScript = preload(
+    "res://core/passives/passive_counter_mutation_port.gd")
 
 var registry
 var source_resolver
@@ -121,13 +125,17 @@ func build_execution_plan(hook: String, context):
             }))
     return plan
 
-func dispatch_event(hook: String, context) -> Dictionary:
+func dispatch_event(
+        hook: String,
+        context,
+        counter_access: String = "none") -> Dictionary:
     var plan = build_execution_plan(hook, context)
     var results: Array = []
     if not plan.is_valid():
         return {"success": false, "plan": plan, "results": results, "errors": plan.errors.duplicate()}
     for invocation in plan.invocations:
-        var executed: Dictionary = execute_invocation(invocation)
+        var executed: Dictionary = execute_invocation(
+            invocation, null, counter_access)
         results.append(executed)
         if not executed.get("success", false):
             return {
@@ -138,16 +146,26 @@ func dispatch_event(hook: String, context) -> Dictionary:
             }
     return {"success": true, "plan": plan, "results": results, "errors": []}
 
-func execute_invocation(invocation, context_override = null) -> Dictionary:
+func execute_invocation(
+        invocation,
+        context_override = null,
+        counter_access: String = "none") -> Dictionary:
     var invocation_context = (
         context_override
         if context_override != null
         else invocation.context.for_invocation(invocation))
+    var port = _attach_counter_port(
+        invocation.source, invocation_context, counter_access)
     var result: Dictionary = registry.execute(
         invocation.source.behavior_id,
         invocation.hook,
         invocation_context,
         invocation.source.configuration)
+    if port != null and not port.is_valid():
+        result = {
+            "success": false,
+            "reason": "；".join(port.errors()),
+        }
     if not result.get("success", false):
         return {
             "success": false,
@@ -215,7 +233,7 @@ func execution_plan_fingerprint_values(plan) -> Dictionary:
     }
 
 func query_modifiers(hook: String, context) -> Dictionary:
-    return dispatch_event(hook, context)
+    return dispatch_event(hook, context, "read")
 
 func execution_counts_for(hook: String, context) -> Dictionary:
     var plan = build_execution_plan(hook, context)
@@ -237,11 +255,14 @@ func _resolve_additional_executions(target_source, sources: Array, context) -> D
             provider_source, "passive_invocation_plan_query", query_context)
         if not activation.active:
             continue
+        var port = _attach_counter_port(provider_source, query_context, "read")
         var result: Dictionary = registry.execute(
             provider_source.behavior_id,
             "passive_invocation_plan_query",
             query_context,
             provider_source.configuration)
+        if port != null and not port.is_valid():
+            return {"success": false, "reason": "；".join(port.errors())}
         if not result.get("success", false):
             return result
         if not _repeat_result_targets(result, target_source):
@@ -272,3 +293,23 @@ func _repeat_result_targets(result: Dictionary, target_source) -> bool:
             and str(result["target_source_kind"]) != target_source.source_kind:
         return false
     return true
+
+func _attach_counter_port(source, context, access: String):
+    context.counter_read_port = null
+    context.counter_mutation_port = null
+    if access == "none" or context.owner == null:
+        return null
+    var store = context.owner.get("passive_counter_store")
+    if store == null:
+        return null
+    var definitions: Array = registry.counter_definitions(
+        source.behavior_id, source.configuration)
+    var port = (
+        CounterMutationPortScript.new(store, source, definitions)
+        if access == "mutation"
+        else CounterReadPortScript.new(store, source, definitions))
+    context.counter_read_port = port
+    context.source = source
+    if access == "mutation":
+        context.counter_mutation_port = port
+    return port

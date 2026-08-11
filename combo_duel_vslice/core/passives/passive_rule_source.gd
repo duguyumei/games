@@ -7,6 +7,7 @@ var source_instance_key: String = ""
 var definition: Dictionary = {}
 var behavior_id: String = ""
 var behavior_index: int = 0
+var state_key: String = ""
 var configuration: Dictionary = {}
 var source_order: int = 0
 
@@ -17,6 +18,7 @@ func configure(values: Dictionary):
     definition = values.get("definition", {}).duplicate(true)
     behavior_id = str(values.get("behavior_id", ""))
     behavior_index = int(values.get("behavior_index", 0))
+    state_key = str(values.get("state_key", ""))
     configuration = values.get("configuration", {}).duplicate(true)
     source_order = int(values.get("source_order", 0))
     return self
@@ -29,6 +31,7 @@ func to_dict() -> Dictionary:
         "definition": definition.duplicate(true),
         "behavior_id": behavior_id,
         "behavior_index": behavior_index,
+        "state_key": state_key,
         "configuration": configuration.duplicate(true),
         "source_order": source_order,
     }

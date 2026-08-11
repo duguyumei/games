@@ -482,11 +482,63 @@ add／multiply／set／script 表达式 DSL。领域服务再校验价格、费�
 
 成功行为通过 `RunPassiveEventService` 发送 `practice_opened`、
 `practice_purchase_committed`、`practice_pack_opened`、`meditation_committed`、
-`inner_skill_forgotten`、`battle_completed` 或 `node_completed`。Handler 只能从上下文取得
-`RunPassiveEffectPorts` 并调用已登记的 `RunMutationService` 效果，不能持有 RunSession、修习服务
-或导航服务。事件在成长工作副本上执行；任一 Invocation 失败时回滚整个副本，成功后才记录稳定
-事务令牌。节点来源快照只保存 source kind、内容 ID、实例键、behavior 索引和顺序，读档不会重放
-已提交事件。
+`inner_skill_forgotten`、`battle_completed` 或 `node_completed`。Handler 的领域修改只能通过上下文的
+`RunPassiveEffectPorts` 调用已登记的 `RunMutationService` 效果；有状态 Handler 另按 6.11 使用限域
+计数器端口，不能持有 RunSession、修习服务或导航服务。事件在成长工作副本上执行；任一 Invocation
+失败时回滚整个副本，成功后才记录稳定事务令牌。节点来源快照只保存 source kind、内容 ID、实例键、
+behavior 索引和顺序，读档不会重放已提交事件。
+
+## 6.11 被动持久整数计数器
+
+有状态 Handler 必须实现 `counter_definitions(configuration)`，并只声明整数计数器。内容 behavior
+同时提供稳定 `state_key`：
+
+```json
+{
+  "id": "some_growth_behavior",
+  "state_key": "stable_growth",
+  "configuration": {}
+}
+```
+
+```gdscript
+func counter_definitions(_configuration: Dictionary) -> Array:
+    return [{
+        "counter_id": "battle_progress",
+        "default_value": 0,
+        "minimum": 0,
+        "maximum": 2,
+        "retention_policy": "while_owned",
+    }]
+```
+
+Registry 与内容 Validator 会校验稳定 snake_case、整数上下界、默认值范围、保留策略、同一状态
+命名空间的重复 counter ID，以及有状态 behavior 是否声明 `state_key`。无状态 behavior 不要求补写
+`state_key`。计数器的持久身份固定为
+`source_kind + content_id + state_key + counter_id`；不得使用槽位、`source_order`、数组下标或
+`source_instance_key` 中的 slot index。
+
+纯查询从 `context.counter_read_port` 调用 `read(counter_id)` 或
+`has_non_default_value(counter_id)`；已提交事件从 `context.counter_mutation_port` 调用
+`write`、`increment` 或 `reset`。这里使用 `read/write` 而不是覆盖 Godot `Object.get/set`，语义仍是
+类型化的 get/set。端口自动限域到当前 Invocation；未声明 ID、非整数和低于 minimum 的写入失败，
+声明 maximum 时超出值明确封顶。Handler 不得跨来源拼装 key；确有跨来源需求时新增专用领域端口。
+
+计数器属于 `GrowthInventory.capture_mutation_state()` 的完整事务。后续 Invocation 读取同一事务中
+前一 Invocation 的最新值，ExecutionPlan 不重建；Handler、后续 Invocation、RunMutationService
+或基础领域事务失败时，计数器与其他成长字段一起回滚。重复 `transaction_token` 不会再次执行或
+增长。压制来源不建立 Invocation，但压制不会删除已有值。
+
+`retention_policy = "run"` 保留到新本局 reset；`while_owned` 在最后一个已获副本永久失去后由
+集中所有权清理移除。内功持有读取 `learned_inner_skill_ids`，物品持有读取 `item_ids`；卸下、重排、
+压制及只遗忘同 ID 的一份副本都不清除。同 ID 多副本共享内容级状态，因此两个副本分别触发时可以
+连续增长两次。需要逐副本状态时必须先引入持久实例 ID，不能借用装备槽位。
+
+存档字段为版本化的 `passive_counter_state`，只保存稳定排序的 key 与非默认整数值；未知来源、
+内容、state key、counter ID、重复键或越界值均拒绝载入，不保存 Handler、Callable、配置或完整
+定义。`RunProgressSnapshot` 用 `has_passive_counter_state` 区分缺失与空集合：带字段时绝对替换，
+缺失时保持现值。当前战斗层不拥有该状态，所以战后局部快照不回传空字段。本平台没有向正式内容
+JSON 增加任何内功或物品。
 
 ## 7. 什么时候只写 JSON
 

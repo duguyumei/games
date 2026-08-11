@@ -17,6 +17,8 @@ var invocation = null
 var plan_target_source = null
 var source_snapshot: Array = []
 var has_source_snapshot: bool = false
+var counter_read_port = null
+var counter_mutation_port = null
 
 func configure(values: Dictionary):
     actor = values.get("actor", values.get("owner"))
@@ -33,6 +35,8 @@ func configure(values: Dictionary):
     plan_target_source = values.get("plan_target_source")
     has_source_snapshot = values.has("source_snapshot")
     source_snapshot = values.get("source_snapshot", []).duplicate(true)
+    counter_read_port = values.get("counter_read_port")
+    counter_mutation_port = values.get("counter_mutation_port")
     return self
 
 func for_invocation(current_invocation):

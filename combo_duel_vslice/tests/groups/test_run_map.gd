@@ -10,6 +10,7 @@ func _initialize() -> void:
         "_test_run_terminal_result_contract_and_closure",
         "_test_inner_skill_loadout_and_forgetting",
         "_test_run_passive_queries_events_and_transactions",
+        "_test_run_passive_persistent_counters_and_state_ports",
         "_test_experience_interest_node_settlement",
         "_test_s2f2f1_formal_pills_and_transactions",
         "_test_s2f2f2_formal_curios_and_protocols",

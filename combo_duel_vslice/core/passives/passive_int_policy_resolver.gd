@@ -51,7 +51,7 @@ func resolve(request):
             "metadata": request.metadata.duplicate(true),
         }
         var executed: Dictionary = runtime.execute_invocation(
-            invocation, invocation_context)
+            invocation, invocation_context, "read")
         purity_error = _restore_if_query_mutated(request.owner, owner_state)
         if purity_error != "":
             return _failure(request, purity_error)

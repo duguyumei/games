@@ -311,6 +311,72 @@ class RunPassiveProbeHandler:
             return {"success": false, "reason": "Fake Handler 提交失败"}
         return {"success": true}
 
+class PassiveCounterProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    var stable_id: String
+
+    func _init(id_value: String = "passive_counter_probe") -> void:
+        stable_id = id_value
+
+    func behavior_id() -> String:
+        return stable_id
+
+    func supported_hooks() -> Array[String]:
+        return [
+            "battle_completed",
+            "inner_skill_forget_value_query",
+        ] as Array[String]
+
+    func validate_configuration(_configuration: Dictionary) -> Array[String]:
+        return []
+
+    func counter_definitions(configuration: Dictionary) -> Array:
+        var definition := {
+            "counter_id": configuration.get("counter_id", "battle_progress"),
+            "default_value": configuration.get("default_value", 0),
+            "minimum": configuration.get("minimum", 0),
+            "retention_policy": configuration.get(
+                "retention_policy", "while_owned"),
+        }
+        if configuration.has("maximum"):
+            definition["maximum"] = configuration["maximum"]
+        return [definition]
+
+    func handle(hook: String, context, configuration: Dictionary) -> Dictionary:
+        var counter_id := str(configuration.get(
+            "counter_id", "battle_progress"))
+        if hook == "inner_skill_forget_value_query":
+            var progress: int = context.counter_read_port.read(counter_id)
+            return {
+                "success": true,
+                "value": int(context.payload.get("current_value", 0)) \
+                    + progress * int(configuration.get("query_multiplier", 3)),
+            }
+        var port = context.counter_mutation_port
+        if str(configuration.get("mode", "")) == "undeclared":
+            port.increment("missing_counter", 1)
+            return {"success": true}
+        var before: int = port.read(counter_id)
+        var non_default_before: bool = port.has_non_default_value(counter_id)
+        var incremented: Dictionary = port.increment(
+            counter_id, configuration.get("increment_amount", 1))
+        if not incremented.get("success", false):
+            return incremented
+        if str(configuration.get("mode", "")) == "mutation_failure":
+            return context.payload["effect_ports"].apply_effects([{
+                "op": "missing_counter_test_operation",
+            }])
+        if str(configuration.get("mode", "")) == "fail":
+            return {"success": false, "reason": "Fake 计数器事件失败"}
+        return {
+            "success": true,
+            "before": before,
+            "after": int(incremented.get("value", before)),
+            "capped": bool(incremented.get("capped", false)),
+            "non_default_before": non_default_before,
+        }
+
 class DirectCardTriggerProbe:
     extends RefCounted
 
@@ -538,6 +604,7 @@ func _initialize() -> void:
     _test_defense_retention_policy_and_round_decay()
     _test_passive_runtime_capacity_suppression_invocations_and_items()
     _test_run_passive_queries_events_and_transactions()
+    _test_run_passive_persistent_counters_and_state_ports()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
@@ -1684,6 +1751,485 @@ func _test_run_passive_queries_events_and_transactions() -> void:
         RunSaveDataScript.new(old_save_values).restore_session(
             catalog).get("success", false),
         "旧存档缺少 F5B 可选字段仍可载入")
+
+func _test_run_passive_persistent_counters_and_state_ports() -> void:
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    _assert_true(
+        registry.register_handler(PassiveCounterProbeHandler.new()),
+        "注册 F5C 有状态 Fake Handler")
+    _assert_true(
+        registry.register_handler(
+            PassiveCounterProbeHandler.new("passive_counter_probe_two")),
+        "注册 F5C 重复命名空间校验 Handler")
+    _assert_true(
+        registry.register_handler(PassiveRepeatProbeHandler.new()),
+        "注册 F5C 额外执行 Fake Handler")
+
+    var base_catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(base_catalog.load_all(), "建立 F5C 内容测试基线")
+    var values := _catalog_definitions(base_catalog)
+    values["inner_skills"]["inner_skills"].append({
+        "id": "counter_inner", "name": "计数器测试内功",
+        "status": "formal", "description": "仅用于测试持久整数状态。",
+        "forget_value": 7,
+        "behaviors": [{
+            "id": "passive_counter_probe",
+            "state_key": "stable_growth",
+            "configuration": {
+                "counter_id": "battle_progress",
+                "minimum": 0,
+                "maximum": 2,
+                "retention_policy": "while_owned",
+                "query_multiplier": 3,
+            },
+        }],
+    })
+    values["items"]["items"].append_array([
+        {
+            "id": "run_counter_item", "name": "整局计数器测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "测试 run 保留策略。", "price": 1,
+            "behaviors": [{
+                "id": "passive_counter_probe", "state_key": "run_growth",
+                "configuration": {
+                    "counter_id": "victory_progress", "minimum": 0,
+                    "retention_policy": "run", "query_multiplier": 0,
+                },
+            }],
+        },
+        {
+            "id": "counter_repeat_item", "name": "计数器重复测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "令目标 Invocation 额外执行一次。", "price": 1,
+            "behaviors": [{
+                "id": "repeat_probe",
+                "configuration": {"target_content_id": "counter_inner"},
+            }],
+        },
+        {
+            "id": "counter_failure_item", "name": "计数器失败测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "写入后令 Handler 失败。", "price": 1,
+            "behaviors": [{
+                "id": "passive_counter_probe", "state_key": "failure_growth",
+                "configuration": {
+                    "counter_id": "failed_progress", "minimum": 0,
+                    "retention_policy": "while_owned", "mode": "fail",
+                    "query_multiplier": 0,
+                },
+            }],
+        },
+        {
+            "id": "counter_mutation_failure_item",
+            "name": "计数器领域端口失败测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "写入后令 RunMutationService 失败。", "price": 1,
+            "behaviors": [{
+                "id": "passive_counter_probe", "state_key": "mutation_growth",
+                "configuration": {
+                    "counter_id": "failed_progress", "minimum": 0,
+                    "retention_policy": "while_owned",
+                    "mode": "mutation_failure", "query_multiplier": 0,
+                },
+            }],
+        },
+        {
+            "id": "counter_undeclared_item", "name": "未声明访问测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "尝试访问其他计数器。", "price": 1,
+            "behaviors": [{
+                "id": "passive_counter_probe", "state_key": "declared_growth",
+                "configuration": {
+                    "counter_id": "declared_progress", "minimum": 0,
+                    "retention_policy": "while_owned", "mode": "undeclared",
+                    "query_multiplier": 0,
+                },
+            }],
+        },
+        {
+            "id": "counter_below_minimum_item", "name": "下界测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "尝试写入下界以下。", "price": 1,
+            "behaviors": [{
+                "id": "passive_counter_probe", "state_key": "minimum_growth",
+                "configuration": {
+                    "counter_id": "bounded_progress", "minimum": 0,
+                    "retention_policy": "while_owned", "increment_amount": -1,
+                    "query_multiplier": 0,
+                },
+            }],
+        },
+        {
+            "id": "counter_non_integer_item", "name": "非整数测试物品",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "尝试用非整数增加计数器。", "price": 1,
+            "behaviors": [{
+                "id": "passive_counter_probe", "state_key": "integer_growth",
+                "configuration": {
+                    "counter_id": "integer_progress", "minimum": 0,
+                    "retention_policy": "while_owned", "increment_amount": 1.5,
+                    "query_multiplier": 0,
+                },
+            }],
+        },
+    ])
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        catalog.load_from_definitions(values, base_catalog.paths),
+        "F5C Fake 内容通过计数器定义与 state_key 校验")
+
+    var missing_state_key_values := values.duplicate(true)
+    missing_state_key_values["inner_skills"]["inner_skills"][-1][
+        "behaviors"][0].erase("state_key")
+    var missing_state_key_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not missing_state_key_catalog.load_from_definitions(
+            missing_state_key_values, base_catalog.paths),
+        "有状态 behavior 缺少 state_key 时内容加载失败")
+    var invalid_counter_values := values.duplicate(true)
+    invalid_counter_values["inner_skills"]["inner_skills"][-1][
+        "behaviors"][0]["configuration"]["maximum"] = -1
+    var invalid_counter_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not invalid_counter_catalog.load_from_definitions(
+            invalid_counter_values, base_catalog.paths),
+        "计数器 maximum 小于 minimum 时内容加载失败")
+    var invalid_retention_values := values.duplicate(true)
+    invalid_retention_values["inner_skills"]["inner_skills"][-1][
+        "behaviors"][0]["configuration"]["retention_policy"] = "battle"
+    var invalid_retention_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not invalid_retention_catalog.load_from_definitions(
+            invalid_retention_values, base_catalog.paths),
+        "未知计数器保留策略在内容加载阶段失败")
+    var duplicate_namespace_values := values.duplicate(true)
+    duplicate_namespace_values["inner_skills"]["inner_skills"][-1][
+        "behaviors"].append({
+            "id": "passive_counter_probe_two",
+            "state_key": "stable_growth",
+            "configuration": {
+                "counter_id": "battle_progress", "minimum": 0,
+                "retention_policy": "while_owned",
+            },
+        })
+    var duplicate_namespace_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not duplicate_namespace_catalog.load_from_definitions(
+            duplicate_namespace_values, base_catalog.paths),
+        "同一状态命名空间重复 counter_id 时内容加载失败")
+    for invalid_definition_configuration in [
+            {"counter_id": "Bad-ID", "default_value": 0, "minimum": 0,
+                "retention_policy": "run"},
+            {"counter_id": "typed_progress", "default_value": "0",
+                "minimum": 0, "retention_policy": "run"},
+            {"counter_id": "typed_progress", "default_value": 0,
+                "minimum": "0", "retention_policy": "run"},
+            {"counter_id": "typed_progress", "default_value": 0,
+                "minimum": 0, "maximum": "2", "retention_policy": "run"}]:
+        _assert_true(
+            not registry.validate_counter_definitions(
+                "passive_counter_probe",
+                invalid_definition_configuration).is_empty(),
+            "Registry 拒绝非法 ID 或非整数计数器定义")
+
+    var runtime = PassiveRuleRuntimeScript.new(registry, catalog)
+    var int_resolver = PassiveIntPolicyResolverScript.new(runtime)
+    var mutation_service = RunMutationServiceScript.new(
+        RunEffectHandlerRegistryScript.new(), catalog)
+    var event_service = RunPassiveEventServiceScript.new(
+        runtime, mutation_service)
+    var growth = GrowthInventoryScript.new(catalog, false)
+    growth.learned_inner_skill_ids.assign(["counter_inner", "counter_inner"])
+    growth.equipped_inner_skill_ids.assign(["counter_inner", "counter_inner"])
+    var event_state = RunStateScript.new(null, growth)
+    var first_event := event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": growth,
+            "outcome": "player_victory",
+            "transaction_token": "f5c:battle:1",
+        }), growth, event_state)
+    _assert_true(first_event.get("success", false), "两副本计数器事件成功")
+    _assert_equal(first_event.get("invocation_count"), 2, "同 ID 两副本仍分别建立 Invocation")
+    _assert_equal(
+        first_event["results"][0]["result"].get("before"), 0,
+        "第一 Invocation 读取共享计数器初值")
+    _assert_true(
+        not first_event["results"][0]["result"].get(
+            "non_default_before", true),
+        "has_non_default_value 在初值时为 false")
+    _assert_equal(
+        first_event["results"][1]["result"].get("before"), 1,
+        "第二 Invocation 读取第一 Invocation 已提交的新值")
+    _assert_true(
+        first_event["results"][1]["result"].get(
+            "non_default_before", false),
+        "has_non_default_value 在首次增长后为 true")
+    var shared_state: Dictionary = growth.passive_counter_store.capture_state()
+    _assert_equal(shared_state["entries"].size(), 1, "同 ID 多副本只保存一个内容级计数器")
+    _assert_equal(shared_state["entries"][0]["value"], 2, "共享计数器连续增长并达到上限")
+    var duplicate_event := event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": growth,
+            "transaction_token": "f5c:battle:1",
+        }), growth, event_state)
+    _assert_true(duplicate_event.get("duplicate", false), "重复事务令牌返回 duplicate")
+    _assert_equal(
+        growth.passive_counter_store.capture_state(), shared_state,
+        "重复事务令牌不重复增长计数器")
+
+    growth.equipped_inner_skill_ids.assign(["counter_inner"])
+    var repository = InnerSkillRepositoryScript.new()
+    repository.configure(catalog.definition("inner_skills"))
+    var loadout = InnerSkillLoadoutServiceScript.new(
+        growth, repository, null, runtime)
+    loadout.use_passive_services(
+        runtime, int_resolver, event_service, event_state)
+    var query_state_before := growth.capture_mutation_state()
+    var forget_query_one := loadout.query_forget_value("counter_inner")
+    var forget_query_two := loadout.query_forget_value("counter_inner")
+    _assert_equal(forget_query_one.get("forget_value"), 13, "纯查询读取 progress 并计算 base + progress × 3")
+    _assert_equal(forget_query_one, forget_query_two, "重复纯查询结果确定且一致")
+    _assert_equal(growth.capture_mutation_state(), query_state_before, "纯查询不修改计数器或其他成长状态")
+    _assert_true(
+        runtime.build_execution_plan(
+            "inner_skill_forget_value_query", {"owner": growth}).is_valid(),
+        "ExecutionPlan 不因计数器变化重新规划")
+    var capped_event := event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": growth,
+            "transaction_token": "f5c:battle:capped",
+        }), growth, event_state)
+    _assert_true(
+        capped_event["results"][0]["result"].get("capped", false),
+        "超过声明 maximum 时采用明确封顶语义")
+
+    var set_loadout_result := loadout.set_loadout([], 0)
+    _assert_true(set_loadout_result.get("success", false), "卸下有状态内功成功")
+    _assert_equal(
+        growth.passive_counter_store.capture_state(), shared_state,
+        "卸下内功不清除 while_owned 进度")
+    runtime.suppression_service.apply({
+        "suppression_id": "f5c-counter-suppression",
+        "target_content_id": "counter_inner",
+        "blocked_hooks": ["battle_completed"],
+        "reason": "F5C 临时压制",
+    })
+    _assert_equal(
+        growth.passive_counter_store.capture_state(), shared_state,
+        "临时压制不清除已有进度")
+    runtime.suppression_service.clear()
+
+    var suppression_growth = GrowthInventoryScript.new(catalog, false)
+    suppression_growth.learned_inner_skill_ids.assign(["counter_inner"])
+    suppression_growth.equipped_inner_skill_ids.assign(["counter_inner"])
+    var suppression_state = RunStateScript.new(null, suppression_growth)
+    _assert_true(event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": suppression_growth,
+            "transaction_token": "f5c:suppression:seed",
+        }), suppression_growth, suppression_state).get("success", false),
+        "建立压制恢复测试进度")
+    var suppression_progress: Dictionary = (
+        suppression_growth.passive_counter_store.capture_state())
+    runtime.suppression_service.apply({
+        "suppression_id": "f5c-counter-suppression-active",
+        "target_content_id": "counter_inner",
+        "blocked_hooks": ["battle_completed"],
+        "reason": "F5C Invocation 压制",
+    })
+    var suppressed_event := event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": suppression_growth,
+            "transaction_token": "f5c:suppression:blocked",
+        }), suppression_growth, suppression_state)
+    _assert_equal(
+        suppressed_event.get("invocation_count"), 0,
+        "被压制来源不建立 Invocation")
+    _assert_equal(
+        suppression_growth.passive_counter_store.capture_state(),
+        suppression_progress,
+        "压制期间不增长也不删除计数器")
+    runtime.suppression_service.clear()
+    _assert_true(event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": suppression_growth,
+            "transaction_token": "f5c:suppression:restored",
+        }), suppression_growth, suppression_state).get("success", false),
+        "压制解除后来源恢复执行")
+    _assert_equal(
+        suppression_growth.passive_counter_store.capture_state()[
+            "entries"][0]["value"],
+        2,
+        "压制解除后从原有进度继续增长")
+
+    var repeated_growth = GrowthInventoryScript.new(catalog, false)
+    repeated_growth.learned_inner_skill_ids.assign(["counter_inner"])
+    repeated_growth.equipped_inner_skill_ids.assign(["counter_inner"])
+    repeated_growth.item_ids.assign(["counter_repeat_item"])
+    var repeated_state = RunStateScript.new(null, repeated_growth)
+    var repeated_event := event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": repeated_growth,
+            "transaction_token": "f5c:repeat:1",
+        }), repeated_growth, repeated_state)
+    _assert_equal(repeated_event.get("invocation_count"), 2, "额外执行产生相邻的第二次 Invocation")
+    _assert_equal(repeated_event["results"][1]["result"].get("before"), 1, "额外执行读取第一次修改后的最新值")
+
+    for failure_case in [
+            ["counter_failure_item", "f5c:failure:handler"],
+            ["counter_mutation_failure_item", "f5c:failure:mutation"],
+            ["counter_undeclared_item", "f5c:failure:undeclared"],
+            ["counter_below_minimum_item", "f5c:failure:minimum"],
+            ["counter_non_integer_item", "f5c:failure:integer"]]:
+        var failure_growth = GrowthInventoryScript.new(catalog, false)
+        failure_growth.item_ids.assign([str(failure_case[0])])
+        var failure_state = RunStateScript.new(null, failure_growth)
+        var failure_before := failure_growth.capture_mutation_state()
+        var failed := event_service.dispatch(
+            RunPassiveEventContextScript.new().configure({
+                "hook": "battle_completed", "owner": failure_growth,
+                "transaction_token": str(failure_case[1]),
+            }), failure_growth, failure_state)
+        _assert_true(not failed.get("success", false), "%s 明确失败" % str(failure_case[0]))
+        _assert_equal(failure_growth.capture_mutation_state(), failure_before, "失败后计数器与其他成长字段完整回滚")
+        _assert_true(failure_state.committed_passive_event_tokens.is_empty(), "失败事件不留下去重令牌")
+    var undeclared_growth = GrowthInventoryScript.new(catalog, false)
+    undeclared_growth.item_ids.assign(["counter_undeclared_item"])
+    var undeclared_state = RunStateScript.new(null, undeclared_growth)
+    var undeclared_result := event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": undeclared_growth,
+            "transaction_token": "f5c:undeclared:detail",
+        }), undeclared_growth, undeclared_state)
+    _assert_true(
+        str(undeclared_result.get("reason", "")).contains("counter_undeclared_item")
+            and str(undeclared_result.get("reason", "")).contains("passive_counter_probe")
+            and str(undeclared_result.get("reason", "")).contains("declared_growth")
+            and str(undeclared_result.get("reason", "")).contains("missing_counter"),
+        "未声明访问错误包含内容、behavior、state_key 与 counter_id")
+
+    var ownership_growth = GrowthInventoryScript.new(catalog, false)
+    ownership_growth.learned_inner_skill_ids.assign(["counter_inner", "counter_inner"])
+    ownership_growth.equipped_inner_skill_ids.assign(["counter_inner"])
+    var ownership_state = RunStateScript.new(null, ownership_growth)
+    _assert_true(event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": ownership_growth,
+            "transaction_token": "f5c:ownership:seed",
+        }), ownership_growth, ownership_state).get("success", false),
+        "建立 while_owned 遗忘测试进度")
+    ownership_growth.equipped_inner_skill_ids.clear()
+    var ownership_loadout = InnerSkillLoadoutServiceScript.new(
+        ownership_growth, repository, null, runtime)
+    ownership_loadout.use_passive_services(
+        runtime, int_resolver, event_service, ownership_state)
+    _assert_true(ownership_loadout.forget_inner_skill("counter_inner").get("success", false), "遗忘第一副本成功")
+    _assert_equal(
+        ownership_growth.passive_counter_store.capture_state()["entries"].size(),
+        1,
+        "仍持有同 ID 另一副本时 while_owned 进度保留")
+    _assert_true(ownership_loadout.forget_inner_skill("counter_inner").get("success", false), "遗忘最后副本成功")
+    _assert_true(
+        ownership_growth.passive_counter_store.capture_state()["entries"].is_empty(),
+        "最后一个副本永久失去后集中清除 while_owned 进度")
+
+    var run_growth = GrowthInventoryScript.new(catalog, false)
+    run_growth.item_ids.assign(["run_counter_item"])
+    var run_state = RunStateScript.new(null, run_growth)
+    _assert_true(event_service.dispatch(
+        RunPassiveEventContextScript.new().configure({
+            "hook": "battle_completed", "owner": run_growth,
+            "transaction_token": "f5c:run:seed",
+        }), run_growth, run_state).get("success", false),
+        "建立 run 保留策略进度")
+    var run_counter_state: Dictionary = run_growth.passive_counter_store.capture_state()
+    var without_item := run_growth.capture_mutation_state()
+    without_item["item_ids"] = []
+    _assert_true(run_growth.replace_mutation_state(without_item).is_empty(), "永久失去 run 来源内容事务成功")
+    _assert_equal(
+        run_growth.passive_counter_store.capture_state(), run_counter_state,
+        "run 计数器在来源失去后仍保留到本局结束")
+
+    var full_snapshot = run_growth.to_progress_snapshot()
+    _assert_true(full_snapshot.has_passive_counter_state, "完整本局快照携带计数器绝对状态")
+    var snapshot_target = GrowthInventoryScript.new(catalog, false)
+    snapshot_target.apply_progress_snapshot(full_snapshot)
+    _assert_equal(snapshot_target.passive_counter_store.capture_state(), run_counter_state, "带字段快照绝对替换计数器")
+    snapshot_target.apply_progress_snapshot(full_snapshot)
+    _assert_equal(snapshot_target.passive_counter_store.capture_state(), run_counter_state, "同一绝对快照应用两次不重复增长")
+    snapshot_target.apply_progress_snapshot(
+        RunProgressSnapshotScript.from_dict({"experience": 99}))
+    _assert_equal(snapshot_target.passive_counter_store.capture_state(), run_counter_state, "缺失计数器字段的部分快照不清空现有状态")
+    snapshot_target.apply_progress_snapshot(
+        RunProgressSnapshotScript.from_dict({
+            "passive_counter_state": {"version": 1, "entries": []},
+        }))
+    _assert_true(snapshot_target.passive_counter_store.capture_state()["entries"].is_empty(), "带字段空状态执行绝对清空")
+    _assert_true(
+        not RunProgressSnapshotScript.from_dict({"life": 1}).has_passive_counter_state,
+        "战斗侧未拥有计数器时不会伪造空字段")
+    var battle_return_snapshot = BattleSetupServiceScript.new(
+        catalog).capture_progress(
+            BattleSideScript.new("F5C 战斗快照", "f5c-battle"),
+            RunDeckScript.new(catalog))
+    _assert_true(
+        not battle_return_snapshot.has_passive_counter_state,
+        "当前战斗回传快照不以空计数器覆盖本局状态")
+
+    var save_session: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog)
+    _assert_true(save_session.execute({
+        "type": "setup_run", "seed": 5451}).success, "建立 F5C 存档测试本局")
+    save_session.growth.item_ids.assign(["run_counter_item"])
+    save_session.growth.replace_mutation_state(run_growth.capture_mutation_state())
+    var save_values: Dictionary = RunSaveDataScript.new().capture(
+        save_session).to_dict()
+    _assert_equal(
+        save_values["growth"]["passive_counter_state"], run_counter_state,
+        "存档输出版本化、稳定排序的计数器 entries")
+    var restored := RunSaveDataScript.new(save_values).restore_session(catalog)
+    _assert_true(restored.get("success", false), "计数器存档可验证并恢复")
+    _assert_equal(
+        restored["run_session"].growth.passive_counter_store.capture_state(),
+        run_counter_state,
+        "读档恢复绝对计数器状态")
+    var old_save_values := save_values.duplicate(true)
+    old_save_values["growth"].erase("passive_counter_state")
+    var old_restored := RunSaveDataScript.new(old_save_values).restore_session(catalog)
+    _assert_true(old_restored.get("success", false), "旧存档缺少计数器字段时兼容为空集合")
+    _assert_true(
+        old_restored["run_session"].growth.passive_counter_store.capture_state()["entries"].is_empty(),
+        "旧存档不会继承外部计数器状态")
+    for corrupt_state in [
+            {"version": 1, "entries": [
+                run_counter_state["entries"][0],
+                run_counter_state["entries"][0],
+            ]},
+            {"version": 1, "entries": [{
+                "source_kind": "item", "content_id": "missing_item",
+                "state_key": "run_growth", "counter_id": "victory_progress",
+                "value": 1,
+            }]},
+            {"version": 1, "entries": [{
+                "source_kind": "inner_skill", "content_id": "counter_inner",
+                "state_key": "stable_growth", "counter_id": "battle_progress",
+                "value": 3,
+            }]}]:
+        var corrupt_save := save_values.duplicate(true)
+        corrupt_save["growth"]["passive_counter_state"] = corrupt_state
+        _assert_true(
+            not RunSaveDataScript.new(corrupt_save).validate(catalog).is_empty(),
+            "重复键、未知定义或越界值的计数器存档明确失败")
+
+    run_growth.reset("f5c-reset", null, 100)
+    _assert_true(
+        run_growth.passive_counter_store.capture_state()["entries"].is_empty(),
+        "新本局 reset 清空所有 run 与 while_owned 计数器")
 
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()

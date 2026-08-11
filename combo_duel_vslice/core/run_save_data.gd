@@ -12,6 +12,8 @@ const NodeInteractionServiceScript = preload(
     "res://core/node_interactions/node_interaction_service.gd")
 const RunTerminalResultDTOScript = preload(
     "res://core/run_terminal_result_dto.gd")
+const PassiveCounterStoreScript = preload(
+    "res://core/passives/run_passive_counter_store.gd")
 
 const SCHEMA_VERSION := 1
 const CONTENT_VERSION := 1
@@ -98,6 +100,7 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
                 run_session.growth.base_hand_limit_modifier),
             "hand_technique_multiplier_modifiers": run_session.growth.hand_technique_multiplier_modifiers.duplicate(true),
             "used_unique_consumable_ids": run_session.growth.used_unique_consumable_ids.duplicate(),
+            "passive_counter_state": run_session.growth.passive_counter_store.capture_state(),
             "run_deck": run_session.growth.run_deck.to_snapshot(),
         },
     }
@@ -235,6 +238,9 @@ func validate(content_catalog = null) -> Array[String]:
                 errors.append("hand_technique_multiplier_modifiers 包含未知牌型：%s" % str(hand_id))
             elif not growth["hand_technique_multiplier_modifiers"][hand_id] is int:
                 errors.append("hand_technique_multiplier_modifiers.%s 必须是整数" % str(hand_id))
+    if growth.has("passive_counter_state") \
+            and not growth["passive_counter_state"] is Dictionary:
+        errors.append("growth.passive_counter_state 必须是对象")
     _validate_life_fields(growth, phase, terminal_value, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
@@ -266,6 +272,11 @@ func validate(content_catalog = null) -> Array[String]:
         node_state.get("node_passive_source_snapshot", []),
         catalog,
         errors)
+    if growth.has("passive_counter_state") \
+            and growth["passive_counter_state"] is Dictionary:
+        errors.append_array(
+            PassiveCounterStoreScript.new(catalog).validate_state(
+                growth["passive_counter_state"]))
     var deck = GrowthInventoryScript.new(catalog, false).run_deck
     errors.append_array(deck.restore_snapshot(growth["run_deck"]))
     for card in growth["run_deck"].get("cards", []):
@@ -337,6 +348,9 @@ func restore_session(
     if growth_state.has("used_unique_consumable_ids"):
         progress_values["used_unique_consumable_ids"] = (
             growth_state["used_unique_consumable_ids"])
+    if growth_state.has("passive_counter_state"):
+        progress_values["passive_counter_state"] = (
+            growth_state["passive_counter_state"])
     growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict(progress_values))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
@@ -739,6 +753,12 @@ func _normalize_v1_types() -> void:
     _normalize_optional_integer(growth, "consumable_use_sequence")
     _normalize_optional_integer(growth, "forgotten_inner_skill_count")
     _normalize_optional_integer(growth, "base_hand_limit_modifier")
+    var passive_counter_state = growth.get("passive_counter_state", {})
+    if passive_counter_state is Dictionary:
+        _normalize_optional_integer(passive_counter_state, "version")
+        for entry in passive_counter_state.get("entries", []):
+            if entry is Dictionary:
+                _normalize_optional_integer(entry, "value")
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
     var progression = growth.get("hand_technique_progression", {})
     if progression is Dictionary:

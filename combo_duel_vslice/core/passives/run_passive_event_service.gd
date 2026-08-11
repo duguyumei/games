@@ -64,7 +64,8 @@ func dispatch(context, growth, event_state) -> Dictionary:
     var ports = EffectPortsScript.new(
         growth, _mutation_service, context.to_dict())
     context.payload["effect_ports"] = ports
-    var dispatched: Dictionary = runtime.dispatch_event(context.hook, context)
+    var dispatched: Dictionary = runtime.dispatch_event(
+        context.hook, context, "mutation")
     if not dispatched.get("success", false):
         var rollback_errors: Array[String] = growth.replace_mutation_state(state_before)
         var reason := "；".join(dispatched.get("errors", []))

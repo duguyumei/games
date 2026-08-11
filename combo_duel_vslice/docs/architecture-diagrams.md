@@ -556,6 +556,9 @@ flowchart LR
     REG --> INT["PassiveIntPolicyResolver<br/>价格/遗忘/冥想/补充包纯查询"]
     REG --> EVENT["RunPassiveEventService<br/>成功提交后一次"]
     EVENT --> PORTS["RunPassiveEffectPorts<br/>受控 RunMutationService"]
+    INV --> CPORT["Counter Port<br/>查询只读/事件可写"]
+    CPORT --> CSTORE["RunPassiveCounterStore<br/>版本化整数 entries"]
+    GROWTH["GrowthInventory<br/>完整 mutation state"] --> CSTORE
     CAT["ContentCatalog<br/>load_all 前装配 Registry"] --> REG
 ```
 
@@ -567,6 +570,12 @@ suppression，执行计划不进入本局存档。
 返回并记录来源，不解释通用数值 DSL。购买、冥想、遗忘和开包在 `GrowthInventory` 工作副本中把
 基础修改与事件组成同一事务。节点开始来源快照和已提交事件令牌以稳定 ID 存档，因此当前节点或
 当前购买中新获得的来源不会追溯触发，读档也不会重放成功事件。
+
+有状态 behavior 由 Handler 声明计数器定义，内容提供稳定 `state_key`。Counter Port 以
+`source_kind + content_id + state_key + counter_id` 限定当前 Invocation，只允许查询读取、提交事件
+修改；Store 随 GrowthInventory 工作副本一同提交或回滚。`while_owned` 只在最后一个内容副本永久
+失去后清除，`run` 保留至新本局。RunProgressSnapshot 的可选字段采用绝对替换，战斗侧未拥有该
+状态时不回传空集合。
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 

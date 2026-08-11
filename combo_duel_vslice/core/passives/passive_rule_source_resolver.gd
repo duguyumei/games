@@ -87,6 +87,7 @@ func sources_from_snapshot(snapshot: Array) -> Array:
             "definition": definition,
             "behavior_id": str(behavior.get("id", "")),
             "behavior_index": behavior_index,
+            "state_key": str(behavior.get("state_key", "")),
             "configuration": behavior.get("configuration", {}),
             "source_order": int(value.get("source_order", 0)),
         }))
@@ -147,6 +148,7 @@ func _append_behaviors(
             "definition": definition,
             "behavior_id": str(behavior.get("id", "")),
             "behavior_index": behavior_index,
+            "state_key": str(behavior.get("state_key", "")),
             "configuration": behavior.get("configuration", {}),
             "source_order": source_order,
         }))
