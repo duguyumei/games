@@ -2,13 +2,11 @@ class_name StatusBehaviorRegistry
 extends RefCounted
 
 const CardHandlerScript = preload("res://core/statuses/card_status_behavior_handler.gd")
-const ActorHandlerScript = preload("res://core/statuses/actor_status_behavior_handler.gd")
 
 var _handlers_by_behavior: Dictionary = {}
 
 func _init() -> void:
     register_handler(CardHandlerScript.new())
-    register_handler(ActorHandlerScript.new())
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
     if handler == null or not handler.has_method("behavior_ids") \

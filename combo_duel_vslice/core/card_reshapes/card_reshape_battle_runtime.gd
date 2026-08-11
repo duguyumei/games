@@ -2,6 +2,8 @@ class_name CardReshapeBattleRuntime
 extends RefCounted
 
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
+const ReshapeContextScript = preload(
+    "res://core/card_reshapes/card_reshape_behavior_context.gd")
 
 ## 战斗事件与重塑行为之间的轻量适配器。
 ##
@@ -38,12 +40,6 @@ func _init(rules, effect_ports, rng: RandomNumberGenerator, timing_system) -> vo
         900,
         self,
         "_on_turn_end")
-    timing_system.register_weak_handler(
-        timing_system.TURN_END,
-        "card_reshape_runtime.turn_end_final",
-        1000,
-        self,
-        "_on_turn_end_final")
     timing_system.register_weak_handler(
         timing_system.BATTLE_END,
         "card_reshape_runtime.battle_victory",
@@ -144,14 +140,6 @@ func _on_turn_end(event) -> Dictionary:
         applied += _applied_count(_dispatch(card, "turn_end", event.actor))
     return {"success": true, "detail": "结算 %d 张留手真气的重塑行为" % applied}
 
-func _on_turn_end_final(event) -> Dictionary:
-    if event.actor == null:
-        return {"success": false, "detail": "最终回合结束缺少行动方"}
-    var applied := 0
-    for card in event.actor.hand.duplicate():
-        applied += _applied_count(_dispatch(card, "turn_end_final", event.actor))
-    return {"success": true, "detail": "最终结算 %d 张留手真气" % applied}
-
 func _on_battle_victory(event) -> Dictionary:
     var winner = event.context.get("winner")
     if winner == null:
@@ -175,11 +163,40 @@ func _on_battle_start(event) -> Dictionary:
     _action_serial = 0
     var applied := 0
     for side in event.context.get("actors", []):
+        var all_cards: Array = []
+        for zone in [side.draw_pile, side.hand, side.staging, side.discard_pile]:
+            for card in zone:
+                if not all_cards.has(card):
+                    all_cards.append(card)
+        for card in all_cards:
+            applied += _applied_count(_dispatch_permanent_enhancement_battle_start(
+                card, side))
         # 牌库尾部是顶。按数组正序逐张置顶，恰好保持原本从顶到底的抽取顺序。
         for card in side.draw_pile.duplicate():
             applied += _applied_count(_dispatch(
                 card, "battle_start_hand_priority", side))
     return {"success": true, "detail": "优先排列 %d 张起始真气" % applied}
+
+func _dispatch_permanent_enhancement_battle_start(card, holder) -> Array[Dictionary]:
+    var results: Array[Dictionary] = []
+    if card.return_to_origin_active() or str(card.reshape_enhancement) == "":
+        return results
+    var definition: Dictionary = _rules.definition(
+        "enhancement", str(card.reshape_enhancement))
+    for behavior_value in definition.get("behaviors", []):
+        var behavior: Dictionary = behavior_value
+        if str(behavior.get("trigger", "")) != "battle_start":
+            continue
+        results.append(_rules.registry.execute(
+            behavior,
+            ReshapeContextScript.new().configure({
+                "card": card,
+                "holder": holder,
+                "effect_ports": _effect_ports_ref.get_ref(),
+                "rng": _rng,
+                "trigger": "battle_start",
+            })))
+    return results
 
 func _dispatch(
         card,

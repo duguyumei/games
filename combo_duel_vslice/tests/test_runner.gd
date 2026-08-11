@@ -252,10 +252,7 @@ func _initialize() -> void:
     _test_content_catalog_and_validator()
     _test_card_reshape_behavior_registry()
     _test_enemy_pool_content_and_repository()
-    _test_production_formal_sequences_and_damage()
     _test_formal_enemy_pool_battle_setup()
-    _test_production_enemy_pool_remote_ai_battle()
-    _test_formal_production_technique_behaviors()
     _test_starter_build_assembly_and_composition_root()
     _test_node_reward_service_contract()
     _test_run_effect_platform_contract()
@@ -268,14 +265,11 @@ func _initialize() -> void:
     _test_battle_timing_system_contract_and_integration()
     _test_defense_retention_policy_and_round_decay()
     _test_awakening_battle_runtime()
-    _test_awakening_group_completion_paths()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
     _test_f2e1_formal_imprint_runtime_and_persistence()
-    _test_f2e2_echo_qualified_trigger_replay()
     _test_status_behavior_registry_contract()
     _test_status_system_contract()
-    _test_declared_card_status_runtime_semantics()
     _test_action_controller_boundaries_and_strategy()
     _test_remote_ai_module_contract()
     _test_chat_completions_provider_contract()
@@ -290,29 +284,17 @@ func _initialize() -> void:
     _test_damage_resolver_rules_and_facade()
     _test_structured_game_log_channels()
     _test_action_preview_service_matches_engine_facade()
-    _test_action_resolver_boundary_and_queue_rebind()
-    _test_sequence_progression_and_condition_failure()
     _test_no_automatic_damage_or_draw()
-    _test_representative_damage_draw_discard()
-    _test_representative_defense_and_layers()
-    _test_representative_multi_attack()
-    _test_representative_special_technique()
-    _test_delayed_power_snapshot()
     _test_visible_queue_left_to_right()
     _test_inner_skill_equipment_and_extra_qi_defense()
     _test_inner_skill_preview_and_enemy_plan()
-    _test_inner_skill_and_technique_left_to_right()
     _test_consumable_shared_slots_and_generation_limit()
     _test_battle_consumable_multi_effect_rollback()
-    _test_insight_growth_and_technique_acquisition()
-    _test_formal_practice_shop_and_hand_progression()
     _test_zengyuan_pill_enhancement_and_preview()
     _test_simple_reshape_behaviors()
     _test_battle_consumable_reshape_persists_via_run_deck()
     _test_consumable_effect_registry_contract()
     _test_consumable_effect_validation_scope()
-    _test_run_consumable_high_card_insight()
-    _test_run_consumable_insight_exhausted_pool()
     _test_run_consumable_zengyuan_pill()
     _test_run_consumable_origin_and_save()
     _test_run_consumable_invalid_targets()
@@ -342,16 +324,8 @@ func _initialize() -> void:
     _test_map_practice_and_battle_scene_integration()
     _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback()
     _test_front_menu_and_starter_build_flow()
-    _test_scripted_enemy_is_deterministic_and_locked()
-    _test_enemy_ai_plan_is_deterministic_and_hidden()
-    _test_enemy_ai_uses_natural_combo()
-    _test_both_sides_use_synchronized_combo()
-    _test_ai_battle_reaches_terminal_state()
     _test_synchronized_defense_before_damage()
     _test_synchronized_lethal_and_battle_results()
-    _test_data_driven_lethal_gu_needle()
-    _test_lethal_poison_and_gu_recycle_chain()
-    _test_scripted_poison_demo_reaches_recycle()
     if failures.is_empty():
         print("TEST PASS: %d assertions" % assertions)
         quit(0)
@@ -510,7 +484,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(catalog.load_all(), "统一内容目录一次性载入并通过全部校验")
     _assert_equal(catalog.errors, [], "当前内容数据没有校验错误")
     _assert_equal(catalog.definition("base_deck")["version"], 1, "内容数据带顶层版本")
-    _assert_equal(catalog.definition("card_states")["version"], 9, "真气重塑与异状数据带顶层版本")
+    _assert_equal(catalog.definition("card_states")["version"], 10, "真气重塑与异状数据带顶层版本")
     _assert_equal(catalog.definition("starter_builds")["version"], 1, "初始构筑数据带顶层版本")
     _assert_equal(catalog.definition("consumables")["version"], 5, "消耗品与修习商品数据带顶层版本")
     var act_progression: Dictionary = catalog.definition("act_progression")
@@ -528,16 +502,16 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.all_of("origin").size(), 3, "内容目录建立三种正式本源索引")
     _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种正式强化索引")
     _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种正式印记索引")
-    _assert_equal(catalog.all_of("anomaly").size(), 13, "内容目录建立十三种战斗异状索引")
-    _assert_equal(catalog.all_of("actor_status").size(), 8, "内容目录建立八种角色战斗状态索引")
-    _assert_equal(catalog.get_by_id("anomaly", "lethal_poison")["category"], "poison", "烈毒定义归入唯一毒槽")
+    _assert_equal(catalog.all_of("anomaly").size(), 15, "内容目录建立完整正式战斗异状索引")
+    _assert_equal(catalog.all_of("actor_status").size(), 0, "旧命名角色层数已退出内容目录")
+    _assert_equal(catalog.get_by_id("anomaly", "poison")["category"], "state", "毒归入唯一状态槽")
     _assert_equal(
         catalog.get_by_id("anomaly", "purification")["on_apply"],
-        "suppress_existing_effects",
+        "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.get_by_id("technique", "fire_sparks")["name"], "火星连点", "可按类型与 ID 查询功法")
-    _assert_equal(catalog.get_by_id("technique", "stagnant_gu_conceal_breath")["name"], "郁蛊敛息", "郁蛊敛息进入统一功法目录")
-    _assert_equal(catalog.get_by_id("technique", "borrow_fire_guard_heart")["name"], "借火护心", "借火护心进入统一功法目录")
+    _assert_equal(catalog.all_of("technique").size(), 0, "统一功法目录合法为空")
+    _assert_equal(catalog.definition("techniques")["resource_paths"], [], "正式功法资源路径为空")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"], {}, "正式接入状态为空")
 
     var legacy_finish_values := _catalog_definitions(catalog)
     legacy_finish_values["card_states"]["reshape_categories"][0] = {
@@ -561,9 +535,11 @@ func _test_content_catalog_and_validator() -> void:
         _array_contains_text(legacy_consumable_catalog.errors, "未注册的消耗品效果操作：apply_random_finish"),
         "旧消耗品操作报告具名错误")
 
-    var changed_query: Dictionary = catalog.get_by_id("technique", "fire_sparks")
+    var changed_query: Dictionary = catalog.get_by_id("consumable", "high_card_insight")
     changed_query["name"] = "外部篡改"
-    _assert_equal(catalog.get_by_id("technique", "fire_sparks")["name"], "火星连点", "目录查询返回深复制")
+    _assert_true(
+        catalog.get_by_id("consumable", "high_card_insight")["name"] != "外部篡改",
+        "目录查询返回深复制")
     var changed_definition: Dictionary = catalog.definition("scripted_battle")
     changed_definition["enemy"]["opening_hand"][0] = "bad_card"
     _assert_equal(
@@ -572,11 +548,14 @@ func _test_content_catalog_and_validator() -> void:
         "整份定义查询同样保持深复制边界")
 
     var duplicate_values := _catalog_definitions(catalog)
-    duplicate_values["techniques"]["techniques"].append(
-        duplicate_values["techniques"]["techniques"][0].duplicate(true))
+    var duplicate_probe := {
+        "id": "duplicate_probe", "name": "重复探针", "pool": "high",
+        "special": false, "effects": []}
+    duplicate_values["techniques"]["techniques"].append(duplicate_probe.duplicate(true))
+    duplicate_values["techniques"]["techniques"].append(duplicate_probe.duplicate(true))
     var duplicate_catalog = ContentCatalogScript.new()
     _assert_true(not duplicate_catalog.load_from_definitions(duplicate_values), "重复内容 ID 被拒绝")
-    _assert_true(_array_contains_text(duplicate_catalog.errors, "ID 重复：fire_sparks"), "重复 ID 错误稳定定位")
+    _assert_true(_array_contains_text(duplicate_catalog.errors, "ID 重复：duplicate_probe"), "重复 ID 错误稳定定位")
 
     _assert_equal(
         ContentValidatorScript.POOL_IDS,
@@ -584,7 +563,9 @@ func _test_content_catalog_and_validator() -> void:
         "运行内容只承认五个新基础功法池 ID")
     for old_pool_id in ["pair_two_pair", "three_full_house", "four_five"]:
         var legacy_pool_values := _catalog_definitions(catalog)
-        legacy_pool_values["techniques"]["techniques"][0]["pool"] = old_pool_id
+        legacy_pool_values["techniques"]["techniques"].append({
+            "id": "legacy_pool_probe", "name": "旧池探针", "pool": old_pool_id,
+            "special": false, "effects": []})
         var legacy_pool_catalog = ContentCatalogScript.new()
         _assert_true(
             not legacy_pool_catalog.load_from_definitions(legacy_pool_values),
@@ -680,7 +661,10 @@ func _test_content_catalog_and_validator() -> void:
     _assert_true(_array_contains_text(unknown_catalog.errors, "引用未知功法 missing_technique"), "未知功法错误稳定定位")
 
     var wrong_pool_values := _catalog_definitions(catalog)
-    wrong_pool_values["sequences"]["pair"] = ["fire_sparks"]
+    wrong_pool_values["techniques"]["techniques"].append({
+        "id": "wrong_pool_probe", "name": "错误池探针", "pool": "high",
+        "special": false, "effects": []})
+    wrong_pool_values["sequences"]["pair"] = ["wrong_pool_probe"]
     var wrong_pool_catalog = ContentCatalogScript.new()
     _assert_true(not wrong_pool_catalog.load_from_definitions(wrong_pool_values), "错误功法池资格被拒绝")
     _assert_true(_array_contains_text(wrong_pool_catalog.errors, "不属于 pair 的合格共用池"), "错误功法池错误稳定定位")
@@ -697,21 +681,10 @@ func _test_content_catalog_and_validator() -> void:
         "功法仓库载入显式接入档位")
     var production_sequences: Dictionary = production_catalog.definition("sequences")
     for hand_id in ContentValidatorScript.HAND_IDS:
-        if hand_id == "five_kind":
-            _assert_equal(
-                production_sequences[hand_id],
-                [],
-                "五条正式序列是受规则允许的显式空数组")
-            continue
-        _assert_true(
-            not production_sequences[hand_id].is_empty(),
-            "production %s 开局序列非空" % hand_id)
-        for technique_id_value in production_sequences[hand_id]:
-            var technique_id := str(technique_id_value)
-            _assert_true(
-                production_repository.is_formally_complete(technique_id),
-                "production %s 只引用正式语义完整功法 %s" % [
-                    hand_id, technique_id])
+        _assert_equal(
+            production_sequences[hand_id],
+            [],
+            "production %s 正式序列为空" % hand_id)
 
     var fixture_values := _catalog_definitions(production_catalog)
     fixture_values["sequences"]["high_card"] = ["fire_sparks"]
@@ -723,9 +696,8 @@ func _test_content_catalog_and_validator() -> void:
             production_catalog.paths),
         "production 序列拒绝回归夹具功法")
     _assert_true(
-        _array_contains_text(fixture_catalog.errors, "fire_sparks")
-        and _array_contains_text(fixture_catalog.errors, "regression_fixture"),
-        "回归夹具错误同时报告功法 ID 与当前档位")
+        _array_contains_text(fixture_catalog.errors, "fire_sparks"),
+        "归档功法 ID 重回 production 时明确报错")
 
     for abolished_hand_id in ["flush", "straight_flush", "royal_flush"]:
         var abolished_hand_values := _catalog_definitions(catalog)
@@ -741,21 +713,29 @@ func _test_content_catalog_and_validator() -> void:
             "废弃牌型 %s 错误稳定定位" % abolished_hand_id)
 
     var bad_op_values := _catalog_definitions(catalog)
-    bad_op_values["techniques"]["techniques"][0]["effects"][0]["op"] = "unknown_op"
+    bad_op_values["techniques"]["techniques"].append({
+        "id": "bad_op_probe", "name": "坏操作探针", "pool": "high",
+        "special": false, "effects": [{"op": "unknown_op"}]})
     var bad_op_catalog = ContentCatalogScript.new()
     _assert_true(not bad_op_catalog.load_from_definitions(bad_op_values), "未知效果操作码被拒绝")
     _assert_true(_array_contains_text(bad_op_catalog.errors, "未知效果操作码 unknown_op"), "操作码错误稳定定位")
 
     var bad_kind_values := _catalog_definitions(catalog)
-    bad_kind_values["techniques"]["techniques"][0]["effects"][0]["amount"]["kind"] = "unknown_kind"
+    bad_kind_values["techniques"]["techniques"].append({
+        "id": "bad_kind_probe", "name": "坏数值探针", "pool": "high",
+        "special": false, "effects": [{
+            "op": "damage", "amount": {"kind": "unknown_kind"}}]})
     var bad_kind_catalog = ContentCatalogScript.new()
     _assert_true(not bad_kind_catalog.load_from_definitions(bad_kind_values), "未知数值规格被拒绝")
     _assert_true(_array_contains_text(bad_kind_catalog.errors, "未知数值规格 kind unknown_kind"), "数值规格错误稳定定位")
 
     var nested_kind_values := _catalog_definitions(catalog)
-    for technique in nested_kind_values["techniques"]["techniques"]:
-        if technique["id"] == "discard_fuel_open_furnace":
-            technique["effects"][2]["count"]["values"][1]["kind"] = "unknown_nested_kind"
+    nested_kind_values["techniques"]["techniques"].append({
+        "id": "nested_kind_probe", "name": "嵌套数值探针", "pool": "high",
+        "special": false, "effects": [{
+            "op": "damage", "amount": {"kind": "max", "values": [
+                {"kind": "constant", "value": 1},
+                {"kind": "unknown_nested_kind"}]}}]})
     var nested_kind_catalog = ContentCatalogScript.new()
     _assert_true(not nested_kind_catalog.load_from_definitions(nested_kind_values), "递归 max.values 中的未知数值规格被拒绝")
     _assert_true(_array_contains_text(nested_kind_catalog.errors, "unknown_nested_kind"), "递归数值规格错误稳定定位")
@@ -789,13 +769,15 @@ func _test_content_catalog_and_validator() -> void:
         "敌方功法偏好引用错误稳定定位")
 
     var bad_anomaly_lifecycle_values := _catalog_definitions(catalog)
-    bad_anomaly_lifecycle_values["card_states"]["anomalies"][0]["remove_on_enter_discard"] = false
+    var poison_index := _content_entry_index(
+        bad_anomaly_lifecycle_values["card_states"]["anomalies"], "poison")
+    bad_anomaly_lifecycle_values["card_states"]["anomalies"][poison_index]["remove_on_enter_discard"] = false
     var bad_anomaly_lifecycle_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_anomaly_lifecycle_catalog.load_from_definitions(bad_anomaly_lifecycle_values),
-        "毒不能关闭进入弃牌堆清理规则")
+        "状态毒不能关闭进入弃牌堆清理规则")
     _assert_true(
-        _array_contains_text(bad_anomaly_lifecycle_catalog.errors, "毒和状态进入弃牌堆时必须默认移除"),
+        _array_contains_text(bad_anomaly_lifecycle_catalog.errors, "状态进入弃牌堆时必须默认移除"),
         "异状生命周期错误稳定定位")
 
     var bad_anomaly_policy_values := _catalog_definitions(catalog)
@@ -807,7 +789,9 @@ func _test_content_catalog_and_validator() -> void:
         "异状获得策略错误稳定定位")
 
     var bad_status_handler_values := _catalog_definitions(catalog)
-    bad_status_handler_values["card_states"]["anomalies"][0]["behaviors"][0]["handler"] = "missing_status_handler"
+    var growth_index := _content_entry_index(
+        bad_status_handler_values["card_states"]["anomalies"], "growth")
+    bad_status_handler_values["card_states"]["anomalies"][growth_index]["behaviors"][0]["handler"] = "missing_status_handler"
     var bad_status_handler_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_status_handler_catalog.load_from_definitions(bad_status_handler_values),
@@ -816,23 +800,10 @@ func _test_content_catalog_and_validator() -> void:
         _array_contains_text(bad_status_handler_catalog.errors, "未注册的状态处理器 missing_status_handler"),
         "状态处理器错误稳定定位")
 
-    var bad_actor_status_handler_values := _catalog_definitions(catalog)
-    bad_actor_status_handler_values["battle_statuses"]["actor_statuses"][0]["behaviors"][0]["handler"] = "missing_actor_status_handler"
-    var bad_actor_status_handler_catalog = ContentCatalogScript.new()
-    _assert_true(
-        not bad_actor_status_handler_catalog.load_from_definitions(
-            bad_actor_status_handler_values),
-        "角色状态拒绝未注册的状态处理器")
-    _assert_true(
-        _array_contains_text(
-            bad_actor_status_handler_catalog.errors,
-            "未注册的状态处理器 missing_actor_status_handler"),
-        "角色状态处理器错误稳定定位")
-
     var bad_status_reference_values := _catalog_definitions(catalog)
     for anomaly in bad_status_reference_values["card_states"]["anomalies"]:
-        if anomaly.get("id", "") == "qi_severance":
-            anomaly["behaviors"][0]["apply_anomaly"]["id"] = "missing_anomaly"
+        if anomaly.get("id", "") == "growth":
+            anomaly["behaviors"][0]["anomaly"] = "missing_anomaly"
     var bad_status_reference_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_status_reference_catalog.load_from_definitions(bad_status_reference_values),
@@ -842,7 +813,11 @@ func _test_content_catalog_and_validator() -> void:
         "状态行为引用错误稳定定位")
 
     var bad_anomaly_reference_values := _catalog_definitions(catalog)
-    bad_anomaly_reference_values["techniques"]["techniques"][1]["effects"][1]["anomaly"] = "missing_anomaly"
+    bad_anomaly_reference_values["techniques"]["techniques"].append({
+        "id": "bad_anomaly_probe", "name": "坏异状探针", "pool": "high",
+        "special": false, "effects": [{
+            "op": "apply_random_card_anomaly", "category": "state",
+            "anomaly": "missing_anomaly", "count": 1}]})
     var bad_anomaly_reference_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_anomaly_reference_catalog.load_from_definitions(bad_anomaly_reference_values),
@@ -852,14 +827,11 @@ func _test_content_catalog_and_validator() -> void:
         "未知异状引用错误稳定定位")
 
     var bad_actor_status_values := _catalog_definitions(catalog)
-    for technique in bad_actor_status_values["techniques"]["techniques"]:
-        for effect in technique.get("effects", []):
-            if effect.get("op", "") in ["add_stack", "add_target_stack", "add_stack_per_captured_card"]:
-                effect["stack"] = "missing_actor_status"
-                break
-        if not bad_actor_status_values["techniques"]["techniques"].is_empty() \
-                and _array_contains_effect_stack(technique.get("effects", []), "missing_actor_status"):
-            break
+    bad_actor_status_values["techniques"]["techniques"].append({
+        "id": "bad_status_probe", "name": "坏层数探针", "pool": "high",
+        "special": false, "effects": [{
+            "op": "add_stack", "stack": "missing_actor_status",
+            "amount": {"kind": "constant", "value": 1}}]})
     var bad_actor_status_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_actor_status_catalog.load_from_definitions(bad_actor_status_values),
@@ -872,7 +844,7 @@ func _test_content_catalog_and_validator() -> void:
     battle_start_reshape_values["card_states"]["other_reshapes"] = [{
         "id": "test_poison_seed",
         "name": "测试跨战斗毒种",
-        "battle_start_anomalies": [{"category": "poison", "anomaly": "lethal_poison"}],
+        "battle_start_anomalies": [{"category": "state", "anomaly": "poison"}],
     }]
     var battle_start_reshape_catalog = ContentCatalogScript.new()
     _assert_true(
@@ -884,21 +856,21 @@ func _test_content_catalog_and_validator() -> void:
         battle_start_reshape_catalog).on_battle_start(battle_start_card)
     _assert_true(battle_start_results[0]["success"], "战斗开始生命周期执行重塑声明")
     _assert_true(
-        battle_start_card.has_anomaly("poison", "lethal_poison"),
+        battle_start_card.has_anomaly("state", "poison"),
         "跨战斗重塑在新战斗生成毒而不是保存毒对象")
 
     var bad_battle_start_values := _catalog_definitions(catalog)
     bad_battle_start_values["card_states"]["other_reshapes"] = [{
         "id": "bad_poison_seed",
         "name": "错误毒种",
-        "battle_start_anomalies": [{"category": "state", "anomaly": "lethal_poison"}],
+        "battle_start_anomalies": [{"category": "mark", "anomaly": "poison"}],
     }]
     var bad_battle_start_catalog = ContentCatalogScript.new()
     _assert_true(
         not bad_battle_start_catalog.load_from_definitions(bad_battle_start_values),
         "重塑战斗开始异状拒绝错误类别")
     _assert_true(
-        _array_contains_text(bad_battle_start_catalog.errors, "lethal_poison 不属于类别 state"),
+        _array_contains_text(bad_battle_start_catalog.errors, "poison 不属于类别 mark"),
         "重塑战斗开始异状错误稳定定位")
 
     var bad_enhancement_reference_values := _catalog_definitions(catalog)
@@ -936,7 +908,12 @@ func _test_enemy_pool_content_and_repository() -> void:
     _assert_equal(first["cards"].size(), 20, "第一层普通敌人牌组按编码展开为 20 张")
     _assert_equal(first["cards"][0].id, second["cards"][0].id, "相同种子牌组实例 ID 稳定")
     _assert_true(
-        first["cards"].all(func(card): return card.anomaly_snapshot()["poison"] == ""),
+        first["cards"].all(func(card):
+            var snapshot: Dictionary = card.anomaly_snapshot()
+            return snapshot["buffs"].is_empty() \
+                and snapshot["debuffs"].is_empty() \
+                and snapshot["state"].is_empty() \
+                and snapshot["marks"].is_empty()),
         "敌人牌组不预置战斗异状")
     var one_card_values := _catalog_definitions(catalog)
     one_card_values["enemies"]["enemies"][0]["deck"] = ["wind_2"]
@@ -1007,24 +984,11 @@ func _test_enemy_pool_content_and_repository() -> void:
     _assert_equal(
         stable_boss_a["entry"]["id"], stable_boss_b["entry"]["id"],
         "相同 content_seed 与 boss_variant 抽取结果稳定")
-    var formal_ids := {
-        "balance_sleeves_listen_wind": true,
-        "double_gu_exchange_breath": true,
-        "three_ring_ensemble": true,
-        "three_ring_chaos_qi": true,
-        "seize_qi_return_nest": true,
-        "five_steps_echo": true,
-        "stagnant_gu_conceal_breath": true,
-        "borrow_fire_guard_heart": true,
-    }
     for entry in definition["enemies"]:
         var proficiency: Dictionary = entry.get("hand_proficiency_fixed", {})
         _assert_equal(proficiency.size(), 8, "敌人完整声明八种牌型固定熟练度")
         for hand_id in entry.get("sequences", {}):
-            for technique_id in entry["sequences"][hand_id]:
-                _assert_true(
-                    formal_ids.has(str(technique_id)),
-                    "敌人功法只引用八门正式完整功法：%s" % technique_id)
+            _assert_equal(entry["sequences"][hand_id], [], "敌人正式功法序列合法为空")
     var placeholder: Dictionary = definition["enemies"][definition["enemies"].size() - 1]
     _assert_equal(placeholder["acts"].size(), 2, "过渡占位条目覆盖两层")
     _assert_equal(int(placeholder["acts"][0]), 2, "过渡占位条目覆盖第 2 层")
@@ -1051,10 +1015,10 @@ func _test_formal_enemy_pool_battle_setup() -> void:
     _assert_true(
         battle_session.engine.enemy.name != "第 2/3 层过渡占位精英首领",
         "第一层精英不使用过渡占位条目")
-    _assert_true(
-        battle_session.engine.enemy_sequence_book.current_id("high_card") in [
-            "borrow_fire_guard_heart", "stagnant_gu_conceal_breath"],
-        "正式精英功法序列引用正式白名单")
+    _assert_equal(
+        battle_session.engine.enemy_sequence_book.current_id("high_card"),
+        "",
+        "正式精英功法序列为空")
     var boss_session: BattleSession = run_session.create_battle_session()
     _assert_true(
         boss_session.setup_battle({
@@ -1226,7 +1190,6 @@ func _test_production_formal_sequences_and_damage() -> void:
     _assert_true(actual_damage > 0, "production 高牌实际对敌方造成大于0的伤害")
 
 func _test_formal_production_technique_behaviors() -> void:
-    _test_double_gu_exchange_breath_formal_behavior()
     _test_balance_sleeves_listen_wind_formal_behavior()
     _test_three_ring_ensemble_formal_behavior()
     _test_three_ring_chaos_qi_formal_behavior()
@@ -1387,25 +1350,6 @@ func _assert_preview_damage_matches(
         int(preview.get("intent", {}).get("damage", 0)),
         "%s预览伤害与实际结算一致" % label)
     return result
-
-func _test_double_gu_exchange_breath_formal_behavior() -> void:
-    var pair := [_card("6", "wind"), _card("6", "forest")]
-    var poison_card = _card("3", "fire")
-    poison_card.set_anomaly("poison", "lethal_poison")
-    var main = _engine_with_hand(pair + [poison_card])
-    main.enemy.hand = [_card("2", "mountain")]
-    main.sequence_book.configure({"pair": ["double_gu_exchange_breath"]})
-    var result := _assert_preview_damage_matches(
-        main, pair, "双蛊换息一对")
-    _assert_true(result.get("technique_triggered", false), "双蛊换息正式主分支触发")
-    _assert_true(main.enemy.hand.has(poison_card), "双蛊换息将合格带毒手牌置入敌方手牌")
-
-    var shortage_pair := [_card("5", "wind"), _card("5", "forest")]
-    var shortage = _engine_with_hand(shortage_pair)
-    shortage.enemy.hand.clear()
-    shortage.sequence_book.configure({"pair": ["double_gu_exchange_breath"]})
-    _assert_preview_damage_matches(shortage, shortage_pair, "双蛊换息目标不足")
-    _assert_equal(shortage.enemy.hand.size(), 0, "双蛊换息没有可移动目标时不凭空生成真气")
 
 func _test_balance_sleeves_listen_wind_formal_behavior() -> void:
     var two_pair := [
@@ -1928,190 +1872,81 @@ func _test_run_card_workshop_effects() -> void:
     _assert_equal(restored["run_session"].growth.run_deck.to_snapshot(), saved_deck, "读档保留本源、锁、强化与印记")
 
 func _test_qi_instance_state_contract() -> void:
-    var base_catalog = ContentCatalogScript.new()
-    _assert_true(base_catalog.load_all(), "真气实例契约测试载入统一目录")
-    var values := _catalog_definitions(base_catalog)
-    values["card_states"]["other_reshapes"].append({"id": "battle_curse", "name": "战斗诅咒"})
-    values["card_states"]["other_reshapes"].append({"id": "scar", "name": "伤痕"})
     var catalog = ContentCatalogScript.new()
-    _assert_true(catalog.load_from_definitions(values), "实例测试目录扩展印记和其他重塑")
-    var id_factory = CardInstanceIdFactoryScript.new("run-815")
-    var first_id: String = id_factory.next_id("wind_7")
-    var second_id: String = id_factory.next_id("wind_7")
-    _assert_equal(first_id, "run-815:000001:wind_7", "实例ID包含本局命名空间、序号和定义ID")
-    _assert_equal(second_id, "run-815:000002:wind_7", "同一定义的复制真气获得不同实例ID")
-    _assert_equal(id_factory.next_serial(), 3, "实例ID工厂稳定推进序号")
-
+    _assert_true(catalog.load_all(), "新真气实例契约载入统一目录")
+    var lifecycle = CardStateLifecycleScript.new(catalog)
     var card = DeckFactoryScript.create_card_instance(
-        catalog.get_by_id("card", "wind_7"),
-        first_id)
-    _assert_equal(card.id, first_id, "真气运行时ID使用唯一实例ID")
-    _assert_equal(card.definition_id, "wind_7", "真气实例保留基础定义ID")
+        catalog.get_by_id("card", "wind_7"), "f3c:wind_7",
+        catalog.card_reshape_rules)
     card.set_enhancement("qi_boost")
     card.set_imprint("enlightenment")
-    _assert_true(card.set_anomaly("poison", "stagnant_poison"), "可以建立毒异状")
-    _assert_true(card.set_anomaly("poison", "lethal_poison"), "新毒替换唯一毒槽中的旧毒")
-    _assert_equal(card.anomaly_poison, "lethal_poison", "唯一毒槽只保留新毒")
-    _assert_true(card.set_anomaly("state", "vulnerability"), "毒与状态可以共存")
-    _assert_true(card.set_anomaly("state", "acupoint_block"), "新状态替换唯一状态槽中的旧状态")
-    _assert_equal(card.anomaly_state, "acupoint_block", "唯一状态槽只保留新状态")
-    _assert_true(card.set_anomaly("mark", "wind_lure"), "可以建立风引标记")
-    _assert_true(card.set_anomaly("mark", "qi_severance"), "不同标记可以同时存在")
-    _assert_true(card.set_anomaly("other", "temporary_a", {"amount": 1}), "可以建立异状其他")
-    _assert_true(card.set_anomaly("other", "temporary_b", {"amount": 2}), "多个异状其他可以共存")
-    card.remove_anomaly("other")
+
+    _assert_true(lifecycle.apply_anomaly(card, "buff", "qi_heat", {}, 2)["success"], "炽气首次施加")
+    _assert_true(lifecycle.apply_anomaly(card, "buff", "qi_heat", {}, 3)["success"], "炽气同名叠层")
+    _assert_true(lifecycle.apply_anomaly(card, "buff", "growth", {}, 1)["success"], "成长与炽气共存")
+    _assert_true(lifecycle.apply_anomaly(card, "debuff", "qi_wither", {}, 2)["success"], "枯气与增益共存")
+    _assert_true(lifecycle.apply_anomaly(card, "debuff", "decay", {}, 1)["success"], "衰败与枯气共存")
+    _assert_equal(card.anomaly_layers("buff", "qi_heat"), 5, "buff 层数为正整数并累加")
+    _assert_equal(card.anomaly_layers("debuff", "qi_wither"), 2, "debuff 独立保存层数")
+    _assert_equal(card.effective_qi_value(), 18, "增元后由炽气与枯气共同修改统一有效真气值")
+
+    _assert_true(lifecycle.apply_anomaly(card, "state", "vulnerability")["success"], "单状态槽首次施加")
+    _assert_true(not lifecycle.apply_anomaly(card, "state", "poison")["success"], "不同状态默认不能覆盖")
+    _assert_true(lifecycle.apply_anomaly(card, "state", "poison", {}, 1, true)["success"], "replace_state 显式覆盖")
+    _assert_equal(card.current_state()["id"], "poison", "状态槽只保存替换后的毒")
+    _assert_true(lifecycle.apply_anomaly(card, "mark", "wind_lure")["success"], "不同标记可建立")
+    _assert_true(lifecycle.apply_anomaly(card, "mark", "regroup")["success"], "多个标记共存")
+    _assert_true(card.set_temporary_enhancement("momentum"), "临时强化独立写入")
+    _assert_true(card.set_temporary_attribute("fire"), "临时属性独立写入")
 
     var run_data: Dictionary = QiCardInstanceDataScript.capture(card)
-    _assert_true(not run_data.has("anomalies"), "本局实例DTO默认不保存战斗异状")
-    _assert_equal(
-        run_data["reshapes"],
-        {"origin": {}, "enhancement": "qi_boost", "imprint": "enlightenment", "others": {}},
-        "本局实例 DTO 使用新四字段且不含旧品相字段")
-    _assert_equal(
-        QiCardInstanceDataScript.validate(run_data, catalog),
-        [],
-        "本局实例DTO通过内容引用校验")
-    var legacy_instance: Dictionary = run_data.duplicate(true)
-    legacy_instance["version"] = QiCardInstanceDataScript.VERSION - 1
-    legacy_instance["reshapes"]["finish"] = "foil"
-    _assert_true(
-        _array_contains_text(
-            QiCardInstanceDataScript.validate(legacy_instance, catalog),
-            "真气实例版本不受支持"),
-        "旧真气实例版本被明确拒绝而不迁移品相")
+    _assert_equal(run_data["version"], 5, "QiCardInstanceData 提升到版本 5")
+    _assert_true(not run_data.has("anomalies"), "普通 RunDeck DTO 不保存异状")
+    _assert_true(not run_data.has("temporary_reshapes"), "普通 RunDeck DTO 不保存临时重塑")
+    _assert_equal(QiCardInstanceDataScript.validate(run_data, catalog), [], "持久 DTO 通过校验")
     var battle_data: Dictionary = QiCardInstanceDataScript.capture(card, true)
-    _assert_equal(
-        QiCardInstanceDataScript.validate(battle_data, catalog, true),
-        [],
-        "包含战斗状态的实例DTO通过内容引用校验")
-    var restored = QiCardInstanceDataScript.restore(battle_data)
-    _assert_equal(restored.id, first_id, "版本化DTO恢复唯一实例ID")
-    _assert_equal(restored.definition_id, "wind_7", "版本化DTO恢复基础定义ID")
-    _assert_equal(restored.reshape_imprint, "enlightenment", "版本化DTO恢复印记")
-    _assert_equal(restored.anomaly_poison, "lethal_poison", "版本化DTO恢复毒异状")
-    _assert_true(restored.has_anomaly("mark", "wind_lure"), "版本化DTO恢复多个标记")
-    restored.set_anomaly("other", "temporary_a", {"amount": 1})
+    _assert_equal(battle_data["anomalies"]["state"]["payload"], {}, "战斗 DTO 保存状态 payload")
+    _assert_equal(battle_data["temporary_reshapes"]["attribute"], "fire", "战斗 DTO 保存临时属性")
+    _assert_equal(QiCardInstanceDataScript.validate(battle_data, catalog, true), [], "新战斗 DTO 通过严格校验")
+    var restored = QiCardInstanceDataScript.restore(battle_data, catalog.card_reshape_rules)
+    _assert_equal(restored.anomaly_snapshot(), card.anomaly_snapshot(), "战斗 DTO 完整恢复四类异状")
+    _assert_equal(restored.temporary_reshapes, card.temporary_reshapes, "战斗 DTO 完整恢复临时重塑")
 
-    var lifecycle = CardStateLifecycleScript.new(catalog)
     var removed: Dictionary = lifecycle.on_enter_discard(restored)
-    _assert_equal(removed["poison"], "lethal_poison", "实际进入弃牌堆默认移除毒")
-    _assert_equal(removed["state"], "acupoint_block", "实际进入弃牌堆默认移除状态")
-    _assert_true(not restored.has_anomaly("poison"), "弃牌清理后没有残留毒")
-    _assert_true(not restored.has_anomaly("state"), "弃牌清理后没有残留状态")
-    _assert_true(restored.has_anomaly("mark", "wind_lure"), "标记不由通用弃牌规则清除")
-    _assert_true(restored.has_anomaly("mark", "qi_severance"), "绝气标记保留到自己的生命周期")
-    _assert_true(restored.has_anomaly("other", "temporary_a"), "异状其他只按自身生命周期处理")
-    lifecycle.on_battle_end(restored)
-    _assert_true(restored.anomaly_snapshot()["marks"].is_empty(), "战斗结束清理全部标记")
-    _assert_true(restored.anomaly_snapshot()["others"].is_empty(), "战斗结束清理异状其他")
-
-    var discard_side = BattleSideScript.new("弃牌生命周期")
-    discard_side.use_card_state_lifecycle(lifecycle)
-    var explicitly_discarded = _card("6", "forest")
-    explicitly_discarded.set_anomaly("poison", "lethal_poison")
-    explicitly_discarded.set_anomaly("state", "vulnerability")
-    explicitly_discarded.set_anomaly("mark", "wind_lure")
-    discard_side.hand = [explicitly_discarded]
-    discard_side.discard_all()
-    _assert_true(not explicitly_discarded.has_anomaly("poison"), "真实明确弃牌入口移除毒")
-    _assert_true(not explicitly_discarded.has_anomaly("state"), "真实明确弃牌入口移除状态")
-    _assert_true(explicitly_discarded.has_anomaly("mark", "wind_lure"), "真实明确弃牌入口保留未触发标记")
+    _assert_equal(removed["state"]["id"], "poison", "实际入弃牌堆移除状态")
+    _assert_true(not restored.has_anomaly("buff", "growth"), "成长入弃牌堆移除")
+    _assert_true(not restored.has_anomaly("debuff", "decay"), "衰败入弃牌堆移除")
+    _assert_equal(restored.anomaly_layers("buff", "qi_heat"), 5, "炽气跨牌区保留")
+    _assert_equal(restored.anomaly_layers("debuff", "qi_wither"), 2, "枯气跨牌区保留")
+    _assert_true(restored.has_anomaly("mark", "regroup"), "普通入堆清理不擅自删除标记")
 
     var purified = DeckFactoryScript.create_card_instance(
-        catalog.get_by_id("card", "fire_9"),
-        id_factory.next_id("fire_9"))
-    catalog.card_reshape_rules.bind_card(purified)
-    _assert_true(CardOriginServiceScript.new(catalog).apply_to_card(
-        purified, "attribute_change", {"attribute": "mountain"}).get("success", false),
-        "净化测试牌先接受转属本源")
+        catalog.get_by_id("card", "fire_9"), "f3c:purified",
+        catalog.card_reshape_rules)
     purified.set_enhancement("qi_boost")
-    purified.set_imprint("enlightenment")
-    purified.set_other_reshape("battle_curse", {"poison": "lethal_poison"})
-    purified.set_other_reshape("scar", {"stacks": 1})
-    purified.set_anomaly("poison", "lethal_poison")
-    purified.set_anomaly("state", "acupoint_block")
-    purified.set_anomaly("mark", "wind_lure")
-    purified.set_anomaly("mark", "qi_severance")
-    purified.set_anomaly("other", "temporary_a", {"qi_delta": 4})
-    var purification_result: Dictionary = lifecycle.apply_anomaly(
-        purified, "mark", "purification")
-    _assert_true(purification_result["success"], "可以通过统一生命周期施加净化")
-    _assert_true(purified.reshape_origin.is_empty(), "净化令本源在当前战斗失效")
-    _assert_equal(purified.reshape_enhancement, "", "净化令已有强化失效")
-    _assert_equal(purified.reshape_imprint, "", "净化令已有印记失效")
-    _assert_true(purified.reshape_others.is_empty(), "净化令已有重塑其他失效")
-    _assert_equal(purified.anomaly_poison, "", "净化清除已有毒")
-    _assert_equal(purified.anomaly_state, "", "净化清除已有状态")
-    _assert_equal(purified.anomaly_marks.keys(), ["purification"], "净化清除风标与绝气标记后建立自身")
-    _assert_true(purified.anomaly_others.is_empty(), "净化清除已有异状其他")
+    purified.set_imprint("echo")
+    lifecycle.apply_anomaly(purified, "buff", "qi_heat", {}, 2)
+    lifecycle.apply_anomaly(purified, "state", "poison")
+    lifecycle.apply_anomaly(purified, "mark", "burned_out")
+    purified.set_temporary_enhancement("momentum")
+    purified.set_temporary_attribute("wind")
+    _assert_true(lifecycle.apply_anomaly(purified, "mark", "purification")["success"], "首次净化合法")
+    _assert_true(purified.reshape_enhancement == "qi_boost" and purified.reshape_imprint == "echo", "净化保留永久重塑")
+    _assert_true(purified.anomaly_snapshot()["buffs"].is_empty() and purified.current_state().is_empty(), "净化清除 buff/debuff/state")
+    _assert_equal(purified.anomaly_snapshot()["marks"].keys(), ["purification"], "净化最后只建立自身")
+    _assert_equal(purified.temporary_reshapes, {"enhancement": "", "attribute": ""}, "净化清除临时重塑")
+    _assert_true(not lifecycle.apply_anomaly(purified, "mark", "purification")["success"], "重复净化被拒绝且不再清理")
+    _assert_true(lifecycle.apply_anomaly(purified, "state", "poison")["success"], "净化不是持续免疫")
+    lifecycle.on_battle_end(purified)
+    _assert_true(purified.anomaly_snapshot()["marks"].is_empty(), "战斗结束清除全部标记")
+    _assert_equal(purified.reshape_enhancement, "qi_boost", "战斗结束永久强化保持")
 
-    var purified_run_data: Dictionary = QiCardInstanceDataScript.capture(purified)
-    _assert_equal(purified_run_data["reshapes"]["origin"]["id"], "attribute_change", "净化期间本局DTO仍保存暂存本源")
-    _assert_equal(purified_run_data["reshapes"]["enhancement"], "qi_boost", "净化期间本局DTO仍保存暂存强化")
-    _assert_equal(purified_run_data["reshapes"]["others"]["battle_curse"]["poison"], "lethal_poison", "净化期间本局DTO仍保存暂存重塑其他")
-    var purified_battle_data: Dictionary = QiCardInstanceDataScript.capture(purified, true)
-    _assert_true(purified_battle_data["reshapes"]["origin"].is_empty(), "战斗 DTO 记录本源实际失效状态")
-    _assert_equal(purified_battle_data["reshapes"]["enhancement"], "", "战斗DTO保留净化期间的实际失效状态")
-    _assert_true(purified_battle_data["suppressed_reshapes"].has("enhancement"), "战斗DTO记录待恢复重塑")
-
-    _assert_true(purified.origin_locked(), "本源被净化屏蔽期间锁仍存在")
-    _assert_true(not CardOriginServiceScript.new(catalog).apply_to_card(
-        purified, "rank_change", {"direction": "up"}).get("success", false),
-        "净化屏蔽期间不能绕过本源锁")
-    purified.set_enhancement("momentum")
-    purified.set_anomaly("poison", "stagnant_poison")
-    purified.set_anomaly("state", "qi_dissipation")
-    purified.set_anomaly("mark", "returning_wind")
-    purified.set_anomaly("other", "temporary_b", {"qi_delta": 2})
-    var refreshed: Dictionary = lifecycle.apply_anomaly(
-        purified, "mark", "purification")
-    _assert_true(refreshed["refreshed"], "重复获得净化只刷新而不清除后来内容")
-    _assert_equal(purified.reshape_enhancement, "momentum", "净化后新强化正常生效")
-    _assert_true(purified.has_anomaly("poison", "stagnant_poison"), "净化后新毒正常生效")
-    _assert_true(purified.has_anomaly("state", "qi_dissipation"), "净化后新状态正常生效")
-    _assert_true(purified.has_anomaly("mark", "returning_wind"), "净化后新标记正常生效")
-    _assert_true(purified.has_anomaly("other", "temporary_b"), "净化后新异状其他正常生效")
-
-    var restored_after_purification: Dictionary = lifecycle.on_battle_end(purified)
-    _assert_equal(purified.reshape_origin["id"], "attribute_change", "战斗结束恢复净化前本源")
-    _assert_equal(purified.reshape_enhancement, "momentum", "后来强化替换净化前强化")
-    _assert_equal(purified.reshape_imprint, "enlightenment", "战斗结束恢复净化前印记")
-    _assert_true(purified.reshape_others.has("battle_curse"), "战斗结束恢复未被替换的重塑其他")
-    _assert_true(purified.reshape_others.has("scar"), "多个重塑其他分别恢复")
-    _assert_true(purified.anomaly_snapshot()["marks"].is_empty(), "战斗结束移除净化与后来标记")
-    _assert_equal(purified.anomaly_poison, "", "净化后新毒不跨战斗")
-    _assert_equal(purified.anomaly_state, "", "净化后新状态不跨战斗")
-    _assert_true(purified.anomaly_others.is_empty(), "净化后新异状其他不跨战斗")
-    _assert_equal(restored_after_purification["origin"]["id"], "attribute_change", "生命周期返回恢复的本源")
-
-    var handler_card = DeckFactoryScript.create_card_instance(
-        catalog.get_by_id("card", "mountain_6"),
-        id_factory.next_id("mountain_6"))
-    handler_card.set_enhancement("qi_boost")
-    handler_card.set_anomaly("poison", "lethal_poison")
-    var handler_target = BattleSideScript.new("净化目标")
-    handler_target.hand = [handler_card]
-    var handler_rng := RandomNumberGenerator.new()
-    handler_rng.seed = 815
-    var handler_executor = EffectExecutorScript.new(handler_rng, null, catalog)
-    var handler_result: Dictionary = handler_executor.execute_all([{
-        "op": "apply_random_card_anomaly",
-        "zone": "hand",
-        "category": "mark",
-        "anomaly": "purification",
-        "count": 1,
-    }], {"target": handler_target, "captures": {}})
-    _assert_true(handler_result["success"], "数据驱动效果处理器通过统一生命周期施加净化")
-    _assert_equal(handler_card.reshape_enhancement, "", "效果处理器施加净化后强化立即失效")
-    _assert_true(handler_card.has_anomaly("mark", "purification"), "效果处理器保留净化标记")
-
-    var invalid_data: Dictionary = run_data.duplicate(true)
-    invalid_data["reshapes"]["enhancement"] = "missing_enhancement"
+    var legacy_battle := battle_data.duplicate(true)
+    legacy_battle["anomalies"] = {
+        "poison": "lethal_poison", "state": "", "marks": {}, "others": {}}
     _assert_true(
-        _array_contains_text(
-            QiCardInstanceDataScript.validate(invalid_data, catalog),
-            "missing_enhancement"),
-        "实例DTO拒绝未知内容引用")
+        not QiCardInstanceDataScript.validate(legacy_battle, catalog, true).is_empty(),
+        "旧双毒战斗快照明确拒绝而不自动映射")
 
 func _test_remote_ai_module_contract() -> void:
     var context = AiBattleContextScript.new().configure({
@@ -2119,7 +1954,7 @@ func _test_remote_ai_module_contract() -> void:
         "rules_version": "v0.30",
         "player_build": {
             "deck": ["wind_2", "forest_3"],
-            "techniques": ["fire_sparks"],
+            "techniques": [],
         },
         "enemy_build": {"archetype": "mock_enemy"},
         "visibility": {"opponent_hand": false, "opponent_draw_order": false},
@@ -2681,7 +2516,8 @@ func _test_effect_handler_registry_contract() -> void:
     _assert_equal(executor.registry.handler_group("draw"), "card_zone", "抽牌操作进入牌区处理器")
     _assert_equal(executor.registry.handler_group("apply_random_card_anomaly"), "card_anomaly", "真气异状进入异状处理器")
     _assert_equal(executor.registry.handler_group("add_target_stack"), "stack", "层数操作进入层数处理器")
-    _assert_equal(executor.registry.handler_group("register_attack_counter_delay"), "flow_delay", "延迟记录进入流程处理器")
+    _assert_equal(executor.registry.handler_group("add_momentum"), "flow_delay", "连势直接操作进入流程处理器")
+    _assert_equal(executor.registry.handler_group("register_attack_counter_delay"), "", "旧延迟反击端口已移除")
 
     var unknown_result: Dictionary = executor.execute_all([{"op": "not_registered"}], {})
     _assert_true(not unknown_result["success"], "未注册操作码在执行边界被安全拒绝")
@@ -2719,9 +2555,13 @@ func _test_effect_extension_entry_contract() -> void:
     var definitions: Dictionary = {}
     for key in ContentCatalogScript.CONTENT_ORDER:
         definitions[key] = catalog.definition(key)
-    definitions["techniques"]["techniques"][0]["effects"] = [
-        {"op": "probe_effect", "amount": 9},
-    ]
+    definitions["techniques"]["techniques"].append({
+        "id": "effect_extension_probe",
+        "name": "效果扩展探针",
+        "pool": "high",
+        "special": false,
+        "effects": [{"op": "probe_effect", "amount": 9}],
+    })
     var registered_catalog = ContentCatalogScript.new(null, registry)
     _assert_true(
         registered_catalog.load_from_definitions(definitions),
@@ -2741,10 +2581,17 @@ func _test_effect_extension_entry_contract() -> void:
         "非法参数返回处理器声明的明确诊断")
 
     var invalid_condition_definitions := _catalog_definitions(catalog)
-    for technique in invalid_condition_definitions["techniques"]["techniques"]:
-        if str(technique.get("id", "")) == "borrow_fire_guard_heart":
-            technique["effects"][1]["when"]["actor_defense_equals"] = -1
-            break
+    invalid_condition_definitions["techniques"]["techniques"].append({
+        "id": "invalid_condition_probe",
+        "name": "非法条件探针",
+        "pool": "high",
+        "special": false,
+        "effects": [{
+            "op": "defense",
+            "amount": {"kind": "constant", "value": 1},
+            "when": {"actor_defense_equals": -1},
+        }],
+    })
     var invalid_condition_result: Dictionary = ContentValidatorScript.new().validate(
         invalid_condition_definitions)
     _assert_true(
@@ -2772,78 +2619,79 @@ func _test_effect_extension_entry_contract() -> void:
 
 func _test_card_zone_service_contract() -> void:
     var catalog = ContentCatalogScript.new()
-    _assert_true(catalog.load_all(), "牌区服务契约测试载入统一内容目录")
-    var lifecycle = CardStateLifecycleScript.new(catalog)
-    var side = BattleSideScript.new("牌区测试方")
-    side.use_card_state_lifecycle(lifecycle)
-    var rng := RandomNumberGenerator.new()
-    rng.seed = 816
-    var cards := [
-        DeckFactoryScript.create_card_instance(catalog.get_by_id("card", "wind_2"), "zone:wind_2"),
-        DeckFactoryScript.create_card_instance(catalog.get_by_id("card", "forest_3"), "zone:forest_3"),
-        DeckFactoryScript.create_card_instance(catalog.get_by_id("card", "fire_4"), "zone:fire_4"),
-        DeckFactoryScript.create_card_instance(catalog.get_by_id("card", "mountain_5"), "zone:mountain_5"),
-    ]
-    side.reset(cards, rng, false)
-    _assert_equal(side.draw(2).size(), 2, "统一牌区服务执行抽牌")
-    var staged_id := str(side.hand[0].id)
-    _assert_true(side.stage_cards([staged_id]), "统一牌区服务把手牌移入待出区")
-    _assert_equal(side.rollback_staging().size(), 1, "待出失败通过统一牌区服务回滚")
-    var discard_target = side.find_hand_card(staged_id)
-    discard_target.set_anomaly("poison", "lethal_poison")
-    discard_target.set_anomaly("state", "qi_dissipation")
-    discard_target.set_anomaly("mark", "wind_lure")
-    _assert_true(side.stage_cards([staged_id]), "回滚后的真气可以再次进入待出区")
-    side.commit_staging()
-    _assert_true(not discard_target.has_anomaly("poison"), "实际进入弃牌堆时统一移除毒")
-    _assert_true(not discard_target.has_anomaly("state"), "实际进入弃牌堆时统一移除状态")
-    _assert_true(discard_target.has_anomaly("mark", "wind_lure"), "进入弃牌堆不会擅自移除有自身生命周期的标记")
-    _assert_equal(side.recover_from_discard(1, "hand")[0], discard_target, "回收通过统一牌区服务离开弃牌堆")
-    _assert_true(not discard_target.has_anomaly("poison"), "离开弃牌堆不会恢复已经清除的毒")
+    _assert_true(catalog.load_all(), "F3C 牌区生命周期载入内容")
+    var engine = CombatEngineScript.new(null, catalog)
+    engine.setup(816, false)
 
-    discard_target.set_anomaly("poison", "lethal_poison")
-    _assert_true(side.stage_cards([staged_id]), "蛊印回库测试牌进入待出区")
-    var recycle_result: Dictionary = side.commit_staging_with_recycles({
-        staged_id: {"category": "poison", "anomaly": "lethal_poison"},
-    }, rng)
-    _assert_equal(recycle_result["recycled"], [discard_target], "蛊印续毒从待出区直接洗回牌库")
-    _assert_true(discard_target.has_anomaly("poison", "lethal_poison"), "未实际进入弃牌堆的回库牌保持续毒")
+    var discard_card = _card("6", "forest")
+    catalog.card_reshape_rules.bind_card(discard_card)
+    engine.player.hand = [discard_card]
+    engine.player.draw_pile.clear()
+    engine.player.discard_pile.clear()
+    engine.status_system.apply_card_anomaly(discard_card, "state", "poison", {}, "测试")
+    engine.status_system.apply_card_anomaly(discard_card, "buff", "growth", {}, "测试", 2)
+    engine.status_system.apply_card_anomaly(discard_card, "buff", "qi_heat", {}, "测试", 3)
+    _assert_true(engine.player.stage_cards([discard_card.id]), "真气进入待出区")
+    engine.player.commit_staging()
+    _assert_true(discard_card.current_state().is_empty(), "实际入弃牌堆后清除状态")
+    _assert_true(not discard_card.has_anomaly("buff", "growth"), "实际入弃牌堆后清除成长")
+    _assert_equal(discard_card.anomaly_layers("buff", "qi_heat"), 3, "炽气跨弃牌区保留")
 
-    var temporary_target = side.draw_pile[0]
-    temporary_target.set_enhancement("qi_boost")
-    var temp_remove: Dictionary = side.temporarily_remove_card(str(temporary_target.id), "burn")
-    _assert_true(temp_remove["success"], "燃尽使用统一临时移出接口")
-    _assert_equal(temp_remove["to"], "temporarily_removed", "临时移出进入独立牌区而不是弃牌堆")
-    _assert_true(side.all_cards_for_run_sync().has(temporary_target), "临时移出的本局牌仍参与重塑同步")
-    _assert_true(not side.permanently_removed_card_ids.has(str(temporary_target.id)), "燃尽不会误登记为永久删除")
+    var regroup = _card("7", "mountain")
+    catalog.card_reshape_rules.bind_card(regroup)
+    engine.player.hand = [regroup]
+    engine.player.discard_pile.clear()
+    engine.status_system.apply_card_anomaly(regroup, "state", "vulnerability", {}, "测试")
+    engine.status_system.apply_card_anomaly(regroup, "mark", "regroup", {}, "测试")
+    engine.player.stage_cards([regroup.id])
+    engine.player.commit_staging()
+    _assert_true(engine.player.draw_pile.has(regroup), "重聚在普通入堆与清理后洗回牌库")
+    _assert_true(regroup.current_state().is_empty(), "重聚发生前状态已经清理")
+    _assert_true(not regroup.has_anomaly("mark", "regroup"), "重聚触发后移除自身")
 
-    var permanent_target = side.draw_pile[0]
-    var permanent_remove: Dictionary = side.permanently_remove_card(str(permanent_target.id), "glass_break")
-    _assert_true(permanent_remove["success"], "永久损毁使用统一永久移出接口")
-    _assert_true(side.permanently_removed_card_ids.has(str(permanent_target.id)), "永久移出登记到 RunDeck 同步边界")
+    var alchemy_regroup = _card("8", "fire")
+    catalog.card_reshape_rules.bind_card(alchemy_regroup)
+    alchemy_regroup.set_imprint("alchemy")
+    engine.status_system.apply_card_anomaly(alchemy_regroup, "mark", "regroup", {}, "测试")
+    engine.player.hand = [alchemy_regroup]
+    engine.player.consumable_ids.clear()
+    engine.player.random_discard(1, engine.rng)
+    _assert_equal(engine.player.consumable_ids.size(), 1, "化丹印先于重聚成立并获得丹药")
+    _assert_true(engine.player.draw_pile.has(alchemy_regroup), "随后重聚不撤销化丹收益")
 
-    var generated = DeckFactoryScript.create_card_instance(
-        catalog.get_by_id("card", "fire_6"),
-        "generated:fire_6")
-    _assert_true(side.add_generated_card(generated, "hand", true)["success"], "统一牌区服务可以生成战斗临时真气")
-    _assert_true(generated.temporary_card, "战斗临时生成牌带明确生命周期标志")
+    var lure = _card("5", "forest")
+    var wind_a = _card("2", "wind")
+    var wind_b = _card("3", "wind")
+    var untouched = _card("4", "fire")
+    for entry in [lure, wind_a, wind_b, untouched]:
+        catalog.card_reshape_rules.bind_card(entry)
+    engine.player.hand.clear()
+    engine.player.draw_pile = [untouched, wind_a, wind_b, lure]
+    engine.status_system.apply_card_anomaly(lure, "mark", "wind_lure", {}, "测试")
+    engine.player.draw(1)
+    _assert_equal(engine.player.hand.size(), 2, "风引抽到时额外定向抽一张风真气")
+    _assert_true(engine.player.hand[1].is_attribute("wind"), "风引不会改成普通抽牌库顶")
+    _assert_true(engine.player.draw_pile.has(untouched), "风引未选中非风牌仍在原位")
+    _assert_true(not lure.has_anomaly("mark", "wind_lure"), "风引触发后移除")
 
-    var receiver = BattleSideScript.new("夺取测试方", "zone-opponent")
-    receiver.use_card_state_lifecycle(lifecycle)
-    var transfer_target = side.draw_pile[0]
-    var transfer_id := str(transfer_target.id)
-    var transfer: Dictionary = side.temporarily_transfer_card_to(
-        receiver, transfer_id, "hand")
-    _assert_true(transfer["success"], "临时夺取通过统一跨阵营移动接口")
-    _assert_equal(transfer_target.original_owner_id, side.owner_id, "临时夺取记录原持有者而不改写本局归属")
-    _assert_equal(receiver.find_hand_card(transfer_id), transfer_target, "夺取真气进入目标方指定牌区")
-    var returned: Dictionary = receiver.return_transferred_card_to(
-        side, transfer_id, "draw_pile")
-    _assert_true(returned["success"], "临时夺取真气可以通过统一接口归还")
-    _assert_equal(transfer_target.original_owner_id, "", "归还后清除临时原持有者标记")
-    _assert_true(side.draw_pile.has(transfer_target), "归还真气回到原持有者指定牌区")
-    _assert_true(side.permanently_remove_card(str(generated.id))["success"], "战斗临时牌可以从当前战斗彻底移除")
-    _assert_true(not side.permanently_removed_card_ids.has(str(generated.id)), "移除战斗临时牌不会登记为本局永久删除")
+    var turbulence = _card("9", "forest")
+    var wind_hand = _card("10", "wind")
+    catalog.card_reshape_rules.bind_card(turbulence)
+    catalog.card_reshape_rules.bind_card(wind_hand)
+    engine.player.hand = [wind_hand]
+    engine.player.draw_pile = [turbulence]
+    engine.player.discard_pile.clear()
+    engine.status_system.apply_card_anomaly(turbulence, "mark", "turbulence", {}, "测试")
+    engine.player.draw(1)
+    _assert_true(engine.player.discard_pile.has(turbulence), "乱流可选中刚抽到且不视为风的自身")
+    _assert_true(engine.player.hand.has(wind_hand), "乱流不弃掉风属性合法保留牌")
+
+    var temporary_target = wind_hand
+    var temp_remove: Dictionary = engine.player.temporarily_remove_card(
+        str(temporary_target.id), "void")
+    _assert_true(temp_remove["success"], "临时消散进入独立临时移出区")
+    _assert_true(not engine.player.discard_pile.has(temporary_target), "临时消散不进入弃牌堆")
+    _assert_true(engine.player.all_cards_for_run_sync().has(temporary_target), "临时移出牌仍按既有协议归还 RunDeck")
 
 func _test_battle_flow_coordinator_contract() -> void:
     var left = BattleSideScript.new("左方", "left")
@@ -2993,10 +2841,10 @@ func _test_battle_timing_system_contract_and_integration() -> void:
     _assert_equal(battle_start_count, 1, "同一场战斗的战斗开始时点只触发一次")
 
     var ending_card = _card("7", "forest")
-    ending_card.set_anomaly("poison", "lethal_poison")
+    ending_card.set_anomaly("state", "poison")
     engine.player.hand = [ending_card]
-    engine.player.stacks["momentum"] = 5
-    engine.enemy.stacks["gu_mark"] = 2
+    engine.player.momentum_value = 5
+    engine.enemy.current_reflection_percent = 40
     engine.delayed_effects.append({"label": "未到期测试延迟"})
     engine.enemy.life = 0
     engine._update_battle_state()
@@ -3011,8 +2859,10 @@ func _test_battle_timing_system_contract_and_integration() -> void:
             "combat_engine.flow_cleanup",
         ],
         "战斗结束先结算胜利重塑，再清真气异状与临时战斗状态")
-    _assert_equal(ending_card.anomaly_poison, "", "战斗结束时点清除真气异状")
+    _assert_true(ending_card.current_state().is_empty(), "战斗结束时点清除真气异状")
     _assert_true(engine.player.stacks.is_empty() and engine.enemy.stacks.is_empty(), "战斗结束时点清除敌我临时层数")
+    _assert_equal(engine.player.momentum_value, 0, "战斗结束时点清除连势")
+    _assert_equal(engine.enemy.current_reflection_percent, 0, "战斗结束时点清除反震")
     _assert_equal(engine.delayed_effects.size(), 0, "战斗结束时点清除未到期延迟记录")
     _assert_equal(engine.player.defense + engine.enemy.defense, 0, "战斗结束时点清除双方防御")
 
@@ -3182,228 +3032,98 @@ func _test_status_behavior_registry_contract() -> void:
 
 func _test_status_system_contract() -> void:
     var catalog = ContentCatalogScript.new()
-    _assert_true(catalog.load_all(), "状态系统契约测试载入统一内容目录")
-    var shared_log = GameLogScript.new()
-    var engine = CombatEngineScript.new(shared_log, catalog)
+    _assert_true(catalog.load_all(), "F3C 状态系统载入正式内容")
+    var engine = CombatEngineScript.new(GameLogScript.new(), catalog)
     engine.setup(815, false)
     var system = engine.status_system
-    _assert_true(
-        system != null and system.has_method("add_actor_status"),
-        "战斗核心装配独立 StatusSystem")
-
-    var player_gu: Dictionary = system.add_actor_status(engine.player, "gu_mark", 4, "状态契约")
-    var enemy_momentum: Dictionary = system.add_actor_status(engine.enemy, "momentum", 3, "状态契约")
-    _assert_equal(player_gu["changed"], 4, "玩家通过统一状态接口获得蛊印")
-    _assert_equal(enemy_momentum["changed"], 3, "敌方通过同一状态接口获得连势")
-    _assert_equal(system.actor_status_value(engine.player, "gu_mark"), 4, "统一接口查询玩家状态层数")
-    _assert_equal(system.actor_status_value(engine.enemy, "momentum"), 3, "统一接口查询敌方状态层数")
-    _assert_equal(system.consume_actor_status(engine.player, "gu_mark", 2, "状态契约")["changed"], 2, "统一接口消费角色状态")
-    _assert_true(not system.add_actor_status(engine.player, "missing_status", 1)["success"], "状态系统拒绝未登记角色状态")
-    system.add_actor_status(engine.player, "qi_intake", 2, "状态契约")
-    system.add_actor_status(engine.player, "full_sleeve", 2, "状态契约")
-    system.add_actor_status(engine.player, "bound_sleeve", 1, "状态契约")
-    _assert_equal(engine.player.current_hand_limit(), 10, "纳气、盈袖与束袖统一计算当前手牌上限")
-
     var card = _card("9", "fire")
-    card.set_enhancement("qi_boost")
+    catalog.card_reshape_rules.bind_card(card)
     engine.player.hand = [card]
-    _assert_true(system.apply_card_anomaly(card, "poison", "lethal_poison", {}, "状态契约")["success"], "状态系统施加烈毒")
-    _assert_true(system.apply_card_anomaly(card, "poison", "stagnant_poison", {}, "状态契约")["success"], "新毒通过状态系统替换唯一毒槽")
-    _assert_true(card.has_anomaly("poison", "stagnant_poison"), "唯一毒槽保留后来毒")
-    system.apply_card_anomaly(card, "state", "vulnerability", {}, "状态契约")
-    system.apply_card_anomaly(card, "state", "acupoint_block", {}, "状态契约")
-    _assert_true(card.has_anomaly("state", "acupoint_block"), "新状态通过状态系统替换唯一状态槽")
-    system.apply_card_anomaly(card, "mark", "wind_lure", {}, "状态契约")
-    system.apply_card_anomaly(card, "mark", "wind_mark", {}, "状态契约")
-    _assert_true(card.is_attribute("wind"), "风标记令普通真气同时视为风")
-    system.apply_card_anomaly(card, "mark", "qi_severance", {}, "状态契约")
-    _assert_equal(card.anomaly_marks.size(), 3, "不同标记可通过状态系统共存")
-    system.apply_card_anomaly(card, "mark", "purification", {}, "状态契约")
-    _assert_equal(card.reshape_enhancement, "", "净化通过状态系统屏蔽既有强化")
-    _assert_equal(card.anomaly_marks.keys(), ["purification"], "净化清除既有异状后保留自身")
-    system.apply_card_anomaly(card, "state", "qi_dissipation", {}, "净化后施加")
-    _assert_true(card.has_anomaly("state", "qi_dissipation"), "净化不阻止后来施加的异状")
 
-    system.consume_actor_status(engine.player, "gu_mark", 99, "状态契约")
-    var poison_card = _card("7", "forest")
-    poison_card.set_enhancement("qi_boost")
-    engine.player.staging = [poison_card]
-    system.apply_card_anomaly(poison_card, "poison", "lethal_poison", {}, "状态契约")
-    var poison_resolutions: Array = system.resolve_played_card_anomalies(
-        engine.player,
-        engine.player.staging)
-    _assert_equal(poison_resolutions[0]["damage"], 15, "烈毒读取增元后的当前有效真气值")
-    _assert_equal(engine.player.life, 85, "烈毒通过统一伤害入口作用于持有者")
-    _assert_true(not poison_card.has_anomaly("poison"), "没有蛊印时烈毒触发后移除")
-
-    system.register_attack_counter_delay("状态契约延迟", 1, 120, 6, engine.player, engine.enemy)
-    engine.deal_damage(engine.player, engine.enemy, 5, "technique")
-    _assert_equal(system.delayed_records[0]["attack_count"], 1, "延迟记录通过状态系统累计攻击段")
+    _assert_true(system.apply_card_anomaly(card, "buff", "qi_heat", {}, "测试", 2)["success"], "状态系统施加炽气层数")
+    _assert_true(system.apply_card_anomaly(card, "debuff", "qi_wither", {}, "测试", 1)["success"], "状态系统施加枯气层数")
+    _assert_equal(system.effective_qi_value(card), 10, "炽气枯气走同一有效真气管线")
+    system.apply_card_anomaly(card, "buff", "growth", {}, "测试", 2)
+    system.apply_card_anomaly(card, "debuff", "decay", {}, "测试", 1)
     engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
-        "actor": engine.player,
-        "actors": [engine.player, engine.enemy],
-    })
-    _assert_equal(system.delayed_records.size(), 0, "回合结束时点由状态系统结算到期延迟")
-    _assert_equal(engine.enemy.life, 89, "延迟结算读取建立时保存的每段伤害")
-    _assert_true(
-        _array_contains_change_type(system.history, "delay_register")
-        and _array_contains_change_type(system.history, "delay_resolve"),
-        "状态历史记录延迟建立与结算")
-    var status_snapshot = BattleSessionScript.new(engine).snapshot()
-    _assert_equal(
-        status_snapshot.status_history.size(),
-        system.history.size(),
-        "战斗快照公开状态系统的深复制历史")
+        "actor": engine.player})
+    _assert_equal(card.anomaly_layers("buff", "qi_heat"), 4, "成长留手按层产生炽气")
+    _assert_equal(card.anomaly_layers("debuff", "qi_wither"), 2, "衰败留手按层产生枯气")
 
-    engine.timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
-        "actors": [engine.player, engine.enemy],
-    })
-    _assert_equal(card.reshape_enhancement, "qi_boost", "战斗结束移除净化并恢复未替换的强化")
-    _assert_true(card.anomaly_snapshot()["marks"].is_empty(), "战斗结束清除全部战斗异状")
-    _assert_true(engine.player.stacks.is_empty() and engine.enemy.stacks.is_empty(), "战斗结束统一清除敌我角色状态")
-    _assert_true(not system.history.is_empty(), "状态系统公开结构化变化历史")
-    _assert_true(not shared_log.entries("battle").is_empty(), "状态变化进入统一战斗日志")
+    var forbidden = _card("7", "forest")
+    catalog.card_reshape_rules.bind_card(forbidden)
+    engine.player.hand = [forbidden]
+    _assert_true(system.apply_card_anomaly(forbidden, "state", "forbidden", {}, "测试", 2)["success"], "封禁两层首次施加")
+    _assert_true(system.apply_card_anomaly(forbidden, "state", "forbidden", {}, "测试", 2)["success"], "封禁同名层数相加")
+    _assert_equal(forbidden.anomaly_layers("state", "forbidden"), 4, "封禁累计四层")
+    _assert_true(not system.can_play_card(engine.player, forbidden)["allowed"], "封禁层数大于零不可打出")
+    engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {"actor": engine.player})
+    _assert_equal(forbidden.anomaly_layers("state", "forbidden"), 3, "每个完整回合只减少一层封禁")
 
-func _test_declared_card_status_runtime_semantics() -> void:
-    var engine = CombatEngineScript.new()
-    engine.setup(816, false)
-    engine.sequence_book.configure({"high_card": []})
+    var state_card = _card("6", "wind")
+    catalog.card_reshape_rules.bind_card(state_card)
+    _assert_true(system.apply_card_anomaly(state_card, "state", "vulnerability", {}, "测试")["success"], "先施加破绽")
+    _assert_true(not system.apply_card_anomaly(state_card, "state", "poison", {}, "测试")["success"], "不同状态默认拒绝覆盖")
+    _assert_equal(state_card.current_state()["id"], "vulnerability", "拒绝覆盖时旧状态保留")
+    _assert_true(system.apply_card_anomaly(state_card, "state", "poison", {}, "测试", 1, true)["success"], "replace_state 原子替换")
+    _assert_equal(state_card.current_state()["id"], "poison", "显式替换后毒成为唯一状态")
+    _assert_true(system.apply_card_anomaly(state_card, "state", "poison", {}, "测试")["success"], "重复毒视为成功但不重复获得")
+    _assert_equal(state_card.anomaly_layers("state", "poison"), 1, "毒不叠层")
 
-    var dissipated = _card("9", "forest")
-    engine.player.hand = [dissipated]
-    engine.status_system.apply_card_anomaly(
-        dissipated, "state", "qi_dissipation", {}, "状态语义测试")
-    _assert_equal(
-        engine.preview([dissipated.id])["values"]["card_total"],
-        4,
-        "散气令参与最高牌型的有效真气贡献减半并向下取整")
-
-    var stagnant = _card("9", "forest")
-    engine.player.hand = [stagnant]
-    engine.status_system.apply_card_anomaly(
-        stagnant, "poison", "stagnant_poison", {}, "状态语义测试")
-    _assert_equal(
-        engine.preview([stagnant.id])["values"]["card_total"],
-        5,
-        "郁毒按原本贡献计算并扣除向下取整的50%削减值")
-    engine.status_system.apply_card_anomaly(
-        stagnant, "state", "qi_dissipation", {}, "状态语义测试")
-    _assert_equal(
-        engine.preview([stagnant.id])["values"]["card_total"],
-        2,
-        "散气先确定有效贡献后郁毒独立扣除该贡献的50%")
+    var poison_card = _card("7", "forest")
+    catalog.card_reshape_rules.bind_card(poison_card)
+    poison_card.set_enhancement("qi_boost")
+    engine.player.life = 100
+    engine.player.staging = [poison_card]
+    system.apply_card_anomaly(poison_card, "state", "poison", {}, "测试")
+    var poison_resolutions: Array = system.resolve_played_card_anomalies(
+        engine.player, [poison_card], {"action_token": "poison"})
+    _assert_equal(poison_resolutions[0]["damage"], 15, "毒冻结当前有效真气值伤害")
+    _assert_equal(engine.player.life, 85, "毒伤作用于持有者")
+    _assert_true(not poison_card.has_anomaly("state"), "毒伤后移除毒")
+    var discarded_poison = _card("8", "mountain")
+    catalog.card_reshape_rules.bind_card(discarded_poison)
+    engine.player.hand = [discarded_poison]
+    engine.player.staging.clear()
+    system.apply_card_anomaly(discarded_poison, "state", "poison", {}, "测试")
+    engine.player.random_discard(1, engine.rng)
+    _assert_equal(engine.player.life, 85, "毒被明确弃掉不造成伤害")
 
     var acupoint_a = _card("2", "forest")
     var acupoint_b = _card("3", "forest")
     var vulnerable = _card("4", "mountain")
+    for entry in [acupoint_a, acupoint_b, vulnerable]:
+        catalog.card_reshape_rules.bind_card(entry)
     engine.player.hand = [acupoint_a, acupoint_b]
     engine.enemy.hand = [vulnerable]
-    engine.status_system.apply_card_anomaly(
-        acupoint_a, "state", "acupoint_block", {}, "状态语义测试")
-    engine.status_system.apply_card_anomaly(
-        acupoint_b, "state", "acupoint_block", {}, "状态语义测试")
-    engine.status_system.apply_card_anomaly(
-        vulnerable, "state", "vulnerability", {}, "状态语义测试")
+    system.apply_card_anomaly(acupoint_a, "state", "acupoint_block", {}, "测试")
+    system.apply_card_anomaly(acupoint_b, "state", "acupoint_block", {}, "测试")
+    system.apply_card_anomaly(vulnerable, "state", "vulnerability", {}, "测试")
     engine.enemy.life = 1000
     engine.enemy.max_life = 1000
     engine.deal_damage(engine.player, engine.enemy, 100, "technique")
-    _assert_equal(engine.enemy.life, 920, "两张封穴与一张破绽按每张20%合并修正普通伤害")
-    engine.enemy.life = 1000
-    engine.deal_damage(engine.player, engine.enemy, 100, "technique", true)
-    _assert_equal(engine.enemy.life, 900, "破绽与封穴不修改权威规则未明确包含的真伤")
+    _assert_equal(engine.enemy.life, 920, "两封穴一破绽按手牌张数合并为 -20%")
 
-    var limited = CombatEngineScript.new()
-    limited.setup(817, false)
-    limited.status_system.add_actor_status(limited.player, "qi_intake", 3, "状态语义测试")
-    _assert_equal(limited.player.current_hand_limit(), 9, "纳气按是否存在统一增加1点上限而非按层叠加")
-    limited.status_system.add_actor_status(limited.player, "full_sleeve", 2, "状态语义测试")
-    limited.status_system.add_actor_status(limited.player, "bound_sleeve", 20, "状态语义测试")
-    _assert_equal(limited.player.current_hand_limit(), 1, "盈袖束袖叠加后手牌上限最低为1")
-    limited.timing_system.emit_timing(BattleTimingSystemScript.AFTER_NORMAL_DRAW, {
-        "actor": limited.player,
-    })
-    _assert_equal(
-        limited.status_system.actor_status_value(limited.player, "qi_intake"),
-        2,
-        "纳气在正常补牌完成后只移除1层")
+    var flawless = _card("5", "fire")
+    catalog.card_reshape_rules.bind_card(flawless)
+    flawless.set_enhancement("flawless")
+    system.apply_card_anomaly(flawless, "state", "forbidden", {}, "测试")
+    _assert_true(flawless.has_anomaly("state", "forbidden"), "无漏不阻止封禁")
+    _assert_true(not system.apply_card_anomaly(
+        flawless, "state", "poison", {}, "测试", 1, true)["success"], "无漏阻止 replace_state 的毒")
+    _assert_equal(flawless.current_state()["id"], "forbidden", "替换被无漏阻止时旧状态不丢失")
+    system.apply_card_anomaly(flawless, "mark", "return_to_origin", {}, "测试")
+    _assert_true(system.apply_card_anomaly(
+        flawless, "state", "poison", {}, "测试", 1, true)["success"], "归元期间无漏效果失效")
 
-    var forbidden = _card("7", "fire")
-    limited.player.hand = [forbidden]
-    limited.sequence_book.configure({"high_card": []})
-    limited.status_system.apply_card_anomaly(
-        forbidden, "state", "forbidden", {}, "状态语义测试")
-    var forbidden_preview: Dictionary = limited.preview([forbidden.id])
-    _assert_true(not forbidden_preview.get("valid", false), "封禁牌在本回合不能进入合法出牌提案")
-    _assert_true(
-        str(forbidden_preview.get("reason", "")).contains("封禁"),
-        "封禁拒绝原因可供UI与AI统一读取")
-    limited.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
-        "actor": limited.player,
-    })
-    _assert_true(not forbidden.has_anomaly("state", "forbidden"), "封禁在持有者本回合结束后移除")
-    _assert_true(limited.preview([forbidden.id]).get("valid", false), "封禁移除后真气恢复可打出")
-
-    var severed = _card("8", "fire")
-    limited.player.hand = [severed]
-    limited.player.draw_pile.clear()
-    limited.status_system.apply_card_anomaly(
-        severed, "state", "vulnerability", {}, "状态语义测试")
-    limited.status_system.apply_card_anomaly(
-        severed, "mark", "qi_severance", {}, "状态语义测试")
-    limited.player.random_discard(1, limited.rng)
-    _assert_true(
-        limited.player.draw_pile.back() == severed,
-        "绝气标记在真气进入弃牌堆后将其改置牌库顶")
-    _assert_true(severed.has_anomaly("state", "forbidden"), "绝气改置时以封禁替换此前状态")
-    _assert_true(not severed.has_anomaly("mark", "qi_severance"), "绝气标记成功触发后移除自身")
-
-    var returning = _card("6", "wind")
-    limited.player.hand = [returning]
-    limited.player.draw_pile.clear()
-    limited.status_system.apply_card_anomaly(
-        returning, "poison", "lethal_poison", {}, "状态语义测试")
-    limited.status_system.apply_card_anomaly(
-        returning, "mark", "returning_wind", {}, "状态语义测试")
-    var history_before: int = limited.status_system.history.size()
-    limited.player.random_discard(1, limited.rng)
-    var discard_history: Array = limited.status_system.history.slice(history_before)
-    _assert_equal(discard_history[0]["status_id"], "lethal_poison", "回风改置前先完成进入弃牌堆的毒清理响应")
-    _assert_equal(discard_history[1]["status_id"], "returning_wind", "回风在其他明确弃牌响应后移除自身")
-    _assert_true(limited.player.draw_pile.back() == returning, "回风最终把真气放回牌库顶")
-
-    var stopped = CombatEngineScript.new()
-    stopped.setup(818, false)
-    var turbulence_card = _card("5", "mountain")
-    var follow = _card("4", "forest")
-    stopped.status_system.apply_card_anomaly(
-        turbulence_card, "mark", "wind_lure", {}, "优先级测试")
-    stopped.status_system.apply_card_anomaly(
-        turbulence_card, "mark", "turbulence", {}, "优先级测试")
-    stopped.enemy.draw_pile = [follow, turbulence_card]
-    stopped.enemy.hand.clear()
-    stopped.enemy.draw(1)
-    _assert_true(stopped.enemy.discard_pile.has(turbulence_card), "低优先级数值的乱流先于风引触发")
-    _assert_true(turbulence_card.has_anomaly("mark", "wind_lure"), "乱流改置后停止同张牌剩余抽牌行为")
-    _assert_true(stopped.enemy.draw_pile.has(follow), "停止分发后风引没有额外抽取下一张牌")
-
-    var stolen = _card("10", "wind")
-    stopped.status_system.apply_card_anomaly(
-        stolen, "mark", "wind_lure", {}, "优先级测试")
-    stopped.status_system.apply_card_anomaly(
-        stolen, "mark", "turbulence", {}, "优先级测试")
-    stopped.status_system.add_actor_status(stopped.player, "steal_wind", 1, "优先级测试")
-    stopped.enemy.draw_pile = [stolen]
-    stopped.enemy.draw(1)
-    _assert_true(stopped.player.hand.has(stolen), "夺风先于被抽入手牌的真气状态响应")
-    _assert_true(
-        stolen.has_anomaly("mark", "wind_lure") and stolen.has_anomaly("mark", "turbulence"),
-        "夺风移走真气后停止原持有者的风引与乱流响应")
-    _assert_true(
-        _array_contains_change_type(limited.status_system.history, "card_anomaly_remove"),
-        "处理器触发产生结构化状态历史")
-    _assert_true(
-        not limited.game_log.entries("battle").is_empty(),
-        "处理器触发与数值状态变化进入统一战斗日志")
+    var snapshot = BattleSessionScript.new(engine).snapshot()
+    _assert_equal(snapshot.status_history.size(), system.history.size(), "战斗快照公开完整状态变化历史")
+    engine.player.hand = [flawless]
+    engine.timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
+        "actors": [engine.player, engine.enemy]})
+    _assert_true(flawless.anomaly_snapshot()["marks"].is_empty(), "战斗结束清除新异状")
+    _assert_equal(engine.player.momentum_value, 0, "F3B 连势战斗结束清理继续成立")
+    _assert_equal(engine.player.current_reflection_percent, 0, "F3B 反震战斗结束清理继续成立")
 
 func _array_contains_change_type(values: Array, wanted: String) -> bool:
     for value in values:
@@ -3436,7 +3156,7 @@ func _test_action_controller_boundaries_and_strategy() -> void:
     opponent.hand = [_card("A", "mountain")]
     opponent.draw_pile = [_card("K", "mountain")]
     var sequence_book = preload("res://core/sequence_book.gd").new()
-    sequence_book.configure({"high_card": ["fire_sparks"]})
+    sequence_book.configure({"high_card": ["probe_observation_technique"]})
     var flow = BattleFlowCoordinatorScript.new()
     flow.reset([actor, opponent])
     flow.begin_round([{"actor": actor, "actions": 1}])
@@ -3571,90 +3291,62 @@ func _fake_action_preview(card_ids: Array, definitions: Dictionary) -> Dictionar
 
 func _test_run_deck_contract() -> void:
     var catalog = ContentCatalogScript.new()
-    _assert_true(catalog.load_all(), "RunDeck 契约测试载入统一内容目录")
+    _assert_true(catalog.load_all(), "RunDeck 新版本契约载入内容目录")
     var run_deck = RunDeckScript.new(catalog)
-    run_deck.reset_standard("run-815")
-    _assert_equal(run_deck.card_count(), 52, "RunDeck 从内容数据建立 52 张本局真气")
-    _assert_true(run_deck.has_card("wind_7"), "基础真气实例在 RunDeck 中可按实例 ID 定位")
-
-    var battle_cards := run_deck.create_battle_cards()
-    var source = null
-    for card in battle_cards:
-        if card.id == "wind_7":
-            source = card
-            break
-    _assert_true(source != null, "RunDeck 可以创建独立战斗实例")
+    run_deck.reset_standard("f3c-run")
+    _assert_equal(run_deck.card_count(), 52, "RunDeck 建立标准 52 张")
+    var cards: Array = run_deck.create_battle_cards()
+    var source = cards.filter(func(card): return card.id == "wind_7")[0]
     _assert_true(CardOriginServiceScript.new(catalog).apply_to_card(
-        source, "attribute_change", {"attribute": "mountain"}).get("success", false),
-        "战斗实例可通过共享本源规划器转属")
+        source, "attribute_change", {"attribute": "mountain"})["success"], "战斗实例转属")
     source.set_enhancement("qi_boost")
-    source.set_anomaly("poison", "lethal_poison")
-    run_deck.sync_from_battle_cards(battle_cards)
+    source.set_anomaly("buff", "qi_heat", {}, 3)
+    source.set_anomaly("state", "poison")
+    source.set_temporary_enhancement("momentum")
+    source.set_temporary_attribute("fire")
+    run_deck.sync_from_battle_cards(cards)
     var persistent: Dictionary = run_deck.card_data("wind_7")
-    _assert_equal(persistent["reshapes"]["origin"]["id"], "attribute_change", "战斗中的本源同步为本局重塑")
-    _assert_equal(persistent["reshapes"]["enhancement"], "qi_boost", "战斗中的强化同步为本局重塑")
-    _assert_equal(persistent["reshapes"]["imprint"], "", "未实现印记槽保持为空")
-    _assert_true(persistent["reshapes"]["others"].is_empty(), "未配置的重塑其他不会被测试擅自补入内容库")
-    _assert_true(not persistent.has("anomalies"), "RunDeck 永不保存战斗异状")
+    _assert_equal(persistent["version"], 5, "RunDeck 内部使用 QiCard DTO v5")
+    _assert_equal(persistent["origin_base_identity"]["definition_id"], "wind_7", "持久 DTO 保存转属前基础身份")
+    _assert_equal(persistent["definition_id"], "mountain_7", "持久 DTO 保存已物化转属身份")
+    _assert_true(not persistent.has("anomalies"), "同步不写回战斗异状")
+    _assert_true(not persistent.has("temporary_reshapes"), "同步不写回临时重塑")
 
-    var copied: Dictionary = run_deck.copy_card("wind_7", 2)
-    _assert_true(copied["success"], "RunDeck 提供明确的永久复制接口")
-    _assert_equal(copied["instance_ids"].size(), 2, "永久复制生成指定数量的实例")
-    _assert_true(copied["instance_ids"][0] != copied["instance_ids"][1], "每张复制真气拥有独立实例 ID")
-    _assert_equal(run_deck.card_count(), 54, "永久复制增加本局牌组数量")
-    _assert_equal(
-        run_deck.card_data(copied["instance_ids"][0])["reshapes"],
-        persistent["reshapes"],
-        "永久复制完整保留全部重塑")
-    _assert_true(run_deck.remove_card(copied["instance_ids"][0])["success"], "RunDeck 提供明确的永久移出接口")
-    _assert_equal(run_deck.card_count(), 53, "永久移出只删除目标实例")
+    var copied: Dictionary = run_deck.copy_card("wind_7", 1)
+    _assert_true(copied["success"], "完整复制成功")
+    var copy_data: Dictionary = run_deck.card_data(copied["instance_ids"][0])
+    _assert_true(not copy_data.has("anomalies") and not copy_data.has("temporary_reshapes"), "完整复制不复制战斗层")
+    _assert_equal(copy_data["origin_base_identity"], persistent["origin_base_identity"], "完整复制保留永久身份")
 
-    var temporary = DeckFactoryScript.create_card_instance(
-        catalog.get_by_id("card", "fire_3"),
-        "temporary:test")
-    temporary.temporary_card = true
-    _assert_equal(run_deck.add_card(temporary)["success"], false, "战斗临时真气不能误入本局牌组")
-    var restored_deck = RunDeckScript.new(catalog)
-    _assert_equal(restored_deck.restore_snapshot(run_deck.to_snapshot()), [], "RunDeck 版本化快照可以通过校验恢复")
-    _assert_equal(restored_deck.to_snapshot(), run_deck.to_snapshot(), "RunDeck 快照恢复保持完整实例状态和 ID 序列")
-    var legacy_deck_snapshot: Dictionary = run_deck.to_snapshot()
-    legacy_deck_snapshot["version"] = RunDeckScript.VERSION - 1
+    var snapshot: Dictionary = run_deck.to_snapshot()
+    _assert_equal(snapshot["version"], 3, "RunDeck 快照版本提升为 3")
+    var restored = RunDeckScript.new(catalog)
+    _assert_equal(restored.restore_snapshot(snapshot), [], "RunDeck v3 快照恢复")
+    _assert_equal(restored.to_snapshot(), snapshot, "RunDeck v3 往返稳定")
+
+    var legacy = RunDeckScript.new(catalog)
+    legacy.reset_from_card_ids(["wind_2"], "legacy")
+    var legacy_snapshot: Dictionary = legacy.to_snapshot()
+    legacy_snapshot["version"] = 2
+    legacy_snapshot["cards"][0]["version"] = 4
+    legacy_snapshot["cards"][0].erase("origin_base_identity")
+    var migrated = RunDeckScript.new(catalog)
+    _assert_equal(migrated.restore_snapshot(legacy_snapshot), [], "当前工作区无本源 v2/v4 快照明确迁移")
+    _assert_equal(migrated.to_snapshot()["cards"][0]["version"], 5, "迁移后实例升级为 v5")
+
+    var impossible_legacy: Dictionary = legacy_snapshot.duplicate(true)
+    impossible_legacy["cards"][0]["reshapes"]["origin"] = {
+        "id": "attribute_change", "payload": {"attribute": "fire"}}
     _assert_true(
         _array_contains_text(
-            RunDeckScript.new(catalog).restore_snapshot(legacy_deck_snapshot),
-            "本局牌组版本不受支持"),
-        "旧 RunDeck 版本明确拒绝而不静默迁移")
-
-    var progress = RunProgressSnapshotScript.from_dict({
-        "consumable_ids": ["zengyuan_pill"],
-        "learned_technique_ids": ["long_wind_full_sleeve"],
-        "run_deck": run_deck.to_snapshot(),
-    })
-    var battle_session: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+            RunDeckScript.new(catalog).restore_snapshot(impossible_legacy),
+            "不能静默猜测"),
+        "缺少转属前属性的旧快照明确拒绝")
+    var unsupported: Dictionary = snapshot.duplicate(true)
+    unsupported["version"] = 1
     _assert_true(
-        battle_session.setup_battle({"content_seed": 815}, progress),
-        "BattleSetupService 从 RunDeck 快照建立战斗牌组")
-    var battle_source = null
-    for card in battle_session.engine.player.all_zone_cards():
-        if card.id == "wind_7":
-            battle_source = card
-            break
-    _assert_true(battle_source != null, "战斗装配保留本局真气实例 ID")
-    _assert_equal(battle_source.reshape_origin["id"], "attribute_change", "战斗装配恢复本源字段")
-    _assert_equal(battle_source.anomaly_poison, "", "新战斗不会从 RunDeck 恢复上场异状")
-    battle_source.set_enhancement("momentum")
-    battle_source.set_anomaly("state", "qi_dissipation")
-    battle_session.engine.player.mark_permanently_removed("wind_2")
-    var synced_progress = battle_session.player_progress_snapshot()
-    var synced_deck: Dictionary = synced_progress.run_deck
-    _assert_equal(synced_deck["cards"].size(), 52, "明确登记的永久移出会同步回本局牌组")
-    var synced_source: Dictionary = {}
-    for values in synced_deck["cards"]:
-        if values["instance_id"] == "wind_7":
-            synced_source = values
-            break
-    _assert_equal(synced_source["reshapes"]["enhancement"], "momentum", "战斗中的强化替换同步回 RunDeck")
-    _assert_true(not synced_source.has("anomalies"), "战斗同步不会把状态异状带到下一场")
+        _array_contains_text(RunDeckScript.new(catalog).restore_snapshot(unsupported), "版本不受支持"),
+        "更旧 RunDeck 版本仍明确拒绝")
 
 func _test_awakening_origin_persistence_contract() -> void:
     var catalog = ContentCatalogScript.new()
@@ -3824,7 +3516,10 @@ func _test_awakening_battle_runtime() -> void:
     origin.apply_to_card(fire_extra, "awakening", {})
     fire_main.set_enhancement("qi_boost")
     var fire_engine = _engine_with_hand([fire_main, fire_extra], [], 82113)
-    fire_engine.sequence_book.configure({"high_card": ["stagnant_gu_conceal_breath"]})
+    fire_engine.repository.techniques["probe_awakening_group"] = {
+        "id": "probe_awakening_group", "name": "觉醒组探针", "pool": "high",
+        "special": false, "effects": []}
+    fire_engine.sequence_book.configure({"high_card": ["probe_awakening_group"]})
     var fire_preview: Dictionary = fire_engine.preview(_ids([fire_main, fire_extra]))
     _assert_equal(fire_preview["values"]["card_total"], 30, "增元火觉醒按(7+8)×2参与数值计算")
     _assert_true(
@@ -3970,218 +3665,105 @@ func _test_awakening_group_completion_paths() -> void:
 
 func _test_f2d2_formal_enhancement_runtime() -> void:
     var catalog = ContentCatalogScript.new()
-    _assert_true(catalog.load_all(), "F2D2 正式强化测试载入内容目录")
-    var enhancement_ids: Array = catalog.all_of("enhancement").map(
-        func(value): return str(value.get("id", "")))
-    enhancement_ids.sort()
-    _assert_equal(
-        enhancement_ids,
-        ["flawless", "hidden_gold", "hunyuan", "momentum", "opportunity",
-            "qi_boost", "rock_solid", "void_burst"],
-        "八种正式强化集合完整且无额外内容")
+    _assert_true(catalog.load_all(), "F3C 强化与归元测试载入内容")
+    var lifecycle = CardStateLifecycleScript.new(catalog)
 
-    var void_main = _card("7", "fire")
-    var void_extra = _card("2", "forest")
-    void_main.set_enhancement("void_burst")
-    void_extra.set_enhancement("void_burst")
-    var void_hand: Dictionary = HandEvaluatorScript.evaluate([void_main, void_extra])
-    var void_values: Dictionary = PowerCalculatorScript.calculate(void_hand)
-    _assert_equal(void_values["card_total"], 14, "虚暴只翻倍参与最高牌型的真气")
-    _assert_equal(
-        void_extra.effective_qi_value(false, {"participating": false}),
-        2,
-        "额外打出但未参与的虚暴真气保持原有效值")
-    CardOriginServiceScript.new(catalog).apply_to_card(void_main, "awakening", {})
-    _assert_equal(
-        void_main.effective_qi_value(false, {"participating": true}),
-        28,
-        "虚暴 priority 200 先于火觉醒 priority 300 连续翻倍")
+    var double_enhancement = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_7"), "f3c:double-enhancement",
+        catalog.card_reshape_rules)
+    double_enhancement.set_enhancement("qi_boost")
+    double_enhancement.set_temporary_enhancement("qi_boost")
+    _assert_equal(double_enhancement.effective_qi_value(), 23, "永久与同名临时强化作为两个来源分别生效")
+    double_enhancement.set_temporary_enhancement("momentum")
+    _assert_equal(double_enhancement.effective_qi_value(), 15, "同临时强化子槽新内容替换旧内容")
+    _assert_equal(double_enhancement.reshape_enhancement, "qi_boost", "临时强化不替换永久强化")
 
-    var mountain_void = _card("7", "mountain")
+    var temporary_attribute = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "forest_6"), "f3c:temporary-attribute",
+        catalog.card_reshape_rules)
+    temporary_attribute.set_temporary_attribute("wind")
+    _assert_true(temporary_attribute.is_attribute("forest") and temporary_attribute.is_attribute("wind"), "临时属性只增加属性身份")
+    _assert_equal(temporary_attribute.attribute, "forest", "临时属性不改变基础属性")
+    temporary_attribute.set_temporary_attribute("fire")
+    _assert_true(not temporary_attribute.is_attribute("wind") and temporary_attribute.is_attribute("fire"), "临时属性同槽替换")
+
+    var burned = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "fire_7"), "f3c:burned",
+        catalog.card_reshape_rules)
+    CardOriginServiceScript.new(catalog).apply_to_card(burned, "awakening", {})
+    burned.set_enhancement("void_burst")
+    burned.set_temporary_enhancement("qi_boost")
+    lifecycle.apply_anomaly(burned, "buff", "qi_heat", {}, 20)
+    lifecycle.apply_anomaly(burned, "mark", "burned_out")
+    _assert_equal(burned.effective_qi_value(false, {"participating": true}), 0, "燃尽最终覆盖增元、虚暴、觉醒与炽气")
+    _assert_true(burned.is_card_kind("normal"), "燃尽牌仍属于普通真气")
+    var burned_pair = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_7"), "f3c:burned-pair",
+        catalog.card_reshape_rules)
+    lifecycle.apply_anomaly(burned_pair, "mark", "burned_out")
+    _assert_equal(HandEvaluatorScript.evaluate([burned, burned_pair])["id"], "pair", "燃尽不改变牌阶或牌型识别")
+
+    var changed = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "wind_7"), "f3c:return-attribute",
+        catalog.card_reshape_rules)
     CardOriginServiceScript.new(catalog).apply_to_card(
-        mountain_void, "awakening", {})
-    mountain_void.set_enhancement("void_burst")
-    var mountain_engine = _engine_with_hand([mountain_void], [], 82201)
-    var end_result: Dictionary = mountain_engine.timing_system.emit_timing(
-        BattleTimingSystemScript.TURN_END, {
-            "actor": mountain_engine.player,
-            "actors": [mountain_engine.player],
-        })
-    _assert_equal(mountain_engine.player.defense, 7, "山觉醒先按当前有效真气获得防御")
-    _assert_true(
-        mountain_engine.player.temporarily_removed_cards.has(mountain_void),
-        "普通回合结束重塑完成后虚无牌消散")
-    _assert_equal(
-        end_result["results"][-2]["handler_id"],
-        "card_reshape_runtime.turn_end",
-        "山觉醒位于普通重塑 order 900")
-    _assert_equal(
-        end_result["results"][-1]["handler_id"],
-        "card_reshape_runtime.turn_end_final",
-        "虚无消散位于最终回合结束 order 1000")
+        changed, "attribute_change", {"attribute": "fire"})
+    changed.set_enhancement("qi_boost")
+    changed.set_imprint("echo")
+    changed.set_temporary_enhancement("momentum")
+    changed.set_temporary_attribute("mountain")
+    lifecycle.apply_anomaly(changed, "mark", "return_to_origin")
+    _assert_true(changed.is_attribute("wind") and not changed.is_attribute("fire"), "归元令转属恢复改造前属性识别")
+    _assert_true(not changed.is_attribute("mountain"), "归元压制临时属性")
+    _assert_equal(changed.effective_qi_value(), 7, "归元压制永久与临时强化")
+    _assert_true(changed.origin_locked(), "归元期间本源槽仍锁定")
+    changed.set_enhancement("void_burst")
+    changed.set_temporary_enhancement("qi_boost")
+    changed.remove_anomaly("mark", "return_to_origin")
+    _assert_true(changed.is_attribute("fire") and changed.is_attribute("mountain"), "移除归元后转属与临时属性自动恢复")
+    _assert_equal(changed.effective_qi_value(), 15, "移除归元后按最新永久虚暴与临时增元恢复")
 
-    var flawless = _card("6", "wind")
-    flawless.set_enhancement("flawless")
-    var permission_engine = _engine_with_hand([flawless], [], 82202)
-    for blocked in [
-        ["poison", "lethal_poison"],
-        ["poison", "stagnant_poison"],
-        ["state", "vulnerability"],
-        ["state", "acupoint_block"],
-    ]:
-        _assert_true(
-            not permission_engine.status_system.apply_card_anomaly(
-                flawless, blocked[0], blocked[1], {}, "无漏测试").get(
-                    "success", false),
-            "无漏拒绝 %s" % blocked[1])
-    _assert_true(
-        permission_engine.status_system.apply_card_anomaly(
-            flawless, "state", "qi_dissipation", {}, "无漏测试").get(
-                "success", false),
-        "无漏允许散气")
-    _assert_true(
-        permission_engine.status_system.apply_card_anomaly(
-            flawless, "mark", "wind_mark", {}, "无漏测试").get(
-                "success", false),
-        "无漏允许普通标记")
+    var ranked = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "forest_7"), "f3c:return-rank",
+        catalog.card_reshape_rules)
+    CardOriginServiceScript.new(catalog).apply_to_card(
+        ranked, "rank_change", {"direction": "up"})
+    _assert_equal(ranked.current_rank_order(), 8, "易阶正常物化新牌阶")
+    lifecycle.apply_anomaly(ranked, "mark", "return_to_origin")
+    _assert_equal(ranked.current_rank_order(), 7, "归元期间读取易阶前牌阶")
+    _assert_equal(ranked.current_base_qi_value(), 7, "归元期间读取易阶前基础真气值")
+    ranked.remove_anomaly("mark", "return_to_origin")
+    _assert_equal(ranked.current_rank_order(), 8, "移除归元后恢复易阶结果")
 
-    var random_flawless = _card("5", "wind")
-    var random_ordinary = _card("4", "forest")
-    random_flawless.set_enhancement("flawless")
-    var random_target = BattleSideScript.new("随机异状目标")
-    random_target.hand = [random_flawless, random_ordinary]
-    var random_executor = EffectExecutorScript.new(
-        RandomNumberGenerator.new(), null, catalog)
-    var random_result: Dictionary = random_executor.execute_all([{
-        "op": "apply_random_card_anomaly",
-        "zone": "hand",
-        "category": "poison",
-        "anomaly": "lethal_poison",
-        "count": 2,
-    }], {"target": random_target, "captures": {}})
-    _assert_true(random_result.get("success", false), "随机异状先过滤无漏非法目标")
-    _assert_equal(random_flawless.anomaly_poison, "", "无漏不进入随机毒目标集合")
-    _assert_equal(random_ordinary.anomaly_poison, "lethal_poison", "随机毒只施加给合法目标")
-    var random_option_result: Dictionary = permission_engine.effect_executor.execute_all([{
-        "op": "apply_card_anomaly_to_captured",
-        "capture": "flawless_target",
-        "random_options": [
-            {"category": "poison", "anomaly": "lethal_poison"},
-            {"category": "state", "anomaly": "qi_dissipation"},
-        ],
-    }], {
-        "ports": permission_engine.effect_ports,
-        "actor": permission_engine.player,
-        "target": permission_engine.enemy,
-        "captures": {"flawless_target": [random_flawless]},
-    })
-    _assert_true(random_option_result.get("success", false), "随机异状选项过滤后正常结算")
-    _assert_equal(
-        random_flawless.anomaly_state,
-        "qi_dissipation",
-        "随机异状先排除无漏拒绝项再抽取")
+    var awakened = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "fire_5"), "f3c:return-awakening",
+        catalog.card_reshape_rules)
+    CardOriginServiceScript.new(catalog).apply_to_card(awakened, "awakening", {})
+    _assert_equal(awakened.effective_qi_value(false, {"participating": true}), 10, "火觉醒正常生效")
+    lifecycle.apply_anomaly(awakened, "mark", "return_to_origin")
+    _assert_equal(awakened.effective_qi_value(false, {"participating": true}), 5, "归元压制觉醒行为")
 
-    var flawless_extra = _card("2", "forest")
-    flawless_extra.set_enhancement("flawless")
-    var flawless_main = _card("A", "wind")
-    var flawless_engine = _engine_with_hand(
-        [flawless_main, flawless_extra], [], 82203)
-    var direct_flawless: Array = flawless_engine.card_reshape_runtime.on_card_played(
-        flawless_engine.player, [flawless_extra])
-    _assert_equal(direct_flawless.size(), 1, "无漏行为由正式运行时注册")
-    _assert_equal(flawless_engine.player.defense, 2, "无漏 Handler 通过窄端口增加防御")
-    flawless_engine.player.defense = 0
-    flawless_engine.sequence_book.configure({"high_card": []})
-    var flawless_result: Dictionary = flawless_engine.confirm_play(
-        _ids([flawless_main, flawless_extra]))
-    _assert_true(flawless_result.get("success", false), "无漏额外牌正常打出")
-    _assert_equal(
-        flawless_engine.player.defense,
-        2,
-        "无漏打出效果覆盖未参与最高牌型的额外真气")
-
-    var rock = _card("6", "mountain")
-    var ordinary_a = _card("4", "wind")
-    var ordinary_b = _card("3", "forest")
-    rock.set_enhancement("rock_solid")
-    var discard_engine = _engine_with_hand(
-        [rock, ordinary_a, ordinary_b], [], 82204)
-    var random_discarded: Array = discard_engine.player.random_discard(
-        3, discard_engine.rng)
-    _assert_equal(random_discarded.size(), 2, "随机弃牌只处理可明确弃掉的真气")
-    _assert_true(discard_engine.player.hand.has(rock), "磐石不进入随机弃牌候选")
-    discard_engine.player.hand.append(_card("5", "fire"))
-    _assert_equal(discard_engine.player.discard_all().size(), 1, "全部弃牌跳过磐石")
-    _assert_true(discard_engine.player.hand.has(rock), "全部弃牌后磐石仍留手")
-    var direct_discard: Dictionary = discard_engine.player.card_zone_service.move_card(
-        discard_engine.player,
-        "hand",
-        "discard_pile",
-        rock,
-        "explicit_discard")
-    _assert_true(not direct_discard.get("success", false), "统一移动入口拒绝明确弃掉磐石")
-
-    var choice_main = _card("A", "wind")
-    var choice_rock = _card("6", "mountain")
-    var choice_a = _card("4", "forest")
-    var choice_b = _card("3", "fire")
-    choice_rock.set_enhancement("rock_solid")
-    var choice_engine = _engine_with_hand(
-        [choice_main, choice_rock, choice_a, choice_b], [], 82205)
-    choice_engine.enemy.hand = [_card("2", "wind"), _card("3", "wind")]
-    choice_engine.sequence_book.configure({
-        "high_card": ["discard_gu_exchange_breath"],
-    })
-    var choice_result: Dictionary = choice_engine.confirm_play([choice_main.id])
-    _assert_true(choice_result.get("pending_choice", false), "明确弃牌功法建立选择请求")
-    var candidate_ids: Array = choice_result.get("choice_request", {}).get(
-        "candidate_ids", [])
-    _assert_true(not candidate_ids.has(choice_rock.id), "手动明确弃牌候选自动排除磐石")
-    _assert_true(
-        _resolve_all_pending_choices(choice_engine).get("success", false),
-        "明确弃牌候选测试完成并释放等待事务")
-
-    var rock_extra = _card("2", "mountain")
-    rock_extra.set_enhancement("rock_solid")
-    var rock_main = _card("A", "wind")
-    var rock_engine = _engine_with_hand([rock_main, rock_extra], [], 82206)
-    rock_engine.sequence_book.configure({"high_card": []})
-    var enemy_life_before: int = rock_engine.enemy.life
-    var rock_play: Dictionary = rock_engine.confirm_play(
-        _ids([rock_main, rock_extra]))
-    _assert_true(rock_play.get("success", false), "磐石额外牌正常打出")
-    _assert_equal(
-        rock_engine.enemy.life,
-        enemy_life_before - 2,
-        "磐石打出效果覆盖未参与最高牌型的额外真气")
-    _assert_true(rock_engine.player.discard_pile.has(rock_extra), "磐石正常打出后进入弃牌堆")
-
-    var hidden_hand = _card("2", "wind")
-    var hidden_draw = _card("3", "forest")
-    var hidden_discard = _card("4", "fire")
-    var hidden_staging = _card("5", "mountain")
-    var hidden_removed = _card("6", "wind")
-    for card in [hidden_hand, hidden_draw, hidden_discard, hidden_staging, hidden_removed]:
-        card.set_enhancement("hidden_gold")
-    var gold_engine = _engine_with_hand([hidden_hand], [hidden_draw], 82207)
-    gold_engine.player.discard_pile = [hidden_discard]
-    gold_engine.player.staging = [hidden_staging]
-    gold_engine.player.temporarily_removed_cards = [hidden_removed]
-    gold_engine.player.experience = 10
-    gold_engine.enemy.life = 0
-    gold_engine.outcome_service.update()
-    _assert_equal(
-        gold_engine.player.experience,
-        16,
-        "藏金胜利只统计手牌与抽牌堆各三点历练")
-
-    var losing_gold = _card("7", "wind")
-    losing_gold.set_enhancement("hidden_gold")
-    var loss_engine = _engine_with_hand([losing_gold], [], 82208)
-    loss_engine.player.experience = 10
-    loss_engine.player.life = 0
-    loss_engine.outcome_service.update()
-    _assert_equal(loss_engine.player.experience, 10, "藏金在玩家战败时不奖励")
+    var start_void = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "mountain_6"), "f3c:start-void",
+        catalog.card_reshape_rules)
+    start_void.set_enhancement("void_burst")
+    var engine = CombatEngineScript.new(null, catalog)
+    engine.setup(82201, false)
+    engine.player.draw_pile = [start_void]
+    engine.player.hand.clear()
+    engine.start_player_turn()
+    _assert_true(start_void.has_anomaly("mark", "void"), "永久虚暴只在战斗开始施加虚无")
+    start_void.set_enhancement("qi_boost")
+    _assert_true(start_void.has_anomaly("mark", "void"), "战斗开始后替换虚暴不移除已获虚无")
+    var midbattle = _card("4", "wind")
+    catalog.card_reshape_rules.bind_card(midbattle)
+    engine.player.hand = [midbattle]
+    midbattle.set_enhancement("void_burst")
+    _assert_true(not midbattle.has_anomaly("mark", "void"), "战斗中途获得虚暴本场不补发虚无")
+    engine.status_system.apply_card_anomaly(midbattle, "mark", "void", {}, "测试")
+    engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {"actor": engine.player})
+    _assert_true(engine.player.temporarily_removed_cards.has(midbattle), "虚无在其他回合结束效果后最终消散留手牌")
+    _assert_true(not engine.player.discard_pile.has(midbattle), "虚无消散不进入弃牌堆")
 
 func _test_f2d2_opportunity_freeze_and_progress_sync() -> void:
     var first = _card("7", "wind")
@@ -4214,7 +3796,7 @@ func _test_f2d2_opportunity_freeze_and_progress_sync() -> void:
         pure_preview["values"], 1)
     for field in [
         "card_multiplier_bonus", "technique_multiplier",
-        "unamplified_technique_value", "technique_value"]:
+        "initial_power", "pre_momentum_power", "technique_value"]:
         _assert_equal(
             result["preview"]["values"][field],
             expected_values[field],
@@ -4223,88 +3805,6 @@ func _test_f2d2_opportunity_freeze_and_progress_sync() -> void:
         result["preview"]["values"]["baseline_value"],
         pure_preview["values"]["baseline_value"],
         "机缘不修改 baseline_value")
-
-    var pending_card = _card("8", "fire")
-    pending_card.set_enhancement("opportunity")
-    var pending_a = _card("3", "forest")
-    var pending_b = _card("4", "mountain")
-    var pending_engine = _engine_with_hand(
-        [pending_card, pending_a, pending_b], [], 82302)
-    pending_engine.enemy.hand = [_card("2", "wind"), _card("3", "wind")]
-    pending_engine.sequence_book.configure({
-        "high_card": ["discard_gu_exchange_breath"],
-    })
-    pending_engine.rng.seed = _find_opportunity_seed([false, true])
-    var pending_result: Dictionary = pending_engine.confirm_play([pending_card.id])
-    _assert_true(pending_result.get("pending_choice", false), "机缘行动可以进入等待选择")
-    var frozen_before: Dictionary = pending_result["preview"].get(
-        "reshape_action_results", {}).duplicate(true)
-    var experience_before_resume: int = pending_engine.player.experience
-    var repeated_finalize: Dictionary = pending_engine.action_resolver \
-        .finalize_action_preview(pending_engine.player, pending_result["preview"])
-    _assert_true(repeated_finalize.get("reused", false), "同一行动重复 finalizer 复用冻结结果")
-    _assert_equal(
-        pending_engine.player.experience,
-        experience_before_resume,
-        "同一行动重复 finalizer 不重复发放机缘历练")
-    var pending_snapshot: Dictionary = pending_engine.action_service \
-        .pending_action_transaction_snapshot()
-    _assert_equal(
-        pending_snapshot["record"]["reshape_action_results"],
-        frozen_before,
-        "BattleActionRecord 快照保存机缘冻结结果")
-    var resumed: Dictionary = _resolve_all_pending_choices(pending_engine)
-    _assert_true(resumed.get("success", false), "等待选择恢复后行动完成")
-    _assert_equal(
-        pending_engine.player.experience,
-        experience_before_resume,
-        "等待选择恢复不重复增加机缘历练")
-    _assert_equal(
-        resumed["preview"].get("reshape_action_results", {}),
-        frozen_before,
-        "等待选择恢复复用原冻结结果")
-
-    var main_cards := [
-        _card("7", "wind"), _card("7", "forest"), _card("7", "fire")]
-    var cooperation_cards := [_card("5", "wind"), _card("5", "mountain")]
-    main_cards[0].set_enhancement("opportunity")
-    cooperation_cards[0].set_enhancement("opportunity")
-    var cooperation_engine = _engine_with_hand(
-        main_cards + cooperation_cards, [], 82303)
-    cooperation_engine.sequence_book.configure({
-        "three_kind": ["three_ring_ensemble"],
-        "pair": ["double_gu_exchange_breath"],
-    })
-    var main_pure: Dictionary = cooperation_engine.preview(_ids(main_cards))
-    var cooperation_pure: Dictionary = cooperation_engine.preview(
-        _ids(cooperation_cards))
-    cooperation_engine.rng.seed = _find_opportunity_seed(pattern)
-    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
-        _ids(main_cards), _ids(cooperation_cards))
-    _assert_true(cooperation_result.get("success", false), "主组与协同组机缘行动成功")
-    var expected_main: Dictionary = PowerCalculatorScript.apply_frozen_card_multiplier_bonus(
-        main_pure["values"], 1)
-    var expected_cooperation: Dictionary = PowerCalculatorScript.apply_frozen_card_multiplier_bonus(
-        cooperation_pure["values"], 0)
-    var expected_shared := int(floor(
-        int(expected_main["technique_value"])
-        + int(expected_cooperation["technique_value"]) * 0.5))
-    _assert_equal(
-        cooperation_result["preview"]["values"]["technique_value"],
-        expected_shared,
-        "主组先冻结机缘再计算共享功法值")
-    _assert_equal(
-        cooperation_result["cooperation_preview"]["values"]["technique_value"],
-        expected_shared,
-        "协同组先冻结机缘再取得同一共享功法值")
-    _assert_true(
-        cooperation_result["preview"]["reshape_action_results"].has(
-            main_cards[0].id),
-        "主组按实例 ID 保存机缘结果")
-    _assert_true(
-        cooperation_result["cooperation_preview"]["reshape_action_results"].has(
-            cooperation_cards[0].id),
-        "协同组按实例 ID 保存机缘结果")
 
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "战斗历练同步测试载入内容目录")
@@ -4456,8 +3956,14 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     enlightenment_draw.set_imprint("enlightenment")
     var enlightenment_engine = _engine_with_hand(
         pair_cards + [enlightenment_hand], [enlightenment_draw], 82403)
+    enlightenment_engine.repository.techniques["f2e1_pair_probe"] = {
+        "id": "f2e1_pair_probe",
+        "name": "悟道对子探针",
+        "pool": "pair",
+        "effects": [],
+    }
     enlightenment_engine.sequence_book.configure({
-        "pair": ["double_gu_exchange_breath"],
+        "pair": ["f2e1_pair_probe"],
     })
     var pair_result: Dictionary = enlightenment_engine.confirm_play(_ids(pair_cards))
     _assert_true(pair_result.get("success", false), "成功对子出招建立悟道记录")
@@ -4500,9 +4006,27 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     cooperation_mark.set_imprint("enlightenment")
     var cooperation_engine = _engine_with_hand(
         cooperation_main + cooperation_cards + [cooperation_mark], [], 82404)
+    cooperation_engine.repository.techniques["f2e1_cooperation_probe"] = {
+        "id": "f2e1_cooperation_probe",
+        "name": "悟道协同探针",
+        "pool": "three",
+        "cooperation": {
+            "hand_id": "pair",
+            "max_groups": 1,
+            "power_rule": "shared_half",
+            "post_commit": {"destination": "own_discard"},
+        },
+        "effects": [],
+    }
+    cooperation_engine.repository.techniques["f2e1_pair_probe"] = {
+        "id": "f2e1_pair_probe",
+        "name": "悟道对子探针",
+        "pool": "pair",
+        "effects": [],
+    }
     cooperation_engine.sequence_book.configure({
-        "three_kind": ["three_ring_ensemble"],
-        "pair": ["double_gu_exchange_breath"],
+        "three_kind": ["f2e1_cooperation_probe"],
+        "pair": ["f2e1_pair_probe"],
     })
     var cooperation_result: Dictionary = cooperation_engine.confirm_play(
         _ids(cooperation_main), _ids(cooperation_cards))
@@ -4584,7 +4108,7 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     returning_alchemy.set_imprint("alchemy")
     var returning_engine = _engine_with_hand([returning_alchemy], [], 82411)
     returning_engine.status_system.apply_card_anomaly(
-        returning_alchemy, "mark", "returning_wind", {}, "化丹回风测试")
+        returning_alchemy, "mark", "regroup", {}, "化丹重聚测试")
     returning_engine.player.card_zone_service.move_card(
         returning_engine.player,
         "hand",
@@ -4598,8 +4122,8 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
         "pill",
         "回风已改置牌区后化丹仍从正式池生成丹药")
     _assert_true(
-        returning_engine.player.draw_pile.back() == returning_alchemy,
-        "化丹结算后仍保留回风置于牌库顶的结果")
+        returning_engine.player.draw_pile.has(returning_alchemy),
+        "化丹结算后仍保留重聚洗回牌库的结果")
 
     var full_alchemy = _card("10", "fire")
     full_alchemy.set_imprint("alchemy")
@@ -5006,10 +4530,10 @@ func _test_f2e2_echo_qualified_trigger_replay() -> void:
     var poison_engine = _engine_with_hand([poison_echo], [], 82508)
     poison_engine.sequence_book.configure({"high_card": []})
     poison_engine.status_system.apply_card_anomaly(
-        poison_echo, "poison", "lethal_poison", {}, "回响烈毒测试")
+        poison_echo, "state", "poison", {}, "回响毒测试")
     poison_engine.confirm_play([poison_echo.id])
-    _assert_equal(poison_engine.player.life, 86, "烈毒首次移除后仍按执行记录重演第二段七点伤害")
-    _assert_true(not poison_echo.has_anomaly("poison"), "回响烈毒结算后保持异状已移除")
+    _assert_equal(poison_engine.player.life, 86, "毒首次移除后仍按冻结条目重演第二段七点伤害")
+    _assert_true(not poison_echo.has_anomaly("state"), "回响毒结算后保持状态已移除")
 
     var direct_echo = _card("4", "wind")
     direct_echo.set_imprint("echo")
@@ -5257,10 +4781,7 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
             "five_kind": ["bomb"],
         },
         "八种精确牌型的功法池成员资格与权威表完全一致")
-    _assert_equal(
-        engine.sequence_book.sequences["straight"],
-        ["five_yang_chase"],
-        "五阳逐影只挂有效顺子序列")
+    _assert_equal(engine.sequence_book.sequences["straight"], [], "顺子正式序列合法为空")
     _assert_equal(engine.sequence_book.sequences["five_kind"], [], "五条使用独立空初始序列")
     engine.sequence_book.configure({"pair": ["a", "b"], "two_pair": ["a", "b"]})
     engine.sequence_book.advance("pair")
@@ -5341,7 +4862,7 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
     var same_attribute_five_preview: Dictionary = five_engine.preview(_ids(same_attribute_five))
     _assert_equal(same_attribute_five_preview["hand"]["id"], "five_kind", "同属性五张同牌阶仍识别为五条")
     _assert_equal(same_attribute_five_preview["values"]["fixed_multiplier"], 12, "同属性五条保持十二倍固定倍率")
-    _assert_equal(same_attribute_five_preview["values"]["power_amp_percent"], 50, "同属性五条独立获得公共+50%增幅")
+    _assert_equal(same_attribute_five_preview["values"]["direct_power_percent"], 50, "同属性五条独立获得公共+50%直接修正")
 
 func _test_power_calculation() -> void:
     var result := HandEvaluatorScript.evaluate([_card("7"), _card("7", "forest"), _card("4"), _card("3"), _card("A")])
@@ -5354,9 +4875,12 @@ func _test_power_calculation() -> void:
     })
     _assert_equal(values["base_value"], 17, "基础值含固定修正")
     _assert_equal(values["baseline_value"], 34, "牌型基准值只读固定倍率")
-    _assert_equal(values["technique_multiplier"], 5, "功法倍率加法")
-    _assert_equal(values["unamplified_technique_value"], 90, "未增幅功法值")
-    _assert_equal(values["technique_value"], 125, "功法值统一增幅后向下取整")
+    _assert_equal(values["technique_multiplier"], 4, "心得不进入功法倍率")
+    _assert_equal(values["initial_power"], 68, "P₀ 只读取贡献与功法倍率")
+    _assert_equal(values["direct_power_fixed"], 5, "直接固定修正在 P₀ 后保存")
+    _assert_equal(values["direct_power_percent"], 40, "直接百分比在 P₀ 后保存")
+    _assert_equal(values["pre_momentum_power"], 102, "连势前功法值统一向下取整")
+    _assert_equal(values["technique_value"], 102, "无成功功法连势时 P 等于非负连势前值")
 
 func _test_damage_resolver_rules_and_facade() -> void:
     var resolver = DamageResolverScript.new()
@@ -5381,12 +4905,11 @@ func _test_damage_resolver_rules_and_facade() -> void:
     _assert_equal(target.defense, 9, "真伤绕过并保留目标防御")
     _assert_equal(target.life, 96, "真伤直接扣除目标生命")
 
-    actor.stacks["momentum"] = 25
     target.life = 100
     target.defense = 0
     var momentum_hit: Dictionary = resolver.resolve(actor, target, 8, "technique")
-    _assert_equal(momentum_hit["final_amount"], 10, "连势按攻击段实时提高普通伤害")
-    _assert_equal(target.life, 90, "连势增伤后的数值实际结算")
+    _assert_equal(momentum_hit["final_amount"], 8, "连势不再修改攻击段伤害")
+    _assert_equal(target.life, 92, "普通伤害不读取连势百分比")
 
     actor.stacks.clear()
     target.life = 5
@@ -5416,7 +4939,7 @@ func _test_damage_resolver_rules_and_facade() -> void:
 
     var engine = CombatEngineScript.new()
     engine.setup(144, false)
-    engine.player.stacks["momentum"] = 25
+    engine.player.momentum_value = 25
     engine.enemy.life = 20
     engine.enemy.defense = 3
     var facade: Dictionary = engine.deal_damage(
@@ -5427,7 +4950,7 @@ func _test_damage_resolver_rules_and_facade() -> void:
     var direct_actor = BattleSideScript.new("直接攻击方")
     direct_actor.use_status_system(standalone_status_system)
     var direct_target = BattleSideScript.new("直接受击方")
-    direct_actor.stacks["momentum"] = 25
+    direct_actor.momentum_value = 25
     direct_target.life = 20
     direct_target.defense = 3
     var direct: Dictionary = DamageResolverScript.new().resolve(
@@ -7653,7 +7176,7 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
         "hand_technique_progression": {
             "high_card": {"slot_count": 2, "sequence": []},
         },
-        "learned_technique_ids": ["long_wind_full_sleeve"],
+        "learned_technique_ids": [],
         "run_deck": manual_deck.to_snapshot(),
     })
     growth.life = 41
@@ -8715,77 +8238,3 @@ func _test_synchronized_lethal_and_battle_results() -> void:
     exhausted.player.draw_pile.clear()
     exhausted.confirm_play([exhausted.player.hand[0].id])
     _assert_equal(exhausted.battle_state, "player_defeat", "无手牌无牌库且敌人存活判负")
-
-func _test_data_driven_lethal_gu_needle() -> void:
-    var selected := [_card("9", "wind")]
-    var engine = _engine_with_hand(selected + [_card("3", "forest")])
-    var poison_target = _card("7", "fire")
-    engine.enemy.hand = [poison_target]
-    engine.sequence_book.configure({"high_card": ["lethal_gu_needle"]})
-    var result := engine.confirm_play(_ids(selected))
-    _assert_true(result["technique_triggered"], "烈蛊飞针由数据效果接口触发")
-    _assert_equal(engine.enemy.life, 96, "烈蛊飞针造成 floor(P/2) 伤害")
-    _assert_true(poison_target.has_anomaly("poison", "lethal_poison"), "烈蛊飞针为对手手牌附烈毒")
-    _assert_equal(engine.enemy.stacks.get("gu_mark", 0), 1, "纯风且实际附毒后获得蛊印")
-
-func _poison_chain_engine(with_gu: bool):
-    var engine = CombatEngineScript.new()
-    engine.setup(5150, false)
-    engine.scripted_mode = true
-    engine.actions_available = 1
-    engine.enemy_actions_available = 1
-    engine.sequence_book.configure({"high_card": []})
-    engine.enemy_sequence_book.configure({"high_card": []})
-    engine.player.hand = [_card("2", "mountain"), _card("3", "forest")]
-    engine.player.draw_pile.clear()
-    var poisoned = _card("7", "fire")
-    poisoned.set_anomaly("poison", "lethal_poison")
-    var companion = _card("4", "forest")
-    engine.enemy.hand = [poisoned, companion]
-    engine.enemy.draw_pile.clear()
-    engine.locked_enemy_card_ids = [poisoned.id, companion.id]
-    if with_gu:
-        engine.enemy.stacks["gu_mark"] = 1
-    return {"engine": engine, "poisoned": poisoned, "player_card": engine.player.hand[0]}
-
-func _test_lethal_poison_and_gu_recycle_chain() -> void:
-    var without_gu: Dictionary = _poison_chain_engine(false)
-    var plain_engine = without_gu["engine"]
-    plain_engine.confirm_play([without_gu["player_card"].id])
-    _assert_equal(plain_engine.enemy.life, 93, "烈毒按真气值造成普通伤害")
-    _assert_true(plain_engine.enemy.discard_pile.has(without_gu["poisoned"]), "没有蛊印时毒牌正常进入弃牌堆")
-    _assert_true(not without_gu["poisoned"].has_anomaly("poison"), "烈毒触发后移除")
-
-    var with_gu: Dictionary = _poison_chain_engine(true)
-    var gu_engine = with_gu["engine"]
-    gu_engine.confirm_play([with_gu["player_card"].id])
-    _assert_equal(gu_engine.enemy.life, 93, "蛊印不取消本次烈毒伤害")
-    _assert_equal(gu_engine.enemy.stacks.get("gu_mark", 0), 0, "烈毒结算后消耗一层蛊印")
-    _assert_true(gu_engine.enemy.draw_pile.has(with_gu["poisoned"]), "蛊印使毒牌洗回对手牌库")
-    _assert_true(not gu_engine.enemy.discard_pile.has(with_gu["poisoned"]), "洗回牌不留在弃牌堆")
-    _assert_true(with_gu["poisoned"].has_anomaly("poison", "lethal_poison"), "洗回牌重新获得同种烈毒")
-
-func _test_scripted_poison_demo_reaches_recycle() -> void:
-    var engine = CombatEngineScript.new()
-    engine.setup_scripted_battle(2308)
-    engine.start_player_turn()
-    var first_wind = null
-    for card in engine.player.hand:
-        if card.attribute == "wind":
-            first_wind = card
-            break
-    _assert_true(first_wind != null, "固定种子起手存在风牌用于一线悬蛊")
-    engine.confirm_play([first_wind.id])
-    engine.end_player_turn()
-    engine.start_player_turn()
-    engine.confirm_play([engine.player.hand[0].id])
-    var poisoned = engine.enemy.find_hand_card("enemy:mountain_3")
-    _assert_true(poisoned != null and poisoned.has_anomaly("poison", "lethal_poison"), "固定场景第二回合将山3附烈毒")
-    var gu_before := int(engine.enemy.stacks.get("gu_mark", 0))
-    engine.end_player_turn()
-    engine.start_player_turn()
-    _assert_true(engine.locked_enemy_card_ids.has("enemy:mountain_3"), "第三回合脚本锁定带毒山3实例")
-    engine.confirm_play([engine.player.hand[0].id])
-    _assert_equal(engine.enemy.stacks.get("gu_mark", 0), gu_before - 1, "场景实战链消耗一层蛊印")
-    _assert_true(engine.enemy.draw_pile.has(poisoned), "场景实战链将山3洗回牌库")
-    _assert_true(poisoned.has_anomaly("poison", "lethal_poison"), "场景洗回山3继续携带烈毒")

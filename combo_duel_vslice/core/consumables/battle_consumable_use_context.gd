@@ -56,12 +56,21 @@ func capture_transaction_state() -> Dictionary:
 		if card == null:
 			continue
 		card_states[instance_id] = {
+			"identity": {
+				"definition_id": card.definition_id,
+				"rank_name": card.rank_name,
+				"rank_order": card.rank_order,
+				"qi_value": card.qi_value,
+				"attribute": card.attribute,
+				"attribute_name": card.attribute_name,
+			},
+			"origin_base_identity": card.origin_base_identity.duplicate(true),
 			"origin": card.reshape_origin.duplicate(true),
 			"enhancement": str(card.reshape_enhancement),
 			"imprint": str(card.reshape_imprint),
 			"others": card.reshape_others.duplicate(true),
-			"suppressed_reshapes": card.suppressed_reshapes.duplicate(true),
 			"anomalies": card.anomaly_snapshot(),
+			"temporary_reshapes": card.temporary_reshapes.duplicate(true),
 		}
 	return {
 		"cards": card_states,
@@ -80,16 +89,23 @@ func restore_transaction_state(snapshot: Dictionary) -> bool:
 			restored = false
 			continue
 		var values: Dictionary = snapshot["cards"][instance_id]
+		var identity: Dictionary = values.get("identity", {})
+		card.definition_id = str(identity.get("definition_id", card.definition_id))
+		card.rank_name = str(identity.get("rank_name", card.rank_name))
+		card.rank_order = int(identity.get("rank_order", card.rank_order))
+		card.qi_value = int(identity.get("qi_value", card.qi_value))
+		card.attribute = str(identity.get("attribute", card.attribute))
+		card.attribute_name = str(identity.get("attribute_name", card.attribute_name))
+		card.origin_base_identity = values.get("origin_base_identity", {}).duplicate(true)
 		card.reshape_origin = values.get("origin", {}).duplicate(true)
 		card.reshape_enhancement = str(values.get("enhancement", ""))
 		card.reshape_imprint = str(values.get("imprint", ""))
 		card.reshape_others = values.get("others", {}).duplicate(true)
-		card.suppressed_reshapes = values.get("suppressed_reshapes", {}).duplicate(true)
 		var anomalies: Dictionary = values.get("anomalies", {})
-		card.anomaly_poison = str(anomalies.get("poison", ""))
-		card.anomaly_state = str(anomalies.get("state", ""))
-		card.anomaly_marks = anomalies.get("marks", {}).duplicate(true)
-		card.anomaly_others = anomalies.get("others", {}).duplicate(true)
+		if not card.restore_anomaly_snapshot(anomalies):
+			restored = false
+		card.temporary_reshapes = values.get("temporary_reshapes", {
+			"enhancement": "", "attribute": ""}).duplicate(true)
 	growth.hand_technique_progression = snapshot.get(
 		"hand_technique_progression", {}).duplicate(true)
 	growth.owned_technique_ids.assign(snapshot.get("owned_technique_ids", []))

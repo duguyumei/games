@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "full_sleeve_wind"
-display_name = "满袖生风"
-pool = "high"
-description = "获得 P 点防御；抽2张。若恰好抽到2张且均视为风，造成 floor(P/2) 点伤害；否则给实际抽到的普通真气附风标记，再选择1张手牌放回牌库顶。"
-effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"draw","count":2,"capture":"drawn"},{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2},"phase":"zones","when":{"all":[{"capture_count_equals":{"capture":"drawn","value":2}},{"capture_all_attribute":{"capture":"drawn","attribute":"wind"}}]}},{"op":"apply_card_anomaly_to_captured","capture":"drawn","category":"mark","anomaly":"wind_mark","when":{"not":{"all":[{"capture_count_equals":{"capture":"drawn","value":2}},{"capture_all_attribute":{"capture":"drawn","attribute":"wind"}}]}}},{"op":"select_cards","choice_id":"return_top","prompt":"选择1张手牌放回牌库顶","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"return_top","when":{"not":{"all":[{"capture_count_equals":{"capture":"drawn","value":2}},{"capture_all_attribute":{"capture":"drawn","attribute":"wind"}}]}}},{"op":"move_captured","capture":"return_top","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"draw_pile","placement":"top","when":{"not":{"all":[{"capture_count_equals":{"capture":"drawn","value":2}},{"capture_all_attribute":{"capture":"drawn","attribute":"wind"}}]}}}]

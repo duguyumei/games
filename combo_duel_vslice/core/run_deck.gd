@@ -6,7 +6,7 @@ const QiCardInstanceDataScript = preload("res://core/qi_card_instance_data.gd")
 const CardInstanceIdFactoryScript = preload("res://core/card_instance_id_factory.gd")
 const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
 
-const VERSION := 2
+const VERSION := 3
 
 var _content_catalog
 var _base_deck_definition: Dictionary = {}
@@ -352,7 +352,8 @@ func to_snapshot() -> Dictionary:
 
 func restore_snapshot(values: Dictionary) -> Array[String]:
     var errors: Array[String] = []
-    if int(values.get("version", 0)) != VERSION:
+    var snapshot_version := int(values.get("version", 0))
+    if snapshot_version not in [2, VERSION]:
         errors.append("本局牌组版本不受支持：%s" % str(values.get("version", "")))
         return errors
     var incoming = values.get("cards", [])
@@ -366,13 +367,21 @@ func restore_snapshot(values: Dictionary) -> Array[String]:
             errors.append("本局牌组包含非对象真气实例")
             continue
         var card_values: Dictionary = item
+        if snapshot_version == 2:
+            var migration: Dictionary = QiCardInstanceDataScript.migrate_persistent(
+                card_values, _content_catalog)
+            if not migration.get("success", false):
+                errors.append(str(migration.get("reason", "真气实例迁移失败")))
+                continue
+            card_values = migration["values"]
         var instance_id := str(card_values.get("instance_id", ""))
         if unique_ids.has(instance_id):
             errors.append("本局牌组包含重复实例 ID：%s" % instance_id)
             continue
         unique_ids[instance_id] = true
         errors.append_array(_validate(card_values))
-        restored_cards.append(card_values.duplicate(true))
+        restored_cards.append(QiCardInstanceDataScript.capture(
+            QiCardInstanceDataScript.restore(card_values, _reshape_rules())))
     if not errors.is_empty():
         return errors
     _cards = restored_cards

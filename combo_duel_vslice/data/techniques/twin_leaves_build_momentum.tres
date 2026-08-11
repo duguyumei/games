@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "twin_leaves_build_momentum"
-display_name = "双叶催势"
-pool = "pair"
-description = "获得floor(P/2)防御；选择并明确弃掉至多4张手牌；每张在完整回合结束时获得1层连势，两对每张改为2层。"
-effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"select_cards","choice_id":"discard_for_momentum","prompt":"选择至多4张手牌明确弃掉","chooser":"actor","minimum":0,"maximum":4,"insufficient_policy":"use_available","selection_purpose":"explicit_discard","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected"},{"op":"move_captured","capture":"selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"register_turn_end_stack","stack":"momentum","turn_ends":1,"amount":{"kind":"multiply","values":[{"kind":"capture_count","capture":"discarded"},{"kind":"hand_map","values":{"pair":1,"two_pair":2}}]}}]

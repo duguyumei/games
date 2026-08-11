@@ -71,7 +71,7 @@ func _test_round_trip_and_complete_run_deck() -> void:
         restored.growth.hand_progression("high_card")["slot_count"],
         2,
         "往返保留高牌功法槽位")
-    _assert_equal(restored.growth.learned_technique_ids, ["long_wind_full_sleeve"], "往返保留功法稳定 ID")
+    _assert_equal(restored.growth.learned_technique_ids, [], "空功法池往返保持无已习得功法")
     _assert_equal(restored.growth.learned_inner_skill_ids, ["extra_qi_to_defense"], "往返保留已习得内功 ID")
     _assert_equal(restored.growth.equipped_inner_skill_ids, ["extra_qi_to_defense"], "往返保留已装备内功 ID")
     _assert_equal(restored.growth.technique_slot_index, 1, "往返保留功法与内功结算槽位")
@@ -197,7 +197,6 @@ func _configured_session(seed_value: int, experience: int):
         "sequence": [],
     }
     session.growth.learned_technique_ids.clear()
-    session.growth.learned_technique_ids.append("long_wind_full_sleeve")
     session.growth.learned_inner_skill_ids.clear()
     session.growth.learned_inner_skill_ids.append("extra_qi_to_defense")
     session.growth.equipped_inner_skill_ids.clear()
@@ -209,7 +208,7 @@ func _configured_session(seed_value: int, experience: int):
         if card.id != "wind_7":
             continue
         card.set_enhancement("qi_boost")
-        card.set_anomaly("poison", "lethal_poison")
+        card.set_anomaly("state", "poison")
     session.growth.run_deck.sync_from_battle_cards(cards)
     _assert_true(session.growth.run_deck.apply_card_origin(
         ["wind_7"], "attribute_change", {"attribute": "mountain"}

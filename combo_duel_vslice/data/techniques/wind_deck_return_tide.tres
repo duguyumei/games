@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "wind_deck_return_tide"
-display_name = "风库回潮"
-pool = "bomb"
-description = "获得P点防御；四条随机洗回弃牌堆中不视为风的牌的一半（向上取整），五条可选择全部牌；纯风改为洗回全部合格牌。"
-effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"actor","zone":"discard_pile","order":"zone","filters":{"exclude_attributes":["wind"]}},"capture":"eligible_discards","when":{"hand_id":"four_kind"}},{"op":"capture_query","query":{"side":"actor","zone":"discard_pile","order":"zone"},"capture":"eligible_discards","when":{"hand_id":"five_kind"}},{"op":"move_captured","capture":"eligible_discards","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"draw_pile","order":"random","limit":{"kind":"conditional","when":{"pure_attribute":"wind"},"then":{"kind":"capture_count","capture":"eligible_discards"},"else":{"kind":"divide_ceil","value":{"kind":"capture_count","capture":"eligible_discards"},"divisor":{"kind":"constant","value":2}}},"reason":"recover","shuffle_destination":true}]

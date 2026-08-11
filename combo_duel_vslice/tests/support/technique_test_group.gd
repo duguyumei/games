@@ -11,6 +11,7 @@ func _run_group(group_name: String, test_methods: Array[String]) -> void:
             failures.append("测试分组 %s 引用了不存在的方法 %s" % [group_name, method_name])
             continue
         call(method_name)
+    _dispose_tracked_engines()
     if failures.is_empty():
         print("TEST GROUP PASS [%s]: %d assertions" % [group_name, assertions])
         quit(0)

@@ -13,7 +13,7 @@ func _run() -> void:
     var project_report: Dictionary = BatchValidatorScript.new().validate_project()
     _assert_true(project_report["valid"], "合法的全量 JSON/TRES 内容通过独立校验：%s" % JSON.stringify(project_report["diagnostics"]))
     _assert_true(int(project_report["summary"]["json_files"]) >= 12, "扫描全部 JSON")
-    _assert_true(int(project_report["summary"]["tres_files"]) >= 1, "扫描全部 TRES")
+    _assert_equal(int(project_report["summary"]["tres_files"]), 0, "正式功法 TRES 已全部清空")
     _assert_equal(int(project_report["schema_version"]), 1, "报告具有机器可读版本")
 
     var catalog = ContentCatalogScript.new()
@@ -69,19 +69,23 @@ func _test_generated_batch(baseline: Dictionary) -> void:
         _assert_true(enemy_report["valid"], "批量敌人 %s 走同一内容契约" % enemy_spec[0])
 
 func _test_rejected_samples(baseline: Dictionary) -> void:
-    var duplicate: Dictionary = baseline.duplicate(true)
+    var with_probe: Dictionary = baseline.duplicate(true)
+    with_probe["techniques"]["techniques"].append(
+        SkeletonGeneratorScript.new().build(
+            "technique", "pipeline_probe", "管线内存探针")["envelope"]["content"])
+    var duplicate: Dictionary = with_probe.duplicate(true)
     duplicate["techniques"]["techniques"].append(duplicate["techniques"]["techniques"][0].duplicate(true))
     _assert_rejected(duplicate, "DUPLICATE_ID", "重复 ID")
 
-    var missing_reference: Dictionary = baseline.duplicate(true)
+    var missing_reference: Dictionary = with_probe.duplicate(true)
     missing_reference["sequences"]["pair"] = ["missing_technique"]
     _assert_rejected(missing_reference, "UNKNOWN_REFERENCE", "缺失跨文件引用")
 
-    var unknown_op: Dictionary = baseline.duplicate(true)
+    var unknown_op: Dictionary = with_probe.duplicate(true)
     unknown_op["techniques"]["techniques"][0]["effects"][0]["op"] = "unknown_batch_op"
     _assert_rejected(unknown_op, "UNKNOWN_OPERATION", "未知操作码")
 
-    var invalid_target: Dictionary = baseline.duplicate(true)
+    var invalid_target: Dictionary = with_probe.duplicate(true)
     invalid_target["techniques"]["techniques"][0]["effects"] = [{
         "op": "select_cards", "choice_id": "bad_target", "chooser": "spectator",
         "minimum": 1, "maximum": 1, "insufficient_policy": "invent_targets",
@@ -90,18 +94,18 @@ func _test_rejected_samples(baseline: Dictionary) -> void:
     _assert_rejected(invalid_target, "INVALID_TARGET_POLICY", "非法目标策略")
     _assert_rejected(invalid_target, "INVALID_TARGET_SIDE", "非法目标阵营")
 
-    var invalid_timing: Dictionary = baseline.duplicate(true)
+    var invalid_timing: Dictionary = with_probe.duplicate(true)
     invalid_timing["techniques"]["techniques"][0]["effects"] = [{
         "op": "register_delayed_effects", "timing": "whenever", "occurrences": 1,
         "effects": [{"op": "damage", "amount": {"kind": "power"}}],
     }]
     _assert_rejected(invalid_timing, "UNKNOWN_EVENT_TIMING", "非法事件时点")
 
-    var invalid_amount: Dictionary = baseline.duplicate(true)
+    var invalid_amount: Dictionary = with_probe.duplicate(true)
     invalid_amount["techniques"]["techniques"][0]["effects"][0]["amount"] = {"kind": "unknown_scale"}
     _assert_rejected(invalid_amount, "INVALID_VALUE_SPEC", "非法数值规格")
 
-    var unstable_id: Dictionary = baseline.duplicate(true)
+    var unstable_id: Dictionary = with_probe.duplicate(true)
     unstable_id["techniques"]["techniques"][0]["id"] = "Bad ID"
     _assert_rejected(unstable_id, "UNSTABLE_ID", "非稳定 ID")
 

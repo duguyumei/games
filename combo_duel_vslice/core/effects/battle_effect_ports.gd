@@ -12,7 +12,6 @@ var _status_system: StatusSystem
 var _battle_flow: BattleFlowCoordinator
 var _trigger_queue: VisibleTriggerQueue
 var _sides: Array[BattleSide] = []
-var _played_return_callback: Callable
 var _hand_retrigger_callback: Callable
 var _card_reshape_runtime_ref: WeakRef
 var _consumable_repository
@@ -32,9 +31,6 @@ func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
 
 func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
-
-func use_played_return_callback(callback: Callable) -> void:
-    _played_return_callback = callback
 
 func use_hand_retrigger_callback(callback: Callable) -> void:
     _hand_retrigger_callback = callback
@@ -72,10 +68,8 @@ func deal_damage(
         _status_system)
     if not bool(result["buffered"]):
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
-    _status_system.record_attack_segment(actor, source_kind)
     if not bool(result["buffered"]):
-        _status_system.resolve_received_attack_segment(
-            actor, target, source_kind, result)
+        _resolve_reflection(actor, target, source_kind, result)
     result["success"] = true
     return result
 
@@ -97,6 +91,23 @@ func flush_synchronized_damage() -> void:
 
 func add_defense(side: BattleSide, amount: int) -> int:
     return side.add_defense(amount)
+
+func add_momentum(side: BattleSide, amount: int) -> int:
+    return side.add_momentum(amount)
+
+func set_momentum(side: BattleSide, value: int) -> int:
+    return side.set_momentum(value)
+
+func set_reflection_percent(side: BattleSide, value: int) -> int:
+    return side.set_reflection_percent(value)
+
+func add_direct_power_fixed(side: BattleSide, amount: int) -> int:
+    side.direct_power_fixed += amount
+    return side.direct_power_fixed
+
+func add_direct_power_percent(side: BattleSide, amount: int) -> int:
+    side.direct_power_percent += amount
+    return side.direct_power_percent
 
 func gain_battle_experience(side: BattleSide, amount: int) -> int:
     var gained := maxi(0, amount)
@@ -226,9 +237,45 @@ func apply_card_anomaly(
         category: String,
         anomaly_id: String,
         payload: Dictionary,
-        source: String) -> Dictionary:
+        source: String,
+        layers: int = 1,
+        replace_state: bool = false) -> Dictionary:
     return _status_system.apply_card_anomaly(
-        card, category, anomaly_id, payload, source)
+        card, category, anomaly_id, payload, source, layers, replace_state)
+
+func can_apply_card_anomaly(
+        card,
+        category: String,
+        anomaly_id: String,
+        replace_state: bool = false) -> Dictionary:
+    return _status_system.can_apply_card_anomaly(
+        card, category, anomaly_id, replace_state)
+
+func apply_temporary_enhancement(card, enhancement_id: String) -> Dictionary:
+    if card == null or enhancement_id == "":
+        return {"success": false, "reason": "临时强化参数无效"}
+    return {
+        "success": card.set_temporary_enhancement(enhancement_id),
+        "enhancement": enhancement_id,
+    }
+
+func apply_temporary_attribute(card, attribute_id: String) -> Dictionary:
+    if card == null:
+        return {"success": false, "reason": "临时属性目标为空"}
+    return {
+        "success": card.set_temporary_attribute(attribute_id),
+        "attribute": attribute_id,
+    }
+
+func clear_temporary_reshape(card, subslot: String) -> Dictionary:
+    if card == null or subslot not in ["enhancement", "attribute"]:
+        return {"success": false, "reason": "临时重塑子槽无效"}
+    return {"success": true, "removed": card.clear_temporary_reshape(subslot)}
+
+func clear_all_temporary_reshapes(card) -> Dictionary:
+    if card == null:
+        return {"success": false, "reason": "临时重塑目标为空"}
+    return {"success": true, "removed": card.clear_all_temporary_reshapes()}
 
 func _card_reshape_runtime():
     return (
@@ -254,28 +301,6 @@ func gain_extra_actions(side: BattleSide, amount: int, source: String) -> int:
         "+%d（连击不自动补牌）" % gained)
     return gained
 
-func register_attack_counter_delay(
-        label: String,
-        turn_ends: int,
-        snapshot_power: int,
-        damage_per_segment: int,
-        actor: BattleSide,
-        target: BattleSide) -> Dictionary:
-    var result: Dictionary = _status_system.register_attack_counter_delay(
-        label,
-        turn_ends,
-        snapshot_power,
-        damage_per_segment,
-        actor,
-        target)
-    add_history(
-        "delayed_register",
-        label,
-        "%s延迟功法" % actor.name,
-        "成功",
-        "记录建立时 P=%d" % snapshot_power)
-    return result
-
 func register_turn_end_stack(
         label: String,
         turn_ends: int,
@@ -284,27 +309,6 @@ func register_turn_end_stack(
         actor: BattleSide) -> Dictionary:
     return _status_system.register_turn_end_stack(
         label, turn_ends, stack_id, amount, actor)
-
-func register_played_return(
-        side: BattleSide,
-        played_cards: Array,
-        contributing_cards: Array,
-        count: int,
-        destination: String,
-        anomaly: String,
-        enter_discard_first: bool,
-        shuffle: bool) -> Dictionary:
-    if not _played_return_callback.is_valid():
-        return {"success": false, "registered": 0}
-    return _played_return_callback.call(
-        side,
-        played_cards,
-        contributing_cards,
-        count,
-        destination,
-        anomaly,
-        enter_discard_first,
-        shuffle)
 
 func register_delayed_effects(
         label: String,
@@ -322,7 +326,7 @@ func retrigger_current_hand_technique(
         actor: BattleSide,
         target: BattleSide,
         sequence_book,
-        snapshot_power: int,
+        power_snapshot: Dictionary,
         maximum_discard: int,
         excluded_technique_ids: Array) -> Dictionary:
     if not _hand_retrigger_callback.is_valid():
@@ -331,7 +335,7 @@ func retrigger_current_hand_technique(
         actor,
         target,
         sequence_book,
-        snapshot_power,
+        power_snapshot,
         maximum_discard,
         excluded_technique_ids)
 
@@ -366,9 +370,27 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         int(resolution["amount"]),
         str(resolution["source_kind"]),
         resolution["result"])
-    _status_system.resolve_received_attack_segment(
+    _resolve_reflection(
         resolution["actor"],
         resolution["target"],
         str(resolution["source_kind"]),
         resolution["result"])
     return int(resolution["actor"].life) <= 0
+
+func _resolve_reflection(
+        attacker: BattleSide,
+        defender: BattleSide,
+        source_kind: String,
+        result: Dictionary) -> void:
+    if attacker == null or defender == null or attacker == defender \
+            or source_kind == "reflection" \
+            or bool(result.get("true_damage", false)):
+        return
+    var defense_lost := int(result.get("defense_lost", 0))
+    var percent := int(defender.current_reflection_percent)
+    if defense_lost <= 0 or percent <= 0:
+        return
+    var amount := int(floor(defense_lost * percent / 100.0))
+    if amount <= 0:
+        return
+    deal_damage(defender, attacker, amount, "reflection", false)

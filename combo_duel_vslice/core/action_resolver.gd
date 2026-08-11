@@ -4,6 +4,7 @@ extends RefCounted
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const BattleActionRecordScript = preload("res://core/battle_action_record.gd")
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
+const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 
 var technique_repository
 var inner_skill_repository
@@ -13,8 +14,6 @@ var timing_system
 var rng: RandomNumberGenerator
 var effect_ports
 var _pending_resolution: Dictionary = {}
-
-var _recycle_after_play: Dictionary = {}
 
 func _init(
         effect_ports_value,
@@ -43,7 +42,6 @@ func use_trigger_queue(queue) -> void:
     trigger_queue = queue
 
 func reset() -> void:
-    _recycle_after_play.clear()
     _pending_resolution.clear()
 
 func make_action_record(
@@ -82,6 +80,9 @@ func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
                 "on_play_resolve", technique["name"], "%s功法" % record["actor"].name,
                 "条件失败", action_preview["condition"]["reason"])
             continue
+        action_preview["values"] = PowerCalculatorScript.apply_momentum(
+            action_preview["values"],
+            int(record["actor"].momentum_value))
         record["triggered"] = true
     _pending_resolution = {
         "records": records,
@@ -150,6 +151,9 @@ func _continue_resolution() -> Dictionary:
 func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bool:
     var phase_has_entries := false
     for record in records:
+        if record["triggered"] \
+                and not bool(record["momentum_prepared"]):
+            _prepare_successful_technique_momentum(record)
         for source_spec in _action_trigger_sources(record):
             var source_effects: Array = source_spec["definition"].get("effects", [])
             if source_spec.get("entity") != null:
@@ -172,6 +176,7 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "hand_result": record["preview"]["hand"],
                 "played_cards": record["preview"]["cards"],
                 "power": record["preview"]["values"]["technique_value"],
+                "values": record["preview"]["values"],
                 "technique_id": source_spec["definition"].get("id", ""),
                 "technique_name": source_spec["definition"].get("name", ""),
                 "technique_pool": technique_pool,
@@ -206,18 +211,11 @@ func _mark_failed_records(results: Array) -> void:
                 record["triggered"] = false
 
 func commit_staging_for(side, cards: Array = []) -> Dictionary:
-    var side_recycles: Dictionary = _recycle_after_play.get(side.get_instance_id(), {})
-    var result: Dictionary = (
-        side.commit_staging_with_recycles(side_recycles, rng)
+    var committed: Array = (
+        side.commit_staging()
         if cards.is_empty()
-        else side.commit_selected_staging_with_recycles(cards, side_recycles, rng))
-    for card in result.get("committed", []):
-        side_recycles.erase(card.id)
-    if side_recycles.is_empty():
-        _recycle_after_play.erase(side.get_instance_id())
-    else:
-        _recycle_after_play[side.get_instance_id()] = side_recycles
-    return result
+        else side.commit_selected_staging(cards))
+    return {"committed": committed}
 
 func commit_cooperation_staging(record, cooperation: Dictionary) -> Dictionary:
     var destination := str(cooperation.get("post_commit", {}).get("destination", "own_discard"))
@@ -231,44 +229,13 @@ func commit_cooperation_staging(record, cooperation: Dictionary) -> Dictionary:
             "cooperation_commit", "top")
         if result.get("success", false):
             committed.append(card)
-    return {"committed": committed, "recycled": []}
-
-func register_played_return(
-        side,
-        played_cards: Array,
-        contributing_cards: Array,
-        count: int,
-        destination: String,
-        anomaly: String,
-        enter_discard_first: bool,
-        shuffle: bool) -> Dictionary:
-    var candidates: Array = []
-    for card in played_cards:
-        if contributing_cards.has(card):
-            candidates.append(card)
-    for index in range(candidates.size() - 1, 0, -1):
-        var other := rng.randi_range(0, index)
-        var temporary = candidates[index]
-        candidates[index] = candidates[other]
-        candidates[other] = temporary
-    var registered := mini(maxi(0, count), candidates.size())
-    var side_id: int = int(side.get_instance_id())
-    if not _recycle_after_play.has(side_id):
-        _recycle_after_play[side_id] = {}
-    for card in candidates.slice(0, registered):
-        _recycle_after_play[side_id][card.id] = {
-            "destination": destination,
-            "anomaly": anomaly,
-            "enter_discard_first": enter_discard_first,
-            "shuffle": shuffle,
-        }
-    return {"success": true, "registered": registered}
+    return {"committed": committed}
 
 func retrigger_current_hand_technique(
         actor,
         target,
         sequence_book,
-        snapshot_power: int,
+        power_snapshot: Dictionary,
         maximum_discard: int,
         excluded_technique_ids: Array) -> Dictionary:
     if effect_ports.technique_draw_count(actor) > 0:
@@ -300,7 +267,8 @@ func retrigger_current_hand_technique(
         "target": target,
         "hand_result": hand_result,
         "played_cards": hand_result.get("contributing", []),
-        "power": snapshot_power,
+        "power": int(power_snapshot.get("technique_value", 0)),
+        "values": power_snapshot,
         "technique_id": technique_id,
         "technique_name": definition.display_name,
         "technique_pool": definition.pool,
@@ -313,7 +281,6 @@ func retrigger_current_hand_technique(
         return {"success": false, "triggered": false, "detail": "回合末重触正在等待目标选择"}
     if not result.get("success", false):
         return {"success": false, "triggered": false, "detail": result.get("detail", "重触失败")}
-    sequence_book.advance(str(hand_result["id"]))
     return {
         "success": true,
         "triggered": true,
@@ -355,6 +322,7 @@ func _finish_action_record(record) -> void:
     var technique: Dictionary = action_preview["technique"]
     var hand_id: String = action_preview["hand"]["id"]
     if record["triggered"]:
+        record["actor"].last_successful_technique_hand_id = hand_id
         record["book"].advance(hand_id)
         trigger_queue.add_history(
             "group_end", "功法序列推进", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]],
@@ -376,10 +344,10 @@ func log_calculation(side, action_preview: Dictionary, hide_values: bool = false
         "基础值 %d｜牌型基准值 %d｜功法值 %d（不自动造成伤害）" % [
             values["base_value"], values["baseline_value"], values["technique_value"]])
 
-func log_cards_leave(side, cards: Array, recycled: Array = []) -> void:
+func log_cards_leave(side, cards: Array) -> void:
     trigger_queue.add_history(
         "cards_leave_play", "%s打出真气离开待出区" % side.name, "规则", "成功",
-        "%d 张；其中 %d 张因蛊印洗回牌库；这不视为弃掉" % [cards.size(), recycled.size()])
+        "%d 张进入弃牌堆并完成入堆响应" % cards.size())
 
 func combat_order_labels(side, technique_name: String = "当前功法") -> Array[String]:
     var entries: Array = [{"order": side.technique_slot_index, "label": technique_name}]
@@ -399,7 +367,8 @@ func _effects_for_phase(effects: Array, phase: String) -> Array:
     var result: Array = []
     var prepare_ops := [
         "defense", "defense_from_noncontributing_qi", "add_stack", "add_target_stack",
-        "register_attack_counter_delay"]
+        "add_momentum", "set_momentum", "set_reflection_percent",
+        "add_direct_power_fixed", "add_direct_power_percent"]
     var damage_ops := ["damage", "multi_damage"]
     for effect in effects:
         var explicit_phase: String = effect.get("phase", "")
@@ -469,22 +438,12 @@ func _resolve_played_card_anomalies(records: Array) -> void:
                 "真气异状",
                 "结算",
                 anomaly_detail)
-            if bool(resolution["recycle"]):
-                var side_id: int = holder.get_instance_id()
-                if not _recycle_after_play.has(side_id):
-                    _recycle_after_play[side_id] = {}
-                _recycle_after_play[side_id][card.id] = {
-                    "category": str(resolution.get("recycle_category", "")),
-                    "anomaly": str(resolution.get("recycle_anomaly_id", "")),
-                }
-                var recycle_status_name := str(resolution.get(
-                    "recycle_status_name", "状态"))
-                trigger_queue.add_history(
-                    "card_anomaly_recycle",
-                    "%s消耗 1 层%s" % [holder.name, recycle_status_name],
-                    recycle_status_name,
-                    "成功",
-                    "%s续上%s，结算后洗回牌库" % [card.display_name(), anomaly_name])
-
 func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")
+
+func _prepare_successful_technique_momentum(record) -> void:
+    record["momentum_prepared"] = true
+    var actor = record["actor"]
+    var hand_id := str(record["preview"]["hand"]["id"])
+    if actor.last_successful_technique_hand_id != hand_id:
+        actor.set_momentum(0)

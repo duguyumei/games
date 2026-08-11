@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "exchange_nest_into_enemy"
-display_name = "换巢入敌"
-pool = "pair"
-description = "获得P点防御；抽3张，然后选择2张手牌置入敌方牌库顶；两对中置入牌分别获得1种随机毒。"
-effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"draw","count":3,"capture":"drawn"},{"op":"select_cards","choice_id":"send_two","prompt":"选择2张手牌置入敌方牌库顶","chooser":"actor","minimum":2,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"sent"},{"op":"apply_card_anomaly_to_captured","capture":"sent","random_options":[{"category":"poison","anomaly":"lethal_poison"},{"category":"poison","anomaly":"stagnant_poison"}],"when":{"hand_id":"two_pair"}},{"op":"move_captured","capture":"sent","from_side":"actor","from_zone":"hand","to_side":"target","to_zone":"draw_pile","placement":"top"}]

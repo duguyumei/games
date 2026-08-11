@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "four_poles_control_top"
-display_name = "四极控顶"
-pool = "bomb"
-description = "造成P点伤害；四条随机使牌库中至多5张普通真气获得风引，五条只检查牌库顶实际5张。"
-effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"apply_random_card_anomaly","zone":"draw_pile","category":"mark","anomaly":"wind_lure","count":5,"when":{"hand_id":"four_kind"}},{"op":"capture_query","query":{"side":"actor","zone":"draw_pile","order":"top","limit":5},"capture":"top_five","when":{"hand_id":"five_kind"}},{"op":"apply_card_anomaly_to_captured","capture":"top_five","category":"mark","anomaly":"wind_lure","when":{"hand_id":"five_kind"}}]

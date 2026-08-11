@@ -1,11 +1,11 @@
 {
-  "version": 1,
-  "high_card": ["suspended_gu", "lethal_gu_needle", "long_wind_full_sleeve"],
-  "pair": ["double_gu_bind"],
-  "two_pair": ["double_gu_bind"],
-  "three_kind": ["three_corpses_gu"],
-  "straight": ["five_yang_chase"],
-  "full_house": ["three_corpses_gu"],
-  "four_kind": ["discard_fuel_open_furnace"],
+  "version": 2,
+  "high_card": [],
+  "pair": [],
+  "two_pair": [],
+  "three_kind": [],
+  "straight": [],
+  "full_house": [],
+  "four_kind": [],
   "five_kind": []
 }

@@ -8,6 +8,11 @@ var target = null
 var hand_result: Dictionary = {}
 var played_cards: Array = []
 var power: int = 0
+var initial_power: int = 0
+var direct_power_fixed: int = 0
+var direct_power_percent: int = 0
+var pre_momentum_power: int = 0
+var momentum_used: int = 0
 var technique_id: String = ""
 var technique_name: String = ""
 var actual_hand_id: String = ""
@@ -30,7 +35,19 @@ func configure(values: Dictionary):
     target = values.get("target")
     hand_result = values.get("hand_result", {})
     played_cards = values.get("played_cards", [])
-    power = int(values.get("power", 0))
+    var power_values: Dictionary = values.get("values", {})
+    power = int(values.get(
+        "power", power_values.get("technique_value", 0)))
+    initial_power = int(values.get(
+        "initial_power", power_values.get("initial_power", power)))
+    direct_power_fixed = int(values.get(
+        "direct_power_fixed", power_values.get("direct_power_fixed", 0)))
+    direct_power_percent = int(values.get(
+        "direct_power_percent", power_values.get("direct_power_percent", 0)))
+    pre_momentum_power = int(values.get(
+        "pre_momentum_power", power_values.get("pre_momentum_power", power)))
+    momentum_used = int(values.get(
+        "momentum_used", power_values.get("momentum_used", 0)))
     technique_id = str(values.get("technique_id", ""))
     technique_name = str(values.get("technique_name", ""))
     actual_hand_id = str(values.get(
@@ -84,6 +101,11 @@ static func coerce(value):
 func public_metadata() -> Dictionary:
     return {
         "power": power,
+        "initial_power": initial_power,
+        "direct_power_fixed": direct_power_fixed,
+        "direct_power_percent": direct_power_percent,
+        "pre_momentum_power": pre_momentum_power,
+        "momentum_used": momentum_used,
         "technique_id": technique_id,
         "technique_name": technique_name,
         "actual_hand_id": actual_hand_id,
@@ -99,4 +121,14 @@ func public_metadata() -> Dictionary:
         "capture_keys": captures.keys(),
         "has_ports": ports != null,
         "waiting_choice_count": choice_candidates.size(),
+    }
+
+func power_snapshot() -> Dictionary:
+    return {
+        "initial_power": initial_power,
+        "direct_power_fixed": direct_power_fixed,
+        "direct_power_percent": direct_power_percent,
+        "pre_momentum_power": pre_momentum_power,
+        "momentum_used": momentum_used,
+        "technique_value": power,
     }

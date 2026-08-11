@@ -59,7 +59,7 @@ func power_amp_percent(card) -> int:
 
 func effective_qi_value(card, calculation_context: Dictionary = {}) -> int:
     return maxi(0, _run_numeric(
-        card, "effective_qi", int(card.qi_value), calculation_context))
+        card, "effective_qi", _base_qi_value(card), calculation_context))
 
 func dispatch_battle_event(
         card,
@@ -94,7 +94,7 @@ func calculate_numeric_bundle_once(
         calculation_context: Dictionary = {},
         contribution_modifier: Callable = Callable()) -> Dictionary:
     var effective_qi := maxi(0, _run_numeric(
-        card, "effective_qi", int(card.qi_value), calculation_context))
+        card, "effective_qi", _base_qi_value(card), calculation_context))
     var contribution := _run_numeric(
         card, "card_contribution", effective_qi, calculation_context)
     if contribution_modifier.is_valid():
@@ -169,7 +169,7 @@ func can_explicit_discard(card) -> Dictionary:
 
 func has_card_kind(card, kind: String) -> bool:
     if kind == "normal":
-        return effective_qi_value(card) != 0
+        return true
     return true
 
 func _run_numeric(
@@ -213,6 +213,9 @@ func _behavior_entries(card, trigger: String) -> Array:
                     "behavior": behavior,
                 })
             serial += 1
+    if trigger == "effective_qi":
+        for anomaly_entry in _effective_qi_anomaly_entries(card, serial):
+            entries.append(anomaly_entry)
     entries.sort_custom(func(left, right):
         if int(left["priority"]) != int(right["priority"]):
             return int(left["priority"]) < int(right["priority"])
@@ -229,27 +232,80 @@ func _reshape_id(card, category: String) -> String:
 
 func _active_definitions(card) -> Array:
     var result: Array = []
+    if card.has_method("return_to_origin_active") and card.return_to_origin_active():
+        return result
     for category in ["origin", "enhancement", "imprint"]:
         var definition_value := definition(category, _reshape_id(card, category))
         if not definition_value.is_empty():
             result.append(definition_value)
     for reshape_id in card.reshape_others:
-        var suppressed_others: Dictionary = card.suppressed_reshapes.get("others", {})
-        if suppressed_others.has(str(reshape_id)):
-            continue
         var definition_value := definition("other", str(reshape_id))
         if not definition_value.is_empty():
             result.append(definition_value)
+    var temporary_enhancement := str(card.temporary_reshapes.get("enhancement", ""))
+    if temporary_enhancement != "":
+        var temporary_definition := definition("enhancement", temporary_enhancement)
+        if not temporary_definition.is_empty():
+            result.append(temporary_definition)
     return result
 
+func _effective_qi_anomaly_entries(card, starting_serial: int) -> Array:
+    var result: Array = []
+    var serial := starting_serial
+    var snapshot: Dictionary = card.anomaly_snapshot()
+    for pair in [["buff", "buffs"], ["debuff", "debuffs"]]:
+        for anomaly_id in snapshot.get(pair[1], {}):
+            var layers: int = card.anomaly_layers(pair[0], str(anomaly_id))
+            var definition_value: Dictionary = definition("anomaly", str(anomaly_id))
+            for modifier_value in definition_value.get("modifiers", []):
+                var modifier: Dictionary = modifier_value
+                if str(modifier.get("id", "")) != "effective_qi_add_per_layer":
+                    continue
+                result.append({
+                    "priority": int(modifier.get("priority", 400)),
+                    "serial": serial,
+                    "behavior": {
+                        "trigger": "effective_qi",
+                        "handler": "add_effective_qi",
+                        "amount": layers * int(modifier.get("value", 0)),
+                    },
+                })
+                serial += 1
+    for anomaly_id in snapshot.get("marks", {}):
+        var definition_value: Dictionary = definition("anomaly", str(anomaly_id))
+        for modifier_value in definition_value.get("modifiers", []):
+            var modifier: Dictionary = modifier_value
+            if str(modifier.get("id", "")) != "effective_qi_final_value":
+                continue
+            result.append({
+                "priority": int(modifier.get("priority", 10000)),
+                "serial": serial,
+                "behavior": {
+                    "trigger": "effective_qi",
+                    "handler": "set_effective_qi",
+                    "value": maxi(0, int(modifier.get("value", 0))),
+                },
+            })
+            serial += 1
+    return result
+
+func _base_qi_value(card) -> int:
+    return card.current_base_qi_value() \
+        if card.has_method("current_base_qi_value") else int(card.qi_value)
+
 func _content_type(category: String) -> String:
-    return "other_reshape" if category == "other" else category
+    if category == "other":
+        return "other_reshape"
+    return category
 
 func _load_fallback_definitions() -> void:
     var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://data/card_states.json"))
     if not parsed is Dictionary:
         return
-    for pair in [["origin", "origins"], ["enhancement", "enhancements"], ["imprint", "imprints"], ["other", "other_reshapes"]]:
+    for pair in [
+            ["origin", "origins"], ["enhancement", "enhancements"],
+            ["imprint", "imprints"], ["other", "other_reshapes"],
+            ["anomaly", "anomalies"]]:
         var values: Dictionary = {}
         for value in parsed.get(pair[1], []):
             values[str(value.get("id", ""))] = value.duplicate(true)

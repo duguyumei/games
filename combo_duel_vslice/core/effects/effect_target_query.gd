@@ -44,13 +44,15 @@ func validate() -> Dictionary:
         var anomaly = filters["anomaly"]
         if not anomaly is Dictionary:
             return _invalid("异状筛选必须是对象")
-        if str(anomaly.get("category", "")) not in ["mark", "poison", "state", "other"]:
+        if str(anomaly.get("category", "")) not in ["buff", "debuff", "state", "mark"]:
             return _invalid("异状筛选缺少合法 category")
     if filters.has("reshape"):
         var reshape = filters["reshape"]
         if not reshape is Dictionary:
             return _invalid("重塑筛选必须是对象")
-        if str(reshape.get("category", "")) not in ["origin", "enhancement", "imprint", "other"]:
+        if str(reshape.get("category", "")) not in [
+                "origin", "enhancement", "imprint", "other",
+                "temporary_enhancement", "temporary_attribute"]:
             return _invalid("重塑筛选缺少合法 category")
     return {"ok": true, "reason": ""}
 
@@ -118,20 +120,27 @@ func _matches(card) -> bool:
         for attribute in filters["exclude_attributes"]:
             if card.is_attribute(str(attribute)):
                 return false
-    if filters.has("rank_names") and not filters["rank_names"].has(card.rank_name):
+    var rank_name: String = card.current_rank_name() \
+        if card.has_method("current_rank_name") else str(card.rank_name)
+    var rank_order: int = card.current_rank_order() \
+        if card.has_method("current_rank_order") else int(card.rank_order)
+    var definition_id: String = card.current_definition_id() \
+        if card.has_method("current_definition_id") else str(card.definition_id)
+    if filters.has("rank_names") and not filters["rank_names"].has(rank_name):
         return false
-    if filters.has("rank_orders") and not filters["rank_orders"].has(card.rank_order):
+    if filters.has("rank_orders") and not filters["rank_orders"].has(rank_order):
         return false
-    if filters.has("definition_ids") and not filters["definition_ids"].has(card.definition_id):
+    if filters.has("definition_ids") and not filters["definition_ids"].has(definition_id):
         return false
     if filters.has("temporary") and bool(filters["temporary"]) != bool(card.temporary_card):
         return false
     if filters.has("has_any_reshape"):
-        var has_reshape: bool = (
-            not card.reshape_origin.is_empty()
-            or card.reshape_enhancement != ""
-            or card.reshape_imprint != ""
-            or not card.reshape_others.is_empty())
+        var has_reshape: bool = card.has_any_reshape_storage() \
+            if card.has_method("has_any_reshape_storage") else (
+                not card.reshape_origin.is_empty()
+                or card.reshape_enhancement != ""
+                or card.reshape_imprint != ""
+                or not card.reshape_others.is_empty())
         if has_reshape != bool(filters["has_any_reshape"]):
             return false
     if filters.has("anomaly") and not _matches_anomaly(card, filters["anomaly"]):
@@ -164,6 +173,14 @@ func _matches_reshape(card, spec: Dictionary) -> bool:
         "other":
             actual = not card.reshape_others.is_empty() \
                 if reshape_id == "" else card.reshape_others.has(reshape_id)
+        "temporary_enhancement":
+            var temporary_enhancement := str(card.temporary_reshapes.get("enhancement", ""))
+            actual = temporary_enhancement != "" \
+                and (reshape_id == "" or temporary_enhancement == reshape_id)
+        "temporary_attribute":
+            var temporary_attribute := str(card.temporary_reshapes.get("attribute", ""))
+            actual = temporary_attribute != "" \
+                and (reshape_id == "" or temporary_attribute == reshape_id)
     return actual == bool(spec.get("present", true))
 
 func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:

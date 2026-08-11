@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "wind_born_echo"
-display_name = "风生回响"
-pool = "high"
-description = "造成P点伤害并记录P；回合结束时，若本回合没有因功法直接抽牌，则识别整手最高精确牌型并明确弃掉全部手牌。实际弃牌不多于6张且牌型不是高牌时，以记录P重触该牌型当前功法，且不能递归重触自身。"
-effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"register_delayed_effects","timing":"turn_end","occurrences":1,"effects":[{"op":"retrigger_current_hand_technique","maximum_discard":6,"excluded_technique_ids":["wind_born_echo"]}]}]

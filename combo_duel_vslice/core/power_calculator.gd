@@ -22,28 +22,41 @@ static func calculate(
     var fixed_multiplier: int = int(hand_result["multiplier"])
     var technique_multiplier: int = (
         fixed_multiplier
-        + int(modifiers.get("insight_multiplier", 0))
         + int(modifiers.get("multiplier_bonus", 0))
         + card_multiplier_bonus)
     var baseline_value: int = base_value * fixed_multiplier
-    var unamplified: int = (
-        base_value * technique_multiplier
-        + int(modifiers.get("power_fixed", 0)))
-    var amp_percent: int = int(modifiers.get("power_amp_percent", 0)) + card_amp_percent
-    var technique_value := maxi(0, int(floor(unamplified * (1.0 + amp_percent / 100.0))))
+    var initial_power: int = int(floor(base_value * technique_multiplier))
+    var direct_power_fixed := int(modifiers.get("power_fixed", 0))
+    var direct_power_percent := (
+        int(modifiers.get("power_amp_percent", 0)) + card_amp_percent)
+    var pre_momentum_power := int(floor(
+        (initial_power + direct_power_fixed)
+        * (1.0 + direct_power_percent / 100.0)))
     return {
         "card_total": card_total,
         "base_value": base_value,
         "fixed_multiplier": fixed_multiplier,
         "technique_multiplier": technique_multiplier,
         "baseline_value": baseline_value,
-        "unamplified_technique_value": unamplified,
-        "power_amp_percent": amp_percent,
+        "initial_power": initial_power,
+        "direct_power_fixed": direct_power_fixed,
+        "direct_power_percent": direct_power_percent,
+        "pre_momentum_power": pre_momentum_power,
+        "momentum_used": 0,
         "card_multiplier_bonus": card_multiplier_bonus,
         "card_amp_percent": card_amp_percent,
         "card_trigger_bundles": card_trigger_bundles,
-        "technique_value": technique_value,
+        "technique_value": maxi(0, pre_momentum_power),
     }
+
+static func apply_momentum(values: Dictionary, momentum: int) -> Dictionary:
+    var result := values.duplicate(true)
+    result["momentum_used"] = maxi(0, momentum)
+    result["technique_value"] = maxi(
+        0,
+        int(result.get("pre_momentum_power", 0))
+        + int(result["momentum_used"]))
+    return result
 
 static func _qualified_card_numeric_bundle(
         card,
@@ -82,17 +95,15 @@ static func apply_frozen_card_multiplier_bonus(
     var applied_bonus := maxi(0, bonus)
     if applied_bonus == 0:
         return result
-    var base_value := int(result.get("base_value", 0))
     var previous_multiplier := int(result.get("technique_multiplier", 0))
-    var fixed_power := (
-        int(result.get("unamplified_technique_value", 0))
-        - base_value * previous_multiplier)
     result["card_multiplier_bonus"] = (
         int(result.get("card_multiplier_bonus", 0)) + applied_bonus)
     result["technique_multiplier"] = previous_multiplier + applied_bonus
-    result["unamplified_technique_value"] = (
-        base_value * int(result["technique_multiplier"]) + fixed_power)
-    result["technique_value"] = maxi(0, int(floor(
-        int(result["unamplified_technique_value"])
-        * (1.0 + int(result.get("power_amp_percent", 0)) / 100.0))))
-    return result
+    result["initial_power"] = int(floor(
+        int(result.get("base_value", 0))
+        * int(result["technique_multiplier"])))
+    result["pre_momentum_power"] = int(floor(
+        (int(result["initial_power"])
+        + int(result.get("direct_power_fixed", 0)))
+        * (1.0 + int(result.get("direct_power_percent", 0)) / 100.0)))
+    return apply_momentum(result, int(result.get("momentum_used", 0)))

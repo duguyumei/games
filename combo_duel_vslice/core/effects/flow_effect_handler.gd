@@ -11,8 +11,9 @@ func _init(resolver) -> void:
 
 func operation_ids() -> Array[String]:
     return [
-        "gain_extra_action", "register_attack_counter_delay", "register_turn_end_stack",
-        "register_played_return",
+        "gain_extra_action", "add_momentum", "set_momentum",
+        "set_reflection_percent", "add_direct_power_fixed",
+        "add_direct_power_percent", "register_turn_end_stack",
         "register_delayed_effects",
         "retrigger_current_hand_technique",
     ]
@@ -29,19 +30,26 @@ func execute(effect: Dictionary, context):
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             runtime.ports.gain_extra_actions(runtime.actor, amount, "功法")
             return EffectResultScript.succeeded("连击机会 +%d" % amount)
-        "register_attack_counter_delay":
-            var damage: int = value_resolver.resolve(effect.get("damage", {}), runtime)
-            var result: Dictionary = runtime.ports.register_attack_counter_delay(
-                runtime.technique_name if runtime.technique_name != "" else "延迟功法",
-                int(effect.get("turn_ends", 1)),
-                runtime.power,
-                damage,
-                runtime.actor,
-                runtime.target)
-            if not result.get("success", true):
-                return EffectResultScript.failed(str(result.get("reason", "延迟记录失败")))
-            return EffectResultScript.succeeded(
-                "记录 P=%d，延迟伤害/段=%d" % [runtime.power, damage])
+        "add_momentum":
+            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            var changed: int = runtime.ports.add_momentum(runtime.actor, amount)
+            return EffectResultScript.succeeded("连势 %+d" % changed)
+        "set_momentum":
+            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            runtime.ports.set_momentum(runtime.actor, amount)
+            return EffectResultScript.succeeded("连势设为 %d" % runtime.actor.momentum_value)
+        "set_reflection_percent":
+            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            runtime.ports.set_reflection_percent(runtime.actor, amount)
+            return EffectResultScript.succeeded("反震设为 %d%%" % runtime.actor.current_reflection_percent)
+        "add_direct_power_fixed":
+            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            runtime.ports.add_direct_power_fixed(runtime.actor, amount)
+            return EffectResultScript.succeeded("直接功法值固定修正 %+d" % amount)
+        "add_direct_power_percent":
+            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            runtime.ports.add_direct_power_percent(runtime.actor, amount)
+            return EffectResultScript.succeeded("直接功法值百分比修正 %+d%%" % amount)
         "register_turn_end_stack":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             var result: Dictionary = runtime.ports.register_turn_end_stack(
@@ -53,18 +61,6 @@ func execute(effect: Dictionary, context):
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "延迟层数建立失败")))
             return EffectResultScript.succeeded("回合结束时%s +%d" % [effect.get("stack", ""), amount])
-        "register_played_return":
-            var count: int = value_resolver.resolve(effect.get("count", {}), runtime)
-            var result: Dictionary = runtime.ports.register_played_return(
-                runtime.actor,
-                runtime.played_cards,
-                runtime.hand_result.get("contributing", []),
-                count,
-                str(effect.get("destination", "hand")),
-                str(effect.get("anomaly", "")),
-                bool(effect.get("enter_discard_first", true)),
-                bool(effect.get("shuffle", false)))
-            return EffectResultScript.succeeded("登记打出牌回收 %d 张" % int(result.get("registered", 0)))
         "register_delayed_effects":
             var result: Dictionary = runtime.ports.register_delayed_effects(
                 runtime.technique_name if runtime.technique_name != "" else "延迟功法",
@@ -80,7 +76,7 @@ func execute(effect: Dictionary, context):
                 runtime.actor,
                 runtime.target,
                 runtime.sequence_book,
-                runtime.power,
+                runtime.power_snapshot(),
                 int(effect.get("maximum_discard", 6)),
                 effect.get("excluded_technique_ids", []))
             if not result.get("success", false):

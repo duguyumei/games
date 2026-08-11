@@ -3,8 +3,13 @@
   "id": "trial_sync_01",
   "name": "试炼对手",
   "player": {
-    "inner_skills": ["extra_qi_to_defense"],
-    "consumables": ["high_card_insight", "zengyuan_pill"],
+    "inner_skills": [
+      "extra_qi_to_defense"
+    ],
+    "consumables": [
+      "high_card_insight",
+      "zengyuan_pill"
+    ],
     "technique_slot_index": 1,
     "loadout_status": "vertical_slice_debug"
   },
@@ -13,10 +18,21 @@
     "inner_skills": [],
     "technique_slot_index": 0,
     "opening_hand": [
-      "fire_2", "forest_4", "mountain_6", "wind_8",
-      "fire_9", "forest_J", "mountain_Q", "wind_K"
+      "fire_2",
+      "forest_4",
+      "mountain_6",
+      "wind_8",
+      "fire_9",
+      "forest_J",
+      "mountain_Q",
+      "wind_K"
     ],
-    "draw_order": ["forest_2", "mountain_3", "fire_5", "wind_7"],
+    "draw_order": [
+      "forest_2",
+      "mountain_3",
+      "fire_5",
+      "wind_7"
+    ],
     "ai": {
       "damage_weight": 1.0,
       "defense_weight": 0.7,
@@ -33,20 +49,48 @@
       "next_technique_bias": {}
     },
     "sequences": {
-      "high_card": ["fire_sparks", "suspended_gu", "long_wind_full_sleeve"],
-      "pair": ["double_gu_bind"],
-      "two_pair": ["double_gu_bind"],
-      "three_kind": ["three_corpses_gu"],
-      "full_house": ["three_corpses_gu"],
-      "four_kind": ["discard_fuel_open_furnace"],
+      "high_card": [],
+      "pair": [],
+      "two_pair": [],
+      "three_kind": [],
+      "full_house": [],
+      "four_kind": [],
       "five_kind": [],
-      "straight": ["five_yang_chase"]
+      "straight": []
     }
   },
   "rounds": [
-    {"actions": [["fire_2", "forest_4"]]},
-    {"actions": [["mountain_6", "wind_8"]]},
-    {"actions": [["mountain_3", "fire_9"]]},
-    {"actions": [["forest_J", "mountain_Q"]]}
+    {
+      "actions": [
+        [
+          "fire_2",
+          "forest_4"
+        ]
+      ]
+    },
+    {
+      "actions": [
+        [
+          "mountain_6",
+          "wind_8"
+        ]
+      ]
+    },
+    {
+      "actions": [
+        [
+          "mountain_3",
+          "fire_9"
+        ]
+      ]
+    },
+    {
+      "actions": [
+        [
+          "forest_J",
+          "mountain_Q"
+        ]
+      ]
+    }
   ]
 }

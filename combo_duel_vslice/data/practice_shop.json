@@ -8,16 +8,7 @@
         "offer_kind": "technique",
         "weight": 35,
         "fixed_price": 3,
-        "candidate_ids": [
-          "balance_sleeves_listen_wind",
-          "double_gu_exchange_breath",
-          "three_ring_ensemble",
-          "three_ring_chaos_qi",
-          "seize_qi_return_nest",
-          "five_steps_echo",
-          "stagnant_gu_conceal_breath",
-          "borrow_fire_guard_heart"
-        ]
+        "candidate_ids": []
       },
       {
         "id": "pills",

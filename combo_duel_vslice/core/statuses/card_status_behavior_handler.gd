@@ -6,11 +6,14 @@ var _handlers: Dictionary = {}
 func _init() -> void:
     _handlers = {
         "damage_holder_by_current_qi": Callable(self, "_damage_holder_by_current_qi"),
-        "remove_self_and_draw": Callable(self, "_remove_self_and_draw"),
-        "remove_self_and_explicit_discard": Callable(self, "_remove_self_and_explicit_discard"),
-        "remove_self_and_return_top": Callable(self, "_remove_self_and_return_top"),
-        "remove_self_apply_anomaly_and_return_top": Callable(
-            self, "_remove_self_apply_anomaly_and_return_top"),
+        "grow_anomaly_layers": Callable(self, "_grow_anomaly_layers"),
+        "decrement_state_layer": Callable(self, "_decrement_state_layer"),
+        "remove_self_and_draw_filtered": Callable(self, "_remove_self_and_draw_filtered"),
+        "remove_self_and_discard_non_attribute": Callable(
+            self, "_remove_self_and_discard_non_attribute"),
+        "remove_self_and_shuffle_into_draw_pile": Callable(
+            self, "_remove_self_and_shuffle_into_draw_pile"),
+        "temporarily_remove_if_in_hand": Callable(self, "_temporarily_remove_if_in_hand"),
         "block_play": Callable(self, "_block_play"),
         "remove_self": Callable(self, "_remove_self_behavior"),
         "remove_self_with_resolution": Callable(self, "_remove_self_with_resolution"),
@@ -33,7 +36,8 @@ func _damage_holder_by_current_qi(context) -> Dictionary:
     if context.holder == null or context.card == null or context.effect_ports == null:
         return {"success": false, "detail": "真气伤害状态缺少持有者、真气或战斗端口"}
     _remove_self(context)
-    var amount: int = context.status_system.effective_qi_value(context.card)
+    var amount: int = int(context.behavior.get(
+        "frozen_amount", context.status_system.effective_qi_value(context.card)))
     context.effect_ports.deal_damage(
         context.holder,
         context.holder,
@@ -47,74 +51,92 @@ func _damage_holder_by_current_qi(context) -> Dictionary:
             "anomaly_id": context.status_id,
             "anomaly_name": str(context.definition.get("name", context.status_id)),
             "damage": amount,
-            "recycle": false,
         },
     }
 
-func _remove_self_and_draw(context) -> Dictionary:
-    if context.holder == null or context.card == null or context.effect_ports == null:
-        return {"success": false, "detail": "抽牌状态缺少持有者、真气或战斗端口"}
-    _remove_self(context)
-    context.effect_ports.draw(
-        context.holder,
-        maxi(0, int(context.behavior.get("count", 1))),
-        str(context.behavior.get("source_kind", "status")))
-    return {"success": true}
-
-func _remove_self_and_explicit_discard(context) -> Dictionary:
-    if context.holder == null or context.card == null or context.effect_ports == null:
-        return {"success": false, "detail": "弃牌状态缺少持有者、真气或战斗端口"}
-    _remove_self(context)
-    var moved: Dictionary = context.effect_ports.move_card(
-        context.holder,
-        "hand",
-        context.holder,
-        "discard_pile",
+func _grow_anomaly_layers(context) -> Dictionary:
+    if context.holder == null or context.card == null \
+            or not context.holder.hand.has(context.card):
+        return {"success": true, "applied": false}
+    var layers: int = context.card.anomaly_layers(context.category, context.status_id)
+    if layers <= 0:
+        return {"success": true, "applied": false}
+    return context.status_system.apply_card_anomaly(
         context.card,
-        "explicit_discard")
+        str(context.behavior.get("category", "")),
+        str(context.behavior.get("anomaly", "")),
+        {},
+        str(context.definition.get("name", context.status_id)),
+        layers)
+
+func _decrement_state_layer(context) -> Dictionary:
+    var layers: int = context.card.anomaly_layers("state", context.status_id)
+    if layers <= 1:
+        _remove_self(context)
+    else:
+        context.card.set_state_layers(layers - 1)
+    return {"success": true, "applied": true}
+
+func _remove_self_and_draw_filtered(context) -> Dictionary:
+    if context.holder == null or context.card == null or context.effect_ports == null:
+        return {"success": false, "detail": "定向抽牌状态缺少运行依赖"}
+    _remove_self(context)
+    var candidates: Array = context.holder.draw_pile.filter(
+        func(card): return card.is_attribute(str(context.behavior.get("attribute", ""))))
+    if candidates.is_empty():
+        return {"success": true, "applied": false}
+    var index: int = context.rng.randi_range(0, candidates.size() - 1) \
+        if context.rng != null else 0
+    var chosen = candidates[index]
+    var moved: Dictionary = context.effect_ports.move_card(
+        context.holder, "draw_pile", context.holder, "hand", chosen, "draw")
+    return {"success": bool(moved.get("success", false)), "card": chosen}
+
+func _remove_self_and_discard_non_attribute(context) -> Dictionary:
+    if context.holder == null or context.card == null or context.effect_ports == null:
+        return {"success": false, "detail": "乱流缺少运行依赖"}
+    _remove_self(context)
+    var attribute_id := str(context.behavior.get("attribute", ""))
+    var candidates: Array = context.holder.hand.filter(func(card):
+        return not card.is_attribute(attribute_id) \
+            and bool(context.effect_ports.can_explicit_discard(
+                context.holder, card).get("allowed", true)))
+    if candidates.is_empty():
+        return {"success": true, "applied": false}
+    var index: int = context.rng.randi_range(0, candidates.size() - 1) \
+        if context.rng != null else 0
+    var chosen = candidates[index]
+    var moved: Dictionary = context.effect_ports.move_card(
+        context.holder, "hand", context.holder, "discard_pile",
+        chosen, "explicit_discard")
     return {
         "success": bool(moved.get("success", false)),
-        "stop_card_behaviors": bool(moved.get("success", false)),
+        "stop_card_behaviors": chosen == context.card and bool(moved.get("success", false)),
+        "card": chosen,
     }
 
-func _remove_self_and_return_top(context) -> Dictionary:
+func _remove_self_and_shuffle_into_draw_pile(context) -> Dictionary:
     if context.holder == null or context.card == null or context.effect_ports == null:
-        return {"success": false, "detail": "回库状态缺少持有者、真气或战斗端口"}
+        return {"success": false, "detail": "重聚缺少运行依赖"}
+    if not context.holder.discard_pile.has(context.card):
+        return {"success": true, "applied": false}
     _remove_self(context)
     var moved: Dictionary = context.effect_ports.move_card(
-        context.holder,
-        "discard_pile",
-        context.holder,
-        "draw_pile",
-        context.card,
-        str(context.behavior.get("reason", context.status_id)),
-        "top")
+        context.holder, "discard_pile", context.holder, "draw_pile",
+        context.card, "regroup")
+    if moved.get("success", false) and context.rng != null:
+        context.effect_ports.shuffle_zone(context.holder, "draw_pile", context.rng)
     return {"success": bool(moved.get("success", false))}
 
-func _remove_self_apply_anomaly_and_return_top(context) -> Dictionary:
-    if context.card == null:
-        return {"success": false, "detail": "改置状态缺少真气"}
-    _remove_self(context)
-    var applied: Dictionary = context.behavior.get("apply_anomaly", {})
-    var apply_result: Dictionary = context.status_system.apply_card_anomaly(
-        context.card,
-        str(applied.get("category", "")),
-        str(applied.get("id", "")),
-        applied.get("payload", {}),
-        str(context.definition.get("name", context.status_id)))
-    if not apply_result.get("success", false):
-        return apply_result
-    if context.holder == null or context.effect_ports == null:
-        return {"success": true}
-    var moved: Dictionary = context.effect_ports.move_card(
+func _temporarily_remove_if_in_hand(context) -> Dictionary:
+    if context.holder == null or context.card == null or context.effect_ports == null:
+        return {"success": false, "detail": "虚无缺少运行依赖"}
+    if not context.holder.hand.has(context.card):
+        return {"success": true, "applied": false}
+    return context.effect_ports.temporarily_remove_card(
         context.holder,
-        "discard_pile",
-        context.holder,
-        "draw_pile",
-        context.card,
-        str(context.behavior.get("reason", context.status_id)),
-        "top")
-    return {"success": bool(moved.get("success", false))}
+        str(context.card.id),
+        str(context.behavior.get("reason", context.status_id)))
 
 func _block_play(context) -> Dictionary:
     return {
@@ -140,7 +162,6 @@ func _remove_self_with_resolution(context) -> Dictionary:
             "anomaly_name": str(context.definition.get("name", context.status_id)),
             "effect_kind": str(context.behavior.get("effect_kind", "status")),
             "detail": str(context.behavior.get("detail", "状态已结算")),
-            "recycle": false,
         },
     }
 

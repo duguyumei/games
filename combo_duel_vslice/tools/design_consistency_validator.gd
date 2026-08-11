@@ -24,6 +24,7 @@ var warnings: Array[String] = []
 var authoritative: Dictionary = {}
 var runtime: Dictionary = {}
 var abolished_names: Array[String] = []
+var authoritative_empty_declared: bool = false
 
 func validate(pool_dir: String, technique_dir: String) -> Dictionary:
     errors.clear()
@@ -31,9 +32,11 @@ func validate(pool_dir: String, technique_dir: String) -> Dictionary:
     authoritative.clear()
     runtime.clear()
     abolished_names.clear()
+    authoritative_empty_declared = false
     _parse_authoritative_pools(pool_dir)
     _parse_runtime_techniques(technique_dir)
-    if errors.is_empty() and authoritative.is_empty():
+    if errors.is_empty() and authoritative.is_empty() \
+            and not authoritative_empty_declared:
         errors.append("未能从设计文档解析出任何活跃功法，解析规则可能已与文档格式脱节")
     _compare_names_and_pools()
     return result()
@@ -72,17 +75,22 @@ func _parse_authoritative_pools(pool_dir: String) -> void:
         return
     for file_name in file_names:
         var path := pool_dir.path_join(file_name)
-        var file := FileAccess.open(path, FileAccess.READ)
-        if file == null:
+        var text := FileAccess.get_file_as_string(path)
+        if text == "":
             errors.append("无法读取功法池文档：%s" % path)
             continue
+        if file_name == "20-gongfa-framework.md" \
+                and text.contains("当前五个正式功法池全部为空"):
+            authoritative_empty_declared = true
+        var archived_file := text.contains("# 历史归档")
         var current_pool := ""
-        while not file.eof_reached():
-            var line := file.get_line()
+        for line_value in text.split("\n"):
+            var line := str(line_value)
             var group_match := group_pattern.search(line)
             if group_match != null:
                 var label := group_match.get_string(1)
-                current_pool = str(POOL_LABEL_TO_CODE.get(label, ""))
+                var normalized_label := label.trim_prefix("归档·")
+                current_pool = str(POOL_LABEL_TO_CODE.get(normalized_label, ""))
                 if current_pool == "":
                     warnings.append("%s 出现未登记的池标题：%s" % [file_name, label])
                 continue
@@ -93,6 +101,10 @@ func _parse_authoritative_pools(pool_dir: String) -> void:
             if entry_match == null or current_pool == "":
                 continue
             var technique_name := entry_match.get_string(1)
+            if archived_file:
+                if not abolished_names.has(technique_name):
+                    abolished_names.append(technique_name)
+                continue
             if authoritative.has(technique_name):
                 errors.append("权威功法名重复：%s" % technique_name)
                 continue

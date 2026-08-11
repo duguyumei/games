@@ -69,7 +69,11 @@ func preview_dto(
         modifiers["power_amp_percent"] = int(modifiers.get("power_amp_percent", 0)) + 50
     modifiers["power_fixed"] = (
         int(modifiers.get("power_fixed", 0))
-        + int(side.hand_proficiency_fixed.get(hand_result["id"], 0)))
+        + int(side.hand_proficiency_fixed.get(hand_result["id"], 0))
+        + int(side.direct_power_fixed))
+    modifiers["power_amp_percent"] = (
+        int(modifiers.get("power_amp_percent", 0))
+        + int(side.direct_power_percent))
     var contribution_modifier := Callable()
     if side.status_system != null:
         contribution_modifier = Callable(side.status_system, "modify_card_contribution").bind(side)
@@ -84,6 +88,11 @@ func preview_dto(
         condition = technique_repository.conditions_met(
             technique_definition,
             hand_result)
+    values = PowerCalculatorScript.apply_momentum(
+        values,
+        side.momentum_value
+        if technique_definition != null and bool(condition.get("ok", false))
+        else 0)
 
     var intent := {
         "damage": 0,
@@ -97,6 +106,7 @@ func preview_dto(
         "hand_result": hand_result,
         "played_cards": cards,
         "power": values["technique_value"],
+        "values": values,
         "technique_id": str(technique.get("id", "")),
         "technique_name": str(technique.get("name", "")),
         "technique_pool": str(technique.get("pool", "")),
@@ -126,6 +136,7 @@ func preview_dto(
             "hand_result": hand_result,
             "played_cards": cards,
             "power": values["technique_value"],
+            "values": values,
             "technique_id": str(inner_skill.get("id", "")),
             "technique_name": str(inner_skill.get("name", "")),
             "captures": {},

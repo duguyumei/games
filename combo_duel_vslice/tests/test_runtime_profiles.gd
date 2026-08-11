@@ -63,8 +63,8 @@ func _test_profile_content_dependencies() -> void:
         "res://data/production_enemy_entry.json",
         "production 使用正式敌人内容入口")
     _assert_true(
-        not production_catalog.definition("sequences")["high_card"].is_empty(),
-        "production 装配正式功法序列")
+        production_catalog.definition("sequences")["high_card"].is_empty(),
+        "production 合法装配空正式功法序列")
     _assert_true(
         production_catalog.definition("inner_skills")["inner_skills"].is_empty(),
         "production 内容目录未装配调试内功")

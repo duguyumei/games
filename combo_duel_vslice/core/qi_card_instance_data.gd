@@ -3,7 +3,61 @@ extends RefCounted
 
 const QiCardScript = preload("res://core/qi_card.gd")
 
-const VERSION := 4
+const VERSION := 5
+
+static func migrate_persistent(values: Dictionary, content_catalog) -> Dictionary:
+    var version := int(values.get("version", 0))
+    if version == VERSION:
+        return {"success": true, "values": values.duplicate(true), "migrated": false}
+    if version != 4:
+        return {"success": false, "reason": "真气实例版本不受支持：%s" % version}
+    if values.has("anomalies") or values.has("suppressed_reshapes"):
+        return {"success": false, "reason": "旧战斗异状/压制快照不能迁移为 RunDeck"}
+    var migrated := values.duplicate(true)
+    migrated["version"] = VERSION
+    var origin: Dictionary = migrated.get("reshapes", {}).get("origin", {})
+    migrated["origin_base_identity"] = {}
+    if not origin.is_empty():
+        var recovered := _recover_legacy_origin_identity(migrated, origin, content_catalog)
+        if not recovered.get("success", false):
+            return recovered
+        migrated["origin_base_identity"] = recovered["identity"]
+    return {"success": true, "values": migrated, "migrated": true}
+
+static func _recover_legacy_origin_identity(
+        values: Dictionary,
+        origin: Dictionary,
+        content_catalog) -> Dictionary:
+    var origin_id := str(origin.get("id", ""))
+    if origin_id == "attribute_change":
+        return {
+            "success": false,
+            "reason": "旧转属真气缺少改造前属性，不能静默猜测原始身份",
+        }
+    var definition: Dictionary = {}
+    if origin_id == "awakening":
+        definition = content_catalog.get_by_id("card", str(values.get("definition_id", "")))
+    elif origin_id == "rank_change":
+        var direction := str(origin.get("payload", {}).get("direction", ""))
+        var original_order := int(values.get("rank_order", 0)) + (-1 if direction == "up" else 1)
+        var base_deck: Dictionary = content_catalog.definition("base_deck")
+        var original_rank := ""
+        for rank in base_deck.get("ranks", []):
+            if int(rank.get("order", 0)) == original_order:
+                original_rank = str(rank.get("id", ""))
+                break
+        definition = content_catalog.get_by_id(
+            "card", "%s_%s" % [str(values.get("attribute", "")), original_rank])
+    if definition.is_empty():
+        return {"success": false, "reason": "旧本源真气无法恢复改造前基础身份"}
+    return {"success": true, "identity": {
+        "definition_id": str(definition.get("id", "")),
+        "rank_name": str(definition.get("rank", "")),
+        "rank_order": int(definition.get("order", 0)),
+        "qi_value": int(definition.get("qi", 0)),
+        "attribute": str(definition.get("attribute", "")),
+        "attribute_name": str(definition.get("attribute_name", "")),
+    }}
 
 static func capture(card, include_combat_state: bool = false) -> Dictionary:
     var values := {
@@ -15,6 +69,8 @@ static func capture(card, include_combat_state: bool = false) -> Dictionary:
         "qi_value": int(card.qi_value),
         "attribute": str(card.attribute),
         "attribute_name": str(card.attribute_name),
+        "origin_base_identity": _normalized_origin_base_identity(
+            card.origin_base_identity),
         "reshapes": (
             card.active_reshape_state()
             if include_combat_state
@@ -24,7 +80,7 @@ static func capture(card, include_combat_state: bool = false) -> Dictionary:
     }
     if include_combat_state:
         values["anomalies"] = card.anomaly_snapshot()
-        values["suppressed_reshapes"] = card.suppressed_reshapes.duplicate(true)
+        values["temporary_reshapes"] = card.temporary_reshapes.duplicate(true)
     return values
 
 static func restore(values: Dictionary, reshape_rules = null):
@@ -44,12 +100,15 @@ static func restore(values: Dictionary, reshape_rules = null):
     card.reshape_enhancement = str(reshapes.get("enhancement", ""))
     card.reshape_imprint = str(reshapes.get("imprint", ""))
     card.reshape_others = reshapes.get("others", {}).duplicate(true)
+    card.origin_base_identity = _normalized_origin_base_identity(
+        values.get("origin_base_identity", {}))
     var anomalies: Dictionary = values.get("anomalies", {})
-    card.anomaly_poison = str(anomalies.get("poison", ""))
-    card.anomaly_state = str(anomalies.get("state", ""))
-    card.anomaly_marks = anomalies.get("marks", {}).duplicate(true)
-    card.anomaly_others = anomalies.get("others", {}).duplicate(true)
-    card.suppressed_reshapes = values.get("suppressed_reshapes", {}).duplicate(true)
+    if not anomalies.is_empty():
+        card.restore_anomaly_snapshot(anomalies)
+    card.temporary_reshapes = values.get("temporary_reshapes", {
+        "enhancement": "",
+        "attribute": "",
+    }).duplicate(true)
     card.original_owner_id = str(values.get("original_owner_id", ""))
     card.temporary_card = bool(values.get("temporary_card", false))
     return card
@@ -73,14 +132,13 @@ static func validate(values: Dictionary, content_catalog, include_combat_state: 
         str(values.get("attribute", "")),
         content_catalog,
         errors)
+    _validate_origin_base_identity(values, content_catalog, errors)
     if include_combat_state:
         _validate_anomalies(values.get("anomalies", {}), content_catalog, errors)
-        _validate_reshapes(
-            values.get("suppressed_reshapes", {}),
-            str(values.get("attribute", "")),
-            content_catalog,
-            errors,
-            true)
+        _validate_temporary_reshapes(
+            values.get("temporary_reshapes", {}), content_catalog, errors)
+        if values.has("suppressed_reshapes"):
+            errors.append("战斗真气实例不得包含旧 suppressed_reshapes")
     return errors
 
 static func _validate_reshapes(
@@ -175,27 +233,102 @@ static func _validate_anomalies(values, content_catalog, errors: Array[String]) 
     if not values is Dictionary:
         errors.append("anomalies 必须是对象")
         return
-    for category in ["poison", "state"]:
-        var anomaly_id := str(values.get(category, ""))
-        if anomaly_id == "":
-            continue
-        var definition: Dictionary = content_catalog.get_by_id("anomaly", anomaly_id)
-        if definition.is_empty():
-            errors.append("真气实例引用未知异状：%s" % anomaly_id)
-        elif str(definition.get("category", "")) != category:
-            errors.append("异状 %s 不属于类别 %s" % [anomaly_id, category])
-    for category in ["mark", "other"]:
-        var field := "marks" if category == "mark" else "others"
+    if values.has("poison") or values.has("others"):
+        errors.append("战斗真气实例包含旧 poison/others 异状结构")
+    for field in ["buffs", "debuffs"]:
         var entries = values.get(field, {})
         if not entries is Dictionary:
-            errors.append("异状·%s必须是对象" % category)
+            errors.append("异状 %s 必须是对象" % field)
             continue
         for anomaly_id in entries:
+            if not entries[anomaly_id] is int or int(entries[anomaly_id]) <= 0:
+                errors.append("异状 %s 层数必须是正整数" % str(anomaly_id))
             var definition: Dictionary = content_catalog.get_by_id("anomaly", str(anomaly_id))
             if definition.is_empty():
                 errors.append("真气实例引用未知异状：%s" % str(anomaly_id))
-            elif str(definition.get("category", "")) != category:
-                errors.append("异状 %s 不属于类别 %s" % [str(anomaly_id), category])
+            elif str(definition.get("category", "")) != field.trim_suffix("s"):
+                errors.append("异状 %s 不属于类别 %s" % [str(anomaly_id), field.trim_suffix("s")])
+    var state = values.get("state", {})
+    if not state is Dictionary:
+        errors.append("异状 state 必须是对象")
+    elif not state.is_empty():
+        if not state.has_all(["id", "layers", "payload"]) or state.size() != 3:
+            errors.append("state 必须且只能包含 id/layers/payload")
+        var state_id := str(state.get("id", ""))
+        var definition: Dictionary = content_catalog.get_by_id("anomaly", state_id)
+        if definition.is_empty() or str(definition.get("category", "")) != "state":
+            errors.append("真气实例引用未知或非 state 异状：%s" % state_id)
+        if not state.get("layers") is int or int(state.get("layers", 0)) <= 0:
+            errors.append("state layers 必须是正整数")
+        if not state.get("payload") is Dictionary:
+            errors.append("state payload 必须是对象")
+    var marks = values.get("marks", {})
+    if not marks is Dictionary:
+        errors.append("异状 marks 必须是对象")
+    else:
+        for anomaly_id in marks:
+            if not marks[anomaly_id] is Dictionary:
+                errors.append("mark payload 必须是对象：%s" % str(anomaly_id))
+            var definition: Dictionary = content_catalog.get_by_id("anomaly", str(anomaly_id))
+            if definition.is_empty() or str(definition.get("category", "")) != "mark":
+                errors.append("真气实例引用未知或非 mark 异状：%s" % str(anomaly_id))
+    for field in ["buffs", "debuffs", "state", "marks"]:
+        if not values.has(field):
+            errors.append("anomalies 缺少字段 %s" % field)
+    for field in values:
+        if str(field) not in ["buffs", "debuffs", "state", "marks"]:
+            errors.append("anomalies 包含旧版或未知字段 %s" % str(field))
+
+static func _validate_temporary_reshapes(
+        values,
+        content_catalog,
+        errors: Array[String]) -> void:
+    if not values is Dictionary:
+        errors.append("temporary_reshapes 必须是对象")
+        return
+    if values.size() != 2 or not values.has_all(["enhancement", "attribute"]):
+        errors.append("temporary_reshapes 必须且只能包含 enhancement/attribute")
+    var enhancement_id := str(values.get("enhancement", ""))
+    if enhancement_id != "" and not content_catalog.has_id("enhancement", enhancement_id):
+        errors.append("临时强化引用未知强化：%s" % enhancement_id)
+    var attribute_id := str(values.get("attribute", ""))
+    if attribute_id != "" and attribute_id not in ["wind", "forest", "fire", "mountain"]:
+        errors.append("临时属性引用未知基础属性：%s" % attribute_id)
+
+static func _validate_origin_base_identity(
+        values: Dictionary,
+        content_catalog,
+        errors: Array[String]) -> void:
+    var identity = values.get("origin_base_identity", {})
+    if not identity is Dictionary:
+        errors.append("origin_base_identity 必须是对象")
+        return
+    var origin = values.get("reshapes", {}).get("origin", {})
+    if origin.is_empty():
+        if not identity.is_empty():
+            errors.append("无本源真气不得保存 origin_base_identity")
+        return
+    var required := [
+        "definition_id", "rank_name", "rank_order", "qi_value",
+        "attribute", "attribute_name"]
+    if identity.size() != required.size() or not identity.has_all(required):
+        errors.append("有本源真气必须完整保存 origin_base_identity")
+        return
+    var definition_id := str(identity.get("definition_id", ""))
+    if not content_catalog.has_id("card", definition_id):
+        errors.append("origin_base_identity 引用未知 definition_id：%s" % definition_id)
+
+static func _normalized_origin_base_identity(values) -> Dictionary:
+    if not values is Dictionary or values.is_empty():
+        return {}
+    return {
+        "definition_id": str(values.get("definition_id", "")),
+        "rank_name": str(values.get("rank_name", "")),
+        "rank_order": int(values.get("rank_order", 0)),
+        "qi_value": int(values.get("qi_value", 0)),
+        "attribute": str(values.get("attribute", "")),
+        "attribute_name": str(values.get("attribute_name", "")),
+    }
 
 static func _validate_optional_reference(
         values: Dictionary,

@@ -177,6 +177,7 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         trigger_queue)
     effect_ports.use_sides(player, enemy)
     status_system.use_effect_ports(effect_ports)
+    status_system.use_rng(rng)
     card_reshape_runtime = CardReshapeBattleRuntimeScript.new(
         content_catalog.card_reshape_rules,
         effect_ports,
@@ -215,8 +216,6 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         effect_executor,
         rng,
         timing_system)
-    effect_ports.use_played_return_callback(
-        Callable(action_resolver, "register_played_return"))
     effect_ports.use_hand_retrigger_callback(
         Callable(action_resolver, "retrigger_current_hand_technique"))
     loadout_service = BattleLoadoutServiceScript.new(
@@ -651,21 +650,6 @@ func damage_actor_can_continue(side) -> bool:
 
 func damage_target_can_receive(side) -> bool:
     return damage_resolver.target_can_receive(side)
-
-func register_attack_counter_delay(
-        label: String,
-        turn_ends: int,
-        snapshot_power: int,
-        damage_per_segment: int,
-        actor,
-        target) -> Dictionary:
-    return effect_ports.register_attack_counter_delay(
-        label,
-        turn_ends,
-        snapshot_power,
-        damage_per_segment,
-        actor,
-        target)
 
 func _update_battle_state() -> void:
     outcome_service.set_mode(scripted_mode)

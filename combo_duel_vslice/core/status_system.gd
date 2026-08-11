@@ -22,6 +22,7 @@ var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
 var behavior_registry
 var _card_trigger_replay_service = null
+var _rng: RandomNumberGenerator = null
 
 func _init(
         catalog,
@@ -66,6 +67,12 @@ func _init(
             self,
             "_on_turn_end")
         timing_system.register_weak_handler(
+            timing_system.TURN_END,
+            "status_system.card_turn_end_final",
+            1100,
+            self,
+            "_on_card_turn_end_final")
+        timing_system.register_weak_handler(
             timing_system.BATTLE_END,
             "status_system.card_battle_end",
             100,
@@ -90,6 +97,9 @@ func use_effect_executor(executor) -> void:
 func use_card_trigger_replay_service(service) -> void:
     _card_trigger_replay_service = service
 
+func use_rng(random_source: RandomNumberGenerator) -> void:
+    _rng = random_source
+
 func reset() -> void:
     delayed_records.clear()
     history.clear()
@@ -106,18 +116,21 @@ func card_numeric_modifier(card, modifier_id: String) -> int:
     var total := 0
     var snapshot: Dictionary = card.anomaly_snapshot()
     var anomaly_ids: Array = []
-    if str(snapshot.get("poison", "")) != "":
-        anomaly_ids.append(str(snapshot["poison"]))
-    if str(snapshot.get("state", "")) != "":
-        anomaly_ids.append(str(snapshot["state"]))
+    anomaly_ids.append_array(snapshot.get("buffs", {}).keys())
+    anomaly_ids.append_array(snapshot.get("debuffs", {}).keys())
+    if not snapshot.get("state", {}).is_empty():
+        anomaly_ids.append(str(snapshot["state"].get("id", "")))
     anomaly_ids.append_array(snapshot.get("marks", {}).keys())
-    anomaly_ids.append_array(snapshot.get("others", {}).keys())
     for anomaly_id in anomaly_ids:
         var definition: Dictionary = content_catalog.get_by_id("anomaly", str(anomaly_id))
         for modifier_value in definition.get("modifiers", []):
             var modifier: Dictionary = modifier_value
             if str(modifier.get("id", "")) == modifier_id:
-                total += int(modifier.get("value", 0))
+                var layers := 1
+                var category := str(definition.get("category", ""))
+                if category in ["buff", "debuff", "state"]:
+                    layers = card.anomaly_layers(category, str(anomaly_id))
+                total += layers * int(modifier.get("value", 0))
     return total
 
 func actor_hand_card_numeric_modifier(side, modifier_id: String) -> int:
@@ -127,17 +140,7 @@ func actor_hand_card_numeric_modifier(side, modifier_id: String) -> int:
     return total
 
 func modify_card_contribution(card, contribution: int, holder = null) -> int:
-    var value := int(floor(contribution * (100.0 + card_numeric_modifier(
-            card, "qi_contribution_percent")) / 100.0))
-    var reduction_percent := card_numeric_modifier(
-        card, "poison_contribution_reduction_percent")
-    if reduction_percent != 0:
-        var poison_effect_percent := 100
-        if holder != null:
-            poison_effect_percent += actor_numeric_modifier(
-                holder, "poison_effect_percent")
-        value -= int(floor(value * reduction_percent * poison_effect_percent / 10000.0))
-    return value
+    return contribution
 
 func can_play_card(holder, card) -> Dictionary:
     var result := _dispatch_card_behaviors("play_attempt", holder, card)
@@ -237,10 +240,12 @@ func apply_card_anomaly(
         category: String,
         anomaly_id: String,
         payload: Dictionary = {},
-        source: String = "效果") -> Dictionary:
+        source: String = "效果",
+        layers: int = 1,
+        replace_state: bool = false) -> Dictionary:
     var before = _card_anomaly_value(card, category, anomaly_id)
     var result: Dictionary = lifecycle.apply_anomaly(
-        card, category, anomaly_id, payload)
+        card, category, anomaly_id, payload, layers, replace_state)
     if not result.get("success", false):
         return result
     _record_change(
@@ -254,17 +259,21 @@ func apply_card_anomaly(
         {"category": category, "refreshed": bool(result.get("refreshed", false))})
     return result
 
+func can_apply_card_anomaly(
+        card,
+        category: String,
+        anomaly_id: String,
+        replace_state: bool = false) -> Dictionary:
+    return lifecycle.can_apply_anomaly(card, category, anomaly_id, replace_state)
+
 func remove_card_anomaly(
         card,
         category: String,
         anomaly_id: String = "",
         source: String = "效果") -> Dictionary:
     var resolved_id := anomaly_id
-    if resolved_id == "":
-        if category == "poison":
-            resolved_id = str(card.anomaly_poison)
-        elif category == "state":
-            resolved_id = str(card.anomaly_state)
+    if resolved_id == "" and category == "state":
+        resolved_id = str(card.current_state().get("id", ""))
     var changed: bool = card.has_anomaly(category, anomaly_id)
     var before = _card_anomaly_value(card, category, resolved_id)
     var removed = card.remove_anomaly(category, anomaly_id)
@@ -286,23 +295,19 @@ func remove_card_anomaly(
     }
 
 func on_card_enter_discard(card, source: String = "进入弃牌堆") -> Dictionary:
-    var before_poison := str(card.anomaly_poison)
-    var before_state := str(card.anomaly_state)
     var removed: Dictionary = lifecycle.on_enter_discard(card)
-    if str(removed.get("poison", "")) != "":
+    if not removed.get("state", {}).is_empty():
+        var before_state: Dictionary = removed["state"]
         _record_change(
-            "card_anomaly_remove", "card", str(card.id), before_poison,
-            before_poison, null, source, {"category": "poison"})
-    if str(removed.get("state", "")) != "":
-        _record_change(
-            "card_anomaly_remove", "card", str(card.id), before_state,
+            "card_anomaly_remove", "card", str(card.id), str(before_state.get("id", "")),
             before_state, null, source, {"category": "state"})
-    var effect_ports = _effect_ports()
-    var holder = (
-        effect_ports.side_holding_card(card, "discard_pile")
-        if effect_ports != null else null)
-    _dispatch_card_behaviors("enter_discard", holder, card)
     return removed
+
+func on_card_enter_discard_behaviors(holder, card) -> void:
+    _dispatch_card_behaviors("enter_discard", holder, card)
+
+func on_card_enter_discard_late(holder, card) -> void:
+    _dispatch_card_behaviors("enter_discard_late", holder, card)
 
 func on_card_drawn(holder, card) -> void:
     var effect_ports = _effect_ports()
@@ -381,7 +386,7 @@ func effective_qi_value(card) -> int:
     var value: int = (
         card.effective_qi_value(true)
         if card.has_method("effective_qi_value") else int(card.qi_value))
-    return maxi(0, modify_card_contribution(card, value))
+    return maxi(0, value)
 
 func _dispatch_card_behaviors(
         trigger: String,
@@ -390,12 +395,14 @@ func _dispatch_card_behaviors(
         source_values: Dictionary = {}) -> Dictionary:
     var entries: Array = []
     var snapshot: Dictionary = card.anomaly_snapshot()
-    _append_card_behavior_entries(entries, trigger, "poison", str(snapshot.get("poison", "")))
-    _append_card_behavior_entries(entries, trigger, "state", str(snapshot.get("state", "")))
+    for status_id in snapshot.get("buffs", {}).keys():
+        _append_card_behavior_entries(entries, trigger, "buff", str(status_id))
+    for status_id in snapshot.get("debuffs", {}).keys():
+        _append_card_behavior_entries(entries, trigger, "debuff", str(status_id))
+    var state: Dictionary = snapshot.get("state", {})
+    _append_card_behavior_entries(entries, trigger, "state", str(state.get("id", "")))
     for status_id in snapshot.get("marks", {}).keys():
         _append_card_behavior_entries(entries, trigger, "mark", str(status_id))
-    for status_id in snapshot.get("others", {}).keys():
-        _append_card_behavior_entries(entries, trigger, "other", str(status_id))
     entries.sort_custom(func(left, right):
         if int(left["priority"]) != int(right["priority"]):
             return int(left["priority"]) < int(right["priority"])
@@ -451,10 +458,14 @@ func _execute_card_behavior_entries(
     }
     var executed_entries: Array = []
     for entry_value in entries:
-        var entry: Dictionary = entry_value
+        var entry: Dictionary = entry_value.duplicate(true)
         if require_current_anomaly and not card.has_anomaly(
                 str(entry["category"]), str(entry["status_id"])):
             continue
+        if replay_depth == 0 \
+                and str(entry.get("behavior", {}).get("handler", "")) \
+                    == "damage_holder_by_current_qi":
+            entry["behavior"]["frozen_amount"] = effective_qi_value(card)
         var context_values := source_values.duplicate()
         context_values.merge({
             "trigger": trigger,
@@ -471,6 +482,7 @@ func _execute_card_behavior_entries(
             "action_token": str(source_values.get("action_token", "")),
             "replay_depth": replay_depth,
             "trigger_sequence": trigger_sequence,
+            "rng": _rng,
         }, true)
         var context = StatusBehaviorContextScript.new().configure(
             context_values)
@@ -602,40 +614,6 @@ func _modifier_context_matches(modifier: Dictionary, context: Dictionary) -> boo
         or source_kinds.is_empty() \
         or source_kinds.has(str(context.get("source_kind", "")))
 
-func register_attack_counter_delay(
-        label: String,
-        turn_ends: int,
-        snapshot_power: int,
-        damage_per_segment: int,
-        actor,
-        target) -> Dictionary:
-    var record := {
-        "id": "delay-%06d" % _delay_serial,
-        "kind": "attack_counter",
-        "label": label,
-        "remaining_turn_ends": maxi(1, turn_ends),
-        "snapshot_power": snapshot_power,
-        "damage_per_segment": maxi(0, damage_per_segment),
-        "attack_count": 0,
-        "actor": actor,
-        "target": target,
-    }
-    _delay_serial += 1
-    delayed_records.append(record)
-    _record_change(
-        "delay_register",
-        "actor",
-        str(actor.owner_id),
-        str(record["id"]),
-        null,
-        int(record["remaining_turn_ends"]),
-        label,
-        {
-            "snapshot_power": snapshot_power,
-            "damage_per_segment": damage_per_segment,
-        })
-    return {"success": true, "record": record}
-
 func register_turn_end_stack(
         label: String,
         turn_ends: int,
@@ -674,6 +652,11 @@ func register_delayed_effects(
         "remaining_occurrences": maxi(1, occurrences),
         "effects": effects.duplicate(true),
         "power": runtime.power,
+        "initial_power": runtime.initial_power,
+        "direct_power_fixed": runtime.direct_power_fixed,
+        "direct_power_percent": runtime.direct_power_percent,
+        "pre_momentum_power": runtime.pre_momentum_power,
+        "momentum_used": runtime.momentum_used,
         "actor": runtime.actor,
         "target": runtime.target,
         "hand_result": runtime.hand_result.duplicate(true),
@@ -688,29 +671,6 @@ func register_delayed_effects(
     _delay_serial += 1
     delayed_records.append(record)
     return {"success": true, "record": record}
-
-func record_attack_segment(actor, source_kind: String) -> void:
-    if source_kind not in ["technique", "chase", "counter"]:
-        return
-    for delayed in delayed_records:
-        if delayed.get("kind", "") == "attack_counter" \
-                and delayed.get("actor") == actor:
-            delayed["attack_count"] = int(delayed.get("attack_count", 0)) + 1
-
-func resolve_received_attack_segment(
-        attacker,
-        target,
-        source_kind: String,
-        result: Dictionary) -> Dictionary:
-    if attacker == null or target == null or attacker == target \
-            or source_kind not in ["technique", "chase", "counter"]:
-        return {"success": true}
-    return _dispatch_actor_behaviors(target, "attack_segment_received", {
-        "attacker": attacker,
-        "source_kind": source_kind,
-        "defense_lost": int(result.get("defense_lost", 0)),
-        "life_lost": int(result.get("life_lost", 0)),
-    })
 
 func _on_battle_start(event) -> Dictionary:
     var applied_count := 0
@@ -761,22 +721,6 @@ func _on_turn_end(event) -> Dictionary:
                 str(delayed["stack_id"]),
                 int(delayed["amount"]),
                 str(delayed["label"]))
-        elif effect_ports != null:
-            delayed_records.erase(delayed)
-            effect_ports.add_history(
-                "turn_end", delayed["label"], "延迟功法", "结算",
-                "快照 P=%d｜记录攻击段=%d｜每段=%d" % [
-                    delayed["snapshot_power"],
-                    delayed["attack_count"],
-                    delayed["damage_per_segment"]])
-            for _index in range(int(delayed["attack_count"])):
-                if delayed["target"].life <= 0:
-                    break
-                effect_ports.deal_damage(
-                    delayed["actor"],
-                    delayed["target"],
-                    delayed["damage_per_segment"],
-                    "delayed_chase")
         _record_change(
             "delay_resolve",
             "actor",
@@ -792,13 +736,15 @@ func _on_turn_end(event) -> Dictionary:
     }
 
 func _dispatch_card_turn_end(holder) -> void:
-    var cards: Array = []
-    for zone in [holder.draw_pile, holder.hand, holder.staging, holder.discard_pile]:
-        for card in zone:
-            if not cards.has(card):
-                cards.append(card)
-    for card in cards:
+    for card in holder.hand.duplicate():
         _dispatch_card_behaviors("turn_end", holder, card)
+
+func _on_card_turn_end_final(event) -> Dictionary:
+    if event.actor == null:
+        return {"success": false, "detail": "最终回合结束时点缺少行动方"}
+    for card in event.actor.hand.duplicate():
+        _dispatch_card_behaviors("turn_end_final", event.actor, card)
+    return {"success": true}
 
 func _on_after_normal_draw_delays(event) -> Dictionary:
     if event.actor == null:
@@ -826,6 +772,11 @@ func _resolve_delayed_effect_chain(record: Dictionary) -> Dictionary:
         "hand_result": record["hand_result"],
         "played_cards": record["played_cards"],
         "power": int(record["power"]),
+        "initial_power": int(record.get("initial_power", record["power"])),
+        "direct_power_fixed": int(record.get("direct_power_fixed", 0)),
+        "direct_power_percent": int(record.get("direct_power_percent", 0)),
+        "pre_momentum_power": int(record.get("pre_momentum_power", record["power"])),
+        "momentum_used": int(record.get("momentum_used", 0)),
         "technique_id": str(record["technique_id"]),
         "technique_name": str(record["technique_name"]),
         "actual_hand_id": str(record.get("actual_hand_id", "")),
@@ -840,6 +791,11 @@ func _resolve_delayed_effect_chain(record: Dictionary) -> Dictionary:
 func _on_card_battle_end(event) -> Dictionary:
     var cleaned_count := 0
     for side in event.actors:
+        side.direct_power_fixed = 0
+        side.direct_power_percent = 0
+        side.momentum_value = 0
+        side.last_successful_technique_hand_id = ""
+        side.current_reflection_percent = 0
         var cards: Array = []
         for zone in [
                 side.draw_pile,
@@ -940,10 +896,8 @@ func _status_name(status_id: String) -> String:
 
 func _card_anomaly_value(card, category: String, anomaly_id: String):
     match category:
-        "poison": return str(card.anomaly_poison)
-        "state": return str(card.anomaly_state)
-        "mark": return card.anomaly_marks.get(anomaly_id, null)
-        "other": return card.anomaly_others.get(anomaly_id, null)
+        "buff", "debuff", "state": return card.anomaly_layers(category, anomaly_id)
+        "mark": return card.anomaly_snapshot().get("marks", {}).get(anomaly_id, null)
     return null
 
 func _effective_qi_value(card) -> int:

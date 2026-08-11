@@ -1,26 +1,11 @@
 {
   "version": 2,
-  "high_card": [
-    "borrow_fire_guard_heart",
-    "stagnant_gu_conceal_breath"
-  ],
-  "pair": [
-    "double_gu_exchange_breath"
-  ],
-  "two_pair": [
-    "balance_sleeves_listen_wind"
-  ],
-  "three_kind": [
-    "three_ring_ensemble"
-  ],
-  "straight": [
-    "five_steps_echo"
-  ],
-  "full_house": [
-    "three_ring_chaos_qi"
-  ],
-  "four_kind": [
-    "seize_qi_return_nest"
-  ],
+  "high_card": [],
+  "pair": [],
+  "two_pair": [],
+  "three_kind": [],
+  "straight": [],
+  "full_house": [],
+  "four_kind": [],
   "five_kind": []
 }

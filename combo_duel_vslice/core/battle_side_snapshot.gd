@@ -15,6 +15,11 @@ var name: String = ""
 var life: int = 0
 var max_life: int = 0
 var defense: int = 0
+var direct_power_fixed: int = 0
+var direct_power_percent: int = 0
+var momentum_value: int = 0
+var last_successful_technique_hand_id: String = ""
+var current_reflection_percent: int = 0
 var hand_limit: int = 0
 var inner_skill_limit: int = 0
 var draw_count: int = 0
@@ -48,6 +53,8 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     var missing: Array[String] = []
     for required in [
             "name", "life", "max_life", "defense", "hand_limit",
+            "direct_power_fixed", "direct_power_percent", "momentum_value",
+            "last_successful_technique_hand_id", "current_reflection_percent",
             "inner_skill_limit",
             "draw_count", "hand_count", "staging_count", "discard_count",
             "deck_count", "temporarily_removed_count", "stacks",
@@ -61,6 +68,13 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.life = int(values.get("life", 0))
     result.max_life = int(values.get("max_life", 0))
     result.defense = int(values.get("defense", 0))
+    result.direct_power_fixed = int(values.get("direct_power_fixed", 0))
+    result.direct_power_percent = int(values.get("direct_power_percent", 0))
+    result.momentum_value = int(values.get("momentum_value", 0))
+    result.last_successful_technique_hand_id = str(
+        values.get("last_successful_technique_hand_id", ""))
+    result.current_reflection_percent = int(
+        values.get("current_reflection_percent", 0))
     result.hand_limit = int(values.get("hand_limit", 0))
     result.inner_skill_limit = int(values.get("inner_skill_limit", 0))
     result.draw_count = int(values.get("draw_count", 0))
@@ -98,6 +112,11 @@ func to_dict() -> Dictionary:
         "life": life,
         "max_life": max_life,
         "defense": defense,
+        "direct_power_fixed": direct_power_fixed,
+        "direct_power_percent": direct_power_percent,
+        "momentum_value": momentum_value,
+        "last_successful_technique_hand_id": last_successful_technique_hand_id,
+        "current_reflection_percent": current_reflection_percent,
         "hand_limit": hand_limit,
         "inner_skill_limit": inner_skill_limit,
         "draw_count": draw_count,

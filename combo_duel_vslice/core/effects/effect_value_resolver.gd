@@ -14,6 +14,14 @@ func resolve(spec, context) -> int:
             return int(spec.get("value", 0))
         "power":
             return runtime.power
+        "initial_power":
+            return runtime.initial_power
+        "initial_power_fraction":
+            var value := int(floor(
+                runtime.initial_power
+                * int(spec.get("numerator", 1))
+                / float(maxi(1, int(spec.get("denominator", 1))))))
+            return maxi(int(spec.get("minimum", 0)), value)
         "power_fraction":
             var value := int(floor(
                 runtime.power
@@ -156,14 +164,16 @@ func condition_met(condition: Dictionary, context) -> bool:
         for card in cards:
             if not _card_is_attribute(card, str(spec.get("attribute", ""))):
                 return false
-    if condition.has("capture_any_poison"):
-        var cards: Array = runtime.captures.get(str(condition["capture_any_poison"]), [])
-        var has_poison := false
+    if condition.has("capture_any_anomaly"):
+        var spec: Dictionary = condition["capture_any_anomaly"]
+        var cards: Array = runtime.captures.get(str(spec.get("capture", "")), [])
+        var has_anomaly := false
         for card in cards:
-            if (str(card.get("poison", "")) != "" if card is Dictionary else card.has_anomaly("poison")):
-                has_poison = true
+            if not card is Dictionary and card.has_anomaly(
+                    str(spec.get("category", "")), str(spec.get("id", ""))):
+                has_anomaly = true
                 break
-        if not has_poison:
+        if not has_anomaly:
             return false
     if condition.has("actor_hand_less_than_target"):
         if runtime.actor == null or runtime.target == null \

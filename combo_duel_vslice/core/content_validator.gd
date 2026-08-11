@@ -50,6 +50,38 @@ const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS
 const POOL_IDS := [
     "high", "pair", "three", "straight", "bomb",
 ]
+const EXPECTED_POOL_MEMBERSHIP := {
+    "high_card": ["high"],
+    "pair": ["pair"],
+    "two_pair": ["pair"],
+    "three_kind": ["three"],
+    "straight": ["straight"],
+    "full_house": ["pair", "three"],
+    "four_kind": ["bomb"],
+    "five_kind": ["bomb"],
+}
+const RETIRED_TECHNIQUE_IDS := [
+    "all_sounds_listen_wind", "balance_sleeves_listen_wind",
+    "borrow_fire_guard_heart", "discard_fuel_open_furnace",
+    "discard_gu_exchange_breath", "double_gu_bind",
+    "double_gu_exchange_breath", "double_wind_continue_form",
+    "enemy_discard_returns_nest", "exchange_nest_into_enemy",
+    "exchange_sea_intake_qi", "fire_sparks", "five_steps_echo",
+    "five_yang_chase", "four_poles_control_top", "four_symbols_harmony",
+    "full_sleeve_bind_enemy", "full_sleeve_wind", "gather_wind_faces",
+    "layered_leaves_return_tide", "lethal_gu_needle",
+    "listen_wind_stack_top", "long_wind_full_sleeve",
+    "measure_breath_twins", "poison_nest_seek_meridian",
+    "poison_wind_seek_meridian", "returning_loop_long_breath",
+    "returning_wind_continue_form", "seize_qi_return_nest",
+    "snake_path_order_meridian", "stagnant_gu_conceal_breath",
+    "suspended_gu", "sweeping_wind_sleeve", "three_breath_turbulence",
+    "three_cards_listen_tide", "three_corpses_gu", "three_ring_breathing",
+    "three_ring_chaos_qi", "three_ring_ensemble",
+    "triple_layer_return_armor", "twin_leaves_build_momentum",
+    "twin_swallows_press_sleeve", "twin_wind_exchange", "wind_born_echo",
+    "wind_deck_return_tide", "wind_path_control_top", "wind_transforms_force",
+]
 const TECHNIQUE_INTEGRATION_STATUSES := [
     "formal_complete", "partial_integration", "regression_fixture",
 ]
@@ -57,7 +89,17 @@ const FORMAL_TECHNIQUE_STATUS := "formal_complete"
 const PRODUCTION_SEQUENCES_PATH := "res://data/production_sequences.json"
 const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
 const RESHAPE_CATEGORY_IDS := ["origin", "enhancement", "imprint", "other"]
-const ANOMALY_CATEGORY_IDS := ["mark", "poison", "state", "other"]
+const ANOMALY_CATEGORY_IDS := ["buff", "debuff", "state", "mark"]
+const REQUIRED_ANOMALY_IDS := [
+    "qi_heat", "growth", "qi_wither", "decay",
+    "poison", "vulnerability", "acupoint_block", "forbidden",
+    "wind_lure", "turbulence", "regroup", "burned_out",
+    "purification", "return_to_origin", "void",
+]
+const RETIRED_ANOMALY_IDS := [
+    "lethal_poison", "stagnant_poison", "qi_dissipation",
+    "wind_mark", "returning_wind", "qi_severance",
+]
 const REQUIRED_ORIGIN_IDS := ["attribute_change", "rank_change", "awakening"]
 const REQUIRED_ENHANCEMENT_IDS := [
     "qi_boost", "momentum", "hunyuan", "void_burst", "flawless",
@@ -68,14 +110,15 @@ const RETIRED_RESHAPE_IDS := [
     "bonus", "multiplier", "wild", "glass", "steel", "stone", "gold", "lucky",
     "foil", "holographic", "polychrome", "negative", "red", "blue", "purple",
 ]
-const ANOMALY_ON_APPLY_POLICIES := ["", "suppress_existing_effects"]
-const MARK_LIFECYCLE_EVENTS := ["draw", "explicit_discard", "enter_discard", "turn_end", "battle_end"]
+const ANOMALY_ON_APPLY_POLICIES := ["", "purify_combat_state"]
+const MARK_LIFECYCLE_EVENTS := [
+    "draw", "enter_discard", "turn_end_final", "battle_end", "remove"]
 const CARD_STATUS_TRIGGERS := [
-    "play_attempt", "played", "draw", "explicit_discard", "enter_discard", "turn_end",
+    "play_attempt", "played", "draw", "explicit_discard", "enter_discard",
+    "enter_discard_late", "turn_end", "turn_end_final",
 ]
 const CARD_STATUS_MODIFIER_IDS := [
-    "qi_contribution_percent",
-    "poison_contribution_reduction_percent",
+    "effective_qi_add_per_layer", "effective_qi_final_value",
     "outgoing_damage_percent",
     "incoming_damage_percent",
 ]
@@ -575,8 +618,10 @@ func _validate_card_states(definition: Dictionary) -> void:
     _validate_categories(
         definition.get("anomaly_categories"),
         ANOMALY_CATEGORY_IDS,
-        {"mark": -1, "poison": 1, "state": 1, "other": -1},
+        {"buff": -1, "debuff": -1, "state": 1, "mark": -1},
         "card_states.anomaly_categories")
+    _validate_temporary_reshape_subslots(
+        definition.get("temporary_reshape_subslots"))
     _validate_named_definitions(
         definition.get("origins"),
         REQUIRED_ORIGIN_IDS,
@@ -629,14 +674,19 @@ func _validate_card_states(definition: Dictionary) -> void:
                 continue
             var content_id := _required_id(value, scope)
             _register_unique(_anomalies_by_id, content_id, scope, value)
+            if RETIRED_ANOMALY_IDS.has(content_id):
+                _error(scope + ".id", "旧异状 ID 已废弃：%s" % content_id)
             _validate_name(value, scope)
             var category := str(value.get("category", ""))
             if not ANOMALY_CATEGORY_IDS.has(category):
                 _error(scope, "引用未知异状类别 %s" % category)
             if not value.get("remove_on_enter_discard") is bool:
                 _error(scope, "remove_on_enter_discard 必须是布尔值")
-            elif category in ["poison", "state"] and not bool(value["remove_on_enter_discard"]):
-                _error(scope, "毒和状态进入弃牌堆时必须默认移除")
+            elif category == "state" and not bool(value["remove_on_enter_discard"]):
+                _error(scope, "状态进入弃牌堆时必须默认移除")
+            elif content_id in ["growth", "decay"] \
+                    and not bool(value["remove_on_enter_discard"]):
+                _error(scope, "成长与衰败进入弃牌堆时必须移除")
             if not value.get("remove_on_battle_end") is bool or not bool(value.get("remove_on_battle_end", false)):
                 _error(scope, "异状必须在战斗结束前移除")
             if category == "mark":
@@ -650,8 +700,8 @@ func _validate_card_states(definition: Dictionary) -> void:
             var on_apply := str(value.get("on_apply", ""))
             if not ANOMALY_ON_APPLY_POLICIES.has(on_apply):
                 _error(scope, "未知异状获得策略 %s" % on_apply)
-            if on_apply == "suppress_existing_effects" and category != "mark":
-                _error(scope, "失效既有效果策略只允许异状标记")
+            if on_apply == "purify_combat_state" and content_id != "purification":
+                _error(scope, "净化清理策略只允许 purification")
             var runtime_payload = value.get("runtime_payload", {})
             if not runtime_payload is Dictionary:
                 _error(scope + ".runtime_payload", "必须是对象")
@@ -661,8 +711,23 @@ func _validate_card_states(definition: Dictionary) -> void:
                         _error(scope + ".runtime_payload.attribute_aliases", "未知属性 %s" % str(attribute_id))
             _validate_status_behaviors(value, CARD_STATUS_TRIGGERS, scope)
             _validate_card_status_modifiers(value, scope)
+            if category in ["buff", "debuff"] \
+                    and not bool(value.get("stackable", false)):
+                _error(scope + ".stackable", "buff/debuff 必须声明可叠层")
+            if category == "state" \
+                    and str(value.get("same_id", "")) not in ["keep", "stack"]:
+                _error(scope + ".same_id", "state 必须声明同名 keep 或 stack 策略")
         _validate_card_status_behavior_references()
         _validate_card_reshape_behavior_references()
+        _validate_required_ids(
+            _anomalies_by_id, REQUIRED_ANOMALY_IDS, "card_states.anomalies")
+        _validate_only_ids(
+            _anomalies_by_id, REQUIRED_ANOMALY_IDS, "card_states.anomalies")
+        if str(_anomalies_by_id.get("forbidden", {}).get("same_id", "")) != "stack":
+            _error("card_states.anomalies.forbidden.same_id", "封禁必须累加层数")
+        if str(_anomalies_by_id.get("purification", {}).get("same_id", "reject")) != "reject":
+            _error("card_states.anomalies.purification.same_id", "净化必须拒绝重复施加")
+        _validate_void_burst_contract()
     _validate_other_reshape_battle_start_anomalies()
 
 func _validate_card_reshape_behaviors(values, scope: String) -> void:
@@ -833,6 +898,15 @@ func _validate_card_status_behavior_references() -> void:
         var definition: Dictionary = _anomalies_by_id[status_id]
         for index in range(definition.get("behaviors", []).size()):
             var behavior: Dictionary = definition["behaviors"][index]
+            if behavior.has("anomaly"):
+                var direct_id := str(behavior.get("anomaly", ""))
+                var direct_category := str(behavior.get("category", ""))
+                var direct_scope := "card_states.anomalies.%s.behaviors[%d]" % [
+                    status_id, index]
+                if not _anomalies_by_id.has(direct_id):
+                    _error(direct_scope + ".anomaly", "引用未知真气异状 %s" % direct_id)
+                elif str(_anomalies_by_id[direct_id].get("category", "")) != direct_category:
+                    _error(direct_scope + ".category", "异状 %s 不属于类别 %s" % [direct_id, direct_category])
             if not behavior.has("apply_anomaly"):
                 continue
             var scope := "card_states.anomalies.%s.behaviors[%d].apply_anomaly" % [
@@ -889,6 +963,10 @@ func _validate_techniques(definition: Dictionary) -> void:
         for pool_id in membership[hand_id]:
             if not pool_id is String or not POOL_IDS.has(str(pool_id)):
                 _error("techniques.pool_membership.%s" % hand_id, "引用未知功法池 %s" % str(pool_id))
+        if membership[hand_id] != EXPECTED_POOL_MEMBERSHIP[hand_id]:
+            _error(
+                "techniques.pool_membership.%s" % hand_id,
+                "必须精确为 %s" % str(EXPECTED_POOL_MEMBERSHIP[hand_id]))
     for hand_id in membership:
         if not HAND_IDS.has(str(hand_id)):
             _error("techniques.pool_membership", "包含未知精确牌型 %s" % str(hand_id))
@@ -903,6 +981,8 @@ func _validate_techniques(definition: Dictionary) -> void:
             continue
         var technique_id := _required_id(value, scope)
         _register_unique(_techniques_by_id, technique_id, scope, value)
+        if RETIRED_TECHNIQUE_IDS.has(technique_id):
+            _error(scope + ".id", "归档功法不得恢复到正式运行数据：%s" % technique_id)
         if not value.get("name") is String or str(value.get("name", "")) == "":
             _error(scope, "name 必须是非空字符串")
         var pool_id := str(value.get("pool", ""))
@@ -1466,11 +1546,11 @@ func _validate_sequences(definition: Dictionary, scope: String) -> void:
             _error(scope, "缺少牌型 %s 的序列数组" % hand_id)
             continue
         if is_production_sequence \
-                and hand_id != "five_kind" \
-                and definition[hand_id].is_empty():
+                and _techniques_by_id.is_empty() \
+                and not definition[hand_id].is_empty():
             _error(
                 "%s.%s" % [scope, hand_id],
-                "production 正式开局序列不能为空")
+                "正式功法为 0 时 production 序列必须为空")
         var seen: Dictionary = {}
         for index in range(definition[hand_id].size()):
             var technique_id := str(definition[hand_id][index])
@@ -1768,6 +1848,60 @@ func _validate_reshape_categories(values) -> void:
             _error(
                 "%s[%d].replaceable" % [scope, index],
                 "必须为 %s" % str(replaceable[category_id]))
+
+func _validate_temporary_reshape_subslots(values) -> void:
+    var required := ["enhancement", "attribute"]
+    _validate_categories(
+        values,
+        required,
+        {"enhancement": 1, "attribute": 1},
+        "card_states.temporary_reshape_subslots")
+    if not values is Array:
+        return
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary:
+            continue
+        if not value.get("replaceable") is bool \
+                or not bool(value.get("replaceable", false)):
+            _error(
+                "card_states.temporary_reshape_subslots[%d].replaceable" % index,
+                "临时重塑子槽必须允许替换")
+
+func _validate_void_burst_contract() -> void:
+    var void_burst: Dictionary = _enhancements_by_id.get("void_burst", {})
+    var battle_start_void := 0
+    for behavior_value in void_burst.get("behaviors", []):
+        var behavior: Dictionary = behavior_value
+        if str(behavior.get("trigger", "")) == "turn_end_final" \
+                or str(behavior.get("handler", "")) == "temporarily_remove_if_in_hand":
+            _error(
+                "card_states.enhancements.void_burst.behaviors",
+                "虚暴不得直接在回合结束消散")
+        if str(behavior.get("trigger", "")) == "battle_start" \
+                and str(behavior.get("handler", "")) == "apply_anomaly" \
+                and str(behavior.get("category", "")) == "mark" \
+                and str(behavior.get("anomaly", "")) == "void":
+            battle_start_void += 1
+    if battle_start_void != 1:
+        _error(
+            "card_states.enhancements.void_burst.behaviors",
+            "虚暴必须且只能声明一次战斗开始施加虚无")
+    var flawless: Dictionary = _enhancements_by_id.get("flawless", {})
+    var blocked_ids: Array = []
+    for behavior_value in flawless.get("behaviors", []):
+        var behavior: Dictionary = behavior_value
+        if str(behavior.get("handler", "")) == "block_anomaly_application":
+            blocked_ids.assign(behavior.get("anomaly_ids", []))
+            if not behavior.get("categories", []).is_empty():
+                _error(
+                    "card_states.enhancements.flawless.behaviors",
+                    "无漏不得按整个异状类别阻止")
+    blocked_ids.sort()
+    if blocked_ids != ["acupoint_block", "poison", "vulnerability"]:
+        _error(
+            "card_states.enhancements.flawless.behaviors",
+            "无漏阻止名单必须精确为 poison/vulnerability/acupoint_block")
 
 func _validate_named_definitions(values, required_ids: Array, index: Dictionary, scope: String) -> void:
     if not values is Array:

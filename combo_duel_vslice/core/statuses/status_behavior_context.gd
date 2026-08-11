@@ -28,6 +28,7 @@ var source_trigger: String = ""
 var action_token: String = ""
 var replay_depth: int = 0
 var trigger_sequence: int = 0
+var rng: RandomNumberGenerator = null
 
 func configure(values: Dictionary):
     trigger = str(values.get("trigger", ""))
@@ -53,4 +54,5 @@ func configure(values: Dictionary):
     action_token = str(values.get("action_token", ""))
     replay_depth = int(values.get("replay_depth", 0))
     trigger_sequence = int(values.get("trigger_sequence", 0))
+    rng = values.get("rng")
     return self

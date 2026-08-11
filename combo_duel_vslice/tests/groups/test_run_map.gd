@@ -8,7 +8,6 @@ func _initialize() -> void:
         "_test_run_session_commands_snapshots_events_and_logs",
         "_test_inner_skill_loadout_and_forgetting",
         "_test_experience_interest_node_settlement",
-        "_test_formal_practice_shop_and_hand_progression",
         "_test_s2f2f1_formal_pills_and_transactions",
         "_test_s2f2f2_formal_curios_and_protocols",
         "_test_s2f2f3_practice_shop_packs_items_and_migration",

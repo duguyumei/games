@@ -4,7 +4,8 @@ extends RefCounted
 const CardReshapeRuleServiceScript = preload(
     "res://core/card_reshapes/card_reshape_rule_service.gd")
 
-const ANOMALY_CATEGORIES := ["mark", "poison", "state", "other"]
+const ANOMALY_CATEGORIES := ["buff", "debuff", "state", "mark"]
+const TEMPORARY_RESHAPE_SUBSLOTS := ["enhancement", "attribute"]
 
 var id: String
 var definition_id: String
@@ -19,12 +20,19 @@ var reshape_enhancement: String = ""
 var reshape_imprint: String = ""
 var reshape_others: Dictionary = {}
 
-var anomaly_poison: String = ""
-var anomaly_state: String = ""
-var anomaly_marks: Dictionary = {}
-var anomaly_others: Dictionary = {}
-
-var suppressed_reshapes: Dictionary = {}
+var anomalies: Dictionary = {
+    "buffs": {},
+    "debuffs": {},
+    "state": {},
+    "marks": {},
+}
+var temporary_reshapes: Dictionary = {
+    "enhancement": "",
+    "attribute": "",
+}
+## 本源改造提交前的基础身份。只有存在本源时才非空；归元读取此快照，
+## 不反向猜测已经物化到 definition_id/rank/attribute/qi_value 的旧身份。
+var origin_base_identity: Dictionary = {}
 var original_owner_id: String = ""
 var temporary_card: bool = false
 var reshape_rule_service
@@ -46,45 +54,59 @@ func _init(
     attribute_name = card_attribute_name
 
 func display_name() -> String:
-    return "%s·%s" % [attribute_name, rank_name]
+    return "%s·%s" % [current_attribute_name(), current_rank_name()]
+
+func return_to_origin_active() -> bool:
+    return has_anomaly("mark", "return_to_origin")
+
+func current_definition_id() -> String:
+    return str(_effective_identity().get("definition_id", definition_id))
+
+func current_rank_name() -> String:
+    return str(_effective_identity().get("rank_name", rank_name))
+
+func current_rank_order() -> int:
+    return int(_effective_identity().get("rank_order", rank_order))
+
+func current_base_qi_value() -> int:
+    return int(_effective_identity().get("qi_value", qi_value))
+
+func current_attribute() -> String:
+    return str(_effective_identity().get("attribute", attribute))
+
+func current_attribute_name() -> String:
+    return str(_effective_identity().get("attribute_name", attribute_name))
+
+func _effective_identity() -> Dictionary:
+    if return_to_origin_active() and not origin_base_identity.is_empty():
+        return origin_base_identity
+    return {}
 
 func is_attribute(attribute_id: String) -> bool:
-    if attribute == attribute_id:
+    if current_attribute() == attribute_id:
+        return true
+    if not return_to_origin_active() \
+            and str(temporary_reshapes.get("attribute", "")) == attribute_id:
         return true
     var rules = _reshape_rules()
     if rules.matches_attribute(self, attribute_id):
         return true
-    for payload_value in anomaly_marks.values():
-        var payload: Dictionary = payload_value
-        if payload.get("attribute_aliases", []).has(attribute_id):
-            return true
     return false
 
 func set_enhancement(enhancement_id: String) -> void:
-    suppressed_reshapes.erase("enhancement")
     reshape_enhancement = enhancement_id
     _reshape_rules().apply_reshape(self, "enhancement", enhancement_id)
 
 func set_imprint(imprint_id: String) -> void:
-    suppressed_reshapes.erase("imprint")
     reshape_imprint = imprint_id
     _reshape_rules().apply_reshape(self, "imprint", imprint_id)
 
 func origin_locked() -> bool:
-    if not reshape_origin.is_empty():
-        return true
-    var suppressed_origin = suppressed_reshapes.get("origin", {})
-    return suppressed_origin is Dictionary and not suppressed_origin.is_empty()
+    return not reshape_origin.is_empty()
 
 func set_other_reshape(reshape_id: String, payload: Dictionary = {}) -> bool:
     if reshape_id == "":
         return false
-    var suppressed_others: Dictionary = suppressed_reshapes.get("others", {})
-    suppressed_others.erase(reshape_id)
-    if suppressed_others.is_empty():
-        suppressed_reshapes.erase("others")
-    else:
-        suppressed_reshapes["others"] = suppressed_others
     reshape_others[reshape_id] = payload.duplicate(true)
     var result: Dictionary = _reshape_rules().apply_reshape(self, "other", reshape_id, payload)
     if not bool(result.get("success", false)):
@@ -95,17 +117,13 @@ func set_other_reshape(reshape_id: String, payload: Dictionary = {}) -> bool:
 func remove_other_reshape(reshape_id: String) -> Dictionary:
     var previous: Dictionary = reshape_others.get(reshape_id, {}).duplicate(true)
     reshape_others.erase(reshape_id)
-    var suppressed_others: Dictionary = suppressed_reshapes.get("others", {})
-    if previous.is_empty() and suppressed_others.has(reshape_id):
-        previous = suppressed_others[reshape_id].duplicate(true)
-    suppressed_others.erase(reshape_id)
-    if suppressed_others.is_empty():
-        suppressed_reshapes.erase("others")
-    else:
-        suppressed_reshapes["others"] = suppressed_others
     return previous
 
-func set_anomaly(category: String, anomaly_id: String, payload: Dictionary = {}) -> bool:
+func set_anomaly(
+        category: String,
+        anomaly_id: String,
+        payload: Dictionary = {},
+        layers: int = 1) -> bool:
     if not ANOMALY_CATEGORIES.has(category) or anomaly_id == "":
         return false
     var anomaly_check: Dictionary = _reshape_rules().can_apply_anomaly(
@@ -113,11 +131,44 @@ func set_anomaly(category: String, anomaly_id: String, payload: Dictionary = {})
     if not bool(anomaly_check.get("allowed", true)):
         return false
     match category:
-        "poison": anomaly_poison = anomaly_id
-        "state": anomaly_state = anomaly_id
-        "mark": anomaly_marks[anomaly_id] = payload.duplicate(true)
-        "other": anomaly_others[anomaly_id] = payload.duplicate(true)
+        "buff": anomalies["buffs"][anomaly_id] = maxi(1, layers)
+        "debuff": anomalies["debuffs"][anomaly_id] = maxi(1, layers)
+        "state": anomalies["state"] = {
+            "id": anomaly_id,
+            "layers": maxi(1, layers),
+            "payload": payload.duplicate(true),
+        }
+        "mark": anomalies["marks"][anomaly_id] = payload.duplicate(true)
     return true
+
+func add_anomaly_layers(category: String, anomaly_id: String, layers: int = 1) -> bool:
+    if category not in ["buff", "debuff"] or anomaly_id == "" or layers <= 0:
+        return false
+    anomalies[_plural_category(category)][anomaly_id] = (
+        anomaly_layers(category, anomaly_id) + layers)
+    return true
+
+func set_state_layers(layers: int) -> bool:
+    if anomalies["state"].is_empty():
+        return false
+    if layers <= 0:
+        anomalies["state"].clear()
+    else:
+        anomalies["state"]["layers"] = layers
+    return true
+
+func anomaly_layers(category: String, anomaly_id: String) -> int:
+    match category:
+        "buff", "debuff":
+            return maxi(0, int(anomalies[_plural_category(category)].get(anomaly_id, 0)))
+        "state":
+            return int(anomalies["state"].get("layers", 0)) \
+                if str(anomalies["state"].get("id", "")) == anomaly_id else 0
+        "mark": return 1 if anomalies["marks"].has(anomaly_id) else 0
+    return 0
+
+func current_state() -> Dictionary:
+    return anomalies["state"].duplicate(true)
 
 func configure_reshape_rule_service(service) -> void:
     reshape_rule_service = service
@@ -156,102 +207,93 @@ func _reshape_rules():
 
 func has_anomaly(category: String, anomaly_id: String = "") -> bool:
     match category:
-        "poison": return anomaly_poison != "" and (anomaly_id == "" or anomaly_poison == anomaly_id)
-        "state": return anomaly_state != "" and (anomaly_id == "" or anomaly_state == anomaly_id)
-        "mark": return not anomaly_marks.is_empty() if anomaly_id == "" else anomaly_marks.has(anomaly_id)
-        "other": return not anomaly_others.is_empty() if anomaly_id == "" else anomaly_others.has(anomaly_id)
+        "buff", "debuff":
+            var entries: Dictionary = anomalies[_plural_category(category)]
+            return not entries.is_empty() if anomaly_id == "" else int(entries.get(anomaly_id, 0)) > 0
+        "state":
+            var state_id := str(anomalies["state"].get("id", ""))
+            return state_id != "" and (anomaly_id == "" or state_id == anomaly_id)
+        "mark":
+            return not anomalies["marks"].is_empty() \
+                if anomaly_id == "" else anomalies["marks"].has(anomaly_id)
     return false
 
 func remove_anomaly(category: String, anomaly_id: String = ""):
     match category:
-        "poison":
-            var previous_poison := anomaly_poison
-            if anomaly_id == "" or anomaly_poison == anomaly_id:
-                anomaly_poison = ""
-            return previous_poison
+        "buff", "debuff":
+            var entries: Dictionary = anomalies[_plural_category(category)]
+            if anomaly_id == "":
+                var previous_entries := entries.duplicate(true)
+                entries.clear()
+                return previous_entries
+            var previous_layers := int(entries.get(anomaly_id, 0))
+            entries.erase(anomaly_id)
+            return previous_layers
         "state":
-            var previous_state := anomaly_state
-            if anomaly_id == "" or anomaly_state == anomaly_id:
-                anomaly_state = ""
+            var previous_state: Dictionary = anomalies["state"].duplicate(true)
+            if anomaly_id == "" or str(anomalies["state"].get("id", "")) == anomaly_id:
+                anomalies["state"].clear()
             return previous_state
         "mark":
             if anomaly_id == "":
-                var previous_marks := anomaly_marks.duplicate(true)
-                anomaly_marks.clear()
+                var previous_marks: Dictionary = anomalies["marks"].duplicate(true)
+                anomalies["marks"].clear()
                 return previous_marks
-            var previous_mark: Dictionary = anomaly_marks.get(anomaly_id, {}).duplicate(true)
-            anomaly_marks.erase(anomaly_id)
+            var previous_mark: Dictionary = anomalies["marks"].get(anomaly_id, {}).duplicate(true)
+            anomalies["marks"].erase(anomaly_id)
             return previous_mark
-        "other":
-            if anomaly_id == "":
-                var previous_others := anomaly_others.duplicate(true)
-                anomaly_others.clear()
-                return previous_others
-            var previous_other: Dictionary = anomaly_others.get(anomaly_id, {}).duplicate(true)
-            anomaly_others.erase(anomaly_id)
-            return previous_other
     return null
 
 func anomaly_snapshot() -> Dictionary:
-    return {
-        "poison": anomaly_poison,
-        "state": anomaly_state,
-        "marks": anomaly_marks.duplicate(true),
-        "others": anomaly_others.duplicate(true),
+    return anomalies.duplicate(true)
+
+func restore_anomaly_snapshot(values: Dictionary) -> bool:
+    if values.has("poison") or values.has("others") \
+            or not values.has_all(["buffs", "debuffs", "state", "marks"]):
+        return false
+    anomalies = {
+        "buffs": values.get("buffs", {}).duplicate(true),
+        "debuffs": values.get("debuffs", {}).duplicate(true),
+        "state": values.get("state", {}).duplicate(true),
+        "marks": values.get("marks", {}).duplicate(true),
     }
+    return true
 
 func clear_anomalies() -> Dictionary:
     var removed := anomaly_snapshot()
-    anomaly_poison = ""
-    anomaly_state = ""
-    anomaly_marks.clear()
-    anomaly_others.clear()
+    anomalies["buffs"].clear()
+    anomalies["debuffs"].clear()
+    anomalies["state"].clear()
+    anomalies["marks"].clear()
     return removed
 
 func clear_combat_state() -> void:
-    restore_suppressed_reshapes()
     clear_anomalies()
+    clear_all_temporary_reshapes()
 
-func suppress_existing_reshapes_and_clear_anomalies() -> Dictionary:
-    if not suppressed_reshapes.is_empty():
-        return {"reshapes": {}, "anomalies": {}}
-    var removed_reshapes := active_reshape_state()
-    suppressed_reshapes = {}
-    if not reshape_origin.is_empty():
-        suppressed_reshapes["origin"] = reshape_origin.duplicate(true)
-    if reshape_enhancement != "":
-        suppressed_reshapes["enhancement"] = reshape_enhancement
-    if reshape_imprint != "":
-        suppressed_reshapes["imprint"] = reshape_imprint
-    if not reshape_others.is_empty():
-        suppressed_reshapes["others"] = reshape_others.duplicate(true)
-    reshape_origin.clear()
-    reshape_enhancement = ""
-    reshape_imprint = ""
-    reshape_others.clear()
-    return {"reshapes": removed_reshapes, "anomalies": clear_anomalies()}
+func set_temporary_enhancement(enhancement_id: String) -> bool:
+    if enhancement_id == "":
+        return false
+    temporary_reshapes["enhancement"] = enhancement_id
+    return true
 
-func restore_suppressed_reshapes() -> Dictionary:
-    var restored := {"origin": {}, "enhancement": "", "imprint": "", "others": {}}
-    var suppressed_origin = suppressed_reshapes.get("origin", {})
-    if reshape_origin.is_empty() \
-            and suppressed_origin is Dictionary \
-            and not suppressed_origin.is_empty():
-        reshape_origin = suppressed_origin.duplicate(true)
-        restored["origin"] = reshape_origin.duplicate(true)
-    if reshape_enhancement == "" and suppressed_reshapes.has("enhancement"):
-        reshape_enhancement = str(suppressed_reshapes["enhancement"])
-        restored["enhancement"] = reshape_enhancement
-    if reshape_imprint == "" and suppressed_reshapes.has("imprint"):
-        reshape_imprint = str(suppressed_reshapes["imprint"])
-        restored["imprint"] = reshape_imprint
-    var suppressed_others: Dictionary = suppressed_reshapes.get("others", {})
-    for reshape_id in suppressed_others:
-        if not reshape_others.has(reshape_id):
-            reshape_others[reshape_id] = suppressed_others[reshape_id].duplicate(true)
-            restored["others"][reshape_id] = suppressed_others[reshape_id].duplicate(true)
-    suppressed_reshapes.clear()
-    return restored
+func set_temporary_attribute(attribute_id: String) -> bool:
+    if attribute_id not in ["wind", "forest", "fire", "mountain"]:
+        return false
+    temporary_reshapes["attribute"] = attribute_id
+    return true
+
+func clear_temporary_reshape(subslot: String) -> String:
+    if subslot not in TEMPORARY_RESHAPE_SUBSLOTS:
+        return ""
+    var previous := str(temporary_reshapes.get(subslot, ""))
+    temporary_reshapes[subslot] = ""
+    return previous
+
+func clear_all_temporary_reshapes() -> Dictionary:
+    var previous := temporary_reshapes.duplicate(true)
+    temporary_reshapes = {"enhancement": "", "attribute": ""}
+    return previous
 
 func active_reshape_state() -> Dictionary:
     return {
@@ -262,24 +304,18 @@ func active_reshape_state() -> Dictionary:
     }
 
 func persistent_reshape_state() -> Dictionary:
-    var suppressed_origin = suppressed_reshapes.get("origin", {})
-    var values := {
-        "origin": (
-            suppressed_origin.duplicate(true)
-            if suppressed_origin is Dictionary else {}),
-        "enhancement": str(suppressed_reshapes.get("enhancement", "")),
-        "imprint": str(suppressed_reshapes.get("imprint", "")),
-        "others": suppressed_reshapes.get("others", {}).duplicate(true),
-    }
-    if not reshape_origin.is_empty():
-        values["origin"] = reshape_origin.duplicate(true)
-    if reshape_enhancement != "":
-        values["enhancement"] = reshape_enhancement
-    if reshape_imprint != "":
-        values["imprint"] = reshape_imprint
-    for reshape_id in reshape_others:
-        values["others"][reshape_id] = reshape_others[reshape_id].duplicate(true)
-    return values
+    return active_reshape_state()
+
+func has_any_reshape_storage() -> bool:
+    return not reshape_origin.is_empty() \
+        or reshape_enhancement != "" \
+        or reshape_imprint != "" \
+        or not reshape_others.is_empty() \
+        or str(temporary_reshapes.get("enhancement", "")) != "" \
+        or str(temporary_reshapes.get("attribute", "")) != ""
+
+func _plural_category(category: String) -> String:
+    return "buffs" if category == "buff" else "debuffs"
 
 func to_dict() -> Dictionary:
     return {
@@ -291,9 +327,10 @@ func to_dict() -> Dictionary:
         "qi_value": qi_value,
         "attribute": attribute,
         "attribute_name": attribute_name,
+        "origin_base_identity": origin_base_identity.duplicate(true),
         "reshapes": active_reshape_state(),
         "anomalies": anomaly_snapshot(),
-        "suppressed_reshapes": suppressed_reshapes.duplicate(true),
+        "temporary_reshapes": temporary_reshapes.duplicate(true),
         "original_owner_id": original_owner_id,
         "temporary_card": temporary_card,
     }

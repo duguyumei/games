@@ -256,7 +256,7 @@ func _finish_solo_player_resolution(record, action_preview: Dictionary) -> Dicti
     var player_commit: Dictionary = action_resolver.commit_staging_for(
         player, action_preview.get("cards", []) if has_cooperation else [])
     var played_cards: Array = player_commit["committed"]
-    action_resolver.log_cards_leave(player, played_cards, player_commit["recycled"])
+    action_resolver.log_cards_leave(player, played_cards)
     action_resolver.finish_action_record(record)
     if has_cooperation:
         return _resolve_solo_cooperation(
@@ -312,8 +312,7 @@ func _finish_solo_cooperation_resolution(
     var cooperation_commit: Dictionary = action_resolver.commit_cooperation_staging(
         record, metadata.get("cooperation", {}))
     var cooperation_cards: Array = cooperation_commit["committed"]
-    action_resolver.log_cards_leave(
-        player, cooperation_cards, cooperation_commit.get("recycled", []))
+    action_resolver.log_cards_leave(player, cooperation_cards)
     action_resolver.finish_action_record(record)
     var all_cards: Array = metadata.get("main_cards", []).duplicate()
     all_cards.append_array(cooperation_cards)
@@ -493,12 +492,12 @@ func _finish_synchronized_resolution(
     var player_commit: Dictionary = action_resolver.commit_staging_for(
         player, player_preview.get("cards", []) if has_cooperation else [])
     var enemy_commit: Dictionary = action_resolver.commit_staging_for(enemy) \
-        if enemy_will_act else {"committed": [], "recycled": []}
+        if enemy_will_act else {"committed": []}
     var player_cards: Array = player_commit["committed"]
     var enemy_cards: Array = enemy_commit["committed"]
-    action_resolver.log_cards_leave(player, player_cards, player_commit["recycled"])
+    action_resolver.log_cards_leave(player, player_cards)
     if enemy_will_act:
-        action_resolver.log_cards_leave(enemy, enemy_cards, enemy_commit["recycled"])
+        action_resolver.log_cards_leave(enemy, enemy_cards)
     for record in records:
         action_resolver.finish_action_record(record)
     if has_cooperation:
@@ -574,9 +573,7 @@ func _finish_synchronized_cooperation_resolution(
     var all_player_cards: Array = metadata.get("player_cards", []).duplicate()
     all_player_cards.append_array(cooperation_commit.get("committed", []))
     action_resolver.log_cards_leave(
-        player,
-        cooperation_commit.get("committed", []),
-        cooperation_commit.get("recycled", []))
+        player, cooperation_commit.get("committed", []))
     action_resolver.finish_action_record(record)
     return _finish_synchronized_outcome(
         metadata.get("player_preview", {}),
@@ -643,7 +640,7 @@ func _finish_synchronized_outcome(
 func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictionary:
     var enemy_commit: Dictionary = action_resolver.commit_staging_for(enemy)
     var enemy_cards: Array = enemy_commit["committed"]
-    action_resolver.log_cards_leave(enemy, enemy_cards, enemy_commit["recycled"])
+    action_resolver.log_cards_leave(enemy, enemy_cards)
     action_resolver.finish_action_record(record)
     last_player_action_cards.clear()
     last_enemy_action_cards = enemy_cards

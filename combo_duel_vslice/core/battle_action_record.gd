@@ -14,6 +14,7 @@ var failed: bool = false
 var token: String = ""
 var captures_by_source: Dictionary = {}
 var cooperation_groups: Array = []
+var momentum_prepared: bool = false
 
 func configure(
         action_actor,
@@ -35,6 +36,7 @@ func configure(
     cooperation_groups.clear()
     triggered = false
     failed = false
+    momentum_prepared = false
     return self
 
 func snapshot() -> Dictionary:
@@ -47,6 +49,7 @@ func snapshot() -> Dictionary:
         "token": token,
         "triggered": triggered,
         "failed": failed,
+        "momentum_prepared": momentum_prepared,
         "hand_id": str(preview.get("hand", {}).get("id", "")),
         "technique_id": str(preview.get("technique_id", "")),
         "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
@@ -68,4 +71,5 @@ func to_dict() -> Dictionary:
         "token": token,
         "captures_by_source": captures_by_source,
         "cooperation_groups": cooperation_groups,
+        "momentum_prepared": momentum_prepared,
     }

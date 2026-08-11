@@ -51,9 +51,11 @@ static func evaluate(cards: Array) -> Dictionary:
         return {}
     var rank_groups: Dictionary = {}
     for card in cards:
-        if not rank_groups.has(card.rank_order):
-            rank_groups[card.rank_order] = []
-        rank_groups[card.rank_order].append(card)
+        var rank_order: int = card.current_rank_order() \
+            if card.has_method("current_rank_order") else int(card.rank_order)
+        if not rank_groups.has(rank_order):
+            rank_groups[rank_order] = []
+        rank_groups[rank_order].append(card)
 
     var is_five := cards.size() == 5
     var straight := is_five and _is_straight(cards)
@@ -87,7 +89,11 @@ static func evaluate(cards: Array) -> Dictionary:
 
     var highest = cards[0]
     for card in cards:
-        if card.rank_order > highest.rank_order:
+        var card_order: int = card.current_rank_order() \
+            if card.has_method("current_rank_order") else int(card.rank_order)
+        var highest_order: int = highest.current_rank_order() \
+            if highest.has_method("current_rank_order") else int(highest.rank_order)
+        if card_order > highest_order:
             highest = card
     return _result("high_card", [highest])
 
@@ -121,9 +127,11 @@ static func _ranks_with_count(groups: Dictionary, count: int) -> Array:
 static func _is_straight(cards: Array) -> bool:
     var ranks: Array = []
     for card in cards:
-        if ranks.has(card.rank_order):
+        var rank_order: int = card.current_rank_order() \
+            if card.has_method("current_rank_order") else int(card.rank_order)
+        if ranks.has(rank_order):
             return false
-        ranks.append(card.rank_order)
+        ranks.append(rank_order)
     ranks.sort()
     if ranks == [2, 3, 4, 5, 14]:
         return true

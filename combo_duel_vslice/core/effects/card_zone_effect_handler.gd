@@ -95,10 +95,11 @@ func execute(effect: Dictionary, context):
                 snapshots.append({
                     "card": card,
                     "id": str(card.id),
-                    "qi_value": int(card.qi_value),
+                    "qi_value": int(card.current_base_qi_value()) \
+                        if card.has_method("current_base_qi_value") else int(card.qi_value),
                     "attributes": attributes,
-                    "poison": str(card.anomaly_poison),
-                    "state": str(card.anomaly_state),
+                    "state": card.current_state() \
+                        if card.has_method("current_state") else {},
                 })
             runtime.captures[str(effect.get("result_capture", "card_metadata"))] = snapshots
             return EffectResultScript.succeeded("记录真气快照 %d 张" % snapshots.size())

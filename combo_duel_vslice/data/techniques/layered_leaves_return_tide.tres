@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "layered_leaves_return_tide"
-display_name = "重叶回潮"
-pool = "high"
-description = "获得 floor(P/2) 防御；抽2张，再选择2张手牌明确弃掉；若实际弃掉恰好2张且均视为风，随机洗回弃牌堆至多2张风牌。"
-effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"draw","count":2,"capture":"drawn"},{"op":"select_cards","choice_id":"discard_two","prompt":"选择2张手牌明确弃掉","chooser":"actor","minimum":2,"maximum":2,"insufficient_policy":"use_available","selection_purpose":"explicit_discard","query":{"side":"actor","zone":"hand","order":"zone"},"capture":"selected"},{"op":"move_captured","capture":"selected","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"move_query","query":{"side":"actor","zone":"discard_pile","order":"random","limit":2,"filters":{"attributes":["wind"]}},"to_side":"actor","to_zone":"draw_pile","reason":"recover","shuffle_destination":true,"when":{"all":[{"capture_count_equals":{"capture":"discarded","value":2}},{"capture_all_attribute":{"capture":"discarded","attribute":"wind"}}]}}]

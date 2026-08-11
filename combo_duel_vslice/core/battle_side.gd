@@ -21,6 +21,11 @@ var defense: int = 0
 var experience: int = 0
 var hand_limit: int = 8
 var base_hand_limit_modifier: int = 0
+var direct_power_fixed: int = 0
+var direct_power_percent: int = 0
+var momentum_value: int = 0
+var last_successful_technique_hand_id: String = ""
+var current_reflection_percent: int = 0
 var draw_pile: Array = []
 var hand: Array = []
 var staging: Array = []
@@ -67,6 +72,11 @@ func reset(
     experience = 0
     hand_limit = 8
     base_hand_limit_modifier = 0
+    direct_power_fixed = 0
+    direct_power_percent = 0
+    momentum_value = 0
+    last_successful_technique_hand_id = ""
+    current_reflection_percent = 0
     stacks.clear()
     equipped_inner_skill_ids.clear()
     technique_slot_index = 0
@@ -147,7 +157,9 @@ func resolve_hand_definition_ids(definition_ids: Array) -> Array[String]:
     var used: Dictionary = {}
     for definition_id in definition_ids:
         for card in hand:
-            if used.has(card.id) or card.definition_id != str(definition_id):
+            var current_definition_id: String = card.current_definition_id() \
+                if card.has_method("current_definition_id") else str(card.definition_id)
+            if used.has(card.id) or current_definition_id != str(definition_id):
                 continue
             used[card.id] = true
             resolved.append(str(card.id))
@@ -157,16 +169,8 @@ func resolve_hand_definition_ids(definition_ids: Array) -> Array[String]:
 func commit_staging() -> Array:
     return card_zone_service.commit_staging(self)
 
-func commit_staging_with_recycles(recycle_anomalies: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
-    return card_zone_service.commit_staging_with_recycles(
-        self, recycle_anomalies, rng)
-
-func commit_selected_staging_with_recycles(
-        cards: Array,
-        recycle_anomalies: Dictionary,
-        rng: RandomNumberGenerator) -> Dictionary:
-    return card_zone_service.commit_selected_staging_with_recycles(
-        self, cards, recycle_anomalies, rng)
+func commit_selected_staging(cards: Array) -> Array:
+    return card_zone_service.commit_selected_staging(self, cards)
 
 func count_anomaly_in_zone(zone: String, category: String, anomaly_id: String) -> int:
     var cards: Array = []
@@ -217,6 +221,19 @@ func add_defense(amount: int) -> int:
     var gained := maxi(0, amount)
     defense += gained
     return gained
+
+func add_momentum(amount: int) -> int:
+    var before := momentum_value
+    momentum_value = maxi(0, momentum_value + amount)
+    return momentum_value - before
+
+func set_momentum(value: int) -> int:
+    momentum_value = maxi(0, value)
+    return momentum_value
+
+func set_reflection_percent(value: int) -> int:
+    current_reflection_percent = maxi(0, value)
+    return current_reflection_percent
 
 func add_stack(stack_id: String, amount: int) -> int:
     if status_system != null:

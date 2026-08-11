@@ -39,6 +39,11 @@ func plan(values: Dictionary, origin_id: String, payload: Dictionary) -> Diction
         return _failure("觉醒属性必须与真气当前基础属性一致")
 
     var after := values.duplicate(true)
+    var base_identity: Dictionary = _normalized_identity(
+        values.get("origin_base_identity", {}))
+    if base_identity.is_empty():
+        base_identity = _normalized_identity(values)
+    after["origin_base_identity"] = base_identity
     var stored_payload := resolved_payload.duplicate(true)
     match origin_id:
         "attribute_change":
@@ -94,6 +99,7 @@ func apply_to_card(card, origin_id: String, payload: Dictionary) -> Dictionary:
         "qi_value": int(card.qi_value),
         "attribute": str(card.attribute),
         "attribute_name": str(card.attribute_name),
+        "origin_base_identity": card.origin_base_identity.duplicate(true),
         "reshapes": card.persistent_reshape_state(),
     }
     var result := plan(values, origin_id, payload)
@@ -106,6 +112,7 @@ func apply_to_card(card, origin_id: String, payload: Dictionary) -> Dictionary:
     card.qi_value = int(after["qi_value"])
     card.attribute = str(after["attribute"])
     card.attribute_name = str(after["attribute_name"])
+    card.origin_base_identity = after["origin_base_identity"].duplicate(true)
     card.reshape_origin = after["reshapes"]["origin"].duplicate(true)
     return {"success": true, "after": after}
 
@@ -155,6 +162,18 @@ func _apply_base_identity(values: Dictionary, attribute: Dictionary, rank: Dicti
     values["rank_name"] = str(rank["id"])
     values["rank_order"] = int(rank["order"])
     values["qi_value"] = int(rank["qi"])
+
+func _normalized_identity(values) -> Dictionary:
+    if not values is Dictionary or values.is_empty():
+        return {}
+    return {
+        "definition_id": str(values.get("definition_id", "")),
+        "rank_name": str(values.get("rank_name", "")),
+        "rank_order": int(values.get("rank_order", 0)),
+        "qi_value": int(values.get("qi_value", 0)),
+        "attribute": str(values.get("attribute", "")),
+        "attribute_name": str(values.get("attribute_name", "")),
+    }
 
 func _attribute_definition(attribute_id: String) -> Dictionary:
     for value in _base_deck.get("attributes", []):

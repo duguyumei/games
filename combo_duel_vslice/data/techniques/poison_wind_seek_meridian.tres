@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="TechniqueDefinition" format=3]
-[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "poison_wind_seek_meridian"
-display_name = "毒风索脉"
-pool = "high"
-description = "获得 floor(P/2) 防御；敌方从牌库随机抽取1张带毒真气；没有目标时改为造成 floor(P/2) 伤害。"
-effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2}},{"op":"draw_filtered","query":{"side":"target","zone":"draw_pile","order":"random","limit":1,"filters":{"anomaly":{"category":"poison","present":true}}},"capture":"poison_draw"},{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2},"phase":"zones","when":{"capture_empty":"poison_draw"}}]

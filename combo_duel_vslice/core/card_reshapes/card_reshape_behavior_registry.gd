@@ -20,8 +20,6 @@ const AddDefenseFromQiScript = preload(
     "res://core/card_reshapes/add_defense_from_effective_qi_handler.gd")
 const DealDamageFromQiScript = preload(
     "res://core/card_reshapes/deal_damage_from_effective_qi_handler.gd")
-const TemporarilyRemoveInHandScript = preload(
-    "res://core/card_reshapes/temporarily_remove_if_in_hand_handler.gd")
 const BlockExplicitDiscardScript = preload(
     "res://core/card_reshapes/block_explicit_discard_handler.gd")
 const GainBattleExperienceScript = preload(
@@ -41,9 +39,9 @@ const TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp",
     "attribute_check", "effective_qi", "anomaly_apply", "reshape_applied",
     "card_drawn", "card_entered_discard", "group_resolved", "turn_end",
-    "card_played", "explicit_discard_attempt", "turn_end_final",
+    "card_played", "explicit_discard_attempt",
     "battle_victory", "action_confirmed", "battle_start_hand_priority",
-    "card_explicitly_discarded", "qualified_trigger_replay",
+    "card_explicitly_discarded", "qualified_trigger_replay", "battle_start",
 ]
 const NUMERIC_TRIGGERS := [
     "card_contribution", "technique_multiplier", "power_amp", "effective_qi",
@@ -70,7 +68,6 @@ func _init(register_defaults: bool = true) -> void:
         register_handler(ApplyAnomalyScript.new())
         register_handler(AddDefenseFromQiScript.new())
         register_handler(DealDamageFromQiScript.new())
-        register_handler(TemporarilyRemoveInHandScript.new())
         register_handler(BlockExplicitDiscardScript.new())
         register_handler(GainBattleExperienceScript.new())
         register_handler(FreezeIndependentChancesScript.new())

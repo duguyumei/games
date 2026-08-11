@@ -194,8 +194,9 @@ func validate(content_catalog = null) -> Array[String]:
     for card in growth["run_deck"].get("cards", []):
         if not card is Dictionary:
             continue
-        if card.has("anomalies") or card.has("suppressed_reshapes"):
-            errors.append("本局 RunDeck 不能包含战斗异状或压制状态")
+        if card.has("anomalies") or card.has("temporary_reshapes") \
+                or card.has("suppressed_reshapes"):
+            errors.append("本局 RunDeck 不能包含战斗异状、临时重塑或旧压制状态")
         if bool(card.get("temporary_card", false)) or str(card.get("original_owner_id", "")) != "":
             errors.append("本局 RunDeck 不能包含临时或夺取真气")
     return errors

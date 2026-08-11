@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "reshape_categories": [
     {"id": "origin", "capacity": 1, "replaceable": false},
     {"id": "enhancement", "capacity": 1, "replaceable": true},
@@ -7,10 +7,14 @@
     {"id": "other", "capacity": -1, "replaceable": true}
   ],
   "anomaly_categories": [
-    {"id": "mark", "capacity": -1, "lifecycle": "definition"},
-    {"id": "poison", "capacity": 1, "remove_on_enter_discard": true},
-    {"id": "state", "capacity": 1, "remove_on_enter_discard": true},
-    {"id": "other", "capacity": -1, "lifecycle": "definition"}
+    {"id": "buff", "capacity": -1, "same_id": "stack"},
+    {"id": "debuff", "capacity": -1, "same_id": "stack"},
+    {"id": "state", "capacity": 1, "different_id": "reject"},
+    {"id": "mark", "capacity": -1, "same_id": "reject"}
+  ],
+  "temporary_reshape_subslots": [
+    {"id": "enhancement", "capacity": 1, "replaceable": true},
+    {"id": "attribute", "capacity": 1, "replaceable": true}
   ],
   "origins": [
     {"id": "attribute_change", "name": "转属"},
@@ -73,10 +77,11 @@
           "factor": 2
         },
         {
-          "trigger": "turn_end_final",
-          "priority": 1000,
-          "handler": "temporarily_remove_if_in_hand",
-          "reason": "void"
+          "trigger": "battle_start",
+          "priority": 500,
+          "handler": "apply_anomaly",
+          "category": "mark",
+          "anomaly": "void"
         }
       ]
     },
@@ -87,8 +92,7 @@
         {
           "trigger": "anomaly_apply",
           "handler": "block_anomaly_application",
-          "categories": ["poison"],
-          "anomaly_ids": ["vulnerability", "acupoint_block"],
+          "anomaly_ids": ["poison", "vulnerability", "acupoint_block"],
           "reason": "无漏拒绝毒、破绽与封穴"
         },
         {
@@ -200,51 +204,40 @@
   "other_reshapes": [],
   "anomalies": [
     {
-      "id": "lethal_poison",
-      "name": "烈毒",
-      "category": "poison",
-      "remove_on_enter_discard": true,
+      "id": "qi_heat", "name": "炽气", "category": "buff",
+      "stackable": true, "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "behaviors": [
-        {
-          "trigger": "played",
-          "handler": "damage_holder_by_current_qi",
-          "source_kind": "烈毒"
-        }
-      ]
+      "modifiers": [{"id": "effective_qi_add_per_layer", "value": 1, "priority": 400}]
     },
     {
-      "id": "stagnant_poison",
-      "name": "郁毒",
-      "category": "poison",
-      "remove_on_enter_discard": true,
+      "id": "growth", "name": "成长", "category": "buff",
+      "stackable": true, "remove_on_enter_discard": true,
       "remove_on_battle_end": true,
-      "modifiers": [
-        {"id": "poison_contribution_reduction_percent", "value": 50}
-      ],
-      "behaviors": [
-        {
-          "trigger": "played",
-          "handler": "remove_self_with_resolution",
-          "effect_kind": "qi_reduction",
-          "detail": "郁毒削减已计入本次真气贡献"
-        }
-      ]
+      "behaviors": [{"trigger": "turn_end", "priority": 600, "handler": "grow_anomaly_layers", "category": "buff", "anomaly": "qi_heat"}]
     },
     {
-      "id": "qi_dissipation",
-      "name": "散气",
-      "category": "state",
-      "remove_on_enter_discard": true,
+      "id": "qi_wither", "name": "枯气", "category": "debuff",
+      "stackable": true, "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "modifiers": [
-        {"id": "qi_contribution_percent", "value": -50}
-      ]
+      "modifiers": [{"id": "effective_qi_add_per_layer", "value": -1, "priority": 400}]
+    },
+    {
+      "id": "decay", "name": "衰败", "category": "debuff",
+      "stackable": true, "remove_on_enter_discard": true,
+      "remove_on_battle_end": true,
+      "behaviors": [{"trigger": "turn_end", "priority": 610, "handler": "grow_anomaly_layers", "category": "debuff", "anomaly": "qi_wither"}]
+    },
+    {
+      "id": "poison", "name": "毒", "category": "state",
+      "same_id": "keep", "remove_on_enter_discard": true,
+      "remove_on_battle_end": true,
+      "behaviors": [{"trigger": "played", "priority": 100, "handler": "damage_holder_by_current_qi", "source_kind": "毒"}]
     },
     {
       "id": "vulnerability",
       "name": "破绽",
       "category": "state",
+      "same_id": "keep",
       "remove_on_enter_discard": true,
       "remove_on_battle_end": true,
       "modifiers": [
@@ -255,6 +248,7 @@
       "id": "acupoint_block",
       "name": "封穴",
       "category": "state",
+      "same_id": "keep",
       "remove_on_enter_discard": true,
       "remove_on_battle_end": true,
       "modifiers": [
@@ -265,6 +259,7 @@
       "id": "forbidden",
       "name": "封禁",
       "category": "state",
+      "same_id": "stack",
       "remove_on_enter_discard": true,
       "remove_on_battle_end": true,
       "lifecycle": ["turn_end"],
@@ -277,18 +272,9 @@
         },
         {
           "trigger": "turn_end",
-          "handler": "remove_self"
+          "handler": "decrement_state_layer"
         }
       ]
-    },
-    {
-      "id": "wind_mark",
-      "name": "风标记",
-      "category": "mark",
-      "remove_on_enter_discard": false,
-      "remove_on_battle_end": true,
-      "lifecycle": ["battle_end"],
-      "runtime_payload": {"attribute_aliases": ["wind"]}
     },
     {
       "id": "wind_lure",
@@ -301,24 +287,8 @@
         {
           "trigger": "draw",
           "priority": 200,
-          "handler": "remove_self_and_draw",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "id": "returning_wind",
-      "name": "回风",
-      "category": "mark",
-      "remove_on_enter_discard": false,
-      "remove_on_battle_end": true,
-      "lifecycle": ["explicit_discard"],
-      "behaviors": [
-        {
-          "trigger": "explicit_discard",
-          "priority": 900,
-          "handler": "remove_self_and_return_top",
-          "reason": "returning_wind"
+          "handler": "remove_self_and_draw_filtered",
+          "attribute": "wind"
         }
       ]
     },
@@ -333,23 +303,23 @@
         {
           "trigger": "draw",
           "priority": 100,
-          "handler": "remove_self_and_explicit_discard"
+          "handler": "remove_self_and_discard_non_attribute",
+          "attribute": "wind"
         }
       ]
     },
     {
-      "id": "qi_severance",
-      "name": "绝气标记",
+      "id": "regroup",
+      "name": "重聚",
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
       "lifecycle": ["enter_discard"],
       "behaviors": [
         {
-          "trigger": "enter_discard",
-          "handler": "remove_self_apply_anomaly_and_return_top",
-          "reason": "qi_severance",
-          "apply_anomaly": {"category": "state", "id": "forbidden"}
+          "trigger": "enter_discard_late",
+          "priority": 900,
+          "handler": "remove_self_and_shuffle_into_draw_pile"
         }
       ]
     },
@@ -359,10 +329,8 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["battle_end"],
-      "modifiers": [
-        {"id": "qi_contribution_percent", "value": -100}
-      ]
+      "lifecycle": ["battle_end", "remove"],
+      "modifiers": [{"id": "effective_qi_final_value", "value": 0, "priority": 10000}]
     },
     {
       "id": "purification",
@@ -370,8 +338,23 @@
       "category": "mark",
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
-      "lifecycle": ["battle_end"],
-      "on_apply": "suppress_existing_effects"
+      "lifecycle": ["battle_end", "remove"],
+      "same_id": "reject",
+      "on_apply": "purify_combat_state"
+    },
+    {
+      "id": "return_to_origin",
+      "name": "归元",
+      "category": "mark",
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["battle_end", "remove"]
+    },
+    {
+      "id": "void", "name": "虚无", "category": "mark",
+      "remove_on_enter_discard": false, "remove_on_battle_end": true,
+      "lifecycle": ["turn_end_final", "battle_end", "remove"],
+      "behaviors": [{"trigger": "turn_end_final", "priority": 1000, "handler": "temporarily_remove_if_in_hand", "reason": "void"}]
     }
   ]
 }

@@ -3,15 +3,11 @@ extends "res://tests/support/technique_test_group.gd"
 
 func _initialize() -> void:
     _run_group("technique-runtime", [
-        "_test_wind_common_card_flow_rules",
-        "_test_wind_high_technique_batch",
-        "_test_wind_cooperation_group_resolution",
-        "_test_wind_echo_and_five_card_power",
-        "_test_wind_four_kind_card_flow_and_persistent_trigger",
-        "_test_stagnant_gu_conceal_breath_pipeline",
-        "_test_borrow_fire_guard_heart_pipeline",
-        "_test_borrowed_force_attack_segments",
-        "_test_structured_results_and_pending_boundary",
-        "_test_resumable_selection_does_not_replay_completed_effects",
-        "_test_combat_action_pauses_and_resumes_transactionally",
+        "_test_empty_and_failed_techniques_leave_momentum_untouched",
+        "_test_same_hand_momentum_is_used_and_retained",
+        "_test_changed_hand_uses_old_momentum_then_keeps_new_gain",
+        "_test_retrigger_reuses_frozen_snapshot",
+        "_test_delayed_effect_reuses_frozen_snapshot",
+        "_test_reflection_override_sources_and_recursion_guard",
+        "_test_synchronized_reflection_matches_normal_damage",
     ])

@@ -16,7 +16,6 @@ const QUALIFIED_TRIGGERS := [
     "card_played",
     "group_resolved",
     "turn_end",
-    "turn_end_final",
     "battle_victory",
 ]
 
