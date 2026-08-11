@@ -24,6 +24,7 @@ var info_page: Control
 var continue_button: Button
 var begin_run_button: Button
 var active_run = null
+var new_game_confirmation: ConfirmationDialog
 var _initialized: bool = false
 
 func _ready() -> void:
@@ -53,6 +54,7 @@ func initialize_interface() -> void:
     add_child(shell)
     menu_page = MenuPageScene.instantiate()
     menu_page.new_game_requested.connect(_on_new_game)
+    menu_page.continue_requested.connect(_on_continue_game)
     menu_page.info_requested.connect(_show_info)
     menu_page.quit_requested.connect(_quit_game)
     continue_button = menu_page.continue_button()
@@ -66,8 +68,16 @@ func initialize_interface() -> void:
     shell.add_child(menu_page)
     shell.add_child(build_page)
     shell.add_child(info_page)
+    new_game_confirmation = ConfirmationDialog.new()
+    new_game_confirmation.title = "开始新行旅"
+    new_game_confirmation.dialog_text = "开始新行旅会覆盖当前本局记录，是否继续？"
+    new_game_confirmation.ok_button_text = "继续新行旅"
+    new_game_confirmation.cancel_button_text = "保留当前记录"
+    new_game_confirmation.confirmed.connect(_enter_new_game_configuration)
+    add_child(new_game_confirmation)
     _refresh_starter_build_button()
     _show_menu()
+    _refresh_continue_availability()
 
 func _build_background() -> void:
     var background := ColorRect.new()
@@ -95,6 +105,16 @@ func _build_background() -> void:
     add_child(texture)
 
 func _on_new_game() -> void:
+    var save_check: Dictionary = composition_root.run_save_application_service.execute({
+        "type": "has_run_save",
+    })
+    if save_check.get("success", false) and save_check.get("exists", false):
+        if new_game_confirmation.is_inside_tree():
+            new_game_confirmation.popup_centered()
+        return
+    _enter_new_game_configuration()
+
+func _enter_new_game_configuration() -> void:
     var builds: Array = starter_repository.available_builds()
     selected_starter_build_id = (
         str(builds[0].get("id", "")) if builds.size() == 1 else "")
@@ -125,10 +145,80 @@ func _start_new_run() -> void:
         "seed": seed_value,
         "starter_build_id": selected_starter_build_id,
     })
+    active_run.return_to_menu_requested.connect(_return_from_run_to_menu)
+    active_run.new_run_requested.connect(_restart_from_terminal)
     add_child(active_run)
     # 场景可能在当前帧稍后才收到 _ready；入口必须在返回前完成建局，
     # 这样 UI、测试和后续存档读取都能看到同一个已生成的 RunSession。
     active_run.initialize_interface()
+
+func _on_continue_game() -> void:
+    var loaded: Dictionary = composition_root.run_save_application_service.execute({
+        "type": "load_run",
+    })
+    if not loaded.get("success", false):
+        _present_load_failure(loaded)
+        return
+    shell.visible = false
+    active_run = RunScene.instantiate()
+    active_run.configure_composition_root(composition_root)
+    active_run.configure_restored_run(
+        loaded["run_session"],
+        str(loaded.get("resume_policy", "")),
+        {
+            "source": loaded.get("source", "primary"),
+            "migrations": loaded.get("migrations", []).duplicate(),
+            "recovery_restored_primary": loaded.get(
+                "recovery_restored_primary", false),
+            "recovery_warning": loaded.get("recovery_warning", ""),
+        })
+    active_run.return_to_menu_requested.connect(_return_from_run_to_menu)
+    active_run.new_run_requested.connect(_restart_from_terminal)
+    add_child(active_run)
+    active_run.initialize_interface()
+
+func _present_load_failure(result: Dictionary) -> void:
+    var kind := str(result.get("kind", "domain_validation"))
+    if kind == "missing":
+        _refresh_continue_availability()
+        _show_menu()
+        return
+    var title: String = {
+        "corrupt": "存档损坏",
+        "incompatible": "存档版本不兼容",
+        "domain_validation": "存档内容校验失败",
+    }.get(kind, "无法继续游戏")
+    info_page.present(title, str(result.get("reason", "未知存档错误")))
+    _show_page(info_page)
+
+func _return_from_run_to_menu() -> void:
+    _release_active_run()
+    shell.visible = true
+    _show_menu()
+    _refresh_continue_availability()
+
+func _restart_from_terminal() -> void:
+    _release_active_run()
+    shell.visible = true
+    _show_menu()
+    _refresh_continue_availability()
+    _on_new_game()
+
+func _release_active_run() -> void:
+    if active_run == null:
+        return
+    active_run.shutdown_interface()
+    active_run.queue_free()
+    active_run = null
+
+func _refresh_continue_availability() -> void:
+    if menu_page == null or composition_root.run_save_application_service == null:
+        return
+    var result: Dictionary = composition_root.run_save_application_service.execute({
+        "type": "has_run_save",
+    })
+    menu_page.present_continue_availability(
+        bool(result.get("success", false) and result.get("exists", false)))
 
 func _show_info(title: String, body: String) -> void:
     info_page.present(title, body)

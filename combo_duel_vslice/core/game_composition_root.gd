@@ -30,6 +30,8 @@ const NodeInteractionHandlerRegistryScript = preload(
     "res://core/node_interactions/node_interaction_handler_registry.gd")
 const NodeInteractionServiceScript = preload(
     "res://core/node_interactions/node_interaction_service.gd")
+const RunSaveApplicationServiceScript = preload(
+    "res://core/run_save_application_service.gd")
 
 var content_catalog: ContentCatalog
 var game_log: StructuredGameLog
@@ -45,6 +47,7 @@ var consumable_effect_registry
 var consumable_use_service
 var node_interaction_registry
 var node_interaction_service
+var run_save_application_service
 
 func _init(runtime_profile_override: RuntimeProfile = null) -> void:
     runtime_profile = (
@@ -83,6 +86,8 @@ func initialize() -> bool:
     starter_build_repository = StarterBuildRepositoryScript.new()
     starter_build_assembler = StarterBuildAssemblerScript.new(content_catalog)
     ai_settings_service = AiSettingsServiceScript.new()
+    run_save_application_service = RunSaveApplicationServiceScript.new(
+        null, content_catalog, Callable(self, "create_run_session"))
     if loaded:
         starter_build_repository.configure(
             content_catalog.definition("starter_builds"))
@@ -101,17 +106,19 @@ func content_errors() -> Array[String]:
 ##
 ## 内容未通过校验时返回 null 而不是带空定义的会话：带空定义运行会让缺失内容
 ## 表现为静默的默认值，而不是可定位的失败。
-func create_run_session() -> RunSession:
+func create_run_session(run_state_override = null) -> RunSession:
     if not initialized:
         initialize()
     if not content_catalog.loaded:
         push_error("内容未通过校验，拒绝创建本局会话：%s" % ", ".join(content_catalog.errors))
         return null
-    var map_generator := MapGeneratorScript.new(
-        content_catalog.definition("map_rules"))
-    var navigation := MapNavigationServiceScript.new(map_generator)
-    var growth := GrowthInventoryScript.new(content_catalog, false)
-    var run_state := RunStateScript.new(navigation, growth)
+    var run_state = run_state_override
+    if run_state == null:
+        var map_generator := MapGeneratorScript.new(
+            content_catalog.definition("map_rules"))
+        var navigation := MapNavigationServiceScript.new(map_generator)
+        var growth := GrowthInventoryScript.new(content_catalog, false)
+        run_state = RunStateScript.new(navigation, growth)
     var node_dispatcher := NodeDispatcherScript.new(
         content_catalog.definition("node_content"))
     var consumables := ConsumableRepositoryScript.new()

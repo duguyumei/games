@@ -7,6 +7,7 @@ extends RefCounted
 ## 也不把地图、奖励或成长服务的规则复制到门面中。
 
 signal state_changed
+signal persistence_boundary_reached(command_type: String)
 
 const RunStateScript = preload("res://core/run_state.gd")
 const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd")
@@ -67,6 +68,7 @@ var _active_battle_session = null
 var _pending_victory_battle_result: Dictionary = {}
 var selected_starter_build_id: String = ""
 var runtime_profile
+var _persistent_change_serial: int = 0
 
 func _init(
         run_state_override = null,
@@ -193,6 +195,8 @@ func ai_settings_snapshot() -> Dictionary:
 
 func execute(command: Dictionary) -> CommandResult:
     var command_type := str(command.get("type", ""))
+    var change_serial_before := _persistent_change_serial
+    var persistence_state_before := _capture_persistence_state()
     var result: Dictionary
     match command_type:
         "setup_run":
@@ -214,6 +218,8 @@ func execute(command: Dictionary) -> CommandResult:
                 command.get("progress_snapshot"))
         "abandon_run":
             result = _abandon_run()
+        "resume_current_node":
+            result = _resume_current_node()
         "query_node_interaction":
             result = _query_node_interaction()
         "commit_node_interaction":
@@ -277,7 +283,12 @@ func execute(command: Dictionary) -> CommandResult:
             and not bool(result.get("suppress_rejection_log", false)):
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
     result.erase("suppress_rejection_log")
-    return CommandResultScript.from_dict(command_type, result)
+    var command_result = CommandResultScript.from_dict(command_type, result)
+    if command_result.success \
+            and _persistent_change_serial != change_serial_before \
+            and _capture_persistence_state() != persistence_state_before:
+        persistence_boundary_reached.emit(command_type)
+    return command_result
 
 func snapshot() -> RunSnapshot:
     var graph: Dictionary = navigation.graph.duplicate(true)
@@ -738,6 +749,21 @@ func _current_node_dispatch() -> Dictionary:
         navigation.node_definition(navigation.current_node_id),
         navigation.node_dispatch_context())
 
+func _resume_current_node() -> Dictionary:
+    if navigation.phase != "node_in_progress":
+        return {"success": false, "reason": "当前没有可从开头恢复的进行中节点"}
+    var dispatch := _current_node_dispatch()
+    if not dispatch.get("success", false):
+        return dispatch
+    return {
+        "success": true,
+        "phase": navigation.phase,
+        "dispatch": dispatch.duplicate(true),
+    }
+
+func close_active_battle() -> bool:
+    return _close_active_battle_session()
+
 func _claim_reward(bundle_id: String) -> Dictionary:
     if navigation.phase != "awaiting_reward" or _pending_reward == null:
         return {"success": false, "reason": "当前没有待领取的节点奖励"}
@@ -1188,6 +1214,26 @@ func _player_max_life_for_act(act: int) -> int:
 func _settle_node_experience_interest() -> Dictionary:
     return growth.apply_experience_interest()
 
+func _capture_persistence_state() -> Dictionary:
+    return {
+        "seed": navigation.seed,
+        "act": navigation.act,
+        "graph": navigation.graph.duplicate(true),
+        "phase": navigation.phase,
+        "current_node_id": navigation.current_node_id,
+        "completed_node_ids": navigation.completed_node_ids.duplicate(true),
+        "starter_build_id": selected_starter_build_id,
+        "growth": growth.capture_mutation_state(),
+        "pending_reward": (
+            _pending_reward.to_dict() if _pending_reward != null else {}),
+        "pending_node_interaction": (
+            _node_interaction_service.capture_pending()
+            if _node_interaction_service != null else {}),
+        "terminal_result": (
+            _run_state.terminal_result.to_dict()
+            if _run_state.terminal_result != null else {}),
+    }
+
 func _record_command_rejected(command_type: String, reason: String) -> void:
     var entry: Dictionary = game_log.record_system(
         "warning",
@@ -1209,4 +1255,5 @@ func _queue_event(event_type: String, log_entry: Dictionary, values: Dictionary 
     _event_serial += 1
 
 func _on_run_state_changed() -> void:
+    _persistent_change_serial += 1
     state_changed.emit()

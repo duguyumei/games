@@ -51,6 +51,9 @@ const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const RunSaveDataScript = preload("res://core/run_save_data.gd")
+const SaveRepositoryScript = preload("res://core/save_repository.gd")
+const RunSaveApplicationServiceScript = preload(
+    "res://core/run_save_application_service.gd")
 const InnerSkillRepositoryScript = preload("res://core/inner_skill_repository.gd")
 const InnerSkillLoadoutServiceScript = preload(
     "res://core/inner_skill_loadout_service.gd")
@@ -6407,6 +6410,34 @@ func _test_node_interaction_platform_contract() -> void:
         session_interaction,
         "恢复后 query 与保存前 DTO 完全一致")
     _assert_equal(handler.prepare_calls, prepare_calls_before_save, "恢复 pending interaction 不重新调用 prepare 或抽随机")
+    var interaction_save_path := "/tmp/taiwu-s2-f4c-interaction-ui.json"
+    for path in [interaction_save_path, interaction_save_path + ".bak"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
+    var interaction_composition = GameCompositionRootScript.new()
+    _assert_true(interaction_composition.initialize(), "交互恢复 UI 建立组合根")
+    interaction_composition.run_save_application_service = RunSaveApplicationServiceScript.new(
+        SaveRepositoryScript.new(interaction_save_path),
+        interaction_composition.content_catalog,
+        Callable(interaction_composition, "create_run_session"))
+    var interaction_ui = RunScene.instantiate()
+    interaction_ui.configure_composition_root(interaction_composition)
+    interaction_ui.configure_restored_run(
+        restored_session,
+        "resume_interaction",
+        {"source": "primary"})
+    interaction_ui.initialize_interface()
+    _assert_true(interaction_ui.interaction_overlay.visible, "resume_interaction 打开通用单选 UI")
+    _assert_equal(
+        interaction_ui.interaction_overlay.interaction,
+        session_interaction,
+        "通用交互 UI 展示原冻结 token、choices 与 metadata")
+    _assert_equal(handler.prepare_calls, prepare_calls_before_save, "UI 恢复路由也不重新调用 Handler.prepare")
+    interaction_ui.shutdown_interface()
+    interaction_ui.free()
+    for path in [interaction_save_path, interaction_save_path + ".bak"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
     var committed = restored_session.execute({
         "type": "commit_node_interaction",
         "interaction_token": session_token,
@@ -7702,7 +7733,22 @@ func _test_run_build_read_only_layout_and_ui_domain_boundary() -> void:
     overlay.queue_free()
 
 func _test_map_practice_and_battle_scene_integration() -> void:
+    var save_path := "/tmp/taiwu-s2-f4c-map-ui.json"
+    for path in [save_path, save_path + ".bak"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
+    var ui_root = GameCompositionRootScript.new()
+    _assert_true(ui_root.initialize(), "地图 UI 自动存档测试建立组合根")
+    ui_root.run_save_application_service = RunSaveApplicationServiceScript.new(
+        SaveRepositoryScript.new(save_path),
+        ui_root.content_catalog,
+        Callable(ui_root, "create_run_session"))
     var run_ui = RunScene.instantiate()
+    run_ui.configure_composition_root(ui_root)
+    run_ui.configure_new_run({
+        "seed": 2308,
+        "starter_build_id": "standard_52",
+    })
     run_ui.initialize_interface()
     root.add_child(run_ui)
     _assert_true(run_ui.practice_button != null, "地图场景建立右下角修习按钮")
@@ -7791,6 +7837,9 @@ func _test_map_practice_and_battle_scene_integration() -> void:
     _assert_true(not run_ui.battle_layer.visible, "战斗胜利后关闭战斗层而不自动打开修习")
     _assert_true(not run_ui.practice_overlay.visible, "战斗胜利不会强制弹出修习页面")
     run_ui.queue_free()
+    for path in [save_path, save_path + ".bak"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
 
 func _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback() -> void:
     var injected_scene = BattleScene.instantiate()
@@ -7823,7 +7872,18 @@ func _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback()
     standalone_scene.queue_free()
 
 func _test_front_menu_and_starter_build_flow() -> void:
+    var save_path := "/tmp/taiwu-s2-f4c-front-ui.json"
+    for path in [save_path, save_path + ".bak"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
+    var front_root = GameCompositionRootScript.new()
+    _assert_true(front_root.initialize(), "首页自动存档测试建立组合根")
+    front_root.run_save_application_service = RunSaveApplicationServiceScript.new(
+        SaveRepositoryScript.new(save_path),
+        front_root.content_catalog,
+        Callable(front_root, "create_run_session"))
     var front = FrontScene.instantiate()
+    front.composition_root = front_root
     front.initialize_interface()
     root.add_child(front)
     _assert_true(front.menu_page.visible, "项目入口默认显示主菜单")
@@ -7845,7 +7905,11 @@ func _test_front_menu_and_starter_build_flow() -> void:
         front.active_run.run_session.snapshot().phase,
         "awaiting_node",
         "确认构筑后本局从地图待选状态开始")
+    _assert_true(FileAccess.file_exists(save_path), "新本局稳定 setup_run 边界写入首份自动存档")
     front.queue_free()
+    for path in [save_path, save_path + ".bak"]:
+        if FileAccess.file_exists(path):
+            DirAccess.remove_absolute(path)
 
 func _assert_map_route_constraints(graph: Dictionary, label: String) -> void:
     var nodes_by_id: Dictionary = {}

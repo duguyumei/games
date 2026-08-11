@@ -2,6 +2,7 @@ class_name FrontMenuPage
 extends Control
 
 signal new_game_requested
+signal continue_requested
 signal info_requested(title: String, body: String)
 signal quit_requested
 
@@ -16,6 +17,14 @@ func _ready() -> void:
 func continue_button() -> Button:
     _ensure_built()
     return _continue_button
+
+func present_continue_availability(available: bool) -> void:
+    _ensure_built()
+    _continue_button.disabled = not available
+    _continue_button.tooltip_text = (
+        "读取最近一次稳定本局记录"
+        if available
+        else "当前尚未建立本局存档，暂无可继续记录")
 
 func _ensure_built() -> void:
     if _built:
@@ -77,7 +86,8 @@ func _build() -> void:
     buttons.add_child(heading)
     buttons.add_child(UiDesignScript.divider(8))
     buttons.add_child(_menu_button("新游戏", func(): new_game_requested.emit(), true))
-    _continue_button = _menu_button("继续游戏", Callable(), false)
+    _continue_button = _menu_button(
+        "继续游戏", func(): continue_requested.emit(), false)
     _continue_button.disabled = true
     _continue_button.tooltip_text = "当前尚未建立本局存档，暂无可继续记录"
     buttons.add_child(_continue_button)

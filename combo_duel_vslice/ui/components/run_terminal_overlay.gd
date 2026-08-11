@@ -2,6 +2,7 @@ class_name RunTerminalOverlay
 extends ColorRect
 
 signal restart_requested
+signal return_to_menu_requested
 
 const UiDesignScript = preload("res://ui/ui_design.gd")
 
@@ -9,6 +10,7 @@ var title_label: Label
 var detail_label: Label
 var progress_label: Label
 var restart_button: Button
+var menu_button: Button
 var presented_kind: String = ""
 var _built := false
 
@@ -94,3 +96,9 @@ func _ensure_built() -> void:
     restart_button.pressed.connect(func(): restart_requested.emit())
     UiDesignScript.style_button(restart_button)
     box.add_child(restart_button)
+    menu_button = Button.new()
+    menu_button.text = "返回主菜单"
+    menu_button.custom_minimum_size = Vector2(300, 52)
+    menu_button.pressed.connect(func(): return_to_menu_requested.emit())
+    UiDesignScript.style_button(menu_button)
+    box.add_child(menu_button)

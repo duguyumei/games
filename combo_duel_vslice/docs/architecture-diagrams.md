@@ -113,8 +113,9 @@ classDiagram
         +content_catalog
         +game_log
         +runtime_profile
+        +run_save_application_service
         +initialize() bool
-        +create_run_session() RunSession
+        +create_run_session(run_state_override) RunSession
     }
     class ContentCatalog {
         +load_all() bool
@@ -145,6 +146,9 @@ classDiagram
     class StarterBuildRepository
     class StarterBuildAssembler
     class PracticeService
+    class RunSaveApplicationService
+    class RunAutosaveCoordinator
+    class SaveRepository
 
     GameCompositionRoot --> ContentCatalog : 创建并加载
     GameCompositionRoot --> RunSession : 工厂方法
@@ -154,6 +158,11 @@ classDiagram
     GameCompositionRoot --> NodeRewardService
     GameCompositionRoot --> NodeInteractionService
     GameCompositionRoot --> NodeInteractionHandlerRegistry
+    GameCompositionRoot --> RunSaveApplicationService
+    RunSaveApplicationService --> SaveRepository
+    RunSaveApplicationService ..> GameCompositionRoot : session factory
+    RunAutosaveCoordinator --> RunSaveApplicationService
+    RunSession ..> RunAutosaveCoordinator : persistence boundary
     RunSession --> MapNavigationService
     RunSession --> GrowthInventory
     RunSession --> NodeDispatcher
@@ -364,7 +373,33 @@ sequenceDiagram
     end
 ```
 
-### 4.4 战斗核心状态机（回合与行动窗口）
+### 4.4 稳定命令边界、自动存档与恢复路由
+
+```mermaid
+sequenceDiagram
+    participant UI as FrontMain / RunMain
+    participant RS as RunSession
+    participant ASC as RunAutosaveCoordinator
+    participant APP as RunSaveApplicationService
+    participant REPO as SaveRepository
+    participant ROOT as GameCompositionRoot
+
+    UI->>RS: execute(持久命令)
+    RS->>RS: 命令内部可多次 RunState.changed
+    RS-->>ASC: persistence_boundary_reached（成功且变化，只一次）
+    ASC->>APP: save_run(session)
+    APP->>REPO: 原子写入 + 有效备份
+    REPO-->>UI: 成功或可重试的具体失败
+
+    UI->>APP: load_run
+    APP->>REPO: 读取主档或备份
+    APP->>ROOT: create_run_session(restored RunState)
+    ROOT-->>UI: 共享依赖的 RunSession + resume_policy
+```
+
+查询命令和失败命令没有持久边界；BattleSession 的回合、手牌、牌序与 AI 窗口不进入本局存档。恢复 UI 按 `resume_boundary`、`restart_node_from_start`、`resume_interaction`、`show_terminal` 四种策略路由。
+
+### 4.5 战斗核心状态机（回合与行动窗口）
 
 ```mermaid
 stateDiagram-v2
@@ -452,6 +487,8 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     A[主菜单 front_main] --> B[初始构筑页]
+    A --> R[继续游戏 load_run]
+    R --> S[按四种 resume_policy 恢复页面]
     B --> C[建局 RunSession + 固定种子生成地图]
     C --> D[地图选择节点 map_view]
     D --> E[节点派发 node_dispatcher]

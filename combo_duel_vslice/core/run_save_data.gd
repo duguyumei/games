@@ -244,7 +244,9 @@ func validate(content_catalog = null) -> Array[String]:
             errors.append("本局 RunDeck 不能包含临时或夺取真气")
     return errors
 
-func restore_session(content_catalog = null) -> Dictionary:
+func restore_session(
+        content_catalog = null,
+        session_factory: Callable = Callable()) -> Dictionary:
     var catalog = content_catalog
     if catalog == null:
         catalog = ContentCatalogScript.new()
@@ -324,12 +326,18 @@ func restore_session(content_catalog = null) -> Dictionary:
     if not terminal_value.is_empty():
         state.terminal_result = RunTerminalResultDTOScript.from_dict(
             terminal_value)
-    var session = RunSessionScript.new(state, null, null, null, catalog)
+    var session = (
+        session_factory.call(state)
+        if session_factory.is_valid()
+        else RunSessionScript.new(state, null, null, null, catalog))
+    if session == null:
+        return {"success": false, "reason": "恢复会话工厂未能建立 RunSession"}
     session.selected_starter_build_id = str(run["starter_build_id"])
     if navigation.phase == "awaiting_reward":
         session._pending_reward = RewardBundleScript.new(node_state["pending_reward"])
     var pending_interaction: Dictionary = node_state.get(
         "pending_node_interaction", {})
+    session._node_interaction_service.clear()
     if not pending_interaction.is_empty():
         var pending_restore: Dictionary = session._node_interaction_service.restore_pending(
             pending_interaction)

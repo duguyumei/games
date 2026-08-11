@@ -63,14 +63,16 @@ func save(run_save_data) -> Dictionary:
 
 func load() -> Dictionary:
     if not FileAccess.file_exists(save_path):
-        return _load_backup("主存档不存在")
+        return _load_backup("主存档不存在", "missing")
     var primary := _decode_file(save_path)
     if primary.get("success", false):
         primary["source"] = "primary"
         return primary
     if primary.get("kind", "") == "incompatible":
         return primary
-    return _load_backup(str(primary.get("reason", "主存档损坏")))
+    return _load_backup(
+        str(primary.get("reason", "主存档损坏")),
+        str(primary.get("kind", "corrupt")))
 
 func encode(values: Dictionary) -> String:
     var payload_json := JSON.stringify(values)
@@ -125,12 +127,20 @@ func _decode(encoded: String) -> Dictionary:
         "source_schema_version": migration.get("source_schema_version", envelope_schema),
     }
 
-func _load_backup(primary_reason: String) -> Dictionary:
+func _load_backup(primary_reason: String, primary_kind: String) -> Dictionary:
     var backup := _decode_file(backup_path)
     if not backup.get("success", false):
+        var backup_kind := str(backup.get("kind", "corrupt"))
+        var failure_kind: String = (
+            "incompatible"
+            if backup_kind == "incompatible"
+            else (
+                "missing"
+                if primary_kind == "missing" and backup_kind == "missing"
+                else "corrupt"))
         return {
             "success": false,
-            "kind": backup.get("kind", "corrupt"),
+            "kind": failure_kind,
             "reason": "%s；备份恢复失败：%s" % [primary_reason, backup.get("reason", "未知错误")],
         }
     var restored := _copy_atomically(backup_path, save_path)

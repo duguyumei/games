@@ -1,5 +1,8 @@
 extends Control
 
+signal return_to_menu_requested
+signal new_run_requested
+
 const GameCompositionRootScript = preload("res://core/game_composition_root.gd")
 const MapViewScript = preload("res://ui/map_view.gd")
 const BattleScene = preload("res://ui/main.tscn")
@@ -13,6 +16,12 @@ const PlaceholderPageScene = preload("res://ui/components/node_placeholder_page.
 const ContentFailurePageScript = preload("res://ui/components/content_failure_page.gd")
 const RunTerminalOverlayScript = preload(
     "res://ui/components/run_terminal_overlay.gd")
+const RunAutosaveCoordinatorScript = preload(
+    "res://core/run_autosave_coordinator.gd")
+const AutosaveStatusScript = preload(
+    "res://ui/components/autosave_status.gd")
+const NodeInteractionOverlayScript = preload(
+    "res://ui/components/node_interaction_overlay.gd")
 
 const COLORS := UiDesignScript.COLORS
 
@@ -39,35 +48,57 @@ var boss_chest_overlay: Control
 var battle_layer: Control
 var current_battle
 var terminal_overlay
+var interaction_overlay
 var abandon_confirmation: ConfirmationDialog
 var toast_label: Label
+var autosave_status
+var autosave_coordinator
 var seed_value: int = 2308
 var starter_build_id: String = "standard_52"
 var _interface_initialized: bool = false
 var _displayed_act: int = 0
+var _startup_mode: String = ""
+var _resume_policy: String = ""
+var _restore_metadata: Dictionary = {}
+var _shutdown: bool = false
 
 func _ready() -> void:
     initialize_interface()
 
-func configure_new_run(configuration: Dictionary) -> void:
+func configure_new_run(configuration: Dictionary) -> bool:
+    if _interface_initialized or _startup_mode != "":
+        push_error("RunMain 新本局启动模式重复配置或配置过晚")
+        return false
+    _startup_mode = "new"
     seed_value = int(configuration.get("seed", seed_value))
     starter_build_id = str(configuration.get(
         "starter_build_id", starter_build_id))
-    if _interface_initialized:
-        _ensure_services()
-        if run_session == null:
-            return
-        run_session.execute({
-            "type": "setup_run",
-            "seed": seed_value,
-            "starter_build_id": starter_build_id,
-        })
+    return true
+
+func configure_restored_run(
+        restored_session,
+        resume_policy: String,
+        restore_metadata: Dictionary) -> bool:
+    if _interface_initialized or _startup_mode != "":
+        push_error("RunMain 恢复启动模式重复配置或配置过晚")
+        return false
+    if restored_session == null:
+        push_error("RunMain 恢复启动缺少 RunSession")
+        return false
+    _startup_mode = "restored"
+    run_session = restored_session
+    _resume_policy = resume_policy
+    _restore_metadata = restore_metadata.duplicate(true)
+    return true
 
 func initialize_interface() -> void:
     if _interface_initialized:
         return
     _interface_initialized = true
     theme = UiDesignScript.create_theme()
+    if _startup_mode == "":
+        push_error("RunMain 必须在 initialize_interface() 前配置新本局或恢复本局")
+        return
     _ensure_services()
     if run_session == null:
         _build_content_failure_page()
@@ -84,28 +115,36 @@ func initialize_interface() -> void:
             ai_settings_service.last_error)
     _build_interface()
     run_session.state_changed.connect(_refresh)
-    run_session.execute({
-        "type": "setup_run",
-        "seed": seed_value,
-        "starter_build_id": starter_build_id,
-    })
+    autosave_coordinator = RunAutosaveCoordinatorScript.new(
+        composition_root.run_save_application_service)
+    autosave_coordinator.save_succeeded.connect(_on_autosave_succeeded)
+    autosave_coordinator.save_failed.connect(_on_autosave_failed)
+    autosave_coordinator.bind_session(run_session)
+    if _startup_mode == "new":
+        var setup := run_session.execute({
+            "type": "setup_run",
+            "seed": seed_value,
+            "starter_build_id": starter_build_id,
+        })
+        if not setup.success:
+            _show_toast(setup.reason_or("无法建立新本局"))
+    else:
+        autosave_status.present_idle("已载入存档")
+        _refresh()
+        _apply_resume_policy()
 
 func configure_composition_root(root: GameCompositionRoot) -> void:
     if _interface_initialized:
         return
     composition_root = root
-    if composition_root == null:
-        return
-    run_session = composition_root.create_run_session()
-    ai_settings_service = composition_root.ai_settings_service
 
 func _ensure_services() -> void:
-    if run_session != null:
-        return
-    composition_root = GameCompositionRootScript.new()
+    if composition_root == null:
+        composition_root = GameCompositionRootScript.new()
     composition_root.initialize()
-    run_session = composition_root.create_run_session()
     ai_settings_service = composition_root.ai_settings_service
+    if _startup_mode == "new" and run_session == null:
+        run_session = composition_root.create_run_session()
 
 func _build_interface() -> void:
     var background := ColorRect.new()
@@ -222,6 +261,9 @@ func _build_interface() -> void:
         "action_text": "完成节点并返回地图",
     })
     add_child(node_overlay)
+    interaction_overlay = NodeInteractionOverlayScript.new()
+    interaction_overlay.commit_requested.connect(_commit_node_interaction)
+    add_child(interaction_overlay)
     reward_overlay = RewardOverlayScene.instantiate()
     reward_overlay.claim_requested.connect(_claim_reward)
     add_child(reward_overlay)
@@ -243,7 +285,8 @@ func _build_interface() -> void:
     battle_layer.z_index = 300
     add_child(battle_layer)
     terminal_overlay = RunTerminalOverlayScript.new()
-    terminal_overlay.restart_requested.connect(_reset_run)
+    terminal_overlay.restart_requested.connect(_request_new_run)
+    terminal_overlay.return_to_menu_requested.connect(_request_return_to_menu)
     add_child(terminal_overlay)
     abandon_confirmation = ConfirmationDialog.new()
     abandon_confirmation.title = "放弃本局"
@@ -278,12 +321,16 @@ func _build_top_bar() -> Control:
     row.add_child(experience_label)
     life_label = UiDesignScript.pill("生命 0/0", Color("d98673"))
     row.add_child(life_label)
-    var reset := Button.new()
-    reset.text = "新路线"
-    reset.tooltip_text = "以当前种子重新生成本局"
-    reset.pressed.connect(_reset_run)
-    UiDesignScript.style_button(reset)
-    row.add_child(reset)
+    autosave_status = AutosaveStatusScript.new()
+    autosave_status.custom_minimum_size.x = 235
+    autosave_status.retry_requested.connect(_retry_autosave)
+    row.add_child(autosave_status)
+    var menu := Button.new()
+    menu.text = "返回主菜单"
+    menu.tooltip_text = "战斗中返回后，将从当前节点开头继续"
+    menu.pressed.connect(_request_return_to_menu)
+    UiDesignScript.style_button(menu)
+    row.add_child(menu)
     abandon_button = Button.new()
     abandon_button.text = "放弃本局"
     abandon_button.tooltip_text = "结束当前本局（需要二次确认）"
@@ -396,6 +443,8 @@ func _open_dispatched_content(dispatch_result: Dictionary) -> void:
     match str(dispatch_result.get("route", "")):
         "battle":
             _open_battle(dispatch_result)
+        "interaction":
+            _open_node_interaction()
         "placeholder":
             _open_noncombat_node(dispatch_result)
         _:
@@ -440,6 +489,30 @@ func _open_noncombat_node(dispatch_result: Dictionary) -> void:
         "action_text": "完成节点并返回地图",
     })
     node_overlay.visible = true
+
+func _open_node_interaction() -> void:
+    var result := run_session.execute({"type": "query_node_interaction"})
+    if not result.success:
+        _show_toast(result.reason_or("无法读取节点选择"))
+        return
+    interaction_overlay.present(
+        result.payload_value("interaction", {}))
+
+func _commit_node_interaction(
+        interaction_token: String,
+        choice_id: String,
+        choice_payload: Dictionary) -> void:
+    var result := run_session.execute({
+        "type": "commit_node_interaction",
+        "interaction_token": interaction_token,
+        "choice_id": choice_id,
+        "choice_payload": choice_payload.duplicate(true),
+    })
+    if not result.success:
+        _show_toast(result.reason_or("无法提交节点选择"))
+        return
+    interaction_overlay.visible = false
+    _show_reward_overlay()
 
 func _complete_noncombat_node() -> void:
     node_overlay.visible = false
@@ -675,21 +748,73 @@ func _meditate() -> void:
         _show_toast(result.reason_or("无法冥想"))
     _refresh()
 
-func _reset_run() -> void:
+func _apply_resume_policy() -> void:
+    var phase := str(run_session.snapshot().phase)
+    match _resume_policy:
+        "resume_boundary":
+            match phase:
+                "awaiting_node":
+                    pass
+                "awaiting_reward":
+                    _show_reward_overlay()
+                "boss_chest":
+                    boss_chest_overlay.visible = true
+                _:
+                    _show_toast("存档阶段与 resume_boundary 不匹配：%s" % phase)
+        "restart_node_from_start":
+            var resumed := run_session.execute({"type": "resume_current_node"})
+            if resumed.success:
+                _open_dispatched_content(resumed.payload_value("dispatch", {}))
+                _show_toast("战斗从节点开头重新开始")
+            else:
+                _show_toast(resumed.reason_or("无法从节点开头恢复"))
+        "resume_interaction":
+            _open_node_interaction()
+        "show_terminal":
+            _show_terminal_overlay()
+        _:
+            _show_toast("未知恢复策略：%s" % _resume_policy)
+    _present_restore_notice()
+
+func _present_restore_notice() -> void:
+    if str(_restore_metadata.get("source", "primary")) != "backup":
+        return
+    var message := "主存档损坏，已从上一份有效备份恢复。"
+    if not bool(_restore_metadata.get("recovery_restored_primary", false)):
+        var warning := str(_restore_metadata.get(
+            "recovery_warning", "未能恢复主存档文件"))
+        message += "\n%s" % warning
+    _show_toast(message)
+
+func _request_new_run() -> void:
+    new_run_requested.emit()
+
+func _request_return_to_menu() -> void:
+    shutdown_interface()
+    return_to_menu_requested.emit()
+
+func shutdown_interface() -> void:
+    if _shutdown:
+        return
+    _shutdown = true
+    if autosave_coordinator != null:
+        autosave_coordinator.unbind_session()
     _release_current_battle()
-    practice_overlay.visible = false
-    run_build_overlay.visible = false
-    node_overlay.visible = false
-    reward_overlay.visible = false
-    boss_chest_overlay.visible = false
-    terminal_overlay.visible = false
-    build_button.z_index = 350
-    run_session.execute({
-        "type": "setup_run",
-        "seed": seed_value,
-        "starter_build_id": starter_build_id,
-    })
-    _show_toast("已按种子 %d 生成新路线" % seed_value)
+    if run_session != null:
+        run_session.close_active_battle()
+
+func _exit_tree() -> void:
+    shutdown_interface()
+
+func _retry_autosave() -> void:
+    if autosave_coordinator != null:
+        autosave_coordinator.retry_last_save()
+
+func _on_autosave_succeeded(reason: String) -> void:
+    autosave_status.present_success(reason)
+
+func _on_autosave_failed(reason: String, detail: String) -> void:
+    autosave_status.present_failure(reason, detail)
 
 func _request_abandon_run() -> void:
     if run_session.snapshot().phase in ["run_complete", "run_terminated"]:
@@ -711,6 +836,8 @@ func _release_current_battle() -> void:
         current_battle = null
     if battle_layer != null:
         battle_layer.visible = false
+    if run_session != null:
+        run_session.close_active_battle()
 
 func _show_terminal_overlay() -> void:
     var snapshot: Dictionary = run_session.snapshot().to_dict()
@@ -720,6 +847,7 @@ func _show_terminal_overlay() -> void:
     practice_overlay.visible = false
     run_build_overlay.visible = false
     node_overlay.visible = false
+    interaction_overlay.visible = false
     reward_overlay.visible = false
     boss_chest_overlay.visible = false
     _release_current_battle()

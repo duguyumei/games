@@ -12,8 +12,12 @@ const ContentCatalogScript = preload("res://core/content_catalog.gd")
 
 var repository
 var content_catalog
+var session_factory: Callable
 
-func _init(repository_override = null, content_catalog_override = null) -> void:
+func _init(
+        repository_override = null,
+        content_catalog_override = null,
+        session_factory_override: Callable = Callable()) -> void:
     repository = (
         repository_override
         if repository_override != null else SaveRepositoryScript.new())
@@ -22,6 +26,7 @@ func _init(repository_override = null, content_catalog_override = null) -> void:
         if content_catalog_override != null else ContentCatalogScript.new())
     if content_catalog_override == null:
         content_catalog.load_all()
+    session_factory = session_factory_override
 
 func execute(command: Dictionary) -> Dictionary:
     match str(command.get("type", "")):
@@ -48,10 +53,27 @@ func load_run() -> Dictionary:
     if not loaded.get("success", false):
         return loaded
     var data = loaded["data"]
-    var restored: Dictionary = data.restore_session(content_catalog)
+    var restored: Dictionary = data.restore_session(content_catalog, session_factory)
     if not restored.get("success", false):
+        if not restored.has("kind"):
+            restored["kind"] = "domain_validation"
         return restored
+    var session = restored["run_session"]
+    session.game_log.clear("run")
+    session.game_log.clear("battle")
+    session.game_log.record_run(
+        "run_restored",
+        "恢复本局",
+        "从稳定存档边界恢复本局",
+        {
+            "source": loaded.get("source", "primary"),
+            "resume_policy": restored.get("resume_policy", ""),
+            "act": session.navigation.act,
+            "phase": session.navigation.phase,
+            "node_id": session.navigation.current_node_id,
+        })
     restored["source"] = loaded.get("source", "primary")
     restored["migrations"] = loaded.get("migrations", []).duplicate()
     restored["recovery_restored_primary"] = loaded.get("recovery_restored_primary", false)
+    restored["recovery_warning"] = loaded.get("recovery_warning", "")
     return restored
