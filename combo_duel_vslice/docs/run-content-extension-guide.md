@@ -434,8 +434,9 @@ kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_intera
 
 永久内功配装通过 `InnerSkillLoadoutService` 一次性提交完整的
 `equipped_inner_skill_ids` 和 `technique_slot_index`。服务按 ID 统计已获与请求数量，允许同 ID
-多副本，但任何 ID 的装备数不能超过内功库中的副本数；总装备数上限为 6。非法提交在修改前
-完整拒绝，不依赖 `BattleSide` 的战斗侧防御性截断。永久功法序列与内功配装共用地图待选门禁，
+多副本，但任何 ID 的装备数不能超过内功库中的副本数；基础容量为 6，当前有效容量由统一
+`InnerSkillCapacityPolicy` 纯查询得到。非法提交在修改前完整拒绝，战斗侧也不再截断或 clamp。
+永久功法序列与内功配装共用地图待选门禁，
 进行中的节点、战斗、待领奖励和 Boss 宝箱流程均不可修改，查询始终可用。
 
 普通遗忘每次只删除一个未装备副本。遗忘所得由可注入的
@@ -447,6 +448,29 @@ kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_intera
 `forgotten_inner_skill_count` 属于 `GrowthInventory` 的完整 mutation state、
 `RunProgressSnapshot`、v1 存档 `growth` 段与本局成长快照。战斗返回的局部快照不携带该字段，
 因此不会清空本局累计；旧存档缺省时恢复为 0。
+
+## 6.9 内功与物品被动行为
+
+内功和物品内容均使用 version 2 的 `behaviors`：
+
+```json
+{
+  "behaviors": [{
+    "id": "on_play_effects",
+    "configuration": {"effects": [{"op": "defense_from_noncontributing_qi"}]}
+  }]
+}
+```
+
+能够由现有战斗 `EffectSpec` 表达的简单出牌效果使用 `on_play_effects`；需要新参数、专有查询或
+新规则正文时新增职责单一的 `PassiveRuleHandler`。Handler 只声明 behavior、hook、配置校验和
+处理逻辑，不扫描库存、不读 JSON，也不识别内容 ID。中央 `ActionPreviewService` 与
+`ActionResolver` 只消费 Runtime 生成的计划和 invocation。
+
+调用链为 `SourceResolver → ActivationPolicy → ExecutionPlan → Invocation → Handler`。内功只从
+已装备槽位逐副本建源，物品从唯一持有区建源；两者共用 Runtime 与 Registry，但不合并库存。
+容量查询以拟提交完整配装重新解析一次来源，不做递归固定点；压制只影响新计划；重复 invocation
+连续执行且不会再次运行计划查询。
 
 ## 7. 什么时候只写 JSON
 

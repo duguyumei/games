@@ -36,6 +36,7 @@ var temporarily_removed: Array = []
 var equipped_inner_skill_ids: Array = []
 var equipped_inner_skills: Array = []
 var technique_slot_index: int = 0
+var item_ids: Array = []
 var consumable_ids: Array = []
 var consumables: Array = []
 var consumable_limit: int = 0
@@ -90,6 +91,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.equipped_inner_skill_ids = values.get("equipped_inner_skill_ids", []).duplicate(true)
     result.equipped_inner_skills = values.get("equipped_inner_skills", []).duplicate(true)
     result.technique_slot_index = int(values.get("technique_slot_index", 0))
+    result.item_ids = values.get("item_ids", []).duplicate(true)
     result.consumable_ids = values.get("consumable_ids", []).duplicate(true)
     result.consumables = values.get("consumables", []).duplicate(true)
     result.consumable_limit = int(values.get("consumable_limit", 0))
@@ -127,6 +129,7 @@ func to_dict() -> Dictionary:
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(true),
         "equipped_inner_skills": equipped_inner_skills.duplicate(true),
         "technique_slot_index": technique_slot_index,
+        "item_ids": item_ids.duplicate(true),
         "consumable_ids": consumable_ids.duplicate(true),
         "consumables": consumables.duplicate(true),
         "consumable_limit": consumable_limit,

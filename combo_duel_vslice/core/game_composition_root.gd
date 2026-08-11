@@ -32,6 +32,10 @@ const NodeInteractionServiceScript = preload(
     "res://core/node_interactions/node_interaction_service.gd")
 const RunSaveApplicationServiceScript = preload(
     "res://core/run_save_application_service.gd")
+const PassiveRuleHandlerRegistryScript = preload(
+    "res://core/passives/passive_rule_handler_registry.gd")
+const PassiveRuleRuntimeScript = preload(
+    "res://core/passives/passive_rule_runtime.gd")
 
 var content_catalog: ContentCatalog
 var game_log: StructuredGameLog
@@ -48,6 +52,8 @@ var consumable_use_service
 var node_interaction_registry
 var node_interaction_service
 var run_save_application_service
+var passive_rule_registry
+var passive_rule_runtime
 
 func _init(runtime_profile_override: RuntimeProfile = null) -> void:
     runtime_profile = (
@@ -66,10 +72,14 @@ func initialize() -> bool:
     run_mutation_service = RunMutationServiceScript.new(run_effect_registry)
     consumable_effect_registry = ConsumableEffectHandlerRegistryScript.new()
     node_interaction_registry = NodeInteractionHandlerRegistryScript.new()
+    passive_rule_registry = PassiveRuleHandlerRegistryScript.new()
     content_catalog = ContentCatalogScript.new(
         runtime_profile, null, run_effect_registry, null,
-        consumable_effect_registry, node_interaction_registry)
+        consumable_effect_registry, node_interaction_registry,
+        passive_rule_registry)
     var loaded: bool = content_catalog.load_all()
+    passive_rule_runtime = PassiveRuleRuntimeScript.new(
+        passive_rule_registry, content_catalog)
     run_mutation_service.content_catalog = content_catalog
     node_interaction_service = NodeInteractionServiceScript.new(
         node_interaction_registry, run_mutation_service, content_catalog)
@@ -142,4 +152,8 @@ func create_run_session(run_state_override = null) -> RunSession:
         consumable_use_service,
         node_interaction_service)
     session.configure_ai_settings_service(ai_settings_service)
+    # RunSession 保持应用门面职责；组合根把与内容校验同一实例的 Registry 所建
+    # Runtime 注入配装策略，不让门面自行重建或读取内容文件。
+    session._inner_skill_loadout_service.use_passive_runtime(
+        passive_rule_runtime)
     return session

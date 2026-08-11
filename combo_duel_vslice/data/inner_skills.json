@@ -1,14 +1,20 @@
 {
-  "version": 1,
+  "version": 2,
   "inner_skills": [
     {
       "id": "extra_qi_to_defense",
       "name": "初始内功候选",
       "status": "candidate",
-      "timing": "on_play_resolve",
       "description": "未参与最高牌型的打出真气，其真气值总和转化为防御。",
-      "effects": [
-        {"op": "defense_from_noncontributing_qi"}
+      "behaviors": [
+        {
+          "id": "on_play_effects",
+          "configuration": {
+            "effects": [
+              {"op": "defense_from_noncontributing_qi"}
+            ]
+          }
+        }
       ]
     }
   ]

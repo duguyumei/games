@@ -12,12 +12,12 @@ const EffectContextScript = preload("res://core/effects/technique_effect_context
 const ActionPreviewDtoScript = preload("res://core/action_preview_dto.gd")
 
 var technique_repository
-var inner_skill_repository
+var passive_rule_runtime
 var effect_executor
 
-func _init(techniques, inner_skills, executor) -> void:
+func _init(techniques, passive_runtime, executor) -> void:
     technique_repository = techniques
-    inner_skill_repository = inner_skills
+    passive_rule_runtime = passive_runtime
     effect_executor = executor
 
 func preview(
@@ -125,30 +125,36 @@ func preview_dto(
             technique_definition.effects,
             technique_intent_context,
             damage_percent))
-    for inner_skill_id in side.equipped_inner_skill_ids:
-        var inner_skill: Dictionary = inner_skill_repository.get_inner_skill(inner_skill_id)
-        if inner_skill.get("timing", "") != "on_play_resolve":
-            continue
-        # 内功只读取实际牌型，不能继承当前功法的池分支。
-        var inner_intent_context = EffectContextScript.new().configure({
+    var passive_preview: Dictionary = passive_rule_runtime.dispatch_event(
+        "action_preview", {
             "actor": side,
-            "hand_result": hand_result,
-            "played_cards": cards,
-            "power": values["technique_value"],
-            "values": values,
-            "technique_id": str(inner_skill.get("id", "")),
-            "technique_name": str(inner_skill.get("name", "")),
-            "captures": {},
-            "source_kind": "preview",
+            "target": target,
+            "payload": {
+                "effect_executor": effect_executor,
+                "damage_percent": damage_percent,
+                "captures_by_source": {},
+                "effect_context_values": {
+                    "actor": side,
+                    "target": target,
+                    "hand_result": hand_result,
+                    "played_cards": cards,
+                    "power": values["technique_value"],
+                    "values": values,
+                    "captures": {},
+                    "source_kind": "preview",
+                },
+            },
         })
-        var inner_intent: Dictionary = effect_executor.summarize_intent(
-            inner_skill.get("effects", []),
-            inner_intent_context,
-            damage_percent)
-        intent["inner_skill_defense"] = (
-            int(intent["inner_skill_defense"])
-            + int(inner_intent.get("defense", 0)))
-        _merge_intent(intent, inner_intent)
+    if not passive_preview.get("success", false):
+        return _invalid_preview(
+            "被动规则预览失败：%s" % "；".join(passive_preview.get("errors", [])))
+    for entry in passive_preview.get("results", []):
+        var passive_intent: Dictionary = entry.get("result", {}).get("intent", {})
+        if entry["source"].source_kind == "inner_skill":
+            intent["inner_skill_defense"] = (
+                int(intent["inner_skill_defense"])
+                + int(passive_intent.get("defense", 0)))
+        _merge_intent(intent, passive_intent)
 
     var natural_combo_available := is_same_attribute_action(cards) and not natural_combo_used
     intent["natural_combo"] = natural_combo_available
@@ -192,8 +198,8 @@ static func is_same_attribute_action(cards: Array) -> bool:
 
 func _inner_skill_definitions_for(side) -> Array:
     var definitions: Array = []
-    for inner_skill_id in side.equipped_inner_skill_ids:
-        var definition: Dictionary = inner_skill_repository.get_inner_skill(inner_skill_id)
+    for entry in passive_rule_runtime.equipped_inner_skill_entries({"owner": side}):
+        var definition: Dictionary = entry["definition"]
         if not definition.is_empty():
             definitions.append(definition)
     return definitions

@@ -3,15 +3,13 @@ extends RefCounted
 
 const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const CardZoneServiceScript = preload("res://core/card_zone_service.gd")
+const InnerSkillCapacityPolicyScript = preload(
+    "res://core/passives/inner_skill_capacity_policy.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
     "full_house", "four_kind", "five_kind",
 ]
-
-## 可同时装备的内功上限。`configure_inner_skills()` 按此截断，快照按此对外公开，
-## 表现层不再各自假设一个数字。
-const INNER_SKILL_LIMIT := 6
 
 var name: String
 var owner_id: String
@@ -32,6 +30,7 @@ var staging: Array = []
 var discard_pile: Array = []
 var temporarily_removed_cards: Array = []
 var equipped_inner_skill_ids: Array[String] = []
+var item_ids: Array[String] = []
 var technique_slot_index: int = 0
 var consumable_ids: Array[String] = []
 var consumable_limit: int = 3
@@ -44,6 +43,7 @@ var permanently_removed_card_ids: Array[String] = []
 var card_state_lifecycle
 var status_system
 var card_zone_service := CardZoneServiceScript.new()
+var passive_rule_runtime = null
 
 func _init(side_name: String = "", stable_owner_id: String = "") -> void:
     name = side_name
@@ -59,6 +59,9 @@ func use_status_system(system) -> void:
 
 func use_card_reshape_runtime(runtime) -> void:
     card_zone_service.use_card_reshape_runtime(runtime)
+
+func use_passive_rule_runtime(runtime) -> void:
+    passive_rule_runtime = runtime
 
 func reset(
         cards: Array,
@@ -77,6 +80,7 @@ func reset(
     last_successful_technique_hand_id = ""
     current_reflection_percent = 0
     equipped_inner_skill_ids.clear()
+    item_ids.clear()
     technique_slot_index = 0
     consumable_ids.clear()
     consumable_limit = 3
@@ -219,11 +223,67 @@ func set_reflection_percent(value: int) -> int:
     current_reflection_percent = maxi(0, value)
     return current_reflection_percent
 
-func configure_inner_skills(inner_skill_ids: Array, dynamic_technique_slot: int = 0) -> void:
-    equipped_inner_skill_ids.clear()
-    for inner_skill_id in inner_skill_ids.slice(0, INNER_SKILL_LIMIT):
-        equipped_inner_skill_ids.append(str(inner_skill_id))
-    technique_slot_index = clampi(dynamic_technique_slot, 0, equipped_inner_skill_ids.size())
+func configure_inner_skills(
+        inner_skill_ids: Array,
+        dynamic_technique_slot: int = 0) -> Dictionary:
+    var normalized: Array[String] = []
+    for value in inner_skill_ids:
+        if not value is String or str(value).strip_edges() == "":
+            return {"success": false, "reason": "内功装配不能包含空 ID"}
+        var content_id := str(value)
+        if passive_rule_runtime != null \
+                and not passive_rule_runtime.has_content("inner_skill", content_id):
+            return {"success": false, "reason": "未知内功：%s" % content_id}
+        normalized.append(content_id)
+    var capacity := {
+        "base_capacity": InnerSkillCapacityPolicyScript.BASE_INNER_SKILL_CAPACITY,
+        "effective_capacity": InnerSkillCapacityPolicyScript.BASE_INNER_SKILL_CAPACITY,
+        "modifiers": [],
+        "errors": [],
+    }
+    if passive_rule_runtime != null:
+        capacity = passive_rule_runtime.resolve_inner_skill_capacity(self, normalized)
+    if not capacity.get("errors", []).is_empty():
+        return {
+            "success": false,
+            "reason": "内功容量查询失败：%s" % "；".join(capacity["errors"]),
+        }
+    if normalized.size() > int(capacity.get("effective_capacity", 0)):
+        return {
+            "success": false,
+            "reason": "内功有效容量为 %d，不能装备 %d 门" % [
+                int(capacity.get("effective_capacity", 0)), normalized.size()],
+        }
+    if dynamic_technique_slot < 0 or dynamic_technique_slot > normalized.size():
+        return {
+            "success": false,
+            "reason": "technique_slot_index 必须位于 0～装备数量之间",
+        }
+    equipped_inner_skill_ids.assign(normalized)
+    technique_slot_index = dynamic_technique_slot
+    return {
+        "success": true,
+        "equipped_inner_skill_ids": normalized.duplicate(),
+        "technique_slot_index": technique_slot_index,
+        "capacity": capacity,
+    }
+
+func configure_items(ids: Array) -> Dictionary:
+    var normalized: Array[String] = []
+    var seen: Dictionary = {}
+    for value in ids:
+        if not value is String or str(value).strip_edges() == "":
+            return {"success": false, "reason": "物品装配不能包含空 ID"}
+        var content_id := str(value)
+        if seen.has(content_id):
+            return {"success": false, "reason": "物品 ID 重复：%s" % content_id}
+        if passive_rule_runtime != null \
+                and not passive_rule_runtime.has_content("item", content_id):
+            return {"success": false, "reason": "未知物品：%s" % content_id}
+        seen[content_id] = true
+        normalized.append(content_id)
+    item_ids.assign(normalized)
+    return {"success": true, "item_ids": normalized.duplicate()}
 
 func configure_consumables(ids: Array) -> void:
     consumable_ids.clear()

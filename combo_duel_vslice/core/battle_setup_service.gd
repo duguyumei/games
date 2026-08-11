@@ -74,17 +74,30 @@ func apply_scripted_scenario(scenario, player, enemy, rng, enemy_deck: Array) ->
     # 脚本场景只负责初始装配，行动生成仍由敌方控制器和规划服务完成。
     var player_definition: Dictionary = scenario.player_definition()
     var enemy_definition: Dictionary = scenario.enemy_definition()
-    player.configure_inner_skills(
+    var player_items: Dictionary = player.configure_items(
+        player_definition.get("item_ids", []))
+    if not player_items.get("success", false):
+        return player_items
+    var player_inner: Dictionary = player.configure_inner_skills(
         player_definition.get("inner_skills", []),
         int(player_definition.get("technique_slot_index", 0)))
+    if not player_inner.get("success", false):
+        return player_inner
     player.configure_consumables(player_definition.get("consumables", []))
-    enemy.configure_inner_skills(
+    var enemy_items: Dictionary = enemy.configure_items(
+        enemy_definition.get("item_ids", []))
+    if not enemy_items.get("success", false):
+        return enemy_items
+    var enemy_inner: Dictionary = enemy.configure_inner_skills(
         enemy_definition.get("inner_skills", []),
         int(enemy_definition.get("technique_slot_index", 0)))
+    if not enemy_inner.get("success", false):
+        return enemy_inner
     enemy.max_life = int(enemy_definition.get("life", 100))
     enemy.life = enemy.max_life
     enemy.replace_deck(scenario.arrange_enemy_deck(enemy_deck), rng, false)
     return {
+        "success": true,
         "name": scenario.scenario_name(),
         "enemy_sequences": scenario.enemy_sequences(),
         "enemy_ai_policy": scenario.enemy_ai_policy(),
@@ -112,9 +125,15 @@ func apply_formal_enemy(
     var entry: Dictionary = selected["entry"]
     enemy.max_life = int(life_definition["max_life"])
     enemy.life = enemy.max_life
-    enemy.configure_inner_skills(
+    var item_result: Dictionary = enemy.configure_items(
+        entry.get("item_ids", []))
+    if not item_result.get("success", false):
+        return item_result
+    var inner_result: Dictionary = enemy.configure_inner_skills(
         entry.get("equipped_inner_skill_ids", []),
         int(entry.get("technique_slot_index", 0)))
+    if not inner_result.get("success", false):
+        return inner_result
     enemy.hand_proficiency_fixed = entry.get("hand_proficiency_fixed", {}).duplicate(true)
     enemy.replace_deck(selected["cards"], rng, true)
     return {
@@ -147,9 +166,32 @@ func run_deck_from_progress(progress_snapshot: RunProgressSnapshot):
         run_deck.reset_standard("battle-fallback")
     return run_deck
 
-func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> void:
+func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Dictionary:
     if progress_snapshot == null:
-        return
+        return {"success": true}
+    var previous_item_ids: Array = side.item_ids.duplicate()
+    if progress_snapshot.has_item_ids:
+        var item_result: Dictionary = side.configure_items(
+            progress_snapshot.item_ids)
+        if not item_result.get("success", false):
+            return item_result
+    if progress_snapshot.has_equipped_inner_skill_ids:
+        if progress_snapshot.has_learned_inner_skill_ids:
+            var learned_counts := _counts(progress_snapshot.learned_inner_skill_ids)
+            var equipped_counts := _counts(progress_snapshot.equipped_inner_skill_ids)
+            for content_id in equipped_counts:
+                if int(equipped_counts[content_id]) > int(learned_counts.get(content_id, 0)):
+                    side.item_ids.assign(previous_item_ids)
+                    return {
+                        "success": false,
+                        "reason": "装备数量超过已获得副本数：%s" % str(content_id),
+                    }
+        var inner_result: Dictionary = side.configure_inner_skills(
+            progress_snapshot.equipped_inner_skill_ids,
+            progress_snapshot.technique_slot_index)
+        if not inner_result.get("success", false):
+            side.item_ids.assign(previous_item_ids)
+            return inner_result
     if progress_snapshot.has_consumable_ids:
         side.configure_consumables(progress_snapshot.consumable_ids)
     if progress_snapshot.has_hand_technique_progression:
@@ -169,10 +211,14 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> vo
         side.life = progress_snapshot.life
     if progress_snapshot.has_experience:
         side.experience = progress_snapshot.experience
-    if progress_snapshot.has_equipped_inner_skill_ids:
-        side.configure_inner_skills(
-            progress_snapshot.equipped_inner_skill_ids,
-            progress_snapshot.technique_slot_index)
+    return {"success": true}
+
+func _counts(values: Array) -> Dictionary:
+    var result: Dictionary = {}
+    for value in values:
+        var content_id := str(value)
+        result[content_id] = int(result.get(content_id, 0)) + 1
+    return result
 
 func capture_progress(side, run_deck) -> RunProgressSnapshot:
     run_deck.sync_from_battle_cards(
@@ -180,6 +226,9 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         side.permanently_removed_card_ids)
     return RunProgressSnapshotScript.from_dict({
         "consumable_ids": side.consumable_ids.duplicate(),
+        "item_ids": side.item_ids.duplicate(),
+        "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
+        "technique_slot_index": side.technique_slot_index,
         "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "learned_technique_ids": side.owned_technique_ids.duplicate(),
         "life": side.life,

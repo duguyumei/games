@@ -7,6 +7,7 @@ func _initialize() -> void:
         "_test_battle_flow_coordinator_contract",
         "_test_battle_timing_system_contract_and_integration",
         "_test_defense_retention_policy_and_round_decay",
+        "_test_passive_runtime_capacity_suppression_invocations_and_items",
         "_test_awakening_battle_runtime",
         "_test_f2d2_formal_enhancement_runtime",
         "_test_f2d2_opportunity_freeze_and_progress_sync",

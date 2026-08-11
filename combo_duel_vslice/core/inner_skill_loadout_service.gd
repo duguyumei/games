@@ -5,25 +5,38 @@ const InnerSkillLoadoutDTOScript = preload(
     "res://core/inner_skill_loadout_dto.gd")
 const InnerSkillForgetValuePolicyScript = preload(
     "res://core/inner_skill_forget_value_policy.gd")
-
-const INNER_SKILL_LIMIT := 6
+const InnerSkillCapacityPolicyScript = preload(
+    "res://core/passives/inner_skill_capacity_policy.gd")
+const PassiveRuleRuntimeScript = preload(
+    "res://core/passives/passive_rule_runtime.gd")
 
 var _growth
 var _repository
 var _forget_value_policy
+var _passive_runtime
 
-func _init(growth, repository, forget_value_policy = null) -> void:
+func _init(growth, repository, forget_value_policy = null, passive_runtime = null) -> void:
     _growth = growth
     _repository = repository
     _forget_value_policy = (
         forget_value_policy
         if forget_value_policy != null
         else InnerSkillForgetValuePolicyScript.new())
+    _passive_runtime = passive_runtime
+    if _passive_runtime == null:
+        var catalog = _growth.get("_content_catalog")
+        if catalog != null and catalog.get("passive_rule_registry") != null:
+            _passive_runtime = PassiveRuleRuntimeScript.new(
+                catalog.passive_rule_registry, catalog)
+
+func use_passive_runtime(runtime) -> void:
+    _passive_runtime = runtime
 
 ## 查询完整配装。`editable` 只描述当前会话门禁，不改变领域库存。
 func get_loadout(
         editable: bool = true,
         blocked_reason: String = ""):
+    var capacity := _resolve_capacity(_growth.equipped_inner_skill_ids)
     var learned_counts := _counts(_growth.learned_inner_skill_ids)
     var equipped_counts := _counts(_growth.equipped_inner_skill_ids)
     var learned: Array = []
@@ -81,7 +94,10 @@ func get_loadout(
         "equipped": equipped,
         "equipped_inner_skill_ids": _growth.equipped_inner_skill_ids,
         "technique_slot_index": _growth.technique_slot_index,
-        "inner_skill_limit": INNER_SKILL_LIMIT,
+        "base_inner_skill_capacity": capacity["base_capacity"],
+        "effective_inner_skill_capacity": capacity["effective_capacity"],
+        "capacity_modifiers": capacity["modifiers"],
+        "inner_skill_limit": capacity["effective_capacity"],
         "editable": editable,
         "blocked_reason": "" if editable else blocked_reason,
     })
@@ -90,20 +106,7 @@ func get_loadout(
 func set_loadout(equipped_inner_skill_ids, technique_slot_index) -> Dictionary:
     if not equipped_inner_skill_ids is Array:
         return {"success": false, "reason": "equipped_inner_skill_ids 必须是数组"}
-    if equipped_inner_skill_ids.size() > INNER_SKILL_LIMIT:
-        return {
-            "success": false,
-            "reason": "内功最多装备 %d 门" % INNER_SKILL_LIMIT,
-        }
-    if not technique_slot_index is int:
-        return {"success": false, "reason": "technique_slot_index 必须是整数"}
-    if int(technique_slot_index) < 0 \
-            or int(technique_slot_index) > equipped_inner_skill_ids.size():
-        return {
-            "success": false,
-            "reason": "technique_slot_index 必须位于 0～装备数量之间",
-        }
-
+    # 固定顺序：ID → 已获得副本数 → proposed 容量 → 数量 → 功法位置。
     var learned_counts := _counts(_growth.learned_inner_skill_ids)
     var requested_counts: Dictionary = {}
     var normalized: Array[String] = []
@@ -126,6 +129,27 @@ func set_loadout(equipped_inner_skill_ids, technique_slot_index) -> Dictionary:
                 "reason": "装备数量超过已获得副本数：%s" % inner_skill_id,
             }
         normalized.append(inner_skill_id)
+
+    var capacity := _resolve_capacity(normalized)
+    if not capacity.get("errors", []).is_empty():
+        return {
+            "success": false,
+            "reason": "内功容量查询失败：%s" % "；".join(capacity["errors"]),
+        }
+    if normalized.size() > int(capacity["effective_capacity"]):
+        return {
+            "success": false,
+            "reason": "内功有效容量为 %d，不能装备 %d 门" % [
+                int(capacity["effective_capacity"]), normalized.size()],
+        }
+    if not technique_slot_index is int:
+        return {"success": false, "reason": "technique_slot_index 必须是整数"}
+    if int(technique_slot_index) < 0 \
+            or int(technique_slot_index) > normalized.size():
+        return {
+            "success": false,
+            "reason": "technique_slot_index 必须位于 0～装备数量之间",
+        }
 
     var before: Dictionary = get_loadout().to_dict()
     _growth.equipped_inner_skill_ids.assign(normalized)
@@ -216,3 +240,15 @@ func _count(values: Array, inner_skill_id: String) -> int:
         if str(value) == inner_skill_id:
             result += 1
     return result
+
+func _resolve_capacity(proposed_ids: Array) -> Dictionary:
+    if _passive_runtime != null:
+        return _passive_runtime.resolve_inner_skill_capacity(
+            _growth, proposed_ids)
+    return {
+        "base_capacity": InnerSkillCapacityPolicyScript.BASE_INNER_SKILL_CAPACITY,
+        "modifiers": [],
+        "effective_capacity": InnerSkillCapacityPolicyScript.BASE_INNER_SKILL_CAPACITY,
+        "source_breakdown": [],
+        "errors": [],
+    }

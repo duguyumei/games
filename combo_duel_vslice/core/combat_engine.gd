@@ -31,6 +31,10 @@ const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 const BattleLoadoutServiceScript = preload("res://core/battle_loadout_service.gd")
 const CardReshapeBattleRuntimeScript = preload(
     "res://core/card_reshapes/card_reshape_battle_runtime.gd")
+const PassiveRuleHandlerRegistryScript = preload(
+    "res://core/passives/passive_rule_handler_registry.gd")
+const PassiveRuleRuntimeScript = preload(
+    "res://core/passives/passive_rule_runtime.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -64,6 +68,8 @@ var enemy_planning_service
 var battle_setup_service
 var loadout_service: BattleLoadoutService
 var card_reshape_runtime
+var passive_rule_registry
+var passive_rule_runtime
 
 var turn_number: int:
     get: return round_service.turn_number
@@ -142,7 +148,10 @@ var defense_retention_policy:
 var last_defense_decay_results: Array[Dictionary]:
     get: return round_service.last_defense_decay_results
 
-func _init(game_log_override = null, content_catalog_override = null) -> void:
+func _init(
+        game_log_override = null,
+        content_catalog_override = null,
+        passive_rule_registry_override = null) -> void:
     if game_log_override != null:
         use_game_log(game_log_override)
     content_catalog = (
@@ -153,6 +162,16 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
     if content_catalog_override == null:
         content_catalog.load_all()
     content_ready = bool(content_catalog.loaded)
+    passive_rule_registry = (
+        passive_rule_registry_override
+        if passive_rule_registry_override != null
+        else content_catalog.passive_rule_registry)
+    if passive_rule_registry == null:
+        passive_rule_registry = PassiveRuleHandlerRegistryScript.new()
+    passive_rule_runtime = PassiveRuleRuntimeScript.new(
+        passive_rule_registry, content_catalog)
+    player.use_passive_rule_runtime(passive_rule_runtime)
+    enemy.use_passive_rule_runtime(passive_rule_runtime)
     if content_ready:
         battle_setup_service.configure_repositories(
             repository,
@@ -206,12 +225,12 @@ func _init(game_log_override = null, content_catalog_override = null) -> void:
         "_on_flow_battle_end_timing")
     action_preview_service = ActionPreviewServiceScript.new(
         repository,
-        inner_skill_repository,
+        passive_rule_runtime,
         effect_executor)
     action_resolver = ActionResolverScript.new(
         effect_ports,
         repository,
-        inner_skill_repository,
+        passive_rule_runtime,
         trigger_queue,
         effect_executor,
         rng,
@@ -396,6 +415,7 @@ func setup(
     enemy_plan.clear()
     damage_resolver.reset()
     action_resolver.reset()
+    passive_rule_runtime.suppression_service.clear()
     state_changed.emit()
 
 func setup_scripted_battle(
@@ -428,6 +448,14 @@ func setup_scripted_battle(
         enemy,
         rng,
         _create_standard_deck("enemy"))
+    if not scripted_setup.get("success", false):
+        battle_state = "scenario_error"
+        battle_state_detail = str(scripted_setup.get("reason", "脚本战斗装配无效"))
+        game_log.record_system(
+            "error", "scenario_loadout", "脚本战斗装配失败",
+            battle_state_detail)
+        state_changed.emit()
+        return false
     enemy.name = scripted_setup["name"]
     enemy_ai_policy = scripted_setup["enemy_ai_policy"]
     _sync_action_service_modes()
@@ -472,6 +500,12 @@ func register_defense_retention_provider(provider_id: String, provider) -> bool:
 
 func unregister_defense_retention_provider(provider_id: String) -> bool:
     return defense_retention_policy.unregister_provider(provider_id)
+
+func apply_passive_suppression(values: Dictionary) -> Dictionary:
+    return passive_rule_runtime.suppression_service.apply(values)
+
+func remove_passive_suppression(suppression_id: String) -> bool:
+    return passive_rule_runtime.suppression_service.remove(suppression_id)
 
 func _finish_round_end() -> void:
     round_service.finish_round_end()
@@ -656,7 +690,9 @@ func _update_battle_state() -> void:
     outcome_service.update()
 
 func _on_flow_battle_end_timing(event) -> Dictionary:
-    return outcome_service.on_battle_end_timing(event)
+    var result: Dictionary = outcome_service.on_battle_end_timing(event)
+    passive_rule_runtime.suppression_service.clear()
+    return result
 
 func _set_scenario_error(detail: String) -> void:
     outcome_service.set_scenario_error(detail)

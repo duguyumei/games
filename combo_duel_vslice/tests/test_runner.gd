@@ -105,6 +105,11 @@ const NodeInteractionHandlerRegistryScript = preload(
     "res://core/node_interactions/node_interaction_handler_registry.gd")
 const NodeInteractionServiceScript = preload(
     "res://core/node_interactions/node_interaction_service.gd")
+const PassiveRuleHandlerRegistryScript = preload(
+    "res://core/passives/passive_rule_handler_registry.gd")
+const PassiveRuleRuntimeScript = preload(
+    "res://core/passives/passive_rule_runtime.gd")
+const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 const ProbeStatusBehaviorHandlerScript = preload(
@@ -152,6 +157,77 @@ class InnerSkillForgetValueProbe:
 
     func resolve(definition: Dictionary, _growth) -> int:
         return int(definition.get("forget_value", 0)) + additional_value
+
+class PassiveCapacityProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    var stable_id: String
+
+    func _init(id_value: String = "capacity_probe") -> void:
+        stable_id = id_value
+
+    func behavior_id() -> String:
+        return stable_id
+
+    func supported_hooks() -> Array[String]:
+        return ["inner_skill_capacity_query"] as Array[String]
+
+    func validate_configuration(configuration: Dictionary) -> Array[String]:
+        if not configuration.get("amount") is int:
+            return ["amount 必须是整数"] as Array[String]
+        return []
+
+    func handle(_hook: String, _context, configuration: Dictionary) -> Dictionary:
+        return {
+            "success": true,
+            "additional_capacity": int(configuration["amount"]),
+        }
+
+class PassiveStateProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    func behavior_id() -> String:
+        return "state_probe"
+
+    func supported_hooks() -> Array[String]:
+        return ["action_preview", "action_resolve"] as Array[String]
+
+    func validate_configuration(_configuration: Dictionary) -> Array[String]:
+        return []
+
+    func handle(hook: String, context, _configuration: Dictionary) -> Dictionary:
+        if hook == "action_preview":
+            return {"success": true, "intent": {"defense": 1}}
+        if bool(context.payload.get("direct_runtime_probe", false)):
+            var before := int(context.actor.defense)
+            context.actor.add_defense(before + 1)
+            return {"success": true, "before": before, "after": context.actor.defense}
+        return {"success": true, "effects": [{"op": "defense", "amount": 1}]}
+
+class PassiveRepeatProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    func behavior_id() -> String:
+        return "repeat_probe"
+
+    func supported_hooks() -> Array[String]:
+        return ["passive_invocation_plan_query"] as Array[String]
+
+    func validate_configuration(configuration: Dictionary) -> Array[String]:
+        if not configuration.get("target_content_id") is String:
+            return ["target_content_id 必须是字符串"] as Array[String]
+        return []
+
+    func handle(_hook: String, context, configuration: Dictionary) -> Dictionary:
+        if context.plan_target_source == null \
+                or context.plan_target_source.content_id != str(
+                    configuration["target_content_id"]):
+            return {"success": true, "additional_executions": 0}
+        return {
+            "success": true,
+            "additional_executions": 1,
+            "target_content_id": str(configuration["target_content_id"]),
+        }
 
 class DirectCardTriggerProbe:
     extends RefCounted
@@ -363,6 +439,7 @@ func _initialize() -> void:
         quit(2)
         return
     _test_content_catalog_and_validator()
+    _test_passive_rule_registry_and_content_contract()
     _test_card_reshape_behavior_registry()
     _test_enemy_pool_content_and_repository()
     _test_formal_enemy_pool_battle_setup()
@@ -377,6 +454,7 @@ func _initialize() -> void:
     _test_battle_flow_coordinator_contract()
     _test_battle_timing_system_contract_and_integration()
     _test_defense_retention_policy_and_round_decay()
+    _test_passive_runtime_capacity_suppression_invocations_and_items()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
@@ -729,6 +807,337 @@ func _test_card_reshape_behavior_registry() -> void:
             unknown_anomaly_catalog.errors,
             "card_states.origins[2].behaviors[3].anomaly"),
         "重塑异状引用错误稳定报告内容路径")
+
+func _test_passive_rule_registry_and_content_contract() -> void:
+    var invalid_registry = PassiveRuleHandlerRegistryScript.new(false)
+    _assert_true(
+        not invalid_registry.register_handler(PassiveCapacityProbeHandler.new("")),
+        "空 behavior ID 注册失败")
+    _assert_true(
+        not invalid_registry.register_handler(PassiveCapacityProbeHandler.new("Bad-ID")),
+        "非法 behavior ID 注册失败")
+    _assert_true(
+        invalid_registry.register_handler(PassiveCapacityProbeHandler.new()),
+        "合法 Fake Handler 可以注入")
+    _assert_true(
+        not invalid_registry.register_handler(PassiveCapacityProbeHandler.new()),
+        "重复 behavior ID 注册失败")
+
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    _assert_true(registry.register_handler(PassiveCapacityProbeHandler.new()), "注册容量查询 Fake Handler")
+    _assert_true(registry.register_handler(PassiveStateProbeHandler.new()), "注册事件 Fake Handler")
+    _assert_true(registry.register_handler(PassiveRepeatProbeHandler.new()), "注册重复规划 Fake Handler")
+    var base_catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(base_catalog.load_all(), "建立被动规则内容测试基线")
+    var values := _catalog_definitions(base_catalog)
+    values["inner_skills"]["inner_skills"].append_array([
+        {
+            "id": "state_inner", "name": "状态探针内功", "status": "candidate",
+            "description": "测试事件 invocation。",
+            "behaviors": [{"id": "state_probe", "configuration": {}}],
+        },
+        {
+            "id": "capacity_inner", "name": "容量探针内功", "status": "candidate",
+            "description": "测试 proposed 配装容量。",
+            "behaviors": [{"id": "capacity_probe", "configuration": {"amount": 1}}],
+        },
+        {
+            "id": "behaviorless_candidate", "name": "无行为候选", "status": "candidate",
+            "description": "候选内容允许暂不接行为。",
+        },
+    ])
+    values["items"]["items"].append_array([
+        {
+            "id": "capacity_item", "name": "容量物品探针", "kind": "item",
+            "status": "candidate", "unique": true, "description": "测试物品容量查询。",
+            "behaviors": [{"id": "capacity_probe", "configuration": {"amount": 1}}],
+        },
+        {
+            "id": "repeat_item", "name": "重复物品探针", "kind": "item",
+            "status": "candidate", "unique": true, "description": "测试 invocation 规划。",
+            "behaviors": [{
+                "id": "repeat_probe",
+                "configuration": {"target_content_id": "state_inner"},
+            }],
+        },
+    ])
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        catalog.load_from_definitions(values, base_catalog.paths),
+        "内功与物品 behaviors 由同一 Registry 校验")
+    var runtime = PassiveRuleRuntimeScript.new(registry, catalog)
+    _assert_true(
+        catalog.passive_rule_registry == registry and runtime.registry == registry,
+        "内容校验与运行时复用同一个 Registry 实例")
+    _assert_equal(catalog.definition("inner_skills")["version"], 2, "内功内容协议为 version 2")
+    _assert_equal(catalog.definition("items")["version"], 2, "物品内容协议为 version 2")
+    _assert_true(
+        catalog.get_by_id("inner_skill", "behaviorless_candidate").get("behaviors", []).is_empty(),
+        "candidate 可以暂时没有 behavior")
+
+    var unknown_values := values.duplicate(true)
+    unknown_values["inner_skills"]["inner_skills"][0]["behaviors"][0]["id"] = "missing_passive"
+    var unknown_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not unknown_catalog.load_from_definitions(unknown_values, base_catalog.paths),
+        "未注册 behavior 在内容加载阶段失败")
+    var invalid_configuration := values.duplicate(true)
+    invalid_configuration["inner_skills"]["inner_skills"][0]["behaviors"][0]["configuration"] = {"effects": []}
+    var invalid_configuration_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not invalid_configuration_catalog.load_from_definitions(
+            invalid_configuration, base_catalog.paths),
+        "非法 behavior configuration 在内容加载阶段失败")
+    var formal_inner_missing := values.duplicate(true)
+    formal_inner_missing["inner_skills"]["inner_skills"].append({
+        "id": "formal_without_behavior", "name": "缺行为正式内功",
+        "status": "formal", "description": "非法探针", "forget_value": 1,
+    })
+    var formal_inner_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not formal_inner_catalog.load_from_definitions(formal_inner_missing, base_catalog.paths),
+        "正式内功缺少 behavior 加载失败")
+    var formal_item_missing := values.duplicate(true)
+    formal_item_missing["items"]["items"].append({
+        "id": "formal_item_without_behavior", "name": "缺行为正式物品",
+        "kind": "item", "status": "formal", "unique": true,
+        "description": "非法探针", "price": 1,
+    })
+    var formal_item_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not formal_item_catalog.load_from_definitions(formal_item_missing, base_catalog.paths),
+        "正式物品缺少 behavior 加载失败")
+    var legacy_values := values.duplicate(true)
+    legacy_values["inner_skills"]["inner_skills"][0]["timing"] = "on_play_resolve"
+    legacy_values["inner_skills"]["inner_skills"][0]["effects"] = [{"op": "defense", "amount": 1}]
+    var legacy_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not legacy_catalog.load_from_definitions(legacy_values, base_catalog.paths),
+        "旧顶层 timing/effects 被拒绝")
+    var duplicate_behavior := values.duplicate(true)
+    duplicate_behavior["inner_skills"]["inner_skills"][0]["behaviors"].append(
+        duplicate_behavior["inner_skills"]["inner_skills"][0]["behaviors"][0].duplicate(true))
+    var duplicate_behavior_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not duplicate_behavior_catalog.load_from_definitions(
+            duplicate_behavior, base_catalog.paths),
+        "同一内容重复声明 behavior ID 加载失败")
+
+    var resolver_source := FileAccess.get_file_as_string("res://core/action_resolver.gd")
+    var preview_source := FileAccess.get_file_as_string("res://core/action_preview_service.gd")
+    _assert_true(
+        not resolver_source.contains("inner_skill_repository")
+        and not resolver_source.contains("get(\"timing\""),
+        "ActionResolver 不再读取内功仓库或解释旧 timing 字段")
+    _assert_true(
+        not preview_source.contains("inner_skill_repository")
+        and not preview_source.contains("get(\"behaviors\""),
+        "ActionPreviewService 不直接解释内功 behavior")
+
+func _test_passive_runtime_capacity_suppression_invocations_and_items() -> void:
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    registry.register_handler(PassiveCapacityProbeHandler.new())
+    registry.register_handler(PassiveStateProbeHandler.new())
+    registry.register_handler(PassiveRepeatProbeHandler.new())
+    var base_catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(base_catalog.load_all(), "建立被动 Runtime 测试基线")
+    var values := _catalog_definitions(base_catalog)
+    values["inner_skills"]["inner_skills"].append_array([
+        {
+            "id": "state_inner", "name": "状态探针内功", "status": "candidate",
+            "description": "测试事件 invocation。",
+            "behaviors": [{"id": "state_probe", "configuration": {}}],
+        },
+        {
+            "id": "capacity_inner", "name": "容量探针内功", "status": "candidate",
+            "description": "测试 proposed 配装容量。",
+            "behaviors": [{"id": "capacity_probe", "configuration": {"amount": 1}}],
+        },
+    ])
+    values["items"]["items"].append_array([
+        {
+            "id": "capacity_item", "name": "容量物品探针", "kind": "item",
+            "status": "candidate", "unique": true, "description": "测试容量。",
+            "behaviors": [{"id": "capacity_probe", "configuration": {"amount": 1}}],
+        },
+        {
+            "id": "repeat_item", "name": "重复物品探针", "kind": "item",
+            "status": "candidate", "unique": true, "description": "测试额外执行。",
+            "behaviors": [{"id": "repeat_probe", "configuration": {"target_content_id": "state_inner"}}],
+        },
+    ])
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(catalog.load_from_definitions(values, base_catalog.paths), "Fake 被动测试内容通过校验")
+    var runtime = PassiveRuleRuntimeScript.new(registry, catalog)
+
+    var growth = GrowthInventoryScript.new(catalog, false)
+    var inner_repository = InnerSkillRepositoryScript.new()
+    inner_repository.configure(catalog.definition("inner_skills"))
+    growth.learned_inner_skill_ids.assign([
+        "state_inner", "state_inner", "state_inner", "state_inner",
+        "state_inner", "state_inner", "state_inner", "capacity_inner"])
+    var loadout = InnerSkillLoadoutServiceScript.new(
+        growth, inner_repository, null, runtime)
+    var base_capacity: Dictionary = runtime.resolve_inner_skill_capacity(growth, [])
+    _assert_equal(base_capacity["base_capacity"], 6, "动态容量唯一基础值为六")
+    _assert_equal(base_capacity["effective_capacity"], 6, "无修正时有效容量为六")
+    var seven_state := [
+        "state_inner", "state_inner", "state_inner", "state_inner",
+        "state_inner", "state_inner", "state_inner"]
+    var rejected: Dictionary = loadout.set_loadout(seven_state, 7)
+    _assert_true(not rejected["success"], "默认七门配装失败")
+    _assert_equal(growth.equipped_inner_skill_ids, [], "容量不足不自动装备或截断")
+    _assert_equal(growth.technique_slot_index, 0, "容量失败不移动功法位置")
+    growth.item_ids.append("capacity_item")
+    var item_capacity: Dictionary = runtime.resolve_inner_skill_capacity(growth, seven_state)
+    _assert_equal(item_capacity["effective_capacity"], 7, "Fake Item +1 后有效容量为七")
+    _assert_true(loadout.set_loadout(seven_state, 7)["success"], "Fake Item +1 后可装备七门")
+    growth.item_ids.clear()
+    var proposed := [
+        "capacity_inner", "state_inner", "state_inner", "state_inner",
+        "state_inner", "state_inner", "state_inner"]
+    _assert_true(
+        loadout.set_loadout(proposed, 1)["success"],
+        "proposed loadout 中占一格且容量 +1 的内功参与查询")
+    var before_query := JSON.stringify(growth.to_progress_snapshot().to_dict())
+    var first_query := runtime.resolve_inner_skill_capacity(growth, proposed)
+    var second_query := runtime.resolve_inner_skill_capacity(growth, proposed)
+    _assert_equal(first_query, second_query, "相同容量查询输入返回相同结果")
+    _assert_equal(
+        JSON.stringify(growth.to_progress_snapshot().to_dict()), before_query,
+        "容量纯查询不修改本局状态")
+    var dto: Dictionary = loadout.get_loadout().to_dict()
+    _assert_equal(dto["base_inner_skill_capacity"], 6, "DTO 公开基础容量")
+    _assert_equal(dto["effective_inner_skill_capacity"], 7, "DTO 公开有效容量")
+    _assert_equal(dto["inner_skill_limit"], 7, "兼容字段映射当前有效容量")
+
+    var actor = BattleSideScript.new("探针", "probe")
+    actor.use_passive_rule_runtime(runtime)
+    _assert_true(actor.configure_items(["repeat_item"])["success"], "物品独立装配到被动来源")
+    _assert_true(
+        actor.configure_inner_skills(["state_inner", "state_inner"], 1)["success"],
+        "同 ID 两个副本分别装备")
+    var dispatch: Dictionary = runtime.dispatch_event("action_resolve", {
+        "actor": actor,
+        "payload": {"direct_runtime_probe": true},
+    })
+    _assert_true(dispatch["success"], "重复 invocation 执行成功")
+    _assert_equal(dispatch["results"].size(), 4, "两个副本各由 Fake Repeat Provider 连续执行两次")
+    _assert_equal(actor.defense, 15, "后续 invocation 读取前次执行后的最新防御状态")
+    _assert_equal(
+        dispatch["plan"].invocations[0].source.source_instance_key,
+        dispatch["plan"].invocations[1].source.source_instance_key,
+        "同 source 的两次 invocation 相邻")
+    _assert_true(
+        dispatch["plan"].invocations[0].source.source_instance_key
+        != dispatch["plan"].invocations[2].source.source_instance_key,
+        "同 ID 多副本是两个不同 source")
+    _assert_equal(
+        dispatch["plan"].invocations[0].execution_count, 2,
+        "额外执行不会递归放大自身，单 source 固定两次")
+    actor.defense = 0
+    var preview_dispatch: Dictionary = runtime.dispatch_event("action_preview", {"actor": actor})
+    var preview_defense := 0
+    for entry in preview_dispatch["results"]:
+        preview_defense += int(entry["result"].get("intent", {}).get("defense", 0))
+    _assert_equal(preview_defense, 4, "预览使用与实际相同的 execution count")
+    _assert_equal(actor.defense, 0, "预览纯查询不执行正式效果")
+
+    var first_key := "inner:probe:0:state_inner"
+    _assert_true(runtime.suppression_service.apply({
+        "suppression_id": "single-copy",
+        "target_instance_key": first_key,
+        "blocked_hooks": ["action_preview", "action_resolve"],
+        "reason": "单副本封功",
+        "source_id": "test",
+    })["success"], "压制可精确选择一个副本")
+    var suppressed_plan = runtime.build_execution_plan("action_resolve", {"actor": actor})
+    _assert_equal(suppressed_plan.invocations.size(), 2, "被压制副本即使有重复修正也生成零次 invocation")
+    _assert_equal(actor.equipped_inner_skill_ids.size(), 2, "压制不删除或卸下内功")
+    runtime.suppression_service.remove("single-copy")
+    _assert_equal(
+        runtime.build_execution_plan("action_resolve", {"actor": actor}).invocations.size(), 4,
+        "压制移除后来源自然恢复触发")
+    runtime.suppression_service.apply({
+        "suppression_id": "all-copies",
+        "target_source_kind": "inner_skill",
+        "target_content_id": "state_inner",
+        "blocked_hooks": ["action_resolve"],
+        "reason": "同 ID 全副本封功",
+        "expiry": {"through_round": 1},
+    })
+    _assert_equal(
+        runtime.build_execution_plan("action_resolve", {"actor": actor, "round_number": 1}).invocations.size(),
+        0,
+        "同 ID 全副本压制与单副本选择器语义不同")
+    _assert_equal(
+        runtime.build_execution_plan("action_resolve", {"actor": actor, "round_number": 2}).invocations.size(),
+        4,
+        "压制到期自动失效")
+    var delayed_probe := [{"source": "already-built"}]
+    runtime.suppression_service.apply({
+        "suppression_id": "late-suppression",
+        "target_source_kind": "inner_skill",
+        "blocked_hooks": [],
+        "reason": "后续封功",
+    })
+    _assert_equal(delayed_probe.size(), 1, "之后施加压制不撤销已进入其他系统的延迟效果")
+    runtime.suppression_service.clear()
+
+    var engine = CombatEngineScript.new(null, catalog, registry)
+    engine.setup(2308, false)
+    engine.player.configure_items(["repeat_item"])
+    engine.player.configure_inner_skills(["state_inner", "state_inner"], 1)
+    engine.apply_passive_suppression({
+        "suppression_id": "snapshot-copy",
+        "target_instance_key": "inner:player:0:state_inner",
+        "blocked_hooks": ["action_preview", "action_resolve"],
+        "reason": "快照封功",
+    })
+    var battle_session = BattleSessionScript.new(engine, RuntimeProfileScript.test())
+    var side_snapshot = battle_session.snapshot().player
+    _assert_true(not side_snapshot.equipped_inner_skills[0]["active"], "快照区分已装备但失效的副本")
+    _assert_equal(side_snapshot.equipped_inner_skills[0]["inactive_reason"], "快照封功", "快照公开具体失效原因")
+    _assert_equal(side_snapshot.equipped_inner_skills[0]["execution_count_preview"], 0, "失效副本预览执行次数为零")
+    _assert_equal(side_snapshot.equipped_inner_skills[1]["execution_count_preview"], 2, "未失效副本保留重复预览次数")
+
+    var setup_service = BattleSetupServiceScript.new(catalog)
+    var progress = RunProgressSnapshotScript.from_dict({
+        "item_ids": ["capacity_item"],
+        "equipped_inner_skill_ids": seven_state,
+        "technique_slot_index": 7,
+    })
+    var progress_side = BattleSideScript.new("进度", "progress")
+    progress_side.use_passive_rule_runtime(runtime)
+    _assert_true(
+        setup_service.apply_non_deck_progress(progress_side, progress)["success"],
+        "item IDs 先进入战斗并为七门玩家配装提供容量")
+    _assert_equal(progress_side.item_ids, ["capacity_item"], "item IDs 不进入内功或消耗品栏")
+    _assert_equal(progress_side.consumable_ids, [], "物品与 consumable IDs 保持独立")
+    var run_deck = setup_service.run_deck_from_progress(null)
+    var captured = setup_service.capture_progress(progress_side, run_deck)
+    _assert_equal(captured.item_ids, ["capacity_item"], "战后 item IDs 原样回传本局快照")
+    var duplicate_items = RunProgressSnapshotScript.from_dict({
+        "item_ids": ["capacity_item", "capacity_item"],
+    })
+    _assert_true(
+        not setup_service.apply_non_deck_progress(progress_side, duplicate_items)["success"],
+        "重复 item ID 明确失败")
+    _assert_equal(progress_side.item_ids, ["capacity_item"], "重复物品失败保持原物品装配")
+    var legacy_side = BattleSideScript.new("旧快照", "legacy")
+    legacy_side.use_passive_rule_runtime(runtime)
+    _assert_true(
+        setup_service.apply_non_deck_progress(
+            legacy_side, RunProgressSnapshotScript.from_dict({}))["success"],
+        "旧快照缺少 item IDs 兼容为空")
 
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
@@ -4445,12 +4854,13 @@ func _test_inner_skill_equipment_and_extra_qi_defense() -> void:
     _assert_equal(equipped.player.defense, 5, "未参与一对的 2 与 3 转化为 5 点防御")
     _assert_equal(equipped.player.equipped_inner_skill_ids.size(), 1, "玩家独立记录已装备内功")
     _assert_equal(equipped.enemy.equipped_inner_skill_ids.size(), 0, "敌方装备状态与玩家独立")
-    equipped.player.configure_inner_skills([
+    var over_capacity: Dictionary = equipped.player.configure_inner_skills([
         "extra_qi_to_defense", "extra_qi_to_defense", "extra_qi_to_defense",
         "extra_qi_to_defense", "extra_qi_to_defense", "extra_qi_to_defense",
         "extra_qi_to_defense"], 7)
-    _assert_equal(equipped.player.equipped_inner_skill_ids.size(), 6, "基础内功装备栏上限为六")
-    _assert_equal(equipped.player.technique_slot_index, 6, "动态功法位限制在当前装备顺序内")
+    _assert_true(not over_capacity["success"], "默认有效容量下七门内功明确失败")
+    _assert_equal(equipped.player.equipped_inner_skill_ids.size(), 1, "容量失败不截断或替换原配装")
+    _assert_equal(equipped.player.technique_slot_index, 1, "容量失败不移动原功法位置")
 
 func _test_inner_skill_preview_and_enemy_plan() -> void:
     var cards := [_card("7", "wind"), _card("7", "forest"), _card("2", "fire"), _card("3", "mountain")]
@@ -5385,16 +5795,19 @@ func _test_s2f2f1_formal_pills_and_transactions() -> void:
         _assert_equal(experience_session.growth.experience, experience_case[1], "聚功丹 %d→%d" % experience_case)
 
     var fixture_values := _catalog_definitions(catalog)
+    fixture_values["inner_skills"]["version"] = 2
     fixture_values["inner_skills"]["inner_skills"].append_array([
         {
-            "id": "forget_fixture_a", "name": "遗忘甲", "timing": "on_play_resolve",
+            "id": "forget_fixture_a", "name": "遗忘甲", "status": "candidate",
             "forget_value": 30,
-            "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}],
+            "behaviors": [{"id": "on_play_effects", "configuration": {
+                "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]} }],
         },
         {
-            "id": "forget_fixture_b", "name": "遗忘乙", "timing": "on_play_resolve",
+            "id": "forget_fixture_b", "name": "遗忘乙", "status": "candidate",
             "forget_value": 35,
-            "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}],
+            "behaviors": [{"id": "on_play_effects", "configuration": {
+                "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]} }],
         },
     ])
     var fixture_catalog = ContentCatalogScript.new()
@@ -5621,9 +6034,10 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
     _assert_true(not no_rarity.execute({"type": "query_consumable_use", "slot_index": 0}).payload_value("can_use"), "没有稀有内功候选时请神契不可用")
 
     var fixture_values := _catalog_definitions(catalog)
+    fixture_values["inner_skills"]["version"] = 2
     fixture_values["inner_skills"]["inner_skills"].append_array([
-        {"id": "rare_curio_fixture", "name": "稀有奇珍测试内功", "rarity": "rare", "timing": "on_play_resolve", "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]},
-        {"id": "legendary_curio_fixture", "name": "传奇奇珍测试内功", "rarity": "legendary", "timing": "on_play_resolve", "effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]},
+        {"id": "rare_curio_fixture", "name": "稀有奇珍测试内功", "status": "candidate", "rarity": "rare", "behaviors": [{"id": "on_play_effects", "configuration": {"effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]}}]},
+        {"id": "legendary_curio_fixture", "name": "传奇奇珍测试内功", "status": "candidate", "rarity": "legendary", "behaviors": [{"id": "on_play_effects", "configuration": {"effects": [{"op": "defense", "amount": {"kind": "constant", "value": 1}}]}}]},
     ])
     var fixture_catalog = ContentCatalogScript.new()
     _assert_true(fixture_catalog.load_from_definitions(fixture_values), "奇珍内功 rarity fixture 有效")
@@ -5859,8 +6273,8 @@ func _test_snapshot_boundaries_are_typed() -> void:
         "战斗事件按字段读取且不保留无类型旁路")
     _assert_equal(
         battle.player.inner_skill_limit,
-        BattleSideScript.INNER_SKILL_LIMIT,
-        "内功容量由领域常量供给，表现层不各自假设")
+        6,
+        "无被动修正时快照公开基础六格容量")
     _assert_equal(battle.SCHEMA_VERSION, 1, "战斗快照使用稳定版本号")
     _assert_equal(battle.to_dict()["schema_version"], 1, "战斗快照序列化保留版本号")
     _assert_equal(
@@ -6876,27 +7290,32 @@ func _test_inner_skill_loadout_and_forgetting() -> void:
     var production_catalog = ContentCatalogScript.new()
     _assert_true(production_catalog.load_all(), "内功配装测试载入正式内容目录")
     var fixture_values := _catalog_definitions(production_catalog)
+    fixture_values["inner_skills"]["version"] = 2
     fixture_values["inner_skills"]["inner_skills"].append_array([
         {
             "id": "loadout_fixture_a",
             "name": "配装测试甲",
             "status": "formal",
-            "timing": "on_play_resolve",
             "forget_value": 7,
-            "effects": [{
-                "op": "defense",
-                "amount": {"kind": "constant", "value": 1},
+            "behaviors": [{
+                "id": "on_play_effects",
+                "configuration": {"effects": [{
+                    "op": "defense",
+                    "amount": {"kind": "constant", "value": 1},
+                }]},
             }],
         },
         {
             "id": "loadout_fixture_b",
             "name": "配装测试乙",
             "status": "formal",
-            "timing": "on_play_resolve",
             "forget_value": 11,
-            "effects": [{
-                "op": "defense",
-                "amount": {"kind": "constant", "value": 1},
+            "behaviors": [{
+                "id": "on_play_effects",
+                "configuration": {"effects": [{
+                    "op": "defense",
+                    "amount": {"kind": "constant", "value": 1},
+                }]},
             }],
         },
     ])
@@ -6910,10 +7329,12 @@ func _test_inner_skill_loadout_and_forgetting() -> void:
         "id": "formal_missing_forget_value",
         "name": "缺失遗忘所得",
         "status": "formal",
-        "timing": "on_play_resolve",
-        "effects": [{
-            "op": "defense",
-            "amount": {"kind": "constant", "value": 1},
+        "behaviors": [{
+            "id": "on_play_effects",
+            "configuration": {"effects": [{
+                "op": "defense",
+                "amount": {"kind": "constant", "value": 1},
+            }]},
         }],
     })
     var missing_catalog = ContentCatalogScript.new()

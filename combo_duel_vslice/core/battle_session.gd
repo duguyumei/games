@@ -193,7 +193,13 @@ func setup_battle(
                 engine.enemy, engine.enemy_sequence_book)
             engine.enemy_ai_policy = formal_setup["ai_policy"]
             engine._sync_action_service_modes()
-        _battle_setup_service.apply_non_deck_progress(engine.player, progress_snapshot)
+        var progress_setup: Dictionary = _battle_setup_service.apply_non_deck_progress(
+            engine.player, progress_snapshot)
+        if not progress_setup.get("success", false):
+            engine.game_log.record_system(
+                "error", "player_progress", "玩家战斗装配失败",
+                str(progress_setup.get("reason", "未知错误")))
+            return false
         _battle_setup_service.apply_player_technique_progression(
             engine.player, engine.sequence_book, progress_snapshot)
         engine.use_external_enemy_actions(_remote_ai_enabled)
@@ -295,7 +301,10 @@ func apply_player_progress_from(progress_snapshot: RunProgressSnapshot) -> void:
         return
     _player_run_deck = _battle_setup_service.run_deck_from_progress(progress_snapshot)
     engine.replace_player_deck(_player_run_deck.create_battle_cards(), true)
-    _battle_setup_service.apply_non_deck_progress(engine.player, progress_snapshot)
+    var result: Dictionary = _battle_setup_service.apply_non_deck_progress(
+        engine.player, progress_snapshot)
+    if not result.get("success", false):
+        push_error("玩家战斗装配失败：%s" % str(result.get("reason", "未知错误")))
 
 func player_progress_snapshot() -> RunProgressSnapshot:
     return _battle_setup_service.capture_progress(engine.player, _player_run_deck)
@@ -569,10 +578,39 @@ func _record_command_rejected(command_type: String, reason: String) -> void:
     _event_serial += 1
 
 func _side_snapshot(side) -> Dictionary:
+    var passive_context := {
+        "owner": side,
+        "round_number": engine.turn_number,
+    }
+    var capacity: Dictionary = engine.passive_rule_runtime.resolve_inner_skill_capacity(
+        side, side.equipped_inner_skill_ids)
+    var execution_counts: Dictionary = engine.passive_rule_runtime.execution_counts_for(
+        "action_preview", passive_context)
     var equipped_inner_skills: Array = []
-    for inner_skill_id in side.equipped_inner_skill_ids:
-        equipped_inner_skills.append(
-            engine.inner_skill_repository.get_inner_skill(inner_skill_id))
+    for inner_entry in engine.passive_rule_runtime.equipped_inner_skill_entries(
+            passive_context):
+        var definition: Dictionary = inner_entry["definition"].duplicate(true)
+        var active := true
+        var inactive_reasons: Array[String] = []
+        var matching_sources: Array = engine.passive_rule_runtime.collect_sources(
+            passive_context).filter(func(source):
+                return source.source_instance_key == inner_entry["source_instance_key"])
+        for source in matching_sources:
+            var handler = engine.passive_rule_registry.handler(source.behavior_id)
+            if handler == null or not handler.supported_hooks().has("action_preview"):
+                continue
+            var activation = engine.passive_rule_runtime.is_source_active(
+                source, "action_preview", passive_context)
+            if not activation.active:
+                active = false
+                if activation.reason != "" and not inactive_reasons.has(activation.reason):
+                    inactive_reasons.append(activation.reason)
+        definition["active"] = active
+        definition["inactive_reason"] = "；".join(inactive_reasons)
+        definition["source_instance_key"] = inner_entry["source_instance_key"]
+        definition["execution_count_preview"] = int(execution_counts.get(
+            inner_entry["source_instance_key"], 0))
+        equipped_inner_skills.append(definition)
     var consumables: Array = []
     for consumable_id in side.consumable_ids:
         var consumable: Dictionary = engine.consumable_repository.get_consumable(consumable_id).duplicate(true)
@@ -589,7 +627,7 @@ func _side_snapshot(side) -> Dictionary:
         "last_successful_technique_hand_id": side.last_successful_technique_hand_id,
         "current_reflection_percent": side.current_reflection_percent,
         "hand_limit": side.current_hand_limit(),
-        "inner_skill_limit": side.INNER_SKILL_LIMIT,
+        "inner_skill_limit": int(capacity["effective_capacity"]),
         "draw_count": side.draw_pile.size(),
         "hand_count": side.hand.size(),
         "staging_count": side.staging.size(),
@@ -604,6 +642,7 @@ func _side_snapshot(side) -> Dictionary:
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
         "equipped_inner_skills": equipped_inner_skills,
         "technique_slot_index": side.technique_slot_index,
+        "item_ids": side.item_ids.duplicate(),
         "consumable_ids": side.consumable_ids.duplicate(),
         "consumables": consumables,
         "consumable_limit": side.consumable_limit,

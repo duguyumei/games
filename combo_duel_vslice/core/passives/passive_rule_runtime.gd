@@ -1,0 +1,204 @@
+class_name PassiveRuleRuntime
+extends RefCounted
+
+const ContextScript = preload("res://core/passives/passive_rule_context.gd")
+const SourceResolverScript = preload(
+    "res://core/passives/passive_rule_source_resolver.gd")
+const SuppressionServiceScript = preload(
+    "res://core/passives/passive_suppression_service.gd")
+const ActivationPolicyScript = preload(
+    "res://core/passives/passive_rule_activation_policy.gd")
+const InvocationScript = preload(
+    "res://core/passives/passive_rule_invocation.gd")
+const ExecutionPlanScript = preload(
+    "res://core/passives/passive_rule_execution_plan.gd")
+const CapacityPolicyScript = preload(
+    "res://core/passives/inner_skill_capacity_policy.gd")
+
+var registry
+var source_resolver
+var suppression_service
+var activation_policy
+var capacity_policy
+
+func _init(
+        handler_registry,
+        content_catalog = null,
+        suppression_override = null,
+        activation_override = null,
+        resolver_override = null) -> void:
+    registry = handler_registry
+    source_resolver = (
+        resolver_override
+        if resolver_override != null
+        else SourceResolverScript.new(content_catalog))
+    suppression_service = (
+        suppression_override
+        if suppression_override != null
+        else SuppressionServiceScript.new())
+    activation_policy = (
+        activation_override
+        if activation_override != null
+        else ActivationPolicyScript.new(suppression_service))
+    capacity_policy = CapacityPolicyScript.new(self)
+
+func coerce_context(value):
+    if value is ContextScript:
+        return value
+    if value is Dictionary:
+        return ContextScript.new().configure(value)
+    return ContextScript.new().configure({"owner": value})
+
+func collect_sources(context) -> Array:
+    return source_resolver.collect_sources(coerce_context(context))
+
+func equipped_inner_skill_entries(context) -> Array:
+    return source_resolver.equipped_inner_skill_entries(
+        coerce_context(context))
+
+func has_content(source_kind: String, content_id: String) -> bool:
+    var catalog = source_resolver._catalog
+    if catalog == null:
+        return false
+    return catalog.has_id(
+        "inner_skill" if source_kind == "inner_skill" else "item",
+        content_id)
+
+func is_source_active(source, hook: String, context):
+    return activation_policy.is_source_active(
+        source, hook, coerce_context(context))
+
+func resolve_inner_skill_capacity(
+        growth_or_context,
+        proposed_equipped_inner_skill_ids: Array = []) -> Dictionary:
+    var context = coerce_context(growth_or_context)
+    context.has_proposed_inner_skill_ids = true
+    context.proposed_equipped_inner_skill_ids = proposed_equipped_inner_skill_ids.duplicate()
+    return capacity_policy.resolve(context, proposed_equipped_inner_skill_ids)
+
+func build_execution_plan(hook: String, context):
+    var resolved_context = coerce_context(context)
+    resolved_context.hook = hook
+    var plan = ExecutionPlanScript.new().configure({"hook": hook})
+    if not registry.has_hook(hook):
+        plan.errors.append("未知被动 hook：%s" % hook)
+        return plan
+    var sources := collect_sources(resolved_context)
+    for source in sources:
+        var handler = registry.handler(source.behavior_id)
+        if handler == null:
+            plan.errors.append("未注册的被动行为：%s" % source.behavior_id)
+            continue
+        if not handler.supported_hooks().has(hook):
+            continue
+        var activation = is_source_active(source, hook, resolved_context)
+        plan.activations.append({
+            "source": source,
+            "activation": activation,
+        })
+        if not activation.active:
+            continue
+        var repeat: Dictionary = _resolve_additional_executions(
+            source, sources, resolved_context)
+        if not repeat.get("success", false):
+            plan.errors.append(str(repeat.get("reason", "额外执行次数无效")))
+            continue
+        var execution_count := 1 + int(repeat.get("additional_executions", 0))
+        if execution_count < 0:
+            plan.errors.append("被动执行次数必须是非负整数：%s" % source.source_instance_key)
+            continue
+        for execution_index in range(execution_count):
+            plan.invocations.append(InvocationScript.new().configure({
+                "source": source,
+                "hook": hook,
+                "execution_index": execution_index,
+                "execution_count": execution_count,
+                "repeat_origin": repeat.get("repeat_origin", []),
+                "context": resolved_context,
+            }))
+    return plan
+
+func dispatch_event(hook: String, context) -> Dictionary:
+    var plan = build_execution_plan(hook, context)
+    var results: Array = []
+    if not plan.is_valid():
+        return {"success": false, "plan": plan, "results": results, "errors": plan.errors.duplicate()}
+    for invocation in plan.invocations:
+        var invocation_context = invocation.context.for_invocation(invocation)
+        var result: Dictionary = registry.execute(
+            invocation.source.behavior_id,
+            hook,
+            invocation_context,
+            invocation.source.configuration)
+        results.append({
+            "source": invocation.source,
+            "invocation": invocation,
+            "result": result,
+        })
+        if not result.get("success", false):
+            return {
+                "success": false,
+                "plan": plan,
+                "results": results,
+                "errors": [str(result.get("reason", "被动行为执行失败"))],
+            }
+    return {"success": true, "plan": plan, "results": results, "errors": []}
+
+func query_modifiers(hook: String, context) -> Dictionary:
+    return dispatch_event(hook, context)
+
+func execution_counts_for(hook: String, context) -> Dictionary:
+    var plan = build_execution_plan(hook, context)
+    var result: Dictionary = {}
+    for invocation in plan.invocations:
+        result[invocation.source.source_instance_key] = invocation.execution_count
+    return result
+
+func _resolve_additional_executions(target_source, sources: Array, context) -> Dictionary:
+    var additional := 0
+    var origins: Array[String] = []
+    var query_context = context.for_plan_target(target_source)
+    for provider_source in sources:
+        var handler = registry.handler(provider_source.behavior_id)
+        if handler == null \
+                or not handler.supported_hooks().has("passive_invocation_plan_query"):
+            continue
+        var activation = is_source_active(
+            provider_source, "passive_invocation_plan_query", query_context)
+        if not activation.active:
+            continue
+        var result: Dictionary = registry.execute(
+            provider_source.behavior_id,
+            "passive_invocation_plan_query",
+            query_context,
+            provider_source.configuration)
+        if not result.get("success", false):
+            return result
+        if not _repeat_result_targets(result, target_source):
+            continue
+        var value = result.get("additional_executions", 0)
+        if not value is int or int(value) < 0:
+            return {
+                "success": false,
+                "reason": "additional_executions 必须是确定的非负整数",
+            }
+        additional += int(value)
+        if int(value) > 0:
+            origins.append(provider_source.source_instance_key)
+    return {
+        "success": true,
+        "additional_executions": additional,
+        "repeat_origin": origins,
+    }
+
+func _repeat_result_targets(result: Dictionary, target_source) -> bool:
+    if result.has("target_instance_key") \
+            and str(result["target_instance_key"]) != target_source.source_instance_key:
+        return false
+    if result.has("target_content_id") \
+            and str(result["target_content_id"]) != target_source.content_id:
+        return false
+    if result.has("target_source_kind") \
+            and str(result["target_source_kind"]) != target_source.source_kind:
+        return false
+    return true

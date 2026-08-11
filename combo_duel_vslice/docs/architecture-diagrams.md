@@ -540,6 +540,26 @@ flowchart LR
 
 ---
 
+## 7.1 统一被动规则运行时
+
+```mermaid
+flowchart LR
+    INNER["已装备内功<br/>多副本+槽位顺序"] --> SRC["PassiveRuleSourceResolver"]
+    ITEM["持有物品<br/>唯一+不占内功栏"] --> SRC
+    SRC --> ACT["ActivationPolicy<br/>读取战斗内 suppression"]
+    ACT --> PLAN["ExecutionPlan<br/>一次冻结执行次数"]
+    PLAN --> INV["0/1/2/... Invocation<br/>同来源连续"]
+    INV --> REG["同一 HandlerRegistry"]
+    REG --> PREVIEW["ActionPreviewService<br/>纯 intent"]
+    REG --> RESOLVE["ActionResolver<br/>现有效果队列"]
+    REG --> CAP["InnerSkillCapacityPolicy<br/>基础 6 + 有效修正"]
+    CAT["ContentCatalog<br/>load_all 前装配 Registry"] --> REG
+```
+
+Registry 同时服务内容加载校验和运行时派发。SourceResolver 保留内功与物品各自的库存语义；
+Runtime 只识别来源、behavior、hook、激活、顺序和 invocation，不识别具体内容 ID。战斗结束清空
+suppression，执行计划不进入本局存档。
+
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 
 | Java | 本项目对应 | 例子 |

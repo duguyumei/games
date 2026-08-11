@@ -14,6 +14,8 @@ const ConsumableEffectHandlerRegistryScript = preload(
     "res://core/consumables/consumable_effect_handler_registry.gd")
 const NodeInteractionHandlerRegistryScript = preload(
     "res://core/node_interactions/node_interaction_handler_registry.gd")
+const PassiveRuleHandlerRegistryScript = preload(
+    "res://core/passives/passive_rule_handler_registry.gd")
 
 const CONTENT_ORDER := [
     "base_deck",
@@ -64,6 +66,7 @@ var run_effect_registry
 var card_reshape_registry
 var consumable_effect_registry
 var node_interaction_registry
+var passive_rule_registry
 var card_reshape_rules
 var enemy_repository_ref: WeakRef = null
 
@@ -73,7 +76,8 @@ func _init(
         run_effect_registry_override = null,
         card_reshape_registry_override = null,
         consumable_effect_registry_override = null,
-        node_interaction_registry_override = null) -> void:
+        node_interaction_registry_override = null,
+        passive_rule_registry_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
@@ -95,6 +99,10 @@ func _init(
         node_interaction_registry_override
         if node_interaction_registry_override != null
         else NodeInteractionHandlerRegistryScript.new())
+    passive_rule_registry = (
+        passive_rule_registry_override
+        if passive_rule_registry_override != null
+        else PassiveRuleHandlerRegistryScript.new(true, effect_registry))
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()
@@ -154,7 +162,8 @@ func load_from_definitions(values: Dictionary, source_paths: Dictionary = {}) ->
         return false
     var validator = ContentValidatorScript.new(
         effect_registry, run_effect_registry, card_reshape_registry,
-        consumable_effect_registry, node_interaction_registry)
+        consumable_effect_registry, node_interaction_registry,
+        passive_rule_registry)
     var validation: Dictionary = validator.validate(_definitions, paths)
     errors.assign(validation.get("errors", []))
     warnings.assign(validation.get("warnings", []))

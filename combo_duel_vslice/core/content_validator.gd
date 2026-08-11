@@ -24,6 +24,8 @@ const ConsumableTargetingProtocolScript = preload(
     "res://core/consumables/consumable_targeting_protocol.gd")
 const NodeInteractionHandlerRegistryScript = preload(
     "res://core/node_interactions/node_interaction_handler_registry.gd")
+const PassiveRuleHandlerRegistryScript = preload(
+    "res://core/passives/passive_rule_handler_registry.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 
 const CONTENT_KEYS := [
@@ -180,6 +182,7 @@ var _run_effect_registry
 var _card_reshape_registry
 var _consumable_effect_registry
 var _node_interaction_registry
+var _passive_rule_registry
 var _status_behavior_ids: Array[String] = []
 
 func _init(
@@ -187,7 +190,8 @@ func _init(
         run_effect_registry_override = null,
         card_reshape_registry_override = null,
         consumable_effect_registry_override = null,
-        node_interaction_registry_override = null) -> void:
+        node_interaction_registry_override = null,
+        passive_rule_registry_override = null) -> void:
     _status_behavior_ids = StatusBehaviorRegistryScript.new().behavior_ids()
     _effect_registry = effect_registry_override
     if _effect_registry == null:
@@ -204,6 +208,10 @@ func _init(
     _node_interaction_registry = node_interaction_registry_override
     if _node_interaction_registry == null:
         _node_interaction_registry = NodeInteractionHandlerRegistryScript.new()
+    _passive_rule_registry = passive_rule_registry_override
+    if _passive_rule_registry == null:
+        _passive_rule_registry = PassiveRuleHandlerRegistryScript.new(
+            true, _effect_registry)
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {
@@ -232,6 +240,10 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
         _error("consumables.registry", str(message))
     for message in _node_interaction_registry.registration_errors():
         _error("node_interactions.registry", str(message))
+    for message in _passive_rule_registry.registration_errors():
+        _error(
+            "passives.registry.%s" % str(message.get("behavior_id", "")),
+            str(message.get("message", "被动行为注册失败")))
     _contents = contents
     _paths = paths
     _card_ids.clear()
@@ -997,6 +1009,13 @@ func _validate_cooperation(value, scope: String) -> void:
         _error(scope + ".post_commit.destination", "引用未知协同牌提交位置")
 
 func _validate_inner_skills(definition: Dictionary) -> void:
+    # production 的空池仍是旧 v1 兼容占位；一旦声明任何内容即必须采用 v2。
+    # 正式主数据 inner_skills.json 已迁移为 v2。
+    if int(definition.get("version", 0)) != 2 \
+            and not (int(definition.get("version", 0)) == 1 \
+            and definition.get("inner_skills", []) is Array \
+            and definition.get("inner_skills", []).is_empty()):
+        _error("inner_skills.version", "当前被动行为结构必须为 version 2")
     var values = definition.get("inner_skills")
     if not values is Array:
         _error("inner_skills.inner_skills", "必须是数组")
@@ -1012,13 +1031,15 @@ func _validate_inner_skills(definition: Dictionary) -> void:
         if not value.get("name") is String or str(value.get("name", "")) == "":
             _error(scope, "name 必须是非空字符串")
         var status := str(value.get("status", ""))
+        if status not in ITEM_STATUSES:
+            _error(scope + ".status", "必须为 candidate、design_only 或 formal")
         if value.has("forget_value") \
                 and (not _is_integer(value.get("forget_value")) \
                 or int(value.get("forget_value", -1)) < 0):
             _error(scope + ".forget_value", "必须是非负整数")
         if status == FORMAL_CONTENT_STATUS and not value.has("forget_value"):
             _error(scope + ".forget_value", "正式内功必须配置非负整数遗忘所得")
-        _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
+        _validate_passive_behaviors(value, status, scope, "内功")
 
 func _validate_consumables(definition: Dictionary) -> void:
     var values = definition.get("consumables")
@@ -1143,6 +1164,8 @@ func _validate_consumables(definition: Dictionary) -> void:
             seen_offers[consumable_id] = true
 
 func _validate_items(definition: Dictionary) -> void:
+    if int(definition.get("version", 0)) != 2:
+        _error("items.version", "当前被动行为结构必须为 version 2")
     var values = definition.get("items")
     if not values is Array:
         _error("items.items", "必须是数组")
@@ -1172,6 +1195,52 @@ func _validate_items(definition: Dictionary) -> void:
                 and (not _is_integer(value.get("price")) \
                 or int(value.get("price", -1)) < 0):
             _error(scope + ".price", "正式物品必须有非负整数价格")
+        _validate_passive_behaviors(value, status, scope, "物品")
+
+func _validate_passive_behaviors(
+        definition: Dictionary,
+        status: String,
+        scope: String,
+        kind_name: String) -> void:
+    for retired_field in ["timing", "effects"]:
+        if definition.has(retired_field):
+            _error(
+                scope + "." + retired_field,
+                "旧式顶层 %s 已停用，必须迁移到 behaviors" % retired_field)
+    var behaviors = definition.get("behaviors", [])
+    if not behaviors is Array:
+        _error(scope + ".behaviors", "必须是数组")
+        return
+    if status == FORMAL_CONTENT_STATUS and behaviors.is_empty():
+        _error(scope + ".behaviors", "正式%s必须至少声明一个被动行为" % kind_name)
+    var seen: Dictionary = {}
+    for behavior_index in range(behaviors.size()):
+        var behavior = behaviors[behavior_index]
+        var behavior_scope := "%s.behaviors[%d]" % [scope, behavior_index]
+        if not behavior is Dictionary:
+            _error(behavior_scope, "必须是对象")
+            continue
+        var behavior_id = behavior.get("id")
+        if not behavior_id is String or str(behavior_id) == "":
+            _error(behavior_scope + ".id", "必须是非空稳定 behavior ID")
+            continue
+        var normalized_id := str(behavior_id)
+        if not _is_snake_case(normalized_id):
+            _error(behavior_scope + ".id", "必须使用稳定 snake_case")
+        if seen.has(normalized_id):
+            _error(behavior_scope + ".id", "同一内容不能重复声明 behavior %s" % normalized_id)
+            continue
+        seen[normalized_id] = true
+        if not _passive_rule_registry.has_handler(normalized_id):
+            _error(behavior_scope + ".id", "未注册的被动行为：%s" % normalized_id)
+            continue
+        var configuration = behavior.get("configuration", {})
+        if not configuration is Dictionary:
+            _error(behavior_scope + ".configuration", "必须是对象")
+            continue
+        for message in _passive_rule_registry.validate_configuration(
+                normalized_id, configuration):
+            _error(behavior_scope + ".configuration", str(message))
 
 func _validate_practice_shop(definition: Dictionary) -> void:
     if int(definition.get("version", 0)) != 2:

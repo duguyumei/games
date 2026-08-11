@@ -7,25 +7,26 @@ const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 
 var technique_repository
-var inner_skill_repository
+var passive_rule_runtime
 var trigger_queue
 var effect_executor
 var timing_system
 var rng: RandomNumberGenerator
 var effect_ports
 var _pending_resolution: Dictionary = {}
+var _passive_sources_by_token: Dictionary = {}
 
 func _init(
         effect_ports_value,
         techniques,
-        inner_skills,
+        passive_runtime,
         queue,
         executor,
         random_source: RandomNumberGenerator,
         battle_timing_system = null) -> void:
     effect_ports = effect_ports_value
     technique_repository = techniques
-    inner_skill_repository = inner_skills
+    passive_rule_runtime = passive_runtime
     trigger_queue = queue
     effect_executor = executor
     rng = random_source
@@ -43,6 +44,7 @@ func use_trigger_queue(queue) -> void:
 
 func reset() -> void:
     _pending_resolution.clear()
+    _passive_sources_by_token.clear()
 
 func make_action_record(
         actor,
@@ -122,6 +124,16 @@ func _continue_resolution() -> Dictionary:
         if not bool(_pending_resolution.get("phase_started", false)):
             var timing: String = ("sync_" if synchronized else "solo_") + phase
             var phase_has_entries := _enqueue_phase_records(records, phase, timing)
+            if _pending_resolution.has("runtime_error"):
+                var runtime_error := str(_pending_resolution["runtime_error"])
+                for failed_record in records:
+                    _passive_sources_by_token.erase(str(failed_record["token"]))
+                _pending_resolution.clear()
+                return {
+                    "success": false,
+                    "pending_choice": false,
+                    "detail": runtime_error,
+                }
             _pending_resolution["phase_started"] = true
             _pending_resolution["timing"] = timing
             _pending_resolution["phase_has_entries"] = phase_has_entries
@@ -155,7 +167,8 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 and not bool(record["momentum_prepared"]):
             _prepare_successful_technique_momentum(record)
         for source_spec in _action_trigger_sources(record):
-            var source_effects: Array = source_spec["definition"].get("effects", [])
+            var source_effects: Array = source_spec.get(
+                "effects", source_spec["definition"].get("effects", []))
             if source_spec.get("entity") != null:
                 source_effects = source_spec["entity"].effects
             var effects := _effects_for_phase(source_effects, phase)
@@ -187,8 +200,8 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
             })
             trigger_queue.enqueue(
                 timing,
-                source_spec["definition"].get("name", "未命名效果"),
-                "%s%s" % [record["actor"].name, "功法" if source_spec["kind"] == "technique" else "内功"],
+                _source_settlement_label(source_spec),
+                "%s%s" % [record["actor"].name, _source_kind_label(source_spec["kind"])],
                 int(record["order"]) + int(source_spec["local_order"]),
                 effects,
                 context)
@@ -330,6 +343,7 @@ func _finish_action_record(record) -> void:
     elif not technique.is_empty():
         trigger_queue.add_history(
             "group_end", "功法序列保持", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]], "未推进")
+    _passive_sources_by_token.erase(str(record["token"]))
 
 func log_calculation(side, action_preview: Dictionary, hide_values: bool = false) -> void:
     var hand_result: Dictionary = action_preview["hand"]
@@ -351,10 +365,10 @@ func log_cards_leave(side, cards: Array) -> void:
 
 func combat_order_labels(side, technique_name: String = "当前功法") -> Array[String]:
     var entries: Array = [{"order": side.technique_slot_index, "label": technique_name}]
-    for index in range(side.equipped_inner_skill_ids.size()):
-        var definition: Dictionary = inner_skill_repository.get_inner_skill(side.equipped_inner_skill_ids[index])
+    for inner_entry in passive_rule_runtime.equipped_inner_skill_entries({"owner": side}):
+        var definition: Dictionary = inner_entry["definition"]
         entries.append({
-            "order": side.combat_source_order(index),
+            "order": inner_entry["source_order"],
             "label": definition.get("name", "未知内功"),
         })
     entries.sort_custom(func(left, right): return int(left["order"]) < int(right["order"]))
@@ -399,19 +413,68 @@ func _action_trigger_sources(record) -> Array:
             "local_order": actor.technique_slot_index,
             "capture_key": "technique",
         })
-    for index in range(actor.equipped_inner_skill_ids.size()):
-        var inner_skill_id: String = actor.equipped_inner_skill_ids[index]
-        var inner_skill: Dictionary = inner_skill_repository.get_inner_skill(inner_skill_id)
-        if inner_skill.is_empty() or inner_skill.get("timing", "") != "on_play_resolve":
-            continue
-        sources.append({
-            "kind": "inner_skill",
-            "definition": inner_skill,
-            "local_order": actor.combat_source_order(index),
-            "capture_key": "inner:%d:%s" % [index, inner_skill_id],
-        })
+    var action_token := str(record["token"])
+    if not _passive_sources_by_token.has(action_token):
+        var dispatched: Dictionary = passive_rule_runtime.dispatch_event(
+            "action_resolve", {
+                "actor": actor,
+                "target": record["target"],
+                "round_number": int(record["turn_number"]),
+                "payload": {
+                    "effect_context_values": {
+                        "actor": actor,
+                        "target": record["target"],
+                        "hand_result": record["preview"]["hand"],
+                        "played_cards": record["preview"]["cards"],
+                        "power": record["preview"]["values"]["technique_value"],
+                        "values": record["preview"]["values"],
+                        "action_token": action_token,
+                        "sequence_book": record["book"],
+                    },
+                },
+            })
+        var resolved_sources: Array = []
+        if not dispatched.get("success", false):
+            var detail := "被动规则结算计划失败：%s" % "；".join(
+                dispatched.get("errors", []))
+            _pending_resolution["runtime_error"] = detail
+            trigger_queue.add_history(
+                "passive_rule_error", "被动规则结算失败", actor.name,
+                "失败", detail)
+        else:
+            for entry in dispatched.get("results", []):
+                var effects = entry.get("result", {}).get("effects", [])
+                if not effects is Array or effects.is_empty():
+                    continue
+                var source = entry["source"]
+                var invocation = entry["invocation"]
+                resolved_sources.append({
+                    "kind": source.source_kind,
+                    "definition": source.definition,
+                    "local_order": source.source_order,
+                    "capture_key": source.source_instance_key,
+                    "effects": effects,
+                    "execution_index": invocation.execution_index,
+                    "execution_count": invocation.execution_count,
+                })
+        _passive_sources_by_token[action_token] = resolved_sources
+    sources.append_array(_passive_sources_by_token[action_token])
     sources.sort_custom(func(left, right): return int(left["local_order"]) < int(right["local_order"]))
     return sources
+
+func _source_kind_label(kind: String) -> String:
+    if kind == "technique":
+        return "功法"
+    if kind == "item":
+        return "物品"
+    return "内功"
+
+func _source_settlement_label(source_spec: Dictionary) -> String:
+    var label := str(source_spec["definition"].get("name", "未命名效果"))
+    var count := int(source_spec.get("execution_count", 1))
+    if count > 1:
+        label += "（%d/%d）" % [int(source_spec.get("execution_index", 0)) + 1, count]
+    return label
 
 func _resolve_played_card_anomalies(records: Array) -> void:
     for record in records:

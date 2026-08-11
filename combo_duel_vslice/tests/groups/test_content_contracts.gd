@@ -5,6 +5,7 @@ func _initialize() -> void:
     _run_group("content-contracts", [
         "_test_card_reshape_behavior_registry",
         "_test_content_catalog_and_validator",
+        "_test_passive_rule_registry_and_content_contract",
         "_test_enemy_pool_content_and_repository",
         "_test_starter_build_assembly_and_composition_root",
         "_test_node_reward_service_contract",
