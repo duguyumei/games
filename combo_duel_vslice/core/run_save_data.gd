@@ -10,6 +10,8 @@ const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const RewardBundleScript = preload("res://core/reward_bundle.gd")
 const NodeInteractionServiceScript = preload(
     "res://core/node_interactions/node_interaction_service.gd")
+const RunTerminalResultDTOScript = preload(
+    "res://core/run_terminal_result_dto.gd")
 
 const SCHEMA_VERSION := 1
 const CONTENT_VERSION := 1
@@ -20,6 +22,7 @@ const ALLOWED_PHASES := [
     "awaiting_reward",
     "boss_chest",
     "run_complete",
+    "run_terminated",
 ]
 
 var _data: Dictionary
@@ -37,6 +40,9 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
     var pending_interaction: Dictionary = (
         run_session._node_interaction_service.capture_pending()
         if run_session._node_interaction_service != null else {})
+    var terminal_result: Dictionary = (
+        run_session._run_state.terminal_result.to_dict()
+        if run_session._run_state.terminal_result != null else {})
     _data = {
         "schema_version": SCHEMA_VERSION,
         "content_version": content_version_value,
@@ -54,12 +60,16 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "completed_node_ids": run_session.navigation.completed_node_ids.keys(),
             "pending_reward": pending_reward,
             "pending_node_interaction": pending_interaction,
+            "terminal_result": terminal_result,
             "resume_policy": (
-                "resume_interaction"
-                if phase == "node_in_progress" and not pending_interaction.is_empty()
+                "show_terminal"
+                if phase in ["run_complete", "run_terminated"]
                 else (
-                    "restart_node_from_start"
-                    if phase == "node_in_progress" else "resume_boundary")),
+                    "resume_interaction"
+                    if phase == "node_in_progress" and not pending_interaction.is_empty()
+                    else (
+                        "restart_node_from_start"
+                        if phase == "node_in_progress" else "resume_boundary"))),
         },
         "growth": {
             "experience": int(run_session.growth.experience),
@@ -125,6 +135,10 @@ func validate(content_catalog = null) -> Array[String]:
         node_ids[str(node["id"])] = true
     var phase := str(node_state.get("phase", ""))
     var current_node_id := str(node_state.get("current_node_id", ""))
+    var terminal_value = node_state.get("terminal_result", {})
+    if not terminal_value is Dictionary:
+        errors.append("terminal_result 必须是对象")
+        terminal_value = {}
     if not ALLOWED_PHASES.has(phase):
         errors.append("本局阶段不是合法节点边界：%s" % phase)
     if current_node_id != "" and not node_ids.has(current_node_id):
@@ -144,6 +158,14 @@ func validate(content_catalog = null) -> Array[String]:
             errors.append("进行中节点 resume_policy 必须为 %s" % expected_policy)
     elif not pending_interaction.is_empty():
         errors.append("只有 node_in_progress 可以保存 pending_node_interaction")
+    _validate_terminal_result(
+        terminal_value, phase, current_node_id, graph, errors)
+    if phase in ["run_complete", "run_terminated"]:
+        var legacy_complete: bool = (
+            phase == "run_complete" and terminal_value.is_empty())
+        if not legacy_complete \
+                and str(node_state.get("resume_policy", "")) != "show_terminal":
+            errors.append("终局阶段 resume_policy 必须为 show_terminal")
     for completed_id in node_state.get("completed_node_ids", []):
         if not node_ids.has(str(completed_id)):
             errors.append("已完成节点 ID 不在已保存地图中：%s" % str(completed_id))
@@ -183,7 +205,7 @@ func validate(content_catalog = null) -> Array[String]:
                 errors.append("hand_technique_multiplier_modifiers 包含未知牌型：%s" % str(hand_id))
             elif not growth["hand_technique_multiplier_modifiers"][hand_id] is int:
                 errors.append("hand_technique_multiplier_modifiers.%s 必须是整数" % str(hand_id))
-    _validate_life_fields(growth, errors)
+    _validate_life_fields(growth, phase, terminal_value, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
         return errors
@@ -284,6 +306,24 @@ func restore_session(content_catalog = null) -> Dictionary:
     for content_id in growth_state["practice_purchase_ids"]:
         growth.practice_purchases[str(content_id)] = true
     var state = RunStateScript.new(navigation, growth)
+    var terminal_value: Dictionary = node_state.get("terminal_result", {})
+    if terminal_value.is_empty() and navigation.phase == "run_complete":
+        var legacy_node: Dictionary = navigation.node_definition(
+            navigation.current_node_id)
+        terminal_value = {
+            "schema_version": RunTerminalResultDTOScript.SCHEMA_VERSION,
+            "kind": "victory",
+            "source": "legacy_save",
+            "detail": "兼容旧存档：本局已通关。",
+            "battle_state": "player_victory",
+            "act": navigation.act,
+            "node_id": navigation.current_node_id,
+            "node_type": str(legacy_node.get("type", "boss")),
+            "turn_number": 0,
+        }
+    if not terminal_value.is_empty():
+        state.terminal_result = RunTerminalResultDTOScript.from_dict(
+            terminal_value)
     var session = RunSessionScript.new(state, null, null, null, catalog)
     session.selected_starter_build_id = str(run["starter_build_id"])
     if navigation.phase == "awaiting_reward":
@@ -298,8 +338,45 @@ func restore_session(content_catalog = null) -> Dictionary:
     return {
         "success": true,
         "run_session": session,
-        "resume_policy": str(node_state["resume_policy"]),
+        "resume_policy": (
+            "show_terminal"
+            if navigation.phase in ["run_complete", "run_terminated"]
+            else str(node_state["resume_policy"])),
     }
+
+func _validate_terminal_result(
+        terminal_value: Dictionary,
+        phase: String,
+        current_node_id: String,
+        graph: Dictionary,
+        errors: Array[String]) -> void:
+    if terminal_value.is_empty():
+        if phase == "run_terminated":
+            errors.append("run_terminated 必须保存 terminal_result")
+        return
+    var terminal = RunTerminalResultDTOScript.from_dict(terminal_value)
+    if terminal == null:
+        errors.append("terminal_result 结构或状态映射无效")
+        return
+    if phase == "run_complete" and terminal.kind != "victory":
+        errors.append("run_complete 必须对应 victory terminal_result")
+    elif phase == "run_terminated" \
+            and terminal.kind not in RunTerminalResultDTOScript.NON_VICTORY_KINDS:
+        errors.append("run_terminated 必须对应非胜利 terminal_result")
+    elif phase not in ["run_complete", "run_terminated"]:
+        errors.append("非终局阶段不能保存 terminal_result")
+    if terminal.node_id != current_node_id:
+        errors.append("terminal_result.node_id 与 current_node_id 不一致")
+    if terminal.act != int(graph.get("act", terminal.act)):
+        errors.append("terminal_result.act 与地图层数不一致")
+    if terminal.node_id != "":
+        var node_type := ""
+        for node in graph.get("nodes", []):
+            if node is Dictionary and str(node.get("id", "")) == terminal.node_id:
+                node_type = str(node.get("type", ""))
+                break
+        if terminal.node_type != node_type:
+            errors.append("terminal_result.node_type 与当前节点不一致")
 
 func _validate_pending_interaction(
         pending: Dictionary,
@@ -446,7 +523,11 @@ func _counts(values) -> Dictionary:
         result[content_id] = int(result.get(content_id, 0)) + 1
     return result
 
-func _validate_life_fields(growth: Dictionary, errors: Array[String]) -> void:
+func _validate_life_fields(
+        growth: Dictionary,
+        phase: String,
+        terminal_value: Dictionary,
+        errors: Array[String]) -> void:
     var has_life := growth.has("life")
     var has_max_life := growth.has("max_life")
     if has_life != has_max_life:
@@ -456,10 +537,15 @@ func _validate_life_fields(growth: Dictionary, errors: Array[String]) -> void:
         return
     var life_value = growth["life"]
     var max_life_value = growth["max_life"]
-    var life_valid := life_value is int and int(life_value) > 0
+    var allows_zero_life := phase == "run_terminated" \
+        and str(terminal_value.get("kind", "")) == "defeat"
+    var life_valid := life_value is int \
+        and (int(life_value) >= 0 if allows_zero_life else int(life_value) > 0)
     var max_life_valid := max_life_value is int and int(max_life_value) > 0
     if not life_valid:
-        errors.append("growth.life 必须是正整数")
+        errors.append(
+            "growth.life 必须是非负整数"
+            if allows_zero_life else "growth.life 必须是正整数")
     if not max_life_valid:
         errors.append("growth.max_life 必须是正整数")
     if life_valid and max_life_valid and int(life_value) > int(max_life_value):
@@ -531,6 +617,11 @@ func _normalize_v1_types() -> void:
     var node_state = _data.get("node_state", {})
     if node_state is Dictionary:
         _normalize_reward(node_state.get("pending_reward", {}))
+        var terminal = node_state.get("terminal_result", {})
+        if terminal is Dictionary and not terminal.is_empty():
+            for field in ["schema_version", "act", "turn_number"]:
+                if terminal.has(field):
+                    terminal[field] = int(terminal[field])
     var growth = _data.get("growth", {})
     if not growth is Dictionary:
         return

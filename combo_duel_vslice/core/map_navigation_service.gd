@@ -110,6 +110,15 @@ func node_dispatch_context() -> Dictionary:
 func can_open_practice() -> bool:
     return phase == "awaiting_node"
 
+func terminate_run() -> Dictionary:
+    if is_terminal():
+        return {"success": false, "reason": "本局已经结束"}
+    phase = "run_terminated"
+    return {"success": true, "phase": phase}
+
+func is_terminal() -> bool:
+    return phase in ["run_complete", "run_terminated"]
+
 func _advance_act() -> void:
     act += 1
     current_node_id = ""

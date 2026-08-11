@@ -30,6 +30,7 @@ var battle_log: Array = []
 var system_log: Array = []
 var runtime_mode: String = ""
 var debug_menu_enabled: bool = false
+var terminal_result: Dictionary = {}
 
 ## 从本局会话产出的字典构建。
 static func from_dict(values: Dictionary) -> RunSnapshot:
@@ -59,6 +60,7 @@ static func from_dict(values: Dictionary) -> RunSnapshot:
     result.system_log = values.get("system_log", []).duplicate(true)
     result.runtime_mode = str(values.get("runtime_mode", ""))
     result.debug_menu_enabled = bool(values.get("debug_menu_enabled", false))
+    result.terminal_result = values.get("terminal_result", {}).duplicate(true)
     return result
 
 ## 是否有待领取的奖励。
@@ -90,4 +92,5 @@ func to_dict() -> Dictionary:
         "system_log": system_log.duplicate(true),
         "runtime_mode": runtime_mode,
         "debug_menu_enabled": debug_menu_enabled,
+        "terminal_result": terminal_result.duplicate(true),
     }

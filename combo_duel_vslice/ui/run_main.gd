@@ -11,6 +11,8 @@ const RunBuildDTOScript = preload("res://core/run_build_dto.gd")
 const RewardOverlayScene = preload("res://ui/components/reward_overlay.tscn")
 const PlaceholderPageScene = preload("res://ui/components/node_placeholder_page.tscn")
 const ContentFailurePageScript = preload("res://ui/components/content_failure_page.gd")
+const RunTerminalOverlayScript = preload(
+    "res://ui/components/run_terminal_overlay.gd")
 
 const COLORS := UiDesignScript.COLORS
 
@@ -28,6 +30,7 @@ var hover_label: Label
 var route_label: Label
 var practice_button: Button
 var build_button: Button
+var abandon_button: Button
 var practice_overlay: Control
 var run_build_overlay: RunBuildOverlay
 var node_overlay: Control
@@ -35,6 +38,8 @@ var reward_overlay: Control
 var boss_chest_overlay: Control
 var battle_layer: Control
 var current_battle
+var terminal_overlay
+var abandon_confirmation: ConfirmationDialog
 var toast_label: Label
 var seed_value: int = 2308
 var starter_build_id: String = "standard_52"
@@ -237,6 +242,16 @@ func _build_interface() -> void:
     battle_layer.visible = false
     battle_layer.z_index = 300
     add_child(battle_layer)
+    terminal_overlay = RunTerminalOverlayScript.new()
+    terminal_overlay.restart_requested.connect(_reset_run)
+    add_child(terminal_overlay)
+    abandon_confirmation = ConfirmationDialog.new()
+    abandon_confirmation.title = "放弃本局"
+    abandon_confirmation.dialog_text = "确定放弃当前本局吗？尚未领取的奖励不会发放。"
+    abandon_confirmation.ok_button_text = "确认放弃"
+    abandon_confirmation.cancel_button_text = "继续本局"
+    abandon_confirmation.confirmed.connect(_confirm_abandon_run)
+    add_child(abandon_confirmation)
 
 func _build_top_bar() -> Control:
     var panel := PanelContainer.new()
@@ -269,6 +284,12 @@ func _build_top_bar() -> Control:
     reset.pressed.connect(_reset_run)
     UiDesignScript.style_button(reset)
     row.add_child(reset)
+    abandon_button = Button.new()
+    abandon_button.text = "放弃本局"
+    abandon_button.tooltip_text = "结束当前本局（需要二次确认）"
+    abandon_button.pressed.connect(_request_abandon_run)
+    UiDesignScript.style_button(abandon_button)
+    row.add_child(abandon_button)
     panel.add_child(row)
     return panel
 
@@ -340,18 +361,23 @@ func _refresh() -> void:
         "查看并编辑本局构筑"
         if phase == "awaiting_node"
         else "查看本局构筑（当前阶段只读）")
+    abandon_button.disabled = phase in ["run_complete", "run_terminated"]
     phase_label.text = {
         "awaiting_node": "当前：等待选择下一节点",
         "node_in_progress": "当前：节点进行中 · 修习已锁定",
         "awaiting_reward": "当前：等待领取节点奖励 · 修习已锁定",
         "boss_chest": "当前：第 17 层 Boss 宝箱 · 修习已锁定",
         "run_complete": "第三层 Boss 已击败 · 本局完成",
+        "run_terminated": "本局已经终止",
     }.get(phase, phase)
     route_label.text = "可选 %d　已完成 %d　消耗品 %d/3" % [
         int(current_run.get("available_node_count", 0)),
         int(current_run.get("completed_node_count", 0)),
         growth.get("consumable_ids", []).size()]
     _refresh_practice()
+    if phase in ["run_complete", "run_terminated"] \
+            and not run_build_overlay.visible:
+        _show_terminal_overlay()
 
 func _refresh_practice() -> void:
     if practice_overlay == null:
@@ -387,18 +413,25 @@ func _open_battle(dispatch_result: Dictionary) -> void:
     battle_layer.add_child(current_battle)
     _show_toast(str(dispatch_result.get("message", "进入战斗")))
 
-func _on_battle_finished(outcome: String) -> void:
-    if outcome != "player_victory":
+func _on_battle_finished(_outcome: String) -> void:
+    if current_battle == null:
         return
-    run_session.sync_progress_snapshot(current_battle.player_progress_snapshot())
-    current_battle.queue_free()
-    current_battle = null
-    battle_layer.visible = false
-    var result := run_session.execute({"type": "complete_node"})
+    var battle_result = current_battle.final_result()
+    var progress_snapshot = current_battle.player_progress_snapshot()
+    var result := run_session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": battle_result,
+        "progress_snapshot": progress_snapshot,
+    })
+    _release_current_battle()
     if not result.success:
-        _show_toast(result.reason_or("无法建立节点奖励"))
+        _show_toast(result.reason_or("无法结算战斗结果"))
         return
-    _show_reward_overlay()
+    match result.phase:
+        "awaiting_reward":
+            _show_reward_overlay()
+        "run_terminated", "run_complete":
+            _show_terminal_overlay()
 
 func _open_noncombat_node(dispatch_result: Dictionary) -> void:
     node_overlay.configure({
@@ -439,9 +472,7 @@ func _claim_reward(bundle_id: String = "") -> void:
                 "Boss 奖励已领取 · 进入第 17 层 Boss 宝箱",
                 result.payload_value("experience_interest", {})))
         "run_complete":
-            _show_toast(_interest_toast(
-                "节点奖励已领取 · 本局完成",
-                result.payload_value("experience_interest", {})))
+            _show_terminal_overlay()
         _:
             _show_toast(_interest_toast(
                 "节点奖励已领取 · 当前历练 %d" % int(result.payload_value("experience", 0)),
@@ -478,11 +509,16 @@ func _open_run_build() -> void:
     if practice_overlay.visible:
         return
     if _refresh_run_build(false):
+        if terminal_overlay != null and terminal_overlay.visible:
+            terminal_overlay.visible = false
+        run_build_overlay.z_index = 600
         build_button.visible = false
 
 func _close_run_build() -> void:
     run_build_overlay.visible = false
     build_button.visible = true
+    if run_session.snapshot().phase in ["run_complete", "run_terminated"]:
+        _show_terminal_overlay()
 
 func _refresh_run_build(preserve_drafts: bool) -> bool:
     var result := run_session.execute({"type": "get_run_build"})
@@ -640,21 +676,56 @@ func _meditate() -> void:
     _refresh()
 
 func _reset_run() -> void:
-    if current_battle != null:
-        current_battle.queue_free()
-        current_battle = null
-    battle_layer.visible = false
+    _release_current_battle()
     practice_overlay.visible = false
     run_build_overlay.visible = false
     node_overlay.visible = false
     reward_overlay.visible = false
     boss_chest_overlay.visible = false
+    terminal_overlay.visible = false
+    build_button.z_index = 350
     run_session.execute({
         "type": "setup_run",
         "seed": seed_value,
         "starter_build_id": starter_build_id,
     })
     _show_toast("已按种子 %d 生成新路线" % seed_value)
+
+func _request_abandon_run() -> void:
+    if run_session.snapshot().phase in ["run_complete", "run_terminated"]:
+        return
+    abandon_confirmation.popup_centered()
+
+func _confirm_abandon_run() -> void:
+    var result := run_session.execute({"type": "abandon_run"})
+    if not result.success:
+        _show_toast(result.reason_or("无法放弃本局"))
+        return
+    _release_current_battle()
+    _show_terminal_overlay()
+
+func _release_current_battle() -> void:
+    if current_battle != null:
+        current_battle.close_battle()
+        current_battle.queue_free()
+        current_battle = null
+    if battle_layer != null:
+        battle_layer.visible = false
+
+func _show_terminal_overlay() -> void:
+    var snapshot: Dictionary = run_session.snapshot().to_dict()
+    var terminal_result: Dictionary = snapshot.get("terminal_result", {})
+    if terminal_result.is_empty():
+        return
+    practice_overlay.visible = false
+    run_build_overlay.visible = false
+    node_overlay.visible = false
+    reward_overlay.visible = false
+    boss_chest_overlay.visible = false
+    _release_current_battle()
+    build_button.visible = true
+    build_button.z_index = 550
+    terminal_overlay.present(terminal_result, snapshot)
 
 func _scroll_map_to_bottom() -> void:
     await get_tree().process_frame

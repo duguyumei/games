@@ -254,6 +254,7 @@ S0 已在基线提交 `0555d0f` 完成最终验收，S1.1～S1.5 的平台建设
 | 2.F1B（已完成） | 建立本局真气工坊与六种牌组改造 Handler | 1 天 |
 | 2.F1C（已完成） | 建立真气重塑行为注册平台并迁移现有纯规则行为 | 1 天 |
 | 2.F4A（已完成） | 建立非战斗节点统一交互协议与通用本局获得操作 | 1 天 |
+| 2.F4B（已完成） | 建立战斗最终结果、本局终局状态、存档与统一终局 UI 闭环 | 1 天 |
 | 2.4（已完成） | 完成 `2 普通商品 + 2 补充包 + 1 物品`、空位与 `5、6、7……` 冥想刷新 | 3 天 |
 | 2.5（已完成） | 将心得接入具体牌型功法槽位与序列成长；五条心得保留为禁用定义 | 1 天 |
 | 2.6 | 接入 6 门代表性丹药及战斗外牌组改造操作 | 4 天 |
@@ -324,6 +325,20 @@ S0 已在基线提交 `0555d0f` 完成最终验收，S1.1～S1.5 的平台建设
   恢复不调用 Handler.prepare，旧存档缺少字段继续兼容。
 - 本阶段只建立协议，生产 Registry 保持为空，`event/rest/treasure` 继续 placeholder；正式休息、
   事件、普通宝箱及 Boss 隐藏宝箱内容分别留给后续小型 Handler 任务。
+
+**S2-F4B 完成记录（2026-08-11）**
+
+- `BattleFinalResultDTO` 固定战斗四种终止状态并携带节点、层数、内容与回合绑定；
+  `RunSession.resolve_battle_result` 拒绝 active、过期节点及不匹配内容种子的结果。
+- 玩家胜利同步绝对进度后继续既有奖励链；战败直接进入 `run_terminated/defeat`，不完成节点、
+  不建立奖励、不结算功行；同归于尽保持 `unresolved_rule`，场景错误保持具体 detail，后二者
+  都不回写可能只执行了一部分的战斗进度。
+- 主动放弃从地图、战斗、待领奖励或 Boss 宝箱阶段进入统一终局，清除待领取奖励与待提交
+  interaction；RunSession 通过 BattleSession 的关闭口取消待处理远程 AI 请求。
+- `RunTerminalResultDTO` 固定 victory、defeat、abandoned、unresolved_rule、scenario_error 五种
+  kind。第三层 Boss 仍在完整奖励与功行成功后才建立 victory；五种结果共用终局 UI。
+- v1 存档以可选 `terminal_result` 保存终局并使用 `show_terminal` 恢复策略；普通旧档继续兼容，
+  缺少该字段的旧 `run_complete` 存档恢复时生成兼容 victory，不提升 schema。
 
 **验收**
 

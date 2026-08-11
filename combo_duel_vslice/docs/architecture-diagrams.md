@@ -256,15 +256,20 @@ classDiagram
     class HandResultDto
     class RewardBundle
     class QiCardInstanceData
+    class BattleFinalResultDTO
+    class RunTerminalResultDTO
 
     BattleSession --> BattleSnapshot
     BattleSession --> BattleEvent
+    BattleSession --> BattleFinalResultDTO
     RunSession --> RunSnapshot
     RunSession --> RunBuildQueryService
     RunBuildQueryService --> RunBuildDTO
     RunBuildDTO --> HandTechniqueLoadoutDTO
     RunBuildDTO --> InnerSkillLoadoutDTO
     RunSession --> RunEvent
+    RunSession --> RunTerminalResultDTO
+    BattleFinalResultDTO --> RunSession : resolve_battle_result
     BattleSession ..> RunProgressSnapshot : 入战导入/战后导出
     RunSession ..> RunProgressSnapshot
     UI --> BattleSnapshot : 只读
@@ -283,12 +288,17 @@ classDiagram
 stateDiagram-v2
     [*] --> awaiting_node : 建局(setup_run)
     awaiting_node --> node_in_progress : 进入节点(begin_node)
-    node_in_progress --> awaiting_reward : 战斗/占位完成，或 interaction commit 成功
+    node_in_progress --> awaiting_reward : player_victory，或非战斗节点成功
+    node_in_progress --> run_terminated : defeat/unresolved_rule/scenario_error
+    awaiting_node --> run_terminated : abandon_run
+    awaiting_reward --> run_terminated : abandon_run
+    boss_chest --> run_terminated : abandon_run
     awaiting_reward --> awaiting_node : 领取普通/精英奖励
     awaiting_reward --> boss_chest : 第1、2层领取 Boss 奖励
     boss_chest --> awaiting_node : 完成 Boss 宝箱并进入下一层
     awaiting_reward --> run_complete : 第3层领取 Boss 奖励
     run_complete --> [*]
+    run_terminated --> [*]
 ```
 
 interaction 路由在进入 `node_in_progress` 之前完成纯 `prepare`。未提交时不能直接
@@ -325,7 +335,36 @@ sequenceDiagram
 `NodeInteractionService` 不推进地图；`NodeRewardService` 不识别交互 kind；
 `MapNavigationService` 不再计算奖励数值。
 
-### 4.3 战斗核心状态机（回合与行动窗口）
+### 4.3 战斗结果到本局终局协议
+
+```mermaid
+sequenceDiagram
+    participant UI as run_main
+    participant BS as BattleSession
+    participant RS as RunSession
+    participant NAV as MapNavigationService
+    participant NRS as NodeRewardService
+
+    UI->>BS: final_result()
+    BS-->>UI: BattleFinalResultDTO
+    UI->>RS: resolve_battle_result(dto, absolute progress)
+    alt player_victory
+        RS->>RS: 同步绝对进度
+        RS->>NAV: complete_current_node_to_reward
+        RS->>NRS: create_bundle
+        NRS-->>UI: awaiting_reward
+    else player_defeat
+        RS->>RS: 同步绝对进度
+        RS->>NAV: terminate_run
+        RS-->>UI: run_terminated / defeat
+    else unresolved_draw 或 scenario_error
+        RS->>RS: 丢弃本场部分进度
+        RS->>NAV: terminate_run
+        RS-->>UI: unresolved_rule / scenario_error
+    end
+```
+
+### 4.4 战斗核心状态机（回合与行动窗口）
 
 ```mermaid
 stateDiagram-v2
@@ -352,7 +391,7 @@ stateDiagram-v2
     BothDown --> [*]
 ```
 
-### 4.4 远程 AI 行动窗口状态机（ActionWindowAiCoordinator）
+### 4.5 远程 AI 行动窗口状态机（ActionWindowAiCoordinator）
 
 ```mermaid
 stateDiagram-v2
@@ -421,11 +460,14 @@ flowchart LR
     E -. 已具备统一协议 .-> O[interaction route<br>prepare/query/commit/cancel]
     O --> H
     F --> H[胜利 → 奖励包 reward_overlay]
-    F --> I[失败后的本局终止推进尚未正式接入]
+    F --> I[战败/规则未确认/场景错误<br>run_terminated + terminal_result]
     H --> J[领取奖励 → 历练 + 修习开放]
     J --> D
     J --> K[第1、2层 Boss 宝箱占位流程 → 下一层]
-    J --> M[第3层 Boss 奖励完成 → run_complete]
+    J --> M[第3层 Boss 奖励与功行完成<br>run_complete + victory]
+    D --> P[放弃本局 → abandoned]
+    I --> Q[统一终局页]
+    M --> Q
     D --> L[修习 practice_overlay<br>买功法/消耗品/冥想]
     L --> D
     D --> N[本局构筑 run_build_overlay<br>真气/消耗品/功法/内功/物品]

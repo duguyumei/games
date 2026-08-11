@@ -8,6 +8,7 @@ const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 
 var navigation = MapNavigationServiceScript.new()
 var growth = GrowthInventoryScript.new()
+var terminal_result = null
 
 func _init(navigation_override = null, growth_override = null) -> void:
     if navigation_override != null:
@@ -82,6 +83,7 @@ var practice_purchases: Dictionary:
         growth.practice_purchases = value
 
 func setup(seed_value: int = 2308) -> void:
+    terminal_result = null
     growth.reset("run-%d" % seed_value)
     navigation.setup(seed_value)
     changed.emit()

@@ -39,6 +39,10 @@ const AiProviderFactoryScript = preload("res://core/ai/providers/ai_provider_fac
 const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const GameLogScript = preload("res://core/game_log.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
+const BattleFinalResultDTOScript = preload(
+    "res://core/battle_final_result_dto.gd")
+const RunTerminalResultDTOScript = preload(
+    "res://core/run_terminal_result_dto.gd")
 const MapGeneratorScript = preload("res://core/map_generator.gd")
 const NodeDispatcherScript = preload("res://core/node_dispatcher.gd")
 const RunStateScript = preload("res://core/run_state.gd")
@@ -78,6 +82,8 @@ const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
 const BattleScene = preload("res://ui/main.tscn")
 const RunScene = preload("res://ui/run_main.tscn")
+const RunTerminalOverlayScript = preload(
+    "res://ui/components/run_terminal_overlay.gd")
 const FrontScene = preload("res://ui/front_main.tscn")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const CardReshapeBehaviorRegistryScript = preload(
@@ -423,6 +429,7 @@ func _initialize() -> void:
     _test_run_service_boundaries_and_progress_snapshot()
     _test_node_interaction_platform_contract()
     _test_run_session_commands_snapshots_events_and_logs()
+    _test_run_terminal_result_contract_and_closure()
     _test_inner_skill_loadout_and_forgetting()
     _test_experience_interest_node_settlement()
     _test_boss_chest_flow()
@@ -5687,7 +5694,7 @@ func _test_run_consumable_phase_gate() -> void:
     var in_progress := session.execute({
         "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
     _assert_true(not in_progress.success, "节点执行中不能使用消耗品")
-    _assert_true(session.execute({"type": "complete_node"}).success, "完成节点进入奖励")
+    _assert_true(_complete_current_node_for_test(session).success, "完成节点进入奖励")
     var reward_phase := session.execute({
         "type": "use_consumable", "slot_index": 0, "selected_instance_ids": []})
     _assert_true(not reward_phase.success, "奖励阶段不能使用消耗品")
@@ -6493,7 +6500,7 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     var rejected := session.execute({"type": "open_practice"})
     _assert_equal(rejected.success, false, "节点未完成时本局会话拒绝打开修习")
 
-    var completion := session.execute({"type": "complete_node"})
+    var completion := _complete_current_node_for_test(session)
     _assert_true(completion.success, "本局会话完成当前节点")
     _assert_equal(session.snapshot().phase, "awaiting_reward", "节点完成后进入待领取奖励阶段")
     _assert_equal(session.snapshot().experience, 0, "领取前奖励不会提前写入历练")
@@ -6541,7 +6548,7 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     boss_state.current_node_id = boss_state.graph["boss_id"]
     boss_state.phase = "node_in_progress"
     var boss_session: RunSession = RunSessionScript.new(boss_state)
-    _assert_true(boss_session.execute({"type": "complete_node"}).success, "Boss 节点完成也经过本局会话")
+    _assert_true(_complete_current_node_for_test(boss_session).success, "Boss 节点完成也经过本局会话")
     _assert_equal(boss_session.snapshot().phase, "awaiting_reward", "Boss胜利先进入奖励阶段")
     _assert_equal(boss_session.snapshot().reward["experience_total"], 5, "Boss奖励包为五点历练")
     var boss_bundle_id := str(boss_session.snapshot().reward["bundle"]["id"])
@@ -6551,6 +6558,288 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     _assert_true(boss_session.execute({"type": "complete_boss_chest"}).success, "Boss 宝箱流程通过本局命令完成")
     _assert_equal(boss_session.snapshot().act, 2, "Boss 宝箱命令推进到下一层")
     _assert_equal(boss_session.snapshot().run_log.size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
+
+func _test_run_terminal_result_contract_and_closure() -> void:
+    _assert_equal(
+        BattleFinalResultDTOScript.from_dict({
+            "schema_version": 1,
+            "battle_state": "active",
+        }),
+        null,
+        "active 战斗不能建立正式 BattleFinalResultDTO")
+
+    var stale_session: RunSession = RunSessionScript.new()
+    _assert_true(stale_session.execute({
+        "type": "setup_run", "seed": 94001,
+    }).success, "过期战斗结果测试建立本局")
+    var stale_node := str(stale_session.snapshot().available_node_ids[0])
+    var stale_begin := stale_session.execute({
+        "type": "begin_node", "node_id": stale_node,
+    })
+    var stale_dispatch: Dictionary = stale_begin.payload_value("dispatch", {})
+    var stale_result = _battle_final_result_for_test(
+        stale_dispatch, "player_victory", "测试胜利", 2)
+    stale_result.content_seed += 1
+    _assert_true(not stale_session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": stale_result,
+        "progress_snapshot": stale_session.progress_snapshot(),
+    }).success, "过期 content_seed 的战斗结果被拒绝")
+    _assert_equal(stale_session.snapshot().phase, "node_in_progress", "过期结果不推进节点")
+    _assert_true(not stale_session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": null,
+        "progress_snapshot": stale_session.progress_snapshot(),
+    }).success, "active/空战斗结果被统一命令拒绝")
+    var victory: RunSession = RunSessionScript.new()
+    _assert_true(victory.execute({
+        "type": "setup_run", "seed": 94002,
+    }).success, "胜利结果测试建立本局")
+    var victory_node := str(victory.snapshot().available_node_ids[0])
+    var victory_begin := victory.execute({
+        "type": "begin_node", "node_id": victory_node,
+    })
+    var victory_dispatch: Dictionary = victory_begin.payload_value("dispatch", {})
+    var victory_progress_values := victory.progress_snapshot().to_dict()
+    victory_progress_values["life"] = 83
+    var victory_command := victory.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            victory_dispatch, "player_victory", "玩家胜利", 4),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            victory_progress_values),
+    })
+    _assert_true(victory_command.success, "玩家胜利结果通过统一命令结算")
+    _assert_equal(victory.snapshot().phase, "awaiting_reward", "玩家胜利同步进度后进入 awaiting_reward")
+    _assert_equal(victory.snapshot().growth.get("life"), 83, "胜利同步绝对战斗生命")
+    _assert_true(victory.snapshot().completed_node_ids.has(victory_node), "胜利节点标记完成")
+    _assert_true(victory.snapshot().reward.get("available", false), "胜利建立 NodeRewardService 奖励")
+
+    var defeat: RunSession = RunSessionScript.new()
+    _assert_true(defeat.execute({
+        "type": "setup_run", "seed": 94003,
+    }).success, "战败结果测试建立本局")
+    var defeat_node := str(defeat.snapshot().available_node_ids[0])
+    var defeat_begin := defeat.execute({
+        "type": "begin_node", "node_id": defeat_node,
+    })
+    var defeat_dispatch: Dictionary = defeat_begin.payload_value("dispatch", {})
+    var defeat_progress_values := defeat.progress_snapshot().to_dict()
+    defeat_progress_values["life"] = 0
+    var defeat_result = _battle_final_result_for_test(
+        defeat_dispatch, "player_defeat", "玩家生命归零", 5)
+    var defeated := defeat.execute({
+        "type": "resolve_battle_result",
+        "battle_result": defeat_result,
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            defeat_progress_values),
+    })
+    _assert_true(defeated.success, "战败结果成功进入本局终局")
+    _assert_equal(defeat.snapshot().phase, "run_terminated", "战败进入 run_terminated")
+    _assert_equal(defeat.snapshot().terminal_result.get("kind"), "defeat", "战败终局 kind 稳定")
+    _assert_equal(defeat.snapshot().growth.get("life"), 0, "战败绝对进度保留生命归零")
+    _assert_true(not defeat.snapshot().completed_node_ids.has(defeat_node), "失败节点不进入 completed_node_ids")
+    _assert_true(not defeat.snapshot().reward.get("available", false), "战败不建立节点奖励")
+    _assert_equal(defeat.snapshot().experience, 0, "战败不增加基础历练或结算功行")
+    _assert_equal(defeat.snapshot().act, 1, "战败不推进层数")
+    _assert_true(not defeat.execute({"type": "begin_node", "node_id": defeat_node}).success, "终局后节点选择锁定")
+    _assert_true(not defeat.execute({"type": "claim_reward", "bundle_id": ""}).success, "终局后奖励领取锁定")
+    _assert_true(not defeat.execute({"type": "open_practice"}).success, "终局后修习锁定")
+    _assert_true(not defeat.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": [],
+        "technique_slot_index": 0,
+    }).success, "终局后构筑修改锁定")
+    var terminal_log_count := _count_run_log_category(defeat, "run_defeated")
+    _assert_true(not defeat.execute({
+        "type": "resolve_battle_result",
+        "battle_result": defeat_result,
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            defeat_progress_values),
+    }).success, "同一战斗结果重复提交被拒绝")
+    _assert_equal(
+        _count_run_log_category(defeat, "run_defeated"),
+        terminal_log_count,
+        "重复战斗结果不重复写终局日志")
+
+    var unresolved: RunSession = RunSessionScript.new()
+    unresolved.execute({"type": "setup_run", "seed": 94004})
+    var unresolved_node := str(unresolved.snapshot().available_node_ids[0])
+    var unresolved_begin := unresolved.execute({
+        "type": "begin_node", "node_id": unresolved_node,
+    })
+    var unresolved_progress_values := unresolved.progress_snapshot().to_dict()
+    unresolved_progress_values["life"] = 1
+    unresolved_progress_values["experience"] = 77
+    var unresolved_result := unresolved.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            unresolved_begin.payload_value("dispatch", {}),
+            "unresolved_draw", "双方同时倒下", 6),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            unresolved_progress_values),
+    })
+    _assert_true(unresolved_result.success, "同归于尽结果可以正式终止本局")
+    _assert_equal(unresolved.snapshot().terminal_result.get("kind"), "unresolved_rule", "同归于尽保持规则未确认而非战败")
+    _assert_equal(unresolved.snapshot().experience, 0, "规则未确认不应用本场部分进度")
+    _assert_true(unresolved.snapshot().terminal_result.get("detail", "").contains("尚未确认"), "规则未确认保留明确说明")
+
+    var scenario: RunSession = RunSessionScript.new()
+    scenario.execute({"type": "setup_run", "seed": 94005})
+    var scenario_node := str(scenario.snapshot().available_node_ids[0])
+    var scenario_begin := scenario.execute({
+        "type": "begin_node", "node_id": scenario_node,
+    })
+    var scenario_progress_values := scenario.progress_snapshot().to_dict()
+    scenario_progress_values["life"] = 1
+    scenario_progress_values["experience"] = 99
+    var scenario_result := scenario.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            scenario_begin.payload_value("dispatch", {}),
+            "scenario_error", "测试场景脚本在第 4 步失败", 3),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            scenario_progress_values),
+    })
+    _assert_true(scenario_result.success, "场景错误进入技术终止")
+    _assert_equal(scenario.snapshot().terminal_result.get("kind"), "scenario_error", "场景错误不映射为普通战败")
+    _assert_equal(scenario.snapshot().experience, 0, "场景错误不应用部分战斗进度")
+    _assert_equal(scenario.snapshot().growth.get("life"), 100, "场景错误保留战前生命")
+    _assert_equal(scenario.snapshot().terminal_result.get("detail"), "测试场景脚本在第 4 步失败", "场景错误保留具体 detail")
+
+    victory._node_interaction_service._pending = {"test_pending": true}
+    var abandoned := victory.execute({"type": "abandon_run"})
+    _assert_true(abandoned.success, "awaiting_reward 阶段允许主动放弃")
+    _assert_equal(victory.snapshot().terminal_result.get("kind"), "abandoned", "主动放弃建立 abandoned 终局")
+    _assert_true(not victory.snapshot().reward.get("available", false), "放弃清除未领取奖励")
+    _assert_true(victory._node_interaction_service.capture_pending().is_empty(), "放弃清除 pending interaction")
+    var abandon_logs := _count_run_log_category(victory, "run_abandoned")
+    _assert_true(not victory.execute({"type": "abandon_run"}).success, "重复放弃被拒绝")
+    _assert_equal(_count_run_log_category(victory, "run_abandoned"), abandon_logs, "重复放弃不重复写日志")
+
+    var remote_run: RunSession = RunSessionScript.new()
+    remote_run.execute({"type": "setup_run", "seed": 94006})
+    var remote_node := str(remote_run.snapshot().available_node_ids[0])
+    var remote_begin := remote_run.execute({
+        "type": "begin_node", "node_id": remote_node,
+    })
+    var remote_dispatch: Dictionary = remote_begin.payload_value("dispatch", {})
+    var remote_provider = MockAiProviderScript.new(false)
+    var remote_battle: BattleSession = remote_run.create_battle_session()
+    remote_battle.use_ai_provider(remote_provider)
+    remote_dispatch["battle"]["use_remote_ai"] = true
+    remote_dispatch["battle"]["use_enemy_ai"] = true
+    _assert_true(remote_battle.setup_battle(
+        remote_dispatch, remote_run.progress_snapshot()), "放弃测试建立远程 AI 战斗")
+    _assert_true(remote_battle.execute({"type": "start_turn"}).success, "放弃测试打开远程 AI 行动窗口")
+    _assert_true(not remote_provider.pending.is_empty(), "放弃前远程 Provider 存在待处理请求")
+    _assert_true(remote_run.execute({"type": "abandon_run"}).success, "等待远程 AI 时可以放弃本局")
+    _assert_true(remote_provider.pending.is_empty(), "放弃通过 BattleSession 公开关闭方法取消远程请求")
+    remote_provider.free()
+
+    var defeat_save = RunSaveDataScript.new().capture(defeat)
+    _assert_equal(defeat_save.to_dict()["node_state"]["resume_policy"], "show_terminal", "终局存档使用 show_terminal")
+    var defeat_restored: Dictionary = defeat_save.restore_session()
+    _assert_true(defeat_restored.get("success", false), "战败终局存档可以恢复")
+    _assert_equal(defeat_restored.get("resume_policy"), "show_terminal", "终局读档返回 show_terminal")
+    _assert_equal(
+        defeat_restored["run_session"].snapshot().terminal_result,
+        defeat.snapshot().terminal_result,
+        "终局存档往返保持完整结果")
+
+    var final_state = RunStateScript.new()
+    final_state.setup(94007)
+    final_state.navigation.act = 3
+    final_state.navigation.graph = final_state.navigation.map_generator.generate(
+        final_state.navigation.seed, 3)
+    final_state.current_node_id = str(final_state.graph["boss_id"])
+    final_state.phase = "node_in_progress"
+    var final_run: RunSession = RunSessionScript.new(final_state)
+    var final_dispatch := final_run._current_node_dispatch()
+    _assert_true(final_run.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            final_dispatch, "player_victory", "第三层 Boss 胜利", 9),
+        "progress_snapshot": final_run.progress_snapshot(),
+    }).success, "第三层 Boss 胜利先建立奖励")
+    var final_bundle := str(final_run.snapshot().reward["bundle"]["id"])
+    _assert_true(final_run.execute({
+        "type": "claim_reward", "bundle_id": final_bundle,
+    }).success, "第三层 Boss 完整奖励可以领取")
+    _assert_equal(final_run.snapshot().phase, "run_complete", "第三层 Boss 奖励后保持原 run_complete 流程")
+    _assert_equal(final_run.snapshot().terminal_result.get("kind"), "victory", "完整奖励与功行后才建立 victory 终局")
+    var legacy_terminal_save: Dictionary = (
+        RunSaveDataScript.new().capture(final_run).to_dict())
+    legacy_terminal_save["node_state"].erase("terminal_result")
+    legacy_terminal_save["node_state"]["resume_policy"] = "resume_boundary"
+    var legacy_terminal_restore := RunSaveDataScript.new(
+        legacy_terminal_save).restore_session()
+    _assert_true(legacy_terminal_restore.get("success", false), "旧 run_complete 存档缺少 terminal_result 仍可恢复")
+    _assert_equal(
+        legacy_terminal_restore["run_session"].snapshot().terminal_result.get("kind"),
+        "victory",
+        "旧 run_complete 恢复时生成兼容 victory 结果")
+
+    var overlay = RunTerminalOverlayScript.new()
+    root.add_child(overlay)
+    for kind in RunTerminalResultDTOScript.KINDS:
+        var battle_state: String = {
+            "victory": "player_victory",
+            "defeat": "player_defeat",
+            "abandoned": "",
+            "unresolved_rule": "unresolved_draw",
+            "scenario_error": "scenario_error",
+        }[kind]
+        overlay.present({
+            "schema_version": 1,
+            "kind": kind,
+            "source": "ui_test",
+            "detail": "UI detail %s" % kind,
+            "battle_state": battle_state,
+            "act": 2,
+            "node_id": "node-ui",
+            "node_type": "combat",
+            "turn_number": 3,
+        }, {"act": 2, "current_node_id": "node-ui", "experience": 17})
+        _assert_equal(overlay.presented_kind, kind, "终局 UI 展示 %s kind" % kind)
+        _assert_equal(overlay.detail_label.text, "UI detail %s" % kind, "终局 UI 展示 %s 具体说明" % kind)
+        _assert_true(overlay.progress_label.text.contains("17"), "终局 UI 展示 %s 当前历练" % kind)
+    overlay.queue_free()
+
+func _battle_final_result_for_test(
+        dispatch: Dictionary,
+        battle_state: String,
+        detail: String,
+        turn_number: int):
+    return BattleFinalResultDTOScript.from_dict({
+        "schema_version": 1,
+        "battle_state": battle_state,
+        "detail": detail,
+        "node_id": str(dispatch.get("node_id", "")),
+        "act": int(dispatch.get("act", 1)),
+        "node_type": str(dispatch.get("node_type", "")),
+        "content_id": str(dispatch.get("content_id", "")),
+        "content_seed": int(dispatch.get("content_seed", 0)),
+        "turn_number": turn_number,
+    })
+
+func _complete_current_node_for_test(session: RunSession) -> CommandResult:
+    var dispatch: Dictionary = session._current_node_dispatch()
+    if str(dispatch.get("route", "")) != "battle":
+        return session.execute({"type": "complete_node"})
+    return session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            dispatch, "player_victory", "测试节点胜利", 1),
+        "progress_snapshot": session.progress_snapshot(),
+    })
+
+func _count_run_log_category(session: RunSession, category: String) -> int:
+    var count := 0
+    for entry in session.snapshot().run_log:
+        if str(entry.get("category", "")) == category:
+            count += 1
+    return count
 
 func _test_inner_skill_loadout_and_forgetting() -> void:
     var production_catalog = ContentCatalogScript.new()
@@ -6840,7 +7129,7 @@ func _test_inner_skill_loadout_and_forgetting() -> void:
     _assert_true(not node_query.payload_value("loadout").get("editable", true), "节点中 DTO 标记不可编辑")
     _assert_true(str(node_query.payload_value("loadout").get("blocked_reason", "")) != "", "不可编辑 DTO 提供门禁原因")
     _assert_true(gate_session.execute({"type": "get_hand_technique_loadout", "hand_id": "high_card"}).success, "功法序列查询不受修改门禁影响")
-    _assert_true(gate_session.execute({"type": "complete_node"}).success, "构筑门禁测试进入待领奖励阶段")
+    _assert_true(_complete_current_node_for_test(gate_session).success, "构筑门禁测试进入待领奖励阶段")
     _assert_true(not gate_session.execute({
         "type": "set_inner_skill_loadout",
         "equipped_inner_skill_ids": [],
@@ -6932,7 +7221,7 @@ func _interest_test_session(node_type: String, starting_experience: int) -> RunS
 
 func _claim_interest_test_node(session: RunSession) -> CommandResult:
     _assert_true(
-        session.execute({"type": "complete_node"}).success,
+        _complete_current_node_for_test(session).success,
         "功行测试节点建立奖励包")
     var bundle_id := str(session.snapshot().reward.get("bundle", {}).get("id", ""))
     var result := session.execute({"type": "claim_reward", "bundle_id": bundle_id})
@@ -7035,7 +7324,7 @@ func _test_layered_life_progression_and_battle_persistence() -> void:
     final_session.navigation.current_node_id = final_session.navigation.graph["boss_id"]
     final_session.navigation.phase = "node_in_progress"
     _assert_true(
-        final_session.execute({"type": "complete_node"}).success,
+        _complete_current_node_for_test(final_session).success,
         "第三层 Boss 胜利建立最终奖励")
     var final_bundle_id := str(final_session.snapshot().reward["bundle"]["id"])
     _assert_true(
@@ -7447,12 +7736,20 @@ func _test_map_practice_and_battle_scene_integration() -> void:
     run_ui._close_practice()
     var first_node_id: String = str(run_ui.run_session.snapshot().available_node_ids[0])
     run_ui._on_node_selected(first_node_id)
+    if not run_ui.current_battle.is_node_ready():
+        run_ui.current_battle.battle_session.setup_battle(
+            run_ui.current_battle.battle_configuration,
+            run_ui.run_session.progress_snapshot())
     _assert_equal(run_ui.run_session.snapshot().phase, "node_in_progress", "地图选择战斗节点后进入未完成状态")
     _assert_true(run_ui.battle_layer.visible and run_ui.current_battle != null, "战斗节点接入现有战斗场景")
     _assert_equal(
         run_ui.current_battle.battle_configuration["content_id"],
         "representative_combat",
         "地图 UI 使用调度结果创建战斗而不自行选择内容")
+    _assert_equal(
+        run_ui.current_battle.battle_configuration.get("node_id", "missing"),
+        first_node_id,
+        "地图 UI 将当前节点 ID 传入战斗配置")
     _assert_true(
         int(run_ui.current_battle.battle_configuration["content_seed"]) > 0,
         "地图 UI 将节点稳定内容种子传入战斗场景")
@@ -7464,8 +7761,23 @@ func _test_map_practice_and_battle_scene_integration() -> void:
         and not run_ui.run_build_overlay._build.editable,
         "节点进行中构筑页保持可见并使用 DTO 只读门禁")
     run_ui._close_run_build()
+    run_ui.current_battle.battle_session.engine.battle_state = "player_victory"
+    run_ui.current_battle.battle_session.engine.battle_state_detail = "测试胜利"
+    var ui_final_result = run_ui.current_battle.final_result()
+    _assert_equal(
+        run_ui.current_battle.battle_session._battle_binding.get(
+            "node_id", "missing"),
+        first_node_id,
+        "BattleSession 保存地图节点绑定")
+    _assert_equal(
+        ui_final_result.node_id,
+        first_node_id,
+        "战斗 UI 的正式结果保留当前节点绑定")
     run_ui._on_battle_finished("player_victory")
-    _assert_equal(run_ui.run_session.snapshot().phase, "awaiting_reward", "战斗胜利后进入可见奖励阶段")
+    _assert_equal(
+        run_ui.run_session.snapshot().phase,
+        "awaiting_reward",
+        "战斗胜利后进入可见奖励阶段：%s" % run_ui.toast_label.text)
     _assert_equal(run_ui.run_session.snapshot().experience, 0, "领取前战斗奖励不会提前到账")
     _assert_true(run_ui.reward_overlay.visible, "战斗胜利后显示奖励结算页面")
     _assert_true(run_ui.practice_button.disabled, "奖励领取期间修习保持锁定")

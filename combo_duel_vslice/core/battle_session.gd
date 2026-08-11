@@ -19,6 +19,8 @@ const BattleAiAdapterScript = preload("res://core/ai/battle_ai_adapter.gd")
 const AiProviderFactoryScript = preload("res://core/ai/providers/ai_provider_factory.gd")
 const AiConversationStoreScript = preload("res://core/ai/ai_conversation_store.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
+const BattleFinalResultDTOScript = preload(
+    "res://core/battle_final_result_dto.gd")
 
 var engine
 var _battle_setup_service
@@ -40,6 +42,7 @@ var _ai_runtime_profile: Dictionary = {}
 var _ai_conversation_store = AiConversationStoreScript.new()
 var _ai_conversation_path: String = ""
 var runtime_profile
+var _battle_binding: Dictionary = {}
 
 static var _ai_attempt_serial: int = 0
 
@@ -99,6 +102,8 @@ func _notification(what: int) -> void:
 func setup_battle(
         configuration: Dictionary = {},
         progress_snapshot: RunProgressSnapshot = null) -> bool:
+    close_battle()
+    _battle_binding.clear()
     engine.game_log.clear("battle")
     _event_queue.clear()
     _history_cursor = 0
@@ -150,6 +155,13 @@ func setup_battle(
             "conversation_directory",
             AiConversationStoreScript.DEFAULT_DIRECTORY)))
     _ai_settings["conversation_path"] = _ai_conversation_path
+    _battle_binding = {
+        "node_id": str(configuration.get("node_id", "")),
+        "act": act,
+        "node_type": node_type,
+        "content_id": str(configuration.get("content_id", "")),
+        "content_seed": int(configuration.get("content_seed", 2308)),
+    }
     _player_run_deck = _battle_setup_service.run_deck_from_progress(progress_snapshot)
     var player_cards = (
         _player_run_deck.create_battle_cards()
@@ -287,6 +299,34 @@ func apply_player_progress_from(progress_snapshot: RunProgressSnapshot) -> void:
 
 func player_progress_snapshot() -> RunProgressSnapshot:
     return _battle_setup_service.capture_progress(engine.player, _player_run_deck)
+
+## 只在战斗已经结束后建立正式结果；active 永远没有 BattleFinalResultDTO。
+func final_result():
+    if engine.battle_state not in BattleFinalResultDTOScript.TERMINAL_STATES:
+        return null
+    var values := _battle_binding.duplicate(true)
+    values.merge({
+        "schema_version": BattleFinalResultDTOScript.SCHEMA_VERSION,
+        "battle_state": engine.battle_state,
+        "detail": engine.battle_state_detail,
+        "turn_number": engine.turn_number,
+    }, true)
+    return BattleFinalResultDTOScript.from_dict(values)
+
+## 关闭当前远程 AI 行动窗口。调用方无需接触 provider 或 gateway。
+func close_battle() -> bool:
+    var had_pending_remote_request := false
+    if ai_coordinator != null:
+        had_pending_remote_request = (
+            str(ai_coordinator.state)
+            == ActionWindowAiCoordinatorScript.THINKING)
+        ai_coordinator.close_window()
+    if engine != null:
+        engine.use_external_enemy_actions(false)
+        if engine.enemy_planning_service != null:
+            engine.enemy_planning_service.clear_action_lock()
+    _remote_ai_enabled = false
+    return had_pending_remote_request
 
 func combat_order_labels(technique_name: String = "当前功法") -> Array[String]:
     return engine.combat_order_labels(engine.player, technique_name)

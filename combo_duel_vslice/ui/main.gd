@@ -84,6 +84,12 @@ func configure_run_context(
 func player_progress_snapshot() -> RunProgressSnapshot:
     return battle_session.player_progress_snapshot()
 
+func final_result():
+    return battle_session.final_result()
+
+func close_battle() -> bool:
+    return battle_session.close_battle()
+
 func _build_interface() -> void:
     var background = FeltBackgroundScript.new()
     background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

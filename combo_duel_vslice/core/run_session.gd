@@ -37,6 +37,10 @@ const RunBuildQueryServiceScript = preload(
     "res://core/run_build_query_service.gd")
 const NodeInteractionServiceScript = preload(
     "res://core/node_interactions/node_interaction_service.gd")
+const BattleFinalResultDTOScript = preload(
+    "res://core/battle_final_result_dto.gd")
+const RunTerminalResultDTOScript = preload(
+    "res://core/run_terminal_result_dto.gd")
 
 var game_log
 var _run_state
@@ -59,6 +63,8 @@ var _inner_skill_loadout_service
 var _run_build_query_service
 var _node_interaction_service
 var _pending_reward = null
+var _active_battle_session = null
+var _pending_victory_battle_result: Dictionary = {}
 var selected_starter_build_id: String = ""
 var runtime_profile
 
@@ -173,6 +179,7 @@ func create_battle_session() -> BattleSession:
             and _ai_settings_service.has_method("runtime_profile"):
         session.configure_ai_runtime(
             _ai_settings_service.runtime_profile(true))
+    _active_battle_session = session
     return session
 
 func configure_ai_settings_service(service) -> void:
@@ -201,6 +208,12 @@ func execute(command: Dictionary) -> CommandResult:
             result = _begin_node(str(command.get("node_id", "")))
         "complete_node":
             result = _complete_node()
+        "resolve_battle_result":
+            result = _resolve_battle_result(
+                command.get("battle_result"),
+                command.get("progress_snapshot"))
+        "abandon_run":
+            result = _abandon_run()
         "query_node_interaction":
             result = _query_node_interaction()
         "commit_node_interaction":
@@ -260,8 +273,10 @@ func execute(command: Dictionary) -> CommandResult:
                 command.get("choice_payload", {}))
         _:
             result = {"success": false, "reason": "未知本局命令：%s" % command_type}
-    if not result.get("success", false):
+    if not result.get("success", false) \
+            and not bool(result.get("suppress_rejection_log", false)):
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
+    result.erase("suppress_rejection_log")
     return CommandResultScript.from_dict(command_type, result)
 
 func snapshot() -> RunSnapshot:
@@ -290,6 +305,9 @@ func snapshot() -> RunSnapshot:
         "system_log": game_log.entries("system", 200),
         "runtime_mode": runtime_profile.mode_name(),
         "debug_menu_enabled": runtime_profile.allows_debug_menu(),
+        "terminal_result": (
+            _run_state.terminal_result.to_dict()
+            if _run_state.terminal_result != null else {}),
     })
 
 func drain_events() -> Array:
@@ -337,12 +355,15 @@ func _setup_run(seed_value: int, starter_build_id: String) -> Dictionary:
         build_check["definition"], "run-%d" % seed_value)
     if not assembled.get("success", false):
         return assembled
+    _close_active_battle_session()
     game_log.clear("run")
     game_log.clear("battle")
     _event_queue.clear()
     _event_serial = 0
     _pending_reward = null
+    _pending_victory_battle_result.clear()
     _node_interaction_service.clear()
+    _run_state.terminal_result = null
     growth.reset(
         "run-%d" % seed_value,
         assembled["run_deck"],
@@ -420,6 +441,200 @@ func _begin_node(node_id: String) -> Dictionary:
         "route": dispatch.get("route", ""),
     })
     return result
+
+func _resolve_battle_result(
+        battle_result,
+        progress_snapshot) -> Dictionary:
+    if navigation.phase != "node_in_progress":
+        return {
+            "success": false,
+            "reason": "当前没有可结算的进行中战斗",
+            "suppress_rejection_log": navigation.is_terminal(),
+        }
+    var gate := _validate_battle_final_result(battle_result)
+    if not gate.get("success", false):
+        return gate
+    var state := str(battle_result.battle_state)
+    if state in ["player_victory", "player_defeat"] \
+            and not progress_snapshot is RunProgressSnapshot:
+        return {"success": false, "reason": "战斗结果缺少绝对 progress_snapshot"}
+    _close_active_battle_session()
+    match state:
+        "player_victory":
+            sync_progress_snapshot(progress_snapshot)
+            _pending_victory_battle_result = battle_result.to_dict()
+            var completion := _complete_node_to_reward()
+            if not completion.get("success", false):
+                _pending_victory_battle_result.clear()
+                return completion
+            return completion
+        "player_defeat":
+            sync_progress_snapshot(progress_snapshot)
+            return _terminate_from_battle_result(
+                battle_result, "defeat", "玩家在战斗中失败")
+        "unresolved_draw":
+            return _terminate_from_battle_result(
+                battle_result,
+                "unresolved_rule",
+                "双方同时倒下\n当前胜负规则尚未确认，本局无法继续结算。")
+        "scenario_error":
+            return _terminate_from_battle_result(
+                battle_result, "scenario_error", str(battle_result.detail))
+    return {"success": false, "reason": "未知战斗终止状态"}
+
+func _validate_battle_final_result(battle_result) -> Dictionary:
+    if battle_result == null \
+            or battle_result.get_script() != BattleFinalResultDTOScript \
+            or not battle_result.is_terminal():
+        return {"success": false, "reason": "battle_result 必须是已终止战斗的正式 DTO"}
+    var dispatch := _current_node_dispatch()
+    if not dispatch.get("success", false):
+        return dispatch
+    if str(dispatch.get("route", "")) != "battle":
+        return {"success": false, "reason": "当前节点不是战斗路由"}
+    if str(battle_result.node_id) != navigation.current_node_id:
+        return {"success": false, "reason": "战斗结果 node_id 已过期或不匹配"}
+    if int(battle_result.act) != navigation.act:
+        return {"success": false, "reason": "战斗结果 act 已过期或不匹配"}
+    if int(battle_result.content_seed) != int(dispatch.get("content_seed", 0)):
+        return {"success": false, "reason": "战斗结果 content_seed 已过期或不匹配"}
+    if str(battle_result.content_id) != str(dispatch.get("content_id", "")):
+        return {"success": false, "reason": "战斗结果 content_id 已过期或不匹配"}
+    if str(battle_result.node_type) != str(dispatch.get("node_type", "")):
+        return {"success": false, "reason": "战斗结果 node_type 不匹配"}
+    return {"success": true, "dispatch": dispatch}
+
+func _terminate_from_battle_result(
+        battle_result,
+        kind: String,
+        default_detail: String) -> Dictionary:
+    var detail := str(battle_result.detail)
+    if kind == "unresolved_rule":
+        detail = default_detail
+    elif detail == "":
+        detail = default_detail
+    var terminal = RunTerminalResultDTOScript.from_dict({
+        "schema_version": RunTerminalResultDTOScript.SCHEMA_VERSION,
+        "kind": kind,
+        "source": "battle",
+        "detail": detail,
+        "battle_state": str(battle_result.battle_state),
+        "act": int(battle_result.act),
+        "node_id": str(battle_result.node_id),
+        "node_type": str(battle_result.node_type),
+        "turn_number": int(battle_result.turn_number),
+    })
+    if terminal == null:
+        return {"success": false, "reason": "无法建立本局终局结果"}
+    return _enter_terminal(terminal, false)
+
+func _abandon_run() -> Dictionary:
+    if navigation.is_terminal() or _run_state.terminal_result != null:
+        return {
+            "success": false,
+            "reason": "本局已经结束，不能重复放弃",
+            "suppress_rejection_log": true,
+        }
+    if navigation.phase not in [
+            "awaiting_node", "node_in_progress", "awaiting_reward", "boss_chest"]:
+        return {"success": false, "reason": "当前阶段不能放弃本局"}
+    var node: Dictionary = navigation.node_definition(navigation.current_node_id)
+    var terminal = RunTerminalResultDTOScript.from_dict({
+        "schema_version": RunTerminalResultDTOScript.SCHEMA_VERSION,
+        "kind": "abandoned",
+        "source": "player_command",
+        "detail": "玩家主动放弃本局",
+        "battle_state": "",
+        "act": navigation.act,
+        "node_id": navigation.current_node_id,
+        "node_type": str(node.get("type", "")),
+        "turn_number": 0,
+    })
+    return _enter_terminal(terminal, false)
+
+func _enter_terminal(terminal_result, already_complete: bool) -> Dictionary:
+    if terminal_result == null or not terminal_result.is_valid():
+        return {"success": false, "reason": "终局结果无效"}
+    if _run_state.terminal_result != null:
+        return {
+            "success": false,
+            "reason": "本局终局已经记录",
+            "suppress_rejection_log": true,
+        }
+    _close_active_battle_session()
+    if already_complete:
+        if navigation.phase != "run_complete" or not terminal_result.is_victory():
+            return {"success": false, "reason": "通关终局与本局阶段不一致"}
+    else:
+        var transition: Dictionary = navigation.terminate_run()
+        if not transition.get("success", false):
+            return transition
+    _pending_reward = null
+    _pending_victory_battle_result.clear()
+    _node_interaction_service.clear()
+    _run_state.terminal_result = terminal_result
+    _run_state.changed.emit()
+    var event_type := _terminal_event_type(terminal_result.kind)
+    var metadata := {
+        "kind": terminal_result.kind,
+        "act": terminal_result.act,
+        "node_id": terminal_result.node_id,
+        "node_type": terminal_result.node_type,
+        "battle_state": terminal_result.battle_state,
+        "turn_number": terminal_result.turn_number,
+    }
+    var entry: Dictionary = game_log.record_run(
+        event_type,
+        _terminal_title(terminal_result.kind),
+        terminal_result.detail,
+        metadata)
+    _queue_event(event_type, entry, metadata)
+    return {
+        "success": true,
+        "phase": navigation.phase,
+        "terminal_result": terminal_result.to_dict(),
+    }
+
+func _complete_victory_terminal() -> Dictionary:
+    var node: Dictionary = navigation.node_definition(navigation.current_node_id)
+    var battle_values := _pending_victory_battle_result
+    var terminal = RunTerminalResultDTOScript.from_dict({
+        "schema_version": RunTerminalResultDTOScript.SCHEMA_VERSION,
+        "kind": "victory",
+        "source": "battle_reward",
+        "detail": "第三层 Boss 的完整奖励与功行已经结算，本局通关。",
+        "battle_state": str(battle_values.get("battle_state", "player_victory")),
+        "act": navigation.act,
+        "node_id": navigation.current_node_id,
+        "node_type": str(node.get("type", battle_values.get("node_type", "boss"))),
+        "turn_number": int(battle_values.get("turn_number", 0)),
+    })
+    return _enter_terminal(terminal, true)
+
+func _terminal_event_type(kind: String) -> String:
+    return {
+        "victory": "run_completed",
+        "defeat": "run_defeated",
+        "abandoned": "run_abandoned",
+        "unresolved_rule": "run_rule_unresolved",
+        "scenario_error": "run_scenario_error",
+    }.get(kind, "run_terminated")
+
+func _terminal_title(kind: String) -> String:
+    return {
+        "victory": "本局通关",
+        "defeat": "本局战败",
+        "abandoned": "本局已放弃",
+        "unresolved_rule": "本局因规则未确认而终止",
+        "scenario_error": "本局因场景错误而终止",
+    }.get(kind, "本局结束")
+
+func _close_active_battle_session() -> bool:
+    if _active_battle_session == null:
+        return false
+    var cancelled := bool(_active_battle_session.close_battle())
+    _active_battle_session = null
+    return cancelled
 
 func _complete_node() -> Dictionary:
     var dispatch := _current_node_dispatch()
@@ -574,6 +789,12 @@ func _claim_reward(bundle_id: String) -> Dictionary:
         _practice_service.start_new_shop(
             growth, navigation.seed, navigation.act,
             int(growth.practice_shop_state.get("shop_index", 0)) + 1)
+    elif navigation_result.get("phase", "") == "run_complete":
+        var terminal_result := _complete_victory_terminal()
+        if not terminal_result.get("success", false):
+            return terminal_result
+        navigation_result["terminal_result"] = terminal_result.get(
+            "terminal_result", {}).duplicate(true)
     return navigation_result
 
 func _reward_snapshot() -> Dictionary:
