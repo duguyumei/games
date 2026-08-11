@@ -12,6 +12,7 @@ var order_id: String = "zone"
 var limit: int = -1
 var filters: Dictionary = {}
 var _filters_type_valid: bool = true
+var card_identity_policy = null
 
 func configure(spec: Dictionary):
     side_id = str(spec.get("side", "actor"))
@@ -21,6 +22,7 @@ func configure(spec: Dictionary):
     var filter_values = spec.get("filters", {})
     _filters_type_valid = filter_values is Dictionary
     filters = filter_values.duplicate(true) if _filters_type_valid else {}
+    card_identity_policy = spec.get("card_identity_policy")
     return self
 
 func validate() -> Dictionary:
@@ -66,7 +68,15 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
     var cards: Array = _zone_cards(context, side)
     var matches: Array = []
     for card in cards:
-        if _matches(card):
+        var facts = null
+        if card_identity_policy != null and card_identity_policy.has_method("resolve"):
+            var identity: Dictionary = card_identity_policy.resolve(card, {
+                "owner": context.actor, "actor": context.actor, "target": context.target,
+            })
+            if not identity.get("success", false):
+                return {"success": false, "reason": identity.get("reason", "卡牌身份查询失败"), "cards": []}
+            facts = identity.get("facts")
+        if _matches(card, facts):
             matches.append(card)
     if order_id == "top":
         matches.reverse()
@@ -104,25 +114,25 @@ func _zone_cards(context, side) -> Array:
         "discard_pile": return side.discard_pile.duplicate()
     return []
 
-func _matches(card) -> bool:
+func _matches(card, facts = null) -> bool:
     var card_kind := str(filters.get("card_kind", "any"))
-    if card_kind == "normal" and not card.is_card_kind("normal"):
+    if card_kind == "normal" and not (facts.is_card_kind("normal") if facts != null else card.is_card_kind("normal")):
         return false
     if filters.has("attributes"):
         var matches_attribute := false
         for attribute in filters["attributes"]:
-            if card.is_attribute(str(attribute)):
+            if _card_has_attribute(card, str(attribute), facts):
                 matches_attribute = true
                 break
         if not matches_attribute:
             return false
     if filters.has("exclude_attributes"):
         for attribute in filters["exclude_attributes"]:
-            if card.is_attribute(str(attribute)):
+            if _card_has_attribute(card, str(attribute), facts):
                 return false
-    var rank_name: String = card.current_rank_name() \
+    var rank_name: String = str(facts.rank_name) if facts != null else card.current_rank_name() \
         if card.has_method("current_rank_name") else str(card.rank_name)
-    var rank_order: int = card.current_rank_order() \
+    var rank_order: int = int(facts.rank_order) if facts != null else card.current_rank_order() \
         if card.has_method("current_rank_order") else int(card.rank_order)
     var definition_id: String = card.current_definition_id() \
         if card.has_method("current_definition_id") else str(card.definition_id)
@@ -148,6 +158,15 @@ func _matches(card) -> bool:
     if filters.has("reshape") and not _matches_reshape(card, filters["reshape"]):
         return false
     return true
+
+func _card_has_attribute(card, attribute: String, facts = null) -> bool:
+    if facts != null:
+        return bool(facts.has_attribute(attribute))
+    if card_identity_policy != null and card_identity_policy.has_method("resolve"):
+        var resolved: Dictionary = card_identity_policy.resolve(card, {})
+        if resolved.get("success", false):
+            return bool(resolved["facts"].has_attribute(attribute))
+    return card.is_attribute(attribute)
 
 func _matches_anomaly(card, spec: Dictionary) -> bool:
     var present: bool = bool(spec.get("present", true))

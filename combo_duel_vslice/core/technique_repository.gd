@@ -134,7 +134,7 @@ func is_allowed_for_hand(technique, hand_id: String) -> bool:
     var eligible_pools: Array = pool_membership.get(hand_id, [])
     return eligible_pools.has(_definition_value(technique, "pool", ""))
 
-func conditions_met(technique, hand_result: Dictionary) -> Dictionary:
+func conditions_met(technique, hand_result: Dictionary, identity_policy = null) -> Dictionary:
     if technique == null or (technique is Dictionary and technique.is_empty()):
         return {"ok": false, "reason": "功法不存在"}
     var hand_id: String = hand_result.get("id", "")
@@ -147,11 +147,11 @@ func conditions_met(technique, hand_result: Dictionary) -> Dictionary:
         var wanted: String = condition["attribute"]
         var count := 0
         for card in hand_result.get("contributing", []):
-            if card.is_attribute(wanted):
+            if _card_has_attribute(card, wanted, identity_policy):
                 count += 1
         if count < int(condition.get("minimum", 1)):
             return {"ok": false, "reason": "参与最高牌型的%s属性真气不足" % wanted}
-    if condition.has("pure_attribute") and not is_pure_attribute(hand_result, condition["pure_attribute"]):
+    if condition.has("pure_attribute") and not is_pure_attribute(hand_result, condition["pure_attribute"], identity_policy):
         return {"ok": false, "reason": "参与最高牌型的真气不是纯属性"}
     return {"ok": true, "reason": "条件满足"}
 
@@ -163,11 +163,18 @@ func _definition_value(technique, key: String, fallback):
 func _normalized_definition(value: Dictionary) -> Dictionary:
     return DefinitionScript.new().configure_from_dictionary(value).to_definition()
 
-static func is_pure_attribute(hand_result: Dictionary, attribute: String) -> bool:
+static func is_pure_attribute(hand_result: Dictionary, attribute: String, identity_policy = null) -> bool:
     var contributing: Array = hand_result.get("contributing", [])
     if contributing.is_empty():
         return false
     for card in contributing:
-        if not card.is_attribute(attribute):
+        if not _card_has_attribute(card, attribute, identity_policy):
             return false
     return true
+
+static func _card_has_attribute(card, attribute: String, identity_policy = null) -> bool:
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var result: Dictionary = identity_policy.resolve(card, {})
+        if result.get("success", false):
+            return bool(result["facts"].has_attribute(attribute))
+    return card.is_attribute(attribute)

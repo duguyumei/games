@@ -53,6 +53,9 @@ var passive_counter_store = null
 ## 只存在于当前战斗，不进入 RunProgressSnapshot 或存档。
 var battle_passive_counter_store = null
 var battle_rule_query_service = null
+var hand_recognition_policy = null
+var card_identity_policy = null
+var battle_permission_service = null
 var last_hand_limit_query_result: Dictionary = {}
 
 func _init(side_name: String = "", stable_owner_id: String = "") -> void:
@@ -84,6 +87,20 @@ func use_passive_rule_runtime(runtime) -> void:
 
 func use_battle_rule_query_service(service) -> void:
     battle_rule_query_service = service
+
+func use_card_policies(recognition_policy, identity_policy) -> void:
+    hand_recognition_policy = recognition_policy
+    card_identity_policy = identity_policy
+    for card in all_zone_cards():
+        if card.has_method("configure_identity_policy"):
+            card.configure_identity_policy(identity_policy)
+
+func use_battle_permission_service(service) -> void:
+    battle_permission_service = service
+    card_zone_service.use_battle_permission_service(service)
+    for card in all_zone_cards():
+        if card.has_method("configure_battle_permission_service"):
+            card.configure_battle_permission_service(service)
 
 func reset(
         cards: Array,
@@ -197,6 +214,7 @@ func capture_passive_query_state() -> Dictionary:
             "qi_value": int(card.qi_value),
             "attribute": str(card.attribute),
             "attribute_name": str(card.attribute_name),
+            "is_true_qi": bool(card.is_true_qi),
             "reshape_origin": card.reshape_origin.duplicate(true),
             "reshape_enhancement": str(card.reshape_enhancement),
             "reshape_imprint": str(card.reshape_imprint),
@@ -307,6 +325,7 @@ func replace_passive_query_state(state: Dictionary) -> void:
         card.qi_value = int(card_state["qi_value"])
         card.attribute = str(card_state["attribute"])
         card.attribute_name = str(card_state["attribute_name"])
+        card.is_true_qi = bool(card_state.get("is_true_qi", true))
         card.reshape_origin = card_state["reshape_origin"].duplicate(true)
         card.reshape_enhancement = str(card_state["reshape_enhancement"])
         card.reshape_imprint = str(card_state["reshape_imprint"])

@@ -70,19 +70,19 @@ func resolve(spec, context) -> int:
         "capture_attribute_qi_sum":
             var total := 0
             for card in _capture_cards(runtime, spec):
-                if _card_is_attribute(card, str(spec.get("attribute", ""))):
+                if _card_is_attribute(card, str(spec.get("attribute", "")), runtime):
                     total += int(card.get("qi_value", 0) if card is Dictionary else card.qi_value)
             return total
         "capture_attribute_count":
             var count := 0
             for card in _capture_cards(runtime, spec):
-                if _card_is_attribute(card, str(spec.get("attribute", ""))):
+                if _card_is_attribute(card, str(spec.get("attribute", "")), runtime):
                     count += 1
             return count
         "capture_non_attribute_count":
             var count := 0
             for card in _capture_cards(runtime, spec):
-                if not _card_is_attribute(card, str(spec.get("attribute", ""))):
+                if not _card_is_attribute(card, str(spec.get("attribute", "")), runtime):
                     count += 1
             return count
         "hand_count":
@@ -136,7 +136,7 @@ func condition_met(condition: Dictionary, context) -> bool:
         if contributing.is_empty():
             return false
         for card in contributing:
-            if not card.is_attribute(attribute):
+            if not _card_is_attribute(card, attribute, runtime):
                 return false
     if condition.has("capture_nonempty"):
         var captured: Array = runtime.captures.get(condition["capture_nonempty"], [])
@@ -164,7 +164,7 @@ func condition_met(condition: Dictionary, context) -> bool:
         if cards.is_empty():
             return false
         for card in cards:
-            if not _card_is_attribute(card, str(spec.get("attribute", ""))):
+            if not _card_is_attribute(card, str(spec.get("attribute", "")), runtime):
                 return false
     if condition.has("capture_any_anomaly"):
         var spec: Dictionary = condition["capture_any_anomaly"]
@@ -190,9 +190,16 @@ func condition_met(condition: Dictionary, context) -> bool:
 func _capture_cards(runtime, spec: Dictionary) -> Array:
     return runtime.captures.get(str(spec.get("capture", "")), [])
 
-func _card_is_attribute(card, attribute: String) -> bool:
+func _card_is_attribute(card, attribute: String, runtime = null) -> bool:
     if card is Dictionary:
         return card.get("attributes", []).has(attribute)
+    if runtime != null and runtime.card_identity_policy != null \
+            and runtime.card_identity_policy.has_method("resolve"):
+        var result: Dictionary = runtime.card_identity_policy.resolve(card, {
+            "owner": runtime.actor, "actor": runtime.actor, "target": runtime.target,
+        })
+        if result.get("success", false):
+            return bool(result["facts"].has_attribute(attribute))
     return card.is_attribute(attribute)
 
 func noncontributing_qi_total(context) -> int:

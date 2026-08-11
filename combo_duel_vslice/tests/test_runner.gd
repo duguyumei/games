@@ -122,6 +122,22 @@ const BattlePassiveEventContextScript = preload(
     "res://core/passives/battle_passive_event_context.gd")
 const BattlePassiveCommittedEventContextScript = preload(
     "res://core/passives/battle_passive_committed_event_context.gd")
+const HandRecognitionOptionsScript = preload(
+    "res://core/passives/hand_recognition_options.gd")
+const HandRecognitionPolicyScript = preload(
+    "res://core/passives/hand_recognition_policy.gd")
+const CardIdentityPolicyScript = preload(
+    "res://core/passives/card_identity_policy.gd")
+const BattlePermissionServiceScript = preload(
+    "res://core/passives/battle_permission_service.gd")
+const EffectTargetQueryScript = preload(
+    "res://core/effects/effect_target_query.gd")
+const EffectValueResolverScript = preload(
+    "res://core/effects/effect_value_resolver.gd")
+const TechniqueEffectContextScript = preload(
+    "res://core/effects/technique_effect_context.gd")
+const TechniqueRepositoryPolicyScript = preload(
+    "res://core/technique_repository.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 const ProbeStatusBehaviorHandlerScript = preload(
@@ -828,6 +844,7 @@ func _initialize() -> void:
     _test_run_passive_persistent_counters_and_state_ports()
     _test_battle_passive_lifecycle_bridge_and_temporary_counters()
     _test_battle_fine_grained_events_and_int_queries()
+    _test_battle_card_policy_ports()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
@@ -6150,6 +6167,127 @@ func _test_awakening_origin_persistence_contract() -> void:
         inferred_enemy["cards"][0].reshape_origin["payload"]["attribute"],
         "fire",
         "敌人空 payload 觉醒在装配时持久化实际属性")
+
+func _test_battle_card_policy_ports() -> void:
+    var four_cards := [_card("2"), _card("3"), _card("4"), _card("5")]
+    _assert_true(
+        HandEvaluatorScript.evaluate(four_cards).get("id", "") != "straight",
+        "默认识别仍只允许五张顺子")
+    var recognition := HandRecognitionPolicyScript.new()
+    recognition.register_provider(
+        func(_owner, _context): return {"straight_allowed_sizes": [4]},
+        "fake_four_card", 20)
+    var four_options: Dictionary = recognition.resolve_options()
+    _assert_true(four_options.get("success", false), "Fake 四张顺子选项查询成功")
+    _assert_equal(
+        HandEvaluatorScript.evaluate(four_cards, four_options["options"])["id"],
+        "straight",
+        "Fake 策略可以声明四张顺子")
+
+    var gap_options = HandRecognitionOptionsScript.new().configure({
+        "straight_allowed_sizes": [4], "straight_max_step": 2,
+    })
+    _assert_equal(
+        HandEvaluatorScript.evaluate(
+            [_card("2"), _card("4"), _card("6"), _card("8")],
+            gap_options)["id"],
+        "straight",
+        "Fake 最大相邻间隔 2 生效")
+    _assert_equal(
+        HandEvaluatorScript.evaluate(
+            [_card("A"), _card("2"), _card("3"), _card("4"), _card("5")])["id"],
+        "straight",
+        "默认 A 低端规则保持")
+    _assert_equal(
+        HandEvaluatorScript.evaluate(
+            [_card("10"), _card("J"), _card("Q"), _card("K"), _card("A")])["id"],
+        "straight",
+        "默认 A 高端规则保持")
+
+    var identity_card = _card("7", "wind")
+    identity_card.is_true_qi = false
+    var identity := CardIdentityPolicyScript.new()
+    identity.register_provider(
+        func(_card_value, _context): return {
+            "facts": {
+                "is_true_qi": true,
+                "additional_effective_attributes": ["fire"],
+                "card_kinds": ["true_origin"],
+            },
+        },
+        "fake_true_origin", 20)
+    var identity_result: Dictionary = identity.resolve(identity_card)
+    _assert_true(identity_result.get("success", false), "Fake 身份查询成功")
+    _assert_true(identity_result["facts"].is_true_qi, "Fake 普通真气可以临时视为真元")
+    _assert_true(identity_result["facts"].has_attribute("fire"), "Fake 身份统一增加有效属性")
+    _assert_true(identity_result["facts"].is_card_kind("true_origin"), "Fake 普通真气可以视为真元")
+    _assert_equal(identity_card.attribute, "wind", "Fake 身份不修改原始属性字段")
+    _assert_true(not identity_card.is_true_qi, "Fake 真元身份不写回原始真气标记")
+    _assert_true(
+        TechniqueRepositoryPolicyScript.is_pure_attribute(
+            {"contributing": [identity_card]}, "fire", identity),
+        "功法条件复用同一身份查询")
+    var identity_side := BattleSideScript.new("identity", "identity")
+    identity_side.hand.append(identity_card)
+    var target_context = TechniqueEffectContextScript.new().configure({
+        "actor": identity_side, "target": identity_side,
+        "card_identity_policy": identity,
+        "captures": {"probe": [identity_card]},
+    })
+    var target_query = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand",
+        "filters": {"attributes": ["fire"]},
+        "card_identity_policy": identity,
+    }).resolve(target_context)
+    _assert_true(target_query.get("success", false), "目标筛选复用同一身份查询")
+    _assert_equal(target_query.get("cards", []).size(), 1, "视为身份参与目标筛选")
+    var value_count := EffectValueResolverScript.new().resolve(
+        {"kind": "capture_attribute_count", "capture": "probe", "attribute": "fire"},
+        target_context)
+    _assert_equal(value_count, 1, "效果值复用同一身份查询")
+    identity.register_provider(
+        func(_card_value, _context): return {"rank_tags": ["second_source"]},
+        "fake_second", 30)
+    var merged_identity: Dictionary = identity.resolve(identity_card)
+    _assert_equal(
+        merged_identity["source_breakdown"].map(func(entry): return entry["source_id"]),
+        ["fake_true_origin", "fake_second"],
+        "多个身份来源按稳定顺序合并")
+
+    var conflicting_identity := CardIdentityPolicyScript.new()
+    conflicting_identity.register_provider(
+        func(_card_value, _context): return {"is_true_qi": false},
+        "conflict_a", 10)
+    conflicting_identity.register_provider(
+        func(_card_value, _context): return {"is_true_qi": true},
+        "conflict_b", 20)
+    _assert_true(
+        not conflicting_identity.resolve(identity_card).get("success", true),
+        "冲突身份规则明确失败")
+
+    var permission := BattlePermissionServiceScript.new()
+    var permission_calls: Array[String] = []
+    permission.register_provider(
+        func(hook, _context):
+            permission_calls.append(hook)
+            return {"allowed": hook != "explicit_discard_permission_query", "reason": "Fake 否决"},
+        "fake_permission", 10)
+    _assert_true(
+        permission.can_play_card(null, identity_card).get("allowed", false),
+        "只有明确拒绝才阻断其他操作")
+    _assert_true(
+        not permission.can_explicit_discard(null, identity_card).get("allowed", true),
+        "明确弃牌统一权限链可以拒绝")
+    _assert_equal(
+        permission_calls,
+        ["card_play_permission_query", "explicit_discard_permission_query"],
+        "普通出牌不触发明确弃牌权限")
+    var failed_permission := BattlePermissionServiceScript.new()
+    failed_permission.register_provider(
+        func(_hook, _context): return {}, "broken_permission", 10)
+    _assert_true(
+        not failed_permission.can_play_card(null, identity_card).get("allowed", true),
+        "权限查询失败不默认允许")
 
 func _test_awakening_battle_runtime() -> void:
     var catalog = ContentCatalogScript.new()

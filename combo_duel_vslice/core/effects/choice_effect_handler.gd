@@ -26,6 +26,7 @@ func execute(effect: Dictionary, context):
         return EffectResultScript.failed("选择效果缺少 query 对象")
     if query_spec.get("limit") is Dictionary and value_resolver != null:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
+    query_spec["card_identity_policy"] = runtime.card_identity_policy
     var query = TargetQueryScript.new().configure(query_spec)
     var minimum := _resolve_bound(effect.get("minimum", 0), runtime)
     var maximum := _resolve_bound(effect.get("maximum", 0), runtime)

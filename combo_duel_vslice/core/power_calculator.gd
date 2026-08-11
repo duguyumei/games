@@ -4,7 +4,9 @@ extends RefCounted
 static func calculate(
         hand_result: Dictionary,
         modifiers: Dictionary = {},
-        contribution_modifier: Callable = Callable()) -> Dictionary:
+        contribution_modifier: Callable = Callable(),
+        identity_policy = null,
+        identity_context: Dictionary = {}) -> Dictionary:
     if hand_result.is_empty():
         return {}
     var card_total := 0
@@ -13,7 +15,7 @@ static func calculate(
     var card_trigger_bundles: Dictionary = {}
     for card in hand_result["contributing"]:
         var bundle := _qualified_card_numeric_bundle(
-            card, contribution_modifier)
+            card, contribution_modifier, identity_policy, identity_context)
         card_total += int(bundle["contribution"])
         card_multiplier_bonus += int(bundle["technique_multiplier_bonus"])
         card_amp_percent += int(bundle["power_amp_percent"])
@@ -60,7 +62,15 @@ static func apply_momentum(values: Dictionary, momentum: int) -> Dictionary:
 
 static func _qualified_card_numeric_bundle(
         card,
-        contribution_modifier: Callable) -> Dictionary:
+        contribution_modifier: Callable,
+        identity_policy = null,
+        identity_context: Dictionary = {}) -> Dictionary:
+    var identity: Dictionary = {}
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var identity_result: Dictionary = identity_policy.resolve(
+            card, identity_context)
+        if identity_result.get("success", false):
+            identity = identity_result["facts"].to_dict()
     if card.has_method("effective_qi_value") \
             and card.has_method("reshape_card_contribution"):
         # 读取一次会确保旧卡牌夹具也完成 fallback rules 绑定；该调用纯计算且结果
@@ -69,10 +79,12 @@ static func _qualified_card_numeric_bundle(
         var rules = card.reshape_rule_service
         if rules != null and rules.has_method(
                 "calculate_qualified_numeric_bundle"):
-            return rules.calculate_qualified_numeric_bundle(
+            var bundle: Dictionary = rules.calculate_qualified_numeric_bundle(
                 card,
                 {"participating": true},
                 contribution_modifier)
+            bundle["identity"] = identity
+            return bundle
     var contribution := int(card.qi_value)
     if contribution_modifier.is_valid():
         contribution = int(contribution_modifier.call(card, contribution))
@@ -86,6 +98,7 @@ static func _qualified_card_numeric_bundle(
         "technique_multiplier_bonus": 0,
         "power_amp_percent": 0,
         "passes": [],
+        "identity": identity,
     }
 
 static func apply_frozen_card_multiplier_bonus(

@@ -59,7 +59,22 @@ func preview_dto(
         if card == null or cards.has(card):
             return _invalid_preview("选择包含不在手牌中的真气")
         cards.append(card)
-    var hand_result_dto = HandEvaluatorScript.evaluate_dto(cards)
+    var recognition_options = null
+    var recognition_query: Dictionary = {"success": true}
+    if side.hand_recognition_policy != null:
+        recognition_query = side.hand_recognition_policy.resolve_options(side, {
+            "actor": side, "target": target,
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+        })
+        if not recognition_query.get("success", false):
+            return _invalid_preview(str(recognition_query.get("reason", "牌型识别查询失败")))
+        recognition_options = recognition_query.get("options")
+    var hand_result_dto = HandEvaluatorScript.evaluate_dto(
+        cards,
+        recognition_options,
+        side.card_identity_policy,
+        {"owner": side, "actor": side, "target": target})
     if hand_result_dto.is_empty():
         return _invalid_preview("无法识别牌型")
     var hand_result: Dictionary = hand_result_dto.to_dict()
@@ -74,7 +89,8 @@ func preview_dto(
         int(modifiers.get("multiplier_bonus", 0))
         + int(side.hand_technique_multiplier_modifiers.get(
             hand_result["id"], 0)))
-    if cards.size() == 5 and is_same_attribute_action(cards):
+    if cards.size() == 5 \
+            and is_same_attribute_action(cards, side.card_identity_policy):
         modifiers["power_amp_percent"] = int(modifiers.get("power_amp_percent", 0)) + 50
     modifiers["power_fixed"] = (
         int(modifiers.get("power_fixed", 0))
@@ -98,7 +114,8 @@ func preview_dto(
     if technique_definition != null:
         condition = technique_repository.conditions_met(
             technique_definition,
-            hand_result)
+            hand_result,
+            side.card_identity_policy)
     values = PowerCalculatorScript.apply_momentum(
         values,
         side.momentum_value
@@ -123,6 +140,7 @@ func preview_dto(
         "technique_pool": str(technique.get("pool", "")),
         "captures": {},
         "source_kind": "preview",
+        "card_identity_policy": side.card_identity_policy,
     })
     var damage_percent := 0
     if side.status_system != null:
@@ -254,7 +272,7 @@ func _resolve_power_values(
                 if round_number_reader.is_valid() else 0,
             "hand_id": str(hand_result.get("id", "")),
             "source_kind": source_kind,
-            "card_facts": _card_facts(cards),
+            "card_facts": _card_facts(cards, side.card_identity_policy),
             "metadata": {"stage": field},
         })
         if not query.success:
@@ -274,16 +292,20 @@ func _resolve_power_values(
         contribution_modifier = Callable(
             side.status_system, "modify_card_contribution").bind(side)
     var values := PowerCalculatorScript.calculate(
-        hand_result, effective, contribution_modifier)
+        hand_result,
+        effective,
+        contribution_modifier,
+        side.card_identity_policy,
+        {"owner": side, "actor": side, "target": target})
     values["passive_power_queries"] = details.duplicate(true)
     return {"success": true, "values": values, "queries": details}
 
-func _card_facts(cards: Array) -> Array:
+func _card_facts(cards: Array, identity_policy = null) -> Array:
     var result: Array = []
     for card in cards:
         var attributes: Array[String] = []
         for attribute in ["wind", "forest", "fire", "mountain"]:
-            if card.is_attribute(attribute):
+            if _card_has_attribute(card, attribute, identity_policy):
                 attributes.append(attribute)
         result.append({
             "instance_id": str(card.id),
@@ -292,8 +314,15 @@ func _card_facts(cards: Array) -> Array:
             "qi": int(card.effective_qi_value()) \
                 if card.has_method("effective_qi_value") else int(card.qi_value),
             "attributes": attributes,
+            "identity": _card_identity_dict(card, identity_policy),
         })
     return result
+
+func _card_identity_dict(card, identity_policy) -> Dictionary:
+    if identity_policy == null or not identity_policy.has_method("resolve"):
+        return {}
+    var resolved: Dictionary = identity_policy.resolve(card, {})
+    return resolved["facts"].to_dict() if resolved.get("success", false) else {}
 
 func _resolve_preview_intent(side, target, intent: Dictionary) -> Dictionary:
     var result := intent.duplicate(true)
@@ -339,7 +368,7 @@ func _invalid_preview(reason: String):
         "reason": reason,
     })
 
-static func is_same_attribute_action(cards: Array) -> bool:
+static func is_same_attribute_action(cards: Array, identity_policy = null) -> bool:
     if cards.is_empty():
         return false
     for attribute in ["wind", "forest", "fire", "mountain"]:
@@ -347,12 +376,19 @@ static func is_same_attribute_action(cards: Array) -> bool:
         for card in cards:
             if card.effective_qi_value() == 0:
                 continue
-            if not card.is_attribute(attribute):
+            if not _card_has_attribute(card, attribute, identity_policy):
                 all_match = false
                 break
         if all_match:
             return true
     return false
+
+static func _card_has_attribute(card, attribute: String, identity_policy = null) -> bool:
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var resolved: Dictionary = identity_policy.resolve(card, {})
+        if resolved.get("success", false):
+            return bool(resolved["facts"].has_attribute(attribute))
+    return card.is_attribute(attribute)
 
 func _inner_skill_definitions_for(side) -> Array:
     var definitions: Array = []

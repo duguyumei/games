@@ -3,6 +3,8 @@ extends RefCounted
 
 const CardReshapeRuleServiceScript = preload(
     "res://core/card_reshapes/card_reshape_rule_service.gd")
+const CardIdentityFactsScript = preload(
+    "res://core/passives/card_identity_facts.gd")
 
 const ANOMALY_CATEGORIES := ["buff", "debuff", "state", "mark"]
 const TEMPORARY_RESHAPE_SUBSLOTS := ["enhancement", "attribute"]
@@ -14,6 +16,8 @@ var rank_order: int
 var qi_value: int
 var attribute: String
 var attribute_name: String
+## 身份策略读取的本源真气标记；策略只覆盖查询结果，不写回此字段。
+var is_true_qi: bool = true
 
 var reshape_origin: Dictionary = {}
 var reshape_enhancement: String = ""
@@ -36,6 +40,8 @@ var origin_base_identity: Dictionary = {}
 var original_owner_id: String = ""
 var temporary_card: bool = false
 var reshape_rule_service
+var identity_policy = null
+var battle_permission_service = null
 
 func _init(
         card_id: String = "",
@@ -83,6 +89,13 @@ func _effective_identity() -> Dictionary:
     return {}
 
 func is_attribute(attribute_id: String) -> bool:
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var resolved: Dictionary = identity_policy.resolve(self, {})
+        if resolved.get("success", false):
+            return bool(resolved["facts"].has_attribute(attribute_id))
+    return base_is_attribute(attribute_id)
+
+func base_is_attribute(attribute_id: String) -> bool:
     if current_attribute() == attribute_id:
         return true
     if not return_to_origin_active() \
@@ -173,6 +186,27 @@ func current_state() -> Dictionary:
 func configure_reshape_rule_service(service) -> void:
     reshape_rule_service = service
 
+func configure_identity_policy(policy) -> void:
+    identity_policy = policy
+
+func configure_battle_permission_service(service) -> void:
+    battle_permission_service = service
+
+func identity_facts(context: Dictionary = {}):
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var resolved: Dictionary = identity_policy.resolve(self, context)
+        if resolved.get("success", false):
+            return resolved["facts"]
+    return CardIdentityFactsScript.new().configure({
+        "is_true_qi": is_true_qi,
+        "effective_attributes": [current_attribute()],
+        "rank_tags": [current_rank_name(), "rank_%d" % current_rank_order()],
+        "card_kinds": ["normal", "true_qi"] if is_true_qi else ["normal"],
+        "rank_order": current_rank_order(),
+        "rank_name": current_rank_name(),
+        "definition_id": current_definition_id(),
+    })
+
 func effective_qi_value(
         include_contribution: bool = false,
         calculation_context: Dictionary = {}) -> int:
@@ -192,12 +226,21 @@ func reshape_power_amp_percent() -> int:
     return _reshape_rules().power_amp_percent(self)
 
 func is_card_kind(kind: String) -> bool:
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var resolved: Dictionary = identity_policy.resolve(self, {})
+        if resolved.get("success", false):
+            return bool(resolved["facts"].is_card_kind(kind))
+    return base_is_card_kind(kind)
+
+func base_is_card_kind(kind: String) -> bool:
     return _reshape_rules().has_card_kind(self, kind)
 
 func can_apply_anomaly(category: String = "", anomaly_id: String = "") -> Dictionary:
     return _reshape_rules().can_apply_anomaly(self, category, anomaly_id)
 
 func can_explicit_discard() -> Dictionary:
+    if battle_permission_service != null:
+        return battle_permission_service.can_explicit_discard(null, self)
     return _reshape_rules().can_explicit_discard(self)
 
 func _reshape_rules():

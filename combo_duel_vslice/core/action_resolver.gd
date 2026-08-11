@@ -245,6 +245,7 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "source_kind": source_spec["kind"],
                 "captures": captures_by_source[capture_key],
                 "sequence_book": record["book"],
+                "card_identity_policy": record["actor"].card_identity_policy,
             })
             trigger_queue.enqueue(
                 timing,
@@ -301,7 +302,16 @@ func retrigger_current_hand_technique(
         excluded_technique_ids: Array) -> Dictionary:
     if effect_ports.technique_draw_count(actor) > 0:
         return {"success": true, "triggered": false, "detail": "本回合已有功法直接抽牌"}
-    var best_candidates: Array = HandEvaluatorScript.evaluate_best_candidates(actor.hand)
+    var recognition_options = null
+    if actor.hand_recognition_policy != null:
+        var options_result: Dictionary = actor.hand_recognition_policy.resolve_options(actor, {
+            "owner": actor, "actor": actor, "target": target,
+        })
+        if not options_result.get("success", false):
+            return {"success": false, "triggered": false, "detail": str(options_result.get("reason", "牌型识别查询失败"))}
+        recognition_options = options_result.get("options")
+    var best_candidates: Array = HandEvaluatorScript.evaluate_best_candidates(
+        actor.hand, recognition_options, actor.card_identity_policy, {"owner": actor, "actor": actor, "target": target})
     if best_candidates.size() > 1:
         return {
             "success": false,
@@ -319,7 +329,8 @@ func retrigger_current_hand_technique(
     var definition = technique_repository.get_definition(technique_id)
     if definition == null:
         return {"success": false, "triggered": false, "detail": "重触功法不存在"}
-    var condition: Dictionary = technique_repository.conditions_met(definition, hand_result)
+    var condition: Dictionary = technique_repository.conditions_met(
+        definition, hand_result, actor.card_identity_policy)
     if not condition.get("ok", false):
         return {"success": true, "triggered": false, "detail": condition.get("reason", "条件失败")}
     var context = EffectContextScript.new().configure({
@@ -336,6 +347,7 @@ func retrigger_current_hand_technique(
         "source_kind": "technique_retrigger",
         "sequence_book": sequence_book,
         "captures": {},
+        "card_identity_policy": actor.card_identity_policy,
     })
     var result: Dictionary = effect_executor.execute_all(definition.effects, context)
     if result.get("pending_choice", false):

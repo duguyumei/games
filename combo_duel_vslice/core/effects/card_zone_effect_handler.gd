@@ -203,6 +203,7 @@ func _query(effect: Dictionary, runtime) -> Dictionary:
     query_spec.erase("exclude_capture")
     if query_spec.get("limit") is Dictionary:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
+    query_spec["card_identity_policy"] = runtime.card_identity_policy
     var result: Dictionary = TargetQueryScript.new().configure(query_spec).resolve(runtime, rng)
     if result.get("success", false) and excluded_capture != "":
         var excluded_ids: Dictionary = {}

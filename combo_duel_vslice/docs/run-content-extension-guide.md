@@ -581,7 +581,17 @@ order；`battle_end` Handler 完成后才清临时 Store。
 
 功法值 Handler 只能修改四阶段输入，`PowerCalculator` 继续独占 `baseline_value`、`initial_power`、`pre_momentum_power` 与 `technique_value` 公式。预览可重复查询；正式行动在重塑冻结后重跑四项查询，将 `base_value/effective_value/source_breakdown/fingerprint` 写入 `passive_power_queries`，并随每个主组／协同组自己的 action token 冻结。等待选择恢复只读冻结结果。普通伤害、防御获得和防御保留率在实际写入前按最新状态查询一次；真实伤害不进入普通伤害查询。
 
-本接口不提供牌型识别改写、真元身份、打出／明确弃牌权限否决、功法触发条件否决、内功复制或任意战斗状态写端口。S2-F5D2 没有修改正式白名单，也没有使任何候选内功或物品正式化。
+本接口不提供内功复制或任意战斗状态写端口。S2-F5D2 没有修改正式白名单，也没有使任何候选内功或物品正式化。
+
+## 6.14 牌型、卡牌身份与战斗权限查询
+
+牌型识别统一由 `HandRecognitionOptions` 与 `HandRecognitionPolicy` 提供选项。默认值固定为五张顺子、最大相邻间隔 1、A 可在低端或高端且不可首尾循环；`HandEvaluator.evaluate`、`evaluate_best` 与 `evaluate_best_candidates` 消费同一 Options，正式预览、敌方候选和整手重触都先执行 `hand_evaluation_options_query`。查询只返回选项，不移动牌、不推进 RNG，也不改写战斗状态。
+
+卡牌有效身份由 `CardIdentityFacts`／`CardIdentityPolicy` 汇总 `is_true_qi`、`effective_attributes`、`rank_tags` 与 `card_kinds`，基础事实继续复用 `QiCard` 的归元、临时属性和重塑身份。来源按 Runtime 的稳定执行计划合并；同一标量身份出现冲突会明确失败。牌型、功法条件、功法值卡牌事实、效果值、目标查询和 AI／UI 预览均消费该事实，不改写卡牌原始字段。被压制来源不进入执行计划，解除压制后自然重新参与。
+
+操作否决统一进入 `BattlePermissionService`。当前已接入 `card_play_permission_query` 与 `explicit_discard_permission_query`；`technique_activation_permission_query`、`cooperation_permission_query` 已登记为后续端口。有效来源按稳定顺序执行，只有明确 `allowed = false` 的有效结果拒绝操作，但 Handler 失败或返回形状无效会失败关闭，不能按允许继续。既有状态系统打出否决和 `CardReshapeBattleRuntime` 明确弃牌否决只是统一服务的适配来源，因此无漏、磐石继续沿用原规则，中央流程不识别内容 ID。
+
+普通打出只查询打出权限，进入弃牌堆时不查询明确弃牌权限；手动选择、随机弃牌、全部弃牌和 `reason = "explicit_discard"` 的移动则共用明确弃牌链。等待选择恢复使用已冻结候选，不重复发送权限查询。所有查询仍复用唯一 `PassiveRuleRuntime`、压制服务和 Invocation 顺序，本任务没有新增正式内容或白名单。
 
 ## 7. 什么时候只写 JSON
 

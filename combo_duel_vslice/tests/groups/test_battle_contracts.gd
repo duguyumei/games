@@ -10,6 +10,7 @@ func _initialize() -> void:
         "_test_passive_runtime_capacity_suppression_invocations_and_items",
         "_test_battle_passive_lifecycle_bridge_and_temporary_counters",
         "_test_battle_fine_grained_events_and_int_queries",
+        "_test_battle_card_policy_ports",
         "_test_awakening_battle_runtime",
         "_test_f2d2_formal_enhancement_runtime",
         "_test_f2d2_opportunity_freeze_and_progress_sync",

@@ -23,6 +23,7 @@ var _technique_draw_counts: Dictionary = {}
 var behavior_registry
 var _card_trigger_replay_service = null
 var _rng: RandomNumberGenerator = null
+var battle_permission_service = null
 
 func _init(
         catalog,
@@ -100,6 +101,9 @@ func use_card_trigger_replay_service(service) -> void:
 func use_rng(random_source: RandomNumberGenerator) -> void:
     _rng = random_source
 
+func use_battle_permission_service(service) -> void:
+    battle_permission_service = service
+
 func reset() -> void:
     delayed_records.clear()
     history.clear()
@@ -140,9 +144,20 @@ func modify_card_contribution(card, contribution: int, holder = null) -> int:
     return contribution
 
 func can_play_card(holder, card) -> Dictionary:
+    if battle_permission_service != null:
+        return battle_permission_service.can_play_card(holder, card)
+    return _legacy_can_play_card(holder, card)
+
+func _legacy_can_play_card(holder, card) -> Dictionary:
     var result := _dispatch_card_behaviors("play_attempt", holder, card)
     if bool(result.get("blocked", false)):
         return {"allowed": false, "reason": str(result.get("reason", "此真气本回合不能打出"))}
+    return {"allowed": true}
+
+func permission_query(hook: String, context: Dictionary) -> Dictionary:
+    if hook == "card_play_permission_query":
+        return _legacy_can_play_card(context.get("owner", context.get("actor")), context.get("card"))
+    # 状态系统目前没有额外的明确弃牌否决；统一端口仍记录这一来源。
     return {"allowed": true}
 
 func can_play_cards(holder, cards: Array) -> Dictionary:

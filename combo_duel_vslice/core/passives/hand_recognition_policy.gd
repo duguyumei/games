@@ -1,0 +1,158 @@
+class_name HandRecognitionPolicy
+extends RefCounted
+
+const OptionsScript = preload("res://core/passives/hand_recognition_options.gd")
+const ContextScript = preload("res://core/passives/passive_rule_context.gd")
+
+var _runtime_ref: WeakRef
+var _providers: Array = []
+var _serial: int = 0
+
+func _init(passive_runtime = null) -> void:
+    _runtime_ref = weakref(passive_runtime) if passive_runtime != null else null
+
+func register_provider(provider, source_id: String = "", order: int = 0) -> String:
+    var stable_id := source_id if source_id != "" else "provider:%06d" % _serial
+    _providers.append({
+        "provider": weakref(provider) if provider is Object and not provider is Callable else provider,
+        "source_id": stable_id,
+        "order": order,
+        "serial": _serial,
+    })
+    _serial += 1
+    _sort_providers()
+    return stable_id
+
+func unregister_provider(source_id: String) -> bool:
+    for index in range(_providers.size()):
+        if str(_providers[index]["source_id"]) == source_id:
+            _providers.remove_at(index)
+            return true
+    return false
+
+func resolve_options(owner = null, context: Dictionary = {}) -> Dictionary:
+    var options = OptionsScript.new().configure()
+    var breakdown: Array = []
+    var state_before := _capture_state(owner)
+    var runtime_result := _runtime_modifiers(owner, context)
+    var purity_error := _restore_if_mutated(owner, state_before)
+    if purity_error != "":
+        return _failure(options, purity_error, breakdown)
+    if not runtime_result.get("success", false):
+        return _failure(options, str(runtime_result.get("reason", "牌型识别查询失败")), breakdown)
+    for entry in runtime_result.get("entries", []):
+        var merged := _merge(options, entry.get("value", {}))
+        if not merged.get("success", false):
+            return _failure(options, str(merged.get("reason", "牌型识别选项无效")), breakdown)
+        breakdown.append(entry)
+    for entry in _providers:
+        var response := _call_provider(entry["provider"], owner, context)
+        purity_error = _restore_if_mutated(owner, state_before)
+        if purity_error != "":
+            return _failure(options, purity_error, breakdown)
+        if not response.get("success", false):
+            return _failure(options, "%s：%s" % [entry["source_id"], response.get("reason", "查询失败")], breakdown)
+        var merged := _merge(options, response.get("value", {}))
+        if not merged.get("success", false):
+            return _failure(options, "%s：%s" % [entry["source_id"], merged.get("reason", "选项无效")], breakdown)
+        breakdown.append({"source_id": entry["source_id"], "value": response["value"].duplicate(true)})
+    return {
+        "success": true,
+        "options": options,
+        "source_breakdown": breakdown,
+        "errors": [],
+    }
+
+func resolve(owner = null, context: Dictionary = {}) -> Dictionary:
+    return resolve_options(owner, context)
+
+func _runtime_modifiers(owner, context: Dictionary) -> Dictionary:
+    var runtime = _runtime_ref.get_ref() if _runtime_ref != null else null
+    if runtime == null:
+        return {"success": true, "entries": []}
+    var values := {
+        "owner": owner,
+        "actor": context.get("actor", owner),
+        "target": context.get("target"),
+        "round_number": int(context.get("round_number", 0)),
+        "payload": context.duplicate(false),
+    }
+    var plan = runtime.build_execution_plan(
+        "hand_evaluation_options_query", ContextScript.new().configure(values))
+    if not plan.is_valid():
+        return {"success": false, "reason": "；".join(plan.errors)}
+    var entries: Array = []
+    for invocation in plan.invocations:
+        var executed: Dictionary = runtime.execute_invocation(invocation, null, "read")
+        if not executed.get("success", false):
+            return {"success": false, "reason": executed.get("reason", "查询失败")}
+        var result: Dictionary = executed["result"]
+        var value = result.get("options", result)
+        if not value is Dictionary:
+            return {"success": false, "reason": "牌型识别 Handler 必须返回 options 对象"}
+        entries.append({
+            "source_id": invocation.source.source_instance_key,
+            "value": value.duplicate(true),
+        })
+    return {"success": true, "entries": entries}
+
+func _call_provider(provider, owner, context: Dictionary) -> Dictionary:
+    if provider is WeakRef:
+        provider = provider.get_ref()
+        if provider == null:
+            return {"success": false, "reason": "Provider 已释放"}
+    var value = null
+    if provider is Callable:
+        value = provider.call(owner, context)
+    elif provider != null and provider.has_method("resolve_options"):
+        value = provider.resolve_options(owner, context)
+    elif provider != null and provider.has_method("query"):
+        value = provider.query("hand_evaluation_options_query", owner, context)
+    if not value is Dictionary:
+        return {"success": false, "reason": "Provider 必须返回对象"}
+    if value.has("success") and not bool(value["success"]):
+        return {"success": false, "reason": str(value.get("reason", "查询失败"))}
+    var options_value = value.get("options", value)
+    if not options_value is Dictionary:
+        return {"success": false, "reason": "Provider 的 options 必须是对象"}
+    return {"success": true, "value": options_value}
+
+func _merge(options, values: Dictionary) -> Dictionary:
+    var next: Dictionary = options.to_dict()
+    for field in [
+            "straight_allowed_sizes", "straight_max_step",
+            "ace_low_allowed", "ace_high_allowed"]:
+        if values.has(field):
+            next[field] = values[field]
+    options.configure(next)
+    return {"success": true}
+
+func _failure(options, reason: String, breakdown: Array) -> Dictionary:
+    return {
+        "success": false,
+        "options": options,
+        "source_breakdown": breakdown,
+        "errors": [reason],
+        "reason": reason,
+    }
+
+func _capture_state(owner) -> Dictionary:
+    return owner.capture_passive_query_state() \
+        if owner != null and owner.has_method("capture_passive_query_state") else {}
+
+func _restore_if_mutated(owner, before: Dictionary) -> String:
+    if owner == null or before.is_empty() \
+            or not owner.has_method("capture_passive_query_state"):
+        return ""
+    if owner.capture_passive_query_state() == before:
+        return ""
+    owner.replace_passive_query_state(before)
+    return "纯查询 Handler 不得修改战斗状态"
+
+func _sort_providers() -> void:
+    _providers.sort_custom(func(left, right):
+        if int(left["order"]) != int(right["order"]):
+            return int(left["order"]) < int(right["order"])
+        if str(left["source_id"]) != str(right["source_id"]):
+            return str(left["source_id"]) < str(right["source_id"])
+        return int(left["serial"]) < int(right["serial"]))

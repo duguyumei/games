@@ -12,21 +12,39 @@ const HANDS := {
     "five_kind": {"name": "五条", "multiplier": 12, "strength": 7},
 }
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
+const HandRecognitionOptionsScript = preload(
+    "res://core/passives/hand_recognition_options.gd")
 
-static func evaluate_dto(cards: Array):
-    return HandResultDtoScript.new().configure(evaluate(cards))
+static func evaluate_dto(
+        cards: Array,
+        options = null,
+        identity_policy = null,
+        context: Dictionary = {}):
+    return HandResultDtoScript.new().configure(
+        evaluate(cards, options, identity_policy, context))
 
-static func evaluate_best(cards: Array) -> Dictionary:
-    var candidates := evaluate_best_candidates(cards)
+static func evaluate_best(
+        cards: Array,
+        options = null,
+        identity_policy = null,
+        context: Dictionary = {}) -> Dictionary:
+    var candidates := evaluate_best_candidates(
+        cards, options, identity_policy, context)
     return candidates[0] if not candidates.is_empty() else {}
 
-static func evaluate_best_candidates(cards: Array) -> Array:
+static func evaluate_best_candidates(
+        cards: Array,
+        options = null,
+        identity_policy = null,
+        context: Dictionary = {}) -> Array:
+    var resolved_options = _coerce_options(options)
     var best_strength := -1
     var candidates: Array = []
     var seen_contributing: Dictionary = {}
     for size in range(1, mini(5, cards.size()) + 1):
         for group in _combinations(cards, size):
-            var candidate := evaluate(group)
+            var candidate := evaluate(
+                group, resolved_options, identity_policy, context)
             if candidate.is_empty():
                 continue
             var strength := int(candidate["strength"])
@@ -46,19 +64,29 @@ static func evaluate_best_candidates(cards: Array) -> Array:
                 candidates.append(candidate)
     return candidates
 
-static func evaluate(cards: Array) -> Dictionary:
+static func evaluate(
+        cards: Array,
+        options = null,
+        identity_policy = null,
+        context: Dictionary = {}) -> Dictionary:
     if cards.is_empty() or cards.size() > 5:
         return {}
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        for card in cards:
+            var identity: Dictionary = identity_policy.resolve(card, context)
+            if not identity.get("success", false):
+                return {}
+    var resolved_options = _coerce_options(options)
     var rank_groups: Dictionary = {}
     for card in cards:
-        var rank_order: int = card.current_rank_order() \
-            if card.has_method("current_rank_order") else int(card.rank_order)
+        var rank_order := _rank_order(card, identity_policy, context)
         if not rank_groups.has(rank_order):
             rank_groups[rank_order] = []
         rank_groups[rank_order].append(card)
 
     var is_five := cards.size() == 5
-    var straight := is_five and _is_straight(cards)
+    var straight: bool = resolved_options.straight_allowed_sizes.has(cards.size()) \
+        and _is_straight(cards, resolved_options, identity_policy, context)
 
     var five_rank := _highest_rank_with_count(rank_groups, 5)
     if five_rank >= 0:
@@ -89,10 +117,8 @@ static func evaluate(cards: Array) -> Dictionary:
 
     var highest = cards[0]
     for card in cards:
-        var card_order: int = card.current_rank_order() \
-            if card.has_method("current_rank_order") else int(card.rank_order)
-        var highest_order: int = highest.current_rank_order() \
-            if highest.has_method("current_rank_order") else int(highest.rank_order)
+        var card_order := _rank_order(card, identity_policy, context)
+        var highest_order := _rank_order(highest, identity_policy, context)
         if card_order > highest_order:
             highest = card
     return _result("high_card", [highest])
@@ -124,21 +150,53 @@ static func _ranks_with_count(groups: Dictionary, count: int) -> Array:
     ranks.reverse()
     return ranks
 
-static func _is_straight(cards: Array) -> bool:
+static func _is_straight(
+        cards: Array,
+        options,
+        identity_policy = null,
+        context: Dictionary = {}) -> bool:
     var ranks: Array = []
     for card in cards:
-        var rank_order: int = card.current_rank_order() \
-            if card.has_method("current_rank_order") else int(card.rank_order)
+        var rank_order := _rank_order(card, identity_policy, context)
         if ranks.has(rank_order):
             return false
         ranks.append(rank_order)
     ranks.sort()
-    if ranks == [2, 3, 4, 5, 14]:
-        return true
+    if ranks.has(14) and bool(options.ace_low_allowed):
+        var ace_low_ranks := ranks.duplicate()
+        ace_low_ranks.erase(14)
+        ace_low_ranks.append(1)
+        ace_low_ranks.sort()
+        if _steps_within_limit(ace_low_ranks, int(options.straight_max_step)):
+            return true
+    if ranks.has(14) and not bool(options.ace_high_allowed):
+        return false
+    if ranks.has(14) and ranks[0] < 10:
+        # A 只能占据低端特例或高端，不能与中间牌阶形成首尾循环。
+        return false
+    return _steps_within_limit(ranks, int(options.straight_max_step))
+
+static func _steps_within_limit(ranks: Array, maximum_step: int) -> bool:
     for index in range(1, ranks.size()):
-        if ranks[index] != ranks[index - 1] + 1:
+        var step := int(ranks[index]) - int(ranks[index - 1])
+        if step < 1 or step > maximum_step:
             return false
     return true
+
+static func _rank_order(card, identity_policy, context: Dictionary) -> int:
+    if identity_policy != null and identity_policy.has_method("resolve"):
+        var resolved: Dictionary = identity_policy.resolve(card, context)
+        if bool(resolved.get("success", false)) and resolved.get("facts") != null:
+            return int(resolved["facts"].rank_order)
+    return int(card.current_rank_order()) \
+        if card.has_method("current_rank_order") else int(card.rank_order)
+
+static func _coerce_options(value):
+    if value is HandRecognitionOptionsScript:
+        return value
+    if value is Dictionary:
+        return HandRecognitionOptionsScript.new().configure(value)
+    return HandRecognitionOptionsScript.new().configure()
 
 static func _combinations(cards: Array, size: int, start: int = 0, prefix: Array = []) -> Array:
     if prefix.size() == size:

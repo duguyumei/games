@@ -41,6 +41,12 @@ const BattlePassiveCommittedEventServiceScript = preload(
     "res://core/passives/battle_passive_committed_event_service.gd")
 const BattleRuleQueryServiceScript = preload(
     "res://core/passives/battle_rule_query_service.gd")
+const HandRecognitionPolicyScript = preload(
+    "res://core/passives/hand_recognition_policy.gd")
+const CardIdentityPolicyScript = preload(
+    "res://core/passives/card_identity_policy.gd")
+const BattlePermissionServiceScript = preload(
+    "res://core/passives/battle_permission_service.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -79,6 +85,9 @@ var passive_rule_runtime
 var battle_passive_timing_bridge
 var battle_passive_event_service
 var battle_rule_query_service
+var hand_recognition_policy
+var card_identity_policy
+var battle_permission_service
 var _battle_instance_serial: int = 0
 
 var turn_number: int:
@@ -188,6 +197,9 @@ func _init(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
     battle_rule_query_service = BattleRuleQueryServiceScript.new(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
+    hand_recognition_policy = HandRecognitionPolicyScript.new(passive_rule_runtime)
+    card_identity_policy = CardIdentityPolicyScript.new(passive_rule_runtime)
+    battle_permission_service = BattlePermissionServiceScript.new(passive_rule_runtime)
     player.use_battle_rule_query_service(battle_rule_query_service)
     enemy.use_battle_rule_query_service(battle_rule_query_service)
     player.use_committed_event_service(
@@ -211,6 +223,12 @@ func _init(
         content_catalog,
         timing_system,
         game_log)
+    battle_permission_service.register_provider(
+        status_system,
+        "status_system",
+        100,
+        ["card_play_permission_query", "explicit_discard_permission_query"])
+    status_system.use_battle_permission_service(battle_permission_service)
     effect_ports = BattleEffectPortsScript.new(
         damage_resolver,
         status_system,
@@ -224,6 +242,11 @@ func _init(
         effect_ports,
         rng,
         timing_system)
+    battle_permission_service.register_provider(
+        card_reshape_runtime,
+        "card_reshape_runtime",
+        200,
+        ["explicit_discard_permission_query"])
     status_system.use_card_trigger_replay_service(
         card_reshape_runtime.trigger_replay_service)
     effect_ports.use_card_reshape_runtime(card_reshape_runtime)
@@ -237,6 +260,10 @@ func _init(
     enemy.use_card_state_lifecycle(card_state_lifecycle)
     player.use_status_system(status_system)
     enemy.use_status_system(status_system)
+    player.use_card_policies(hand_recognition_policy, card_identity_policy)
+    enemy.use_card_policies(hand_recognition_policy, card_identity_policy)
+    player.use_battle_permission_service(battle_permission_service)
+    enemy.use_battle_permission_service(battle_permission_service)
     player.use_card_reshape_runtime(card_reshape_runtime)
     enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)

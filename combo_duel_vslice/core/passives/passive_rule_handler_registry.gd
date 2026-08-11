@@ -44,6 +44,15 @@ const BATTLE_INT_QUERY_HOOKS := [
     "defense_retention_percent_query",
 ]
 
+const BATTLE_POLICY_QUERY_HOOKS := [
+    "hand_evaluation_options_query",
+    "card_identity_query",
+    "card_play_permission_query",
+    "explicit_discard_permission_query",
+    "technique_activation_permission_query",
+    "cooperation_permission_query",
+]
+
 const HOOKS := [
     "action_preview",
     "action_resolve",
@@ -87,6 +96,12 @@ const HOOKS := [
     "incoming_damage_query",
     "defense_gain_query",
     "defense_retention_percent_query",
+    "hand_evaluation_options_query",
+    "card_identity_query",
+    "card_play_permission_query",
+    "explicit_discard_permission_query",
+    "technique_activation_permission_query",
+    "cooperation_permission_query",
 ]
 
 var _handlers: Dictionary = {}

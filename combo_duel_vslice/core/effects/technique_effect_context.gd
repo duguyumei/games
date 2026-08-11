@@ -29,6 +29,7 @@ var source_card = null
 var source_card_instance_id: String = ""
 var source_trigger: String = ""
 var replay_depth: int = 0
+var card_identity_policy = null
 
 func configure(values: Dictionary):
     actor = values.get("actor")
@@ -69,6 +70,7 @@ func configure(values: Dictionary):
     source_card_instance_id = str(values.get("source_card_instance_id", ""))
     source_trigger = str(values.get("source_trigger", ""))
     replay_depth = int(values.get("replay_depth", 0))
+    card_identity_policy = values.get("card_identity_policy")
     # 旧测试字典仍可传 engine，但上下文只保存它已经装配好的窄效果端口。
     if ports == null and values.get("engine") != null:
         ports = values["engine"].action_resolver.effect_ports

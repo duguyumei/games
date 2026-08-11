@@ -13,6 +13,7 @@ var status_system
 var card_reshape_runtime
 var committed_event_service
 var round_number_reader: Callable
+var battle_permission_service
 
 func _init(lifecycle = null) -> void:
     card_state_lifecycle = lifecycle
@@ -30,12 +31,17 @@ func use_committed_event_service(service, round_reader: Callable = Callable()) -
     committed_event_service = service
     round_number_reader = round_reader
 
+func use_battle_permission_service(service) -> void:
+    battle_permission_service = service
+
 func reset_zones(side, cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
     side.hand.clear()
     side.staging.clear()
     side.discard_pile.clear()
     side.temporarily_removed_cards.clear()
     side.draw_pile = cards.duplicate()
+    for card in side.draw_pile:
+        _bind_card_policies(side, card)
     if shuffle_cards:
         shuffle(side.draw_pile, rng)
 
@@ -71,7 +77,7 @@ func stage_cards(side, card_ids: Array) -> bool:
             return false
         found.append(card)
     for card in found:
-        if status_system != null and not status_system.can_play_card(side, card).get("allowed", false):
+        if not _card_play_permission(side, card).get("allowed", false):
             return false
     for card in found:
         move_card(side, "hand", "staging", card, "stage")
@@ -248,6 +254,7 @@ func add_generated(side, card, destination: String, temporary: bool) -> Dictiona
     if has_instance(side, str(card.id)):
         return {"success": false, "reason": "真气实例 ID 已存在于战斗牌区"}
     card.temporary_card = temporary
+    _bind_card_policies(side, card)
     zone(side, destination).append(card)
     var reason := "temporary_generate" if temporary else "permanent_generate"
     var result := {
@@ -373,10 +380,19 @@ func _can_explicit_discard(side, card) -> bool:
     return bool(_explicit_discard_permission(side, card).get("allowed", true))
 
 func _explicit_discard_permission(side, card) -> Dictionary:
+    if battle_permission_service != null:
+        return battle_permission_service.can_explicit_discard(side, card)
     if card_reshape_runtime != null:
         return card_reshape_runtime.can_explicit_discard(side, card)
     if card.has_method("can_explicit_discard"):
         return card.can_explicit_discard()
+    return {"allowed": true}
+
+func _card_play_permission(side, card) -> Dictionary:
+    if battle_permission_service != null:
+        return battle_permission_service.can_play_card(side, card)
+    if status_system != null:
+        return status_system.can_play_card(side, card)
     return {"allowed": true}
 
 func find_card(side, zone_name: String, instance_id: String):
@@ -407,6 +423,14 @@ func zone(side, zone_name: String) -> Array:
         "staging": return side.staging
         "discard_pile": return side.discard_pile
     return []
+
+func _bind_card_policies(side, card) -> void:
+    if card == null:
+        return
+    if card.has_method("configure_identity_policy"):
+        card.configure_identity_policy(side.card_identity_policy)
+    if card.has_method("configure_battle_permission_service"):
+        card.configure_battle_permission_service(side.battle_permission_service)
 
 func shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
     for index in range(cards.size() - 1, 0, -1):

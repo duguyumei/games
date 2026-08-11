@@ -81,6 +81,11 @@ func can_explicit_discard(holder, card) -> Dictionary:
             }
     return {"allowed": true}
 
+func permission_query(hook: String, context: Dictionary) -> Dictionary:
+    if hook == "explicit_discard_permission_query":
+        return can_explicit_discard(context.get("owner", context.get("actor")), context.get("card"))
+    return {"allowed": true}
+
 func finalize_action_preview(holder, preview: Dictionary) -> Dictionary:
     if bool(preview.get("reshape_action_confirmed", false)):
         return {"success": true, "reused": true}
