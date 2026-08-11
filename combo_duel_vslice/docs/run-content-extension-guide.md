@@ -439,8 +439,8 @@ kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_intera
 永久功法序列与内功配装共用地图待选门禁，
 进行中的节点、战斗、待领奖励和 Boss 宝箱流程均不可修改，查询始终可用。
 
-普通遗忘每次只删除一个未装备副本。遗忘所得由可注入的
-`InnerSkillForgetValuePolicy.resolve(definition, growth)` 解析；默认返回 `forget_value`，中央流程
+普通遗忘每次只删除一个未装备副本。基础所得来自 `forget_value`，展示与提交都经由
+`PassiveIntPolicyResolver` 的 `inner_skill_forget_value_query` 依次归并当前有效值，中央流程
 不识别内功或物品 ID。正式内功必须配置非负整数 `forget_value`；候选或仅设计内容缺少该字段时
 可以载入，但普通遗忘会明确拒绝，不按 0 处理。成功的普通遗忘同时增加历练和
 `forgotten_inner_skill_count`；奇珍清理、替换、自动消失及其他永久移除不增加该计数。
@@ -471,6 +471,22 @@ kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_intera
 已装备槽位逐副本建源，物品从唯一持有区建源；两者共用 Runtime 与 Registry，但不合并库存。
 容量查询以拟提交完整配装重新解析一次来源，不做递归固定点；压制只影响新计划；重复 invocation
 连续执行且不会再次运行计划查询。
+
+## 6.10 本局纯查询与已提交事件
+
+价格、遗忘所得、冥想费用、补充包展示数／选择数使用
+`PassiveIntQueryRequest → PassiveIntPolicyResolver → ExecutionPlan → Invocation → Handler →
+PassiveIntQueryResult`。Handler 直接返回新的确定整数 `value`；不得为这些能力建立
+add／multiply／set／script 表达式 DSL。领域服务再校验价格、费用、数量和遗忘所得均为非负整数。
+商店槽位始终保存基础值，快照只在深复制 DTO 上附加有效值与来源明细。
+
+成功行为通过 `RunPassiveEventService` 发送 `practice_opened`、
+`practice_purchase_committed`、`practice_pack_opened`、`meditation_committed`、
+`inner_skill_forgotten`、`battle_completed` 或 `node_completed`。Handler 只能从上下文取得
+`RunPassiveEffectPorts` 并调用已登记的 `RunMutationService` 效果，不能持有 RunSession、修习服务
+或导航服务。事件在成长工作副本上执行；任一 Invocation 失败时回滚整个副本，成功后才记录稳定
+事务令牌。节点来源快照只保存 source kind、内容 ID、实例键、behavior 索引和顺序，读档不会重放
+已提交事件。
 
 ## 7. 什么时候只写 JSON
 

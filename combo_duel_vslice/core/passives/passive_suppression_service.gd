@@ -24,11 +24,11 @@ func remove(suppression_id: String) -> bool:
     return _suppressions.erase(suppression_id)
 
 func blockers_for(source, hook: String, round_number: int = 0) -> Array:
-    purge_expired(round_number)
     var result: Array = []
     for id in _suppressions:
         var suppression = _suppressions[id]
-        if suppression.blocks(source, hook, round_number):
+        if not suppression.is_expired(round_number) \
+                and suppression.blocks(source, hook, round_number):
             result.append(suppression)
     result.sort_custom(func(left, right):
         return left.suppression_id < right.suppression_id)

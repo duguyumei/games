@@ -109,6 +109,12 @@ const PassiveRuleHandlerRegistryScript = preload(
     "res://core/passives/passive_rule_handler_registry.gd")
 const PassiveRuleRuntimeScript = preload(
     "res://core/passives/passive_rule_runtime.gd")
+const PassiveIntPolicyResolverScript = preload(
+    "res://core/passives/passive_int_policy_resolver.gd")
+const RunPassiveEventServiceScript = preload(
+    "res://core/passives/run_passive_event_service.gd")
+const RunPassiveEventContextScript = preload(
+    "res://core/passives/run_passive_event_context.gd")
 const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
@@ -228,6 +234,82 @@ class PassiveRepeatProbeHandler:
             "additional_executions": 1,
             "target_content_id": str(configuration["target_content_id"]),
         }
+
+class RunPassiveProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    var event_calls: Array[Dictionary] = []
+
+    func behavior_id() -> String:
+        return "run_passive_probe"
+
+    func supported_hooks() -> Array[String]:
+        return [
+            "practice_price_query",
+            "inner_skill_forget_value_query",
+            "meditation_cost_query",
+            "pack_offer_count_query",
+            "pack_choose_count_query",
+            "practice_opened",
+            "practice_purchase_committed",
+            "practice_pack_opened",
+            "meditation_committed",
+            "inner_skill_forgotten",
+            "battle_completed",
+            "node_completed",
+        ] as Array[String]
+
+    func validate_configuration(configuration: Dictionary) -> Array[String]:
+        for field in [
+                "price_delta", "forget_delta", "meditation_delta",
+                "offer_delta", "choose_delta", "event_experience"]:
+            if configuration.has(field) and not configuration[field] is int:
+                return ["%s 必须是整数" % field] as Array[String]
+        return []
+
+    func handle(hook: String, context, configuration: Dictionary) -> Dictionary:
+        if hook.ends_with("_query"):
+            if str(configuration.get("fail_hook", "")) == hook:
+                return {"success": false, "reason": "Fake 查询失败"}
+            var current := int(context.payload.get("current_value", 0))
+            var request = context.payload.get("int_query")
+            var target_id := str(configuration.get("target_id", ""))
+            if hook == "practice_price_query" \
+                    and target_id != "" and request != null \
+                    and request.subject_id != target_id:
+                return {"success": true, "value": current}
+            var field: String = {
+                "practice_price_query": "price_delta",
+                "inner_skill_forget_value_query": "forget_delta",
+                "meditation_cost_query": "meditation_delta",
+                "pack_offer_count_query": "offer_delta",
+                "pack_choose_count_query": "choose_delta",
+            }.get(hook, "")
+            return {
+                "success": true,
+                "value": current + int(configuration.get(field, 0)),
+            }
+        var ports = context.payload.get("effect_ports")
+        var recorded_payload: Dictionary = context.payload.duplicate(false)
+        recorded_payload.erase("effect_ports")
+        event_calls.append({
+            "hook": hook,
+            "source_instance_key": context.source.source_instance_key,
+            "transaction_token": context.transaction_token,
+            "payload": recorded_payload,
+            "growth": ports.growth_snapshot() if ports != null else {},
+        })
+        var amount := int(configuration.get("event_experience", 0))
+        if amount > 0:
+            var applied: Dictionary = ports.apply_effects([{
+                "op": "gain_experience", "amount": amount,
+                "source": "run_passive_probe",
+            }])
+            if not applied.get("success", false):
+                return applied
+        if str(configuration.get("fail_hook", "")) == hook:
+            return {"success": false, "reason": "Fake Handler 提交失败"}
+        return {"success": true}
 
 class DirectCardTriggerProbe:
     extends RefCounted
@@ -455,6 +537,7 @@ func _initialize() -> void:
     _test_battle_timing_system_contract_and_integration()
     _test_defense_retention_policy_and_round_decay()
     _test_passive_runtime_capacity_suppression_invocations_and_items()
+    _test_run_passive_queries_events_and_transactions()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
@@ -1138,6 +1221,469 @@ func _test_passive_runtime_capacity_suppression_invocations_and_items() -> void:
         setup_service.apply_non_deck_progress(
             legacy_side, RunProgressSnapshotScript.from_dict({}))["success"],
         "旧快照缺少 item IDs 兼容为空")
+
+func _test_run_passive_queries_events_and_transactions() -> void:
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    var probe_handler = RunPassiveProbeHandler.new()
+    _assert_true(registry.register_handler(probe_handler), "注册本局查询与事件 Fake Handler")
+    _assert_true(
+        registry.register_handler(PassiveRepeatProbeHandler.new()),
+        "本局查询复用额外 Invocation Fake Handler")
+    for hook in [
+            "practice_price_query", "inner_skill_forget_value_query",
+            "meditation_cost_query", "pack_offer_count_query",
+            "pack_choose_count_query", "practice_opened",
+            "practice_purchase_committed", "practice_pack_opened",
+            "meditation_committed", "inner_skill_forgotten",
+            "battle_completed", "node_completed"]:
+        _assert_true(registry.has_hook(hook), "Registry 登记稳定 Hook %s" % hook)
+
+    var base_catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(base_catalog.load_all(), "建立 F5B 内容测试基线")
+    var values := _catalog_definitions(base_catalog)
+    values["items"]["items"].append_array([
+        {
+            "id": "run_policy_probe", "name": "本局策略探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "测试本局查询与事件。", "price": 9,
+            "behaviors": [{
+                "id": "run_passive_probe",
+                "configuration": {
+                    "target_id": "zengyuan_pill", "price_delta": -3,
+                    "forget_delta": 3, "meditation_delta": -5,
+                    "offer_delta": 1, "choose_delta": 1,
+                },
+            }],
+        },
+        {
+            "id": "self_price_probe", "name": "自身价格探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "未持有时不能修改自己的价格。", "price": 9,
+            "behaviors": [{
+                "id": "run_passive_probe",
+                "configuration": {"target_id": "self_price_probe", "price_delta": -9},
+            }],
+        },
+        {
+            "id": "event_failure_probe", "name": "事件失败探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "先修改工作副本再失败。", "price": 1,
+            "behaviors": [{
+                "id": "run_passive_probe",
+                "configuration": {
+                    "event_experience": 4,
+                    "fail_hook": "practice_purchase_committed",
+                },
+            }],
+        },
+        {
+            "id": "forget_query_failure_probe", "name": "遗忘查询失败探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "遗忘查询失败时保持事务不变。", "price": 1,
+            "behaviors": [{
+                "id": "run_passive_probe",
+                "configuration": {"fail_hook": "inner_skill_forget_value_query"},
+            }],
+        },
+        {
+            "id": "run_repeat_probe", "name": "本局重复探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "额外执行目标来源一次。", "price": 1,
+            "behaviors": [{
+                "id": "repeat_probe",
+                "configuration": {"target_content_id": "run_policy_probe"},
+            }],
+        },
+    ])
+    values["inner_skills"]["inner_skills"].append({
+        "id": "forget_policy_fixture", "name": "统一遗忘测试内功",
+        "status": "formal", "description": "测试遗忘查询。", "forget_value": 7,
+        "behaviors": [{
+            "id": "on_play_effects",
+            "configuration": {"effects": [{
+                "op": "defense",
+                "amount": {"kind": "constant", "value": 1},
+            }]},
+        }],
+    })
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        catalog.load_from_definitions(values, base_catalog.paths),
+        "F5B Fake 内容通过共享 Registry 校验")
+    var runtime = PassiveRuleRuntimeScript.new(registry, catalog)
+    var int_resolver = PassiveIntPolicyResolverScript.new(runtime)
+    var mutation_service = RunMutationServiceScript.new(
+        RunEffectHandlerRegistryScript.new(), catalog)
+    var event_service = RunPassiveEventServiceScript.new(
+        runtime, mutation_service)
+
+    var growth = GrowthInventoryScript.new(catalog, false)
+    growth.experience = 20
+    growth.item_ids.assign(["run_policy_probe"])
+    growth.practice_shop_state = {
+        "shop_index": 1, "act": 1,
+        "normal": [{
+            "id": "zengyuan_pill", "kind": "consumable", "price": 3,
+        }],
+        "packs": [], "items": [],
+        "meditation_count": 0, "next_meditation_cost": 5,
+        "pack_open_sequence": 0,
+    }
+    var event_state = RunStateScript.new(null, growth)
+    var practice = PracticeServiceScript.new(catalog)
+    practice.use_passive_services(int_resolver, event_service, event_state)
+    var state_before_queries := growth.capture_mutation_state()
+    var first_price: Dictionary = practice.resolve_price(
+        growth, "consumable", "zengyuan_pill", 3)
+    var second_price: Dictionary = practice.resolve_price(
+        growth, "consumable", "zengyuan_pill", 3)
+    _assert_equal(first_price, second_price, "相同价格查询重复执行结果完全相同")
+    _assert_equal(first_price.get("effective_price"), 0, "Fake Handler 可把有效价格改为零")
+    _assert_equal(
+        growth.capture_mutation_state(), state_before_queries,
+        "价格查询不修改成长、商店或随机序号")
+    var free_purchase := practice.purchase(
+        growth, "normal", 0, true, {"run_seed": 41, "act": 1})
+    _assert_true(free_purchase.get("success", false), "有效价格为零时正式购买成功")
+    _assert_equal(free_purchase.get("base_price"), 3, "购买保留基础价格")
+    _assert_equal(free_purchase.get("effective_price"), 0, "展示与提交共用零元有效价格")
+    _assert_equal(growth.experience, 20, "免费购买不扣历练")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "practice_purchase_committed").size(),
+        1,
+        "成功购买只触发一次 practice_purchase_committed")
+
+    var self_growth = GrowthInventoryScript.new(catalog, false)
+    self_growth.experience = 20
+    self_growth.practice_shop_state = {
+        "shop_index": 2, "normal": [], "packs": [],
+        "items": [{
+            "id": "self_price_probe", "kind": "item", "price": 9,
+        }],
+    }
+    var self_state = RunStateScript.new(null, self_growth)
+    practice.use_passive_services(int_resolver, event_service, self_state)
+    var self_purchase := practice.purchase(
+        self_growth, "items", 0, true, {"run_seed": 41, "act": 1})
+    _assert_true(self_purchase.get("success", false), "未持有物品可以正常购买")
+    _assert_equal(self_purchase.get("effective_price"), 9, "新买物品不能修改自己的购买价格")
+    _assert_equal(self_growth.experience, 11, "自身价格未生效时按基础价格扣费")
+    _assert_equal(
+        self_purchase.get("passive_event", {}).get("results", []).size(),
+        0,
+        "新买物品不追溯成为本次购买事件来源")
+
+    var repository = InnerSkillRepositoryScript.new()
+    repository.configure(catalog.definition("inner_skills"))
+    growth.learned_inner_skill_ids.assign([
+        "forget_policy_fixture", "forget_policy_fixture"])
+    growth.equipped_inner_skill_ids.assign(["forget_policy_fixture"])
+    practice.use_passive_services(int_resolver, event_service, event_state)
+    var loadout = InnerSkillLoadoutServiceScript.new(
+        growth, repository, null, runtime)
+    loadout.use_passive_services(
+        runtime, int_resolver, event_service, event_state)
+    var forget_display := loadout.query_forget_value("forget_policy_fixture")
+    var forget_commit := loadout.forget_inner_skill(
+        "forget_policy_fixture", {"run_seed": 41, "act": 1})
+    _assert_equal(forget_display.get("forget_value"), 10, "遗忘展示经过统一查询链")
+    _assert_true(forget_commit.get("success", false), "统一遗忘查询成功提交")
+    _assert_equal(forget_commit.get("forget_value"), 10, "遗忘展示与正式获得值一致")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "inner_skill_forgotten").size(),
+        1,
+        "普通遗忘成功后只触发一次 inner_skill_forgotten")
+
+    var forget_failure_growth = GrowthInventoryScript.new(catalog, false)
+    forget_failure_growth.experience = 6
+    forget_failure_growth.item_ids.assign(["forget_query_failure_probe"])
+    forget_failure_growth.learned_inner_skill_ids.assign([
+        "forget_policy_fixture", "forget_policy_fixture"])
+    forget_failure_growth.equipped_inner_skill_ids.assign([
+        "forget_policy_fixture"])
+    var forget_failure_state = RunStateScript.new(null, forget_failure_growth)
+    var forget_failure_loadout = InnerSkillLoadoutServiceScript.new(
+        forget_failure_growth, repository, null, runtime)
+    forget_failure_loadout.use_passive_services(
+        runtime, int_resolver, event_service, forget_failure_state)
+    var forget_failure_before := forget_failure_growth.capture_mutation_state()
+    _assert_true(
+        not forget_failure_loadout.forget_inner_skill(
+            "forget_policy_fixture").get("success", false),
+        "遗忘整数查询失败时正式遗忘被拒绝")
+    _assert_equal(
+        forget_failure_growth.capture_mutation_state(), forget_failure_before,
+        "遗忘查询失败不删除库存、不发历练且不增加计数")
+
+    growth.practice_shop_state = {
+        "shop_index": 3, "act": 1, "normal": [], "packs": [], "items": [],
+        "meditation_count": 0, "next_meditation_cost": 5,
+        "pack_open_sequence": 0,
+    }
+    var meditation := practice.meditate(
+        growth, 41, 1, true, {"run_seed": 41, "act": 1})
+    _assert_true(meditation.get("success", false), "零元冥想成功")
+    _assert_equal(meditation.get("effective_cost"), 0, "冥想有效费用可为零")
+    _assert_equal(
+        growth.practice_shop_state.get("next_meditation_cost"), 6,
+        "免费冥想后基础费用仍从五推进到六")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "meditation_committed").size(),
+        1,
+        "成功冥想只触发一次 meditation_committed")
+
+    var pack: Dictionary = catalog.definition("practice_shop").get(
+        "packs", {}).get("candidates", [])[0].duplicate(true)
+    growth.practice_shop_state = {
+        "shop_index": 4, "act": 1, "normal": [], "packs": [pack], "items": [],
+        "meditation_count": 0, "next_meditation_cost": 5,
+        "pack_open_sequence": 0,
+    }
+    growth.consumable_ids.clear()
+    var pack_events_before: int = probe_handler.event_calls.filter(
+        func(value): return value["hook"] == "practice_pack_opened").size()
+    var preview := practice.open_pack(growth, "packs", 0, [], true, 41, 1)
+    _assert_true(preview.get("success", false), "补充包策略预览成功")
+    _assert_equal(
+        preview.get("effective_offer_count"),
+        int(preview.get("base_offer_count")) + 1,
+        "补充包准备令牌冻结有效展示数量")
+    _assert_equal(
+        preview.get("effective_choose_count"),
+        int(preview.get("base_choose_count")) + 1,
+        "补充包准备令牌冻结有效选择数量")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "practice_pack_opened").size(),
+        pack_events_before,
+        "补充包预览不触发 practice_pack_opened")
+    var pack_commit := practice.open_pack(
+        growth, "packs", 0, [preview["preview"][0]], true, 41, 1,
+        str(preview["preparation_token"]))
+    _assert_true(pack_commit.get("success", false), "冻结补充包正式确认成功")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "practice_pack_opened").size(),
+        pack_events_before + 1,
+        "补充包正式开启只触发一次事件")
+
+    var battle_events_before: int = probe_handler.event_calls.filter(
+        func(value): return value["hook"] == "battle_completed").size()
+    var victory_session: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog)
+    victory_session.execute({"type": "setup_run", "seed": 4341})
+    victory_session.configure_passive_services(
+        runtime, int_resolver, event_service)
+    victory_session.growth.item_ids.assign(["run_policy_probe"])
+    var victory_node := str(victory_session.snapshot().available_node_ids[0])
+    var victory_begin := victory_session.execute({
+        "type": "begin_node", "node_id": victory_node})
+    victory_session.growth.item_ids.append("self_price_probe")
+    var victory_dispatch: Dictionary = victory_begin.payload_value("dispatch", {})
+    var victory_result := victory_session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            victory_dispatch, "player_victory", "F5B Fake 胜利", 3),
+        "progress_snapshot": victory_session.progress_snapshot(),
+    })
+    _assert_true(victory_result.success, "胜利正式结果触发本局结算")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "battle_completed").size(),
+        battle_events_before + 1,
+        "player_victory 触发一次 battle_completed")
+    _assert_equal(
+        victory_result.payload_value("passive_event", {}).get(
+            "invocation_count"),
+        null,
+        "战斗事件由同步事务消费，不泄漏为节点建立结果字段")
+
+    var node_events_before: int = probe_handler.event_calls.filter(
+        func(value): return value["hook"] == "node_completed").size()
+    var reward_bundle: Dictionary = victory_session.snapshot().reward.get(
+        "bundle", {})
+    var claim := victory_session.execute({
+        "type": "claim_reward",
+        "bundle_id": str(reward_bundle.get("id", "")),
+    })
+    _assert_true(claim.success, "节点奖励、功行与完成事件完整提交")
+    var node_event: Dictionary = claim.payload_value("passive_event", {})
+    _assert_equal(node_event.get("invocation_count"), 1, "节点开始只冻结原有一个被动来源")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "node_completed").size(),
+        node_events_before + 1,
+        "节点完整奖励和功行后只触发一次 node_completed")
+    var last_node_call: Dictionary = probe_handler.event_calls.filter(
+        func(value): return value["hook"] == "node_completed")[-1]
+    _assert_equal(
+        last_node_call.get("growth", {}).get("experience"),
+        claim.payload_value("experience"),
+        "node_completed Handler 观察到奖励与功行均已结算")
+    _assert_true(
+        claim.payload_value("phase", "") != "awaiting_reward",
+        "node_completed 成功后才推进离开奖励阶段")
+    var node_count_after_claim: int = probe_handler.event_calls.filter(
+        func(value): return value["hook"] == "node_completed").size()
+    _assert_true(not victory_session.execute({
+        "type": "claim_reward", "bundle_id": str(reward_bundle.get("id", "")),
+    }).success, "同一节点令牌不能重复提交")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "node_completed").size(),
+        node_count_after_claim,
+        "同一节点重复命令不重复触发 node_completed")
+
+    var defeat_session: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog)
+    defeat_session.execute({"type": "setup_run", "seed": 4342})
+    defeat_session.configure_passive_services(runtime, int_resolver, event_service)
+    defeat_session.growth.item_ids.assign(["run_policy_probe"])
+    var defeat_node := str(defeat_session.snapshot().available_node_ids[0])
+    var defeat_begin := defeat_session.execute({
+        "type": "begin_node", "node_id": defeat_node})
+    var defeat_dispatch: Dictionary = defeat_begin.payload_value("dispatch", {})
+    _assert_true(defeat_session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            defeat_dispatch, "player_defeat", "F5B Fake 战败", 4),
+        "progress_snapshot": defeat_session.progress_snapshot(),
+    }).success, "战败正式结果触发本局终局")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "battle_completed").size(),
+        battle_events_before + 2,
+        "player_defeat 也只触发一次 battle_completed")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "node_completed").size(),
+        node_count_after_claim,
+        "战败节点不触发 node_completed")
+
+    for terminal_state in ["unresolved_draw", "scenario_error"]:
+        var terminal_session: RunSession = RunSessionScript.new(
+            null, null, null, null, catalog)
+        terminal_session.execute({"type": "setup_run", "seed": 4350})
+        terminal_session.configure_passive_services(
+            runtime, int_resolver, event_service)
+        terminal_session.growth.item_ids.assign(["run_policy_probe"])
+        var terminal_node := str(
+            terminal_session.snapshot().available_node_ids[0])
+        var terminal_begin := terminal_session.execute({
+            "type": "begin_node", "node_id": terminal_node})
+        var terminal_dispatch: Dictionary = terminal_begin.payload_value(
+            "dispatch", {})
+        _assert_true(terminal_session.execute({
+            "type": "resolve_battle_result",
+            "battle_result": _battle_final_result_for_test(
+                terminal_dispatch, terminal_state, terminal_state, 5),
+        }).success, "%s 正式终止但不成长" % terminal_state)
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "battle_completed").size(),
+        battle_events_before + 2,
+        "unresolved_draw 与 scenario_error 均不触发 battle_completed")
+
+    var suppressed_growth = GrowthInventoryScript.new(catalog, false)
+    suppressed_growth.item_ids.assign(["run_policy_probe"])
+    runtime.suppression_service.apply({
+        "suppression_id": "run-query-suppression",
+        "target_content_id": "run_policy_probe",
+        "blocked_hooks": ["practice_price_query", "practice_opened"],
+        "reason": "本局查询压制",
+    })
+    _assert_equal(
+        practice.resolve_price(
+            suppressed_growth, "consumable", "zengyuan_pill", 3).get(
+                "effective_price"),
+        3,
+        "压制来源不参与本局整数查询")
+    var suppressed_plan = runtime.build_execution_plan(
+        "practice_opened", {"owner": suppressed_growth})
+    _assert_equal(suppressed_plan.invocations.size(), 0, "压制来源不参与本局事件")
+    runtime.suppression_service.clear()
+
+    var repeated_growth = GrowthInventoryScript.new(catalog, false)
+    repeated_growth.item_ids.assign(["run_policy_probe", "run_repeat_probe"])
+    var repeated_plan = runtime.build_execution_plan(
+        "inner_skill_forget_value_query", {"owner": repeated_growth})
+    _assert_equal(repeated_plan.invocations.size(), 2, "新增查询 Hook 保留额外执行一次")
+    _assert_equal(
+        repeated_plan.invocations[0].source.source_instance_key,
+        repeated_plan.invocations[1].source.source_instance_key,
+        "新增查询的额外 Invocation 在同来源位置连续且不递归")
+
+    var failure_growth = GrowthInventoryScript.new(catalog, false)
+    failure_growth.experience = 10
+    failure_growth.item_ids.assign(["event_failure_probe"])
+    failure_growth.practice_shop_state = {
+        "shop_index": 5, "normal": [{
+            "id": "zengyuan_pill", "kind": "consumable", "price": 3,
+        }], "packs": [], "items": [],
+    }
+    var failure_state = RunStateScript.new(null, failure_growth)
+    practice.use_passive_services(int_resolver, event_service, failure_state)
+    var failure_before := failure_growth.capture_mutation_state()
+    var failed_purchase := practice.purchase(
+        failure_growth, "normal", 0, true, {"run_seed": 41, "act": 1})
+    _assert_true(not failed_purchase.get("success", false), "事件 Handler 失败使购买失败")
+    _assert_equal(
+        failure_growth.capture_mutation_state(), failure_before,
+        "Handler 先修改端口再失败时不留下扣费、内容或被动修改")
+    _assert_true(
+        failure_state.committed_passive_event_tokens.is_empty(),
+        "失败事件不留下去重令牌")
+
+    var opened_session: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog)
+    _assert_true(opened_session.execute({
+        "type": "setup_run", "seed": 4141}).success, "建立修习打开事件测试本局")
+    opened_session.configure_passive_services(
+        runtime, int_resolver, event_service)
+    opened_session.growth.item_ids.assign(["run_policy_probe"])
+    var opened_before: int = probe_handler.event_calls.filter(
+        func(value): return value["hook"] == "practice_opened").size()
+    opened_session.snapshot()
+    opened_session.snapshot()
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "practice_opened").size(),
+        opened_before,
+        "snapshot 与 UI 刷新不触发 practice_opened")
+    _assert_true(opened_session.execute({"type": "open_practice"}).success, "首次打开修习成功")
+    _assert_true(opened_session.execute({"type": "open_practice"}).success, "重复打开命令幂等成功")
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "practice_opened").size(),
+        opened_before + 1,
+        "修习从关闭到打开只触发一次 practice_opened")
+    opened_session.execute({"type": "close_practice"})
+    opened_session.execute({"type": "open_practice"})
+    _assert_equal(
+        probe_handler.event_calls.filter(
+            func(value): return value["hook"] == "practice_opened").size(),
+        opened_before + 2,
+        "关闭后再次主动打开属于新一次 practice_opened")
+
+    var old_save_session: RunSession = RunSessionScript.new(
+        null, null, null, null, catalog)
+    _assert_true(old_save_session.execute({
+        "type": "setup_run", "seed": 4242}).success, "建立旧存档兼容测试本局")
+    var old_save_values: Dictionary = RunSaveDataScript.new().capture(
+        old_save_session).to_dict()
+    for field in [
+            "practice_is_open", "practice_open_sequence",
+            "node_passive_source_snapshot", "node_passive_source_node_id",
+            "committed_passive_event_tokens"]:
+        old_save_values["node_state"].erase(field)
+    _assert_true(
+        RunSaveDataScript.new(old_save_values).restore_session(
+            catalog).get("success", false),
+        "旧存档缺少 F5B 可选字段仍可载入")
 
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
@@ -7488,8 +8034,8 @@ func _test_inner_skill_loadout_and_forgetting() -> void:
         session.growth, repository, InnerSkillForgetValueProbe.new(3))
     _assert_equal(
         policy_service.query_forget_value("loadout_fixture_a").get("forget_value"),
-        10,
-        "可注入遗忘所得策略统一修改当前有效值")
+        7,
+        "旧遗忘策略注入不再绕过统一被动整数查询链")
 
     _assert_true(session.execute({
         "type": "set_inner_skill_loadout",

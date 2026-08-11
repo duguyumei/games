@@ -9,6 +9,11 @@ const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 var navigation = MapNavigationServiceScript.new()
 var growth = GrowthInventoryScript.new()
 var terminal_result = null
+var practice_is_open: bool = false
+var practice_open_sequence: int = 0
+var node_passive_source_snapshot: Array = []
+var node_passive_source_node_id: String = ""
+var committed_passive_event_tokens: Array[String] = []
 
 func _init(navigation_override = null, growth_override = null) -> void:
     if navigation_override != null:
@@ -84,9 +89,17 @@ var practice_purchases: Dictionary:
 
 func setup(seed_value: int = 2308) -> void:
     terminal_result = null
+    reset_passive_run_state()
     growth.reset("run-%d" % seed_value)
     navigation.setup(seed_value)
     changed.emit()
+
+func reset_passive_run_state() -> void:
+    practice_is_open = false
+    practice_open_sequence = 0
+    node_passive_source_snapshot.clear()
+    node_passive_source_node_id = ""
+    committed_passive_event_tokens.clear()
 
 func available_node_ids() -> Array[String]:
     return navigation.available_node_ids()

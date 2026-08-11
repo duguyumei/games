@@ -553,12 +553,20 @@ flowchart LR
     REG --> PREVIEW["ActionPreviewService<br/>纯 intent"]
     REG --> RESOLVE["ActionResolver<br/>现有效果队列"]
     REG --> CAP["InnerSkillCapacityPolicy<br/>基础 6 + 有效修正"]
+    REG --> INT["PassiveIntPolicyResolver<br/>价格/遗忘/冥想/补充包纯查询"]
+    REG --> EVENT["RunPassiveEventService<br/>成功提交后一次"]
+    EVENT --> PORTS["RunPassiveEffectPorts<br/>受控 RunMutationService"]
     CAT["ContentCatalog<br/>load_all 前装配 Registry"] --> REG
 ```
 
 Registry 同时服务内容加载校验和运行时派发。SourceResolver 保留内功与物品各自的库存语义；
 Runtime 只识别来源、behavior、hook、激活、顺序和 invocation，不识别具体内容 ID。战斗结束清空
 suppression，执行计划不进入本局存档。
+
+本局整数查询从基础值开始，每个 Invocation 读取上一个 Invocation 的有效值；Runtime 只校验整数
+返回并记录来源，不解释通用数值 DSL。购买、冥想、遗忘和开包在 `GrowthInventory` 工作副本中把
+基础修改与事件组成同一事务。节点开始来源快照和已提交事件令牌以稳定 ID 存档，因此当前节点或
+当前购买中新获得的来源不会追溯触发，读档也不会重放成功事件。
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 

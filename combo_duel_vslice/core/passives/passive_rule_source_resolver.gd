@@ -9,6 +9,8 @@ func _init(content_catalog = null) -> void:
     _catalog = content_catalog
 
 func collect_sources(context) -> Array:
+    if context != null and context.has_source_snapshot:
+        return sources_from_snapshot(context.source_snapshot)
     var owner = context.owner if context != null else null
     if owner == null or _catalog == null:
         return []
@@ -39,6 +41,55 @@ func collect_sources(context) -> Array:
             "item:%s:%s" % [owner_id, content_id],
             _catalog.get_by_id("item", content_id),
             10000 + item_index)
+    result.sort_custom(func(left, right):
+        if left.source_order != right.source_order:
+            return left.source_order < right.source_order
+        if left.source_instance_key != right.source_instance_key:
+            return left.source_instance_key < right.source_instance_key
+        return left.behavior_index < right.behavior_index)
+    return result
+
+func capture_source_snapshot(context) -> Array:
+    var result: Array = []
+    for source in collect_sources(context):
+        result.append({
+            "source_kind": source.source_kind,
+            "content_id": source.content_id,
+            "source_instance_key": source.source_instance_key,
+            "behavior_id": source.behavior_id,
+            "behavior_index": source.behavior_index,
+            "source_order": source.source_order,
+        })
+    return result
+
+func sources_from_snapshot(snapshot: Array) -> Array:
+    var result: Array = []
+    if _catalog == null:
+        return result
+    for value in snapshot:
+        if not value is Dictionary:
+            continue
+        var source_kind := str(value.get("source_kind", ""))
+        var content_id := str(value.get("content_id", ""))
+        var behavior_index := int(value.get("behavior_index", -1))
+        var definition: Dictionary = _catalog.get_by_id(source_kind, content_id)
+        var behaviors = definition.get("behaviors", [])
+        if behavior_index < 0 or behavior_index >= behaviors.size() \
+                or not behaviors[behavior_index] is Dictionary:
+            continue
+        var behavior: Dictionary = behaviors[behavior_index]
+        if str(behavior.get("id", "")) != str(value.get("behavior_id", "")):
+            continue
+        result.append(SourceScript.new().configure({
+            "source_kind": source_kind,
+            "content_id": content_id,
+            "source_instance_key": str(value.get("source_instance_key", "")),
+            "definition": definition,
+            "behavior_id": str(behavior.get("id", "")),
+            "behavior_index": behavior_index,
+            "configuration": behavior.get("configuration", {}),
+            "source_order": int(value.get("source_order", 0)),
+        }))
     result.sort_custom(func(left, right):
         if left.source_order != right.source_order:
             return left.source_order < right.source_order

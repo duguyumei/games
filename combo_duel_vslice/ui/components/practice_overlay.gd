@@ -39,7 +39,10 @@ func present(data: Dictionary) -> void:
     _present_group(_offers, practice.get("normal", []), "normal")
     _present_group(_packs, practice.get("packs", []), "packs")
     _present_group(_items, practice.get("items", []), "items")
-    _meditate_button.text = "冥想刷新（%d 历练）" % int(practice.get("next_meditation_cost", 5))
+    _meditate_button.text = "冥想刷新（%d 历练）" % int(
+        practice.get(
+            "effective_meditation_cost",
+            practice.get("next_meditation_cost", 5)))
 
 func present_pack_choices(
         group: String,

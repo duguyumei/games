@@ -15,6 +15,8 @@ var payload: Dictionary = {}
 var source = null
 var invocation = null
 var plan_target_source = null
+var source_snapshot: Array = []
+var has_source_snapshot: bool = false
 
 func configure(values: Dictionary):
     actor = values.get("actor", values.get("owner"))
@@ -29,6 +31,8 @@ func configure(values: Dictionary):
     source = values.get("source")
     invocation = values.get("invocation")
     plan_target_source = values.get("plan_target_source")
+    has_source_snapshot = values.has("source_snapshot")
+    source_snapshot = values.get("source_snapshot", []).duplicate(true)
     return self
 
 func for_invocation(current_invocation):
@@ -42,6 +46,7 @@ func for_invocation(current_invocation):
         "payload": payload,
         "source": current_invocation.source,
         "invocation": current_invocation,
+        "source_snapshot": source_snapshot,
     })
 
 func for_plan_target(target_source):
@@ -56,6 +61,8 @@ func for_plan_target(target_source):
     })
     result.has_proposed_inner_skill_ids = has_proposed_inner_skill_ids
     result.proposed_equipped_inner_skill_ids = proposed_equipped_inner_skill_ids.duplicate()
+    result.has_source_snapshot = has_source_snapshot
+    result.source_snapshot = source_snapshot.duplicate(true)
     return result
 
 func effect_context_for(current_source = null):

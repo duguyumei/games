@@ -42,6 +42,8 @@ const BattleFinalResultDTOScript = preload(
     "res://core/battle_final_result_dto.gd")
 const RunTerminalResultDTOScript = preload(
     "res://core/run_terminal_result_dto.gd")
+const EventContextScript = preload(
+    "res://core/passives/run_passive_event_context.gd")
 
 var game_log
 var _run_state
@@ -63,6 +65,9 @@ var _inner_skill_repository
 var _inner_skill_loadout_service
 var _run_build_query_service
 var _node_interaction_service
+var _passive_rule_runtime
+var _passive_int_policy_resolver
+var _run_passive_event_service
 var _pending_reward = null
 var _active_battle_session = null
 var _pending_victory_battle_result: Dictionary = {}
@@ -186,6 +191,22 @@ func create_battle_session() -> BattleSession:
 
 func configure_ai_settings_service(service) -> void:
     _ai_settings_service = service
+
+func configure_passive_services(
+        passive_runtime,
+        int_policy_resolver,
+        event_service) -> void:
+    _passive_rule_runtime = passive_runtime
+    _passive_int_policy_resolver = int_policy_resolver
+    _run_passive_event_service = event_service
+    _practice_service.use_passive_services(
+        int_policy_resolver, event_service, _run_state)
+    _inner_skill_loadout_service.use_passive_services(
+        passive_runtime, int_policy_resolver, event_service, _run_state)
+    if _run_state.node_passive_source_node_id == "" \
+            and navigation.current_node_id != "" \
+            and navigation.phase in ["node_in_progress", "awaiting_reward"]:
+        _freeze_current_node_passive_sources(navigation.current_node_id)
 
 func ai_settings_snapshot() -> Dictionary:
     if _ai_settings_service == null \
@@ -375,6 +396,7 @@ func _setup_run(seed_value: int, starter_build_id: String) -> Dictionary:
     _pending_victory_battle_result.clear()
     _node_interaction_service.clear()
     _run_state.terminal_result = null
+    _run_state.reset_passive_run_state()
     growth.reset(
         "run-%d" % seed_value,
         assembled["run_deck"],
@@ -429,6 +451,8 @@ func _begin_node(node_id: String) -> Dictionary:
                 and not interaction_result.get("reused", false):
             _node_interaction_service.clear()
         return result
+    _run_state.practice_is_open = false
+    _freeze_current_node_passive_sources(node_id)
     _run_state.changed.emit()
     result["dispatch"] = dispatch.duplicate(true)
     if not interaction_result.is_empty():
@@ -472,7 +496,10 @@ func _resolve_battle_result(
     _close_active_battle_session()
     match state:
         "player_victory":
-            sync_progress_snapshot(progress_snapshot)
+            var victory_sync := _sync_battle_progress_and_event(
+                progress_snapshot, battle_result)
+            if not victory_sync.get("success", false):
+                return victory_sync
             _pending_victory_battle_result = battle_result.to_dict()
             var completion := _complete_node_to_reward()
             if not completion.get("success", false):
@@ -480,7 +507,10 @@ func _resolve_battle_result(
                 return completion
             return completion
         "player_defeat":
-            sync_progress_snapshot(progress_snapshot)
+            var defeat_sync := _sync_battle_progress_and_event(
+                progress_snapshot, battle_result)
+            if not defeat_sync.get("success", false):
+                return defeat_sync
             return _terminate_from_battle_result(
                 battle_result, "defeat", "玩家在战斗中失败")
         "unresolved_draw":
@@ -492,6 +522,53 @@ func _resolve_battle_result(
             return _terminate_from_battle_result(
                 battle_result, "scenario_error", str(battle_result.detail))
     return {"success": false, "reason": "未知战斗终止状态"}
+
+func _sync_battle_progress_and_event(
+        progress_snapshot,
+        battle_result) -> Dictionary:
+    var state_before: Dictionary = growth.capture_mutation_state()
+    var working = growth.create_mutation_copy()
+    if working == null:
+        return {"success": false, "reason": "无法建立战斗结果事务工作副本"}
+    working.apply_progress_snapshot(progress_snapshot)
+    var event_result := _dispatch_run_passive_event(
+        "battle_completed", working, {
+            "node_id": str(battle_result.node_id),
+            "node_type": str(battle_result.node_type),
+            "content_id": str(battle_result.content_id),
+            "content_kind": "battle",
+            "outcome": str(battle_result.battle_state),
+            "transaction_token": "battle_completed:%d:%s:%d" % [
+                int(battle_result.act), str(battle_result.node_id),
+                int(battle_result.content_seed)],
+            "payload": {
+                "turn_number": int(battle_result.turn_number),
+                "detail": str(battle_result.detail),
+            },
+        }, _current_node_passive_sources())
+    if not event_result.get("success", false):
+        return event_result
+    var commit_errors: Array[String] = growth.replace_mutation_state(
+        working.capture_mutation_state())
+    if not commit_errors.is_empty():
+        _rollback_passive_event_token(event_result)
+        return {"success": false, "reason": "；".join(commit_errors)}
+    var state_after: Dictionary = growth.capture_mutation_state()
+    if state_before != state_after:
+        var entry: Dictionary = game_log.record_run(
+            "growth_sync",
+            "战斗成长同步到本局",
+            "牌组 %d 张，消耗品 %d/3，已获功法 %d 门" % [
+                growth.run_deck.card_count(), growth.consumable_ids.size(),
+                growth.learned_technique_ids.size()],
+            {"act": navigation.act, "phase": navigation.phase})
+        _queue_event("growth_synced", entry, {
+            "run_deck_count": growth.run_deck.card_count(),
+            "consumable_count": growth.consumable_ids.size(),
+            "learned_technique_count": growth.learned_technique_ids.size(),
+        })
+        _run_state.changed.emit()
+    return {"success": true, "passive_event": event_result}
 
 func _validate_battle_final_result(battle_result) -> Dictionary:
     if battle_result == null \
@@ -770,15 +847,42 @@ func _claim_reward(bundle_id: String) -> Dictionary:
     if bundle_id != "" and bundle_id != _pending_reward.bundle_id():
         return {"success": false, "reason": "奖励包已过期或不匹配"}
     var bundle_snapshot: Dictionary = _pending_reward.to_dict()
+    var growth_state_before: Dictionary = growth.capture_mutation_state()
+    var working = growth.create_mutation_copy()
+    if working == null:
+        return {"success": false, "reason": "无法建立节点结算事务工作副本"}
     var apply_result: Dictionary = _node_reward_service.apply_bundle(
-        _pending_reward, growth)
+        _pending_reward, working)
     if not apply_result.get("success", false):
         return apply_result
-    var interest: Dictionary = _settle_node_experience_interest()
+    var interest: Dictionary = working.apply_experience_interest()
+    working.clear_practice_purchases()
+    var node_id := str(bundle_snapshot.get("node_id", navigation.current_node_id))
+    var node_event := _dispatch_run_passive_event(
+        "node_completed", working, {
+            "node_id": node_id,
+            "node_type": str(bundle_snapshot.get("node_type", "")),
+            "content_kind": "map_node",
+            "transaction_token": "node_completed:%d:%s" % [
+                int(bundle_snapshot.get("act", navigation.act)), node_id],
+            "payload": {
+                "bundle_id": str(bundle_snapshot.get("id", "")),
+                "applied": apply_result.get("applied", []).duplicate(true),
+                "experience_interest": interest.duplicate(true),
+            },
+        }, _current_node_passive_sources())
+    if not node_event.get("success", false):
+        return node_event
+    var commit_errors: Array[String] = growth.replace_mutation_state(
+        working.capture_mutation_state())
+    if not commit_errors.is_empty():
+        _rollback_passive_event_token(node_event)
+        return {"success": false, "reason": "；".join(commit_errors)}
     var navigation_result: Dictionary = navigation.claim_current_node_reward()
     if not navigation_result.get("success", false):
+        growth.replace_mutation_state(growth_state_before)
+        _rollback_passive_event_token(node_event)
         return navigation_result
-    growth.clear_practice_purchases()
     _pending_reward = null
     _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
@@ -811,16 +915,22 @@ func _claim_reward(bundle_id: String) -> Dictionary:
     navigation_result["applied"] = apply_result.get("applied", []).duplicate(true)
     navigation_result["experience_interest"] = interest.duplicate(true)
     navigation_result["experience"] = growth.experience
+    navigation_result["passive_event"] = node_event
     if navigation_result.get("phase", "") == "awaiting_node":
+        _clear_node_passive_sources()
         _practice_service.start_new_shop(
             growth, navigation.seed, navigation.act,
             int(growth.practice_shop_state.get("shop_index", 0)) + 1)
     elif navigation_result.get("phase", "") == "run_complete":
+        _clear_node_passive_sources()
         var terminal_result := _complete_victory_terminal()
         if not terminal_result.get("success", false):
             return terminal_result
         navigation_result["terminal_result"] = terminal_result.get(
             "terminal_result", {}).duplicate(true)
+    elif navigation_result.get("phase", "") == "boss_chest":
+        _freeze_current_node_passive_sources(
+            "boss_chest:%d" % int(bundle_snapshot.get("act", navigation.act)))
     return navigation_result
 
 func _reward_snapshot() -> Dictionary:
@@ -840,12 +950,37 @@ func _complete_boss_chest() -> Dictionary:
     if navigation.phase != "boss_chest":
         return {"success": false, "reason": "当前没有待完成的 Boss 宝箱"}
     var act_before: int = navigation.act
-    var interest: Dictionary = _settle_node_experience_interest()
+    var growth_state_before: Dictionary = growth.capture_mutation_state()
+    var working = growth.create_mutation_copy()
+    if working == null:
+        return {"success": false, "reason": "无法建立 Boss 宝箱事务工作副本"}
+    var interest: Dictionary = working.apply_experience_interest()
+    var chest_node_id := "boss_chest:%d" % act_before
+    var node_event := _dispatch_run_passive_event(
+        "node_completed", working, {
+            "node_id": chest_node_id,
+            "node_type": "boss_chest",
+            "content_kind": "boss_chest",
+            "transaction_token": "node_completed:%d:%s" % [
+                act_before, chest_node_id],
+            "payload": {"experience_interest": interest.duplicate(true)},
+        }, _current_node_passive_sources())
+    if not node_event.get("success", false):
+        return node_event
+    var commit_errors: Array[String] = growth.replace_mutation_state(
+        working.capture_mutation_state())
+    if not commit_errors.is_empty():
+        _rollback_passive_event_token(node_event)
+        return {"success": false, "reason": "；".join(commit_errors)}
     var result: Dictionary = navigation.complete_boss_chest()
     if not result.get("success", false):
+        growth.replace_mutation_state(growth_state_before)
+        _rollback_passive_event_token(node_event)
         return result
     result["experience_interest"] = interest.duplicate(true)
     result["experience"] = growth.experience
+    result["passive_event"] = node_event
+    _clear_node_passive_sources()
     growth.grow_life_to(_player_max_life_for_act(navigation.act))
     _practice_service.start_new_shop(
         growth, navigation.seed, navigation.act,
@@ -879,15 +1014,41 @@ func _complete_boss_chest() -> Dictionary:
 func _open_practice() -> Dictionary:
     if not navigation.can_open_practice():
         return {"success": false, "reason": "当前节点尚未完成，不能修习"}
+    if _run_state.practice_is_open:
+        return {"success": true, "already_open": true}
+    var working = growth.create_mutation_copy()
+    if working == null:
+        return {"success": false, "reason": "无法建立打开修习事务工作副本"}
+    var next_sequence: int = int(_run_state.practice_open_sequence) + 1
+    var event_result := _dispatch_run_passive_event(
+        "practice_opened", working, {
+            "shop_index": int(working.practice_shop_state.get("shop_index", 0)),
+            "transaction_token": "practice_opened:%d" % next_sequence,
+            "payload": {"practice_open_sequence": next_sequence},
+        })
+    if not event_result.get("success", false):
+        return event_result
+    var commit_errors: Array[String] = growth.replace_mutation_state(
+        working.capture_mutation_state())
+    if not commit_errors.is_empty():
+        _rollback_passive_event_token(event_result)
+        return {"success": false, "reason": "；".join(commit_errors)}
+    _run_state.practice_is_open = true
+    _run_state.practice_open_sequence = next_sequence
+    _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
         "practice_lifecycle",
         "打开修习",
         "当前历练 %d" % growth.experience,
         {"act": navigation.act, "experience": growth.experience})
     _queue_event("practice_opened", entry, {"act": navigation.act})
-    return {"success": true}
+    return {"success": true, "passive_event": event_result}
 
 func _close_practice() -> Dictionary:
+    if not _run_state.practice_is_open:
+        return {"success": true, "already_closed": true}
+    _run_state.practice_is_open = false
+    _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
         "practice_lifecycle",
         "关闭修习",
@@ -900,15 +1061,13 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
     if definition.is_empty() or not _consumable_repository.practice_offers().has(consumable_id):
         return {"success": false, "reason": "当前修习没有该选项"}
-    var price := int(definition.get("price", 0))
-    var result: Dictionary = growth.purchase_consumable(
-        consumable_id,
-        price,
-        navigation.can_open_practice())
+    var result: Dictionary = _practice_service.purchase_standalone_consumable(
+        growth, definition, navigation.can_open_practice(),
+        _practice_event_values())
     if not result.get("success", false):
         return result
     _run_state.changed.emit()
-    result["price"] = price
+    var price := int(result.get("effective_price", result.get("price", 0)))
     result["definition"] = definition.duplicate(true)
     var entry: Dictionary = game_log.record_run(
         "practice_purchase",
@@ -1069,7 +1228,7 @@ func _forget_inner_skill(inner_skill_id: String) -> Dictionary:
     if not gate.get("allowed", false):
         return {"success": false, "reason": str(gate.get("reason", ""))}
     var result: Dictionary = _inner_skill_loadout_service.forget_inner_skill(
-        inner_skill_id)
+        inner_skill_id, _practice_event_values())
     if result.get("success", false):
         _run_state.changed.emit()
     return result
@@ -1092,7 +1251,8 @@ func _purchase_practice_offer(group: String, slot_index: int) -> Dictionary:
     if not navigation.can_open_practice():
         return {"success": false, "reason": "当前节点尚未完成，不能修习"}
     var result: Dictionary = _practice_service.purchase(
-        growth, group, slot_index, navigation.can_open_practice())
+        growth, group, slot_index, navigation.can_open_practice(),
+        _practice_event_values())
     if result.get("success", false):
         _run_state.changed.emit()
     return result
@@ -1105,14 +1265,16 @@ func _open_practice_pack(
     var result: Dictionary = _practice_service.open_pack(
         growth, group, slot_index, selected_ids,
         navigation.can_open_practice(),
-        navigation.seed, navigation.act, preparation_token)
+        navigation.seed, navigation.act, preparation_token,
+        _practice_event_values())
     if result.get("success", false) and not result.has("preview"):
         _run_state.changed.emit()
     return result
 
 func _meditate() -> Dictionary:
     var result: Dictionary = _practice_service.meditate(
-        growth, navigation.seed, navigation.act, navigation.can_open_practice())
+        growth, navigation.seed, navigation.act, navigation.can_open_practice(),
+        _practice_event_values())
     if result.get("success", false):
         _run_state.changed.emit()
     return result
@@ -1126,11 +1288,22 @@ func _practice_snapshot() -> Dictionary:
         var definition: Dictionary = _consumable_repository.get_consumable(consumable_id).duplicate(true)
         if definition.is_empty():
             continue
-        var price := int(definition.get("price", 0))
+        var base_price := int(definition.get("price", 0))
+        var price_query: Dictionary = _practice_service.resolve_price(
+            growth, "consumable", consumable_id, base_price,
+            {"group": "standalone"})
+        var price := int(price_query.get("effective_price", base_price))
         var purchased: bool = growth.practice_purchases.has(consumable_id)
+        definition["base_price"] = base_price
+        definition["effective_price"] = price
+        definition["price"] = price
+        definition["price_modifiers"] = price_query.get(
+            "price_modifiers", []).duplicate(true)
+        definition["price_query_error"] = str(price_query.get("reason", ""))
         definition["purchased"] = purchased
         definition["can_purchase"] = (
-            navigation.can_open_practice()
+            price_query.get("success", false)
+            and navigation.can_open_practice()
             and not purchased
             and growth.experience >= price
             and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT)
@@ -1141,6 +1314,9 @@ func _practice_snapshot() -> Dictionary:
         shop_state.get("packs", []), "packs")
     var items := _decorate_practice_slots(
         shop_state.get("items", []), "items")
+    var base_meditation_cost := int(shop_state.get("next_meditation_cost", 5))
+    var meditation_query: Dictionary = _practice_service.resolve_meditation_cost(
+        growth, base_meditation_cost)
     return {
         "available": navigation.can_open_practice(),
         "offer_ids": offer_ids,
@@ -1151,7 +1327,13 @@ func _practice_snapshot() -> Dictionary:
         "packs": packs,
         "items": items,
         "meditation_count": int(shop_state.get("meditation_count", 0)),
-        "next_meditation_cost": int(shop_state.get("next_meditation_cost", 5)),
+        "next_meditation_cost": base_meditation_cost,
+        "base_meditation_cost": base_meditation_cost,
+        "effective_meditation_cost": int(meditation_query.get(
+            "effective_cost", base_meditation_cost)),
+        "meditation_cost_modifiers": meditation_query.get(
+            "modifier_breakdown", []).duplicate(true),
+        "meditation_query_error": str(meditation_query.get("reason", "")),
     }
 
 func _decorate_practice_slots(values: Array, group: String) -> Array:
@@ -1161,14 +1343,51 @@ func _decorate_practice_slots(values: Array, group: String) -> Array:
             result.append({})
             continue
         var definition: Dictionary = value.duplicate(true)
+        var base_price := int(definition.get("price", 0))
+        var price_query: Dictionary = _practice_service.resolve_price(
+            growth, str(definition.get("kind", "")),
+            str(definition.get("id", "")), base_price,
+            {"group": group, "slot_index": result.size()})
+        var effective_price := int(price_query.get("effective_price", base_price))
+        definition["base_price"] = base_price
+        definition["effective_price"] = effective_price
+        definition["price"] = effective_price
+        definition["price_modifiers"] = price_query.get(
+            "price_modifiers", []).duplicate(true)
+        definition["price_query_error"] = str(price_query.get("reason", ""))
         var can_purchase: bool = bool(navigation.can_open_practice()) \
-            and growth.experience >= int(definition.get("price", 0))
+            and price_query.get("success", false) \
+            and growth.experience >= effective_price
         if str(definition.get("kind", "")) == "consumable":
             can_purchase = can_purchase \
                 and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT
         elif str(definition.get("kind", "")) == "consumable_pack":
             can_purchase = can_purchase \
                 and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT
+            var pack_id := str(definition.get("id", ""))
+            var offer_query: Dictionary = _practice_service.resolve_pack_count(
+                "pack_offer_count_query", growth, pack_id,
+                int(definition.get("offer_count", 0)), {
+                    "group": group, "slot_index": result.size()})
+            var choose_query: Dictionary = _practice_service.resolve_pack_count(
+                "pack_choose_count_query", growth, pack_id,
+                int(definition.get("choose_count", 0)), {
+                    "group": group, "slot_index": result.size()})
+            definition["base_offer_count"] = int(
+                definition.get("offer_count", 0))
+            definition["effective_offer_count"] = int(
+                offer_query.get("effective_value", definition["base_offer_count"]))
+            definition["base_choose_count"] = int(
+                definition.get("choose_count", 0))
+            definition["effective_choose_count"] = int(
+                choose_query.get("effective_value", definition["base_choose_count"]))
+            definition["offer_count_modifiers"] = offer_query.get(
+                "modifier_breakdown", []).duplicate(true)
+            definition["choose_count_modifiers"] = choose_query.get(
+                "modifier_breakdown", []).duplicate(true)
+            can_purchase = can_purchase \
+                and offer_query.get("success", false) \
+                and choose_query.get("success", false)
         elif str(definition.get("kind", "")) == "item":
             can_purchase = can_purchase \
                 and not growth.item_ids.has(str(definition.get("id", "")))
@@ -1214,6 +1433,64 @@ func _player_max_life_for_act(act: int) -> int:
 func _settle_node_experience_interest() -> Dictionary:
     return growth.apply_experience_interest()
 
+func _practice_event_values() -> Dictionary:
+    return {
+        "run_seed": navigation.seed,
+        "act": navigation.act,
+        "shop_index": int(growth.practice_shop_state.get("shop_index", 0)),
+    }
+
+func _freeze_current_node_passive_sources(node_id: String) -> void:
+    _run_state.node_passive_source_node_id = node_id
+    _run_state.node_passive_source_snapshot = (
+        _run_passive_event_service.capture_source_snapshot(growth)
+        if _run_passive_event_service != null else [])
+
+func _current_node_passive_sources() -> Array:
+    return _run_state.node_passive_source_snapshot.duplicate(true)
+
+func _clear_node_passive_sources() -> void:
+    _run_state.node_passive_source_snapshot.clear()
+    _run_state.node_passive_source_node_id = ""
+
+func _dispatch_run_passive_event(
+        hook: String,
+        event_growth,
+        specific_values: Dictionary,
+        source_snapshot = null) -> Dictionary:
+    if _run_passive_event_service == null:
+        return {
+            "success": true,
+            "skipped": true,
+            "hook": hook,
+            "transaction_token": str(specific_values.get(
+                "transaction_token", "")),
+        }
+    var resolved_source_snapshot: Array = (
+        _run_passive_event_service.capture_source_snapshot(event_growth)
+        if source_snapshot == null else source_snapshot.duplicate(true))
+    var values := {
+        "hook": hook,
+        "owner": event_growth,
+        "run_seed": navigation.seed,
+        "act": navigation.act,
+        "node_id": navigation.current_node_id,
+        "shop_index": int(event_growth.practice_shop_state.get(
+            "shop_index", 0)),
+        "source_snapshot": resolved_source_snapshot,
+    }
+    values.merge(specific_values, true)
+    return _run_passive_event_service.dispatch(
+        EventContextScript.new().configure(values),
+        event_growth,
+        _run_state)
+
+func _rollback_passive_event_token(event_result: Dictionary) -> void:
+    if bool(event_result.get("skipped", false)):
+        return
+    _run_state.committed_passive_event_tokens.erase(
+        str(event_result.get("transaction_token", "")))
+
 func _capture_persistence_state() -> Dictionary:
     return {
         "seed": navigation.seed,
@@ -1232,6 +1509,11 @@ func _capture_persistence_state() -> Dictionary:
         "terminal_result": (
             _run_state.terminal_result.to_dict()
             if _run_state.terminal_result != null else {}),
+        "practice_is_open": _run_state.practice_is_open,
+        "practice_open_sequence": _run_state.practice_open_sequence,
+        "node_passive_source_snapshot": _run_state.node_passive_source_snapshot.duplicate(true),
+        "node_passive_source_node_id": _run_state.node_passive_source_node_id,
+        "committed_passive_event_tokens": _run_state.committed_passive_event_tokens.duplicate(),
     }
 
 func _record_command_rejected(command_type: String, reason: String) -> void:

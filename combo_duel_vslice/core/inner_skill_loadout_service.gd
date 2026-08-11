@@ -3,25 +3,25 @@ extends RefCounted
 
 const InnerSkillLoadoutDTOScript = preload(
     "res://core/inner_skill_loadout_dto.gd")
-const InnerSkillForgetValuePolicyScript = preload(
-    "res://core/inner_skill_forget_value_policy.gd")
 const InnerSkillCapacityPolicyScript = preload(
     "res://core/passives/inner_skill_capacity_policy.gd")
 const PassiveRuleRuntimeScript = preload(
     "res://core/passives/passive_rule_runtime.gd")
+const IntQueryRequestScript = preload(
+    "res://core/passives/passive_int_query_request.gd")
+const EventContextScript = preload(
+    "res://core/passives/run_passive_event_context.gd")
 
 var _growth
 var _repository
-var _forget_value_policy
 var _passive_runtime
+var _int_policy_resolver
+var _event_service
+var _event_state
 
-func _init(growth, repository, forget_value_policy = null, passive_runtime = null) -> void:
+func _init(growth, repository, _legacy_forget_policy = null, passive_runtime = null) -> void:
     _growth = growth
     _repository = repository
-    _forget_value_policy = (
-        forget_value_policy
-        if forget_value_policy != null
-        else InnerSkillForgetValuePolicyScript.new())
     _passive_runtime = passive_runtime
     if _passive_runtime == null:
         var catalog = _growth.get("_content_catalog")
@@ -31,6 +31,16 @@ func _init(growth, repository, forget_value_policy = null, passive_runtime = nul
 
 func use_passive_runtime(runtime) -> void:
     _passive_runtime = runtime
+
+func use_passive_services(
+        runtime,
+        int_policy_resolver = null,
+        event_service = null,
+        event_state = null) -> void:
+    _passive_runtime = runtime
+    _int_policy_resolver = int_policy_resolver
+    _event_service = event_service
+    _event_state = event_state
 
 ## 查询完整配装。`editable` 只描述当前会话门禁，不改变领域库存。
 func get_loadout(
@@ -65,6 +75,8 @@ func get_loadout(
                 int(forget_resolution.get("forget_value", 0))
                 if forget_resolution.get("success", false)
                 else null),
+            "modifier_breakdown": forget_resolution.get(
+                "modifier_breakdown", []).duplicate(true),
             "can_forget": (
                 total_count > equipped_count
                 and forget_resolution.get("success", false)),
@@ -164,7 +176,9 @@ func set_loadout(equipped_inner_skill_ids, technique_slot_index) -> Dictionary:
     }
 
 ## 查询当前有效普通遗忘所得。缺失基础字段不会被解释为 0。
-func query_forget_value(inner_skill_id: String) -> Dictionary:
+func query_forget_value(
+        inner_skill_id: String,
+        source_snapshot: Array = []) -> Dictionary:
     if not _repository.has_inner_skill(inner_skill_id):
         return {"success": false, "reason": "未知内功：%s" % inner_skill_id}
     var definition: Dictionary = _repository.get_inner_skill(inner_skill_id)
@@ -179,21 +193,50 @@ func query_forget_value(inner_skill_id: String) -> Dictionary:
             "success": false,
             "reason": "该内功遗忘所得配置无效：%s" % inner_skill_id,
         }
-    if _forget_value_policy == null \
-            or not _forget_value_policy.has_method("resolve"):
-        return {"success": false, "reason": "内功遗忘所得策略不可用"}
-    var resolved = _forget_value_policy.resolve(definition, _growth)
-    if not resolved is int or int(resolved) < 0:
+    var base_value := int(definition["forget_value"])
+    var resolved_value := base_value
+    var breakdown: Array = []
+    if _int_policy_resolver != null:
+        var values := {
+            "hook": "inner_skill_forget_value_query",
+            "owner": _growth,
+            "subject_kind": "inner_skill",
+            "subject_id": inner_skill_id,
+            "base_value": base_value,
+            "metadata": {
+                "learned_count": _count(
+                    _growth.learned_inner_skill_ids, inner_skill_id),
+                "equipped_count": _count(
+                    _growth.equipped_inner_skill_ids, inner_skill_id),
+            },
+        }
+        if not source_snapshot.is_empty():
+            values["source_snapshot"] = source_snapshot
+        var query_result = _int_policy_resolver.resolve(
+            IntQueryRequestScript.new().configure(values))
+        var query_values: Dictionary = query_result.to_dict()
+        if not query_values.get("success", false):
+            return {
+                "success": false,
+                "reason": "；".join(query_values.get("errors", [])),
+                "query": query_values,
+            }
+        resolved_value = int(query_values["effective_value"])
+        breakdown = query_values["modifier_breakdown"].duplicate(true)
+    if resolved_value < 0:
         return {"success": false, "reason": "内功有效遗忘所得必须是非负整数"}
     return {
         "success": true,
         "inner_skill_id": inner_skill_id,
-        "base_forget_value": int(definition["forget_value"]),
-        "forget_value": int(resolved),
+        "base_forget_value": base_value,
+        "forget_value": resolved_value,
+        "modifier_breakdown": breakdown,
     }
 
 ## 普通遗忘一个当前未装备副本，并一次性结算历练与累计数量。
-func forget_inner_skill(inner_skill_id: String) -> Dictionary:
+func forget_inner_skill(
+        inner_skill_id: String,
+        event_values: Dictionary = {}) -> Dictionary:
     if inner_skill_id.strip_edges() == "":
         return {"success": false, "reason": "inner_skill_id 不能为空"}
     if not _repository.has_inner_skill(inner_skill_id):
@@ -207,25 +250,81 @@ func forget_inner_skill(inner_skill_id: String) -> Dictionary:
             "success": false,
             "reason": "该内功所有副本均已装备，请先卸下一份",
         }
-    var forget_resolution := query_forget_value(inner_skill_id)
+    var source_snapshot: Array = (
+        _event_service.capture_source_snapshot(_growth)
+        if _event_service != null else [])
+    var forget_resolution := query_forget_value(
+        inner_skill_id, source_snapshot)
     if not forget_resolution.get("success", false):
         return forget_resolution
 
     var forget_value := int(forget_resolution["forget_value"])
     var experience_before := int(_growth.experience)
-    var matching_index: int = _growth.learned_inner_skill_ids.find(inner_skill_id)
-    _growth.learned_inner_skill_ids.remove_at(matching_index)
-    _growth.experience = experience_before + forget_value
-    _growth.forgotten_inner_skill_count += 1
+    var working = _growth.create_mutation_copy()
+    if working == null:
+        return {"success": false, "reason": "无法建立遗忘事务工作副本"}
+    var matching_index: int = working.learned_inner_skill_ids.find(inner_skill_id)
+    working.learned_inner_skill_ids.remove_at(matching_index)
+    working.experience = experience_before + forget_value
+    working.forgotten_inner_skill_count += 1
+    var event_result := _dispatch_forgotten_event(
+        working, inner_skill_id, forget_resolution,
+        source_snapshot, event_values)
+    if not event_result.get("success", false):
+        return event_result
+    var commit_errors: Array[String] = _growth.replace_mutation_state(
+        working.capture_mutation_state())
+    if not commit_errors.is_empty():
+        if _event_state != null and not event_result.get("skipped", false):
+            _event_state.committed_passive_event_tokens.erase(
+                str(event_result.get("transaction_token", "")))
+        return {"success": false, "reason": "；".join(commit_errors)}
     return {
         "success": true,
         "inner_skill_id": inner_skill_id,
         "forget_value": forget_value,
+        "base_forget_value": int(forget_resolution["base_forget_value"]),
+        "modifier_breakdown": forget_resolution["modifier_breakdown"],
         "experience_before": experience_before,
         "experience_after": _growth.experience,
         "forgotten_inner_skill_count": _growth.forgotten_inner_skill_count,
         "remaining_count": learned_count - 1,
+        "passive_event": event_result,
     }
+
+func _dispatch_forgotten_event(
+        working,
+        inner_skill_id: String,
+        forget_resolution: Dictionary,
+        source_snapshot: Array,
+        event_values: Dictionary) -> Dictionary:
+    var token := "inner_skill_forgotten:%d:%s" % [
+        int(working.forgotten_inner_skill_count), inner_skill_id]
+    if _event_service == null or _event_state == null:
+        return {
+            "success": true,
+            "skipped": true,
+            "hook": "inner_skill_forgotten",
+            "transaction_token": token,
+        }
+    var values := event_values.duplicate(true)
+    values.merge({
+        "hook": "inner_skill_forgotten",
+        "owner": working,
+        "content_id": inner_skill_id,
+        "content_kind": "inner_skill",
+        "transaction_token": token,
+        "source_snapshot": source_snapshot,
+        "payload": {
+            "base_forget_value": int(
+                forget_resolution["base_forget_value"]),
+            "forget_value": int(forget_resolution["forget_value"]),
+            "forgotten_inner_skill_count": int(
+                working.forgotten_inner_skill_count),
+        },
+    }, true)
+    return _event_service.dispatch(
+        EventContextScript.new().configure(values), working, _event_state)
 
 func _counts(values: Array) -> Dictionary:
     var result: Dictionary = {}

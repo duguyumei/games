@@ -52,6 +52,9 @@ func coerce_context(value):
 func collect_sources(context) -> Array:
     return source_resolver.collect_sources(coerce_context(context))
 
+func capture_source_snapshot(context) -> Array:
+    return source_resolver.capture_source_snapshot(coerce_context(context))
+
 func equipped_inner_skill_entries(context) -> Array:
     return source_resolver.equipped_inner_skill_entries(
         coerce_context(context))
@@ -124,25 +127,92 @@ func dispatch_event(hook: String, context) -> Dictionary:
     if not plan.is_valid():
         return {"success": false, "plan": plan, "results": results, "errors": plan.errors.duplicate()}
     for invocation in plan.invocations:
-        var invocation_context = invocation.context.for_invocation(invocation)
-        var result: Dictionary = registry.execute(
-            invocation.source.behavior_id,
-            hook,
-            invocation_context,
-            invocation.source.configuration)
-        results.append({
-            "source": invocation.source,
-            "invocation": invocation,
-            "result": result,
-        })
-        if not result.get("success", false):
+        var executed: Dictionary = execute_invocation(invocation)
+        results.append(executed)
+        if not executed.get("success", false):
             return {
                 "success": false,
                 "plan": plan,
                 "results": results,
-                "errors": [str(result.get("reason", "被动行为执行失败"))],
+                "errors": [str(executed.get("reason", "被动行为执行失败"))],
             }
     return {"success": true, "plan": plan, "results": results, "errors": []}
+
+func execute_invocation(invocation, context_override = null) -> Dictionary:
+    var invocation_context = (
+        context_override
+        if context_override != null
+        else invocation.context.for_invocation(invocation))
+    var result: Dictionary = registry.execute(
+        invocation.source.behavior_id,
+        invocation.hook,
+        invocation_context,
+        invocation.source.configuration)
+    if not result.get("success", false):
+        return {
+            "success": false,
+            "reason": "%s · %s · %s：%s" % [
+                invocation.hook,
+                invocation.source.source_instance_key,
+                invocation.source.behavior_id,
+                str(result.get("reason", "被动行为执行失败"))],
+            "source": invocation.source,
+            "invocation": invocation,
+            "result": result,
+        }
+    return {
+        "success": true,
+        "source": invocation.source,
+        "invocation": invocation,
+        "result": result,
+    }
+
+func source_fingerprint(hooks: Array, context) -> Dictionary:
+    var values: Array = []
+    var errors: Array[String] = []
+    for hook_value in hooks:
+        var hook := str(hook_value)
+        var plan = build_execution_plan(hook, context)
+        if not plan.is_valid():
+            errors.append_array(plan.errors)
+            continue
+        values.append(execution_plan_fingerprint_values(plan))
+    return {
+        "success": errors.is_empty(),
+        "fingerprint": (
+            JSON.stringify(values[0]).sha256_text()
+            if values.size() == 1
+            else JSON.stringify(values).sha256_text()),
+        "errors": errors,
+        "plans": values,
+    }
+
+func execution_plan_fingerprint(plan) -> String:
+    return JSON.stringify(execution_plan_fingerprint_values(plan)).sha256_text()
+
+func execution_plan_fingerprint_values(plan) -> Dictionary:
+    var activations: Array = []
+    for entry in plan.activations:
+        activations.append({
+            "source_instance_key": entry["source"].source_instance_key,
+            "behavior_id": entry["source"].behavior_id,
+            "active": entry["activation"].active,
+            "blocked_by": entry["activation"].blocked_by.duplicate(),
+        })
+    var invocations: Array = []
+    for invocation in plan.invocations:
+        invocations.append({
+            "source_instance_key": invocation.source.source_instance_key,
+            "behavior_id": invocation.source.behavior_id,
+            "behavior_index": invocation.source.behavior_index,
+            "execution_index": invocation.execution_index,
+            "execution_count": invocation.execution_count,
+        })
+    return {
+        "hook": plan.hook,
+        "activations": activations,
+        "invocations": invocations,
+    }
 
 func query_modifiers(hook: String, context) -> Dictionary:
     return dispatch_event(hook, context)

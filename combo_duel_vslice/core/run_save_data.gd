@@ -61,6 +61,11 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "pending_reward": pending_reward,
             "pending_node_interaction": pending_interaction,
             "terminal_result": terminal_result,
+            "practice_is_open": run_session._run_state.practice_is_open,
+            "practice_open_sequence": run_session._run_state.practice_open_sequence,
+            "node_passive_source_snapshot": run_session._run_state.node_passive_source_snapshot.duplicate(true),
+            "node_passive_source_node_id": run_session._run_state.node_passive_source_node_id,
+            "committed_passive_event_tokens": run_session._run_state.committed_passive_event_tokens.duplicate(),
             "resume_policy": (
                 "show_terminal"
                 if phase in ["run_complete", "run_terminated"]
@@ -139,6 +144,31 @@ func validate(content_catalog = null) -> Array[String]:
     if not terminal_value is Dictionary:
         errors.append("terminal_result 必须是对象")
         terminal_value = {}
+    if node_state.has("practice_is_open") \
+            and not node_state["practice_is_open"] is bool:
+        errors.append("practice_is_open 必须是布尔值")
+    if node_state.has("practice_open_sequence") \
+            and (not node_state["practice_open_sequence"] is int \
+            or int(node_state["practice_open_sequence"]) < 0):
+        errors.append("practice_open_sequence 必须是非负整数")
+    if node_state.has("node_passive_source_snapshot") \
+            and not node_state["node_passive_source_snapshot"] is Array:
+        errors.append("node_passive_source_snapshot 必须是数组")
+    elif node_state.has("node_passive_source_snapshot"):
+        _validate_passive_source_snapshot(
+            node_state["node_passive_source_snapshot"], errors)
+    if node_state.has("committed_passive_event_tokens"):
+        var tokens = node_state["committed_passive_event_tokens"]
+        if not tokens is Array:
+            errors.append("committed_passive_event_tokens 必须是数组")
+        else:
+            var seen_tokens: Dictionary = {}
+            for token_value in tokens:
+                var token := str(token_value)
+                if not token_value is String \
+                        or token == "" or seen_tokens.has(token):
+                    errors.append("committed_passive_event_tokens 包含空值或重复值")
+                seen_tokens[token] = true
     if not ALLOWED_PHASES.has(phase):
         errors.append("本局阶段不是合法节点边界：%s" % phase)
     if current_node_id != "" and not node_ids.has(current_node_id):
@@ -232,6 +262,10 @@ func validate(content_catalog = null) -> Array[String]:
             "旧版存档 map_state.act 无对应玩家生命上限：%s" %
             str(map_state.get("act", "")))
     _validate_content_ids(run, growth, catalog, errors)
+    _validate_passive_source_content(
+        node_state.get("node_passive_source_snapshot", []),
+        catalog,
+        errors)
     var deck = GrowthInventoryScript.new(catalog, false).run_deck
     errors.append_array(deck.restore_snapshot(growth["run_deck"]))
     for card in growth["run_deck"].get("cards", []):
@@ -308,6 +342,14 @@ func restore_session(
     for content_id in growth_state["practice_purchase_ids"]:
         growth.practice_purchases[str(content_id)] = true
     var state = RunStateScript.new(navigation, growth)
+    state.practice_is_open = bool(node_state.get("practice_is_open", false))
+    state.practice_open_sequence = int(node_state.get("practice_open_sequence", 0))
+    state.node_passive_source_snapshot = node_state.get(
+        "node_passive_source_snapshot", []).duplicate(true)
+    state.node_passive_source_node_id = str(node_state.get(
+        "node_passive_source_node_id", ""))
+    state.committed_passive_event_tokens.assign(node_state.get(
+        "committed_passive_event_tokens", []))
     var terminal_value: Dictionary = node_state.get("terminal_result", {})
     if terminal_value.is_empty() and navigation.phase == "run_complete":
         var legacy_node: Dictionary = navigation.node_definition(
@@ -385,6 +427,63 @@ func _validate_terminal_result(
                 break
         if terminal.node_type != node_type:
             errors.append("terminal_result.node_type 与当前节点不一致")
+
+func _validate_passive_source_snapshot(
+        values: Array,
+        errors: Array[String]) -> void:
+    var seen: Dictionary = {}
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary:
+            errors.append("node_passive_source_snapshot[%d] 必须是对象" % index)
+            continue
+        for forbidden_field in ["definition", "configuration", "handler", "callable"]:
+            if value.has(forbidden_field):
+                errors.append(
+                    "node_passive_source_snapshot 不得保存 %s" % forbidden_field)
+        var source_kind := str(value.get("source_kind", ""))
+        var content_id := str(value.get("content_id", ""))
+        var instance_key := str(value.get("source_instance_key", ""))
+        var behavior_id := str(value.get("behavior_id", ""))
+        var behavior_index = value.get("behavior_index")
+        var source_order = value.get("source_order")
+        if source_kind not in ["inner_skill", "item"] \
+                or content_id == "" or instance_key == "" or behavior_id == "":
+            errors.append("node_passive_source_snapshot[%d] 稳定来源字段无效" % index)
+        if not behavior_index is int or int(behavior_index) < 0 \
+                or not source_order is int:
+            errors.append("node_passive_source_snapshot[%d] 顺序字段无效" % index)
+        var key := "%s:%s:%s" % [instance_key, behavior_id, str(behavior_index)]
+        if seen.has(key):
+            errors.append("node_passive_source_snapshot 包含重复来源：%s" % key)
+        seen[key] = true
+
+func _validate_passive_source_content(
+        values,
+        catalog,
+        errors: Array[String]) -> void:
+    if not values is Array:
+        return
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary:
+            continue
+        var source_kind := str(value.get("source_kind", ""))
+        var content_id := str(value.get("content_id", ""))
+        var definition: Dictionary = catalog.get_by_id(source_kind, content_id)
+        if definition.is_empty():
+            errors.append(
+                "node_passive_source_snapshot[%d] 引用未知来源 %s:%s" % [
+                    index, source_kind, content_id])
+            continue
+        var behavior_index := int(value.get("behavior_index", -1))
+        var behaviors = definition.get("behaviors", [])
+        if behavior_index < 0 or behavior_index >= behaviors.size() \
+                or not behaviors[behavior_index] is Dictionary \
+                or str(behaviors[behavior_index].get("id", "")) \
+                != str(value.get("behavior_id", "")):
+            errors.append(
+                "node_passive_source_snapshot[%d] behavior 与当前内容不一致" % index)
 
 func _validate_pending_interaction(
         pending: Dictionary,
@@ -624,6 +723,7 @@ func _normalize_v1_types() -> void:
         _normalize_graph(map_state.get("graph", {}))
     var node_state = _data.get("node_state", {})
     if node_state is Dictionary:
+        _normalize_optional_integer(node_state, "practice_open_sequence")
         _normalize_reward(node_state.get("pending_reward", {}))
         var terminal = node_state.get("terminal_result", {})
         if terminal is Dictionary and not terminal.is_empty():

@@ -10,6 +10,18 @@ const HOOKS := [
     "action_resolve",
     "inner_skill_capacity_query",
     "passive_invocation_plan_query",
+    "practice_price_query",
+    "inner_skill_forget_value_query",
+    "meditation_cost_query",
+    "pack_offer_count_query",
+    "pack_choose_count_query",
+    "practice_opened",
+    "practice_purchase_committed",
+    "practice_pack_opened",
+    "meditation_committed",
+    "inner_skill_forgotten",
+    "battle_completed",
+    "node_completed",
 ]
 
 var _handlers: Dictionary = {}
