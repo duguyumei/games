@@ -3,6 +3,9 @@ extends RefCounted
 
 var hook: String = ""
 var owner = null
+var actor = null
+var target = null
+var round_number: int = 0
 var subject_kind: String = ""
 var subject_id: String = ""
 var base_value: int = 0
@@ -14,6 +17,9 @@ var has_source_snapshot: bool = false
 func configure(values: Dictionary):
     hook = str(values.get("hook", ""))
     owner = values.get("owner")
+    actor = values.get("actor", owner)
+    target = values.get("target")
+    round_number = int(values.get("round_number", 0))
     subject_kind = str(values.get("subject_kind", ""))
     subject_id = str(values.get("subject_id", ""))
     base_value = int(values.get("base_value", 0))
@@ -27,6 +33,9 @@ func with_current_value(value: int):
     var result = get_script().new().configure({
         "hook": hook,
         "owner": owner,
+        "actor": actor,
+        "target": target,
+        "round_number": round_number,
         "subject_kind": subject_kind,
         "subject_id": subject_id,
         "base_value": base_value,
@@ -40,6 +49,7 @@ func with_current_value(value: int):
 func to_dict() -> Dictionary:
     return {
         "hook": hook,
+        "round_number": round_number,
         "subject_kind": subject_kind,
         "subject_id": subject_id,
         "base_value": base_value,

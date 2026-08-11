@@ -15,6 +15,9 @@ var _sides: Array[BattleSide] = []
 var _hand_retrigger_callback: Callable
 var _card_reshape_runtime_ref: WeakRef
 var _consumable_repository
+var _battle_rule_query_service
+var _committed_event_service
+var _round_number_reader: Callable
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -41,6 +44,14 @@ func use_card_reshape_runtime(runtime) -> void:
 func use_consumable_repository(repository) -> void:
     _consumable_repository = repository
 
+func use_passive_battle_services(
+        query_service,
+        event_service,
+        round_reader: Callable = Callable()) -> void:
+    _battle_rule_query_service = query_service
+    _committed_event_service = event_service
+    _round_number_reader = round_reader
+
 func opponent_of(side: BattleSide) -> BattleSide:
     for candidate in _sides:
         if candidate != side:
@@ -59,16 +70,25 @@ func deal_damage(
         amount: int,
         source_kind: String,
         true_damage: bool = false) -> Dictionary:
+    var resolved_amount := _resolve_actual_damage_amount(
+        actor, target, amount, source_kind, true_damage)
+    if not resolved_amount.get("success", false):
+        return {
+            "success": false,
+            "reason": resolved_amount.get("reason", "伤害查询失败"),
+            "buffered": false,
+        }
+    var final_override = null
+    if not _damage_resolver.is_buffering():
+        final_override = int(resolved_amount["amount"])
     var result: Dictionary = _damage_resolver.resolve(
-        actor,
-        target,
-        amount,
-        source_kind,
-        true_damage,
-        _status_system)
+        actor, target, amount, source_kind, true_damage,
+        _status_system, final_override)
     if not bool(result["buffered"]):
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
     if not bool(result["buffered"]):
+        _emit_damage_resolved(
+            actor, target, amount, source_kind, true_damage, result, false)
         _resolve_reflection(actor, target, source_kind, result)
     result["success"] = true
     return result
@@ -86,11 +106,54 @@ func begin_synchronized_damage(records: Array) -> void:
     _damage_resolver.begin_synchronized(actors)
 
 func flush_synchronized_damage() -> void:
-    _damage_resolver.flush_synchronized(Callable(
-        self, "_on_synchronized_damage_resolved"))
+    _damage_resolver.flush_synchronized(
+        Callable(self, "_on_synchronized_damage_resolved"),
+        Callable(self, "_resolve_synchronized_damage_amount"))
 
-func add_defense(side: BattleSide, amount: int) -> int:
-    return side.add_defense(amount)
+func add_defense(
+        side: BattleSide,
+        amount: int,
+        source_kind: String = "effect",
+        action_token: String = "") -> int:
+    var requested := maxi(0, amount)
+    if requested <= 0:
+        return 0
+    var effective := requested
+    if _battle_rule_query_service != null:
+        var query = _battle_rule_query_service.resolve_values({
+            "hook": "defense_gain_query",
+            "owner": side, "actor": side,
+            "subject_kind": "defense_gain",
+            "subject_id": source_kind,
+            "base_value": requested,
+            "round_number": _round_number(),
+            "action_token": action_token,
+            "source_kind": source_kind,
+        })
+        if not query.success:
+            _battle_rule_query_service.report_failure(query, "defense_gain")
+            return 0
+        effective = maxi(0, query.effective_value)
+    if effective <= 0:
+        return 0
+    var before := int(side.defense)
+    var gained := side.add_defense(effective)
+    if gained > 0 and _committed_event_service != null:
+        var serial: int = int(_committed_event_service.next_serial())
+        _committed_event_service.commit("defense_gained", {
+            "event_token": _committed_event_service.make_token(
+                "defense_gained", side, serial, action_token),
+            "event_serial": serial,
+            "actor": side, "owner": side,
+            "round_number": _round_number(),
+            "action_token": action_token,
+            "source_kind": source_kind,
+            "requested_amount": requested,
+            "effective_amount": gained,
+            "defense_before": before,
+            "defense_after": int(side.defense),
+        })
+    return gained
 
 func add_momentum(side: BattleSide, amount: int) -> int:
     return side.add_momentum(amount)
@@ -165,7 +228,8 @@ func finalize_reshape_action(side: BattleSide, preview: Dictionary) -> Dictionar
     return runtime.finalize_action_preview(side, preview)
 
 func draw(side: BattleSide, count: int, source_kind: String = "") -> Array:
-    var drawn: Array = side.draw(count)
+    var draw_reason := source_kind if source_kind != "" else "effect_draw"
+    var drawn: Array = side.draw(count, draw_reason)
     if source_kind == "technique":
         _status_system.record_technique_card_flow(side, "draw", drawn.size())
     return drawn
@@ -208,7 +272,7 @@ func move_card(
             source_side, source_zone, destination_zone, card, reason)
     else:
         result = source_side.temporarily_transfer_card_to(
-            target_side, str(card.id), destination_zone)
+            target_side, str(card.id), destination_zone, reason)
     if result.get("success", false) and placement == "bottom":
         var destination: Array = target_side.card_zone_service.zone(
             target_side, destination_zone)
@@ -358,12 +422,83 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         int(resolution["amount"]),
         str(resolution["source_kind"]),
         resolution["result"])
+    _emit_damage_resolved(
+        resolution["actor"], resolution["target"],
+        int(resolution.get("requested_amount", resolution["amount"])),
+        str(resolution["source_kind"]), bool(resolution["true_damage"]),
+        resolution["result"], true)
     _resolve_reflection(
         resolution["actor"],
         resolution["target"],
         str(resolution["source_kind"]),
         resolution["result"])
     return int(resolution["actor"].life) <= 0
+
+func _resolve_actual_damage_amount(
+        actor,
+        target,
+        requested_amount: int,
+        source_kind: String,
+        true_damage: bool) -> Dictionary:
+    if true_damage or _damage_resolver.is_buffering():
+        return {"success": true, "amount": maxi(0, requested_amount)}
+    var current := ComboDamageResolver.calculate_final_amount(
+        actor, target, requested_amount, source_kind, false, _status_system)
+    for stage in [
+            ["outgoing_damage_query", actor],
+            ["incoming_damage_query", target]]:
+        if _battle_rule_query_service == null:
+            continue
+        var owner = stage[1]
+        var query = _battle_rule_query_service.resolve_values({
+            "hook": stage[0], "owner": owner,
+            "actor": actor, "target": target,
+            "subject_kind": "damage", "subject_id": source_kind,
+            "base_value": current, "round_number": _round_number(),
+            "source_kind": source_kind,
+            "metadata": {"requested_amount": requested_amount},
+        })
+        if not query.success:
+            _battle_rule_query_service.report_failure(query, "damage")
+            return {"success": false, "reason": "；".join(query.errors)}
+        current = query.effective_value
+    return {"success": true, "amount": maxi(0, int(floor(float(current))))}
+
+func _resolve_synchronized_damage_amount(intent: Dictionary) -> Dictionary:
+    return _resolve_actual_damage_amount(
+        intent["actor"], intent["target"],
+        int(intent.get("requested_amount", intent["amount"])),
+        str(intent["source_kind"]), bool(intent["true_damage"]))
+
+func _emit_damage_resolved(
+        actor,
+        target,
+        requested_amount: int,
+        source_kind: String,
+        true_damage: bool,
+        result: Dictionary,
+        synchronized: bool) -> void:
+    if _committed_event_service == null:
+        return
+    var serial: int = int(_committed_event_service.next_serial())
+    _committed_event_service.commit("damage_resolved", {
+        "event_token": _committed_event_service.make_token(
+            "damage_resolved", actor, serial),
+        "event_serial": serial,
+        "actor": actor, "target": target, "owner": actor,
+        "include_target_owner": true,
+        "round_number": _round_number(),
+        "source_kind": source_kind,
+        "requested_amount": requested_amount,
+        "final_amount": int(result.get("final_amount", result.get("requested", 0))),
+        "defense_lost": int(result.get("defense_lost", 0)),
+        "life_lost": int(result.get("life_lost", 0)),
+        "true_damage": true_damage,
+        "synchronized": synchronized,
+    })
+
+func _round_number() -> int:
+    return int(_round_number_reader.call()) if _round_number_reader.is_valid() else 0
 
 func _resolve_reflection(
         attacker: BattleSide,

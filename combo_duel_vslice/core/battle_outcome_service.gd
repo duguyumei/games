@@ -115,15 +115,25 @@ func _finish_once() -> void:
         winner = player
     elif state == "player_defeat":
         winner = enemy
-    timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
+    var emitted: Dictionary = timing_system.emit_timing(
+        BattleTimingSystemScript.BATTLE_END, {
         "round_number": turn_number_reader.call(),
         "actors": [player, enemy],
         "winner": winner,
+        "battle_state": state,
         "metadata": {
             "battle_state": state,
             "battle_state_detail": detail,
         },
     })
+    if not emitted.get("success", false):
+        set_scenario_error(
+            "战斗时点失败 hook=%s reason=%s" % [
+                BattleTimingSystemScript.BATTLE_END,
+                str(emitted.get("reason", "battle_end 处理器失败")),
+            ])
+        cleanup_completed = true
+        return
     cleanup_completed = true
     battle_flow.set_action_count(player, 0)
     battle_flow.set_action_count(enemy, 0)

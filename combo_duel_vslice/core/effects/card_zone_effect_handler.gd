@@ -77,7 +77,12 @@ func execute(effect: Dictionary, context):
             return _draw_filtered(effect, runtime)
         "draw_to_limit":
             var side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
-            var wanted: int = maxi(0, side.current_hand_limit() - side.hand.size()) if side != null else 0
+            var hand_limit_result: Dictionary = (
+                side.effective_hand_limit_result() if side != null else {"success": false})
+            if not hand_limit_result.get("success", false):
+                return EffectResultScript.failed("有效手牌上限查询失败")
+            var wanted: int = maxi(
+                0, int(hand_limit_result["effective_value"]) - side.hand.size())
             var drawn: Array = (
                 runtime.ports.draw(side, wanted, "technique")
                 if runtime.ports != null and side != null

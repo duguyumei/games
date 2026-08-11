@@ -79,3 +79,11 @@
 判断通用同属性连击时，统一检查本次行动中主牌型与所有协同组实际打出的普通真气；它们必须共同满足同一种属性。任意一组不满足时，本次行动不能自然触发通用同属性连击。协同的具体起手与续接条件由功法明确给出；内功可以改变协同路线或提供协同奖励，但协同本身不默认增加统一伤害倍率。
 
 双方行动都包含协同组时，按牌型组序号进行跨阵营调度：双方主牌型组作为第 0 组同步结算，双方第 1 个协同组作为第 1 组同步结算，之后继续按相同序号配对。某一序号只有一方仍有协同组时，该组按单方牌型组结算；另一方不会为缺失组建立新的出牌效果。每一组完成自己的完整流程和序列推进后才进入下一序号，任一方多出的协同组仍属于原行动，不视为连击或新的行动窗口。
+
+#### 行动确认冻结与细粒度已提交事件
+
+行动预览和 AI 候选枚举只执行纯查询，不发送已提交事件。每个主牌型组和协同组拥有独立的稳定行动 token。正式确认必须在选牌、协同与合法性校验完成，卡牌进入待出区，重塑随机结果冻结之后，以最新战斗状态重新查询 `base_fixed`、`multiplier_bonus`、`power_fixed` 和 `power_amp_percent` 四项阶段输入，再由唯一 `PowerCalculator` 公式计算本组数值。查询明细和来源指纹随行动记录冻结；后续 `prepare → damage → zones`、等待选择恢复和同组重触全部复用，不得重新查询。确认查询失败时，卡牌返回手牌，不消耗行动次数，不推进功法序列，也不发送 `action_confirmed`。
+
+四阶段冻结成功、效果尚未开始前发送一次 `action_confirmed`。本组完成 `prepare → damage → zones → 打出卡牌离开待出区 → group_end／功法序列推进` 后，才发送一次 `action_resolved`；上下文分别明确 `technique_triggered` 和 `action_succeeded`，不能用功法 ID 是否为空推测。等待选择恢复与重复 finalizer 由行动 token 去重，不能再次发送确认或重新冻结。预览、快照与只读目标数量查询不会发送任何细粒度事件。
+
+卡牌实际从抽牌堆进入手牌后，先执行卡牌自身抽牌响应，再发送 `card_drawn`；批次性的 `after_normal_draw` 仍在整批正常补牌完成后发生。正常打出进入弃牌堆时，完整顺序为：`staging → discard_pile → StatusSystem 入堆行为 → CardReshapeBattleRuntime 入堆行为 → 状态晚期入堆／CardStateLifecycle → card_entered_discard`，不发送 `card_explicitly_discarded`。明确弃牌成功时沿用相同自身响应顺序，随后固定发送 `card_entered_discard → card_explicitly_discarded`，每张牌各一次。

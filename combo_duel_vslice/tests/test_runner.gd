@@ -116,6 +116,12 @@ const RunPassiveEventServiceScript = preload(
 const RunPassiveEventContextScript = preload(
     "res://core/passives/run_passive_event_context.gd")
 const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
+const BattlePassiveCounterReadPortScript = preload(
+    "res://core/passives/battle_passive_counter_read_port.gd")
+const BattlePassiveEventContextScript = preload(
+    "res://core/passives/battle_passive_event_context.gd")
+const BattlePassiveCommittedEventContextScript = preload(
+    "res://core/passives/battle_passive_committed_event_context.gd")
 
 const ProbeEffectHandlerScript = preload("res://tests/support/probe_effect_handler.gd")
 const ProbeStatusBehaviorHandlerScript = preload(
@@ -377,6 +383,221 @@ class PassiveCounterProbeHandler:
             "non_default_before": non_default_before,
         }
 
+class BattleLifecycleProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    var calls: Array[Dictionary] = []
+
+    func behavior_id() -> String:
+        return "battle_lifecycle_probe"
+
+    func supported_hooks() -> Array[String]:
+        return [
+            "action_preview",
+            "battle_start", "round_start", "turn_start",
+            "before_normal_draw", "after_normal_draw",
+            "action_window_start", "group_end", "action_window_end",
+            "turn_end", "battle_end",
+        ] as Array[String]
+
+    func validate_configuration(_configuration: Dictionary) -> Array[String]:
+        return []
+
+    func battle_timing_bindings(configuration: Dictionary) -> Array:
+        return configuration.get("bindings", [])
+
+    func counter_definitions(configuration: Dictionary) -> Array:
+        if not configuration.has("persistent_counter"):
+            return []
+        return [configuration["persistent_counter"]]
+
+    func battle_counter_definitions(configuration: Dictionary) -> Array:
+        return configuration.get("battle_counters", [])
+
+    func handle(hook: String, context, configuration: Dictionary) -> Dictionary:
+        var battle_event: bool = context is BattlePassiveEventContextScript
+        var result := {
+            "success": true,
+            "hook": hook,
+            "owner_id": str(context.owner_id) if battle_event else str(context.owner.owner_id),
+            "actor_id": (
+                str(context.actor.owner_id) if context.actor != null else ""),
+            "timing_serial": context.timing_serial if battle_event else -1,
+            "execution_index": context.invocation.execution_index \
+                if context.invocation != null else 0,
+            "source_instance_key": context.source.source_instance_key \
+                if context.source != null else "",
+            "drawn_count": context.drawn_cards.size() if battle_event else 0,
+            "winner_id": str(context.winner.owner_id) \
+                if battle_event and context.winner != null else "",
+            "battle_state": str(context.battle_state) \
+                if battle_event else "",
+            "persistent_mutation_available": (
+                context.persistent_counter_mutation_port != null),
+            "battle_mutation_available": (
+                context.battle_counter_mutation_port != null),
+        }
+        var persistent = configuration.get("persistent_counter", {})
+        if persistent is Dictionary and not persistent.is_empty():
+            var counter_id := str(persistent.get("counter_id", ""))
+            result["persistent_before"] = (
+                context.persistent_counter_read_port.read(counter_id))
+            if hook != "action_preview" \
+                    and bool(configuration.get("increment_persistent", false)):
+                var written: Dictionary = (
+                    context.persistent_counter_mutation_port.increment(counter_id, 1))
+                result["persistent_after"] = written.get(
+                    "value", result["persistent_before"])
+        var battle_before: Dictionary = {}
+        var battle_after: Dictionary = {}
+        var increment_ids: Array = configuration.get(
+            "increments_by_hook", {}).get(
+                hook, configuration.get("increment_battle_ids", []))
+        for definition in configuration.get("battle_counters", []):
+            var counter_id := str(definition.get("counter_id", ""))
+            battle_before[counter_id] = context.battle_counter_read_port.read(
+                counter_id)
+            if hook != "action_preview" \
+                    and increment_ids.has(counter_id):
+                var written: Dictionary = (
+                    context.battle_counter_mutation_port.increment(counter_id, 1))
+                battle_after[counter_id] = written.get(
+                    "value", battle_before[counter_id])
+        result["battle_before"] = battle_before
+        result["battle_after"] = battle_after
+        calls.append(result.duplicate(true))
+        if str(configuration.get("fail_hook", "")) == hook \
+                and int(configuration.get("fail_execution_index", 0)) \
+                    == int(result["execution_index"]):
+            return {"success": false, "reason": "Fake 战斗生命周期失败"}
+        return result
+
+class InvalidBattleBindingProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    func behavior_id() -> String:
+        return "invalid_battle_binding_probe"
+
+    func supported_hooks() -> Array[String]:
+        return ["battle_start"] as Array[String]
+
+    func battle_timing_bindings(configuration: Dictionary) -> Array:
+        return configuration.get("bindings", [])
+
+    func handle(_hook: String, _context, _configuration: Dictionary) -> Dictionary:
+        return {"success": true}
+
+class BattleFineGrainedProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    var calls: Array[Dictionary] = []
+
+    func behavior_id() -> String:
+        return "battle_fine_grained_probe"
+
+    func supported_hooks() -> Array[String]:
+        var result: Array[String] = []
+        result.append_array(PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS)
+        result.append_array(PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS)
+        return result
+
+    func counter_definitions(_configuration: Dictionary) -> Array:
+        return [{
+            "counter_id": "committed_total", "default_value": 0,
+            "minimum": 0, "retention_policy": "run",
+        }]
+
+    func battle_counter_definitions(_configuration: Dictionary) -> Array:
+        return [{
+            "counter_id": "committed_total", "default_value": 0,
+            "minimum": 0, "reset_scope": "battle",
+        }]
+
+    func handle(hook: String, context, configuration: Dictionary) -> Dictionary:
+        if hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
+            var current := int(context.payload.get("current_value", 0))
+            calls.append({
+                "kind": "query", "hook": hook,
+                "owner_id": str(context.owner.owner_id),
+                "current_value": current,
+                "execution_index": int(context.invocation.execution_index),
+                "persistent_mutation_available": (
+                    context.persistent_counter_mutation_port != null),
+                "battle_mutation_available": (
+                    context.battle_counter_mutation_port != null),
+                "action_token": str(context.payload.get(
+                    "int_query").action_token),
+            })
+            if str(configuration.get("fail_query", "")) == hook \
+                    and (
+                        not bool(configuration.get("fail_query_on_confirm", false))
+                        or str(context.payload.get("int_query").action_token) != ""):
+                return {"success": false, "reason": "Fake 战斗查询失败"}
+            if bool(configuration.get("mutate_query_state", false)):
+                context.owner.defense += 9
+                var cards: Array = context.owner.all_zone_cards()
+                if not cards.is_empty():
+                    cards[0].reshape_enhancement = "query_mutation_probe"
+                    cards[0].anomalies["buffs"]["query_mutation_probe"] = 1
+                if context.owner.status_system != null:
+                    context.owner.status_system.delayed_records.append({
+                        "id": "query_mutation_probe",
+                    })
+                    context.owner.status_system._rng.randi()
+            var absolute_values: Dictionary = configuration.get("query_values", {})
+            if absolute_values.has(hook):
+                return {"success": true, "value": int(absolute_values[hook])}
+            return {
+                "success": true,
+                "value": current + int(configuration.get(
+                    "query_deltas", {}).get(hook, 0)),
+            }
+        var committed_context: bool = (
+            context is BattlePassiveCommittedEventContextScript)
+        var persistent_before: int = int(context.persistent_counter_read_port.read(
+            "committed_total"))
+        var battle_before: int = int(context.battle_counter_read_port.read(
+            "committed_total"))
+        if bool(configuration.get("increment_events", true)):
+            context.persistent_counter_mutation_port.increment(
+                "committed_total", 1)
+            context.battle_counter_mutation_port.increment(
+                "committed_total", 1)
+        calls.append({
+            "kind": "event", "hook": hook,
+            "typed_context": committed_context,
+            "owner_id": str(context.owner_id),
+            "actor_id": str(context.actor.owner_id) if context.actor != null else "",
+            "target_id": str(context.target.owner_id) if context.target != null else "",
+            "event_token": str(context.event_token),
+            "action_token": str(context.action_token),
+            "card_instance_id": str(context.card_instance_id),
+            "draw_reason": str(context.draw_reason),
+            "from_zone": str(context.from_zone),
+            "reason": str(context.reason),
+            "explicit_discard": bool(context.explicit_discard),
+            "normal_play": bool(context.normal_play),
+            "requested_amount": int(context.requested_amount),
+            "final_amount": int(context.final_amount),
+            "defense_lost": int(context.defense_lost),
+            "life_lost": int(context.life_lost),
+            "true_damage": bool(context.true_damage),
+            "synchronized": bool(context.synchronized),
+            "effective_amount": int(context.effective_amount),
+            "defense_before": int(context.defense_before),
+            "defense_after": int(context.defense_after),
+            "technique_triggered": bool(context.technique_triggered),
+            "action_succeeded": bool(context.action_succeeded),
+            "persistent_before": persistent_before,
+            "battle_before": battle_before,
+            "execution_index": int(context.invocation.execution_index),
+        })
+        if str(configuration.get("fail_event", "")) == hook \
+                and int(configuration.get("fail_execution_index", 0)) \
+                    == int(context.invocation.execution_index):
+            return {"success": false, "reason": "Fake 已提交事件失败"}
+        return {"success": true}
+
 class DirectCardTriggerProbe:
     extends RefCounted
 
@@ -605,6 +826,8 @@ func _initialize() -> void:
     _test_passive_runtime_capacity_suppression_invocations_and_items()
     _test_run_passive_queries_events_and_transactions()
     _test_run_passive_persistent_counters_and_state_ports()
+    _test_battle_passive_lifecycle_bridge_and_temporary_counters()
+    _test_battle_fine_grained_events_and_int_queries()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
@@ -2230,6 +2453,1109 @@ func _test_run_passive_persistent_counters_and_state_ports() -> void:
     _assert_true(
         run_growth.passive_counter_store.capture_state()["entries"].is_empty(),
         "新本局 reset 清空所有 run 与 while_owned 计数器")
+
+func _test_battle_passive_lifecycle_bridge_and_temporary_counters() -> void:
+    var handler := BattleLifecycleProbeHandler.new()
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    _assert_true(registry.register_handler(handler), "注册 F5D1 战斗生命周期 Fake Handler")
+    _assert_true(
+        registry.register_handler(InvalidBattleBindingProbeHandler.new()),
+        "注册 F5D1 无效绑定校验 Handler")
+    _assert_true(
+        registry.register_handler(PassiveRepeatProbeHandler.new()),
+        "注册 F5D1 额外 Invocation Handler")
+    for hook in PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS:
+        _assert_true(registry.has_hook(hook), "Registry 登记正式战斗 Hook：%s" % hook)
+    _assert_true(
+        registry.validate_battle_timing_bindings(
+            "battle_lifecycle_probe", {
+                "bindings": [{"hook": "after_normal_draw", "order": 700}],
+            }).is_empty(),
+        "Handler 可以代码声明合法 hook 与全局整数 order")
+    _assert_true(
+        not registry.validate_battle_timing_bindings(
+            "invalid_battle_binding_probe", {
+                "bindings": [{"hook": "turn_start", "order": 1}],
+            }).is_empty(),
+        "binding hook 未进入 supported_hooks 时校验失败")
+    _assert_true(
+        not registry.validate_battle_timing_bindings(
+            "invalid_battle_binding_probe", {
+                "bindings": [{"hook": "battle_start", "order": 1.5}],
+            }).is_empty(),
+        "binding order 非整数时校验失败")
+    _assert_true(
+        not registry.validate_battle_timing_bindings(
+            "invalid_battle_binding_probe", {
+                "bindings": [
+                    {"hook": "battle_start", "order": 1},
+                    {"hook": "battle_start", "order": 1},
+                ],
+            }).is_empty(),
+        "同一 Handler 重复 hook + order 时校验失败")
+
+    var battle_counter_definitions := [
+        {
+            "counter_id": "battle_total", "default_value": 0,
+            "minimum": 0, "reset_scope": "battle",
+        },
+        {
+            "counter_id": "turn_total", "default_value": 0,
+            "minimum": 0, "reset_scope": "turn",
+        },
+        {
+            "counter_id": "window_total", "default_value": 0,
+            "minimum": 0, "reset_scope": "action_window",
+        },
+    ]
+    var persistent_definition := {
+        "counter_id": "run_total", "default_value": 0,
+        "minimum": 0, "retention_policy": "run",
+    }
+    var items: Array = []
+    for hook_index in range(
+            PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS.size()):
+        var hook: String = (
+            PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS[hook_index])
+        items.append(_battle_passive_test_item(
+            "lifecycle_%s" % hook,
+            [{"hook": hook, "order": 600}],
+            {}))
+    items.append(_battle_passive_test_item("no_timing_binding", [], {}))
+    items.append(_battle_passive_test_item(
+        "counter_item",
+        [
+            {"hook": "round_start", "order": 250},
+            {"hook": "turn_start", "order": 250},
+            {"hook": "action_window_start", "order": 250},
+        ],
+        {
+            "battle_counters": battle_counter_definitions,
+            "persistent_counter": persistent_definition,
+            "increment_persistent": true,
+            "increments_by_hook": {
+                "round_start": ["battle_total"],
+                "turn_start": ["turn_total"],
+                "action_window_start": ["window_total"],
+            },
+        }))
+    items.append(_battle_passive_test_item(
+        "same_order_first",
+        [{"hook": "after_normal_draw", "order": 700}], {}))
+    items.append(_battle_passive_test_item(
+        "same_order_second",
+        [{"hook": "after_normal_draw", "order": 700}], {}))
+    items.append(_battle_passive_test_item(
+        "battle_end_state",
+        [
+            {"hook": "battle_start", "order": 350},
+            {"hook": "battle_end", "order": 350},
+        ],
+        {
+            "battle_counters": [{
+                "counter_id": "end_visible", "default_value": 0,
+                "minimum": 0, "reset_scope": "battle",
+            }],
+            "increments_by_hook": {
+                "battle_start": ["end_visible"],
+                "battle_end": ["end_visible"],
+            },
+        }))
+    items.append({
+        "id": "repeat_copy_item", "name": "战斗 Invocation 重复探针",
+        "kind": "item", "status": "candidate", "unique": true,
+        "description": "仅用于 F5D1 测试。", "price": 1,
+        "behaviors": [{
+            "id": "repeat_probe",
+            "configuration": {"target_content_id": "copy_inner"},
+        }],
+    })
+    items.append({
+        "id": "repeat_group_item", "name": "group_end 重复探针",
+        "kind": "item", "status": "candidate", "unique": true,
+        "description": "仅用于 F5D1 测试。", "price": 1,
+        "behaviors": [{
+            "id": "repeat_probe",
+            "configuration": {"target_content_id": "failure_group"},
+        }],
+    })
+    items.append_array([
+        _battle_passive_test_item(
+            "failure_battle_start",
+            [{"hook": "battle_start", "order": 400}],
+            {"fail_hook": "battle_start"}),
+        _battle_passive_test_item(
+            "failure_turn_start",
+            [{"hook": "turn_start", "order": 400}],
+            {"fail_hook": "turn_start"}),
+        _battle_passive_test_item(
+            "failure_group",
+            [{"hook": "group_end", "order": 400}],
+            {
+                "fail_hook": "group_end", "fail_execution_index": 1,
+                "battle_counters": [{
+                    "counter_id": "failed_battle", "default_value": 0,
+                    "minimum": 0, "reset_scope": "battle",
+                }],
+                "persistent_counter": persistent_definition,
+                "increment_persistent": true,
+                "increment_battle_ids": ["failed_battle"],
+            }),
+        _battle_passive_test_item(
+            "failure_battle_end",
+            [{"hook": "battle_end", "order": 400}],
+            {
+                "fail_hook": "battle_end",
+                "battle_counters": [{
+                    "counter_id": "failed_end", "default_value": 0,
+                    "minimum": 0, "reset_scope": "battle",
+                }],
+                "persistent_counter": persistent_definition,
+                "increment_persistent": true,
+                "increment_battle_ids": ["failed_end"],
+            }),
+        _battle_passive_test_item(
+            "snapshot_probe",
+            [{"hook": "battle_start", "order": 300}],
+            {
+                "persistent_counter": persistent_definition,
+                "increment_persistent": true,
+            }),
+    ])
+    var inner_skills := [{
+        "id": "copy_inner", "name": "同 ID 战斗副本探针",
+        "status": "candidate", "description": "仅用于 F5D1 测试。",
+        "forget_value": 1,
+        "behaviors": [{
+            "id": "battle_lifecycle_probe", "state_key": "copy_state",
+            "configuration": {
+                "bindings": [{"hook": "battle_start", "order": 300}],
+                "battle_counters": [{
+                    "counter_id": "copy_battle", "default_value": 0,
+                    "minimum": 0, "reset_scope": "battle",
+                }],
+                "persistent_counter": persistent_definition,
+                "increment_persistent": true,
+                "increment_battle_ids": ["copy_battle"],
+            },
+        }],
+    }]
+    var catalog_result := _battle_passive_test_catalog(
+        registry, items, inner_skills)
+    var catalog = catalog_result["catalog"]
+    _assert_true(catalog_result["success"], "F5D1 Fake 内容通过统一内容校验")
+
+    var base_values: Dictionary = catalog_result["base_values"]
+    for invalid_case in [
+            [{"hook": "turn_start", "order": 1}, "supported_hooks"],
+            [{"hook": "battle_start", "order": 1.5}, "order"],
+            [
+                [
+                    {"hook": "battle_start", "order": 1},
+                    {"hook": "battle_start", "order": 1},
+                ],
+                "重复声明",
+            ],
+        ]:
+        var invalid_values := base_values.duplicate(true)
+        var bindings = invalid_case[0]
+        if bindings is Dictionary:
+            bindings = [bindings]
+        invalid_values["items"]["items"].append({
+            "id": "invalid_binding_content", "name": "无效绑定内容",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "仅用于校验。", "price": 1,
+            "behaviors": [{
+                "id": "invalid_battle_binding_probe",
+                "configuration": {"bindings": bindings},
+            }],
+        })
+        var invalid_catalog = ContentCatalogScript.new(
+            RuntimeProfileScript.test(), null, null, null, null, null, registry)
+        _assert_true(
+            not invalid_catalog.load_from_definitions(
+                invalid_values, catalog_result["paths"]),
+            "非法战斗 binding 在内容校验阶段失败：%s" % str(invalid_case[1]))
+
+    var lifecycle_ids: Array[String] = []
+    for hook in PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS:
+        lifecycle_ids.append("lifecycle_%s" % hook)
+    lifecycle_ids.append_array([
+        "no_timing_binding", "counter_item",
+        "same_order_first", "same_order_second", "battle_end_state",
+    ])
+    var engine = _battle_passive_test_engine(catalog, registry, lifecycle_ids)
+    handler.calls.clear()
+    var first_draw: Array = engine.start_player_turn()
+    _assert_true(not first_draw.is_empty(), "单方生命周期桥接成功进入首次补牌")
+    _assert_true(
+        engine.battle_passive_timing_bridge.registered_binding_snapshot().any(
+            func(entry): return entry["handler_id"] == \
+                "passives.after_normal_draw.700"),
+        "Bridge 使用 passives.<hook>.<order> 稳定注册 ID")
+    var after_draw_calls := handler.calls.filter(
+        func(call): return call["hook"] == "after_normal_draw")
+    _assert_true(
+        after_draw_calls.any(func(call): return int(call["drawn_count"]) == first_draw.size()),
+        "after_normal_draw Context 携带实际抽到的卡牌")
+    _assert_true(
+        not handler.calls.any(
+            func(call): return str(call["source_instance_key"]).contains(
+                "no_timing_binding")),
+        "未声明 timing binding 的 Handler 不会被 Bridge 执行")
+    var after_draw_history: Array = engine.battle_passive_timing_bridge.execution_history.filter(
+        func(entry): return entry["hook"] == "after_normal_draw")
+    _assert_true(
+        int(after_draw_history[0]["order"]) < int(after_draw_history[-1]["order"]),
+        "不同 order 按 BattleTimingSystem 全局时序执行")
+    var same_order_history: Array = after_draw_history.filter(
+        func(entry): return int(entry["order"]) == 700)
+    _assert_true(
+        str(same_order_history[0]["source_instance_key"]).contains(
+            "same_order_first")
+            and str(same_order_history[1]["source_instance_key"]).contains(
+                "same_order_second"),
+        "同一 order 内保持物品稳定来源顺序")
+    var play_result: Dictionary = engine.confirm_play([
+        str(engine.player.hand[0].id)])
+    _assert_true(play_result.get("success", false), "实际行动触发 group_end 被动桥接")
+    if engine.battle_state == "active":
+        engine.end_player_turn()
+    engine.enemy.life = 0
+    engine._update_battle_state()
+    var seen_hooks: Dictionary = {}
+    for call in handler.calls:
+        seen_hooks[str(call["hook"])] = true
+    for hook in PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS:
+        _assert_true(seen_hooks.has(hook), "实际战斗执行正式生命周期 Hook：%s" % hook)
+    var battle_end_calls := handler.calls.filter(
+        func(call): return call["hook"] == "battle_end")
+    _assert_true(
+        battle_end_calls.any(func(call):
+            return call["winner_id"] == "player" \
+                and call["battle_state"] == "player_victory"),
+        "battle_end Context 使用 BattleOutcomeService 的明确 winner 与 battle_state")
+    var end_state_call: Dictionary = battle_end_calls.filter(
+        func(call): return str(call["source_instance_key"]).contains(
+            "battle_end_state"))[0]
+    _assert_equal(
+        end_state_call["battle_before"]["end_visible"], 1,
+        "battle_end Handler 执行时仍可读取本场临时计数")
+    _assert_true(
+        engine.player.battle_passive_counter_store.is_empty(),
+        "battle_end 全部处理器结束后清空战斗临时 Store")
+
+    var counter_engine = _battle_passive_test_engine(
+        catalog, registry, ["counter_item"])
+    handler.calls.clear()
+    counter_engine.start_player_turn()
+    counter_engine.end_player_turn()
+    counter_engine.apply_passive_suppression({
+        "suppression_id": "f5d1-round-suppression",
+        "target_content_id": "counter_item",
+        "blocked_hooks": ["round_start"],
+        "reason": "F5D1 测试压制",
+    })
+    counter_engine.start_player_turn()
+    counter_engine.end_player_turn()
+    counter_engine.remove_passive_suppression("f5d1-round-suppression")
+    counter_engine.start_player_turn()
+    var counter_calls := handler.calls.filter(
+        func(call): return str(call["source_instance_key"]).contains(
+            "counter_item"))
+    var round_calls := counter_calls.filter(
+        func(call): return call["hook"] == "round_start")
+    _assert_equal(round_calls.size(), 2, "被压制来源不建立 Invocation，解除后恢复")
+    _assert_equal(
+        round_calls[1]["battle_before"]["battle_total"], 1,
+        "battle 计数跨回合和压制保留")
+    var turn_calls := counter_calls.filter(
+        func(call): return call["hook"] == "turn_start")
+    _assert_true(
+        turn_calls.all(func(call):
+            return int(call["battle_before"]["turn_total"]) == 0),
+        "turn 计数只在对应 actor 的 turn_start Handler 前重置")
+    var window_calls := counter_calls.filter(
+        func(call): return call["hook"] == "action_window_start")
+    _assert_true(
+        window_calls.all(func(call):
+            return int(call["battle_before"]["window_total"]) == 0),
+        "action_window 计数只在新窗口 Handler 前重置")
+    var preview_state_before: Dictionary = (
+        counter_engine.player.battle_passive_counter_store.capture_state())
+    var preview_one: Dictionary = counter_engine.passive_rule_runtime.dispatch_event(
+        "action_preview", {"actor": counter_engine.player})
+    var preview_two: Dictionary = counter_engine.passive_rule_runtime.dispatch_event(
+        "action_preview", {"actor": counter_engine.player})
+    _assert_true(
+        preview_one.get("success", false) and preview_two.get("success", false),
+        "action_preview 可重复读取两类计数")
+    var counter_preview: Dictionary = preview_one["results"].filter(
+        func(entry): return entry["source"].content_id == "counter_item")[0]["result"]
+    _assert_true(
+        not counter_preview["persistent_mutation_available"]
+            and not counter_preview["battle_mutation_available"],
+        "action_preview 只获得持久与临时只读端口")
+    _assert_equal(
+        counter_engine.player.battle_passive_counter_store.capture_state(),
+        preview_state_before,
+        "重复预览和 AI 候选式查询不修改临时计数")
+    counter_engine.use_external_enemy_actions(false)
+    _assert_true(
+        counter_engine.player.battle_passive_counter_store.is_empty(),
+        "战斗关闭时清空临时计数并注销旧 Bridge 绑定")
+
+    var copy_engine = _battle_passive_test_engine(
+        catalog, registry, ["repeat_copy_item"],
+        ["copy_inner", "copy_inner"])
+    handler.calls.clear()
+    copy_engine.start_player_turn()
+    var copy_calls := handler.calls.filter(
+        func(call): return call["hook"] == "battle_start" \
+            and str(call["source_instance_key"]).contains("copy_inner"))
+    _assert_equal(copy_calls.size(), 4, "两副本各自保留额外 Invocation")
+    _assert_equal(
+        copy_calls.map(func(call): return int(call["execution_index"])),
+        [0, 1, 0, 1],
+        "额外 Invocation 在原来源位置连续执行")
+    _assert_equal(
+        copy_engine.player.battle_passive_counter_store.capture_state()[
+            "entries"].size(),
+        2,
+        "同 ID 两个副本按 source_instance_key 拥有独立战斗临时计数")
+    var copy_persistent: Dictionary = (
+        copy_engine.player.passive_counter_store.capture_state())
+    _assert_equal(copy_persistent["entries"].size(), 1, "F5C 持久计数仍按内容级身份共享")
+    _assert_equal(copy_persistent["entries"][0]["value"], 4, "连续 Invocation 读取此前已提交持久值")
+    var entering_snapshot = BattleSetupServiceScript.new(catalog).capture_progress(
+        copy_engine.player, RunDeckScript.new(catalog))
+    var imported_engine = _battle_passive_test_engine(catalog, registry, [])
+    var imported: Dictionary = BattleSetupServiceScript.new(
+        catalog).apply_non_deck_progress(
+            imported_engine.player, entering_snapshot)
+    _assert_true(imported.get("success", false), "RunProgressSnapshot 持久计数绝对装配进 BattleSide 副本")
+    _assert_equal(
+        imported_engine.player.passive_counter_store.capture_state(),
+        copy_persistent,
+        "战斗开始前持久 Store 与本局快照完全一致")
+    imported_engine.start_player_turn()
+    _assert_equal(
+        imported_engine.player.passive_counter_store.capture_state()[
+            "entries"][0]["value"],
+        8,
+        "战斗 Handler 在独立副本中读取旧值并连续增长")
+    _assert_equal(
+        copy_engine.player.passive_counter_store.capture_state(),
+        copy_persistent,
+        "战斗副本修改不直接写回原本局状态")
+
+    var gate_engine = _battle_passive_test_engine(
+        catalog, registry, ["lifecycle_battle_start"])
+    _assert_true(
+        gate_engine.enemy.configure_items([
+            "lifecycle_battle_start"]).get("success", false),
+        "为敌方配置同 Hook 门禁夹具")
+    gate_engine.start_player_turn()
+    _assert_equal(gate_engine.battle_state, "scenario_error", "双方同 Hook 时拒绝正式战斗装配")
+    _assert_true(
+        gate_engine.battle_state_detail.contains(
+            "unconfirmed_cross_side_passive_order")
+            and gate_engine.battle_state_detail.contains("battle_start")
+            and gate_engine.battle_state_detail.contains("player")
+            and gate_engine.battle_state_detail.contains("enemy"),
+        "跨阵营门禁错误包含 code、hook 与双方 owner_id")
+
+    var battle_start_failure = _battle_passive_test_engine(
+        catalog, registry, ["failure_battle_start"])
+    battle_start_failure.start_player_turn()
+    _assert_equal(battle_start_failure.battle_state, "scenario_error", "battle_start 失败进入 scenario_error")
+    _assert_equal(
+        battle_start_failure.timing_system.history.size(), 1,
+        "battle_start 失败后不继续 round_start 或抽牌")
+    var turn_failure = _battle_passive_test_engine(
+        catalog, registry, ["failure_turn_start"])
+    turn_failure.start_player_turn()
+    _assert_equal(turn_failure.battle_state, "scenario_error", "turn_start 失败进入 scenario_error")
+    _assert_true(turn_failure.player.hand.is_empty(), "turn_start 失败后不会继续正常抽牌")
+
+    var group_failure = _battle_passive_test_engine(
+        catalog, registry, ["failure_group", "repeat_group_item"])
+    handler.calls.clear()
+    group_failure.start_player_turn()
+    var group_state_before: Dictionary = group_failure.player.passive_counter_store.capture_state()
+    var group_battle_before: Dictionary = (
+        group_failure.player.battle_passive_counter_store.capture_state())
+    var hand_id := str(HandEvaluatorScript.evaluate([
+        group_failure.player.hand[0]])["id"])
+    var technique_before: String = group_failure.sequence_book.current_id(hand_id)
+    group_failure.confirm_play([str(group_failure.player.hand[0].id)])
+    _assert_equal(group_failure.battle_state, "scenario_error", "group_end 第二 Invocation 失败进入 scenario_error")
+    _assert_true(
+        group_failure.battle_state_detail.contains("hook=group_end")
+            and group_failure.battle_state_detail.contains("order=400")
+            and group_failure.battle_state_detail.contains("failure_group")
+            and group_failure.battle_state_detail.contains(
+                "battle_lifecycle_probe")
+            and group_failure.battle_state_detail.contains(
+                "Fake 战斗生命周期失败"),
+        "时点失败诊断包含 hook、order、source_instance_key、behavior_id 与原因")
+    _assert_equal(
+        group_failure.player.passive_counter_store.capture_state(),
+        group_state_before,
+        "group_end 失败回滚该时点全部持久计数修改")
+    _assert_equal(
+        group_failure.player.battle_passive_counter_store.capture_state(),
+        group_battle_before,
+        "group_end 失败回滚该时点全部临时计数修改")
+    _assert_equal(
+        group_failure.sequence_book.current_id(hand_id), technique_before,
+        "order 400 被动失败后不会继续 order 500 功法序列推进")
+
+    var end_failure = _battle_passive_test_engine(
+        catalog, registry, ["failure_battle_end"])
+    end_failure.start_player_turn()
+    var end_persistent_before: Dictionary = end_failure.player.passive_counter_store.capture_state()
+    var end_battle_before: Dictionary = end_failure.player.battle_passive_counter_store.capture_state()
+    end_failure.enemy.life = 0
+    end_failure._update_battle_state()
+    _assert_equal(end_failure.battle_state, "scenario_error", "battle_end 失败不返回正常胜利")
+    _assert_equal(
+        end_failure.player.passive_counter_store.capture_state(),
+        end_persistent_before,
+        "battle_end 失败回滚持久计数")
+    _assert_equal(
+        end_failure.player.battle_passive_counter_store.capture_state(),
+        end_battle_before,
+        "battle_end 失败回滚临时计数")
+
+    var victory_snapshot = BattleSetupServiceScript.new(catalog).capture_progress(
+        engine.player, RunDeckScript.new(catalog))
+    _assert_true(victory_snapshot.has_passive_counter_state, "胜利战斗快照携带持久计数绝对状态")
+    var snapshot_growth = GrowthInventoryScript.new(catalog, false)
+    snapshot_growth.apply_progress_snapshot(victory_snapshot)
+    var synced_state: Dictionary = snapshot_growth.passive_counter_store.capture_state()
+    snapshot_growth.apply_progress_snapshot(victory_snapshot)
+    _assert_equal(
+        snapshot_growth.passive_counter_store.capture_state(), synced_state,
+        "同一战斗绝对快照同步两次不会重复增加")
+    var defeat_engine = _battle_passive_test_engine(
+        catalog, registry, ["snapshot_probe"])
+    defeat_engine.start_player_turn()
+    defeat_engine.player.life = 0
+    defeat_engine._update_battle_state()
+    var defeat_snapshot = BattleSetupServiceScript.new(catalog).capture_progress(
+        defeat_engine.player, RunDeckScript.new(catalog))
+    _assert_equal(defeat_engine.battle_state, "player_defeat", "建立战败持久状态回写夹具")
+    _assert_true(
+        defeat_snapshot.has_passive_counter_state \
+            and not defeat_snapshot.passive_counter_state["entries"].is_empty(),
+        "战败绝对快照同样保留战斗内增长的持久计数")
+
+    _assert_true(
+        not registry.validate_battle_counter_definitions(
+            "battle_lifecycle_probe", {
+                "battle_counters": [{
+                    "counter_id": "Bad-ID", "default_value": 0,
+                    "minimum": 0, "reset_scope": "battle",
+                }],
+            }).is_empty(),
+        "临时计数器 ID、整数范围与 reset_scope 由 Registry 集中校验")
+
+func _test_battle_fine_grained_events_and_int_queries() -> void:
+    var handler := BattleFineGrainedProbeHandler.new()
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    _assert_true(registry.register_handler(handler), "注册 F5D2 Fake Handler")
+    _assert_true(
+        registry.register_handler(PassiveRepeatProbeHandler.new()),
+        "F5D2 复用额外 Invocation 规划 Handler")
+    _assert_equal(
+        PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
+        7,
+        "Registry 明确登记七个细粒度已提交事件")
+    _assert_equal(
+        PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
+        9,
+        "Registry 明确登记九个战斗整数查询")
+    for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
+        _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
+    for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
+        _assert_true(registry.has_hook(hook), "登记战斗整数查询 Hook：%s" % hook)
+
+    var probe_configuration := {
+        "increment_events": true,
+        "query_deltas": {
+            "hand_limit_query": 2,
+            "power_base_fixed_query": 1,
+            "power_multiplier_bonus_query": 1,
+            "power_fixed_query": 3,
+            "power_amp_percent_query": 10,
+            "outgoing_damage_query": 2,
+            "incoming_damage_query": 3,
+            "defense_gain_query": 4,
+            "defense_retention_percent_query": 50,
+        },
+    }
+    var items := [
+        _f5d2_probe_item("f5d2_probe", probe_configuration),
+        _f5d2_probe_item("f5d2_event_failure", {
+            "increment_events": true,
+            "fail_event": "action_confirmed",
+            "fail_execution_index": 1,
+        }),
+        _f5d2_probe_item("f5d2_hand_query_failure", {
+            "fail_query": "hand_limit_query",
+        }),
+        _f5d2_probe_item("f5d2_defense_query_failure", {
+            "fail_query": "defense_gain_query",
+        }),
+        _f5d2_probe_item("f5d2_power_query_failure", {
+            "fail_query": "power_fixed_query",
+            "fail_query_on_confirm": true,
+        }),
+        _f5d2_probe_item("f5d2_damage_query_failure", {
+            "fail_query": "outgoing_damage_query",
+        }),
+        _f5d2_probe_item("f5d2_retention_query_failure", {
+            "fail_query": "defense_retention_percent_query",
+        }),
+        _f5d2_probe_item("f5d2_query_mutation", {
+            "mutate_query_state": true,
+        }),
+        {
+            "id": "f5d2_repeat_probe", "name": "F5D2 查询重复探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "仅用于 F5D2 自动化测试。", "price": 1,
+            "behaviors": [{
+                "id": "repeat_probe",
+                "configuration": {"target_content_id": "f5d2_probe"},
+            }],
+        },
+        {
+            "id": "f5d2_repeat_failure", "name": "F5D2 失败重复探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "仅用于 F5D2 自动化测试。", "price": 1,
+            "behaviors": [{
+                "id": "repeat_probe",
+                "configuration": {"target_content_id": "f5d2_event_failure"},
+            }],
+        },
+    ]
+    var catalog_result := _battle_passive_test_catalog(registry, items, [])
+    _assert_true(catalog_result["success"], "F5D2 Fake 内容通过统一内容校验")
+    var catalog = catalog_result["catalog"]
+
+    var engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_probe"])
+    _assert_true(
+        engine.enemy.configure_items(["f5d2_probe"])["success"],
+        "受击方装配同一 Fake 查询来源")
+    handler.calls.clear()
+    var normal_draw: Array = engine.start_player_turn()
+    _assert_equal(engine.player.base_hand_limit(), 8, "基础手牌上限保持独立字段")
+    _assert_equal(engine.player.current_hand_limit(), 10, "有效手牌上限经过统一查询")
+    _assert_equal(normal_draw.size(), 10, "正常补牌使用有效手牌上限")
+    var drawn_calls := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "card_drawn")
+    _assert_equal(drawn_calls.size(), 10, "每张实际进入手牌的真气触发一次 card_drawn")
+    _assert_true(
+        drawn_calls.all(func(call):
+            return call["typed_context"] and call["draw_reason"] == "normal_draw"),
+        "card_drawn 使用有界 Context 并携带 draw_reason")
+    var events_before_preview := handler.calls.filter(
+        func(call): return call["kind"] == "event").size()
+    var counter_before_preview: Dictionary = (
+        engine.player.battle_passive_counter_store.capture_state())
+    var preview_one: Dictionary = engine.preview([str(engine.player.hand[0].id)])
+    var preview_two: Dictionary = engine.preview([str(engine.player.hand[0].id)])
+    _assert_true(preview_one["valid"] and preview_two["valid"], "重复预览纯查询成功")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event").size(),
+        events_before_preview,
+        "preview 与 AI 候选式枚举不触发已提交事件")
+    _assert_equal(
+        engine.player.battle_passive_counter_store.capture_state(),
+        counter_before_preview,
+        "重复预览不修改战斗临时计数")
+    _assert_equal(
+        preview_one["values"]["passive_power_queries"]["base_fixed"]["effective_value"],
+        1,
+        "power_base_fixed_query 只归并 base_fixed 阶段输入")
+    _assert_equal(
+        preview_one["values"]["passive_power_queries"]["multiplier_bonus"]["effective_value"],
+        1,
+        "power_multiplier_bonus_query 固定为第二阶段")
+    _assert_equal(
+        preview_one["values"]["passive_power_queries"]["power_fixed"]["effective_value"],
+        3,
+        "power_fixed_query 固定为第三阶段")
+    _assert_equal(
+        preview_one["values"]["passive_power_queries"]["power_amp_percent"]["effective_value"],
+        10,
+        "power_amp_percent_query 固定为第四阶段")
+    _assert_true(
+        handler.calls.filter(func(call): return call["kind"] == "query").all(
+            func(call): return not call["persistent_mutation_available"] \
+                and not call["battle_mutation_available"]),
+        "所有战斗整数查询只获得两类只读计数端口")
+
+    var played_card = engine.player.hand[0]
+    var play_result: Dictionary = engine.confirm_play([str(played_card.id)])
+    _assert_true(play_result.get("success", false), "实际行动完成确认与结算")
+    var confirmed_calls := handler.calls.filter(
+        func(call): return call["kind"] == "event" \
+            and call["hook"] == "action_confirmed" \
+            and call["actor_id"] == "player")
+    var resolved_calls := handler.calls.filter(
+        func(call): return call["kind"] == "event" \
+            and call["hook"] == "action_resolved" \
+            and call["actor_id"] == "player")
+    _assert_equal(confirmed_calls.size(), 1, "主行动组 action_confirmed 只提交一次")
+    _assert_equal(resolved_calls.size(), 1, "主行动组 action_resolved 只提交一次")
+    _assert_equal(
+        confirmed_calls[0]["action_token"], resolved_calls[0]["action_token"],
+        "确认与完成共享同一稳定行动 token")
+    _assert_true(
+        bool(play_result["preview"].get("passive_action_confirmed", false)),
+        "行动记录保存正式确认冻结标记")
+    _assert_true(
+        not play_result["preview"]["values"]["passive_power_queries"].is_empty(),
+        "正式确认值保留四阶段来源明细与指纹")
+    var normal_entered := handler.calls.filter(
+        func(call): return call["kind"] == "event" \
+            and call["hook"] == "card_entered_discard" \
+            and call["card_instance_id"] == str(played_card.id))
+    _assert_equal(normal_entered.size(), 1, "正常打出只触发一次 entered_discard")
+    _assert_true(normal_entered[0]["normal_play"], "正常入堆 Context 标记 normal_play")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "card_explicitly_discarded" \
+            and call["card_instance_id"] == str(played_card.id)).size(),
+        0,
+        "正常打出不触发 explicitly_discarded")
+    var normal_enter_index := handler.calls.find(normal_entered[0])
+    var resolved_index := handler.calls.find(resolved_calls[0])
+    _assert_true(
+        normal_enter_index < resolved_index \
+            and engine.player.staging.is_empty(),
+        "action_resolved 位于卡牌入堆和 group_end 序列处理之后")
+
+    var explicit_card = engine.player.hand[0]
+    var event_count_before_discard := handler.calls.size()
+    var discarded: Array = engine.player.discard_all()
+    _assert_true(discarded.has(explicit_card), "明确弃牌移动成功")
+    var explicit_slice: Array = handler.calls.slice(event_count_before_discard).filter(
+        func(call): return call["kind"] == "event" \
+            and call["card_instance_id"] == str(explicit_card.id))
+    _assert_equal(
+        explicit_slice.map(func(call): return call["hook"]),
+        ["card_entered_discard", "card_explicitly_discarded"],
+        "明确弃牌固定先 entered_discard 后 explicitly_discarded")
+    _assert_true(
+        explicit_slice.all(func(call):
+            return call["explicit_discard"] and call["from_zone"] == "hand"),
+        "明确弃牌 Context 携带来源区与语义标志")
+
+    var defense_events_before := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "defense_gained").size()
+    var defense_before: int = int(engine.player.defense)
+    var gained: int = int(engine.effect_ports.add_defense(
+        engine.player, 2, "test_defense", "defense-action"))
+    _assert_equal(gained, 6, "正式防御增加经过 defense_gain_query")
+    var defense_call: Dictionary = handler.calls.filter(
+        func(call): return call["kind"] == "event" \
+            and call["hook"] == "defense_gained")[-1]
+    _assert_equal(defense_call["requested_amount"], 2, "防御事件记录请求值")
+    _assert_equal(defense_call["effective_amount"], 6, "防御事件记录实际增加值")
+    _assert_equal(defense_call["defense_before"], defense_before, "防御事件记录写入前值")
+    _assert_equal(defense_call["defense_after"], defense_before + 6, "防御事件记录写入后值")
+    engine.effect_ports.add_defense(engine.player, 0, "zero_defense")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "defense_gained").size(),
+        defense_events_before + 1,
+        "请求或最终增加为零时不触发 defense_gained")
+
+    engine.enemy.life = 100
+    engine.enemy.defense = 5
+    var ordinary_hit: Dictionary = engine.deal_damage(
+        engine.player, engine.enemy, 10, "test_damage")
+    _assert_equal(ordinary_hit["final_amount"], 15, "普通伤害依次经过 status/outgoing/incoming")
+    _assert_equal(ordinary_hit["defense_lost"], 5, "普通伤害写入后记录实际防御损失")
+    _assert_equal(ordinary_hit["life_lost"], 10, "普通伤害写入后记录实际生命损失")
+    var damage_calls := handler.calls.filter(
+        func(call): return call["kind"] == "event" \
+            and call["hook"] == "damage_resolved" \
+            and call["requested_amount"] == 10)
+    _assert_equal(damage_calls.size(), 2, "造成方与受击方来源都接收 damage_resolved")
+    _assert_true(
+        damage_calls.all(func(call): return call["final_amount"] == 15),
+        "damage_resolved Context 携带最终实际伤害")
+    var normal_query_count := handler.calls.filter(
+        func(call): return call["kind"] == "query" \
+            and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size()
+    engine.deal_damage(engine.player, engine.enemy, 4, "test_true", true)
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "query" \
+            and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size(),
+        normal_query_count,
+        "真实伤害不进入普通伤害查询")
+    _assert_true(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "damage_resolved")[-1]["true_damage"],
+        "真实伤害仍在实际写入后提交 damage_resolved")
+
+    var sync_events_before := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "damage_resolved").size()
+    var sync_queries_before := handler.calls.filter(
+        func(call): return call["kind"] == "query" \
+            and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size()
+    engine.begin_synchronized_damage([{"actor": engine.player}])
+    engine.deal_damage(engine.player, engine.enemy, 7, "sync_probe")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "damage_resolved").size(),
+        sync_events_before,
+        "同步伤害 shadow preview 不提交 damage_resolved")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "query" \
+            and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size(),
+        sync_queries_before,
+        "同步 shadow 不执行动态伤害查询")
+    engine.flush_synchronized_damage()
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "query" \
+            and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size(),
+        sync_queries_before + 2,
+        "同步伤害只在实际 flush 执行一次 outgoing/incoming")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "damage_resolved").size(),
+        sync_events_before + 2,
+        "flush 后双方来源各接收一次实际 damage_resolved")
+    _assert_true(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "damage_resolved")[-1]["synchronized"],
+        "同步实际事件明确标记 synchronized")
+
+    engine.player.defense = 3
+    var retention: Dictionary = engine.defense_retention_policy.apply_decay(
+        engine.player, {"round_number": engine.turn_number})
+    _assert_equal(retention["retention_percent"], 100, "保留率基础 50 经 Fake Handler 得到 100")
+    _assert_equal(engine.player.defense, 3, "有效保留率 100 时防御完全不衰减")
+    var snapshot = BattleSessionScript.new(engine).snapshot()
+    _assert_equal(snapshot.player.base_hand_limit, 8, "战斗快照公开基础手牌上限")
+    _assert_equal(snapshot.player.hand_limit, 10, "战斗快照与 AI/UI 共用有效手牌上限")
+
+    var duplicate_token := "f5d2-duplicate-event"
+    var duplicate_values := {
+        "event_token": duplicate_token,
+        "actor": engine.player, "owner": engine.player,
+        "action_token": "duplicate-action",
+    }
+    var persistent_before_duplicate: Dictionary = (
+        engine.player.passive_counter_store.capture_state())
+    var first_duplicate: Dictionary = engine.battle_passive_event_service.commit(
+        "action_confirmed", duplicate_values)
+    var state_after_duplicate: Dictionary = (
+        engine.player.passive_counter_store.capture_state())
+    var second_duplicate: Dictionary = engine.battle_passive_event_service.commit(
+        "action_confirmed", duplicate_values)
+    _assert_true(first_duplicate["success"] and second_duplicate["reused"], "稳定 token 去重重复 finalizer")
+    _assert_true(
+        persistent_before_duplicate != state_after_duplicate \
+            and engine.player.passive_counter_store.capture_state() == state_after_duplicate,
+        "重复提交不重复增长持久计数")
+
+    engine.apply_passive_suppression({
+        "suppression_id": "f5d2-suppression",
+        "target_content_id": "f5d2_probe",
+        "blocked_hooks": ["hand_limit_query", "card_drawn"],
+        "reason": "F5D2 测试压制",
+    })
+    _assert_equal(engine.player.current_hand_limit(), 8, "被压制来源不参与查询")
+    var draw_events_before_suppressed := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "card_drawn").size()
+    engine.effect_ports.draw(engine.player, 1, "suppressed_draw")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "card_drawn").size(),
+        draw_events_before_suppressed,
+        "被压制来源不接收已提交事件")
+    engine.remove_passive_suppression("f5d2-suppression")
+    _assert_equal(engine.player.current_hand_limit(), 10, "解除压制后查询恢复")
+
+    var repeat_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_probe", "f5d2_repeat_probe"])
+    var repeat_limit: Dictionary = repeat_engine.player.effective_hand_limit_result()
+    _assert_equal(repeat_limit["effective_value"], 12, "额外 Invocation 在来源位置连续归并")
+    _assert_equal(
+        repeat_limit["source_breakdown"].size(), 2,
+        "额外 Invocation 不递归增加执行次数")
+
+    var cooperation_main := [
+        _card("6", "wind"), _card("6", "forest"), _card("6", "fire")]
+    var cooperation_cards := [_card("4", "wind"), _card("4", "mountain")]
+    var cooperation_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_probe"])
+    cooperation_engine.player.hand = cooperation_main + cooperation_cards
+    cooperation_engine.player.draw_pile.clear()
+    cooperation_engine.actions_available = 1
+    cooperation_engine.repository.techniques["f5d2_cooperation_main"] = {
+        "id": "f5d2_cooperation_main", "name": "F5D2 协同主组",
+        "pool": "three", "effects": [],
+        "cooperation": {
+            "hand_id": "pair", "max_groups": 1,
+            "power_rule": "shared_half",
+            "post_commit": {"destination": "own_discard"},
+        },
+    }
+    cooperation_engine.repository.techniques["f5d2_cooperation_pair"] = {
+        "id": "f5d2_cooperation_pair", "name": "F5D2 协同组",
+        "pool": "pair", "effects": [],
+    }
+    cooperation_engine.sequence_book.configure({
+        "three_kind": ["f5d2_cooperation_main"],
+        "pair": ["f5d2_cooperation_pair"],
+    })
+    handler.calls.clear()
+    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
+        _ids(cooperation_main), _ids(cooperation_cards))
+    _assert_true(cooperation_result.get("success", false), "协同实际路径结算成功")
+    var cooperation_confirmed := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "action_confirmed")
+    var cooperation_resolved := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "action_resolved")
+    _assert_equal(cooperation_confirmed.size(), 2, "主组与协同组分别确认一次")
+    _assert_equal(cooperation_resolved.size(), 2, "主组与协同组分别完成一次")
+    _assert_true(
+        cooperation_confirmed[0]["action_token"] != cooperation_confirmed[1]["action_token"],
+        "协同组拥有独立 action token 与冻结值")
+
+    var wait_selected = _card("8", "wind")
+    var wait_reserve = _card("3", "forest")
+    var wait_reserve_second = _card("5", "fire")
+    var wait_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_probe"])
+    wait_engine.player.hand = [wait_selected, wait_reserve, wait_reserve_second]
+    wait_engine.player.draw_pile.clear()
+    wait_engine.actions_available = 1
+    wait_engine.repository.techniques["f5d2_wait_probe"] = {
+        "id": "f5d2_wait_probe", "name": "F5D2 等待探针", "pool": "high",
+        "effects": [{
+            "op": "select_cards", "choice_id": "wait_once",
+            "prompt": "请选择保留手牌", "chooser": "actor",
+            "minimum": 1, "maximum": 1,
+            "insufficient_policy": "fail",
+            "query": {"side": "actor", "zone": "hand", "order": "zone"},
+            "capture": "waited",
+        }],
+    }
+    wait_engine.sequence_book.configure({"high_card": ["f5d2_wait_probe"]})
+    handler.calls.clear()
+    var wait_start: Dictionary = wait_engine.confirm_play([str(wait_selected.id)])
+    _assert_true(
+        wait_start.get("pending_choice", false),
+        "行动进入等待选择：%s" % str(wait_start))
+    var wait_confirmed_before := handler.calls.filter(
+        func(call): return call["kind"] == "event" and call["hook"] == "action_confirmed").size()
+    var wait_query_before := handler.calls.filter(
+        func(call): return call["kind"] == "query" \
+            and str(call["action_token"]) != "").size()
+    var wait_request: Dictionary = wait_start["choice_request"]
+    var wait_finish: Dictionary = wait_engine.resolve_effect_choice(
+        str(wait_request["request_id"]), [str(wait_reserve.id)])
+    _assert_true(wait_finish.get("success", false), "等待选择恢复后完成行动")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "event" \
+            and call["hook"] == "action_confirmed").size(),
+        wait_confirmed_before,
+        "等待恢复不重复 action_confirmed")
+    _assert_equal(
+        handler.calls.filter(func(call): return call["kind"] == "query" \
+            and str(call["action_token"]) != "").size(),
+        wait_query_before,
+        "等待恢复复用已冻结四阶段功法值")
+
+    var hand_failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_hand_query_failure"])
+    var failed_draw: Array = hand_failure_engine.start_player_turn()
+    _assert_true(failed_draw.is_empty(), "hand_limit 查询失败时不补牌")
+    _assert_equal(hand_failure_engine.player.hand.size(), 0, "失败前未修改手牌")
+    _assert_equal(hand_failure_engine.battle_state, "scenario_error", "手牌查询失败进入 scenario_error")
+
+    var defense_failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_defense_query_failure"])
+    var defense_failure_before: int = int(defense_failure_engine.player.defense)
+    _assert_equal(
+        defense_failure_engine.effect_ports.add_defense(
+            defense_failure_engine.player, 5, "failure_probe"),
+        0,
+        "defense_gain 查询失败返回零实际增加")
+    _assert_equal(
+        defense_failure_engine.player.defense,
+        defense_failure_before,
+        "defense_gain 查询失败发生在防御写入前")
+    _assert_equal(defense_failure_engine.battle_state, "scenario_error", "防御查询失败进入 scenario_error")
+
+    var power_failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_power_query_failure"])
+    power_failure_engine.start_player_turn()
+    var power_failure_card = power_failure_engine.player.hand[0]
+    var power_failure_actions: int = int(power_failure_engine.actions_available)
+    var power_failure_sequence: Dictionary = (
+        power_failure_engine.sequence_book.positions.duplicate(true))
+    var power_failure_result: Dictionary = power_failure_engine.confirm_play([
+        str(power_failure_card.id)])
+    _assert_true(not power_failure_result.get("success", true), "正式确认 power 查询失败拒绝行动")
+    _assert_true(power_failure_engine.player.hand.has(power_failure_card), "功法查询失败后卡牌返回手牌")
+    _assert_true(power_failure_engine.player.staging.is_empty(), "功法查询失败不保留待出区卡牌")
+    _assert_equal(power_failure_engine.actions_available, power_failure_actions, "功法查询失败不消耗行动次数")
+    _assert_equal(power_failure_engine.sequence_book.positions, power_failure_sequence, "功法查询失败不推进功法序列")
+    _assert_equal(power_failure_engine.battle_state, "active", "功法确认查询失败保持行动窗口可重试")
+
+    var damage_failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_damage_query_failure"])
+    var damage_failure_life: int = int(damage_failure_engine.enemy.life)
+    var damage_failure_defense: int = int(damage_failure_engine.enemy.defense)
+    var damage_failure_result: Dictionary = damage_failure_engine.deal_damage(
+        damage_failure_engine.player, damage_failure_engine.enemy, 9, "failure_probe")
+    _assert_true(not damage_failure_result.get("success", true), "伤害查询失败拒绝实际伤害")
+    _assert_equal(damage_failure_engine.enemy.life, damage_failure_life, "伤害查询失败不写生命")
+    _assert_equal(damage_failure_engine.enemy.defense, damage_failure_defense, "伤害查询失败不写防御")
+    _assert_equal(damage_failure_engine.battle_state, "scenario_error", "伤害查询失败进入 scenario_error")
+
+    var retention_failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_retention_query_failure"])
+    retention_failure_engine.player.defense = 7
+    var retention_failure: Dictionary = (
+        retention_failure_engine.defense_retention_policy.apply_decay(
+            retention_failure_engine.player, {"round_number": 1}))
+    _assert_true(not retention_failure.get("success", true), "防御保留率查询失败拒绝衰减")
+    _assert_equal(retention_failure_engine.player.defense, 7, "保留率查询失败保持原防御")
+    _assert_equal(retention_failure_engine.battle_state, "scenario_error", "保留率查询失败进入 scenario_error")
+
+    var mutation_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_query_mutation"])
+    var mutation_card = mutation_engine.player.draw_pile[0]
+    var mutation_card_state := {
+        "enhancement": str(mutation_card.reshape_enhancement),
+        "anomalies": mutation_card.anomalies.duplicate(true),
+    }
+    var mutation_defense: int = int(mutation_engine.player.defense)
+    var mutation_delays: Array = (
+        mutation_engine.status_system.delayed_records.duplicate(true))
+    var mutation_rng_state: int = int(mutation_engine.rng.state)
+    var mutation_query: Dictionary = (
+        mutation_engine.player.effective_hand_limit_result())
+    _assert_true(
+        not mutation_query.get("success", true),
+        "纯查询修改战斗状态时整个查询失败")
+    _assert_equal(
+        mutation_engine.player.defense, mutation_defense,
+        "违规查询修改的防御被恢复")
+    _assert_equal(
+        {
+            "enhancement": str(mutation_card.reshape_enhancement),
+            "anomalies": mutation_card.anomalies.duplicate(true),
+        }, mutation_card_state,
+        "违规查询修改的卡牌重塑与异状被恢复")
+    _assert_equal(
+        mutation_engine.status_system.delayed_records, mutation_delays,
+        "违规查询写入的延迟状态被恢复")
+    _assert_equal(
+        mutation_engine.rng.state, mutation_rng_state,
+        "违规查询推进的战斗 RNG 被恢复")
+    _assert_equal(
+        mutation_engine.battle_state, "scenario_error",
+        "纯查询违规进入 scenario_error")
+
+    var event_failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["f5d2_event_failure", "f5d2_repeat_failure"])
+    var failure_result: Dictionary = event_failure_engine.battle_passive_event_service.commit(
+        "action_confirmed", {
+            "event_token": "f5d2-failure-token",
+            "actor": event_failure_engine.player,
+            "owner": event_failure_engine.player,
+            "action_token": "f5d2-failure-action",
+        })
+    _assert_true(not failure_result.get("success", true), "第二个 Invocation 失败终止已提交事件")
+    _assert_true(
+        event_failure_engine.player.passive_counter_store.capture_state()["entries"].is_empty(),
+        "事件失败回滚持久计数器")
+    _assert_true(
+        event_failure_engine.player.battle_passive_counter_store.capture_state()["entries"].is_empty(),
+        "事件失败回滚战斗临时计数器")
+    _assert_equal(event_failure_engine.battle_state, "scenario_error", "事件失败进入 scenario_error")
+
+func _battle_passive_test_item(
+        content_id: String,
+        bindings: Array,
+        extra_configuration: Dictionary) -> Dictionary:
+    var configuration := {"bindings": bindings.duplicate(true)}
+    configuration.merge(extra_configuration, true)
+    var behavior := {
+        "id": "battle_lifecycle_probe",
+        "configuration": configuration,
+    }
+    if configuration.has("persistent_counter") \
+            or configuration.has("battle_counters"):
+        behavior["state_key"] = "%s_state" % content_id
+    return {
+        "id": content_id,
+        "name": "战斗被动测试·%s" % content_id,
+        "kind": "item",
+        "status": "candidate",
+        "unique": true,
+        "description": "仅用于 F5D1 自动化测试。",
+        "price": 1,
+        "behaviors": [behavior],
+    }
+
+func _f5d2_probe_item(
+        content_id: String,
+        configuration: Dictionary) -> Dictionary:
+    return {
+        "id": content_id,
+        "name": "F5D2 战斗细粒度探针·%s" % content_id,
+        "kind": "item", "status": "candidate", "unique": true,
+        "description": "仅用于 F5D2 自动化测试。", "price": 1,
+        "behaviors": [{
+            "id": "battle_fine_grained_probe",
+            "state_key": "%s_state" % content_id,
+            "configuration": configuration.duplicate(true),
+        }],
+    }
+
+func _battle_passive_test_catalog(
+        registry,
+        items: Array,
+        inner_skills: Array) -> Dictionary:
+    var base_catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
+    if not base_catalog.load_all():
+        return {"success": false, "catalog": base_catalog}
+    var values := _catalog_definitions(base_catalog)
+    values["items"]["items"].append_array(items)
+    values["inner_skills"]["inner_skills"].append_array(inner_skills)
+    var catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    var success := catalog.load_from_definitions(values, base_catalog.paths)
+    return {
+        "success": success,
+        "catalog": catalog,
+        "base_values": _catalog_definitions(base_catalog),
+        "paths": base_catalog.paths.duplicate(true),
+    }
+
+func _battle_passive_test_engine(
+        catalog,
+        registry,
+        item_ids: Array,
+        inner_skill_ids: Array = []):
+    var engine = CombatEngineScript.new(null, catalog, registry)
+    engine.setup(5512, false)
+    engine.player.configure_items(item_ids)
+    engine.player.configure_inner_skills(inner_skill_ids, 0)
+    return engine
 
 func _test_content_catalog_and_validator() -> void:
     var catalog = ContentCatalogScript.new()
@@ -4213,10 +5539,12 @@ func _test_battle_timing_system_contract_and_integration() -> void:
     _assert_equal(
         battle_end_entry["handler_results"].map(func(result): return result["handler_id"]),
         [
+            "passives.battle_end.begin",
             "card_reshape_runtime.battle_victory",
             "status_system.card_battle_end",
             "status_system.transient_battle_end",
             "combat_engine.flow_cleanup",
+            "passives.battle_end.end",
         ],
         "战斗结束先结算胜利重塑，再清真气异状与临时战斗状态")
     _assert_true(ending_card.current_state().is_empty(), "战斗结束时点清除真气异状")

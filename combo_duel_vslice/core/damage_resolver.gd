@@ -18,17 +18,17 @@ func resolve(
         base_amount: int,
         source_kind: String,
         true_damage: bool = false,
-        status_system = null) -> Dictionary:
-    var final_amount := calculate_final_amount(
-        actor,
-        target,
-        base_amount,
-        source_kind,
-        true_damage,
-        status_system)
+        status_system = null,
+        final_amount_override = null) -> Dictionary:
+    var final_amount := (
+        int(final_amount_override)
+        if final_amount_override != null
+        else calculate_final_amount(
+            actor, target, base_amount, source_kind, true_damage, status_system))
     var result: Dictionary
     if _buffer_active:
-        result = _buffer_damage(actor, target, final_amount, source_kind, true_damage)
+        result = _buffer_damage(
+            actor, target, final_amount, base_amount, source_kind, true_damage)
     else:
         result = apply_to_target(target, final_amount, true_damage)
     result["final_amount"] = final_amount
@@ -42,7 +42,9 @@ func begin_synchronized(actors: Array) -> void:
     for actor in actors:
         _actor_start_alive[actor.get_instance_id()] = actor.life > 0
 
-func flush_synchronized(after_resolution: Callable = Callable()) -> Array:
+func flush_synchronized(
+        after_resolution: Callable = Callable(),
+        actual_amount_resolver: Callable = Callable()) -> Array:
     var buffered := _buffer.duplicate()
     _buffer_active = false
     var resolved: Array = []
@@ -51,14 +53,22 @@ func flush_synchronized(after_resolution: Callable = Callable()) -> Array:
         var actor_id: int = int(intent["actor"].get_instance_id())
         if stopped_actor_ids.has(actor_id):
             continue
+        var actual_amount := int(intent["amount"])
+        if actual_amount_resolver.is_valid():
+            var amount_result: Dictionary = actual_amount_resolver.call(intent)
+            if not amount_result.get("success", false):
+                break
+            actual_amount = maxi(0, int(amount_result["amount"]))
         var actual := apply_to_target(
             intent["target"],
-            int(intent["amount"]),
+            actual_amount,
             bool(intent["true_damage"]))
+        actual["final_amount"] = actual_amount
         var resolution := {
             "actor": intent["actor"],
             "target": intent["target"],
-            "amount": intent["amount"],
+            "amount": actual_amount,
+            "requested_amount": intent.get("requested_amount", intent["amount"]),
             "source_kind": intent["source_kind"],
             "true_damage": intent["true_damage"],
             "preview": intent["preview"],
@@ -137,6 +147,7 @@ func _buffer_damage(
         actor,
         target,
         amount: int,
+        requested_amount: int,
         source_kind: String,
         true_damage: bool) -> Dictionary:
     var target_id: int = target.get_instance_id()
@@ -149,6 +160,7 @@ func _buffer_damage(
         "actor": actor,
         "target": target,
         "amount": amount,
+        "requested_amount": requested_amount,
         "source_kind": source_kind,
         "true_damage": true_damage,
         "preview": preview,

@@ -14,11 +14,20 @@ const ActionPreviewDtoScript = preload("res://core/action_preview_dto.gd")
 var technique_repository
 var passive_rule_runtime
 var effect_executor
+var battle_rule_query_service
+var round_number_reader: Callable
 
-func _init(techniques, passive_runtime, executor) -> void:
+func _init(
+        techniques,
+        passive_runtime,
+        executor,
+        query_service = null,
+        round_reader: Callable = Callable()) -> void:
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
     effect_executor = executor
+    battle_rule_query_service = query_service
+    round_number_reader = round_reader
 
 func preview(
         side,
@@ -74,10 +83,12 @@ func preview_dto(
     modifiers["power_amp_percent"] = (
         int(modifiers.get("power_amp_percent", 0))
         + int(side.direct_power_percent))
-    var contribution_modifier := Callable()
-    if side.status_system != null:
-        contribution_modifier = Callable(side.status_system, "modify_card_contribution").bind(side)
-    var values := PowerCalculatorScript.calculate(hand_result, modifiers, contribution_modifier)
+    var power_result := _resolve_power_values(
+        side, target, hand_result, cards, modifiers, "", "preview")
+    if not power_result.get("success", false):
+        return _invalid_preview(str(power_result.get(
+            "reason", "功法值查询失败")))
+    var values: Dictionary = power_result["values"]
     var technique_id: String = sequence_book.current_id(hand_result["id"])
     var technique_definition = technique_repository.get_definition(technique_id)
     var technique: Dictionary = (
@@ -155,6 +166,11 @@ func preview_dto(
                 int(intent["inner_skill_defense"])
                 + int(passive_intent.get("defense", 0)))
         _merge_intent(intent, passive_intent)
+    var queried_intent := _resolve_preview_intent(side, target, intent)
+    if not queried_intent.get("success", false):
+        return _invalid_preview(str(queried_intent.get(
+            "reason", "伤害或防御预览查询失败")))
+    intent = queried_intent["intent"]
 
     var natural_combo_available := is_same_attribute_action(cards) and not natural_combo_used
     intent["natural_combo"] = natural_combo_available
@@ -165,6 +181,10 @@ func preview_dto(
         "cards": cards,
         "hand": hand_result,
         "values": values,
+        "passive_power_query_inputs": {
+            "modifiers": modifiers,
+            "queries": power_result["queries"],
+        },
         "technique_id": technique_id,
         "technique": technique,
         "condition": condition,
@@ -174,6 +194,144 @@ func preview_dto(
         "next_technique_id": next_technique_id,
         "next_technique": technique_repository.get_technique(next_technique_id),
     })
+
+func recalculate_confirmed_power(
+        side,
+        target,
+        preview: Dictionary,
+        action_token: String,
+        frozen_multiplier_bonus: int = 0) -> Dictionary:
+    var inputs: Dictionary = preview.get(
+        "passive_power_query_inputs", {})
+    var modifiers: Dictionary = inputs.get("modifiers", {}).duplicate(true)
+    modifiers["multiplier_bonus"] = (
+        int(modifiers.get("multiplier_bonus", 0)) + frozen_multiplier_bonus)
+    var result := _resolve_power_values(
+        side, target, preview.get("hand", {}), preview.get("cards", []),
+        modifiers, action_token, "action_confirmed")
+    if result.get("success", false):
+        preview["values"] = result["values"]
+        preview["values"]["card_multiplier_bonus"] = (
+            int(preview["values"].get("card_multiplier_bonus", 0))
+            + frozen_multiplier_bonus)
+        preview["values"]["frozen_card_multiplier_bonus"] = frozen_multiplier_bonus
+        preview["values"]["passive_power_queries"] = result["queries"]
+        preview["passive_power_query_inputs"]["confirmed_queries"] = result["queries"]
+        preview["passive_power_query_inputs"]["confirmed_action_token"] = action_token
+    return result
+
+func _resolve_power_values(
+        side,
+        target,
+        hand_result: Dictionary,
+        cards: Array,
+        modifiers: Dictionary,
+        action_token: String,
+        source_kind: String) -> Dictionary:
+    var effective := modifiers.duplicate(true)
+    var details: Dictionary = {}
+    var stages := [
+        ["base_fixed", "power_base_fixed_query"],
+        ["multiplier_bonus", "power_multiplier_bonus_query"],
+        ["power_fixed", "power_fixed_query"],
+        ["power_amp_percent", "power_amp_percent_query"],
+    ]
+    for stage in stages:
+        var field := str(stage[0])
+        var hook := str(stage[1])
+        var base_value := int(effective.get(field, 0))
+        if battle_rule_query_service == null:
+            details[field] = {
+                "base_value": base_value, "effective_value": base_value,
+                "source_breakdown": [], "fingerprint": "",
+            }
+            continue
+        var query = battle_rule_query_service.resolve_values({
+            "hook": hook, "owner": side, "actor": side, "target": target,
+            "subject_kind": "power_stage", "subject_id": field,
+            "base_value": base_value, "action_token": action_token,
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+            "hand_id": str(hand_result.get("id", "")),
+            "source_kind": source_kind,
+            "card_facts": _card_facts(cards),
+            "metadata": {"stage": field},
+        })
+        if not query.success:
+            return {
+                "success": false,
+                "reason": "%s：%s" % [hook, "；".join(query.errors)],
+            }
+        effective[field] = query.effective_value
+        details[field] = {
+            "base_value": query.base_value,
+            "effective_value": query.effective_value,
+            "source_breakdown": query.modifier_breakdown.duplicate(true),
+            "fingerprint": query.source_fingerprint,
+        }
+    var contribution_modifier := Callable()
+    if side.status_system != null:
+        contribution_modifier = Callable(
+            side.status_system, "modify_card_contribution").bind(side)
+    var values := PowerCalculatorScript.calculate(
+        hand_result, effective, contribution_modifier)
+    values["passive_power_queries"] = details.duplicate(true)
+    return {"success": true, "values": values, "queries": details}
+
+func _card_facts(cards: Array) -> Array:
+    var result: Array = []
+    for card in cards:
+        var attributes: Array[String] = []
+        for attribute in ["wind", "forest", "fire", "mountain"]:
+            if card.is_attribute(attribute):
+                attributes.append(attribute)
+        result.append({
+            "instance_id": str(card.id),
+            "definition_id": str(card.current_definition_id()) \
+                if card.has_method("current_definition_id") else str(card.definition_id),
+            "qi": int(card.effective_qi_value()) \
+                if card.has_method("effective_qi_value") else int(card.qi_value),
+            "attributes": attributes,
+        })
+    return result
+
+func _resolve_preview_intent(side, target, intent: Dictionary) -> Dictionary:
+    var result := intent.duplicate(true)
+    if battle_rule_query_service == null:
+        return {"success": true, "intent": result}
+    var damage := maxi(0, int(result.get("damage", 0)))
+    if damage > 0 and target != null:
+        for stage in [
+                ["outgoing_damage_query", side],
+                ["incoming_damage_query", target]]:
+            var damage_query = battle_rule_query_service.resolve_values({
+                "hook": stage[0], "owner": stage[1],
+                "actor": side, "target": target,
+                "subject_kind": "damage_preview", "subject_id": "preview",
+                "base_value": damage,
+                "round_number": int(round_number_reader.call()) \
+                    if round_number_reader.is_valid() else 0,
+                "source_kind": "preview",
+            })
+            if not damage_query.success:
+                return {"success": false, "reason": "；".join(damage_query.errors)}
+            damage = maxi(0, damage_query.effective_value)
+        result["damage"] = damage
+    var defense := maxi(0, int(result.get("defense", 0)))
+    if defense > 0:
+        var defense_query = battle_rule_query_service.resolve_values({
+            "hook": "defense_gain_query", "owner": side,
+            "actor": side, "target": target,
+            "subject_kind": "defense_preview", "subject_id": "preview",
+            "base_value": defense,
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+            "source_kind": "preview",
+        })
+        if not defense_query.success:
+            return {"success": false, "reason": "；".join(defense_query.errors)}
+        result["defense"] = maxi(0, defense_query.effective_value)
+    return {"success": true, "intent": result}
 
 func _invalid_preview(reason: String):
     return ActionPreviewDtoScript.new().configure({

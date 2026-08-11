@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 var name: String = ""
 var life: int = 0
@@ -21,6 +21,7 @@ var momentum_value: int = 0
 var last_successful_technique_hand_id: String = ""
 var current_reflection_percent: int = 0
 var hand_limit: int = 0
+var base_hand_limit: int = 0
 var inner_skill_limit: int = 0
 var draw_count: int = 0
 var hand_count: int = 0
@@ -53,6 +54,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     var missing: Array[String] = []
     for required in [
             "name", "life", "max_life", "defense", "hand_limit",
+            "base_hand_limit",
             "direct_power_fixed", "direct_power_percent", "momentum_value",
             "last_successful_technique_hand_id", "current_reflection_percent",
             "inner_skill_limit",
@@ -76,6 +78,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.current_reflection_percent = int(
         values.get("current_reflection_percent", 0))
     result.hand_limit = int(values.get("hand_limit", 0))
+    result.base_hand_limit = int(values.get("base_hand_limit", 0))
     result.inner_skill_limit = int(values.get("inner_skill_limit", 0))
     result.draw_count = int(values.get("draw_count", 0))
     result.hand_count = int(values.get("hand_count", 0))
@@ -114,6 +117,7 @@ func to_dict() -> Dictionary:
         "last_successful_technique_hand_id": last_successful_technique_hand_id,
         "current_reflection_percent": current_reflection_percent,
         "hand_limit": hand_limit,
+        "base_hand_limit": base_hand_limit,
         "inner_skill_limit": inner_skill_limit,
         "draw_count": draw_count,
         "hand_count": hand_count,

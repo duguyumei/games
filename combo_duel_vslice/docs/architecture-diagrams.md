@@ -555,9 +555,17 @@ flowchart LR
     REG --> CAP["InnerSkillCapacityPolicy<br/>基础 6 + 有效修正"]
     REG --> INT["PassiveIntPolicyResolver<br/>价格/遗忘/冥想/补充包纯查询"]
     REG --> EVENT["RunPassiveEventService<br/>成功提交后一次"]
+    REG --> BRIDGE["BattlePassiveTimingBridge<br/>十个 BattleTimingSystem 时点"]
+    REG --> BEVENT["BattlePassiveCommittedEventService<br/>七个实际提交事实"]
+    REG --> BQUERY["BattleRuleQueryService<br/>九个只读整数查询"]
     EVENT --> PORTS["RunPassiveEffectPorts<br/>受控 RunMutationService"]
     INV --> CPORT["Counter Port<br/>查询只读/事件可写"]
     CPORT --> CSTORE["RunPassiveCounterStore<br/>版本化整数 entries"]
+    BRIDGE --> BPORT["Battle Counter Port<br/>生命周期可写/预览只读"]
+    BPORT --> BSTORE["BattlePassiveCounterStore<br/>battle/turn/action_window"]
+    BRIDGE --> TIMING["BattleTimingSystem<br/>hook + global order"]
+    BEVENT --> RECEIPT["BattlePassiveEventReceiptStore<br/>战斗内稳定 token 去重"]
+    BQUERY --> INT
     GROWTH["GrowthInventory<br/>完整 mutation state"] --> CSTORE
     CAT["ContentCatalog<br/>load_all 前装配 Registry"] --> REG
 ```
@@ -574,8 +582,20 @@ suppression，执行计划不进入本局存档。
 有状态 behavior 由 Handler 声明计数器定义，内容提供稳定 `state_key`。Counter Port 以
 `source_kind + content_id + state_key + counter_id` 限定当前 Invocation，只允许查询读取、提交事件
 修改；Store 随 GrowthInventory 工作副本一同提交或回滚。`while_owned` 只在最后一个内容副本永久
-失去后清除，`run` 保留至新本局。RunProgressSnapshot 的可选字段采用绝对替换，战斗侧未拥有该
-状态时不回传空集合。
+失去后清除，`run` 保留至新本局。RunProgressSnapshot 的可选字段采用绝对替换；玩家战斗侧持有
+独立副本并在胜负结果中绝对回传，缺失字段仍保持接收方现值。
+
+战斗生命周期由 Bridge 读取 Handler 的 `battle_timing_bindings()`，以
+`passives.<hook>.<order>` 接入既有十个时点。单方同 order 内仍按来源顺序、behavior 顺序和额外
+Invocation 顺序执行；双方同 Hook 都有效时由 `unconfirmed_cross_side_passive_order` 阻断装配，不把
+注册先后解释成权威跨阵营顺序。每个时点先冻结 ExecutionPlan 和两类计数快照，再分 order 执行；
+失败恢复 F5C 持久副本与战斗临时 Store 并转为 `scenario_error`。临时键使用
+`owner_id + source_instance_key + state_key + counter_id`，不进入存档；持久键仍为内容级身份，战后
+通过绝对 RunProgressSnapshot 回到 GrowthInventory。
+
+细粒度事件不占用 `BattleTimingSystem` 的十个生命周期位置。牌区由 `CardZoneService` 在自身响应完成后调用窄事件服务；行动由 `ActionResolver` 在冻结完成与 `group_end` 后分别提交；伤害和防御由 `BattleEffectPorts` 在真实写入后提交。receipt 只持续当前战斗。预览、AI 枚举、快照和同步伤害 shadow 不产生 receipt。
+
+战斗整数查询继续复用 `PassiveIntPolicyResolver` 的逐 Invocation 归并。`ActionPreviewService` 用它生成纯预览，正式确认再冻结四阶段功法输入；`BattleEffectPorts` 在实际普通伤害和防御写入前查询，`DefenseRetentionPolicy` 从基础 50 查询最终比例。`BattleSide` 同时公开基础与有效手牌上限，战斗快照保存两者，UI 和 AI 读取有效值。本层没有第二套 Runtime，也没有内容 ID 分支。
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 

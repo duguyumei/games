@@ -23,13 +23,17 @@ func execute(effect: Dictionary, context):
         "defense":
             var resolved: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             var amount: int = (
-                runtime.ports.add_defense(runtime.actor, resolved)
+                runtime.ports.add_defense(
+                    runtime.actor, resolved, runtime.source_kind,
+                    runtime.action_token)
                 if runtime.ports != null else runtime.actor.add_defense(resolved))
             return EffectResultScript.succeeded("获得 %d 防御" % amount)
         "defense_from_noncontributing_qi":
             var resolved: int = value_resolver.noncontributing_qi_total(runtime)
             var amount: int = (
-                runtime.ports.add_defense(runtime.actor, resolved)
+                runtime.ports.add_defense(
+                    runtime.actor, resolved, runtime.source_kind,
+                    runtime.action_token)
                 if runtime.ports != null else runtime.actor.add_defense(resolved))
             return EffectResultScript.succeeded("额外真气转化 %d 防御" % amount)
     return EffectResultScript.failed("防御处理器不支持：%s" % str(effect.get("op", "")))

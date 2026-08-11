@@ -27,6 +27,9 @@ func resolve(request):
         owner_state = request.owner.capture_mutation_state()
     var context_values := {
         "owner": request.owner,
+        "actor": request.actor,
+        "target": request.target,
+        "round_number": request.round_number,
         "hook": request.hook,
         "payload": {},
     }

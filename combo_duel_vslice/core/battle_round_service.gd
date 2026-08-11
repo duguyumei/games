@@ -32,6 +32,7 @@ var _battle_state: Callable
 var _lock_enemy_action: Callable
 var _resolve_enemy_only_actions: Callable
 var _update_battle_state: Callable
+var _set_scenario_error: Callable
 var _state_changed: Callable
 
 func _init(
@@ -44,6 +45,7 @@ func _init(
         lock_enemy_action: Callable,
         resolve_enemy_only_actions: Callable,
         update_battle_state: Callable,
+        set_scenario_error: Callable,
         state_changed: Callable) -> void:
     player = player_side
     enemy = enemy_side
@@ -54,6 +56,7 @@ func _init(
     _lock_enemy_action = lock_enemy_action
     _resolve_enemy_only_actions = resolve_enemy_only_actions
     _update_battle_state = update_battle_state
+    _set_scenario_error = set_scenario_error
     _state_changed = state_changed
 
 func reset() -> void:
@@ -74,11 +77,13 @@ func start_player_turn() -> Array:
         return []
 
     if not battle_start_card_effects_applied:
-        timing_system.emit_timing(BattleTimingSystemScript.BATTLE_START, {
+        if not _emit_timing(BattleTimingSystemScript.BATTLE_START, {
             "round_number": 0,
             "actors": [player, enemy],
             "metadata": {"setup_mode": "scripted" if scripted_mode else "solo"},
-        })
+        }):
+            _state_changed.call()
+            return []
         battle_start_card_effects_applied = true
 
     turn_number += 1
@@ -89,10 +94,12 @@ func start_player_turn() -> Array:
     if scripted_mode:
         current_round_actors.append(enemy)
 
-    timing_system.emit_timing(BattleTimingSystemScript.ROUND_START, {
+    if not _emit_timing(BattleTimingSystemScript.ROUND_START, {
         "round_number": turn_number,
         "actors": current_round_actors,
-    })
+    }):
+        _state_changed.call()
+        return []
     battle_flow.begin_round([
         {"actor": player, "actions": 1},
         {"actor": enemy, "actions": 1 if scripted_mode else 0},
@@ -101,22 +108,37 @@ func start_player_turn() -> Array:
     var drawn: Array = []
     var enemy_drawn: Array = []
     for side in current_round_actors:
-        timing_system.emit_timing(BattleTimingSystemScript.TURN_START, {
+        if not _emit_timing(BattleTimingSystemScript.TURN_START, {
             "round_number": turn_number,
             "actor": side,
             "actors": current_round_actors,
-        })
-        timing_system.emit_timing(BattleTimingSystemScript.BEFORE_NORMAL_DRAW, {
+        }):
+            _state_changed.call()
+            return drawn
+        var hand_limit_result: Dictionary = side.effective_hand_limit_result()
+        if not hand_limit_result.get("success", false):
+            _state_changed.call()
+            return drawn
+        var effective_hand_limit := int(hand_limit_result["effective_value"])
+        if not _emit_timing(BattleTimingSystemScript.BEFORE_NORMAL_DRAW, {
             "round_number": turn_number,
             "actor": side,
             "actors": current_round_actors,
             "metadata": {
                 "hand_count": side.hand.size(),
-                "hand_limit": side.current_hand_limit(),
+                "base_hand_limit": side.base_hand_limit(),
+                "hand_limit": effective_hand_limit,
             },
-        })
-        var side_drawn: Array = side.draw_to_limit()
-        timing_system.emit_timing(BattleTimingSystemScript.AFTER_NORMAL_DRAW, {
+        }):
+            _state_changed.call()
+            return drawn
+        var side_drawn: Array = side.draw(
+            maxi(0, effective_hand_limit - side.hand.size()), "normal_draw")
+        if side == player:
+            drawn = side_drawn
+        else:
+            enemy_drawn = side_drawn
+        if not _emit_timing(BattleTimingSystemScript.AFTER_NORMAL_DRAW, {
             "round_number": turn_number,
             "actor": side,
             "actors": current_round_actors,
@@ -124,13 +146,12 @@ func start_player_turn() -> Array:
             "metadata": {
                 "drawn_count": side_drawn.size(),
                 "hand_count": side.hand.size(),
-                "hand_limit": side.current_hand_limit(),
+                "base_hand_limit": side.base_hand_limit(),
+                "hand_limit": effective_hand_limit,
             },
-        })
-        if side == player:
-            drawn = side_drawn
-        else:
-            enemy_drawn = side_drawn
+        }):
+            _state_changed.call()
+            return drawn
 
     trigger_queue.add_history(
         "round_start" if scripted_mode else "player_turn_start",
@@ -140,11 +161,13 @@ func start_player_turn() -> Array:
         "我方抽 %d 张｜对手抽 %d 张" % [drawn.size(), enemy_drawn.size()]
             if scripted_mode
             else "补至上限：抽 %d 张" % drawn.size())
-    timing_system.emit_timing(BattleTimingSystemScript.ACTION_WINDOW_START, {
+    if not _emit_timing(BattleTimingSystemScript.ACTION_WINDOW_START, {
         "round_number": turn_number,
         "actors": current_round_actors,
         "metadata": {"scripted_mode": scripted_mode},
-    })
+    }):
+        _state_changed.call()
+        return drawn
 
     if player.hand.is_empty():
         battle_flow.forfeit_remaining(player, "没有可用于出招的手牌")
@@ -181,19 +204,22 @@ func finish_round_end() -> Array[Dictionary]:
         return last_defense_decay_results.duplicate(true)
     round_ended = true
     var ending_actors: Array = [player, enemy]
-    timing_system.emit_timing(BattleTimingSystemScript.ACTION_WINDOW_END, {
+    if not _emit_timing(BattleTimingSystemScript.ACTION_WINDOW_END, {
         "round_number": turn_number,
         "actors": ending_actors,
-    })
+    }):
+        return last_defense_decay_results.duplicate(true)
     last_defense_decay_results.clear()
     for side in ending_actors:
-        last_defense_decay_results.append(
-            defense_retention_policy.apply_decay(side, {
+        var decay: Dictionary = defense_retention_policy.apply_decay(side, {
                 "timing": "round_end_defense_decay",
                 "round_number": turn_number,
                 "actor": side,
                 "actors": ending_actors,
-            }))
+            })
+        last_defense_decay_results.append(decay)
+        if not decay.get("success", false):
+            return last_defense_decay_results.duplicate(true)
     trigger_queue.add_history(
         "defense_decay",
         "双方防御衰减",
@@ -201,14 +227,23 @@ func finish_round_end() -> Array[Dictionary]:
         "成功",
         _defense_decay_detail(last_defense_decay_results))
     for side in ending_actors:
-        timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
+        if not _emit_timing(BattleTimingSystemScript.TURN_END, {
             "round_number": turn_number,
             "actor": side,
             "actors": ending_actors,
-        })
+        }):
+            return last_defense_decay_results.duplicate(true)
     trigger_queue.add_history("player_turn_end", "玩家回合结束", "规则", "成功")
     _update_battle_state.call()
     return last_defense_decay_results.duplicate(true)
+
+func _emit_timing(hook: String, context: Dictionary) -> bool:
+    var result: Dictionary = timing_system.emit_timing(hook, context)
+    if result.get("success", false):
+        return true
+    var reason := str(result.get("reason", "战斗时点处理器失败"))
+    _set_scenario_error.call("战斗时点失败 hook=%s reason=%s" % [hook, reason])
+    return false
 
 func _defense_decay_detail(results: Array[Dictionary]) -> String:
     var details: Array[String] = []

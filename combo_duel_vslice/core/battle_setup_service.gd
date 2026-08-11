@@ -211,6 +211,16 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Di
         side.life = progress_snapshot.life
     if progress_snapshot.has_experience:
         side.experience = progress_snapshot.experience
+    if progress_snapshot.has_passive_counter_state \
+            and side.passive_counter_store != null:
+        var counter_errors: Array[String] = side.passive_counter_store.replace_state(
+            progress_snapshot.passive_counter_state)
+        if not counter_errors.is_empty():
+            return {
+                "success": false,
+                "reason": "玩家本局被动计数器装配失败：%s" % \
+                    "；".join(counter_errors),
+            }
     return {"success": true}
 
 func _counts(values: Array) -> Dictionary:
@@ -224,7 +234,7 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
     run_deck.sync_from_battle_cards(
         side.all_cards_for_run_sync(),
         side.permanently_removed_card_ids)
-    return RunProgressSnapshotScript.from_dict({
+    var values := {
         "consumable_ids": side.consumable_ids.duplicate(),
         "item_ids": side.item_ids.duplicate(),
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
@@ -237,4 +247,8 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "base_hand_limit_modifier": side.base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": side.hand_technique_multiplier_modifiers.duplicate(true),
         "run_deck": run_deck.to_snapshot(),
-    })
+    }
+    if side.passive_counter_store != null:
+        values["passive_counter_state"] = (
+            side.passive_counter_store.capture_state())
+    return RunProgressSnapshotScript.from_dict(values)

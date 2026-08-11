@@ -18,6 +18,10 @@ const CounterReadPortScript = preload(
     "res://core/passives/passive_counter_read_port.gd")
 const CounterMutationPortScript = preload(
     "res://core/passives/passive_counter_mutation_port.gd")
+const BattleCounterReadPortScript = preload(
+    "res://core/passives/battle_passive_counter_read_port.gd")
+const BattleCounterMutationPortScript = preload(
+    "res://core/passives/battle_passive_counter_mutation_port.gd")
 
 var registry
 var source_resolver
@@ -129,6 +133,8 @@ func dispatch_event(
         hook: String,
         context,
         counter_access: String = "none") -> Dictionary:
+    if hook == "action_preview" and counter_access == "none":
+        counter_access = "read"
     var plan = build_execution_plan(hook, context)
     var results: Array = []
     if not plan.is_valid():
@@ -154,17 +160,21 @@ func execute_invocation(
         context_override
         if context_override != null
         else invocation.context.for_invocation(invocation))
-    var port = _attach_counter_port(
+    var ports: Array = _attach_counter_ports(
         invocation.source, invocation_context, counter_access)
     var result: Dictionary = registry.execute(
         invocation.source.behavior_id,
         invocation.hook,
         invocation_context,
         invocation.source.configuration)
-    if port != null and not port.is_valid():
+    var port_errors: Array[String] = []
+    for port in ports:
+        if not port.is_valid():
+            port_errors.append_array(port.errors())
+    if not port_errors.is_empty():
         result = {
             "success": false,
-            "reason": "；".join(port.errors()),
+            "reason": "；".join(port_errors),
         }
     if not result.get("success", false):
         return {
@@ -255,14 +265,19 @@ func _resolve_additional_executions(target_source, sources: Array, context) -> D
             provider_source, "passive_invocation_plan_query", query_context)
         if not activation.active:
             continue
-        var port = _attach_counter_port(provider_source, query_context, "read")
+        var ports: Array = _attach_counter_ports(
+            provider_source, query_context, "read")
         var result: Dictionary = registry.execute(
             provider_source.behavior_id,
             "passive_invocation_plan_query",
             query_context,
             provider_source.configuration)
-        if port != null and not port.is_valid():
-            return {"success": false, "reason": "；".join(port.errors())}
+        var port_errors: Array[String] = []
+        for port in ports:
+            if not port.is_valid():
+                port_errors.append_array(port.errors())
+        if not port_errors.is_empty():
+            return {"success": false, "reason": "；".join(port_errors)}
         if not result.get("success", false):
             return result
         if not _repeat_result_targets(result, target_source):
@@ -294,22 +309,56 @@ func _repeat_result_targets(result: Dictionary, target_source) -> bool:
         return false
     return true
 
-func _attach_counter_port(source, context, access: String):
+func _attach_counter_ports(source, context, access: String) -> Array:
     context.counter_read_port = null
     context.counter_mutation_port = null
+    context.persistent_counter_read_port = null
+    context.persistent_counter_mutation_port = null
+    context.battle_counter_read_port = null
+    context.battle_counter_mutation_port = null
+    var result: Array = []
     if access == "none" or context.owner == null:
-        return null
-    var store = context.owner.get("passive_counter_store")
-    if store == null:
-        return null
-    var definitions: Array = registry.counter_definitions(
-        source.behavior_id, source.configuration)
-    var port = (
-        CounterMutationPortScript.new(store, source, definitions)
-        if access == "mutation"
-        else CounterReadPortScript.new(store, source, definitions))
-    context.counter_read_port = port
+        return result
+    var persistent_store = _property_value(
+        context.owner, "passive_counter_store")
+    if persistent_store != null:
+        var persistent_definitions: Array = registry.counter_definitions(
+            source.behavior_id, source.configuration)
+        var persistent_port = (
+            CounterMutationPortScript.new(
+                persistent_store, source, persistent_definitions)
+            if access == "mutation"
+            else CounterReadPortScript.new(
+                persistent_store, source, persistent_definitions))
+        context.counter_read_port = persistent_port
+        context.persistent_counter_read_port = persistent_port
+        if access == "mutation":
+            context.counter_mutation_port = persistent_port
+            context.persistent_counter_mutation_port = persistent_port
+        result.append(persistent_port)
+    var battle_store = _property_value(
+        context.owner, "battle_passive_counter_store")
+    if battle_store != null:
+        var battle_definitions: Array = registry.battle_counter_definitions(
+            source.behavior_id, source.configuration)
+        var owner_id := str(_property_value(context.owner, "owner_id"))
+        var battle_port = (
+            BattleCounterMutationPortScript.new(
+                battle_store, owner_id, source, battle_definitions)
+            if access == "mutation"
+            else BattleCounterReadPortScript.new(
+                battle_store, owner_id, source, battle_definitions))
+        context.battle_counter_read_port = battle_port
+        if access == "mutation":
+            context.battle_counter_mutation_port = battle_port
+        result.append(battle_port)
     context.source = source
-    if access == "mutation":
-        context.counter_mutation_port = port
-    return port
+    return result
+
+func _property_value(owner, property_name: String):
+    if owner == null or not owner.has_method("get_property_list"):
+        return null
+    for property in owner.get_property_list():
+        if str(property.get("name", "")) == property_name:
+            return owner.get(property_name)
+    return null

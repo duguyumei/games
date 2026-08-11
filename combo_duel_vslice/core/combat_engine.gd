@@ -35,6 +35,12 @@ const PassiveRuleHandlerRegistryScript = preload(
     "res://core/passives/passive_rule_handler_registry.gd")
 const PassiveRuleRuntimeScript = preload(
     "res://core/passives/passive_rule_runtime.gd")
+const BattlePassiveTimingBridgeScript = preload(
+    "res://core/passives/battle_passive_timing_bridge.gd")
+const BattlePassiveCommittedEventServiceScript = preload(
+    "res://core/passives/battle_passive_committed_event_service.gd")
+const BattleRuleQueryServiceScript = preload(
+    "res://core/passives/battle_rule_query_service.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -70,6 +76,10 @@ var loadout_service: BattleLoadoutService
 var card_reshape_runtime
 var passive_rule_registry
 var passive_rule_runtime
+var battle_passive_timing_bridge
+var battle_passive_event_service
+var battle_rule_query_service
+var _battle_instance_serial: int = 0
 
 var turn_number: int:
     get: return round_service.turn_number
@@ -172,6 +182,18 @@ func _init(
         passive_rule_registry, content_catalog)
     player.use_passive_rule_runtime(passive_rule_runtime)
     enemy.use_passive_rule_runtime(passive_rule_runtime)
+    battle_passive_timing_bridge = BattlePassiveTimingBridgeScript.new(
+        passive_rule_runtime, timing_system)
+    battle_passive_event_service = BattlePassiveCommittedEventServiceScript.new(
+        passive_rule_runtime, Callable(self, "_set_scenario_error"))
+    battle_rule_query_service = BattleRuleQueryServiceScript.new(
+        passive_rule_runtime, Callable(self, "_set_scenario_error"))
+    player.use_battle_rule_query_service(battle_rule_query_service)
+    enemy.use_battle_rule_query_service(battle_rule_query_service)
+    player.use_committed_event_service(
+        battle_passive_event_service, Callable(self, "_read_turn_number"))
+    enemy.use_committed_event_service(
+        battle_passive_event_service, Callable(self, "_read_turn_number"))
     if content_ready:
         battle_setup_service.configure_repositories(
             repository,
@@ -206,6 +228,9 @@ func _init(
         card_reshape_runtime.trigger_replay_service)
     effect_ports.use_card_reshape_runtime(card_reshape_runtime)
     effect_ports.use_consumable_repository(consumable_repository)
+    effect_ports.use_passive_battle_services(
+        battle_rule_query_service, battle_passive_event_service,
+        Callable(self, "_read_turn_number"))
     delayed_effects = status_system.delayed_records
     card_state_lifecycle = status_system.lifecycle
     player.use_card_state_lifecycle(card_state_lifecycle)
@@ -220,13 +245,15 @@ func _init(
     timing_system.register_weak_handler(
         BattleTimingSystemScript.BATTLE_END,
         "combat_engine.flow_cleanup",
-        950,
+        2147483646,
         self,
         "_on_flow_battle_end_timing")
     action_preview_service = ActionPreviewServiceScript.new(
         repository,
         passive_rule_runtime,
-        effect_executor)
+        effect_executor,
+        battle_rule_query_service,
+        Callable(self, "_read_turn_number"))
     action_resolver = ActionResolverScript.new(
         effect_ports,
         repository,
@@ -234,7 +261,10 @@ func _init(
         trigger_queue,
         effect_executor,
         rng,
-        timing_system)
+        timing_system,
+        Callable(self, "_set_scenario_error"),
+        action_preview_service,
+        battle_passive_event_service)
     effect_ports.use_hand_retrigger_callback(
         Callable(action_resolver, "retrigger_current_hand_technique"))
     loadout_service = BattleLoadoutServiceScript.new(
@@ -251,7 +281,10 @@ func _init(
         Callable(self, "_lock_enemy_action"),
         Callable(self, "_resolve_enemy_only_actions"),
         Callable(self, "_update_battle_state"),
+        Callable(self, "_set_scenario_error"),
         Callable(self, "_emit_state_changed"))
+    round_service.defense_retention_policy.use_battle_rule_query_service(
+        battle_rule_query_service)
     round_service.set_modes(scripted_mode, external_enemy_action_mode)
     enemy_planning_service = EnemyActionPlanningServiceScript.new(
         enemy,
@@ -380,6 +413,8 @@ func setup(
         battle_state_detail = "统一内容目录无效"
         state_changed.emit()
         return
+    battle_passive_timing_bridge.close_battle()
+    battle_passive_event_service.close_battle()
     rng.seed = seed_value
     battle_cleanup_completed = false
     round_service.reset()
@@ -415,6 +450,9 @@ func setup(
     enemy_plan.clear()
     damage_resolver.reset()
     action_resolver.reset()
+    _battle_instance_serial += 1
+    battle_passive_event_service.open_battle(
+        [player, enemy], "battle-%06d" % _battle_instance_serial)
     passive_rule_runtime.suppression_service.clear()
     state_changed.emit()
 
@@ -476,6 +514,9 @@ func replace_player_deck(cards: Array, shuffle_cards: bool = true) -> void:
     state_changed.emit()
 
 func use_external_enemy_actions(enabled: bool) -> void:
+    if not enabled and battle_passive_timing_bridge.is_assembled():
+        battle_passive_timing_bridge.close_battle()
+        battle_passive_event_service.close_battle()
     external_enemy_action_mode = enabled
     round_service.set_modes(scripted_mode, external_enemy_action_mode)
     action_service.set_modes(scripted_mode, enemy_ai_enabled, external_enemy_action_mode)
@@ -490,6 +531,13 @@ func start_player_turn() -> Array:
     last_player_action_cards.clear()
     last_enemy_action_cards.clear()
     enemy_plan.clear()
+    if not battle_passive_timing_bridge.is_assembled():
+        var assembled: Dictionary = battle_passive_timing_bridge.assemble(
+            [player, enemy])
+        if not assembled.get("success", false):
+            _set_scenario_error(str(assembled.get(
+                "reason", "战斗被动生命周期装配失败")))
+            return []
     return round_service.start_player_turn()
 
 func end_player_turn() -> void:

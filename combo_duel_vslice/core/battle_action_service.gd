@@ -184,7 +184,7 @@ func resolve_locked_enemy_action_once() -> Dictionary:
         set_scenario_error.call(detail)
         return {"success": false, "reason": detail}
     var finalize_result: Dictionary = action_resolver.finalize_action_preview(
-        enemy, action_preview)
+        enemy, action_preview, player, turn_number_reader.call())
     if not finalize_result.get("success", false):
         enemy.rollback_staging()
         return finalize_result
@@ -428,7 +428,7 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         return player_finalize
     if enemy_will_act:
         var enemy_finalize: Dictionary = action_resolver.finalize_action_preview(
-            enemy, enemy_preview)
+            enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_finalize.get("success", false):
             player.rollback_staging()
             enemy.rollback_staging()
@@ -672,13 +672,15 @@ func _grant_extra_actions(side, amount: int, source: String) -> void:
 func _finalize_staged_proposal(side, proposal) -> Dictionary:
     _restore_individual_cooperation_power(proposal)
     var main_result: Dictionary = action_resolver.finalize_action_preview(
-        side, proposal.preview)
+        side, proposal.preview,
+        enemy if side == player else player, turn_number_reader.call())
     if not main_result.get("success", false):
         return main_result
     for group in proposal.groups.slice(1):
         var group_preview: Dictionary = group.get("preview", {})
         var group_result: Dictionary = action_resolver.finalize_action_preview(
-            side, group_preview)
+            side, group_preview,
+            enemy if side == player else player, turn_number_reader.call())
         if not group_result.get("success", false):
             return group_result
     _refresh_cooperation_shared_power(proposal)

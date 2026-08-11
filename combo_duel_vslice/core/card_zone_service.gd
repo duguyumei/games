@@ -11,6 +11,8 @@ const ACTIVE_ZONES := ["draw_pile", "hand", "staging", "discard_pile"]
 var card_state_lifecycle
 var status_system
 var card_reshape_runtime
+var committed_event_service
+var round_number_reader: Callable
 
 func _init(lifecycle = null) -> void:
     card_state_lifecycle = lifecycle
@@ -24,6 +26,10 @@ func use_status_system(system) -> void:
 func use_card_reshape_runtime(runtime) -> void:
     card_reshape_runtime = runtime
 
+func use_committed_event_service(service, round_reader: Callable = Callable()) -> void:
+    committed_event_service = service
+    round_number_reader = round_reader
+
 func reset_zones(side, cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
     side.hand.clear()
     side.staging.clear()
@@ -33,13 +39,15 @@ func reset_zones(side, cards: Array, rng: RandomNumberGenerator, shuffle_cards: 
     if shuffle_cards:
         shuffle(side.draw_pile, rng)
 
-func draw(side, count: int) -> Array:
+func draw(side, count: int, draw_reason: String = "rule_draw") -> Array:
     var drawn: Array = []
     for _index in range(maxi(0, count)):
         if side.draw_pile.is_empty():
             break
         var card = side.draw_pile.back()
-        move_card(side, "draw_pile", "hand", card, "draw")
+        move_card(side, "draw_pile", "hand", card, "draw", {
+            "draw_reason": draw_reason,
+        })
         drawn.append(card)
     return drawn
 
@@ -170,7 +178,8 @@ func temporarily_transfer(
         source_side,
         target_side,
         instance_id: String,
-        destination: String = "draw_pile") -> Dictionary:
+        destination: String = "draw_pile",
+        reason: String = "temporary_transfer") -> Dictionary:
     if destination not in ACTIVE_ZONES:
         return {"success": false, "reason": "临时夺取的目标牌区无效"}
     var location := find_active_location(source_side, instance_id)
@@ -184,15 +193,21 @@ func temporarily_transfer(
     if str(card.original_owner_id) == "":
         card.original_owner_id = source_side.owner_id
     zone(target_side, destination).append(card)
-    return {
+    var result := {
         "success": true,
         "card": card,
         "from_owner": source_side.owner_id,
         "to_owner": target_side.owner_id,
         "from": source_zone,
         "to": destination,
-        "reason": "temporary_transfer",
+        "reason": reason,
     }
+    var event_result := _notify_arrival(
+        target_side, card, source_zone, destination, reason, {})
+    if not event_result.get("success", true):
+        result["passive_event_success"] = false
+        result["passive_event_reason"] = event_result.get("reason", "")
+    return result
 
 func return_transferred(
         holder_side,
@@ -210,7 +225,7 @@ func return_transferred(
     zone(holder_side, str(location["zone"])).erase(card)
     card.original_owner_id = ""
     zone(original_side, destination).append(card)
-    return {
+    var result := {
         "success": true,
         "card": card,
         "from_owner": holder_side.owner_id,
@@ -219,6 +234,13 @@ func return_transferred(
         "to": destination,
         "reason": "return_transfer",
     }
+    var event_result := _notify_arrival(
+        original_side, card, str(location["zone"]), destination,
+        "return_transfer", {})
+    if not event_result.get("success", true):
+        result["passive_event_success"] = false
+        result["passive_event_reason"] = event_result.get("reason", "")
+    return result
 
 func add_generated(side, card, destination: String, temporary: bool) -> Dictionary:
     if card == null or destination not in ACTIVE_ZONES:
@@ -227,20 +249,28 @@ func add_generated(side, card, destination: String, temporary: bool) -> Dictiona
         return {"success": false, "reason": "真气实例 ID 已存在于战斗牌区"}
     card.temporary_card = temporary
     zone(side, destination).append(card)
-    return {
+    var reason := "temporary_generate" if temporary else "permanent_generate"
+    var result := {
         "success": true,
         "card": card,
         "from": "generated",
         "to": destination,
-        "reason": "temporary_generate" if temporary else "permanent_generate",
+        "reason": reason,
     }
+    var event_result := _notify_arrival(
+        side, card, "generated", destination, reason, {})
+    if not event_result.get("success", true):
+        result["passive_event_success"] = false
+        result["passive_event_reason"] = event_result.get("reason", "")
+    return result
 
 func move_card(
         side,
         source_zone: String,
         destination_zone: String,
         card,
-        reason: String) -> Dictionary:
+        reason: String,
+        event_metadata: Dictionary = {}) -> Dictionary:
     if source_zone not in ACTIVE_ZONES or destination_zone not in ACTIVE_ZONES:
         return {"success": false, "reason": "未知牌区"}
     var source: Array = zone(side, source_zone)
@@ -255,6 +285,27 @@ func move_card(
             }
     source.erase(card)
     zone(side, destination_zone).append(card)
+    var event_result := _notify_arrival(
+        side, card, source_zone, destination_zone, reason, event_metadata)
+    var result := {
+        "success": true,
+        "card": card,
+        "from": source_zone,
+        "to": destination_zone,
+        "reason": reason,
+    }
+    if not event_result.get("success", true):
+        result["passive_event_success"] = false
+        result["passive_event_reason"] = event_result.get("reason", "")
+    return result
+
+func _notify_arrival(
+        side,
+        card,
+        source_zone: String,
+        destination_zone: String,
+        reason: String,
+        event_metadata: Dictionary) -> Dictionary:
     if destination_zone == "discard_pile":
         if status_system != null:
             status_system.on_card_enter_discard_behaviors(side, card)
@@ -272,13 +323,51 @@ func move_card(
             status_system.on_card_drawn(side, card)
         if card_reshape_runtime != null:
             card_reshape_runtime.on_card_drawn(side, card)
-    return {
-        "success": true,
+    return _emit_committed_card_events(
+        side, card, source_zone, destination_zone, reason, event_metadata)
+
+func _emit_committed_card_events(
+        side,
+        card,
+        source_zone: String,
+        destination_zone: String,
+        reason: String,
+        metadata: Dictionary) -> Dictionary:
+    if committed_event_service == null:
+        return {"success": true}
+    var event_serial: int = int(committed_event_service.next_serial())
+    var common := {
+        "actor": side,
+        "owner": side,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "event_serial": event_serial,
         "card": card,
-        "from": source_zone,
-        "to": destination_zone,
+        "card_instance_id": str(card.id),
+        "from_zone": source_zone,
         "reason": reason,
+        "metadata": metadata,
     }
+    if destination_zone == "hand" and reason == "draw":
+        common["draw_reason"] = str(metadata.get("draw_reason", "rule_draw"))
+        common["event_token"] = committed_event_service.make_token(
+            "card_drawn", side, event_serial, "", str(card.id))
+        return committed_event_service.commit("card_drawn", common)
+    if destination_zone != "discard_pile":
+        return {"success": true}
+    common["explicit_discard"] = reason == "explicit_discard"
+    common["normal_play"] = reason == "normal_play"
+    common["event_token"] = committed_event_service.make_token(
+        "card_entered_discard", side, event_serial, "", str(card.id))
+    var entered: Dictionary = committed_event_service.commit(
+        "card_entered_discard", common)
+    if not entered.get("success", false) or reason != "explicit_discard":
+        return entered
+    var explicit := common.duplicate(false)
+    explicit["event_token"] = committed_event_service.make_token(
+        "card_explicitly_discarded", side, event_serial, "", str(card.id))
+    return committed_event_service.commit(
+        "card_explicitly_discarded", explicit)
 
 func _can_explicit_discard(side, card) -> bool:
     return bool(_explicit_discard_permission(side, card).get("allowed", true))

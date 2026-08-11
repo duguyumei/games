@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 var actor
 var target
@@ -55,6 +55,10 @@ func snapshot() -> Dictionary:
         "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
         "reshape_action_results": preview.get(
             "reshape_action_results", {}).duplicate(true),
+        "passive_action_confirmed": bool(preview.get(
+            "passive_action_confirmed", false)),
+        "passive_power_queries": preview.get("values", {}).get(
+            "passive_power_queries", {}).duplicate(true),
         "cooperation_group_count": cooperation_groups.size(),
     }
 

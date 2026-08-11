@@ -626,6 +626,7 @@ func _side_snapshot(side) -> Dictionary:
         "momentum_value": side.momentum_value,
         "last_successful_technique_hand_id": side.last_successful_technique_hand_id,
         "current_reflection_percent": side.current_reflection_percent,
+        "base_hand_limit": side.base_hand_limit(),
         "hand_limit": side.current_hand_limit(),
         "inner_skill_limit": int(capacity["effective_capacity"]),
         "draw_count": side.draw_pile.size(),

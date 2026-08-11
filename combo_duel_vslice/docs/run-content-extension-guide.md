@@ -537,8 +537,51 @@ Registry 与内容 Validator 会校验稳定 snake_case、整数上下界、默�
 存档字段为版本化的 `passive_counter_state`，只保存稳定排序的 key 与非默认整数值；未知来源、
 内容、state key、counter ID、重复键或越界值均拒绝载入，不保存 Handler、Callable、配置或完整
 定义。`RunProgressSnapshot` 用 `has_passive_counter_state` 区分缺失与空集合：带字段时绝对替换，
-缺失时保持现值。当前战斗层不拥有该状态，所以战后局部快照不回传空字段。本平台没有向正式内容
-JSON 增加任何内功或物品。
+缺失时保持现值。战斗装配把该状态绝对导入玩家 `BattleSide` 的独立副本；战斗 Handler 不直接
+修改 `GrowthInventory`。玩家胜利或战败的战后局部快照绝对回传副本状态，重复同步同一快照不会
+再次增长；未决平局或场景错误不进入本局回写流程，敌方空 Store 也不会覆盖玩家状态。本平台没有
+向正式内容 JSON 增加任何内功或物品。
+
+## 6.12 战斗生命周期绑定与临时计数器
+
+生命周期 Handler 在代码中同时声明支持的 hook 与全局 order；例如：
+
+```gdscript
+func supported_hooks() -> Array[String]:
+    return ["after_normal_draw"] as Array[String]
+
+func battle_timing_bindings(_configuration: Dictionary) -> Array:
+    return [{"hook": "after_normal_draw", "order": 700}]
+```
+
+允许的 hook 与 `BattleTimingSystem` 十个常量一一对应。Registry 会拒绝未知 hook、未进入
+`supported_hooks()` 的 binding、非整数 order 和同一 Handler 重复 hook/order。Bridge 以
+`passives.<hook>.<order>` 注册；执行顺序为 BattleTimingSystem order，再按内功装备／物品稳定来源
+顺序、behavior 顺序与 Invocation `execution_index`。`on_play_effects` 仍只服务 action preview/resolve，
+不伪造生命周期绑定。双方同 Hook 都有有效绑定时，当前正式装配以
+`unconfirmed_cross_side_passive_order` 阻断，直到 S4.0 冻结跨阵营顺序。
+
+临时整数由 `battle_counter_definitions(configuration)` 声明，字段为 `counter_id`、
+`default_value`、`minimum`、可选 `maximum` 和 `reset_scope`。`battle` 保留整场，`turn` 在对应 actor
+的 `turn_start` Handler 前重置，`action_window` 在参与当前窗口的 actor 的
+`action_window_start` Handler 前重置。临时键为
+`owner_id + source_instance_key + state_key + counter_id`；这与 F5C 持久键刻意不同，使当前战斗的
+同 ID 多副本各自计数，但绝不写入存档。生命周期 Context 提供
+`persistent_counter_*_port` 与 `battle_counter_*_port`；action preview 只有两个 read port。任一时点的
+Invocation 失败会把当前 actor 的两类计数恢复到该时点开始前并进入 `scenario_error`，不会继续较晚
+order；`battle_end` Handler 完成后才清临时 Store。
+
+## 6.13 战斗细粒度事件与持续整数查询
+
+生命周期边界与实际事实必须分开选用。阶段开始／结束使用 6.12 的十个 `BattleTimingSystem` Hook；只有玩法修改已经成功提交时，才使用 `action_confirmed`、`action_resolved`、`card_drawn`、`card_entered_discard`、`card_explicitly_discarded`、`damage_resolved` 或 `defense_gained`。`BattlePassiveCommittedEventService` 为事件建立由 battle instance、事件种类、行动／区域／伤害序号、owner 与卡牌实例 ID 组成的稳定 token；重复提交直接复用 receipt。事件获得两类 mutation port，失败只回滚计数器并转场景错误，不反向搬牌或恢复生命。
+
+持续整数读取使用 `BattleRuleQueryService`，底层仍是既有 `PassiveIntPolicyResolver`，不得复制整数引擎或增加 add／multiply／set DSL。允许的 Hook 为 `hand_limit_query`、四个 `power_*_query`、`outgoing_damage_query`、`incoming_damage_query`、`defense_gain_query` 与 `defense_retention_percent_query`。每个 Invocation 读取上一个有效整数并返回新的确定 `value`；上下文只注入两类 read port。被压制来源不进入计划，额外 Invocation 在来源位置连续执行且不重新规划。
+
+`BattleSide.base_hand_limit()` 只计算 `max(1, hand_limit + base_hand_limit_modifier)`；`current_hand_limit()`／`effective_hand_limit_result()` 再执行 `hand_limit_query`，供正常补牌、抽至上限、效果值、战斗快照、UI 与 AI 共用。明确写“基础手牌上限”的内容必须调用前者。查询失败不能按基础值继续补牌。
+
+功法值 Handler 只能修改四阶段输入，`PowerCalculator` 继续独占 `baseline_value`、`initial_power`、`pre_momentum_power` 与 `technique_value` 公式。预览可重复查询；正式行动在重塑冻结后重跑四项查询，将 `base_value/effective_value/source_breakdown/fingerprint` 写入 `passive_power_queries`，并随每个主组／协同组自己的 action token 冻结。等待选择恢复只读冻结结果。普通伤害、防御获得和防御保留率在实际写入前按最新状态查询一次；真实伤害不进入普通伤害查询。
+
+本接口不提供牌型识别改写、真元身份、打出／明确弃牌权限否决、功法触发条件否决、内功复制或任意战斗状态写端口。S2-F5D2 没有修改正式白名单，也没有使任何候选内功或物品正式化。
 
 ## 7. 什么时候只写 JSON
 

@@ -13,6 +13,10 @@ const DEFAULT_RETENTION_PERCENT := 50
 const PROVIDER_METHOD := "defense_retention_modifier"
 
 var _providers: Array[Dictionary] = []
+var _battle_rule_query_service = null
+
+func use_battle_rule_query_service(service) -> void:
+    _battle_rule_query_service = service
 
 func register_provider(provider_id: String, provider) -> bool:
     if provider_id == "" or not _is_valid_provider(provider):
@@ -65,22 +69,60 @@ func resolve_retention(side, context: Dictionary = {}) -> Dictionary:
         100
         if prevented
         else clampi(retention_percent, 0, 100))
+    var query_result: Dictionary = {}
+    if _battle_rule_query_service != null:
+        var query = _battle_rule_query_service.resolve_values({
+            "hook": "defense_retention_percent_query",
+            "owner": side, "actor": side,
+            "subject_kind": "defense_retention",
+            "subject_id": str(side.owner_id),
+            "base_value": retention_percent,
+            "round_number": int(context.get("round_number", 0)),
+            "source_kind": "round_end_decay",
+            "metadata": context,
+        })
+        query_result = query.to_dict()
+        if not query.success:
+            _battle_rule_query_service.report_failure(query, "defense_retention")
+            return {
+                "success": false, "side": side,
+                "side_id": _side_id(side),
+                "retention_percent": retention_percent,
+                "prevented": prevented, "modifiers": modifiers,
+                "query": query_result, "errors": query.errors.duplicate(),
+            }
+        retention_percent = clampi(query.effective_value, 0, 100)
+        prevented = retention_percent == 100
     return {
+        "success": true,
         "side": side,
         "side_id": _side_id(side),
         "retention_percent": retention_percent,
         "prevented": prevented,
         "modifiers": modifiers,
+        "query": query_result,
     }
 
 func apply_decay(side, context: Dictionary = {}) -> Dictionary:
     var retention := resolve_retention(side, context)
     var before := maxi(0, int(side.defense))
+    if not retention.get("success", false):
+        return {
+            "success": false, "side": side,
+            "side_id": retention.get("side_id", _side_id(side)),
+            "before": before, "after": before, "lost": 0,
+            "retention_percent": int(retention.get("retention_percent", 50)),
+            "prevented": false,
+            "modifiers": retention.get("modifiers", []).duplicate(true),
+            "query": retention.get("query", {}).duplicate(true),
+            "errors": retention.get("errors", []).duplicate(),
+        }
     var retention_percent := int(retention["retention_percent"])
     var after := maxi(0, int(floor(
         float(before) * float(retention_percent) / 100.0)))
     side.defense = after
     return {
+        "success": true,
         "side": side,
         "side_id": retention["side_id"],
         "before": before,
@@ -89,6 +131,7 @@ func apply_decay(side, context: Dictionary = {}) -> Dictionary:
         "retention_percent": retention_percent,
         "prevented": bool(retention["prevented"]),
         "modifiers": retention["modifiers"].duplicate(true),
+        "query": retention.get("query", {}).duplicate(true),
     }
 
 func _is_valid_provider(provider) -> bool:

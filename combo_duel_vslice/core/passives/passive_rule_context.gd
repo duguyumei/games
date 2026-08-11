@@ -19,6 +19,10 @@ var source_snapshot: Array = []
 var has_source_snapshot: bool = false
 var counter_read_port = null
 var counter_mutation_port = null
+var persistent_counter_read_port = null
+var persistent_counter_mutation_port = null
+var battle_counter_read_port = null
+var battle_counter_mutation_port = null
 
 func configure(values: Dictionary):
     actor = values.get("actor", values.get("owner"))
@@ -37,6 +41,12 @@ func configure(values: Dictionary):
     source_snapshot = values.get("source_snapshot", []).duplicate(true)
     counter_read_port = values.get("counter_read_port")
     counter_mutation_port = values.get("counter_mutation_port")
+    persistent_counter_read_port = values.get(
+        "persistent_counter_read_port", counter_read_port)
+    persistent_counter_mutation_port = values.get(
+        "persistent_counter_mutation_port", counter_mutation_port)
+    battle_counter_read_port = values.get("battle_counter_read_port")
+    battle_counter_mutation_port = values.get("battle_counter_mutation_port")
     return self
 
 func for_invocation(current_invocation):
@@ -51,6 +61,10 @@ func for_invocation(current_invocation):
         "source": current_invocation.source,
         "invocation": current_invocation,
         "source_snapshot": source_snapshot,
+        "persistent_counter_read_port": persistent_counter_read_port,
+        "persistent_counter_mutation_port": persistent_counter_mutation_port,
+        "battle_counter_read_port": battle_counter_read_port,
+        "battle_counter_mutation_port": battle_counter_mutation_port,
     })
 
 func for_plan_target(target_source):

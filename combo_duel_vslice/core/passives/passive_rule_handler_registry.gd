@@ -6,10 +6,57 @@ const OnPlayEffectsHandlerScript = preload(
     "res://core/passives/on_play_effects_passive_handler.gd")
 const CounterDefinitionScript = preload(
     "res://core/passives/passive_counter_definition.gd")
+const BattleCounterDefinitionScript = preload(
+    "res://core/passives/battle_passive_counter_definition.gd")
+
+const BATTLE_TIMING_HOOKS := [
+    "battle_start",
+    "round_start",
+    "turn_start",
+    "before_normal_draw",
+    "after_normal_draw",
+    "action_window_start",
+    "group_end",
+    "action_window_end",
+    "turn_end",
+    "battle_end",
+]
+
+const BATTLE_COMMITTED_EVENT_HOOKS := [
+    "action_confirmed",
+    "action_resolved",
+    "card_drawn",
+    "card_entered_discard",
+    "card_explicitly_discarded",
+    "damage_resolved",
+    "defense_gained",
+]
+
+const BATTLE_INT_QUERY_HOOKS := [
+    "hand_limit_query",
+    "power_base_fixed_query",
+    "power_multiplier_bonus_query",
+    "power_fixed_query",
+    "power_amp_percent_query",
+    "outgoing_damage_query",
+    "incoming_damage_query",
+    "defense_gain_query",
+    "defense_retention_percent_query",
+]
 
 const HOOKS := [
     "action_preview",
     "action_resolve",
+    "battle_start",
+    "round_start",
+    "turn_start",
+    "before_normal_draw",
+    "after_normal_draw",
+    "action_window_start",
+    "group_end",
+    "action_window_end",
+    "turn_end",
+    "battle_end",
     "inner_skill_capacity_query",
     "passive_invocation_plan_query",
     "practice_price_query",
@@ -24,6 +71,22 @@ const HOOKS := [
     "inner_skill_forgotten",
     "battle_completed",
     "node_completed",
+    "action_confirmed",
+    "action_resolved",
+    "card_drawn",
+    "card_entered_discard",
+    "card_explicitly_discarded",
+    "damage_resolved",
+    "defense_gained",
+    "hand_limit_query",
+    "power_base_fixed_query",
+    "power_multiplier_bonus_query",
+    "power_fixed_query",
+    "power_amp_percent_query",
+    "outgoing_damage_query",
+    "incoming_damage_query",
+    "defense_gain_query",
+    "defense_retention_percent_query",
 ]
 
 var _handlers: Dictionary = {}
@@ -154,6 +217,120 @@ func validate_counter_definitions(
             errors.append("counter_definitions[%d]：%s" % [index, message])
         if seen.has(definition.counter_id):
             errors.append("重复声明 counter_id：%s" % definition.counter_id)
+        seen[definition.counter_id] = true
+    return errors
+
+func battle_timing_bindings(
+        behavior_id: String,
+        configuration: Dictionary) -> Array[Dictionary]:
+    var current = handler(behavior_id)
+    if current == null:
+        return []
+    var values = current.battle_timing_bindings(configuration)
+    if not values is Array:
+        return []
+    var result: Array[Dictionary] = []
+    for value in values:
+        if value is Dictionary:
+            result.append({
+                "hook": str(value.get("hook", "")),
+                "order": value.get("order"),
+            })
+    return result
+
+func validate_battle_timing_bindings(
+        behavior_id: String,
+        configuration: Dictionary) -> Array[String]:
+    var current = handler(behavior_id)
+    if current == null:
+        return ["未注册的被动行为：%s" % behavior_id] as Array[String]
+    var values = current.battle_timing_bindings(configuration)
+    if not values is Array:
+        return ["battle_timing_bindings 必须返回数组"] as Array[String]
+    var errors: Array[String] = []
+    var seen: Dictionary = {}
+    var supported: Array[String] = current.supported_hooks()
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary:
+            errors.append("battle_timing_bindings[%d] 必须是对象" % index)
+            continue
+        var hook := str(value.get("hook", ""))
+        if hook not in BATTLE_TIMING_HOOKS:
+            errors.append(
+                "battle_timing_bindings[%d].hook 不是正式战斗时点：%s" % [
+                    index, hook])
+        elif not supported.has(hook):
+            errors.append(
+                "battle_timing_bindings[%d].hook 未在 supported_hooks 声明：%s" % [
+                    index, hook])
+        if not value.get("order") is int:
+            errors.append("battle_timing_bindings[%d].order 必须是整数" % index)
+            continue
+        var binding_key := "%s|%d" % [hook, int(value["order"])]
+        if seen.has(binding_key):
+            errors.append("重复声明战斗时点绑定：%s" % binding_key)
+        seen[binding_key] = true
+    return errors
+
+func battle_counter_definitions(
+        behavior_id: String,
+        configuration: Dictionary) -> Array:
+    var current = handler(behavior_id)
+    if current == null:
+        return []
+    var result: Array = []
+    var values = current.battle_counter_definitions(configuration)
+    if not values is Array:
+        return result
+    for value in values:
+        if value is BattleCounterDefinitionScript:
+            result.append(value)
+        elif value is Dictionary:
+            result.append(BattleCounterDefinitionScript.new().configure(value))
+    return result
+
+func validate_battle_counter_definitions(
+        behavior_id: String,
+        configuration: Dictionary) -> Array[String]:
+    var current = handler(behavior_id)
+    if current == null:
+        return ["未注册的被动行为：%s" % behavior_id] as Array[String]
+    var values = current.battle_counter_definitions(configuration)
+    if not values is Array:
+        return ["battle_counter_definitions 必须返回数组"] as Array[String]
+    var errors: Array[String] = []
+    var seen: Dictionary = {}
+    for index in range(values.size()):
+        var value = values[index]
+        if not value is Dictionary and not value is BattleCounterDefinitionScript:
+            errors.append(
+                "battle_counter_definitions[%d] 必须是对象或 BattlePassiveCounterDefinition" % index)
+            continue
+        if value is Dictionary:
+            for required_field in [
+                    "counter_id", "default_value", "minimum", "reset_scope"]:
+                if not value.has(required_field):
+                    errors.append(
+                        "battle_counter_definitions[%d] 缺少 %s" % [
+                            index, required_field])
+            if value.has("default_value") and not value["default_value"] is int:
+                errors.append(
+                    "battle_counter_definitions[%d].default_value 必须是整数" % index)
+            if value.has("minimum") and not value["minimum"] is int:
+                errors.append(
+                    "battle_counter_definitions[%d].minimum 必须是整数" % index)
+            if value.has("maximum") and not value["maximum"] is int:
+                errors.append(
+                    "battle_counter_definitions[%d].maximum 必须是整数" % index)
+        var definition = (
+            value
+            if value is BattleCounterDefinitionScript
+            else BattleCounterDefinitionScript.new().configure(value))
+        for message in definition.validation_errors():
+            errors.append("battle_counter_definitions[%d]：%s" % [index, message])
+        if seen.has(definition.counter_id):
+            errors.append("重复声明 battle counter_id：%s" % definition.counter_id)
         seen[definition.counter_id] = true
     return errors
 

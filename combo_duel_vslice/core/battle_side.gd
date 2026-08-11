@@ -5,6 +5,10 @@ const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const CardZoneServiceScript = preload("res://core/card_zone_service.gd")
 const InnerSkillCapacityPolicyScript = preload(
     "res://core/passives/inner_skill_capacity_policy.gd")
+const RunPassiveCounterStoreScript = preload(
+    "res://core/passives/run_passive_counter_store.gd")
+const BattlePassiveCounterStoreScript = preload(
+    "res://core/passives/battle_passive_counter_store.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -44,6 +48,12 @@ var card_state_lifecycle
 var status_system
 var card_zone_service := CardZoneServiceScript.new()
 var passive_rule_runtime = null
+## 本局持久状态在战斗内使用独立副本；战后只通过绝对快照回写。
+var passive_counter_store = null
+## 只存在于当前战斗，不进入 RunProgressSnapshot 或存档。
+var battle_passive_counter_store = null
+var battle_rule_query_service = null
+var last_hand_limit_query_result: Dictionary = {}
 
 func _init(side_name: String = "", stable_owner_id: String = "") -> void:
     name = side_name
@@ -60,8 +70,20 @@ func use_status_system(system) -> void:
 func use_card_reshape_runtime(runtime) -> void:
     card_zone_service.use_card_reshape_runtime(runtime)
 
+func use_committed_event_service(service, round_reader: Callable = Callable()) -> void:
+    card_zone_service.use_committed_event_service(service, round_reader)
+
 func use_passive_rule_runtime(runtime) -> void:
     passive_rule_runtime = runtime
+    var catalog = (
+        runtime.source_resolver._catalog
+        if runtime != null and runtime.source_resolver != null
+        else null)
+    passive_counter_store = RunPassiveCounterStoreScript.new(catalog)
+    battle_passive_counter_store = BattlePassiveCounterStoreScript.new()
+
+func use_battle_rule_query_service(service) -> void:
+    battle_rule_query_service = service
 
 func reset(
         cards: Array,
@@ -90,6 +112,11 @@ func reset(
     hand_technique_multiplier_modifiers.clear()
     owned_technique_ids.clear()
     permanently_removed_card_ids.clear()
+    if passive_counter_store != null:
+        passive_counter_store.clear()
+    if battle_passive_counter_store != null:
+        battle_passive_counter_store.clear()
+    last_hand_limit_query_result.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
 
 func replace_deck(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
@@ -113,20 +140,197 @@ func mark_permanently_removed(instance_id: String) -> void:
 func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
     card_zone_service.shuffle(cards, rng)
 
-func draw(count: int) -> Array:
-    return card_zone_service.draw(self, count)
+func draw(count: int, draw_reason: String = "rule_draw") -> Array:
+    return card_zone_service.draw(self, count, draw_reason)
 
-func draw_to_limit() -> Array:
+func draw_to_limit(draw_reason: String = "normal_draw") -> Array:
     var limit := current_hand_limit()
+    if limit < 1:
+        return []
     if hand.size() >= limit:
         return []
-    return draw(limit - hand.size())
+    return draw(limit - hand.size(), draw_reason)
 
 func current_hand_limit() -> int:
-    return maxi(
-        1,
-        hand_limit
-        + base_hand_limit_modifier)
+    var result := effective_hand_limit_result()
+    if not result.get("success", false):
+        return 0
+    return int(result["effective_value"])
+
+func base_hand_limit() -> int:
+    return maxi(1, hand_limit + base_hand_limit_modifier)
+
+func effective_hand_limit_result() -> Dictionary:
+    var base_value := base_hand_limit()
+    if battle_rule_query_service == null:
+        last_hand_limit_query_result = {
+            "success": true, "base_value": base_value,
+            "effective_value": base_value, "source_breakdown": [],
+            "fingerprint": "", "errors": [],
+        }
+        return last_hand_limit_query_result.duplicate(true)
+    var resolved = battle_rule_query_service.resolve_values({
+        "hook": "hand_limit_query",
+        "owner": self,
+        "actor": self,
+        "subject_kind": "battle_side",
+        "subject_id": owner_id,
+        "base_value": base_value,
+        "metadata": {"base_hand_limit": base_value},
+    })
+    last_hand_limit_query_result = resolved.to_dict()
+    if not resolved.success:
+        battle_rule_query_service.report_failure(resolved, "hand_limit")
+        return last_hand_limit_query_result.duplicate(true)
+    last_hand_limit_query_result["effective_value"] = maxi(
+        1, int(last_hand_limit_query_result["effective_value"]))
+    return last_hand_limit_query_result.duplicate(true)
+
+func capture_passive_query_state() -> Dictionary:
+    var card_states: Dictionary = {}
+    for card in all_cards_for_run_sync():
+        card_states[str(card.id)] = {
+            "id": str(card.id),
+            "definition_id": str(card.definition_id),
+            "rank_name": str(card.rank_name),
+            "rank_order": int(card.rank_order),
+            "qi_value": int(card.qi_value),
+            "attribute": str(card.attribute),
+            "attribute_name": str(card.attribute_name),
+            "reshape_origin": card.reshape_origin.duplicate(true),
+            "reshape_enhancement": str(card.reshape_enhancement),
+            "reshape_imprint": str(card.reshape_imprint),
+            "reshape_others": card.reshape_others.duplicate(true),
+            "anomalies": card.anomalies.duplicate(true),
+            "temporary_reshapes": card.temporary_reshapes.duplicate(true),
+            "origin_base_identity": card.origin_base_identity.duplicate(true),
+            "original_owner_id": str(card.original_owner_id),
+            "temporary_card": bool(card.temporary_card),
+            "reshape_rule_service": card.reshape_rule_service,
+        }
+    var status_state: Dictionary = {}
+    if status_system != null:
+        status_state = {
+            "delayed_records": status_system.delayed_records.duplicate(true),
+            "history": status_system.history.duplicate(true),
+            "serial": int(status_system._serial),
+            "delay_serial": int(status_system._delay_serial),
+            "technique_draw_counts": status_system._technique_draw_counts.duplicate(true),
+            "rng_state": int(status_system._rng.state) \
+                if status_system._rng != null else -1,
+        }
+    return {
+        "max_life": max_life,
+        "life": life, "defense": defense, "experience": experience,
+        "hand_limit": hand_limit,
+        "base_hand_limit_modifier": base_hand_limit_modifier,
+        "direct_power_fixed": direct_power_fixed,
+        "direct_power_percent": direct_power_percent,
+        "momentum_value": momentum_value,
+        "last_successful_technique_hand_id": last_successful_technique_hand_id,
+        "current_reflection_percent": current_reflection_percent,
+        "draw_ids": draw_pile.map(func(card): return str(card.id)),
+        "hand_ids": hand.map(func(card): return str(card.id)),
+        "staging_ids": staging.map(func(card): return str(card.id)),
+        "discard_ids": discard_pile.map(func(card): return str(card.id)),
+        "draw_cards": draw_pile.duplicate(),
+        "hand_cards": hand.duplicate(),
+        "staging_cards": staging.duplicate(),
+        "discard_cards": discard_pile.duplicate(),
+        "temporarily_removed_cards": temporarily_removed_cards.duplicate(),
+        "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
+        "item_ids": item_ids.duplicate(),
+        "technique_slot_index": technique_slot_index,
+        "consumable_ids": consumable_ids.duplicate(),
+        "consumable_limit": consumable_limit,
+        "hand_proficiency_fixed": hand_proficiency_fixed.duplicate(true),
+        "hand_technique_progression": hand_technique_progression.duplicate(true),
+        "hand_technique_progression_active": hand_technique_progression_active,
+        "hand_technique_multiplier_modifiers": (
+            hand_technique_multiplier_modifiers.duplicate(true)),
+        "owned_technique_ids": owned_technique_ids.duplicate(),
+        "permanently_removed_card_ids": permanently_removed_card_ids.duplicate(),
+        "card_states": card_states,
+        "status_state": status_state,
+        "persistent_counters": passive_counter_store.capture_state() \
+            if passive_counter_store != null else {},
+        "battle_counters": battle_passive_counter_store.capture_state() \
+            if battle_passive_counter_store != null else {},
+    }
+
+func replace_passive_query_state(state: Dictionary) -> void:
+    max_life = int(state.get("max_life", max_life))
+    life = int(state.get("life", life))
+    defense = int(state.get("defense", defense))
+    experience = int(state.get("experience", experience))
+    hand_limit = int(state.get("hand_limit", hand_limit))
+    base_hand_limit_modifier = int(state.get("base_hand_limit_modifier", base_hand_limit_modifier))
+    direct_power_fixed = int(state.get("direct_power_fixed", direct_power_fixed))
+    direct_power_percent = int(state.get("direct_power_percent", direct_power_percent))
+    momentum_value = int(state.get("momentum_value", momentum_value))
+    last_successful_technique_hand_id = str(state.get(
+        "last_successful_technique_hand_id", last_successful_technique_hand_id))
+    current_reflection_percent = int(state.get(
+        "current_reflection_percent", current_reflection_percent))
+    draw_pile.assign(state.get("draw_cards", draw_pile))
+    hand.assign(state.get("hand_cards", hand))
+    staging.assign(state.get("staging_cards", staging))
+    discard_pile.assign(state.get("discard_cards", discard_pile))
+    temporarily_removed_cards.assign(state.get(
+        "temporarily_removed_cards", temporarily_removed_cards))
+    equipped_inner_skill_ids.assign(state.get(
+        "equipped_inner_skill_ids", equipped_inner_skill_ids))
+    item_ids.assign(state.get("item_ids", item_ids))
+    technique_slot_index = int(state.get("technique_slot_index", technique_slot_index))
+    consumable_ids.assign(state.get("consumable_ids", consumable_ids))
+    consumable_limit = int(state.get("consumable_limit", consumable_limit))
+    hand_proficiency_fixed = state.get(
+        "hand_proficiency_fixed", hand_proficiency_fixed).duplicate(true)
+    hand_technique_progression = state.get(
+        "hand_technique_progression", hand_technique_progression).duplicate(true)
+    hand_technique_progression_active = bool(state.get(
+        "hand_technique_progression_active", hand_technique_progression_active))
+    hand_technique_multiplier_modifiers = state.get(
+        "hand_technique_multiplier_modifiers",
+        hand_technique_multiplier_modifiers).duplicate(true)
+    owned_technique_ids.assign(state.get("owned_technique_ids", owned_technique_ids))
+    permanently_removed_card_ids.assign(state.get(
+        "permanently_removed_card_ids", permanently_removed_card_ids))
+    var card_states: Dictionary = state.get("card_states", {})
+    for card in all_cards_for_run_sync():
+        var card_state: Dictionary = card_states.get(str(card.id), {})
+        if card_state.is_empty():
+            continue
+        card.definition_id = str(card_state["definition_id"])
+        card.rank_name = str(card_state["rank_name"])
+        card.rank_order = int(card_state["rank_order"])
+        card.qi_value = int(card_state["qi_value"])
+        card.attribute = str(card_state["attribute"])
+        card.attribute_name = str(card_state["attribute_name"])
+        card.reshape_origin = card_state["reshape_origin"].duplicate(true)
+        card.reshape_enhancement = str(card_state["reshape_enhancement"])
+        card.reshape_imprint = str(card_state["reshape_imprint"])
+        card.reshape_others = card_state["reshape_others"].duplicate(true)
+        card.anomalies = card_state["anomalies"].duplicate(true)
+        card.temporary_reshapes = card_state["temporary_reshapes"].duplicate(true)
+        card.origin_base_identity = card_state["origin_base_identity"].duplicate(true)
+        card.original_owner_id = str(card_state["original_owner_id"])
+        card.temporary_card = bool(card_state["temporary_card"])
+        card.reshape_rule_service = card_state["reshape_rule_service"]
+    var status_state: Dictionary = state.get("status_state", {})
+    if status_system != null and not status_state.is_empty():
+        status_system.delayed_records.assign(status_state["delayed_records"])
+        status_system.history.assign(status_state["history"])
+        status_system._serial = int(status_state["serial"])
+        status_system._delay_serial = int(status_state["delay_serial"])
+        status_system._technique_draw_counts = (
+            status_state["technique_draw_counts"].duplicate(true))
+        if status_system._rng != null and int(status_state["rng_state"]) >= 0:
+            status_system._rng.state = int(status_state["rng_state"])
+    if passive_counter_store != null:
+        passive_counter_store.replace_state(state.get("persistent_counters", {}))
+    if battle_passive_counter_store != null:
+        battle_passive_counter_store.replace_state(state.get("battle_counters", {}))
 
 func stage_cards(card_ids: Array) -> bool:
     return card_zone_service.stage_cards(self, card_ids)
@@ -194,9 +398,10 @@ func add_generated_card(card, destination: String, temporary: bool) -> Dictionar
 func temporarily_transfer_card_to(
         target_side,
         instance_id: String,
-        destination: String = "draw_pile") -> Dictionary:
+        destination: String = "draw_pile",
+        reason: String = "temporary_transfer") -> Dictionary:
     return card_zone_service.temporarily_transfer(
-        self, target_side, instance_id, destination)
+        self, target_side, instance_id, destination, reason)
 
 func return_transferred_card_to(
         original_side,

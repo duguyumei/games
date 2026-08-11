@@ -1215,6 +1215,7 @@ func _validate_passive_behaviors(
         _error(scope + ".behaviors", "正式%s必须至少声明一个被动行为" % kind_name)
     var seen: Dictionary = {}
     var state_counters: Dictionary = {}
+    var battle_state_counters: Dictionary = {}
     for behavior_index in range(behaviors.size()):
         var behavior = behaviors[behavior_index]
         var behavior_scope := "%s.behaviors[%d]" % [scope, behavior_index]
@@ -1242,6 +1243,9 @@ func _validate_passive_behaviors(
         for message in _passive_rule_registry.validate_configuration(
                 normalized_id, configuration):
             _error(behavior_scope + ".configuration", str(message))
+        for message in _passive_rule_registry.validate_battle_timing_bindings(
+                normalized_id, configuration):
+            _error(behavior_scope + ".configuration", str(message))
         var counter_errors: Array[String] = (
             _passive_rule_registry.validate_counter_definitions(
                 normalized_id, configuration))
@@ -1249,10 +1253,19 @@ func _validate_passive_behaviors(
             _error(behavior_scope + ".configuration", str(message))
         var definitions: Array = _passive_rule_registry.counter_definitions(
             normalized_id, configuration)
+        var battle_counter_errors: Array[String] = (
+            _passive_rule_registry.validate_battle_counter_definitions(
+                normalized_id, configuration))
+        for message in battle_counter_errors:
+            _error(behavior_scope + ".configuration", str(message))
+        var battle_definitions: Array = (
+            _passive_rule_registry.battle_counter_definitions(
+                normalized_id, configuration))
         var state_key := str(behavior.get("state_key", ""))
         if behavior.has("state_key") and not _is_snake_case(state_key):
             _error(behavior_scope + ".state_key", "必须使用稳定 snake_case")
-        if not definitions.is_empty() and state_key == "":
+        if (not definitions.is_empty() or not battle_definitions.is_empty()) \
+                and state_key == "":
             _error(
                 behavior_scope + ".state_key",
                 "声明计数器的 behavior 必须提供稳定 state_key")
@@ -1268,6 +1281,15 @@ func _validate_passive_behaviors(
                     "状态命名空间 %s 重复声明 counter_id %s" % [
                         state_key, counter_definition.counter_id])
             state_counters[state_key][counter_definition.counter_id] = true
+        if not battle_state_counters.has(state_key):
+            battle_state_counters[state_key] = {}
+        for counter_definition in battle_definitions:
+            if battle_state_counters[state_key].has(counter_definition.counter_id):
+                _error(
+                    behavior_scope + ".state_key",
+                    "战斗状态命名空间 %s 重复声明 counter_id %s" % [
+                        state_key, counter_definition.counter_id])
+            battle_state_counters[state_key][counter_definition.counter_id] = true
 
 func _validate_practice_shop(definition: Dictionary) -> void:
     if int(definition.get("version", 0)) != 2:

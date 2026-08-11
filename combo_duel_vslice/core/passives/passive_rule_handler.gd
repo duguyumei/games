@@ -17,5 +17,13 @@ func validate_configuration(_configuration: Dictionary) -> Array[String]:
 func counter_definitions(_configuration: Dictionary) -> Array:
     return []
 
+## 声明 behavior 对十个 BattleTimingSystem 生命周期时点的全局 order 绑定。
+func battle_timing_bindings(_configuration: Dictionary) -> Array:
+    return []
+
+## 声明只存在于当前战斗的整数计数器。
+func battle_counter_definitions(_configuration: Dictionary) -> Array:
+    return []
+
 func handle(_hook: String, _context, _configuration: Dictionary) -> Dictionary:
     return {"success": false, "reason": "被动行为尚未实现"}

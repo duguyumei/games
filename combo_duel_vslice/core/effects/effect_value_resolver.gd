@@ -91,6 +91,8 @@ func resolve(spec, context) -> int:
             return runtime.target.hand.size() if runtime.target != null else 0
         "hand_limit":
             return runtime.actor.current_hand_limit() if runtime.actor != null else 0
+        "base_hand_limit":
+            return runtime.actor.base_hand_limit() if runtime.actor != null else 0
         "conditional":
             return resolve(
                 spec.get("then", {}) if condition_met(spec.get("when", {}), runtime) else spec.get("else", {}),

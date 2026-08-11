@@ -9,6 +9,7 @@ var reason: String = ""
 var cards: Array = []
 var hand: HandResultDtoScript
 var values: Dictionary = {}
+var passive_power_query_inputs: Dictionary = {}
 var technique_id: String = ""
 var technique: Dictionary = {}
 var condition: Dictionary = {}
@@ -24,6 +25,8 @@ func configure(snapshot: Dictionary):
     cards = snapshot.get("cards", []).duplicate()
     hand = HandResultDtoScript.new().configure(snapshot.get("hand", {}))
     values = snapshot.get("values", {}).duplicate(true)
+    passive_power_query_inputs = snapshot.get(
+        "passive_power_query_inputs", {}).duplicate(true)
     technique_id = str(snapshot.get("technique_id", ""))
     technique = snapshot.get("technique", {}).duplicate(true)
     condition = snapshot.get("condition", {}).duplicate(true)
@@ -45,6 +48,7 @@ func to_dict() -> Dictionary:
         "cards": cards.duplicate(),
         "hand": hand.to_dict(),
         "values": values.duplicate(true),
+        "passive_power_query_inputs": passive_power_query_inputs.duplicate(true),
         "technique_id": technique_id,
         "technique": technique.duplicate(true),
         "condition": condition.duplicate(true),

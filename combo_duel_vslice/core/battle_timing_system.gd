@@ -133,6 +133,7 @@ func emit_timing(timing: String, context: Dictionary = {}) -> Dictionary:
             return int(left["serial"]) < int(right["serial"])
         return int(left["order"]) < int(right["order"]))
     var all_succeeded := true
+    var failure_reason := ""
     for entry in matching:
         var raw_result
         if entry["weak_target"] != null:
@@ -167,12 +168,22 @@ func emit_timing(timing: String, context: Dictionary = {}) -> Dictionary:
                 str(entry["source"]),
                 "成功" if result["success"] else "失败",
                 str(result.get("detail", "")))
+        if not bool(result["success"]):
+            failure_reason = "%s order=%d handler_id=%s reason=%s" % [
+                timing,
+                int(entry["order"]),
+                str(entry["id"]),
+                str(result.get(
+                    "detail", result.get("reason", "处理器执行失败"))),
+            ]
+            break
     var snapshot: Dictionary = event.snapshot()
     history.append(snapshot)
     return {
         "success": all_succeeded,
         "event": event,
         "results": event.handler_results.duplicate(true),
+        "reason": failure_reason,
     }
 
 func history_snapshot(limit: int = 0) -> Array:

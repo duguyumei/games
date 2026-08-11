@@ -15,6 +15,9 @@ var rng: RandomNumberGenerator
 var effect_ports
 var _pending_resolution: Dictionary = {}
 var _passive_sources_by_token: Dictionary = {}
+var _set_scenario_error: Callable
+var action_preview_service
+var committed_event_service
 
 func _init(
         effect_ports_value,
@@ -23,7 +26,10 @@ func _init(
         queue,
         executor,
         random_source: RandomNumberGenerator,
-        battle_timing_system = null) -> void:
+        battle_timing_system = null,
+        scenario_error_callback: Callable = Callable(),
+        preview_service = null,
+        event_service = null) -> void:
     effect_ports = effect_ports_value
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
@@ -31,6 +37,9 @@ func _init(
     effect_executor = executor
     rng = random_source
     timing_system = battle_timing_system
+    _set_scenario_error = scenario_error_callback
+    action_preview_service = preview_service
+    committed_event_service = event_service
     if timing_system != null:
         timing_system.register_weak_handler(
             timing_system.GROUP_END,
@@ -61,8 +70,47 @@ func make_action_record(
         order,
         turn_number)
 
-func finalize_action_preview(actor, action_preview: Dictionary) -> Dictionary:
-    return effect_ports.finalize_reshape_action(actor, action_preview)
+func finalize_action_preview(
+        actor,
+        action_preview: Dictionary,
+        target = null,
+        turn_number: int = 0) -> Dictionary:
+    if bool(action_preview.get("passive_action_confirmed", false)):
+        return {"success": true, "reused": true}
+    var reshape: Dictionary = effect_ports.finalize_reshape_action(
+        actor, action_preview)
+    if not reshape.get("success", false):
+        return reshape
+    var action_token := str(action_preview.get("reshape_action_token", ""))
+    if action_preview_service != null:
+        var recalculated: Dictionary = action_preview_service.recalculate_confirmed_power(
+            actor, target, action_preview, action_token,
+            int(reshape.get("card_multiplier_bonus", 0)))
+        if not recalculated.get("success", false):
+            return {
+                "success": false,
+                "reason": recalculated.get("reason", "行动确认功法值查询失败"),
+            }
+    if committed_event_service != null:
+        var confirmed: Dictionary = committed_event_service.commit(
+            "action_confirmed", {
+                "event_token": committed_event_service.make_token(
+                    "action_confirmed", actor, action_token, action_token),
+                "actor": actor, "target": target, "owner": actor,
+                "round_number": turn_number, "action_token": action_token,
+                "technique_triggered": (
+                    not action_preview.get("technique", {}).is_empty()
+                    and bool(action_preview.get("condition", {}).get("ok", false))),
+                "action_succeeded": true,
+                "metadata": {
+                    "hand_id": str(action_preview.get("hand", {}).get("id", "")),
+                    "power_query_fingerprints": _power_query_fingerprints(action_preview),
+                },
+            })
+        if not confirmed.get("success", false):
+            return confirmed
+    action_preview["passive_action_confirmed"] = true
+    return {"success": true, "reused": false, "action_token": action_token}
 
 func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
     if not _pending_resolution.is_empty():
@@ -305,7 +353,7 @@ func retrigger_current_hand_technique(
 
 func finish_action_record(record) -> void:
     if timing_system != null:
-        timing_system.emit_timing(timing_system.GROUP_END, {
+        var emitted: Dictionary = timing_system.emit_timing(timing_system.GROUP_END, {
             "round_number": int(record["turn_number"]),
             "actor": record["actor"],
             "actors": [record["actor"]],
@@ -315,8 +363,19 @@ func finish_action_record(record) -> void:
                 "hand_id": str(record["preview"]["hand"]["id"]),
             },
         })
+        if not emitted.get("success", false):
+            var detail := "战斗时点失败 hook=%s reason=%s" % [
+                timing_system.GROUP_END,
+                str(emitted.get("reason", "group_end 处理器失败")),
+            ]
+            _passive_sources_by_token.erase(str(record["token"]))
+            if _set_scenario_error.is_valid():
+                _set_scenario_error.call(detail)
+        else:
+            _emit_action_resolved(record)
         return
     _finish_action_record(record)
+    _emit_action_resolved(record)
 
 func _on_group_end(event) -> Dictionary:
     var record = event.context.get("record", null)
@@ -344,6 +403,33 @@ func _finish_action_record(record) -> void:
         trigger_queue.add_history(
             "group_end", "功法序列保持", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]], "未推进")
     _passive_sources_by_token.erase(str(record["token"]))
+
+func _emit_action_resolved(record) -> void:
+    if committed_event_service == null:
+        return
+    committed_event_service.commit("action_resolved", {
+        "event_token": committed_event_service.make_token(
+            "action_resolved", record["actor"], record["token"], record["token"]),
+        "actor": record["actor"], "target": record["target"],
+        "owner": record["actor"], "round_number": int(record["turn_number"]),
+        "action_token": str(record["token"]),
+        "technique_triggered": bool(record["triggered"]),
+        "action_succeeded": not bool(record["failed"]),
+        "metadata": {
+            "hand_id": str(record["preview"]["hand"]["id"]),
+            "staging_count_after": record["actor"].staging.size(),
+            "sequence_position_after": record["book"].positions.get(
+                str(record["preview"]["hand"]["id"]), 0),
+        },
+    })
+
+func _power_query_fingerprints(action_preview: Dictionary) -> Dictionary:
+    var result: Dictionary = {}
+    for stage in action_preview.get("values", {}).get(
+            "passive_power_queries", {}):
+        result[stage] = str(action_preview["values"][
+            "passive_power_queries"][stage].get("fingerprint", ""))
+    return result
 
 func log_calculation(side, action_preview: Dictionary, hide_values: bool = false) -> void:
     var hand_result: Dictionary = action_preview["hand"]

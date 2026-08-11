@@ -20,5 +20,6 @@ func execute(behavior: Dictionary, context) -> Dictionary:
         return {"success": true, "defense": 0, "applied": false}
     var amount: int = context.effect_ports.current_effective_qi(
         context.holder, context.card)
-    var gained: int = context.effect_ports.add_defense(context.holder, amount)
+    var gained: int = context.effect_ports.add_defense(
+        context.holder, amount, "card_reshape", context.action_token)
     return {"success": true, "defense": gained, "applied": true}
