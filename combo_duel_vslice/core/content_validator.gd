@@ -122,13 +122,6 @@ const CARD_STATUS_MODIFIER_IDS := [
     "outgoing_damage_percent",
     "incoming_damage_percent",
 ]
-const ACTOR_STATUS_TRIGGERS := [
-    "after_normal_draw",
-    "opponent_card_drawn",
-    "played_card_anomaly_resolved",
-    "technique_card_flow",
-    "attack_segment_received",
-]
 const RANK_SPECS := [
     ["2", 2, 2], ["3", 3, 3], ["4", 4, 4], ["5", 5, 5],
     ["6", 6, 6], ["7", 7, 7], ["8", 8, 8], ["9", 9, 9],
@@ -175,7 +168,6 @@ var _enhancements_by_id: Dictionary = {}
 var _imprints_by_id: Dictionary = {}
 var _other_reshapes_by_id: Dictionary = {}
 var _anomalies_by_id: Dictionary = {}
-var _actor_statuses_by_id: Dictionary = {}
 var _techniques_by_id: Dictionary = {}
 var _inner_skills_by_id: Dictionary = {}
 var _consumables_by_id: Dictionary = {}
@@ -214,10 +206,9 @@ func _init(
             "hand_ids": TECHNIQUE_BRANCH_HAND_IDS,
         },
         _effect_registry)
-    ## 索引在校验过程中增量建立（异状先于功法校验注册）。这里传入的是同一份
-    ## 字典引用，因此后续 clear 与写入都对效果校验器可见；这两个索引只允许
-    ## clear 和写入，不能整体重新赋值，否则引用会断开。
-    _effect_specs.use_indexes(_anomalies_by_id, _actor_statuses_by_id)
+    ## 异状索引在校验过程中增量建立（异状先于功法校验注册）。这里传入的是
+    ## 同一份字典引用，因此后续只能 clear 和写入，不能整体重新赋值。
+    _effect_specs.use_indexes(_anomalies_by_id)
 
 func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     errors.clear()
@@ -240,7 +231,6 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     _imprints_by_id.clear()
     _other_reshapes_by_id.clear()
     _anomalies_by_id.clear()
-    _actor_statuses_by_id.clear()
     _techniques_by_id.clear()
     _inner_skills_by_id.clear()
     _consumables_by_id.clear()
@@ -591,27 +581,10 @@ func _validate_battle_statuses(definition: Dictionary) -> void:
     if not values is Array:
         _error("battle_statuses.actor_statuses", "必须是数组")
         return
-    for index in range(values.size()):
-        var value = values[index]
-        var scope := "battle_statuses.actor_statuses[%d]" % index
-        if not value is Dictionary:
-            _error(scope, "必须是对象")
-            continue
-        var status_id := _required_id(value, scope)
-        _register_unique(_actor_statuses_by_id, status_id, scope, value)
-        _validate_name(value, scope)
-        if str(value.get("duration", "")) != "battle":
-            _error(scope + ".duration", "当前角色状态必须持续一场战斗")
-        if not value.get("stacking") is bool or not bool(value.get("stacking", false)):
-            _error(scope + ".stacking", "当前角色状态必须允许叠层")
-        if not _is_integer(value.get("maximum")) or int(value.get("maximum", 0)) == 0 \
-                or int(value.get("maximum", 0)) < -1:
-            _error(scope + ".maximum", "必须为 -1 或正整数")
-        var clear_on = value.get("clear_on")
-        if not clear_on is Array or not clear_on.has("battle_end"):
-            _error(scope + ".clear_on", "必须包含 battle_end")
-        _validate_status_behaviors(value, ACTOR_STATUS_TRIGGERS, scope)
-        _validate_status_modifiers(value, scope)
+    if not values.is_empty():
+        _error(
+            "battle_statuses.actor_statuses",
+            "旧命名角色层数已退役，兼容占位数组必须为空")
 
 func _validate_card_states(definition: Dictionary) -> void:
     _validate_reshape_categories(definition.get("reshape_categories"))
@@ -849,32 +822,6 @@ func _validate_status_behaviors(
             _error(behavior_scope + ".category", "未知异状类别 %s" % str(behavior["category"]))
         if behavior.has("effects_by_flow") and not behavior["effects_by_flow"] is Dictionary:
             _error(behavior_scope + ".effects_by_flow", "必须是对象")
-
-func _validate_status_modifiers(definition: Dictionary, scope: String) -> void:
-    var modifiers = definition.get("modifiers", [])
-    if not modifiers is Array:
-        _error(scope + ".modifiers", "必须是数组")
-        return
-    for index in range(modifiers.size()):
-        var modifier = modifiers[index]
-        var modifier_scope := "%s.modifiers[%d]" % [scope, index]
-        if not modifier is Dictionary:
-            _error(modifier_scope, "必须是对象")
-            continue
-        if str(modifier.get("id", "")) == "":
-            _error(modifier_scope + ".id", "必须是非空字符串")
-        if not modifier.has("presence") and not modifier.has("per_stack"):
-            _error(modifier_scope, "必须声明 presence 或 per_stack")
-        for field in ["presence", "per_stack"]:
-            if modifier.has(field) and not _is_integer(modifier[field]):
-                _error(modifier_scope + "." + field, "必须是整数")
-        var source_kinds = modifier.get("source_kinds", [])
-        if not source_kinds is Array:
-            _error(modifier_scope + ".source_kinds", "必须是数组")
-        else:
-            for source_kind in source_kinds:
-                if not source_kind is String or str(source_kind) == "":
-                    _error(modifier_scope + ".source_kinds", "必须只包含非空字符串")
 
 func _validate_card_status_modifiers(definition: Dictionary, scope: String) -> void:
     var modifiers = definition.get("modifiers", [])

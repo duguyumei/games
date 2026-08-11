@@ -2,12 +2,12 @@
   "locale": "zh_CN",
   "entries": [
     {
-      "key": "content.technique.fire_sparks.name",
-      "text": "火星连点"
+      "key": "content.technique.localization_probe_technique.name",
+      "text": "本地化探针"
     },
     {
-      "key": "content.technique.fire_sparks.description",
-      "text": "造成 {segments} 次 {damage} 点伤害；每个攻击段后获得 {momentum} 层连势。"
+      "key": "content.technique.localization_probe_technique.description",
+      "text": "用于验证本地化基础设施的中性探针，测试值为 {value}。"
     },
     {
       "key": "ui.sample.turn_summary",

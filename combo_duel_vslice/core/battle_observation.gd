@@ -9,7 +9,6 @@ var actor_max_life: int = 0
 var actor_defense: int = 0
 var actor_draw_count: int = 0
 var actor_discard_count: int = 0
-var actor_stacks: Dictionary = {}
 var opponent_id: String = ""
 var opponent_name: String = ""
 var opponent_life: int = 0
@@ -31,7 +30,6 @@ func capture(actor, opponent, sequence_book, battle_flow):
     actor_defense = int(actor.defense)
     actor_draw_count = actor.draw_pile.size()
     actor_discard_count = actor.discard_pile.size()
-    actor_stacks = actor.stacks.duplicate(true)
     opponent_id = str(opponent.owner_id)
     opponent_name = str(opponent.name)
     opponent_life = int(opponent.life)

@@ -229,9 +229,6 @@ func zone_cards(side: BattleSide, zone: String) -> Array:
         "discard_pile": return side.discard_pile.duplicate()
     return []
 
-func add_actor_status(side: BattleSide, status_id: String, amount: int, source: String) -> Dictionary:
-    return _status_system.add_actor_status(side, status_id, amount, source)
-
 func apply_card_anomaly(
         card,
         category: String,
@@ -300,15 +297,6 @@ func gain_extra_actions(side: BattleSide, amount: int, source: String) -> int:
         "成功",
         "+%d（连击不自动补牌）" % gained)
     return gained
-
-func register_turn_end_stack(
-        label: String,
-        turn_ends: int,
-        stack_id: String,
-        amount: int,
-        actor: BattleSide) -> Dictionary:
-    return _status_system.register_turn_end_stack(
-        label, turn_ends, stack_id, amount, actor)
 
 func register_delayed_effects(
         label: String,

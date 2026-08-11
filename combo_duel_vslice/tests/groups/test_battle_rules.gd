@@ -4,6 +4,8 @@ extends "res://tests/support/main_test_group.gd"
 func _initialize() -> void:
     _run_group("battle-rules", [
         "_test_no_automatic_damage_or_draw",
+        "_test_representative_damage_draw_discard",
+        "_test_multi_damage_and_consecutive_chase",
         "_test_visible_queue_left_to_right",
         "_test_inner_skill_equipment_and_extra_qi_defense",
         "_test_inner_skill_preview_and_enemy_plan",

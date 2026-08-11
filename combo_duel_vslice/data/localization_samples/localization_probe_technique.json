@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "type": "technique_text_sample",
+  "id": "localization_probe_technique",
+  "name_key": "content.technique.localization_probe_technique.name",
+  "description_key": "content.technique.localization_probe_technique.description",
+  "name": "本地化探针",
+  "description": "用于验证本地化基础设施的中性探针，测试值为 {value}。",
+  "description_parameters": {
+    "value": 4
+  }
+}

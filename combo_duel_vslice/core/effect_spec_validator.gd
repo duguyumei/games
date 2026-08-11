@@ -4,7 +4,7 @@ extends RefCounted
 ## 效果规格校验。
 ##
 ## 只判断「一条效果规格是否结构合法」：操作码是否已注册、数值规格是否自洽、
-## 目标查询与选择协议字段是否完整、引用的异状与角色状态是否存在。
+## 目标查询与选择协议字段是否完整、引用的真气异状是否存在。
 ##
 ## 不判断内容定义的整体形状（那属于 ContentValidator），也不知道自己在校验哪份
 ## 内容文件。战斗操作码与专有参数规则来自 EffectHandlerRegistry；消耗品仍使用
@@ -37,7 +37,6 @@ var _reshape_category_ids: Array
 var _hand_ids: Array
 var _effect_registry
 var _anomalies_by_id: Dictionary = {}
-var _actor_statuses_by_id: Dictionary = {}
 
 ## `report_error` 接收 (scope, message)，由调用方决定错误如何汇总。
 ## `vocabulary` 提供跨内容共用的 ID 集合，避免在这里复制一份常量。
@@ -53,11 +52,8 @@ func _init(
     _effect_registry = effect_registry
 
 ## 提供引用检查所需的索引。索引在内容校验过程中增量建立，因此单独设置。
-func use_indexes(
-        anomalies_by_id: Dictionary,
-        actor_statuses_by_id: Dictionary) -> void:
+func use_indexes(anomalies_by_id: Dictionary) -> void:
     _anomalies_by_id = anomalies_by_id
-    _actor_statuses_by_id = actor_statuses_by_id
 
 ## 校验一条效果链。战斗效果传入 `battle`，其他轻量场景可传入允许操作码数组。
 func validate_effects(values, operation_source, scope: String) -> void:
@@ -115,11 +111,6 @@ func validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> voi
         _error(effect_scope, "引用未知真气异状 %s" % anomaly_id)
     elif str(_anomalies_by_id[anomaly_id].get("category", "")) != category:
         _error(effect_scope, "异状 %s 不属于类别 %s" % [anomaly_id, category])
-
-func validate_actor_status_reference(value, scope: String) -> void:
-    var status_id := str(value)
-    if not _actor_statuses_by_id.has(status_id):
-        _error(scope, "引用未知角色状态 %s" % status_id)
 
 func _validate_condition(condition: Dictionary, scope: String) -> void:
     for list_field in ["all", "any"]:

@@ -4,7 +4,7 @@ const CatalogScript = preload("res://core/localization/localization_catalog.gd")
 const FormatterScript = preload("res://core/localization/localization_text_formatter.gd")
 const ContentAdapterScript = preload("res://core/localization/localized_content_adapter.gd")
 const TextPresenterScript = preload("res://core/localization/localized_text_presenter.gd")
-const SAMPLE_PATH := "res://data/localization_samples/fire_sparks.json"
+const SAMPLE_PATH := "res://data/localization_samples/localization_probe_technique.json"
 
 var failures: Array[String] = []
 var assertions := 0
@@ -31,12 +31,18 @@ func _test_real_catalog_and_language_switch() -> void:
     _assert_true(catalog.load_directory(), "中英文目录通过完整校验")
     _assert_equal(catalog.errors, [], "真实目录没有重复、缺失中文或参数错误")
     _assert_equal(catalog.available_locales(), ["en_US", "zh_CN"], "语言列表稳定排序")
-    _assert_equal(catalog.text("content.technique.fire_sparks.name"), "火星连点", "默认语言为中文")
+    _assert_equal(
+        catalog.text("content.technique.localization_probe_technique.name"),
+        "本地化探针",
+        "默认语言为中文")
     var locale_events: Array[String] = []
     catalog.locale_changed.connect(func(locale: String) -> void: locale_events.append(locale))
     _assert_true(catalog.set_locale("en_US"), "可切换到已加载英文")
     _assert_equal(locale_events, ["en_US"], "语言切换发出刷新信号")
-    _assert_equal(catalog.text("content.technique.fire_sparks.name"), "Spark Barrage", "切换语言更新文案")
+    _assert_equal(
+        catalog.text("content.technique.localization_probe_technique.name"),
+        "Localization Probe",
+        "切换语言更新文案")
     _assert_equal(catalog.text("ui.sample.default_only"), "默认中文回退可用", "次语言缺项回退默认中文")
     _assert_equal(catalog.text("missing.sample.key"), "⟦missing.sample.key⟧", "完全缺失的 key 保持可见")
     _assert_true(not catalog.set_locale("not_loaded"), "拒绝切换到未加载语言")
@@ -49,9 +55,9 @@ func _test_interpolation_and_formatters() -> void:
     var summary := catalog.text("ui.sample.turn_summary", {
         "turn": 2,
         "actor": "太吾",
-        "technique": "火星连点",
+        "technique": "本地化探针",
     })
-    _assert_equal(summary, "第 2 回合：太吾 打出 火星连点", "命名参数完成插值")
+    _assert_equal(summary, "第 2 回合：太吾 打出 本地化探针", "命名参数完成插值")
     _assert_equal(
         FormatterScript.interpolate("保留 {{value}}，缺少 {amount}", {}),
         "保留 {value}，缺少 ⟪amount?⟫",
@@ -84,22 +90,22 @@ func _test_long_text_font_and_wrapping() -> void:
 
 func _test_content_key_migration_boundary() -> void:
     var parsed = JSON.parse_string(FileAccess.get_file_as_string(SAMPLE_PATH))
-    _assert_true(parsed is Dictionary, "功法本地化纵切样本可解析")
+    _assert_true(parsed is Dictionary, "独立本地化探针样本可解析")
     var catalog = CatalogScript.new()
-    _assert_true(catalog.load_directory(), "功法纵切样本目录载入")
+    _assert_true(catalog.load_directory(), "本地化探针目录载入")
     var view: Dictionary = ContentAdapterScript.technique_view(
         parsed, catalog, parsed.get("description_parameters", {}))
-    _assert_equal(view["id"], "fire_sparks", "逻辑身份来自稳定 id")
-    _assert_equal(view["display_name"], "火星连点", "新内容通过 name_key 取中文")
+    _assert_equal(view["id"], "localization_probe_technique", "逻辑身份来自稳定 id")
+    _assert_equal(view["display_name"], "本地化探针", "探针通过 name_key 取中文")
     _assert_equal(
         view["description"],
-        "造成 3 次 4 点伤害；每个攻击段后获得 1 层连势。",
-        "新内容通过 description_key 与参数生成说明")
-    _assert_true(catalog.set_locale("en_US"), "功法样本切换英文")
+        "用于验证本地化基础设施的中性探针，测试值为 4。",
+        "探针通过 description_key 与参数生成说明")
+    _assert_true(catalog.set_locale("en_US"), "本地化探针切换英文")
     var english_view: Dictionary = ContentAdapterScript.technique_view(
         parsed, catalog, parsed.get("description_parameters", {}))
     _assert_equal(english_view["id"], view["id"], "语言切换不改变逻辑 id")
-    _assert_equal(english_view["display_name"], "Spark Barrage", "同一内容 key 切换英文显示")
+    _assert_equal(english_view["display_name"], "Localization Probe", "同一内容 key 切换英文显示")
     var legacy_view: Dictionary = ContentAdapterScript.technique_view({
         "id": "legacy_technique",
         "name": "旧功法名",

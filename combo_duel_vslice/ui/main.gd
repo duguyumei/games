@@ -476,7 +476,7 @@ func _refresh() -> void:
         "max_life": player_state.max_life,
         "defense": player_state.defense,
         "statuses": [{
-            "text": "连势 %d" % player_state.stack_count("momentum"),
+            "text": "连势 %d" % player_state.momentum_value,
             "color": COLORS["orange"],
         }],
     })
@@ -486,8 +486,7 @@ func _refresh() -> void:
         "max_life": enemy_state.max_life,
         "defense": enemy_state.defense,
         "statuses": [
-            {"text": "蛊印 %d" % enemy_state.stack_count("gu_mark"), "color": COLORS["purple"]},
-            {"text": "连势 %d" % enemy_state.stack_count("momentum"), "color": COLORS["orange"]},
+            {"text": "连势 %d" % enemy_state.momentum_value, "color": COLORS["orange"]},
             {"text": "烈毒 %d" % _count_card_anomaly(enemy_state.hand, "poison", "lethal_poison"), "color": COLORS["red"]},
         ],
         "plans": [

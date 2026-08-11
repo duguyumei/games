@@ -47,29 +47,16 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
                 intent["damage"] = int(intent.get("damage", 0)) + int(floor(
                     amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
                 intent["segments"] = int(intent.get("segments", 0)) + 1
-                var after_stack: Dictionary = effect.get("after_each_stack", {})
-                var actor = context.actor if context != null else null
-                if actor != null:
-                    state["damage_percent"] = (
-                        int(state.get("damage_percent", 0))
-                        + maxi(0, int(after_stack.get("amount", 0)))
-                        * actor.status_modifier_per_stack(
-                            str(after_stack.get("stack", "")),
-                            "damage_percent",
-                            {"source_kind": "technique"}))
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("op", "")) != "multi_damage":
         return
     validator.validate_positive_integer(effect.get("segments"), scope + ".segments", "segments")
-    for field in ["after_each_stack", "chase_stack"]:
-        var stack_spec = effect.get(field, {})
-        if not stack_spec is Dictionary or stack_spec.is_empty():
-            continue
-        validator.validate_actor_status_reference(
-            stack_spec.get("stack"), scope + "." + field + ".stack")
-        validator.validate_non_negative_integer(
-            stack_spec.get("amount"), scope + "." + field + ".amount", field + ".amount")
+    for retired_field in ["after_each_stack", "chase_stack"]:
+        if effect.has(retired_field):
+            validator.report_error(
+                scope + "." + retired_field,
+                "依赖旧命名角色层数的字段已废弃")
 
 func _execute_multi_damage(effect: Dictionary, runtime):
     var actor = runtime.actor
@@ -89,25 +76,11 @@ func _execute_multi_damage(effect: Dictionary, runtime):
         var current_life_hit: bool = int(hit["life_lost"]) > 0
         if current_life_hit:
             life_hits += 1
-        var after_stack: Dictionary = effect.get("after_each_stack", {})
-        if not after_stack.is_empty():
-            ports.add_actor_status(
-                actor,
-                str(after_stack["stack"]),
-                int(after_stack.get("amount", 0)),
-                runtime.technique_name if runtime.technique_name != "" else "功法")
         if previous_life_hit and current_life_hit \
                 and int(effect.get("chase_on_consecutive_life_hits_percent", 0)) > 0:
             var chase_amount := int(floor(
                 amount * int(effect["chase_on_consecutive_life_hits_percent"]) / 100.0))
             ports.deal_damage(actor, target, chase_amount, "chase")
-            var chase_stack: Dictionary = effect.get("chase_stack", {})
-            if not chase_stack.is_empty():
-                ports.add_actor_status(
-                    actor,
-                    str(chase_stack.get("stack", "")),
-                    int(chase_stack.get("amount", 0)),
-                    runtime.technique_name if runtime.technique_name != "" else "功法")
             chase_count += 1
         previous_life_hit = current_life_hit
     return EffectResultScript.succeeded(

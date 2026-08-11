@@ -113,8 +113,7 @@ func preview_dto(
         "captures": {},
         "source_kind": "preview",
     })
-    var damage_percent: int = side.status_modifier(
-        "damage_percent", {"source_kind": "technique"})
+    var damage_percent := 0
     if side.status_system != null:
         damage_percent += side.status_system.actor_hand_card_numeric_modifier(
             side, "outgoing_damage_percent")

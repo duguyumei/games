@@ -107,9 +107,6 @@ func reset() -> void:
     _delay_serial = 0
     _technique_draw_counts.clear()
 
-func actor_status_value(side, status_id: String) -> int:
-    return maxi(0, int(side.stacks.get(status_id, 0)))
-
 func card_numeric_modifier(card, modifier_id: String) -> int:
     if card == null or modifier_id == "":
         return 0
@@ -159,10 +156,6 @@ func record_technique_card_flow(side, flow_kind: String, count: int) -> void:
     if flow_kind == "draw" and count > 0:
         var side_key := int(side.get_instance_id())
         _technique_draw_counts[side_key] = int(_technique_draw_counts.get(side_key, 0)) + count
-    _dispatch_actor_behaviors(side, "technique_card_flow", {
-        "flow_kind": flow_kind,
-        "count": count,
-    })
 
 func technique_draw_count(side) -> int:
     return int(_technique_draw_counts.get(int(side.get_instance_id()), 0))
@@ -171,69 +164,6 @@ func _on_turn_start(event) -> Dictionary:
     if event.actor != null:
         _technique_draw_counts.erase(int(event.actor.get_instance_id()))
     return {"success": true}
-
-func add_actor_status(
-        side,
-        status_id: String,
-        amount: int,
-        source: String = "效果") -> Dictionary:
-    var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
-    if definition.is_empty():
-        return {"success": false, "reason": "未知角色状态：%s" % status_id}
-    var before := actor_status_value(side, status_id)
-    var gained := maxi(0, amount)
-    var after := before + gained
-    var maximum := int(definition.get("maximum", -1))
-    if maximum >= 0:
-        after = mini(after, maximum)
-    gained = after - before
-    if after > 0:
-        side.stacks[status_id] = after
-    _record_change(
-        "actor_status_add",
-        "actor",
-        str(side.owner_id),
-        status_id,
-        before,
-        after,
-        source)
-    return {
-        "success": true,
-        "status_id": status_id,
-        "before": before,
-        "after": after,
-        "changed": gained,
-    }
-
-func consume_actor_status(
-        side,
-        status_id: String,
-        amount: int,
-        source: String = "效果") -> Dictionary:
-    if content_catalog.get_by_id("actor_status", status_id).is_empty():
-        return {"success": false, "reason": "未知角色状态：%s" % status_id}
-    var before := actor_status_value(side, status_id)
-    var consumed := mini(before, maxi(0, amount))
-    var after := before - consumed
-    if after <= 0:
-        side.stacks.erase(status_id)
-    else:
-        side.stacks[status_id] = after
-    _record_change(
-        "actor_status_consume",
-        "actor",
-        str(side.owner_id),
-        status_id,
-        before,
-        after,
-        source)
-    return {
-        "success": true,
-        "status_id": status_id,
-        "before": before,
-        "after": after,
-        "changed": consumed,
-    }
 
 func apply_card_anomaly(
         card,
@@ -310,15 +240,6 @@ func on_card_enter_discard_late(holder, card) -> void:
     _dispatch_card_behaviors("enter_discard_late", holder, card)
 
 func on_card_drawn(holder, card) -> void:
-    var effect_ports = _effect_ports()
-    if effect_ports == null:
-        return
-    var opponent = effect_ports.opponent_of(holder)
-    if opponent != null and _dispatch_actor_behaviors(
-            opponent,
-            "opponent_card_drawn",
-            {"holder": holder, "card": card}).get("stop_card_behaviors", false):
-        return
     if not holder.hand.has(card):
         return
     _dispatch_card_behaviors("draw", holder, card)
@@ -331,9 +252,7 @@ func on_card_explicit_discard(holder, card) -> void:
 func _on_after_normal_draw(event) -> Dictionary:
     if event.actor == null:
         return {"success": false, "detail": "正常补牌完成时点缺少行动方"}
-    var result := _dispatch_actor_behaviors(
-        event.actor, "after_normal_draw", {"event": event})
-    return {"success": true, "detail": str(result.get("detail", ""))}
+    return {"success": true}
 
 func resolve_played_card_anomalies(
         holder,
@@ -343,44 +262,8 @@ func resolve_played_card_anomalies(
     for card in cards:
         for resolution in _dispatch_card_behaviors(
                 "played", holder, card, source_values).get("resolutions", []):
-            _dispatch_actor_behaviors(holder, "played_card_anomaly_resolved", {
-                "card": card,
-                "resolution": resolution,
-            })
             resolutions.append(resolution)
     return resolutions
-
-func actor_numeric_modifier(
-        side,
-        modifier_id: String,
-        context: Dictionary = {}) -> int:
-    var total := 0
-    for status_id_value in side.stacks.keys():
-        var status_id := str(status_id_value)
-        var stacks := actor_status_value(side, status_id)
-        if stacks <= 0:
-            continue
-        var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
-        for modifier_value in definition.get("modifiers", []):
-            var modifier: Dictionary = modifier_value
-            if str(modifier.get("id", "")) != modifier_id \
-                    or not _modifier_context_matches(modifier, context):
-                continue
-            total += int(modifier.get("presence", 0))
-            total += stacks * int(modifier.get("per_stack", 0))
-    return total
-
-func status_modifier_per_stack(
-        status_id: String,
-        modifier_id: String,
-        context: Dictionary = {}) -> int:
-    var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
-    for modifier_value in definition.get("modifiers", []):
-        var modifier: Dictionary = modifier_value
-        if str(modifier.get("id", "")) == modifier_id \
-                and _modifier_context_matches(modifier, context):
-            return int(modifier.get("per_stack", 0))
-    return 0
 
 func effective_qi_value(card) -> int:
     var value: int = (
@@ -555,86 +438,6 @@ func _append_card_behavior_entries(
             "behavior_index": behavior_index,
         })
 
-func _dispatch_actor_behaviors(
-        side,
-        trigger: String,
-        values: Dictionary = {}) -> Dictionary:
-    var entries: Array = []
-    for status_id_value in side.stacks.keys():
-        var status_id := str(status_id_value)
-        if actor_status_value(side, status_id) <= 0:
-            continue
-        var definition: Dictionary = content_catalog.get_by_id("actor_status", status_id)
-        for behavior_index in range(definition.get("behaviors", []).size()):
-            var behavior: Dictionary = definition.get("behaviors", [])[behavior_index]
-            if str(behavior.get("trigger", "")) == trigger:
-                entries.append({
-                    "priority": int(behavior.get("priority", 500)),
-                    "status_id": status_id,
-                    "definition": definition,
-                    "behavior": behavior,
-                    "behavior_index": behavior_index,
-                })
-    entries.sort_custom(func(left, right):
-        if int(left["priority"]) != int(right["priority"]):
-            return int(left["priority"]) < int(right["priority"])
-        if str(left["status_id"]) != str(right["status_id"]):
-            return str(left["status_id"]) < str(right["status_id"])
-        return int(left["behavior_index"]) < int(right["behavior_index"]))
-    var stopped := false
-    var consumed := 0
-    for entry_value in entries:
-        var entry: Dictionary = entry_value
-        if actor_status_value(side, str(entry["status_id"])) <= 0:
-            continue
-        var context_values := values.duplicate()
-        context_values.merge({
-            "trigger": trigger,
-            "status_id": entry["status_id"],
-            "definition": entry["definition"],
-            "behavior": entry["behavior"],
-            "actor": side,
-            "status_system": self,
-            "effect_ports": _effect_ports(),
-        }, true)
-        var context = StatusBehaviorContextScript.new().configure(context_values)
-        var result: Dictionary = behavior_registry.execute(entry["behavior"], context)
-        consumed += int(result.get("consumed", 0))
-        if bool(result.get("stop_card_behaviors", false)):
-            stopped = true
-            break
-    return {
-        "stop_card_behaviors": stopped,
-        "detail": "状态层数 -%d" % consumed if consumed > 0 else "",
-    }
-
-func _modifier_context_matches(modifier: Dictionary, context: Dictionary) -> bool:
-    var source_kinds = modifier.get("source_kinds", [])
-    return not source_kinds is Array \
-        or source_kinds.is_empty() \
-        or source_kinds.has(str(context.get("source_kind", "")))
-
-func register_turn_end_stack(
-        label: String,
-        turn_ends: int,
-        stack_id: String,
-        amount: int,
-        actor) -> Dictionary:
-    if content_catalog.get_by_id("actor_status", stack_id).is_empty():
-        return {"success": false, "reason": "未知角色状态：%s" % stack_id}
-    var record := {
-        "id": "delay-%06d" % _delay_serial,
-        "kind": "turn_end_stack",
-        "label": label,
-        "remaining_turn_ends": maxi(1, turn_ends),
-        "stack_id": stack_id,
-        "amount": maxi(0, amount),
-        "actor": actor,
-    }
-    _delay_serial += 1
-    delayed_records.append(record)
-    return {"success": true, "record": record}
-
 func register_delayed_effects(
         label: String,
         timing: String,
@@ -700,27 +503,14 @@ func _on_turn_end(event) -> Dictionary:
     for delayed in delayed_records:
         if delayed.get("actor") != event.actor:
             continue
-        if delayed.get("kind", "") == "effect_chain":
-            if delayed.get("timing", "") == "turn_end":
-                due.append(delayed)
-            continue
-        delayed["remaining_turn_ends"] = int(delayed["remaining_turn_ends"]) - 1
-        if int(delayed["remaining_turn_ends"]) <= 0:
+        if delayed.get("kind", "") == "effect_chain" \
+                and delayed.get("timing", "") == "turn_end":
             due.append(delayed)
-    var effect_ports = _effect_ports()
     for delayed in due:
-        if delayed.get("kind", "") == "effect_chain":
-            _resolve_delayed_effect_chain(delayed)
-            delayed["remaining_occurrences"] = int(delayed["remaining_occurrences"]) - 1
-            if int(delayed["remaining_occurrences"]) <= 0:
-                delayed_records.erase(delayed)
-        elif delayed.get("kind", "") == "turn_end_stack":
+        _resolve_delayed_effect_chain(delayed)
+        delayed["remaining_occurrences"] = int(delayed["remaining_occurrences"]) - 1
+        if int(delayed["remaining_occurrences"]) <= 0:
             delayed_records.erase(delayed)
-            add_actor_status(
-                delayed["actor"],
-                str(delayed["stack_id"]),
-                int(delayed["amount"]),
-                str(delayed["label"]))
         _record_change(
             "delay_resolve",
             "actor",
@@ -825,27 +615,11 @@ func _on_card_battle_end(event) -> Dictionary:
     }
 
 func _on_transient_battle_end(event) -> Dictionary:
-    var cleared_stack_kinds := 0
-    for side in event.actors:
-        for status_id in side.stacks.keys():
-            var before := int(side.stacks[status_id])
-            side.stacks.erase(status_id)
-            cleared_stack_kinds += 1
-            _record_change(
-                "actor_status_clear",
-                "actor",
-                str(side.owner_id),
-                str(status_id),
-                before,
-                0,
-                "战斗结束")
     var cleared_delays := delayed_records.size()
     delayed_records.clear()
     return {
         "success": true,
-        "detail": "清理 %d 类层数与 %d 个延迟记录" % [
-            cleared_stack_kinds,
-            cleared_delays],
+        "detail": "清理 %d 个延迟记录" % cleared_delays,
     }
 
 func history_snapshot(limit: int = 0) -> Array:
@@ -887,10 +661,6 @@ func _record_change(
     return snapshot
 
 func _status_name(status_id: String) -> String:
-    var actor_status: Dictionary = content_catalog.get_by_id(
-        "actor_status", status_id)
-    if not actor_status.is_empty():
-        return str(actor_status.get("name", status_id))
     var anomaly: Dictionary = content_catalog.get_by_id("anomaly", status_id)
     return str(anomaly.get("name", status_id)) if not anomaly.is_empty() else status_id
 

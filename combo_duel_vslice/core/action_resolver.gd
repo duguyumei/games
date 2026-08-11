@@ -366,7 +366,7 @@ func combat_order_labels(side, technique_name: String = "当前功法") -> Array
 func _effects_for_phase(effects: Array, phase: String) -> Array:
     var result: Array = []
     var prepare_ops := [
-        "defense", "defense_from_noncontributing_qi", "add_stack", "add_target_stack",
+        "defense", "defense_from_noncontributing_qi",
         "add_momentum", "set_momentum", "set_reflection_percent",
         "add_direct_power_fixed", "add_direct_power_percent"]
     var damage_ops := ["damage", "multi_damage"]

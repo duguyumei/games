@@ -561,7 +561,6 @@ func _side_snapshot(side) -> Dictionary:
         "staging": _card_snapshots(side.staging),
         "discard_pile": _card_snapshots(side.discard_pile),
         "temporarily_removed": _card_snapshots(side.temporarily_removed_cards),
-        "stacks": side.stacks.duplicate(true),
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
         "equipped_inner_skills": equipped_inner_skills,
         "technique_slot_index": side.technique_slot_index,

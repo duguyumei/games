@@ -22,7 +22,6 @@ var _files: Array[String] = []
 var _json_documents: Dictionary = {}
 var _tres_resources: Dictionary = {}
 var _anomaly_categories: Dictionary = {}
-var _actor_status_ids: Dictionary = {}
 var _id_regex := RegEx.new()
 var _consumable_effect_ops: Array[String] = []
 
@@ -76,7 +75,6 @@ func _reset() -> void:
     _json_documents.clear()
     _tres_resources.clear()
     _anomaly_categories.clear()
-    _actor_status_ids.clear()
 
 func _scan_directory(path: String) -> void:
     var directory := DirAccess.open(path)
@@ -200,10 +198,6 @@ func _audit_definitions(definitions: Dictionary) -> void:
     for value in definitions.get("card_states", {}).get("anomalies", []):
         if value is Dictionary:
             _anomaly_categories[str(value.get("id", ""))] = str(value.get("category", ""))
-    _actor_status_ids.clear()
-    for value in definitions.get("battle_statuses", {}).get("actor_statuses", []):
-        if value is Dictionary:
-            _actor_status_ids[str(value.get("id", ""))] = true
     _audit_runtime_operation_registry()
     _audit_ids(definitions)
     var techniques: Array = definitions.get("techniques", {}).get("techniques", [])
@@ -234,7 +228,6 @@ func _audit_runtime_operation_registry() -> void:
 func _audit_ids(definitions: Dictionary) -> void:
     var arrays := [
         ["starter_builds", "starter_builds"],
-        ["battle_statuses", "actor_statuses"],
         ["card_states", "enhancements"],
         ["card_states", "finishes"],
         ["card_states", "imprints"],
@@ -294,10 +287,6 @@ func _audit_effects(values, allowed_ops: Array, scope: String) -> void:
             if not _is_positive_integer(effect.get("occurrences")):
                 _add("error", "INVALID_OCCURRENCES", effect_scope + ".occurrences", "occurrences 必须是正整数")
             _audit_effects(effect.get("effects", []), _battle_effect_ops(), effect_scope + ".effects")
-        if op in ["add_stack", "add_target_stack", "add_stack_per_captured_card", "register_turn_end_stack"]:
-            var stack_id := str(effect.get("stack", ""))
-            if not _actor_status_ids.has(stack_id):
-                _add("error", "UNKNOWN_REFERENCE", effect_scope + ".stack", "引用未知角色状态 %s" % stack_id)
         if op in ["apply_random_card_anomaly", "apply_card_anomaly_to_captured"]:
             _audit_anomaly_options(effect, effect_scope)
 

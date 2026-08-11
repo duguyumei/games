@@ -173,7 +173,6 @@ func _candidate_from_proposal(proposal, index: int, hand_size: int):
 func _enemy_self_state(observation) -> Dictionary:
     var result: Dictionary = observation.public_snapshot()
     result["hand_cards"] = _card_snapshots(engine.enemy.hand)
-    result["stacks"] = engine.enemy.stacks.duplicate(true)
     result["equipped_inner_skill_ids"] = engine.enemy.equipped_inner_skill_ids.duplicate()
     result["owned_technique_ids"] = engine.enemy.owned_technique_ids.duplicate()
     result["hand_proficiency_fixed"] = engine.enemy.hand_proficiency_fixed.duplicate(true)
@@ -184,7 +183,6 @@ func _player_public_state() -> Dictionary:
         "life": engine.player.life,
         "max_life": engine.player.max_life,
         "defense": engine.player.defense,
-        "stacks": engine.player.stacks.duplicate(true),
         "hand_count": engine.player.hand.size(),
         "draw_pile_count": engine.player.draw_pile.size(),
         "discard_count": engine.player.discard_pile.size(),

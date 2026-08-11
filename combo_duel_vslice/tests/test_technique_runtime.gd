@@ -111,6 +111,23 @@ func _test_power_snapshot_formula_and_initial_power_reader() -> void:
         21,
         "效果可以按比例读取 P₀")
 
+    var effect_engine = _engine_with_cards([])
+    var effect_context = EffectContextScript.new().configure({
+        "ports": effect_engine.effect_ports,
+        "actor": effect_engine.player,
+        "target": effect_engine.enemy,
+        "power": 0,
+    })
+    var direct_result: Dictionary = effect_engine.effect_executor.execute_all([
+        {"op": "add_direct_power_fixed", "amount": {
+            "kind": "constant", "value": 5}},
+        {"op": "add_direct_power_percent", "amount": {
+            "kind": "constant", "value": 25}},
+    ], effect_context)
+    _assert_true(direct_result["success"], "直接功法值修正操作继续通过通用效果链结算")
+    _assert_equal(effect_engine.player.direct_power_fixed, 5, "固定直接功法值修正写入明确角色字段")
+    _assert_equal(effect_engine.player.direct_power_percent, 25, "百分比直接功法值修正写入明确角色字段")
+
 func _test_empty_and_failed_techniques_leave_momentum_untouched() -> void:
     var empty_engine = _engine_with_cards([_card("9", "wind")])
     empty_engine.player.momentum_value = 8

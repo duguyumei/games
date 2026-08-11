@@ -4,7 +4,7 @@
 
 稳定 key 只使用小写 ASCII、数字与下划线，并至少包含一个点。命名空间约定：
 
-- `content.<内容类型>.<稳定逻辑 id>.<字段>`，例如 `content.technique.fire_sparks.name`
+- `content.<内容类型>.<稳定逻辑 id>.<字段>`，例如 `content.technique.localization_probe_technique.name`
 - `ui.<页面或组件>.<用途>`，例如 `ui.sample.turn_summary`
 - `keyword.<稳定 id>.name`
 - `tooltip.<稳定 id>.description`

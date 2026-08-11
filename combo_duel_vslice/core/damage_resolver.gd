@@ -94,11 +94,7 @@ static func calculate_final_amount(
         status_system = null) -> int:
     var final_amount := maxi(0, base_amount)
     if not true_damage:
-        var damage_percent: int = (
-            status_system.actor_numeric_modifier(
-                actor, "damage_percent", {"source_kind": source_kind})
-            if status_system != null
-            else actor.status_modifier("damage_percent", {"source_kind": source_kind}))
+        var damage_percent := 0
         if status_system != null:
             damage_percent += status_system.actor_hand_card_numeric_modifier(
                 actor, "outgoing_damage_percent")

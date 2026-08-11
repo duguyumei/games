@@ -13,7 +13,7 @@ func operation_ids() -> Array[String]:
     return [
         "gain_extra_action", "add_momentum", "set_momentum",
         "set_reflection_percent", "add_direct_power_fixed",
-        "add_direct_power_percent", "register_turn_end_stack",
+        "add_direct_power_percent",
         "register_delayed_effects",
         "retrigger_current_hand_technique",
     ]
@@ -50,17 +50,6 @@ func execute(effect: Dictionary, context):
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             runtime.ports.add_direct_power_percent(runtime.actor, amount)
             return EffectResultScript.succeeded("直接功法值百分比修正 %+d%%" % amount)
-        "register_turn_end_stack":
-            var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
-            var result: Dictionary = runtime.ports.register_turn_end_stack(
-                runtime.technique_name if runtime.technique_name != "" else "延迟层数",
-                int(effect.get("turn_ends", 1)),
-                str(effect.get("stack", "")),
-                amount,
-                runtime.actor)
-            if not result.get("success", false):
-                return EffectResultScript.failed(str(result.get("reason", "延迟层数建立失败")))
-            return EffectResultScript.succeeded("回合结束时%s +%d" % [effect.get("stack", ""), amount])
         "register_delayed_effects":
             var result: Dictionary = runtime.ports.register_delayed_effects(
                 runtime.technique_name if runtime.technique_name != "" else "延迟功法",
@@ -92,9 +81,6 @@ func summarize(effect: Dictionary, context, intent: Dictionary, _state: Dictiona
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     match str(effect.get("op", "")):
-        "register_turn_end_stack":
-            validator.validate_actor_status_reference(
-                effect.get("stack"), scope + ".stack")
         "register_delayed_effects":
             if str(effect.get("timing", "")) not in ["turn_end", "after_normal_draw"]:
                 validator.report_error(scope + ".timing", "未知延迟事件时点 %s" % str(effect.get("timing", "")))

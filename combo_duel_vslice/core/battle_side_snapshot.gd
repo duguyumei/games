@@ -33,7 +33,6 @@ var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
 var temporarily_removed: Array = []
-var stacks: Dictionary = {}
 var equipped_inner_skill_ids: Array = []
 var equipped_inner_skills: Array = []
 var technique_slot_index: int = 0
@@ -57,7 +56,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "last_successful_technique_hand_id", "current_reflection_percent",
             "inner_skill_limit",
             "draw_count", "hand_count", "staging_count", "discard_count",
-            "deck_count", "temporarily_removed_count", "stacks",
+            "deck_count", "temporarily_removed_count",
             "technique_slot_index", "consumable_limit"]:
         if not values.has(required):
             missing.append(str(required))
@@ -88,7 +87,6 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.staging = values.get("staging", []).duplicate(true)
     result.discard_pile = values.get("discard_pile", []).duplicate(true)
     result.temporarily_removed = values.get("temporarily_removed", []).duplicate(true)
-    result.stacks = values.get("stacks", {}).duplicate(true)
     result.equipped_inner_skill_ids = values.get("equipped_inner_skill_ids", []).duplicate(true)
     result.equipped_inner_skills = values.get("equipped_inner_skills", []).duplicate(true)
     result.technique_slot_index = int(values.get("technique_slot_index", 0))
@@ -99,10 +97,6 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.hand_technique_progression = values.get("hand_technique_progression", {}).duplicate(true)
     result.owned_technique_ids = values.get("owned_technique_ids", []).duplicate(true)
     return result
-
-## 该方持有的某个状态层数。状态不存在时为 0 是规则语义，不是兜底。
-func stack_count(stack_id: String) -> int:
-    return int(stacks.get(stack_id, 0))
 
 ## 序列化边界。存档、AI 传输和既有测试断言使用。
 func to_dict() -> Dictionary:
@@ -130,7 +124,6 @@ func to_dict() -> Dictionary:
         "staging": staging.duplicate(true),
         "discard_pile": discard_pile.duplicate(true),
         "temporarily_removed": temporarily_removed.duplicate(true),
-        "stacks": stacks.duplicate(true),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(true),
         "equipped_inner_skills": equipped_inner_skills.duplicate(true),
         "technique_slot_index": technique_slot_index,

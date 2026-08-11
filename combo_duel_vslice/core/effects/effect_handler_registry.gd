@@ -6,7 +6,6 @@ const DamageHandlerScript = preload("res://core/effects/damage_effect_handler.gd
 const DefenseHandlerScript = preload("res://core/effects/defense_effect_handler.gd")
 const CardZoneHandlerScript = preload("res://core/effects/card_zone_effect_handler.gd")
 const CardAnomalyHandlerScript = preload("res://core/effects/card_anomaly_effect_handler.gd")
-const StackHandlerScript = preload("res://core/effects/stack_effect_handler.gd")
 const FlowHandlerScript = preload("res://core/effects/flow_effect_handler.gd")
 const ChoiceHandlerScript = preload("res://core/effects/choice_effect_handler.gd")
 
@@ -22,7 +21,6 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
     register_handler(DefenseHandlerScript.new(value_resolver))
     register_handler(CardZoneHandlerScript.new(value_resolver, random_source))
     register_handler(CardAnomalyHandlerScript.new(value_resolver, random_source, content_catalog))
-    register_handler(StackHandlerScript.new(value_resolver))
     register_handler(FlowHandlerScript.new(value_resolver))
     register_handler(ChoiceHandlerScript.new(random_source, value_resolver))
 

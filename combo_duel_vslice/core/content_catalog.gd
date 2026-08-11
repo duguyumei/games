@@ -181,7 +181,6 @@ func _build_indexes() -> void:
     _indexes = {
         "card": {},
         "starter_build": {},
-        "actor_status": {},
         "origin": {},
         "enhancement": {},
         "imprint": {},
@@ -211,7 +210,6 @@ func _build_indexes() -> void:
                 "attribute_name": str(attribute["name"]),
             }
     var card_states: Dictionary = _definitions["card_states"]
-    _index_array("actor_status", _definitions["battle_statuses"]["actor_statuses"])
     _index_array("origin", card_states["origins"])
     _index_array("enhancement", card_states["enhancements"])
     _index_array("imprint", card_states["imprints"])

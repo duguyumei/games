@@ -31,7 +31,6 @@ var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
 var temporarily_removed_cards: Array = []
-var stacks: Dictionary = {}
 var equipped_inner_skill_ids: Array[String] = []
 var technique_slot_index: int = 0
 var consumable_ids: Array[String] = []
@@ -77,7 +76,6 @@ func reset(
     momentum_value = 0
     last_successful_technique_hand_id = ""
     current_reflection_percent = 0
-    stacks.clear()
     equipped_inner_skill_ids.clear()
     technique_slot_index = 0
     consumable_ids.clear()
@@ -124,21 +122,7 @@ func current_hand_limit() -> int:
     return maxi(
         1,
         hand_limit
-        + base_hand_limit_modifier
-        + status_modifier("hand_limit"))
-
-func status_modifier(modifier_id: String, context: Dictionary = {}) -> int:
-    if status_system == null:
-        return 0
-    return status_system.actor_numeric_modifier(self, modifier_id, context)
-
-func status_modifier_per_stack(
-        status_id: String,
-        modifier_id: String,
-        context: Dictionary = {}) -> int:
-    if status_system == null:
-        return 0
-    return status_system.status_modifier_per_stack(status_id, modifier_id, context)
+        + base_hand_limit_modifier)
 
 func stage_cards(card_ids: Array) -> bool:
     return card_zone_service.stage_cards(self, card_ids)
@@ -234,15 +218,6 @@ func set_momentum(value: int) -> int:
 func set_reflection_percent(value: int) -> int:
     current_reflection_percent = maxi(0, value)
     return current_reflection_percent
-
-func add_stack(stack_id: String, amount: int) -> int:
-    if status_system != null:
-        var result: Dictionary = status_system.add_actor_status(
-            self, stack_id, amount, "战斗方接口")
-        return int(result.get("changed", 0)) if result.get("success", false) else 0
-    var gained := maxi(0, amount)
-    stacks[stack_id] = int(stacks.get(stack_id, 0)) + gained
-    return gained
 
 func configure_inner_skills(inner_skill_ids: Array, dynamic_technique_slot: int = 0) -> void:
     equipped_inner_skill_ids.clear()

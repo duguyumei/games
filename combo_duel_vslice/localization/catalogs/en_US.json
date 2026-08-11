@@ -2,12 +2,12 @@
   "locale": "en_US",
   "entries": [
     {
-      "key": "content.technique.fire_sparks.name",
-      "text": "Spark Barrage"
+      "key": "content.technique.localization_probe_technique.name",
+      "text": "Localization Probe"
     },
     {
-      "key": "content.technique.fire_sparks.description",
-      "text": "Deal {damage} damage {segments} times; gain {momentum} Momentum after each hit."
+      "key": "content.technique.localization_probe_technique.description",
+      "text": "A neutral probe for localization infrastructure with test value {value}."
     },
     {
       "key": "ui.sample.turn_summary",
