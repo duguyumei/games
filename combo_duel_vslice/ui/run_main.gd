@@ -5,6 +5,9 @@ const MapViewScript = preload("res://ui/map_view.gd")
 const BattleScene = preload("res://ui/main.tscn")
 const UiDesignScript = preload("res://ui/ui_design.gd")
 const PracticeOverlayScene = preload("res://ui/components/practice_overlay.tscn")
+const RunBuildOverlayScene = preload(
+    "res://ui/components/run_build_overlay.tscn")
+const RunBuildDTOScript = preload("res://core/run_build_dto.gd")
 const RewardOverlayScene = preload("res://ui/components/reward_overlay.tscn")
 const PlaceholderPageScene = preload("res://ui/components/node_placeholder_page.tscn")
 const ContentFailurePageScript = preload("res://ui/components/content_failure_page.gd")
@@ -24,7 +27,9 @@ var phase_label: Label
 var hover_label: Label
 var route_label: Label
 var practice_button: Button
+var build_button: Button
 var practice_overlay: Control
+var run_build_overlay: RunBuildOverlay
 var node_overlay: Control
 var reward_overlay: Control
 var boss_chest_overlay: Control
@@ -151,6 +156,25 @@ func _build_interface() -> void:
     practice_button.z_index = 50
     add_child(practice_button)
 
+    build_button = Button.new()
+    build_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+    build_button.offset_left = -350
+    build_button.offset_top = -132
+    build_button.offset_right = -176
+    build_button.offset_bottom = -28
+    build_button.add_theme_font_size_override("font_size", 16)
+    build_button.add_theme_color_override("font_color", Color("d9f2ec"))
+    build_button.add_theme_stylebox_override(
+        "normal", UiDesignScript.box(
+            Color("24434a"), 18, Color("75a9a7"), 2, 8))
+    build_button.add_theme_stylebox_override(
+        "hover", UiDesignScript.box(
+            Color("315a60"), 18, Color("9bd0c9"), 3, 10))
+    build_button.pressed.connect(_open_run_build)
+    # 战斗层也允许只读查看构筑，因此入口保持在战斗场景之上。
+    build_button.z_index = 350
+    add_child(build_button)
+
     toast_label = Label.new()
     toast_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
     toast_label.offset_left = 300
@@ -172,6 +196,19 @@ func _build_interface() -> void:
     practice_overlay.pack_selection_requested.connect(_confirm_pack_selection)
     practice_overlay.meditate_requested.connect(_meditate)
     add_child(practice_overlay)
+    run_build_overlay = RunBuildOverlayScene.instantiate()
+    run_build_overlay.close_requested.connect(_close_run_build)
+    run_build_overlay.consumable_query_requested.connect(
+        _query_run_consumable)
+    run_build_overlay.consumable_use_requested.connect(
+        _use_run_consumable)
+    run_build_overlay.hand_loadout_save_requested.connect(
+        _save_hand_technique_loadout)
+    run_build_overlay.inner_skill_loadout_save_requested.connect(
+        _save_inner_skill_loadout)
+    run_build_overlay.inner_skill_forget_requested.connect(
+        _forget_inner_skill)
+    add_child(run_build_overlay)
     node_overlay = PlaceholderPageScene.instantiate()
     node_overlay.completed.connect(_complete_noncombat_node)
     node_overlay.configure({
@@ -293,6 +330,16 @@ func _refresh() -> void:
     practice_button.tooltip_text = (
         "打开修习页面" if bool(current_run.get("can_open_practice", false))
         else "当前节点尚未完成，不能修习")
+    build_button.text = "构 筑\n真气 %d · 消耗品 %d/3" % [
+        int(growth.get("run_deck_count", 0)),
+        growth.get("consumable_ids", []).size()]
+    build_button.visible = (
+        not practice_overlay.visible and not run_build_overlay.visible)
+    build_button.disabled = false
+    build_button.tooltip_text = (
+        "查看并编辑本局构筑"
+        if phase == "awaiting_node"
+        else "查看本局构筑（当前阶段只读）")
     phase_label.text = {
         "awaiting_node": "当前：等待选择下一节点",
         "node_in_progress": "当前：节点进行中 · 修习已锁定",
@@ -419,11 +466,109 @@ func _open_practice() -> void:
         _show_toast(result.reason_or("当前不能修习"))
         return
     practice_overlay.visible = true
+    build_button.visible = false
     _refresh_practice()
 
 func _close_practice() -> void:
     run_session.execute({"type": "close_practice"})
     practice_overlay.visible = false
+    build_button.visible = true
+
+func _open_run_build() -> void:
+    if practice_overlay.visible:
+        return
+    if _refresh_run_build(false):
+        build_button.visible = false
+
+func _close_run_build() -> void:
+    run_build_overlay.visible = false
+    build_button.visible = true
+
+func _refresh_run_build(preserve_drafts: bool) -> bool:
+    var result := run_session.execute({"type": "get_run_build"})
+    if not result.success:
+        _show_toast(result.reason_or("无法读取本局构筑"))
+        return false
+    var build = RunBuildDTOScript.new().configure(
+        result.payload_value("build", {}))
+    run_build_overlay.present(build, preserve_drafts)
+    return true
+
+func _query_run_consumable(slot_index: int) -> void:
+    var result := run_session.execute({
+        "type": "query_consumable_use",
+        "slot_index": slot_index,
+    })
+    if not result.success:
+        _show_toast(result.reason_or("无法查询消耗品"))
+        return
+    run_build_overlay.present_consumable_query(
+        slot_index, result.payload.duplicate(true))
+
+func _use_run_consumable(
+        slot_index: int,
+        selected_instance_ids: Array,
+        choice_payload: Dictionary) -> void:
+    var result := run_session.execute({
+        "type": "use_consumable",
+        "slot_index": slot_index,
+        "selected_instance_ids": selected_instance_ids.duplicate(),
+        "choice_payload": choice_payload.duplicate(true),
+    })
+    if result.success:
+        run_build_overlay.close_consumable_dialog()
+        _refresh_run_build(false)
+        _show_toast(str(result.payload_value(
+            "detail", "消耗品已使用")))
+        return
+    _show_toast(result.reason_or("无法使用消耗品"))
+    _refresh_run_build(true)
+    _query_run_consumable(slot_index)
+
+func _save_hand_technique_loadout(
+        hand_id: String,
+        technique_ids: Array) -> void:
+    var result := run_session.execute({
+        "type": "set_hand_technique_loadout",
+        "hand_id": hand_id,
+        "technique_ids": technique_ids.duplicate(),
+    })
+    if result.success:
+        run_build_overlay.mark_hand_saved(hand_id)
+        _refresh_run_build(false)
+        _show_toast("功法序列已保存")
+        return
+    _show_toast(result.reason_or("无法保存功法序列"))
+    _refresh_run_build(true)
+
+func _save_inner_skill_loadout(
+        equipped_inner_skill_ids: Array,
+        technique_slot_index: int) -> void:
+    var result := run_session.execute({
+        "type": "set_inner_skill_loadout",
+        "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
+        "technique_slot_index": technique_slot_index,
+    })
+    if result.success:
+        run_build_overlay.mark_inner_skill_saved()
+        _refresh_run_build(false)
+        _show_toast("内功配装已保存")
+        return
+    _show_toast(result.reason_or("无法保存内功配装"))
+    _refresh_run_build(true)
+
+func _forget_inner_skill(inner_skill_id: String) -> void:
+    var result := run_session.execute({
+        "type": "forget_inner_skill",
+        "inner_skill_id": inner_skill_id,
+    })
+    if result.success:
+        _refresh_run_build(false)
+        _show_toast("遗忘一份内功 · 历练 +%d" % int(
+            result.payload_value("forget_value", 0)))
+        return
+    _show_toast(result.reason_or("无法普通遗忘内功"))
+    _refresh_run_build(true)
 
 func _buy_consumable(consumable_id: String) -> void:
     var result := run_session.execute({
@@ -500,6 +645,7 @@ func _reset_run() -> void:
         current_battle = null
     battle_layer.visible = false
     practice_overlay.visible = false
+    run_build_overlay.visible = false
     node_overlay.visible = false
     reward_overlay.visible = false
     boss_chest_overlay.visible = false

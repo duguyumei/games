@@ -109,6 +109,13 @@ Gate-S01 语义核对把 47 门进一步分为 2 门正式语义完整、38 门�
   与 `to_dict`。漏改 `from_dict` 会让字段永远是默认值。
 - 组件 `present()` 收类型化对象，不收 `Dictionary`。在调用处转回字典等于把
   类型边界又打开一个口。
+- 地图“本局构筑”使用 `RunSession.execute({"type": "get_run_build"})`，由
+  `RunBuildQueryService` 组合完整牌组、共享消耗品槽、八种功法序列、现有
+  `InnerSkillLoadoutDTO` 与独立物品区。UI 只接收 `RunBuildDTO`；消耗品的动态
+  选择继续只读取 `query_consumable_use` 返回的协议对象。
+- 构筑子组件不持有 `RunSession`。它们只维护未提交草稿并发出 signal，
+  `run_main.gd` 是唯一命令转发者；成功后重新查询 DTO，失败后保留草稿并重新查询，
+  不做乐观库存修改。
 - 共享控件工厂放 `ui/ui_design.gd`，不在页面里写第二份实现。
 - `ui/main.gd` 优先接收 `RunMain` 在 `_ready` 前注入的共享 `BattleSession`；只有独立启动
   战斗场景时才延迟创建默认会话，避免正式流程重复加载内容。

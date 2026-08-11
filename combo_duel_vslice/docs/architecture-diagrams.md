@@ -21,9 +21,9 @@
 flowchart TB
     subgraph UI["表现层 ui/（类似 Java Controller + View）"]
         FRONT["front_main.gd 主菜单/初始构筑"]
-        RUN["run_main.gd 地图/修习"]
+        RUN["run_main.gd 地图/修习/本局构筑命令转发"]
         BATTLE["main.gd 战斗界面"]
-        COMP["组件: battle_hand_zone / battle_actor_status\nbattle_loadout_view / technique_sequence_view\nreward_overlay / practice_overlay / ..."]
+        COMP["组件: battle_hand_zone / battle_actor_status\nbattle_loadout_view / technique_sequence_view\nreward_overlay / practice_overlay / run_build_overlay / ..."]
         FRONT --> RUN
         RUN --> BATTLE
         RUN --> COMP
@@ -222,6 +222,18 @@ classDiagram
     class RunProgressSnapshot {
         战斗与本局之间的成长传输
     }
+    class RunBuildDTO {
+        完整本局构筑只读页面 DTO
+    }
+    class HandTechniqueLoadoutDTO {
+        单一精确牌型序列与合法候选
+    }
+    class InnerSkillLoadoutDTO {
+        内功多副本、顺序、功法位置与遗忘信息
+    }
+    class RunBuildQueryService {
+        只查询并组装 DTO
+    }
     class BattleEvent
     class RunEvent
     class CommandResult
@@ -236,11 +248,16 @@ classDiagram
     BattleSession --> BattleSnapshot
     BattleSession --> BattleEvent
     RunSession --> RunSnapshot
+    RunSession --> RunBuildQueryService
+    RunBuildQueryService --> RunBuildDTO
+    RunBuildDTO --> HandTechniqueLoadoutDTO
+    RunBuildDTO --> InnerSkillLoadoutDTO
     RunSession --> RunEvent
     BattleSession ..> RunProgressSnapshot : 入战导入/战后导出
     RunSession ..> RunProgressSnapshot
     UI --> BattleSnapshot : 只读
     UI --> RunSnapshot : 只读
+    UI --> RunBuildDTO : 构筑页只读输入
     UI --> CommandResult : 命令回执
 ```
 
@@ -363,6 +380,8 @@ flowchart LR
     J --> M[第3层 Boss 奖励完成 → run_complete]
     D --> L[修习 practice_overlay<br>买功法/消耗品/冥想]
     L --> D
+    D --> N[本局构筑 run_build_overlay<br>真气/消耗品/功法/内功/物品]
+    N --> D
 ```
 
 ---
@@ -386,6 +405,10 @@ flowchart LR
     BS --> PROG["RunProgressSnapshot<br>战后成长回写"]
     PROG --> GROWTH
     SNAP --> UI["UI 展示"]
+    GROWTH --> RBQ["RunBuildQueryService<br>只读组装"]
+    CAT --> RBQ
+    RBQ --> RBDTO["RunBuildDTO<br>深复制构筑数据"]
+    RBDTO --> UI
 ```
 
 ---

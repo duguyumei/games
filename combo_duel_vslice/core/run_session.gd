@@ -33,6 +33,8 @@ const InnerSkillRepositoryScript = preload(
     "res://core/inner_skill_repository.gd")
 const InnerSkillLoadoutServiceScript = preload(
     "res://core/inner_skill_loadout_service.gd")
+const RunBuildQueryServiceScript = preload(
+    "res://core/run_build_query_service.gd")
 
 var game_log
 var _run_state
@@ -52,6 +54,7 @@ var _practice_service
 var _consumable_use_service
 var _inner_skill_repository
 var _inner_skill_loadout_service
+var _run_build_query_service
 var _pending_reward = null
 var selected_starter_build_id: String = ""
 var runtime_profile
@@ -132,6 +135,8 @@ func _init(
             _content_catalog.definition("inner_skills"))
     _inner_skill_loadout_service = InnerSkillLoadoutServiceScript.new(
         growth, _inner_skill_repository)
+    _run_build_query_service = RunBuildQueryServiceScript.new(
+        growth, _content_catalog, _inner_skill_loadout_service)
     _consumable_use_service = (
         consumable_use_service_override
         if consumable_use_service_override != null
@@ -208,6 +213,8 @@ func execute(command: Dictionary) -> CommandResult:
         "get_hand_technique_loadout":
             result = {"success": true, "loadout": growth.get_hand_technique_loadout(
                 str(command.get("hand_id", "")))}
+        "get_run_build":
+            result = _get_run_build()
         "set_hand_technique_loadout":
             result = _set_hand_technique_loadout(
                 str(command.get("hand_id", "")), command.get("technique_ids", []))
@@ -683,6 +690,12 @@ func _get_inner_skill_loadout() -> Dictionary:
     var loadout = _inner_skill_loadout_service.get_loadout(
         bool(gate.get("allowed", false)), str(gate.get("reason", "")))
     return {"success": true, "loadout": loadout.to_dict()}
+
+func _get_run_build() -> Dictionary:
+    var gate := _run_build_edit_gate()
+    var build = _run_build_query_service.query(
+        bool(gate.get("allowed", false)), str(gate.get("reason", "")))
+    return {"success": true, "build": build.to_dict()}
 
 func _set_inner_skill_loadout(
         equipped_inner_skill_ids,

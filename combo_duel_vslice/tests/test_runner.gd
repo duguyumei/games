@@ -64,6 +64,15 @@ const RunMutationServiceScript = preload(
     "res://core/run_effects/run_mutation_service.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
 const PracticeOverlayScript = preload("res://ui/components/practice_overlay.gd")
+const RunBuildDTOScript = preload("res://core/run_build_dto.gd")
+const RunBuildOverlayScene = preload(
+    "res://ui/components/run_build_overlay.tscn")
+const RunCardSelectionDialogScene = preload(
+    "res://ui/components/run_card_selection_dialog.tscn")
+const RunTechniqueLoadoutPanelScene = preload(
+    "res://ui/components/run_technique_loadout_panel.tscn")
+const RunInnerSkillLoadoutPanelScene = preload(
+    "res://ui/components/run_inner_skill_loadout_panel.tscn")
 const EffectExecutorScript = preload("res://core/effect_executor.gd")
 const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
@@ -323,6 +332,12 @@ func _initialize() -> void:
     _test_boss_chest_flow()
     _test_layered_life_progression_and_battle_persistence()
     _test_run_state_battle_growth_persistence()
+    _test_run_build_query_dto_and_empty_formal_pools()
+    _test_run_build_consumable_target_selection_and_cancel()
+    _test_run_build_prepared_preview_and_enum_protocol()
+    _test_run_build_technique_removals_and_independent_drafts()
+    _test_run_build_inner_skill_draft_and_forgetting()
+    _test_run_build_read_only_layout_and_ui_domain_boundary()
     _test_map_practice_and_battle_scene_integration()
     _test_battle_scene_prefers_injected_session_and_keeps_standalone_fallback()
     _test_front_menu_and_starter_build_flow()
@@ -359,6 +374,102 @@ func _assert_true(value: bool, label: String) -> void:
     assertions += 1
     if not value:
         failures.append("%s：期望为 true" % label)
+
+func _contains_object_value(value) -> bool:
+    if value is Object:
+        return true
+    if value is Array:
+        for child in value:
+            if _contains_object_value(child):
+                return true
+    elif value is Dictionary:
+        for child in value.values():
+            if _contains_object_value(child):
+                return true
+    return false
+
+func _run_build_ui_fixture(
+        editable: bool,
+        include_techniques: bool) -> RunBuildDTO:
+    var names := {
+        "high_card": "高牌", "pair": "一对", "two_pair": "两对",
+        "three_kind": "三条", "straight": "顺子",
+        "full_house": "葫芦", "four_kind": "四条", "five_kind": "五条",
+    }
+    var hand_loadouts: Array = []
+    for hand_id in GrowthInventoryScript.HAND_IDS:
+        var sequence: Array = []
+        var available: Array = []
+        if include_techniques:
+            match hand_id:
+                "pair":
+                    sequence = [{"id": "pair_a", "name": "对子甲", "description": "", "pool": "pair", "status": "formal_complete"}]
+                    available = [{"id": "pair_b", "name": "对子乙", "description": "", "pool": "pair", "status": "formal_complete"}]
+                "four_kind":
+                    sequence = [{"id": "four_base", "name": "四条甲", "description": "", "pool": "bomb", "status": "formal_complete"}]
+                    available = [{"id": "bomb_shared", "name": "炸弹候选", "description": "", "pool": "bomb", "status": "formal_complete"}]
+                "five_kind":
+                    sequence = [{"id": "five_base", "name": "五条甲", "description": "", "pool": "bomb", "status": "formal_complete"}]
+                    available = [{"id": "bomb_shared", "name": "炸弹候选", "description": "", "pool": "bomb", "status": "formal_complete"}]
+        hand_loadouts.append({
+            "hand_id": hand_id,
+            "hand_name": names[hand_id],
+            "slot_count": 2,
+            "sequence": sequence,
+            "available_techniques": available,
+            "editable": editable,
+            "blocked_reason": "节点进行中" if not editable else "",
+        })
+    return RunBuildDTOScript.new().configure({
+        "editable": editable,
+        "blocked_reason": "节点进行中" if not editable else "",
+        "cards": [
+            {
+                "instance_id": "card:1", "definition_id": "wind_2",
+                "display_name": "风·2", "attribute": "wind",
+                "attribute_name": "风", "rank": "2", "rank_order": 2,
+                "qi_value": 2, "origin": {}, "origin_name": "",
+                "enhancement": "", "enhancement_name": "",
+                "imprint": "", "imprint_name": "", "others": {},
+                "other_names": [],
+            },
+        ],
+        "consumable_limit": 3,
+        "consumables": [
+            {"slot_index": 0, "id": "probe_pill", "name": "探针丹", "kind": "pill", "description": "", "status": "formal"},
+            {"slot_index": 1, "id": "", "name": "空槽", "kind": "", "description": "", "status": "empty"},
+            {"slot_index": 2, "id": "", "name": "空槽", "kind": "", "description": "", "status": "empty"},
+        ],
+        "items": [],
+        "hand_loadouts": hand_loadouts,
+        "inner_skill_loadout": {
+            "learned": [
+                {
+                    "id": "inner_a", "name": "内功甲", "total_count": 2,
+                    "equipped_count": 1, "unequipped_count": 1,
+                    "base_forget_value": 4, "forget_value": 4,
+                    "can_forget": true, "status": "formal",
+                },
+                {
+                    "id": "inner_b", "name": "内功乙", "total_count": 1,
+                    "equipped_count": 0, "unequipped_count": 1,
+                    "base_forget_value": null, "forget_value": null,
+                    "can_forget": false, "status": "candidate",
+                },
+            ],
+            "equipped": [{
+                "slot_index": 0, "inner_skill_id": "inner_a",
+                "name": "内功甲", "occurrence_index": 1,
+                "combat_source_order": 0,
+            }],
+            "equipped_inner_skill_ids": ["inner_a"],
+            "technique_slot_index": 1,
+            "inner_skill_limit": 6,
+            "editable": editable,
+            "blocked_reason": "节点进行中" if not editable else "",
+        },
+        "experience": 9,
+    })
 
 func _catalog_definitions(catalog) -> Dictionary:
     var result: Dictionary = {}
@@ -6542,11 +6653,284 @@ func _test_run_save_life_round_trip_legacy_defaults_and_validation() -> void:
             "growth.life 必须是正整数"),
         "非整数当前生命被具名拒绝")
 
+func _test_run_build_query_dto_and_empty_formal_pools() -> void:
+    var session: RunSession = RunSessionScript.new()
+    _assert_true(
+        session.execute({"type": "setup_run", "seed": 30301}).success,
+        "构筑 DTO 测试建立标准本局")
+    session.growth.consumable_ids.assign(["xiantian_fu"])
+    session.growth.item_ids.assign(["gift_card", "gift_card"])
+    var first_result := session.execute({"type": "get_run_build"})
+    _assert_true(first_result.success, "任何地图待选状态可以查询完整构筑")
+    var first: Dictionary = first_result.payload_value("build", {})
+    _assert_equal(first.get("schema_version"), 1, "构筑 DTO 使用 schema_version 1")
+    _assert_equal(first.get("cards", []).size(), 52, "构筑 DTO 返回完整标准真气实例")
+    _assert_true(
+        not _contains_object_value(first),
+        "构筑命令边界不返回 GrowthInventory、RunDeck 或其他真实对象")
+    _assert_equal(first.get("hand_loadouts", []).size(), 8, "空正式功法池仍返回八种精确牌型")
+    for loadout in first.get("hand_loadouts", []):
+        _assert_true(
+            loadout.get("sequence", []).is_empty()
+            and loadout.get("available_techniques", []).is_empty(),
+            "%s 在正式空池中显示空序列和空候选" % loadout.get("hand_id", ""))
+    var four: Dictionary = first["hand_loadouts"][6]
+    var five: Dictionary = first["hand_loadouts"][7]
+    four["sequence"].append({"id": "local_probe"})
+    _assert_true(five["sequence"].is_empty(), "四条与五条 DTO 序列不是同一数组")
+    _assert_equal(first.get("consumables", []).size(), 3, "共享消耗品 DTO 始终保留三个槽位")
+    _assert_equal(first["consumables"][0].get("slot_index"), 0, "非空消耗品保留 slot_index 0")
+    _assert_equal(first["consumables"][1].get("status"), "empty", "未占用槽位明确返回空槽")
+    _assert_equal(first.get("items", [])[0].get("count"), 2, "相同物品按独立持有区汇总数量")
+    _assert_true(
+        first.get("items", []).all(func(item):
+            return str(item.get("id", "")) != "xiantian_fu"),
+        "奇珍不会进入物品页 DTO")
+    first["cards"][0]["display_name"] = "本地篡改"
+    first["consumables"][0]["name"] = "本地篡改"
+    var second: Dictionary = session.execute(
+        {"type": "get_run_build"}).payload_value("build", {})
+    _assert_true(
+        second["cards"][0].get("display_name") != "本地篡改"
+        and second["consumables"][0].get("name") != "本地篡改",
+        "修改返回 DTO 不会反向修改领域对象或下一次查询")
+
+func _test_run_build_consumable_target_selection_and_cancel() -> void:
+    var session: RunSession = RunSessionScript.new()
+    session.execute({"type": "setup_run", "seed": 30302})
+    session.growth.consumable_ids.assign(["zengyuan_pill"])
+    var query_result := session.execute({
+        "type": "query_consumable_use", "slot_index": 0})
+    var query: Dictionary = query_result.payload.duplicate(true)
+    _assert_equal(query.get("selection"), "player_selected", "选择型消耗品由 query 声明 player_selected")
+    _assert_equal(query.get("minimum"), 1, "选择型消耗品返回最少目标数")
+    _assert_equal(query.get("maximum"), 2, "选择型消耗品返回最多目标数")
+    var build = RunBuildDTOScript.new().configure(
+        session.execute({"type": "get_run_build"}).payload_value("build", {}))
+    var dialog = RunCardSelectionDialogScene.instantiate()
+    root.add_child(dialog)
+    var submitted := {"count": 0, "ids": []}
+    dialog.use_requested.connect(func(_slot: int, ids: Array, _payload: Dictionary):
+        submitted["count"] = int(submitted["count"]) + 1
+        submitted["ids"] = ids.duplicate())
+    dialog.present_query(0, query, build)
+    _assert_true(not dialog.can_confirm(), "未达到 minimum 时确认按钮禁用")
+    _assert_true(not dialog.toggle_target("not-eligible", true), "DTO 外真气不能被选择")
+    var targets: Array = query.get("eligible_targets", [])
+    var first_id := str(targets[0].get("instance_id", ""))
+    var second_id := str(targets[1].get("instance_id", ""))
+    var third_id := str(targets[2].get("instance_id", ""))
+    _assert_true(dialog.toggle_target(first_id, true), "合法真气可按 instance_id 选择")
+    _assert_true(dialog.can_confirm(), "达到 minimum 后允许确认")
+    _assert_true(dialog.toggle_target(second_id, true), "可选择到 maximum")
+    _assert_true(not dialog.toggle_target(third_id, true), "超过 maximum 的选择被 UI 拒绝")
+    dialog.cancel()
+    _assert_equal(submitted["count"], 0, "取消选择不发送 use_consumable 意图")
+    _assert_equal(build.consumables[0].get("id"), "zengyuan_pill", "取消不会在 UI 本地删除消耗品")
+    dialog.present_query(0, query, build)
+    dialog.toggle_target(first_id, true)
+    _assert_true(dialog.confirm(), "合法 player_selected 选择可以确认")
+    _assert_equal(submitted["ids"], [first_id], "确认只提交 eligible_targets 中的稳定实例 ID")
+    var failed := session.execute({
+        "type": "use_consumable",
+        "slot_index": 0,
+        "selected_instance_ids": ["not-eligible"],
+        "choice_payload": {},
+    })
+    _assert_true(not failed.success, "核心拒绝非法目标")
+    _assert_equal(
+        session.execute({"type": "get_run_build"}).payload_value(
+            "build", {}).get("consumables", [])[0].get("id"),
+        "zengyuan_pill",
+        "命令失败后库存未被乐观修改")
+    dialog.queue_free()
+
+func _test_run_build_prepared_preview_and_enum_protocol() -> void:
+    var session: RunSession = RunSessionScript.new()
+    session.execute({"type": "setup_run", "seed": 30303})
+    session.growth.consumable_ids.assign(["zhuanxiang_lun"])
+    var first: Dictionary = session.execute({
+        "type": "query_consumable_use", "slot_index": 0}).payload
+    var second: Dictionary = session.execute({
+        "type": "query_consumable_use", "slot_index": 0}).payload
+    _assert_true(not str(first.get("preparation_token", "")).is_empty(), "冻结预览返回非空 preparation_token")
+    _assert_equal(first.get("prepared_preview"), second.get("prepared_preview"), "重复打开冻结预览保持相同目标和变化")
+    _assert_equal(first.get("preparation_token"), second.get("preparation_token"), "重复打开冻结预览保持相同 token")
+    var build = RunBuildDTOScript.new().configure(
+        session.execute({"type": "get_run_build"}).payload_value("build", {}))
+    var dialog = RunCardSelectionDialogScene.instantiate()
+    root.add_child(dialog)
+    var submitted := {"payload": {}}
+    dialog.use_requested.connect(func(_slot: int, _ids: Array, payload: Dictionary):
+        submitted["payload"] = payload.duplicate(true))
+    dialog.present_query(0, first, build)
+    _assert_true(dialog.can_confirm(), "冻结确定性预览无需手选目标即可确认")
+    dialog.confirm()
+    _assert_equal(
+        submitted["payload"].get("preparation_token"),
+        first.get("preparation_token"),
+        "确认冻结预览时原样回传 preparation_token")
+
+    session.growth.consumable_ids.assign(["tongjie_gongming"])
+    var enum_query: Dictionary = session.execute({
+        "type": "query_consumable_use", "slot_index": 0}).payload
+    _assert_equal(enum_query.get("choice_schema", {}).get("type"), "enum", "同阶共鸣通过通用 enum schema 查询")
+    _assert_true(not enum_query.get("choice_options", []).is_empty(), "enum 候选由核心动态返回")
+    dialog.present_query(0, enum_query, build)
+    var option := str(enum_query.get("choice_options", [])[0].get("value", ""))
+    _assert_true(dialog.select_enum(option), "enum 控件只接受 choice_options 中的值")
+    _assert_equal(dialog.choice_payload().get("rank"), option, "enum 按 schema.field 生成 choice_payload")
+    _assert_true(not dialog.select_enum("UI-hard-coded-rank"), "enum 不接受 DTO 外硬编码牌阶")
+    dialog.queue_free()
+
+func _test_run_build_technique_removals_and_independent_drafts() -> void:
+    var build := _run_build_ui_fixture(true, true)
+    var dialog = RunCardSelectionDialogScene.instantiate()
+    root.add_child(dialog)
+    var removal_query := {
+        "can_use": true,
+        "name": "协议探针",
+        "description": "按组移出功法",
+        "selection": "deterministic_random",
+        "minimum": 0,
+        "maximum": 0,
+        "eligible_targets": [],
+        "choice_schema": {
+            "type": "technique_sequence_removals",
+            "field": "removed_technique_ids_by_hand",
+            "groups": [
+                {"hand_id": "high_card", "required_count": 0, "options": []},
+                {"hand_id": "pair", "required_count": 1, "options": ["pair_a", "pair_b"]},
+            ],
+        },
+        "choice_options": [],
+        "prepared_preview": {},
+        "preparation_token": "",
+    }
+    dialog.present_query(0, removal_query, build)
+    _assert_true(not dialog.can_confirm(), "功法移出组未满足 required_count 时不能确认")
+    _assert_true(dialog.set_removal_selection("pair", ["pair_a"]), "功法移出提交稳定功法 ID")
+    _assert_true(dialog.can_confirm(), "所有组恰好满足 required_count 后允许确认")
+    _assert_equal(
+        dialog.choice_payload().get(
+            "removed_technique_ids_by_hand", {}).get("high_card"),
+        [],
+        "required_count 为 0 的组提交空数组")
+    _assert_true(
+        not dialog.set_removal_selection("pair", ["pair_a", "pair_b"]),
+        "单组不能选择超过 required_count")
+    dialog.queue_free()
+
+    var panel = RunTechniqueLoadoutPanelScene.instantiate()
+    root.add_child(panel)
+    panel.present(build)
+    var five_before: Array = panel.draft_sequence("five_kind")
+    _assert_true(panel.add_technique("four_kind", "bomb_shared"), "四条草稿可加入炸弹池候选")
+    _assert_equal(panel.draft_sequence("five_kind"), five_before, "修改四条草稿不影响五条草稿")
+    _assert_true(panel.add_technique("pair", "pair_b"), "功法草稿只能加入 DTO 候选")
+    _assert_true(not panel.add_technique("pair", "missing"), "DTO 外功法不能加入草稿")
+    var saved := {"hand_id": "", "ids": []}
+    panel.save_requested.connect(func(hand_id: String, ids: Array):
+        saved["hand_id"] = hand_id
+        saved["ids"] = ids.duplicate())
+    _assert_true(panel.request_save("pair"), "保存功法页发送一次完整序列命令意图")
+    _assert_equal(saved["hand_id"], "pair", "功法保存保留精确牌型 ID")
+    _assert_equal(saved["ids"], ["pair_a", "pair_b"], "功法保存发送完整稳定 ID 数组")
+    panel.queue_free()
+
+func _test_run_build_inner_skill_draft_and_forgetting() -> void:
+    var build := _run_build_ui_fixture(true, true)
+    var panel = RunInnerSkillLoadoutPanelScene.instantiate()
+    root.add_child(panel)
+    panel.present(build)
+    _assert_true(panel.add_copy("inner_a"), "同 ID 第二份内功可以单独装备")
+    _assert_equal(panel.draft_equipped_ids(), ["inner_a", "inner_a"], "内功草稿保留同 ID 多副本")
+    _assert_true(panel.add_copy("inner_b"), "不同内功可以继续加入配装")
+    _assert_true(panel.move_copy(2, -1), "内功副本可以调整顺序")
+    _assert_true(panel.set_technique_position(2), "功法位置可设为 0～装备数量之间的分隔槽")
+    var saved := {"ids": [], "position": -1}
+    panel.save_requested.connect(func(ids: Array, position: int):
+        saved["ids"] = ids.duplicate()
+        saved["position"] = position)
+    _assert_true(panel.request_save(), "内功保存发送完整配装")
+    _assert_equal(saved["ids"], ["inner_a", "inner_b", "inner_a"], "内功保存保留副本与排序")
+    _assert_equal(saved["position"], 2, "内功顺序和 technique_slot_index 一起提交")
+    var forgotten := {"id": ""}
+    panel.forget_requested.connect(func(inner_skill_id: String):
+        forgotten["id"] = inner_skill_id)
+    _assert_true(panel.request_forget("inner_a"), "can_forget 且 forget_value 有效时显示确认")
+    panel._forget_confirmation.confirmed.emit()
+    _assert_equal(forgotten["id"], "inner_a", "普通遗忘只发送一份指定内功 ID")
+    _assert_true(not panel.request_forget("inner_b"), "缺少 forget_value 的候选内功禁用普通遗忘")
+    panel.queue_free()
+
+func _test_run_build_read_only_layout_and_ui_domain_boundary() -> void:
+    var build := _run_build_ui_fixture(false, false)
+    var overlay = RunBuildOverlayScene.instantiate()
+    root.add_child(overlay)
+    overlay.present(build)
+    _assert_true(overlay.visible, "只读阶段仍可打开构筑页面")
+    _assert_equal(overlay.tabs.get_tab_count(), 5, "构筑 Overlay 提供五个分页")
+    for child in overlay.tabs.get_children():
+        _assert_true(child is ScrollContainer, "%s 分页内容位于可滚动容器" % child.name)
+    _assert_true(
+        not overlay.technique_panel.add_technique("pair", "pair_b"),
+        "只读阶段功法草稿修改禁用")
+    _assert_true(
+        not overlay.inner_skill_panel.add_copy("inner_a"),
+        "只读阶段内功装备修改禁用")
+    overlay.present_consumable_query(0, {
+        "can_use": false,
+        "reason": "当前阶段只读",
+        "name": "只读探针",
+        "description": "",
+        "selection": "player_selected",
+        "minimum": 1,
+        "maximum": 1,
+        "eligible_targets": [{"instance_id": "card:1", "display_name": "风·2"}],
+        "choice_schema": {},
+        "choice_options": [],
+        "prepared_preview": {},
+        "preparation_token": "",
+    })
+    _assert_true(
+        not overlay.selection_dialog.can_confirm(),
+        "只读 query 的 can_use=false 禁用消耗品正式确认")
+    _assert_true(
+        overlay.tabs.custom_minimum_size.y <= 680,
+        "1440×900 基准窗口为页头、分页与底部留出可见空间")
+    var forbidden := [
+        "run_session.growth",
+        "run_session.navigation",
+        "composition_root.content_catalog",
+        "GrowthInventory.new(",
+        "ContentCatalog.new(",
+        ".run_deck.",
+    ]
+    var ui_paths := [
+        "res://ui/run_main.gd",
+        "res://ui/components/run_build_overlay.gd",
+        "res://ui/components/run_deck_panel.gd",
+        "res://ui/components/run_consumable_panel.gd",
+        "res://ui/components/run_card_selection_dialog.gd",
+        "res://ui/components/run_technique_loadout_panel.gd",
+        "res://ui/components/run_inner_skill_loadout_panel.gd",
+        "res://ui/components/run_item_inventory_panel.gd",
+    ]
+    for path in ui_paths:
+        var source := FileAccess.get_file_as_string(path)
+        for token in forbidden:
+            _assert_true(
+                not source.contains(token),
+                "%s 不直接访问领域对象：%s" % [path, token])
+    overlay.queue_free()
+
 func _test_map_practice_and_battle_scene_integration() -> void:
     var run_ui = RunScene.instantiate()
     run_ui.initialize_interface()
     root.add_child(run_ui)
     _assert_true(run_ui.practice_button != null, "地图场景建立右下角修习按钮")
+    _assert_true(run_ui.build_button != null, "地图场景建立独立于修习的构筑按钮")
     _assert_equal(run_ui.life_label.text, "生命 100/100", "地图顶栏显示当前生命与上限")
     _assert_true(run_ui.map_scroll != null, "地图使用纵向滚动容器")
     _assert_true(
@@ -6561,6 +6945,16 @@ func _test_map_practice_and_battle_scene_integration() -> void:
         run_ui.map_view._node_position(0, 6).x <= run_ui.map_view.size.x - 180.0,
         "地图右侧为修习按钮保留节点安全区")
     _assert_true(not run_ui.practice_button.disabled, "初始待选节点状态修习按钮可用")
+    run_ui._open_run_build()
+    _assert_true(run_ui.run_build_overlay.visible, "地图待选阶段可打开构筑 Overlay")
+    _assert_equal(run_ui.run_build_overlay.tabs.get_tab_count(), 5, "地图构筑入口加载五个分页")
+    _assert_true(
+        run_ui.run_build_overlay.technique_panel._empty_state.visible,
+        "正式功法池为空时 UI 显示权威空状态")
+    _assert_true(
+        run_ui.run_build_overlay.inner_skill_panel._empty_state.visible,
+        "未获得正式内功时 UI 显示空状态而不伪装候选内容")
+    run_ui._close_run_build()
     run_ui._open_practice()
     _assert_true(run_ui.practice_overlay.visible, "点击修习按钮打开卡片式修习页面")
     run_ui._close_practice()
@@ -6576,6 +6970,13 @@ func _test_map_practice_and_battle_scene_integration() -> void:
         int(run_ui.current_battle.battle_configuration["content_seed"]) > 0,
         "地图 UI 将节点稳定内容种子传入战斗场景")
     _assert_true(run_ui.practice_button.disabled, "战斗节点进行中修习按钮锁定")
+    _assert_true(not run_ui.build_button.disabled, "战斗节点进行中仍允许只读查看构筑")
+    run_ui._open_run_build()
+    _assert_true(
+        run_ui.run_build_overlay.visible
+        and not run_ui.run_build_overlay._build.editable,
+        "节点进行中构筑页保持可见并使用 DTO 只读门禁")
+    run_ui._close_run_build()
     run_ui._on_battle_finished("player_victory")
     _assert_equal(run_ui.run_session.snapshot().phase, "awaiting_reward", "战斗胜利后进入可见奖励阶段")
     _assert_equal(run_ui.run_session.snapshot().experience, 0, "领取前战斗奖励不会提前到账")
