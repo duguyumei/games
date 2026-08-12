@@ -24,7 +24,6 @@ const DEFAULT_SETTINGS := {
     "compression_enabled": true,
     "compression_interval_rounds": 5,
     "max_retries": 1,
-    "intent_visibility": "full",
 }
 
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate(true)
@@ -46,7 +45,7 @@ var current_action_index: int = 0
 var enemy_can_act: bool = false
 var player_can_act: bool = false
 var decision_source: String = ""
-var public_intent: Dictionary = {}
+var possible_enemy_intents: Array = []
 var last_error: Dictionary = {}
 var last_metadata: Dictionary = {}
 
@@ -105,7 +104,8 @@ func open_window(
     enemy_can_act = bool(values.get("enemy_can_act", false))
     player_can_act = bool(values.get("player_can_act", false))
     decision_source = ""
-    public_intent.clear()
+    possible_enemy_intents = values.get(
+        "possible_enemy_intents", []).duplicate(true)
     last_error.clear()
     last_metadata.clear()
     _fallback_proposal = fallback_proposal
@@ -204,7 +204,7 @@ func close_window() -> void:
     enemy_can_act = false
     player_can_act = false
     decision_source = ""
-    public_intent.clear()
+    possible_enemy_intents.clear()
     _fallback_proposal = null
     _emit_state_changed()
 
@@ -220,7 +220,7 @@ func snapshot() -> Dictionary:
         "player_can_act": player_can_act,
         "can_player_confirm": can_player_confirm(),
         "decision_source": decision_source,
-        "public_intent": public_intent.duplicate(true),
+        "possible_enemy_intents": possible_enemy_intents.duplicate(true),
         "last_error": last_error.duplicate(true),
         "last_metadata": last_metadata.duplicate(true),
     }
@@ -250,10 +250,14 @@ func _on_decision_failed(decision_id: String, error: Dictionary) -> void:
 
 func _use_fallback(error: Dictionary) -> Dictionary:
     last_error = error.duplicate(true)
-    if _fallback_proposal == null or not bool(_fallback_proposal.accepted):
+    var fallback = (
+        _fallback_proposal.call()
+        if _fallback_proposal is Callable and _fallback_proposal.is_valid()
+        else _fallback_proposal)
+    if fallback == null or not bool(fallback.accepted):
         return _fail_window(error)
     fallback_used.emit(current_window_id, error.duplicate(true))
-    return _lock_proposal(_fallback_proposal, "local_utility", {
+    return _lock_proposal(fallback, "local_utility", {
         "fallback_reason": error.duplicate(true),
         "elapsed_msec": maxi(0, _now_msec() - _started_at_msec),
     })
@@ -276,7 +280,6 @@ func _lock_proposal(proposal, source: String, metadata: Dictionary) -> Dictionar
         return _fail_window(error)
     decision_source = source
     last_metadata = metadata.duplicate(true)
-    public_intent = _public_intent_for(proposal)
     state = READY if source == "remote" else FALLBACK_READY
     if source != "remote" and conversation != null:
         conversation.record_local_outcome(
@@ -289,7 +292,6 @@ func _lock_proposal(proposal, source: String, metadata: Dictionary) -> Dictionar
             })
     proposal_locked.emit(current_window_id, proposal, {
         "source": source,
-        "public_intent": public_intent.duplicate(true),
         "provider": metadata.duplicate(true),
     })
     _emit_state_changed()
@@ -309,18 +311,6 @@ func _fail_window(error: Dictionary) -> Dictionary:
         "success": false,
         "state": state,
         "reason": str(error.get("message", "AI 行动窗口失败")),
-    }
-
-func _public_intent_for(proposal) -> Dictionary:
-    if str(settings.get("intent_visibility", "full")) != "full":
-        return {"ready": true}
-    var intent: Dictionary = proposal.preview.get("intent", {})
-    return {
-        "ready": true,
-        "damage": maxi(0, int(intent.get("damage", 0))),
-        "defense": maxi(0, int(intent.get("defense", 0))),
-        "segments": maxi(0, int(intent.get("segments", 0))),
-        "combo": bool(intent.get("combo", false)),
     }
 
 func _emit_state_changed() -> void:

@@ -156,6 +156,12 @@ const ENEMY_AI_NUMBER_FIELDS := [
     "sequence_progress_weight",
     "combo_follow_up_weight",
     "combo_without_follow_up_penalty",
+    "candidate_limit",
+    "diversity_penalty",
+    "future_value_discount",
+]
+const ENEMY_AI_DIRECTIONS := [
+    "assault", "survival", "prepare", "cycle", "develop", "control",
 ]
 const FORBIDDEN_ENEMY_ENTRY_FIELDS := [
     "life", "max_life", "owned_technique_ids", "consumable_ids",
@@ -1728,6 +1734,21 @@ func _validate_enemy_ai_policy(value, scope: String) -> void:
         return
     for field in value:
         var field_name := str(field)
+        if field_name == "direction_weights":
+            var weights = value[field]
+            if not weights is Dictionary:
+                _error(scope + ".direction_weights", "必须是对象")
+                continue
+            for direction_value in weights:
+                var direction := str(direction_value)
+                if direction not in ENEMY_AI_DIRECTIONS:
+                    _error(scope + ".direction_weights", "未知战略方向 %s" % direction)
+                elif not _is_number(weights[direction_value]) \
+                        or float(weights[direction_value]) < 0.0:
+                    _error(
+                        "%s.direction_weights.%s" % [scope, direction],
+                        "必须是非负数值")
+            continue
         if field_name == "next_technique_bias":
             var biases = value[field]
             if not biases is Dictionary:
@@ -1752,6 +1773,16 @@ func _validate_enemy_ai_policy(value, scope: String) -> void:
         var ratio := float(value["danger_life_ratio"])
         if ratio < 0.0 or ratio > 1.0:
             _error(scope + ".danger_life_ratio", "必须位于 0～1")
+    if value.has("candidate_limit"):
+        if not value["candidate_limit"] is int \
+                or int(value["candidate_limit"]) < 1 \
+                or int(value["candidate_limit"]) > 5:
+            _error(scope + ".candidate_limit", "必须是 1～5 的整数")
+    for ratio_field in ["diversity_penalty", "future_value_discount"]:
+        if value.has(ratio_field):
+            var ratio := float(value[ratio_field])
+            if ratio < 0.0 or ratio > 1.0:
+                _error(scope + "." + ratio_field, "必须位于 0～1")
 
 func _validate_loadout_references(loadout: Dictionary, scope: String) -> void:
     var inner_skill_ids = loadout.get("inner_skills", [])

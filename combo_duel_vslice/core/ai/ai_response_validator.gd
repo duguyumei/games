@@ -1,7 +1,7 @@
 class_name AiResponseValidator
 extends RefCounted
 
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
 const ALLOWED_KEYS := [
     "schema_version",
     "decision_id",

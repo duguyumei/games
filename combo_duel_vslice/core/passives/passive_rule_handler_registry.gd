@@ -51,6 +51,9 @@ const BATTLE_POLICY_QUERY_HOOKS := [
     "explicit_discard_permission_query",
     "technique_activation_permission_query",
     "cooperation_permission_query",
+    "ai_action_value_query",
+    "ai_card_play_value_query",
+    "ai_card_retention_value_query",
 ]
 
 const HOOKS := [
@@ -103,6 +106,9 @@ const HOOKS := [
     "explicit_discard_permission_query",
     "technique_activation_permission_query",
     "cooperation_permission_query",
+    "ai_action_value_query",
+    "ai_card_play_value_query",
+    "ai_card_retention_value_query",
 ]
 
 var _handlers: Dictionary = {}

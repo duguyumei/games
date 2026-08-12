@@ -30,6 +30,26 @@ func propose_utility(observation, preview_action: Callable, policy: Dictionary):
             "observation": observation.public_snapshot(),
         })
 
+func choose_utility_proposal(proposals: Array):
+    if proposals.is_empty():
+        return ProposalScript.new().configure_reject(
+            "enemy_utility", "没有合法压缩候选")
+    var best_priority := -1
+    var best_score := -INF
+    for proposal in proposals:
+        var priority := int(proposal.diagnostics.get("priority", 0))
+        if priority > best_priority:
+            best_priority = priority
+            best_score = float(proposal.score)
+        elif priority == best_priority:
+            best_score = maxf(best_score, float(proposal.score))
+    var best: Array = []
+    for proposal in proposals:
+        if int(proposal.diagnostics.get("priority", 0)) == best_priority \
+                and is_equal_approx(float(proposal.score), best_score):
+            best.append(proposal)
+    return best[planner.rng.randi_range(0, best.size() - 1)]
+
 func propose_utility_candidates(
         observation,
         preview_action: Callable,

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "case_id": "seed-2308-default",
+      "content_seed": 2308,
+      "policy": {}
+    },
+    {
+      "case_id": "seed-2308-diversity-high",
+      "content_seed": 2308,
+      "policy": {
+        "diversity_penalty": 0.65,
+        "future_value_discount": 0.5,
+        "candidate_limit": 5
+      }
+    }
+  ]
+}

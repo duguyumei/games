@@ -347,12 +347,15 @@ func snapshot() -> BattleSnapshot:
         else {
             "state": "local_utility" if engine.enemy_ai_enabled else "disabled",
             "can_player_confirm": true,
-            "public_intent": engine.enemy_plan.duplicate(true),
+            "possible_enemy_intents": engine.enemy_planning_service.possible_enemy_intents.duplicate(true),
         })
-    var visible_enemy_plan: Dictionary = engine.enemy_plan.duplicate(true)
-    if _remote_ai_enabled:
-        visible_enemy_plan = ai_snapshot.get("public_intent", {}).duplicate(true)
-        visible_enemy_plan.erase("ready")
+    var action_revealed: bool = not engine.last_enemy_action_cards.is_empty()
+    var visible_enemy_plan: Dictionary = (
+        engine.enemy_planning_service.public_plan(
+            engine.last_enemy_preview.get("intent", {}))
+        if action_revealed else {})
+    var visible_locked_count: int = (
+        engine.last_enemy_action_cards.size() if action_revealed else 0)
     return BattleSnapshotScript.from_dict({
         "battle_state": engine.battle_state,
         "battle_state_detail": engine.battle_state_detail,
@@ -365,8 +368,10 @@ func snapshot() -> BattleSnapshot:
         },
         "resolution_mode": engine.battle_flow.resolution_mode(),
         "round_ended": engine.round_ended,
-        "locked_enemy_card_count": engine.locked_enemy_card_ids.size(),
+        "locked_enemy_card_count": visible_locked_count,
         "enemy_plan": visible_enemy_plan,
+        "possible_enemy_intents": ai_snapshot.get(
+            "possible_enemy_intents", []).duplicate(true),
         "ai_decision": ai_snapshot,
         "pending_choice": engine.pending_effect_choice_snapshot(),
         "pending_action_transaction": engine.pending_action_transaction_snapshot(),

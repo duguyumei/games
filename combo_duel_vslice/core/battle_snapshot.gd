@@ -11,7 +11,7 @@ extends RefCounted
 ## 日志与时点历史保持 Array 形态：它们是天然的追加序列，元素契约由
 ## StructuredGameLog 与 BattleTimingSystem 负责。
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 const SideSnapshotScript = preload("res://core/battle_side_snapshot.gd")
 
@@ -25,6 +25,7 @@ var resolution_mode: String = ""
 var round_ended: bool = false
 var locked_enemy_card_count: int = 0
 var enemy_plan: Dictionary = {}
+var possible_enemy_intents: Array = []
 var ai_decision: Dictionary = {}
 var pending_choice: Dictionary = {}
 var pending_action_transaction: Dictionary = {}
@@ -60,6 +61,8 @@ static func from_dict(values: Dictionary) -> BattleSnapshot:
     result.round_ended = bool(values.get("round_ended", false))
     result.locked_enemy_card_count = int(values.get("locked_enemy_card_count", 0))
     result.enemy_plan = values.get("enemy_plan", {}).duplicate(true)
+    result.possible_enemy_intents = values.get(
+        "possible_enemy_intents", []).duplicate(true)
     result.ai_decision = values.get("ai_decision", {}).duplicate(true)
     result.pending_choice = values.get("pending_choice", {}).duplicate(true)
     result.pending_action_transaction = values.get(
@@ -113,6 +116,7 @@ func to_dict() -> Dictionary:
         "round_ended": round_ended,
         "locked_enemy_card_count": locked_enemy_card_count,
         "enemy_plan": enemy_plan.duplicate(true),
+        "possible_enemy_intents": possible_enemy_intents.duplicate(true),
         "ai_decision": ai_decision.duplicate(true),
         "pending_choice": pending_choice.duplicate(true),
         "pending_action_transaction": pending_action_transaction.duplicate(true),

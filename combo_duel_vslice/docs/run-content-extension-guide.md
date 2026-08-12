@@ -36,6 +36,14 @@
 消耗品效果注册表是第三套独立平台：正式本局入口与战斗纵切兼容入口共用同一注册表，
 通过两个窄 Context 适配目标区域（RunDeck 实例 vs 当前手牌 QiCard）。
 
+战斗被动若要影响敌方候选画像，不把内容 ID 或状态 ID 写进 AI 中央模块，而是在既有
+`PassiveRuleHandler` 上声明 `ai_action_value_query`、`ai_card_play_value_query` 或
+`ai_card_retention_value_query`。Handler 返回 `estimated_value`、`progress_value`、
+`control_value`、`trigger_signatures`、`progress_entries` 中需要的字段；运行时保留稳定
+`source_breakdown`。三类查询只读，禁止移动真气、推进 RNG 或修改本局／战斗计数器；缺少
+Handler 时统一返回零贡献。这里评估的只是在当前战斗内的一步即时与未来价值，不纳入跨战斗
+经济、成长，也不实现 MCTS 或完整状态克隆。
+
 ## 2. 调用与事务边界
 
 ```text

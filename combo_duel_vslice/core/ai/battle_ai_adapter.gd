@@ -45,6 +45,7 @@ func build_window(battle_id: String, window_serial: int) -> Dictionary:
     var candidates: Array = []
     var fallback_proposal = null
     var observation = null
+    var candidate_set: Dictionary = {}
     if enemy_can_act:
         var battle_observation = engine.enemy_decision_observation()
         observation = DecisionObservationScript.new().configure({
@@ -59,11 +60,16 @@ func build_window(battle_id: String, window_serial: int) -> Dictionary:
                 "resolution_mode": "synchronized" if player_can_act else "single",
             },
         })
-        var proposals: Array = engine.enemy_remote_action_proposals()
+        candidate_set = engine.enemy_candidate_set()
+        var records: Array = candidate_set.get("records", [])
+        var proposals: Array = candidate_set.get("proposals", [])
         for index in range(proposals.size()):
             candidates.append(_candidate_from_proposal(
-                proposals[index], index, engine.enemy.hand.size()))
-        fallback_proposal = engine.enemy_utility_action_proposal()
+                proposals[index], index, engine.enemy.hand.size(),
+                records[index].get("features", {}) if index < records.size() else {}))
+        fallback_proposal = Callable(
+            engine.enemy_planning_service,
+            "choose_from_candidate_set").bind(proposals.duplicate())
     return {
         "window_id": window_id,
         "decision_id": window_id,
@@ -75,6 +81,9 @@ func build_window(battle_id: String, window_serial: int) -> Dictionary:
         "observation": observation,
         "candidates": candidates,
         "fallback_proposal": fallback_proposal,
+        "possible_enemy_intents": candidate_set.get(
+            "possible_enemy_intents", []).duplicate(true) if enemy_can_act else [],
+        "candidate_reduction": engine.enemy_planning_service.last_candidate_reduction.duplicate(true),
     }
 
 func record_action_result(coordinator, result: Dictionary) -> void:
@@ -146,7 +155,8 @@ func record_consumable_use(
         },
     })
 
-func _candidate_from_proposal(proposal, index: int, hand_size: int):
+func _candidate_from_proposal(
+        proposal, index: int, hand_size: int, features: Dictionary = {}):
     var preview: Dictionary = proposal.preview
     var intent: Dictionary = preview.get("intent", {})
     var values: Dictionary = preview.get("values", {})
@@ -163,12 +173,20 @@ func _candidate_from_proposal(proposal, index: int, hand_size: int):
             "segments": maxi(0, int(intent.get("segments", 0))),
             "combo": bool(intent.get("combo", false)),
             "retained_hand_count": maxi(0, hand_size - proposal.card_ids.size()),
+            "strategic_features": _remote_feature_snapshot(features),
         },
         "tags": [
             str(preview.get("hand", {}).get("id", "")),
             str(preview.get("technique_id", "")),
         ],
     }, proposal)
+
+func _remote_feature_snapshot(features: Dictionary) -> Dictionary:
+    if features.is_empty():
+        return {}
+    var result := features.duplicate(true)
+    result.erase("internal")
+    return result
 
 func _enemy_self_state(observation) -> Dictionary:
     var result: Dictionary = observation.public_snapshot()

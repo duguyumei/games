@@ -36,6 +36,16 @@ const MockAiProviderScript = preload("res://core/ai/providers/mock_ai_provider.g
 const AiProviderSettingsScript = preload("res://core/ai/providers/ai_provider_settings.gd")
 const ChatCompletionsAiProviderScript = preload("res://core/ai/providers/chat_completions_ai_provider.gd")
 const AiProviderFactoryScript = preload("res://core/ai/providers/ai_provider_factory.gd")
+const EnemyCandidateReducerScript = preload(
+    "res://core/ai/enemy_candidate_reducer.gd")
+const EnemyCandidateDominanceFilterScript = preload(
+    "res://core/ai/enemy_candidate_dominance_filter.gd")
+const EnemyCandidateFeaturesScript = preload(
+    "res://core/ai/enemy_candidate_features.gd")
+const EnemyAiValueQueryServiceScript = preload(
+    "res://core/ai/enemy_ai_value_query_service.gd")
+const FakeEnemyAiValueProviderScript = preload(
+    "res://tests/support/fake_enemy_ai_value_provider.gd")
 const DamageResolverScript = preload("res://core/damage_resolver.gd")
 const GameLogScript = preload("res://core/game_log.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
@@ -973,6 +983,7 @@ func _initialize() -> void:
     _test_status_system_contract()
     _test_action_controller_boundaries_and_strategy()
     _test_remote_ai_module_contract()
+    _test_enemy_candidate_reduction_and_hidden_intents()
     _test_chat_completions_provider_contract()
     _test_ai_settings_and_conversation_disk_contract()
     _test_remote_ai_action_window_session_gate()
@@ -5255,7 +5266,7 @@ func _test_remote_ai_module_contract() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 1,
+            "schema_version": 2,
             "decision_id": "decision-1",
             "state_hash": "state-hash-1",
             "candidate_id": "not-a-local-candidate",
@@ -5264,7 +5275,7 @@ func _test_remote_ai_module_contract() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 1,
+            "schema_version": 2,
             "decision_id": "decision-1",
             "state_hash": "state-hash-1",
             "candidate_id": "candidate-pair-with-synergy",
@@ -5312,7 +5323,7 @@ func _test_remote_ai_module_contract() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 1,
+            "schema_version": 2,
             "decision_id": "decision-2",
             "state_hash": "state-hash-2",
             "candidate_id": "candidate-pair-with-synergy",
@@ -5369,7 +5380,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     _assert_equal(thinking_snapshot.locked_enemy_card_count, 0, "AI 回答前敌方不提前移动或锁定真气")
     _assert_equal(provider.submitted_requests.size(), 1, "首个敌方出手机会只发送一次接口请求")
     var first_request: Dictionary = provider.submitted_requests[0]["payload"]
-    _assert_true(first_request.get("candidates", []).size() > 1, "远程 AI 只收到本地枚举的多个合法选择")
+    _assert_true(first_request.get("candidates", []).size() in range(1, 6), "远程 AI 只收到 1～5 个本地压缩候选")
     _assert_equal(first_request["candidates"][0]["groups"][0]["kind"], "main", "普通候选使用第 0 主牌型组契约")
 
     var player_hand_before: Array = thinking_snapshot.player.hand
@@ -5394,7 +5405,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 1,
+            "schema_version": 2,
             "decision_id": first_request["observation"]["decision_id"],
             "state_hash": first_request["observation"]["state_hash"],
             "candidate_id": first_request["candidates"][0]["candidate_id"],
@@ -5404,8 +5415,12 @@ func _test_remote_ai_action_window_session_gate() -> void:
     var ready_snapshot = session.snapshot()
     _assert_equal(ready_snapshot.ai_decision["state"], "ready", "合法回答通过后行动窗口转为思考完毕")
     _assert_true(ready_snapshot.ai_decision["can_player_confirm"], "敌方行动锁定后开放玩家确认")
-    _assert_true(ready_snapshot.locked_enemy_card_count > 0, "远程候选经本地复核后才锁定敌方真气")
-    _assert_true(ready_snapshot.enemy_plan.has("damage"), "本地预览核为已锁定远程候选生成公开伤害意图")
+    _assert_equal(ready_snapshot.locked_enemy_card_count, 0, "远程候选锁定后仍不泄露实际出牌张数")
+    _assert_true(ready_snapshot.enemy_plan.is_empty(), "远程候选锁定后不公开实际伤害与防御")
+    _assert_equal(
+        ready_snapshot.possible_enemy_intents,
+        thinking_snapshot.possible_enemy_intents,
+        "AI 思考完成前后可能意图内容和冻结顺序完全一致")
 
     var mixed_ids: Array[String] = []
     var ready_hand: Array = ready_snapshot.player.hand
@@ -5438,7 +5453,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 1,
+            "schema_version": 2,
             "decision_id": second_request["observation"]["decision_id"],
             "state_hash": second_request["observation"]["state_hash"],
             "candidate_id": second_request["candidates"][0]["candidate_id"],
@@ -5476,6 +5491,208 @@ func _test_remote_ai_action_window_session_gate() -> void:
     _assert_true(timeout_exchange_kinds.has("fallback_selected"), "AI 会话持久记录最终本地接管行动")
     provider.free()
     timeout_provider.free()
+
+func _test_enemy_candidate_reduction_and_hidden_intents() -> void:
+    var provider = MockAiProviderScript.new(false)
+    var session: BattleSession = BattleSessionScript.new()
+    session.use_ai_provider(provider)
+    var configuration := {
+        "content_seed": 2308,
+        "content_id": "candidate-reduction-contract",
+        "battle": {
+            "scenario_path": "res://data/scripted_battle.json",
+            "use_enemy_ai": true,
+            "use_remote_ai": true,
+        },
+    }
+    _assert_true(session.setup_battle(configuration), "候选压缩测试战斗建立")
+    session.execute({"type": "start_turn"})
+    var thinking = session.snapshot()
+    var reduction: Dictionary = session.engine.enemy_planning_service.last_candidate_reduction
+    _assert_true(int(reduction.get("full_count", 0)) > 5, "八张手牌的完整合法候选仍在本地枚举")
+    _assert_true(int(reduction.get("reduced_count", 0)) in range(1, 6), "对外候选压缩为 1～5 个")
+    _assert_equal(
+        provider.submitted_requests[0]["payload"]["candidates"].size(),
+        thinking.possible_enemy_intents.size(),
+        "远程 AI 与玩家可能意图来自同一压缩集合")
+    var public_ids: Dictionary = {}
+    for intent in thinking.possible_enemy_intents:
+        public_ids[str(intent["public_id"])] = true
+        _assert_true(not intent.has("candidate_id"), "公开意图不含远程候选 ID")
+        _assert_true(not intent.has("selected"), "公开意图不含选择标记")
+        _assert_true(not intent.has("card_ids"), "公开意图不含敌方卡牌实例")
+    _assert_equal(public_ids.size(), thinking.possible_enemy_intents.size(), "公开意图不制造重复项")
+
+    var request: Dictionary = provider.submitted_requests[0]["payload"]
+    provider.queue_result({
+        "success": true,
+        "body": {
+            "schema_version": 2,
+            "decision_id": request["observation"]["decision_id"],
+            "state_hash": request["observation"]["state_hash"],
+            "candidate_id": request["candidates"][0]["candidate_id"],
+        },
+    })
+    provider.complete(str(provider.submitted_requests[0]["request_id"]))
+    var ready = session.snapshot()
+    _assert_equal(ready.possible_enemy_intents, thinking.possible_enemy_intents, "AI 锁定不移动或重排可能意图")
+    _assert_equal(ready.locked_enemy_card_count, 0, "AI 锁定阶段不泄露实际出牌数量")
+    _assert_true(ready.enemy_plan.is_empty(), "AI 锁定阶段不泄露实际伤防")
+
+    var player_ids: Array[String] = [str(ready.player.hand[0]["id"])]
+    var resolved := session.execute({"type": "play_cards", "card_ids": player_ids})
+    _assert_true(resolved.success, "双方确认后进入正式揭示与结算")
+    var revealed = session.snapshot()
+    _assert_true(not revealed.last_enemy_preview.is_empty(), "正式揭示后公开实际敌方行动预览")
+    _assert_true(revealed.locked_enemy_card_count > 0, "正式揭示后才公开实际出牌数量")
+    _assert_true(revealed.enemy_plan.has("damage"), "正式揭示后才公开实际伤害与防御")
+
+    var reducer = EnemyCandidateReducerScript.new()
+    _assert_equal(reducer.normalize_policy({"candidate_limit": 0})["candidate_limit"], 1, "候选下限明确归一化为 1")
+    _assert_equal(reducer.normalize_policy({"candidate_limit": 9})["candidate_limit"], 5, "候选上限明确归一化为 5")
+
+    var one_actor = BattleSideScript.new("单选敌人", "single")
+    var one_target = BattleSideScript.new("目标", "target")
+    var only_card = _card("2", "wind")
+    only_card.effective_qi_value()
+    one_actor.hand = [only_card]
+    one_actor.hand_limit = 8
+    var one_observation = BattleObservationScript.new()
+    one_observation.actor_hand = one_actor.hand
+    one_observation.actor_life = 20
+    one_observation.actor_max_life = 20
+    one_observation.opponent_life = 20
+    var only_preview := {
+        "valid": true,
+        "hand": {"id": "high_card", "contributing": [only_card]},
+        "intent": {"damage": 2, "defense": 0, "combo": false},
+        "condition": {"ok": true},
+        "technique_id": "",
+        "next_technique_id": "",
+    }
+    var only_proposal = BattleActionProposalScript.new().configure_accept(
+        "test", [only_card.id], only_preview)
+    var one_before := one_actor.capture_passive_query_state()
+    var one_result: Dictionary = reducer.reduce(
+        [only_proposal], one_observation, one_actor, one_target, {"candidate_limit": 5})
+    _assert_equal(one_result["proposals"].size(), 1, "只有一个合法方案时只返回一个且不补重复")
+    _assert_equal(
+        one_actor.capture_passive_query_state(), one_before,
+        "重复画像与压缩不移动卡牌、不修改状态或 RNG")
+
+    var dominance = EnemyCandidateDominanceFilterScript.new()
+    var prepare := EnemyCandidateFeaturesScript.empty()
+    prepare["immediate"]["damage"] = 10
+    prepare["card_flow"]["played_count"] = 2
+    prepare["card_flow"]["retained_count"] = 3
+    prepare["future"]["retained_hand_value"] = 8.0
+    var cycle := prepare.duplicate(true)
+    cycle["card_flow"]["played_count"] = 5
+    cycle["card_flow"]["expected_next_normal_draw"] = 5
+    cycle["card_state"]["negative_card_cleanup_value"] = 6.0
+    cycle["future"]["retained_hand_value"] = 0.0
+    var tradeoff_records := [
+        {"features": prepare, "serial": 0},
+        {"features": cycle, "serial": 1},
+    ]
+    _assert_equal(dominance.filter(tradeoff_records).size(), 2, "同伤害的两张蓄势与五张换气各有优势并同时保留")
+    var worse := prepare.duplicate(true)
+    worse["future"]["retained_hand_value"] = 2.0
+    _assert_equal(dominance.filter([
+        {"features": prepare, "serial": 0},
+        {"features": worse, "serial": 1},
+    ]).size(), 1, "同方向且所有关键维度全面更差的候选被帕累托淘汰")
+    var lethal_feature := EnemyCandidateFeaturesScript.empty()
+    lethal_feature["immediate"]["lethal"] = true
+    var survival_feature := EnemyCandidateFeaturesScript.empty()
+    survival_feature["immediate"]["avoids_immediate_death"] = true
+    var ordinary_feature := EnemyCandidateFeaturesScript.empty()
+    var hard_records := [
+        {"features": lethal_feature, "serial": 0},
+        {"features": survival_feature, "serial": 1},
+        {"features": ordinary_feature, "serial": 2},
+    ]
+    reducer._mark_unique_hard_candidates(hard_records)
+    _assert_true(
+        lethal_feature["internal"]["hard_reasons"].has("lethal"),
+        "唯一斩杀候选进入硬保护")
+    _assert_true(
+        survival_feature["internal"]["hard_reasons"].has("survival"),
+        "唯一保命候选进入硬保护")
+    var similar_left := prepare.duplicate(true)
+    var similar_right := prepare.duplicate(true)
+    similar_left["internal"]["card_ids"] = ["a", "b"]
+    similar_right["internal"]["card_ids"] = ["a", "b"]
+    _assert_true(
+        reducer._similarity(similar_left, similar_right) >= 0.94,
+        "高度重复画像达到 MMR 重复候选停止阈值")
+
+    var query_actor = BattleSideScript.new("估值方", "query")
+    var query_target = BattleSideScript.new("估值目标", "query_target")
+    query_actor.defense = 3
+    var query_service = EnemyAiValueQueryServiceScript.new()
+    var fake = FakeEnemyAiValueProviderScript.new().configure({
+        "ai_action_value_query": {
+            "success": true,
+            "estimated_value": 10.0,
+            "progress_value": 4.0,
+            "progress_entries": [{
+                "source_kind": "inner_skill", "source_id": "fake",
+                "counter_before": 2, "counter_after": 3,
+                "trigger_ready": true, "estimated_value": 10,
+            }],
+        },
+    })
+    query_service.register_provider(fake, "fake_inner_skill", 50)
+    var action_value := query_service.query("ai_action_value_query", {
+        "actor": query_actor, "target": query_target,
+    })
+    _assert_equal(action_value["estimated_value"], 10.0, "内功即时触发通过纯查询进入估值")
+    _assert_equal(action_value["progress_entries"][0]["counter_after"], 3, "内功计数临界信息进入结构化画像来源")
+    _assert_equal(query_actor.defense, 3, "重复估值不修改战斗状态")
+    var positive_card = _card("5", "fire")
+    positive_card.set_anomaly("buff", "qi_heat", {}, 2)
+    var negative_card = _card("6", "forest")
+    negative_card.set_anomaly("debuff", "decay", {}, 2)
+    negative_card.set_anomaly("state", "poison")
+    var reshape_card = _card("7", "mountain")
+    reshape_card.reshape_enhancement = "fake_play_enhancement"
+    reshape_card.reshape_imprint = "fake_play_imprint"
+    query_actor.hand = [positive_card, negative_card, reshape_card]
+    var positive_retention := query_service.query(
+        "ai_card_retention_value_query", {
+            "actor": query_actor, "target": query_target, "card": positive_card,
+        })
+    var negative_play := query_service.query(
+        "ai_card_play_value_query", {
+            "actor": query_actor, "target": query_target, "card": negative_card,
+        })
+    var reshape_play := query_service.query(
+        "ai_card_play_value_query", {
+            "actor": query_actor, "target": query_target, "card": reshape_card,
+        })
+    _assert_true(
+        float(positive_retention["estimated_value"]) > 0.0,
+        "正面留手真气提高保留价值")
+    _assert_true(
+        float(negative_play["negative_card_cleanup_value"]) > 0.0,
+        "负面留手真气提高换气或清理价值")
+    _assert_true(
+        float(reshape_play["estimated_value"]) > 0.0,
+        "打出型强化与印记进入卡牌打出价值")
+    var mutating = FakeEnemyAiValueProviderScript.new()
+    mutating.mutate_actor = true
+    var guarded_query = EnemyAiValueQueryServiceScript.new()
+    guarded_query.register_provider(mutating, "mutating_fake", 10)
+    var guarded_before := query_actor.capture_passive_query_state()
+    var guarded_result := guarded_query.query("ai_action_value_query", {
+        "actor": query_actor, "target": query_target,
+    })
+    _assert_true(not guarded_result["success"], "估值 Handler 修改战斗状态时查询明确失败")
+    _assert_equal(
+        query_actor.capture_passive_query_state(), guarded_before,
+        "失败的估值查询恢复状态且不推进 RNG 或计数器")
+    provider.free()
 
 func _test_chat_completions_provider_contract() -> void:
     var defaults = AiProviderSettingsScript.new()
@@ -5520,7 +5737,7 @@ func _test_chat_completions_provider_contract() -> void:
         },
     })
     var decision_payload := {
-        "schema_version": 1,
+        "schema_version": 2,
         "type": "battle_decision",
         "battle_id": "provider-contract-battle",
         "provider_epoch": 0,
@@ -5560,7 +5777,7 @@ func _test_chat_completions_provider_contract() -> void:
     _assert_equal(provider._messages_by_battle["provider-contract-battle"].size(), 1, "取消或失败请求会回滚未获回答的用户消息")
 
     var decision_json := JSON.stringify({
-        "schema_version": 1,
+        "schema_version": 2,
         "decision_id": "decision-provider-test",
         "state_hash": "provider-state-hash",
         "candidate_id": "candidate-000",
@@ -5585,8 +5802,17 @@ func _test_chat_completions_provider_contract() -> void:
     _assert_equal(http_error["message"], "invalid api key", "Provider 保留兼容服务返回的错误信息")
 
     var validator = AiResponseValidatorScript.new()
-    var unexpected_field: Dictionary = validator.validate({
+    var legacy_response: Dictionary = validator.validate({
         "schema_version": 1,
+        "decision_id": "decision-provider-test",
+        "state_hash": "provider-state-hash",
+        "candidate_id": "candidate-000",
+    }, decision_payload["observation"], ["candidate-000"])
+    _assert_equal(
+        legacy_response["error_code"], "INVALID_SCHEMA_VERSION",
+        "隐藏意图远程协议明确拒绝旧 v1 响应")
+    var unexpected_field: Dictionary = validator.validate({
+        "schema_version": 2,
         "decision_id": "decision-provider-test",
         "state_hash": "provider-state-hash",
         "candidate_id": "candidate-000",
@@ -5640,7 +5866,7 @@ func _test_ai_settings_and_conversation_disk_contract() -> void:
         "/tmp/taiwu-ai-conversation-contract")
     _assert_true(not conversation_path.get_file().contains("/"), "会话文件名会清理路径分隔符")
     _assert_true(store.save(conversation_path, {
-        "schema_version": 1,
+        "schema_version": 2,
         "battle_id": unsafe_battle_id,
         "api_key": "conversation-secret",
         "nested": {"authorization": "Bearer conversation-secret"},
@@ -9549,8 +9775,8 @@ func _test_snapshot_boundaries_are_typed() -> void:
         battle.player.inner_skill_limit,
         6,
         "无被动修正时快照公开基础六格容量")
-    _assert_equal(battle.SCHEMA_VERSION, 1, "战斗快照使用稳定版本号")
-    _assert_equal(battle.to_dict()["schema_version"], 1, "战斗快照序列化保留版本号")
+    _assert_equal(battle.SCHEMA_VERSION, 2, "战斗快照使用隐藏意图协议版本")
+    _assert_equal(battle.to_dict()["schema_version"], 2, "战斗快照序列化保留隐藏意图版本号")
     _assert_equal(
         battle.log_channel("battle"),
         battle.battle_log,

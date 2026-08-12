@@ -330,7 +330,8 @@ func _init(
         Callable(self, "_read_turn_number"),
         Callable(self, "_read_enemy_action_index"),
         trigger_queue,
-        game_log)
+        game_log,
+        passive_rule_runtime)
     action_service = BattleActionServiceScript.new(
         player,
         enemy,
@@ -644,6 +645,9 @@ func enemy_decision_observation():
 func enemy_remote_action_proposals() -> Array:
     _sync_action_service_modes()
     return enemy_planning_service.remote_action_proposals()
+
+func enemy_candidate_set() -> Dictionary:
+    return enemy_planning_service.prepare_candidate_set()
 
 func enemy_utility_action_proposal():
     _sync_action_service_modes()

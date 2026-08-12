@@ -462,13 +462,12 @@ func _refresh() -> void:
     var current := battle_session.snapshot()
     var player_state := current.player
     var enemy_state := current.enemy
-    var enemy_plan: Dictionary = current.enemy_plan
+    var possible_intents: Array = current.possible_enemy_intents
     var ai_decision: Dictionary = current.ai_decision
-    var has_plan: bool = not enemy_plan.is_empty()
     var ai_state := str(ai_decision.get("state", "disabled"))
     var ai_state_label: String = {
         "thinking": "思考中…",
-        "ready": "思考完毕",
+        "ready": "已准备",
         "fallback_ready": "本地接管",
         "no_enemy_action": "本击不出手",
         "failed": "行动失败",
@@ -495,17 +494,12 @@ func _refresh() -> void:
             {"text": "连势 %d" % enemy_state.momentum_value, "color": COLORS["orange"]},
             {"text": "烈毒 %d" % _count_card_anomaly(enemy_state.hand, "poison", "lethal_poison"), "color": COLORS["red"]},
         ],
-        "plans": [
-            {"text": ai_state_label, "color": COLORS["purple"], "tooltip": "敌方当前行动提案的生成状态；远程失败时自动切回本地 Utility AI"},
-            {"text": "伤害 %s" % str(enemy_plan.get("damage", 0) if has_plan else "—"), "color": COLORS["red"], "tooltip": "对手当前锁定行动预计造成的原始伤害；条件追击会在结算时动态变化"},
-            {"text": "防御 %s" % str(enemy_plan.get("defense", 0) if has_plan else "—"), "color": COLORS["blue"], "tooltip": "对手当前锁定行动预计获得的防御"},
-            {"text": "连击 %s" % ("是" if enemy_plan.get("combo", false) else ("否" if has_plan else "—")), "color": COLORS["orange"], "tooltip": "本击是否已经满足自然连击或功法额外行动条件"},
-        ],
+        "plans": _enemy_intent_chips(ai_state_label, possible_intents),
     })
     enemy_hand_count_label.text = "%d / %d%s" % [
         enemy_state.hand_count,
         enemy_state.hand_limit,
-        " · 已计划" if current.locked_enemy_card_count > 0 else "",
+        " · 已计划" if ai_state in ["ready", "fallback_ready"] else "",
     ]
     round_badge.text = "第 %d 回合 · 我方 %d / 对手 %d 次" % [
         current.turn_number,
@@ -538,6 +532,37 @@ func _refresh() -> void:
         _battle_finish_emitted = true
         run_progress = battle_session.player_progress_snapshot()
         battle_finished.emit.call_deferred(current.battle_state)
+
+func _enemy_intent_chips(ai_state_label: String, intents: Array) -> Array:
+    var result: Array = [{
+        "text": ai_state_label,
+        "color": COLORS["purple"],
+        "tooltip": "敌方决策状态；已准备只表示内部选择完成，不公开实际选择",
+    }]
+    for intent_value in intents.slice(0, 5):
+        var intent: Dictionary = intent_value
+        var detail := "预计伤害 %d｜预计防御 %d｜打出约 %d 张" % [
+            int(intent.get("damage", 0)), int(intent.get("defense", 0)),
+            int(intent.get("played_count", 0))]
+        var tags: Array = intent.get("public_tags", [])
+        if not tags.is_empty():
+            detail += "｜" + "｜".join(tags)
+        result.append({
+            "text": str(intent.get("display_name", "可能意图")),
+            "color": _intent_color(str(intent.get("direction", "prepare"))),
+            "tooltip": detail,
+            "minimum_width": 58.0,
+        })
+    return result
+
+func _intent_color(direction: String) -> Color:
+    match direction:
+        "assault": return COLORS["red"]
+        "survival": return COLORS["blue"]
+        "cycle": return COLORS["green"]
+        "develop": return COLORS["orange"]
+        "control": return COLORS["purple"]
+    return COLORS["gold"]
 
 func _count_card_anomaly(cards: Array, category: String, anomaly_id: String) -> int:
     var count := 0

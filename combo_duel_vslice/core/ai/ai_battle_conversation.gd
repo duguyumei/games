@@ -6,7 +6,7 @@ signal changed
 const SnapshotScript = preload("res://core/ai/ai_conversation_snapshot.gd")
 const CompactorScript = preload("res://core/ai/ai_history_compactor.gd")
 
-const VERSION := 1
+const VERSION := 2
 const DEFAULT_SETTINGS := {
     "compression_enabled": true,
     "compression_interval_rounds": 5,

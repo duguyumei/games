@@ -7,6 +7,12 @@ extends RefCounted
 ## 这里不执行伤害与牌区提交，也不允许远程响应直接成为领域动作。
 
 const BattleObservationScript = preload("res://core/battle_observation.gd")
+const AiValueQueryServiceScript = preload(
+    "res://core/ai/enemy_ai_value_query_service.gd")
+const CandidateReducerScript = preload(
+    "res://core/ai/enemy_candidate_reducer.gd")
+const IntentProjectorScript = preload(
+    "res://core/ai/enemy_intent_public_projector.gd")
 
 var enemy
 var player
@@ -28,6 +34,12 @@ var enemy_ai_policy: Dictionary = {}
 var locked_enemy_card_ids: Array = []
 var locked_enemy_action_proposal = null
 var enemy_plan: Dictionary = {}
+var possible_enemy_intents: Array = []
+var last_candidate_reduction: Dictionary = {}
+## 本地私有诊断：包含完整候选卡牌实例和评分，不进入快照或远程请求。
+var last_candidate_diagnostics: Dictionary = {}
+var candidate_reducer
+var intent_projector := IntentProjectorScript.new()
 
 func _init(
         enemy_side,
@@ -42,7 +54,8 @@ func _init(
         turn_reader: Callable,
         action_index_reader: Callable,
         history,
-        log) -> void:
+        log,
+        passive_rule_runtime = null) -> void:
     enemy = enemy_side
     player = player_side
     battle_flow = flow
@@ -56,11 +69,16 @@ func _init(
     read_action_index = action_index_reader
     trigger_queue = history
     game_log = log
+    candidate_reducer = CandidateReducerScript.new(
+        AiValueQueryServiceScript.new(passive_rule_runtime))
 
 func reset() -> void:
     locked_enemy_card_ids.clear()
     locked_enemy_action_proposal = null
     enemy_plan.clear()
+    possible_enemy_intents.clear()
+    last_candidate_reduction.clear()
+    last_candidate_diagnostics.clear()
     enemy_ai_policy.clear()
 
 func set_modes(ai_enabled: bool, uses_external_enemy_actions: bool) -> void:
@@ -68,7 +86,7 @@ func set_modes(ai_enabled: bool, uses_external_enemy_actions: bool) -> void:
     external_enemy_action_mode = uses_external_enemy_actions
 
 func set_policy(policy: Dictionary) -> void:
-    enemy_ai_policy = policy.duplicate(true)
+    enemy_ai_policy = candidate_reducer.normalize_policy(policy)
 
 func use_game_log_queue(history, log) -> void:
     trigger_queue = history
@@ -82,23 +100,54 @@ func decision_observation():
         battle_flow)
 
 func remote_action_proposals() -> Array:
+    return prepare_candidate_set().get("proposals", [])
+
+func prepare_candidate_set() -> Dictionary:
+    possible_enemy_intents.clear()
+    last_candidate_reduction.clear()
+    last_candidate_diagnostics.clear()
     if not battle_flow.can_act(enemy):
-        return []
+        return {
+            "success": true, "full_count": 0, "records": [], "proposals": [],
+            "possible_enemy_intents": [],
+        }
     var observation = decision_observation()
-    return enemy_action_controller.propose_utility_candidates(
+    var full_proposals: Array = enemy_action_controller.propose_utility_candidates(
         observation,
         func(card_ids: Array): return preview_for_side.call(
             enemy, card_ids, enemy_sequence_book),
         enemy_ai_policy)
+    var reduced: Dictionary = candidate_reducer.reduce(
+        full_proposals, observation, enemy, player, enemy_ai_policy,
+        int(read_turn_number.call()))
+    if not reduced.get("success", false):
+        set_scenario_error.call(str(reduced.get("reason", "敌方候选压缩失败")))
+        return reduced
+    possible_enemy_intents = intent_projector.project(reduced["records"])
+    reduced["possible_enemy_intents"] = possible_enemy_intents.duplicate(true)
+    last_candidate_reduction = {
+        "full_count": int(reduced.get("full_count", 0)),
+        "pareto_count": int(reduced.get("pareto_count", 0)),
+        "reduced_count": reduced.get("proposals", []).size(),
+        "candidate_limit": int(reduced.get("candidate_limit", 5)),
+    }
+    last_candidate_diagnostics = reduced.get(
+        "diagnostics", {}).duplicate(true)
+    return reduced
+
+func candidate_reduction_diagnostics() -> Dictionary:
+    return last_candidate_diagnostics.duplicate(true)
 
 func utility_action_proposal():
     if not battle_flow.can_act(enemy):
         return null
-    return enemy_action_controller.propose_utility(
-        decision_observation(),
-        func(card_ids: Array): return preview_for_side.call(
-            enemy, card_ids, enemy_sequence_book),
-        enemy_ai_policy)
+    var candidate_set := prepare_candidate_set()
+    if not candidate_set.get("success", false):
+        return null
+    return choose_from_candidate_set(candidate_set.get("proposals", []))
+
+func choose_from_candidate_set(proposals: Array):
+    return enemy_action_controller.choose_utility_proposal(proposals)
 
 func lock_action() -> void:
     clear_action_lock()
@@ -188,12 +237,9 @@ func store_action_proposal(proposal, source_label: String) -> Dictionary:
             "score_components": proposal.diagnostics.get("score_components", {}).duplicate(true),
             "card_count": locked_enemy_card_ids.size(),
         })
-    var detail: String = "%d 张背面真气" % locked_enemy_card_ids.size()
-    if enemy_ai_enabled or external_enemy_action_mode:
-        detail = "预计伤害 %d｜预计防御 %d%s" % [
-            enemy_plan.get("damage", 0),
-            enemy_plan.get("defense", 0),
-            "｜将获得连击" if enemy_plan.get("combo", false) else ""]
+    var detail: String = (
+        "已计划" if enemy_ai_enabled or external_enemy_action_mode
+        else "%d 张背面真气" % locked_enemy_card_ids.size())
     trigger_queue.add_history(
         "enemy_lock", "对手已确定本击计划", source_label, "成功", detail)
     return {"success": true, "preview": revalidated_preview}
