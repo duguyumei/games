@@ -32,4 +32,8 @@
 
 十个生命周期 Hook 只表示战斗阶段边界，不代替实际抽牌、弃牌、伤害或防御等细粒度事实。战斗内功可以另外监听七个**已提交事件**：`action_confirmed`、`action_resolved`、`card_drawn`、`card_entered_discard`、`card_explicitly_discarded`、`damage_resolved` 与 `defense_gained`。预览、AI 候选枚举、同步伤害 shadow 和只读快照都不发送这些事件。已提交事件使用稳定战斗内 token 去重，允许修改两类已声明计数器；任一 Invocation 失败时回滚两类计数器并进入场景错误，但已经发生的牌区移动、生命或防御写入不伪装成可完整回滚。
 
-持续战斗数值统一通过九个只读整数查询：有效手牌上限、功法值四阶段输入、造成伤害、受到伤害、防御获得与回合结束防御保留率。查询仍复用相同来源、压制、执行计划和额外 Invocation，只能获得持久／战斗临时计数器的 read port。功法值四阶段在每个主组或协同组正式确认时重算并冻结；伤害与防御查询在实际写入前只执行一次。该平台没有使任何候选内功或物品成为正式内容，也没有开放牌型改写、打出／弃牌否决、内功复制或任意战斗对象修改端口。
+持续战斗数值统一通过九个只读整数查询：有效手牌上限、功法值四阶段输入、造成伤害、受到伤害、防御获得与回合结束防御保留率。查询仍复用相同来源、压制、执行计划和额外 Invocation，只能获得持久／战斗临时计数器的 read port。功法值四阶段在每个主组或协同组正式确认时重算并冻结；伤害与防御查询在实际写入前只执行一次。
+
+战斗被动若需要真实修改领域状态，只能使用 Invocation 作用域的 `BattlePassiveEffectPorts`。它用 `owner`、`actor`、`target`、`opponent` 四个稳定 scope 表达目标，并把抽牌、随机／全部明确弃牌、防御、伤害、牌区移动、临时移除、卡牌异状、抽牌堆置顶、战斗历练、额外行动与气势收口到既有 `BattleEffectPorts`；Handler 不直接持有 `CombatEngine`、`BattleSide`、`StatusSystem`、`CardZoneService` 或战斗 RNG。生命周期与七个已提交事实可以获得该端口；预览、AI 候选、牌型／身份／权限以及所有整数查询均不注入写端口。
+
+每条写命令使用 `battle_instance_id + event_token/action_token + source_instance_key + behavior_index + execution_index + command_index` 组成稳定 token，等待恢复或重复 Invocation 复用收据，不重新抽取随机数或重复写入。单条调用链最多执行 64 条命令；参数、scope 或权限失败会停止同一 Invocation 的后续写入并进入场景错误。事件级 receipt 仍由 `BattlePassiveEventReceiptStore` 负责，真实写入后的抽牌、弃牌、伤害与防御事实仍由既有细粒度事件服务发送，失败只回滚计数器，不伪造生命、防御或牌区事务。新增效果语义应建立职责单一的小 Handler 或领域服务，不能把命令集合扩成任意 JSON DSL。该平台没有使任何候选内功或物品成为正式内容，也没有开放内功复制。

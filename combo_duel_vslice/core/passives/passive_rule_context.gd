@@ -23,6 +23,10 @@ var persistent_counter_read_port = null
 var persistent_counter_mutation_port = null
 var battle_counter_read_port = null
 var battle_counter_mutation_port = null
+## 仅真实战斗 mutation Hook 在执行 Invocation 时注入。
+var battle_effect_ports = null
+## 作用域快照只供窄端口解析；Handler 不从这里取得完整 BattleSide。
+var battle_effect_scope: Dictionary = {}
 
 func configure(values: Dictionary):
     actor = values.get("actor", values.get("owner"))
@@ -47,7 +51,22 @@ func configure(values: Dictionary):
         "persistent_counter_mutation_port", counter_mutation_port)
     battle_counter_read_port = values.get("battle_counter_read_port")
     battle_counter_mutation_port = values.get("battle_counter_mutation_port")
+    battle_effect_ports = values.get("battle_effect_ports")
+    battle_effect_scope = values.get("battle_effect_scope", {}).duplicate(false)
+    if battle_effect_scope.is_empty():
+        battle_effect_scope = {
+            "action_token": str(values.get("action_token", "")),
+            "event_token": str(values.get("event_token", "")),
+            "event_serial": int(values.get("event_serial", -1)),
+            "timing_serial": int(values.get("timing_serial", -1)),
+            "card": values.get("card"),
+            "card_instance_id": str(values.get("card_instance_id", "")),
+        }
     return self
+
+func use_battle_effect_ports(ports, scope: Dictionary) -> void:
+    battle_effect_ports = ports
+    battle_effect_scope = scope.duplicate(false)
 
 func for_invocation(current_invocation):
     return get_script().new().configure({
@@ -65,6 +84,8 @@ func for_invocation(current_invocation):
         "persistent_counter_mutation_port": persistent_counter_mutation_port,
         "battle_counter_read_port": battle_counter_read_port,
         "battle_counter_mutation_port": battle_counter_mutation_port,
+        "battle_effect_ports": battle_effect_ports,
+        "battle_effect_scope": battle_effect_scope,
     })
 
 func for_plan_target(target_source):

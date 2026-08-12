@@ -235,6 +235,9 @@ func _init(
         battle_flow,
         trigger_queue)
     effect_ports.use_sides(player, enemy)
+    effect_ports.use_battle_rng(rng)
+    passive_rule_runtime.use_battle_effect_ports(
+        effect_ports, Callable(self, "_set_scenario_error"))
     status_system.use_effect_ports(effect_ports)
     status_system.use_rng(rng)
     card_reshape_runtime = CardReshapeBattleRuntimeScript.new(
@@ -442,6 +445,7 @@ func setup(
         return
     battle_passive_timing_bridge.close_battle()
     battle_passive_event_service.close_battle()
+    passive_rule_runtime.close_battle_effect_commands()
     rng.seed = seed_value
     battle_cleanup_completed = false
     round_service.reset()
@@ -478,8 +482,11 @@ func setup(
     damage_resolver.reset()
     action_resolver.reset()
     _battle_instance_serial += 1
+    var battle_instance_id := "battle-%06d" % _battle_instance_serial
+    effect_ports.use_battle_instance_id(battle_instance_id)
+    passive_rule_runtime.open_battle_effect_commands(battle_instance_id)
     battle_passive_event_service.open_battle(
-        [player, enemy], "battle-%06d" % _battle_instance_serial)
+        [player, enemy], battle_instance_id)
     passive_rule_runtime.suppression_service.clear()
     state_changed.emit()
 
@@ -544,6 +551,7 @@ func use_external_enemy_actions(enabled: bool) -> void:
     if not enabled and battle_passive_timing_bridge.is_assembled():
         battle_passive_timing_bridge.close_battle()
         battle_passive_event_service.close_battle()
+        passive_rule_runtime.close_battle_effect_commands()
     external_enemy_action_mode = enabled
     round_service.set_modes(scripted_mode, external_enemy_action_mode)
     action_service.set_modes(scripted_mode, enemy_ai_enabled, external_enemy_action_mode)

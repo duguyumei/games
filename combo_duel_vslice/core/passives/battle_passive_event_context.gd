@@ -38,4 +38,6 @@ func for_invocation(current_invocation):
         "source": current_invocation.source,
         "invocation": current_invocation,
         "source_snapshot": source_snapshot,
+        "battle_effect_ports": battle_effect_ports,
+        "battle_effect_scope": battle_effect_scope,
     })

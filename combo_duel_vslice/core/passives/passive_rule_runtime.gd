@@ -22,12 +22,28 @@ const BattleCounterReadPortScript = preload(
     "res://core/passives/battle_passive_counter_read_port.gd")
 const BattleCounterMutationPortScript = preload(
     "res://core/passives/battle_passive_counter_mutation_port.gd")
+const BattlePassiveEffectPortsScript = preload(
+    "res://core/passives/battle_passive_effect_ports.gd")
+
+const BATTLE_MUTATION_HOOKS := [
+    "battle_start", "round_start", "turn_start", "before_normal_draw",
+    "after_normal_draw", "action_window_start", "group_end",
+    "action_window_end", "turn_end", "battle_end",
+    "action_confirmed", "action_resolved", "card_drawn",
+    "card_entered_discard", "card_explicitly_discarded",
+    "damage_resolved", "defense_gained",
+]
 
 var registry
 var source_resolver
 var suppression_service
 var activation_policy
 var capacity_policy
+var _battle_effect_ports_ref: WeakRef
+var _battle_effect_scenario_error: Callable
+var _battle_effect_command_receipts: Dictionary = {}
+var _active_effect_chain: Dictionary = {}
+var _effect_execution_depth: int = 0
 
 func _init(
         handler_registry,
@@ -49,6 +65,22 @@ func _init(
         if activation_override != null
         else ActivationPolicyScript.new(suppression_service))
     capacity_policy = CapacityPolicyScript.new(self)
+
+func use_battle_effect_ports(
+        ports,
+        scenario_error_callback: Callable = Callable()) -> void:
+    _battle_effect_ports_ref = weakref(ports) if ports != null else null
+    _battle_effect_scenario_error = scenario_error_callback
+
+func open_battle_effect_commands(_battle_instance_id: String = "") -> void:
+    _battle_effect_command_receipts.clear()
+    _active_effect_chain.clear()
+    _effect_execution_depth = 0
+
+func close_battle_effect_commands() -> void:
+    _battle_effect_command_receipts.clear()
+    _active_effect_chain.clear()
+    _effect_execution_depth = 0
 
 func coerce_context(value):
     if value is ContextScript:
@@ -160,6 +192,12 @@ func execute_invocation(
         context_override
         if context_override != null
         else invocation.context.for_invocation(invocation))
+    var mutation_hook: bool = invocation.hook in BATTLE_MUTATION_HOOKS
+    if mutation_hook:
+        _begin_effect_chain()
+        _attach_battle_effect_port(invocation, invocation_context)
+    elif invocation_context.has_method("use_battle_effect_ports"):
+        invocation_context.use_battle_effect_ports(null, {})
     var ports: Array = _attach_counter_ports(
         invocation.source, invocation_context, counter_access)
     var result: Dictionary = registry.execute(
@@ -176,6 +214,13 @@ func execute_invocation(
             "success": false,
             "reason": "；".join(port_errors),
         }
+    # The scoped port retains its Invocation context while the Handler runs.  Clear
+    # both references before returning so a RefCounted context/port cycle cannot
+    # survive a completed event.
+    if mutation_hook and invocation_context.has_method("use_battle_effect_ports"):
+        invocation_context.use_battle_effect_ports(null, {})
+    if mutation_hook:
+        _end_effect_chain()
     if not result.get("success", false):
         return {
             "success": false,
@@ -194,6 +239,42 @@ func execute_invocation(
         "invocation": invocation,
         "result": result,
     }
+
+func _attach_battle_effect_port(invocation, context) -> void:
+    var base_ports = (
+        _battle_effect_ports_ref.get_ref()
+        if _battle_effect_ports_ref != null else null)
+    if base_ports == null or not context.has_method("use_battle_effect_ports"):
+        if context.has_method("use_battle_effect_ports"):
+            context.use_battle_effect_ports(null, {})
+        return
+    var existing_scope: Dictionary = context.battle_effect_scope.duplicate(false)
+    existing_scope["hook"] = invocation.hook
+    var action_token := str(existing_scope.get("action_token", ""))
+    if action_token == "":
+        action_token = str(context.payload.get("action_token", ""))
+    existing_scope["action_token"] = action_token
+    var event_token := str(existing_scope.get("event_token", ""))
+    if event_token == "":
+        event_token = str(context.payload.get("event_token", ""))
+    existing_scope["event_token"] = event_token
+    var port = BattlePassiveEffectPortsScript.new(
+        base_ports,
+        context,
+        _battle_effect_command_receipts,
+        _active_effect_chain,
+        _battle_effect_scenario_error)
+    context.use_battle_effect_ports(port, existing_scope)
+
+func _begin_effect_chain() -> void:
+    if _effect_execution_depth == 0:
+        _active_effect_chain = {"command_count": 0}
+    _effect_execution_depth += 1
+
+func _end_effect_chain() -> void:
+    _effect_execution_depth = maxi(0, _effect_execution_depth - 1)
+    if _effect_execution_depth == 0:
+        _active_effect_chain = {}
 
 func source_fingerprint(hooks: Array, context) -> Dictionary:
     var values: Array = []

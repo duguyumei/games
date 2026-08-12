@@ -558,6 +558,10 @@ flowchart LR
     REG --> BRIDGE["BattlePassiveTimingBridge<br/>十个 BattleTimingSystem 时点"]
     REG --> BEVENT["BattlePassiveCommittedEventService<br/>七个实际提交事实"]
     REG --> BQUERY["BattleRuleQueryService<br/>九个只读整数查询"]
+    REG --> BPERM["BattlePermissionService<br/>操作否决查询"]
+    BRIDGE --> BPWRITE["BattlePassiveEffectPorts<br/>Invocation 作用域写命令"]
+    BEVENT --> BPWRITE
+    BPWRITE --> EPORT["BattleEffectPorts<br/>既有领域服务适配"]
     EVENT --> PORTS["RunPassiveEffectPorts<br/>受控 RunMutationService"]
     INV --> CPORT["Counter Port<br/>查询只读/事件可写"]
     CPORT --> CSTORE["RunPassiveCounterStore<br/>版本化整数 entries"]
@@ -596,6 +600,10 @@ Invocation 顺序执行；双方同 Hook 都有效时由 `unconfirmed_cross_side
 细粒度事件不占用 `BattleTimingSystem` 的十个生命周期位置。牌区由 `CardZoneService` 在自身响应完成后调用窄事件服务；行动由 `ActionResolver` 在冻结完成与 `group_end` 后分别提交；伤害和防御由 `BattleEffectPorts` 在真实写入后提交。receipt 只持续当前战斗。预览、AI 枚举、快照和同步伤害 shadow 不产生 receipt。
 
 战斗整数查询继续复用 `PassiveIntPolicyResolver` 的逐 Invocation 归并。`ActionPreviewService` 用它生成纯预览，正式确认再冻结四阶段功法输入；`BattleEffectPorts` 在实际普通伤害和防御写入前查询，`DefenseRetentionPolicy` 从基础 50 查询最终比例。`BattleSide` 同时公开基础与有效手牌上限，战斗快照保存两者，UI 和 AI 读取有效值。本层没有第二套 Runtime，也没有内容 ID 分支。
+
+战斗真实写入由 `BattlePassiveEffectPorts` 按 Invocation 创建窄门面。Bridge 的十个生命周期和 CommittedEventService 的七个事实事件可以注入；预览、AI 枚举、整数查询、牌型、身份和权限查询不注入。四个 scope 在端口内部解析为当前战斗方，Handler 不能传入任意 `BattleSide` 或自带 RNG。端口调用既有 `BattleEffectPorts`，所以明确弃牌、无漏／磐石、伤害与防御查询以及写入后的细粒度事件均保持同一路径。
+
+事件 token 防止整个已提交事实重放；命令 token 再以来源、behavior、execution 与调用下标防止等待恢复或重复 Invocation 重放单条写入。嵌套调用链共享 64 条命令上限，失败锁住当前端口并进入 `scenario_error`。领域写入一旦成功不由新端口伪造反向回滚；现有时点／事件事务仍只回滚两类计数器。
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 

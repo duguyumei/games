@@ -18,6 +18,8 @@ var _consumable_repository
 var _battle_rule_query_service
 var _committed_event_service
 var _round_number_reader: Callable
+var _battle_rng: RandomNumberGenerator
+var _battle_instance_id: String = "battle-0"
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -52,6 +54,42 @@ func use_passive_battle_services(
     _committed_event_service = event_service
     _round_number_reader = round_reader
 
+func use_battle_rng(rng: RandomNumberGenerator) -> void:
+    _battle_rng = rng
+
+func battle_rng() -> RandomNumberGenerator:
+    return _battle_rng
+
+func use_battle_instance_id(value: String) -> void:
+    _battle_instance_id = value if value != "" else "battle-0"
+
+func battle_instance_id() -> String:
+    return _battle_instance_id
+
+func is_current_side(side) -> bool:
+    return side != null and _sides.has(side)
+
+func locate_active_card(card_instance_id: String) -> Dictionary:
+    if card_instance_id == "":
+        return {"success": false, "reason": "卡牌实例 ID 不能为空"}
+    var matches: Array[Dictionary] = []
+    for side in _sides:
+        var location: Dictionary = side.card_zone_service.find_active_location(
+            side, card_instance_id)
+        if not location.is_empty():
+            matches.append({
+                "side": side,
+                "zone": str(location["zone"]),
+                "card": location["card"],
+            })
+    if matches.is_empty():
+        return {"success": false, "reason": "当前战斗不存在目标卡牌"}
+    if matches.size() > 1:
+        return {"success": false, "reason": "当前战斗存在重复卡牌实例 ID"}
+    var result: Dictionary = matches[0]
+    result["success"] = true
+    return result
+
 func opponent_of(side: BattleSide) -> BattleSide:
     for candidate in _sides:
         if candidate != side:
@@ -69,9 +107,10 @@ func deal_damage(
         target: BattleSide,
         amount: int,
         source_kind: String,
-        true_damage: bool = false) -> Dictionary:
+        true_damage: bool = false,
+        action_token: String = "") -> Dictionary:
     var resolved_amount := _resolve_actual_damage_amount(
-        actor, target, amount, source_kind, true_damage)
+        actor, target, amount, source_kind, true_damage, action_token)
     if not resolved_amount.get("success", false):
         return {
             "success": false,
@@ -88,7 +127,8 @@ func deal_damage(
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
     if not bool(result["buffered"]):
         _emit_damage_resolved(
-            actor, target, amount, source_kind, true_damage, result, false)
+            actor, target, amount, source_kind, true_damage, result, false,
+            action_token)
         _resolve_reflection(actor, target, source_kind, result)
     result["success"] = true
     return result
@@ -115,9 +155,17 @@ func add_defense(
         amount: int,
         source_kind: String = "effect",
         action_token: String = "") -> int:
+    return int(add_defense_result(
+        side, amount, source_kind, action_token).get("gained", 0))
+
+func add_defense_result(
+        side: BattleSide,
+        amount: int,
+        source_kind: String = "effect",
+        action_token: String = "") -> Dictionary:
     var requested := maxi(0, amount)
     if requested <= 0:
-        return 0
+        return {"success": true, "gained": 0, "requested": requested}
     var effective := requested
     if _battle_rule_query_service != null:
         var query = _battle_rule_query_service.resolve_values({
@@ -132,10 +180,20 @@ func add_defense(
         })
         if not query.success:
             _battle_rule_query_service.report_failure(query, "defense_gain")
-            return 0
+            return {
+                "success": false,
+                "gained": 0,
+                "requested": requested,
+                "reason": "；".join(query.errors),
+            }
         effective = maxi(0, query.effective_value)
     if effective <= 0:
-        return 0
+        return {
+            "success": true,
+            "gained": 0,
+            "requested": requested,
+            "effective": effective,
+        }
     var before := int(side.defense)
     var gained := side.add_defense(effective)
     if gained > 0 and _committed_event_service != null:
@@ -153,7 +211,14 @@ func add_defense(
             "defense_before": before,
             "defense_after": int(side.defense),
         })
-    return gained
+    return {
+        "success": true,
+        "gained": gained,
+        "requested": requested,
+        "effective": effective,
+        "before": before,
+        "after": int(side.defense),
+    }
 
 func add_momentum(side: BattleSide, amount: int) -> int:
     return side.add_momentum(amount)
@@ -426,7 +491,8 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         resolution["actor"], resolution["target"],
         int(resolution.get("requested_amount", resolution["amount"])),
         str(resolution["source_kind"]), bool(resolution["true_damage"]),
-        resolution["result"], true)
+        resolution["result"], true,
+        str(resolution.get("action_token", "")))
     _resolve_reflection(
         resolution["actor"],
         resolution["target"],
@@ -439,7 +505,8 @@ func _resolve_actual_damage_amount(
         target,
         requested_amount: int,
         source_kind: String,
-        true_damage: bool) -> Dictionary:
+        true_damage: bool,
+        action_token: String = "") -> Dictionary:
     if true_damage or _damage_resolver.is_buffering():
         return {"success": true, "amount": maxi(0, requested_amount)}
     var current := ComboDamageResolver.calculate_final_amount(
@@ -456,6 +523,7 @@ func _resolve_actual_damage_amount(
             "subject_kind": "damage", "subject_id": source_kind,
             "base_value": current, "round_number": _round_number(),
             "source_kind": source_kind,
+            "action_token": action_token,
             "metadata": {"requested_amount": requested_amount},
         })
         if not query.success:
@@ -468,7 +536,8 @@ func _resolve_synchronized_damage_amount(intent: Dictionary) -> Dictionary:
     return _resolve_actual_damage_amount(
         intent["actor"], intent["target"],
         int(intent.get("requested_amount", intent["amount"])),
-        str(intent["source_kind"]), bool(intent["true_damage"]))
+        str(intent["source_kind"]), bool(intent["true_damage"]),
+        str(intent.get("action_token", "")))
 
 func _emit_damage_resolved(
         actor,
@@ -477,17 +546,19 @@ func _emit_damage_resolved(
         source_kind: String,
         true_damage: bool,
         result: Dictionary,
-        synchronized: bool) -> void:
+        synchronized: bool,
+        action_token: String = "") -> void:
     if _committed_event_service == null:
         return
     var serial: int = int(_committed_event_service.next_serial())
     _committed_event_service.commit("damage_resolved", {
         "event_token": _committed_event_service.make_token(
-            "damage_resolved", actor, serial),
+            "damage_resolved", actor, serial, action_token),
         "event_serial": serial,
         "actor": actor, "target": target, "owner": actor,
         "include_target_owner": true,
         "round_number": _round_number(),
+        "action_token": action_token,
         "source_kind": source_kind,
         "requested_amount": requested_amount,
         "final_amount": int(result.get("final_amount", result.get("requested", 0))),

@@ -593,6 +593,14 @@ order；`battle_end` Handler 完成后才清临时 Store。
 
 普通打出只查询打出权限，进入弃牌堆时不查询明确弃牌权限；手动选择、随机弃牌、全部弃牌和 `reason = "explicit_discard"` 的移动则共用明确弃牌链。等待选择恢复使用已冻结候选，不重复发送权限查询。所有查询仍复用唯一 `PassiveRuleRuntime`、压制服务和 Invocation 顺序，本任务没有新增正式内容或白名单。
 
+## 6.15 战斗被动写命令端口
+
+内功或物品 Handler 需要真正修改战斗时，只能调用 `context.battle_effect_ports` 中的 `BattlePassiveEffectPorts`。该对象按 Invocation 创建，不暴露完整 `BattleEffectPorts`、战斗方对象、状态系统、牌区服务或 RNG。目标只能写为 `owner`、`actor`、`target`、`opponent`；无法解析到当前战斗方时结构化失败，不默认回退玩家或敌人。第一版命令包括 `draw_cards`、`discard_random_cards`、`discard_all_cards`、`gain_defense`、`deal_damage`、`move_card`、`temporarily_remove_card`、`apply_card_anomaly`、`place_on_draw_pile_top`、`gain_battle_experience`，以及复用稳定底层能力的额外行动和气势接口。
+
+每个结果至少带 `success`、`changed`、`reason`、`payload` 和 `command_token`。底层继续由 `BattleEffectPorts` 执行，因此随机弃牌使用战斗统一 RNG，明确弃牌经过 `BattlePermissionService`，防御和普通伤害经过数值查询，真实伤害保持原边界，异状先执行 `can_apply_card_anomaly`，成功写入后继续提交既有细粒度事件。正常打出使用 `normal_play`，不能改写为明确弃牌。
+
+只有十个生命周期 Hook 与七个已提交事件获得写端口。`action_preview`、所有整数查询、牌型 Options、卡牌身份与四个权限 Hook 都只有查询能力；预览或 AI 枚举不能写战斗。命令 token 由战斗实例、当前事件／行动 token、来源实例键、behavior、execution 和命令下标组成，事件收据与命令收据分别去重；单条嵌套调用链最多 64 条写命令。首条命令失败后本 Invocation 的后续命令不再执行。不要把这些窄命令组合成 JSON 脚本语言；新语义应新增小 Handler 或专属领域服务。本节只描述平台，没有新增正式内容或白名单。
+
 ## 7. 什么时候只写 JSON
 
 满足以下条件时只写 JSON：
