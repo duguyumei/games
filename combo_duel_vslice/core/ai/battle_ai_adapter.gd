@@ -9,18 +9,40 @@ extends RefCounted
 const BattleContextScript = preload("res://core/ai/ai_battle_context.gd")
 const DecisionObservationScript = preload("res://core/ai/ai_decision_observation.gd")
 const CandidateScript = preload("res://core/ai/ai_candidate.gd")
+const ProtocolScript = preload("res://core/ai/ai_protocol.gd")
+const StableEncoderScript = preload("res://core/ai/ai_stable_value_encoder.gd")
+const SemanticProjectorScript = preload(
+    "res://core/ai/ai_content_semantic_projector.gd")
+const StateProjectorScript = preload(
+    "res://core/ai/ai_battle_state_projector.gd")
+const PublicStateDeltaScript = preload(
+    "res://core/ai/ai_public_state_delta.gd")
 
 var engine
+var encoder := StableEncoderScript.new()
+var state_projector := StateProjectorScript.new()
+var state_delta := PublicStateDeltaScript.new()
+var context_snapshot: Dictionary = {}
+var _before_visible_state: Dictionary = {}
 
 func _init(combat_engine) -> void:
     engine = combat_engine
 
 func build_context(battle_id: String):
-    return BattleContextScript.new().configure({
+    var semantic_projector = SemanticProjectorScript.new(engine.content_catalog)
+    var semantics: Dictionary = semantic_projector.project(
+        engine.player, engine.enemy, engine.sequence_book,
+        engine.enemy_sequence_book)
+    context_snapshot = {
         "battle_id": battle_id,
-        "rules_version": "v0.30",
+        "rules_version": ProtocolScript.RULES_VERSION,
+        "content_version": ProtocolScript.CONTENT_VERSION,
+        "content_fingerprint": semantic_projector.fingerprint(semantics),
+        "ai_protocol_version": ProtocolScript.AI_PROTOCOL_VERSION,
+        "prompt_version": ProtocolScript.PROMPT_VERSION,
         "player_build": _side_build(engine.player, engine.sequence_book),
         "enemy_build": _side_build(engine.enemy, engine.enemy_sequence_book),
+        "content_semantics": semantics,
         "visibility": {
             "player_current_hand": false,
             "player_draw_order": false,
@@ -31,7 +53,8 @@ func build_context(battle_id: String):
             "history_delta": true,
             "synchronized_group_indices": true,
         },
-    })
+    }
+    return BattleContextScript.new().configure(context_snapshot)
 
 func build_window(battle_id: String, window_serial: int) -> Dictionary:
     var player_can_act: bool = engine.battle_flow.can_act(engine.player)
@@ -41,39 +64,47 @@ func build_window(battle_id: String, window_serial: int) -> Dictionary:
         engine.turn_number,
         window_serial,
     ]
-    var state_hash := _state_hash(window_id)
     var candidates: Array = []
     var fallback_proposal = null
     var observation = null
     var candidate_set: Dictionary = {}
     if enemy_can_act:
+        var candidate_set_values: Dictionary = engine.enemy_candidate_set()
+        candidate_set = candidate_set_values
         var battle_observation = engine.enemy_decision_observation()
+        var self_state := state_projector.project_self(
+            engine.enemy, engine.enemy_sequence_book, engine.battle_flow)
+        var opponent_state := state_projector.project_opponent(
+            engine.player, engine.sequence_book, engine.battle_flow)
+        opponent_state["opponent_threat"] = battle_observation.opponent_threat.duplicate(true)
         observation = DecisionObservationScript.new().configure({
             "decision_id": window_id,
             "window_id": window_id,
-            "state_hash": state_hash,
+            "state_hash": "pending",
             "round_number": engine.turn_number,
             "action_index": engine.enemy_action_index,
-            "self_state": _enemy_self_state(battle_observation),
-            "opponent_public_state": _player_public_state(),
+            "self_state": self_state,
+            "opponent_public_state": opponent_state,
             "metadata": {
                 "resolution_mode": "synchronized" if player_can_act else "single",
             },
         })
-        candidate_set = engine.enemy_candidate_set()
         var records: Array = candidate_set.get("records", [])
         var proposals: Array = candidate_set.get("proposals", [])
         for index in range(proposals.size()):
             candidates.append(_candidate_from_proposal(
                 proposals[index], index, engine.enemy.hand.size(),
-                records[index].get("features", {}) if index < records.size() else {}))
+                records[index] if index < records.size() else {}))
+        var state_hash := _state_hash(observation, candidates)
+        observation.state_hash = state_hash
         fallback_proposal = Callable(
             engine.enemy_planning_service,
             "choose_from_candidate_set").bind(proposals.duplicate())
+    _before_visible_state = _visible_battle_state()
     return {
         "window_id": window_id,
         "decision_id": window_id,
-        "state_hash": state_hash,
+        "state_hash": observation.state_hash if observation != null else "",
         "round_number": engine.turn_number,
         "action_index": engine.enemy_action_index,
         "player_can_act": player_can_act,
@@ -84,6 +115,8 @@ func build_window(battle_id: String, window_serial: int) -> Dictionary:
         "possible_enemy_intents": candidate_set.get(
             "possible_enemy_intents", []).duplicate(true) if enemy_can_act else [],
         "candidate_reduction": engine.enemy_planning_service.last_candidate_reduction.duplicate(true),
+        "candidate_diagnostics": engine.enemy_planning_service.candidate_reduction_diagnostics(),
+        "versions": _versions(),
     }
 
 func record_action_result(coordinator, result: Dictionary) -> void:
@@ -91,7 +124,7 @@ func record_action_result(coordinator, result: Dictionary) -> void:
         return
     var player_preview: Dictionary = result.get("preview", {})
     if not player_preview.is_empty():
-        coordinator.record_public_event({
+        _record_event(coordinator, {
             "round_number": engine.turn_number,
             "action_index": coordinator.current_action_index,
             "window_id": coordinator.current_window_id,
@@ -106,7 +139,7 @@ func record_action_result(coordinator, result: Dictionary) -> void:
         })
     var enemy_preview: Dictionary = result.get("enemy_preview", {})
     if not enemy_preview.is_empty():
-        coordinator.record_public_event({
+        _record_event(coordinator, {
             "round_number": engine.turn_number,
             "action_index": coordinator.current_action_index,
             "window_id": coordinator.current_window_id,
@@ -119,7 +152,38 @@ func record_action_result(coordinator, result: Dictionary) -> void:
                 "technique_id": str(enemy_preview.get("technique_id", "")),
             },
         })
-    coordinator.record_public_event({
+    var after_state := _visible_battle_state()
+    var delta := {
+        "player": state_delta.between(
+            _before_visible_state.get("player", {}), after_state["player"]),
+        "enemy": state_delta.between(
+            _before_visible_state.get("enemy", {}), after_state["enemy"]),
+    }
+    var player_damage := maxi(
+        0, -int(delta["enemy"]["life_delta"].get("delta", 0)))
+    var enemy_damage := maxi(
+        0, -int(delta["player"]["life_delta"].get("delta", 0)))
+    if player_damage > 0:
+        _record_event(coordinator, {
+            "round_number": engine.turn_number,
+            "action_index": coordinator.current_action_index,
+            "window_id": coordinator.current_window_id,
+            "event_type": "damage_resolved",
+            "actor_id": "player",
+            "visibility": "public",
+            "payload": {"amount": player_damage, "target_id": "enemy"},
+        })
+    if enemy_damage > 0:
+        _record_event(coordinator, {
+            "round_number": engine.turn_number,
+            "action_index": coordinator.current_action_index,
+            "window_id": coordinator.current_window_id,
+            "event_type": "damage_resolved",
+            "actor_id": "enemy",
+            "visibility": "public",
+            "payload": {"amount": enemy_damage, "target_id": "player"},
+        })
+    _record_event(coordinator, {
         "round_number": engine.turn_number,
         "action_index": coordinator.current_action_index,
         "window_id": coordinator.current_window_id,
@@ -132,7 +196,39 @@ func record_action_result(coordinator, result: Dictionary) -> void:
             "enemy_life": engine.enemy.life,
             "enemy_defense": engine.enemy.defense,
             "battle_state": engine.battle_state,
+            "state_delta": delta,
         },
+    })
+    _before_visible_state = after_state
+    coordinator.record_actual_result(coordinator.current_decision_id, {
+        "life_delta": {
+            "player": delta["player"]["life_delta"],
+            "enemy": delta["enemy"]["life_delta"],
+        },
+        "defense_delta": {
+            "player": delta["player"]["defense_delta"],
+            "enemy": delta["enemy"]["defense_delta"],
+        },
+        "zone_count_delta": {
+            "player": delta["player"]["zone_count_delta"],
+            "enemy": delta["enemy"]["zone_count_delta"],
+        },
+        "revealed_zone_changes": (
+            delta["player"]["revealed_zone_changes"]
+            + delta["enemy"]["revealed_zone_changes"]),
+        "status_changes": delta["player"]["status_changes"] \
+            + delta["enemy"]["status_changes"],
+        "passive_triggers": delta["player"]["passive_changes"] \
+            + delta["enemy"]["passive_changes"],
+        "sequence_changes": delta["player"]["sequence_changes"] \
+            + delta["enemy"]["sequence_changes"],
+        "battle_state_after": engine.battle_state,
+        "actual_damage": _actual_damage(delta),
+        "actual_defense": maxi(0, int(delta["enemy"]["defense_delta"]["delta"])),
+        "lethal": engine.player.life <= 0,
+        "avoided_death": engine.enemy.life > 0,
+        "waited_for_choice": bool(result.get("pending_choice", false)),
+        "local_revalidation_failed": false,
     })
 
 func record_consumable_use(
@@ -141,7 +237,7 @@ func record_consumable_use(
         result: Dictionary) -> void:
     if coordinator == null:
         return
-    coordinator.record_public_event({
+    _record_event(coordinator, {
         "round_number": engine.turn_number,
         "action_index": engine.enemy_action_index,
         "window_id": coordinator.current_window_id,
@@ -156,7 +252,7 @@ func record_consumable_use(
     })
 
 func _candidate_from_proposal(
-        proposal, index: int, hand_size: int, features: Dictionary = {}):
+        proposal, index: int, hand_size: int, record: Dictionary = {}):
     var preview: Dictionary = proposal.preview
     var intent: Dictionary = preview.get("intent", {})
     var values: Dictionary = preview.get("values", {})
@@ -173,12 +269,13 @@ func _candidate_from_proposal(
             "segments": maxi(0, int(intent.get("segments", 0))),
             "combo": bool(intent.get("combo", false)),
             "retained_hand_count": maxi(0, hand_size - proposal.card_ids.size()),
-            "strategic_features": _remote_feature_snapshot(features),
+            "strategic_features": _remote_feature_snapshot(record.get("features", {})),
         },
         "tags": [
             str(preview.get("hand", {}).get("id", "")),
             str(preview.get("technique_id", "")),
         ],
+        "diagnostic_candidate_id": str(record.get("diagnostic_candidate_id", "")),
     }, proposal)
 
 func _remote_feature_snapshot(features: Dictionary) -> Dictionary:
@@ -221,17 +318,51 @@ func _side_build(side, sequence_book) -> Dictionary:
         "sequence_positions": sequence_book.positions.duplicate(true),
     }
 
-func _state_hash(window_id: String) -> String:
-    var hand_ids: Array[String] = _card_ids(engine.enemy.hand)
-    hand_ids.sort()
-    return str(hash(JSON.stringify({
-        "window_id": window_id,
-        "round_number": engine.turn_number,
-        "action_index": engine.enemy_action_index,
-        "enemy_hand_ids": hand_ids,
-        "enemy_action_state": engine.actor_action_state(engine.enemy),
-        "enemy_sequence_positions": engine.enemy_sequence_book.positions.duplicate(true),
-    })))
+func _state_hash(observation, candidates: Array) -> String:
+    var observation_snapshot: Dictionary = observation.snapshot()
+    observation_snapshot.erase("state_hash")
+    var candidate_snapshots: Array = []
+    for candidate in candidates:
+        candidate_snapshots.append(candidate.public_snapshot())
+    return encoder.sha256({
+        "observation": observation_snapshot,
+        "candidates": candidate_snapshots,
+        "rules_version": context_snapshot.get("rules_version", ""),
+        "content_fingerprint": context_snapshot.get("content_fingerprint", ""),
+        "passive_source_fingerprint": encoder.sha256({
+            "enemy": observation_snapshot.get("self", {}).get("passive_progress", []),
+            "player": observation_snapshot.get("opponent", {}).get("public_passive_progress", []),
+        }),
+    })
+
+func _versions() -> Dictionary:
+    return {
+        "rules_version": context_snapshot.get("rules_version", ""),
+        "content_version": context_snapshot.get("content_version", 0),
+        "content_fingerprint": context_snapshot.get("content_fingerprint", ""),
+        "ai_protocol_version": ProtocolScript.AI_PROTOCOL_VERSION,
+        "prompt_version": ProtocolScript.PROMPT_VERSION,
+    }
+
+func _visible_battle_state() -> Dictionary:
+    return {
+        "player": state_projector.project_opponent(
+            engine.player, engine.sequence_book, engine.battle_flow),
+        "enemy": state_projector.project_self(
+            engine.enemy, engine.enemy_sequence_book, engine.battle_flow),
+    }
+
+func _record_event(coordinator, event: Dictionary) -> Dictionary:
+    var projected: Dictionary = coordinator.record_public_event(event)
+    if not projected.is_empty():
+        engine.enemy_planning_service.record_public_ai_event(projected)
+    return projected
+
+func _actual_damage(delta: Dictionary) -> int:
+    var player_life: Dictionary = delta.get("player", {}).get("life_delta", {})
+    var enemy_life: Dictionary = delta.get("enemy", {}).get("life_delta", {})
+    return maxi(0, -int(player_life.get("delta", 0))) \
+        + maxi(0, -int(enemy_life.get("delta", 0)))
 
 func _card_snapshots(cards: Array) -> Array:
     var result: Array = []

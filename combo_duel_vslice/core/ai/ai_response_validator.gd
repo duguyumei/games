@@ -1,7 +1,12 @@
 class_name AiResponseValidator
 extends RefCounted
 
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 3
+const REASON_CODES := [
+    "lethal", "survival", "assault", "prepare", "cycle", "control",
+    "passive_trigger", "sequence_progress", "resource_preservation",
+    "uncertainty_management",
+]
 const ALLOWED_KEYS := [
     "schema_version",
     "decision_id",
@@ -34,10 +39,19 @@ func validate(raw_response, observation: Dictionary, valid_candidate_ids: Array)
             "INVALID_CANDIDATE",
             "candidate_id 不在合法候选中",
             {"valid_candidate_ids": valid_candidate_ids.duplicate()})
+    var reason_provided: bool = parsed.has("reason_code") \
+        and str(parsed.get("reason_code", "")) != ""
+    var reason_code: String = str(parsed.get("reason_code", "unspecified")) \
+        if reason_provided else "unspecified"
+    if reason_provided and not REASON_CODES.has(reason_code):
+        return _failure("INVALID_REASON_CODE", "reason_code 不在固定枚举中", {
+            "allowed_reason_codes": REASON_CODES.duplicate(),
+        })
     return {
         "valid": true,
         "candidate_id": candidate_id,
-        "reason_code": str(parsed.get("reason_code", "")),
+        "reason_code": reason_code,
+        "protocol_quality_issue": not reason_provided,
         "confidence": clampf(float(parsed.get("confidence", 0.0)), 0.0, 1.0),
         "parsed": parsed.duplicate(true),
     }

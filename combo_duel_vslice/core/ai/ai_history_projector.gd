@@ -9,9 +9,21 @@ const HIDDEN_ID_KEYS := [
     "target_card_ids",
     "drawn_card_ids",
 ]
+const PUBLIC_EVENT_TYPES := [
+    "action_window_opened", "cards_played", "technique_resolved",
+    "cooperation_resolved", "combo_granted", "damage_resolved",
+    "defense_changed", "defense_decayed", "card_drawn",
+    "card_entered_discard", "card_explicitly_discarded",
+    "card_temporarily_removed", "card_returned", "card_state_changed",
+    "passive_triggered", "passive_counter_changed", "sequence_advanced",
+    "consumable_used", "action_resolved", "round_completed",
+    "battle_completed",
+]
 
 func project(raw_event: Dictionary) -> Dictionary:
     var values := raw_event.duplicate(true)
+    if not PUBLIC_EVENT_TYPES.has(str(values.get("event_type", values.get("type", "")))):
+        return {}
     var visibility := str(values.get("visibility", "public"))
     if visibility == "private":
         return {}
@@ -20,6 +32,10 @@ func project(raw_event: Dictionary) -> Dictionary:
         var hidden_count := [int(payload.get("count", 0))]
         payload = _redact_hidden_targets(payload, hidden_count)
         payload["hidden_target_count"] = int(hidden_count[0])
+    if str(values.get("actor_id", "")) == "player" \
+            and str(values.get("event_type", "")) == "card_drawn":
+        var drawn_count := int(payload.get("count", payload.get("drawn_count", 0)))
+        payload = {"count": drawn_count}
     values["payload"] = payload
     values["visibility"] = "public_redacted" if visibility == "hidden_random_target" else "public"
     return HistoryEventScript.new().configure(values).snapshot()

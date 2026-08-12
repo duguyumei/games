@@ -609,6 +609,29 @@ Invocation 顺序执行；双方同 Hook 都有效时由 `unconfirmed_cross_side
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 
+## 7.1 AI v3 信息、会话与私有轨迹
+
+```mermaid
+flowchart LR
+    CAT["ContentCatalog + 本场构筑"] --> SEM["AiContentSemanticProjector"]
+    SEM --> FP["规范 JSON + SHA-256 内容指纹"]
+    BATTLE["BattleSide / Sequence / Flow"] --> STATE["AiBattleStateProjector + VisibilityPolicy"]
+    STATE --> OBS["AiDecisionObservation v3"]
+    PUBLIC["公开构筑 + 公开历史"] --> THREAT["AiPublicThreatEstimator"]
+    THREAT --> OBS
+    F6B["F6B 完整候选诊断"] --> MAP["公开候选 ↔ 诊断候选映射"]
+    OBS --> HASH["观察 + 公开候选 + 版本 + 被动指纹"]
+    FP --> HASH
+    HASH --> REQ["远程请求：仅公开 v3 数据"]
+    REQ --> CONV["user://ai/conversations"]
+    F6B --> TRACE["user://ai/traces"]
+    MAP --> TRACE
+    RESULT["正式揭示与结算差量"] --> TRACE
+    TRACE --> REPORT["只读 run_ai_trace_report.gd"]
+```
+
+公开请求永远不经过 `TRACE`；玩家快照也只读取冻结的 `possible_enemy_intents`。因此完整手牌与全候选诊断可以用于本机复盘，而不会成为模型作弊输入或提前泄露最终选择。
+
 | Java | 本项目对应 | 例子 |
 |---|---|---|
 | 类 | `class_name` 脚本 | `battle_session.gd` |

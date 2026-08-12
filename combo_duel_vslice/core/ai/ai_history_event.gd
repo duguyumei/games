@@ -1,7 +1,7 @@
 class_name AiHistoryEvent
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 3
 
 var sequence: int = -1
 var round_number: int = 0

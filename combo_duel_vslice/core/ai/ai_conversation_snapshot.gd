@@ -6,7 +6,7 @@ extends RefCounted
 ## 这里只冻结对话上下文、交换记录和压缩游标，不负责请求编排、重试或
 ## 密钥脱敏；前者属于 AiBattleConversation，后者属于 AiConversationStore。
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 3
 
 var battle_id: String = ""
 var context_snapshot: Dictionary = {}

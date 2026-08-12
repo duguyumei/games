@@ -6,7 +6,7 @@ signal changed
 const SnapshotScript = preload("res://core/ai/ai_conversation_snapshot.gd")
 const CompactorScript = preload("res://core/ai/ai_history_compactor.gd")
 
-const VERSION := 2
+const VERSION := 3
 const DEFAULT_SETTINGS := {
     "compression_enabled": true,
     "compression_interval_rounds": 5,
@@ -111,6 +111,11 @@ func record_request(request_id: String, request: Dictionary) -> void:
         "kind": "request",
         "request_id": request_id,
         "provider_epoch": provider_epoch,
+        "battle_id": battle_id,
+        "decision_id": str(request.get("observation", {}).get("decision_id", "")),
+        "round_number": int(request.get("observation", {}).get("round_number", 0)),
+        "action_index": int(request.get("observation", {}).get("action_index", 0)),
+        "retry_index": _retry_index(request_id),
         "payload": request.duplicate(true),
     })
     if request.has("battle_context"):
@@ -122,6 +127,9 @@ func record_response(request_id: String, response: Dictionary) -> void:
         "kind": "response",
         "request_id": request_id,
         "provider_epoch": provider_epoch,
+        "battle_id": battle_id,
+        "error_code": str(response.get("error_code", "")),
+        "retry_index": _retry_index(request_id),
         "payload": response.duplicate(true),
     })
     changed.emit()
@@ -135,6 +143,12 @@ func accept_decision(request: Dictionary, result: Dictionary) -> void:
         "decision_id": str(request.get("observation", {}).get("decision_id", "")),
         "candidate_id": str(result.get("candidate_id", "")),
         "provider_epoch": provider_epoch,
+        "battle_id": battle_id,
+        "round_number": int(request.get("observation", {}).get("round_number", 0)),
+        "action_index": int(request.get("observation", {}).get("action_index", 0)),
+        "reason_code": str(result.get("reason_code", "unspecified")),
+        "confidence": float(result.get("confidence", 0.0)),
+        "protocol_quality_issue": bool(result.get("protocol_quality_issue", false)),
     })
     changed.emit()
 
@@ -146,9 +160,32 @@ func record_local_outcome(
         "kind": outcome_kind,
         "decision_id": decision_id,
         "provider_epoch": provider_epoch,
+        "battle_id": battle_id,
         "payload": payload.duplicate(true),
     })
     changed.emit()
+
+func record_audit(kind: String, values: Dictionary = {}) -> void:
+    var entry := {
+        "kind": kind,
+        "battle_id": battle_id,
+        "decision_id": str(values.get("decision_id", "")),
+        "request_id": str(values.get("request_id", "")),
+        "provider_epoch": provider_epoch,
+        "round_number": int(values.get("round_number", 0)),
+        "action_index": int(values.get("action_index", 0)),
+        "error_code": str(values.get("error_code", "")),
+        "retry_index": int(values.get("retry_index", 0)),
+    }
+    for key in values:
+        if not entry.has(key):
+            entry[key] = values[key] if not values[key] is Dictionary \
+                and not values[key] is Array else values[key].duplicate(true)
+    exchanges.append(entry)
+    changed.emit()
+
+func _retry_index(request_id: String) -> int:
+    return int(request_id.get_slice(":", request_id.get_slice_count(":") - 1))
 
 func snapshot() -> AiConversationSnapshot:
     return SnapshotScript.from_dict({

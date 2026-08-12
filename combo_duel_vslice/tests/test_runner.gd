@@ -32,6 +32,12 @@ const AiSettingsServiceScript = preload("res://core/ai/ai_settings_service.gd")
 const AiDecisionGatewayScript = preload("res://core/ai/ai_decision_gateway.gd")
 const AiPromptEncoderScript = preload("res://core/ai/ai_prompt_encoder.gd")
 const AiResponseValidatorScript = preload("res://core/ai/ai_response_validator.gd")
+const AiStableValueEncoderScript = preload(
+    "res://core/ai/ai_stable_value_encoder.gd")
+const AiHistoryCompactorScript = preload(
+    "res://core/ai/ai_history_compactor.gd")
+const AiTraceReporterScript = preload(
+    "res://tools/ai/ai_trace_reporter.gd")
 const MockAiProviderScript = preload("res://core/ai/providers/mock_ai_provider.gd")
 const AiProviderSettingsScript = preload("res://core/ai/providers/ai_provider_settings.gd")
 const ChatCompletionsAiProviderScript = preload("res://core/ai/providers/chat_completions_ai_provider.gd")
@@ -987,6 +993,7 @@ func _initialize() -> void:
     _test_chat_completions_provider_contract()
     _test_ai_settings_and_conversation_disk_contract()
     _test_remote_ai_action_window_session_gate()
+    _test_ai_protocol_v3_information_trace_and_report_contract()
     _test_effect_handler_registry_contract()
     _test_effect_extension_entry_contract()
     _test_standard_deck()
@@ -5149,6 +5156,10 @@ func _test_remote_ai_module_contract() -> void:
     var context = AiBattleContextScript.new().configure({
         "battle_id": "battle-ai-contract",
         "rules_version": "v0.30",
+        "content_version": 2,
+        "content_fingerprint": "contract-content-fingerprint",
+        "ai_protocol_version": 3,
+        "prompt_version": 3,
         "player_build": {
             "deck": ["wind_2", "forest_3"],
             "techniques": [],
@@ -5266,7 +5277,7 @@ func _test_remote_ai_module_contract() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 2,
+            "schema_version": 3,
             "decision_id": "decision-1",
             "state_hash": "state-hash-1",
             "candidate_id": "not-a-local-candidate",
@@ -5275,11 +5286,11 @@ func _test_remote_ai_module_contract() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 2,
+            "schema_version": 3,
             "decision_id": "decision-1",
             "state_hash": "state-hash-1",
             "candidate_id": "candidate-pair-with-synergy",
-            "reason_code": "preserve_future_options",
+            "reason_code": "resource_preservation",
             "confidence": 0.75,
         },
     })
@@ -5323,7 +5334,7 @@ func _test_remote_ai_module_contract() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 2,
+            "schema_version": 3,
             "decision_id": "decision-2",
             "state_hash": "state-hash-2",
             "candidate_id": "candidate-pair-with-synergy",
@@ -5405,7 +5416,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 2,
+            "schema_version": 3,
             "decision_id": first_request["observation"]["decision_id"],
             "state_hash": first_request["observation"]["state_hash"],
             "candidate_id": first_request["candidates"][0]["candidate_id"],
@@ -5453,7 +5464,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 2,
+            "schema_version": 3,
             "decision_id": second_request["observation"]["decision_id"],
             "state_hash": second_request["observation"]["state_hash"],
             "candidate_id": second_request["candidates"][0]["candidate_id"],
@@ -5527,7 +5538,7 @@ func _test_enemy_candidate_reduction_and_hidden_intents() -> void:
     provider.queue_result({
         "success": true,
         "body": {
-            "schema_version": 2,
+            "schema_version": 3,
             "decision_id": request["observation"]["decision_id"],
             "state_hash": request["observation"]["state_hash"],
             "candidate_id": request["candidates"][0]["candidate_id"],
@@ -5737,7 +5748,7 @@ func _test_chat_completions_provider_contract() -> void:
         },
     })
     var decision_payload := {
-        "schema_version": 2,
+        "schema_version": 3,
         "type": "battle_decision",
         "battle_id": "provider-contract-battle",
         "provider_epoch": 0,
@@ -5777,11 +5788,11 @@ func _test_chat_completions_provider_contract() -> void:
     _assert_equal(provider._messages_by_battle["provider-contract-battle"].size(), 1, "取消或失败请求会回滚未获回答的用户消息")
 
     var decision_json := JSON.stringify({
-        "schema_version": 2,
+        "schema_version": 3,
         "decision_id": "decision-provider-test",
         "state_hash": "provider-state-hash",
         "candidate_id": "candidate-000",
-        "reason_code": "preserve_future_options",
+        "reason_code": "resource_preservation",
         "confidence": 0.8,
     })
     var parsed_response: Dictionary = provider.parse_provider_response(
@@ -5812,7 +5823,7 @@ func _test_chat_completions_provider_contract() -> void:
         legacy_response["error_code"], "INVALID_SCHEMA_VERSION",
         "隐藏意图远程协议明确拒绝旧 v1 响应")
     var unexpected_field: Dictionary = validator.validate({
-        "schema_version": 2,
+        "schema_version": 3,
         "decision_id": "decision-provider-test",
         "state_hash": "provider-state-hash",
         "candidate_id": "candidate-000",
@@ -5850,6 +5861,7 @@ func _test_ai_settings_and_conversation_disk_contract() -> void:
     editable.set_value("provider", "model", "custom-compatible-model")
     editable.set_value("conversation", "compression_interval_rounds", 7)
     editable.set_value("storage", "conversation_directory", "/tmp/taiwu-ai-conversation-contract")
+    editable.set_value("storage", "decision_trace_directory", "/tmp/taiwu-ai-trace-contract")
     _assert_equal(editable.save(settings_path), OK, "玩家可以直接修改并保存 AI 配置文件")
     _assert_true(settings_service.reload(), "AI 设置服务重新载入玩家编辑后的配置")
     var runtime_profile: Dictionary = settings_service.runtime_profile(true)
@@ -5866,7 +5878,7 @@ func _test_ai_settings_and_conversation_disk_contract() -> void:
         "/tmp/taiwu-ai-conversation-contract")
     _assert_true(not conversation_path.get_file().contains("/"), "会话文件名会清理路径分隔符")
     _assert_true(store.save(conversation_path, {
-        "schema_version": 2,
+        "schema_version": 3,
         "battle_id": unsafe_battle_id,
         "api_key": "conversation-secret",
         "nested": {"authorization": "Bearer conversation-secret"},
@@ -5917,6 +5929,196 @@ func _test_ai_settings_and_conversation_disk_contract() -> void:
     _assert_true(not restarted_session.ai_coordinator.conversation.has_method("restore"), "AI 会话对象不提供续战恢复入口")
     mock_provider.free()
     restarted_provider.free()
+
+func _test_ai_protocol_v3_information_trace_and_report_contract() -> void:
+    var encoder = AiStableValueEncoderScript.new()
+    var left := {"b": 2, "nested": {"z": 9, "a": 1}, "a": [3, 2, 1]}
+    var right := {"a": [3, 2, 1], "nested": {"a": 1, "z": 9}, "b": 2}
+    _assert_equal(encoder.sha256(left), encoder.sha256(right),
+        "稳定 AI 编码不受 Dictionary 插入顺序影响")
+    right["nested"]["a"] = 2
+    _assert_true(encoder.sha256(left) != encoder.sha256(right),
+        "稳定 AI 编码在语义字段变化时改变 SHA-256")
+
+    var provider = MockAiProviderScript.new(false)
+    var session: BattleSession = BattleSessionScript.new()
+    session.use_ai_provider(provider)
+    var configuration := {
+        "content_seed": 9916,
+        "content_id": "ai-v3-contract",
+        "battle": {
+            "scenario_path": "res://data/scripted_battle.json",
+            "use_enemy_ai": true,
+            "use_remote_ai": true,
+        },
+        "ai_settings": {
+            "autosave_decision_trace": true,
+            "decision_trace_path": "/tmp/taiwu-ai-v3-contract-trace.json",
+        },
+    }
+    if FileAccess.file_exists(configuration["ai_settings"]["decision_trace_path"]):
+        DirAccess.remove_absolute(configuration["ai_settings"]["decision_trace_path"])
+    _assert_true(session.setup_battle(configuration), "AI v3 信息协议测试战斗建立")
+    session.execute({"type": "start_turn"})
+    var request: Dictionary = provider.submitted_requests[0]["payload"]
+    _assert_equal(request["schema_version"], 3, "AI 请求统一升级为协议 v3")
+    var context: Dictionary = request["battle_context"]
+    for field in ["rules_version", "content_version", "content_fingerprint",
+            "ai_protocol_version", "prompt_version"]:
+        _assert_true(context.has(field), "战斗开始上下文包含版本字段 %s" % field)
+    _assert_equal(context["ai_protocol_version"], 3, "战斗上下文声明 AI 协议 v3")
+    _assert_equal(context["prompt_version"], 3, "战斗上下文声明提示词 v3")
+    _assert_true(context["content_fingerprint"].length() == 64,
+        "本场内容语义使用 SHA-256 指纹")
+    _assert_true(not context["content_semantics"]["techniques"].is_empty(),
+        "本场引用功法进入语义上下文")
+    for technique in context["content_semantics"]["techniques"]:
+        _assert_true(str(technique.get("name", "")) != ""
+            and str(technique.get("description", "")) != "",
+            "功法 ID 同时携带名称和玩家语义")
+    _assert_true(not JSON.stringify(context).contains("handler"),
+        "内容语义不暴露 Handler 类名或内部运行时")
+    _assert_true(not context["player_build"].has("draw_order")
+        and not context["enemy_build"].has("draw_order"),
+        "双方完整构筑均不发送抽牌顺序")
+
+    var observation: Dictionary = request["observation"]
+    _assert_equal(observation["schema_version"], 3, "每窗口观察升级为 v3")
+    _assert_equal(observation["self"]["hand_cards"].size(),
+        session.engine.enemy.hand.size(), "敌人看到自身当前手牌实例")
+    _assert_true(not observation["self"].has("draw_order"),
+        "敌人也不能看到自身抽牌顺序")
+    _assert_equal(observation["opponent"]["hand_count"],
+        session.engine.player.hand.size(), "玩家当前手牌只公开数量")
+    _assert_true(not observation["opponent"].has("hand_cards"),
+        "玩家当前手牌实例不进入 AI 观察")
+    for field in ["momentum", "hand_limit", "reflection_percent",
+            "sequence_positions", "action_state", "public_statuses"]:
+        _assert_true(observation["opponent"].has(field),
+            "玩家公开状态包含 %s" % field)
+    var threat: Dictionary = observation["opponent"]["opponent_threat"]
+    _assert_true(int(threat["expected"]) >= 0 and int(threat["maximum"]) \
+        >= int(threat["expected"]), "公开威胁估计形成合法确定区间")
+    _assert_equal(threat["basis"], "public_build_history",
+        "威胁估计只声明公开构筑和历史依据")
+    _assert_true(session.engine.enemy_decision_observation().expected_incoming_damage >= 0,
+        "F6B 保命画像不再读取永久 -1")
+    _assert_true(str(observation["state_hash"]).length() == 64,
+        "完整观察与候选生成稳定 SHA-256 状态哈希")
+    _assert_true(not JSON.stringify(request).contains("candidate_diagnostics"),
+        "F6B 完整诊断不进入远程请求")
+    _assert_true(not JSON.stringify(session.snapshot().to_dict()).contains(
+        "candidate_diagnostics"), "私有轨迹不进入 BattleSnapshot")
+
+    var invalid_reason := AiResponseValidatorScript.new().validate({
+        "schema_version": 3,
+        "decision_id": observation["decision_id"],
+        "state_hash": observation["state_hash"],
+        "candidate_id": request["candidates"][0]["candidate_id"],
+        "reason_code": "free_form_reason",
+    }, observation, [request["candidates"][0]["candidate_id"]])
+    _assert_equal(invalid_reason["error_code"], "INVALID_REASON_CODE",
+        "非枚举 reason_code 触发协议校验失败")
+    var unspecified := AiResponseValidatorScript.new().validate({
+        "schema_version": 3,
+        "decision_id": observation["decision_id"],
+        "state_hash": observation["state_hash"],
+        "candidate_id": request["candidates"][0]["candidate_id"],
+    }, observation, [request["candidates"][0]["candidate_id"]])
+    _assert_equal(unspecified["reason_code"], "unspecified",
+        "缺少 reason_code 时规范化为 unspecified")
+    _assert_true(unspecified["protocol_quality_issue"],
+        "缺少 reason_code 记录为协议质量问题但不拒绝行动")
+    var legacy_v2 := AiResponseValidatorScript.new().validate({
+        "schema_version": 2,
+        "decision_id": observation["decision_id"],
+        "state_hash": observation["state_hash"],
+        "candidate_id": request["candidates"][0]["candidate_id"],
+    }, observation, [request["candidates"][0]["candidate_id"]])
+    _assert_equal(legacy_v2["error_code"], "INVALID_SCHEMA_VERSION",
+        "旧 schema_version=2 回答明确拒绝")
+
+    provider.queue_result({"success": true, "body": {
+        "schema_version": 3,
+        "decision_id": observation["decision_id"],
+        "state_hash": observation["state_hash"],
+        "candidate_id": request["candidates"][0]["candidate_id"],
+        "reason_code": "prepare", "confidence": 0.63,
+    }, "usage": {"prompt_tokens": 40, "completion_tokens": 8}})
+    provider.complete(str(provider.submitted_requests[0]["request_id"]))
+    var ready = session.snapshot()
+    _assert_equal(ready.ai_decision["state"], "ready",
+        "v3 合法回答通过本地复核并锁定")
+    var trace: Dictionary = session.ai_decision_trace_snapshot()
+    _assert_equal(trace["windows"].size(), 1, "每个决策窗口建立一条私有轨迹")
+    var window: Dictionary = trace["windows"][0]
+    _assert_true(not window["candidate_diagnostics"].is_empty(),
+        "私有轨迹直接复用 F6B 完整候选诊断")
+    _assert_equal(window["candidate_map"][0]["public_candidate_id"],
+        request["candidates"][0]["candidate_id"],
+        "公开候选与诊断候选建立本地映射")
+    _assert_equal(window["selected"]["source"], "remote",
+        "远程选择记录到同一窗口轨迹")
+    _assert_equal(window["selected"]["reason_code"], "prepare",
+        "轨迹保留固定 reason_code")
+    var resolved := session.execute({
+        "type": "play_cards",
+        "card_ids": [str(ready.player.hand[0]["id"])],
+    })
+    _assert_true(resolved.success, "真实双方行动完成正式揭示与结算")
+    trace = session.ai_decision_trace_snapshot()
+    window = trace["windows"][0]
+    _assert_true(not window["actual_result"].is_empty(),
+        "实际结算回填到同一 decision_id 私有轨迹")
+    _assert_true(window["actual_result"].has("life_delta")
+        and window["actual_result"].has("defense_delta")
+        and window["actual_result"].has("battle_state_after"),
+        "实际结果包含生命、防御差量与结算后状态")
+    _assert_true(FileAccess.file_exists(
+        configuration["ai_settings"]["decision_trace_path"]),
+        "私有轨迹独立写入指定本地目录")
+
+    var compact_events: Array = []
+    for index in range(6):
+        compact_events.append({
+            "sequence": index,
+            "round_number": mini(5, index + 1),
+            "action_index": index,
+            "window_id": "window-%d" % index,
+            "event_type": "action_resolved",
+            "actor_id": "system",
+            "payload": {"player_life": 100 - index, "player_defense": index,
+                "enemy_life": 90 - index, "enemy_defense": index * 2,
+                "battle_state": "active", "state_delta": {}},
+        })
+    var compacted := AiHistoryCompactorScript.new(5).compact(compact_events, 5)
+    _assert_equal(compacted["recent_action_tail"].size(), 4,
+        "五回合摘要保留最近四次正式行动")
+    _assert_equal(compacted["recent_action_tail"][0]["sequence"], 2,
+        "历史压缩保留近期行动时序")
+    _assert_equal(compacted,
+        AiHistoryCompactorScript.new(5).compact(compact_events, 5),
+        "相同公开事件产生完全相同历史摘要")
+
+    var empty_report := AiTraceReporterScript.new().report_paths([],
+        "/tmp/taiwu-ai-v3-empty")
+    _assert_equal(empty_report["status"], "no_data",
+        "离线报告空目录明确输出无数据")
+    var damaged_path := "/tmp/taiwu-ai-v3-damaged.json"
+    var damaged_file := FileAccess.open(damaged_path, FileAccess.WRITE)
+    damaged_file.store_string("{not-json")
+    damaged_file.close()
+    var report := AiTraceReporterScript.new().report_paths([
+        configuration["ai_settings"]["decision_trace_path"], damaged_path],
+        "/tmp/taiwu-ai-v3-contract")
+    _assert_equal(report["battle_count"], 1,
+        "损坏轨迹不会阻断其他战斗汇总")
+    _assert_equal(report["damaged_file_count"], 1,
+        "损坏轨迹被单独结构化报告")
+    _assert_true(str(report["human_summary"]) != ""
+        and report["aggregate"] is Dictionary,
+        "离线工具同时输出人类摘要和结构化 JSON 数据")
+    provider.free()
 
 func _test_effect_handler_registry_contract() -> void:
     var rng := RandomNumberGenerator.new()

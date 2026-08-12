@@ -10,6 +10,7 @@ const ProviderSettingsScript = preload("res://core/ai/providers/ai_provider_sett
 
 const DEFAULT_PATH := "user://ai/ai_settings.cfg"
 const DEFAULT_CONVERSATION_DIRECTORY := "user://ai/conversations"
+const DEFAULT_DECISION_TRACE_DIRECTORY := "user://ai/traces"
 
 var config_path: String = DEFAULT_PATH
 var last_error: String = ""
@@ -58,6 +59,8 @@ func reload() -> bool:
         else "ready_only")
     _storage["conversation_directory"] = str(
         _storage.get("conversation_directory", DEFAULT_CONVERSATION_DIRECTORY))
+    _storage["decision_trace_directory"] = str(
+        _storage.get("decision_trace_directory", DEFAULT_DECISION_TRACE_DIRECTORY))
     _loaded = true
     last_error = ""
     return true
@@ -103,6 +106,8 @@ func _reset_defaults() -> void:
     _storage = {
         "autosave_conversation": true,
         "conversation_directory": DEFAULT_CONVERSATION_DIRECTORY,
+        "autosave_decision_trace": true,
+        "decision_trace_directory": DEFAULT_DECISION_TRACE_DIRECTORY,
     }
     _loaded = false
     last_error = ""

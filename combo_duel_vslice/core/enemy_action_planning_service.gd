@@ -13,6 +13,8 @@ const CandidateReducerScript = preload(
     "res://core/ai/enemy_candidate_reducer.gd")
 const IntentProjectorScript = preload(
     "res://core/ai/enemy_intent_public_projector.gd")
+const ThreatEstimatorScript = preload(
+    "res://core/ai/ai_public_threat_estimator.gd")
 
 var enemy
 var player
@@ -38,8 +40,10 @@ var possible_enemy_intents: Array = []
 var last_candidate_reduction: Dictionary = {}
 ## 本地私有诊断：包含完整候选卡牌实例和评分，不进入快照或远程请求。
 var last_candidate_diagnostics: Dictionary = {}
+var public_ai_events: Array = []
 var candidate_reducer
 var intent_projector := IntentProjectorScript.new()
+var threat_estimator := ThreatEstimatorScript.new()
 
 func _init(
         enemy_side,
@@ -79,6 +83,7 @@ func reset() -> void:
     possible_enemy_intents.clear()
     last_candidate_reduction.clear()
     last_candidate_diagnostics.clear()
+    public_ai_events.clear()
     enemy_ai_policy.clear()
 
 func set_modes(ai_enabled: bool, uses_external_enemy_actions: bool) -> void:
@@ -93,11 +98,19 @@ func use_game_log_queue(history, log) -> void:
     game_log = log
 
 func decision_observation():
-    return BattleObservationScript.new().capture(
+    var observation = BattleObservationScript.new().capture(
         enemy,
         player,
         enemy_sequence_book,
         battle_flow)
+    observation.opponent_threat = threat_estimator.estimate(
+        player, public_ai_events)
+    observation.expected_incoming_damage = int(
+        observation.opponent_threat.get("expected", 0))
+    return observation
+
+func record_public_ai_event(event: Dictionary) -> void:
+    public_ai_events.append(event.duplicate(true))
 
 func remote_action_proposals() -> Array:
     return prepare_candidate_set().get("proposals", [])

@@ -8,6 +8,8 @@ var groups: Array = []
 var summary: Dictionary = {}
 var tags: Array[String] = []
 var action_proposal = null
+## 仅本地轨迹使用，不进入 public_snapshot()。
+var diagnostic_candidate_id: String = ""
 
 func configure(values: Dictionary, proposal = null):
     candidate_id = str(values.get("candidate_id", values.get("id", "")))
@@ -17,6 +19,7 @@ func configure(values: Dictionary, proposal = null):
     for tag in values.get("tags", []):
         tags.append(str(tag))
     action_proposal = proposal
+    diagnostic_candidate_id = str(values.get("diagnostic_candidate_id", ""))
     return self
 
 func is_valid() -> bool:

@@ -100,6 +100,17 @@ func _on_request_completed(request_id: String, provider_result: Dictionary) -> v
             state["observation"],
             state["candidates_by_id"].keys())
     var decision_id := str(state["observation"].get("decision_id", ""))
+    if not provider_result.get("success", false) \
+            and str(validation.get("error_code", "")) in [
+                "TIMEOUT", "REQUEST_TIMEOUT", "HTTP_TIMEOUT"]:
+        state["conversation"].record_audit("decision_timed_out", {
+            "decision_id": decision_id,
+            "request_id": request_id,
+            "round_number": int(state["observation"].get("round_number", 0)),
+            "action_index": int(state["observation"].get("action_index", 0)),
+            "error_code": str(validation.get("error_code", "TIMEOUT")),
+            "retry_index": int(state["retry_index"]),
+        })
     if validation.get("valid", false):
         var candidate = state["candidates_by_id"][validation["candidate_id"]]
         if candidate.action_proposal == null:
@@ -110,18 +121,50 @@ func _on_request_completed(request_id: String, provider_result: Dictionary) -> v
                 "context": {},
             }
         else:
+            state["conversation"].record_audit("validation_succeeded", {
+                "decision_id": decision_id,
+                "request_id": request_id,
+                "round_number": int(state["observation"].get("round_number", 0)),
+                "action_index": int(state["observation"].get("action_index", 0)),
+                "retry_index": int(state["retry_index"]),
+            })
             state["conversation"].accept_decision(state["request"], validation)
+            var provider_metadata := _provider_metadata(provider_result)
             decision_ready.emit(decision_id, candidate.action_proposal, {
                 "candidate_id": validation["candidate_id"],
                 "reason_code": validation.get("reason_code", ""),
                 "confidence": validation.get("confidence", 0.0),
                 "request_id": request_id,
+                "retry_index": int(state["retry_index"]),
+                "usage": provider_result.get("usage", {}).duplicate(true),
+                "provider_id": provider_metadata["provider_id"],
+                "model": provider_metadata["model"],
+                "thinking_enabled": provider_metadata["thinking_enabled"],
+                "reasoning_effort": provider_metadata["reasoning_effort"],
+                "prompt_version": 3,
+                "protocol_quality_issue": validation.get("protocol_quality_issue", false),
             })
             return
+    state["conversation"].record_audit("validation_failed", {
+        "decision_id": decision_id,
+        "request_id": request_id,
+        "round_number": int(state["observation"].get("round_number", 0)),
+        "action_index": int(state["observation"].get("action_index", 0)),
+        "error_code": str(validation.get("error_code", "VALIDATION_FAILED")),
+        "retry_index": int(state["retry_index"]),
+    })
     if int(state["retry_index"]) < int(state["max_retries"]):
         state["retry_index"] = int(state["retry_index"]) + 1
         state["last_error"] = validation.duplicate(true)
         decision_retry.emit(decision_id, state["retry_index"], validation.duplicate(true))
+        state["conversation"].record_audit("decision_retried", {
+            "decision_id": decision_id,
+            "request_id": request_id,
+            "round_number": int(state["observation"].get("round_number", 0)),
+            "action_index": int(state["observation"].get("action_index", 0)),
+            "error_code": str(validation.get("error_code", "")),
+            "retry_index": int(state["retry_index"]),
+        })
         _submit_state(state)
         return
     decision_failed.emit(decision_id, validation.duplicate(true))
@@ -144,6 +187,14 @@ func cancel_decision(decision_id: String, reason: String = "请求已取消") ->
             "error_code": "REQUEST_CANCELLED",
             "message": reason,
         })
+        state["conversation"].record_audit("decision_cancelled", {
+            "decision_id": decision_id,
+            "request_id": request_id,
+            "round_number": int(state["observation"].get("round_number", 0)),
+            "action_index": int(state["observation"].get("action_index", 0)),
+            "error_code": "REQUEST_CANCELLED",
+            "retry_index": int(state.get("retry_index", 0)),
+        })
         cancelled = true
     if cancelled:
         decision_failed.emit(decision_id, {
@@ -153,3 +204,17 @@ func cancel_decision(decision_id: String, reason: String = "请求已取消") ->
             "context": {},
         })
     return cancelled
+
+func _provider_metadata(provider_result: Dictionary) -> Dictionary:
+    var result := {
+        "provider_id": "", "model": "", "thinking_enabled": false,
+        "reasoning_effort": "",
+    }
+    if provider != null and provider.has_method("provider_id"):
+        result["provider_id"] = str(provider.provider_id())
+    var provider_settings = provider.get("settings") if provider != null else null
+    if provider_settings != null:
+        result["model"] = str(provider_settings.get("model"))
+        result["thinking_enabled"] = bool(provider_settings.get("thinking_enabled"))
+        result["reasoning_effort"] = str(provider_settings.get("reasoning_effort"))
+    return result

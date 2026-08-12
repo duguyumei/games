@@ -18,6 +18,8 @@ const ActionWindowAiCoordinatorScript = preload("res://core/ai/action_window_ai_
 const BattleAiAdapterScript = preload("res://core/ai/battle_ai_adapter.gd")
 const AiProviderFactoryScript = preload("res://core/ai/providers/ai_provider_factory.gd")
 const AiConversationStoreScript = preload("res://core/ai/ai_conversation_store.gd")
+const AiDecisionTraceStoreScript = preload(
+    "res://core/ai/ai_decision_trace_store.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const BattleFinalResultDTOScript = preload(
     "res://core/battle_final_result_dto.gd")
@@ -41,6 +43,8 @@ var _ai_adapter = null
 var _ai_runtime_profile: Dictionary = {}
 var _ai_conversation_store = AiConversationStoreScript.new()
 var _ai_conversation_path: String = ""
+var _ai_trace_store = AiDecisionTraceStoreScript.new()
+var _ai_trace_path: String = ""
 var runtime_profile
 var _battle_binding: Dictionary = {}
 
@@ -140,7 +144,11 @@ func setup_battle(
     _ai_settings.merge(configuration.get("ai_settings", {}), true)
     var storage: Dictionary = _ai_runtime_profile.get("storage", {})
     _ai_settings["autosave_conversation"] = bool(
-        storage.get("autosave_conversation", false))
+        _ai_settings.get("autosave_conversation",
+            storage.get("autosave_conversation", false)))
+    _ai_settings["autosave_decision_trace"] = bool(
+        _ai_settings.get("autosave_decision_trace",
+            storage.get("autosave_decision_trace", false)))
     if _remote_ai_enabled and _ai_provider == null:
         var provider_config: Dictionary = _ai_runtime_profile.get(
             "provider", {}).duplicate(true)
@@ -155,6 +163,13 @@ func setup_battle(
             "conversation_directory",
             AiConversationStoreScript.DEFAULT_DIRECTORY)))
     _ai_settings["conversation_path"] = _ai_conversation_path
+    _ai_trace_path = str(_ai_settings.get("decision_trace_path", ""))
+    if _ai_trace_path == "":
+        _ai_trace_path = _ai_trace_store.path_for_battle(
+            _ai_battle_id,
+            str(storage.get("decision_trace_directory",
+                AiDecisionTraceStoreScript.DEFAULT_DIRECTORY)))
+    _ai_settings["decision_trace_path"] = _ai_trace_path
     _battle_binding = {
         "node_id": str(configuration.get("node_id", "")),
         "act": act,
@@ -280,6 +295,7 @@ func _execute_command(command: BattleCommandDto) -> CommandResult:
     if not result.get("success", false):
         _record_command_rejected(command_type, str(result.get("reason", "命令执行失败")))
     _capture_trigger_history()
+    _complete_ai_trace_if_terminal()
     return CommandResultScript.from_dict(command_type, result)
 
 func preview(card_ids: Array) -> Dictionary:
@@ -329,6 +345,8 @@ func close_battle() -> bool:
         had_pending_remote_request = (
             str(ai_coordinator.state)
             == ActionWindowAiCoordinatorScript.THINKING)
+        if engine != null and engine.battle_state != "active":
+            ai_coordinator.complete_battle_trace(_ai_battle_summary())
         ai_coordinator.close_window()
     if engine != null:
         engine.use_external_enemy_actions(false)
@@ -336,6 +354,71 @@ func close_battle() -> bool:
             engine.enemy_planning_service.clear_action_lock()
     _remote_ai_enabled = false
     return had_pending_remote_request
+
+func _ai_battle_summary() -> Dictionary:
+    var trace: Dictionary = ai_coordinator.decision_trace_snapshot() \
+        if ai_coordinator != null else {}
+    var windows: Array = trace.get("windows", [])
+    var remote_success := 0
+    var fallback_count := 0
+    var total_elapsed := 0
+    var prompt_tokens := 0
+    var completion_tokens := 0
+    var missed_lethal := 0
+    var missed_survival := 0
+    for window in windows:
+        var selected: Dictionary = window.get("selected", {})
+        if str(selected.get("source", "")) == "remote":
+            remote_success += 1
+        elif not selected.is_empty():
+            fallback_count += 1
+        total_elapsed += int(selected.get("elapsed_msec", 0))
+        prompt_tokens += int(selected.get("usage", {}).get("prompt_tokens", 0))
+        completion_tokens += int(selected.get("usage", {}).get("completion_tokens", 0))
+        var diagnostics: Dictionary = window.get("candidate_diagnostics", {})
+        var chosen_diagnostic := str(selected.get("diagnostic_candidate_id", ""))
+        var has_lethal := false
+        var has_survival := false
+        var chose_lethal := false
+        var chose_survival := false
+        for candidate in diagnostics.get("candidates", []):
+            var reasons: Array = candidate.get("hard_protection", {}).get("reasons", [])
+            has_lethal = has_lethal or reasons.has("lethal")
+            has_survival = has_survival or reasons.has("survival")
+            if str(candidate.get("diagnostic_candidate_id", "")) == chosen_diagnostic:
+                chose_lethal = reasons.has("lethal")
+                chose_survival = reasons.has("survival")
+        missed_lethal += 1 if has_lethal and not chose_lethal else 0
+        missed_survival += 1 if has_survival and not chose_survival else 0
+    var validation_failures := 0
+    var timeouts := 0
+    for exchange in ai_coordinator.conversation.exchanges:
+        validation_failures += 1 if str(exchange.get("kind", "")) == "validation_failed" else 0
+        timeouts += 1 if str(exchange.get("error_code", "")) in [
+            "REQUEST_TIMEOUT", "TIMEOUT"] else 0
+    return {
+        "battle_result": "enemy_won" if engine.battle_state == "player_defeat" \
+            else "player_won" if engine.battle_state == "player_victory" \
+            else engine.battle_state,
+        "enemy_id": str(_battle_binding.get("content_id", "")),
+        "total_rounds": int(engine.turn_number),
+        "decision_count": windows.size(),
+        "remote_success_count": remote_success,
+        "fallback_count": fallback_count,
+        "validation_failure_count": validation_failures,
+        "timeout_count": timeouts,
+        "missed_lethal_count": missed_lethal,
+        "missed_survival_count": missed_survival,
+        "total_prompt_tokens": prompt_tokens,
+        "total_completion_tokens": completion_tokens,
+        "average_elapsed_msec": float(total_elapsed) / float(windows.size()) \
+            if not windows.is_empty() else 0.0,
+    }
+
+func _complete_ai_trace_if_terminal() -> void:
+    if ai_coordinator == null or engine == null or engine.battle_state == "active":
+        return
+    ai_coordinator.complete_battle_trace(_ai_battle_summary())
 
 func combat_order_labels(technique_name: String = "当前功法") -> Array[String]:
     return engine.combat_order_labels(engine.player, technique_name)
@@ -406,6 +489,13 @@ func ai_conversation_snapshot() -> AiConversationSnapshot:
 
 func ai_conversation_path() -> String:
     return _ai_conversation_path
+
+func ai_decision_trace_path() -> String:
+    return _ai_trace_path
+
+func ai_decision_trace_snapshot() -> Dictionary:
+    return ai_coordinator.decision_trace_snapshot() \
+        if ai_coordinator != null else {}
 
 func save_ai_conversation(path: String = "") -> bool:
     if ai_coordinator == null:

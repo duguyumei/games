@@ -1,7 +1,7 @@
 class_name AiDecisionObservation
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 3
 const FORBIDDEN_OPPONENT_KEYS := [
     "hand",
     "hand_cards",
@@ -10,6 +10,8 @@ const FORBIDDEN_OPPONENT_KEYS := [
     "selected_card_ids",
     "staging",
     "rng_seed",
+    "private_counters",
+    "candidate_diagnostics",
 ]
 
 var decision_id: String = ""

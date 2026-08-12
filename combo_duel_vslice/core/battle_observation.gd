@@ -18,6 +18,10 @@ var opponent_hand_count: int = 0
 var opponent_draw_count: int = 0
 var opponent_discard_count: int = 0
 var expected_incoming_damage: int = -1
+var opponent_threat: Dictionary = {
+    "minimum": 0, "expected": 0, "maximum": 0,
+    "confidence": "low", "basis": "public_build_history",
+}
 var sequence_positions: Dictionary = {}
 var action_state: Dictionary = {}
 
@@ -61,6 +65,7 @@ func public_snapshot() -> Dictionary:
         "opponent_draw_count": opponent_draw_count,
         "opponent_discard_count": opponent_discard_count,
         "expected_incoming_damage": expected_incoming_damage,
+        "opponent_threat": opponent_threat.duplicate(true),
         "sequence_positions": sequence_positions.duplicate(true),
         "action_state": action_state.duplicate(true),
     }

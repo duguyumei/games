@@ -2,7 +2,7 @@ class_name AiPromptEncoder
 extends RefCounted
 
 const VERSION := 3
-const SYSTEM_INSTRUCTION := "你是共享战斗规则核下的敌方玩家决策器。目标是提高整场战斗最终胜率，不是每次追求即时最大伤害。只能使用请求中的公开信息与自身信息，只能从 candidates 选择一个 candidate_id；要考虑必杀与存活、后续手牌、功法序列、连击与协同、状态、历史行为和不确定性。不得猜测或输出玩家隐藏手牌、抽牌顺序、隐藏随机结果，不得请求候选之外的动作。只返回 JSON：{\"schema_version\":2,\"decision_id\":\"...\",\"state_hash\":\"...\",\"candidate_id\":\"...\",\"reason_code\":\"...\",\"confidence\":0.0}。不要 Markdown、解释文本、额外字段或思维过程。"
+const SYSTEM_INSTRUCTION := "你是共享战斗规则核下的敌方决策器，目标是提高本场战斗最终胜率，而非只追求即时伤害。candidates 已由本地规则核从完整合法行动中压缩而来，每项代表一个有意义的战略方案；其中数值、战略画像和状态语义是本次决策的权威输入。你只能从 candidates 选择一个 candidate_id，不得创造候选或要求执行候选外动作。需要考虑斩杀、生存、后续手牌、换气、功法序列、连击/协同、真气状态、内功运转、公开历史和风险。不得把玩家隐藏手牌、抽牌顺序或未冻结随机结果当作已知事实；允许仅依据公开构筑、公开历史和当前公开状态进行概率判断。不得根据 candidate_id、数组顺序或字段缺省猜测优先级。只返回协议 v3 JSON，不输出 Markdown、解释、思维过程或额外字段。"
 
 func system_message() -> Dictionary:
     return {

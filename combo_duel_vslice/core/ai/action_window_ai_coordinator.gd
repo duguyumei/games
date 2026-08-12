@@ -11,6 +11,8 @@ const DecisionGatewayScript = preload("res://core/ai/ai_decision_gateway.gd")
 const DecisionObservationScript = preload("res://core/ai/ai_decision_observation.gd")
 const HistoryProjectorScript = preload("res://core/ai/ai_history_projector.gd")
 const ConversationStoreScript = preload("res://core/ai/ai_conversation_store.gd")
+const TraceRecorderScript = preload(
+    "res://core/ai/ai_decision_trace_recorder.gd")
 
 const IDLE := "idle"
 const THINKING := "thinking"
@@ -35,6 +37,7 @@ var proposal_locker: Callable
 var clock: Callable
 var conversation_path: String = ""
 var conversation_autosave_enabled: bool = false
+var trace_recorder = null
 
 var state: String = IDLE
 var current_window_id: String = ""
@@ -73,6 +76,8 @@ func configure(
         settings.get("autosave_conversation", false)) \
         and conversation_path != ""
     conversation.changed.connect(_persist_conversation)
+    trace_recorder = TraceRecorderScript.new().configure(
+        conversation.battle_id, settings)
     gateway = DecisionGatewayScript.new(provider)
     gateway.decision_ready.connect(_on_decision_ready)
     gateway.decision_failed.connect(_on_decision_failed)
@@ -109,6 +114,18 @@ func open_window(
     last_error.clear()
     last_metadata.clear()
     _fallback_proposal = fallback_proposal
+    if trace_recorder != null and enemy_can_act:
+        trace_recorder.begin_window({
+            "decision_id": current_decision_id,
+            "round_number": current_round_number,
+            "action_index": current_action_index,
+            "versions": values.get("versions", {}).duplicate(true),
+            "provider": _provider_snapshot(),
+            "observation_snapshot": values.get("observation").snapshot() \
+                if values.get("observation") is Object else {},
+            "candidate_diagnostics": values.get(
+                "candidate_diagnostics", {}).duplicate(true),
+        }, candidates)
     record_public_event({
         "round_number": current_round_number,
         "action_index": current_action_index,
@@ -236,6 +253,18 @@ func save_conversation(path: String = "") -> bool:
         return false
     return conversation_store.save(target_path, conversation.snapshot())
 
+func record_actual_result(decision_id: String, values: Dictionary) -> void:
+    if trace_recorder != null:
+        trace_recorder.record_actual(decision_id, values)
+
+func complete_battle_trace(values: Dictionary) -> void:
+    if trace_recorder != null:
+        trace_recorder.complete_battle(values)
+
+func decision_trace_snapshot() -> Dictionary:
+    return trace_recorder.trace.snapshot() \
+        if trace_recorder != null and trace_recorder.trace != null else {}
+
 func _on_decision_ready(decision_id: String, proposal, metadata: Dictionary) -> void:
     if decision_id != current_decision_id or state != THINKING:
         return
@@ -281,6 +310,41 @@ func _lock_proposal(proposal, source: String, metadata: Dictionary) -> Dictionar
     decision_source = source
     last_metadata = metadata.duplicate(true)
     state = READY if source == "remote" else FALLBACK_READY
+    if trace_recorder != null:
+        var candidate_ids := _candidate_ids_for_proposal(proposal)
+        trace_recorder.record_selected(current_decision_id, {
+            "diagnostic_candidate_id": candidate_ids["diagnostic_candidate_id"],
+            "public_candidate_id": candidate_ids["public_candidate_id"],
+            "primary_direction": candidate_ids["primary_direction"],
+            "source": source,
+            "reason_code": str(metadata.get(
+                "reason_code", "local_utility" if source != "remote" else "unspecified")),
+            "confidence": float(metadata.get("confidence", 0.0)),
+            "elapsed_msec": int(metadata.get("elapsed_msec", 0)),
+            "fallback_reason": metadata.get("fallback_reason", {}).duplicate(true),
+            "usage": metadata.get("usage", {}).duplicate(true),
+            "local_revalidation_failed": false,
+        })
+    if conversation != null:
+        conversation.record_audit("decision_accepted", {
+            "decision_id": current_decision_id,
+            "request_id": str(metadata.get("request_id", "")),
+            "round_number": current_round_number,
+            "action_index": current_action_index,
+            "retry_index": int(metadata.get("retry_index", 0)),
+            "candidate_id": str(metadata.get("candidate_id", "")),
+            "reason_code": str(metadata.get(
+                "reason_code", "local_utility" if source != "remote" else "unspecified")),
+            "confidence": float(metadata.get("confidence", 0.0)),
+            "elapsed_msec": int(metadata.get("elapsed_msec", 0)),
+            "usage": metadata.get("usage", {}).duplicate(true),
+            "source": source,
+            "provider_id": str(metadata.get("provider_id", "")),
+            "model": str(metadata.get("model", "")),
+            "thinking_enabled": bool(metadata.get("thinking_enabled", false)),
+            "reasoning_effort": str(metadata.get("reasoning_effort", "")),
+            "prompt_version": int(metadata.get("prompt_version", 3)),
+        })
     if source != "remote" and conversation != null:
         conversation.record_local_outcome(
             current_decision_id,
@@ -322,3 +386,61 @@ func _persist_conversation() -> void:
 
 func _now_msec() -> int:
     return int(clock.call()) if clock.is_valid() else Time.get_ticks_msec()
+
+func _provider_snapshot() -> Dictionary:
+    if gateway == null or gateway.provider == null:
+        return {}
+    var provider = gateway.provider
+    var result := {"provider_id": provider.provider_id() \
+        if provider.has_method("provider_id") else ""}
+    var provider_settings = provider.get("settings")
+    if provider_settings != null:
+        result.merge({
+            "model": str(provider_settings.get("model")),
+            "thinking_enabled": bool(provider_settings.get("thinking_enabled")),
+            "reasoning_effort": str(provider_settings.get("reasoning_effort")),
+        }, true)
+    return result
+
+func _candidate_ids_for_proposal(proposal) -> Dictionary:
+    var result := {
+        "public_candidate_id": "", "diagnostic_candidate_id": "",
+        "primary_direction": "",
+    }
+    if trace_recorder == null or trace_recorder.trace == null:
+        return result
+    var index: int = int(trace_recorder.trace._index_of(current_decision_id))
+    if index < 0:
+        return result
+    var window: Dictionary = trace_recorder.trace.windows[index]
+    for mapping in window.get("candidate_map", []):
+        var public_id := str(mapping.get("public_candidate_id", ""))
+        if str(last_metadata.get("candidate_id", "")) == public_id:
+            result["public_candidate_id"] = public_id
+            result["diagnostic_candidate_id"] = str(
+                mapping.get("diagnostic_candidate_id", ""))
+            break
+    if result["public_candidate_id"] == "":
+        for diagnostic in window.get(
+                "candidate_diagnostics", {}).get("candidates", []):
+            if diagnostic.get("card_ids", []) == proposal.card_ids:
+                result["diagnostic_candidate_id"] = str(
+                    diagnostic.get("diagnostic_candidate_id", ""))
+                result["primary_direction"] = str(
+                    diagnostic.get("direction", {}).get("primary", ""))
+                for mapping in window.get("candidate_map", []):
+                    if str(mapping.get("diagnostic_candidate_id", "")) \
+                            == result["diagnostic_candidate_id"]:
+                        result["public_candidate_id"] = str(
+                            mapping.get("public_candidate_id", ""))
+                break
+    if result["diagnostic_candidate_id"] != "" \
+            and result["primary_direction"] == "":
+        for diagnostic in window.get(
+                "candidate_diagnostics", {}).get("candidates", []):
+            if str(diagnostic.get("diagnostic_candidate_id", "")) \
+                    == result["diagnostic_candidate_id"]:
+                result["primary_direction"] = str(
+                    diagnostic.get("direction", {}).get("primary", ""))
+                break
+    return result
