@@ -519,7 +519,7 @@ func _choice_query(growth, definition: Dictionary, eligible: Array) -> Dictionar
 			var groups: Array = []
 			for hand_id in growth.HAND_IDS:
 				var progression: Dictionary = growth.hand_technique_progression.get(hand_id, {})
-				var new_slots := maxi(0, int(progression.get("slot_count", 1)) + int(values.get("slot_delta", -1)))
+				var new_slots := maxi(1, int(progression.get("slot_count", 1)) + int(values.get("slot_delta", -1)))
 				var sequence: Array = progression.get("sequence", []).duplicate()
 				groups.append({
 					"hand_id": hand_id,
@@ -561,7 +561,7 @@ func _validate_choice_payload(
 			for hand_id in growth.HAND_IDS:
 				var progression: Dictionary = growth.hand_technique_progression.get(hand_id, {})
 				var sequence: Array = progression.get("sequence", []).duplicate()
-				var new_slots := maxi(0, int(progression.get("slot_count", 1)) + int(values.get("slot_delta", -1)))
+				var new_slots := maxi(1, int(progression.get("slot_count", 1)) + int(values.get("slot_delta", -1)))
 				var required := maxi(0, sequence.size() - new_slots)
 				var selected = selections.get(hand_id, [])
 				if not selected is Array or selected.size() != required:

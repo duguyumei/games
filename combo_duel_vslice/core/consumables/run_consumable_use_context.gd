@@ -31,6 +31,8 @@ func insight_candidates(hand_id: String, pools: Array) -> Array[String]:
 	var membership: Array = techniques.get("pool_membership", {}).get(hand_id, [])
 	var statuses: Dictionary = techniques.get("integration_statuses", {})
 	for value in techniques.get("techniques", []):
+		if bool(value.get("built_in", false)):
+			continue
 		var technique_id := str(value.get("id", ""))
 		var pool_id := str(value.get("pool", ""))
 		if str(statuses.get(technique_id, "missing")) != "formal_complete":
@@ -277,7 +279,7 @@ func rewrite_technique_progression(
 	for hand_id in growth.HAND_IDS:
 		var progression: Dictionary = growth.hand_technique_progression.get(hand_id, {}).duplicate(true)
 		var old_slots := int(progression.get("slot_count", 1))
-		var new_slots := maxi(0, old_slots + slot_delta)
+		var new_slots := maxi(1, old_slots + slot_delta)
 		var sequence: Array = progression.get("sequence", []).duplicate()
 		var selected: Array = removals.get(hand_id, [])
 		if selected.size() != maxi(0, sequence.size() - new_slots):
@@ -289,6 +291,12 @@ func rewrite_technique_progression(
 		progression["slot_count"] = new_slots
 		progression["sequence"] = sequence
 		growth.hand_technique_progression[hand_id] = progression
+	var validation: Dictionary = growth.technique_loadout_policy.validate_complete(
+		growth, growth.hand_technique_progression,
+		growth.learned_technique_ids, "")
+	if not validation.get("success", false):
+		growth.hand_technique_progression = before
+		return validation
 	for hand_id in modifiers:
 		growth.hand_technique_multiplier_modifiers[hand_id] = (
 			int(growth.hand_technique_multiplier_modifiers.get(hand_id, 0))

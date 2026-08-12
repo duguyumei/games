@@ -1,11 +1,11 @@
 {
-  "version": 2,
-  "high_card": [],
-  "pair": [],
-  "two_pair": [],
-  "three_kind": [],
-  "straight": [],
-  "full_house": [],
-  "four_kind": [],
-  "five_kind": []
+  "version": 3,
+  "high_card": ["basic_scatter"],
+  "pair": ["basic_scatter"],
+  "two_pair": ["basic_scatter"],
+  "three_kind": ["basic_scatter"],
+  "straight": ["basic_scatter"],
+  "full_house": ["basic_scatter"],
+  "four_kind": ["basic_scatter"],
+  "five_kind": ["basic_scatter"]
 }

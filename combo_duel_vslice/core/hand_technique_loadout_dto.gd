@@ -1,7 +1,7 @@
 class_name HandTechniqueLoadoutDTO
 extends RefCounted
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 var hand_id: String = ""
 var hand_name: String = ""
@@ -10,6 +10,7 @@ var sequence: Array = []
 var available_techniques: Array = []
 var editable: bool = false
 var blocked_reason: String = ""
+var missing_slot_count: int = 0
 
 func configure(values: Dictionary):
     hand_id = str(values.get("hand_id", ""))
@@ -20,6 +21,8 @@ func configure(values: Dictionary):
         "available_techniques", []).duplicate(true)
     editable = bool(values.get("editable", false))
     blocked_reason = str(values.get("blocked_reason", ""))
+    missing_slot_count = maxi(0, int(values.get(
+        "missing_slot_count", slot_count - sequence.size())))
     return self
 
 func to_dict() -> Dictionary:
@@ -32,5 +35,5 @@ func to_dict() -> Dictionary:
         "available_techniques": available_techniques.duplicate(true),
         "editable": editable,
         "blocked_reason": blocked_reason,
+        "missing_slot_count": missing_slot_count,
     }
-

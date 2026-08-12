@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "basic_guard"
+display_name = "守招"
+pool = "universal"
+special = true
+built_in = true
+base_loadout_limit = 99
+eligible_hand_ids = Array[String](["high_card", "pair", "two_pair", "three_kind", "straight", "full_house", "four_kind", "five_kind"])
+built_in_fallback_order = 1
+description = "获得 floor(P / 4) 点防御。"
+condition = {}
+cooperation = {}
+effects = [{"op": "defense", "amount": {"kind": "power_fraction", "numerator": 1, "denominator": 4, "minimum": 0}}]

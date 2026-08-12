@@ -2,7 +2,7 @@ class_name GainInsightConsumableHandler
 extends "res://core/consumables/consumable_effect_handler.gd"
 
 ## 心得：使对应具体牌型功法槽位 +1，并从正式白名单中确定性抽取尚未进入该
-## 牌型序列的功法。
+## 牌型序列的功法；没有合格普通功法时由统一配装策略使用基础功法补满新槽。
 ##
 ## 候选范围由上下文按效果的功法池解析（本局）或按共享功法仓库解析（战斗）；
 ## 没有合格功法时仍成功增加槽位，不跨池抽取。五条与四条可以共用功法候选池，
@@ -59,7 +59,6 @@ func apply(effect: Dictionary, context) -> Dictionary:
 	for candidate_value in context.insight_candidates(hand_id, pools):
 		var candidate := str(candidate_value)
 		if candidate != "" \
-				and not current_sequence.has(candidate) \
 				and not candidates.has(candidate):
 			candidates.append(candidate)
 	candidates.sort()
@@ -71,8 +70,8 @@ func apply(effect: Dictionary, context) -> Dictionary:
 	details.append("%s功法槽位 +1" % hand_id)
 	if acquired_id != "":
 		details.append("获得功法：%s" % context.technique_name(acquired_id))
-	else:
-		details.append("合格池暂无可抽功法，保留新增槽位")
+	if bool(result.get("used_built_in_fallback", false)):
+		details.append("合格池暂无可抽功法，装配基础功法：%s" % context.technique_name(acquired_id))
 	return {
 		"success": true,
 		"applied": {

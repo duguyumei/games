@@ -52,7 +52,7 @@ const HAND_IDS := [
 ]
 const TECHNIQUE_BRANCH_HAND_IDS := HAND_IDS
 const POOL_IDS := [
-    "high", "pair", "three", "straight", "bomb",
+    "high", "pair", "three", "straight", "bomb", "universal",
 ]
 const EXPECTED_POOL_MEMBERSHIP := {
     "high_card": ["high"],
@@ -959,6 +959,21 @@ func _validate_techniques(definition: Dictionary) -> void:
         _validate_cooperation(value.get("cooperation", {}), scope + ".cooperation")
         if not value.get("special") is bool:
             _error(scope, "special 必须是布尔值")
+        if not value.get("built_in", false) is bool:
+            _error(scope + ".built_in", "必须是布尔值")
+        if bool(value.get("built_in", false)) \
+                and not bool(value.get("special", false)):
+            _error(scope + ".built_in", "内建功法必须标记 special")
+        if not _is_integer(value.get("base_loadout_limit", 1)) \
+                or int(value.get("base_loadout_limit", 1)) <= 0:
+            _error(scope + ".base_loadout_limit", "必须是正整数")
+        var eligible_hand_ids = value.get("eligible_hand_ids", [])
+        if not eligible_hand_ids is Array:
+            _error(scope + ".eligible_hand_ids", "必须是数组")
+        else:
+            for eligible_hand_id in eligible_hand_ids:
+                if str(eligible_hand_id) not in HAND_IDS:
+                    _error(scope + ".eligible_hand_ids", "引用未知精确牌型 %s" % str(eligible_hand_id))
         _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
     _validate_technique_integration_statuses(
         integration_statuses,
@@ -1392,7 +1407,9 @@ func _validate_practice_normal_completeness(categories: Array) -> void:
         if offer_kind == "technique":
             for content_id in _contents["techniques"].get("integration_statuses", {}):
                 if str(_contents["techniques"]["integration_statuses"][content_id]) \
-                        == FORMAL_TECHNIQUE_STATUS:
+                        == FORMAL_TECHNIQUE_STATUS \
+                        and not bool(_techniques_by_id.get(
+                            str(content_id), {}).get("built_in", false)):
                     expected.append(str(content_id))
         elif offer_kind == "inner_skill":
             for content_id in _inner_skills_by_id:
@@ -1422,6 +1439,8 @@ func _validate_practice_normal_candidate(
     if offer_kind == "technique":
         if not _techniques_by_id.has(content_id):
             _error(scope, "引用未知功法 %s" % content_id)
+        elif bool(_techniques_by_id[content_id].get("built_in", false)):
+            _error(scope, "内建功法 %s 不进入修习商店" % content_id)
         elif str(_contents["techniques"].get(
                 "integration_statuses", {}).get(content_id, "")) \
                 != FORMAL_TECHNIQUE_STATUS:
@@ -1615,6 +1634,7 @@ func _validate_sequences(definition: Dictionary, scope: String) -> void:
     var is_production_sequence := (
         scope == "sequences"
         and str(_paths.get("sequences", "")) == PRODUCTION_SEQUENCES_PATH)
+    var total_counts: Dictionary = {}
     for hand_id in HAND_IDS:
         if not definition.has(hand_id) or not definition[hand_id] is Array:
             _error(scope, "缺少牌型 %s 的序列数组" % hand_id)
@@ -1625,21 +1645,22 @@ func _validate_sequences(definition: Dictionary, scope: String) -> void:
             _error(
                 "%s.%s" % [scope, hand_id],
                 "正式功法为 0 时 production 序列必须为空")
-        var seen: Dictionary = {}
         for index in range(definition[hand_id].size()):
             var technique_id := str(definition[hand_id][index])
             var item_scope := "%s.%s[%d]" % [scope, hand_id, index]
             if technique_id == "":
                 _error(item_scope, "功法 ID 不能为空")
                 continue
-            if seen.has(technique_id):
-                _error(item_scope, "同一序列重复引用功法 %s" % technique_id)
-            seen[technique_id] = true
             if not _techniques_by_id.has(technique_id):
                 _error(item_scope, "引用未知功法 %s" % technique_id)
                 continue
             var technique: Dictionary = _techniques_by_id[technique_id]
-            if not membership.get(hand_id, []).has(technique.get("pool", "")):
+            total_counts[technique_id] = int(total_counts.get(
+                technique_id, 0)) + 1
+            var exact_hands: Array = technique.get("eligible_hand_ids", [])
+            if (not exact_hands.is_empty() and not exact_hands.has(hand_id)) \
+                    or (exact_hands.is_empty() and not membership.get(
+                        hand_id, []).has(technique.get("pool", ""))):
                 _error(item_scope, "功法 %s 不属于 %s 的合格共用池" % [technique_id, hand_id])
             if is_production_sequence:
                 var status := str(statuses.get(technique_id, "missing"))
@@ -1648,6 +1669,15 @@ func _validate_sequences(definition: Dictionary, scope: String) -> void:
                         item_scope,
                         "功法 %s 当前接入档位为 %s，production 只允许 %s" % [
                             technique_id, status, FORMAL_TECHNIQUE_STATUS])
+    for technique_id_value in total_counts:
+        var technique_id := str(technique_id_value)
+        var technique: Dictionary = _techniques_by_id.get(technique_id, {})
+        var limit = technique.get("base_loadout_limit", 1)
+        if limit is int and int(total_counts[technique_id]) > int(limit):
+            _error(
+                scope,
+                "功法 %s 全局装配 %d 次，超过基础上限 %d" % [
+                    technique_id, int(total_counts[technique_id]), int(limit)])
     for key in definition:
         if str(key) != "version" and not HAND_IDS.has(str(key)):
             _error(scope, "包含未知精确牌型 %s" % str(key))
@@ -2108,7 +2138,8 @@ func content_definition(content_type: String, content_id: String) -> Dictionary:
 func is_formally_obtainable(content_type: String, content_id: String) -> bool:
     match content_type:
         "technique":
-            return str(_contents.get("techniques", {}).get(
+            return not bool(content_definition("technique", content_id).get(
+                "built_in", false)) and str(_contents.get("techniques", {}).get(
                 "integration_statuses", {}).get(content_id, "")) \
                 == FORMAL_TECHNIQUE_STATUS
         "inner_skill", "consumable", "item":

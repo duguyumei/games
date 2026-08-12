@@ -192,7 +192,8 @@ func is_formally_obtainable(content_type: String, content_id: String) -> bool:
     if not has_id(content_type, content_id):
         return false
     if content_type == "technique":
-        return str(_definitions.get("techniques", {}).get(
+        return not bool(get_by_id("technique", content_id).get(
+            "built_in", false)) and str(_definitions.get("techniques", {}).get(
             "integration_statuses", {}).get(content_id, "")) == "formal_complete"
     if content_type in ["inner_skill", "consumable", "item"]:
         return str(get_by_id(content_type, content_id).get("status", "")) == "formal"

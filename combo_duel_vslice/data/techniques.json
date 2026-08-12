@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "pool_membership": {
     "high_card": ["high"],
     "pair": ["pair"],
@@ -10,6 +10,12 @@
     "four_kind": ["bomb"],
     "five_kind": ["bomb"]
   },
-  "integration_statuses": {},
-  "resource_paths": []
+  "integration_statuses": {
+    "basic_scatter": "formal_complete",
+    "basic_guard": "formal_complete"
+  },
+  "resource_paths": [
+    "res://data/techniques/basic_scatter.tres",
+    "res://data/techniques/basic_guard.tres"
+  ]
 }

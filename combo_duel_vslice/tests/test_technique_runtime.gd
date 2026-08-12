@@ -9,6 +9,9 @@ const CombatEngineScript = preload("res://core/combat_engine.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const EffectValueResolverScript = preload("res://core/effects/effect_value_resolver.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
+const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
+const TechniqueLoadoutPolicyScript = preload(
+    "res://core/technique_loadout_policy.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -30,6 +33,87 @@ var assertions: int = 0
 var card_serial: int = 0
 var tracked_engines: Array = []
 
+class LoadoutQueryResult:
+    extends RefCounted
+    var values: Dictionary
+    func _init(source: Dictionary) -> void:
+        values = source
+    func to_dict() -> Dictionary:
+        return values.duplicate(true)
+
+class LoadoutLimitTwoResolver:
+    extends RefCounted
+    var calls: Array[Dictionary] = []
+    func resolve(request):
+        calls.append(request.to_dict())
+        return LoadoutQueryResult.new({
+            "success": true,
+            "hook": request.hook,
+            "subject_kind": request.subject_kind,
+            "subject_id": request.subject_id,
+            "base_value": request.base_value,
+            "effective_value": 2 if request.subject_id == "normal_probe" \
+                else request.base_value,
+            "modifier_breakdown": [],
+            "source_fingerprint": "fake_limit_two",
+        })
+
+class LoadoutCatalog:
+    extends RefCounted
+    var techniques: Dictionary = {}
+    var statuses: Dictionary = {}
+    var sequences: Dictionary = {}
+    func _init() -> void:
+        var hands := [
+            "high_card", "pair", "two_pair", "three_kind", "straight",
+            "full_house", "four_kind", "five_kind"]
+        techniques = {
+            "basic_scatter": {
+                "id": "basic_scatter", "name": "散招", "pool": "universal",
+                "built_in": true, "base_loadout_limit": 99,
+                "eligible_hand_ids": hands.duplicate(),
+                "built_in_fallback_order": 0,
+            },
+            "basic_guard": {
+                "id": "basic_guard", "name": "守招", "pool": "universal",
+                "built_in": true, "base_loadout_limit": 99,
+                "eligible_hand_ids": hands.duplicate(),
+                "built_in_fallback_order": 1,
+            },
+            "normal_probe": {
+                "id": "normal_probe", "name": "普通探针", "pool": "pair",
+                "built_in": false, "base_loadout_limit": 1,
+                "eligible_hand_ids": [],
+            },
+        }
+        statuses = {
+            "basic_scatter": "formal_complete",
+            "basic_guard": "formal_complete",
+            "normal_probe": "formal_complete",
+        }
+        for hand_id in hands:
+            sequences[hand_id] = ["basic_scatter"]
+    func get_by_id(kind: String, content_id: String) -> Dictionary:
+        return techniques.get(content_id, {}).duplicate(true) \
+            if kind == "technique" else {}
+    func definition(key: String) -> Dictionary:
+        if key == "sequences":
+            return sequences.duplicate(true)
+        if key == "techniques":
+            return {
+                "techniques": techniques.values(),
+                "integration_statuses": statuses.duplicate(true),
+                "pool_membership": {
+                    "high_card": ["high"], "pair": ["pair"],
+                    "two_pair": ["pair"], "three_kind": ["three"],
+                    "straight": ["straight"], "full_house": ["pair", "three"],
+                    "four_kind": ["bomb"], "five_kind": ["bomb"],
+                },
+            }
+        return {}
+    func all_of(kind: String) -> Array:
+        return techniques.values() if kind == "technique" else []
+
 func _initialize() -> void:
     if not RuntimeProfileScript.current().is_test():
         push_error("自动化测试必须显式指定 --launch-mode=test")
@@ -45,6 +129,7 @@ func _initialize() -> void:
     _test_reflection_override_sources_and_recursion_guard()
     _test_synchronized_reflection_matches_normal_damage()
     _test_all_insights_grow_empty_slots()
+    _test_s2f6a_basic_techniques_and_loadout_limits()
     _dispose_tracked_engines()
     if failures.is_empty():
         print("TECHNIQUE TEST PASS: %d assertions" % assertions)
@@ -58,17 +143,18 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 0, "正式功法仓库为零门")
-    _assert_equal(repository.resource_paths, [], "正式功法资源路径为空")
+    _assert_equal(repository.techniques.size(), 2, "正式功法仓库包含两门基础功法")
+    _assert_equal(repository.resource_paths.size(), 2, "正式功法资源路径包含两项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
-        catalog.definition("techniques")["integration_statuses"], {},
-        "正式接入状态为空对象")
+        catalog.definition("techniques")["integration_statuses"],
+        {"basic_scatter": "formal_complete", "basic_guard": "formal_complete"},
+        "两门基础功法均正式接入")
     for hand_id in HAND_IDS:
         _assert_equal(
-            catalog.definition("sequences")[hand_id], [],
-            "production %s 序列为空" % hand_id)
+            catalog.definition("sequences")[hand_id], ["basic_scatter"],
+            "production %s 默认装备散招" % hand_id)
     for enemy in catalog.definition("enemies")["enemies"]:
         for hand_id in HAND_IDS:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
@@ -79,7 +165,7 @@ func _test_empty_repository_and_production_data() -> void:
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 0, "正式目录不存在旧功法资源")
+    _assert_equal(resource_count, 2, "正式目录只存在两门基础功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -305,6 +391,115 @@ func _test_all_insights_grow_empty_slots() -> void:
         _assert_equal(result["slot_count_after"], before + 1, "%s 槽位增加一" % hand_id)
         _assert_equal(result["acquired_technique_id"], "", "%s 不生成功法" % hand_id)
         _assert_true(result["no_technique_available"], "%s 明确报告池空" % hand_id)
+
+func _test_s2f6a_basic_techniques_and_loadout_limits() -> void:
+    var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
+    _assert_true(catalog.load_all(), "F6A 正式基础功法内容可加载")
+    var scatter: Dictionary = catalog.get_by_id("technique", "basic_scatter")
+    var guard: Dictionary = catalog.get_by_id("technique", "basic_guard")
+    var effect_engine = _engine_with_cards([])
+    for power in [3, 4]:
+        effect_engine.enemy.life = 100
+        effect_engine.enemy.defense = 0
+        effect_engine.player.defense = 0
+        var context = EffectContextScript.new().configure({
+            "ports": effect_engine.effect_ports,
+            "actor": effect_engine.player,
+            "target": effect_engine.enemy,
+            "power": power,
+        })
+        _assert_true(effect_engine.effect_executor.execute_all(
+            scatter["effects"], context)["success"], "散招走通用效果链")
+        _assert_equal(100 - effect_engine.enemy.life, int(floor(power / 4.0)),
+            "散招 P=%d 造成 floor(P/4)" % power)
+        _assert_true(effect_engine.effect_executor.execute_all(
+            guard["effects"], context)["success"], "守招走通用效果链")
+        _assert_equal(effect_engine.player.defense, int(floor(power / 4.0)),
+            "守招 P=%d 获得 floor(P/4) 防御" % power)
+
+    var action_engine = _engine_with_cards([_card("4", "wind")])
+    action_engine.repository.configure(catalog.definition("techniques"), true)
+    var action_sequences := _empty_sequences()
+    action_sequences["high_card"] = ["basic_scatter", "basic_guard"]
+    action_engine.sequence_book.configure(action_sequences)
+    action_engine.player.momentum_value = 3
+    action_engine.player.last_successful_technique_hand_id = "high_card"
+    var played: Dictionary = action_engine.confirm_play([action_engine.player.hand[0].id])
+    _assert_true(played.get("technique_triggered", false), "基础功法是真实功法并正常启动")
+    _assert_equal(played["preview"]["values"]["momentum_used"], 3, "基础功法读取连势")
+    _assert_equal(action_engine.sequence_book.current_id("high_card"), "basic_guard", "基础功法成功后推进真实序列")
+
+    var fake_catalog := LoadoutCatalog.new()
+    var growth = GrowthInventoryScript.new(fake_catalog, false)
+    growth.learned_technique_ids.assign(["normal_probe"])
+    var policy = growth.technique_loadout_policy
+    var baseline: Dictionary = growth.hand_technique_progression.duplicate(true)
+    var cross_hand: Dictionary = baseline.duplicate(true)
+    cross_hand["pair"] = {"slot_count": 1, "sequence": ["normal_probe"]}
+    cross_hand["two_pair"] = {"slot_count": 1, "sequence": ["normal_probe"]}
+    _assert_true(not policy.validate_complete(
+        growth, cross_hand, growth.learned_technique_ids, "two_pair")["success"],
+        "普通功法跨八牌型合计第二次被拒绝")
+    var same_hand: Dictionary = baseline.duplicate(true)
+    same_hand["pair"] = {
+        "slot_count": 2,
+        "sequence": ["normal_probe", "normal_probe"],
+    }
+    _assert_true(not policy.validate_complete(
+        growth, same_hand, growth.learned_technique_ids, "pair")["success"],
+        "普通功法同一序列第二次被拒绝")
+
+    var resolver := LoadoutLimitTwoResolver.new()
+    policy.use_int_policy_resolver(resolver)
+    var before_state := growth.capture_mutation_state()
+    _assert_true(policy.validate_complete(
+        growth, cross_hand, growth.learned_technique_ids, "two_pair")["success"],
+        "Fake 查询将普通功法上限改为 2 后跨牌型合法")
+    _assert_true(policy.validate_complete(
+        growth, same_hand, growth.learned_technique_ids, "pair")["success"],
+        "Fake 查询上限 2 后同序列重复合法")
+    _assert_equal(growth.capture_mutation_state(), before_state, "装配次数查询不修改本局状态")
+    _assert_true(resolver.calls.all(func(call):
+        return call.get("hook") == "technique_loadout_copy_limit_query"),
+        "所有 Fake 次数查询使用统一 hook")
+
+    policy.use_int_policy_resolver(null)
+    var ninety_nine: Dictionary = baseline.duplicate(true)
+    var remaining := 99
+    for hand_id in HAND_IDS:
+        var count := mini(remaining, 13)
+        ninety_nine[hand_id] = {
+            "slot_count": count,
+            "sequence": [],
+        }
+        for _index in range(count):
+            ninety_nine[hand_id]["sequence"].append("basic_scatter")
+        remaining -= count
+    _assert_equal(remaining, 0, "测试夹具恰好生成 99 个散招")
+    _assert_true(policy.validate_complete(
+        growth, ninety_nine, growth.learned_technique_ids)["success"],
+        "散招全局装配 99 次合法")
+    var hundred: Dictionary = ninety_nine.duplicate(true)
+    hundred["high_card"]["slot_count"] += 1
+    hundred["high_card"]["sequence"].append("basic_scatter")
+    _assert_true(not policy.validate_complete(
+        growth, hundred, growth.learned_technique_ids)["success"],
+        "第 100 个散招被拒绝")
+
+    var original: Dictionary = growth.hand_technique_progression.duplicate(true)
+    _assert_true(not growth.set_hand_technique_loadout("pair", [])["success"],
+        "未填满序列不能保存")
+    _assert_equal(growth.hand_technique_progression, original,
+        "不完整提交失败时八牌型原状态不变")
+    var insight := growth.apply_insight_growth("high_card", [])
+    _assert_true(insight["success"], "心得无普通候选时仍成功")
+    _assert_equal(insight["acquired_technique_id"], "basic_scatter",
+        "心得无普通候选时自动填入散招")
+    _assert_equal(growth.hand_progression("high_card")["sequence"].size(),
+        growth.hand_progression("high_card")["slot_count"],
+        "心得完成后序列仍填满")
+    _assert_equal(growth.learned_technique_ids, ["normal_probe"],
+        "基础功法不写入已习得功法集合")
 
 func _probe_engine(
         cards: Array,

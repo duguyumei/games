@@ -14,9 +14,11 @@ const RunTerminalResultDTOScript = preload(
     "res://core/run_terminal_result_dto.gd")
 const PassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
+const TechniqueLoadoutPolicyScript = preload(
+    "res://core/technique_loadout_policy.gd")
 
 const SCHEMA_VERSION := 1
-const CONTENT_VERSION := 1
+const CONTENT_VERSION := 2
 const SAVE_FORMAT := "taiwu_run_save"
 const ALLOWED_PHASES := [
     "awaiting_node",
@@ -415,8 +417,8 @@ func _validate_terminal_result(
         graph: Dictionary,
         errors: Array[String]) -> void:
     if terminal_value.is_empty():
-        if phase == "run_terminated":
-            errors.append("run_terminated 必须保存 terminal_result")
+        if phase in ["run_complete", "run_terminated"]:
+            errors.append("终局存档必须保存 terminal_result")
         return
     var terminal = RunTerminalResultDTOScript.from_dict(terminal_value)
     if terminal == null:
@@ -673,8 +675,6 @@ func _validate_life_fields(
         errors.append("growth.life 不能大于 growth.max_life")
 
 func _validate_hand_progression(values, catalog, errors: Array[String]) -> void:
-    if values.is_empty():
-        return
     if not values is Dictionary:
         errors.append("growth.hand_technique_progression 必须是对象")
         return
@@ -688,19 +688,28 @@ func _validate_hand_progression(values, catalog, errors: Array[String]) -> void:
             continue
         var slot_count = progression.get("slot_count", 0)
         var sequence = progression.get("sequence", [])
-        if not slot_count is int or int(slot_count) < 0:
-            errors.append("growth.hand_technique_progression.%s.slot_count 必须是非负整数" % hand_id)
-        if not sequence is Array or sequence.size() > int(slot_count):
-            errors.append("growth.hand_technique_progression.%s.sequence 超出槽位" % hand_id)
+        if not slot_count is int or int(slot_count) < 1:
+            errors.append("growth.hand_technique_progression.%s.slot_count 必须是正整数" % hand_id)
+        if not sequence is Array or sequence.size() != int(slot_count):
+            errors.append("growth.hand_technique_progression.%s.sequence 必须填满槽位" % hand_id)
             continue
-        var seen: Dictionary = {}
         for technique_id_value in sequence:
             var technique_id := str(technique_id_value)
-            if seen.has(technique_id):
-                errors.append("growth.hand_technique_progression.%s.sequence 重复功法 %s" % [hand_id, technique_id])
-            seen[technique_id] = true
             if not catalog.has_id("technique", technique_id):
                 errors.append("growth.hand_technique_progression 引用未知功法：%s" % technique_id)
+    if not errors.is_empty():
+        return
+    var owner := GrowthInventoryScript.new(catalog, false)
+    owner.hand_technique_progression = values.duplicate(true)
+    owner.learned_technique_ids.assign(
+        _data.get("growth", {}).get("learned_technique_ids", []))
+    var policy := TechniqueLoadoutPolicyScript.new(catalog)
+    var validation := policy.validate_complete(
+        owner, owner.hand_technique_progression,
+        owner.learned_technique_ids, "")
+    if not validation.get("success", false):
+        errors.append("growth.hand_technique_progression：%s" % str(
+            validation.get("reason", "配装校验失败")))
 
 func _life_values_for_restore(
         growth: Dictionary,

@@ -94,7 +94,9 @@ func formal_technique_ids() -> Array[String]:
     var result: Array[String] = []
     for technique_id_value in integration_statuses:
         var technique_id := str(technique_id_value)
-        if is_formally_complete(technique_id):
+        var definition = get_definition(technique_id)
+        if is_formally_complete(technique_id) \
+                and definition != null and not definition.built_in:
             result.append(technique_id)
     result.sort()
     return result
@@ -131,6 +133,10 @@ func _load_resource_entities() -> bool:
     return true
 
 func is_allowed_for_hand(technique, hand_id: String) -> bool:
+    var eligible_hand_ids: Array = _definition_value(
+        technique, "eligible_hand_ids", [])
+    if not eligible_hand_ids.is_empty():
+        return eligible_hand_ids.has(hand_id)
     var eligible_pools: Array = pool_membership.get(hand_id, [])
     return eligible_pools.has(_definition_value(technique, "pool", ""))
 

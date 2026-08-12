@@ -201,6 +201,7 @@ func configure_passive_services(
     _run_passive_event_service = event_service
     _practice_service.use_passive_services(
         int_policy_resolver, event_service, _run_state)
+    growth.use_technique_loadout_policy_resolver(int_policy_resolver)
     _inner_skill_loadout_service.use_passive_services(
         passive_runtime, int_policy_resolver, event_service, _run_state)
     if _run_state.node_passive_source_node_id == "" \

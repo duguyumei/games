@@ -24,11 +24,13 @@ const HAND_NAMES := {
 var _growth
 var _content_catalog
 var _inner_skill_loadout_service
+var _technique_loadout_policy
 
 func _init(growth, content_catalog, inner_skill_loadout_service) -> void:
     _growth = growth
     _content_catalog = content_catalog
     _inner_skill_loadout_service = inner_skill_loadout_service
+    _technique_loadout_policy = _growth.technique_loadout_policy
 
 func query(editable: bool, blocked_reason: String = ""):
     var reason := "" if editable else blocked_reason
@@ -137,19 +139,23 @@ func _build_hand_loadout(
     var techniques: Dictionary = _content_catalog.definition("techniques")
     var integration_statuses: Dictionary = techniques.get(
         "integration_statuses", {})
-    var permitted_pools: Array = techniques.get(
-        "pool_membership", {}).get(hand_id, [])
     var progression: Dictionary = _growth.hand_progression(hand_id)
     var sequence_ids: Array = progression.get("sequence", [])
     var sequence: Array = []
     for technique_id_value in sequence_ids:
         sequence.append(_technique_summary(
-            str(technique_id_value), integration_statuses))
+            str(technique_id_value), integration_statuses, hand_id))
     var available: Array = []
     var emitted: Dictionary = {}
-    for technique_id_value in _growth.learned_technique_ids:
+    var candidate_ids: Array = _growth.learned_technique_ids.duplicate()
+    for definition_value in _content_catalog.all_of("technique"):
+        var definition: Dictionary = definition_value
+        if bool(definition.get("built_in", false)):
+            candidate_ids.append(str(definition.get("id", "")))
+    candidate_ids.sort()
+    for technique_id_value in candidate_ids:
         var technique_id := str(technique_id_value)
-        if emitted.has(technique_id) or sequence_ids.has(technique_id):
+        if emitted.has(technique_id):
             continue
         emitted[technique_id] = true
         var definition: Dictionary = _content_catalog.get_by_id(
@@ -159,10 +165,11 @@ func _build_hand_loadout(
         if str(integration_statuses.get(technique_id, "")) \
                 != "formal_complete":
             continue
-        if not permitted_pools.has(str(definition.get("pool", ""))):
+        if not _technique_loadout_policy.is_eligible(
+                technique_id, hand_id, _growth.learned_technique_ids):
             continue
         available.append(_technique_summary(
-            technique_id, integration_statuses))
+            technique_id, integration_statuses, hand_id))
     return HandTechniqueLoadoutDTOScript.new().configure({
         "hand_id": hand_id,
         "hand_name": str(HAND_NAMES.get(hand_id, hand_id)),
@@ -171,13 +178,32 @@ func _build_hand_loadout(
         "available_techniques": available,
         "editable": editable,
         "blocked_reason": blocked_reason,
+        "missing_slot_count": maxi(
+            0, int(progression.get("slot_count", 1)) - sequence_ids.size()),
     })
 
 func _technique_summary(
         technique_id: String,
-        integration_statuses: Dictionary) -> Dictionary:
+        integration_statuses: Dictionary,
+        hand_id: String) -> Dictionary:
     var definition: Dictionary = _content_catalog.get_by_id(
         "technique", technique_id)
+    var totals: Dictionary = _technique_loadout_policy.total_counts(
+        _growth.hand_technique_progression)
+    var by_hand: Dictionary = _technique_loadout_policy.counts_by_hand(
+        _growth.hand_technique_progression)
+    var equipped_total := int(totals.get(technique_id, 0))
+    var query: Dictionary = _technique_loadout_policy.resolve_limit(
+        _growth, technique_id, equipped_total, by_hand, hand_id)
+    var base_limit := int(definition.get("base_loadout_limit", 1))
+    var effective_limit := int(query.get("effective_value", base_limit))
+    var eligible: bool = _technique_loadout_policy.is_eligible(
+        technique_id, hand_id, _growth.learned_technique_ids)
+    var disabled_reason := ""
+    if not query.get("success", false):
+        disabled_reason = str(query.get("reason", "装配次数查询失败"))
+    elif equipped_total >= effective_limit:
+        disabled_reason = "已装配 %d/%d" % [equipped_total, effective_limit]
     return {
         "id": technique_id,
         "name": str(definition.get("name", technique_id)),
@@ -185,6 +211,13 @@ func _technique_summary(
         "pool": str(definition.get("pool", "")),
         "status": str(integration_statuses.get(
             technique_id, definition.get("status", "missing"))),
+        "base_loadout_limit": base_limit,
+        "effective_loadout_limit": effective_limit,
+        "equipped_total_count": equipped_total,
+        "remaining_count": maxi(0, effective_limit - equipped_total),
+        "built_in": bool(definition.get("built_in", false)),
+        "eligible": eligible,
+        "disabled_reason": disabled_reason,
     }
 
 func _definition_name(content_type: String, content_id: String) -> String:

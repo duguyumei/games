@@ -7,6 +7,10 @@ extends Resource
 @export var display_name: String = ""
 @export var pool: String = ""
 @export var special: bool = false
+@export var built_in: bool = false
+@export var base_loadout_limit: int = 1
+@export var eligible_hand_ids: Array[String] = []
+@export var built_in_fallback_order: int = 0
 @export_multiline var description: String = ""
 @export var condition: Dictionary = {}
 @export var cooperation: Dictionary = {}
@@ -17,6 +21,10 @@ func configure_from_dictionary(value: Dictionary):
 	display_name = str(value.get("name", value.get("display_name", id)))
 	pool = str(value.get("pool", ""))
 	special = bool(value.get("special", false))
+	built_in = bool(value.get("built_in", false))
+	base_loadout_limit = int(value.get("base_loadout_limit", 1))
+	eligible_hand_ids.assign(value.get("eligible_hand_ids", []))
+	built_in_fallback_order = int(value.get("built_in_fallback_order", 0))
 	description = str(value.get("description", ""))
 	condition = value.get("condition", {}).duplicate(true)
 	cooperation = value.get("cooperation", {}).duplicate(true)
@@ -29,6 +37,10 @@ func to_definition() -> Dictionary:
 		"name": display_name,
 		"pool": pool,
 		"special": special,
+		"built_in": built_in,
+		"base_loadout_limit": base_loadout_limit,
+		"eligible_hand_ids": eligible_hand_ids.duplicate(),
+		"built_in_fallback_order": built_in_fallback_order,
 		"description": description,
 		"condition": condition.duplicate(true),
 		"cooperation": cooperation.duplicate(true),

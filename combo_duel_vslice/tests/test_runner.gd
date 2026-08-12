@@ -1030,6 +1030,7 @@ func _initialize() -> void:
     _test_run_build_consumable_target_selection_and_cancel()
     _test_run_build_prepared_preview_and_enum_protocol()
     _test_run_build_technique_removals_and_independent_drafts()
+    _test_s2f6a_repeated_technique_slot_index_operations()
     _test_run_build_inner_skill_draft_and_forgetting()
     _test_run_build_read_only_layout_and_ui_domain_boundary()
     _test_map_practice_and_battle_scene_integration()
@@ -1097,14 +1098,14 @@ func _run_build_ui_fixture(
         if include_techniques:
             match hand_id:
                 "pair":
-                    sequence = [{"id": "pair_a", "name": "对子甲", "description": "", "pool": "pair", "status": "formal_complete"}]
-                    available = [{"id": "pair_b", "name": "对子乙", "description": "", "pool": "pair", "status": "formal_complete"}]
+                    sequence = [{"id": "pair_a", "name": "对子甲", "description": "", "pool": "pair", "status": "formal_complete", "effective_loadout_limit": 1, "equipped_total_count": 1, "eligible": true, "disabled_reason": "已装配 1/1"}]
+                    available = [{"id": "pair_b", "name": "对子乙", "description": "", "pool": "pair", "status": "formal_complete", "effective_loadout_limit": 1, "equipped_total_count": 0, "eligible": true, "disabled_reason": ""}]
                 "four_kind":
-                    sequence = [{"id": "four_base", "name": "四条甲", "description": "", "pool": "bomb", "status": "formal_complete"}]
-                    available = [{"id": "bomb_shared", "name": "炸弹候选", "description": "", "pool": "bomb", "status": "formal_complete"}]
+                    sequence = [{"id": "four_base", "name": "四条甲", "description": "", "pool": "bomb", "status": "formal_complete", "effective_loadout_limit": 1, "equipped_total_count": 1, "eligible": true, "disabled_reason": "已装配 1/1"}]
+                    available = [{"id": "bomb_shared", "name": "炸弹候选", "description": "", "pool": "bomb", "status": "formal_complete", "effective_loadout_limit": 1, "equipped_total_count": 0, "eligible": true, "disabled_reason": ""}]
                 "five_kind":
-                    sequence = [{"id": "five_base", "name": "五条甲", "description": "", "pool": "bomb", "status": "formal_complete"}]
-                    available = [{"id": "bomb_shared", "name": "炸弹候选", "description": "", "pool": "bomb", "status": "formal_complete"}]
+                    sequence = [{"id": "five_base", "name": "五条甲", "description": "", "pool": "bomb", "status": "formal_complete", "effective_loadout_limit": 1, "equipped_total_count": 1, "eligible": true, "disabled_reason": "已装配 1/1"}]
+                    available = [{"id": "bomb_shared", "name": "炸弹候选", "description": "", "pool": "bomb", "status": "formal_complete", "effective_loadout_limit": 1, "equipped_total_count": 0, "eligible": true, "disabled_reason": ""}]
         hand_loadouts.append({
             "hand_id": hand_id,
             "hand_name": names[hand_id],
@@ -4092,14 +4093,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 0, "统一功法目录合法为空")
-    _assert_equal(catalog.definition("techniques")["resource_paths"], [], "正式功法资源路径为空")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"], {}, "正式接入状态为空")
+    _assert_equal(catalog.all_of("technique").size(), 2, "统一功法目录包含两门基础功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 2, "正式功法资源路径包含两项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 2, "正式接入状态包含两门基础功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 0, "正式功法资源目录仍无 .tres")
+    _assert_equal(formal_technique_resource_count, 2, "正式功法资源目录仅有两门基础功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
@@ -4207,8 +4208,8 @@ func _test_content_catalog_and_validator() -> void:
 
     _assert_equal(
         ContentValidatorScript.POOL_IDS,
-        ["high", "pair", "three", "straight", "bomb"],
-        "运行内容只承认五个新基础功法池 ID")
+        ["high", "pair", "three", "straight", "bomb", "universal"],
+        "运行内容承认五个普通池和基础通用归类")
     for old_pool_id in ["pair_two_pair", "three_full_house", "four_five"]:
         var legacy_pool_values := _catalog_definitions(catalog)
         legacy_pool_values["techniques"]["techniques"].append({
@@ -4331,8 +4332,8 @@ func _test_content_catalog_and_validator() -> void:
     for hand_id in ContentValidatorScript.HAND_IDS:
         _assert_equal(
             production_sequences[hand_id],
-            [],
-            "production %s 正式序列为空" % hand_id)
+            ["basic_scatter"],
+            "production %s 正式序列默认散招" % hand_id)
 
     var fixture_values := _catalog_definitions(production_catalog)
     fixture_values["sequences"]["high_card"] = ["fire_sparks"]
@@ -5763,7 +5764,7 @@ func _test_effect_extension_entry_contract() -> void:
         "重复注册错误包含稳定效果 ID")
 
     var invalid_definitions := definitions.duplicate(true)
-    invalid_definitions["techniques"]["techniques"][0]["effects"][0]["amount"] = 0
+    invalid_definitions["techniques"]["techniques"][-1]["effects"][0]["amount"] = 0
     var invalid_result: Dictionary = ContentValidatorScript.new(registry).validate(invalid_definitions)
     _assert_true(not invalid_result["valid"], "已注册效果的非法参数在内容校验阶段失败")
     _assert_true(
@@ -9278,7 +9279,7 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
     guixu.growth.consumable_ids.assign(["guixu"])
     var removals: Dictionary = {}
     for hand_id in GrowthInventoryScript.HAND_IDS:
-        removals[hand_id] = guixu.growth.hand_technique_progression[hand_id]["sequence"].duplicate()
+        removals[hand_id] = []
     var guixu_result := guixu.execute({
         "type": "use_consumable", "slot_index": 0,
         "choice_payload": {"removed_technique_ids_by_hand": removals},
@@ -9286,8 +9287,8 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
     _assert_true(guixu_result.success, "归墟按玩家选择移出超槽功法")
     var expected_modifiers := {"high_card": 1, "pair": 1, "two_pair": 1, "three_kind": 2, "straight": 2, "full_house": 2, "four_kind": 4, "five_kind": 6}
     for hand_id in GrowthInventoryScript.HAND_IDS:
-        _assert_equal(guixu.growth.hand_technique_progression[hand_id]["slot_count"], 0, "归墟 %s 槽位可降到 0" % hand_id)
-        _assert_true(guixu.growth.hand_technique_progression[hand_id]["sequence"].is_empty(), "归墟 %s 序列按选择移出" % hand_id)
+        _assert_equal(guixu.growth.hand_technique_progression[hand_id]["slot_count"], 1, "归墟 %s 槽位最低为 1" % hand_id)
+        _assert_equal(guixu.growth.hand_technique_progression[hand_id]["sequence"], ["basic_scatter"], "归墟 %s 保持完整序列" % hand_id)
         _assert_equal(guixu.growth.hand_technique_multiplier_modifiers[hand_id], expected_modifiers[hand_id], "归墟 %s 倍率修正正确" % hand_id)
         for technique_id in removals[hand_id]:
             _assert_true(guixu.growth.learned_technique_ids.has(technique_id), "归墟移出序列但保留功法库")
@@ -10492,11 +10493,7 @@ func _test_run_terminal_result_contract_and_closure() -> void:
     legacy_terminal_save["node_state"]["resume_policy"] = "resume_boundary"
     var legacy_terminal_restore := RunSaveDataScript.new(
         legacy_terminal_save).restore_session()
-    _assert_true(legacy_terminal_restore.get("success", false), "旧 run_complete 存档缺少 terminal_result 仍可恢复")
-    _assert_equal(
-        legacy_terminal_restore["run_session"].snapshot().terminal_result.get("kind"),
-        "victory",
-        "旧 run_complete 恢复时生成兼容 victory 结果")
+    _assert_true(not legacy_terminal_restore.get("success", false), "缺少 terminal_result 的旧终局存档明确拒绝")
 
     var overlay = RunTerminalOverlayScript.new()
     root.add_child(overlay)
@@ -10830,11 +10827,11 @@ func _test_inner_skill_loadout_and_forgetting() -> void:
         "equipped_inner_skill_ids": ["loadout_fixture_a"],
         "technique_slot_index": 1,
     }).success, "地图待选状态可以修改内功配装")
-    _assert_true(gate_session.execute({
+    _assert_true(not gate_session.execute({
         "type": "set_hand_technique_loadout",
         "hand_id": "high_card",
         "technique_ids": [],
-    }).success, "地图待选状态可以修改永久功法序列")
+    }).success, "地图待选状态拒绝保存空功法序列")
     var first_node_id := str(gate_session.snapshot().available_node_ids[0])
     _assert_true(gate_session.execute({
         "type": "begin_node", "node_id": first_node_id,
@@ -11169,16 +11166,16 @@ func _test_run_build_query_dto_and_empty_formal_pools() -> void:
     _assert_true(
         not _contains_object_value(first),
         "构筑命令边界不返回 GrowthInventory、RunDeck 或其他真实对象")
-    _assert_equal(first.get("hand_loadouts", []).size(), 8, "空正式功法池仍返回八种精确牌型")
+    _assert_equal(first.get("hand_loadouts", []).size(), 8, "基础功法配装返回八种精确牌型")
     for loadout in first.get("hand_loadouts", []):
         _assert_true(
-            loadout.get("sequence", []).is_empty()
-            and loadout.get("available_techniques", []).is_empty(),
-            "%s 在正式空池中显示空序列和空候选" % loadout.get("hand_id", ""))
+            loadout.get("sequence", []).map(func(value): return value.get("id")) == ["basic_scatter"]
+            and loadout.get("available_techniques", []).any(func(value): return value.get("id") == "basic_guard"),
+            "%s 显示默认散招和可选守招" % loadout.get("hand_id", ""))
     var four: Dictionary = first["hand_loadouts"][6]
     var five: Dictionary = first["hand_loadouts"][7]
     four["sequence"].append({"id": "local_probe"})
-    _assert_true(five["sequence"].is_empty(), "四条与五条 DTO 序列不是同一数组")
+    _assert_equal(five["sequence"].size(), 1, "四条与五条 DTO 序列不是同一数组")
     _assert_equal(first.get("consumables", []).size(), 3, "共享消耗品 DTO 始终保留三个槽位")
     _assert_equal(first["consumables"][0].get("slot_index"), 0, "非空消耗品保留 slot_index 0")
     _assert_equal(first["consumables"][1].get("status"), "empty", "未占用槽位明确返回空槽")
@@ -11339,6 +11336,29 @@ func _test_run_build_technique_removals_and_independent_drafts() -> void:
     _assert_equal(saved["ids"], ["pair_a", "pair_b"], "功法保存发送完整稳定 ID 数组")
     panel.queue_free()
 
+func _test_s2f6a_repeated_technique_slot_index_operations() -> void:
+    var build := _run_build_ui_fixture(true, false)
+    var loadout = build.hand_loadout("pair")
+    loadout.slot_count = 3
+    loadout.sequence = [
+        {"id": "basic_scatter", "name": "散招"},
+        {"id": "basic_guard", "name": "守招"},
+        {"id": "basic_scatter", "name": "散招"},
+    ]
+    loadout.available_techniques = []
+    var panel = RunTechniqueLoadoutPanelScene.instantiate()
+    root.add_child(panel)
+    panel.present(build)
+    _assert_true(panel.remove_technique_at("pair", 2), "重复基础功法可按第三槽下标删除")
+    _assert_equal(panel.draft_sequence("pair"), ["basic_scatter", "basic_guard"],
+        "删除第三槽不会误删第一个同 ID 功法")
+    panel.discard_drafts()
+    _assert_true(panel.move_technique_at("pair", 2, -1), "重复基础功法可按槽位下标移动")
+    _assert_equal(panel.draft_sequence("pair"),
+        ["basic_scatter", "basic_scatter", "basic_guard"],
+        "移动第三槽不会查找并移动第一个同 ID 功法")
+    panel.queue_free()
+
 func _test_run_build_inner_skill_draft_and_forgetting() -> void:
     var build := _run_build_ui_fixture(true, true)
     var panel = RunInnerSkillLoadoutPanelScene.instantiate()
@@ -11465,8 +11485,8 @@ func _test_map_practice_and_battle_scene_integration() -> void:
     _assert_true(run_ui.run_build_overlay.visible, "地图待选阶段可打开构筑 Overlay")
     _assert_equal(run_ui.run_build_overlay.tabs.get_tab_count(), 5, "地图构筑入口加载五个分页")
     _assert_true(
-        run_ui.run_build_overlay.technique_panel._empty_state.visible,
-        "正式功法池为空时 UI 显示权威空状态")
+        not run_ui.run_build_overlay.technique_panel._empty_state.visible,
+        "基础功法始终作为正式候选显示")
     _assert_true(
         run_ui.run_build_overlay.inner_skill_panel._empty_state.visible,
         "未获得正式内功时 UI 显示空状态而不伪装候选内容")

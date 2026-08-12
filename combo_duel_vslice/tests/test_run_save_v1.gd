@@ -1,6 +1,7 @@
 extends SceneTree
 
 const RunSessionScript = preload("res://core/run_session.gd")
+const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const RunSaveDataScript = preload("res://core/run_save_data.gd")
 const SaveRepositoryScript = preload("res://core/save_repository.gd")
 const MigrationRegistryScript = preload("res://core/run_save_migration_registry.gd")
@@ -47,6 +48,7 @@ func _initialize() -> void:
     _test_corruption_backup_recovery_and_unknown_version_rejection()
     _remove_test_files()
     _test_reward_boundary_and_v1_to_v2_migration()
+    _test_s2f6a_content_version_and_complete_loadout_round_trip()
     _remove_test_files()
     _test_autosave_stable_boundaries_and_battle_exclusion()
     _test_composition_root_restore_factory_and_first_save()
@@ -98,7 +100,7 @@ func _test_round_trip_and_complete_run_deck() -> void:
         restored.growth.hand_progression("high_card")["slot_count"],
         2,
         "往返保留高牌功法槽位")
-    _assert_equal(restored.growth.learned_technique_ids, [], "空功法池往返保持无已习得功法")
+    _assert_equal(restored.growth.learned_technique_ids, [], "基础功法往返仍不计入已习得功法")
     _assert_equal(restored.growth.learned_inner_skill_ids, ["extra_qi_to_defense"], "往返保留已习得内功 ID")
     _assert_equal(restored.growth.equipped_inner_skill_ids, ["extra_qi_to_defense"], "往返保留已装备内功 ID")
     _assert_equal(restored.growth.technique_slot_index, 1, "往返保留功法与内功结算槽位")
@@ -562,6 +564,24 @@ func _remove_paths(save_path: String) -> void:
         if FileAccess.file_exists(path):
             DirAccess.remove_absolute(path)
 
+func _test_s2f6a_content_version_and_complete_loadout_round_trip() -> void:
+    var session = _configured_session(6206, 6)
+    var current = RunSaveDataScript.new().capture(session)
+    _assert_equal(current.to_dict().get("content_version"), 2,
+        "F6A 新存档写入 content_version=2")
+    var old_values: Dictionary = current.to_dict()
+    old_values["content_version"] = 1
+    _assert_true(not RunSaveDataScript.new(old_values).validate().is_empty(),
+        "content_version=1 旧存档明确拒绝")
+    var restored: Dictionary = current.restore_session()
+    _assert_true(restored.get("success", false), "content_version=2 新存档可以恢复")
+    for hand_id in GrowthInventoryScript.HAND_IDS:
+        var progression: Dictionary = restored["run_session"].growth.hand_progression(hand_id)
+        _assert_true(int(progression["slot_count"]) >= 1,
+            "%s 往返后槽位至少为 1" % hand_id)
+        _assert_equal(progression["sequence"].size(), progression["slot_count"],
+            "%s 往返后序列仍完整填满" % hand_id)
+
 func _configured_session(seed_value: int, experience: int):
     var session: RunSession = RunSessionScript.new()
     var setup := session.execute({
@@ -575,7 +595,7 @@ func _configured_session(seed_value: int, experience: int):
     session.growth.consumable_ids.append("zengyuan_pill")
     session.growth.hand_technique_progression["high_card"] = {
         "slot_count": 2,
-        "sequence": [],
+        "sequence": ["basic_scatter", "basic_scatter"],
     }
     session.growth.learned_technique_ids.clear()
     session.growth.learned_inner_skill_ids.clear()

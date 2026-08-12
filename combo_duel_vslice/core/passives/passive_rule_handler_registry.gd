@@ -73,6 +73,7 @@ const HOOKS := [
     "meditation_cost_query",
     "pack_offer_count_query",
     "pack_choose_count_query",
+    "technique_loadout_copy_limit_query",
     "practice_opened",
     "practice_purchase_committed",
     "practice_pack_opened",

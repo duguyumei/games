@@ -56,38 +56,53 @@ func add_technique(hand_id: String, technique_id: String) -> bool:
     if loadout == null or not loadout.editable:
         return false
     var draft: Array = _drafts.get(hand_id, []).duplicate()
-    if draft.size() >= loadout.slot_count or draft.has(technique_id):
+    if draft.size() >= loadout.slot_count:
         return false
     var allowed := _all_technique_ids(loadout)
     if not allowed.has(technique_id):
+        return false
+    var summary := _technique(loadout, technique_id)
+    var current_count := draft.count(technique_id)
+    var original_hand_count := _ids(loadout.sequence).count(technique_id)
+    var total_without_original := int(summary.get(
+        "equipped_total_count", 0)) - original_hand_count
+    if total_without_original + current_count + 1 > int(summary.get(
+            "effective_loadout_limit", 0)):
         return false
     draft.append(technique_id)
     _set_draft(hand_id, draft)
     return true
 
 func remove_technique(hand_id: String, technique_id: String) -> bool:
+    var draft: Array = _drafts.get(hand_id, [])
+    return remove_technique_at(hand_id, draft.find(technique_id))
+
+func remove_technique_at(hand_id: String, slot_index: int) -> bool:
     var loadout = _loadout(hand_id)
     if loadout == null or not loadout.editable:
         return false
     var draft: Array = _drafts.get(hand_id, []).duplicate()
-    var index := draft.find(technique_id)
-    if index < 0:
+    if slot_index < 0 or slot_index >= draft.size():
         return false
-    draft.remove_at(index)
+    draft.remove_at(slot_index)
     _set_draft(hand_id, draft)
     return true
 
 func move_technique(hand_id: String, technique_id: String, offset: int) -> bool:
+    var draft: Array = _drafts.get(hand_id, [])
+    return move_technique_at(hand_id, draft.find(technique_id), offset)
+
+func move_technique_at(hand_id: String, slot_index: int, offset: int) -> bool:
     var loadout = _loadout(hand_id)
     if loadout == null or not loadout.editable or not [-1, 1].has(offset):
         return false
     var draft: Array = _drafts.get(hand_id, []).duplicate()
-    var index := draft.find(technique_id)
-    var target := index + offset
-    if index < 0 or target < 0 or target >= draft.size():
+    var target := slot_index + offset
+    if slot_index < 0 or slot_index >= draft.size() \
+            or target < 0 or target >= draft.size():
         return false
-    var value = draft[index]
-    draft[index] = draft[target]
+    var value = draft[slot_index]
+    draft[slot_index] = draft[target]
     draft[target] = value
     _set_draft(hand_id, draft)
     return true
@@ -95,7 +110,8 @@ func move_technique(hand_id: String, technique_id: String, offset: int) -> bool:
 func request_save(hand_id: String) -> bool:
     var loadout = _loadout(hand_id)
     if loadout == null or not loadout.editable \
-            or not _dirty_hands.has(hand_id):
+            or not _dirty_hands.has(hand_id) \
+            or draft_sequence(hand_id).size() != loadout.slot_count:
         return false
     save_requested.emit(hand_id, draft_sequence(hand_id))
     return true
@@ -181,17 +197,35 @@ func _render_selected() -> void:
     _available_list.clear()
     for technique in _all_techniques(loadout):
         var technique_id := str(technique.get("id", ""))
-        if technique_id == "" or draft.has(technique_id):
+        if technique_id == "":
             continue
-        _available_list.add_item(str(technique.get("name", technique_id)))
+        var current_count := draft.count(technique_id)
+        var original_hand_count := _ids(loadout.sequence).count(technique_id)
+        var displayed_total := int(technique.get(
+            "equipped_total_count", 0)) - original_hand_count + current_count
+        var effective_limit := int(technique.get(
+            "effective_loadout_limit", 0))
+        var label := str(technique.get("name", technique_id))
+        label += " · 已装配 %d/%d" % [
+            displayed_total, effective_limit]
+        _available_list.add_item(label)
         _available_list.set_item_metadata(
             _available_list.item_count - 1, technique_id)
+        _available_list.set_item_disabled(
+            _available_list.item_count - 1,
+            not bool(technique.get("eligible", false)) \
+                or displayed_total >= effective_limit \
+                or (str(technique.get("disabled_reason", "")) != "" \
+                    and not str(technique.get("disabled_reason", "")).begins_with(
+                        "已装配 ")))
     var is_editable := bool(loadout.editable)
     _summary.text = "%d / %d 槽%s" % [
         draft.size(), loadout.slot_count,
         " · 未保存" if _dirty_hands.has(hand_id) else ""]
     if not is_editable:
         _summary.text += " · 只读：%s" % loadout.blocked_reason
+    elif draft.size() < loadout.slot_count:
+        _summary.text += " · 还缺 %d 个功法" % (loadout.slot_count - draft.size())
     _empty_state.visible = (
         _all_techniques(loadout).is_empty()
         and loadout.sequence.is_empty())
@@ -199,7 +233,9 @@ func _render_selected() -> void:
     _remove_button.disabled = not is_editable
     _up_button.disabled = not is_editable
     _down_button.disabled = not is_editable
-    _save_button.disabled = not is_editable or not _dirty_hands.has(hand_id)
+    _save_button.disabled = not is_editable \
+        or not _dirty_hands.has(hand_id) \
+        or draft.size() != loadout.slot_count
 
 func _set_draft(hand_id: String, draft: Array) -> void:
     _drafts[hand_id] = draft.duplicate()
@@ -238,6 +274,12 @@ func _technique_name(loadout, technique_id: String) -> String:
             return str(technique.get("name", technique_id))
     return technique_id
 
+func _technique(loadout, technique_id: String) -> Dictionary:
+    for technique in _all_techniques(loadout):
+        if str(technique.get("id", "")) == technique_id:
+            return technique
+    return {}
+
 func _ids(techniques: Array) -> Array:
     var result: Array = []
     for technique in techniques:
@@ -264,15 +306,19 @@ func _on_add() -> void:
     add_technique(selected_hand_id(), _selected_metadata(_available_list))
 
 func _on_remove() -> void:
-    remove_technique(selected_hand_id(), _selected_metadata(_sequence_list))
+    var selected := _sequence_list.get_selected_items()
+    remove_technique_at(
+        selected_hand_id(), -1 if selected.is_empty() else int(selected[0]))
 
 func _on_move_up() -> void:
-    move_technique(
-        selected_hand_id(), _selected_metadata(_sequence_list), -1)
+    var selected := _sequence_list.get_selected_items()
+    move_technique_at(
+        selected_hand_id(), -1 if selected.is_empty() else int(selected[0]), -1)
 
 func _on_move_down() -> void:
-    move_technique(
-        selected_hand_id(), _selected_metadata(_sequence_list), 1)
+    var selected := _sequence_list.get_selected_items()
+    move_technique_at(
+        selected_hand_id(), -1 if selected.is_empty() else int(selected[0]), 1)
 
 func _on_save() -> void:
     request_save(selected_hand_id())

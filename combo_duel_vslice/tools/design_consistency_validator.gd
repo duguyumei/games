@@ -14,6 +14,7 @@ const POOL_LABEL_TO_CODE := {
     "三条池": "three",
     "顺子池": "straight",
     "炸弹池": "bomb",
+    "基础通用功法": "universal",
 }
 
 ## 设计文档已明确废弃、不得作为活跃内容出现在数据或规则中的牌型。
@@ -80,7 +81,7 @@ func _parse_authoritative_pools(pool_dir: String) -> void:
             errors.append("无法读取功法池文档：%s" % path)
             continue
         if file_name == "20-gongfa-framework.md" \
-                and text.contains("当前五个正式功法池全部为空"):
+                and text.contains("当前五个普通正式功法池全部为空"):
             authoritative_empty_declared = true
         var archived_file := text.contains("# 历史归档")
         var current_pool := ""

@@ -240,7 +240,7 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
         "technique_slot_index": side.technique_slot_index,
         "hand_technique_progression": side.hand_technique_progression.duplicate(true),
-        "learned_technique_ids": side.owned_technique_ids.duplicate(),
+        "learned_technique_ids": _obtainable_owned_technique_ids(side),
         "life": side.life,
         "max_life": side.max_life,
         "experience": side.experience,
@@ -252,3 +252,13 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         values["passive_counter_state"] = (
             side.passive_counter_store.capture_state())
     return RunProgressSnapshotScript.from_dict(values)
+
+func _obtainable_owned_technique_ids(side) -> Array[String]:
+    var result: Array[String] = []
+    for technique_id_value in side.owned_technique_ids:
+        var technique_id := str(technique_id_value)
+        var definition: Dictionary = _content_catalog.get_by_id(
+            "technique", technique_id) if _content_catalog != null else {}
+        if not bool(definition.get("built_in", false)):
+            result.append(technique_id)
+    return result
