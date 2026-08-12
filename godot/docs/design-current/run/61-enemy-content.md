@@ -1,128 +1,88 @@
-# 正式敌人内容（S2 第 1 层）
+# 敌人内容池与配置规则
 
 > 本文件是当前 v0.30 模块化权威设计源的一部分。
-> 敌人运行数据位于 `combo_duel_vslice/data/enemies.json`，但本文件拥有第 1 层正式精英与 Boss
-> 的身份、构筑和 AI 覆盖规则；运行数据不得反向定义设计。
+> 敌人运行数据位于 `combo_duel_vslice/data/enemies.json`；本文件只定义敌人内容池的稳定通则，
+> 不冻结某一批敌人的数量、姓名、构筑或功法清单。具体敌人由后续内容设计逐个确认和配置。
 
-## 1. 内容范围与通用约束
+## 1. 敌人是可扩展内容池
 
-本轮内部试玩确认第 1 层使用两名精英和三名 Boss。敌人牌组允许任意非空张数，不受 52 张完整
-基础牌组数量限制；52 张仍是玩家标准初始构筑与战斗规则核的基线。敌人牌组只使用基础真气和
-已确认的预置重塑语法，不预置战斗异状。
+敌人按层数、节点类型与其他明确筛选条件组成内容池。普通敌人、精英和 Boss 都是池中的内容条目，
+不在权威通则中规定固定数量，也不设置总量上限。第一层、第二层或任意后续层可以按内容设计需要
+新增、调整或删除敌人；当前运行数据中已有多少条目只代表当前内容进度，不构成永久规则。
 
-所有第 1 层精英使用 `150` 基础生命，所有第 1 层 Boss 使用 `200` 基础生命；生命值来自
-[分层基础生命成长](./60-map-run-and-health.md#31-分层基础生命成长)，不在敌人内容条目中重复声明。
+敌人池必须满足：
 
-所有敌人：
+- 每个敌人使用稳定且唯一的 ID；
+- `acts` 声明它可以出现的层数；
+- `node_types` 声明它可以出现于普通战斗、精英或 Boss 节点；
+- 同一筛选条件下可以有任意数量的候选；
+- 相同本局种子、内容种子与 Boss 变体必须得到确定性抽取结果；
+- 找不到符合条件的敌人时明确报错，不静默换用无关敌人或默认占位敌人。
 
-- `acts` 为 `[1]`，`node_types` 分别为 `["elite"]` 或 `["boss"]`；
-- `equipped_inner_skill_ids` 为空数组，`technique_slot_index` 为 `0`；
-- 完整列出八种精确牌型的 `hand_proficiency_fixed`；该字段是敌方牌型熟练度固定修正，只进入功法值固定修正，不使用玩家心得语义，也不会令敌人随机获得功法；
-- 功法序列只允许 8 门正式语义完整功法：
-  `balance_sleeves_listen_wind`、`double_gu_exchange_breath`、
-  `three_ring_ensemble`、`three_ring_chaos_qi`、`seize_qi_return_nest`、
-  `five_steps_echo`、`stagnant_gu_conceal_breath`、`borrow_fire_guard_heart`；
-- 五条在未改造基础牌组中不可能自然形成，因此本轮所有敌人的 `five_kind` 序列为空。
+开发期间可以保留明确命名的过渡占位条目，但占位条目不是正式敌人设计，进入对应层的正式试玩
+门禁前必须删除或收窄其适用范围。
 
-Boss 必须覆盖至少六种可自然形成的精确牌型。本轮三个 Boss 均覆盖七种（除五条外）牌型。
+## 2. 单个敌人的自由配置
 
-## 2. 第 1 层精英
+每个敌人可以独立配置：
 
-### 丹风逐影客 `act1_cinnabar_wind_hunter`
+- 任意非空牌组；
+- 八种精确牌型各自的功法序列；
+- 牌型熟练度固定修正；
+- 已装备内功；
+- AI 权重覆盖；
+- 后续由正式数据结构支持的其他内容字段。
 
-定位为风属性牌区压力与高牌启动。牌组 26 张：风 12、林 6、火 4、山 4。
+敌人的牌组张数、属性比例、同牌数量、功法总数、单个牌型的功法序列长度、已装备内功数量以及
+牌型覆盖范围，均由该敌人的具体设计决定，不在本文件设置统一内容指标。它可以没有功法，也可以
+配置大量功法；Boss 不强制覆盖指定数量的牌型，普通敌人也不因身份被禁止拥有复杂构筑。
 
-```text
-wind_2*2 wind_3*2 wind_4*2 wind_5*2 wind_6*2 wind_7 wind_8
-forest_3*2 forest_5*2 forest_7*2
-fire_4*2 fire_8*2
-mountain_5*2 mountain_9*2
-```
+空功法序列是合法数据，表示该牌型不触发功法效果。是否适合作为正式敌人，必须根据该敌人的设计
+目标和实测战斗结果判断，不能用“至少几门功法”之类的全局硬编码代替内容验收。
 
-序列为：高牌 `[borrow_fire_guard_heart, stagnant_gu_conceal_breath]`；一对
-`[double_gu_exchange_breath]`；两对 `[balance_sleeves_listen_wind]`；三条
-`[three_ring_ensemble]`；顺子 `[five_steps_echo]`；葫芦为空；四条
-`[seize_qi_return_nest]`；五条为空。
+## 3. 正式内容引用边界
 
-敌方牌型熟练度固定修正：高牌 1、一对 1、两对 1、三条 0、顺子 1、葫芦 0、四条 0、五条 0。
-AI 覆盖：`damage_weight=1.15`、`sequence_progress_weight=1.2`、`overkill_penalty=0.5`。
+敌人配置只能引用已经进入正式运行数据的内容：
 
-### 山灯守关人 `act1_mountain_lantern_warden`
+- 功法必须已经完成正式语义接入，并符合对应精确牌型的功法池资格；
+- 内功必须具有完整运行语义；敌人专属能力可以作为不进入玩家商店和奖励池的特殊内功配置；
+- 预置真气重塑必须来自已确认的正式定义；
+- 不得把历史归档功法、测试夹具、讨论稿或仅有名称的空壳内容写入正式敌人。
 
-定位为山林结构、防御与葫芦路线。牌组 28 张：风 4、林 8、火 4、山 12。
+“当前正式功法池为空”表示现阶段尚无功法可以被正式敌人引用，不表示敌人未来只能使用固定的
+某几门功法。新功法逐门正式接入后，任何符合牌型资格的敌人都可以按具体设计引用它们。
 
-```text
-mountain_2*2 mountain_3*2 mountain_4*2 mountain_5*2 mountain_6*2 mountain_7*2
-forest_2*2 forest_4*2 forest_6*2 forest_8*2
-wind_5*2 wind_9*2 fire_3*2 fire_7*2
-```
+## 4. 数值与行为的职责边界
 
-序列为：高牌 `[stagnant_gu_conceal_breath]`；一对 `[double_gu_exchange_breath]`；
-两对 `[balance_sleeves_listen_wind]`；三条 `[three_ring_ensemble]`；顺子为空；
-葫芦 `[three_ring_chaos_qi]`；四条 `[seize_qi_return_nest]`；五条为空。
+敌人基础生命由分层与节点类型的权威进度表决定，见
+[地图、本局与生命](./60-map-run-and-health.md#31-分层基础生命成长)。敌人条目不复制这张生命表；
+只有明确的测试夹具可以使用场景生命覆盖。
 
-敌方牌型熟练度固定修正：高牌 0、一对 1、两对 1、三条 1、顺子 0、葫芦 1、四条 0、五条 0。
-AI 覆盖：`defense_weight=0.95`、`retained_card_weight=0.35`、`danger_life_ratio=0.4`。
+内容字段的职责如下：
 
-## 3. 第 1 层 Boss
+- 牌组决定敌人能够形成哪些牌型；
+- 功法序列决定形成牌型后执行哪些正式功法；
+- 内功承载持续规则、时点触发和敌人专属机制；
+- AI 权重只决定敌人如何从合法行动中选择，不直接创造战斗规则；
+- 中央战斗代码只执行公共规则，不按敌人 ID 增加专属分支。
 
-### 裂风掌门 `act1_wind_sect_chief`
+如果某个敌人的差异仅靠牌组、功法或 AI 权重就能表达，不重复建立特殊能力。只有确实需要新的规则
+语义时，才通过现有 Registry 增加小型 Handler，再由内功或其他正式内容配置引用；不得为单个敌人
+复制一套战斗系统。
 
-定位为风属性高频进攻与连击追续。牌组 40 张：风 18、林 10、火 6、山 6。
+## 5. 内容批次与试玩验收
 
-```text
-wind_2*2 wind_3*2 wind_4*2 wind_5*2 wind_6*2 wind_7*2 wind_8*2 wind_9*2 wind_10*2
-forest_2*2 forest_3*2 forest_4*2 forest_5*2 forest_6*2
-fire_4*2 fire_6*2 fire_8*2 mountain_5*2 mountain_7*2 mountain_9*2
-```
+内容团队可以为某一轮试玩临时设定“本批录入若干普通敌人、精英和 Boss”的制作目标，但该数字只
+属于批次计划，不属于敌人系统的权威上限，也不得写成内容校验器的固定数量约束。
 
-序列为：高牌 `[borrow_fire_guard_heart, stagnant_gu_conceal_breath]`；一对
-`[double_gu_exchange_breath]`；两对 `[balance_sleeves_listen_wind]`；三条
-`[three_ring_ensemble]`；顺子 `[five_steps_echo]`；葫芦 `[three_ring_chaos_qi]`；四条
-`[seize_qi_return_nest]`；五条为空。
-敌方牌型熟练度固定修正为 `2/2/2/1/1/1/1/0`（按高牌、一对、两对、三条、顺子、葫芦、四条、五条）。
-AI 覆盖：`damage_weight=1.25`、`combo_bonus=10.0`、`combo_follow_up_weight=0.45`、
-`overkill_penalty=0.2`。
+单个正式敌人的准入至少验证：
 
-### 百蛊夫人 `act1_gu_matriarch`
+- 数据引用全部有效，牌组能够完成装配；
+- 在目标层数和节点类型下能够被确定性抽取；
+- 本地 AI 和远程 AI 共用同一合法候选边界；
+- 实际战斗能够推进并得到明确结果，不长期卡在 `active`；
+- 敌人的牌组、功法、内功与 AI 行为符合其具体设计目标；
+- 调整数值或替换内容配置时不需要在 `CombatEngine` 等中央流程增加敌人 ID 分支。
 
-定位为林属性牌区控制与防守。牌组 39 张：风 8、林 18、火 7、山 6。
-
-```text
-forest_2*2 forest_3*2 forest_4*2 forest_5*2 forest_6*2 forest_7*2 forest_8*2 forest_9*2 forest_10*2
-wind_3*2 wind_5*2 wind_7*2 wind_9*2
-mountain_4*2 mountain_6*2 mountain_8*2
-fire_5*2 fire_7*2 fire_9*3
-```
-
-序列为：高牌 `[stagnant_gu_conceal_breath, borrow_fire_guard_heart]`；一对
-`[double_gu_exchange_breath]`；两对 `[balance_sleeves_listen_wind]`；三条
-`[three_ring_ensemble]`；顺子 `[five_steps_echo]`；葫芦 `[three_ring_chaos_qi]`；四条
-`[seize_qi_return_nest]`；五条为空。
-敌方牌型熟练度固定修正为 `1/1/1/1/1/2/1/0`。AI 覆盖：`defense_weight=1.15`、
-`danger_life_ratio=0.45`、`retained_card_weight=0.4`、`combo_without_follow_up_penalty=8.0`。
-
-### 五岳魁首 `act1_five_mountain_lord`
-
-定位为山火结构成型与功法序列推进。牌组 42 张：风 8、林 6、火 10、山 18。
-
-```text
-mountain_2*2 mountain_3*2 mountain_4*2 mountain_5*2 mountain_6*2 mountain_7*2 mountain_8*2 mountain_9*2 mountain_10*2
-fire_2*2 fire_4*2 fire_6*2 fire_8*2 fire_10*2
-wind_3*2 wind_6*2 wind_9*2 forest_4*2 forest_7*2 forest_10*2 wind_A*2
-```
-
-序列为：高牌 `[borrow_fire_guard_heart]`；一对 `[double_gu_exchange_breath]`；两对
-`[balance_sleeves_listen_wind]`；三条 `[three_ring_ensemble]`；顺子 `[five_steps_echo]`；
-葫芦 `[three_ring_chaos_qi]`；四条 `[seize_qi_return_nest]`；五条为空。
-敌方牌型熟练度固定修正为 `1/1/1/2/1/2/2/0`。AI 覆盖：`damage_weight=1.1`、`power_weight=0.08`、
-`sequence_progress_weight=1.35`、`card_cost=0.35`。
-
-## 4. Boss 候选与过渡占位
-
-第 1 层 Boss 候选按 ID 排序后由 `content_seed` 选定起点，`boss_variant=0/1/2` 在候选数组上
-执行循环偏移。因此相同 seed 与相同 variant 必须稳定，相同 seed 的三个 variant 必须得到三个
-不同 Boss；variant 不绑定跨 seed 的固定姓名。
-
-`transitional_elite_boss_placeholder` 仅覆盖第 2、3 层的 `elite` 与 `boss`，名称为
-“第 2/3 层过渡占位精英首领”。第 1 层不得抽到该条目。
+每轮试玩可以根据数据继续新增、删除或重做敌人。运行数据是具体内容实现，权威通则只保证池化、
+引用合法、确定性和模块边界，不替内容设计者决定敌人的数量与构筑。
