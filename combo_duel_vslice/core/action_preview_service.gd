@@ -10,6 +10,7 @@ const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const ActionPreviewDtoScript = preload("res://core/action_preview_dto.gd")
+const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
 
 var technique_repository
 var passive_rule_runtime
@@ -37,14 +38,14 @@ func preview(
         card_ids: Array,
         sequence_book,
         modifiers_by_hand: Dictionary = {},
-        natural_combo_used: bool = false,
+        same_qi_link_used: bool = false,
         target = null) -> Dictionary:
     return preview_dto(
         side,
         card_ids,
         sequence_book,
         modifiers_by_hand,
-        natural_combo_used,
+        same_qi_link_used,
         target).to_dict()
 
 func preview_dto(
@@ -52,7 +53,7 @@ func preview_dto(
         card_ids: Array,
         sequence_book,
         modifiers_by_hand: Dictionary = {},
-        natural_combo_used: bool = false,
+        same_qi_link_used: bool = false,
         target = null):
     if card_ids.size() < 1 or card_ids.size() > 5:
         return _invalid_preview("每次必须选择 1～5 张真气")
@@ -87,14 +88,21 @@ func preview_dto(
     if not bool(play_check.get("allowed", false)):
         return _invalid_preview(str(play_check.get("reason", "此真气本回合不能打出")))
 
+    var same_qi: Dictionary = SameQiRuleScript.analyze(
+        cards,
+        side.card_identity_policy,
+        {"owner": side, "actor": side, "target": target})
+    if not same_qi.get("success", false):
+        return _invalid_preview(str(same_qi.get("reason", "同气身份查询失败")))
+
     var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {}).duplicate(true)
     modifiers["multiplier_bonus"] = (
         int(modifiers.get("multiplier_bonus", 0))
         + int(side.hand_technique_multiplier_modifiers.get(
             hand_result["id"], 0)))
-    if cards.size() == 5 \
-            and is_same_attribute_action(cards, side.card_identity_policy):
-        modifiers["power_amp_percent"] = int(modifiers.get("power_amp_percent", 0)) + 50
+    modifiers["power_amp_percent"] = (
+        int(modifiers.get("power_amp_percent", 0))
+        + int(same_qi.get("power_amp_percent", 0)))
     modifiers["power_fixed"] = (
         int(modifiers.get("power_fixed", 0))
         + int(side.hand_proficiency_fixed.get(hand_result["id"], 0))
@@ -202,9 +210,12 @@ func preview_dto(
             "reason", "伤害或防御预览查询失败")))
     intent = queried_intent["intent"]
 
-    var natural_combo_available := is_same_attribute_action(cards) and not natural_combo_used
-    intent["natural_combo"] = natural_combo_available
-    intent["combo"] = natural_combo_available or bool(intent.get("technique_combo", false))
+    var same_qi_action := SameQiRuleScript.intersect_group_attributes([same_qi])
+    var same_qi_link_available := (
+        bool(same_qi_action.get("qualified", false))
+        and not same_qi_link_used)
+    intent["same_qi_link"] = same_qi_link_available
+    intent["combo"] = same_qi_link_available or bool(intent.get("technique_combo", false))
     var next_technique_id: String = sequence_book.next_id(hand_result["id"])
     return ActionPreviewDtoScript.new().configure({
         "valid": true,
@@ -215,6 +226,8 @@ func preview_dto(
             "modifiers": modifiers,
             "queries": power_result["queries"],
         },
+        "same_qi": same_qi,
+        "same_qi_action": same_qi_action,
         "technique_id": technique_id,
         "technique": technique,
         "condition": condition,
@@ -417,21 +430,6 @@ func _invalid_preview(reason: String):
         "valid": false,
         "reason": reason,
     })
-
-static func is_same_attribute_action(cards: Array, identity_policy = null) -> bool:
-    if cards.is_empty():
-        return false
-    for attribute in ["wind", "forest", "fire", "mountain"]:
-        var all_match := true
-        for card in cards:
-            if card.effective_qi_value() == 0:
-                continue
-            if not _card_has_attribute(card, attribute, identity_policy):
-                all_match = false
-                break
-        if all_match:
-            return true
-    return false
 
 static func _card_has_attribute(card, attribute: String, identity_policy = null) -> bool:
     if identity_policy != null and identity_policy.has_method("resolve"):

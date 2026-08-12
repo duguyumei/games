@@ -6,6 +6,7 @@ func _initialize() -> void:
         "_test_standard_deck",
         "_test_pool_structure_and_turn_draw_rules",
         "_test_active_hand_types_and_same_attribute_rules",
+        "_test_same_qi_rule_and_action_wiring",
         "_test_power_calculation",
         "_test_damage_resolver_rules_and_facade",
     ])

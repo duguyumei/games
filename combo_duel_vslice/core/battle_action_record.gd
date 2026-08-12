@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 4
 
 var actor
 var target
@@ -74,7 +74,14 @@ func snapshot() -> Dictionary:
             "passive_action_confirmed", false)),
         "passive_power_queries": preview.get("values", {}).get(
             "passive_power_queries", {}).duplicate(true),
+        "same_qi": preview.get("same_qi", {}).duplicate(true),
+        "same_qi_action": preview.get("same_qi_action", {}).duplicate(true),
         "cooperation_group_count": cooperation_groups.size(),
+        "cooperation_groups": cooperation_groups.map(func(group): return {
+            "group_index": int(group.get("group_index", 0)),
+            "same_qi": group.get("preview", {}).get(
+                "same_qi", {}).duplicate(true),
+        }),
     }
 
 func to_dict() -> Dictionary:

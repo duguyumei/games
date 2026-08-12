@@ -10,6 +10,7 @@ extends RefCounted
 const ActionPreviewServiceScript = preload("res://core/action_preview_service.gd")
 const PendingActionTransactionScript = preload("res://core/battle_pending_action_transaction.gd")
 const SequenceBookScript = preload("res://core/sequence_book.gd")
+const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
 
 var player
 var enemy
@@ -337,9 +338,7 @@ func _finish_solo_action_outcome(
     last_player_action_cards = played_cards
     last_enemy_action_cards.clear()
     last_played_hand = action_preview["hand"]["id"]
-    if ActionPreviewServiceScript.is_same_attribute_action(played_cards) \
-            and battle_flow.claim_combo(player, "natural_attribute"):
-        _grant_extra_actions(player, 1, "通用同属性连击")
+    _apply_same_qi_link(player, action_preview)
     battle_flow.clear_intents()
     emit_state_changed.call()
     return {
@@ -411,6 +410,11 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
         "main_individual_power": main_individual_power,
         "cooperation_individual_power": cooperation_individual_power,
     })
+    var same_qi_action_result := _freeze_same_qi_action(proposal)
+    if not same_qi_action_result.get("success", false):
+        proposal.groups.pop_back()
+        proposal.preview["values"]["technique_value"] = main_individual_power
+        return same_qi_action_result
     return {"success": true, "shared_power": shared_power}
 
 func _confirm_synchronized_play(player_proposal) -> Dictionary:
@@ -631,14 +635,10 @@ func _finish_synchronized_outcome(
     last_player_action_cards = player_cards
     last_enemy_action_cards = enemy_cards
     last_played_hand = player_preview["hand"]["id"]
-    if ActionPreviewServiceScript.is_same_attribute_action(player_cards) \
-            and battle_flow.claim_combo(player, "natural_attribute"):
-        _grant_extra_actions(player, 1, "通用同属性连击")
+    _apply_same_qi_link(player, player_preview)
     if enemy_will_act:
         enemy_action_index_writer.call(enemy_action_index_reader.call() + 1)
-        if ActionPreviewServiceScript.is_same_attribute_action(enemy_cards) \
-                and battle_flow.claim_combo(enemy, "natural_attribute"):
-            _grant_extra_actions(enemy, 1, "通用同属性连击")
+        _apply_same_qi_link(enemy, enemy_preview)
     battle_flow.clear_intents()
     update_battle_state.call()
     if battle_state_reader.call() == "active" and battle_flow.can_act(enemy):
@@ -677,9 +677,7 @@ func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictio
     last_player_action_cards.clear()
     last_enemy_action_cards = enemy_cards
     enemy_action_index_writer.call(enemy_action_index_reader.call() + 1)
-    if ActionPreviewServiceScript.is_same_attribute_action(enemy_cards) \
-            and battle_flow.claim_combo(enemy, "natural_attribute"):
-        _grant_extra_actions(enemy, 1, "通用同属性连击")
+    _apply_same_qi_link(enemy, action_preview)
     battle_flow.clear_intents()
     update_battle_state.call()
     clear_enemy_action_lock.call()
@@ -700,6 +698,47 @@ func _grant_extra_actions(side, amount: int, source: String) -> void:
         source,
         "成功",
         "+%d（连击不自动补牌）" % gained)
+
+func _apply_same_qi_link(side, action_preview: Dictionary) -> bool:
+    var frozen_action: Dictionary = action_preview.get("same_qi_action", {})
+    if not bool(frozen_action.get("qualified", false)):
+        return false
+    if not bool(action_preview.get("intent", {}).get("same_qi_link", false)):
+        return false
+    if not battle_flow.claim_combo(side, "same_qi_link"):
+        return false
+    _grant_extra_actions(side, 1, "同气连动")
+    return true
+
+func _freeze_same_qi_action(proposal) -> Dictionary:
+    var group_results: Array = [proposal.preview.get("same_qi", {})]
+    for group in proposal.groups.slice(1):
+        group_results.append(group.get("preview", {}).get("same_qi", {}))
+    var action_result: Dictionary = SameQiRuleScript.intersect_group_attributes(
+        group_results)
+    if not action_result.get("success", false):
+        return {
+            "success": false,
+            "reason": str(action_result.get("reason", "同气行动冻结失败")),
+        }
+    var available: bool = (
+        bool(action_result.get("qualified", false))
+        and not battle_flow.has_claimed_combo(player, "same_qi_link"))
+    var technique_combo := bool(
+        proposal.preview.get("intent", {}).get("technique_combo", false))
+    for group in proposal.groups.slice(1):
+        technique_combo = (
+            technique_combo
+            or bool(group.get("preview", {}).get(
+                "intent", {}).get("technique_combo", false)))
+    proposal.preview["same_qi_action"] = action_result.duplicate(true)
+    proposal.preview["intent"]["same_qi_link"] = available
+    proposal.preview["intent"]["combo"] = available or technique_combo
+    for group in proposal.groups.slice(1):
+        group["preview"]["same_qi_action"] = action_result.duplicate(true)
+        group["preview"]["intent"]["same_qi_link"] = available
+        group["preview"]["intent"]["combo"] = available or technique_combo
+    return {"success": true, "same_qi_action": action_result}
 
 func _finalize_staged_proposal(
         side, proposal, emit_confirmed: bool = true) -> Dictionary:

@@ -115,7 +115,8 @@ flowchart LR
 - `action_preview_service.gd`：独立完成选牌校验、牌型与功法值、功法条件、内功预计效果和公开意图，不依赖 UI 或场景树。
 - `hand_result_dto.gd`、`action_preview_dto.gd`：牌型结果与行动预览的 v1 类型化运行时契约；领域服务可直接取得 DTO，旧战斗门面继续通过 `to_dict()` 提供兼容字典。
 - `action_resolver.gd`：独立编排牌型组三阶段触发、左右顺序、效果队列、牌上烈毒与蛊印回库、待出区提交和结算日志；只依赖 `BattleEffectPorts` 与行动记录，序列推进注册为牌型组结束处理器。
-- `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复和结算完成后的连击推进；不生成内容或决定胜负。
+- `same_qi_rule.gd`：纯查询每组普通真气的有效属性身份全体交集与 `0/10/20/30/50%` 同气增幅，并组合冻结后的组结果建立行动级同气连动事实。
+- `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复和结算完成后的同气连动／其他连击推进；不生成内容或决定胜负。
 - `battle_pending_action_transaction.gd`：保存等待功法选择时的可恢复行动事务，区分玩家单方、敌方单方和敌我同步三种形态，并提供版本化快照。
 - `damage_resolver.gd`：独立完成普通伤害、真伤、连势增伤、防御／生命扣减、同步伤害 shadow 和攻击段存活判断，不依赖触发队列或 UI。
 - `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。

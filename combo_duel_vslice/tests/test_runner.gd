@@ -14,6 +14,7 @@ const BattleFlowCoordinatorScript = preload("res://core/battle_flow_coordinator.
 const BattleTimingSystemScript = preload("res://core/battle_timing_system.gd")
 const DefenseRetentionPolicyScript = preload(
     "res://core/defense_retention_policy.gd")
+const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
 const StatusSystemScript = preload("res://core/status_system.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
@@ -999,6 +1000,7 @@ func _initialize() -> void:
     _test_standard_deck()
     _test_pool_structure_and_turn_draw_rules()
     _test_active_hand_types_and_same_attribute_rules()
+    _test_same_qi_rule_and_action_wiring()
     _test_power_calculation()
     _test_damage_resolver_rules_and_facade()
     _test_structured_game_log_channels()
@@ -5472,7 +5474,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
     })
     _assert_true(provider.complete(str(provider.submitted_requests[1]["request_id"])), "Mock Provider 完成敌方单方连击回答")
     _assert_equal(session.snapshot().enemy.discard_count, 2, "玩家无行动机会时敌方合法回答自动完成单方连击")
-    _assert_equal(provider.submitted_requests.size(), 2, "同一完整回合自然连击只触发一次，不额外请求")
+    _assert_equal(provider.submitted_requests.size(), 2, "同一完整回合同气连动只触发一次，不额外请求")
     _assert_true(session.execute({"type": "end_turn"}).success, "双方行动耗尽后可以正常结束完整回合")
 
     var timeout_provider = MockAiProviderScript.new(false)
@@ -6328,8 +6330,8 @@ func _test_battle_flow_coordinator_contract() -> void:
     _assert_equal(flow.resolution_mode(), "synchronized", "至少两方都有意图时才使用同步结算")
     flow.clear_intents()
     _assert_equal(flow.resolution_mode(), "none", "行动窗口结束后清除全部锁定意图")
-    _assert_true(flow.claim_combo(left, "natural_attribute"), "通用行动状态首次占用连击成功")
-    _assert_true(not flow.claim_combo(left, "natural_attribute"), "同一行动方同类连击不能重复占用")
+    _assert_true(flow.claim_combo(left, "same_qi_link"), "同气连动状态首次占用成功")
+    _assert_true(not flow.claim_combo(left, "same_qi_link"), "同一行动方同气连动不能重复占用")
 
     flow.disable_next_rounds(right, "封招", 1)
     flow.begin_round([
@@ -8288,6 +8290,242 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
     _assert_equal(same_attribute_five_preview["values"]["fixed_multiplier"], 12, "同属性五条保持十二倍固定倍率")
     _assert_equal(same_attribute_five_preview["values"]["direct_power_percent"], 50, "同属性五条独立获得公共+50%直接修正")
 
+func _test_same_qi_rule_and_action_wiring() -> void:
+    var identity := CardIdentityPolicyScript.new()
+    for card_count in range(1, 6):
+        var cards: Array = []
+        for index in range(card_count):
+            cards.append(_card(str(index + 2), "wind"))
+        var result: Dictionary = SameQiRuleScript.analyze(
+            cards, identity, {"source_kind": "same_qi_test"})
+        _assert_true(result.get("success", false), "%d 张同气规则查询成功" % card_count)
+        _assert_true(result.get("qualified", false), "%d 张风真气构成同气" % card_count)
+        _assert_equal(
+            result.get("power_amp_percent", -1),
+            [0, 0, 10, 20, 30, 50][card_count],
+            "%d 张同气使用正式投入梯度" % card_count)
+        _assert_equal(result.get("common_attributes", []), ["wind"], "共同属性稳定排序")
+
+    var mismatch := SameQiRuleScript.analyze(
+        [_card("2", "wind"), _card("3", "fire")], identity)
+    _assert_true(not mismatch.get("qualified", true), "属性不统一不构成同气")
+    _assert_equal(mismatch.get("power_amp_percent", -1), 0, "非同气不获得增幅")
+
+    var catalog = ContentCatalogScript.new()
+    _assert_true(catalog.load_all(), "同气混元与临时属性测试载入内容")
+    var mixed = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "fire_5"), "same-qi:hunyuan",
+        catalog.card_reshape_rules)
+    mixed.set_enhancement("hunyuan")
+    var mixed_result := SameQiRuleScript.analyze(
+        [_card("2", "wind"), mixed], identity)
+    _assert_true(mixed_result.get("qualified", false), "风牌与混元构成同气")
+    _assert_equal(mixed_result.get("common_attributes", []), ["wind"], "混元保留正确共同属性")
+
+    var temporary = DeckFactoryScript.create_card_instance(
+        catalog.get_by_id("card", "forest_6"), "same-qi:temporary",
+        catalog.card_reshape_rules)
+    temporary.set_temporary_attribute("wind")
+    var temporary_result := SameQiRuleScript.analyze(
+        [_card("3", "wind"), temporary], identity)
+    _assert_true(temporary_result.get("qualified", false), "临时属性参与同气判断")
+    _assert_equal(temporary_result.get("common_attributes", []), ["wind"], "临时属性进入共同属性集合")
+
+    var overlap_cards := [
+        _card("4", "wind"), _card("5", "forest"), _card("6", "fire")]
+    var overlap_identity := CardIdentityPolicyScript.new()
+    overlap_identity.register_provider(
+        func(card, _context):
+            var additions := {
+                overlap_cards[0].id: ["forest"],
+                overlap_cards[1].id: ["fire"],
+                overlap_cards[2].id: ["wind"],
+            }
+            return {"additional_effective_attributes": additions.get(card.id, [])},
+        "same_qi_pairwise_overlap", 10)
+    var overlap_result := SameQiRuleScript.analyze(
+        overlap_cards, overlap_identity)
+    _assert_true(not overlap_result.get("qualified", true), "两两相交但全体交集为空不构成同气")
+    _assert_equal(overlap_result.get("common_attributes", ["unexpected"]), [], "全体交集严格为空")
+
+    var zero_wind = _card("7", "wind")
+    zero_wind.qi_value = 0
+    var zero_result := SameQiRuleScript.analyze(
+        [zero_wind, _card("8", "fire")], identity)
+    _assert_true(not zero_result.get("qualified", true), "零有效值真气仍参与属性判断")
+    _assert_equal(zero_result.get("card_count", 0), 2, "零有效值真气仍计入投入张数")
+
+    var failed_identity := CardIdentityPolicyScript.new()
+    failed_identity.register_provider(
+        func(_card_value, _context): return {"success": false, "reason": "Fake 身份失败"},
+        "same_qi_identity_failure", 10)
+    var failed_result := SameQiRuleScript.analyze(
+        [_card("9", "wind")], failed_identity)
+    _assert_true(not failed_result.get("success", true), "身份查询失败返回结构化失败")
+    _assert_true(str(failed_result.get("reason", "")).contains("Fake 身份失败"), "身份失败原因不被静默吞掉")
+
+    var high_cards := [
+        _card("A", "fire"), _card("7", "fire"), _card("4", "fire")]
+    var high_engine = _engine_with_hand(high_cards)
+    var high_preview: Dictionary = high_engine.preview(_ids(high_cards))
+    _assert_equal(high_preview["hand"]["id"], "high_card", "高牌额外投入仍只识别高牌")
+    _assert_equal(high_preview["hand"]["contributing"].size(), 1, "高牌只有最高牌参与基础贡献")
+    _assert_equal(high_preview["same_qi"]["card_count"], 3, "高牌非贡献牌计入同气投入")
+    _assert_equal(high_preview["values"]["direct_power_percent"], 20, "高牌三张同气获得 +20%")
+    _assert_equal(high_preview["passive_power_query_inputs"]["modifiers"]["power_amp_percent"], 20, "同气增幅在被动百分比查询前进入基础值")
+    var preview_power := int(high_preview["values"]["technique_value"])
+    var recalculated: Dictionary = high_engine.action_preview_service.recalculate_confirmed_power(
+        high_engine.player, high_engine.enemy, high_preview, "same-qi-recalculate")
+    _assert_true(recalculated.get("success", false), "正式确认功法值重算成功")
+    _assert_equal(high_preview["values"]["technique_value"], preview_power, "正式重算复用同气输入且不重复叠加")
+    _assert_equal(high_preview["values"]["direct_power_percent"], 20, "正式重算保持单份同气增幅")
+
+    var split_main := [_card("6", "wind"), _card("6", "wind"), _card("6", "wind")]
+    var split_coop := [_card("4", "fire"), _card("4", "fire")]
+    var split_engine = _same_qi_cooperation_engine(split_main, split_coop, 82601)
+    var split_result: Dictionary = split_engine.confirm_play(
+        _ids(split_main), _ids(split_coop))
+    _assert_true(split_result.get("success", false), "不同属性的两组协同结算成功")
+    _assert_equal(split_result["preview"]["same_qi"]["power_amp_percent"], 20, "主组三张独立获得 +20%")
+    _assert_equal(split_result["cooperation_preview"]["same_qi"]["power_amp_percent"], 10, "协同组两张独立获得 +10%")
+    _assert_true(not split_result["preview"]["same_qi_action"]["qualified"], "两组无行动级共同属性时不触发连动")
+    _assert_equal(split_result["actions_available"], 0, "两组分别同气但不跨组触发额外行动")
+
+    var linked_main := [_card("6", "wind"), _card("6", "wind"), _card("6", "wind")]
+    var linked_coop := [_card("4", "wind"), _card("4", "wind")]
+    var linked_engine = _same_qi_cooperation_engine(linked_main, linked_coop, 82602)
+    var linked_result: Dictionary = linked_engine.confirm_play(
+        _ids(linked_main), _ids(linked_coop))
+    _assert_true(linked_result.get("success", false), "存在行动级共同属性的协同结算成功")
+    _assert_equal(linked_result["preview"]["same_qi_action"]["common_attributes"], ["wind"], "行动级交集由两组冻结结果建立")
+    _assert_equal(linked_result["actions_available"], 1, "整次行动只授予一次同气连动")
+    _assert_true(linked_engine.same_qi_link_used, "同气连动 claim 已占用")
+
+    var second_card = _card("9", "wind")
+    linked_engine.player.hand = [second_card]
+    var second_result: Dictionary = linked_engine.confirm_play([second_card.id])
+    _assert_true(second_result.get("success", false), "同回合同气额外行动正常打出")
+    _assert_equal(second_result["actions_available"], 0, "同一完整回合第二次同气不再增加行动")
+    linked_engine.player.draw_pile = [_card("10", "wind")]
+    linked_engine.end_player_turn()
+    linked_engine.start_player_turn()
+    _assert_true(not linked_engine.same_qi_link_used, "新完整回合重置同气连动门禁")
+
+    var pending_cards := [_card("8", "wind"), _card("3", "fire")]
+    var pending_reserve = _card("5", "mountain")
+    var pending_reserve_second = _card("7", "forest")
+    var pending_engine = _engine_with_hand(
+        pending_cards + [pending_reserve, pending_reserve_second], [], 82603)
+    var identity_enabled := [true]
+    pending_engine.card_identity_policy.register_provider(
+        func(_card_value, _context): return {
+            "additional_effective_attributes": ["forest"] \
+                if identity_enabled[0] else [],
+        },
+        "same_qi_frozen_identity", 10)
+    pending_engine.repository.techniques["same_qi_wait_probe"] = {
+        "id": "same_qi_wait_probe",
+        "name": "同气等待恢复探针",
+        "pool": "high",
+        "effects": [{
+            "op": "select_cards",
+            "choice_id": "same_qi_wait_once",
+            "prompt": "请选择保留手牌",
+            "chooser": "actor",
+            "minimum": 1,
+            "maximum": 1,
+            "insufficient_policy": "fail",
+            "query": {"side": "actor", "zone": "hand", "order": "zone"},
+            "capture": "same_qi_waited",
+        }],
+    }
+    pending_engine.sequence_book.configure({
+        "high_card": ["same_qi_wait_probe"],
+    })
+    var pending_start: Dictionary = pending_engine.confirm_play(_ids(pending_cards))
+    _assert_true(pending_start.get("pending_choice", false), "同气行动进入等待功法选择")
+    if not pending_start.get("pending_choice", false):
+        _assert_true(false, "同气等待探针诊断：%s" % str(pending_start))
+        return
+    _assert_equal(
+        pending_start["preview"]["same_qi_action"]["common_attributes"],
+        ["forest"],
+        "等待前冻结行动级共同属性")
+    identity_enabled[0] = false
+    var pending_request: Dictionary = pending_start["choice_request"]
+    var pending_finish: Dictionary = pending_engine.resolve_effect_choice(
+        str(pending_request["request_id"]), [str(pending_reserve.id)])
+    _assert_true(pending_finish.get("success", false), "等待选择恢复后行动完成")
+    _assert_equal(pending_finish["actions_available"], 1, "恢复只读取冻结同气结果并授予一次行动")
+    var repeated_finish: Dictionary = pending_engine.resolve_effect_choice(
+        str(pending_request["request_id"]), [str(pending_reserve.id)])
+    _assert_true(not repeated_finish.get("success", true), "重复 finalizer 请求被拒绝")
+    _assert_equal(pending_engine.actions_available, 1, "重复恢复不重复授予同气连动")
+
+    var audit_record = linked_engine.action_resolver.make_action_record(
+        linked_engine.player,
+        linked_engine.enemy,
+        linked_result["preview"],
+        linked_engine.sequence_book,
+        100,
+        linked_engine.turn_number)
+    audit_record.cooperation_groups = [{
+        "group_index": 1,
+        "preview": linked_result["cooperation_preview"],
+    }]
+    var audit_snapshot: Dictionary = audit_record.snapshot()
+    _assert_equal(audit_snapshot["schema_version"], 4, "行动记录升级为同气冻结版本")
+    _assert_equal(audit_snapshot["same_qi"]["power_amp_percent"], 20, "行动记录保存主组同气增幅")
+    _assert_equal(audit_snapshot["same_qi_action"]["common_attributes"], ["wind"], "行动记录保存行动级同气交集")
+    _assert_equal(audit_snapshot["cooperation_groups"][0]["same_qi"]["power_amp_percent"], 10, "行动记录保存协同组同气增幅")
+
+    var technique_card = _card("J", "wind")
+    var technique_engine = _engine_with_hand([technique_card], [], 82604)
+    technique_engine.repository.techniques["same_qi_technique_action"] = {
+        "id": "same_qi_technique_action",
+        "name": "功法额外行动探针",
+        "pool": "high",
+        "effects": [{
+            "op": "gain_extra_action",
+            "amount": {"kind": "constant", "value": 1},
+        }],
+    }
+    technique_engine.sequence_book.configure({
+        "high_card": ["same_qi_technique_action"],
+    })
+    technique_engine.same_qi_link_used = true
+    var technique_result: Dictionary = technique_engine.confirm_play(
+        [technique_card.id])
+    _assert_true(technique_result.get("success", false), "功法额外行动在同气门禁已占用时仍正常结算")
+    _assert_equal(technique_result["actions_available"], 1, "功法额外行动不受同气连动上限限制")
+    _assert_true(technique_engine.same_qi_link_used, "功法额外行动不改变已有同气 claim")
+
+func _same_qi_cooperation_engine(main_cards: Array, cooperation_cards: Array, seed_value: int):
+    var engine = _engine_with_hand(main_cards + cooperation_cards, [], seed_value)
+    engine.repository.techniques["same_qi_cooperation_main"] = {
+        "id": "same_qi_cooperation_main",
+        "name": "同气协同主组探针",
+        "pool": "three",
+        "effects": [],
+        "cooperation": {
+            "hand_id": "pair",
+            "max_groups": 1,
+            "power_rule": "shared_half",
+            "post_commit": {"destination": "own_discard"},
+        },
+    }
+    engine.repository.techniques["same_qi_cooperation_pair"] = {
+        "id": "same_qi_cooperation_pair",
+        "name": "同气协同组探针",
+        "pool": "pair",
+        "effects": [],
+    }
+    engine.sequence_book.configure({
+        "three_kind": ["same_qi_cooperation_main"],
+        "pair": ["same_qi_cooperation_pair"],
+    })
+    return engine
+
 func _test_power_calculation() -> void:
     var result := HandEvaluatorScript.evaluate([_card("7"), _card("7", "forest"), _card("4"), _card("3"), _card("A")])
     var values := PowerCalculatorScript.calculate(result, {
@@ -8439,7 +8677,7 @@ func _test_action_preview_service_matches_engine_facade() -> void:
         card_ids,
         engine.sequence_book,
         engine.power_modifiers,
-        engine.natural_combo_used)
+        engine.same_qi_link_used)
     var through_facade: Dictionary = engine.preview(card_ids)
     _assert_equal(direct, through_facade, "独立行动预览服务与战斗门面返回完全一致")
     _assert_equal(engine.player.hand.size(), hand_count_before, "行动预览服务不移动手牌")
@@ -12181,16 +12419,16 @@ func _test_enemy_ai_plan_is_deterministic_and_hidden() -> void:
     _assert_true(not first.enemy_plan.has("cards"), "公开计划不包含具体真气")
     _assert_true(not first.enemy_plan.has("technique"), "公开计划不包含具体功法")
 
-func _test_enemy_ai_uses_natural_combo() -> void:
+func _test_enemy_ai_uses_same_qi_link() -> void:
     var engine = CombatEngineScript.new()
     engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
     engine.player.draw_pile.clear()
-    _assert_true(engine.enemy_plan.get("combo", false), "AI 首击计划提示自然连击")
+    _assert_true(engine.enemy_plan.get("combo", false), "AI 首击计划提示同气连动")
     var result := engine.confirm_play(_ids(engine.player.hand.slice(0, 2)))
     _assert_true(result["success"], "玩家混属性出牌后同步行动成功")
-    _assert_true(engine.enemy_natural_combo_used, "敌方实际触发自然连击")
+    _assert_true(engine.enemy_same_qi_link_used, "敌方实际触发同气连动")
     _assert_equal(engine.enemy.discard_pile.size(), 2, "玩家无连击时敌方自动使用单方连击")
     _assert_equal(engine.enemy_actions_available, 0, "敌方单方连击已经消耗")
 
@@ -12208,7 +12446,7 @@ func _test_both_sides_use_synchronized_combo() -> void:
     _assert_equal(engine.enemy_plan["defense"], 11, "敌方第二击计划公开预计获得防御")
     engine.confirm_play([engine.player.hand[0].id])
     _assert_equal(engine.enemy.discard_pile.size(), 2, "双方第二击完成同步连击")
-    _assert_equal(engine.enemy_actions_available, 0, "敌方自然连击不会重复触发")
+    _assert_equal(engine.enemy_actions_available, 0, "敌方同气连动不会重复触发")
 
 func _test_ai_battle_reaches_terminal_state() -> void:
     var engine = CombatEngineScript.new()
