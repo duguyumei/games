@@ -963,6 +963,7 @@ func _initialize() -> void:
     _test_battle_passive_lifecycle_bridge_and_temporary_counters()
     _test_battle_fine_grained_events_and_int_queries()
     _test_battle_card_policy_ports()
+    _test_technique_and_cooperation_permission_wiring()
     _test_battle_passive_effect_command_ports()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
@@ -3487,6 +3488,13 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         }],
     }
     wait_engine.sequence_book.configure({"high_card": ["f5d2_wait_probe"]})
+    var wait_permission_calls: Array = []
+    wait_engine.battle_permission_service.register_provider(
+        func(hook, _context):
+            wait_permission_calls.append(hook)
+            return {"allowed": true},
+        "f5f_wait_permission_probe", 10,
+        ["technique_activation_permission_query"])
     handler.calls.clear()
     var wait_start: Dictionary = wait_engine.confirm_play([str(wait_selected.id)])
     _assert_true(
@@ -3497,6 +3505,7 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
     var wait_query_before := handler.calls.filter(
         func(call): return call["kind"] == "query" \
             and str(call["action_token"]) != "").size()
+    var wait_permission_before: int = wait_permission_calls.size()
     var wait_request: Dictionary = wait_start["choice_request"]
     var wait_finish: Dictionary = wait_engine.resolve_effect_choice(
         str(wait_request["request_id"]), [str(wait_reserve.id)])
@@ -3511,6 +3520,9 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
             and str(call["action_token"]) != "").size(),
         wait_query_before,
         "等待恢复复用已冻结四阶段功法值")
+    _assert_equal(
+        wait_permission_calls.size(), wait_permission_before,
+        "等待功法目标选择恢复不重复查询启动权限")
 
     var hand_failure_engine = _battle_passive_test_engine(
         catalog, registry, ["f5d2_hand_query_failure"])
@@ -6763,6 +6775,234 @@ func _test_battle_card_policy_ports() -> void:
     _assert_true(
         not failed_permission.can_play_card(null, identity_card).get("allowed", true),
         "权限查询失败不默认允许")
+
+func _test_technique_and_cooperation_permission_wiring() -> void:
+    var permission := BattlePermissionServiceScript.new()
+    var typed_calls: Array = []
+    permission.register_provider(
+        func(hook, context):
+            typed_calls.append({"hook": hook, "context": context})
+            return {"allowed": true},
+        "typed_permission", 10,
+        ["technique_activation_permission_query", "cooperation_permission_query"])
+    _assert_true(
+        permission.can_activate_technique(null, "fake_technique", "pair")["allowed"],
+        "功法启动权限提供类型化入口")
+    _assert_true(
+        permission.can_establish_cooperation(
+            null, "fake_main", "three_kind", "fake_pair", "pair")["allowed"],
+        "协同建立权限提供类型化入口")
+    _assert_equal(typed_calls[0]["context"]["technique_id"], "fake_technique", "功法入口携带功法 ID")
+    _assert_equal(typed_calls[1]["context"]["cooperation_hand_id"], "pair", "协同入口携带两组身份")
+
+    var selected = _card("7", "wind")
+    var denied_engine = _engine_with_hand([selected], [], 82501)
+    denied_engine.repository.techniques["f5f_denied_probe"] = {
+        "id": "f5f_denied_probe", "name": "F5F 启动拒绝探针",
+        "pool": "high",
+        "effects": [
+            {"op": "damage", "amount": {"kind": "constant", "value": 9}},
+            {"op": "defense", "amount": {"kind": "constant", "value": 6}},
+        ],
+    }
+    denied_engine.sequence_book.configure({
+        "high_card": ["f5f_denied_probe", "f5f_denied_probe"],
+    })
+    denied_engine.player.momentum_value = 8
+    denied_engine.player.last_successful_technique_hand_id = "pair"
+    var denied_calls: Array[String] = []
+    denied_engine.battle_permission_service.register_provider(
+        func(hook, _context):
+            denied_calls.append(hook)
+            return {
+                "allowed": hook != "technique_activation_permission_query",
+                "reason": "Fake 禁止功法启动",
+            },
+        "f5f_deny_technique", 10,
+        ["technique_activation_permission_query"])
+    var rng_before: int = int(denied_engine.rng.state)
+    var denied_preview: Dictionary = denied_engine.preview([selected.id])
+    _assert_true(denied_preview["valid"], "功法启动明确拒绝不使预览无效")
+    _assert_true(denied_preview["technique_activation"]["checked"], "预览保存功法权限已查询")
+    _assert_true(not denied_preview["technique_activation"]["allowed"], "预览保存结构化拒绝")
+    _assert_equal(denied_preview["technique_id"], "f5f_denied_probe", "拒绝预览仍保留当前功法")
+    _assert_equal(denied_preview["intent"]["damage"], 0, "拒绝功法不进入伤害意图")
+    _assert_equal(denied_preview["intent"]["defense"], 0, "拒绝功法不进入防御意图")
+    _assert_equal(denied_preview["values"]["momentum_used"], 0, "拒绝功法预览不读取连势")
+    _assert_equal(denied_engine.rng.state, rng_before, "预览权限查询不推进 RNG")
+    var stable_state: Dictionary = denied_engine.player.capture_passive_query_state()
+    denied_engine.preview([selected.id])
+    _assert_equal(denied_engine.player.capture_passive_query_state(), stable_state, "重复预览权限查询不修改战斗状态")
+    var enemy_life_before: int = denied_engine.enemy.life
+    var denied_result: Dictionary = denied_engine.confirm_play([selected.id])
+    _assert_true(denied_result.get("success", false), "功法启动明确拒绝仍允许出牌")
+    _assert_true(not denied_result.get("technique_triggered", true), "明确拒绝的功法未触发")
+    _assert_equal(denied_engine.enemy.life, enemy_life_before, "拒绝功法伤害不结算")
+    _assert_equal(denied_engine.player.defense, 0, "拒绝功法防御不结算")
+    _assert_equal(denied_engine.player.discard_pile, [selected], "被拒绝功法的真气仍正常进入弃牌堆")
+    _assert_equal(denied_engine.player.momentum_value, 8, "被拒绝功法不使用或清空连势")
+    _assert_equal(denied_engine.player.last_successful_technique_hand_id, "pair", "被拒绝功法不更新成功牌型")
+    _assert_equal(denied_engine.sequence_book.position("high_card"), 0, "被拒绝功法不推进序列")
+    _assert_equal(denied_calls.size(), 4, "每次纯预览查询，正式确认只额外查询一次")
+
+    var broken_card = _card("8", "forest")
+    var broken_engine = _engine_with_hand([broken_card], [], 82502)
+    broken_engine.repository.techniques["f5f_error_probe"] = {
+        "id": "f5f_error_probe", "name": "F5F 查询错误探针",
+        "pool": "high", "effects": [],
+    }
+    broken_engine.sequence_book.configure({"high_card": ["f5f_error_probe"]})
+    var broken_calls := [0]
+    broken_engine.battle_permission_service.register_provider(
+        func(_hook, _context):
+            broken_calls[0] += 1
+            return {"allowed": true} if broken_calls[0] == 1 else {},
+        "f5f_broken_permission", 10,
+        ["technique_activation_permission_query"])
+    var actions_before: int = broken_engine.actions_available
+    var broken_result: Dictionary = broken_engine.confirm_play([broken_card.id])
+    _assert_true(not broken_result.get("success", true), "正式权限查询错误使整个行动失败")
+    _assert_true(broken_engine.player.hand.has(broken_card), "查询错误后牌返回手牌")
+    _assert_true(broken_engine.player.staging.is_empty(), "查询错误后待出区清空")
+    _assert_equal(broken_engine.actions_available, actions_before, "查询错误不消耗行动")
+
+    var mutate_card = _card("9", "fire")
+    var mutate_engine = _engine_with_hand([mutate_card], [], 82503)
+    mutate_engine.repository.techniques["f5f_mutation_probe"] = {
+        "id": "f5f_mutation_probe", "name": "F5F 纯度探针",
+        "pool": "high", "effects": [],
+    }
+    mutate_engine.sequence_book.configure({"high_card": ["f5f_mutation_probe"]})
+    mutate_engine.battle_permission_service.register_provider(
+        func(_hook, context):
+            context["target"].life -= 11
+            return {"allowed": true},
+        "f5f_mutating_permission", 10,
+        ["technique_activation_permission_query"])
+    var target_life_before: int = mutate_engine.enemy.life
+    var mutate_preview: Dictionary = mutate_engine.preview([mutate_card.id])
+    _assert_true(not mutate_preview.get("valid", true), "修改战斗状态的权限查询明确失败")
+    _assert_equal(mutate_engine.enemy.life, target_life_before, "权限纯度失败恢复目标方状态")
+
+    var main_cards := [_card("6", "wind"), _card("6", "forest"), _card("6", "fire")]
+    var cooperation_cards := [_card("4", "wind"), _card("4", "mountain")]
+    var cooperation_engine = _engine_with_hand(
+        main_cards + cooperation_cards, [], 82504)
+    cooperation_engine.repository.techniques["f5f_cooperation_main"] = {
+        "id": "f5f_cooperation_main", "name": "F5F 协同主组",
+        "pool": "three", "effects": [],
+        "cooperation": {
+            "hand_id": "pair", "max_groups": 1,
+            "power_rule": "shared_half",
+            "post_commit": {"destination": "own_discard"},
+        },
+    }
+    cooperation_engine.repository.techniques["f5f_cooperation_pair"] = {
+        "id": "f5f_cooperation_pair", "name": "F5F 协同组",
+        "pool": "pair", "effects": [],
+    }
+    cooperation_engine.sequence_book.configure({
+        "three_kind": ["f5f_cooperation_main"],
+        "pair": ["f5f_cooperation_pair"],
+    })
+    var cooperation_calls := [0]
+    cooperation_engine.battle_permission_service.register_provider(
+        func(hook, _context):
+            if hook == "cooperation_permission_query":
+                cooperation_calls[0] += 1
+                return {
+                    "allowed": cooperation_calls[0] == 1,
+                    "reason": "Fake 正式协同拒绝",
+                }
+            return {"allowed": true},
+        "f5f_cooperation_permission", 10,
+        ["technique_activation_permission_query", "cooperation_permission_query"])
+    var cooperation_actions_before: int = cooperation_engine.actions_available
+    var cooperation_receipts_before: int = (
+        cooperation_engine.battle_passive_event_service.receipt_store.size())
+    var cooperation_result: Dictionary = cooperation_engine.confirm_play(
+        _ids(main_cards), _ids(cooperation_cards))
+    _assert_true(not cooperation_result.get("success", true), "正式协同拒绝使整单失败")
+    _assert_equal(cooperation_calls[0], 2, "协同候选与正式确认各查询一次")
+    _assert_equal(cooperation_engine.player.hand.size(), 5, "正式协同拒绝后两组牌全部返回手牌")
+    _assert_true(cooperation_engine.player.staging.is_empty(), "正式协同拒绝不保留待出牌")
+    _assert_equal(cooperation_engine.actions_available, cooperation_actions_before, "正式协同拒绝不消耗行动")
+    _assert_equal(cooperation_engine.sequence_book.position("three_kind"), 0, "正式协同拒绝不推进主序列")
+    _assert_equal(cooperation_engine.sequence_book.position("pair"), 0, "正式协同拒绝不推进协同序列")
+    _assert_equal(
+        cooperation_engine.battle_passive_event_service.receipt_store.size(),
+        cooperation_receipts_before,
+        "正式协同拒绝前不发送 action_confirmed")
+
+    var candidate_engine = _engine_with_hand(
+        main_cards.duplicate() + cooperation_cards.duplicate(), [], 82505)
+    candidate_engine.repository.techniques = cooperation_engine.repository.techniques.duplicate(true)
+    candidate_engine.sequence_book.configure({
+        "three_kind": ["f5f_cooperation_main"],
+        "pair": ["f5f_cooperation_pair"],
+    })
+    candidate_engine.battle_permission_service.register_provider(
+        func(hook, _context): return {
+            "allowed": hook != "cooperation_permission_query",
+            "reason": "Fake 候选协同拒绝",
+        },
+        "f5f_candidate_cooperation_deny", 10,
+        ["technique_activation_permission_query", "cooperation_permission_query"])
+    var candidate_rejected: Dictionary = candidate_engine.confirm_play(
+        _ids(main_cards), _ids(cooperation_cards))
+    _assert_true(not candidate_rejected.get("success", true), "候选阶段拒绝非法协同")
+    var main_retry: Dictionary = candidate_engine.confirm_play(_ids(main_cards))
+    _assert_true(main_retry.get("success", false), "候选协同被拒绝后主行动可单独重新提交")
+
+    var own_main := [_card("5", "wind"), _card("5", "forest"), _card("5", "fire")]
+    var own_cooperation := [_card("3", "wind"), _card("3", "mountain")]
+    var own_engine = _engine_with_hand(own_main + own_cooperation, [], 82506)
+    own_engine.repository.techniques["f5f_own_main"] = {
+        "id": "f5f_own_main", "name": "F5F 主功法允许",
+        "pool": "three",
+        "effects": [{"op": "damage", "amount": {"kind": "constant", "value": 5}}],
+        "cooperation": {
+            "hand_id": "pair", "max_groups": 1,
+            "power_rule": "shared_half",
+            "post_commit": {"destination": "own_discard"},
+        },
+    }
+    own_engine.repository.techniques["f5f_own_pair"] = {
+        "id": "f5f_own_pair", "name": "F5F 协同功法拒绝",
+        "pool": "pair",
+        "effects": [{"op": "damage", "amount": {"kind": "constant", "value": 7}}],
+    }
+    own_engine.sequence_book.configure({
+        "three_kind": ["f5f_own_main", "f5f_own_main"],
+        "pair": ["f5f_own_pair", "f5f_own_pair"],
+    })
+    own_engine.battle_permission_service.register_provider(
+        func(hook, context):
+            if hook == "technique_activation_permission_query" \
+                    and str(context.get("hand_id", "")) == "pair":
+                return {"allowed": false, "reason": "Fake 协同组功法拒绝"}
+            return {"allowed": true},
+        "f5f_own_group_permission", 10,
+        ["technique_activation_permission_query", "cooperation_permission_query"])
+    var own_life_before: int = own_engine.enemy.life
+    var own_result: Dictionary = own_engine.confirm_play(
+        _ids(own_main), _ids(own_cooperation))
+    _assert_true(own_result.get("success", false), "协同组功法拒绝不取消已允许协同")
+    _assert_true(own_result.get("technique_triggered", false), "主功法仍正常触发")
+    _assert_true(not own_result.get("cooperation_technique_triggered", true), "协同组自身功法未触发")
+    _assert_equal(own_engine.enemy.life, own_life_before - 5, "只结算主功法伤害")
+    _assert_equal(own_engine.player.discard_pile.size(), 5, "协同组牌仍正常打出并提交")
+    _assert_equal(own_engine.sequence_book.position("three_kind"), 1, "主功法序列正常推进")
+    _assert_equal(own_engine.sequence_book.position("pair"), 0, "协同组被拒绝后自身序列不推进")
+
+    var record = denied_engine.action_resolver.make_action_record(
+        denied_engine.player, denied_engine.enemy,
+        denied_result["preview"], denied_engine.sequence_book, 100,
+        denied_engine.turn_number)
+    var record_snapshot: Dictionary = record.snapshot()
+    _assert_true(record_snapshot["technique_activation_checked"], "行动记录保存启动权限已检查")
+    _assert_true(not record_snapshot["technique_activation_allowed"], "行动记录保存冻结拒绝结果")
+    _assert_equal(record_snapshot["technique_activation_reason"], "Fake 禁止功法启动", "行动快照保存拒绝原因")
 
 func _test_awakening_battle_runtime() -> void:
     var catalog = ContentCatalogScript.new()

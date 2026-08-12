@@ -36,4 +36,6 @@
 
 战斗被动若需要真实修改领域状态，只能使用 Invocation 作用域的 `BattlePassiveEffectPorts`。它用 `owner`、`actor`、`target`、`opponent` 四个稳定 scope 表达目标，并把抽牌、随机／全部明确弃牌、防御、伤害、牌区移动、临时移除、卡牌异状、抽牌堆置顶、战斗历练、额外行动与气势收口到既有 `BattleEffectPorts`；Handler 不直接持有 `CombatEngine`、`BattleSide`、`StatusSystem`、`CardZoneService` 或战斗 RNG。生命周期与七个已提交事实可以获得该端口；预览、AI 候选、牌型／身份／权限以及所有整数查询均不注入写端口。
 
+功法启动与协同建立使用同一个 `BattlePermissionService` 的 `technique_activation_permission_query` 和 `cooperation_permission_query`。它们只读当前来源和已声明计数器，按稳定 Invocation 顺序执行，压制来源不参与；形状错误、执行失败或查询修改战斗状态都失败关闭并恢复状态。玩家预览、本地／远程 AI 候选和正式确认共用该链：预览保存结构化结果但不写状态，正式确认重新查询并冻结到每个牌型组，等待选择恢复不重查。功法启动明确拒绝只禁止功法，不禁止真气打出或合格内功、物品与卡牌响应；协同建立则拥有独立的候选和正式两次查询。本接口本身没有使任何正式内功或物品生效。
+
 每条写命令使用 `battle_instance_id + event_token/action_token + source_instance_key + behavior_index + execution_index + command_index` 组成稳定 token，等待恢复或重复 Invocation 复用收据，不重新抽取随机数或重复写入。单条调用链最多执行 64 条命令；参数、scope 或权限失败会停止同一 Invocation 的后续写入并进入场景错误。事件级 receipt 仍由 `BattlePassiveEventReceiptStore` 负责，真实写入后的抽牌、弃牌、伤害与防御事实仍由既有细粒度事件服务发送，失败只回滚计数器，不伪造生命、防御或牌区事务。新增效果语义应建立职责单一的小 Handler 或领域服务，不能把命令集合扩成任意 JSON DSL。该平台没有使任何候选内功或物品成为正式内容，也没有开放内功复制。

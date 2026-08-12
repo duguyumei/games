@@ -75,7 +75,7 @@ func finalize_action_preview(
         action_preview: Dictionary,
         target = null,
         turn_number: int = 0) -> Dictionary:
-    if bool(action_preview.get("passive_action_confirmed", false)):
+    if bool(action_preview.get("action_finalized", false)):
         return {"success": true, "reused": true}
     var reshape: Dictionary = effect_ports.finalize_reshape_action(
         actor, action_preview)
@@ -91,6 +91,23 @@ func finalize_action_preview(
                 "success": false,
                 "reason": recalculated.get("reason", "行动确认功法值查询失败"),
             }
+    var activation_freeze := _freeze_technique_activation(
+        actor, target, action_preview, turn_number, action_token)
+    if not activation_freeze.get("success", false):
+        return activation_freeze
+    action_preview["action_finalized"] = true
+    return {"success": true, "reused": false, "action_token": action_token}
+
+func confirm_finalized_action(
+        actor,
+        action_preview: Dictionary,
+        target = null,
+        turn_number: int = 0) -> Dictionary:
+    if bool(action_preview.get("passive_action_confirmed", false)):
+        return {"success": true, "reused": true}
+    if not bool(action_preview.get("action_finalized", false)):
+        return {"success": false, "reason": "行动尚未完成正式冻结"}
+    var action_token := str(action_preview.get("reshape_action_token", ""))
     if committed_event_service != null:
         var confirmed: Dictionary = committed_event_service.commit(
             "action_confirmed", {
@@ -98,9 +115,8 @@ func finalize_action_preview(
                     "action_confirmed", actor, action_token, action_token),
                 "actor": actor, "target": target, "owner": actor,
                 "round_number": turn_number, "action_token": action_token,
-                "technique_triggered": (
-                    not action_preview.get("technique", {}).is_empty()
-                    and bool(action_preview.get("condition", {}).get("ok", false))),
+                "technique_triggered": bool(action_preview.get(
+                    "technique_activation", {}).get("allowed", false)),
                 "action_succeeded": true,
                 "metadata": {
                     "hand_id": str(action_preview.get("hand", {}).get("id", "")),
@@ -111,6 +127,57 @@ func finalize_action_preview(
             return confirmed
     action_preview["passive_action_confirmed"] = true
     return {"success": true, "reused": false, "action_token": action_token}
+
+func _freeze_technique_activation(
+        actor,
+        target,
+        action_preview: Dictionary,
+        turn_number: int,
+        action_token: String) -> Dictionary:
+    var technique: Dictionary = action_preview.get("technique", {})
+    var condition: Dictionary = action_preview.get("condition", {})
+    if technique.is_empty():
+        action_preview["technique_activation"] = {
+            "success": true, "checked": false, "allowed": false,
+            "reason": "空功法序列", "source_breakdown": [], "errors": [],
+            "frozen": true, "action_token": action_token,
+        }
+        return {"success": true}
+    if not bool(condition.get("ok", false)):
+        action_preview["technique_activation"] = {
+            "success": true, "checked": false, "allowed": false,
+            "reason": str(condition.get("reason", "功法条件不满足")),
+            "source_breakdown": [], "errors": [],
+            "frozen": true, "action_token": action_token,
+        }
+        return {"success": true}
+    var permission = actor.battle_permission_service
+    var result: Dictionary = (
+        permission.can_activate_technique(
+            actor,
+            str(action_preview.get("technique_id", "")),
+            str(action_preview.get("hand", {}).get("id", "")), {
+                "target": target,
+                "round_number": turn_number,
+                "action_token": action_token,
+                "card_instance_ids": action_preview.get("cards", []).map(
+                    func(card): return str(card.id)),
+                "source_kind": "action_confirmed",
+            })
+        if permission != null else {
+            "allowed": true, "reason": "", "source_breakdown": [], "errors": [],
+        })
+    if not result.get("errors", []).is_empty():
+        return {
+            "success": false,
+            "reason": str(result.get("reason", "功法启动权限查询失败")),
+        }
+    result["success"] = true
+    result["checked"] = true
+    result["frozen"] = true
+    result["action_token"] = action_token
+    action_preview["technique_activation"] = result
+    return {"success": true, "permission": result}
 
 func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
     if not _pending_resolution.is_empty():
@@ -129,6 +196,20 @@ func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
             trigger_queue.add_history(
                 "on_play_resolve", technique["name"], "%s功法" % record["actor"].name,
                 "条件失败", action_preview["condition"]["reason"])
+            continue
+        var activation: Dictionary = action_preview.get(
+            "technique_activation", {})
+        if not bool(activation.get("frozen", false)) \
+                or not bool(record["technique_activation_checked"]):
+            return {
+                "success": false, "pending_choice": false,
+                "detail": "功法启动权限尚未冻结",
+            }
+        if not bool(record["technique_activation_allowed"]):
+            trigger_queue.add_history(
+                "on_play_resolve", technique["name"],
+                "%s功法" % record["actor"].name,
+                "启动被拒绝", str(activation.get("reason", "功法启动被拒绝")))
             continue
         action_preview["values"] = PowerCalculatorScript.apply_momentum(
             action_preview["values"],
@@ -333,6 +414,20 @@ func retrigger_current_hand_technique(
         definition, hand_result, actor.card_identity_policy)
     if not condition.get("ok", false):
         return {"success": true, "triggered": false, "detail": condition.get("reason", "条件失败")}
+    var activation := _query_additional_technique_activation(
+        actor, target, technique_id, str(hand_result.get("id", "")),
+        hand_result.get("contributing", []), "hand_retrigger")
+    if not activation.get("success", false):
+        return {
+            "success": false, "triggered": false,
+            "detail": activation.get("reason", "重触功法启动权限查询失败"),
+        }
+    if not activation.get("allowed", false):
+        return {
+            "success": true, "triggered": false,
+            "detail": activation.get("reason", "重触功法启动被拒绝"),
+            "technique_activation": activation,
+        }
     var context = EffectContextScript.new().configure({
         "ports": effect_ports,
         "actor": actor,
@@ -361,7 +456,34 @@ func retrigger_current_hand_technique(
         "technique_id": technique_id,
         "discarded": discarded.size(),
         "detail": "重触%s" % definition.display_name,
+        "technique_activation": activation,
     }
+
+func _query_additional_technique_activation(
+        actor,
+        target,
+        technique_id: String,
+        hand_id: String,
+        cards: Array,
+        source_kind: String) -> Dictionary:
+    var permission = actor.battle_permission_service
+    if permission == null:
+        return {
+            "success": true, "checked": true, "allowed": true,
+            "reason": "", "source_breakdown": [], "errors": [],
+        }
+    var token := "%s:%s:%s:%s" % [
+        str(actor.owner_id), source_kind, hand_id, technique_id]
+    var result: Dictionary = permission.can_activate_technique(
+        actor, technique_id, hand_id, {
+            "target": target,
+            "action_token": token,
+            "card_instance_ids": cards.map(func(card): return str(card.id)),
+            "source_kind": source_kind,
+        })
+    result["checked"] = true
+    result["success"] = result.get("errors", []).is_empty()
+    return result
 
 func finish_action_record(record) -> void:
     if timing_system != null:

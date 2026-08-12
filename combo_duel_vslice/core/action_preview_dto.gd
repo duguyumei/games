@@ -2,7 +2,7 @@ class_name ActionPreviewDto
 extends RefCounted
 
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 var valid: bool = false
 var reason: String = ""
@@ -13,7 +13,9 @@ var passive_power_query_inputs: Dictionary = {}
 var technique_id: String = ""
 var technique: Dictionary = {}
 var condition: Dictionary = {}
+var technique_activation: Dictionary = {}
 var cooperation: Dictionary = {}
+var cooperation_permission: Dictionary = {}
 var intent: Dictionary = {}
 var inner_skills: Array = []
 var next_technique_id: String = ""
@@ -30,7 +32,11 @@ func configure(snapshot: Dictionary):
     technique_id = str(snapshot.get("technique_id", ""))
     technique = snapshot.get("technique", {}).duplicate(true)
     condition = snapshot.get("condition", {}).duplicate(true)
+    technique_activation = snapshot.get(
+        "technique_activation", {}).duplicate(true)
     cooperation = snapshot.get("cooperation", {}).duplicate(true)
+    cooperation_permission = snapshot.get(
+        "cooperation_permission", {}).duplicate(true)
     intent = snapshot.get("intent", {}).duplicate(true)
     inner_skills = snapshot.get("inner_skills", []).duplicate(true)
     next_technique_id = str(snapshot.get("next_technique_id", ""))
@@ -52,7 +58,9 @@ func to_dict() -> Dictionary:
         "technique_id": technique_id,
         "technique": technique.duplicate(true),
         "condition": condition.duplicate(true),
+        "technique_activation": technique_activation.duplicate(true),
         "cooperation": cooperation.duplicate(true),
+        "cooperation_permission": cooperation_permission.duplicate(true),
         "intent": intent.duplicate(true),
         "inner_skills": inner_skills.duplicate(true),
         "next_technique_id": next_technique_id,

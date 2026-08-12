@@ -188,6 +188,11 @@ func resolve_locked_enemy_action_once() -> Dictionary:
     if not finalize_result.get("success", false):
         enemy.rollback_staging()
         return finalize_result
+    var confirmed_result: Dictionary = action_resolver.confirm_finalized_action(
+        enemy, action_preview, player, turn_number_reader.call())
+    if not confirmed_result.get("success", false):
+        enemy.rollback_staging()
+        return confirmed_result
 
     battle_flow.lock_intent(enemy, action_preview)
     battle_flow.consume_action(enemy)
@@ -355,6 +360,8 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
         return {"success": false, "reason": "当前功法不能建立协同"}
     if not proposal.preview.get("condition", {}).get("ok", false):
         return {"success": false, "reason": "当前功法条件不满足，不能建立协同"}
+    if not proposal.preview.get("technique_activation", {}).get("allowed", false):
+        return {"success": false, "reason": "当前功法启动被拒绝，不能建立协同"}
     if cooperation_card_ids.size() < 1 or cooperation_card_ids.size() > 5:
         return {"success": false, "reason": "协同组必须选择1～5张真气"}
     for card_id in cooperation_card_ids:
@@ -375,6 +382,16 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
             "reason": "协同组必须组成%s" % str(cooperation["hand_id"]),
         }
 
+    var permission_result := _query_cooperation_permission(
+        proposal.preview, cooperation_preview, "preview")
+    proposal.preview["cooperation_permission"] = permission_result.duplicate(true)
+    if not permission_result.get("errors", []).is_empty():
+        return {"success": false, "reason": permission_result.get(
+            "reason", "协同权限查询失败")}
+    if not permission_result.get("allowed", false):
+        return {"success": false, "reason": permission_result.get(
+            "reason", "当前不能建立协同")}
+
     var main_individual_power := int(
         proposal.preview["values"]["technique_value"])
     var cooperation_individual_power := int(
@@ -389,6 +406,7 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
         "card_ids": cooperation_card_ids.duplicate(),
         "preview": cooperation_preview,
         "cooperation": cooperation.duplicate(true),
+        "cooperation_permission": permission_result.duplicate(true),
         "shared_power": shared_power,
         "main_individual_power": main_individual_power,
         "cooperation_individual_power": cooperation_individual_power,
@@ -420,7 +438,8 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         set_scenario_error.call(staging_error)
         return {"success": false, "reason": staging_error}
 
-    var player_finalize := _finalize_staged_proposal(player, player_proposal)
+    var player_finalize := _finalize_staged_proposal(
+        player, player_proposal, false)
     if not player_finalize.get("success", false):
         player.rollback_staging()
         if enemy_will_act:
@@ -433,6 +452,19 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
             player.rollback_staging()
             enemy.rollback_staging()
             return enemy_finalize
+    var player_confirmed := _confirm_finalized_proposal(player, player_proposal)
+    if not player_confirmed.get("success", false):
+        player.rollback_staging()
+        if enemy_will_act:
+            enemy.rollback_staging()
+        return player_confirmed
+    if enemy_will_act:
+        var enemy_confirmed: Dictionary = action_resolver.confirm_finalized_action(
+            enemy, enemy_preview, player, turn_number_reader.call())
+        if not enemy_confirmed.get("success", false):
+            player.rollback_staging()
+            enemy.rollback_staging()
+            return enemy_confirmed
 
     battle_flow.lock_intent(player, player_preview)
     if enemy_will_act:
@@ -669,7 +701,8 @@ func _grant_extra_actions(side, amount: int, source: String) -> void:
         "成功",
         "+%d（连击不自动补牌）" % gained)
 
-func _finalize_staged_proposal(side, proposal) -> Dictionary:
+func _finalize_staged_proposal(
+        side, proposal, emit_confirmed: bool = true) -> Dictionary:
     _restore_individual_cooperation_power(proposal)
     var main_result: Dictionary = action_resolver.finalize_action_preview(
         side, proposal.preview,
@@ -683,8 +716,75 @@ func _finalize_staged_proposal(side, proposal) -> Dictionary:
             enemy if side == player else player, turn_number_reader.call())
         if not group_result.get("success", false):
             return group_result
+    if proposal.groups.size() > 1:
+        if not proposal.preview.get("technique_activation", {}).get(
+                "allowed", false):
+            return {
+                "success": false,
+                "reason": "正式确认时主功法启动被拒绝，协同行动整体失效",
+            }
+        var cooperation_preview: Dictionary = proposal.groups[1].get("preview", {})
+        var cooperation_permission := _query_cooperation_permission(
+            proposal.preview, cooperation_preview, "action_confirmed")
+        cooperation_permission["frozen"] = true
+        cooperation_permission["main_action_token"] = str(
+            proposal.preview.get("reshape_action_token", ""))
+        proposal.preview["cooperation_permission"] = cooperation_permission.duplicate(true)
+        proposal.groups[1]["cooperation_permission"] = cooperation_permission.duplicate(true)
+        if not cooperation_permission.get("errors", []).is_empty():
+            return {"success": false, "reason": cooperation_permission.get(
+                "reason", "协同权限查询失败")}
+        if not cooperation_permission.get("allowed", false):
+            return {"success": false, "reason": cooperation_permission.get(
+                "reason", "正式确认时协同被拒绝")}
     _refresh_cooperation_shared_power(proposal)
+    if emit_confirmed:
+        return _confirm_finalized_proposal(side, proposal)
     return {"success": true}
+
+func _confirm_finalized_proposal(side, proposal) -> Dictionary:
+    var target = enemy if side == player else player
+    var main_result: Dictionary = action_resolver.confirm_finalized_action(
+        side, proposal.preview, target, turn_number_reader.call())
+    if not main_result.get("success", false):
+        return main_result
+    for group in proposal.groups.slice(1):
+        var group_result: Dictionary = action_resolver.confirm_finalized_action(
+            side, group.get("preview", {}), target, turn_number_reader.call())
+        if not group_result.get("success", false):
+            return group_result
+    return {"success": true}
+
+func _query_cooperation_permission(
+        main_preview: Dictionary,
+        cooperation_preview: Dictionary,
+        source_kind: String) -> Dictionary:
+    var permission = player.battle_permission_service
+    if permission == null:
+        return {
+            "checked": true, "allowed": true, "reason": "",
+            "source_breakdown": [], "errors": [],
+        }
+    var main_cards: Array = main_preview.get("cards", [])
+    var cooperation_cards: Array = cooperation_preview.get("cards", [])
+    var result: Dictionary = permission.can_establish_cooperation(
+        player,
+        str(main_preview.get("technique_id", "")),
+        str(main_preview.get("hand", {}).get("id", "")),
+        str(cooperation_preview.get("technique_id", "")),
+        str(cooperation_preview.get("hand", {}).get("id", "")), {
+            "target": enemy,
+            "round_number": int(turn_number_reader.call()),
+            "main_action_token": str(main_preview.get("reshape_action_token", "")),
+            "main_card_instance_ids": main_cards.map(func(card): return str(card.id)),
+            "cooperation_card_instance_ids": cooperation_cards.map(
+                func(card): return str(card.id)),
+            "main_preview": main_preview,
+            "cooperation_preview": cooperation_preview,
+            "source_kind": source_kind,
+        })
+    result["checked"] = true
+    return result
 
 func _refresh_cooperation_shared_power(proposal) -> void:
     if proposal.groups.size() < 2:

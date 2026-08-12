@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 
 var actor
 var target
@@ -15,6 +15,10 @@ var token: String = ""
 var captures_by_source: Dictionary = {}
 var cooperation_groups: Array = []
 var momentum_prepared: bool = false
+var technique_activation_checked: bool = false
+var technique_activation_allowed: bool = false
+var technique_activation_reason: String = ""
+var technique_activation_breakdown: Array = []
 
 func configure(
         action_actor,
@@ -37,6 +41,13 @@ func configure(
     triggered = false
     failed = false
     momentum_prepared = false
+    var activation: Dictionary = action_preview.get(
+        "technique_activation", {})
+    technique_activation_checked = bool(activation.get("checked", false))
+    technique_activation_allowed = bool(activation.get("allowed", false))
+    technique_activation_reason = str(activation.get("reason", ""))
+    technique_activation_breakdown = activation.get(
+        "source_breakdown", []).duplicate(true)
     return self
 
 func snapshot() -> Dictionary:
@@ -50,6 +61,10 @@ func snapshot() -> Dictionary:
         "triggered": triggered,
         "failed": failed,
         "momentum_prepared": momentum_prepared,
+        "technique_activation_checked": technique_activation_checked,
+        "technique_activation_allowed": technique_activation_allowed,
+        "technique_activation_reason": technique_activation_reason,
+        "technique_activation_breakdown": technique_activation_breakdown.duplicate(true),
         "hand_id": str(preview.get("hand", {}).get("id", "")),
         "technique_id": str(preview.get("technique_id", "")),
         "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
@@ -76,4 +91,8 @@ func to_dict() -> Dictionary:
         "captures_by_source": captures_by_source,
         "cooperation_groups": cooperation_groups,
         "momentum_prepared": momentum_prepared,
+        "technique_activation_checked": technique_activation_checked,
+        "technique_activation_allowed": technique_activation_allowed,
+        "technique_activation_reason": technique_activation_reason,
+        "technique_activation_breakdown": technique_activation_breakdown,
     }

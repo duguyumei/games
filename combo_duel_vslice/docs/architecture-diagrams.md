@@ -603,6 +603,8 @@ Invocation 顺序执行；双方同 Hook 都有效时由 `unconfirmed_cross_side
 
 战斗真实写入由 `BattlePassiveEffectPorts` 按 Invocation 创建窄门面。Bridge 的十个生命周期和 CommittedEventService 的七个事实事件可以注入；预览、AI 枚举、整数查询、牌型、身份和权限查询不注入。四个 scope 在端口内部解析为当前战斗方，Handler 不能传入任意 `BattleSide` 或自带 RNG。端口调用既有 `BattleEffectPorts`，所以明确弃牌、无漏／磐石、伤害与防御查询以及写入后的细粒度事件均保持同一路径。
 
+功法权限链为 `ActionPreviewService → BattlePermissionService → PassiveRuleRuntime`，结果进入 `ActionPreviewDto.technique_activation`；正式阶段由 `ActionResolver` 在牌进入待出区、重塑和四阶段值完成后重新查询，并冻结到 `BattleActionRecord`。`BattleActionService` 对协同执行候选与正式两次 `cooperation_permission_query`，正式允许后才批量发送各组 `action_confirmed`。解析阶段不再以功法 ID 或 condition 推测触发。UI、玩家、本地 AI 与远程 AI 都读取同一个 preview，等待恢复只读 record，因此不存在第二套权限运行时或 AI 专用规则。
+
 事件 token 防止整个已提交事实重放；命令 token 再以来源、behavior、execution 与调用下标防止等待恢复或重复 Invocation 重放单条写入。嵌套调用链共享 64 条命令上限，失败锁住当前端口并进入 `scenario_error`。领域写入一旦成功不由新端口伪造反向回滚；现有时点／事件事务仍只回滚两类计数器。
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照

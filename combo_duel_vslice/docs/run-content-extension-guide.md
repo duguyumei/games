@@ -593,6 +593,8 @@ order；`battle_end` Handler 完成后才清临时 Store。
 
 普通打出只查询打出权限，进入弃牌堆时不查询明确弃牌权限；手动选择、随机弃牌、全部弃牌和 `reason = "explicit_discard"` 的移动则共用明确弃牌链。等待选择恢复使用已冻结候选，不重复发送权限查询。所有查询仍复用唯一 `PassiveRuleRuntime`、压制服务和 Invocation 顺序，本任务没有新增正式内容或白名单。
 
+功法启动与协同不要复用出牌布尔值推断。当前功法非空且自身条件满足后，由 `can_activate_technique()` 查询；预览把 `checked/allowed/reason/source_breakdown` 写入 `ActionPreviewDto.technique_activation`，明确拒绝时仍保留功法定义但裁掉其伤害、防御和协同入口。正式确认在重塑及四阶段值冻结后重新查询，把结果写入 `BattleActionRecord`；解析、等待恢复、`action_confirmed/action_resolved`、连势和序列只读冻结结果。协同在候选建立和正式确认分别调用 `can_establish_cooperation()`，正式失败整单回滚。主组、协同建立、协同组自身启动是三个独立结果。玩家、本地 Utility AI 与远程候选只消费同一个预览，不复制权限规则。
+
 ## 6.15 战斗被动写命令端口
 
 内功或物品 Handler 需要真正修改战斗时，只能调用 `context.battle_effect_ports` 中的 `BattlePassiveEffectPorts`。该对象按 Invocation 创建，不暴露完整 `BattleEffectPorts`、战斗方对象、状态系统、牌区服务或 RNG。目标只能写为 `owner`、`actor`、`target`、`opponent`；无法解析到当前战斗方时结构化失败，不默认回退玩家或敌人。第一版命令包括 `draw_cards`、`discard_random_cards`、`discard_all_cards`、`gain_defense`、`deal_damage`、`move_card`、`temporarily_remove_card`、`apply_card_anomaly`、`place_on_draw_pile_top`、`gain_battle_experience`，以及复用稳定底层能力的额外行动和气势接口。

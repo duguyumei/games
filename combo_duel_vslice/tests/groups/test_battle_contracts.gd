@@ -11,6 +11,7 @@ func _initialize() -> void:
         "_test_battle_passive_lifecycle_bridge_and_temporary_counters",
         "_test_battle_fine_grained_events_and_int_queries",
         "_test_battle_card_policy_ports",
+        "_test_technique_and_cooperation_permission_wiring",
         "_test_battle_passive_effect_command_ports",
         "_test_awakening_battle_runtime",
         "_test_f2d2_formal_enhancement_runtime",

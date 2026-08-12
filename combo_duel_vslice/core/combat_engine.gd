@@ -283,7 +283,8 @@ func _init(
         passive_rule_runtime,
         effect_executor,
         battle_rule_query_service,
-        Callable(self, "_read_turn_number"))
+        Callable(self, "_read_turn_number"),
+        battle_permission_service)
     action_resolver = ActionResolverScript.new(
         effect_ports,
         repository,

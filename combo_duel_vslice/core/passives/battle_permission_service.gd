@@ -45,11 +45,10 @@ func query(hook: String, context: Dictionary = {}):
     if hook not in QUERY_HOOKS:
         return _denied("未知权限 Hook：%s" % hook, [], ["unknown_hook"])
     var breakdown: Array = []
-    var owner = context.get("owner", context.get("actor"))
-    var state_before: Dictionary = owner.capture_passive_query_state() \
-        if owner != null and owner.has_method("capture_passive_query_state") else {}
+    var tracked_sides := _tracked_sides(context)
+    var state_before := _capture_states(tracked_sides)
     var runtime_entries := _runtime_entries(hook, context)
-    var purity_error := _restore_if_mutated(owner, state_before)
+    var purity_error := _restore_if_mutated(tracked_sides, state_before)
     if purity_error != "":
         return _denied(purity_error, breakdown, ["query_mutation"])
     if not runtime_entries.get("success", false):
@@ -63,7 +62,7 @@ func query(hook: String, context: Dictionary = {}):
         if not hooks.is_empty() and hook not in hooks:
             continue
         var response := _call_provider(source["provider"], hook, context)
-        purity_error = _restore_if_mutated(owner, state_before)
+        purity_error = _restore_if_mutated(tracked_sides, state_before)
         if purity_error != "":
             return _denied(purity_error, breakdown, ["query_mutation"])
         if not response.get("success", false):
@@ -91,6 +90,38 @@ func can_explicit_discard(owner, card, context: Dictionary = {}) -> Dictionary:
     var values := context.duplicate(false)
     values.merge({"owner": owner, "actor": owner, "card": card}, false)
     return query("explicit_discard_permission_query", values).to_dict()
+
+func can_activate_technique(
+        owner,
+        technique_id: String,
+        hand_id: String,
+        context: Dictionary = {}) -> Dictionary:
+    var values := context.duplicate(false)
+    values.merge({
+        "owner": owner,
+        "actor": owner,
+        "technique_id": technique_id,
+        "hand_id": hand_id,
+    }, false)
+    return query("technique_activation_permission_query", values).to_dict()
+
+func can_establish_cooperation(
+        owner,
+        main_technique_id: String,
+        main_hand_id: String,
+        cooperation_technique_id: String,
+        cooperation_hand_id: String,
+        context: Dictionary = {}) -> Dictionary:
+    var values := context.duplicate(false)
+    values.merge({
+        "owner": owner,
+        "actor": owner,
+        "main_technique_id": main_technique_id,
+        "main_hand_id": main_hand_id,
+        "cooperation_technique_id": cooperation_technique_id,
+        "cooperation_hand_id": cooperation_hand_id,
+    }, false)
+    return query("cooperation_permission_query", values).to_dict()
 
 func check(hook: String, context: Dictionary = {}) -> Dictionary:
     return query(hook, context).to_dict()
@@ -164,11 +195,32 @@ func _denied(reason: String, breakdown: Array, errors: Array = []):
         "source_breakdown": breakdown, "errors": errors,
     })
 
-func _restore_if_mutated(owner, before: Dictionary) -> String:
-    if owner == null or before.is_empty() \
-            or not owner.has_method("capture_passive_query_state"):
+func _tracked_sides(context: Dictionary) -> Array:
+    var result: Array = []
+    for key in ["owner", "actor", "target"]:
+        var side = context.get(key)
+        if side != null \
+                and side.has_method("capture_passive_query_state") \
+                and not result.has(side):
+            result.append(side)
+    return result
+
+func _capture_states(sides: Array) -> Array:
+    var result: Array = []
+    for side in sides:
+        result.append({
+            "side": side,
+            "state": side.capture_passive_query_state(),
+        })
+    return result
+
+func _restore_if_mutated(sides: Array, before: Array) -> String:
+    var mutated := false
+    for index in range(sides.size()):
+        if sides[index].capture_passive_query_state() != before[index]["state"]:
+            mutated = true
+    if not mutated:
         return ""
-    if owner.capture_passive_query_state() == before:
-        return ""
-    owner.replace_passive_query_state(before)
+    for entry in before:
+        entry["side"].replace_passive_query_state(entry["state"])
     return "权限查询 Handler 不得修改战斗状态"

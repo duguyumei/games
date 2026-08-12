@@ -15,6 +15,7 @@ var technique_repository
 var passive_rule_runtime
 var effect_executor
 var battle_rule_query_service
+var battle_permission_service
 var round_number_reader: Callable
 
 func _init(
@@ -22,12 +23,14 @@ func _init(
         passive_runtime,
         executor,
         query_service = null,
-        round_reader: Callable = Callable()) -> void:
+        round_reader: Callable = Callable(),
+        permission_service = null) -> void:
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
     effect_executor = executor
     battle_rule_query_service = query_service
     round_number_reader = round_reader
+    battle_permission_service = permission_service
 
 func preview(
         side,
@@ -116,10 +119,19 @@ func preview_dto(
             technique_definition,
             hand_result,
             side.card_identity_policy)
+    var technique_activation := _preview_technique_activation(
+        side, target, technique_id, hand_result, cards,
+        technique_definition, condition)
+    if not technique_activation.get("success", false):
+        return _invalid_preview(str(technique_activation.get(
+            "reason", "功法启动权限查询失败")))
+    var activation_allowed := bool(technique_activation.get("allowed", false))
     values = PowerCalculatorScript.apply_momentum(
         values,
         side.momentum_value
-        if technique_definition != null and bool(condition.get("ok", false))
+        if technique_definition != null \
+            and bool(condition.get("ok", false)) \
+            and activation_allowed
         else 0)
 
     var intent := {
@@ -149,7 +161,7 @@ func preview_dto(
         if target != null:
             damage_percent += side.status_system.actor_hand_card_numeric_modifier(
                 target, "incoming_damage_percent")
-    if technique_definition != null and condition["ok"]:
+    if technique_definition != null and condition["ok"] and activation_allowed:
         _merge_intent(intent, effect_executor.summarize_intent(
             technique_definition.effects,
             technique_intent_context,
@@ -206,12 +218,50 @@ func preview_dto(
         "technique_id": technique_id,
         "technique": technique,
         "condition": condition,
-        "cooperation": technique.get("cooperation", {}).duplicate(true),
+        "technique_activation": technique_activation,
+        "cooperation": technique.get("cooperation", {}).duplicate(true) \
+            if activation_allowed else {},
         "intent": intent,
         "inner_skills": _inner_skill_definitions_for(side),
         "next_technique_id": next_technique_id,
         "next_technique": technique_repository.get_technique(next_technique_id),
     })
+
+func _preview_technique_activation(
+        side,
+        target,
+        technique_id: String,
+        hand_result: Dictionary,
+        cards: Array,
+        technique_definition,
+        condition: Dictionary) -> Dictionary:
+    if technique_definition == null:
+        return {
+            "success": true, "checked": false, "allowed": false,
+            "reason": "空功法序列", "source_breakdown": [], "errors": [],
+        }
+    if not bool(condition.get("ok", false)):
+        return {
+            "success": true, "checked": false, "allowed": false,
+            "reason": str(condition.get("reason", "功法条件不满足")),
+            "source_breakdown": [], "errors": [],
+        }
+    if battle_permission_service == null:
+        return {
+            "success": true, "checked": true, "allowed": true,
+            "reason": "", "source_breakdown": [], "errors": [],
+        }
+    var result: Dictionary = battle_permission_service.can_activate_technique(
+        side, technique_id, str(hand_result.get("id", "")), {
+            "target": target,
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+            "card_instance_ids": cards.map(func(card): return str(card.id)),
+            "source_kind": "preview",
+        })
+    result["success"] = result.get("errors", []).is_empty()
+    result["checked"] = true
+    return result
 
 func recalculate_confirmed_power(
         side,
