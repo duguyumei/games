@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_fire_kindling"
+display_name = "引火式"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "造成P点普通伤害。燃尽牌库中1张非火普通真气；实际成功后，所选手牌获得其基础值一半的炽气。火同气改为自牌库底向上找目标。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["damage","anomaly_apply","same_qi_payoff"])
+public_behavior_summary = Array[String](["damage","anomaly_apply","same_qi_payoff"])
+implementation_category = "B"
+effects = [{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"kindling_heat","prompt":"选择获得炽气的手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"heat_target"},{"op":"burn_deck_then_heat_hand","choice_capture":"heat_target"}]
+

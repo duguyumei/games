@@ -76,7 +76,7 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
             if not identity.get("success", false):
                 return {"success": false, "reason": identity.get("reason", "卡牌身份查询失败"), "cards": []}
             facts = identity.get("facts")
-        if _matches(card, facts):
+        if _matches(card, facts, context, side):
             matches.append(card)
     if order_id == "top":
         matches.reverse()
@@ -114,7 +114,7 @@ func _zone_cards(context, side) -> Array:
         "discard_pile": return side.discard_pile.duplicate()
     return []
 
-func _matches(card, facts = null) -> bool:
+func _matches(card, facts = null, context = null, side = null) -> bool:
     var card_kind := str(filters.get("card_kind", "any"))
     if card_kind == "normal" and not (facts.is_card_kind("normal") if facts != null else card.is_card_kind("normal")):
         return false
@@ -153,11 +153,59 @@ func _matches(card, facts = null) -> bool:
                 or not card.reshape_others.is_empty())
         if has_reshape != bool(filters["has_any_reshape"]):
             return false
+    if filters.has("has_permanent_reshape"):
+        var permanent: bool = (
+            not card.reshape_origin.is_empty()
+            or card.reshape_enhancement != ""
+            or card.reshape_imprint != ""
+            or not card.reshape_others.is_empty())
+        if permanent != bool(filters["has_permanent_reshape"]):
+            return false
+    if filters.has("effective_qi_at_most"):
+        var effective := _current_effective_qi(card, context, side)
+        if effective > int(filters["effective_qi_at_most"]):
+            return false
+    if filters.has("effective_above_base"):
+        var effective := _current_effective_qi(card, context, side)
+        var base := int(card.current_base_qi_value()) \
+            if card.has_method("current_base_qi_value") else int(card.qi_value)
+        if (effective > base) != bool(filters["effective_above_base"]):
+            return false
+    if filters.has("has_non_attribute_identity"):
+        var excluded := str(filters["has_non_attribute_identity"])
+        var found_other := false
+        for attribute in ["wind", "forest", "fire", "mountain"]:
+            if attribute != excluded and _card_has_attribute(card, attribute, facts):
+                found_other = true
+                break
+        if not found_other:
+            return false
+    if bool(filters.get("explicit_discard_allowed", false)) \
+            and (context == null or context.ports == null or side == null \
+            or not context.ports.can_explicit_discard(
+                side, card).get("allowed", false)):
+        return false
+    if filters.has("can_apply_anomaly"):
+        var apply_spec: Dictionary = filters["can_apply_anomaly"]
+        if context == null or context.ports == null \
+                or not context.ports.can_apply_card_anomaly(
+                    card,
+                    str(apply_spec.get("category", "")),
+                    str(apply_spec.get("id", "")),
+                    bool(apply_spec.get("replace_state", false))).get(
+                        "allowed", false):
+            return false
     if filters.has("anomaly") and not _matches_anomaly(card, filters["anomaly"]):
         return false
     if filters.has("reshape") and not _matches_reshape(card, filters["reshape"]):
         return false
     return true
+
+func _current_effective_qi(card, context, side) -> int:
+    if context != null and context.ports != null and side != null:
+        return int(context.ports.current_effective_qi(side, card))
+    return int(card.effective_qi_value()) \
+        if card.has_method("effective_qi_value") else int(card.qi_value)
 
 func _card_has_attribute(card, attribute: String, facts = null) -> bool:
     if facts != null:

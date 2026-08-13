@@ -149,6 +149,7 @@ func resolve_effect_choice(request_id: String, selected_card_ids: Array) -> Dict
             "detail": detail,
         }
     if not resolution.get("success", false):
+        action_resolver.abort_action_resolution()
         return {"success": false, "reason": resolution.get("detail", "功法选择恢复失败")}
 
     var pending = pending_action_resolution
@@ -204,6 +205,11 @@ func resolve_locked_enemy_action_once() -> Dictionary:
     action_resolver.log_calculation(enemy, action_preview, enemy_ai_enabled)
     var record = action_resolver.make_action_record(
         enemy, player, action_preview, enemy_sequence_book, 200, turn_number_reader.call())
+    action_resolver.begin_action_resolution([player, enemy], {
+        "kind": "enemy_only",
+        "round_number": int(turn_number_reader.call()),
+        "action_tokens": [str(record["token"])],
+    })
     var resolution: Dictionary = action_resolver.resolve_action_records(
         [record], battle_flow.resolution_mode() == "synchronized")
     if resolution.get("pending_choice", false):
@@ -218,6 +224,7 @@ func resolve_locked_enemy_action_once() -> Dictionary:
             "detail": resolution.get("detail", "等待选择"),
         }
     if not resolution.get("success", false):
+        action_resolver.abort_action_resolution()
         return {"success": false, "reason": resolution.get("detail", "功法结算失败")}
     return _finish_enemy_only_resolution(record, action_preview)
 
@@ -240,6 +247,11 @@ func _confirm_solo_player(proposal) -> Dictionary:
     var record = action_resolver.make_action_record(
         player, enemy, action_preview, sequence_book, 100, turn_number_reader.call())
     record.cooperation_groups = proposal.groups.slice(1).duplicate(true)
+    action_resolver.begin_action_resolution([player, enemy], {
+        "kind": "solo_player",
+        "round_number": int(turn_number_reader.call()),
+        "action_tokens": [str(record["token"])],
+    })
     var resolution: Dictionary = action_resolver.resolve_action_records(
         [record], battle_flow.resolution_mode() == "synchronized")
     if resolution.get("pending_choice", false):
@@ -254,6 +266,7 @@ func _confirm_solo_player(proposal) -> Dictionary:
             "detail": resolution.get("detail", "等待选择"),
         }
     if not resolution.get("success", false):
+        action_resolver.abort_action_resolution()
         return {"success": false, "reason": resolution.get("detail", "功法结算失败")}
     return _finish_solo_player_resolution(record, action_preview)
 
@@ -300,6 +313,7 @@ func _resolve_solo_cooperation(
             "detail": resolution.get("detail", "等待协同功法选择"),
         }
     if not resolution.get("success", false):
+        action_resolver.abort_action_resolution()
         return {"success": false, "reason": resolution.get("detail", "协同组结算失败")}
     return _finish_solo_cooperation_resolution(
         cooperation_record,
@@ -335,6 +349,10 @@ func _finish_solo_action_outcome(
         main_triggered: bool,
         cooperation_triggered: bool,
         cooperation_preview: Dictionary = {}) -> Dictionary:
+    var action_completed: Dictionary = action_resolver.finish_action_resolution()
+    if not action_completed.get("success", false):
+        return {"success": false, "reason": action_completed.get(
+            "reason", "行动完成时点结算失败")}
     last_player_action_cards = played_cards
     last_enemy_action_cards.clear()
     last_played_hand = action_preview["hand"]["id"]
@@ -494,6 +512,11 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         action_resolver.log_calculation(enemy, enemy_preview, enemy_ai_enabled)
         records.append(action_resolver.make_action_record(
             enemy, player, enemy_preview, enemy_sequence_book, 200, turn_number_reader.call()))
+    action_resolver.begin_action_resolution([player, enemy], {
+        "kind": "synchronized" if enemy_will_act else "solo_player",
+        "round_number": int(turn_number_reader.call()),
+        "action_tokens": records.map(func(record): return str(record["token"])),
+    })
     var resolution: Dictionary = action_resolver.resolve_action_records(
         records, resolution_mode == "synchronized")
     if resolution.get("pending_choice", false):
@@ -512,6 +535,7 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
             "detail": resolution.get("detail", "等待选择"),
         }
     if not resolution.get("success", false):
+        action_resolver.abort_action_resolution()
         return {"success": false, "reason": resolution.get("detail", "功法结算失败")}
     return _finish_synchronized_resolution(
         records, player_preview, enemy_preview, enemy_will_act)
@@ -596,6 +620,7 @@ func _resolve_synchronized_player_cooperation(
             "detail": resolution.get("detail", "等待协同功法选择"),
         }
     if not resolution.get("success", false):
+        action_resolver.abort_action_resolution()
         return {"success": false, "reason": resolution.get("detail", "协同组结算失败")}
     return _finish_synchronized_cooperation_resolution(
         cooperation_record, cooperation_preview, metadata)
@@ -632,6 +657,10 @@ func _finish_synchronized_outcome(
         enemy_triggered: bool,
         cooperation_triggered: bool = false,
         cooperation_preview: Dictionary = {}) -> Dictionary:
+    var action_completed: Dictionary = action_resolver.finish_action_resolution()
+    if not action_completed.get("success", false):
+        return {"success": false, "reason": action_completed.get(
+            "reason", "行动完成时点结算失败")}
     last_player_action_cards = player_cards
     last_enemy_action_cards = enemy_cards
     last_played_hand = player_preview["hand"]["id"]
@@ -674,6 +703,10 @@ func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictio
     var enemy_cards: Array = enemy_commit["committed"]
     action_resolver.log_cards_leave(enemy, enemy_cards)
     action_resolver.finish_action_record(record)
+    var action_completed: Dictionary = action_resolver.finish_action_resolution()
+    if not action_completed.get("success", false):
+        return {"success": false, "reason": action_completed.get(
+            "reason", "行动完成时点结算失败")}
     last_player_action_cards.clear()
     last_enemy_action_cards = enemy_cards
     enemy_action_index_writer.call(enemy_action_index_reader.call() + 1)

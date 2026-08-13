@@ -63,6 +63,12 @@ func execute(effect: Dictionary, context):
     var query_result: Dictionary = query.resolve(runtime, rng)
     if not query_result.get("success", false):
         return EffectResultScript.failed(str(query_result.get("reason", "目标查询失败")))
+    var excluded_capture := str(query_spec.get("exclude_capture", ""))
+    if excluded_capture != "":
+        var excluded_ids: Array = runtime.captures.get(excluded_capture, []).map(
+            func(card): return str(card.id))
+        query_result["cards"] = query_result["cards"].filter(
+            func(card): return not excluded_ids.has(str(card.id)))
     if str(effect.get("selection_purpose", "")) == "explicit_discard":
         query_result["cards"] = query_result["cards"].filter(
             func(card):

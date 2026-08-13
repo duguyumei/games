@@ -20,6 +20,8 @@ var _committed_event_service
 var _round_number_reader: Callable
 var _battle_rng: RandomNumberGenerator
 var _battle_instance_id: String = "battle-0"
+var _effect_executor_ref: WeakRef
+var _action_resolution_scope: Dictionary = {}
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -62,6 +64,14 @@ func battle_rng() -> RandomNumberGenerator:
 
 func use_battle_instance_id(value: String) -> void:
     _battle_instance_id = value if value != "" else "battle-0"
+
+func use_effect_executor(executor) -> void:
+    _effect_executor_ref = weakref(executor)
+
+func execute_effect_chain(effects: Array, context) -> Dictionary:
+    var executor = _effect_executor_ref.get_ref() if _effect_executor_ref != null else null
+    return executor.execute_all(effects, context) if executor != null else {
+        "success": false, "detail": "战斗端口缺少效果执行器"}
 
 func battle_instance_id() -> String:
     return _battle_instance_id
@@ -124,6 +134,7 @@ func deal_damage(
         actor, target, amount, source_kind, true_damage,
         _status_system, final_override)
     if not bool(result["buffered"]):
+        _record_action_damage(actor, target, result)
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
     if not bool(result["buffered"]):
         _emit_damage_resolved(
@@ -144,6 +155,49 @@ func begin_synchronized_damage(records: Array) -> void:
     for record in records:
         actors.append(record["actor"])
     _damage_resolver.begin_synchronized(actors)
+
+func begin_action_resolution(actors: Array, metadata: Dictionary = {}) -> void:
+    var entries: Dictionary = {}
+    for side in actors:
+        if side == null:
+            continue
+        entries[str(side.owner_id)] = {
+            "side": side,
+            "life_before": int(side.life),
+            "defense_before": int(side.defense),
+            "damage_dealt": 0,
+            "damage_received": 0,
+            "defense_lost": 0,
+            "life_lost": 0,
+        }
+    _action_resolution_scope = {
+        "entries": entries,
+        "metadata": metadata.duplicate(true),
+    }
+
+func finish_action_resolution() -> Dictionary:
+    if _action_resolution_scope.is_empty():
+        return {"success": false, "reason": "当前没有行动结算统计范围"}
+    var results: Array = []
+    for entry_value in _action_resolution_scope.get("entries", {}).values():
+        var entry: Dictionary = entry_value
+        var side = entry["side"]
+        var result := entry.duplicate()
+        result["life_after"] = int(side.life)
+        result["defense_after"] = int(side.defense)
+        result["actual_life_loss"] = int(entry.get("life_lost", 0))
+        result["actual_defense_loss"] = int(entry.get("defense_lost", 0))
+        results.append(result)
+    var completed := {
+        "success": true,
+        "results": results,
+        "metadata": _action_resolution_scope.get("metadata", {}).duplicate(true),
+    }
+    _action_resolution_scope.clear()
+    return completed
+
+func abort_action_resolution() -> void:
+    _action_resolution_scope.clear()
 
 func flush_synchronized_damage() -> void:
     _damage_resolver.flush_synchronized(
@@ -226,8 +280,9 @@ func add_momentum(side: BattleSide, amount: int) -> int:
 func set_momentum(side: BattleSide, value: int) -> int:
     return side.set_momentum(value)
 
-func set_reflection_percent(side: BattleSide, value: int) -> int:
-    return side.set_reflection_percent(value)
+func set_reflection_percent(
+        side: BattleSide, value: int, source_token: String = "") -> int:
+    return side.set_reflection_percent(value, source_token)
 
 func add_direct_power_fixed(side: BattleSide, amount: int) -> int:
     side.direct_power_fixed += amount
@@ -241,6 +296,76 @@ func gain_battle_experience(side: BattleSide, amount: int) -> int:
     var gained := maxi(0, amount)
     side.experience += gained
     return gained
+
+func generate_temporary_normal_card(side: BattleSide, attribute: String):
+    var ranks := [
+        ["2", 2, 2], ["3", 3, 3], ["4", 4, 4], ["5", 5, 5],
+        ["6", 6, 6], ["7", 7, 7], ["8", 8, 8], ["9", 9, 9],
+        ["10", 10, 10], ["J", 11, 11], ["Q", 12, 11],
+        ["K", 13, 11], ["A", 14, 12],
+    ]
+    if _battle_rng == null or attribute not in ["wind", "forest", "fire", "mountain"]:
+        return null
+    var rank: Array = ranks[_battle_rng.randi_range(0, ranks.size() - 1)]
+    var card = QiCard.new(
+        "%s-temp-%d" % [attribute, _battle_rng.randi()],
+        str(rank[0]), int(rank[1]), int(rank[2]), attribute, attribute,
+        "%s_%s" % [attribute, str(rank[0]).to_lower()])
+    card.temporary_card = true
+    side.hand.append(card)
+    side.card_zone_service.bind_card_policies(side, card)
+    return card
+
+func steal_random_normal_card(actor: BattleSide, target: BattleSide) -> Dictionary:
+    if actor == null or target == null or _battle_rng == null:
+        return {"success": false}
+    var candidates: Array = target.draw_pile.filter(
+        func(card): return card.is_card_kind("normal"))
+    if candidates.is_empty():
+        return {"success": false}
+    var card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
+    return move_card(target, "draw_pile", actor, "hand", card, "steal", "top", "technique")
+
+func recover_forest_priority(
+        actor: BattleSide, maximum_qi: int, prefer_permanent: bool) -> Dictionary:
+    if actor == null or _battle_rng == null:
+        return {"success": false}
+    var plain: Array = []
+    var reshaped: Array = []
+    for card in actor.discard_pile:
+        if not card.is_card_kind("normal") or current_effective_qi(actor, card) > maximum_qi:
+            continue
+        var permanent: bool = not card.reshape_origin.is_empty() \
+            or card.reshape_enhancement != "" or card.reshape_imprint != "" \
+            or not card.reshape_others.is_empty()
+        (reshaped if permanent else plain).append(card)
+    var candidates: Array = reshaped if prefer_permanent and not reshaped.is_empty() else plain
+    if candidates.is_empty():
+        return {"success": false}
+    var card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
+    return move_card(actor, "discard_pile", actor, "hand", card, "recover", "top", "technique")
+
+func burn_deck_then_heat_hand(
+        actor: BattleSide, bottom_first: bool, choice_capture: String, context) -> Dictionary:
+    var candidates: Array = actor.draw_pile.filter(func(card):
+        return card.is_card_kind("normal") and not card.is_attribute("fire") \
+            and can_apply_card_anomaly(card, "mark", "burned_out").get("allowed", false))
+    if candidates.is_empty():
+        return {"success": true, "detail": ""}
+    var card = null
+    if bottom_first:
+        card = candidates[0]
+    else:
+        card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
+    var applied := apply_card_anomaly(card, "mark", "burned_out", {}, "引火式")
+    if not applied.get("success", false):
+        return {"success": true, "detail": ""}
+    var heat_targets: Array = context.captures.get(choice_capture, [])
+    if not heat_targets.is_empty():
+        var layers := int(floor(card.current_base_qi_value() / 2.0))
+        if layers > 0:
+            apply_card_anomaly(heat_targets[0], "buff", "qi_heat", {}, "引火式", layers)
+    return {"success": true, "detail": "燃尽并施加炽气"}
 
 func can_grant_battle_consumable(side: BattleSide) -> bool:
     return side.consumable_ids.size() < side.consumable_limit
@@ -273,6 +398,10 @@ func notify_cards_played(
     var runtime = _card_reshape_runtime()
     return runtime.on_card_played(
         side, cards, source_values) if runtime != null else []
+
+func successful_on_play_ids(action_token: String) -> Array:
+    var runtime = _card_reshape_runtime()
+    return runtime.successful_on_play_ids(action_token) if runtime != null else []
 
 func register_direct_card_trigger_listener(
         listener_id: String,
@@ -358,6 +487,12 @@ func zone_cards(side: BattleSide, zone: String) -> Array:
         "discard_pile": return side.discard_pile.duplicate()
     return []
 
+func query_effect_targets(context, query_spec: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+    var QueryScript = load("res://core/effects/effect_target_query.gd")
+    var values := query_spec.duplicate(true)
+    values["card_identity_policy"] = context.card_identity_policy
+    return QueryScript.new().configure(values).resolve(context, rng)
+
 func apply_card_anomaly(
         card,
         category: String,
@@ -436,6 +571,15 @@ func register_delayed_effects(
     return _status_system.register_delayed_effects(
         label, timing, occurrences, effects, context)
 
+func register_defense_decay_return(context) -> Dictionary:
+    return _status_system.register_defense_decay_return(context)
+
+func register_reflection_expiry(context, percent: int) -> Dictionary:
+    return _status_system.register_reflection_expiry(context, percent)
+
+func register_no_life_loss_disruption(context, effect: Dictionary) -> Dictionary:
+    return _status_system.register_no_life_loss_disruption(context, effect)
+
 func technique_draw_count(side: BattleSide) -> int:
     return _status_system.technique_draw_count(side)
 
@@ -481,6 +625,8 @@ func _log_damage(
             result["life_lost"]])
 
 func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
+    _record_action_damage(
+        resolution["actor"], resolution["target"], resolution["result"])
     _log_damage(
         resolution["actor"],
         resolution["target"],
@@ -499,6 +645,26 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         str(resolution["source_kind"]),
         resolution["result"])
     return int(resolution["actor"].life) <= 0
+
+func _record_action_damage(actor, target, result: Dictionary) -> void:
+    if _action_resolution_scope.is_empty():
+        return
+    var entries: Dictionary = _action_resolution_scope.get("entries", {})
+    var actor_key := str(actor.owner_id) if actor != null else ""
+    var target_key := str(target.owner_id) if target != null else ""
+    var final_amount := int(result.get("final_amount", result.get("requested", 0)))
+    if entries.has(actor_key):
+        entries[actor_key]["damage_dealt"] = (
+            int(entries[actor_key].get("damage_dealt", 0)) + final_amount)
+    if entries.has(target_key):
+        entries[target_key]["damage_received"] = (
+            int(entries[target_key].get("damage_received", 0)) + final_amount)
+        entries[target_key]["defense_lost"] = (
+            int(entries[target_key].get("defense_lost", 0))
+            + int(result.get("defense_lost", 0)))
+        entries[target_key]["life_lost"] = (
+            int(entries[target_key].get("life_lost", 0))
+            + int(result.get("life_lost", 0)))
 
 func _resolve_actual_damage_amount(
         actor,

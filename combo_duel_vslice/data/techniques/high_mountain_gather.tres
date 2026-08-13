@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_mountain_gather"
+display_name = "聚山"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "获得P点防御。按额外山真气数量N额外获得2N点防御；山同气时改为3N点。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["defense","same_qi_payoff","extra_card_commitment"])
+public_behavior_summary = Array[String](["defense","same_qi_payoff","extra_card_commitment"])
+implementation_category = "A"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"defense","amount":{"kind":"conditional","when":{"same_qi":"mountain"},"then":{"kind":"multiply","values":[{"kind":"extra_attribute_count","attribute":"mountain"},{"kind":"constant","value":3}]},"else":{"kind":"multiply","values":[{"kind":"extra_attribute_count","attribute":"mountain"},{"kind":"constant","value":2}]}}}]

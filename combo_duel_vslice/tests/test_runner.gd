@@ -4113,14 +4113,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 2, "统一功法目录包含两门基础功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 2, "正式功法资源路径包含两项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 2, "正式接入状态包含两门基础功法")
+    _assert_equal(catalog.all_of("technique").size(), 27, "统一功法目录包含基础功法与25门高牌功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 27, "正式功法资源路径包含27项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 27, "正式接入状态包含27门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 2, "正式功法资源目录仅有两门基础功法")
+    _assert_equal(formal_technique_resource_count, 27, "正式功法资源目录包含基础功法与25门高牌功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
@@ -6448,7 +6448,12 @@ func _test_battle_timing_system_contract_and_integration() -> void:
         "action_window_start",
     ], "单方战斗以统一顺序进入战斗、回合、补牌和行动窗口时点")
     engine.end_player_turn()
-    _assert_equal(engine.timing_system.history[-3]["timing"], "action_window_end", "结束回合先关闭行动窗口")
+    _assert_equal(engine.timing_system.history[-5]["timing"], "action_window_end", "结束回合先关闭行动窗口")
+    _assert_equal(
+        engine.timing_system.history.slice(-4, -2).map(
+            func(entry): return entry["timing"]),
+        ["defense_decay_resolved", "defense_decay_resolved"],
+        "行动窗口关闭后分别公开双方防御自然衰减结果")
     _assert_equal(
         engine.timing_system.history.slice(-2).map(
             func(entry): return entry["actor_id"]),
@@ -7514,8 +7519,10 @@ func _test_awakening_battle_runtime() -> void:
         _count_status_changes(fire_engine.status_system.history, "burned_out"),
         1,
         "一个功法组只为参与真气施加一次燃尽")
+    var fire_group_events: Array = fire_engine.timing_system.history.filter(
+        func(entry): return str(entry.get("timing", "")) == "group_end")
     _assert_equal(
-        fire_engine.timing_system.history[-1]["handler_results"][-1]["handler_id"],
+        fire_group_events[-1]["handler_results"][-1]["handler_id"],
         "card_reshape_runtime.group_resolved",
         "火觉醒在功法与内功完成、序列推进之后响应组结束")
     fire_engine.status_system.apply_card_anomaly(

@@ -11,6 +11,7 @@ const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const ActionPreviewDtoScript = preload("res://core/action_preview_dto.gd")
 const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
+const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")
 
 var technique_repository
 var passive_rule_runtime
@@ -121,6 +122,8 @@ func preview_dto(
     var technique: Dictionary = (
         technique_definition.to_definition()
         if technique_definition != null else {})
+    var group_snapshot := HandGroupSnapshotScript.freeze(
+        cards, hand_result, side, target)
     var condition := {"ok": true, "reason": "空序列"}
     if technique_definition != null:
         condition = technique_repository.conditions_met(
@@ -227,6 +230,7 @@ func preview_dto(
             "queries": power_result["queries"],
         },
         "same_qi": same_qi,
+        "group_snapshot": group_snapshot,
         "same_qi_action": same_qi_action,
         "technique_id": technique_id,
         "technique": technique,
@@ -282,6 +286,8 @@ func recalculate_confirmed_power(
         preview: Dictionary,
         action_token: String,
         frozen_multiplier_bonus: int = 0) -> Dictionary:
+    preview["group_snapshot"] = HandGroupSnapshotScript.freeze(
+        preview.get("cards", []), preview.get("hand", {}), side, target)
     var inputs: Dictionary = preview.get(
         "passive_power_query_inputs", {})
     var modifiers: Dictionary = inputs.get("modifiers", {}).duplicate(true)
@@ -299,7 +305,39 @@ func recalculate_confirmed_power(
         preview["values"]["passive_power_queries"] = result["queries"]
         preview["passive_power_query_inputs"]["confirmed_queries"] = result["queries"]
         preview["passive_power_query_inputs"]["confirmed_action_token"] = action_token
+        _apply_technique_power_formation(side, target, preview)
     return result
+
+func _apply_technique_power_formation(side, target, preview: Dictionary) -> void:
+    if preview.has("frozen_power_formation"):
+        var frozen: Dictionary = preview["frozen_power_formation"]
+        preview["values"] = PowerCalculatorScript.apply_direct_power_fixed(
+            preview["values"], int(frozen.get("fixed_bonus", 0)))
+        return
+    var definition: Dictionary = preview.get("technique", {})
+    var formation: Dictionary = definition.get("power_formation", {})
+    if str(formation.get("kind", "")) != "random_extra_current_qi":
+        preview["frozen_power_formation"] = {"fixed_bonus": 0, "target_id": ""}
+        return
+    var snapshot: Dictionary = preview.get("group_snapshot", {})
+    var excluded := str(formation.get("excluded_attribute", ""))
+    var candidates: Array = snapshot.get("extra_cards", []).filter(
+        func(card): return HandGroupSnapshotScript.has_non_attribute_identity(
+            snapshot, card, excluded))
+    var chosen = null
+    if not candidates.is_empty():
+        chosen = candidates[effect_executor.rng.randi_range(0, candidates.size() - 1)]
+    var bonus := HandGroupSnapshotScript.current_effective_qi(snapshot, chosen, side) \
+        if chosen != null else 0
+    preview["frozen_power_formation"] = {
+        "fixed_bonus": bonus,
+        "target_id": str(chosen.id) if chosen != null else "",
+        "target_card": chosen,
+    }
+    preview["group_snapshot"]["power_formation_target_cards"] = \
+        [chosen] if chosen != null else []
+    preview["values"] = PowerCalculatorScript.apply_direct_power_fixed(
+        preview["values"], bonus)
 
 func _resolve_power_values(
         side,

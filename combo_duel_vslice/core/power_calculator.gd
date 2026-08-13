@@ -60,6 +60,15 @@ static func apply_momentum(values: Dictionary, momentum: int) -> Dictionary:
         + int(result["momentum_used"]))
     return result
 
+static func apply_direct_power_fixed(values: Dictionary, amount: int) -> Dictionary:
+    var result := values.duplicate(true)
+    result["direct_power_fixed"] = int(result.get("direct_power_fixed", 0)) + amount
+    result["pre_momentum_power"] = int(floor(
+        (int(result.get("initial_power", 0))
+        + int(result["direct_power_fixed"]))
+        * (1.0 + int(result.get("direct_power_percent", 0)) / 100.0)))
+    return apply_momentum(result, int(result.get("momentum_used", 0)))
+
 static func _qualified_card_numeric_bundle(
         card,
         contribution_modifier: Callable,

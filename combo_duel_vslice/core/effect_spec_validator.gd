@@ -15,9 +15,11 @@ extends RefCounted
 
 ## 数值规格的可用 kind。只有效果规格会用到，因此不放在内容词表里。
 const AMOUNT_KINDS := [
-    "constant", "power", "power_fraction", "n60", "hand_map", "max",
+    "constant", "power", "power_fraction", "initial_power", "initial_power_fraction", "n60", "hand_map", "max",
     "add", "multiply", "divide_floor", "divide_ceil", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
-    "capture_attribute_count", "capture_non_attribute_count", "hand_count",
+    "capture_attribute_count", "capture_non_attribute_count", "capture_base_qi_sum",
+    "capture_current_effective_qi", "group_base_qi_sum", "extra_count",
+    "extra_attribute_count", "hand_count",
     "target_hand_count", "hand_limit",
     "conditional",
     "power_scaled_by_zone_anomaly",
@@ -214,15 +216,36 @@ func _validate_query_filters(filters: Dictionary, scope: String) -> void:
         for attribute in filters[attribute_field]:
             if str(attribute) not in _attribute_ids:
                 _error(scope + "." + attribute_field, "引用未知属性 %s" % str(attribute))
-    for boolean_field in ["temporary", "has_any_reshape"]:
+    for boolean_field in ["temporary", "has_any_reshape", "has_permanent_reshape", "effective_above_base", "explicit_discard_allowed"]:
         if filters.has(boolean_field) and not filters[boolean_field] is bool:
             _error(scope + "." + boolean_field, "必须是布尔值")
+    if filters.has("effective_qi_at_most"):
+        if filters["effective_qi_at_most"] is Dictionary:
+            validate_amount_spec(filters["effective_qi_at_most"], scope + ".effective_qi_at_most")
+        elif not _is_integer(filters["effective_qi_at_most"]):
+            _error(scope + ".effective_qi_at_most", "必须是整数或数值规格")
+    if filters.has("has_non_attribute_identity") \
+            and str(filters["has_non_attribute_identity"]) not in _attribute_ids:
+        _error(scope + ".has_non_attribute_identity", "引用未知属性")
     if filters.has("anomaly"):
         _validate_target_state_filter(
             filters["anomaly"], _anomaly_category_ids, scope + ".anomaly")
     if filters.has("reshape"):
         _validate_target_state_filter(
             filters["reshape"], _reshape_category_ids, scope + ".reshape")
+    if filters.has("can_apply_anomaly"):
+        _validate_target_state_filter(
+            filters["can_apply_anomaly"], _anomaly_category_ids,
+            scope + ".can_apply_anomaly")
+        var anomaly_filter: Dictionary = filters["can_apply_anomaly"] \
+            if filters["can_apply_anomaly"] is Dictionary else {}
+        var anomaly_id := str(anomaly_filter.get("id", ""))
+        var anomaly_category := str(anomaly_filter.get("category", ""))
+        if not _anomalies_by_id.has(anomaly_id):
+            _error(scope + ".can_apply_anomaly", "引用未知真气异状 %s" % anomaly_id)
+        elif str(_anomalies_by_id[anomaly_id].get("category", "")) != anomaly_category:
+            _error(scope + ".can_apply_anomaly", "异状 %s 不属于类别 %s" % [
+                anomaly_id, anomaly_category])
 
 func _validate_target_state_filter(value, category_ids: Array, scope: String) -> void:
     if not value is Dictionary:
@@ -243,7 +266,7 @@ func validate_amount_spec(spec: Dictionary, scope: String) -> void:
         "constant":
             if not _is_number(spec.get("value")):
                 _error(scope, "constant.value 必须是数值")
-        "power_fraction":
+        "power_fraction", "initial_power_fraction":
             _validate_power_fraction(spec, scope)
         "hand_map":
             _validate_hand_map(spec, scope)
@@ -252,7 +275,8 @@ func validate_amount_spec(spec: Dictionary, scope: String) -> void:
         "divide_floor", "divide_ceil":
             _validate_nested_specs(spec, ["value", "divisor"], scope)
         "capture_count", "capture_qi_sum", "capture_attribute_qi_sum", \
-        "capture_attribute_count", "capture_non_attribute_count":
+        "capture_attribute_count", "capture_non_attribute_count", \
+        "capture_base_qi_sum", "capture_current_effective_qi":
             _validate_capture_spec(spec, kind, scope)
         "conditional":
             _validate_nested_specs(spec, ["then", "else"], scope)

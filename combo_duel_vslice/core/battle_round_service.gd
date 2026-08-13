@@ -220,6 +220,18 @@ func finish_round_end() -> Array[Dictionary]:
         last_defense_decay_results.append(decay)
         if not decay.get("success", false):
             return last_defense_decay_results.duplicate(true)
+        if not _emit_timing(BattleTimingSystemScript.DEFENSE_DECAY_RESOLVED, {
+            "round_number": turn_number,
+            "actor": side,
+            "actors": ending_actors,
+            "decay": decay,
+            "metadata": {
+                "defense_before": int(decay.get("before", 0)),
+                "defense_after": int(decay.get("after", 0)),
+                "defense_lost": int(decay.get("lost", 0)),
+            },
+        }):
+            return last_defense_decay_results.duplicate(true)
     trigger_queue.add_history(
         "defense_decay",
         "双方防御衰减",

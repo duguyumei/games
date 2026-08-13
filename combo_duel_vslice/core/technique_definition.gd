@@ -15,6 +15,10 @@ extends Resource
 @export var condition: Dictionary = {}
 @export var cooperation: Dictionary = {}
 @export var effects: Array = []
+@export var power_formation: Dictionary = {}
+@export var semantic_tags: Array[String] = []
+@export var public_behavior_summary: Array[String] = []
+@export var implementation_category: String = ""
 
 func configure_from_dictionary(value: Dictionary):
 	id = str(value.get("id", ""))
@@ -29,6 +33,10 @@ func configure_from_dictionary(value: Dictionary):
 	condition = value.get("condition", {}).duplicate(true)
 	cooperation = value.get("cooperation", {}).duplicate(true)
 	effects = value.get("effects", []).duplicate(true)
+	power_formation = value.get("power_formation", {}).duplicate(true)
+	semantic_tags.assign(value.get("semantic_tags", []))
+	public_behavior_summary.assign(value.get("public_behavior_summary", []))
+	implementation_category = str(value.get("implementation_category", ""))
 	return self
 
 func to_definition() -> Dictionary:
@@ -45,6 +53,10 @@ func to_definition() -> Dictionary:
 		"condition": condition.duplicate(true),
 		"cooperation": cooperation.duplicate(true),
 		"effects": effects.duplicate(true),
+		"power_formation": power_formation.duplicate(true),
+		"semantic_tags": semantic_tags.duplicate(),
+		"public_behavior_summary": public_behavior_summary.duplicate(),
+		"implementation_category": implementation_category,
 	}
 
 func snapshot() -> Dictionary:

@@ -17,7 +17,8 @@ func operation_ids() -> Array[String]:
         "draw", "draw_if_captured_attribute", "discard_random", "discard_all_hand",
         "move_captured", "move_query", "draw_filtered", "draw_to_limit",
         "capture_metadata",
-        "capture_query", "swap_hands",
+        "capture_query", "swap_hands", "reorder_captured_draw_pile",
+        "move_captured_to_hand",
     ]
 
 func group_name() -> String:
@@ -71,6 +72,11 @@ func execute(effect: Dictionary, context):
                 "弃掉全部剩余手牌 %d 张" % discarded.size())
         "move_captured":
             return _move_captured(effect, runtime)
+        "move_captured_to_hand":
+            var moved_effect := effect.duplicate(true)
+            moved_effect["op"] = "move_captured"
+            moved_effect["to_zone"] = "hand"
+            return _move_captured(moved_effect, runtime)
         "move_query":
             return _move_query(effect, runtime)
         "draw_filtered":
@@ -121,6 +127,8 @@ func execute(effect: Dictionary, context):
             runtime.actor.hand = runtime.target.hand
             runtime.target.hand = actor_hand
             return EffectResultScript.succeeded("交换双方当前手牌")
+        "reorder_captured_draw_pile":
+            return _reorder_captured_draw_pile(effect, runtime)
     return EffectResultScript.failed("牌区处理器不支持：%s" % str(effect.get("op", "")))
 
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
@@ -197,12 +205,36 @@ func _draw_filtered(effect: Dictionary, runtime):
     query_effect["reason"] = "draw"
     return _move_query(query_effect, runtime)
 
+func _reorder_captured_draw_pile(effect: Dictionary, runtime):
+    var inspected: Array = runtime.captures.get(str(effect.get("capture", "")), [])
+    var top_cards: Array = runtime.captures.get(str(effect.get("top_capture", "")), [])
+    var bottom_first: Array = runtime.captures.get(
+        str(effect.get("bottom_first_capture", "")), [])
+    if inspected.is_empty() or top_cards.is_empty():
+        return EffectResultScript.succeeded()
+    for card in inspected:
+        runtime.actor.draw_pile.erase(card)
+    var top_card = top_cards[0]
+    var remaining := inspected.filter(func(card): return card != top_card)
+    if not bottom_first.is_empty() and remaining.has(bottom_first[0]):
+        remaining.erase(bottom_first[0])
+        remaining.push_front(bottom_first[0])
+    for card in remaining:
+        runtime.actor.draw_pile.push_front(card)
+    runtime.actor.draw_pile.append(top_card)
+    return EffectResultScript.succeeded("检视并重排 %d 张" % inspected.size())
+
 func _query(effect: Dictionary, runtime) -> Dictionary:
     var query_spec: Dictionary = effect.get("query", {}).duplicate(true)
     var excluded_capture := str(query_spec.get("exclude_capture", ""))
     query_spec.erase("exclude_capture")
     if query_spec.get("limit") is Dictionary:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
+    var filters: Dictionary = query_spec.get("filters", {}).duplicate(true)
+    if filters.get("effective_qi_at_most") is Dictionary:
+        filters["effective_qi_at_most"] = value_resolver.resolve(
+            filters["effective_qi_at_most"], runtime)
+    query_spec["filters"] = filters
     query_spec["card_identity_policy"] = runtime.card_identity_policy
     var result: Dictionary = TargetQueryScript.new().configure(query_spec).resolve(runtime, rng)
     if result.get("success", false) and excluded_capture != "":

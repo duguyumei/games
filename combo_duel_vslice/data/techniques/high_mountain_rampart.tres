@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_mountain_rampart"
+display_name = "山·坚壁"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "获得P点防御。从本次实际成功触发自身打出时效果的真气中随机选择1张，使其获得重聚。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["defense","anomaly_apply","retrigger_sensitive"])
+public_behavior_summary = Array[String](["defense","anomaly_apply","retrigger_sensitive"])
+implementation_category = "B"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"capture_group_cards","kind":"on_play_success","capture":"rampart_candidates"},{"op":"select_random_captured","capture":"rampart_candidates","result_capture":"rampart_target"},{"op":"apply_card_anomaly_to_captured","capture":"rampart_target","category":"mark","anomaly":"regroup"}]
+

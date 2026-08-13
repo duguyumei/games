@@ -54,6 +54,34 @@ func use_trigger_queue(queue) -> void:
 func reset() -> void:
     _pending_resolution.clear()
     _passive_sources_by_token.clear()
+    effect_ports.abort_action_resolution()
+
+func begin_action_resolution(actors: Array, metadata: Dictionary = {}) -> void:
+    effect_ports.begin_action_resolution(actors, metadata)
+
+func abort_action_resolution() -> void:
+    effect_ports.abort_action_resolution()
+
+func finish_action_resolution() -> Dictionary:
+    var completed: Dictionary = effect_ports.finish_action_resolution()
+    if not completed.get("success", false) or timing_system == null:
+        return completed
+    var results: Array = completed.get("results", [])
+    var actors: Array = results.map(func(result): return result.get("side"))
+    var emitted: Dictionary = timing_system.emit_timing(
+        timing_system.ACTION_RESOLUTION_END, {
+            "actors": actors,
+            "action_results": results,
+            "metadata": completed.get("metadata", {}),
+        })
+    if not emitted.get("success", false):
+        var reason := str(emitted.get("reason", "action_resolution_end 处理器失败"))
+        if _set_scenario_error.is_valid():
+            _set_scenario_error.call(
+                "战斗时点失败 hook=%s reason=%s" % [
+                    timing_system.ACTION_RESOLUTION_END, reason])
+        return {"success": false, "reason": reason, "results": results}
+    return completed
 
 func make_action_record(
         actor,
@@ -317,6 +345,7 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "target": record["target"],
                 "hand_result": record["preview"]["hand"],
                 "played_cards": record["preview"]["cards"],
+                "group_snapshot": record["preview"].get("group_snapshot", {}),
                 "power": record["preview"]["values"]["technique_value"],
                 "values": record["preview"]["values"],
                 "technique_id": source_spec["definition"].get("id", ""),
@@ -442,6 +471,7 @@ func retrigger_current_hand_technique(
         "source_kind": "technique_retrigger",
         "sequence_book": sequence_book,
         "captures": {},
+        "group_snapshot": power_snapshot.get("group_snapshot", {}),
         "card_identity_policy": actor.card_identity_policy,
     })
     var result: Dictionary = effect_executor.execute_all(definition.effects, context)
@@ -602,6 +632,8 @@ func _effects_for_phase(effects: Array, phase: String) -> Array:
     var prepare_ops := [
         "defense", "defense_from_noncontributing_qi",
         "add_momentum", "set_momentum", "set_reflection_percent",
+        "set_reflection_until_turn_end",
+        "steal_random_card_if_power_target_and_same_qi",
         "add_direct_power_fixed", "add_direct_power_percent"]
     var damage_ops := ["damage", "multi_damage"]
     for effect in effects:
@@ -708,6 +740,12 @@ func _resolve_played_card_anomalies(records: Array) -> void:
             holder,
             played_cards,
             {"action_token": str(record["token"])})
+        var triggered_ids: Array = record["preview"].get(
+            "group_snapshot", {}).get("on_play_success_cards", []).map(
+                func(value): return str(value.id))
+        for source_id in effect_ports.successful_on_play_ids(str(record["token"])):
+            if not triggered_ids.has(str(source_id)):
+                triggered_ids.append(str(source_id))
         for resolution in resolutions:
             var card = resolution["card"]
             var anomaly_name := str(resolution.get(
@@ -721,6 +759,16 @@ func _resolve_played_card_anomalies(records: Array) -> void:
                 "真气异状",
                 "结算",
                 anomaly_detail)
+            if str(resolution.get("source_trigger", "")) == "card_played" \
+                    and bool(resolution.get("applied", resolution.get("success", false))):
+                var source_id := str(resolution.get("source_card_instance_id", ""))
+                if source_id != "" and not triggered_ids.has(source_id):
+                    triggered_ids.append(source_id)
+        var triggered_cards: Array = record["preview"].get(
+            "group_snapshot", {}).get("played_cards", []).filter(
+                func(value): return triggered_ids.has(str(value.id)))
+        if record["preview"].get("group_snapshot") is Dictionary:
+            record["preview"]["group_snapshot"]["on_play_success_cards"] = triggered_cards
 func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")
 

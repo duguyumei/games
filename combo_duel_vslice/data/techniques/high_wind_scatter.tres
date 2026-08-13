@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_wind_scatter"
+display_name = "散风"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "造成 floor(P/2) 点普通伤害；按额外风真气数量N独立造成N点真伤；N>2时抽2张。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["damage","true_damage","draw","extra_card_commitment"])
+public_behavior_summary = Array[String](["damage","true_damage","draw","extra_card_commitment"])
+implementation_category = "A"
+effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"damage","amount":{"kind":"extra_attribute_count","attribute":"wind"},"true_damage":true},{"op":"draw","count":{"kind":"constant","value":2},"when":{"value_greater_than":{"value":{"kind":"extra_attribute_count","attribute":"wind"},"threshold":2}}}]

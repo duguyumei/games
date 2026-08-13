@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_mountain_stance"
+display_name = "立山式"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "获得P点防御。记录本完整回合自然防御衰减的实际损失，并在下一完整回合开始返还等量防御。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["defense","delayed_defense"])
+public_behavior_summary = Array[String](["defense","delayed_defense"])
+implementation_category = "C"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"register_defense_decay_return"}]
+

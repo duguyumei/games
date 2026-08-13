@@ -1,11 +1,17 @@
 # 功法内容接入状态
 
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
-`godot/docs/design-current/README.md` v0.30 及其功法框架、三个功法池正文。
+`godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)。
+
+## 当前正式目录（2026-08-12）
+
+正式目录共 27 门：基础通用功法 `basic_scatter`、`basic_guard`，以及 25 门高牌功法。25 门高牌资源均为独立 `.tres`，均 `pool=high`、只允许 `high_card`、普通装配上限 1，状态为 `formal_complete`，并已进入修习商店高牌候选。`production_sequences.json` 未修改，八种初始序列仍为一槽 `basic_scatter`。
+
+高牌实现分类：A 12 门，B 10 门，C 3 门。A 为既有能力组合；B 使用公共快照、集合／条件／目标或结果捕获；C 使用公共行动完成、自然防御衰减或来源安全延迟时点。内容校验为 47 文件、0 错误、0 警告；高牌专项测试 183 断言，功法运行时测试 211 断言。
 
 ## 统计口径
 
-`data/techniques/*.tres` 当前正式目录有 2 个可执行实体：`basic_scatter`（散招）与 `basic_guard`（守招）。二者均为 `formal_complete`、`built_in=true`、基础装配上限 99，并用八种 `eligible_hand_ids` 声明通用资格。
+基础通用实体 `basic_scatter`（散招）与 `basic_guard`（守招）均为 `formal_complete`、`built_in=true`、基础装配上限 99，并用八种 `eligible_hand_ids` 声明通用资格；25 门高牌正式实体见上方当前正式目录。
 
 `data/production_sequences.json` 的八种精确牌型均为 `["basic_scatter"]`。两门基础功法不进入修习商店、奖励、心得随机候选或 `learned_technique_ids`；构筑 DTO 仍始终把它们作为合格候选公开。旧 47 门流派／纵切资源统计均属历史记录，不再描述当前正式目录。
 `DesignConsistencyValidator` 的 0 错误也只证明名称、共用牌型池与废弃状态一致。
@@ -19,7 +25,7 @@
 | 回归夹具 | 7 | 早期纵切用于回归协议；不是 S2 正式白名单候选，其中两门另有已确认语义偏差 |
 | 禁用或延期资源 | 0 | 当前 47 个资源内没有；五条心得等禁用内容不属于这 47 门功法实体 |
 
-当前正式口径以开头的两门基础通用功法为准；下列 47 门只解释历史测试与迁移证据，不计入正式玩家内容。
+当前正式口径以开头的 27 门实体为准；下列 47 门只解释历史测试与迁移证据，不计入正式玩家内容。
 
 ## 47 门覆盖矩阵
 

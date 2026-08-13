@@ -1,21 +1,88 @@
 {
-  "version": 4,
+  "version": 5,
   "pool_membership": {
-    "high_card": ["high"],
-    "pair": ["pair"],
-    "two_pair": ["pair"],
-    "three_kind": ["three"],
-    "straight": ["straight"],
-    "full_house": ["pair", "three"],
-    "four_kind": ["bomb"],
-    "five_kind": ["bomb"]
+    "high_card": [
+      "high"
+    ],
+    "pair": [
+      "pair"
+    ],
+    "two_pair": [
+      "pair"
+    ],
+    "three_kind": [
+      "three"
+    ],
+    "straight": [
+      "straight"
+    ],
+    "full_house": [
+      "pair",
+      "three"
+    ],
+    "four_kind": [
+      "bomb"
+    ],
+    "five_kind": [
+      "bomb"
+    ]
   },
   "integration_statuses": {
     "basic_scatter": "formal_complete",
-    "basic_guard": "formal_complete"
+    "basic_guard": "formal_complete",
+    "high_wind_scout": "formal_complete",
+    "high_forest_nurture": "formal_complete",
+    "high_fire_kindling": "formal_complete",
+    "high_mountain_stance": "formal_complete",
+    "high_wind_scatter": "formal_complete",
+    "high_forest_gather": "formal_complete",
+    "high_fire_scatter": "formal_complete",
+    "high_mountain_gather": "formal_complete",
+    "high_wind_startle": "formal_complete",
+    "high_forest_ambush": "formal_complete",
+    "high_fire_scorch": "formal_complete",
+    "high_mountain_suppress": "formal_complete",
+    "high_wind_lure": "formal_complete",
+    "high_forest_cultivate": "formal_complete",
+    "high_fire_ignite": "formal_complete",
+    "high_mountain_momentum": "formal_complete",
+    "high_wind_exchange": "formal_complete",
+    "high_forest_condense": "formal_complete",
+    "high_fire_momentum": "formal_complete",
+    "high_mountain_reflection": "formal_complete",
+    "high_wind_mixed_flow": "formal_complete",
+    "high_forest_transmission": "formal_complete",
+    "high_fire_burn_void": "formal_complete",
+    "high_mountain_rampart": "formal_complete",
+    "high_wind_piercing_cloud": "formal_complete"
   },
   "resource_paths": [
     "res://data/techniques/basic_scatter.tres",
-    "res://data/techniques/basic_guard.tres"
+    "res://data/techniques/basic_guard.tres",
+    "res://data/techniques/high_wind_scout.tres",
+    "res://data/techniques/high_forest_nurture.tres",
+    "res://data/techniques/high_fire_kindling.tres",
+    "res://data/techniques/high_mountain_stance.tres",
+    "res://data/techniques/high_wind_scatter.tres",
+    "res://data/techniques/high_forest_gather.tres",
+    "res://data/techniques/high_fire_scatter.tres",
+    "res://data/techniques/high_mountain_gather.tres",
+    "res://data/techniques/high_wind_startle.tres",
+    "res://data/techniques/high_forest_ambush.tres",
+    "res://data/techniques/high_fire_scorch.tres",
+    "res://data/techniques/high_mountain_suppress.tres",
+    "res://data/techniques/high_wind_lure.tres",
+    "res://data/techniques/high_forest_cultivate.tres",
+    "res://data/techniques/high_fire_ignite.tres",
+    "res://data/techniques/high_mountain_momentum.tres",
+    "res://data/techniques/high_wind_exchange.tres",
+    "res://data/techniques/high_forest_condense.tres",
+    "res://data/techniques/high_fire_momentum.tres",
+    "res://data/techniques/high_mountain_reflection.tres",
+    "res://data/techniques/high_wind_mixed_flow.tres",
+    "res://data/techniques/high_forest_transmission.tres",
+    "res://data/techniques/high_fire_burn_void.tres",
+    "res://data/techniques/high_mountain_rampart.tres",
+    "res://data/techniques/high_wind_piercing_cloud.tres"
   ]
 }

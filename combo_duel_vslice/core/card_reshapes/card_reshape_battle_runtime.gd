@@ -16,6 +16,7 @@ var _rng: RandomNumberGenerator
 var last_successful_hand_by_side: Dictionary = {}
 var trigger_replay_service
 var _action_serial: int = 0
+var successful_on_play_by_action: Dictionary = {}
 
 func _init(rules, effect_ports, rng: RandomNumberGenerator, timing_system) -> void:
     _rules = rules
@@ -67,9 +68,20 @@ func on_card_played(
         source_values: Dictionary = {}) -> Array[Dictionary]:
     var results: Array[Dictionary] = []
     for card in cards:
-        results.append_array(_dispatch(
-            card, "card_played", holder, source_values))
+        var card_results := _dispatch(card, "card_played", holder, source_values)
+        results.append_array(card_results)
+        for result in card_results:
+            if bool(result.get("applied", result.get("success", false))):
+                var token := str(source_values.get("action_token", ""))
+                if token != "":
+                    if not successful_on_play_by_action.has(token):
+                        successful_on_play_by_action[token] = []
+                    if not successful_on_play_by_action[token].has(str(card.id)):
+                        successful_on_play_by_action[token].append(str(card.id))
     return results
+
+func successful_on_play_ids(action_token: String) -> Array:
+    return successful_on_play_by_action.get(action_token, []).duplicate()
 
 func can_explicit_discard(holder, card) -> Dictionary:
     var results := _dispatch(card, "explicit_discard_attempt", holder)
@@ -166,6 +178,7 @@ func _on_battle_victory(event) -> Dictionary:
 func _on_battle_start(event) -> Dictionary:
     last_successful_hand_by_side.clear()
     _action_serial = 0
+    successful_on_play_by_action.clear()
     var applied := 0
     for side in event.context.get("actors", []):
         var all_cards: Array = []

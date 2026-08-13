@@ -8,6 +8,7 @@ const CardZoneHandlerScript = preload("res://core/effects/card_zone_effect_handl
 const CardAnomalyHandlerScript = preload("res://core/effects/card_anomaly_effect_handler.gd")
 const FlowHandlerScript = preload("res://core/effects/flow_effect_handler.gd")
 const ChoiceHandlerScript = preload("res://core/effects/choice_effect_handler.gd")
+const CollectionHandlerScript = preload("res://core/effects/collection_effect_handler.gd")
 
 var value_resolver
 var _handlers_by_op: Dictionary = {}
@@ -23,6 +24,7 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
     register_handler(CardAnomalyHandlerScript.new(value_resolver, random_source, content_catalog))
     register_handler(FlowHandlerScript.new(value_resolver))
     register_handler(ChoiceHandlerScript.new(random_source, value_resolver))
+    register_handler(CollectionHandlerScript.new(value_resolver, random_source))
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
     if not (handler is EffectHandler):

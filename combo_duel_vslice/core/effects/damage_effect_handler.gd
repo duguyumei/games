@@ -22,13 +22,24 @@ func execute(effect: Dictionary, context):
     match str(effect.get("op", "")):
         "damage":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            var is_true := bool(effect.get("true_damage", false))
+            if effect.has("true_damage_when"):
+                is_true = value_resolver.condition_met(
+                    effect["true_damage_when"], runtime)
             var result: Dictionary = runtime.ports.deal_damage(
-                runtime.actor, runtime.target, amount, "technique")
+                runtime.actor, runtime.target, amount, "technique", is_true,
+                runtime.action_token)
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "伤害结算失败")))
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [result]
             return EffectResultScript.succeeded(
                 "伤害 %d（防御-%d / 生命-%d）" % [
-                    amount, result["defense_lost"], result["life_lost"]])
+                    amount, result["defense_lost"], result["life_lost"]], {
+                    "life_lost": int(result["life_lost"]),
+                    "defense_lost": int(result["defense_lost"]),
+                    "true_damage": is_true,
+                })
         "multi_damage":
             return _execute_multi_damage(effect, runtime)
     return _unsupported(effect)
@@ -37,8 +48,14 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
     match str(effect.get("op", "")):
         "damage":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
-            intent["damage"] = int(intent.get("damage", 0)) + int(floor(
+            var is_true := bool(effect.get("true_damage", false))
+            if effect.has("true_damage_when"):
+                is_true = value_resolver.condition_met(effect["true_damage_when"], context)
+            var projected := amount if is_true else int(floor(
                 amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
+            intent["damage"] = int(intent.get("damage", 0)) + projected
+            if is_true:
+                intent["true_damage"] = int(intent.get("true_damage", 0)) + projected
             intent["segments"] = int(intent.get("segments", 0)) + 1
         "multi_damage":
             var count := maxi(0, int(effect.get("segments", 1)))

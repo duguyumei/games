@@ -68,6 +68,18 @@ func _init(
             self,
             "_on_turn_end")
         timing_system.register_weak_handler(
+            timing_system.DEFENSE_DECAY_RESOLVED,
+            "status_system.defense_decay_records", 500, self,
+            "_on_defense_decay_resolved")
+        timing_system.register_weak_handler(
+            timing_system.ROUND_START,
+            "status_system.next_round_records", 500, self,
+            "_on_round_start_records")
+        timing_system.register_weak_handler(
+            timing_system.ACTION_RESOLUTION_END,
+            "status_system.action_resolution_records", 500, self,
+            "_on_action_resolution_end_records")
+        timing_system.register_weak_handler(
             timing_system.TURN_END,
             "status_system.card_turn_end_final",
             1100,
@@ -479,6 +491,9 @@ func register_delayed_effects(
         "target": runtime.target,
         "hand_result": runtime.hand_result.duplicate(true),
         "played_cards": runtime.played_cards.duplicate(),
+        "group_snapshot": runtime.group_snapshot.duplicate(true),
+        "captures": runtime.captures.duplicate(true),
+        "frozen_targets": runtime.captures.values().duplicate(true),
         "technique_id": runtime.technique_id,
         "technique_name": runtime.technique_name,
         "actual_hand_id": runtime.actual_hand_id,
@@ -489,6 +504,93 @@ func register_delayed_effects(
     _delay_serial += 1
     delayed_records.append(record)
     return {"success": true, "record": record}
+
+func register_defense_decay_return(runtime) -> Dictionary:
+    var record := {
+        "id": "decay-return-%06d" % _delay_serial,
+        "kind": "defense_decay_return", "actor": runtime.actor,
+        "source_round": _current_round_hint(runtime), "captured_decay": -1,
+    }
+    _delay_serial += 1
+    delayed_records.append(record)
+    return {"success": true, "record": record}
+
+func register_reflection_expiry(runtime, percent: int) -> Dictionary:
+    var token := "reflection-%06d" % _delay_serial
+    _delay_serial += 1
+    runtime.actor.set_reflection_percent(percent, token)
+    delayed_records.append({
+        "id": token, "kind": "reflection_expiry", "actor": runtime.actor,
+        "source_round": _current_round_hint(runtime),
+    })
+    return {"success": true, "source_token": token}
+
+func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary:
+    delayed_records.append({
+        "id": "window-check-%06d" % _delay_serial,
+        "kind": "no_life_loss_disruption", "actor": runtime.actor,
+        "target": runtime.target,
+        "action_token": runtime.action_token,
+        "effect": effect.duplicate(true),
+    })
+    _delay_serial += 1
+    return {"success": true}
+
+func _on_defense_decay_resolved(event) -> Dictionary:
+    var decay: Dictionary = event.context.get("decay", {})
+    for record in delayed_records:
+        if record.get("kind") == "defense_decay_return" \
+                and record.get("actor") == event.actor \
+                and int(record.get("captured_decay", -1)) < 0:
+            record["captured_decay"] = int(decay.get("lost", 0))
+            record["return_round"] = int(event.round_number) + 1
+    return {"success": true}
+
+func _on_round_start_records(event) -> Dictionary:
+    var due: Array = delayed_records.filter(func(record):
+        return record.get("kind") == "defense_decay_return" \
+            and int(record.get("return_round", -1)) == int(event.round_number))
+    for record in due:
+        var actor = record["actor"]
+        if _effect_ports() != null:
+            _effect_ports().add_defense(
+                actor, int(record.get("captured_decay", 0)), "delayed_technique")
+        delayed_records.erase(record)
+    return {"success": true, "detail": "返还 %d 份防御衰减记录" % due.size()}
+
+func _on_action_resolution_end_records(event) -> Dictionary:
+    var due: Array = delayed_records.filter(func(record):
+        return record.get("kind") == "no_life_loss_disruption" \
+            and _action_token_matches(record, event.context))
+    for record in due:
+        var actor_result: Dictionary = {}
+        for result_value in event.context.get("action_results", []):
+            var result: Dictionary = result_value
+            if result.get("side") == record["actor"]:
+                actor_result = result
+                break
+        if int(actor_result.get("actual_life_loss", 0)) <= 0:
+            var context = EffectContextScript.new().configure({
+                "ports": _effect_ports(), "actor": record["actor"],
+                "target": record["target"], "source_kind": "delayed_technique",
+                "captures": {},
+            })
+            _effect_executor.execute_all([record["effect"]], context)
+        delayed_records.erase(record)
+    return {"success": true}
+
+func _action_token_matches(record: Dictionary, context: Dictionary) -> bool:
+    var record_token := str(record.get("action_token", ""))
+    if record_token == "":
+        return true
+    for token_value in context.get("metadata", {}).get("action_tokens", []):
+        if str(token_value) == record_token:
+            return true
+    return false
+
+func _current_round_hint(runtime) -> int:
+    return int(runtime.action_token.split("-")[-2]) \
+        if runtime.action_token.split("-").size() >= 3 else 0
 
 func _on_battle_start(event) -> Dictionary:
     var applied_count := 0
@@ -534,6 +636,12 @@ func _on_turn_end(event) -> Dictionary:
             0,
             null,
             str(delayed["label"]))
+    var reflection_due: Array = delayed_records.filter(func(record):
+        return record.get("kind") == "reflection_expiry" \
+            and record.get("actor") == event.actor)
+    for record in reflection_due:
+        event.actor.clear_reflection_if_source(str(record["id"]))
+        delayed_records.erase(record)
     _dispatch_card_turn_end(event.actor)
     return {
         "success": true,
@@ -589,7 +697,8 @@ func _resolve_delayed_effect_chain(record: Dictionary) -> Dictionary:
         "technique_pool": str(record.get("technique_pool", "")),
         "sequence_book": record.get("sequence_book"),
         "source_kind": "delayed_technique",
-        "captures": {},
+        "captures": record.get("captures", {}).duplicate(true),
+        "group_snapshot": record.get("group_snapshot", {}).duplicate(true),
     })
     return _effect_executor.execute_all(record["effects"], context)
 

@@ -270,6 +270,7 @@ func _init(
     player.use_card_reshape_runtime(card_reshape_runtime)
     enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)
+    effect_ports.use_effect_executor(effect_executor)
     status_system.use_effect_executor(effect_executor)
     enemy_action_controller = EnemyActionControllerScript.new(rng)
     timing_system.register_weak_handler(

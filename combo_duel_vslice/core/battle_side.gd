@@ -28,6 +28,7 @@ var direct_power_percent: int = 0
 var momentum_value: int = 0
 var last_successful_technique_hand_id: String = ""
 var current_reflection_percent: int = 0
+var current_reflection_source_token: String = ""
 var draw_pile: Array = []
 var hand: Array = []
 var staging: Array = []
@@ -118,6 +119,7 @@ func reset(
     momentum_value = 0
     last_successful_technique_hand_id = ""
     current_reflection_percent = 0
+    current_reflection_source_token = ""
     equipped_inner_skill_ids.clear()
     item_ids.clear()
     technique_slot_index = 0
@@ -247,6 +249,7 @@ func capture_passive_query_state() -> Dictionary:
         "momentum_value": momentum_value,
         "last_successful_technique_hand_id": last_successful_technique_hand_id,
         "current_reflection_percent": current_reflection_percent,
+        "current_reflection_source_token": current_reflection_source_token,
         "draw_ids": draw_pile.map(func(card): return str(card.id)),
         "hand_ids": hand.map(func(card): return str(card.id)),
         "staging_ids": staging.map(func(card): return str(card.id)),
@@ -290,6 +293,8 @@ func replace_passive_query_state(state: Dictionary) -> void:
         "last_successful_technique_hand_id", last_successful_technique_hand_id))
     current_reflection_percent = int(state.get(
         "current_reflection_percent", current_reflection_percent))
+    current_reflection_source_token = str(state.get(
+        "current_reflection_source_token", current_reflection_source_token))
     draw_pile.assign(state.get("draw_cards", draw_pile))
     hand.assign(state.get("hand_cards", hand))
     staging.assign(state.get("staging_cards", staging))
@@ -443,9 +448,17 @@ func set_momentum(value: int) -> int:
     momentum_value = maxi(0, value)
     return momentum_value
 
-func set_reflection_percent(value: int) -> int:
+func set_reflection_percent(value: int, source_token: String = "") -> int:
     current_reflection_percent = maxi(0, value)
+    current_reflection_source_token = source_token if current_reflection_percent > 0 else ""
     return current_reflection_percent
+
+func clear_reflection_if_source(source_token: String) -> bool:
+    if source_token == "" or current_reflection_source_token != source_token:
+        return false
+    current_reflection_percent = 0
+    current_reflection_source_token = ""
+    return true
 
 func configure_inner_skills(
         inner_skill_ids: Array,

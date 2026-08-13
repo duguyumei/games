@@ -20,6 +20,7 @@ func operation_ids() -> Array[String]:
         "apply_random_card_anomaly", "apply_card_anomaly_to_captured",
         "apply_temporary_reshape_to_captured",
         "clear_temporary_reshape_from_captured",
+        "apply_anomaly_from_query",
     ]
 
 func group_name() -> String:
@@ -35,6 +36,16 @@ func execute(effect: Dictionary, context):
         return _clear_temporary_reshape(effect, runtime)
     if str(effect.get("op", "")) == "apply_card_anomaly_to_captured":
         return _apply_to_captured(effect, runtime)
+    if str(effect.get("op", "")) == "apply_anomaly_from_query":
+        var query_result: Dictionary = runtime.ports.query_effect_targets(
+            runtime, _resolved_query(effect.get("query", {}), runtime), rng)
+        if not query_result.get("success", false):
+            return EffectResultScript.failed(str(query_result.get("reason", "异状目标查询失败")))
+        runtime.captures[str(effect.get("capture", "anomaly_targets"))] = query_result["cards"]
+        var apply_effect := effect.duplicate(true)
+        apply_effect["op"] = "apply_card_anomaly_to_captured"
+        apply_effect["capture"] = str(effect.get("capture", "anomaly_targets"))
+        return _apply_to_captured(apply_effect, runtime)
     var target = runtime.target
     if target == null:
         return EffectResultScript.failed("异状处理器缺少目标")
@@ -97,6 +108,11 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             "apply_temporary_reshape_to_captured",
             "clear_temporary_reshape_from_captured"]:
         return
+    if str(effect.get("op", "")) == "apply_anomaly_from_query":
+        if not effect.get("query") is Dictionary:
+            validator.report_error(scope + ".query", "必须是对象")
+        else:
+            validator.validate_target_query(effect["query"], scope + ".query")
     if not effect.has("random_options"):
         validator.validate_anomaly_reference(effect, scope)
 
@@ -169,6 +185,17 @@ func _layers(effect: Dictionary, runtime) -> int:
     var value = effect.get("layers", effect.get("amount", 1))
     return maxi(1, value_resolver.resolve(value, runtime)) \
         if value is Dictionary else maxi(1, int(value))
+
+func _resolved_query(value: Dictionary, runtime) -> Dictionary:
+    var query := value.duplicate(true)
+    if query.get("limit") is Dictionary:
+        query["limit"] = value_resolver.resolve(query["limit"], runtime)
+    var filters: Dictionary = query.get("filters", {}).duplicate(true)
+    if filters.get("effective_qi_at_most") is Dictionary:
+        filters["effective_qi_at_most"] = value_resolver.resolve(
+            filters["effective_qi_at_most"], runtime)
+    query["filters"] = filters
+    return query
 
 func _zone_cards(side, zone: String) -> Array:
     match zone:

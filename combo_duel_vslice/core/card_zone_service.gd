@@ -432,6 +432,9 @@ func _bind_card_policies(side, card) -> void:
     if card.has_method("configure_battle_permission_service"):
         card.configure_battle_permission_service(side.battle_permission_service)
 
+func bind_card_policies(side, card) -> void:
+    _bind_card_policies(side, card)
+
 func shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
     for index in range(cards.size() - 1, 0, -1):
         var other := rng.randi_range(0, index)

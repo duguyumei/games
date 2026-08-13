@@ -10,7 +10,9 @@ const BEFORE_NORMAL_DRAW := "before_normal_draw"
 const AFTER_NORMAL_DRAW := "after_normal_draw"
 const ACTION_WINDOW_START := "action_window_start"
 const GROUP_END := "group_end"
+const ACTION_RESOLUTION_END := "action_resolution_end"
 const ACTION_WINDOW_END := "action_window_end"
+const DEFENSE_DECAY_RESOLVED := "defense_decay_resolved"
 const TURN_END := "turn_end"
 const BATTLE_END := "battle_end"
 
@@ -22,7 +24,9 @@ const ORDERED_TIMINGS := [
     AFTER_NORMAL_DRAW,
     ACTION_WINDOW_START,
     GROUP_END,
+    ACTION_RESOLUTION_END,
     ACTION_WINDOW_END,
+    DEFENSE_DECAY_RESOLVED,
     TURN_END,
     BATTLE_END,
 ]

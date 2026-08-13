@@ -127,6 +127,8 @@ func _initialize() -> void:
     _test_retrigger_reuses_frozen_snapshot()
     _test_delayed_effect_reuses_frozen_snapshot()
     _test_reflection_override_sources_and_recursion_guard()
+    _test_defense_decay_return_records()
+    _test_action_resolution_results_and_no_life_loss_disruption()
     _test_synchronized_reflection_matches_normal_damage()
     _test_all_insights_grow_empty_slots()
     _test_s2f6a_basic_techniques_and_loadout_limits()
@@ -143,14 +145,14 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 2, "正式功法仓库包含两门基础功法")
-    _assert_equal(repository.resource_paths.size(), 2, "正式功法资源路径包含两项")
+    _assert_equal(repository.techniques.size(), 27, "正式功法仓库包含基础功法与25门高牌功法")
+    _assert_equal(repository.resource_paths.size(), 27, "正式功法资源路径包含27项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
         catalog.definition("techniques")["integration_statuses"],
-        {"basic_scatter": "formal_complete", "basic_guard": "formal_complete"},
-        "两门基础功法均正式接入")
+        repository.integration_statuses,
+        "功法仓库与内容目录接入状态一致")
     for hand_id in HAND_IDS:
         _assert_equal(
             catalog.definition("sequences")[hand_id], ["basic_scatter"],
@@ -160,12 +162,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"], [], "商店功法候选为空")
+    _assert_equal(technique_category["candidate_ids"].size(), 25, "商店包含25门高牌正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 2, "正式目录只存在两门基础功法资源")
+    _assert_equal(resource_count, 27, "正式目录存在基础功法与25门高牌功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -354,6 +356,81 @@ func _test_reflection_override_sources_and_recursion_guard() -> void:
     engine.deal_damage(engine.enemy, engine.player, 10, "technique")
     _assert_equal(engine.player.life, player_life, "反震伤害被防御吸收时不会递归反震")
     _assert_equal(engine.enemy.defense, 6, "反震作为普通伤害扣除攻击方防御")
+
+    var expiry_context = EffectContextScript.new().configure({
+        "ports": engine.effect_ports,
+        "actor": engine.player,
+        "target": engine.enemy,
+        "action_token": "player-3-100",
+    })
+    var expiry: Dictionary = engine.status_system.register_reflection_expiry(
+        expiry_context, 50)
+    engine.player.set_reflection_percent(25, "later-source")
+    engine.status_system._on_turn_end({"actor": engine.player})
+    _assert_equal(engine.player.current_reflection_percent, 25, "反震到期不清除后来覆盖的新来源")
+    _assert_true(str(expiry.get("source_token", "")) != "", "反震延迟记录具有来源token")
+
+func _test_defense_decay_return_records() -> void:
+    var engine = _engine_with_cards([])
+    var context = EffectContextScript.new().configure({
+        "ports": engine.effect_ports,
+        "actor": engine.player,
+        "target": engine.enemy,
+        "action_token": "player-4-100",
+    })
+    engine.status_system.register_defense_decay_return(context)
+    engine.status_system.register_defense_decay_return(context)
+    engine.status_system._on_defense_decay_resolved({
+        "actor": engine.player,
+        "round_number": 4,
+        "context": {"decay": {"lost": 3}},
+    })
+    engine.player.defense = 0
+    engine.status_system._on_round_start_records({"round_number": 5})
+    _assert_equal(engine.player.defense, 6, "立山式同回合两份记录分别返还自然衰减")
+
+    engine.status_system.register_defense_decay_return(context)
+    engine.status_system._on_defense_decay_resolved({
+        "actor": engine.player,
+        "round_number": 4,
+        "context": {"decay": {"lost": 0}},
+    })
+    engine.status_system._on_round_start_records({"round_number": 5})
+    _assert_equal(engine.player.defense, 6, "防御提前打光时立山式返还相应减少为零")
+
+func _test_action_resolution_results_and_no_life_loss_disruption() -> void:
+    var engine = _engine_with_cards([])
+    var target_card = _card("3", "wind")
+    engine.enemy.hand = [target_card]
+    engine.enemy.defense = 5
+    var context = EffectContextScript.new().configure({
+        "ports": engine.effect_ports,
+        "actor": engine.player,
+        "target": engine.enemy,
+    })
+    var disruption := {
+        "op": "apply_anomaly_from_query",
+        "query": {"side":"target", "zone":"hand", "order":"zone", "limit":1,
+            "filters":{"card_kind":"normal"}},
+        "capture":"suppressed", "category":"state", "anomaly":"vulnerability",
+    }
+    engine.status_system.register_no_life_loss_disruption(context, disruption)
+    engine.action_resolver.begin_action_resolution([engine.player, engine.enemy])
+    engine.deal_damage(engine.enemy, engine.player, 0, "technique")
+    var completed: Dictionary = engine.action_resolver.finish_action_resolution()
+    _assert_true(completed.get("success", false), "单次行动完成时点成功发出")
+    _assert_true(target_card.has_anomaly("state", "vulnerability"), "本次未损失生命时镇山施加破绽")
+
+    engine.status_system.remove_card_anomaly(target_card, "state", "vulnerability", "test")
+    engine.status_system.register_no_life_loss_disruption(context, disruption)
+    engine.action_resolver.begin_action_resolution([engine.player, engine.enemy])
+    engine.player.defense = 0
+    engine.deal_damage(engine.enemy, engine.player, 1, "technique")
+    completed = engine.action_resolver.finish_action_resolution()
+    var player_result: Dictionary = completed.get("results", []).filter(
+        func(value): return value.get("side") == engine.player)[0]
+    _assert_equal(player_result.get("actual_life_loss", 0), 1, "行动结果提供本次实际生命损失")
+    _assert_true(not target_card.has_anomaly("state", "vulnerability"), "本次损失生命时镇山不施加破绽")
 
 func _test_synchronized_reflection_matches_normal_damage() -> void:
     var engine = _engine_with_cards([])

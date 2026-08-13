@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_mountain_suppress"
+display_name = "镇山"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "获得P点防御。本次行动全部结算完成时，若敌方未使我方损失生命，使敌方随机1张合法手牌获得破绽。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["defense","anomaly_apply","enemy_disruption"])
+public_behavior_summary = Array[String](["defense","anomaly_apply","enemy_disruption"])
+implementation_category = "C"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"register_no_life_loss_disruption","effect":{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"hand","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"vulnerability"}}},"capture":"suppress_target","category":"state","anomaly":"vulnerability"}}]
+

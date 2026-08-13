@@ -2,6 +2,7 @@ class_name EffectValueResolver
 extends RefCounted
 
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")
 
 func resolve(spec, context) -> int:
     var runtime = EffectContextScript.coerce(context)
@@ -67,6 +68,27 @@ func resolve(spec, context) -> int:
             for card in _capture_cards(runtime, spec):
                 total += int(card.get("qi_value", 0) if card is Dictionary else card.qi_value)
             return total
+        "capture_base_qi_sum":
+            return HandGroupSnapshotScript.base_qi_sum(
+                runtime.group_snapshot, _capture_cards(runtime, spec))
+        "capture_current_effective_qi":
+            var cards := _capture_cards(runtime, spec)
+            if cards.is_empty():
+                return 0
+            return HandGroupSnapshotScript.current_effective_qi(
+                runtime.group_snapshot, cards[0], runtime.actor)
+        "group_base_qi_sum":
+            return HandGroupSnapshotScript.base_qi_sum(
+                runtime.group_snapshot,
+                runtime.group_snapshot.get("played_cards", runtime.played_cards))
+        "extra_count":
+            return runtime.group_snapshot.get("extra_cards", []).size()
+        "extra_attribute_count":
+            var count := 0
+            for card in runtime.group_snapshot.get("extra_cards", []):
+                if _card_is_attribute(card, str(spec.get("attribute", "")), runtime):
+                    count += 1
+            return count
         "capture_attribute_qi_sum":
             var total := 0
             for card in _capture_cards(runtime, spec):
@@ -176,6 +198,39 @@ func condition_met(condition: Dictionary, context) -> bool:
                 has_anomaly = true
                 break
         if not has_anomaly:
+            return false
+    if condition.has("same_qi") and not HandGroupSnapshotScript.is_same_qi(
+            runtime.group_snapshot, str(condition["same_qi"])):
+        return false
+    if condition.has("capture_result_life_lost"):
+        var results: Array = runtime.captures.get(
+            str(condition["capture_result_life_lost"]), [])
+        if results.is_empty() or int(results[0].get("life_lost", 0)) <= 0:
+            return false
+    if condition.has("value_at_least"):
+        var comparison: Dictionary = condition["value_at_least"]
+        if resolve(comparison.get("value", 0), runtime) < int(comparison.get("minimum", 0)):
+            return false
+    if condition.has("value_greater_than"):
+        var comparison: Dictionary = condition["value_greater_than"]
+        if resolve(comparison.get("value", 0), runtime) <= int(comparison.get("threshold", 0)):
+            return false
+    if condition.has("initial_power_greater_than_group_base_qi"):
+        var total := HandGroupSnapshotScript.base_qi_sum(
+            runtime.group_snapshot,
+            runtime.group_snapshot.get("played_cards", runtime.played_cards))
+        if runtime.initial_power <= total:
+            return false
+    if condition.has("capture_card_effective_above_base"):
+        var cards: Array = runtime.captures.get(
+            str(condition["capture_card_effective_above_base"]), [])
+        if cards.is_empty():
+            return false
+        var card = cards[0]
+        var base := int(runtime.group_snapshot.get("facts_by_id", {}).get(
+            str(card.id), {}).get("base_qi_at_freeze", card.current_base_qi_value()))
+        if HandGroupSnapshotScript.current_effective_qi(
+                runtime.group_snapshot, card, runtime.actor) <= base:
             return false
     if condition.has("actor_hand_less_than_target"):
         if runtime.actor == null or runtime.target == null \

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_forest_gather"
+display_name = "聚林"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "获得 floor(P/2) 点防御。每张额外林真气获得重聚；林同气时可选择牌库中1张重聚真气获得1层成长。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["defense","anomaly_apply","same_qi_payoff","extra_card_commitment"])
+public_behavior_summary = Array[String](["defense","anomaly_apply","same_qi_payoff","extra_card_commitment"])
+implementation_category = "B"
+effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_group_cards","kind":"extra","attribute":"forest","capture":"extra_forest"},{"op":"apply_card_anomaly_to_captured","capture":"extra_forest","category":"mark","anomaly":"regroup","result_capture":"regroup_applied"},{"op":"select_cards","choice_id":"gather_growth","prompt":"选择1张重聚真气获得成长","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"draw_pile","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"regroup","present":true}}},"capture":"gather_growth_target","when":{"same_qi":"forest"}},{"op":"apply_card_anomaly_to_captured","capture":"gather_growth_target","category":"buff","anomaly":"growth","layers":1}]
+

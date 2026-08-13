@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_mountain_momentum"
+display_name = "山·蓄势"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "获得P点防御。获得 floor(P₀/2) 点连势。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["defense","momentum"])
+public_behavior_summary = Array[String](["defense","momentum"])
+implementation_category = "A"
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"add_momentum","amount":{"kind":"initial_power_fraction","numerator":1,"denominator":2,"minimum":0}}]
+

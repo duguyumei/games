@@ -15,6 +15,11 @@ func operation_ids() -> Array[String]:
         "set_reflection_percent", "add_direct_power_fixed",
         "add_direct_power_percent",
         "register_delayed_effects",
+        "register_defense_decay_return", "set_reflection_until_turn_end",
+        "register_no_life_loss_disruption",
+        "steal_random_card_if_power_target_and_same_qi",
+        "recover_forest_priority",
+        "burn_deck_then_heat_hand",
         "retrigger_current_hand_technique",
     ]
 
@@ -42,6 +47,39 @@ func execute(effect: Dictionary, context):
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             runtime.ports.set_reflection_percent(runtime.actor, amount)
             return EffectResultScript.succeeded("反震设为 %d%%" % runtime.actor.current_reflection_percent)
+        "set_reflection_until_turn_end":
+            var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
+            var result: Dictionary = runtime.ports.register_reflection_expiry(runtime, amount)
+            return EffectResultScript.succeeded("反震设为 %d%%" % amount) \
+                if result.get("success", false) else EffectResultScript.failed("反震到期记录失败")
+        "register_defense_decay_return":
+            runtime.ports.register_defense_decay_return(runtime)
+            return EffectResultScript.succeeded("记录本回合自然防御衰减")
+        "register_no_life_loss_disruption":
+            runtime.ports.register_no_life_loss_disruption(runtime, effect.get("effect", {}))
+            return EffectResultScript.succeeded("记录行动结束生命损失检查")
+        "steal_random_card_if_power_target_and_same_qi":
+            if runtime.group_snapshot.get("power_formation_target_cards", []).is_empty() \
+                    or not value_resolver.condition_met({
+                        "same_qi": str(effect.get("attribute", "wind"))}, runtime):
+                return EffectResultScript.succeeded()
+            var result: Dictionary = runtime.ports.steal_random_normal_card(
+                runtime.actor, runtime.target)
+            return EffectResultScript.succeeded(
+                "夺取敌方真气" if result.get("success", false) else "")
+        "recover_forest_priority":
+            var result: Dictionary = runtime.ports.recover_forest_priority(
+                runtime.actor, runtime.power,
+                value_resolver.condition_met({"same_qi": "forest"}, runtime))
+            return EffectResultScript.succeeded(
+                "回收真气" if result.get("success", false) else "")
+        "burn_deck_then_heat_hand":
+            var result: Dictionary = runtime.ports.burn_deck_then_heat_hand(
+                runtime.actor,
+                value_resolver.condition_met({"same_qi": "fire"}, runtime),
+                str(effect.get("choice_capture", "heat_target")), runtime)
+            return EffectResultScript.succeeded(str(result.get("detail", ""))) \
+                if result.get("success", true) else EffectResultScript.failed(str(result.get("reason", "引火失败")))
         "add_direct_power_fixed":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             runtime.ports.add_direct_power_fixed(runtime.actor, amount)
@@ -88,3 +126,6 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                 effect.get("occurrences"), scope + ".occurrences", "occurrences")
             validator.validate_nested_battle_effects(
                 effect.get("effects"), scope + ".effects")
+        "register_no_life_loss_disruption":
+            validator.validate_nested_battle_effects(
+                [effect.get("effect", {})], scope + ".effect")

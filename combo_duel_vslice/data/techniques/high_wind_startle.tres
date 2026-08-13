@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_wind_startle"
+display_name = "惊风"
+pool = "high"
+special = false
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String](["high_card"])
+built_in_fallback_order = 0
+description = "造成 floor(P/2) 点普通伤害。敌方随机明确弃掉1张合法手牌。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String](["damage","discard","enemy_disruption"])
+public_behavior_summary = Array[String](["damage","discard","enemy_disruption"])
+implementation_category = "A"
+effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"target","zone":"hand","order":"random","limit":1,"filters":{"card_kind":"normal","explicit_discard_allowed":true}},"capture":"startle_discard"},{"op":"move_captured","capture":"startle_discard","from_side":"target","from_zone":"hand","to_side":"target","to_zone":"discard_pile","reason":"explicit_discard"}]
