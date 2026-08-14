@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_forest_swarm_guard"
+display_name="林·群蛊护脉"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="令N为结算开始时我方剩余手牌毒牌数。获得floor(P/2)+3N点防御；若N≥3，从牌库随机获得1张带毒普通真气入手。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","draw","same_qi_payoff"])
+public_behavior_summary=Array[String](["defense","draw"])
+implementation_category="B"
+effects=[{"op":"capture_value","value":{"kind":"zone_anomaly_count","side":"actor","zone":"hand","category":"state","anomaly":"poison"},"capture":"n"},{"op":"defense","amount":{"kind":"add","values":[{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},{"kind":"multiply","values":[3,{"kind":"capture_field_first","capture":"n","field":"amount"}]}]}},{"op":"move_query","query":{"side":"actor","zone":"draw_pile","order":"random","limit":1,"filters":{"card_kind":"normal","anomaly":{"category":"state","id":"poison","present":true}}},"to_side":"actor","to_zone":"hand","reason":"draw","capture":"recovered","when":{"value_at_least":{"value":{"kind":"capture_field_first","capture":"n","field":"amount"},"minimum":3}}}]

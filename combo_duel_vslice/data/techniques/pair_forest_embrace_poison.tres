@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_forest_embrace_poison"
+display_name="林·抱毒守元"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="记录我方手牌毒量H。获得floor(P/2)+floor(H/3)点防御；我方受到floor(H/12)点毒伤，敌方受到floor(H/6)点毒伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","true_damage"])
+implementation_category="B"
+effects=[{"op":"capture_value","value":{"kind":"zone_anomaly_qi_sum","side":"actor","zone":"hand","category":"state","anomaly":"poison"},"capture":"h"},{"op":"defense","amount":{"kind":"add","values":[{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"h","field":"amount"},"divisor":3}]}},{"op":"damage","phase":"damage","from_side":"actor","to_side":"actor","damage_type":"poison","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"h","field":"amount"},"divisor":12}},{"op":"damage","phase":"damage","damage_type":"poison","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"h","field":"amount"},"divisor":6}}]

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_forest_double_cache"
+display_name="林·双藏"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得floor(P/2)点防御。我方剩余手牌与牌库各随机1张能够获得毒的普通真气获得毒。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","anomaly_apply"])
+implementation_category="A"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"apply_anomaly_from_query","query":{"side":"actor","zone":"hand","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"}}},"capture":"hand_poison","category":"state","anomaly":"poison"},{"op":"apply_anomaly_from_query","query":{"side":"actor","zone":"draw_pile","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"}}},"capture":"deck_poison","category":"state","anomaly":"poison"}]

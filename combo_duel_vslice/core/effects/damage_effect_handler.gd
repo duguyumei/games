@@ -26,9 +26,22 @@ func execute(effect: Dictionary, context):
             if effect.has("true_damage_when"):
                 is_true = value_resolver.condition_met(
                     effect["true_damage_when"], runtime)
+            var damage_type := str(effect.get(
+                "damage_type", "true" if is_true else "normal"))
+            if effect.has("damage_type_when"):
+                var typed: Dictionary = effect["damage_type_when"]
+                damage_type = str(typed.get("then", "normal")) \
+                    if value_resolver.condition_met(typed.get("when", {}), runtime) \
+                    else str(typed.get("else", "normal"))
+            is_true = damage_type == "true"
+            var damage_actor = runtime.target \
+                if str(effect.get("from_side", "actor")) == "target" else runtime.actor
+            var damage_target = runtime.actor \
+                if str(effect.get("to_side", "target")) == "actor" else runtime.target
             var result: Dictionary = runtime.ports.deal_damage(
-                runtime.actor, runtime.target, amount, "technique", is_true,
-                runtime.action_token)
+                damage_actor, damage_target, amount,
+                str(effect.get("source_kind", "technique")), is_true,
+                runtime.action_token, damage_type)
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "伤害结算失败")))
             if effect.has("capture"):
@@ -39,6 +52,7 @@ func execute(effect: Dictionary, context):
                     "life_lost": int(result["life_lost"]),
                     "defense_lost": int(result["defense_lost"]),
                     "true_damage": is_true,
+                    "damage_type": damage_type,
                 })
         "multi_damage":
             return _execute_multi_damage(effect, runtime)
@@ -51,11 +65,15 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
             var is_true := bool(effect.get("true_damage", false))
             if effect.has("true_damage_when"):
                 is_true = value_resolver.condition_met(effect["true_damage_when"], context)
-            var projected := amount if is_true else int(floor(
+            var damage_type := str(effect.get(
+                "damage_type", "true" if is_true else "normal"))
+            var projected := amount if damage_type != "normal" else int(floor(
                 amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
             intent["damage"] = int(intent.get("damage", 0)) + projected
-            if is_true:
+            if damage_type == "true":
                 intent["true_damage"] = int(intent.get("true_damage", 0)) + projected
+            if damage_type == "poison":
+                intent["poison_damage"] = int(intent.get("poison_damage", 0)) + projected
             intent["segments"] = int(intent.get("segments", 0)) + 1
         "multi_damage":
             var count := maxi(0, int(effect.get("segments", 1)))

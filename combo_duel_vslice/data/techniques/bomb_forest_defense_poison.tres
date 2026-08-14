@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_forest_defense_poison"
+display_name="林·腐甲生蛊"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="记录我方当前防御F并全部移除。敌方受到floor(F/2)点毒伤，牌库随机至多floor(F/12)张合法牌获得毒；随后我方获得floor(P/2)点防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","true_damage","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"remove_all_defense","capture":"f"},{"op":"damage","phase":"damage","damage_type":"poison","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"f","field":"amount"},"divisor":2}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"draw_pile","order":"random","limit":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"f","field":"amount"},"divisor":12},"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"}}},"capture":"enemy_poison","category":"state","anomaly":"poison"},{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]

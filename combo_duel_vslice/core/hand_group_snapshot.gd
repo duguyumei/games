@@ -28,6 +28,10 @@ static func freeze(
             "card": card,
             "instance_id": str(card.id),
             "base_qi_at_freeze": _base_qi(card),
+            "effective_qi_at_freeze": current_effective_qi({}, card, side),
+            "growth_at_freeze": card.anomaly_layers("buff", "growth"),
+            "heat_at_freeze": card.anomaly_layers("buff", "qi_heat"),
+            "poison_at_freeze": card.has_anomaly("state", "poison"),
             "attributes_at_freeze": attributes,
         }
     var common: Array = ATTRIBUTES.duplicate()
@@ -38,6 +42,11 @@ static func freeze(
     for card in played_cards:
         if on_play_success_ids.has(str(card.id)):
             triggered_cards.append(card)
+    var played_poison_cards: Array = played_cards.filter(
+        func(card): return bool(facts_by_id[str(card.id)]["poison_at_freeze"]))
+    var played_poison_amount := 0
+    for card in played_poison_cards:
+        played_poison_amount += int(facts_by_id[str(card.id)]["effective_qi_at_freeze"])
     return {
         "played_cards": played_cards.duplicate(),
         "contributing_cards": contributing,
@@ -45,6 +54,9 @@ static func freeze(
         "facts_by_id": facts_by_id,
         "common_attributes": common,
         "on_play_success_cards": triggered_cards,
+        "played_poison_cards": played_poison_cards,
+        "played_poison_count": played_poison_cards.size(),
+        "played_poison_amount": played_poison_amount,
     }
 
 static func current_effective_qi(snapshot: Dictionary, card, side) -> int:
@@ -72,6 +84,18 @@ static func base_qi_sum(snapshot: Dictionary, cards: Array) -> int:
         total += int(snapshot.get("facts_by_id", {}).get(
             str(card.id), {}).get("base_qi_at_freeze", _base_qi(card)))
     return total
+
+static func frozen_effective_qi(snapshot: Dictionary, card) -> int:
+    return int(snapshot.get("facts_by_id", {}).get(
+        str(card.id), {}).get("effective_qi_at_freeze", 0))
+
+static func frozen_growth(snapshot: Dictionary, card) -> int:
+    return int(snapshot.get("facts_by_id", {}).get(
+        str(card.id), {}).get("growth_at_freeze", 0))
+
+static func frozen_heat(snapshot: Dictionary, card) -> int:
+    return int(snapshot.get("facts_by_id", {}).get(
+        str(card.id), {}).get("heat_at_freeze", 0))
 
 static func _base_qi(card) -> int:
     return int(card.current_base_qi_value()) \

@@ -7,7 +7,7 @@
 
 > 组合出招当前设计源 v0.30
 >
-> 状态：52 张完整真气牌组、8 张基础手牌、高牌／对子／三条／顺子／炸弹五个普通功法池与葫芦跨池读取、具体牌型独立槽位与循环序列、八种心得、同步出招、协同、同气增幅与同气连动继续生效。此前流派功法均已归档，五个普通正式功法池当前为空；特殊通用功法“散招”“守招”已正式接入，玩家八种初始序列均为一槽散招。实现只承接权威规则，不反向定义设计。
+> 状态：52 张完整真气牌组、8 张基础手牌、高牌／对子／三条／顺子／炸弹五个普通功法池与葫芦跨池读取、具体牌型独立槽位与循环序列、八种心得、同步出招、协同、同气增幅与同气连动继续生效。当前五个普通正式池共 77 门：高牌 36 门、对子 18 门、三条 10 门、顺子 7 门、炸弹 6 门；另有不属于五池的基础通用功法“散招”“守招”。此前 107 门流派候选仍为历史归档，不反向进入当前正式目录；玩家八种初始序列均保持一槽散招。实现只承接权威规则，不反向定义设计。
 >
 > 日期：2026-08-11
 
@@ -21,7 +21,7 @@
 4. [行动结算、触发队列与连击](./combat/12-action-resolution.md)
 5. [伤害、防御与对战结果](./combat/13-damage-defense-and-results.md)
 6. [真气效果、重塑与异状](./combat/14-qi-effects-and-statuses.md)
-7. [功法系统框架](./martial-arts/20-gongfa-framework.md)；[高牌正式功法目录](./martial-arts/24-gongfa-high-card-pool.md)；[旧蛊毒](./martial-arts/21-gongfa-poison-pool.md)、[旧风运转](./martial-arts/22-gongfa-wind-pool.md)与[旧火反击](./martial-arts/23-gongfa-fire-pool.md)仅为历史归档
+7. [功法系统框架](./martial-arts/20-gongfa-framework.md)；[首批高牌正式功法目录](./martial-arts/24-gongfa-high-card-pool.md)；[蛊毒功法](./martial-arts/25-gongfa-poison-candidate-pool.md)、[成长功法](./martial-arts/26-gongfa-growth-candidate-pool.md)与[跨系统桥接功法](./martial-arts/27-gongfa-bridge-candidate-pool.md)已经正式接入，52门稳定ID与池归属见[扩展正式功法索引](./martial-arts/28-gongfa-expanded-formal-pool-index.md)；[旧蛊毒](./martial-arts/21-gongfa-poison-pool.md)、[旧风运转](./martial-arts/22-gongfa-wind-pool.md)与[旧火反击](./martial-arts/23-gongfa-fire-pool.md)仅为历史归档
 8. [内功系统与目录](./martial-arts/30-neigong-framework.md)
 9. [玩家成长与消耗品](./progression/40-progression-overview.md)
 10. [修习与历练经济](./economy/50-training-and-experience.md)及[地图流程](./run/60-map-run-and-health.md)、[正式敌人内容](./run/61-enemy-content.md)

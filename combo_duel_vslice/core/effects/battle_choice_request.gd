@@ -9,6 +9,7 @@ var chooser: String = "actor"
 var minimum: int = 0
 var maximum: int = 0
 var insufficient_policy: String = ""
+var ordered: bool = false
 var candidates: Array = []
 var metadata: Dictionary = {}
 
@@ -19,6 +20,7 @@ func configure(values: Dictionary):
     minimum = int(values.get("minimum", 0))
     maximum = int(values.get("maximum", 0))
     insufficient_policy = str(values.get("insufficient_policy", ""))
+    ordered = bool(values.get("ordered", false))
     candidates = values.get("candidates", []).duplicate()
     metadata = values.get("metadata", {}).duplicate(true)
     return self
@@ -56,6 +58,8 @@ func requires_failure() -> bool:
 
 func should_auto_resolve() -> bool:
     var limits := effective_limits()
+    if ordered and int(limits["maximum"]) > 1:
+        return false
     return int(limits["minimum"]) == int(limits["maximum"]) \
         and (
             int(limits["maximum"]) == 0 \
@@ -110,6 +114,7 @@ func snapshot() -> Dictionary:
         "minimum": int(limits["minimum"]),
         "maximum": int(limits["maximum"]),
         "insufficient_policy": insufficient_policy,
+        "ordered": ordered,
         "candidate_ids": candidate_ids(),
         "candidates": candidate_snapshots,
         "metadata": metadata.duplicate(true),

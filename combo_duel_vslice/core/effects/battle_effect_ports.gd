@@ -118,9 +118,14 @@ func deal_damage(
         amount: int,
         source_kind: String,
         true_damage: bool = false,
-        action_token: String = "") -> Dictionary:
+        action_token: String = "",
+        damage_type: String = "",
+        resolution_metadata: Dictionary = {}) -> Dictionary:
+    var resolved_type := damage_type
+    if resolved_type == "":
+        resolved_type = "true" if true_damage else "normal"
     var resolved_amount := _resolve_actual_damage_amount(
-        actor, target, amount, source_kind, true_damage, action_token)
+        actor, target, amount, source_kind, resolved_type, action_token)
     if not resolved_amount.get("success", false):
         return {
             "success": false,
@@ -128,19 +133,24 @@ func deal_damage(
             "buffered": false,
         }
     var final_override = null
+    var poison_defense_intervention := 0
+    if resolved_type == "poison":
+        poison_defense_intervention = _poison_defense_intervention(
+            actor, target, amount, source_kind, action_token)
     if not _damage_resolver.is_buffering():
         final_override = int(resolved_amount["amount"])
     var result: Dictionary = _damage_resolver.resolve(
-        actor, target, amount, source_kind, true_damage,
-        _status_system, final_override)
+        actor, target, amount, source_kind, resolved_type == "true",
+        _status_system, final_override, resolved_type,
+        poison_defense_intervention, resolution_metadata)
     if not bool(result["buffered"]):
         _record_action_damage(actor, target, result)
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
     if not bool(result["buffered"]):
         _emit_damage_resolved(
-            actor, target, amount, source_kind, true_damage, result, false,
+            actor, target, amount, source_kind, resolved_type, result, false,
             action_token)
-        _resolve_reflection(actor, target, source_kind, result)
+        _resolve_reflection(actor, target, source_kind, resolved_type, result)
     result["success"] = true
     return result
 
@@ -199,10 +209,49 @@ func finish_action_resolution() -> Dictionary:
 func abort_action_resolution() -> void:
     _action_resolution_scope.clear()
 
-func flush_synchronized_damage() -> void:
-    _damage_resolver.flush_synchronized(
+func flush_synchronized_damage() -> Array:
+    return _damage_resolver.flush_synchronized(
         Callable(self, "_on_synchronized_damage_resolved"),
         Callable(self, "_resolve_synchronized_damage_amount"))
+
+func trigger_poison_card(
+        holder: BattleSide,
+        card,
+        action_token: String = "",
+        replayed: bool = false,
+        frozen_amount_override = null) -> Dictionary:
+    if holder == null or card == null or not card.has_anomaly("state", "poison"):
+        return {"success": false, "reason": "毒触发目标无效"}
+    var frozen_amount: int = (
+        current_effective_qi(holder, card)
+        if frozen_amount_override == null else maxi(0, int(frozen_amount_override)))
+    var damage: Dictionary = deal_damage(
+        holder, holder, frozen_amount, "毒", false, action_token, "poison", {
+            "kind": "poison_card_trigger",
+            "holder": holder,
+            "card": card,
+            "frozen_amount": frozen_amount,
+            "action_token": action_token,
+            "replayed": replayed,
+        })
+    if not damage.get("success", false):
+        return damage
+    var removed: Dictionary = remove_card_anomaly(
+        card, "state", "poison", "毒触发")
+    if not removed.get("changed", false):
+        return {"success": false, "reason": "毒伤完成后清除毒失败", "damage_result": damage}
+    if not bool(damage.get("buffered", false)):
+        notify_poison_triggered(
+            holder, card, frozen_amount, damage, action_token, replayed)
+    return {
+        "success": true,
+        "card": card,
+        "frozen_amount": frozen_amount,
+        "life_lost": int(damage.get("life_lost", 0)),
+        "actual_life_loss": int(damage.get("life_lost", 0)),
+        "damage_result": damage,
+        "buffered": bool(damage.get("buffered", false)),
+    }
 
 func add_defense(
         side: BattleSide,
@@ -297,24 +346,27 @@ func gain_battle_experience(side: BattleSide, amount: int) -> int:
     side.experience += gained
     return gained
 
-func generate_temporary_normal_card(side: BattleSide, attribute: String):
+func generate_temporary_normal_card(side: BattleSide, source):
     var ranks := [
         ["2", 2, 2], ["3", 3, 3], ["4", 4, 4], ["5", 5, 5],
         ["6", 6, 6], ["7", 7, 7], ["8", 8, 8], ["9", 9, 9],
         ["10", 10, 10], ["J", 11, 11], ["Q", 12, 11],
         ["K", 13, 11], ["A", 14, 12],
     ]
+    var attribute: String = str(source.current_attribute()) \
+        if source is Object and source.has_method("current_attribute") else str(source)
     if _battle_rng == null or attribute not in ["wind", "forest", "fire", "mountain"]:
         return null
     var rank: Array = ranks[_battle_rng.randi_range(0, ranks.size() - 1)]
+    if source is Object and source.has_method("current_rank_name"):
+        rank = [source.current_rank_name(), source.current_rank_order(), source.current_base_qi_value()]
     var card = QiCard.new(
         "%s-temp-%d" % [attribute, _battle_rng.randi()],
         str(rank[0]), int(rank[1]), int(rank[2]), attribute, attribute,
         "%s_%s" % [attribute, str(rank[0]).to_lower()])
     card.temporary_card = true
-    side.hand.append(card)
-    side.card_zone_service.bind_card_policies(side, card)
-    return card
+    var added: Dictionary = side.card_zone_service.add_generated(side, card, "hand", true)
+    return card if added.get("success", false) else null
 
 func steal_random_normal_card(actor: BattleSide, target: BattleSide) -> Dictionary:
     if actor == null or target == null or _battle_rng == null:
@@ -398,6 +450,47 @@ func notify_cards_played(
     var runtime = _card_reshape_runtime()
     return runtime.on_card_played(
         side, cards, source_values) if runtime != null else []
+
+func notify_poison_triggered(
+        holder: BattleSide,
+        card,
+        frozen_amount: int,
+        damage_result: Dictionary,
+        action_token: String = "",
+        replayed: bool = false) -> void:
+    if _committed_event_service != null:
+        var serial: int = int(_committed_event_service.next_serial())
+        _committed_event_service.commit("poison_trigger_completed", {
+            "event_token": _committed_event_service.make_token(
+                "poison_trigger_completed", holder, serial, action_token),
+            "event_serial": serial,
+            "actor": holder,
+            "owner": holder,
+            "holder": holder,
+            "source_card": card,
+            "source_card_instance_id": str(card.id),
+            "round_number": _round_number(),
+            "action_token": action_token,
+            "frozen_amount": maxi(0, frozen_amount),
+            "actual_life_loss": int(damage_result.get("life_lost", 0)),
+            "damage_result": damage_result.duplicate(true),
+            "replayed": replayed,
+        })
+    _status_system.handle_response_event("poison_trigger_completed", {
+        "holder": holder,
+        "actor": holder,
+        "card": card,
+        "source_card_instance_id": str(card.id),
+        "frozen_amount": maxi(0, frozen_amount),
+        "actual_life_loss": int(damage_result.get("life_lost", 0)),
+        "damage_result": damage_result.duplicate(true),
+        "action_token": action_token,
+        "replayed": replayed,
+    })
+
+func notify_response_event(event_kind: String, values: Dictionary) -> void:
+    if _status_system != null:
+        _status_system.handle_response_event(event_kind, values)
 
 func successful_on_play_ids(action_token: String) -> Array:
     var runtime = _card_reshape_runtime()
@@ -512,6 +605,23 @@ func can_apply_card_anomaly(
     return _status_system.can_apply_card_anomaly(
         card, category, anomaly_id, replace_state)
 
+func remove_card_anomaly(
+        card,
+        category: String,
+        anomaly_id: String = "",
+        source: String = "效果") -> Dictionary:
+    return _status_system.remove_card_anomaly(
+        card, category, anomaly_id, source)
+
+func set_card_anomaly_layers(
+        card,
+        category: String,
+        anomaly_id: String,
+        layers: int,
+        source: String = "效果") -> Dictionary:
+    return _status_system.set_card_anomaly_layers(
+        card, category, anomaly_id, layers, source)
+
 func apply_temporary_enhancement(card, enhancement_id: String) -> Dictionary:
     if card == null or enhancement_id == "":
         return {"success": false, "reason": "临时强化参数无效"}
@@ -570,6 +680,18 @@ func register_delayed_effects(
         context) -> Dictionary:
     return _status_system.register_delayed_effects(
         label, timing, occurrences, effects, context)
+
+func register_response(
+        event_kind: String,
+        expiry: String,
+        effects: Array,
+        context,
+        filters: Dictionary = {}) -> Dictionary:
+    return _status_system.register_response(
+        event_kind, expiry, effects, context, filters)
+
+func register_next_round_hand_limit(context, amount: int) -> Dictionary:
+    return _status_system.register_next_round_hand_limit(context, amount)
 
 func register_defense_decay_return(context) -> Dictionary:
     return _status_system.register_defense_decay_return(context)
@@ -636,14 +758,20 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
     _emit_damage_resolved(
         resolution["actor"], resolution["target"],
         int(resolution.get("requested_amount", resolution["amount"])),
-        str(resolution["source_kind"]), bool(resolution["true_damage"]),
+        str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
         resolution["result"], true,
         str(resolution.get("action_token", "")))
     _resolve_reflection(
         resolution["actor"],
         resolution["target"],
-        str(resolution["source_kind"]),
+        str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
         resolution["result"])
+    var metadata: Dictionary = resolution.get("resolution_metadata", {})
+    if str(metadata.get("kind", "")) == "poison_card_trigger":
+        notify_poison_triggered(
+            metadata.get("holder"), metadata.get("card"),
+            int(metadata.get("frozen_amount", 0)), resolution["result"],
+            str(metadata.get("action_token", "")), bool(metadata.get("replayed", false)))
     return int(resolution["actor"].life) <= 0
 
 func _record_action_damage(actor, target, result: Dictionary) -> void:
@@ -671,12 +799,12 @@ func _resolve_actual_damage_amount(
         target,
         requested_amount: int,
         source_kind: String,
-        true_damage: bool,
+        damage_type: String,
         action_token: String = "") -> Dictionary:
-    if true_damage or _damage_resolver.is_buffering():
+    if damage_type != "normal" or _damage_resolver.is_buffering():
         return {"success": true, "amount": maxi(0, requested_amount)}
     var current := ComboDamageResolver.calculate_final_amount(
-        actor, target, requested_amount, source_kind, false, _status_system)
+        actor, target, requested_amount, source_kind, "normal", _status_system)
     for stage in [
             ["outgoing_damage_query", actor],
             ["incoming_damage_query", target]]:
@@ -698,11 +826,32 @@ func _resolve_actual_damage_amount(
         current = query.effective_value
     return {"success": true, "amount": maxi(0, int(floor(float(current))))}
 
+func _poison_defense_intervention(
+        actor,
+        target,
+        requested_amount: int,
+        source_kind: String,
+        action_token: String) -> int:
+    if _battle_rule_query_service == null or target == null:
+        return 0
+    var query = _battle_rule_query_service.resolve_values({
+        "hook": "poison_defense_intervention_query",
+        "owner": target, "actor": actor, "target": target,
+        "subject_kind": "poison_damage", "subject_id": source_kind,
+        "base_value": 0, "round_number": _round_number(),
+        "source_kind": source_kind, "action_token": action_token,
+        "metadata": {"requested_amount": requested_amount},
+    })
+    if not query.success:
+        _battle_rule_query_service.report_failure(query, "poison_damage")
+        return 0
+    return maxi(0, mini(requested_amount, int(query.effective_value)))
+
 func _resolve_synchronized_damage_amount(intent: Dictionary) -> Dictionary:
     return _resolve_actual_damage_amount(
         intent["actor"], intent["target"],
         int(intent.get("requested_amount", intent["amount"])),
-        str(intent["source_kind"]), bool(intent["true_damage"]),
+        str(intent["source_kind"]), str(intent.get("damage_type", "normal")),
         str(intent.get("action_token", "")))
 
 func _emit_damage_resolved(
@@ -710,7 +859,7 @@ func _emit_damage_resolved(
         target,
         requested_amount: int,
         source_kind: String,
-        true_damage: bool,
+        damage_type: String,
         result: Dictionary,
         synchronized: bool,
         action_token: String = "") -> void:
@@ -730,7 +879,8 @@ func _emit_damage_resolved(
         "final_amount": int(result.get("final_amount", result.get("requested", 0))),
         "defense_lost": int(result.get("defense_lost", 0)),
         "life_lost": int(result.get("life_lost", 0)),
-        "true_damage": true_damage,
+        "true_damage": damage_type == "true",
+        "damage_type": damage_type,
         "synchronized": synchronized,
     })
 
@@ -741,10 +891,11 @@ func _resolve_reflection(
         attacker: BattleSide,
         defender: BattleSide,
         source_kind: String,
+        damage_type: String,
         result: Dictionary) -> void:
     if attacker == null or defender == null or attacker == defender \
             or source_kind == "reflection" \
-            or bool(result.get("true_damage", false)):
+            or damage_type != "normal":
         return
     var defense_lost := int(result.get("defense_lost", 0))
     var percent := int(defender.current_reflection_percent)

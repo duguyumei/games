@@ -22,10 +22,15 @@ var normal_play: bool = false
 var defense_lost: int = 0
 var life_lost: int = 0
 var true_damage: bool = false
+var damage_type: String = "normal"
 var synchronized: bool = false
 var effective_amount: int = 0
 var defense_before: int = 0
 var defense_after: int = 0
+var frozen_amount: int = 0
+var actual_life_loss: int = 0
+var source_card_instance_id: String = ""
+var pre_move_snapshot: Dictionary = {}
 
 func configure(values: Dictionary):
     super.configure(values)
@@ -51,10 +56,15 @@ func configure(values: Dictionary):
     defense_lost = int(values.get("defense_lost", 0))
     life_lost = int(values.get("life_lost", 0))
     true_damage = bool(values.get("true_damage", false))
+    damage_type = str(values.get("damage_type", "true" if true_damage else "normal"))
     synchronized = bool(values.get("synchronized", false))
     effective_amount = int(values.get("effective_amount", 0))
     defense_before = int(values.get("defense_before", 0))
     defense_after = int(values.get("defense_after", 0))
+    frozen_amount = int(values.get("frozen_amount", 0))
+    actual_life_loss = int(values.get("actual_life_loss", life_lost))
+    source_card_instance_id = str(values.get("source_card_instance_id", ""))
+    pre_move_snapshot = values.get("pre_move_snapshot", {}).duplicate(true)
     return self
 
 func for_invocation(current_invocation):
@@ -85,10 +95,15 @@ func for_invocation(current_invocation):
         "defense_lost": defense_lost,
         "life_lost": life_lost,
         "true_damage": true_damage,
+        "damage_type": damage_type,
         "synchronized": synchronized,
         "effective_amount": effective_amount,
         "defense_before": defense_before,
         "defense_after": defense_after,
+        "frozen_amount": frozen_amount,
+        "actual_life_loss": actual_life_loss,
+        "source_card_instance_id": source_card_instance_id,
+        "pre_move_snapshot": pre_move_snapshot,
         "payload": payload,
         "source": current_invocation.source,
         "invocation": current_invocation,

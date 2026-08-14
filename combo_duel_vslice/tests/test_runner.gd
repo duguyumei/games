@@ -3128,12 +3128,12 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        7,
-        "Registry 明确登记七个细粒度已提交事件")
+        8,
+        "Registry 明确登记八个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        9,
-        "Registry 明确登记九个战斗整数查询")
+        10,
+        "Registry 明确登记十个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -4113,14 +4113,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 27, "统一功法目录包含基础功法与25门高牌功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 27, "正式功法资源路径包含27项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 27, "正式接入状态包含27门功法")
+    _assert_equal(catalog.all_of("technique").size(), 79, "统一功法目录包含79门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 79, "正式功法资源路径包含79项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 79, "正式接入状态包含79门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 27, "正式功法资源目录包含基础功法与25门高牌功法")
+    _assert_equal(formal_technique_resource_count, 79, "正式功法资源目录包含79门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()

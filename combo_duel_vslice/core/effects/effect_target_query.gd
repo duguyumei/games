@@ -48,6 +48,13 @@ func validate() -> Dictionary:
             return _invalid("异状筛选必须是对象")
         if str(anomaly.get("category", "")) not in ["buff", "debuff", "state", "mark"]:
             return _invalid("异状筛选缺少合法 category")
+    if filters.has("anomalies"):
+        if not filters["anomalies"] is Array:
+            return _invalid("多异状筛选必须是数组")
+        for anomaly in filters["anomalies"]:
+            if not anomaly is Dictionary \
+                    or str(anomaly.get("category", "")) not in ["buff", "debuff", "state", "mark"]:
+                return _invalid("多异状筛选包含非法项")
     if filters.has("reshape"):
         var reshape = filters["reshape"]
         if not reshape is Dictionary:
@@ -171,6 +178,14 @@ func _matches(card, facts = null, context = null, side = null) -> bool:
             if card.has_method("current_base_qi_value") else int(card.qi_value)
         if (effective > base) != bool(filters["effective_above_base"]):
             return false
+    if filters.has("effective_qi_at_least"):
+        if _current_effective_qi(card, context, side) < int(filters["effective_qi_at_least"]):
+            return false
+    if filters.has("anomaly_layers_at_least"):
+        var layer_spec: Dictionary = filters["anomaly_layers_at_least"]
+        if card.anomaly_layers(str(layer_spec.get("category", "buff")), \
+                str(layer_spec.get("id", ""))) < int(layer_spec.get("value", 1)):
+            return false
     if filters.has("has_non_attribute_identity"):
         var excluded := str(filters["has_non_attribute_identity"])
         var found_other := false
@@ -197,6 +212,9 @@ func _matches(card, facts = null, context = null, side = null) -> bool:
             return false
     if filters.has("anomaly") and not _matches_anomaly(card, filters["anomaly"]):
         return false
+    for anomaly in filters.get("anomalies", []):
+        if not _matches_anomaly(card, anomaly):
+            return false
     if filters.has("reshape") and not _matches_reshape(card, filters["reshape"]):
         return false
     return true

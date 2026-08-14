@@ -16,6 +16,7 @@ const QUERY_HOOKS := [
     "power_amp_percent_query",
     "outgoing_damage_query",
     "incoming_damage_query",
+    "poison_defense_intervention_query",
     "defense_gain_query",
     "defense_retention_percent_query",
 ]

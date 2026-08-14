@@ -37,8 +37,12 @@ func execute(effect: Dictionary, context):
     if str(effect.get("op", "")) == "apply_card_anomaly_to_captured":
         return _apply_to_captured(effect, runtime)
     if str(effect.get("op", "")) == "apply_anomaly_from_query":
+        var resolved_query := _resolved_query(effect.get("query", {}), runtime)
+        if int(resolved_query.get("limit", -1)) == 0:
+            runtime.captures[str(effect.get("capture", "anomaly_targets"))] = []
+            return EffectResultScript.succeeded()
         var query_result: Dictionary = runtime.ports.query_effect_targets(
-            runtime, _resolved_query(effect.get("query", {}), runtime), rng)
+            runtime, resolved_query, rng)
         if not query_result.get("success", false):
             return EffectResultScript.failed(str(query_result.get("reason", "异状目标查询失败")))
         runtime.captures[str(effect.get("capture", "anomaly_targets"))] = query_result["cards"]
@@ -191,9 +195,9 @@ func _resolved_query(value: Dictionary, runtime) -> Dictionary:
     if query.get("limit") is Dictionary:
         query["limit"] = value_resolver.resolve(query["limit"], runtime)
     var filters: Dictionary = query.get("filters", {}).duplicate(true)
-    if filters.get("effective_qi_at_most") is Dictionary:
-        filters["effective_qi_at_most"] = value_resolver.resolve(
-            filters["effective_qi_at_most"], runtime)
+    for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
+        if filters.get(value_field) is Dictionary:
+            filters[value_field] = value_resolver.resolve(filters[value_field], runtime)
     query["filters"] = filters
     return query
 

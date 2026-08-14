@@ -336,6 +336,10 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
             var captures_by_source: Dictionary = record["captures_by_source"]
             if not captures_by_source.has(capture_key):
                 captures_by_source[capture_key] = {}
+            if source_spec["kind"] == "technique" \
+                    and not record.cooperation_groups.is_empty():
+                captures_by_source[capture_key]["cooperation_cards"] = record.cooperation_groups[0].get(
+                    "preview", {}).get("cards", []).duplicate()
             var technique_pool := ""
             if source_spec["kind"] == "technique":
                 technique_pool = str(source_spec["definition"].get("pool", ""))

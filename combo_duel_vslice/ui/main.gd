@@ -483,6 +483,12 @@ func _refresh() -> void:
         "statuses": [{
             "text": "连势 %d" % player_state.momentum_value,
             "color": COLORS["orange"],
+        }, {
+            "text": "毒量 %d · 手牌%d/%d · 牌库%d/%d" % [
+                player_state.poison_total_amount,
+                player_state.poison_hand_count, player_state.poison_hand_amount,
+                player_state.poison_draw_pile_count, player_state.poison_draw_pile_amount],
+            "color": COLORS["green"],
         }],
     })
     enemy_actor_status.present({
@@ -492,7 +498,11 @@ func _refresh() -> void:
         "defense": enemy_state.defense,
         "statuses": [
             {"text": "连势 %d" % enemy_state.momentum_value, "color": COLORS["orange"]},
-            {"text": "烈毒 %d" % _count_card_anomaly(enemy_state.hand, "poison", "lethal_poison"), "color": COLORS["red"]},
+            {"text": "毒量 %d · 手牌%d/%d · 牌库%d/%d" % [
+                enemy_state.poison_total_amount,
+                enemy_state.poison_hand_count, enemy_state.poison_hand_amount,
+                enemy_state.poison_draw_pile_count, enemy_state.poison_draw_pile_amount],
+                "color": COLORS["green"]},
         ],
         "plans": _enemy_intent_chips(ai_state_label, possible_intents),
     })

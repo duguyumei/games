@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_wind_drain_poison_deck"
+display_name="风·涸泽搜蛊"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成floor(P/2)点普通伤害。展示敌方牌库顶至多5张，全部明确弃掉其中带毒且可弃的普通真气并按冻结有效值总和造成毒伤；若无毒牌则选择1张可弃牌弃掉；其余按玩家选择顺序放回牌库顶。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","discard","deck_control","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","true_damage","discard","deck_control"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":5,"filters":{"card_kind":"normal"}},"capture":"shown"},{"op":"filter_captured","capture":"shown","side":"target","filters":{"explicit_discard_allowed":true,"anomaly":{"category":"state","id":"poison","present":true}},"result_capture":"poison_cards"},{"op":"capture_metadata","capture":"poison_cards","result_capture":"poison_before"},{"op":"move_captured","capture":"poison_cards","from_side":"target","from_zone":"draw_pile","to_side":"target","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"poison_discarded"},{"op":"damage","damage_type":"poison","amount":{"kind":"capture_field_sum","capture":"poison_before","field":"effective_qi"},"when":{"capture_nonempty":"poison_discarded"}},{"op":"filter_captured","capture":"shown","side":"target","filters":{"explicit_discard_allowed":true},"result_capture":"fallback_candidates","when":{"capture_empty":"poison_cards"}},{"op":"select_cards","choice_id":"drain_fallback","candidate_capture":"fallback_candidates","prompt":"选择1张敌方展示牌弃掉","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","capture":"fallback","when":{"capture_empty":"poison_cards"}},{"op":"move_captured","capture":"fallback","from_side":"target","from_zone":"draw_pile","to_side":"target","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"fallback_discarded"},{"op":"capture_difference","capture":"shown","exclude_capture":"poison_discarded","result_capture":"remaining_a"},{"op":"capture_difference","capture":"remaining_a","exclude_capture":"fallback_discarded","result_capture":"remaining"},{"op":"select_cards","choice_id":"drain_reorder","candidate_capture":"remaining","prompt":"按从牌库顶到下的顺序排列其余展示牌","chooser":"actor","minimum":{"kind":"capture_count","capture":"remaining"},"maximum":{"kind":"capture_count","capture":"remaining"},"insufficient_policy":"use_available","ordered":true,"capture":"ordered"},{"op":"reorder_captured_draw_pile","side":"target","capture":"remaining","ordered_capture":"ordered"}]

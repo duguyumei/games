@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_heat_to_momentum"
+display_name="火·采薪成势"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。选择1张具有炽气的剩余普通手牌，移除全部Q层炽气，获得Q点连势。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","anomaly_apply"])
+public_behavior_summary=Array[String](["damage","momentum","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"heat_momentum","prompt":"选择采薪手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly_layers_at_least":{"category":"buff","id":"qi_heat","value":1}}},"capture":"card"},{"op":"remove_anomaly_layers","capture":"card","category":"buff","anomaly":"qi_heat","all":true,"result_capture":"q"},{"op":"add_momentum","amount":{"kind":"capture_field_first","capture":"q","field":"amount"}}]

@@ -48,6 +48,8 @@ func resolve(spec, context) -> int:
             for child in spec.get("values", []):
                 total += resolve(child, runtime)
             return total
+        "subtract":
+            return resolve(spec.get("left", 0), runtime) - resolve(spec.get("right", 0), runtime)
         "multiply":
             var product := 1
             for child in spec.get("values", []):
@@ -61,6 +63,9 @@ func resolve(spec, context) -> int:
             return int(ceil(
                 resolve(spec.get("value", {}), runtime)
                 / float(maxi(1, resolve(spec.get("divisor", 1), runtime)))))
+        "modulo":
+            return resolve(spec.get("value", 0), runtime) \
+                % maxi(1, resolve(spec.get("divisor", 1), runtime))
         "capture_count":
             return _capture_cards(runtime, spec).size()
         "capture_qi_sum":
@@ -77,6 +82,85 @@ func resolve(spec, context) -> int:
                 return 0
             return HandGroupSnapshotScript.current_effective_qi(
                 runtime.group_snapshot, cards[0], runtime.actor)
+        "capture_effective_qi_sum":
+            var total := 0
+            for card in _capture_cards(runtime, spec):
+                total += runtime.ports.current_effective_qi(
+                    _side(runtime, str(spec.get("side", "actor"))), card)
+            return total
+        "capture_effective_qi_max":
+            var maximum := 0
+            for card in _capture_cards(runtime, spec):
+                maximum = maxi(maximum, runtime.ports.current_effective_qi(
+                    _side(runtime, str(spec.get("side", "actor"))), card))
+            return maximum
+        "capture_r_sum", "capture_r_max":
+            var values: Array[int] = []
+            var owner = _side(runtime, str(spec.get("side", "actor")))
+            for card in _capture_cards(runtime, spec):
+                values.append(maxi(0, runtime.ports.current_effective_qi(owner, card) \
+                    - int(card.current_base_qi_value())))
+            if str(spec.get("kind", "")) == "capture_r_max":
+                return values.max() if not values.is_empty() else 0
+            var total := 0
+            for value in values:
+                total += value
+            return total
+        "capture_anomaly_layers_sum", "capture_anomaly_layers_max":
+            var values: Array[int] = []
+            for card in _capture_cards(runtime, spec):
+                values.append(card.anomaly_layers(
+                    str(spec.get("category", "buff")), str(spec.get("anomaly", ""))))
+            if str(spec.get("kind", "")) == "capture_anomaly_layers_max":
+                return values.max() if not values.is_empty() else 0
+            var total := 0
+            for value in values:
+                total += value
+            return total
+        "capture_result_count":
+            return runtime.captures.get(str(spec.get("capture", "")), []).size()
+        "capture_actual_life_loss":
+            var total := 0
+            for result in runtime.captures.get(str(spec.get("capture", "")), []):
+                total += int(result.get("life_lost", result.get("actual_life_loss", 0)))
+            return total
+        "capture_field_sum", "capture_field_max", "capture_field_first":
+            var values: Array[int] = []
+            var field := str(spec.get("field", "amount"))
+            for entry in runtime.captures.get(str(spec.get("capture", "")), []):
+                if entry is Dictionary:
+                    values.append(int(entry.get(field, 0)))
+            if str(spec.get("kind", "")) == "capture_field_first":
+                return values[0] if not values.is_empty() else 0
+            if str(spec.get("kind", "")) == "capture_field_max":
+                return values.max() if not values.is_empty() else 0
+            var total := 0
+            for value in values:
+                total += value
+            return total
+        "current_defense":
+            var side = _side(runtime, str(spec.get("side", "actor")))
+            return int(side.defense) if side != null else 0
+        "played_poison_amount":
+            return int(runtime.group_snapshot.get("played_poison_amount", 0))
+        "played_poison_count":
+            return int(runtime.group_snapshot.get("played_poison_count", 0))
+        "zone_anomaly_count", "zone_anomaly_qi_sum":
+            var side = _side(runtime, str(spec.get("side", "actor")))
+            if side == null:
+                return 0
+            var cards: Array = []
+            for zone in spec.get("zones", [spec.get("zone", "hand")]):
+                cards.append_array(runtime.ports.zone_cards(side, str(zone)))
+            cards = cards.filter(func(card): return card.is_card_kind("normal") \
+                and card.has_anomaly(str(spec.get("category", "state")), \
+                    str(spec.get("anomaly", "poison"))))
+            if str(spec.get("kind", "")) == "zone_anomaly_count":
+                return cards.size()
+            var total := 0
+            for card in cards:
+                total += runtime.ports.current_effective_qi(side, card)
+            return total
         "group_base_qi_sum":
             return HandGroupSnapshotScript.base_qi_sum(
                 runtime.group_snapshot,
@@ -133,6 +217,9 @@ func resolve(spec, context) -> int:
                 percent = int(spec["pure_attribute_percent"])
             return int(floor(runtime.power * (100 + count * percent) / 100.0))
     return 0
+
+func _side(runtime, side_id: String):
+    return runtime.target if side_id == "target" else runtime.actor
 
 func condition_met(condition: Dictionary, context) -> bool:
     var runtime = EffectContextScript.coerce(context)
@@ -209,11 +296,25 @@ func condition_met(condition: Dictionary, context) -> bool:
             return false
     if condition.has("value_at_least"):
         var comparison: Dictionary = condition["value_at_least"]
-        if resolve(comparison.get("value", 0), runtime) < int(comparison.get("minimum", 0)):
+        var minimum: int = resolve(comparison.get("minimum", 0), runtime) \
+            if comparison.get("minimum", 0) is Dictionary else int(comparison.get("minimum", 0))
+        if resolve(comparison.get("value", 0), runtime) < minimum:
             return false
     if condition.has("value_greater_than"):
         var comparison: Dictionary = condition["value_greater_than"]
-        if resolve(comparison.get("value", 0), runtime) <= int(comparison.get("threshold", 0)):
+        var threshold: int = resolve(comparison.get("threshold", 0), runtime) \
+            if comparison.get("threshold", 0) is Dictionary else int(comparison.get("threshold", 0))
+        if resolve(comparison.get("value", 0), runtime) <= threshold:
+            return false
+    if condition.has("actor_alive"):
+        if runtime.actor == null or (int(runtime.actor.life) > 0) != bool(condition["actor_alive"]):
+            return false
+    if condition.has("capture_card_in_zone"):
+        var zone_spec: Dictionary = condition["capture_card_in_zone"]
+        var cards: Array = runtime.captures.get(str(zone_spec.get("capture", "")), [])
+        var side = _side(runtime, str(zone_spec.get("side", "actor")))
+        if cards.is_empty() or side == null \
+                or not runtime.ports.zone_cards(side, str(zone_spec.get("zone", "hand"))).has(cards[0]):
             return false
     if condition.has("initial_power_greater_than_group_base_qi"):
         var total := HandGroupSnapshotScript.base_qi_sum(

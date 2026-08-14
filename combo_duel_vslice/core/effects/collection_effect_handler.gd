@@ -17,6 +17,10 @@ func operation_ids() -> Array[String]:
         "capture_group_cards", "for_each_captured", "remove_card_anomaly_from_captured",
         "gain_battle_experience", "generate_temporary_normal_card",
         "select_random_captured",
+        "select_highest_random_captured", "capture_event_cards",
+        "capture_value",
+        "capture_difference",
+        "filter_captured",
     ]
 
 func group_name() -> String:
@@ -72,12 +76,77 @@ func execute(effect: Dictionary, context):
             runtime.captures[str(effect.get("capture", "group_cards"))] = cards
             return EffectResultScript.succeeded("捕获组内真气 %d 张" % cards.size())
         "select_random_captured":
+            var frozen_key := str(effect.get("result_capture", "selected"))
+            if runtime.captures.has(frozen_key):
+                return EffectResultScript.succeeded(
+                    "复用随机捕获 %d 张" % runtime.captures[frozen_key].size())
             var source: Array = runtime.captures.get(str(effect.get("capture", "")), [])
             var selected: Array = []
             if not source.is_empty() and rng != null:
                 selected.append(source[rng.randi_range(0, source.size() - 1)])
-            runtime.captures[str(effect.get("result_capture", "selected"))] = selected
+            runtime.captures[frozen_key] = selected
             return EffectResultScript.succeeded("随机捕获 %d 张" % selected.size())
+        "select_highest_random_captured":
+            var frozen_key := str(effect.get("result_capture", "selected"))
+            if runtime.captures.has(frozen_key):
+                return EffectResultScript.succeeded(
+                    "复用随机最高值真气 %d 张" % runtime.captures[frozen_key].size())
+            var source: Array = runtime.captures.get(str(effect.get("capture", "")), [])
+            var owner = runtime.target if str(effect.get("side", "actor")) == "target" else runtime.actor
+            var selected: Array = []
+            var maximum := -1
+            for card in source:
+                maximum = maxi(maximum, runtime.ports.current_effective_qi(owner, card))
+            var tied: Array = source.filter(func(card):
+                return runtime.ports.current_effective_qi(owner, card) == maximum)
+            if not tied.is_empty() and rng != null:
+                selected.append(tied[rng.randi_range(0, tied.size() - 1)])
+            runtime.captures[frozen_key] = selected
+            return EffectResultScript.succeeded("随机选择最高值真气 %d 张" % selected.size())
+        "capture_event_cards":
+            var events: Array = runtime.captures.get("event", [])
+            var cards: Array = []
+            if not events.is_empty():
+                cards = events[0].get(str(effect.get("field", "event_cards")), []).duplicate()
+            runtime.captures[str(effect.get("capture", "event_cards"))] = cards
+            return EffectResultScript.succeeded("捕获事件真气 %d 张" % cards.size())
+        "capture_value":
+            var amount: int = value_resolver.resolve(effect.get("value", 0), runtime)
+            runtime.captures[str(effect.get("capture", "value"))] = [{"amount": amount}]
+            return EffectResultScript.succeeded("冻结数值 %d" % amount)
+        "capture_difference":
+            var source: Array = runtime.captures.get(str(effect.get("capture", "")), [])
+            var excluded: Array = runtime.captures.get(str(effect.get("exclude_capture", "")), [])
+            runtime.captures[str(effect.get("result_capture", "difference"))] = source.filter(
+                func(card): return not excluded.has(card))
+            return EffectResultScript.succeeded("捕获差集")
+        "filter_captured":
+            var cards: Array = runtime.captures.get(str(effect.get("capture", "")), []).duplicate()
+            var filters: Dictionary = effect.get("filters", {})
+            if filters.has("anomaly"):
+                var anomaly: Dictionary = filters["anomaly"]
+                cards = cards.filter(func(card):
+                    return card.has_anomaly(
+                        str(anomaly.get("category", "")), str(anomaly.get("id", ""))) \
+                        == bool(anomaly.get("present", true)))
+            for anomaly_value in filters.get("anomalies", []):
+                var anomaly: Dictionary = anomaly_value
+                cards = cards.filter(func(card):
+                    return card.has_anomaly(
+                        str(anomaly.get("category", "")), str(anomaly.get("id", ""))) \
+                        == bool(anomaly.get("present", true)))
+            if filters.has("anomaly_layers_at_least"):
+                var layer: Dictionary = filters["anomaly_layers_at_least"]
+                cards = cards.filter(func(card):
+                    return card.anomaly_layers(
+                        str(layer.get("category", "buff")), str(layer.get("id", ""))) \
+                        >= int(layer.get("value", 1)))
+            if bool(filters.get("explicit_discard_allowed", false)):
+                var side = runtime.target if str(effect.get("side", "actor")) == "target" else runtime.actor
+                cards = cards.filter(func(card):
+                    return runtime.ports.can_explicit_discard(side, card).get("allowed", false))
+            runtime.captures[str(effect.get("result_capture", "filtered"))] = cards
+            return EffectResultScript.succeeded("过滤冻结集合 %d 张" % cards.size())
         "for_each_captured":
             if runtime.ports == null:
                 return EffectResultScript.failed("逐张效果缺少战斗端口")
@@ -121,11 +190,18 @@ func execute(effect: Dictionary, context):
                 runtime.captures[str(effect["capture"])] = [{"gained": gained}]
             return EffectResultScript.succeeded("获得 %d 历练" % gained)
         "generate_temporary_normal_card":
-            var base_card = runtime.group_snapshot.get("contributing_cards", [null])[0]
+            var source_capture: Array = runtime.captures.get(
+                str(effect.get("source_capture", "")), [])
+            var contributing: Array = runtime.group_snapshot.get(
+                "contributing_cards", [])
+            var base_card = source_capture[0] if not source_capture.is_empty() \
+                else contributing[0] if not contributing.is_empty() else null
             if base_card == null:
+                if effect.has("capture"):
+                    runtime.captures[str(effect["capture"])] = []
                 return EffectResultScript.succeeded()
             var generated = runtime.ports.generate_temporary_normal_card(
-                runtime.actor, str(base_card.attribute))
+                runtime.actor, base_card)
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [generated] if generated != null else []
             return EffectResultScript.succeeded("生成临时真气" if generated != null else "")

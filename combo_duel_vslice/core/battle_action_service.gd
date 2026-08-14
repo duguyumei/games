@@ -329,6 +329,7 @@ func _finish_solo_cooperation_resolution(
         record,
         cooperation_preview: Dictionary,
         metadata: Dictionary) -> Dictionary:
+    _notify_cooperation_pre_commit(record)
     var cooperation_commit: Dictionary = action_resolver.commit_cooperation_staging(
         record, metadata.get("cooperation", {}))
     var cooperation_cards: Array = cooperation_commit["committed"]
@@ -381,6 +382,9 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
         return {"success": false, "reason": "当前功法启动被拒绝，不能建立协同"}
     if cooperation_card_ids.size() < 1 or cooperation_card_ids.size() > 5:
         return {"success": false, "reason": "协同组必须选择1～5张真气"}
+    if cooperation.has("exact_card_count") \
+            and cooperation_card_ids.size() != int(cooperation["exact_card_count"]):
+        return {"success": false, "reason": "协同组必须精确选择%d张真气" % int(cooperation["exact_card_count"])}
     for card_id in cooperation_card_ids:
         if proposal.card_ids.has(str(card_id)):
             return {"success": false, "reason": "同一张真气不能被主组和协同组重复使用"}
@@ -398,6 +402,8 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
             "success": false,
             "reason": "协同组必须组成%s" % str(cooperation["hand_id"]),
         }
+    if not _cooperation_cards_match(cooperation_preview.get("cards", []), cooperation):
+        return {"success": false, "reason": "协同牌不满足功法声明的异状限制"}
 
     var permission_result := _query_cooperation_permission(
         proposal.preview, cooperation_preview, "preview")
@@ -629,6 +635,7 @@ func _finish_synchronized_cooperation_resolution(
         record,
         cooperation_preview: Dictionary,
         metadata: Dictionary) -> Dictionary:
+    _notify_cooperation_pre_commit(record)
     var cooperation_commit: Dictionary = action_resolver.commit_cooperation_staging(
         record, metadata.get("cooperation", {}))
     var all_player_cards: Array = metadata.get("player_cards", []).duplicate()
@@ -646,6 +653,18 @@ func _finish_synchronized_cooperation_resolution(
         bool(metadata.get("enemy_triggered", false)),
         record["triggered"],
         cooperation_preview)
+
+func _notify_cooperation_pre_commit(record) -> void:
+    var cards: Array = record["preview"].get("cards", []).duplicate()
+    action_resolver.effect_ports.notify_response_event("cooperation_pre_commit", {
+        "actor": record["actor"],
+        "holder": record["actor"],
+        "action_token": str(record["token"]),
+        "round_number": int(turn_number_reader.call()),
+        "event_cards": cards,
+        "source_card_instance_id": str(cards[0].id) if not cards.is_empty() else "",
+        "source_card_instance_ids": cards.map(func(card): return str(card.id)),
+    })
 
 func _finish_synchronized_outcome(
         player_preview: Dictionary,
@@ -796,6 +815,13 @@ func _finalize_staged_proposal(
                 "reason": "正式确认时主功法启动被拒绝，协同行动整体失效",
             }
         var cooperation_preview: Dictionary = proposal.groups[1].get("preview", {})
+        var cooperation_definition: Dictionary = proposal.groups[1].get("cooperation", {})
+        if cooperation_definition.has("exact_card_count") \
+                and cooperation_preview.get("cards", []).size() != int(cooperation_definition["exact_card_count"]):
+            return {"success": false, "reason": "正式确认时协同牌数量不符"}
+        if not _cooperation_cards_match(
+                cooperation_preview.get("cards", []), cooperation_definition):
+            return {"success": false, "reason": "正式确认时协同牌异状限制不符"}
         var cooperation_permission := _query_cooperation_permission(
             proposal.preview, cooperation_preview, "action_confirmed")
         cooperation_permission["frozen"] = true
@@ -857,6 +883,21 @@ func _query_cooperation_permission(
         })
     result["checked"] = true
     return result
+
+func _cooperation_cards_match(cards: Array, cooperation: Dictionary) -> bool:
+    var any_anomalies: Array = cooperation.get("card_has_any_anomaly", [])
+    if any_anomalies.is_empty():
+        return true
+    for card in cards:
+        var matched := false
+        for anomaly_value in any_anomalies:
+            var anomaly: Dictionary = anomaly_value
+            if card.has_anomaly(str(anomaly.get("category", "")), str(anomaly.get("id", ""))):
+                matched = true
+                break
+        if not matched:
+            return false
+    return true
 
 func _refresh_cooperation_shared_power(proposal) -> void:
     if proposal.groups.size() < 2:

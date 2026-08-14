@@ -106,8 +106,13 @@ func execute(effect: Dictionary, context):
                 snapshots.append({
                     "card": card,
                     "id": str(card.id),
-                    "qi_value": int(card.current_base_qi_value()) \
+                    "qi_value": runtime.ports.current_effective_qi(runtime.actor, card),
+                    "effective_qi": runtime.ports.current_effective_qi(runtime.actor, card),
+                    "base_qi": int(card.current_base_qi_value()) \
                         if card.has_method("current_base_qi_value") else int(card.qi_value),
+                    "growth_layers": card.anomaly_layers("buff", "growth"),
+                    "heat_layers": card.anomaly_layers("buff", "qi_heat"),
+                    "had_poison": card.has_anomaly("state", "poison"),
                     "attributes": attributes,
                     "state": card.current_state() \
                         if card.has_method("current_state") else {},
@@ -207,21 +212,34 @@ func _draw_filtered(effect: Dictionary, runtime):
 
 func _reorder_captured_draw_pile(effect: Dictionary, runtime):
     var inspected: Array = runtime.captures.get(str(effect.get("capture", "")), [])
+    var ordered: Array = runtime.captures.get(str(effect.get("ordered_capture", "")), [])
+    var side = runtime.target if str(effect.get("side", "actor")) == "target" else runtime.actor
+    if not ordered.is_empty():
+        var valid := ordered.size() == inspected.size()
+        for card in inspected:
+            valid = valid and ordered.has(card)
+        if not valid:
+            return EffectResultScript.failed("重排选择与展示集合不一致")
+        for card in inspected:
+            side.draw_pile.erase(card)
+        for index in range(ordered.size() - 1, -1, -1):
+            side.draw_pile.append(ordered[index])
+        return EffectResultScript.succeeded("重排牌库顶 %d 张" % inspected.size())
     var top_cards: Array = runtime.captures.get(str(effect.get("top_capture", "")), [])
     var bottom_first: Array = runtime.captures.get(
         str(effect.get("bottom_first_capture", "")), [])
     if inspected.is_empty() or top_cards.is_empty():
         return EffectResultScript.succeeded()
     for card in inspected:
-        runtime.actor.draw_pile.erase(card)
+        side.draw_pile.erase(card)
     var top_card = top_cards[0]
     var remaining := inspected.filter(func(card): return card != top_card)
     if not bottom_first.is_empty() and remaining.has(bottom_first[0]):
         remaining.erase(bottom_first[0])
         remaining.push_front(bottom_first[0])
     for card in remaining:
-        runtime.actor.draw_pile.push_front(card)
-    runtime.actor.draw_pile.append(top_card)
+        side.draw_pile.push_front(card)
+    side.draw_pile.append(top_card)
     return EffectResultScript.succeeded("检视并重排 %d 张" % inspected.size())
 
 func _query(effect: Dictionary, runtime) -> Dictionary:
@@ -231,9 +249,9 @@ func _query(effect: Dictionary, runtime) -> Dictionary:
     if query_spec.get("limit") is Dictionary:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
     var filters: Dictionary = query_spec.get("filters", {}).duplicate(true)
-    if filters.get("effective_qi_at_most") is Dictionary:
-        filters["effective_qi_at_most"] = value_resolver.resolve(
-            filters["effective_qi_at_most"], runtime)
+    for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
+        if filters.get(value_field) is Dictionary:
+            filters[value_field] = value_resolver.resolve(filters[value_field], runtime)
     query_spec["filters"] = filters
     query_spec["card_identity_policy"] = runtime.card_identity_policy
     var result: Dictionary = TargetQueryScript.new().configure(query_spec).resolve(runtime, rng)

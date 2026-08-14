@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_forest_drink_poison_growth"
+display_name="林·饮蛊催生"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得floor(P/2)点防御。选择1张带毒普通手牌令毒立即触发，记录实际生命损失L；若我方未倒下且L>0，选择1张普通手牌获得L层炽气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","anomaly_apply","economic_gain"])
+public_behavior_summary=Array[String](["defense","true_damage","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"drink_poison","prompt":"选择立即触毒手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"state","id":"poison","present":true}}},"capture":"source"},{"op":"trigger_poison_captured","capture":"source","holder":"actor","result_capture":"poison_result"},{"op":"select_cards","choice_id":"drink_growth","prompt":"选择获得炽气的手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"target","when":{"all":[{"actor_alive":true},{"value_greater_than":{"value":{"kind":"capture_actual_life_loss","capture":"poison_result"},"threshold":0}}]}},{"op":"apply_card_anomaly_to_captured","capture":"target","category":"buff","anomaly":"qi_heat","layers":{"kind":"capture_actual_life_loss","capture":"poison_result"}}]

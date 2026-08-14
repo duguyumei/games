@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_forest_bone_poison"
+display_name="林·刮骨渡毒"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得floor(P/2)点防御。选择我方1张毒牌令毒立即触发；按实际生命损失L对敌造成floor(L/2)毒伤，并使敌方牌库随机1张合法牌获得毒。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","true_damage","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"bone_poison","prompt":"选择1张毒牌立即触发","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"state","id":"poison","present":true}}},"capture":"chosen"},{"op":"trigger_poison_captured","capture":"chosen","holder":"actor","result_capture":"triggered"},{"op":"damage","damage_type":"poison","amount":{"kind":"divide_floor","value":{"kind":"capture_actual_life_loss","capture":"triggered"},"divisor":2}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"draw_pile","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"}}},"capture":"enemy_poison","category":"state","anomaly":"poison","when":{"capture_nonempty":"triggered"}}]

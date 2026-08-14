@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_forest_deadwood_spring"
+display_name="林·枯木逢春"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得floor(P/2)点防御。优先选择至多1张可净化普通手牌，使其获得净化后再获得1层成长；结算开始无合法净化目标时改为选择1张普通手牌获得2层炽气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"mark","id":"purification"}}},"capture":"clean_candidates"},{"op":"select_cards","choice_id":"deadwood_clean","candidate_capture":"clean_candidates","prompt":"选择净化目标","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","capture":"clean"},{"op":"apply_card_anomaly_to_captured","capture":"clean","category":"mark","anomaly":"purification","result_capture":"cleaned"},{"op":"apply_card_anomaly_to_captured","capture":"cleaned","category":"buff","anomaly":"growth","layers":1},{"op":"select_cards","choice_id":"deadwood_heat","prompt":"选择获得炽气的手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"fallback","when":{"capture_empty":"clean_candidates"}},{"op":"apply_card_anomaly_to_captured","capture":"fallback","category":"buff","anomaly":"qi_heat","layers":2}]

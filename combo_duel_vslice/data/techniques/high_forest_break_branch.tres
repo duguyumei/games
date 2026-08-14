@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_forest_break_branch"
+display_name="林·折枝"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="选择1张具有炽气的剩余普通手牌，移除其全部Q层炽气。造成floor(P/2)+3Q点普通伤害。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","anomaly_apply"])
+public_behavior_summary=Array[String](["damage","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"select_cards","choice_id":"break_branch","prompt":"选择炽气牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly_layers_at_least":{"category":"buff","id":"qi_heat","value":1}}},"capture":"source"},{"op":"remove_anomaly_layers","capture":"source","category":"buff","anomaly":"qi_heat","all":true,"result_capture":"q"},{"op":"damage","amount":{"kind":"add","values":[{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},{"kind":"multiply","values":[3,{"kind":"capture_field_first","capture":"q","field":"amount"}]}]}}]

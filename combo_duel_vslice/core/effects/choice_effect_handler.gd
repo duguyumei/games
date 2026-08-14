@@ -26,6 +26,11 @@ func execute(effect: Dictionary, context):
         return EffectResultScript.failed("选择效果缺少 query 对象")
     if query_spec.get("limit") is Dictionary and value_resolver != null:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
+    var filters: Dictionary = query_spec.get("filters", {}).duplicate(true)
+    for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
+        if filters.get(value_field) is Dictionary and value_resolver != null:
+            filters[value_field] = value_resolver.resolve(filters[value_field], runtime)
+    query_spec["filters"] = filters
     query_spec["card_identity_policy"] = runtime.card_identity_policy
     var query = TargetQueryScript.new().configure(query_spec)
     var minimum := _resolve_bound(effect.get("minimum", 0), runtime)
@@ -46,6 +51,7 @@ func execute(effect: Dictionary, context):
             "minimum": minimum,
             "maximum": maximum,
             "insufficient_policy": str(effect.get("insufficient_policy", "")),
+            "ordered": bool(effect.get("ordered", false)),
             "candidates": frozen_candidates,
             "metadata": {"query": query.snapshot()},
         })
@@ -60,7 +66,13 @@ func execute(effect: Dictionary, context):
             "selected_card_ids": selected_ids.duplicate(),
         })
 
-    var query_result: Dictionary = query.resolve(runtime, rng)
+    var candidate_capture := str(effect.get("candidate_capture", ""))
+    var query_result: Dictionary = ({
+        "success": true,
+        "reason": "",
+        "cards": runtime.captures.get(candidate_capture, []).duplicate(),
+        "side": runtime.actor if str(effect.get("chooser", "actor")) == "actor" else runtime.target,
+    } if candidate_capture != "" else query.resolve(runtime, rng))
     if not query_result.get("success", false):
         return EffectResultScript.failed(str(query_result.get("reason", "目标查询失败")))
     var excluded_capture := str(query_spec.get("exclude_capture", ""))
@@ -82,6 +94,7 @@ func execute(effect: Dictionary, context):
         "minimum": minimum,
         "maximum": maximum,
         "insufficient_policy": str(effect.get("insufficient_policy", "")),
+        "ordered": bool(effect.get("ordered", false)),
         "candidates": query_result["cards"],
         "metadata": {"query": query.snapshot()},
     })
@@ -103,7 +116,14 @@ func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dicti
     pass
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
-    validator.validate_choice_effect(effect, scope)
+    if effect.has("candidate_capture"):
+        if not effect["candidate_capture"] is String or str(effect["candidate_capture"]) == "":
+            validator.report_error(scope + ".candidate_capture", "必须是非空字符串")
+        var normalized := effect.duplicate(true)
+        normalized["query"] = {"side":effect.get("chooser", "actor"),"zone":"hand","order":"zone","filters":{}}
+        validator.validate_choice_effect(normalized, scope)
+    else:
+        validator.validate_choice_effect(effect, scope)
 
 func _resolve_bound(value, runtime) -> int:
     if value is Dictionary and value_resolver != null:

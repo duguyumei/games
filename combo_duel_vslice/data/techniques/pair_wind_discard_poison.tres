@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_wind_discard_poison"
+display_name="风·弃蛊逐敌"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成floor(P/2)点普通伤害。至本完整回合结束，每当我方带毒普通真气被明确弃掉，按弃置前V对敌方造成V点毒伤；随后可明确弃掉1张带毒普通手牌。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","discard","true_damage","enemy_disruption","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","discard","true_damage"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"register_response","event":"card_moved","expiry":"turn_end","filters":{"owner":"actor","reason":"explicit_discard","from_zone":"hand","had_poison":true},"effects":[{"op":"damage","damage_type":"poison","amount":{"kind":"capture_field_first","capture":"event_snapshot","field":"effective_qi"}}]},{"op":"select_cards","choice_id":"discard_poison","prompt":"可明确弃掉1张毒牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","selection_purpose":"explicit_discard","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","explicit_discard_allowed":true,"anomaly":{"category":"state","id":"poison","present":true}}},"capture":"card"},{"op":"move_captured","capture":"card","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"}]

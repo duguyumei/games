@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_forest_dormant_root"
+display_name="林·宿根"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="获得floor(P/2)点防御。记录本组打出时具有成长的牌；其实际入弃牌堆并清理后，各重新获得1层成长并洗回牌库。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","recover","delayed_defense","retrigger_sensitive"])
+public_behavior_summary=Array[String](["defense","recover","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_group_cards","kind":"played","anomaly":{"category":"buff","id":"growth","present":true},"capture":"roots"},{"op":"register_response","event":"card_moved","expiry":"turn_end","filters":{"owner":"actor","to_zone":"discard_pile","card_instance_ids_from_capture":"roots"},"effects":[{"op":"capture_event_cards","field":"event_cards","capture":"cards"},{"op":"apply_card_anomaly_to_captured","capture":"event_card","category":"buff","anomaly":"growth","layers":1},{"op":"move_captured","capture":"event_card","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true}]}]

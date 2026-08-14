@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_forest_contain_poison"
+display_name="林·含毒"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得floor(P/2)点防御。选择我方剩余手牌1张能够获得毒的普通真气使其获得毒；若成功，敌方牌库随机1张能够获得毒且当前有效真气值不高于该牌的普通真气获得毒。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"contain_poison","prompt":"选择1张手牌含毒","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"}}},"capture":"source"},{"op":"apply_card_anomaly_to_captured","capture":"source","category":"state","anomaly":"poison","result_capture":"source_applied"},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"draw_pile","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"},"effective_qi_at_most":{"kind":"capture_effective_qi_max","capture":"source","side":"actor"}}},"capture":"enemy_poison","category":"state","anomaly":"poison","when":{"capture_nonempty":"source_applied"}}]

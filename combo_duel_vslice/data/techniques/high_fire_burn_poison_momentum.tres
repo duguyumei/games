@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_fire_burn_poison_momentum"
+display_name="火·焚蛊催势"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。选择1张带毒且没有燃尽的剩余普通手牌，记录V并使其获得燃尽；实际成功后获得floor(V/2)点连势，毒不触发也不清除。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","anomaly_apply"])
+public_behavior_summary=Array[String](["damage","momentum","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"burn_poison","prompt":"选择焚蛊手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomalies":[{"category":"state","id":"poison","present":true},{"category":"mark","id":"burned_out","present":false}],"can_apply_anomaly":{"category":"mark","id":"burned_out"}}},"capture":"card"},{"op":"capture_metadata","capture":"card","result_capture":"before"},{"op":"apply_card_anomaly_to_captured","capture":"card","category":"mark","anomaly":"burned_out","result_capture":"burned"},{"op":"add_momentum","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"before","field":"effective_qi"},"divisor":2},"when":{"capture_nonempty":"burned"}}]

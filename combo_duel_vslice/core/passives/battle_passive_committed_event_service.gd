@@ -128,8 +128,9 @@ func _context(
             "technique_triggered", "action_succeeded",
             "from_zone", "reason", "explicit_discard", "normal_play",
             "draw_reason", "defense_lost", "life_lost",
-            "true_damage", "synchronized", "effective_amount",
-            "defense_before", "defense_after"]:
+            "true_damage", "damage_type", "synchronized", "effective_amount",
+            "defense_before", "defense_after", "frozen_amount",
+            "actual_life_loss", "source_card_instance_id", "pre_move_snapshot"]:
         if values.has(field):
             payload[field] = values[field]
     return ContextScript.new().configure({
@@ -159,10 +160,15 @@ func _context(
         "defense_lost": int(values.get("defense_lost", 0)),
         "life_lost": int(values.get("life_lost", 0)),
         "true_damage": bool(values.get("true_damage", false)),
+        "damage_type": str(values.get("damage_type", "normal")),
         "synchronized": bool(values.get("synchronized", false)),
         "effective_amount": int(values.get("effective_amount", 0)),
         "defense_before": int(values.get("defense_before", 0)),
         "defense_after": int(values.get("defense_after", 0)),
+        "frozen_amount": int(values.get("frozen_amount", 0)),
+        "actual_life_loss": int(values.get("actual_life_loss", values.get("life_lost", 0))),
+        "source_card_instance_id": str(values.get("source_card_instance_id", "")),
+        "pre_move_snapshot": values.get("pre_move_snapshot", {}),
         "payload": payload,
     })
 

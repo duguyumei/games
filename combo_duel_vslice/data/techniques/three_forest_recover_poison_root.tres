@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_forest_recover_poison_root"
+display_name="林·回蛊养根"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得floor(P/2)点防御。从弃牌堆随机展示至多5张普通真气，选择1张入手后施毒；结算后手牌毒量不低于24时该牌获得1层成长。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","recover","anomaly_apply","deck_control"])
+public_behavior_summary=Array[String](["defense","recover","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"actor","zone":"discard_pile","order":"random","limit":5,"filters":{"card_kind":"normal"}},"capture":"shown"},{"op":"select_cards","choice_id":"recover_poison","candidate_capture":"shown","prompt":"从展示牌中选择1张","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","capture":"chosen"},{"op":"move_captured","capture":"chosen","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"hand","reason":"recover","result_capture":"moved"},{"op":"apply_card_anomaly_to_captured","capture":"moved","category":"state","anomaly":"poison","result_capture":"poisoned"},{"op":"apply_card_anomaly_to_captured","capture":"moved","category":"buff","anomaly":"growth","layers":1,"when":{"value_at_least":{"value":{"kind":"zone_anomaly_qi_sum","side":"actor","zone":"hand","category":"state","anomaly":"poison"},"minimum":24}}}]

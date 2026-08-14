@@ -673,6 +673,7 @@ func _record_command_rejected(command_type: String, reason: String) -> void:
     _event_serial += 1
 
 func _side_snapshot(side) -> Dictionary:
+    var poison: Dictionary = side.poison_totals()
     var passive_context := {
         "owner": side,
         "round_number": engine.turn_number,
@@ -730,6 +731,12 @@ func _side_snapshot(side) -> Dictionary:
         "discard_count": side.discard_pile.size(),
         "deck_count": side.all_zone_cards().size(),
         "temporarily_removed_count": side.temporarily_removed_cards.size(),
+        "poison_hand_count": int(poison["hand_count"]),
+        "poison_hand_amount": int(poison["hand_amount"]),
+        "poison_draw_pile_count": int(poison["draw_pile_count"]),
+        "poison_draw_pile_amount": int(poison["draw_pile_amount"]),
+        "poison_total_count": int(poison["total_count"]),
+        "poison_total_amount": int(poison["total_amount"]),
         "draw_pile": _card_snapshots(side.draw_pile),
         "hand": _card_snapshots(side.hand),
         "staging": _card_snapshots(side.staging),

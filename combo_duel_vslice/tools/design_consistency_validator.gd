@@ -56,11 +56,12 @@ func result() -> Dictionary:
         "not_integrated": not_integrated,
     }
 
-## 从三个功法池文档解析权威活跃名单。
-## 池归属由 `**高牌（6 门）**` 这类加粗分组标题决定；条目为 `- **名称**（…）：…`。
+## 从功法池文档解析权威活跃名单。
+## 池归属由 `**高牌池（6 门）**` 或 `## **高牌池（6 门）**` 这类分组标题决定；
+## 条目为 `- **名称**`，其后可以继续携带稳定 ID 或正文。
 ## 同时收集"已废弃"段落中列出的名称，它们不得作为活跃功法出现。
 func _parse_authoritative_pools(pool_dir: String) -> void:
-    var group_pattern := RegEx.create_from_string("^\\*\\*(.+?)（\\d+ 门）\\*\\*")
+    var group_pattern := RegEx.create_from_string("^(?:#{1,6}\\s+)?\\*\\*(.+?)（\\d+ 门）\\*\\*")
     var entry_pattern := RegEx.create_from_string("^- \\*\\*(.+?)\\*\\*")
     var directory := DirAccess.open(pool_dir)
     if directory == null:
@@ -121,10 +122,10 @@ func _collect_abolished_names(line: String) -> void:
             if not abolished_names.has(name):
                 abolished_names.append(name)
 
-## 读取每个功法资源的 display_name 与 pool。
+## 读取每个功法资源的 display_name 与 pool；Godot 文本资源允许等号两侧省略空格。
 func _parse_runtime_techniques(technique_dir: String) -> void:
-    var name_pattern := RegEx.create_from_string("(?m)^display_name = \"(.+?)\"")
-    var pool_pattern := RegEx.create_from_string("(?m)^pool = \"(.+?)\"")
+    var name_pattern := RegEx.create_from_string("(?m)^display_name\\s*=\\s*\"(.+?)\"")
+    var pool_pattern := RegEx.create_from_string("(?m)^pool\\s*=\\s*\"(.+?)\"")
     var directory := DirAccess.open(technique_dir)
     if directory == null:
         errors.append("无法打开功法资源目录：%s" % technique_dir)

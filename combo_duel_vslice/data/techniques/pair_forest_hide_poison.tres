@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_forest_hide_poison"
+display_name="林·蛰蛊藏息"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得floor(P/2)点防御。选择至多2张带毒普通手牌洗入牌库；每实际洗入1张，使敌方牌库随机1张不同的合法普通真气获得毒。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","deck_control","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","deck_control","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"hide_poison","prompt":"选择至多2张毒牌洗入牌库","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"state","id":"poison","present":true}}},"capture":"chosen"},{"op":"move_captured","capture":"chosen","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true,"result_capture":"moved"},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"draw_pile","order":"random","limit":{"kind":"capture_result_count","capture":"moved"},"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"poison"}}},"capture":"enemy_poison","category":"state","anomaly":"poison"}]

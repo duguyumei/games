@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_forest_trigger_poison"
+display_name="林·催蛊"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得floor(P/2)点防御。优先令敌方手牌中当前有效真气值最高的随机1张毒牌立即触发，手牌无目标时改查牌库；敌方总毒量不低于24时再处理1张不同的牌。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply","enemy_disruption","retrigger_sensitive"])
+public_behavior_summary=Array[String](["defense","anomaly_apply","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"trigger_highest_poison","holder":"target","maximum":1,"extra_when_value":{"kind":"zone_anomaly_qi_sum","side":"target","zones":["hand","draw_pile"],"category":"state","anomaly":"poison"},"extra_threshold":24,"extra_count":1,"result_capture":"triggered"}]

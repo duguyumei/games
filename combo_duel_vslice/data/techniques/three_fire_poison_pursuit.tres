@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_fire_poison_pursuit"
+display_name="火·蛊焰追身"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="在本次伤害前建立至回合结束的响应，再造成floor(P/2)点普通伤害。敌方每次毒实际触发完成后，追击floor(P/5)点普通伤害并获得1点连势。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","retrigger_sensitive","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","momentum","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"register_response","phase":"damage","event":"poison_trigger_completed","expiry":"turn_end","filters":{"holder":"target"},"effects":[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":5,"minimum":0}},{"op":"add_momentum","amount":1}]},{"op":"damage","phase":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]

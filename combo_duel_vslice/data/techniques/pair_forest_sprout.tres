@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_forest_sprout"
+display_name="林·催芽"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得floor(P/2)点防御。选择1张剩余普通手牌，记录G并使其获得1层成长；若G>0，再使其获得G层炽气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"sprout","prompt":"选择催芽手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"card"},{"op":"capture_metadata","capture":"card","result_capture":"before"},{"op":"apply_card_anomaly_to_captured","capture":"card","category":"buff","anomaly":"growth","layers":1},{"op":"apply_card_anomaly_to_captured","capture":"card","category":"buff","anomaly":"qi_heat","layers":{"kind":"capture_field_first","capture":"before","field":"growth_layers"},"when":{"value_greater_than":{"value":{"kind":"capture_field_first","capture":"before","field":"growth_layers"},"threshold":0}}}]

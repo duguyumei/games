@@ -13,6 +13,7 @@ func project_opponent(side, sequence_book, battle_flow) -> Dictionary:
 
 func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
     var effective_hand_limit := _hand_limit(side)
+    var poison: Dictionary = side.poison_totals()
     var value := {
         "life": int(side.life),
         "max_life": int(side.max_life),
@@ -29,6 +30,7 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
         "draw_pile_count": side.draw_pile.size(),
         "discard_cards": visibility.revealed_cards(side.discard_pile),
         "temporarily_removed_count": side.temporarily_removed_cards.size(),
+        "poison": poison.duplicate(true),
         "sequence_positions": sequence_book.positions.duplicate(true),
         "action_state": battle_flow.snapshot_for(side),
         "public_statuses": _public_statuses(side),

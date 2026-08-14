@@ -10,9 +10,7 @@
 ## 功法数量口径
 
 功法设计唯一来源是 `godot/docs/design-current/README.md` 这份 v0.30 模块化权威源；
-当前三个功法池模块分别记录风林蛊毒 29 门、风运转 38 门、火反击 40 门活跃候选。
-当前 Godot 只保留 9 门可执行纵切样本，它们是运行测试夹具，不代表权威内容总量。
-当前接入状态与剩余迁移范围见
+当前正式目录共79门：2门内建基础功法、首批25门高牌功法，以及52门蛊毒、成长和跨系统桥接功法。52门新增内容分布为高牌11、对子18、三条10、顺子7、炸弹6；旧107门流派候选仍是历史归档，不计入正式目录。当前接入证据见
 `docs/technique-content-status.md`。
 
 ## 运行
@@ -83,7 +81,7 @@ AI 对话。当前没有 AI 设置页面，也没有在确定性测试中访问�
 - `data/card_states.json`：本局重塑（强化、品相、印记、其他）与战斗异状（标记、毒、状态、其他）的容量、持续范围和弃牌清理规则。
 - `core/technique_definition.gd`、`core/technique_instance.gd`：统一的功法内容实体与本局运行时实例；所有功法使用同一种类型。
 - `data/techniques.json`：功法资源清单与共用池映射，不再保存功法正文。
-- `data/techniques/*.tres`：每门功法一个独立资源文件；当前保存 9 门纵切运行样本，内容目录从这里加载、校验和建立索引。
+- `data/techniques/*.tres`：每门功法一个独立资源文件；当前保存79门正式资源，内容目录从这里加载、校验和建立索引。
 - `data/inner_skills.json`：纵切内功定义与通用效果操作，当前只录入一门权威候选。
 - `data/consumables.json`：三类代表性消耗品、目标数量和通用效果操作；不包含完整 52 种候选。
 - `data/map_rules.json`：地图宽度、行数、路径数、固定节点行、节点权重与相邻约束。
@@ -102,15 +100,15 @@ AI 对话。当前没有 AI 设置页面，也没有在确定性测试中访问�
 - `core/actor_turn_state.gd`：每个战斗参与者独立保存行动次数、当前／后续禁用原因、连击占用、锁定意图和放弃行动原因，不区分玩家或敌人。
 - `core/battle_flow_coordinator.gd`：通用行动窗口调度；只有至少两方都锁定有效意图时才选择同步结算，单方有意图时正常单独行动，并支持当前／后续回合禁用和零合法手牌放弃行动。
 - `core/action_preview_service.gd`：无 UI 依赖的行动预览；统一完成选牌校验、牌型、功法值、功法条件、内功预计效果与连击预判。
-- `core/damage_resolver.gd`：无 UI 依赖的伤害结算；统一处理普通伤害、真伤、连势增伤、同步伤害 shadow 与攻击段存活判断。
+- `core/damage_resolver.gd`：无 UI 依赖的伤害结算；独立处理普通伤害、真伤与毒伤，并统一同步伤害 shadow、实际生命损失和攻击段存活判断。
 - `core/effect_executor.gd`：保持统一执行与预览接口的轻量兼容门面；效果链可以在指定下标暂停，并通过 continuation 从原位置恢复，不会重放已经完成的效果。
 - `core/effects/technique_effect_context.gd`：类型化功法执行上下文；集中保存行动方、目标、牌型、功法值、来源、捕获结果与冻结选择数据，正式战斗路径不再向处理器传递完整引擎。
 - `core/effects/battle_effect_ports.gd`：功法处理器使用的窄修改端口；统一代理伤害、防御、牌区、角色状态、真气异状、额外行动与延迟记录。
 - `core/effects/effect_target_query.gd`：通用真气目标查询；统一阵营、牌区、牌库顶、固定种子随机顺序，以及属性、牌阶、普通／石头、重塑和异状筛选。
-- `core/effects/battle_choice_request.gd`：可公开给 UI 或 AI 的选择契约；冻结候选、数量范围、选择方与明确的目标不足策略，并校验重复、越界和过期目标。
+- `core/effects/battle_choice_request.gd`：可公开给 UI 或 AI 的选择契约；冻结候选、数量范围、选择方、排列顺序与明确的目标不足策略，并校验重复、越界和过期目标。
 - `core/effects/technique_effect_continuation.gd`、`technique_effect_result.gd`：结构化保存效果下标、捕获结果与成功／失败／等待选择状态，支持非法选择后继续等待及多阶段连续选择。
-- `core/effects/effect_handler_registry.gd`：把 15 个战斗操作码注册到七类能力处理器；拒绝未知或重复操作码，并允许新增处理器扩展。
-- `core/effects/` 分组处理器：分别负责伤害、防御、牌区、真气异状、层数、流程／延迟和选择；共用递归数值规格、条件解析器与目标查询。
+- `core/effects/effect_handler_registry.gd`：把战斗操作码注册到九类能力处理器；拒绝未知或重复操作码，并允许新增处理器扩展。
+- `core/effects/` 分组处理器：分别负责伤害、防御、牌区、真气异状、毒、集合、原子层数、流程／延迟和选择；共用递归数值规格、条件解析器与目标查询。
 - `core/technique_repository.gd`、`core/inner_skill_repository.gd`、`core/consumable_repository.gd`：接收目录中已验证的深复制定义并提供领域查询；仍保留独立文件加载入口供兼容测试使用。
 - `core/map_generator.gd`：按独立种子生成不交叉、可分叉汇合且能够抵达 Boss 的路线图。
 - `ui/front_main.gd`：主菜单与初始构筑入口；只负责页面输入和场景切换，不直接生成地图。
@@ -133,7 +131,7 @@ AI 对话。当前没有 AI 设置页面，也没有在确定性测试中访问�
 - `core/battle_session.gd`：战斗应用层门面；统一接受开始回合、出牌、功法目标选择、结束回合、使用消耗品和调整功法位命令，并编排远程 AI 行动窗口门禁与敌方单方行动。
 - `core/battle_snapshot.gd`：向表现层提供深复制的只读战斗快照；覆盖卡牌、内功、消耗品、等待选择请求以及战斗／系统日志，避免 UI 读取或修改领域对象。
 - `core/battle_event.gd`：结构化战斗事件；可按序消费并用于后续动画、回放或文本调试器。
-- `core/action_resolver.gd`：统一编排牌型组三阶段触发、左右顺序、选择暂停、牌上烈毒与蛊印回库、待出区提交和结算日志；成功后的序列推进注册在统一牌型组结束时点。
+- `core/action_resolver.gd`：统一编排牌型组三阶段触发、左右顺序、选择暂停、普通毒牌触发、待出区提交和结算日志；成功后的序列推进注册在统一牌型组结束时点。
 - `core/combat_engine.gd`：敌我独立序列、行动窗口、连击、可恢复行动事务与战斗结果；选择期间保持待出区和同步伤害状态，完成后才提交真气并推进序列。
 - `core/battle_action_proposal.gd`：玩家输入、脚本敌人、本地 Utility 和远程候选共同输出的行动提案契约；支持第 0 主组与后续协同组，提案只描述“准备怎么行动”，不自行修改牌区或结算伤害。
 - `core/battle_timing_event.gd`：单次战斗生命周期事件，保存时点、回合号、行动方、公开元数据和处理器结果。

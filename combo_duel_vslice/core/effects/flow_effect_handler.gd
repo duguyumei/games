@@ -15,6 +15,8 @@ func operation_ids() -> Array[String]:
         "set_reflection_percent", "add_direct_power_fixed",
         "add_direct_power_percent",
         "register_delayed_effects",
+        "register_response",
+        "register_next_round_hand_limit",
         "register_defense_decay_return", "set_reflection_until_turn_end",
         "register_no_life_loss_disruption",
         "steal_random_card_if_power_target_and_same_qi",
@@ -98,6 +100,19 @@ func execute(effect: Dictionary, context):
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "延迟效果建立失败")))
             return EffectResultScript.succeeded("建立%s延迟效果" % str(effect.get("timing", "turn_end")))
+        "register_response":
+            var result: Dictionary = runtime.ports.register_response(
+                str(effect.get("event", "")), str(effect.get("expiry", "turn_end")),
+                effect.get("effects", []), runtime, effect.get("filters", {}))
+            return EffectResultScript.succeeded("建立战斗响应") \
+                if result.get("success", false) \
+                else EffectResultScript.failed(str(result.get("reason", "响应建立失败")))
+        "register_next_round_hand_limit":
+            var result: Dictionary = runtime.ports.register_next_round_hand_limit(
+                runtime, value_resolver.resolve(effect.get("amount", 0), runtime))
+            return EffectResultScript.succeeded("建立下一回合手牌上限修正") \
+                if result.get("success", false) \
+                else EffectResultScript.failed(str(result.get("reason", "手牌上限记录失败")))
         "retrigger_current_hand_technique":
             var result: Dictionary = runtime.ports.retrigger_current_hand_technique(
                 runtime.actor,
@@ -126,6 +141,9 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                 effect.get("occurrences"), scope + ".occurrences", "occurrences")
             validator.validate_nested_battle_effects(
                 effect.get("effects"), scope + ".effects")
+        "register_response":
+            validator.validate_nested_battle_effects(
+                effect.get("effects", []), scope + ".effects")
         "register_no_life_loss_disruption":
             validator.validate_nested_battle_effects(
                 [effect.get("effect", {})], scope + ".effect")

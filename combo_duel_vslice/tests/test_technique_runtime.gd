@@ -145,8 +145,8 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 27, "正式功法仓库包含基础功法与25门高牌功法")
-    _assert_equal(repository.resource_paths.size(), 27, "正式功法资源路径包含27项")
+    _assert_equal(repository.techniques.size(), 79, "正式功法仓库包含79门功法")
+    _assert_equal(repository.resource_paths.size(), 79, "正式功法资源路径包含79项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -162,12 +162,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 25, "商店包含25门高牌正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 77, "商店包含77门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 27, "正式目录存在基础功法与25门高牌功法资源")
+    _assert_equal(resource_count, 79, "正式目录存在79门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -618,7 +618,37 @@ func _engine_with_cards(cards: Array):
 
 func _dispose_tracked_engines() -> void:
     for engine in tracked_engines:
+        engine.battle_passive_timing_bridge.close_battle()
+        engine.battle_passive_event_service.close_battle()
+        engine.passive_rule_runtime.close_battle_effect_commands()
         engine.effect_ports.use_hand_retrigger_callback(Callable())
+        engine.battle_passive_event_service._scenario_error = Callable()
+        engine.battle_rule_query_service._scenario_error = Callable()
+        engine.passive_rule_runtime._battle_effect_scenario_error = Callable()
+        engine.player.use_committed_event_service(null)
+        engine.enemy.use_committed_event_service(null)
+        engine.player.use_battle_rule_query_service(null)
+        engine.enemy.use_battle_rule_query_service(null)
+        engine.player.use_status_system(null)
+        engine.enemy.use_status_system(null)
+        engine.player.use_card_state_lifecycle(null)
+        engine.enemy.use_card_state_lifecycle(null)
+        engine.player.use_card_reshape_runtime(null)
+        engine.enemy.use_card_reshape_runtime(null)
+        engine.player.use_card_policies(null, null)
+        engine.enemy.use_card_policies(null, null)
+        engine.player.use_battle_permission_service(null)
+        engine.enemy.use_battle_permission_service(null)
+        engine.status_system.reset()
+        engine.status_system.use_effect_ports(null)
+        engine.status_system.use_effect_executor(null)
+        engine.status_system.use_card_trigger_replay_service(null)
+        engine.status_system.use_battle_permission_service(null)
+        engine.effect_ports._sides.clear()
+        engine.effect_ports._battle_rule_query_service = null
+        engine.effect_ports._committed_event_service = null
+        engine.effect_ports._round_number_reader = Callable()
+        engine.effect_ports._consumable_repository = null
         engine.delayed_effects.clear()
         engine.action_service = null
         engine.round_service = null
@@ -627,6 +657,15 @@ func _dispose_tracked_engines() -> void:
         engine.consumable_service = null
         engine.loadout_service = null
         engine.action_resolver = null
+        engine.battle_rule_query_service = null
+        engine.battle_passive_event_service = null
+        engine.battle_passive_timing_bridge = null
+        engine.battle_permission_service = null
+        engine.passive_rule_runtime = null
+        engine.status_system = null
+        engine.card_reshape_runtime = null
+        engine.effect_executor = null
+        engine.effect_ports = null
     tracked_engines.clear()
 
 func _empty_sequences() -> Dictionary:

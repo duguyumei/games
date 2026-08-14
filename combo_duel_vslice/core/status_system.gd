@@ -13,6 +13,7 @@ var content_catalog
 var lifecycle
 var timing_system
 var delayed_records: Array = []
+var response_records: Array = []
 var history: Array = []
 var _serial: int = 0
 var _delay_serial: int = 0
@@ -118,10 +119,134 @@ func use_battle_permission_service(service) -> void:
 
 func reset() -> void:
     delayed_records.clear()
+    response_records.clear()
     history.clear()
     _serial = 0
     _delay_serial = 0
     _technique_draw_counts.clear()
+
+func register_response(
+        event_kind: String,
+        expiry: String,
+        effects: Array,
+        context,
+        filters: Dictionary = {}) -> Dictionary:
+    var runtime = EffectContextScript.coerce(context)
+    var resolved_filters := filters.duplicate(true)
+    if resolved_filters.has("card_instance_ids_from_capture"):
+        var capture_id := str(resolved_filters["card_instance_ids_from_capture"])
+        resolved_filters["card_instance_ids"] = runtime.captures.get(capture_id, []).map(
+            func(card): return str(card.id))
+        resolved_filters.erase("card_instance_ids_from_capture")
+    if resolved_filters.has("source_card_instance_ids_from_capture"):
+        var capture_id := str(resolved_filters["source_card_instance_ids_from_capture"])
+        resolved_filters["source_card_instance_ids"] = runtime.captures.get(
+            capture_id, []).map(func(card): return str(card.id))
+        resolved_filters.erase("source_card_instance_ids_from_capture")
+    var record := {
+        "id": "response-%06d" % _delay_serial,
+        "event_kind": event_kind,
+        "expiry": expiry,
+        "effects": effects.duplicate(true),
+        "filters": resolved_filters,
+        "actor": runtime.actor,
+        "target": runtime.target,
+        "power": runtime.power,
+        "initial_power": runtime.initial_power,
+        "hand_result": runtime.hand_result.duplicate(true),
+        "played_cards": runtime.played_cards.duplicate(),
+        "group_snapshot": runtime.group_snapshot.duplicate(true),
+        "captures": runtime.captures.duplicate(true),
+        "technique_id": runtime.technique_id,
+        "technique_name": runtime.technique_name,
+        "actual_hand_id": runtime.actual_hand_id,
+        "branch_hand_id": runtime.branch_hand_id,
+        "technique_pool": runtime.technique_pool,
+        "action_token": runtime.action_token,
+        "source_round": _current_round_hint(runtime),
+        "resolving": false,
+    }
+    _delay_serial += 1
+    response_records.append(record)
+    return {"success": true, "record": record}
+
+func register_next_round_hand_limit(context, amount: int) -> Dictionary:
+    var runtime = EffectContextScript.coerce(context)
+    if runtime.actor == null or amount <= 0:
+        return {"success": false, "reason": "下一回合手牌上限参数无效"}
+    var record := {
+        "id": "hand-limit-%06d" % _delay_serial,
+        "kind": "next_round_hand_limit",
+        "actor": runtime.actor,
+        "amount": amount,
+        "source_round": _current_round_hint(runtime),
+        "active_round": -1,
+    }
+    _delay_serial += 1
+    delayed_records.append(record)
+    return {"success": true, "record": record}
+
+func handle_response_event(event_kind: String, values: Dictionary) -> void:
+    if _effect_executor == null:
+        return
+    var matching: Array = response_records.filter(func(record):
+        return str(record.get("event_kind", "")) == event_kind \
+            and not bool(record.get("resolving", false)) \
+            and _response_matches(record, values))
+    for record in matching:
+        record["resolving"] = true
+        var captures: Dictionary = record.get("captures", {}).duplicate(true)
+        captures["event"] = [values.duplicate(true)]
+        if values.has("card"):
+            captures["event_card"] = [values["card"]]
+        if values.has("pre_move_snapshot"):
+            captures["event_snapshot"] = [values["pre_move_snapshot"]]
+        var response_context = EffectContextScript.new().configure({
+            "ports": _effect_ports(), "actor": record["actor"],
+            "target": record["target"], "power": int(record["power"]),
+            "initial_power": int(record["initial_power"]),
+            "hand_result": record["hand_result"],
+            "played_cards": record["played_cards"],
+            "group_snapshot": record["group_snapshot"],
+            "captures": captures,
+            "technique_id": record["technique_id"],
+            "technique_name": record["technique_name"],
+            "actual_hand_id": record["actual_hand_id"],
+            "branch_hand_id": record["branch_hand_id"],
+            "technique_pool": record["technique_pool"],
+            "action_token": record["action_token"],
+            "source_kind": "response",
+        })
+        _effect_executor.execute_all(record["effects"], response_context)
+        record["resolving"] = false
+
+func _response_matches(record: Dictionary, values: Dictionary) -> bool:
+    var filters: Dictionary = record.get("filters", {})
+    if str(filters.get("owner", "")) == "actor" \
+            and values.get("actor") != record.get("actor"):
+        return false
+    if str(filters.get("holder", "")) == "target" \
+            and values.get("holder") != record.get("target"):
+        return false
+    if filters.has("reason") and str(values.get("reason", "")) != str(filters["reason"]):
+        return false
+    if filters.has("from_zone") and str(values.get("from_zone", "")) != str(filters["from_zone"]):
+        return false
+    if filters.has("to_zone") and str(values.get("to_zone", "")) != str(filters["to_zone"]):
+        return false
+    if bool(filters.get("next_round", false)) \
+            and int(values.get("round_number", -1)) != int(record.get("source_round", -1)) + 1:
+        return false
+    if filters.has("card_instance_ids") \
+            and not filters["card_instance_ids"].has(str(values.get("source_card_instance_id", ""))):
+        return false
+    if filters.has("source_card_instance_ids") \
+            and not filters["source_card_instance_ids"].has(str(values.get("source_card_instance_id", ""))):
+        return false
+    var snapshot: Dictionary = values.get("pre_move_snapshot", {})
+    if bool(filters.get("had_poison", false)) and not bool(snapshot.get("had_poison", false)):
+        return false
+    return true
 
 func card_numeric_modifier(card, modifier_id: String) -> int:
     if card == null or modifier_id == "":
@@ -251,6 +376,30 @@ func remove_card_anomaly(
         "anomaly_id": resolved_id,
     }
 
+func set_card_anomaly_layers(
+        card,
+        category: String,
+        anomaly_id: String,
+        layers: int,
+        source: String = "效果") -> Dictionary:
+    if card == null or category not in ["buff", "debuff"] or anomaly_id == "" or layers < 0:
+        return {"success": false, "reason": "异状层数设置参数无效"}
+    var before: int = card.anomaly_layers(category, anomaly_id)
+    if before == layers:
+        return {"success": true, "changed": false, "before": before, "after": layers}
+    if layers == 0:
+        card.remove_anomaly(category, anomaly_id)
+    else:
+        var permission: Dictionary = lifecycle.can_apply_anomaly(
+            card, category, anomaly_id, false)
+        if not permission.get("allowed", false) and before <= 0:
+            return {"success": false, "reason": permission.get("reason", "不能设置异状层数")}
+        card.set_anomaly(category, anomaly_id, {}, layers)
+    _record_change(
+        "card_anomaly_layers_set", "card", str(card.id), anomaly_id,
+        before, layers, source, {"category": category})
+    return {"success": true, "changed": true, "before": before, "after": layers}
+
 func on_card_enter_discard(card, source: String = "进入弃牌堆") -> Dictionary:
     var removed: Dictionary = lifecycle.on_enter_discard(card)
     if not removed.get("state", {}).is_empty():
@@ -279,6 +428,13 @@ func on_card_explicit_discard(holder, card) -> void:
 func _on_after_normal_draw(event) -> Dictionary:
     if event.actor == null:
         return {"success": false, "detail": "正常补牌完成时点缺少行动方"}
+    handle_response_event("after_normal_draw", {
+        "actor": event.actor,
+        "holder": event.actor,
+        "round_number": int(event.round_number),
+        "drawn_cards": event.context.get("drawn_cards", []).duplicate(),
+        "event_cards": event.context.get("drawn_cards", []).duplicate(),
+    })
     return {"success": true}
 
 func resolve_played_card_anomalies(
@@ -544,12 +700,33 @@ func _on_defense_decay_resolved(event) -> Dictionary:
                 and int(record.get("captured_decay", -1)) < 0:
             record["captured_decay"] = int(decay.get("lost", 0))
             record["return_round"] = int(event.round_number) + 1
+    handle_response_event("defense_decay_resolved", {
+        "actor": event.actor,
+        "holder": event.actor,
+        "round_number": int(event.round_number),
+        "decay": decay.duplicate(true),
+    })
     return {"success": true}
 
 func _on_round_start_records(event) -> Dictionary:
+    var event_round := int(event.round_number)
+    var event_actors: Array = (
+        event.get("actors", []) if event is Dictionary else event.actors)
+    for event_actor in event_actors:
+        for record in delayed_records:
+            if record.get("kind") == "next_round_hand_limit" \
+                    and record.get("actor") == event_actor \
+                    and int(record.get("source_round", -1)) + 1 == event_round:
+                event_actor.base_hand_limit_modifier += int(record.get("amount", 0))
+                record["active_round"] = event_round
+        handle_response_event("round_start", {
+            "actor": event_actor,
+            "holder": event_actor,
+            "round_number": event_round,
+        })
     var due: Array = delayed_records.filter(func(record):
         return record.get("kind") == "defense_decay_return" \
-            and int(record.get("return_round", -1)) == int(event.round_number))
+            and int(record.get("return_round", -1)) == event_round)
     for record in due:
         var actor = record["actor"]
         if _effect_ports() != null:
@@ -616,6 +793,8 @@ func _on_battle_start(event) -> Dictionary:
 func _on_turn_end(event) -> Dictionary:
     if event.actor == null:
         return {"success": false, "detail": "回合结束时点缺少行动方"}
+    var event_round := int(
+        event.get("round_number", -1) if event is Dictionary else event.round_number)
     var due: Array = []
     for delayed in delayed_records:
         if delayed.get("actor") != event.actor:
@@ -643,6 +822,25 @@ func _on_turn_end(event) -> Dictionary:
         event.actor.clear_reflection_if_source(str(record["id"]))
         delayed_records.erase(record)
     _dispatch_card_turn_end(event.actor)
+    handle_response_event("turn_end", {
+        "actor": event.actor,
+        "holder": event.actor,
+        "round_number": event_round,
+    })
+    for record in delayed_records.duplicate():
+        if record.get("kind") == "next_round_hand_limit" \
+                and record.get("actor") == event.actor \
+                and int(record.get("active_round", -1)) == event_round:
+            event.actor.base_hand_limit_modifier -= int(record.get("amount", 0))
+            delayed_records.erase(record)
+    for record in response_records.duplicate():
+        if record.get("expiry") == "turn_end" \
+                and record.get("actor") == event.actor:
+            response_records.erase(record)
+        elif record.get("expiry") == "next_round_turn_end" \
+                and record.get("actor") == event.actor \
+                and int(record.get("source_round", -1)) + 1 <= event_round:
+            response_records.erase(record)
     return {
         "success": true,
         "detail": "%s结算 %d 个到期延迟效果" % [event.actor.name, due.size()],
@@ -739,8 +937,9 @@ func _on_card_battle_end(event) -> Dictionary:
     }
 
 func _on_transient_battle_end(event) -> Dictionary:
-    var cleared_delays := delayed_records.size()
+    var cleared_delays := delayed_records.size() + response_records.size()
     delayed_records.clear()
+    response_records.clear()
     return {
         "success": true,
         "detail": "清理 %d 个延迟记录" % cleared_delays,

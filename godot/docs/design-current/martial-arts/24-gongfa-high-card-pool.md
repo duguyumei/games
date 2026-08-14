@@ -1,5 +1,7 @@
 # 高牌正式功法目录
 
+> 本文件记录首批25门高牌正式内容。当前完整高牌池另包含11门蛊毒、成长与桥接功法，稳定ID与池归属见[扩展正式功法索引](./28-gongfa-expanded-formal-pool-index.md)；新增功法的详细正文分别由25、26、27号文档维护。
+
 本文件记录当前正式高牌池的 25 门功法。它们全部绑定 `high_card`，普通装配次数上限为 1；独立资源位于 `combo_duel_vslice/data/techniques/high_*.tres`。公共牌型快照、同气、P₀/P、延迟与 AI 投影规则分别由[功法框架](./20-gongfa-framework.md)、[牌型与数值](../combat/10-hand-ranking-and-values.md)、[行动结算](../combat/12-action-resolution.md)和[AI](../ai/70-enemy-ai.md)定义。
 
 ## 数值与公共边界

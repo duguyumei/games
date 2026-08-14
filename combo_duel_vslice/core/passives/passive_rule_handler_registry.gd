@@ -29,6 +29,7 @@ const BATTLE_COMMITTED_EVENT_HOOKS := [
     "card_entered_discard",
     "card_explicitly_discarded",
     "damage_resolved",
+    "poison_trigger_completed",
     "defense_gained",
 ]
 
@@ -40,6 +41,7 @@ const BATTLE_INT_QUERY_HOOKS := [
     "power_amp_percent_query",
     "outgoing_damage_query",
     "incoming_damage_query",
+    "poison_defense_intervention_query",
     "defense_gain_query",
     "defense_retention_percent_query",
 ]
@@ -90,6 +92,7 @@ const HOOKS := [
     "card_entered_discard",
     "card_explicitly_discarded",
     "damage_resolved",
+    "poison_trigger_completed",
     "defense_gained",
     "hand_limit_query",
     "power_base_fixed_query",
@@ -98,6 +101,7 @@ const HOOKS := [
     "power_amp_percent_query",
     "outgoing_damage_query",
     "incoming_damage_query",
+    "poison_defense_intervention_query",
     "defense_gain_query",
     "defense_retention_percent_query",
     "hand_evaluation_options_query",

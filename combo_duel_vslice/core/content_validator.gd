@@ -1023,6 +1023,23 @@ func _validate_cooperation(value, scope: String) -> void:
         _error(scope + ".max_groups", "必须是正整数")
     if str(value.get("power_rule", "shared_half")) != "shared_half":
         _error(scope + ".power_rule", "当前只支持 shared_half")
+    if value.has("exact_card_count") \
+            and (not _is_integer(value["exact_card_count"]) \
+            or int(value["exact_card_count"]) < 1 \
+            or int(value["exact_card_count"]) > 5):
+        _error(scope + ".exact_card_count", "必须为1～5")
+    if value.has("card_has_any_anomaly"):
+        if not value["card_has_any_anomaly"] is Array \
+                or value["card_has_any_anomaly"].is_empty():
+            _error(scope + ".card_has_any_anomaly", "必须是非空数组")
+        else:
+            for index in range(value["card_has_any_anomaly"].size()):
+                var anomaly = value["card_has_any_anomaly"][index]
+                if not anomaly is Dictionary:
+                    _error(scope + ".card_has_any_anomaly[%d]" % index, "必须是对象")
+                    continue
+                if str(anomaly.get("category", "")) not in ANOMALY_CATEGORY_IDS:
+                    _error(scope + ".card_has_any_anomaly[%d].category" % index, "引用未知异状类别")
     var post_commit = value.get("post_commit", {})
     if not post_commit is Dictionary:
         _error(scope + ".post_commit", "必须是对象")

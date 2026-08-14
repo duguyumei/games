@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_forest_all_poison"
+display_name="林·万蛊同寂"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="获得floor(P/2)点防御。锁定并冻结双方手牌与牌库中的全部带毒普通真气，令它们的毒同时触发；所有牌留在原牌区，伤害后清除毒。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","enemy_disruption","retrigger_sensitive"])
+public_behavior_summary=Array[String](["defense","true_damage","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"trigger_all_poison_simultaneously","result_capture":"triggered"}]

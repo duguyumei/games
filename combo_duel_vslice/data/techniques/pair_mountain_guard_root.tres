@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_mountain_guard_root"
+display_name="山·护根留青"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得P点防御。选择1张剩余普通手牌；本完整回合防御保留结算后，若我方仍有防御且该牌仍在手牌中，使其获得1层成长。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","delayed_defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","delayed_defense","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"guard_root","prompt":"选择护根手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"card"},{"op":"register_response","event":"defense_decay_resolved","expiry":"turn_end","filters":{"owner":"actor"},"effects":[{"op":"apply_card_anomaly_to_captured","capture":"card","category":"buff","anomaly":"growth","layers":1,"when":{"all":[{"value_greater_than":{"value":{"kind":"current_defense","side":"actor"},"threshold":0}},{"capture_card_in_zone":{"capture":"card","side":"actor","zone":"hand"}}]}}],"when":{"capture_nonempty":"card"}}]

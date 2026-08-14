@@ -170,6 +170,24 @@ func draw_to_limit(draw_reason: String = "normal_draw") -> Array:
         return []
     return draw(limit - hand.size(), draw_reason)
 
+func poison_totals() -> Dictionary:
+    var result := {
+        "hand_count": 0, "hand_amount": 0,
+        "draw_pile_count": 0, "draw_pile_amount": 0,
+        "total_count": 0, "total_amount": 0,
+    }
+    for zone_entry in [["hand", hand], ["draw_pile", draw_pile]]:
+        var zone_name: String = zone_entry[0]
+        for card in zone_entry[1]:
+            if not card.is_card_kind("normal") or not card.has_anomaly("state", "poison"):
+                continue
+            result["%s_count" % zone_name] += 1
+            result["%s_amount" % zone_name] += status_system.effective_qi_value(card) \
+                if status_system != null else card.effective_qi_value()
+    result["total_count"] = int(result["hand_count"]) + int(result["draw_pile_count"])
+    result["total_amount"] = int(result["hand_amount"]) + int(result["draw_pile_amount"])
+    return result
+
 func current_hand_limit() -> int:
     var result := effective_hand_limit_result()
     if not result.get("success", false):

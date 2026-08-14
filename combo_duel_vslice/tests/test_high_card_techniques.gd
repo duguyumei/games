@@ -36,7 +36,7 @@ func _test_formal_resources() -> void:
     _assert_true(repository.load_from_file(), "TechniqueRepository加载正式内容")
     var high_ids: Array[String] = repository.formal_technique_ids().filter(
         func(value): return str(value).begins_with("high_"))
-    _assert_equal(high_ids.size(), 25, "25门高牌功法均为formal_complete")
+    _assert_equal(high_ids.size(), 36, "完整高牌池36门功法均为formal_complete")
     for technique_id in high_ids:
         var definition = repository.get_definition(technique_id)
         _assert_equal(definition.pool, "high", "%s属于高牌池" % technique_id)

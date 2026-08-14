@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_forest_hundred_poison"
+display_name="林·百蛊侵脉"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="记录敌方手牌与牌库毒牌数N和总毒量T。获得floor(P/2)点防御，敌方受到2N点毒伤；T≥24时改为3N。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","true_damage"])
+implementation_category="B"
+effects=[{"op":"capture_value","value":{"kind":"zone_anomaly_count","side":"target","zones":["hand","draw_pile"],"category":"state","anomaly":"poison"},"capture":"n"},{"op":"capture_value","value":{"kind":"zone_anomaly_qi_sum","side":"target","zones":["hand","draw_pile"],"category":"state","anomaly":"poison"},"capture":"t"},{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"damage","damage_type":"poison","amount":{"kind":"multiply","values":[{"kind":"capture_field_first","capture":"n","field":"amount"},{"kind":"conditional","when":{"value_at_least":{"value":{"kind":"capture_field_first","capture":"t","field":"amount"},"minimum":24}},"then":3,"else":2}]}}]

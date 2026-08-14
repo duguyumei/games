@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_forest_many_tree_glory"
+display_name="林·百木争荣"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="令Rsum为全部剩余普通手牌的R之和。造成floor(P/2)+2Rsum点普通伤害。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","same_qi_payoff"])
+public_behavior_summary=Array[String](["damage"])
+implementation_category="B"
+effects=[{"op":"capture_query","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"cards"},{"op":"damage","amount":{"kind":"add","values":[{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},{"kind":"multiply","values":[2,{"kind":"capture_r_sum","capture":"cards","side":"actor"}]}]}}]

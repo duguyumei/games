@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_forest_fallen_leaf_return"
+display_name="林·落叶归根"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得floor(P/2)点防御。从弃牌堆随机展示至多5张普通真气并选择1张入手；有效值高于基础值则获得1层成长，否则获得2层炽气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","recover","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","recover","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"actor","zone":"discard_pile","order":"random","limit":5,"filters":{"card_kind":"normal"}},"capture":"shown"},{"op":"select_cards","choice_id":"fallen_leaf","candidate_capture":"shown","prompt":"选择归根真气","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","capture":"chosen"},{"op":"move_captured","capture":"chosen","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"hand","reason":"recover","result_capture":"moved"},{"op":"apply_card_anomaly_to_captured","capture":"moved","category":"buff","anomaly":"growth","layers":1,"when":{"capture_card_effective_above_base":"moved"}},{"op":"apply_card_anomaly_to_captured","capture":"moved","category":"buff","anomaly":"qi_heat","layers":2,"when":{"not":{"capture_card_effective_above_base":"moved"}}}]

@@ -16,9 +16,15 @@ extends RefCounted
 ## 数值规格的可用 kind。只有效果规格会用到，因此不放在内容词表里。
 const AMOUNT_KINDS := [
     "constant", "power", "power_fraction", "initial_power", "initial_power_fraction", "n60", "hand_map", "max",
-    "add", "multiply", "divide_floor", "divide_ceil", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
+    "add", "subtract", "multiply", "divide_floor", "divide_ceil", "modulo", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
     "capture_attribute_count", "capture_non_attribute_count", "capture_base_qi_sum",
     "capture_current_effective_qi", "group_base_qi_sum", "extra_count",
+    "capture_effective_qi_sum", "capture_effective_qi_max",
+    "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum",
+    "capture_anomaly_layers_max", "capture_result_count",
+    "capture_actual_life_loss", "current_defense", "played_poison_amount",
+    "played_poison_count", "zone_anomaly_count", "zone_anomaly_qi_sum",
+    "capture_field_sum", "capture_field_max", "capture_field_first",
     "extra_attribute_count", "hand_count",
     "target_hand_count", "hand_limit",
     "conditional",
@@ -219,17 +225,36 @@ func _validate_query_filters(filters: Dictionary, scope: String) -> void:
     for boolean_field in ["temporary", "has_any_reshape", "has_permanent_reshape", "effective_above_base", "explicit_discard_allowed"]:
         if filters.has(boolean_field) and not filters[boolean_field] is bool:
             _error(scope + "." + boolean_field, "必须是布尔值")
-    if filters.has("effective_qi_at_most"):
-        if filters["effective_qi_at_most"] is Dictionary:
-            validate_amount_spec(filters["effective_qi_at_most"], scope + ".effective_qi_at_most")
-        elif not _is_integer(filters["effective_qi_at_most"]):
-            _error(scope + ".effective_qi_at_most", "必须是整数或数值规格")
+    for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
+        if not filters.has(value_field):
+            continue
+        if filters[value_field] is Dictionary:
+            validate_amount_spec(filters[value_field], scope + "." + value_field)
+        elif not _is_integer(filters[value_field]):
+            _error(scope + "." + value_field, "必须是整数或数值规格")
+    if filters.has("anomaly_layers_at_least"):
+        var layer_filter = filters["anomaly_layers_at_least"]
+        if not layer_filter is Dictionary:
+            _error(scope + ".anomaly_layers_at_least", "必须是对象")
+        else:
+            if str(layer_filter.get("category", "")) not in _anomaly_category_ids:
+                _error(scope + ".anomaly_layers_at_least.category", "引用未知异状类别")
+            if not _is_integer(layer_filter.get("value", 1)) or int(layer_filter.get("value", 1)) <= 0:
+                _error(scope + ".anomaly_layers_at_least.value", "必须是正整数")
     if filters.has("has_non_attribute_identity") \
             and str(filters["has_non_attribute_identity"]) not in _attribute_ids:
         _error(scope + ".has_non_attribute_identity", "引用未知属性")
     if filters.has("anomaly"):
         _validate_target_state_filter(
             filters["anomaly"], _anomaly_category_ids, scope + ".anomaly")
+    if filters.has("anomalies"):
+        if not filters["anomalies"] is Array:
+            _error(scope + ".anomalies", "必须是数组")
+        else:
+            for index in range(filters["anomalies"].size()):
+                _validate_target_state_filter(
+                    filters["anomalies"][index], _anomaly_category_ids,
+                    "%s.anomalies[%d]" % [scope, index])
     if filters.has("reshape"):
         _validate_target_state_filter(
             filters["reshape"], _reshape_category_ids, scope + ".reshape")
@@ -272,11 +297,20 @@ func validate_amount_spec(spec: Dictionary, scope: String) -> void:
             _validate_hand_map(spec, scope)
         "max", "add", "multiply":
             _validate_spec_list(spec, scope)
-        "divide_floor", "divide_ceil":
+        "subtract":
+            _validate_nested_specs(spec, ["left", "right"], scope)
+        "divide_floor", "divide_ceil", "modulo":
             _validate_nested_specs(spec, ["value", "divisor"], scope)
         "capture_count", "capture_qi_sum", "capture_attribute_qi_sum", \
         "capture_attribute_count", "capture_non_attribute_count", \
         "capture_base_qi_sum", "capture_current_effective_qi":
+            _validate_capture_spec(spec, kind, scope)
+        "capture_effective_qi_sum", "capture_effective_qi_max", \
+        "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum", \
+        "capture_anomaly_layers_max", "capture_result_count", \
+        "capture_actual_life_loss":
+            _validate_capture_spec(spec, kind, scope)
+        "capture_field_sum", "capture_field_max", "capture_field_first":
             _validate_capture_spec(spec, kind, scope)
         "conditional":
             _validate_nested_specs(spec, ["then", "else"], scope)
@@ -310,17 +344,17 @@ func _validate_spec_list(spec: Dictionary, scope: String) -> void:
         return
     for index in range(values.size()):
         var nested_scope := "%s.values[%d]" % [scope, index]
-        if not values[index] is Dictionary:
-            _error(nested_scope, "必须是数值规格对象")
-        else:
+        if values[index] is Dictionary:
             validate_amount_spec(values[index], nested_scope)
+        elif not _is_number(values[index]):
+            _error(nested_scope, "必须是数值或数值规格对象")
 
 func _validate_nested_specs(spec: Dictionary, fields: Array, scope: String) -> void:
     for field in fields:
-        if not spec.get(field) is Dictionary:
-            _error(scope + "." + str(field), "必须是数值规格对象")
-        else:
+        if spec.get(field) is Dictionary:
             validate_amount_spec(spec[field], scope + "." + str(field))
+        elif not _is_number(spec.get(field)):
+            _error(scope + "." + str(field), "必须是数值或数值规格对象")
 
 func _validate_capture_spec(spec: Dictionary, kind: String, scope: String) -> void:
     if not spec.get("capture") is String or str(spec.get("capture", "")) == "":

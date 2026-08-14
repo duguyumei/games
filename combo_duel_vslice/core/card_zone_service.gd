@@ -290,6 +290,9 @@ func move_card(
                 "success": false,
                 "reason": str(permission.get("reason", "此真气不能被明确弃掉")),
             }
+    var pre_move_snapshot := _pre_move_snapshot(side, card, source_zone)
+    event_metadata = event_metadata.duplicate(true)
+    event_metadata["pre_move_snapshot"] = pre_move_snapshot
     source.erase(card)
     zone(side, destination_zone).append(card)
     var event_result := _notify_arrival(
@@ -300,11 +303,37 @@ func move_card(
         "from": source_zone,
         "to": destination_zone,
         "reason": reason,
+        "pre_move_snapshot": pre_move_snapshot,
     }
     if not event_result.get("success", true):
         result["passive_event_success"] = false
         result["passive_event_reason"] = event_result.get("reason", "")
     return result
+
+func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
+    var effective := int(card.effective_qi_value()) \
+        if card.has_method("effective_qi_value") else int(card.qi_value)
+    if status_system != null:
+        effective = status_system.effective_qi_value(card)
+    var attributes: Array[String] = []
+    for attribute in ["wind", "forest", "fire", "mountain"]:
+        if card.is_attribute(attribute):
+            attributes.append(attribute)
+    return {
+        "card": card,
+        "instance_id": str(card.id),
+        "source_zone": source_zone,
+        "effective_qi": maxi(0, effective),
+        "base_qi": int(card.current_base_qi_value()),
+        "rank_name": str(card.current_rank_name()),
+        "rank_order": int(card.current_rank_order()),
+        "base_attribute": str(card.current_attribute()),
+        "attributes": attributes,
+        "anomalies": card.anomaly_snapshot(),
+        "growth_layers": card.anomaly_layers("buff", "growth"),
+        "heat_layers": card.anomaly_layers("buff", "qi_heat"),
+        "had_poison": card.has_anomaly("state", "poison"),
+    }
 
 func _notify_arrival(
         side,
@@ -330,8 +359,22 @@ func _notify_arrival(
             status_system.on_card_drawn(side, card)
         if card_reshape_runtime != null:
             card_reshape_runtime.on_card_drawn(side, card)
-    return _emit_committed_card_events(
+    var committed: Dictionary = _emit_committed_card_events(
         side, card, source_zone, destination_zone, reason, event_metadata)
+    if committed.get("success", true) and status_system != null:
+        status_system.handle_response_event("card_moved", {
+            "actor": side,
+            "holder": side,
+            "card": card,
+            "source_card_instance_id": str(card.id),
+            "from_zone": source_zone,
+            "to_zone": destination_zone,
+            "reason": reason,
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+            "pre_move_snapshot": event_metadata.get("pre_move_snapshot", {}),
+        })
+    return committed
 
 func _emit_committed_card_events(
         side,
