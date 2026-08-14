@@ -14,11 +14,16 @@ func project_opponent(side, sequence_book, battle_flow) -> Dictionary:
 func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
     var effective_hand_limit := _hand_limit(side)
     var poison: Dictionary = side.poison_totals()
+    var same_qi_capacity: Dictionary = side.effective_same_qi_capacity_result({
+        "source_kind": "ai_observation",
+    })
     var value := {
         "life": int(side.life),
         "max_life": int(side.max_life),
         "defense": int(side.defense),
         "momentum": int(side.momentum_value),
+        "same_qi_value": int(side.same_qi_value),
+        "same_qi_capacity": int(same_qi_capacity.get("effective_value", 5)),
         "hand_limit": effective_hand_limit,
         "hand_count": side.hand.size(),
         "next_normal_draw_count": mini(
@@ -26,6 +31,10 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
         "direct_power_fixed": int(side.direct_power_fixed),
         "direct_power_percent": int(side.direct_power_percent),
         "reflection_percent": int(side.current_reflection_percent),
+        "reflection_sources": side.public_reflection_sources(),
+        "reflection_true_damage_sources": side.public_reflection_true_damage_sources(),
+        "block_sources": side.public_block_sources(),
+        "challenge_records": side.public_challenge_records(),
         "last_successful_hand_id": str(side.last_successful_technique_hand_id),
         "draw_pile_count": side.draw_pile.size(),
         "discard_cards": visibility.revealed_cards(side.discard_pile),

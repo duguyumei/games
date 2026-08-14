@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_mountain_reflection_crack"
+display_name="山·震裂"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。本完整回合第一次反震使敌方损失生命后，使其随机1张合法手牌获得破绽。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","reflection","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","reflection","anomaly_apply","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_response","phase":"prepare","event":"reflection_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"actual_life_loss_positive":true,"max_triggers":1},"effects":[{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"hand","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"vulnerability"}}},"capture":"crack_target","category":"state","anomaly":"vulnerability"}]}]
+

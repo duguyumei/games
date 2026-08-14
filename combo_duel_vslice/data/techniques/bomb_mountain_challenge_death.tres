@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_mountain_challenge_death"
+display_name="山·天关索命"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="获得P/2点防御。邀战2C；敌方未达标时，对其造成等于未达标差额的真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","enemy_disruption","challenge"])
+public_behavior_summary=Array[String](["defense","true_damage","enemy_disruption","challenge"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"register_challenge","threshold":{"kind":"multiply","values":[{"kind":"card_contribution"},2]},"effects":[{"op":"damage","amount":{"kind":"capture_field_first","capture":"challenge_difference","field":"amount"},"damage_type":"true","direct_attack":false}]}]

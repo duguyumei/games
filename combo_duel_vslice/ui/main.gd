@@ -475,35 +475,74 @@ func _refresh() -> void:
         "disabled": "固定行动",
         "idle": "等待窗口",
     }.get(ai_state, ai_state)
+    var player_statuses: Array = [{
+        "text": "连势 %d" % player_state.momentum_value,
+        "color": COLORS["orange"],
+    }, {
+        "text": "同气 %d/%d" % [
+            player_state.same_qi_value, player_state.same_qi_capacity],
+        "color": COLORS["blue"],
+    }, {
+        "text": "毒量 %d · 手牌%d/%d · 牌库%d/%d" % [
+            player_state.poison_total_amount,
+            player_state.poison_hand_count, player_state.poison_hand_amount,
+            player_state.poison_draw_pile_count, player_state.poison_draw_pile_amount],
+        "color": COLORS["green"],
+    }]
+    if player_state.current_reflection_percent > 0:
+        player_statuses.append({
+            "text": "反震 %d%%" % player_state.current_reflection_percent,
+            "color": COLORS["purple"],
+        })
+    if not player_state.block_sources.is_empty():
+        player_statuses.append({
+            "text": "格挡 %d" % player_state.block_sources.size(),
+            "color": COLORS["blue"],
+        })
+    if not player_state.challenge_records.is_empty():
+        player_statuses.append({
+            "text": "邀战 %d" % player_state.challenge_records.size(),
+            "color": COLORS["red"],
+        })
+    var enemy_statuses: Array = [
+        {"text": "连势 %d" % enemy_state.momentum_value, "color": COLORS["orange"]},
+        {"text": "同气 %d/%d" % [
+            enemy_state.same_qi_value, enemy_state.same_qi_capacity],
+            "color": COLORS["blue"]},
+        {"text": "毒量 %d · 手牌%d/%d · 牌库%d/%d" % [
+            enemy_state.poison_total_amount,
+            enemy_state.poison_hand_count, enemy_state.poison_hand_amount,
+            enemy_state.poison_draw_pile_count, enemy_state.poison_draw_pile_amount],
+            "color": COLORS["green"]},
+    ]
+    if enemy_state.current_reflection_percent > 0:
+        enemy_statuses.append({
+            "text": "反震 %d%%" % enemy_state.current_reflection_percent,
+            "color": COLORS["purple"],
+        })
+    if not enemy_state.block_sources.is_empty():
+        enemy_statuses.append({
+            "text": "格挡 %d" % enemy_state.block_sources.size(),
+            "color": COLORS["blue"],
+        })
+    if not enemy_state.challenge_records.is_empty():
+        enemy_statuses.append({
+            "text": "邀战 %d" % enemy_state.challenge_records.size(),
+            "color": COLORS["red"],
+        })
     player_actor_status.present({
         "name": "太吾 · 战斗状态",
         "life": player_state.life,
         "max_life": player_state.max_life,
         "defense": player_state.defense,
-        "statuses": [{
-            "text": "连势 %d" % player_state.momentum_value,
-            "color": COLORS["orange"],
-        }, {
-            "text": "毒量 %d · 手牌%d/%d · 牌库%d/%d" % [
-                player_state.poison_total_amount,
-                player_state.poison_hand_count, player_state.poison_hand_amount,
-                player_state.poison_draw_pile_count, player_state.poison_draw_pile_amount],
-            "color": COLORS["green"],
-        }],
+        "statuses": player_statuses,
     })
     enemy_actor_status.present({
         "name": enemy_state.name,
         "life": enemy_state.life,
         "max_life": enemy_state.max_life,
         "defense": enemy_state.defense,
-        "statuses": [
-            {"text": "连势 %d" % enemy_state.momentum_value, "color": COLORS["orange"]},
-            {"text": "毒量 %d · 手牌%d/%d · 牌库%d/%d" % [
-                enemy_state.poison_total_amount,
-                enemy_state.poison_hand_count, enemy_state.poison_hand_amount,
-                enemy_state.poison_draw_pile_count, enemy_state.poison_draw_pile_amount],
-                "color": COLORS["green"]},
-        ],
+        "statuses": enemy_statuses,
         "plans": _enemy_intent_chips(ai_state_label, possible_intents),
     })
     enemy_hand_count_label.text = "%d / %d%s" % [
@@ -551,8 +590,9 @@ func _enemy_intent_chips(ai_state_label: String, intents: Array) -> Array:
     }]
     for intent_value in intents.slice(0, 5):
         var intent: Dictionary = intent_value
-        var detail := "预计伤害 %d｜预计防御 %d｜打出约 %d 张" % [
+        var detail := "预计伤害 %d｜预计防御 %d｜预计同气 +%d｜打出约 %d 张" % [
             int(intent.get("damage", 0)), int(intent.get("defense", 0)),
+            int(intent.get("same_qi_gain", 0)),
             int(intent.get("played_count", 0))]
         var tags: Array = intent.get("public_tags", [])
         if not tags.is_empty():
@@ -661,7 +701,9 @@ func _refresh_preview_and_staging(
     var next_technique: Dictionary = preview["next_technique"]
     var condition_ok: bool = preview["condition"]["ok"]
     var inner_defense: int = int(preview.get("intent", {}).get("inner_skill_defense", 0))
-    value_panel.present_preview(hand, values, technique, inner_defense)
+    value_panel.present_preview(
+        hand, values, technique, inner_defense,
+        int(preview.get("same_qi_gain", 0)))
     var technique_name: String = technique.get("name", "空序列")
     var condition_text := "条件满足" if condition_ok else "条件失败：%s" % preview["condition"]["reason"]
     var next_name: String = next_technique.get("name", "空序列")
@@ -673,8 +715,9 @@ func _refresh_preview_and_staging(
         "pips": "●  ○" if technique_name != next_name else "●",
     })
     var contributing_count: int = hand.get("contributing_card_ids", []).size()
-    board_message.text = "%s · %d 张参与数值计算 · P = %d · 内功防御 +%d · 对手计划已锁定" % [
-        hand["name"], contributing_count, values["technique_value"], inner_defense]
+    board_message.text = "%s · %d 张参与数值计算 · P = %d · 同气 +%d · 内功防御 +%d · 对手计划已锁定" % [
+        hand["name"], contributing_count, values["technique_value"],
+        int(preview.get("same_qi_gain", 0)), inner_defense]
 
 func _refresh_consumable_targeting(player_state: BattleSideSnapshot) -> void:
     var definition: Dictionary = player_state.consumables[active_consumable_slot]

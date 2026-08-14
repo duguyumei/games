@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_mountain_poison_cave"
+display_name="山·蛊穴"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得P点防御。本完整回合内，下一次我方因毒失去生命后，获得所失生命两倍的防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","delayed_defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","delayed_defense","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_response","phase":"prepare","event":"poison_trigger_completed","expiry":"turn_end","filters":{"holder_is_actor":true,"actual_life_loss_positive":true,"max_triggers":1},"effects":[{"op":"defense","amount":{"kind":"multiply","values":[{"kind":"event_field","capture":"event","field":"actual_life_loss"},2]}}]}]
+

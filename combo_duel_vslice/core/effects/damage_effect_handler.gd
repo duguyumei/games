@@ -41,7 +41,11 @@ func execute(effect: Dictionary, context):
             var result: Dictionary = runtime.ports.deal_damage(
                 damage_actor, damage_target, amount,
                 str(effect.get("source_kind", "technique")), is_true,
-                runtime.action_token, damage_type)
+                runtime.action_token, damage_type, {
+                    "direct_attack": bool(effect.get(
+                        "direct_attack",
+                        runtime.source_kind in ["technique", "technique_retrigger"])),
+                })
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "伤害结算失败")))
             if effect.has("capture"):
@@ -67,11 +71,19 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
                 is_true = value_resolver.condition_met(effect["true_damage_when"], context)
             var damage_type := str(effect.get(
                 "damage_type", "true" if is_true else "normal"))
+            if effect.has("damage_type_when"):
+                var typed: Dictionary = effect["damage_type_when"]
+                damage_type = str(typed.get("then", "normal")) \
+                    if value_resolver.condition_met(
+                        typed.get("when", {}), context) \
+                    else str(typed.get("else", "normal"))
             var projected := amount if damage_type != "normal" else int(floor(
                 amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
             intent["damage"] = int(intent.get("damage", 0)) + projected
             if damage_type == "true":
                 intent["true_damage"] = int(intent.get("true_damage", 0)) + projected
+            if damage_type == "normal":
+                intent["normal_damage"] = int(intent.get("normal_damage", 0)) + projected
             if damage_type == "poison":
                 intent["poison_damage"] = int(intent.get("poison_damage", 0)) + projected
             intent["segments"] = int(intent.get("segments", 0)) + 1
@@ -79,8 +91,11 @@ func summarize(effect: Dictionary, context, intent: Dictionary, state: Dictionar
             var count := maxi(0, int(effect.get("segments", 1)))
             for _index in range(count):
                 var amount: int = value_resolver.resolve(effect.get("amount", {}), context)
-                intent["damage"] = int(intent.get("damage", 0)) + int(floor(
+                var projected: int = int(floor(
                     amount * (1.0 + int(state.get("damage_percent", 0)) / 100.0)))
+                intent["damage"] = int(intent.get("damage", 0)) + projected
+                intent["normal_damage"] = int(
+                    intent.get("normal_damage", 0)) + projected
                 intent["segments"] = int(intent.get("segments", 0)) + 1
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
@@ -105,7 +120,9 @@ func _execute_multi_damage(effect: Dictionary, runtime):
         if not ports.actor_can_continue(actor) or not ports.target_can_receive(target):
             break
         var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
-        var hit: Dictionary = ports.deal_damage(actor, target, amount, "technique")
+        var hit: Dictionary = ports.deal_damage(
+            actor, target, amount, "technique", false,
+            runtime.action_token, "normal", {"direct_attack": true})
         if not hit.get("success", false):
             return EffectResultScript.failed(str(hit.get("reason", "多段伤害结算失败")))
         var current_life_hit: bool = int(hit["life_lost"]) > 0
@@ -115,7 +132,9 @@ func _execute_multi_damage(effect: Dictionary, runtime):
                 and int(effect.get("chase_on_consecutive_life_hits_percent", 0)) > 0:
             var chase_amount := int(floor(
                 amount * int(effect["chase_on_consecutive_life_hits_percent"]) / 100.0))
-            ports.deal_damage(actor, target, chase_amount, "chase")
+            ports.deal_damage(
+                actor, target, chase_amount, "chase", false,
+                runtime.action_token, "normal", {"direct_attack": true})
             chase_count += 1
         previous_life_hit = current_life_hit
     return EffectResultScript.succeeded(

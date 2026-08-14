@@ -1,6 +1,8 @@
 class_name PowerCalculator
 extends RefCounted
 
+const ATTRIBUTES := ["wind", "forest", "fire", "mountain"]
+
 static func calculate(
         hand_result: Dictionary,
         modifiers: Dictionary = {},
@@ -13,20 +15,41 @@ static func calculate(
     var card_multiplier_bonus := 0
     var card_amp_percent := 0
     var card_trigger_bundles: Dictionary = {}
-    for card in hand_result["contributing"]:
+    var numeric_cards: Array = hand_result.get(
+        "numeric_contributing", hand_result.get("contributing", [])).duplicate()
+    var counted_card_ids: Dictionary = {}
+    var attribute_counts := {
+        "wind": 0, "forest": 0, "fire": 0, "mountain": 0,
+    }
+    for card in numeric_cards:
         var bundle := _qualified_card_numeric_bundle(
             card, contribution_modifier, identity_policy, identity_context)
         card_total += int(bundle["contribution"])
         card_multiplier_bonus += int(bundle["technique_multiplier_bonus"])
         card_amp_percent += int(bundle["power_amp_percent"])
         card_trigger_bundles[str(card.id)] = bundle
+        var card_id := str(card.id)
+        if counted_card_ids.has(card_id):
+            continue
+        counted_card_ids[card_id] = true
+        var identity: Dictionary = bundle.get("identity", {})
+        for attribute in ATTRIBUTES:
+            if identity.get("effective_attributes", []).has(attribute):
+                attribute_counts[attribute] = int(attribute_counts[attribute]) + 1
     var base_value: int = card_total + int(modifiers.get("base_fixed", 0))
-    var fixed_multiplier: int = int(hand_result["multiplier"])
+    var attribute_concentration := 0
+    for count in attribute_counts.values():
+        attribute_concentration = maxi(attribute_concentration, int(count))
+    var concentrated_attributes: Array[String] = []
+    for attribute in ATTRIBUTES:
+        if attribute_concentration > 0 \
+                and int(attribute_counts[attribute]) == attribute_concentration:
+            concentrated_attributes.append(attribute)
     var technique_multiplier: int = (
-        fixed_multiplier
+        attribute_concentration
         + int(modifiers.get("multiplier_bonus", 0))
         + card_multiplier_bonus)
-    var baseline_value: int = base_value * fixed_multiplier
+    var baseline_value: int = base_value
     var initial_power: int = int(floor(base_value * technique_multiplier))
     var direct_power_fixed := int(modifiers.get("power_fixed", 0))
     var direct_power_percent := (
@@ -37,10 +60,14 @@ static func calculate(
     return {
         "card_total": card_total,
         "base_value": base_value,
-        "fixed_multiplier": fixed_multiplier,
+        "contribution_total": base_value,
+        "attribute_counts": attribute_counts,
+        "attribute_concentration": attribute_concentration,
+        "concentrated_attributes": concentrated_attributes,
         "technique_multiplier": technique_multiplier,
         "baseline_value": baseline_value,
         "initial_power": initial_power,
+        "p0": initial_power,
         "direct_power_fixed": direct_power_fixed,
         "direct_power_percent": direct_power_percent,
         "pre_momentum_power": pre_momentum_power,
@@ -80,6 +107,17 @@ static func _qualified_card_numeric_bundle(
             card, identity_context)
         if identity_result.get("success", false):
             identity = identity_result["facts"].to_dict()
+    elif card != null:
+        var attributes: Array[String] = []
+        for attribute in ATTRIBUTES:
+            if card.has_method("is_attribute") and card.is_attribute(attribute):
+                attributes.append(attribute)
+        identity = {
+            "is_true_qi": true,
+            "effective_attributes": attributes,
+            "card_kinds": ["normal"] if not card.has_method("is_card_kind") \
+                or card.is_card_kind("normal") else [],
+        }
     if card.has_method("effective_qi_value") \
             and card.has_method("reshape_card_contribution"):
         # 读取一次会确保旧卡牌夹具也完成 fallback rules 绑定；该调用纯计算且结果

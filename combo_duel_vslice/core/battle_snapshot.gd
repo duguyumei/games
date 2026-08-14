@@ -11,7 +11,7 @@ extends RefCounted
 ## 日志与时点历史保持 Array 形态：它们是天然的追加序列，元素契约由
 ## StructuredGameLog 与 BattleTimingSystem 负责。
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 
 const SideSnapshotScript = preload("res://core/battle_side_snapshot.gd")
 

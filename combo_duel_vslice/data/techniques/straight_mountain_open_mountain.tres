@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_mountain_open_mountain"
+display_name="山·开山"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="获得P/2点防御。若本次行动通过同气获得额外行动，下一次额外行动的第一门成功功法值+C/2。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","same_qi_payoff","retrigger_sensitive"])
+public_behavior_summary=Array[String](["defense","same_qi_payoff","retrigger_sensitive"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"register_response","phase":"prepare","event":"same_qi_gain_resolved","expiry":"turn_end","filters":{"owner":"actor","max_triggers":1},"effects":[{"op":"add_pending_power_fixed","amount":{"kind":"divide_floor","value":{"kind":"card_contribution"},"divisor":2},"when":{"value_greater_than":{"value":{"kind":"event_field","capture":"event","field":"granted_actions"},"threshold":0}}}]}]
+

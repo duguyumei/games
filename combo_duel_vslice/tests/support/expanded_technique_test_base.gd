@@ -74,6 +74,8 @@ func _dispose_engines() -> void:
         engine.enemy.use_card_policies(null, null)
         engine.player.use_battle_permission_service(null)
         engine.enemy.use_battle_permission_service(null)
+        engine.player.clear_combat_sources()
+        engine.enemy.clear_combat_sources()
         engine.status_system.reset()
         engine.status_system.use_effect_ports(null)
         engine.status_system.use_effect_executor(null)

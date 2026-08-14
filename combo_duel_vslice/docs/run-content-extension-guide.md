@@ -435,7 +435,7 @@ kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_intera
 - `used_unique_consumable_ids`：记录已成功使用的唯一消耗品 ID。
 
 旧存档缺省时分别按 `0`、空对象和空数组恢复。战斗装配把前两项写入 `BattleSide`；倍率修正
-不改变固定牌型倍率、`baseline_value` 或 `power_fixed`。唯一内容只在整次事务成功提交时记录，
+不改变属性集中数、`baseline_value=C` 或 `power_fixed`。唯一内容只在整次事务成功提交时记录，
 查询、预览和失败均不写入。
 
 ## 6.8 内功配装与普通遗忘

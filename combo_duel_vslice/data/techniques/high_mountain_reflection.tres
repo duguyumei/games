@@ -19,5 +19,4 @@ power_formation = {}
 semantic_tags = Array[String](["defense","reflection"])
 public_behavior_summary = Array[String](["defense","reflection"])
 implementation_category = "C"
-effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"set_reflection_until_turn_end","amount":50}]
-
+effects = [{"op":"defense","amount":{"kind":"power"}},{"op":"grant_reflection_source","amount":50,"rounds":1,"expiry":"round_end"}]

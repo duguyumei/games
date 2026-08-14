@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 5
 
 var name: String = ""
 var life: int = 0
@@ -18,8 +18,14 @@ var defense: int = 0
 var direct_power_fixed: int = 0
 var direct_power_percent: int = 0
 var momentum_value: int = 0
+var same_qi_value: int = 0
+var same_qi_capacity: int = 5
 var last_successful_technique_hand_id: String = ""
 var current_reflection_percent: int = 0
+var reflection_sources: Array = []
+var reflection_true_damage_sources: Array = []
+var block_sources: Array = []
+var challenge_records: Array = []
 var hand_limit: int = 0
 var base_hand_limit: int = 0
 var inner_skill_limit: int = 0
@@ -62,7 +68,10 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "name", "life", "max_life", "defense", "hand_limit",
             "base_hand_limit",
             "direct_power_fixed", "direct_power_percent", "momentum_value",
+            "same_qi_value", "same_qi_capacity",
             "last_successful_technique_hand_id", "current_reflection_percent",
+            "reflection_sources", "reflection_true_damage_sources",
+            "block_sources", "challenge_records",
             "inner_skill_limit",
             "draw_count", "hand_count", "staging_count", "discard_count",
             "deck_count", "temporarily_removed_count",
@@ -82,10 +91,19 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.direct_power_fixed = int(values.get("direct_power_fixed", 0))
     result.direct_power_percent = int(values.get("direct_power_percent", 0))
     result.momentum_value = int(values.get("momentum_value", 0))
+    result.same_qi_value = int(values.get("same_qi_value", 0))
+    result.same_qi_capacity = int(values.get("same_qi_capacity", 5))
     result.last_successful_technique_hand_id = str(
         values.get("last_successful_technique_hand_id", ""))
     result.current_reflection_percent = int(
         values.get("current_reflection_percent", 0))
+    result.reflection_sources = values.get(
+        "reflection_sources", []).duplicate(true)
+    result.reflection_true_damage_sources = values.get(
+        "reflection_true_damage_sources", []).duplicate(true)
+    result.block_sources = values.get("block_sources", []).duplicate(true)
+    result.challenge_records = values.get(
+        "challenge_records", []).duplicate(true)
     result.hand_limit = int(values.get("hand_limit", 0))
     result.base_hand_limit = int(values.get("base_hand_limit", 0))
     result.inner_skill_limit = int(values.get("inner_skill_limit", 0))
@@ -129,8 +147,14 @@ func to_dict() -> Dictionary:
         "direct_power_fixed": direct_power_fixed,
         "direct_power_percent": direct_power_percent,
         "momentum_value": momentum_value,
+        "same_qi_value": same_qi_value,
+        "same_qi_capacity": same_qi_capacity,
         "last_successful_technique_hand_id": last_successful_technique_hand_id,
         "current_reflection_percent": current_reflection_percent,
+        "reflection_sources": reflection_sources.duplicate(true),
+        "reflection_true_damage_sources": reflection_true_damage_sources.duplicate(true),
+        "block_sources": block_sources.duplicate(true),
+        "challenge_records": challenge_records.duplicate(true),
         "hand_limit": hand_limit,
         "base_hand_limit": base_hand_limit,
         "inner_skill_limit": inner_skill_limit,

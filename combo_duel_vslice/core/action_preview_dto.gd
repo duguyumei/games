@@ -2,7 +2,7 @@ class_name ActionPreviewDto
 extends RefCounted
 
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 4
 
 var valid: bool = false
 var reason: String = ""
@@ -11,7 +11,12 @@ var hand: HandResultDtoScript
 var values: Dictionary = {}
 var passive_power_query_inputs: Dictionary = {}
 var same_qi: Dictionary = {}
-var same_qi_action: Dictionary = {}
+var same_qi_group: Dictionary = {}
+var same_qi_gain: int = 0
+var same_qi_before: int = 0
+var same_qi_capacity: int = 5
+var same_qi_after: int = 0
+var same_qi_trigger_count: int = 0
 var technique_id: String = ""
 var technique: Dictionary = {}
 var condition: Dictionary = {}
@@ -32,7 +37,12 @@ func configure(snapshot: Dictionary):
     passive_power_query_inputs = snapshot.get(
         "passive_power_query_inputs", {}).duplicate(true)
     same_qi = snapshot.get("same_qi", {}).duplicate(true)
-    same_qi_action = snapshot.get("same_qi_action", {}).duplicate(true)
+    same_qi_group = snapshot.get("same_qi_group", {}).duplicate(true)
+    same_qi_gain = int(snapshot.get("same_qi_gain", 0))
+    same_qi_before = int(snapshot.get("same_qi_before", 0))
+    same_qi_capacity = int(snapshot.get("same_qi_capacity", 5))
+    same_qi_after = int(snapshot.get("same_qi_after", 0))
+    same_qi_trigger_count = int(snapshot.get("same_qi_trigger_count", 0))
     technique_id = str(snapshot.get("technique_id", ""))
     technique = snapshot.get("technique", {}).duplicate(true)
     condition = snapshot.get("condition", {}).duplicate(true)
@@ -60,7 +70,12 @@ func to_dict() -> Dictionary:
         "values": values.duplicate(true),
         "passive_power_query_inputs": passive_power_query_inputs.duplicate(true),
         "same_qi": same_qi.duplicate(true),
-        "same_qi_action": same_qi_action.duplicate(true),
+        "same_qi_group": same_qi_group.duplicate(true),
+        "same_qi_gain": same_qi_gain,
+        "same_qi_before": same_qi_before,
+        "same_qi_capacity": same_qi_capacity,
+        "same_qi_after": same_qi_after,
+        "same_qi_trigger_count": same_qi_trigger_count,
         "technique_id": technique_id,
         "technique": technique.duplicate(true),
         "condition": condition.duplicate(true),

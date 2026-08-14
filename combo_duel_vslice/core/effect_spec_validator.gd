@@ -19,6 +19,9 @@ const AMOUNT_KINDS := [
     "add", "subtract", "multiply", "divide_floor", "divide_ceil", "modulo", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
     "capture_attribute_count", "capture_non_attribute_count", "capture_base_qi_sum",
     "capture_current_effective_qi", "group_base_qi_sum", "extra_count",
+    "card_contribution", "extra_effective_qi_sum", "action_same_qi_gain",
+    "action_same_qi_trigger_count", "base_attribute_count", "event_field",
+    "active_temporary_reshape_base_qi_sum",
     "capture_effective_qi_sum", "capture_effective_qi_max",
     "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum",
     "capture_anomaly_layers_max", "capture_result_count",
@@ -145,6 +148,9 @@ func _validate_condition(condition: Dictionary, scope: String) -> void:
     if condition.has("hand_id") \
             and not _hand_ids.has(str(condition["hand_id"])):
         _error(scope + ".hand_id", "引用未知精确牌型 %s" % str(condition["hand_id"]))
+    if condition.has("exact_hand_id") \
+            and not _hand_ids.has(str(condition["exact_hand_id"])):
+        _error(scope + ".exact_hand_id", "引用未知精确牌型 %s" % str(condition["exact_hand_id"]))
     if condition.has("actor_defense_equals") \
             and (not _is_integer(condition["actor_defense_equals"]) \
             or int(condition["actor_defense_equals"]) < 0):

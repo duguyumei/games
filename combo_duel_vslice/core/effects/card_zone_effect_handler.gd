@@ -171,6 +171,10 @@ func _move_captured(effect: Dictionary, runtime):
             and bool(effect.get("preserve_selection_order", false)):
         ordered_cards.reverse()
     for card in ordered_cards:
+        if str(effect.get("reason", "effect")) == "explicit_discard" \
+                and not runtime.ports.can_explicit_discard(
+                    source_side, card).get("allowed", false):
+            continue
         var result: Dictionary = runtime.ports.move_card(
             source_side,
             source_zone,

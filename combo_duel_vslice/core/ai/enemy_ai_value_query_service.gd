@@ -4,6 +4,8 @@ extends RefCounted
 const ContextScript = preload("res://core/passives/passive_rule_context.gd")
 const CardStateProviderScript = preload(
     "res://core/ai/enemy_card_state_value_provider.gd")
+const TechniqueSemanticProviderScript = preload(
+    "res://core/ai/enemy_technique_semantic_value_provider.gd")
 
 const HOOKS := [
     "ai_action_value_query",
@@ -19,6 +21,8 @@ var _unsupported_source_queries: Dictionary = {}
 func _init(passive_runtime = null) -> void:
     _runtime_ref = weakref(passive_runtime) if passive_runtime != null else null
     register_provider(CardStateProviderScript.new(), "card_state_semantics", 100)
+    register_provider(
+        TechniqueSemanticProviderScript.new(), "technique_semantics", 110)
 
 func register_provider(provider, source_id: String, order: int = 0) -> String:
     _providers.append({

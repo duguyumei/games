@@ -2,14 +2,14 @@ class_name HandEvaluator
 extends RefCounted
 
 const HANDS := {
-    "high_card": {"name": "高牌", "multiplier": 1, "strength": 0},
-    "pair": {"name": "一对", "multiplier": 2, "strength": 1},
-    "two_pair": {"name": "两对", "multiplier": 2, "strength": 2},
-    "three_kind": {"name": "三条", "multiplier": 3, "strength": 3},
-    "straight": {"name": "顺子", "multiplier": 4, "strength": 4},
-    "full_house": {"name": "葫芦", "multiplier": 4, "strength": 5},
-    "four_kind": {"name": "四条", "multiplier": 7, "strength": 6},
-    "five_kind": {"name": "五条", "multiplier": 12, "strength": 7},
+    "high_card": {"name": "高牌", "strength": 0},
+    "pair": {"name": "一对", "strength": 1},
+    "two_pair": {"name": "两对", "strength": 2},
+    "three_kind": {"name": "三条", "strength": 3},
+    "straight": {"name": "顺子", "strength": 4},
+    "full_house": {"name": "葫芦", "strength": 5},
+    "four_kind": {"name": "四条", "strength": 6},
+    "five_kind": {"name": "五条", "strength": 7},
 }
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
 const HandRecognitionOptionsScript = preload(
@@ -128,7 +128,6 @@ static func _result(hand_id: String, contributing: Array) -> Dictionary:
     return {
         "id": hand_id,
         "name": definition["name"],
-        "multiplier": definition["multiplier"],
         "strength": definition["strength"],
         "contributing": contributing.duplicate(),
         "royal": false,

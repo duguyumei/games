@@ -1,7 +1,7 @@
 class_name AiCandidate
 extends RefCounted
 
-const VERSION := 2
+const VERSION := 3
 
 var candidate_id: String = ""
 var groups: Array = []

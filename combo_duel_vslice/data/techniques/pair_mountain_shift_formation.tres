@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_mountain_shift_formation"
+display_name="山·移阵"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得P/2点防御。若本次与上一门成功功法的精确牌型不同，本次行动结束时同气+1。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","same_qi_payoff","retrigger_sensitive"])
+public_behavior_summary=Array[String](["defense","same_qi_payoff","retrigger_sensitive"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"register_response","phase":"prepare","event":"same_qi_gain_resolved","expiry":"turn_end","filters":{"owner":"actor","max_triggers":1},"effects":[{"op":"add_same_qi","amount":1}],"when":{"hand_differs_from_previous_success":true}}]
+

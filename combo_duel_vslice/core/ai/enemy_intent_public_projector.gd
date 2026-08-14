@@ -21,6 +21,10 @@ func project(records: Array) -> Array:
             "expected_next_normal_draw": maxi(
                 0, int(features["card_flow"]["expected_next_normal_draw"])),
             "combo": bool(features["immediate"]["combo"]),
+            "same_qi_gain": maxi(0, int(
+                features["immediate"]["same_qi_gain"])),
+            "same_qi_trigger_count": maxi(0, int(
+                features["immediate"]["same_qi_trigger_count"])),
             "public_tags": _public_tags(features),
         })
     return result

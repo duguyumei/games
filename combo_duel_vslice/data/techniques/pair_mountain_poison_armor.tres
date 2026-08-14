@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_mountain_poison_armor"
+display_name="山·蛊甲"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="获得P点防御。若我方手牌毒量不低于24，获得1次格挡。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","block","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","block","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"grant_block","condition":"unconditional","when":{"value_at_least":{"value":{"kind":"zone_anomaly_qi_sum","side":"actor","zone":"hand","category":"state","anomaly":"poison"},"minimum":24}}}]
+

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_mountain_reshape_rampart"
+display_name="山·返璞成垒"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="获得P点防御。移除本组全部临时重塑，再获得实际被移除过临时重塑的真气基础值总和的防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply","extra_card_commitment"])
+public_behavior_summary=Array[String](["defense","anomaly_apply","extra_card_commitment"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"capture_group_cards","kind":"played","capture":"reshape_group"},{"op":"clear_temporary_reshape_from_captured","capture":"reshape_group","subslot":"all","result_capture":"reshape_cleared"},{"op":"defense","amount":{"kind":"capture_base_qi_sum","capture":"reshape_cleared"}}]
+

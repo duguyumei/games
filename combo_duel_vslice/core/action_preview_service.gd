@@ -18,6 +18,7 @@ var passive_rule_runtime
 var effect_executor
 var battle_rule_query_service
 var battle_permission_service
+var same_qi_gauge_service
 var round_number_reader: Callable
 
 func _init(
@@ -26,27 +27,27 @@ func _init(
         executor,
         query_service = null,
         round_reader: Callable = Callable(),
-        permission_service = null) -> void:
+        permission_service = null,
+        gauge_service = null) -> void:
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
     effect_executor = executor
     battle_rule_query_service = query_service
     round_number_reader = round_reader
     battle_permission_service = permission_service
+    same_qi_gauge_service = gauge_service
 
 func preview(
         side,
         card_ids: Array,
         sequence_book,
         modifiers_by_hand: Dictionary = {},
-        same_qi_link_used: bool = false,
         target = null) -> Dictionary:
     return preview_dto(
         side,
         card_ids,
         sequence_book,
         modifiers_by_hand,
-        same_qi_link_used,
         target).to_dict()
 
 func preview_dto(
@@ -54,7 +55,6 @@ func preview_dto(
         card_ids: Array,
         sequence_book,
         modifiers_by_hand: Dictionary = {},
-        same_qi_link_used: bool = false,
         target = null):
     if card_ids.size() < 1 or card_ids.size() > 5:
         return _invalid_preview("每次必须选择 1～5 张真气")
@@ -89,21 +89,19 @@ func preview_dto(
     if not bool(play_check.get("allowed", false)):
         return _invalid_preview(str(play_check.get("reason", "此真气本回合不能打出")))
 
-    var same_qi: Dictionary = SameQiRuleScript.analyze(
+    var same_qi_group: Dictionary = SameQiRuleScript.analyze(
         cards,
         side.card_identity_policy,
         {"owner": side, "actor": side, "target": target})
-    if not same_qi.get("success", false):
-        return _invalid_preview(str(same_qi.get("reason", "同气身份查询失败")))
+    if not same_qi_group.get("success", false):
+        return _invalid_preview(str(same_qi_group.get(
+            "reason", "同气身份查询失败")))
 
     var modifiers: Dictionary = modifiers_by_hand.get(hand_result["id"], {}).duplicate(true)
     modifiers["multiplier_bonus"] = (
         int(modifiers.get("multiplier_bonus", 0))
         + int(side.hand_technique_multiplier_modifiers.get(
             hand_result["id"], 0)))
-    modifiers["power_amp_percent"] = (
-        int(modifiers.get("power_amp_percent", 0))
-        + int(same_qi.get("power_amp_percent", 0)))
     modifiers["power_fixed"] = (
         int(modifiers.get("power_fixed", 0))
         + int(side.hand_proficiency_fixed.get(hand_result["id"], 0))
@@ -213,12 +211,20 @@ func preview_dto(
             "reason", "伤害或防御预览查询失败")))
     intent = queried_intent["intent"]
 
-    var same_qi_action := SameQiRuleScript.intersect_group_attributes([same_qi])
-    var same_qi_link_available := (
-        bool(same_qi_action.get("qualified", false))
-        and not same_qi_link_used)
-    intent["same_qi_link"] = same_qi_link_available
-    intent["combo"] = same_qi_link_available or bool(intent.get("technique_combo", false))
+    var excluded_ids: Array[String] = []
+    for card in cards:
+        excluded_ids.append(str(card.id))
+    var same_qi_projection := _same_qi_projection(
+        side, int(same_qi_group.get("gain", 0)), excluded_ids, target)
+    if not same_qi_projection.get("success", false):
+        return _invalid_preview(str(same_qi_projection.get(
+            "reason", "同气槽容量查询失败")))
+    intent["combo"] = (
+        int(same_qi_projection.get("same_qi_trigger_count", 0)) > 0
+        or bool(intent.get("technique_combo", false)))
+    intent["same_qi_gain"] = int(same_qi_projection["same_qi_gain"])
+    intent["same_qi_trigger_count"] = int(
+        same_qi_projection["same_qi_trigger_count"])
     var next_technique_id: String = sequence_book.next_id(hand_result["id"])
     return ActionPreviewDtoScript.new().configure({
         "valid": true,
@@ -229,9 +235,15 @@ func preview_dto(
             "modifiers": modifiers,
             "queries": power_result["queries"],
         },
-        "same_qi": same_qi,
+        "same_qi": same_qi_group.duplicate(true),
+        "same_qi_group": same_qi_group,
+        "same_qi_gain": int(same_qi_projection["same_qi_gain"]),
+        "same_qi_before": int(same_qi_projection["same_qi_before"]),
+        "same_qi_capacity": int(same_qi_projection["same_qi_capacity"]),
+        "same_qi_after": int(same_qi_projection["same_qi_after"]),
+        "same_qi_trigger_count": int(
+            same_qi_projection["same_qi_trigger_count"]),
         "group_snapshot": group_snapshot,
-        "same_qi_action": same_qi_action,
         "technique_id": technique_id,
         "technique": technique,
         "condition": condition,
@@ -293,11 +305,22 @@ func recalculate_confirmed_power(
     var modifiers: Dictionary = inputs.get("modifiers", {}).duplicate(true)
     modifiers["multiplier_bonus"] = (
         int(modifiers.get("multiplier_bonus", 0)) + frozen_multiplier_bonus)
+    var pending_sources: Array = side.pending_power_fixed_sources.duplicate(true)
+    var pending_total := 0
+    var pending_tokens: Array[String] = []
+    for source in pending_sources:
+        pending_total += int(source.get("amount", 0))
+        pending_tokens.append(str(source.get("source_token", "")))
+    modifiers["power_fixed"] = int(modifiers.get("power_fixed", 0)) + pending_total
+    preview["pending_power_fixed_tokens"] = pending_tokens
+    preview["pending_power_fixed_amount"] = pending_total
     var result := _resolve_power_values(
         side, target, preview.get("hand", {}), preview.get("cards", []),
         modifiers, action_token, "action_confirmed")
     if result.get("success", false):
         preview["values"] = result["values"]
+        preview["group_snapshot"]["card_contribution"] = int(
+            preview["values"].get("card_total", 0))
         preview["values"]["card_multiplier_bonus"] = (
             int(preview["values"].get("card_multiplier_bonus", 0))
             + frozen_multiplier_bonus)
@@ -305,8 +328,69 @@ func recalculate_confirmed_power(
         preview["values"]["passive_power_queries"] = result["queries"]
         preview["passive_power_query_inputs"]["confirmed_queries"] = result["queries"]
         preview["passive_power_query_inputs"]["confirmed_action_token"] = action_token
+        var frozen_same_qi := SameQiRuleScript.analyze(
+            preview.get("cards", []), side.card_identity_policy, {
+                "owner": side, "actor": side, "target": target,
+                "action_token": action_token,
+            })
+        if not frozen_same_qi.get("success", false):
+            return frozen_same_qi
+        frozen_same_qi["frozen"] = true
+        frozen_same_qi["action_token"] = action_token
+        preview["same_qi_group"] = frozen_same_qi.duplicate(true)
+        preview["same_qi"] = frozen_same_qi.duplicate(true)
+        var projection := _same_qi_projection(
+            side, int(frozen_same_qi.get("gain", 0)), [], target,
+            action_token)
+        if not projection.get("success", false):
+            return projection
+        _write_same_qi_projection(preview, projection)
         _apply_technique_power_formation(side, target, preview)
     return result
+
+func _same_qi_projection(
+        side,
+        gain: int,
+        excluded_ids: Array[String],
+        target = null,
+        action_token: String = "") -> Dictionary:
+    if same_qi_gauge_service == null:
+        return {
+            "success": true,
+            "same_qi_gain": gain,
+            "same_qi_before": int(side.same_qi_value),
+            "same_qi_capacity": 5,
+            "same_qi_after": int(side.same_qi_value) + gain,
+            "same_qi_trigger_count": 0,
+        }
+    var legal_after := false
+    for card in side.hand:
+        if excluded_ids.has(str(card.id)):
+            continue
+        if side.status_system == null or bool(
+                side.status_system.can_play_card(side, card).get("allowed", false)):
+            legal_after = true
+            break
+    return same_qi_gauge_service.project_gain(side, gain, {
+        "target": target,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "action_token": action_token,
+        "source_kind": "action_confirmed" if action_token != "" else "preview",
+        "legal_card_available": legal_after,
+    })
+
+func _write_same_qi_projection(preview: Dictionary, projection: Dictionary) -> void:
+    for field in [
+            "same_qi_gain", "same_qi_before", "same_qi_capacity",
+            "same_qi_after", "same_qi_trigger_count"]:
+        preview[field] = int(projection.get(field, 0))
+    preview["intent"]["combo"] = (
+        int(preview["same_qi_trigger_count"]) > 0
+        or bool(preview["intent"].get("technique_combo", false)))
+    preview["intent"]["same_qi_gain"] = int(preview["same_qi_gain"])
+    preview["intent"]["same_qi_trigger_count"] = int(
+        preview["same_qi_trigger_count"])
 
 func _apply_technique_power_formation(side, target, preview: Dictionary) -> void:
     if preview.has("frozen_power_formation"):

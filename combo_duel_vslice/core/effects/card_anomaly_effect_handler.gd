@@ -179,10 +179,23 @@ func _clear_temporary_reshape(effect: Dictionary, runtime):
     if runtime.ports == null:
         return EffectResultScript.failed("临时重塑清除缺少战斗端口")
     var cleared := 0
+    var cleared_cards: Array = []
     for card in runtime.captures.get(str(effect.get("capture", "")), []):
-        if runtime.ports.clear_temporary_reshape(
-                card, str(effect.get("subslot", ""))).get("success", false):
+        var subslot := str(effect.get("subslot", ""))
+        var result: Dictionary = runtime.ports.clear_all_temporary_reshapes(card) \
+            if subslot == "all" else runtime.ports.clear_temporary_reshape(card, subslot)
+        var removed = result.get("removed")
+        var changed := false
+        if removed is Dictionary:
+            for value in removed.values():
+                changed = changed or str(value) != ""
+        else:
+            changed = str(removed) != ""
+        if result.get("success", false) and changed:
             cleared += 1
+            cleared_cards.append(card)
+    if effect.has("result_capture"):
+        runtime.captures[str(effect["result_capture"])] = cleared_cards
     return EffectResultScript.succeeded("清除临时重塑 %d 张" % cleared)
 
 func _layers(effect: Dictionary, runtime) -> int:

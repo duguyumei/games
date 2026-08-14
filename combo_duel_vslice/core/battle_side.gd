@@ -26,9 +26,19 @@ var base_hand_limit_modifier: int = 0
 var direct_power_fixed: int = 0
 var direct_power_percent: int = 0
 var momentum_value: int = 0
+var same_qi_value: int = 0
 var last_successful_technique_hand_id: String = ""
 var current_reflection_percent: int = 0
 var current_reflection_source_token: String = ""
+## 限时战斗来源是当前反震、格挡、邀战与下一功法修正的事实源。
+## 聚合字段 current_reflection_percent 仅供旧调用方与界面读取。
+var reflection_sources: Array = []
+var reflection_true_damage_sources: Array = []
+var block_sources: Array = []
+var challenge_records: Array = []
+var pending_power_fixed_sources: Array = []
+var defense_retention_sources: Array = []
+var _combat_source_serial: int = 0
 var draw_pile: Array = []
 var hand: Array = []
 var staging: Array = []
@@ -58,6 +68,7 @@ var hand_recognition_policy = null
 var card_identity_policy = null
 var battle_permission_service = null
 var last_hand_limit_query_result: Dictionary = {}
+var last_same_qi_capacity_query_result: Dictionary = {}
 
 func _init(side_name: String = "", stable_owner_id: String = "") -> void:
     name = side_name
@@ -117,9 +128,17 @@ func reset(
     direct_power_fixed = 0
     direct_power_percent = 0
     momentum_value = 0
+    same_qi_value = 0
     last_successful_technique_hand_id = ""
     current_reflection_percent = 0
     current_reflection_source_token = ""
+    reflection_sources.clear()
+    reflection_true_damage_sources.clear()
+    block_sources.clear()
+    challenge_records.clear()
+    pending_power_fixed_sources.clear()
+    defense_retention_sources.clear()
+    _combat_source_serial = 0
     equipped_inner_skill_ids.clear()
     item_ids.clear()
     technique_slot_index = 0
@@ -136,6 +155,7 @@ func reset(
     if battle_passive_counter_store != null:
         battle_passive_counter_store.clear()
     last_hand_limit_query_result.clear()
+    last_same_qi_capacity_query_result.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
 
 func replace_deck(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
@@ -223,6 +243,35 @@ func effective_hand_limit_result() -> Dictionary:
         1, int(last_hand_limit_query_result["effective_value"]))
     return last_hand_limit_query_result.duplicate(true)
 
+func effective_same_qi_capacity_result(context: Dictionary = {}) -> Dictionary:
+    const BASE_CAPACITY := 5
+    if battle_rule_query_service == null:
+        last_same_qi_capacity_query_result = {
+            "success": true, "base_value": BASE_CAPACITY,
+            "effective_value": BASE_CAPACITY, "source_breakdown": [],
+            "fingerprint": "", "errors": [],
+        }
+        return last_same_qi_capacity_query_result.duplicate(true)
+    var resolved = battle_rule_query_service.resolve_values({
+        "hook": "same_qi_capacity_query",
+        "owner": self, "actor": self,
+        "target": context.get("target"),
+        "subject_kind": "battle_side",
+        "subject_id": owner_id,
+        "base_value": BASE_CAPACITY,
+        "round_number": int(context.get("round_number", 0)),
+        "action_token": str(context.get("action_token", "")),
+        "source_kind": str(context.get("source_kind", "same_qi_capacity")),
+        "metadata": context.get("metadata", {}).duplicate(true),
+    })
+    last_same_qi_capacity_query_result = resolved.to_dict()
+    if not resolved.success:
+        battle_rule_query_service.report_failure(resolved, "same_qi_capacity")
+        return last_same_qi_capacity_query_result.duplicate(true)
+    last_same_qi_capacity_query_result["effective_value"] = maxi(
+        1, int(last_same_qi_capacity_query_result["effective_value"]))
+    return last_same_qi_capacity_query_result.duplicate(true)
+
 func capture_passive_query_state() -> Dictionary:
     var card_states: Dictionary = {}
     for card in all_cards_for_run_sync():
@@ -250,6 +299,7 @@ func capture_passive_query_state() -> Dictionary:
     if status_system != null:
         status_state = {
             "delayed_records": status_system.delayed_records.duplicate(true),
+            "response_records": status_system.response_records.duplicate(true),
             "history": status_system.history.duplicate(true),
             "serial": int(status_system._serial),
             "delay_serial": int(status_system._delay_serial),
@@ -265,9 +315,17 @@ func capture_passive_query_state() -> Dictionary:
         "direct_power_fixed": direct_power_fixed,
         "direct_power_percent": direct_power_percent,
         "momentum_value": momentum_value,
+        "same_qi_value": same_qi_value,
         "last_successful_technique_hand_id": last_successful_technique_hand_id,
         "current_reflection_percent": current_reflection_percent,
         "current_reflection_source_token": current_reflection_source_token,
+        "reflection_sources": reflection_sources.duplicate(true),
+        "reflection_true_damage_sources": reflection_true_damage_sources.duplicate(true),
+        "block_sources": block_sources.duplicate(true),
+        "challenge_records": challenge_records.duplicate(true),
+        "pending_power_fixed_sources": pending_power_fixed_sources.duplicate(true),
+        "defense_retention_sources": defense_retention_sources.duplicate(true),
+        "combat_source_serial": _combat_source_serial,
         "draw_ids": draw_pile.map(func(card): return str(card.id)),
         "hand_ids": hand.map(func(card): return str(card.id)),
         "staging_ids": staging.map(func(card): return str(card.id)),
@@ -295,6 +353,8 @@ func capture_passive_query_state() -> Dictionary:
             if passive_counter_store != null else {},
         "battle_counters": battle_passive_counter_store.capture_state() \
             if battle_passive_counter_store != null else {},
+        "last_same_qi_capacity_query_result": (
+            last_same_qi_capacity_query_result.duplicate(true)),
     }
 
 func replace_passive_query_state(state: Dictionary) -> void:
@@ -307,12 +367,28 @@ func replace_passive_query_state(state: Dictionary) -> void:
     direct_power_fixed = int(state.get("direct_power_fixed", direct_power_fixed))
     direct_power_percent = int(state.get("direct_power_percent", direct_power_percent))
     momentum_value = int(state.get("momentum_value", momentum_value))
+    same_qi_value = int(state.get("same_qi_value", same_qi_value))
+    last_same_qi_capacity_query_result = state.get(
+        "last_same_qi_capacity_query_result",
+        last_same_qi_capacity_query_result).duplicate(true)
     last_successful_technique_hand_id = str(state.get(
         "last_successful_technique_hand_id", last_successful_technique_hand_id))
     current_reflection_percent = int(state.get(
         "current_reflection_percent", current_reflection_percent))
     current_reflection_source_token = str(state.get(
         "current_reflection_source_token", current_reflection_source_token))
+    reflection_sources.assign(state.get("reflection_sources", reflection_sources))
+    reflection_true_damage_sources.assign(state.get(
+        "reflection_true_damage_sources", reflection_true_damage_sources))
+    block_sources.assign(state.get("block_sources", block_sources))
+    challenge_records.assign(state.get("challenge_records", challenge_records))
+    pending_power_fixed_sources.assign(state.get(
+        "pending_power_fixed_sources", pending_power_fixed_sources))
+    defense_retention_sources.assign(state.get(
+        "defense_retention_sources", defense_retention_sources))
+    _combat_source_serial = int(state.get(
+        "combat_source_serial", _combat_source_serial))
+    _refresh_reflection_aggregate()
     draw_pile.assign(state.get("draw_cards", draw_pile))
     hand.assign(state.get("hand_cards", hand))
     staging.assign(state.get("staging_cards", staging))
@@ -362,6 +438,8 @@ func replace_passive_query_state(state: Dictionary) -> void:
     var status_state: Dictionary = state.get("status_state", {})
     if status_system != null and not status_state.is_empty():
         status_system.delayed_records.assign(status_state["delayed_records"])
+        status_system.response_records.assign(status_state.get(
+            "response_records", []))
         status_system.history.assign(status_state["history"])
         status_system._serial = int(status_state["serial"])
         status_system._delay_serial = int(status_state["delay_serial"])
@@ -467,16 +545,319 @@ func set_momentum(value: int) -> int:
     return momentum_value
 
 func set_reflection_percent(value: int, source_token: String = "") -> int:
-    current_reflection_percent = maxi(0, value)
-    current_reflection_source_token = source_token if current_reflection_percent > 0 else ""
+    var token := source_token if source_token != "" else next_combat_source_token("reflection")
+    if value <= 0:
+        remove_reflection_source(token)
+        return current_reflection_percent
+    add_reflection_source(value, token, -1, "manual", "", "反震", true)
     return current_reflection_percent
 
 func clear_reflection_if_source(source_token: String) -> bool:
-    if source_token == "" or current_reflection_source_token != source_token:
+    return remove_reflection_source(source_token)
+
+func next_combat_source_token(prefix: String) -> String:
+    var token := "%s-%s-%06d" % [prefix, owner_id, _combat_source_serial]
+    _combat_source_serial += 1
+    return token
+
+func add_reflection_source(
+        percent: int,
+        source_token: String = "",
+        remaining_rounds: int = 1,
+        expiry_kind: String = "round_end",
+        expiry_window_id: String = "",
+        label: String = "反震",
+        is_public: bool = true) -> Dictionary:
+    var token := source_token if source_token != "" \
+        else next_combat_source_token("reflection")
+    for existing in reflection_sources.duplicate():
+        if str(existing.get("source_token", "")) == token:
+            reflection_sources.erase(existing)
+    var record := {
+        "source_token": token,
+        "percent": maxi(0, percent),
+        "established_order": _combat_source_serial,
+        "remaining_rounds": remaining_rounds,
+        "expiry_kind": expiry_kind,
+        "expiry_window_id": expiry_window_id,
+        "label": label,
+        "public": is_public,
+    }
+    _combat_source_serial += 1
+    if int(record["percent"]) > 0:
+        reflection_sources.append(record)
+    _refresh_reflection_aggregate()
+    return record
+
+func remove_reflection_source(source_token: String) -> bool:
+    if source_token == "":
         return false
+    var removed := false
+    for record in reflection_sources.duplicate():
+        if str(record.get("source_token", "")) == source_token:
+            reflection_sources.erase(record)
+            removed = true
+    _refresh_reflection_aggregate()
+    return removed
+
+func add_reflection_true_damage_source(
+        source_token: String = "",
+        remaining_rounds: int = 1,
+        label: String = "反震真伤",
+        is_public: bool = true) -> Dictionary:
+    var token := source_token if source_token != "" \
+        else next_combat_source_token("reflection-true")
+    for existing in reflection_true_damage_sources.duplicate():
+        if str(existing.get("source_token", "")) == token:
+            reflection_true_damage_sources.erase(existing)
+    var record := {
+        "source_token": token,
+        "established_order": _combat_source_serial,
+        "remaining_rounds": remaining_rounds,
+        "label": label,
+        "public": is_public,
+    }
+    _combat_source_serial += 1
+    reflection_true_damage_sources.append(record)
+    return record
+
+func reflection_is_true_damage() -> bool:
+    return not reflection_true_damage_sources.is_empty()
+
+func tick_round_limited_sources() -> Dictionary:
+    var expired_reflection: Array[String] = []
+    var expired_true_damage: Array[String] = []
+    var expired_retention: Array[String] = []
+    var expired_reflection_records: Array = []
+    var expired_true_damage_records: Array = []
+    var expired_retention_records: Array = []
+    for record in reflection_sources.duplicate():
+        if str(record.get("expiry_kind", "round_end")) != "round_end" \
+                or int(record.get("remaining_rounds", -1)) < 0:
+            continue
+        record["remaining_rounds"] = int(record.get("remaining_rounds", 1)) - 1
+        if int(record["remaining_rounds"]) <= 0:
+            expired_reflection.append(str(record.get("source_token", "")))
+            expired_reflection_records.append(record.duplicate(true))
+            reflection_sources.erase(record)
+    for record in reflection_true_damage_sources.duplicate():
+        if int(record.get("remaining_rounds", -1)) < 0:
+            continue
+        record["remaining_rounds"] = int(record.get("remaining_rounds", 1)) - 1
+        if int(record["remaining_rounds"]) <= 0:
+            expired_true_damage.append(str(record.get("source_token", "")))
+            expired_true_damage_records.append(record.duplicate(true))
+            reflection_true_damage_sources.erase(record)
+    for record in defense_retention_sources.duplicate():
+        if int(record.get("remaining_rounds", -1)) < 0:
+            continue
+        record["remaining_rounds"] = int(record.get("remaining_rounds", 1)) - 1
+        if int(record["remaining_rounds"]) <= 0:
+            expired_retention.append(str(record.get("source_token", "")))
+            expired_retention_records.append(record.duplicate(true))
+            defense_retention_sources.erase(record)
+    _refresh_reflection_aggregate()
+    return {
+        "reflection": expired_reflection,
+        "true_damage": expired_true_damage,
+        "retention": expired_retention,
+        "reflection_records": expired_reflection_records,
+        "true_damage_records": expired_true_damage_records,
+        "retention_records": expired_retention_records,
+    }
+
+func expire_action_window_sources(window_id: String) -> Dictionary:
+    var expired_reflection: Array[String] = []
+    var expired_blocks: Array[String] = []
+    var expired_reflection_records: Array = []
+    var expired_block_records: Array = []
+    for record in reflection_sources.duplicate():
+        if str(record.get("expiry_kind", "")) == "action_window_end" \
+                and str(record.get("expiry_window_id", "")) == window_id:
+            expired_reflection.append(str(record.get("source_token", "")))
+            expired_reflection_records.append(record.duplicate(true))
+            reflection_sources.erase(record)
+    for record in block_sources.duplicate():
+        if str(record.get("window_id", "")) == window_id:
+            expired_blocks.append(str(record.get("source_token", "")))
+            expired_block_records.append(record.duplicate(true))
+            block_sources.erase(record)
+    _refresh_reflection_aggregate()
+    return {
+        "reflection": expired_reflection, "blocks": expired_blocks,
+        "reflection_records": expired_reflection_records,
+        "block_records": expired_block_records,
+    }
+
+func add_block_source(
+        condition: String,
+        source_token: String = "",
+        target_owner_id: String = "",
+        window_id: String = "",
+        label: String = "格挡",
+        is_public: bool = true,
+        metadata: Dictionary = {}) -> Dictionary:
+    var token := source_token if source_token != "" \
+        else next_combat_source_token("block")
+    var record := {
+        "source_token": token,
+        "condition": condition,
+        "established_order": _combat_source_serial,
+        "target_owner_id": target_owner_id,
+        "window_id": window_id,
+        "waiting_for_action": window_id == "",
+        "label": label,
+        "public": is_public,
+        "metadata": metadata.duplicate(true),
+    }
+    _combat_source_serial += 1
+    block_sources.append(record)
+    return record
+
+func bind_waiting_action_sources(acting_owner_ids: Array, window_id: String) -> void:
+    for record in block_sources:
+        if bool(record.get("waiting_for_action", false)) \
+                and acting_owner_ids.has(str(record.get("target_owner_id", ""))):
+            record["waiting_for_action"] = false
+            record["window_id"] = window_id
+    for record in challenge_records:
+        if bool(record.get("waiting_for_action", false)) \
+                and acting_owner_ids.has(str(record.get("target_owner_id", ""))):
+            record["waiting_for_action"] = false
+            record["window_id"] = window_id
+
+func try_consume_block(
+        amount: int,
+        damage_type: String,
+        attacker_owner_id: String,
+        window_id: String) -> Dictionary:
+    if amount <= 0 or damage_type not in ["normal", "true"]:
+        return {"blocked": false}
+    var ordered := block_sources.duplicate()
+    ordered.sort_custom(func(left, right):
+        return int(left.get("established_order", 0)) \
+            < int(right.get("established_order", 0)))
+    for record in ordered:
+        if bool(record.get("waiting_for_action", false)) \
+                or str(record.get("window_id", "")) != window_id \
+                or str(record.get("target_owner_id", "")) != attacker_owner_id:
+            continue
+        var condition := str(record.get("condition", "unconditional"))
+        if condition == "damage_at_most_defense" and amount > defense:
+            continue
+        block_sources.erase(record)
+        return {"blocked": true, "source": record, "source_token": record["source_token"]}
+    return {"blocked": false}
+
+func add_pending_power_fixed_source(
+        amount: int,
+        source_token: String = "",
+        label: String = "下一门成功功法",
+        is_public: bool = true) -> Dictionary:
+    var token := source_token if source_token != "" \
+        else next_combat_source_token("power-fixed")
+    var record := {
+        "source_token": token,
+        "amount": maxi(0, amount),
+        "established_order": _combat_source_serial,
+        "label": label,
+        "public": is_public,
+    }
+    _combat_source_serial += 1
+    pending_power_fixed_sources.append(record)
+    return record
+
+func add_defense_retention_source(
+        additional_percent: int,
+        prevent_decay: bool,
+        source_token: String = "",
+        remaining_rounds: int = 1,
+        label: String = "防御保留") -> Dictionary:
+    var token := source_token if source_token != "" \
+        else next_combat_source_token("defense-retention")
+    var record := {
+        "source_token": token,
+        "additional_percent": additional_percent,
+        "prevent_decay": prevent_decay,
+        "remaining_rounds": remaining_rounds,
+        "established_order": _combat_source_serial,
+        "label": label, "public": true,
+    }
+    _combat_source_serial += 1
+    defense_retention_sources.append(record)
+    return record
+
+func pending_power_fixed_total() -> int:
+    var total := 0
+    for record in pending_power_fixed_sources:
+        total += int(record.get("amount", 0))
+    return total
+
+func consume_pending_power_fixed_sources(tokens: Array) -> int:
+    var total := 0
+    for record in pending_power_fixed_sources.duplicate():
+        if tokens.has(str(record.get("source_token", ""))):
+            total += int(record.get("amount", 0))
+            pending_power_fixed_sources.erase(record)
+    return total
+
+func public_reflection_sources() -> Array:
+    var result: Array = []
+    for record in reflection_sources:
+        if bool(record.get("public", true)):
+            result.append(_public_source(record, ["percent", "remaining_rounds", "expiry_kind", "label"]))
+    return result
+
+func public_reflection_true_damage_sources() -> Array:
+    var result: Array = []
+    for record in reflection_true_damage_sources:
+        if bool(record.get("public", true)):
+            result.append(_public_source(record, [
+                "remaining_rounds", "label"]))
+    return result
+
+func public_block_sources() -> Array:
+    var result: Array = []
+    for record in block_sources:
+        if bool(record.get("public", true)):
+            result.append(_public_source(record, [
+                "condition", "waiting_for_action", "window_id", "label"]))
+    return result
+
+func public_challenge_records() -> Array:
+    var result: Array = []
+    for record in challenge_records:
+        if bool(record.get("public", true)):
+            result.append(_public_source(record, [
+                "threshold", "current", "target_owner_id", "window_id",
+                "waiting_for_action", "label"]))
+    return result
+
+func clear_combat_sources() -> void:
+    reflection_sources.clear()
+    reflection_true_damage_sources.clear()
+    block_sources.clear()
+    challenge_records.clear()
+    pending_power_fixed_sources.clear()
+    defense_retention_sources.clear()
     current_reflection_percent = 0
     current_reflection_source_token = ""
-    return true
+
+func _refresh_reflection_aggregate() -> void:
+    var latest: Dictionary = {}
+    for record in reflection_sources:
+        if latest.is_empty() or int(record.get("established_order", 0)) \
+                > int(latest.get("established_order", 0)):
+            latest = record
+    current_reflection_percent = int(latest.get("percent", 0))
+    current_reflection_source_token = str(latest.get("source_token", ""))
+
+func _public_source(record: Dictionary, fields: Array) -> Dictionary:
+    var result := {"source_token": str(record.get("source_token", ""))}
+    for field_value in fields:
+        var field := str(field_value)
+        result[field] = record.get(field)
+    return result
 
 func configure_inner_skills(
         inner_skill_ids: Array,

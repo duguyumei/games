@@ -168,6 +168,24 @@ func _matches(card, facts = null, context = null, side = null) -> bool:
             or not card.reshape_others.is_empty())
         if permanent != bool(filters["has_permanent_reshape"]):
             return false
+    if filters.has("has_active_permanent_reshape"):
+        var active_permanent: bool = not card.return_to_origin_active() and (
+            not card.reshape_origin.is_empty()
+            or card.reshape_enhancement != ""
+            or card.reshape_imprint != ""
+            or not card.reshape_others.is_empty())
+        if active_permanent != bool(filters["has_active_permanent_reshape"]):
+            return false
+    if filters.has("has_active_any_reshape"):
+        var active_any: bool = not card.return_to_origin_active() and (
+            not card.reshape_origin.is_empty()
+            or card.reshape_enhancement != ""
+            or card.reshape_imprint != ""
+            or not card.reshape_others.is_empty()
+            or str(card.temporary_reshapes.get("enhancement", "")) != ""
+            or str(card.temporary_reshapes.get("attribute", "")) != "")
+        if active_any != bool(filters["has_active_any_reshape"]):
+            return false
     if filters.has("effective_qi_at_most"):
         var effective := _current_effective_qi(card, context, side)
         if effective > int(filters["effective_qi_at_most"]):

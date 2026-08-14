@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 4
+const SCHEMA_VERSION := 5
 
 var actor
 var target
@@ -75,12 +75,18 @@ func snapshot() -> Dictionary:
         "passive_power_queries": preview.get("values", {}).get(
             "passive_power_queries", {}).duplicate(true),
         "same_qi": preview.get("same_qi", {}).duplicate(true),
-        "same_qi_action": preview.get("same_qi_action", {}).duplicate(true),
+        "same_qi_group": preview.get("same_qi_group", {}).duplicate(true),
+        "same_qi_gain": int(preview.get("same_qi_gain", 0)),
+        "same_qi_before": int(preview.get("same_qi_before", 0)),
+        "same_qi_capacity": int(preview.get("same_qi_capacity", 5)),
+        "same_qi_after": int(preview.get("same_qi_after", 0)),
+        "same_qi_trigger_count": int(preview.get(
+            "same_qi_trigger_count", 0)),
         "cooperation_group_count": cooperation_groups.size(),
         "cooperation_groups": cooperation_groups.map(func(group): return {
             "group_index": int(group.get("group_index", 0)),
-            "same_qi": group.get("preview", {}).get(
-                "same_qi", {}).duplicate(true),
+            "same_qi_group": group.get("preview", {}).get(
+                "same_qi_group", {}).duplicate(true),
         }),
     }
 

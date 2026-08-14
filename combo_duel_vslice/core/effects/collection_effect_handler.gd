@@ -73,6 +73,22 @@ func execute(effect: Dictionary, context):
                         str(apply_spec.get("id", "")),
                         bool(apply_spec.get("replace_state", false))).get(
                             "allowed", false))
+            if bool(effect.get("require_active_permanent_reshape", false)):
+                cards = cards.filter(func(card):
+                    return not card.return_to_origin_active() and (
+                        not card.reshape_origin.is_empty()
+                        or card.reshape_enhancement != ""
+                        or card.reshape_imprint != ""
+                        or not card.reshape_others.is_empty()))
+            if bool(effect.get("require_active_any_reshape", false)):
+                cards = cards.filter(func(card):
+                    return not card.return_to_origin_active() and (
+                        not card.reshape_origin.is_empty()
+                        or card.reshape_enhancement != ""
+                        or card.reshape_imprint != ""
+                        or not card.reshape_others.is_empty()
+                        or str(card.temporary_reshapes.get("enhancement", "")) != ""
+                        or str(card.temporary_reshapes.get("attribute", "")) != ""))
             runtime.captures[str(effect.get("capture", "group_cards"))] = cards
             return EffectResultScript.succeeded("捕获组内真气 %d 张" % cards.size())
         "select_random_captured":

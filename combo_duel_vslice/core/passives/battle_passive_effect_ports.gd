@@ -334,6 +334,32 @@ func grant_extra_actions(
         "source_kind": source_kind,
     })
 
+func gain_same_qi(
+        target_scope: String,
+        amount: int,
+        source_kind: String = "",
+        action_token: String = "") -> Dictionary:
+    var command := _begin_command("gain_same_qi")
+    if not command["success"]:
+        return command["result"]
+    var target := _resolve_scope(target_scope, command["token"])
+    if not target["success"]:
+        return target["result"]
+    var stable_token: String = (
+        action_token if action_token != "" else str(command["token"]))
+    var applied: Dictionary = _effect_ports().gain_same_qi(
+        target["side"], amount, source_kind, stable_token)
+    if not applied.get("success", false):
+        return _failure(command["token"], str(applied.get(
+            "reason", "同气写入失败")))
+    return _success(command["token"], not applied.get("reused", false), {
+        "target_scope": target_scope,
+        "amount": amount,
+        "source_kind": source_kind,
+        "action_token": stable_token,
+        "same_qi_change": applied.duplicate(true),
+    })
+
 func add_momentum(target_scope: String, amount: int) -> Dictionary:
     var command := _begin_command("add_momentum")
     if not command["success"]:

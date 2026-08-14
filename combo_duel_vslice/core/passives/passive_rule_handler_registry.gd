@@ -29,6 +29,13 @@ const BATTLE_COMMITTED_EVENT_HOOKS := [
     "card_entered_discard",
     "card_explicitly_discarded",
     "damage_resolved",
+    "damage_blocked",
+    "reflection_resolved",
+    "reflection_source_changed",
+    "block_source_changed",
+    "challenge_established",
+    "challenge_progressed",
+    "challenge_resolved",
     "poison_trigger_completed",
     "defense_gained",
 ]
@@ -44,6 +51,7 @@ const BATTLE_INT_QUERY_HOOKS := [
     "poison_defense_intervention_query",
     "defense_gain_query",
     "defense_retention_percent_query",
+    "same_qi_capacity_query",
 ]
 
 const BATTLE_POLICY_QUERY_HOOKS := [
@@ -92,6 +100,13 @@ const HOOKS := [
     "card_entered_discard",
     "card_explicitly_discarded",
     "damage_resolved",
+    "damage_blocked",
+    "reflection_resolved",
+    "reflection_source_changed",
+    "block_source_changed",
+    "challenge_established",
+    "challenge_progressed",
+    "challenge_resolved",
     "poison_trigger_completed",
     "defense_gained",
     "hand_limit_query",
@@ -104,6 +119,7 @@ const HOOKS := [
     "poison_defense_intervention_query",
     "defense_gain_query",
     "defense_retention_percent_query",
+    "same_qi_capacity_query",
     "hand_evaluation_options_query",
     "card_identity_query",
     "card_play_permission_query",

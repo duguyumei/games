@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_mountain_topple_peak"
+display_name="山·倾岳"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="清空当前防御并记录为F。获得P点防御，再造成F/2+C点真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","extra_card_commitment"])
+public_behavior_summary=Array[String](["defense","true_damage","extra_card_commitment"])
+implementation_category="B"
+effects=[{"op":"remove_all_defense","phase":"prepare","capture":"removed_defense"},{"op":"defense","amount":{"kind":"power"}},{"op":"damage","amount":{"kind":"add","values":[{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"removed_defense","field":"amount"},"divisor":2},{"kind":"card_contribution"}]},"damage_type":"true"}]
+

@@ -64,12 +64,21 @@ func flush_synchronized(
         if stopped_actor_ids.has(actor_id):
             continue
         var actual_amount := int(intent["amount"])
+        var amount_result: Dictionary = {}
         if actual_amount_resolver.is_valid():
-            var amount_result: Dictionary = actual_amount_resolver.call(intent)
+            amount_result = actual_amount_resolver.call(intent)
             if not amount_result.get("success", false):
                 break
             actual_amount = maxi(0, int(amount_result["amount"]))
-        var actual := apply_to_target(
+        var blocked := bool(amount_result.get("blocked", false)) \
+            if actual_amount_resolver.is_valid() else false
+        var actual := {
+            "requested": actual_amount,
+            "defense_lost": 0,
+            "life_lost": 0,
+            "true_damage": str(intent.get("damage_type", "normal")) == "true",
+            "damage_type": str(intent.get("damage_type", "normal")),
+        } if blocked else apply_to_target(
             intent["target"],
             actual_amount,
             str(intent.get("damage_type", "true" if bool(intent["true_damage"]) else "normal")),
@@ -85,6 +94,9 @@ func flush_synchronized(
             "damage_type": intent.get("damage_type", "normal"),
             "preview": intent["preview"],
             "resolution_metadata": intent.get("resolution_metadata", {}).duplicate(true),
+            "blocked": blocked,
+            "block_result": amount_result.get("block_result", {}).duplicate(true) \
+                if actual_amount_resolver.is_valid() else {},
             "result": actual,
         }
         resolved.append(resolution)

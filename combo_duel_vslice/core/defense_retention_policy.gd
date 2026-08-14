@@ -51,6 +51,16 @@ func resolve_retention(side, context: Dictionary = {}) -> Dictionary:
     var retention_percent := DEFAULT_RETENTION_PERCENT
     var prevented := false
     var modifiers: Array[Dictionary] = []
+    for source in side.defense_retention_sources:
+        var source_percent := int(source.get("additional_percent", 0))
+        var source_prevents := bool(source.get("prevent_decay", false))
+        retention_percent += source_percent
+        prevented = prevented or source_prevents
+        modifiers.append({
+            "provider_id": str(source.get("source_token", "")),
+            "additional_retention_percent": source_percent,
+            "prevent_decay": source_prevents,
+        })
     for entry in _providers:
         var modifier := _resolve_provider(entry["provider"], side, context)
         if modifier.is_empty():

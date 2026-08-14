@@ -24,11 +24,19 @@
 >   持有，外部代码通过公开窄查询访问。
 > - S0 最终验收已通过，当前执行阶段为 S1；大型战斗核心瘦身、状态系统继续拆分、
 >   UI／美术、测试拆分和文档维护继续保留在长期轨道。
-> - 2026-08-14 已接入 79 门正式功法；正文中的“107 门旧候选／9 门纵切样本”只描述
+> - 2026-08-14 已接入 128 门正式功法；正文中的“107 门旧候选／9 门纵切样本”只描述
 >   2026-08-06 审计当时的历史状态，不再作为当前内容口径。当前证据见
 >   `docs/technique-content-status.md`。
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
+
+### 山系公共底层与49门正式接入（2026-08-14）
+
+山系批次复用了冻结牌型组快照和窄效果端口，不在中央流程识别功法名称。`HandGroupSnapshot` 分别冻结主组／协同组的实际打出牌、计值牌、额外牌、C、基础值、当前有效值、可视属性、共同属性和成功打出时捕获集合；`EffectValueResolver` 与 `EffectTargetQuery` 提供额外牌有效值／数量、共同属性、基础值总和、精确牌型、上一成功牌型和同步敌方普通攻击投影。
+
+反震由 `BattleSide.reflection_sources` 维护独立来源，最新有效来源覆盖、到期后恢复旧来源；`reflection_true_damage_sources` 独立控制反震真伤。`grant_reflection_source`、`grant_reflection_true_damage`、`reflection_resolved` 与来源变化历史事件由 `BattleEffectPorts` 提供。格挡来源只在合格敌方直接普通／真伤段进入防御前查询，真实同步 flush 才消费；邀战记录冻结 Q、P₀／P、目标和行动窗口，并按实际防御损失与生命损失推进。
+
+本批新增 `same_qi_gain_resolved`、防御自然衰减完成、回合开始、行动窗口结束等公共时点；同气收口、下一额外行动功法值修正、临时重塑、牌区回收与来源生命周期均由通用 Handler／响应记录完成。AI 通过语义标签估值 Provider 投影，UI 与历史公开当前反震、格挡和邀战，不添加任何山系功法 ID 分支。新增正式资源49个，A/B/C分类为10/8/31。
 
 ## 结论
 
@@ -104,7 +112,7 @@ flowchart LR
 - `game_composition_root.gd`：应用组合根；创建共享内容目录、日志、初始构筑仓库、构筑装配器和战斗会话工厂，再为每局创建独立导航、成长和节点调度实例。
 - `technique_definition.gd`、`technique_instance.gd`：所有功法共用的内容实体和运行时实例类型。
 - `techniques.json`：独立功法资源清单与共用池映射；不再保存功法正文。
-- `data/techniques/*.tres`：每门功法一个独立文件，当前 79 门正式功法从这里加载。
+- `data/techniques/*.tres`：每门功法一个独立文件，当前 128 门正式功法从这里加载。
 - `starter_builds.json`：当前唯一构筑显式声明 52 个基础真气 ID；`StarterBuildAssembler` 将其装配为 `RunDeck`，不再把构筑 ID 只当作快照标签。
 - `node_rewards.json`：注册可扩展奖励类型，并只录入已确认的普通、精英、Boss 基础历练。
 - `battle_statuses.json`：角色战斗状态定义；声明叠层、清理时点、数值修正与事件行为，不由战斗流程按状态 ID 分支。
@@ -132,10 +140,11 @@ flowchart LR
 - `battle_snapshot.gd`：供表现层读取的深复制状态快照。
 - `battle_event.gd`：从触发历史和命令拒绝产生的结构化事件。
 - `action_preview_service.gd`：独立完成选牌校验、牌型与功法值、功法条件、内功预计效果和公开意图，不依赖 UI 或场景树。
-- `hand_result_dto.gd`、`action_preview_dto.gd`：牌型结果与行动预览的 v1 类型化运行时契约；领域服务可直接取得 DTO，旧战斗门面继续通过 `to_dict()` 提供兼容字典。
+- `hand_result_dto.gd`、`action_preview_dto.gd`：牌型结果 v2 与行动预览 v4 类型化运行时契约；牌型结果只保存名称、强度与贡献牌，行动预览显式保存 C/N/M/P₀/P 及预计同气变化。
 - `action_resolver.gd`：独立编排牌型组三阶段触发、左右顺序、效果队列、牌上烈毒与蛊印回库、待出区提交和结算日志；只依赖 `BattleEffectPorts` 与行动记录，序列推进注册为牌型组结束处理器。
-- `same_qi_rule.gd`：纯查询每组普通真气的有效属性身份全体交集与 `0/10/20/30/50%` 同气增幅，并组合冻结后的组结果建立行动级同气连动事实。
-- `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复和结算完成后的同气连动／其他连击推进；不生成内容或决定胜负。
+- `same_qi_rule.gd`：保留具体功法条件所需的全组共同属性纯判断，并对整次行动的普通真气按实例去重、确定性枚举多属性分配，输出最大同气收益、分组、计数与 fingerprint。
+- `same_qi_gauge_service.gd`：维护双方战斗态同气槽，以 `same_qi_capacity_query` 纯查询有效容量，并用稳定 token 幂等处理获得、阈值消耗、溢出和额外行动。
+- `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复，以及全部主组与协同组成功后一次性提交冻结同气收益；不生成内容或决定胜负。
 - `battle_pending_action_transaction.gd`：保存等待功法选择时的可恢复行动事务，区分玩家单方、敌方单方和敌我同步三种形态，并提供版本化快照。
 - `damage_resolver.gd`：独立完成普通伤害、真伤、连势增伤、防御／生命扣减、同步伤害 shadow 和攻击段存活判断，不依赖触发队列或 UI。
 - `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。

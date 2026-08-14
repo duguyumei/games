@@ -1040,6 +1040,9 @@ func _validate_cooperation(value, scope: String) -> void:
                     continue
                 if str(anomaly.get("category", "")) not in ANOMALY_CATEGORY_IDS:
                     _error(scope + ".card_has_any_anomaly[%d].category" % index, "引用未知异状类别")
+    if value.has("shares_attribute_with_main") \
+            and not value["shares_attribute_with_main"] is bool:
+        _error(scope + ".shares_attribute_with_main", "必须是布尔值")
     var post_commit = value.get("post_commit", {})
     if not post_commit is Dictionary:
         _error(scope + ".post_commit", "必须是对象")

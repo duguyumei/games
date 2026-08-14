@@ -22,6 +22,8 @@ var _battle_rng: RandomNumberGenerator
 var _battle_instance_id: String = "battle-0"
 var _effect_executor_ref: WeakRef
 var _action_resolution_scope: Dictionary = {}
+var _same_qi_gauge_service
+var _action_window_serial: int = 0
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -67,6 +69,42 @@ func use_battle_instance_id(value: String) -> void:
 
 func use_effect_executor(executor) -> void:
     _effect_executor_ref = weakref(executor)
+
+func use_same_qi_gauge_service(service) -> void:
+    _same_qi_gauge_service = service
+
+func same_qi_projection(side: BattleSide, amount: int, context: Dictionary = {}) -> Dictionary:
+    if _same_qi_gauge_service == null:
+        return {"success": false, "reason": "同气槽服务尚未装配"}
+    return _same_qi_gauge_service.project_gain(side, amount, context)
+
+func gain_same_qi(
+        side: BattleSide,
+        amount: int,
+        source: String,
+        token: String) -> Dictionary:
+    if _same_qi_gauge_service == null:
+        return {"success": false, "reason": "同气槽服务尚未装配"}
+    var result: Dictionary = _same_qi_gauge_service.apply_gain(
+        side, amount, source, token)
+    if result.get("success", false) and not result.get("reused", false):
+        add_history(
+            "same_qi_changed",
+            "%s同气变化" % side.name,
+            source,
+            "成功",
+            "%d +%d -%d = %d / %d；额外行动 +%d" % [
+                int(result["same_qi_before"]), int(result["gained"]),
+                int(result["spent"]), int(result["same_qi_after"]),
+                int(result["same_qi_capacity"]),
+                int(result["granted_actions"]),
+            ])
+        var response := result.duplicate(true)
+        response["actor"] = side
+        response["holder"] = side
+        response["action_token"] = token.trim_suffix(":same_qi")
+        _status_system.handle_response_event("same_qi_gain_resolved", response)
+    return result
 
 func execute_effect_chain(effects: Array, context) -> Dictionary:
     var executor = _effect_executor_ref.get_ref() if _effect_executor_ref != null else null
@@ -121,6 +159,8 @@ func deal_damage(
         action_token: String = "",
         damage_type: String = "",
         resolution_metadata: Dictionary = {}) -> Dictionary:
+    var resolved_metadata := resolution_metadata.duplicate(true)
+    resolved_metadata["action_token"] = action_token
     var resolved_type := damage_type
     if resolved_type == "":
         resolved_type = "true" if true_damage else "normal"
@@ -139,10 +179,25 @@ func deal_damage(
             actor, target, amount, source_kind, action_token)
     if not _damage_resolver.is_buffering():
         final_override = int(resolved_amount["amount"])
+        var block_result := _try_block_damage(
+            actor, target, int(final_override), resolved_type, source_kind,
+            action_token, resolved_metadata)
+        if block_result.get("blocked", false):
+            _emit_damage_blocked(
+                actor, target, int(final_override), resolved_type, source_kind,
+                action_token, block_result)
+            return {
+                "success": true, "buffered": false, "blocked": true,
+                "final_amount": 0, "requested": int(final_override),
+                "defense_lost": 0, "life_lost": 0,
+                "damage_type": resolved_type,
+                "true_damage": resolved_type == "true",
+                "block_result": block_result,
+            }
     var result: Dictionary = _damage_resolver.resolve(
         actor, target, amount, source_kind, resolved_type == "true",
         _status_system, final_override, resolved_type,
-        poison_defense_intervention, resolution_metadata)
+        poison_defense_intervention, resolved_metadata)
     if not bool(result["buffered"]):
         _record_action_damage(actor, target, result)
         _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
@@ -150,7 +205,8 @@ func deal_damage(
         _emit_damage_resolved(
             actor, target, amount, source_kind, resolved_type, result, false,
             action_token)
-        _resolve_reflection(actor, target, source_kind, resolved_type, result)
+        _resolve_reflection(
+            actor, target, source_kind, resolved_type, result, action_token)
     result["success"] = true
     return result
 
@@ -180,10 +236,26 @@ func begin_action_resolution(actors: Array, metadata: Dictionary = {}) -> void:
             "defense_lost": 0,
             "life_lost": 0,
         }
+    var window_id := "action-window-%06d" % _action_window_serial
+    _action_window_serial += 1
+    var resolved_metadata := metadata.duplicate(true)
+    resolved_metadata["action_window_id"] = window_id
+    var acting_owner_ids: Array = resolved_metadata.get(
+        "acting_owner_ids", []).duplicate()
+    for side in actors:
+        if side != null:
+            side.bind_waiting_action_sources(acting_owner_ids, window_id)
     _action_resolution_scope = {
         "entries": entries,
-        "metadata": metadata.duplicate(true),
+        "metadata": resolved_metadata,
+        "window_id": window_id,
+        "acting_owner_ids": acting_owner_ids,
+        "source_binding_open": true,
     }
+
+func close_current_source_binding_window() -> void:
+    if not _action_resolution_scope.is_empty():
+        _action_resolution_scope["source_binding_open"] = false
 
 func finish_action_resolution() -> Dictionary:
     if _action_resolution_scope.is_empty():
@@ -332,6 +404,95 @@ func set_momentum(side: BattleSide, value: int) -> int:
 func set_reflection_percent(
         side: BattleSide, value: int, source_token: String = "") -> int:
     return side.set_reflection_percent(value, source_token)
+
+func grant_reflection_source(
+        side: BattleSide,
+        percent: int,
+        remaining_rounds: int,
+        expiry_kind: String,
+        label: String,
+        source_token: String = "",
+        target_side: BattleSide = null) -> Dictionary:
+    var window_id := ""
+    if expiry_kind == "action_window_end":
+        var target_owner_id := str(target_side.owner_id) if target_side != null else ""
+        if _can_bind_current_source(target_owner_id):
+            window_id = _current_action_window_id()
+    var record := side.add_reflection_source(
+        percent, source_token, remaining_rounds, expiry_kind,
+        window_id, label, true)
+    _emit_source_state_changed(
+        "reflection_source_changed", side, record, "established")
+    return {"success": true, "record": record, "source_token": record["source_token"]}
+
+func grant_reflection_true_damage_source(
+        side: BattleSide,
+        remaining_rounds: int,
+        label: String,
+        source_token: String = "") -> Dictionary:
+    var record := side.add_reflection_true_damage_source(
+        source_token, remaining_rounds, label, true)
+    _emit_source_state_changed(
+        "reflection_source_changed", side, record, "true_damage_established")
+    return {"success": true, "record": record, "source_token": record["source_token"]}
+
+func grant_block_source(
+        side: BattleSide,
+        target_side: BattleSide,
+        condition: String,
+        label: String,
+        source_token: String = "",
+        metadata: Dictionary = {}) -> Dictionary:
+    var target_owner_id := str(target_side.owner_id) if target_side != null else ""
+    var window_id := _current_action_window_id() \
+        if _can_bind_current_source(target_owner_id) else ""
+    var record := side.add_block_source(
+        condition, source_token, target_owner_id, window_id,
+        label, true, metadata)
+    _emit_source_state_changed("block_source_changed", side, record, "established")
+    return {"success": true, "record": record, "source_token": record["source_token"]}
+
+func register_challenge(
+        context,
+        threshold: int,
+        effects: Array,
+        label: String = "邀战") -> Dictionary:
+    var runtime = context
+    var token: String = str(runtime.actor.next_combat_source_token("challenge"))
+    var target_owner_id := str(runtime.target.owner_id) if runtime.target != null else ""
+    var window_id := _current_action_window_id() \
+        if _can_bind_current_source(target_owner_id) else ""
+    var record := {
+        "source_token": token,
+        "threshold": maxi(0, threshold), "current": 0,
+        "challenger": runtime.actor, "target": runtime.target,
+        "target_owner_id": target_owner_id,
+        "window_id": window_id, "waiting_for_action": window_id == "",
+        "effects": effects.duplicate(true),
+        "power": runtime.power, "initial_power": runtime.initial_power,
+        "hand_result": runtime.hand_result.duplicate(true),
+        "played_cards": runtime.played_cards.duplicate(),
+        "group_snapshot": runtime.group_snapshot.duplicate(true),
+        "captures": runtime.captures.duplicate(true),
+        "technique_id": runtime.technique_id,
+        "technique_name": runtime.technique_name,
+        "actual_hand_id": runtime.actual_hand_id,
+        "branch_hand_id": runtime.branch_hand_id,
+        "technique_pool": runtime.technique_pool,
+        "action_token": runtime.action_token,
+        "label": label, "public": true,
+    }
+    runtime.actor.challenge_records.append(record)
+    _emit_source_state_changed(
+        "challenge_established", runtime.actor, record, "established")
+    return {"success": true, "record": record, "source_token": token}
+
+func notify_source_changed(
+        event_kind: String,
+        side: BattleSide,
+        record: Dictionary,
+        change: String) -> void:
+    _emit_source_state_changed(event_kind, side, record, change)
 
 func add_direct_power_fixed(side: BattleSide, amount: int) -> int:
     side.direct_power_fixed += amount
@@ -747,6 +908,18 @@ func _log_damage(
             result["life_lost"]])
 
 func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
+    var metadata: Dictionary = resolution.get("resolution_metadata", {})
+    var resolved_action_token := str(resolution.get(
+        "action_token", metadata.get("action_token", "")))
+    if bool(resolution.get("blocked", false)):
+        _emit_damage_blocked(
+            resolution["actor"], resolution["target"],
+            int(resolution.get("requested_amount", resolution.get("amount", 0))),
+            str(resolution.get("damage_type", "normal")),
+            str(resolution.get("source_kind", "")),
+            resolved_action_token,
+            resolution.get("block_result", {}))
+        return false
     _record_action_damage(
         resolution["actor"], resolution["target"], resolution["result"])
     _log_damage(
@@ -765,8 +938,7 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         resolution["actor"],
         resolution["target"],
         str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
-        resolution["result"])
-    var metadata: Dictionary = resolution.get("resolution_metadata", {})
+        resolution["result"], resolved_action_token)
     if str(metadata.get("kind", "")) == "poison_card_trigger":
         notify_poison_triggered(
             metadata.get("holder"), metadata.get("card"),
@@ -793,6 +965,17 @@ func _record_action_damage(actor, target, result: Dictionary) -> void:
         entries[target_key]["life_lost"] = (
             int(entries[target_key].get("life_lost", 0))
             + int(result.get("life_lost", 0)))
+    var actual_loss := int(result.get("defense_lost", 0)) \
+        + int(result.get("life_lost", 0))
+    if actual_loss > 0 and actor != null and target != null and actor != target:
+        var window_id := _current_action_window_id()
+        for record in target.challenge_records:
+            if str(record.get("window_id", "")) != window_id \
+                    or str(record.get("target_owner_id", "")) != str(actor.owner_id):
+                continue
+            record["current"] = int(record.get("current", 0)) + actual_loss
+            _emit_source_state_changed(
+                "challenge_progressed", target, record, "progressed")
 
 func _resolve_actual_damage_amount(
         actor,
@@ -848,11 +1031,25 @@ func _poison_defense_intervention(
     return maxi(0, mini(requested_amount, int(query.effective_value)))
 
 func _resolve_synchronized_damage_amount(intent: Dictionary) -> Dictionary:
-    return _resolve_actual_damage_amount(
+    var metadata: Dictionary = intent.get("resolution_metadata", {})
+    var resolved_action_token := str(intent.get(
+        "action_token", metadata.get("action_token", "")))
+    var resolved := _resolve_actual_damage_amount(
         intent["actor"], intent["target"],
         int(intent.get("requested_amount", intent["amount"])),
         str(intent["source_kind"]), str(intent.get("damage_type", "normal")),
-        str(intent.get("action_token", "")))
+        resolved_action_token)
+    if not resolved.get("success", false):
+        return resolved
+    var block_result := _try_block_damage(
+        intent["actor"], intent["target"], int(resolved.get("amount", 0)),
+        str(intent.get("damage_type", "normal")), str(intent.get("source_kind", "")),
+        resolved_action_token, metadata)
+    if block_result.get("blocked", false):
+        resolved["amount"] = 0
+        resolved["blocked"] = true
+        resolved["block_result"] = block_result
+    return resolved
 
 func _emit_damage_resolved(
         actor,
@@ -863,14 +1060,9 @@ func _emit_damage_resolved(
         result: Dictionary,
         synchronized: bool,
         action_token: String = "") -> void:
-    if _committed_event_service == null:
-        return
-    var serial: int = int(_committed_event_service.next_serial())
-    _committed_event_service.commit("damage_resolved", {
-        "event_token": _committed_event_service.make_token(
-            "damage_resolved", actor, serial, action_token),
-        "event_serial": serial,
+    var values := {
         "actor": actor, "target": target, "owner": actor,
+        "attacker": actor, "defender": target, "holder": target,
         "include_target_owner": true,
         "round_number": _round_number(),
         "action_token": action_token,
@@ -882,7 +1074,16 @@ func _emit_damage_resolved(
         "true_damage": damage_type == "true",
         "damage_type": damage_type,
         "synchronized": synchronized,
-    })
+        "defense_after": int(target.defense) if target != null else 0,
+        "life_after": int(target.life) if target != null else 0,
+    }
+    if _committed_event_service != null:
+        var serial: int = int(_committed_event_service.next_serial())
+        values["event_token"] = _committed_event_service.make_token(
+            "damage_resolved", actor, serial, action_token)
+        values["event_serial"] = serial
+        _committed_event_service.commit("damage_resolved", values)
+    _status_system.handle_response_event("damage_resolved", values)
 
 func _round_number() -> int:
     return int(_round_number_reader.call()) if _round_number_reader.is_valid() else 0
@@ -892,10 +1093,11 @@ func _resolve_reflection(
         defender: BattleSide,
         source_kind: String,
         damage_type: String,
-        result: Dictionary) -> void:
+        result: Dictionary,
+        action_token: String = "") -> void:
     if attacker == null or defender == null or attacker == defender \
             or source_kind == "reflection" \
-            or damage_type != "normal":
+            or damage_type == "poison":
         return
     var defense_lost := int(result.get("defense_lost", 0))
     var percent := int(defender.current_reflection_percent)
@@ -904,4 +1106,105 @@ func _resolve_reflection(
     var amount := int(floor(defense_lost * percent / 100.0))
     if amount <= 0:
         return
-    deal_damage(defender, attacker, amount, "reflection", false)
+    var reflection_source_token := str(defender.current_reflection_source_token)
+    var reflection_type := "true" if defender.reflection_is_true_damage() else "normal"
+    var reflected := deal_damage(
+        defender, attacker, amount, "reflection", reflection_type == "true",
+        action_token, reflection_type, {"direct_attack": false})
+    var event_values := {
+        "attacker": attacker, "defender": defender,
+        "actor": defender, "holder": defender, "target": attacker,
+        "defense_lost": defense_lost, "percent": percent,
+        "requested_damage": amount,
+        "actual_life_loss": int(reflected.get("life_lost", 0)),
+        "damage_type": reflection_type,
+        "true_damage": reflection_type == "true",
+        "source_token": reflection_source_token,
+        "action_token": action_token,
+        "action_window_id": _current_action_window_id(),
+    }
+    if _committed_event_service != null:
+        var serial: int = int(_committed_event_service.next_serial())
+        event_values["event_serial"] = serial
+        event_values["event_token"] = _committed_event_service.make_token(
+            "reflection_resolved", defender, serial, action_token)
+        _committed_event_service.commit("reflection_resolved", event_values)
+    _status_system.handle_response_event("reflection_resolved", event_values)
+
+func _try_block_damage(
+        actor: BattleSide,
+        target: BattleSide,
+        amount: int,
+        damage_type: String,
+        source_kind: String,
+        _action_token: String,
+        metadata: Dictionary) -> Dictionary:
+    if actor == null or target == null or actor == target \
+            or damage_type not in ["normal", "true"] \
+            or source_kind == "reflection" \
+            or not bool(metadata.get("direct_attack", false)):
+        return {"blocked": false}
+    return target.try_consume_block(
+        amount, damage_type, str(actor.owner_id), _current_action_window_id())
+
+func _emit_damage_blocked(
+        actor: BattleSide,
+        target: BattleSide,
+        amount: int,
+        damage_type: String,
+        source_kind: String,
+        action_token: String,
+        block_result: Dictionary) -> void:
+    var source: Dictionary = block_result.get("source", {})
+    var values := {
+        "actor": actor, "attacker": actor,
+        "target": target, "defender": target, "holder": target,
+        "amount": amount, "attack_amount": amount,
+        "damage_type": damage_type, "true_damage": damage_type == "true",
+        "source_kind": source_kind,
+        "source_token": str(source.get("source_token", "")),
+        "action_token": action_token,
+        "action_window_id": _current_action_window_id(),
+        "source_metadata": source.get("metadata", {}).duplicate(true),
+    }
+    add_history(
+        "damage_blocked", "%s格挡%s攻击" % [target.name, actor.name],
+        str(source.get("label", "格挡")), "成功", "%d点%s" % [amount, damage_type])
+    _emit_source_state_changed(
+        "block_source_changed", target, source, "consumed")
+    if _committed_event_service != null:
+        var serial: int = int(_committed_event_service.next_serial())
+        values["event_serial"] = serial
+        values["event_token"] = _committed_event_service.make_token(
+            "damage_blocked", target, serial, action_token)
+        _committed_event_service.commit("damage_blocked", values)
+    _status_system.handle_response_event("damage_blocked", values)
+
+func _emit_source_state_changed(
+        event_kind: String,
+        side: BattleSide,
+        record: Dictionary,
+        change: String) -> void:
+    if _committed_event_service == null:
+        return
+    var serial: int = int(_committed_event_service.next_serial())
+    _committed_event_service.commit(event_kind, {
+        "event_token": _committed_event_service.make_token(
+            event_kind, side, serial, str(record.get("source_token", ""))),
+        "event_serial": serial,
+        "actor": side, "owner": side,
+        "round_number": _round_number(),
+        "source_token": str(record.get("source_token", "")),
+        "change": change,
+        "public_state": record.duplicate(true),
+    })
+
+func _current_action_window_id() -> String:
+    return str(_action_resolution_scope.get("window_id", ""))
+
+func _current_acting_owner_ids() -> Array:
+    return _action_resolution_scope.get("acting_owner_ids", [])
+
+func _can_bind_current_source(target_owner_id: String) -> bool:
+    return bool(_action_resolution_scope.get("source_binding_open", false)) \
+        and _current_acting_owner_ids().has(target_owner_id)

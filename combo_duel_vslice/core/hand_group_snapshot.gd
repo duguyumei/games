@@ -28,6 +28,8 @@ static func freeze(
             "card": card,
             "instance_id": str(card.id),
             "base_qi_at_freeze": _base_qi(card),
+            "base_attribute_at_freeze": str(card.current_attribute()) \
+                if card.has_method("current_attribute") else str(card.attribute),
             "effective_qi_at_freeze": current_effective_qi({}, card, side),
             "growth_at_freeze": card.anomaly_layers("buff", "growth"),
             "heat_at_freeze": card.anomaly_layers("buff", "qi_heat"),
@@ -38,6 +40,11 @@ static func freeze(
     for card in played_cards:
         var attributes: Array = facts_by_id[str(card.id)]["attributes_at_freeze"]
         common = common.filter(func(attribute): return attributes.has(attribute))
+    var contributing_common: Array = ATTRIBUTES.duplicate()
+    for card in contributing:
+        var attributes: Array = facts_by_id[str(card.id)]["attributes_at_freeze"]
+        contributing_common = contributing_common.filter(
+            func(attribute): return attributes.has(attribute))
     var triggered_cards: Array = []
     for card in played_cards:
         if on_play_success_ids.has(str(card.id)):
@@ -53,6 +60,7 @@ static func freeze(
         "extra_cards": extra,
         "facts_by_id": facts_by_id,
         "common_attributes": common,
+        "contributing_common_attributes": contributing_common,
         "on_play_success_cards": triggered_cards,
         "played_poison_cards": played_poison_cards,
         "played_poison_count": played_poison_cards.size(),

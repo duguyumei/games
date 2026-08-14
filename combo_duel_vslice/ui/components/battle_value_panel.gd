@@ -33,7 +33,7 @@ func present_idle() -> void:
     _ensure_built()
     _hand_name.text = IDLE_HAND_NAME
     _base_value.text = "0"
-    _multiplier.text = "1"
+    _multiplier.text = "0"
     _power_value.text = "0"
     _baseline.text = IDLE_BASELINE
     _technique_name.text = IDLE_TECHNIQUE_NAME
@@ -49,17 +49,25 @@ func present_preview(
         hand: Dictionary,
         values: Dictionary,
         technique: Dictionary,
-        inner_skill_defense: int) -> void:
+        inner_skill_defense: int,
+        same_qi_gain: int = 0) -> void:
     _ensure_built()
     _hand_name.text = str(hand["name"])
-    _base_value.text = str(values["base_value"])
-    _multiplier.text = str(values["technique_multiplier"])
+    _base_value.text = str(values["contribution_total"])
+    _multiplier.text = str(values["attribute_concentration"])
     _power_value.text = str(values["technique_value"])
-    _baseline.text = "牌型基准值 %d · 不自动伤害" % int(values["baseline_value"])
+    _baseline.text = "C %d · N %d · M %d · P₀ %d · P %d" % [
+        int(values["contribution_total"]),
+        int(values["attribute_concentration"]),
+        int(values["technique_multiplier"]),
+        int(values["initial_power"]),
+        int(values["technique_value"]),
+    ]
     _technique_name.text = "当前功法：%s" % str(technique.get("name", "空序列"))
     var description := str(technique.get("description", "该精确牌型当前没有功法。"))
     if inner_skill_defense > 0:
         description += "\n内功预计获得 %d 防御。" % inner_skill_defense
+    description += "\n本次同气 +%d。" % same_qi_gain
     _technique_description.text = description
 
 ## 消耗品定向中。数值不适用，功法区改为展示消耗品。
@@ -117,7 +125,7 @@ func _build_equation() -> Control:
     var equation := HBoxContainer.new()
     equation.alignment = BoxContainer.ALIGNMENT_CENTER
     equation.add_theme_constant_override("separation", 7)
-    var base_tile := UiDesignScript.number_tile("0", "基础值", COLORS["red"])
+    var base_tile := UiDesignScript.number_tile("0", "贡献 C", COLORS["red"])
     _base_value = base_tile["value"]
     equation.add_child(base_tile["root"])
     var times := Label.new()
@@ -125,7 +133,7 @@ func _build_equation() -> Control:
     times.add_theme_font_size_override("font_size", 28)
     times.add_theme_color_override("font_color", COLORS["muted"])
     equation.add_child(times)
-    var multiplier_tile := UiDesignScript.number_tile("1", "功法倍率", COLORS["blue"])
+    var multiplier_tile := UiDesignScript.number_tile("0", "属性集中 N", COLORS["blue"])
     _multiplier = multiplier_tile["value"]
     equation.add_child(multiplier_tile["root"])
     return equation

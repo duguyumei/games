@@ -19,6 +19,7 @@ const QUERY_HOOKS := [
     "poison_defense_intervention_query",
     "defense_gain_query",
     "defense_retention_percent_query",
+    "same_qi_capacity_query",
 ]
 
 var _resolver

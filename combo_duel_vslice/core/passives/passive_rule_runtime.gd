@@ -32,6 +32,9 @@ const BATTLE_MUTATION_HOOKS := [
     "action_confirmed", "action_resolved", "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
     "damage_resolved", "defense_gained", "poison_trigger_completed",
+    "damage_blocked", "reflection_resolved", "reflection_source_changed",
+    "block_source_changed", "challenge_established", "challenge_progressed",
+    "challenge_resolved",
 ]
 
 var registry

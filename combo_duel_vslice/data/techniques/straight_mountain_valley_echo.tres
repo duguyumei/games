@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_mountain_valley_echo"
+display_name="山·空谷回声"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="获得P点防御。邀战C；敌方未达标时，对其造成等于未达标差额的普通伤害。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","damage","enemy_disruption","challenge"])
+public_behavior_summary=Array[String](["defense","damage","enemy_disruption","challenge"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_challenge","threshold":{"kind":"card_contribution"},"effects":[{"op":"damage","amount":{"kind":"capture_field_first","capture":"challenge_difference","field":"amount"},"damage_type":"normal","direct_attack":false}]}]

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_mountain_still_peak"
+display_name="山·静岳"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得P点防御。邀战C；敌方未达标时，获得等于未达标差额的防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","delayed_defense","enemy_disruption","challenge"])
+public_behavior_summary=Array[String](["defense","delayed_defense","enemy_disruption","challenge"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_challenge","threshold":{"kind":"card_contribution"},"effects":[{"op":"defense","amount":{"kind":"capture_field_first","capture":"challenge_difference","field":"amount"}}]}]

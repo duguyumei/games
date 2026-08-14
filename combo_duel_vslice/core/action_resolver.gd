@@ -216,6 +216,20 @@ func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
             "detail": "已有行动正在等待选择",
         }
     for record in records:
+        var snapshot: Dictionary = record["preview"].get("group_snapshot", {})
+        snapshot["has_cooperation_group"] = not record.cooperation_groups.is_empty()
+        snapshot["opposing_hand_id"] = ""
+        snapshot["opposing_has_normal_attack"] = false
+        if synchronized:
+            for opposing in records:
+                if opposing["actor"] != record["actor"]:
+                    snapshot["opposing_hand_id"] = str(
+                        opposing["preview"].get("hand", {}).get("id", ""))
+                    snapshot["opposing_has_normal_attack"] = int(
+                        opposing["preview"].get("intent", {}).get(
+                            "normal_damage", 0)) > 0
+                    break
+    for record in records:
         var action_preview: Dictionary = record["preview"]
         var technique: Dictionary = action_preview["technique"]
         if technique.is_empty():
@@ -562,6 +576,8 @@ func _finish_action_record(record) -> void:
     var technique: Dictionary = action_preview["technique"]
     var hand_id: String = action_preview["hand"]["id"]
     if record["triggered"]:
+        record["actor"].consume_pending_power_fixed_sources(
+            action_preview.get("pending_power_fixed_tokens", []))
         record["actor"].last_successful_technique_hand_id = hand_id
         record["book"].advance(hand_id)
         trigger_queue.add_history(
@@ -637,6 +653,9 @@ func _effects_for_phase(effects: Array, phase: String) -> Array:
         "defense", "defense_from_noncontributing_qi",
         "add_momentum", "set_momentum", "set_reflection_percent",
         "set_reflection_until_turn_end",
+        "grant_reflection_source", "grant_reflection_true_damage",
+        "grant_block", "register_challenge", "grant_defense_retention",
+        "add_pending_power_fixed",
         "steal_random_card_if_power_target_and_same_qi",
         "add_direct_power_fixed", "add_direct_power_percent"]
     var damage_ops := ["damage", "multi_damage"]

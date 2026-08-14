@@ -41,6 +41,9 @@ func project(
         "defense": defense,
         "segments": maxi(0, int(intent.get("segments", 0))),
         "combo": bool(intent.get("combo", false)),
+        "same_qi_gain": int(preview.get("same_qi_gain", 0)),
+        "same_qi_trigger_count": int(preview.get(
+            "same_qi_trigger_count", 0)),
         "lethal": lethal_threshold > 0 and damage >= lethal_threshold,
         "avoids_immediate_death": (
             incoming >= current_endurance and current_endurance + defense > incoming),

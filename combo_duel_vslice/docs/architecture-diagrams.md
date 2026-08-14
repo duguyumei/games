@@ -411,7 +411,7 @@ stateDiagram-v2
         [*] --> PlayerIntent : 玩家选牌/预览
         PlayerIntent --> AwaitEnemy : 锁定意图
         AwaitEnemy --> Resolve : 双方同步/单方出招
-        Resolve --> Combo : 同气连动？
+        Resolve --> Combo : 同气槽达到有效容量？
         Combo --> AwaitEnemy : 双方连击继续
         Combo --> Resolve : 单方连击自动
         Resolve --> [*] : 牌型组结束

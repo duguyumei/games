@@ -3128,12 +3128,12 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        8,
-        "Registry 明确登记八个细粒度已提交事件")
+        15,
+        "Registry 明确登记十五个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        10,
-        "Registry 明确登记十个战斗整数查询")
+        11,
+        "Registry 明确登记十一个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -4113,14 +4113,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 79, "统一功法目录包含79门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 79, "正式功法资源路径包含79项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 79, "正式接入状态包含79门功法")
+    _assert_equal(catalog.all_of("technique").size(), 128, "统一功法目录包含128门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 128, "正式功法资源路径包含128项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 128, "正式接入状态包含128门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 79, "正式功法资源目录包含79门功法")
+    _assert_equal(formal_technique_resource_count, 128, "正式功法资源目录包含128门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
@@ -5386,6 +5386,11 @@ func _test_remote_ai_action_window_session_gate() -> void:
         },
     }
     _assert_true(session.setup_battle(configuration), "远程 AI 行动窗口战斗建立成功")
+    session.engine.enemy.hand = [
+        _card("2", "wind"), _card("3", "wind"), _card("4", "wind"),
+        _card("5", "wind"), _card("6", "wind")]
+    session.engine.enemy.draw_pile.clear()
+    session.engine.enemy.same_qi_value = 4
     _assert_true(session.execute({"type": "start_turn"}).success, "远程 AI 战斗开始首个行动窗口")
     var thinking_snapshot = session.snapshot()
     _assert_equal(thinking_snapshot.ai_decision["state"], "thinking", "行动窗口开始时敌方立即进入异步思考")
@@ -5395,6 +5400,20 @@ func _test_remote_ai_action_window_session_gate() -> void:
     var first_request: Dictionary = provider.submitted_requests[0]["payload"]
     _assert_true(first_request.get("candidates", []).size() in range(1, 6), "远程 AI 只收到 1～5 个本地压缩候选")
     _assert_equal(first_request["candidates"][0]["groups"][0]["kind"], "main", "普通候选使用第 0 主牌型组契约")
+    _assert_true(first_request["observation"]["self"].has("same_qi_value"), "AI 观察包含自身当前同气")
+    _assert_true(first_request["observation"]["opponent"].has("same_qi_capacity"), "AI 观察包含对手有效同气容量")
+    _assert_true(first_request["candidates"][0]["summary"].has("same_qi_gain"), "AI 候选特征包含预计同气收益")
+    for intent_value in thinking_snapshot.possible_enemy_intents:
+        _assert_true(intent_value.has("same_qi_gain"), "玩家可见可能意图包含预计同气收益")
+        _assert_true(not intent_value.has("candidate_id"), "可能意图不暴露 AI 最终候选身份")
+    var same_qi_candidate_id := ""
+    for candidate_value in first_request.get("candidates", []):
+        var candidate: Dictionary = candidate_value
+        if int(candidate.get("summary", {}).get(
+                "same_qi_trigger_count", 0)) > 0:
+            same_qi_candidate_id = str(candidate.get("candidate_id", ""))
+            break
+    _assert_true(same_qi_candidate_id != "", "压缩候选保留一个预计充满同气的方向")
 
     var player_hand_before: Array = thinking_snapshot.player.hand
     var blocked_play := session.execute({
@@ -5421,7 +5440,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
             "schema_version": 3,
             "decision_id": first_request["observation"]["decision_id"],
             "state_hash": first_request["observation"]["state_hash"],
-            "candidate_id": first_request["candidates"][0]["candidate_id"],
+            "candidate_id": same_qi_candidate_id,
         },
     })
     _assert_true(provider.complete(str(provider.submitted_requests[0]["request_id"])), "Mock Provider 完成首个远程回答")
@@ -5460,6 +5479,7 @@ func _test_remote_ai_action_window_session_gate() -> void:
         second_history_types.append(str(event.get("event_type", "")))
     _assert_true(second_history_types.has("consumable_used"), "下一次请求补发思考期间的我方消耗品事件")
     _assert_true(second_history_types.has("cards_played"), "下一次请求包含双方上一击公开出牌历史")
+    _assert_true(second_history_types.has("same_qi_changed"), "下一次请求包含结构化同气变化历史")
     _assert_true(second_history_types.has("action_resolved"), "下一次请求包含上一击生命防御结算结果")
     _assert_equal(session.snapshot().ai_decision["state"], "thinking", "敌方单方连击使用新的独立思考窗口")
 
@@ -5473,8 +5493,8 @@ func _test_remote_ai_action_window_session_gate() -> void:
         },
     })
     _assert_true(provider.complete(str(provider.submitted_requests[1]["request_id"])), "Mock Provider 完成敌方单方连击回答")
-    _assert_equal(session.snapshot().enemy.discard_count, 2, "玩家无行动机会时敌方合法回答自动完成单方连击")
-    _assert_equal(provider.submitted_requests.size(), 2, "同一完整回合同气连动只触发一次，不额外请求")
+    _assert_equal(session.snapshot().enemy.discard_count, 3, "玩家无行动机会时敌方合法回答自动完成同气槽单方连动")
+    _assert_equal(provider.submitted_requests.size(), 2, "第二击未再次充满同气时不额外请求")
     _assert_true(session.execute({"type": "end_turn"}).success, "双方行动耗尽后可以正常结束完整回合")
 
     var timeout_provider = MockAiProviderScript.new(false)
@@ -6330,8 +6350,8 @@ func _test_battle_flow_coordinator_contract() -> void:
     _assert_equal(flow.resolution_mode(), "synchronized", "至少两方都有意图时才使用同步结算")
     flow.clear_intents()
     _assert_equal(flow.resolution_mode(), "none", "行动窗口结束后清除全部锁定意图")
-    _assert_true(flow.claim_combo(left, "same_qi_link"), "同气连动状态首次占用成功")
-    _assert_true(not flow.claim_combo(left, "same_qi_link"), "同一行动方同气连动不能重复占用")
+    _assert_true(flow.claim_combo(left, "generic_combo"), "通用连击状态首次占用成功")
+    _assert_true(not flow.claim_combo(left, "generic_combo"), "同一行动方同一连击不能重复占用")
 
     flow.disable_next_rounds(right, "封招", 1)
     flow.begin_round([
@@ -7552,10 +7572,14 @@ func _test_awakening_battle_runtime() -> void:
             "actors": [mountain_engine.player],
         })
     _assert_equal(mountain_engine.player.defense, 15, "山觉醒读取增元后的当前有效真气获得防御")
-    _assert_equal(
-        turn_end_result["results"][-2]["handler_id"],
-        "card_reshape_runtime.turn_end",
-        "山觉醒排在现有回合结束状态与延迟效果之后")
+    var turn_end_handler_ids: Array = turn_end_result["results"].map(
+        func(value): return str(value.get("handler_id", "")))
+    _assert_true(
+        turn_end_handler_ids.find("status_system.delayed_records") \
+            < turn_end_handler_ids.find("card_reshape_runtime.turn_end") \
+            and turn_end_handler_ids.find("card_reshape_runtime.turn_end") \
+            < turn_end_handler_ids.find("status_system.card_turn_end_final"),
+        "山觉醒排在现有回合结束状态与延迟效果之后、最终状态清理之前")
     mountain_engine.status_system.apply_card_anomaly(
         mountain_hand, "mark", "burned_out", {}, "觉醒测试燃尽")
     mountain_engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
@@ -8264,13 +8288,14 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
     ]
     var same_attribute_straight := HandEvaluatorScript.evaluate(same_attribute_cards)
     _assert_equal(same_attribute_straight["id"], "straight", "同属性顺子仍只识别为顺子")
-    _assert_equal(same_attribute_straight["multiplier"], 4, "同属性顺子只使用顺子固定倍率")
+    _assert_true(not same_attribute_straight.has("multiplier"), "牌型结果不再携带固定倍率")
+    _assert_true(not HandEvaluatorScript.HANDS["straight"].has("multiplier"), "牌型定义只保留名称与强度")
     _assert_true(not HandEvaluatorScript.HANDS.has("flush"), "正式牌型表不再包含同花")
     _assert_true(not HandEvaluatorScript.HANDS.has("straight_flush"), "正式牌型表不再包含同花顺")
 
     var four_kind_result := HandEvaluatorScript.evaluate(five_kind_cards.slice(0, 4))
     var five_kind_result := HandEvaluatorScript.evaluate(five_kind_cards)
-    _assert_equal(five_kind_result["multiplier"], 12, "五条固定倍率为十二倍")
+    _assert_true(not five_kind_result.has("multiplier"), "五条不再携带旧十二倍倍率")
     _assert_true(
         five_kind_result["strength"] > four_kind_result["strength"],
         "五条强度高于四条")
@@ -8279,8 +8304,8 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
     _assert_true(
         is_equal_approx(
             float(five_kind_values["baseline_value"]) / float(four_kind_values["baseline_value"]),
-            15.0 / 7.0),
-        "同牌阶五条基准值约为四条的 2.14 倍")
+            5.0 / 4.0),
+        "同牌阶五条基准值只按五张贡献与四张贡献之比变化")
 
     var best_source := five_kind_cards + [_card("A", "forest")]
     var best_candidates := HandEvaluatorScript.evaluate_best_candidates(best_source)
@@ -8294,8 +8319,10 @@ func _test_active_hand_types_and_same_attribute_rules() -> void:
     var five_engine = _engine_with_hand(same_attribute_five)
     var same_attribute_five_preview: Dictionary = five_engine.preview(_ids(same_attribute_five))
     _assert_equal(same_attribute_five_preview["hand"]["id"], "five_kind", "同属性五张同牌阶仍识别为五条")
-    _assert_equal(same_attribute_five_preview["values"]["fixed_multiplier"], 12, "同属性五条保持十二倍固定倍率")
-    _assert_equal(same_attribute_five_preview["values"]["direct_power_percent"], 50, "同属性五条独立获得公共+50%直接修正")
+    _assert_true(not same_attribute_five_preview["values"].has("fixed_multiplier"), "固定牌型倍率字段完全退出")
+    _assert_equal(same_attribute_five_preview["values"]["attribute_concentration"], 5, "同属性五条属性集中数为五")
+    _assert_equal(same_attribute_five_preview["values"]["baseline_value"], 35, "牌型基准值只等于贡献 C")
+    _assert_equal(same_attribute_five_preview["values"]["direct_power_percent"], 0, "旧同气百分比增幅彻底退出")
 
 func _test_same_qi_rule_and_action_wiring() -> void:
     var identity := CardIdentityPolicyScript.new()
@@ -8308,15 +8335,23 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         _assert_true(result.get("success", false), "%d 张同气规则查询成功" % card_count)
         _assert_true(result.get("qualified", false), "%d 张风真气构成同气" % card_count)
         _assert_equal(
-            result.get("power_amp_percent", -1),
-            [0, 0, 10, 20, 30, 50][card_count],
-            "%d 张同气使用正式投入梯度" % card_count)
+            result.get("gain", -1), card_count - 1,
+            "%d 张同属性真气按组大小减一获得同气" % card_count)
         _assert_equal(result.get("common_attributes", []), ["wind"], "共同属性稳定排序")
+        _assert_true(not result.has("power_amp_percent"), "旧同气百分比字段已退出")
 
     var mismatch := SameQiRuleScript.analyze(
         [_card("2", "wind"), _card("3", "fire")], identity)
     _assert_true(not mismatch.get("qualified", true), "属性不统一不构成同气")
-    _assert_equal(mismatch.get("power_amp_percent", -1), 0, "非同气不获得增幅")
+    _assert_equal(mismatch.get("gain", -1), 0, "风火各一张不获得同气")
+    var split_gain := SameQiRuleScript.analyze([
+        _card("2", "wind"), _card("3", "wind"), _card("4", "wind"),
+        _card("5", "forest"), _card("6", "forest")], identity)
+    _assert_equal(split_gain.get("gain", -1), 3, "3风+2林确定获得3点同气")
+    var four_directions := SameQiRuleScript.analyze([
+        _card("2", "wind"), _card("3", "forest"),
+        _card("4", "fire"), _card("5", "mountain")], identity)
+    _assert_equal(four_directions.get("gain", -1), 0, "风林火山各一张获得零同气")
 
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "同气混元与临时属性测试载入内容")
@@ -8328,6 +8363,13 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         [_card("2", "wind"), mixed], identity)
     _assert_true(mixed_result.get("qualified", false), "风牌与混元构成同气")
     _assert_equal(mixed_result.get("common_attributes", []), ["wind"], "混元保留正确共同属性")
+    _assert_equal(mixed_result.get("gain", -1), 1, "混元只分配到一个最优属性组")
+    var mixed_pair_card = _card("5", "wind")
+    var mixed_pair := HandEvaluatorScript.evaluate(
+        [mixed_pair_card, mixed], null, identity)
+    var mixed_power := PowerCalculatorScript.calculate(
+        mixed_pair, {}, Callable(), identity)
+    _assert_equal(mixed_power["attribute_concentration"], 2, "混元参与各属性候选但最大集中数只取一次")
 
     var temporary = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "forest_6"), "same-qi:temporary",
@@ -8354,6 +8396,10 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         overlap_cards, overlap_identity)
     _assert_true(not overlap_result.get("qualified", true), "两两相交但全体交集为空不构成同气")
     _assert_equal(overlap_result.get("common_attributes", ["unexpected"]), [], "全体交集严格为空")
+    var overlap_repeat := SameQiRuleScript.analyze(overlap_cards, overlap_identity)
+    _assert_equal(overlap_repeat.get("assignments", {}), overlap_result.get("assignments", {}), "多属性最优分组稳定")
+    _assert_equal(overlap_repeat.get("source_fingerprint", ""), overlap_result.get("source_fingerprint", "x"), "相同输入重复查询 fingerprint 一致")
+    _assert_equal(overlap_result.get("card_ids", []).size(), 3, "多属性实体牌没有重复计数")
 
     var zero_wind = _card("7", "wind")
     zero_wind.qi_value = 0
@@ -8374,18 +8420,24 @@ func _test_same_qi_rule_and_action_wiring() -> void:
     var high_cards := [
         _card("A", "fire"), _card("7", "fire"), _card("4", "fire")]
     var high_engine = _engine_with_hand(high_cards)
+    var high_same_qi_before: int = int(high_engine.player.same_qi_value)
+    var high_history_before: int = high_engine.trigger_queue.history.size()
     var high_preview: Dictionary = high_engine.preview(_ids(high_cards))
     _assert_equal(high_preview["hand"]["id"], "high_card", "高牌额外投入仍只识别高牌")
     _assert_equal(high_preview["hand"]["contributing"].size(), 1, "高牌只有最高牌参与基础贡献")
     _assert_equal(high_preview["same_qi"]["card_count"], 3, "高牌非贡献牌计入同气投入")
-    _assert_equal(high_preview["values"]["direct_power_percent"], 20, "高牌三张同气获得 +20%")
-    _assert_equal(high_preview["passive_power_query_inputs"]["modifiers"]["power_amp_percent"], 20, "同气增幅在被动百分比查询前进入基础值")
+    _assert_equal(high_preview["same_qi_gain"], 2, "高牌额外投入计入行动同气收益")
+    _assert_equal(high_preview["values"]["attribute_concentration"], 1, "高牌额外投入不进入属性集中 N")
+    _assert_equal(high_preview["values"]["direct_power_percent"], 0, "旧同气百分比不再进入功法值")
+    _assert_equal(high_engine.player.same_qi_value, high_same_qi_before, "纯预览不修改同气槽")
+    _assert_equal(high_engine.trigger_queue.history.size(), high_history_before, "纯预览不写战斗历史")
     var preview_power := int(high_preview["values"]["technique_value"])
+    var preview_n := int(high_preview["values"]["attribute_concentration"])
     var recalculated: Dictionary = high_engine.action_preview_service.recalculate_confirmed_power(
         high_engine.player, high_engine.enemy, high_preview, "same-qi-recalculate")
     _assert_true(recalculated.get("success", false), "正式确认功法值重算成功")
-    _assert_equal(high_preview["values"]["technique_value"], preview_power, "正式重算复用同气输入且不重复叠加")
-    _assert_equal(high_preview["values"]["direct_power_percent"], 20, "正式重算保持单份同气增幅")
+    _assert_equal(high_preview["values"]["technique_value"], preview_power, "正式重算功法值稳定")
+    _assert_equal(high_preview["values"]["attribute_concentration"], preview_n, "正式重算不改变 N")
 
     var split_main := [_card("6", "wind"), _card("6", "wind"), _card("6", "wind")]
     var split_coop := [_card("4", "fire"), _card("4", "fire")]
@@ -8393,36 +8445,37 @@ func _test_same_qi_rule_and_action_wiring() -> void:
     var split_result: Dictionary = split_engine.confirm_play(
         _ids(split_main), _ids(split_coop))
     _assert_true(split_result.get("success", false), "不同属性的两组协同结算成功")
-    _assert_equal(split_result["preview"]["same_qi"]["power_amp_percent"], 20, "主组三张独立获得 +20%")
-    _assert_equal(split_result["cooperation_preview"]["same_qi"]["power_amp_percent"], 10, "协同组两张独立获得 +10%")
-    _assert_true(not split_result["preview"]["same_qi_action"]["qualified"], "两组无行动级共同属性时不触发连动")
-    _assert_equal(split_result["actions_available"], 0, "两组分别同气但不跨组触发额外行动")
+    _assert_equal(split_result["preview"]["values"]["attribute_concentration"], 3, "主组三张独立计算 N=3")
+    _assert_equal(split_result["cooperation_preview"]["values"]["attribute_concentration"], 2, "协同组两张独立计算 N=2")
+    _assert_equal(split_result["preview"]["same_qi_gain"], 3, "主组与协同组行动级合并只计算一次 G=3")
+    _assert_equal(split_engine.player.same_qi_value, 3, "未充满时同气保存在槽内")
 
     var linked_main := [_card("6", "wind"), _card("6", "wind"), _card("6", "wind")]
     var linked_coop := [_card("4", "wind"), _card("4", "wind")]
     var linked_engine = _same_qi_cooperation_engine(linked_main, linked_coop, 82602)
+    var linked_reserve := [
+        _card("7", "wind"), _card("8", "wind"),
+        _card("9", "wind"), _card("10", "wind")]
+    linked_engine.player.hand.append_array(linked_reserve)
+    linked_engine.player.same_qi_value = 4
     var linked_result: Dictionary = linked_engine.confirm_play(
         _ids(linked_main), _ids(linked_coop))
-    _assert_true(linked_result.get("success", false), "存在行动级共同属性的协同结算成功")
-    _assert_equal(linked_result["preview"]["same_qi_action"]["common_attributes"], ["wind"], "行动级交集由两组冻结结果建立")
-    _assert_equal(linked_result["actions_available"], 1, "整次行动只授予一次同气连动")
-    _assert_true(linked_engine.same_qi_link_used, "同气连动 claim 已占用")
-
-    var second_card = _card("9", "wind")
-    linked_engine.player.hand = [second_card]
-    var second_result: Dictionary = linked_engine.confirm_play([second_card.id])
-    _assert_true(second_result.get("success", false), "同回合同气额外行动正常打出")
-    _assert_equal(second_result["actions_available"], 0, "同一完整回合第二次同气不再增加行动")
-    linked_engine.player.draw_pile = [_card("10", "wind")]
-    linked_engine.end_player_turn()
-    linked_engine.start_player_turn()
-    _assert_true(not linked_engine.same_qi_link_used, "新完整回合重置同气连动门禁")
+    _assert_true(linked_result.get("success", false), "五张同属性协同结算成功")
+    _assert_equal(linked_result["preview"]["same_qi"]["gain"], 4, "整次行动冻结五张同属性 G=4")
+    _assert_equal(linked_engine.player.same_qi_value, 3, "4+4跨过5后保留3点溢出")
+    _assert_equal(linked_result["actions_available"], 1, "首次充满同气获得一次行动")
+    var second_result: Dictionary = linked_engine.confirm_play(
+        _ids(linked_reserve.slice(0, 3)))
+    _assert_true(second_result.get("success", false), "同回合同气连动行动正常打出")
+    _assert_equal(linked_engine.player.same_qi_value, 0, "溢出3再获得2后正确消耗5")
+    _assert_equal(second_result["actions_available"], 1, "同一完整回合可以连续再次充满并连动")
 
     var pending_cards := [_card("8", "wind"), _card("3", "fire")]
     var pending_reserve = _card("5", "mountain")
     var pending_reserve_second = _card("7", "forest")
     var pending_engine = _engine_with_hand(
         pending_cards + [pending_reserve, pending_reserve_second], [], 82603)
+    pending_engine.player.same_qi_value = 4
     var identity_enabled := [true]
     pending_engine.card_identity_policy.register_provider(
         func(_card_value, _context): return {
@@ -8455,19 +8508,20 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         _assert_true(false, "同气等待探针诊断：%s" % str(pending_start))
         return
     _assert_equal(
-        pending_start["preview"]["same_qi_action"]["common_attributes"],
+        pending_start["preview"]["same_qi"]["common_attributes"],
         ["forest"],
-        "等待前冻结行动级共同属性")
+        "等待前冻结行动级身份与分组")
     identity_enabled[0] = false
     var pending_request: Dictionary = pending_start["choice_request"]
     var pending_finish: Dictionary = pending_engine.resolve_effect_choice(
         str(pending_request["request_id"]), [str(pending_reserve.id)])
     _assert_true(pending_finish.get("success", false), "等待选择恢复后行动完成")
-    _assert_equal(pending_finish["actions_available"], 1, "恢复只读取冻结同气结果并授予一次行动")
+    _assert_equal(pending_finish["actions_available"], 1, "恢复只读取冻结 G 并授予一次行动")
     var repeated_finish: Dictionary = pending_engine.resolve_effect_choice(
         str(pending_request["request_id"]), [str(pending_reserve.id)])
     _assert_true(not repeated_finish.get("success", true), "重复 finalizer 请求被拒绝")
-    _assert_equal(pending_engine.actions_available, 1, "重复恢复不重复授予同气连动")
+    _assert_equal(pending_engine.actions_available, 1, "重复恢复不重复增加同气或行动")
+    _assert_equal(pending_engine.player.same_qi_value, 0, "重复恢复不重复改变同气槽")
 
     var audit_record = linked_engine.action_resolver.make_action_record(
         linked_engine.player,
@@ -8481,10 +8535,34 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         "preview": linked_result["cooperation_preview"],
     }]
     var audit_snapshot: Dictionary = audit_record.snapshot()
-    _assert_equal(audit_snapshot["schema_version"], 4, "行动记录升级为同气冻结版本")
-    _assert_equal(audit_snapshot["same_qi"]["power_amp_percent"], 20, "行动记录保存主组同气增幅")
-    _assert_equal(audit_snapshot["same_qi_action"]["common_attributes"], ["wind"], "行动记录保存行动级同气交集")
-    _assert_equal(audit_snapshot["cooperation_groups"][0]["same_qi"]["power_amp_percent"], 10, "行动记录保存协同组同气增幅")
+    _assert_equal(audit_snapshot["schema_version"], 5, "行动记录升级为同气槽冻结版本")
+    _assert_equal(audit_snapshot["same_qi"]["gain"], 4, "行动记录保存行动级最优分组与 G")
+    _assert_equal(audit_snapshot["same_qi_gain"], 4, "行动记录保存预计同气收益")
+    _assert_equal(audit_snapshot["cooperation_groups"][0]["same_qi_group"]["gain"], 1, "行动记录保存协同组独立身份事实")
+
+    var no_hand_engine = _engine_with_hand([_card("2", "wind")], [], 82605)
+    no_hand_engine.player.hand.clear()
+    no_hand_engine.player.same_qi_value = 4
+    var held_gain: Dictionary = no_hand_engine.effect_ports.gain_same_qi(
+        no_hand_engine.player, 3, "无合法手牌探针", "same-qi:no-hand")
+    _assert_equal(held_gain.get("granted_actions", -1), 0, "没有合法手牌时不创建额外行动")
+    _assert_equal(no_hand_engine.player.same_qi_value, 7, "没有合法手牌时未消耗同气完整保留")
+    var idempotent_first: Dictionary = no_hand_engine.effect_ports.gain_same_qi(
+        no_hand_engine.player, 2, "幂等探针", "same-qi:idempotent")
+    var idempotent_repeat: Dictionary = no_hand_engine.effect_ports.gain_same_qi(
+        no_hand_engine.player, 2, "幂等探针", "same-qi:idempotent")
+    _assert_true(idempotent_repeat.get("reused", false), "相同行动 token 重复写入复用收据")
+    _assert_equal(no_hand_engine.player.same_qi_value, int(idempotent_first["same_qi_after"]), "幂等重放不重复增加同气")
+    no_hand_engine.player.hand = [
+        _card("3", "wind"), _card("4", "forest")]
+    no_hand_engine.player.same_qi_value = 0
+    var multi_threshold: Dictionary = no_hand_engine.effect_ports.gain_same_qi(
+        no_hand_engine.player, 11, "多阈值探针", "same-qi:multi-threshold")
+    _assert_equal(multi_threshold.get("granted_actions", -1), 2, "一次跨过多个阈值逐次获得行动")
+    _assert_equal(no_hand_engine.player.same_qi_value, 1, "多阈值结算保留最终溢出")
+    var failed_play: Dictionary = no_hand_engine.confirm_play(["missing-card"])
+    _assert_true(not failed_play.get("success", true), "失败行动被拒绝")
+    _assert_equal(no_hand_engine.player.same_qi_value, 1, "失败或回滚不增加同气")
 
     var technique_card = _card("J", "wind")
     var technique_engine = _engine_with_hand([technique_card], [], 82604)
@@ -8500,12 +8578,28 @@ func _test_same_qi_rule_and_action_wiring() -> void:
     technique_engine.sequence_book.configure({
         "high_card": ["same_qi_technique_action"],
     })
-    technique_engine.same_qi_link_used = true
     var technique_result: Dictionary = technique_engine.confirm_play(
         [technique_card.id])
-    _assert_true(technique_result.get("success", false), "功法额外行动在同气门禁已占用时仍正常结算")
+    _assert_true(technique_result.get("success", false), "功法额外行动正常结算")
     _assert_equal(technique_result["actions_available"], 1, "功法额外行动不受同气连动上限限制")
-    _assert_true(technique_engine.same_qi_link_used, "功法额外行动不改变已有同气 claim")
+
+    var capacity_handler := BattleFineGrainedProbeHandler.new()
+    var capacity_registry = PassiveRuleHandlerRegistryScript.new()
+    _assert_true(capacity_registry.register_handler(capacity_handler), "注册同气容量 Fake Provider")
+    var capacity_catalog_result := _battle_passive_test_catalog(
+        capacity_registry, [_f5d2_probe_item("same_qi_capacity_probe", {
+            "query_values": {"same_qi_capacity_query": 4},
+        })], [])
+    _assert_true(capacity_catalog_result["success"], "同气容量 Fake 内容通过校验")
+    var capacity_engine = _battle_passive_test_engine(
+        capacity_catalog_result["catalog"], capacity_registry,
+        ["same_qi_capacity_probe"])
+    capacity_engine.player.hand = [_card("A", "wind")]
+    capacity_engine.player.same_qi_value = 3
+    var capacity_gain: Dictionary = capacity_engine.effect_ports.gain_same_qi(
+        capacity_engine.player, 1, "容量4探针", "same-qi:capacity-four")
+    _assert_equal(capacity_gain.get("same_qi_capacity", -1), 4, "Fake Provider 将有效容量改为4")
+    _assert_equal(capacity_gain.get("granted_actions", -1), 1, "容量4时3+1触发一次行动")
 
 func _same_qi_cooperation_engine(main_cards: Array, cooperation_cards: Array, seed_value: int):
     var engine = _engine_with_hand(main_cards + cooperation_cards, [], seed_value)
@@ -8543,13 +8637,44 @@ func _test_power_calculation() -> void:
         "power_amp_percent": 40,
     })
     _assert_equal(values["base_value"], 17, "基础值含固定修正")
-    _assert_equal(values["baseline_value"], 34, "牌型基准值只读固定倍率")
-    _assert_equal(values["technique_multiplier"], 4, "心得不进入功法倍率")
-    _assert_equal(values["initial_power"], 68, "P₀ 只读取贡献与功法倍率")
+    _assert_equal(values["baseline_value"], 17, "牌型基准值等于贡献 C")
+    _assert_equal(values["attribute_counts"], {
+        "wind": 1, "forest": 1, "fire": 0, "mountain": 0,
+    }, "不同属性对子分别进入属性候选计数")
+    _assert_equal(values["attribute_concentration"], 1, "不同属性对子 N=1")
+    _assert_equal(values["technique_multiplier"], 3, "M 以 N 为基础再加显式倍率修正")
+    _assert_equal(values["initial_power"], 51, "P₀=floor(C×M)")
     _assert_equal(values["direct_power_fixed"], 5, "直接固定修正在 P₀ 后保存")
     _assert_equal(values["direct_power_percent"], 40, "直接百分比在 P₀ 后保存")
-    _assert_equal(values["pre_momentum_power"], 102, "连势前功法值统一向下取整")
-    _assert_equal(values["technique_value"], 102, "无成功功法连势时 P 等于非负连势前值")
+    _assert_equal(values["pre_momentum_power"], 78, "连势前功法值统一向下取整")
+    _assert_equal(values["technique_value"], 78, "无成功功法连势时 P 等于非负连势前值")
+    _assert_true(not values.has("fixed_multiplier"), "功法值结果不再输出固定牌型倍率")
+
+    var same_pair := HandEvaluatorScript.evaluate([
+        _card("8", "wind"), _card("8", "wind")])
+    var same_pair_values := PowerCalculatorScript.calculate(same_pair)
+    _assert_equal(same_pair_values["attribute_concentration"], 2, "两张可视为同属性的对子 N=2")
+    var full_house := HandEvaluatorScript.evaluate([
+        _card("7", "wind"), _card("7", "wind"), _card("7", "wind"),
+        _card("3", "forest"), _card("3", "forest")])
+    var full_house_values := PowerCalculatorScript.calculate(full_house)
+    _assert_equal(full_house_values["attribute_concentration"], 3, "葫芦3风2林 N=3")
+
+    var splash_extra = _card("2", "wind")
+    var splash_high := HandEvaluatorScript.evaluate([
+        _card("A", "wind"), splash_extra])
+    splash_high["numeric_contributing"] = splash_high["contributing"].duplicate()
+    splash_high["numeric_contributing"].append(splash_extra)
+    var splash_values := PowerCalculatorScript.calculate(splash_high)
+    _assert_equal(splash_values["contribution_total"], 14, "明确额外参与后飞溅牌同时进入 C")
+    _assert_equal(splash_values["attribute_concentration"], 2, "明确额外参与后飞溅牌同时进入 N")
+
+    var replay_card = _card("5", "fire")
+    var replay_hand := HandEvaluatorScript.evaluate([replay_card])
+    replay_hand["numeric_contributing"] = [replay_card, replay_card]
+    var replay_values := PowerCalculatorScript.calculate(replay_hand)
+    _assert_equal(replay_values["contribution_total"], 10, "同一实体的重演可以重复贡献 C")
+    _assert_equal(replay_values["attribute_concentration"], 1, "同一实体重演只为 N 提供一张计数")
 
 func _test_damage_resolver_rules_and_facade() -> void:
     var resolver = DamageResolverScript.new()
@@ -8684,7 +8809,7 @@ func _test_action_preview_service_matches_engine_facade() -> void:
         card_ids,
         engine.sequence_book,
         engine.power_modifiers,
-        engine.same_qi_link_used)
+        engine.enemy)
     var through_facade: Dictionary = engine.preview(card_ids)
     _assert_equal(direct, through_facade, "独立行动预览服务与战斗门面返回完全一致")
     _assert_equal(engine.player.hand.size(), hand_count_before, "行动预览服务不移动手牌")
@@ -9154,8 +9279,8 @@ func _test_zengyuan_pill_enhancement_and_preview() -> void:
     _assert_equal(pair[1].reshape_enhancement, "qi_boost", "第二张目标获得增元强化")
     var preview := engine.preview(_ids(pair))
     _assert_equal(preview["values"]["base_value"], 30, "两张增元七的有效真气值各加八")
-    _assert_equal(preview["values"]["baseline_value"], 60, "增元同时进入牌型基准值")
-    _assert_equal(preview["values"]["technique_value"], 60, "增元立即进入功法值预览")
+    _assert_equal(preview["values"]["baseline_value"], 30, "增元后的贡献 C 直接作为牌型基准值")
+    _assert_equal(preview["values"]["technique_value"], 30, "不同属性对子 N=1 后得到新功法值预览")
 
 func _test_simple_reshape_behaviors() -> void:
     var catalog = ContentCatalogScript.new()
@@ -10222,8 +10347,10 @@ func _test_snapshot_boundaries_are_typed() -> void:
         battle.player.inner_skill_limit,
         6,
         "无被动修正时快照公开基础六格容量")
-    _assert_equal(battle.SCHEMA_VERSION, 2, "战斗快照使用隐藏意图协议版本")
-    _assert_equal(battle.to_dict()["schema_version"], 2, "战斗快照序列化保留隐藏意图版本号")
+    _assert_equal(battle.player.same_qi_value, 0, "双方快照公开当前同气")
+    _assert_equal(battle.player.same_qi_capacity, 5, "双方快照公开有效同气容量")
+    _assert_equal(battle.SCHEMA_VERSION, 3, "战斗快照升级为同气公开字段版本")
+    _assert_equal(battle.to_dict()["schema_version"], 3, "战斗快照序列化保留同气字段版本号")
     _assert_equal(
         battle.log_channel("battle"),
         battle.battle_log,
@@ -12426,18 +12553,16 @@ func _test_enemy_ai_plan_is_deterministic_and_hidden() -> void:
     _assert_true(not first.enemy_plan.has("cards"), "公开计划不包含具体真气")
     _assert_true(not first.enemy_plan.has("technique"), "公开计划不包含具体功法")
 
-func _test_enemy_ai_uses_same_qi_link() -> void:
+func _test_enemy_ai_uses_same_qi_gauge() -> void:
     var engine = CombatEngineScript.new()
     engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
     engine.player.draw_pile.clear()
-    _assert_true(engine.enemy_plan.get("combo", false), "AI 首击计划提示同气连动")
+    _assert_true(engine.enemy_plan.has("same_qi_gain"), "AI 首击计划包含预计同气收益")
     var result := engine.confirm_play(_ids(engine.player.hand.slice(0, 2)))
     _assert_true(result["success"], "玩家混属性出牌后同步行动成功")
-    _assert_true(engine.enemy_same_qi_link_used, "敌方实际触发同气连动")
-    _assert_equal(engine.enemy.discard_pile.size(), 2, "玩家无连击时敌方自动使用单方连击")
-    _assert_equal(engine.enemy_actions_available, 0, "敌方单方连击已经消耗")
+    _assert_true(engine.enemy.same_qi_value >= 0, "敌方实际结算同气槽")
 
 func _test_both_sides_use_synchronized_combo() -> void:
     var engine = CombatEngineScript.new()
@@ -12446,14 +12571,8 @@ func _test_both_sides_use_synchronized_combo() -> void:
     engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
     engine.player.draw_pile.clear()
     engine.confirm_play([engine.player.hand[0].id])
-    _assert_equal(engine.actions_available, 1, "玩家单属性首击获得一次连击")
-    _assert_equal(engine.enemy_actions_available, 1, "敌方单属性首击获得一次连击")
-    _assert_equal(engine.enemy.discard_pile.size(), 1, "双方连击时敌方等待下一次同步出牌")
-    _assert_equal(engine.enemy_plan["damage"], 0, "敌方第二击计划随功法序列更新为零伤害")
-    _assert_equal(engine.enemy_plan["defense"], 11, "敌方第二击计划公开预计获得防御")
-    engine.confirm_play([engine.player.hand[0].id])
-    _assert_equal(engine.enemy.discard_pile.size(), 2, "双方第二击完成同步连击")
-    _assert_equal(engine.enemy_actions_available, 0, "敌方同气连动不会重复触发")
+    _assert_equal(engine.actions_available, 0, "单张行动 G=0 不会自动获得连击")
+    _assert_equal(engine.enemy_actions_available, 0, "敌方同样只按同气槽阈值获得连击")
 
 func _test_ai_battle_reaches_terminal_state() -> void:
     var engine = CombatEngineScript.new()

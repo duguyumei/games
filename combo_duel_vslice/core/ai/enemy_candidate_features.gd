@@ -7,6 +7,7 @@ static func empty() -> Dictionary:
     return {
         "immediate": {
             "damage": 0, "defense": 0, "segments": 0, "combo": false,
+            "same_qi_gain": 0, "same_qi_trigger_count": 0,
             "lethal": false, "avoids_immediate_death": false,
         },
         "card_flow": {

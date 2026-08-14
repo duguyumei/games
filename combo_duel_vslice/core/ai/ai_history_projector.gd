@@ -11,7 +11,7 @@ const HIDDEN_ID_KEYS := [
 ]
 const PUBLIC_EVENT_TYPES := [
     "action_window_opened", "cards_played", "technique_resolved",
-    "cooperation_resolved", "combo_granted", "damage_resolved",
+    "cooperation_resolved", "same_qi_changed", "combo_granted", "damage_resolved",
     "defense_changed", "defense_decayed", "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
     "card_temporarily_removed", "card_returned", "card_state_changed",

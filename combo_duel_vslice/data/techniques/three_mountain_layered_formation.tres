@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_mountain_layered_formation"
+display_name="山·叠阵"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。若本次行动包含协同组，额外获得C点防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","extra_card_commitment"])
+public_behavior_summary=Array[String](["defense","extra_card_commitment"])
+implementation_category="A"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"defense","amount":{"kind":"card_contribution"},"when":{"action_has_cooperation":true}}]
+

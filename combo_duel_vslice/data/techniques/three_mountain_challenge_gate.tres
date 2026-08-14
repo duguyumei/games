@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_mountain_challenge_gate"
+display_name="山·擂关"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。邀战C；敌方未达标时，下一门成功功法值增加未达标差额。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","enemy_disruption","retrigger_sensitive","challenge"])
+public_behavior_summary=Array[String](["defense","enemy_disruption","retrigger_sensitive","challenge"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_challenge","threshold":{"kind":"card_contribution"},"effects":[{"op":"add_pending_power_fixed","amount":{"kind":"capture_field_first","capture":"challenge_difference","field":"amount"}}]}]

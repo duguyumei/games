@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_mountain_shattered_wall"
+display_name="山·碎壁震心"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="获得P点防御。本完整回合第一次被敌方攻击将防御降至0时，对敌方造成C点真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","true_damage","enemy_disruption"])
+public_behavior_summary=Array[String](["defense","true_damage","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_response","phase":"prepare","event":"damage_resolved","expiry":"turn_end","filters":{"defender_is_actor":true,"attacker_is_target":true,"defense_lost_positive":true,"defense_after_equals":0,"max_triggers":1},"effects":[{"op":"damage","amount":{"kind":"card_contribution"},"damage_type":"true","direct_attack":false}]}]
+

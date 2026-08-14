@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_mountain_ash_rampart"
+display_name="山·灰垒"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。明确弃掉剩余手牌中所有燃尽真气，再获得实际弃掉牌基础值总和的防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","discard","extra_card_commitment"])
+public_behavior_summary=Array[String](["defense","discard","extra_card_commitment"])
+implementation_category="C"
+effects=[{"op":"capture_query","phase":"prepare","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"burned_hand"},{"op":"defense","amount":{"kind":"power"}},{"op":"move_captured","capture":"burned_hand","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"ash_discarded"},{"op":"defense","amount":{"kind":"capture_base_qi_sum","capture":"ash_discarded"}}]
+

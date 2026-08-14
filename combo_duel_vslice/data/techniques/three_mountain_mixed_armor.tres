@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_mountain_mixed_armor"
+display_name="山·浑甲"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。若本次精确牌型为葫芦，获得100%反震，持续至本完整回合结束。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","reflection"])
+public_behavior_summary=Array[String](["defense","reflection"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"grant_reflection_source","amount":100,"rounds":1,"expiry":"round_end","when":{"exact_hand_id":"full_house"}}]
+

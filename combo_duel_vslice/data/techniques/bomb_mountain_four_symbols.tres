@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_mountain_four_symbols"
+display_name="山·四象镇岳"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="获得P点防御。若本组风、林、火、山四种基础属性齐全，额外获得C点防御。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","extra_card_commitment"])
+public_behavior_summary=Array[String](["defense","extra_card_commitment"])
+implementation_category="A"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"defense","amount":{"kind":"card_contribution"},"when":{"base_attribute_count_at_least":4}}]
+

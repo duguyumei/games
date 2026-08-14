@@ -145,8 +145,8 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 79, "正式功法仓库包含79门功法")
-    _assert_equal(repository.resource_paths.size(), 79, "正式功法资源路径包含79项")
+    _assert_equal(repository.techniques.size(), 128, "正式功法仓库包含128门功法")
+    _assert_equal(repository.resource_paths.size(), 128, "正式功法资源路径包含128项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -162,12 +162,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 77, "商店包含77门非内建正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 126, "商店包含126门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 79, "正式目录存在79门正式功法资源")
+    _assert_equal(resource_count, 128, "正式目录存在128门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -179,24 +179,25 @@ func _test_power_snapshot_formula_and_initial_power_reader() -> void:
         "insight_multiplier": 99,
     })
     _assert_equal(values["base_value"], 14, "C 为贡献层结算后的总和")
-    _assert_equal(values["fixed_multiplier"], 2, "固定牌型倍率保持独立")
-    _assert_equal(values["technique_multiplier"], 3, "乘势或机缘进入 M")
-    _assert_equal(values["baseline_value"], 28, "牌型基准值只读取固定倍率")
-    _assert_equal(values["initial_power"], 42, "P₀=floor(C×M)")
+    _assert_true(not values.has("fixed_multiplier"), "固定牌型倍率字段已经退出")
+    _assert_equal(values["attribute_concentration"], 1, "风火对子属性集中 N=1")
+    _assert_equal(values["technique_multiplier"], 2, "乘势或机缘在 N 基础上进入 M")
+    _assert_equal(values["baseline_value"], 14, "牌型基准值只读取 C")
+    _assert_equal(values["initial_power"], 28, "P₀=floor(C×M)")
     _assert_equal(values["direct_power_fixed"], -50, "直接固定修正不进入 P₀")
     _assert_equal(values["direct_power_percent"], -50, "直接百分比不进入 P₀")
-    _assert_equal(values["pre_momentum_power"], -4, "负的连势前功法值不提前截断")
+    _assert_equal(values["pre_momentum_power"], -11, "负的连势前功法值不提前截断")
     values = PowerCalculatorScript.apply_momentum(values, 10)
     _assert_equal(values["momentum_used"], 10, "成功功法记录连势快照")
-    _assert_equal(values["technique_value"], 6, "最终 P 加入连势后统一截断")
+    _assert_equal(values["technique_value"], 0, "最终 P 加入连势后统一截断")
     _assert_true(not values.has("unamplified_technique_value"), "旧混义功法值字段已删除")
     var context = EffectContextScript.new().configure({"values": values})
     var resolver = EffectValueResolverScript.new()
-    _assert_equal(resolver.resolve({"kind": "initial_power"}, context), 42, "效果通用读取 P₀")
+    _assert_equal(resolver.resolve({"kind": "initial_power"}, context), 28, "效果通用读取 P₀")
     _assert_equal(
         resolver.resolve({
             "kind": "initial_power_fraction", "numerator": 1, "denominator": 2}, context),
-        21,
+        14,
         "效果可以按比例读取 P₀")
 
     var effect_engine = _engine_with_cards([])

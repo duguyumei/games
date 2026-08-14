@@ -263,4 +263,7 @@ func public_plan(intent: Dictionary) -> Dictionary:
         "defense": maxi(0, int(intent.get("defense", 0))),
         "segments": maxi(0, int(intent.get("segments", 0))),
         "combo": bool(intent.get("combo", false)),
+        "same_qi_gain": maxi(0, int(intent.get("same_qi_gain", 0))),
+        "same_qi_trigger_count": maxi(
+            0, int(intent.get("same_qi_trigger_count", 0))),
     }

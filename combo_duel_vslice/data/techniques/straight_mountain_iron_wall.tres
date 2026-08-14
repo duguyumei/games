@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_mountain_iron_wall"
+display_name="山·铁壁"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="获得P/2点防御。本完整回合防御不会自然衰减。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","delayed_defense"])
+public_behavior_summary=Array[String](["defense","delayed_defense"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"grant_defense_retention","prevent_decay":true,"additional_percent":0,"rounds":1}]
+

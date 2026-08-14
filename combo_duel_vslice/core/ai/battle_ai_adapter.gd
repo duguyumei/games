@@ -183,6 +183,30 @@ func record_action_result(coordinator, result: Dictionary) -> void:
             "visibility": "public",
             "payload": {"amount": enemy_damage, "target_id": "player"},
         })
+    for change_value in result.get("same_qi_changes", []):
+        if not change_value is Dictionary:
+            continue
+        var change: Dictionary = change_value
+        if change.get("reused", false):
+            continue
+        _record_event(coordinator, {
+            "round_number": engine.turn_number,
+            "action_index": coordinator.current_action_index,
+            "window_id": coordinator.current_window_id,
+            "event_type": "same_qi_changed",
+            "actor_id": str(change.get("side", "system")),
+            "visibility": "public",
+            "payload": {
+                "before": int(change.get("same_qi_before", 0)),
+                "gained": int(change.get("gained", 0)),
+                "spent": int(change.get("spent", 0)),
+                "after": int(change.get("same_qi_after", 0)),
+                "capacity": int(change.get("same_qi_capacity", 5)),
+                "granted_actions": int(change.get("granted_actions", 0)),
+                "source": str(change.get("source", "")),
+                "action_token": str(change.get("action_token", "")),
+            },
+        })
     _record_event(coordinator, {
         "round_number": engine.turn_number,
         "action_index": coordinator.current_action_index,
@@ -268,6 +292,9 @@ func _candidate_from_proposal(
             "defense": maxi(0, int(intent.get("defense", 0))),
             "segments": maxi(0, int(intent.get("segments", 0))),
             "combo": bool(intent.get("combo", false)),
+            "same_qi_gain": int(preview.get("same_qi_gain", 0)),
+            "same_qi_trigger_count": int(preview.get(
+                "same_qi_trigger_count", 0)),
             "retained_hand_count": maxi(0, hand_size - proposal.card_ids.size()),
             "strategic_features": _remote_feature_snapshot(record.get("features", {})),
         },
@@ -298,6 +325,10 @@ func _player_public_state() -> Dictionary:
         "life": engine.player.life,
         "max_life": engine.player.max_life,
         "defense": engine.player.defense,
+        "same_qi_value": engine.player.same_qi_value,
+        "same_qi_capacity": int(engine.player.effective_same_qi_capacity_result({
+            "source_kind": "ai_observation",
+        }).get("effective_value", 5)),
         "hand_count": engine.player.hand.size(),
         "draw_pile_count": engine.player.draw_pile.size(),
         "discard_count": engine.player.discard_pile.size(),

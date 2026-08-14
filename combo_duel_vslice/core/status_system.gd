@@ -87,6 +87,12 @@ func _init(
             self,
             "_on_card_turn_end_final")
         timing_system.register_weak_handler(
+            timing_system.TURN_END,
+            "status_system.combat_source_expiry",
+            1200,
+            self,
+            "_on_combat_source_turn_end")
+        timing_system.register_weak_handler(
             timing_system.BATTLE_END,
             "status_system.card_battle_end",
             100,
@@ -143,6 +149,12 @@ func register_response(
         resolved_filters["source_card_instance_ids"] = runtime.captures.get(
             capture_id, []).map(func(card): return str(card.id))
         resolved_filters.erase("source_card_instance_ids_from_capture")
+    if resolved_filters.has("source_tokens_from_capture"):
+        var capture_id := str(resolved_filters["source_tokens_from_capture"])
+        resolved_filters["source_tokens"] = runtime.captures.get(
+            capture_id, []).map(func(value): return str(
+                value.get("source_token", "") if value is Dictionary else ""))
+        resolved_filters.erase("source_tokens_from_capture")
     var record := {
         "id": "response-%06d" % _delay_serial,
         "event_kind": event_kind,
@@ -165,6 +177,7 @@ func register_response(
         "action_token": runtime.action_token,
         "source_round": _current_round_hint(runtime),
         "resolving": false,
+        "remaining_triggers": int(filters.get("max_triggers", -1)),
     }
     _delay_serial += 1
     response_records.append(record)
@@ -217,8 +230,14 @@ func handle_response_event(event_kind: String, values: Dictionary) -> void:
             "action_token": record["action_token"],
             "source_kind": "response",
         })
-        _effect_executor.execute_all(record["effects"], response_context)
+        var response_result: Dictionary = _effect_executor.execute_all(
+            record["effects"], response_context)
         record["resolving"] = false
+        if response_result.get("success", false) \
+                and int(record.get("remaining_triggers", -1)) > 0:
+            record["remaining_triggers"] = int(record["remaining_triggers"]) - 1
+            if int(record["remaining_triggers"]) <= 0:
+                response_records.erase(record)
 
 func _response_matches(record: Dictionary, values: Dictionary) -> bool:
     var filters: Dictionary = record.get("filters", {})
@@ -242,6 +261,33 @@ func _response_matches(record: Dictionary, values: Dictionary) -> bool:
         return false
     if filters.has("source_card_instance_ids") \
             and not filters["source_card_instance_ids"].has(str(values.get("source_card_instance_id", ""))):
+        return false
+    if filters.has("source_tokens") \
+            and not filters["source_tokens"].has(str(values.get("source_token", ""))):
+        return false
+    if bool(filters.get("defender_is_actor", false)) \
+            and values.get("defender") != record.get("actor"):
+        return false
+    if bool(filters.get("attacker_is_target", false)) \
+            and values.get("attacker") != record.get("target"):
+        return false
+    if bool(filters.get("holder_is_actor", false)) \
+            and values.get("holder") != record.get("actor"):
+        return false
+    if bool(filters.get("actual_life_loss_positive", false)) \
+            and int(values.get("actual_life_loss", values.get("life_lost", 0))) <= 0:
+        return false
+    if filters.has("damage_type") \
+            and str(values.get("damage_type", "")) != str(filters["damage_type"]):
+        return false
+    if filters.has("defense_after_equals") \
+            and int(values.get("defense_after", -1)) != int(filters["defense_after_equals"]):
+        return false
+    if bool(filters.get("defense_lost_positive", false)) \
+            and int(values.get("defense_lost", 0)) <= 0:
+        return false
+    if bool(filters.get("same_action_window", false)) \
+            and not values.get("action_tokens", []).has(str(record.get("action_token", ""))):
         return false
     var snapshot: Dictionary = values.get("pre_move_snapshot", {})
     if bool(filters.get("had_poison", false)) and not bool(snapshot.get("had_poison", false)):
@@ -674,12 +720,10 @@ func register_defense_decay_return(runtime) -> Dictionary:
 func register_reflection_expiry(runtime, percent: int) -> Dictionary:
     var token := "reflection-%06d" % _delay_serial
     _delay_serial += 1
-    runtime.actor.set_reflection_percent(percent, token)
-    delayed_records.append({
-        "id": token, "kind": "reflection_expiry", "actor": runtime.actor,
-        "source_round": _current_round_hint(runtime),
-    })
-    return {"success": true, "source_token": token}
+    return _effect_ports().grant_reflection_source(
+        runtime.actor, percent, 1, "round_end",
+        runtime.technique_name if runtime.technique_name != "" else "反震",
+        token, runtime.target)
 
 func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary:
     delayed_records.append({
@@ -754,6 +798,36 @@ func _on_action_resolution_end_records(event) -> Dictionary:
             })
             _effect_executor.execute_all([record["effect"]], context)
         delayed_records.erase(record)
+    handle_response_event("action_resolution_end", {
+        "actors": event.actors,
+        "action_tokens": event.context.get("metadata", {}).get(
+            "action_tokens", []).duplicate(),
+        "action_window_id": event.context.get("metadata", {}).get(
+            "action_window_id", ""),
+        "action_results": event.context.get("action_results", []).duplicate(true),
+        "round_number": int(event.round_number),
+    })
+    var window_id := str(event.context.get(
+        "metadata", {}).get("action_window_id", ""))
+    if window_id != "":
+        for side in event.actors:
+            _resolve_challenges_for_window(side, window_id)
+        for side in event.actors:
+            var expired: Dictionary = side.expire_action_window_sources(window_id)
+            for record in expired.get("reflection_records", []):
+                _effect_ports().notify_source_changed(
+                    "reflection_source_changed", side, record, "expired")
+            for record in expired.get("block_records", []):
+                _effect_ports().notify_source_changed(
+                    "block_source_changed", side, record, "expired")
+            if not expired.get("reflection", []).is_empty() \
+                    or not expired.get("blocks", []).is_empty():
+                _effect_ports().add_history(
+                    "source_expiry", "%s行动窗来源到期" % side.name,
+                    "战斗来源", "成功",
+                    "反震%d／格挡%d" % [
+                        expired.get("reflection", []).size(),
+                        expired.get("blocks", []).size()])
     return {"success": true}
 
 func _action_token_matches(record: Dictionary, context: Dictionary) -> bool:
@@ -815,12 +889,6 @@ func _on_turn_end(event) -> Dictionary:
             0,
             null,
             str(delayed["label"]))
-    var reflection_due: Array = delayed_records.filter(func(record):
-        return record.get("kind") == "reflection_expiry" \
-            and record.get("actor") == event.actor)
-    for record in reflection_due:
-        event.actor.clear_reflection_if_source(str(record["id"]))
-        delayed_records.erase(record)
     _dispatch_card_turn_end(event.actor)
     handle_response_event("turn_end", {
         "actor": event.actor,
@@ -856,6 +924,61 @@ func _on_card_turn_end_final(event) -> Dictionary:
     for card in event.actor.hand.duplicate():
         _dispatch_card_behaviors("turn_end_final", event.actor, card)
     return {"success": true}
+
+func _on_combat_source_turn_end(event) -> Dictionary:
+    if event.actor == null:
+        return {"success": false, "detail": "战斗来源到期缺少行动方"}
+    var expired: Dictionary = event.actor.tick_round_limited_sources()
+    for record in expired.get("reflection_records", []):
+        _effect_ports().notify_source_changed(
+            "reflection_source_changed", event.actor, record, "expired")
+    for record in expired.get("true_damage_records", []):
+        _effect_ports().notify_source_changed(
+            "reflection_source_changed", event.actor, record, "true_damage_expired")
+    return {
+        "success": true,
+        "detail": "反震来源到期%d／真伤修改到期%d" % [
+            expired.get("reflection", []).size(),
+            expired.get("true_damage", []).size()],
+    }
+
+func _resolve_challenges_for_window(side, window_id: String) -> void:
+    if _effect_executor == null or side == null:
+        return
+    var due: Array = side.challenge_records.filter(func(record):
+        return not bool(record.get("waiting_for_action", false)) \
+            and str(record.get("window_id", "")) == window_id)
+    for record in due:
+        var difference := maxi(
+            0, int(record.get("threshold", 0)) - int(record.get("current", 0)))
+        if difference > 0:
+            var captures: Dictionary = record.get("captures", {}).duplicate(true)
+            captures["challenge_difference"] = [{"amount": difference}]
+            var context = EffectContextScript.new().configure({
+                "ports": _effect_ports(),
+                "actor": record["challenger"], "target": record["target"],
+                "power": int(record.get("power", 0)),
+                "initial_power": int(record.get("initial_power", 0)),
+                "hand_result": record.get("hand_result", {}),
+                "played_cards": record.get("played_cards", []),
+                "group_snapshot": record.get("group_snapshot", {}),
+                "captures": captures,
+                "technique_id": str(record.get("technique_id", "")),
+                "technique_name": str(record.get("technique_name", "")),
+                "actual_hand_id": str(record.get("actual_hand_id", "")),
+                "branch_hand_id": str(record.get("branch_hand_id", "")),
+                "technique_pool": str(record.get("technique_pool", "")),
+                "action_token": str(record.get("action_token", "")),
+                "source_kind": "challenge",
+            })
+            _effect_executor.execute_all(record.get("effects", []), context)
+        _effect_ports().add_history(
+            "challenge_resolved", str(record.get("label", "邀战")),
+            side.name, "成功", "%d/%d，差额%d" % [
+                int(record.get("current", 0)), int(record.get("threshold", 0)), difference])
+        _effect_ports().notify_source_changed(
+            "challenge_resolved", side, record, "resolved")
+        side.challenge_records.erase(record)
 
 func _on_after_normal_draw_delays(event) -> Dictionary:
     if event.actor == null:
@@ -907,7 +1030,7 @@ func _on_card_battle_end(event) -> Dictionary:
         side.direct_power_percent = 0
         side.momentum_value = 0
         side.last_successful_technique_hand_id = ""
-        side.current_reflection_percent = 0
+        side.clear_combat_sources()
         var cards: Array = []
         for zone in [
                 side.draw_pile,

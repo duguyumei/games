@@ -23,6 +23,10 @@ func operation_ids() -> Array[String]:
         "recover_forest_priority",
         "burn_deck_then_heat_hand",
         "retrigger_current_hand_technique",
+        "grant_reflection_source", "grant_reflection_true_damage",
+        "grant_block", "register_challenge",
+        "grant_defense_retention", "add_pending_power_fixed",
+        "clear_same_qi_for_defense", "add_same_qi",
     ]
 
 func group_name() -> String:
@@ -54,6 +58,67 @@ func execute(effect: Dictionary, context):
             var result: Dictionary = runtime.ports.register_reflection_expiry(runtime, amount)
             return EffectResultScript.succeeded("反震设为 %d%%" % amount) \
                 if result.get("success", false) else EffectResultScript.failed("反震到期记录失败")
+        "grant_reflection_source":
+            var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
+            if bool(effect.get("add_to_current", false)):
+                amount += int(runtime.actor.current_reflection_percent)
+            var result: Dictionary = runtime.ports.grant_reflection_source(
+                runtime.actor, amount, int(effect.get("rounds", 1)),
+                str(effect.get("expiry", "round_end")),
+                runtime.technique_name if runtime.technique_name != "" else "反震",
+                "", runtime.target)
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [result.get("record", {})]
+            return EffectResultScript.succeeded("建立%d%%反震来源" % amount) \
+                if result.get("success", false) else EffectResultScript.failed("反震来源建立失败")
+        "grant_reflection_true_damage":
+            var result: Dictionary = runtime.ports.grant_reflection_true_damage_source(
+                runtime.actor, int(effect.get("rounds", 1)),
+                runtime.technique_name if runtime.technique_name != "" else "反震真伤")
+            return EffectResultScript.succeeded("反震伤害改为真伤") \
+                if result.get("success", false) else EffectResultScript.failed("反震真伤来源建立失败")
+        "grant_block":
+            var result: Dictionary = runtime.ports.grant_block_source(
+                runtime.actor, runtime.target,
+                str(effect.get("condition", "unconditional")),
+                runtime.technique_name if runtime.technique_name != "" else "格挡")
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [result.get("record", {})]
+            return EffectResultScript.succeeded("获得1次格挡") \
+                if result.get("success", false) else EffectResultScript.failed("格挡来源建立失败")
+        "register_challenge":
+            var threshold: int = value_resolver.resolve(effect.get("threshold", 0), runtime)
+            var result: Dictionary = runtime.ports.register_challenge(
+                runtime, threshold, effect.get("effects", []),
+                runtime.technique_name if runtime.technique_name != "" else "邀战")
+            return EffectResultScript.succeeded("邀战%d" % threshold) \
+                if result.get("success", false) else EffectResultScript.failed("邀战建立失败")
+        "grant_defense_retention":
+            var record: Dictionary = runtime.actor.add_defense_retention_source(
+                int(effect.get("additional_percent", 0)),
+                bool(effect.get("prevent_decay", false)), "",
+                int(effect.get("rounds", 1)), runtime.technique_name)
+            return EffectResultScript.succeeded("建立防御保留来源") \
+                if not record.is_empty() else EffectResultScript.failed("防御保留来源建立失败")
+        "add_pending_power_fixed":
+            var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
+            runtime.actor.add_pending_power_fixed_source(
+                amount, "", runtime.technique_name)
+            return EffectResultScript.succeeded("下一门成功功法值+%d" % amount)
+        "clear_same_qi_for_defense":
+            var cleared := maxi(0, int(runtime.actor.same_qi_value))
+            runtime.actor.same_qi_value = 0
+            var defense := cleared * int(effect.get("defense_per_point", 4))
+            runtime.ports.add_defense(
+                runtime.actor, defense, runtime.technique_name, runtime.action_token)
+            return EffectResultScript.succeeded("清空%d同气并获得%d防御" % [cleared, defense])
+        "add_same_qi":
+            var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
+            var result: Dictionary = runtime.ports.gain_same_qi(
+                runtime.actor, amount, runtime.technique_name,
+                "%s:%s:add_same_qi" % [runtime.action_token, runtime.technique_id])
+            return EffectResultScript.succeeded("同气+%d" % amount) \
+                if result.get("success", false) else EffectResultScript.failed(str(result.get("reason", "同气增加失败")))
         "register_defense_decay_return":
             runtime.ports.register_defense_decay_return(runtime)
             return EffectResultScript.succeeded("记录本回合自然防御衰减")
@@ -147,3 +212,6 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
         "register_no_life_loss_disruption":
             validator.validate_nested_battle_effects(
                 [effect.get("effect", {})], scope + ".effect")
+        "register_challenge":
+            validator.validate_nested_battle_effects(
+                effect.get("effects", []), scope + ".effects")

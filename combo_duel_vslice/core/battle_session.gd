@@ -712,6 +712,10 @@ func _side_snapshot(side) -> Dictionary:
         var consumable: Dictionary = engine.consumable_repository.get_consumable(consumable_id).duplicate(true)
         consumable["targeting_limits"] = engine.consumable_repository.target_limits(consumable_id)
         consumables.append(consumable)
+    var same_qi_capacity: Dictionary = side.effective_same_qi_capacity_result({
+        "round_number": int(engine.turn_number),
+        "source_kind": "battle_snapshot",
+    })
     return {
         "name": side.name,
         "life": side.life,
@@ -720,8 +724,14 @@ func _side_snapshot(side) -> Dictionary:
         "direct_power_fixed": side.direct_power_fixed,
         "direct_power_percent": side.direct_power_percent,
         "momentum_value": side.momentum_value,
+        "same_qi_value": side.same_qi_value,
+        "same_qi_capacity": int(same_qi_capacity.get("effective_value", 5)),
         "last_successful_technique_hand_id": side.last_successful_technique_hand_id,
         "current_reflection_percent": side.current_reflection_percent,
+        "reflection_sources": side.public_reflection_sources(),
+        "reflection_true_damage_sources": side.public_reflection_true_damage_sources(),
+        "block_sources": side.public_block_sources(),
+        "challenge_records": side.public_challenge_records(),
         "base_hand_limit": side.base_hand_limit(),
         "hand_limit": side.current_hand_limit(),
         "inner_skill_limit": int(capacity["effective_capacity"]),
@@ -762,6 +772,14 @@ func _safe_preview_snapshot(preview: Dictionary) -> Dictionary:
         "hand": _hand_result_snapshot(preview.get("hand", {})),
         "cards": _card_snapshots(preview.get("cards", [])),
         "values": preview.get("values", {}).duplicate(true),
+        "same_qi": preview.get("same_qi", {}).duplicate(true),
+        "same_qi_group": preview.get("same_qi_group", {}).duplicate(true),
+        "same_qi_gain": int(preview.get("same_qi_gain", 0)),
+        "same_qi_before": int(preview.get("same_qi_before", 0)),
+        "same_qi_capacity": int(preview.get("same_qi_capacity", 5)),
+        "same_qi_after": int(preview.get("same_qi_after", 0)),
+        "same_qi_trigger_count": int(preview.get(
+            "same_qi_trigger_count", 0)),
         "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
         "reshape_action_results": preview.get(
             "reshape_action_results", {}).duplicate(true),
@@ -779,7 +797,6 @@ func _hand_result_snapshot(hand_result: Dictionary) -> Dictionary:
     return {
         "id": str(hand_result.get("id", "")),
         "name": str(hand_result.get("name", "")),
-        "multiplier": int(hand_result.get("multiplier", 0)),
         "strength": int(hand_result.get("strength", 0)),
         "royal": bool(hand_result.get("royal", false)),
         "contributing_card_ids": _card_ids(hand_result.get("contributing", [])),

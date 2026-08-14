@@ -47,6 +47,7 @@ const CardIdentityPolicyScript = preload(
     "res://core/passives/card_identity_policy.gd")
 const BattlePermissionServiceScript = preload(
     "res://core/passives/battle_permission_service.gd")
+const SameQiGaugeServiceScript = preload("res://core/same_qi_gauge_service.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -88,6 +89,7 @@ var battle_rule_query_service
 var hand_recognition_policy
 var card_identity_policy
 var battle_permission_service
+var same_qi_gauge_service
 var _battle_instance_serial: int = 0
 
 var turn_number: int:
@@ -99,12 +101,6 @@ var actions_available: int:
 var enemy_actions_available: int:
     get: return battle_flow.available_action_count(enemy)
     set(value): battle_flow.set_action_count(enemy, value)
-var same_qi_link_used: bool:
-    get: return battle_flow.has_claimed_combo(player, "same_qi_link")
-    set(value): battle_flow.set_combo_claimed(player, "same_qi_link", value)
-var enemy_same_qi_link_used: bool:
-    get: return battle_flow.has_claimed_combo(enemy, "same_qi_link")
-    set(value): battle_flow.set_combo_claimed(enemy, "same_qi_link", value)
 var enemy_action_index: int:
     get: return round_service.enemy_action_index
     set(value): round_service.enemy_action_index = value
@@ -236,6 +232,8 @@ func _init(
         trigger_queue)
     effect_ports.use_sides(player, enemy)
     effect_ports.use_battle_rng(rng)
+    same_qi_gauge_service = SameQiGaugeServiceScript.new(battle_flow)
+    effect_ports.use_same_qi_gauge_service(same_qi_gauge_service)
     passive_rule_runtime.use_battle_effect_ports(
         effect_ports, Callable(self, "_set_scenario_error"))
     status_system.use_effect_ports(effect_ports)
@@ -285,7 +283,8 @@ func _init(
         effect_executor,
         battle_rule_query_service,
         Callable(self, "_read_turn_number"),
-        battle_permission_service)
+        battle_permission_service,
+        same_qi_gauge_service)
     action_resolver = ActionResolverScript.new(
         effect_ports,
         repository,
@@ -454,6 +453,7 @@ func setup(
     round_service.reset()
     round_service.set_modes(false, false)
     action_service.reset()
+    same_qi_gauge_service.reset()
     action_service.set_modes(false, false, false)
     enemy_planning_service.reset()
     enemy_planning_service.set_modes(false, false)
@@ -605,7 +605,6 @@ func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionar
         card_ids,
         book,
         modifiers_by_hand,
-        battle_flow.has_claimed_combo(side, "same_qi_link"),
         enemy if side == player else player)
 
 func grant_consumable(side, consumable_id: String, source: String = "效果") -> bool:
@@ -780,6 +779,8 @@ func _update_battle_state() -> void:
 
 func _on_flow_battle_end_timing(event) -> Dictionary:
     var result: Dictionary = outcome_service.on_battle_end_timing(event)
+    player.same_qi_value = 0
+    enemy.same_qi_value = 0
     passive_rule_runtime.suppression_service.clear()
     return result
 

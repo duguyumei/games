@@ -17,6 +17,8 @@ func resolve(spec, context) -> int:
             return runtime.power
         "initial_power":
             return runtime.initial_power
+        "card_contribution":
+            return int(runtime.group_snapshot.get("card_contribution", 0))
         "initial_power_fraction":
             var value := int(floor(
                 runtime.initial_power
@@ -165,6 +167,37 @@ func resolve(spec, context) -> int:
             return HandGroupSnapshotScript.base_qi_sum(
                 runtime.group_snapshot,
                 runtime.group_snapshot.get("played_cards", runtime.played_cards))
+        "extra_effective_qi_sum":
+            var total := 0
+            for card in runtime.group_snapshot.get("extra_cards", []):
+                total += runtime.ports.current_effective_qi(runtime.actor, card)
+            return total
+        "action_same_qi_gain":
+            return int(runtime.group_snapshot.get("action_same_qi_gain", 0))
+        "action_same_qi_trigger_count":
+            return int(runtime.group_snapshot.get(
+                "action_same_qi_trigger_count", 0))
+        "base_attribute_count":
+            var attributes: Dictionary = {}
+            for card in runtime.group_snapshot.get("played_cards", runtime.played_cards):
+                var facts: Dictionary = runtime.group_snapshot.get(
+                    "facts_by_id", {}).get(str(card.id), {})
+                attributes[str(facts.get(
+                    "base_attribute_at_freeze",
+                    card.current_attribute() if card.has_method("current_attribute") else card.attribute))] = true
+            attributes.erase("")
+            return attributes.size()
+        "event_field":
+            var events: Array = runtime.captures.get(
+                str(spec.get("capture", "event")), [])
+            return int(events[0].get(str(spec.get("field", "amount")), 0)) \
+                if not events.is_empty() and events[0] is Dictionary else 0
+        "active_temporary_reshape_base_qi_sum":
+            var total := 0
+            for card in runtime.group_snapshot.get("played_cards", runtime.played_cards):
+                if _has_active_temporary_reshape(card):
+                    total += int(card.current_base_qi_value())
+            return total
         "extra_count":
             return runtime.group_snapshot.get("extra_cards", []).size()
         "extra_attribute_count":
@@ -259,6 +292,9 @@ func condition_met(condition: Dictionary, context) -> bool:
         if runtime.actual_hand_id != wanted_hand_id \
                 and runtime.branch_hand_id != wanted_hand_id:
             return false
+    if condition.has("exact_hand_id") \
+            and runtime.actual_hand_id != str(condition["exact_hand_id"]):
+        return false
     if condition.has("capture_count_equals"):
         var spec: Dictionary = condition["capture_count_equals"]
         if runtime.captures.get(spec.get("capture", ""), []).size() != int(spec.get("value", 0)):
@@ -341,6 +377,69 @@ func condition_met(condition: Dictionary, context) -> bool:
         if runtime.actor == null \
                 or int(runtime.actor.defense) != int(condition["actor_defense_equals"]):
             return false
+    if condition.has("group_played_count") \
+            and runtime.group_snapshot.get("played_cards", runtime.played_cards).size() \
+                != int(condition["group_played_count"]):
+        return false
+    if condition.has("group_has_common_attribute"):
+        var common: Array = runtime.group_snapshot.get("common_attributes", [])
+        var wanted := str(condition["group_has_common_attribute"])
+        if wanted == "any" and common.is_empty():
+            return false
+        if wanted != "any" and not common.has(wanted):
+            return false
+    if condition.has("contributing_has_common_attribute"):
+        var contributing_common: Array = runtime.group_snapshot.get(
+            "contributing_common_attributes", [])
+        var contributing_wanted := str(
+            condition["contributing_has_common_attribute"])
+        if contributing_wanted == "any" and contributing_common.is_empty():
+            return false
+        if contributing_wanted != "any" \
+                and not contributing_common.has(contributing_wanted):
+            return false
+    if bool(condition.get("contributing_has_no_common_attribute", false)) \
+            and not runtime.group_snapshot.get(
+                "contributing_common_attributes", []).is_empty():
+        return false
+    if bool(condition.get("group_has_no_common_attribute", false)) \
+            and not runtime.group_snapshot.get("common_attributes", []).is_empty():
+        return false
+    if condition.has("base_attribute_count_at_least") \
+            and resolve({"kind": "base_attribute_count"}, runtime) \
+                < int(condition["base_attribute_count_at_least"]):
+        return false
+    if bool(condition.get("hand_differs_from_previous_success", false)):
+        if runtime.actor == null \
+                or runtime.actor.last_successful_technique_hand_id == "" \
+                or runtime.actor.last_successful_technique_hand_id == runtime.actual_hand_id:
+            return false
+    if bool(condition.get("action_has_cooperation", false)) \
+            and not bool(runtime.group_snapshot.get("has_cooperation_group", false)):
+        return false
+    if bool(condition.get("group_all_active_permanent_reshape", false)):
+        var cards: Array = runtime.group_snapshot.get("played_cards", runtime.played_cards)
+        if cards.is_empty():
+            return false
+        for card in cards:
+            if not _has_active_permanent_reshape(card):
+                return false
+    if bool(condition.get("group_all_active_any_reshape", false)):
+        var cards: Array = runtime.group_snapshot.get("played_cards", runtime.played_cards)
+        if cards.is_empty():
+            return false
+        for card in cards:
+            if not _has_active_permanent_reshape(card) \
+                    and not _has_active_temporary_reshape(card):
+                return false
+    if bool(condition.get("hand_stronger_than_opposing", false)):
+        var opposing := str(runtime.group_snapshot.get("opposing_hand_id", ""))
+        if opposing == "" or _hand_strength(runtime.actual_hand_id) <= _hand_strength(opposing):
+            return false
+    if bool(condition.get("opposing_has_normal_attack", false)) \
+            and not bool(runtime.group_snapshot.get(
+                "opposing_has_normal_attack", false)):
+        return false
     return true
 
 func _capture_cards(runtime, spec: Dictionary) -> Array:
@@ -357,6 +456,25 @@ func _card_is_attribute(card, attribute: String, runtime = null) -> bool:
         if result.get("success", false):
             return bool(result["facts"].has_attribute(attribute))
     return card.is_attribute(attribute)
+
+func _has_active_permanent_reshape(card) -> bool:
+    if card == null or card.return_to_origin_active():
+        return false
+    return not card.reshape_origin.is_empty() \
+        or str(card.reshape_enhancement) != "" \
+        or str(card.reshape_imprint) != "" \
+        or not card.reshape_others.is_empty()
+
+func _has_active_temporary_reshape(card) -> bool:
+    if card == null or card.return_to_origin_active():
+        return false
+    return str(card.temporary_reshapes.get("enhancement", "")) != "" \
+        or str(card.temporary_reshapes.get("attribute", "")) != ""
+
+func _hand_strength(hand_id: String) -> int:
+    return [
+        "high_card", "pair", "two_pair", "three_kind", "straight",
+        "full_house", "four_kind", "five_kind"].find(hand_id)
 
 func noncontributing_qi_total(context) -> int:
     var runtime = EffectContextScript.coerce(context)

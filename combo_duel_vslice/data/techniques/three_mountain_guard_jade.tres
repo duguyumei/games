@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_mountain_guard_jade"
+display_name="山·护璞"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。选择本次打出的1张拥有当前生效永久重塑的真气，使其获得重聚。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"capture_group_cards","kind":"played","require_active_permanent_reshape":true,"capture":"active_permanent"},{"op":"select_cards","choice_id":"guard_jade","prompt":"选择获得重聚的永久重塑真气","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","candidate_capture":"active_permanent","capture":"guard_jade_target"},{"op":"apply_card_anomaly_to_captured","capture":"guard_jade_target","category":"mark","anomaly":"regroup"}]
+

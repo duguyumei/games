@@ -209,6 +209,7 @@ func resolve_locked_enemy_action_once() -> Dictionary:
         "kind": "enemy_only",
         "round_number": int(turn_number_reader.call()),
         "action_tokens": [str(record["token"])],
+        "acting_owner_ids": [str(enemy.owner_id)],
     })
     var resolution: Dictionary = action_resolver.resolve_action_records(
         [record], battle_flow.resolution_mode() == "synchronized")
@@ -251,6 +252,7 @@ func _confirm_solo_player(proposal) -> Dictionary:
         "kind": "solo_player",
         "round_number": int(turn_number_reader.call()),
         "action_tokens": [str(record["token"])],
+        "acting_owner_ids": [str(player.owner_id)],
     })
     var resolution: Dictionary = action_resolver.resolve_action_records(
         [record], battle_flow.resolution_mode() == "synchronized")
@@ -287,6 +289,7 @@ func _resolve_solo_cooperation(
         group: Dictionary,
         main_preview: Dictionary,
         main_cards: Array) -> Dictionary:
+    action_resolver.effect_ports.close_current_source_binding_window()
     var cooperation_preview: Dictionary = group["preview"]
     var cooperation_record = action_resolver.make_action_record(
         player, enemy, cooperation_preview, sequence_book, 101, turn_number_reader.call())
@@ -357,7 +360,10 @@ func _finish_solo_action_outcome(
     last_player_action_cards = played_cards
     last_enemy_action_cards.clear()
     last_played_hand = action_preview["hand"]["id"]
-    _apply_same_qi_link(player, action_preview)
+    var same_qi_change := _apply_same_qi_gain(
+        player, action_preview, played_cards)
+    if not same_qi_change.get("success", false):
+        return same_qi_change
     battle_flow.clear_intents()
     emit_state_changed.call()
     return {
@@ -367,6 +373,7 @@ func _finish_solo_action_outcome(
         "technique_triggered": main_triggered,
         "cooperation_technique_triggered": cooperation_triggered,
         "played_cards": played_cards,
+        "same_qi_changes": [same_qi_change],
         "actions_available": battle_flow.available_action_count(player),
     }
 
@@ -402,7 +409,9 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
             "success": false,
             "reason": "协同组必须组成%s" % str(cooperation["hand_id"]),
         }
-    if not _cooperation_cards_match(cooperation_preview.get("cards", []), cooperation):
+    if not _cooperation_cards_match(
+            cooperation_preview.get("cards", []), cooperation,
+            proposal.preview.get("cards", [])):
         return {"success": false, "reason": "协同牌不满足功法声明的异状限制"}
 
     var permission_result := _query_cooperation_permission(
@@ -434,11 +443,11 @@ func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
         "main_individual_power": main_individual_power,
         "cooperation_individual_power": cooperation_individual_power,
     })
-    var same_qi_action_result := _freeze_same_qi_action(proposal)
-    if not same_qi_action_result.get("success", false):
+    var same_qi_gain_result := _refresh_same_qi_gain(proposal, false)
+    if not same_qi_gain_result.get("success", false):
         proposal.groups.pop_back()
         proposal.preview["values"]["technique_value"] = main_individual_power
-        return same_qi_action_result
+        return same_qi_gain_result
     return {"success": true, "shared_power": shared_power}
 
 func _confirm_synchronized_play(player_proposal) -> Dictionary:
@@ -522,6 +531,8 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         "kind": "synchronized" if enemy_will_act else "solo_player",
         "round_number": int(turn_number_reader.call()),
         "action_tokens": records.map(func(record): return str(record["token"])),
+        "acting_owner_ids": records.map(
+            func(record): return str(record["actor"].owner_id)),
     })
     var resolution: Dictionary = action_resolver.resolve_action_records(
         records, resolution_mode == "synchronized")
@@ -594,6 +605,7 @@ func _resolve_synchronized_player_cooperation(
         enemy_cards: Array,
         player_triggered: bool,
         enemy_triggered: bool) -> Dictionary:
+    action_resolver.effect_ports.close_current_source_binding_window()
     var cooperation_preview: Dictionary = group["preview"]
     var cooperation_record = action_resolver.make_action_record(
         player, enemy, cooperation_preview, sequence_book, 101, turn_number_reader.call())
@@ -683,10 +695,19 @@ func _finish_synchronized_outcome(
     last_player_action_cards = player_cards
     last_enemy_action_cards = enemy_cards
     last_played_hand = player_preview["hand"]["id"]
-    _apply_same_qi_link(player, player_preview)
+    var same_qi_changes: Array = []
+    var player_same_qi := _apply_same_qi_gain(
+        player, player_preview, player_cards)
+    if not player_same_qi.get("success", false):
+        return player_same_qi
+    same_qi_changes.append(player_same_qi)
     if enemy_will_act:
         enemy_action_index_writer.call(enemy_action_index_reader.call() + 1)
-        _apply_same_qi_link(enemy, enemy_preview)
+        var enemy_same_qi := _apply_same_qi_gain(
+            enemy, enemy_preview, enemy_cards)
+        if not enemy_same_qi.get("success", false):
+            return enemy_same_qi
+        same_qi_changes.append(enemy_same_qi)
     battle_flow.clear_intents()
     update_battle_state.call()
     if battle_state_reader.call() == "active" and battle_flow.can_act(enemy):
@@ -712,6 +733,7 @@ func _finish_synchronized_outcome(
         "enemy_technique_triggered": enemy_triggered,
         "played_cards": player_cards,
         "enemy_played_cards": enemy_cards,
+        "same_qi_changes": same_qi_changes,
         "actions_available": battle_flow.available_action_count(player),
         "enemy_actions_available": battle_flow.available_action_count(enemy),
         "battle_state": battle_state_reader.call(),
@@ -729,7 +751,10 @@ func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictio
     last_player_action_cards.clear()
     last_enemy_action_cards = enemy_cards
     enemy_action_index_writer.call(enemy_action_index_reader.call() + 1)
-    _apply_same_qi_link(enemy, action_preview)
+    var same_qi_change := _apply_same_qi_gain(
+        enemy, action_preview, enemy_cards)
+    if not same_qi_change.get("success", false):
+        return same_qi_change
     battle_flow.clear_intents()
     update_battle_state.call()
     clear_enemy_action_lock.call()
@@ -737,45 +762,74 @@ func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictio
         "success": true,
         "enemy_preview": action_preview,
         "enemy_played_cards": enemy_cards,
+        "same_qi_changes": [same_qi_change],
         "enemy_technique_triggered": record["triggered"],
         "enemy_actions_available": battle_flow.available_action_count(enemy),
         "battle_state": battle_state_reader.call(),
     }
 
-func _grant_extra_actions(side, amount: int, source: String) -> void:
-    var gained: int = battle_flow.grant_actions(side, amount)
-    trigger_queue.add_history(
-        "action_end",
-        "%s额外出牌机会" % side.name,
-        source,
-        "成功",
-        "+%d（连击不自动补牌）" % gained)
+func _apply_same_qi_gain(
+        side,
+        action_preview: Dictionary,
+        actually_played_cards: Array) -> Dictionary:
+    var frozen_action: Dictionary = action_preview.get("same_qi", {})
+    if not bool(frozen_action.get("frozen", false)):
+        return {"success": false, "reason": "行动缺少冻结同气收益"}
+    var actual_ids: Array[String] = []
+    for card in actually_played_cards:
+        actual_ids.append(str(card.id))
+    for card_id in frozen_action.get("card_ids", []):
+        if not actual_ids.has(str(card_id)):
+            return {"success": false, "reason": "冻结同气牌未全部成功打出"}
+    if frozen_action.get("card_ids", []).is_empty():
+        return {"success": false, "reason": "行动没有成功打出的普通真气"}
+    var token := "%s:same_qi" % str(
+        action_preview.get("reshape_action_token", ""))
+    return action_resolver.effect_ports.gain_same_qi(
+        side, int(frozen_action.get("gain", 0)), "同气槽", token)
 
-func _apply_same_qi_link(side, action_preview: Dictionary) -> bool:
-    var frozen_action: Dictionary = action_preview.get("same_qi_action", {})
-    if not bool(frozen_action.get("qualified", false)):
-        return false
-    if not bool(action_preview.get("intent", {}).get("same_qi_link", false)):
-        return false
-    if not battle_flow.claim_combo(side, "same_qi_link"):
-        return false
-    _grant_extra_actions(side, 1, "同气连动")
-    return true
-
-func _freeze_same_qi_action(proposal) -> Dictionary:
-    var group_results: Array = [proposal.preview.get("same_qi", {})]
+func _refresh_same_qi_gain(proposal, frozen: bool) -> Dictionary:
+    var cards: Array = proposal.preview.get("cards", []).duplicate()
     for group in proposal.groups.slice(1):
-        group_results.append(group.get("preview", {}).get("same_qi", {}))
-    var action_result: Dictionary = SameQiRuleScript.intersect_group_attributes(
-        group_results)
+        for card in group.get("preview", {}).get("cards", []):
+            if not cards.has(card):
+                cards.append(card)
+    var action_result: Dictionary = SameQiRuleScript.analyze(
+        cards, player.card_identity_policy, {
+            "owner": player, "actor": player, "target": enemy,
+            "action_token": str(proposal.preview.get(
+                "reshape_action_token", "")),
+        })
     if not action_result.get("success", false):
         return {
             "success": false,
-            "reason": str(action_result.get("reason", "同气行动冻结失败")),
+            "reason": str(action_result.get("reason", "同气行动分组失败")),
         }
-    var available: bool = (
-        bool(action_result.get("qualified", false))
-        and not battle_flow.has_claimed_combo(player, "same_qi_link"))
+    action_result["frozen"] = frozen
+    action_result["action_token"] = str(
+        proposal.preview.get("reshape_action_token", ""))
+    var excluded_ids: Array[String] = []
+    for card in cards:
+        excluded_ids.append(str(card.id))
+    var legal_after := false
+    for card in player.hand:
+        if excluded_ids.has(str(card.id)):
+            continue
+        if player.status_system == null or bool(
+                player.status_system.can_play_card(player, card).get(
+                    "allowed", false)):
+            legal_after = true
+            break
+    var projection: Dictionary = action_resolver.effect_ports.same_qi_projection(
+        player, int(action_result.get("gain", 0)), {
+            "target": enemy,
+            "round_number": int(turn_number_reader.call()),
+            "action_token": action_result["action_token"],
+            "source_kind": "action_confirmed" if frozen else "preview",
+            "legal_card_available": legal_after,
+        })
+    if not projection.get("success", false):
+        return projection
     var technique_combo := bool(
         proposal.preview.get("intent", {}).get("technique_combo", false))
     for group in proposal.groups.slice(1):
@@ -783,14 +837,35 @@ func _freeze_same_qi_action(proposal) -> Dictionary:
             technique_combo
             or bool(group.get("preview", {}).get(
                 "intent", {}).get("technique_combo", false)))
-    proposal.preview["same_qi_action"] = action_result.duplicate(true)
-    proposal.preview["intent"]["same_qi_link"] = available
-    proposal.preview["intent"]["combo"] = available or technique_combo
+    proposal.preview["same_qi"] = action_result.duplicate(true)
+    var main_snapshot: Dictionary = proposal.preview.get(
+        "group_snapshot", {}).duplicate(true)
+    main_snapshot["action_same_qi_gain"] = int(
+        action_result.get("gain", 0))
+    main_snapshot["action_same_qi_trigger_count"] = int(
+        projection.get("same_qi_trigger_count", 0))
+    proposal.preview["group_snapshot"] = main_snapshot
+    for field in [
+            "same_qi_gain", "same_qi_before", "same_qi_capacity",
+            "same_qi_after", "same_qi_trigger_count"]:
+        proposal.preview[field] = int(projection.get(field, 0))
     for group in proposal.groups.slice(1):
-        group["preview"]["same_qi_action"] = action_result.duplicate(true)
-        group["preview"]["intent"]["same_qi_link"] = available
-        group["preview"]["intent"]["combo"] = available or technique_combo
-    return {"success": true, "same_qi_action": action_result}
+        var group_preview: Dictionary = group.get("preview", {})
+        var group_snapshot: Dictionary = group_preview.get(
+            "group_snapshot", {}).duplicate(true)
+        group_snapshot["action_same_qi_gain"] = int(
+            action_result.get("gain", 0))
+        group_snapshot["action_same_qi_trigger_count"] = int(
+            projection.get("same_qi_trigger_count", 0))
+        group_preview["group_snapshot"] = group_snapshot
+    proposal.preview["intent"]["combo"] = (
+        int(projection.get("same_qi_trigger_count", 0)) > 0
+        or technique_combo)
+    proposal.preview["intent"]["same_qi_gain"] = int(
+        projection.get("same_qi_gain", 0))
+    proposal.preview["intent"]["same_qi_trigger_count"] = int(
+        projection.get("same_qi_trigger_count", 0))
+    return {"success": true, "same_qi": action_result}
 
 func _finalize_staged_proposal(
         side, proposal, emit_confirmed: bool = true) -> Dictionary:
@@ -820,7 +895,8 @@ func _finalize_staged_proposal(
                 and cooperation_preview.get("cards", []).size() != int(cooperation_definition["exact_card_count"]):
             return {"success": false, "reason": "正式确认时协同牌数量不符"}
         if not _cooperation_cards_match(
-                cooperation_preview.get("cards", []), cooperation_definition):
+                cooperation_preview.get("cards", []), cooperation_definition,
+                proposal.preview.get("cards", [])):
             return {"success": false, "reason": "正式确认时协同牌异状限制不符"}
         var cooperation_permission := _query_cooperation_permission(
             proposal.preview, cooperation_preview, "action_confirmed")
@@ -835,6 +911,9 @@ func _finalize_staged_proposal(
         if not cooperation_permission.get("allowed", false):
             return {"success": false, "reason": cooperation_permission.get(
                 "reason", "正式确认时协同被拒绝")}
+    var same_qi_freeze := _refresh_same_qi_gain(proposal, true)
+    if not same_qi_freeze.get("success", false):
+        return same_qi_freeze
     _refresh_cooperation_shared_power(proposal)
     if emit_confirmed:
         return _confirm_finalized_proposal(side, proposal)
@@ -884,18 +963,34 @@ func _query_cooperation_permission(
     result["checked"] = true
     return result
 
-func _cooperation_cards_match(cards: Array, cooperation: Dictionary) -> bool:
+func _cooperation_cards_match(
+        cards: Array,
+        cooperation: Dictionary,
+        main_cards: Array = []) -> bool:
     var any_anomalies: Array = cooperation.get("card_has_any_anomaly", [])
-    if any_anomalies.is_empty():
-        return true
-    for card in cards:
-        var matched := false
-        for anomaly_value in any_anomalies:
-            var anomaly: Dictionary = anomaly_value
-            if card.has_anomaly(str(anomaly.get("category", "")), str(anomaly.get("id", ""))):
-                matched = true
+    if not any_anomalies.is_empty():
+        for card in cards:
+            var matched := false
+            for anomaly_value in any_anomalies:
+                var anomaly: Dictionary = anomaly_value
+                if card.has_anomaly(str(anomaly.get("category", "")), str(anomaly.get("id", ""))):
+                    matched = true
+                    break
+            if not matched:
+                return false
+    if bool(cooperation.get("shares_attribute_with_main", false)):
+        var shared := false
+        for card in cards:
+            for main_card in main_cards:
+                for attribute in ["wind", "forest", "fire", "mountain"]:
+                    if card.is_attribute(attribute) and main_card.is_attribute(attribute):
+                        shared = true
+                        break
+                if shared:
+                    break
+            if shared:
                 break
-        if not matched:
+        if not shared:
             return false
     return true
 
