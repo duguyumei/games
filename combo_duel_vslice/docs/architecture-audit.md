@@ -30,6 +30,32 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### TargetQuery 字段处理器注册框架（2026-08-16）
+
+本次只重构目标查询筛选与校验框架，不改变四个牌区的存取／移动顺序，也不改变普通真气、
+临时真气、虚无、异状或重塑的生命周期。原 `TargetQueryFieldCatalog`、
+`EffectSpecValidator._validate_query_filters` 与 `EffectTargetQuery._matches` 分别维护字段名单、
+参数结构和运行判断，capture 排除字段还由 `CardZoneEffectHandler` 预先改写，存在四处漂移风险。
+
+现在 28 个实际 filters 字段全部登记在 `TargetQueryFieldRegistry` 的四组处理器中：身份／属性、
+牌阶／有效真气、异状／重塑、运行权限／capture 排除。每个处理器用同一份字段定义声明名称和
+参数校验，并负责对应的 `matches` 或集合后处理；注册表统一拒绝接口不完整、非法 ID 和重复
+字段。`EffectSpecValidator` 与 `EffectTargetQuery` 只委托注册表，旧字段目录及运行时巨型分支
+已经删除。新增筛选字段不再同步修改多个白名单和 switch。
+
+`exclude_rank_orders_from_capture` 与 `exclude_base_attributes_from_capture` 现在直接读取统一运行
+上下文的 captures 并参与逐牌匹配，不再转换为另一组筛选字段；这也令选择效果与牌区效果复用
+同一语义。`duplicate_rank` 继续在初筛后执行集合后处理。查询牌区顺序、top／bottom／左右、
+稳定并列顺序、注入 RNG 的普通随机与有效真气随机并列、limit 和选择不足策略均未改动。
+
+验证覆盖注册完整性、重复／非法注册、动态字段一次注册即同时驱动校验与运行、内容加载未知
+字段失败、有效属性与基础属性、临时牌阶与有效真气、异状与重塑、临时真气、虚无明确弃置
+权限、异状施加权限、两类 capture 排除、稳定并列和随机确定性。`content-contracts` 1073 条、
+风系专项 349 条、林系成长专项 213 条、功法运行专项 314 条断言通过；quick 7/7 通过，项目
+加载覆盖 637 项。最终 quick 日志位于 `/tmp/taiwu-target-query-quick-final-20260816-01`。全部 Godot
+调用使用独立 `/tmp` 日志；测试与门禁除已知 macOS CA 证书警告外没有脚本加载、文件缺失、
+解析或运行错误。
+
 ### ValueSpec 处理器注册框架（2026-08-16）
 
 本次只重构数值规格底层，不修改任何功法效果语义。`ValueSpecRegistry` 已从中央
@@ -178,7 +204,8 @@ flowchart LR
 - `sequence_book.gd`：精确牌型独立功法序列。
 - `effect_executor.gd`：统一执行与预览汇总的 43 行兼容门面。
 - `effects/technique_effect_context.gd`、`effects/battle_effect_ports.gd`：类型化功法上下文与窄修改端口；正式处理器通过伤害、牌区、状态、流程能力访问战斗，不再从上下文字典取得完整引擎。
-- `effects/effect_target_query.gd`、`battle_choice_request.gd`：统一目标阵营、牌区、顺序、筛选、冻结候选、数量边界和目标不足策略；玩家与敌方效果使用同一选择结果契约。
+- `effects/target_query_field_registry.gd`、`effects/target_query_handlers/`：统一登记目标筛选字段、参数校验和逐牌／集合匹配；内容校验和运行查询不再维护平行字段名单。
+- `effects/effect_target_query.gd`、`battle_choice_request.gd`：统一目标阵营、牌区、顺序、注册式筛选、冻结候选、数量边界和目标不足策略；玩家与敌方效果使用同一选择结果契约。
 - `effects/technique_effect_continuation.gd`、`technique_effect_result.gd`：统一成功、失败与等待选择结果，保存效果下标、已完成结果和上下文引用并从原位置恢复。
 - `effects/effect_handler_registry.gd`：操作码到能力处理器的注册、重复保护与未知操作拒绝。
 - `effects/`：伤害、防御、牌区、真气异状、层数、流程／延迟六类处理器及共用数值解析器。

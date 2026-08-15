@@ -3,8 +3,8 @@ extends RefCounted
 
 const ValueSpecRegistryScript = preload("res://core/specs/value_spec_registry.gd")
 const ConditionSpecRegistryScript = preload("res://core/specs/condition_spec_registry.gd")
-const TargetQueryFieldCatalogScript = preload(
-    "res://core/effects/target_query_field_catalog.gd")
+const TargetQueryFieldRegistryScript = preload(
+    "res://core/effects/target_query_field_registry.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 ## 效果规格校验。
@@ -25,19 +25,15 @@ const QUERY_ORDERS := [
     "highest_rank", "lowest_rank", "highest_effective_qi",
     "highest_effective_qi_random_ties"]
 const QUERY_SIDES := ["actor", "target"]
-const CARD_KINDS := ["any", "normal"]
 const INSUFFICIENT_POLICIES := ["use_available", "skip", "fail"]
 const SELECTION_PURPOSES := ["", "explicit_discard"]
 
 var _report_error: Callable
-var _attribute_ids: Array
-var _anomaly_category_ids: Array
-var _reshape_category_ids: Array
-var _hand_ids: Array
 var _effect_registry
 var _anomalies_by_id: Dictionary = {}
 var _value_spec_registry
 var _condition_spec_registry
+var _target_query_field_registry
 
 ## `report_error` 接收 (scope, message)，由调用方决定错误如何汇总。
 ## `vocabulary` 提供跨内容共用的 ID 集合，避免在这里复制一份常量。
@@ -46,10 +42,6 @@ func _init(
         vocabulary: Dictionary,
         effect_registry) -> void:
     _report_error = report_error
-    _attribute_ids = vocabulary["attribute_ids"]
-    _anomaly_category_ids = vocabulary["anomaly_category_ids"]
-    _reshape_category_ids = vocabulary["reshape_category_ids"]
-    _hand_ids = vocabulary["hand_ids"]
     _effect_registry = effect_registry
     _value_spec_registry = (
         effect_registry.value_resolver.spec_registry
@@ -63,10 +55,14 @@ func _init(
         vocabulary, Callable(self, "validate_amount_spec"))
     _value_spec_registry.configure_validation(
         vocabulary, Callable(self, "validate_condition"))
+    _target_query_field_registry = TargetQueryFieldRegistryScript.new()
+    _target_query_field_registry.configure_validation(
+        vocabulary, Callable(self, "validate_amount_spec"))
 
 ## 提供引用检查所需的索引。索引在内容校验过程中增量建立，因此单独设置。
 func use_indexes(anomalies_by_id: Dictionary) -> void:
     _anomalies_by_id = anomalies_by_id
+    _target_query_field_registry.use_indexes(anomalies_by_id)
 
 ## 校验一条效果链。战斗效果传入 `battle`，其他轻量场景可传入允许操作码数组。
 func validate_effects(values, operation_source, scope: String) -> void:
@@ -169,6 +165,9 @@ func report_error(scope: String, message: String) -> void:
 func value_spec_registration_errors() -> Array[String]:
     return _value_spec_registry.registration_errors()
 
+func target_query_registration_errors() -> Array[String]:
+    return _target_query_field_registry.registration_errors()
+
 func validate_response_event(event_id: String, scope: String) -> void:
     if not BattleEventCatalogScript.forwards_dynamic_response(event_id):
         _error(scope, "引用未知动态响应事件")
@@ -202,86 +201,8 @@ func validate_target_query(query: Dictionary, scope: String) -> void:
     _validate_query_filters(filters, scope + ".filters")
 
 func _validate_query_filters(filters: Dictionary, scope: String) -> void:
-    for field in TargetQueryFieldCatalogScript.unknown_fields(filters):
-        _error(scope + "." + field, "未知目标查询筛选字段")
-    if str(filters.get("card_kind", "any")) not in CARD_KINDS:
-        _error(scope + ".card_kind", "必须为 any 或 normal")
-    for field in [
-            "attributes", "exclude_attributes", "base_attributes",
-            "exclude_base_attributes", "rank_names", "rank_orders",
-            "exclude_rank_orders", "definition_ids"]:
-        if filters.has(field) and not filters[field] is Array:
-            _error(scope + "." + field, "必须是数组")
-    for attribute_field in [
-            "attributes", "exclude_attributes", "base_attributes",
-            "exclude_base_attributes"]:
-        if not filters.has(attribute_field):
-            continue
-        for attribute in filters[attribute_field]:
-            if str(attribute) not in _attribute_ids:
-                _error(scope + "." + attribute_field, "引用未知属性 %s" % str(attribute))
-    for boolean_field in [
-            "temporary", "has_any_reshape", "has_permanent_reshape",
-            "has_active_permanent_reshape", "has_active_any_reshape",
-            "has_any_anomaly", "duplicate_rank", "effective_above_base",
-            "explicit_discard_allowed"]:
-        if filters.has(boolean_field) and not filters[boolean_field] is bool:
-            _error(scope + "." + boolean_field, "必须是布尔值")
-    for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
-        if not filters.has(value_field):
-            continue
-        if filters[value_field] is Dictionary:
-            validate_amount_spec(filters[value_field], scope + "." + value_field)
-        elif not _is_integer(filters[value_field]):
-            _error(scope + "." + value_field, "必须是整数或数值规格")
-    if filters.has("anomaly_layers_at_least"):
-        var layer_filter = filters["anomaly_layers_at_least"]
-        if not layer_filter is Dictionary:
-            _error(scope + ".anomaly_layers_at_least", "必须是对象")
-        else:
-            if str(layer_filter.get("category", "")) not in _anomaly_category_ids:
-                _error(scope + ".anomaly_layers_at_least.category", "引用未知异状类别")
-            if not _is_integer(layer_filter.get("value", 1)) or int(layer_filter.get("value", 1)) <= 0:
-                _error(scope + ".anomaly_layers_at_least.value", "必须是正整数")
-    if filters.has("has_non_attribute_identity") \
-            and str(filters["has_non_attribute_identity"]) not in _attribute_ids:
-        _error(scope + ".has_non_attribute_identity", "引用未知属性")
-    if filters.has("anomaly"):
-        _validate_target_state_filter(
-            filters["anomaly"], _anomaly_category_ids, scope + ".anomaly")
-    if filters.has("anomalies"):
-        if not filters["anomalies"] is Array:
-            _error(scope + ".anomalies", "必须是数组")
-        else:
-            for index in range(filters["anomalies"].size()):
-                _validate_target_state_filter(
-                    filters["anomalies"][index], _anomaly_category_ids,
-                    "%s.anomalies[%d]" % [scope, index])
-    if filters.has("reshape"):
-        _validate_target_state_filter(
-            filters["reshape"], _reshape_category_ids, scope + ".reshape")
-    if filters.has("can_apply_anomaly"):
-        _validate_target_state_filter(
-            filters["can_apply_anomaly"], _anomaly_category_ids,
-            scope + ".can_apply_anomaly")
-        var anomaly_filter: Dictionary = filters["can_apply_anomaly"] \
-            if filters["can_apply_anomaly"] is Dictionary else {}
-        var anomaly_id := str(anomaly_filter.get("id", ""))
-        var anomaly_category := str(anomaly_filter.get("category", ""))
-        if not _anomalies_by_id.has(anomaly_id):
-            _error(scope + ".can_apply_anomaly", "引用未知真气异状 %s" % anomaly_id)
-        elif str(_anomalies_by_id[anomaly_id].get("category", "")) != anomaly_category:
-            _error(scope + ".can_apply_anomaly", "异状 %s 不属于类别 %s" % [
-                anomaly_id, anomaly_category])
-
-func _validate_target_state_filter(value, category_ids: Array, scope: String) -> void:
-    if not value is Dictionary:
-        _error(scope, "必须是对象")
-        return
-    if str(value.get("category", "")) not in category_ids:
-        _error(scope + ".category", "引用未知类别")
-    if value.has("present") and not value["present"] is bool:
-        _error(scope + ".present", "必须是布尔值")
+    _target_query_field_registry.validate_filters(
+        filters, Callable(self, "_error"), scope)
 
 ## 校验数值规格。递归结构，因此对外公开供嵌套场景复用。
 func validate_amount_spec(spec: Dictionary, scope: String) -> void:

@@ -3,6 +3,31 @@
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
 `godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
 
+## TargetQuery 筛选与校验框架优化（2026-08-16，已完成）
+
+本批只优化公共目标查询框架，没有新增、录入或改写功法效果；正式资源数量仍为 211，
+25 门特殊候选的接入状态没有变化。四个牌区的查询／移动规则以及普通、临时、虚无真气的
+生命周期均未调整。
+
+已完成：28 个实际 TargetQuery filters 字段已由身份／属性、牌阶／有效真气、异状／重塑、
+运行权限／capture 排除四个处理器模块登记。每个模块同时负责本组字段名称、参数校验和
+`matches`／集合后处理；`TargetQueryFieldRegistry` 统一拒绝非法或重复注册。
+`EffectSpecValidator` 和 `EffectTargetQuery` 不再保存字段白名单或逐字段运行分支，旧
+`TargetQueryFieldCatalog` 已删除。未注册字段在内容加载时失败，直接运行入口也会拒绝。
+
+语义保持：有效属性与基础属性继续分离；临时牌阶和有效真气值继续读取当前运行事实；异状、
+永久／临时重塑、临时真气、虚无明确弃置权限和异状施加权限继续走原窄端口。两类 capture
+排除字段现在由注册处理器直接匹配，不再由牌区处理器改写字段。牌区顺序、随机并列、limit
+以及 `BattleChoiceRequest` 的目标不足策略没有变化。本批没有修改任何正式功法资源、牌区
+操作或真气状态生命周期。
+
+验证结果：新增注册完整性、重复／非法注册、动态字段、未知内容字段、校验与运行一致性、
+属性／基础属性、临时牌阶与有效真气、异状与重塑、临时／虚无真气、明确弃置权限、capture
+排除、稳定并列和随机确定性测试；`content-contracts` 1073 条、风系专项 349 条、林系成长
+专项 213 条、功法运行专项 314 条断言通过；quick 7/7 通过，其中项目加载覆盖 637 项。最终
+quick 日志位于 `/tmp/taiwu-target-query-quick-final-20260816-01`。所有 Godot 调用使用不同的
+`/tmp` 日志；测试与门禁除已知 macOS CA 证书警告外没有脚本加载、文件缺失、解析或运行错误。
+
 ## ValueSpec 框架优化（2026-08-16，已完成）
 
 本批只优化公共数值规格框架，没有新增、录入或改写功法效果；正式资源数量仍为 211，

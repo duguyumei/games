@@ -294,27 +294,6 @@ func _query(effect: Dictionary, runtime) -> Dictionary:
     if query_spec.get("limit") is Dictionary:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
     var filters: Dictionary = query_spec.get("filters", {}).duplicate(true)
-    var excluded_rank_capture := str(filters.get("exclude_rank_orders_from_capture", ""))
-    if excluded_rank_capture != "":
-        var excluded_ranks: Array = []
-        for entry in runtime.captures.get(excluded_rank_capture, []):
-            var rank_order := int(entry.get("rank_order", 0)) if entry is Dictionary \
-                else int(entry.current_rank_order())
-            if not excluded_ranks.has(rank_order):
-                excluded_ranks.append(rank_order)
-        filters.erase("exclude_rank_orders_from_capture")
-        filters["exclude_rank_orders"] = excluded_ranks
-    var excluded_attribute_capture := str(
-        filters.get("exclude_base_attributes_from_capture", ""))
-    if excluded_attribute_capture != "":
-        var excluded_attributes: Array = []
-        for entry in runtime.captures.get(excluded_attribute_capture, []):
-            var attribute := str(entry.get("base_attribute", "")) if entry is Dictionary \
-                else str(entry.attribute)
-            if attribute != "" and not excluded_attributes.has(attribute):
-                excluded_attributes.append(attribute)
-        filters.erase("exclude_base_attributes_from_capture")
-        filters["exclude_base_attributes"] = excluded_attributes
     for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
         if filters.get(value_field) is Dictionary:
             filters[value_field] = value_resolver.resolve(filters[value_field], runtime)

@@ -149,6 +149,8 @@ const BattlePermissionServiceScript = preload(
     "res://core/passives/battle_permission_service.gd")
 const EffectTargetQueryScript = preload(
     "res://core/effects/effect_target_query.gd")
+const TargetQueryFieldRegistryScript = preload(
+    "res://core/effects/target_query_field_registry.gd")
 const EffectValueResolverScript = preload(
     "res://core/effects/effect_value_resolver.gd")
 const ConditionSpecRegistryScript = preload(
@@ -977,6 +979,52 @@ class ValueSpecProbeHandler:
             _resolver, _registry) -> int:
         return int(spec.get("value", 0)) + 1
 
+class TargetQueryProbeHandler:
+    extends RefCounted
+
+    var stable_field: String
+
+    func _init(field_value: String = "probe_even_rank") -> void:
+        stable_field = field_value
+
+    func field_definitions() -> Dictionary:
+        return {stable_field: {"validation": "bool"}}
+
+    func validate(
+            _field: String, value, definition: Dictionary, registry,
+            report_error: Callable, scope: String) -> bool:
+        return registry.validate_value(value, definition, report_error, scope)
+
+    func matches(
+            _field: String, value, card, _facts,
+            _match_context: Dictionary, _registry) -> bool:
+        return (int(card.current_rank_order()) % 2 == 0) == bool(value)
+
+class TargetQueryPortsProbe:
+    extends RefCounted
+
+    var effective_values: Dictionary = {}
+    var denied_anomaly_card_ids: Dictionary = {}
+
+    func zone_cards(side, zone_id: String) -> Array:
+        match zone_id:
+            "hand": return side.hand.duplicate()
+            "draw_pile": return side.draw_pile.duplicate()
+            "staging": return side.staging.duplicate()
+            "discard_pile": return side.discard_pile.duplicate()
+        return []
+
+    func current_effective_qi(_side, card) -> int:
+        return int(effective_values.get(str(card.id), card.current_base_qi_value()))
+
+    func can_explicit_discard(_side, card) -> Dictionary:
+        return {"allowed": not card.has_anomaly("mark", "void")}
+
+    func can_apply_card_anomaly(
+            card, _category: String, _anomaly_id: String,
+            _replace_state: bool = false) -> Dictionary:
+        return {"allowed": not denied_anomaly_card_ids.has(str(card.id))}
+
 var failures: Array[String] = []
 var assertions: int = 0
 var card_serial: int = 0
@@ -989,6 +1037,7 @@ func _initialize() -> void:
     _test_content_catalog_and_validator()
     _test_condition_spec_registry_contract()
     _test_value_spec_registry_contract()
+    _test_target_query_field_registry_contract()
     _test_passive_rule_registry_and_content_contract()
     _test_card_reshape_behavior_registry()
     _test_enemy_pool_content_and_repository()
@@ -1719,6 +1768,269 @@ func _test_value_spec_registry_contract() -> void:
         registry.resolve({"kind": "probe_value", "value": 8}, runtime, resolver),
         9,
         "动态注册 ValueSpec 处理器直接参与运行解析")
+
+func _test_target_query_field_registry_contract() -> void:
+    var registry = TargetQueryFieldRegistryScript.new()
+    var expected_fields := [
+        "anomalies", "anomaly", "anomaly_layers_at_least", "attributes",
+        "base_attributes", "can_apply_anomaly", "card_kind", "definition_ids",
+        "duplicate_rank", "effective_above_base", "effective_qi_at_least",
+        "effective_qi_at_most", "exclude_attributes",
+        "exclude_base_attributes", "exclude_base_attributes_from_capture",
+        "exclude_rank_orders", "exclude_rank_orders_from_capture",
+        "explicit_discard_allowed", "has_active_any_reshape",
+        "has_active_permanent_reshape", "has_any_anomaly", "has_any_reshape",
+        "has_non_attribute_identity", "has_permanent_reshape", "rank_names",
+        "rank_orders", "reshape", "temporary",
+    ]
+    expected_fields.sort()
+    _assert_equal(
+        registry.registration_errors(), [],
+        "内建 TargetQuery 字段处理器没有重复或非法注册")
+    _assert_equal(
+        registry.field_ids(), expected_fields,
+        "全部实际 TargetQuery filters 字段迁入唯一注册表")
+    for field in registry.field_ids():
+        var handler = registry.handler_for_field(field)
+        _assert_true(
+            handler != null and handler.has_method("validate") \
+                and handler.has_method("matches"),
+            "TargetQuery 字段同时注册参数校验与运行匹配：%s" % field)
+
+    _assert_true(
+        registry.register_handler(TargetQueryProbeHandler.new()),
+        "新增 TargetQuery 字段只注册一个处理器即可接入校验和运行")
+    _assert_true(
+        not registry.register_handler(TargetQueryProbeHandler.new()),
+        "TargetQuery 注册表拒绝重复字段")
+    _assert_true(
+        not registry.register_handler(TargetQueryProbeHandler.new("Bad-Field")),
+        "TargetQuery 注册表拒绝不稳定字段 ID")
+
+    var validation_errors: Array[String] = []
+    var report_error := func(scope: String, message: String) -> void:
+        validation_errors.append(scope + ":" + message)
+    _assert_true(
+        not registry.validate_filters({
+            "rank_orders": ["9"],
+            "explicit_discard_allowed": "yes",
+            "unknown_query_filter": true,
+        }, report_error, "query.filters"),
+        "TargetQuery 注册表同时拒绝错误参数与未知筛选字段")
+    _assert_true(
+        _array_contains_text(validation_errors, "rank_orders[0]") \
+            and _array_contains_text(validation_errors, "必须是布尔值") \
+            and _array_contains_text(validation_errors, "未知目标查询筛选字段"),
+        "TargetQuery 参数与未知字段错误稳定定位")
+
+    var actor := BattleSideScript.new("查询方", "target-query-actor")
+    var target := BattleSideScript.new("目标方", "target-query-target")
+    var ports := TargetQueryPortsProbe.new()
+    var identity_card = _card("7", "wind")
+    identity_card.temporary_reshapes["attribute"] = "fire"
+    var ranked_card = _card("9", "forest")
+    ranked_card.temporary_reshapes["rank"] = {
+        "rank_name": "Q", "rank_order": 12, "qi_value": 11,
+    }
+    var state_card = _card("8", "mountain")
+    state_card.set_anomaly("state", "poison")
+    state_card.reshape_enhancement = "query_probe"
+    var void_card = _card("6", "fire")
+    void_card.set_anomaly("mark", "void")
+    var safe_fire = _card("4", "fire")
+    var temporary_card = _card("5", "forest")
+    temporary_card.temporary_card = true
+    var tie_first = _card("10", "wind")
+    var tie_second = _card("10", "forest")
+    var lower = _card("3", "mountain")
+    actor.hand = [
+        identity_card, ranked_card, state_card, void_card, safe_fire,
+        temporary_card, tie_first, tie_second, lower,
+    ]
+    ports.effective_values[str(ranked_card.id)] = 16
+    ports.effective_values[str(tie_first.id)] = 20
+    ports.effective_values[str(tie_second.id)] = 20
+    ports.effective_values[str(lower.id)] = 10
+    ports.denied_anomaly_card_ids[str(safe_fire.id)] = true
+    var context = TechniqueEffectContextScript.new().configure({
+        "actor": actor,
+        "target": target,
+        "ports": ports,
+        "captures": {
+            "frozen_ranks": [{"rank_order": 12}],
+            "frozen_attributes": [{"base_attribute": "mountain"}],
+        },
+    })
+
+    var identity_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {"attributes": ["fire"], "base_attributes": ["wind"]},
+    }).resolve(context)
+    _assert_equal(
+        _ids(identity_result.get("cards", [])), [identity_card.id],
+        "有效属性与基础属性由同一字段处理器保持不同语义")
+
+    var rank_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {
+            "rank_names": ["Q"], "rank_orders": [12],
+            "effective_qi_at_least": 15, "effective_above_base": true,
+        },
+    }).resolve(context)
+    _assert_equal(
+        _ids(rank_result.get("cards", [])), [ranked_card.id],
+        "临时牌阶与有效真气筛选使用注册字段运行")
+
+    var state_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {
+            "anomaly": {"category": "state", "id": "poison"},
+            "reshape": {"category": "enhancement", "id": "query_probe"},
+            "has_any_anomaly": true,
+            "has_active_permanent_reshape": true,
+        },
+    }).resolve(context)
+    _assert_equal(
+        _ids(state_result.get("cards", [])), [state_card.id],
+        "异状与重塑筛选的校验和运行来自同一处理器")
+
+    var temporary_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {"temporary": true},
+    }).resolve(context)
+    _assert_equal(
+        _ids(temporary_result.get("cards", [])), [temporary_card.id],
+        "临时真气筛选保持原语义")
+
+    var discard_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {
+            "base_attributes": ["fire"],
+            "explicit_discard_allowed": true,
+        },
+    }).resolve(context)
+    _assert_equal(
+        _ids(discard_result.get("cards", [])), [safe_fire.id],
+        "明确弃置权限筛选排除虚无真气")
+
+    var anomaly_permission_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {
+            "base_attributes": ["fire"],
+            "can_apply_anomaly": {"category": "state", "id": "poison"},
+        },
+    }).resolve(context)
+    _assert_equal(
+        _ids(anomaly_permission_result.get("cards", [])), [void_card.id],
+        "异状施加权限继续通过运行端口筛选")
+
+    var capture_exclusion_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {
+            "exclude_rank_orders_from_capture": "frozen_ranks",
+            "exclude_base_attributes_from_capture": "frozen_attributes",
+        },
+    }).resolve(context)
+    _assert_true(
+        not _ids(capture_exclusion_result.get("cards", [])).has(ranked_card.id) \
+            and not _ids(capture_exclusion_result.get("cards", [])).has(state_card.id) \
+            and _ids(capture_exclusion_result.get("cards", [])).has(safe_fire.id),
+        "capture 排除字段直接由注册处理器运行，不再由牌区处理器改写")
+
+    actor.hand = [tie_first, tie_second, lower]
+    var stable_ties: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand",
+        "order": "highest_effective_qi", "limit": 2, "filters": {},
+    }).resolve(context)
+    _assert_equal(
+        _ids(stable_ties.get("cards", [])), [tie_second.id, tie_first.id],
+        "非随机并列继续按原牌区位置确定性逆序")
+
+    var tie_rng_a := RandomNumberGenerator.new()
+    tie_rng_a.seed = 72341
+    var tie_rng_b := RandomNumberGenerator.new()
+    tie_rng_b.seed = 72341
+    var random_ties_a: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand",
+        "order": "highest_effective_qi_random_ties", "limit": 2,
+        "filters": {},
+    }).resolve(context, tie_rng_a)
+    var random_ties_b: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand",
+        "order": "highest_effective_qi_random_ties", "limit": 2,
+        "filters": {},
+    }).resolve(context, tie_rng_b)
+    _assert_equal(
+        _ids(random_ties_a.get("cards", [])),
+        _ids(random_ties_b.get("cards", [])),
+        "随机并列在相同种子下保持确定性")
+    _assert_true(
+        _ids(random_ties_a.get("cards", [])).has(tie_first.id) \
+            and _ids(random_ties_a.get("cards", [])).has(tie_second.id),
+        "随机并列只打乱同值组且 limit 保持原语义")
+
+    var random_rng_a := RandomNumberGenerator.new()
+    random_rng_a.seed = 72342
+    var random_rng_b := RandomNumberGenerator.new()
+    random_rng_b.seed = 72342
+    var random_a: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "random",
+        "limit": -1, "filters": {},
+    }).resolve(context, random_rng_a)
+    var random_b: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "random",
+        "limit": -1, "filters": {},
+    }).resolve(context, random_rng_b)
+    _assert_equal(
+        _ids(random_a.get("cards", [])), _ids(random_b.get("cards", [])),
+        "普通随机查询在相同种子下保持确定性")
+
+    var dynamic_registry = TargetQueryFieldRegistryScript.new()
+    _assert_true(
+        dynamic_registry.register_handler(TargetQueryProbeHandler.new()),
+        "独立注册表可接入动态字段处理器")
+    actor.hand = [safe_fire, temporary_card]
+    var dynamic_result: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {"probe_even_rank": true},
+        "target_query_field_registry": dynamic_registry,
+    }).resolve(context)
+    _assert_equal(
+        _ids(dynamic_result.get("cards", [])), [safe_fire.id],
+        "动态字段的一次注册同时驱动查询校验与 matches")
+
+    var unknown_runtime: Dictionary = EffectTargetQueryScript.new().configure({
+        "side": "actor", "zone": "hand", "order": "zone", "limit": -1,
+        "filters": {"unknown_runtime_filter": true},
+    }).resolve(context)
+    _assert_true(
+        not unknown_runtime.get("success", true),
+        "运行入口同样拒绝未注册 TargetQuery 字段")
+
+    var base_catalog = ContentCatalogScript.new()
+    _assert_true(base_catalog.load_all(), "TargetQuery 内容探针先载入合法基线")
+    var bad_values := _catalog_definitions(base_catalog)
+    var query_patched := false
+    for technique in bad_values["techniques"]["techniques"]:
+        for effect in technique.get("effects", []):
+            if not effect.get("query") is Dictionary:
+                continue
+            var filters: Dictionary = effect["query"].get("filters", {}).duplicate(true)
+            filters["unknown_content_filter"] = true
+            effect["query"]["filters"] = filters
+            query_patched = true
+            break
+        if query_patched:
+            break
+    _assert_true(query_patched, "正式内容中存在 TargetQuery 供未知字段探针使用")
+    var bad_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_catalog.load_from_definitions(bad_values, base_catalog.paths),
+        "未注册 TargetQuery 字段在内容加载阶段失败")
+    _assert_true(
+        _array_contains_text(
+            bad_catalog.errors, "filters.unknown_content_filter"),
+        "内容校验稳定定位未知 TargetQuery 字段")
 
 func _test_passive_rule_registry_and_content_contract() -> void:
     var invalid_registry = PassiveRuleHandlerRegistryScript.new(false)
