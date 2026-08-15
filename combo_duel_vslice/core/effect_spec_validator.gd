@@ -61,6 +61,8 @@ func _init(
         else ConditionSpecRegistryScript.new())
     _condition_spec_registry.configure_validation(
         vocabulary, Callable(self, "validate_amount_spec"))
+    _value_spec_registry.configure_validation(
+        vocabulary, Callable(self, "validate_condition"))
 
 ## 提供引用检查所需的索引。索引在内容校验过程中增量建立，因此单独设置。
 func use_indexes(anomalies_by_id: Dictionary) -> void:
@@ -123,8 +125,8 @@ func validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> voi
     elif str(_anomalies_by_id[anomaly_id].get("category", "")) != category:
         _error(effect_scope, "异状 %s 不属于类别 %s" % [anomaly_id, category])
 
-func validate_condition(condition: Dictionary, scope: String) -> void:
-    _condition_spec_registry.validate_condition(
+func validate_condition(condition: Dictionary, scope: String) -> bool:
+    return _condition_spec_registry.validate_condition(
         condition, Callable(self, "_error"), scope)
 
 func validate_choice_effect(effect: Dictionary, scope: String) -> void:
@@ -163,6 +165,9 @@ func validate_non_negative_integer(value, scope: String, label: String) -> void:
 
 func report_error(scope: String, message: String) -> void:
     _error(scope, message)
+
+func value_spec_registration_errors() -> Array[String]:
+    return _value_spec_registry.registration_errors()
 
 func validate_response_event(event_id: String, scope: String) -> void:
     if not BattleEventCatalogScript.forwards_dynamic_response(event_id):
@@ -280,88 +285,8 @@ func _validate_target_state_filter(value, category_ids: Array, scope: String) ->
 
 ## 校验数值规格。递归结构，因此对外公开供嵌套场景复用。
 func validate_amount_spec(spec: Dictionary, scope: String) -> void:
-    var kind := str(spec.get("kind", ""))
-    if not _value_spec_registry.has_kind(kind):
-        _error(scope, "未知数值规格 kind %s" % kind)
-        return
-    match kind:
-        "constant":
-            if not _is_number(spec.get("value")):
-                _error(scope, "constant.value 必须是数值")
-        "power_fraction", "initial_power_fraction":
-            _validate_power_fraction(spec, scope)
-        "hand_map":
-            _validate_hand_map(spec, scope)
-        "max", "add", "multiply":
-            _validate_spec_list(spec, scope)
-        "subtract":
-            _validate_nested_specs(spec, ["left", "right"], scope)
-        "divide_floor", "divide_ceil", "modulo":
-            _validate_nested_specs(spec, ["value", "divisor"], scope)
-        "capture_count", "capture_qi_sum", "capture_attribute_qi_sum", \
-        "capture_attribute_count", "capture_non_attribute_count", \
-        "capture_base_qi_sum", "capture_card_base_qi_sum", \
-        "capture_current_effective_qi":
-            _validate_capture_spec(spec, kind, scope)
-        "capture_effective_qi_sum", "capture_effective_qi_max", \
-        "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum", \
-        "capture_anomaly_layers_max", "capture_result_count", \
-        "capture_actual_life_loss":
-            _validate_capture_spec(spec, kind, scope)
-        "capture_field_sum", "capture_field_max", "capture_field_first":
-            _validate_capture_spec(spec, kind, scope)
-        "conditional":
-            _validate_nested_specs(spec, ["then", "else"], scope)
-        "power_scaled_by_zone_anomaly":
-            if str(spec.get("category", "")) not in _anomaly_category_ids:
-                _error(scope + ".category", "引用未知异状类别")
-
-func _validate_power_fraction(spec: Dictionary, scope: String) -> void:
-    if not _is_number(spec.get("numerator")):
-        _error(scope, "power_fraction.numerator 必须是数值")
-    if not _is_number(spec.get("denominator")) or float(spec.get("denominator", 0)) <= 0:
-        _error(scope, "power_fraction.denominator 必须是正数")
-    if spec.has("minimum") and not _is_number(spec["minimum"]):
-        _error(scope, "power_fraction.minimum 必须是数值")
-
-func _validate_hand_map(spec: Dictionary, scope: String) -> void:
-    var values = spec.get("values")
-    if not values is Dictionary:
-        _error(scope, "hand_map.values 必须是对象")
-        return
-    for hand_id in values:
-        if not _hand_ids.has(str(hand_id)):
-            _error(scope, "hand_map 引用未知精确牌型 %s" % str(hand_id))
-        if not _is_number(values[hand_id]):
-            _error(scope, "hand_map.%s 必须是数值" % str(hand_id))
-
-func _validate_spec_list(spec: Dictionary, scope: String) -> void:
-    var values = spec.get("values")
-    if not values is Array or values.is_empty():
-        _error(scope, "max.values 必须是非空数组")
-        return
-    for index in range(values.size()):
-        var nested_scope := "%s.values[%d]" % [scope, index]
-        if values[index] is Dictionary:
-            validate_amount_spec(values[index], nested_scope)
-        elif not _is_number(values[index]):
-            _error(nested_scope, "必须是数值或数值规格对象")
-
-func _validate_nested_specs(spec: Dictionary, fields: Array, scope: String) -> void:
-    for field in fields:
-        if spec.get(field) is Dictionary:
-            validate_amount_spec(spec[field], scope + "." + str(field))
-        elif not _is_number(spec.get(field)):
-            _error(scope + "." + str(field), "必须是数值或数值规格对象")
-
-func _validate_capture_spec(spec: Dictionary, kind: String, scope: String) -> void:
-    if not spec.get("capture") is String or str(spec.get("capture", "")) == "":
-        _error(scope + ".capture", "必须是非空捕获键")
-    if kind in [
-            "capture_attribute_qi_sum", "capture_attribute_count",
-            "capture_non_attribute_count"] \
-            and str(spec.get("attribute", "")) not in _attribute_ids:
-        _error(scope + ".attribute", "引用未知属性")
+    _value_spec_registry.validate_amount_spec(
+        spec, Callable(self, "_error"), scope)
 
 func _error(scope: String, message: String) -> void:
     _report_error.call(scope, message)

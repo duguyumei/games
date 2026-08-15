@@ -6,6 +6,7 @@ func _initialize() -> void:
         "_test_card_reshape_behavior_registry",
         "_test_content_catalog_and_validator",
         "_test_condition_spec_registry_contract",
+        "_test_value_spec_registry_contract",
         "_test_passive_rule_registry_and_content_contract",
         "_test_enemy_pool_content_and_repository",
         "_test_starter_build_assembly_and_composition_root",

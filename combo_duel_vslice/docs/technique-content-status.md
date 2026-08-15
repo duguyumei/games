@@ -3,6 +3,27 @@
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
 `godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
 
+## ValueSpec 框架优化（2026-08-16，已完成）
+
+本批只优化公共数值规格框架，没有新增、录入或改写功法效果；正式资源数量仍为 211，
+25 门特殊候选的接入状态没有变化。
+
+已完成：`ValueSpecRegistry` 不再只是中央 kind 名单，66 个现有 kind 已由算术／递归、
+捕获聚合、战斗状态和来源标识四个处理器模块登记。每个模块同时负责本组 kind 注册、字段
+校验和数值解析；注册表统一拒绝非法或重复注册。`EffectSpecValidator.validate_amount_spec`
+只委托注册表，`EffectValueResolver` 只保留入口、条件求值和公共上下文辅助，不再维护完整
+kind 分支。未注册 kind 在内容加载时失败，直接运行也会显式诊断。
+
+语义保持：递归 `add`、`subtract`、`multiply`、`max`、`conditional`，除零保护，
+`floor`／`ceil` 与功法值分数取整，事件及集合 capture，稳定槽位来源标识和装备来源标识
+聚合均未改变。本批没有调整任何正式功法资源或效果公式。
+
+验证结果：新增注册完整性、重复／非法注册、未知 kind、递归表达式、capture、来源标识、
+正负边界取整和除零保护测试；`content-contracts` 1020 条断言、功法运行直跑 314 条、
+分组 139 条通过；quick 7/7 通过，其中项目加载覆盖 633 项。最终 quick 日志位于
+`/tmp/taiwu-value-quick-final2-20260816-1786812338`。所有 Godot 调用使用不同的 `/tmp`
+日志，除已知 macOS CA 证书警告外没有脚本加载、文件缺失、解析、运行或退出期资源错误。
+
 ## ConditionSpec 与事件 filters 框架优化（2026-08-16，已完成）
 
 本批只处理公共条件框架，没有新增、录入或实现特殊功法，正式资源数量仍为 211，25 门特殊

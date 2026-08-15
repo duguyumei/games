@@ -153,6 +153,8 @@ const EffectValueResolverScript = preload(
     "res://core/effects/effect_value_resolver.gd")
 const ConditionSpecRegistryScript = preload(
     "res://core/specs/condition_spec_registry.gd")
+const ValueSpecRegistryScript = preload(
+    "res://core/specs/value_spec_registry.gd")
 const TechniqueEffectContextScript = preload(
     "res://core/effects/technique_effect_context.gd")
 const TechniqueRepositoryPolicyScript = preload(
@@ -951,6 +953,30 @@ class RunContentProbeCatalog:
     func is_formally_obtainable(content_type: String, content_id: String) -> bool:
         return formal_ids.get(content_type, []).has(content_id)
 
+class ValueSpecProbeHandler:
+    extends RefCounted
+
+    var stable_kind: String
+
+    func _init(kind_value: String = "probe_value") -> void:
+        stable_kind = kind_value
+
+    func kind_ids() -> Array[String]:
+        return [stable_kind]
+
+    func validate(
+            _kind: String, spec: Dictionary, registry,
+            report_error: Callable, scope: String) -> bool:
+        if registry.is_integer(spec.get("value")):
+            return true
+        report_error.call(scope + ".value", "必须是整数")
+        return false
+
+    func resolve(
+            _kind: String, spec: Dictionary, _runtime,
+            _resolver, _registry) -> int:
+        return int(spec.get("value", 0)) + 1
+
 var failures: Array[String] = []
 var assertions: int = 0
 var card_serial: int = 0
@@ -962,6 +988,7 @@ func _initialize() -> void:
         return
     _test_content_catalog_and_validator()
     _test_condition_spec_registry_contract()
+    _test_value_spec_registry_contract()
     _test_passive_rule_registry_and_content_contract()
     _test_card_reshape_behavior_registry()
     _test_enemy_pool_content_and_repository()
@@ -1552,6 +1579,146 @@ func _test_condition_spec_registry_contract() -> void:
             bad_event_filter_catalog.errors,
             "filters.unknown_event_filter"),
         "事件未知 filters 字段稳定定位")
+
+func _test_value_spec_registry_contract() -> void:
+    var registry = ValueSpecRegistryScript.new()
+    _assert_equal(
+        registry.registration_errors(), [],
+        "内建 ValueSpec 处理器没有重复或非法 kind")
+    _assert_equal(
+        registry.kind_ids().size(), 66,
+        "第一批实际 ValueSpec kind 全部迁入处理器注册框架")
+    for kind in registry.kind_ids():
+        var handler = registry.handler_for_kind(kind)
+        _assert_true(
+            handler != null and handler.has_method("validate") \
+                and handler.has_method("resolve"),
+            "ValueSpec kind 同时注册校验与解析处理器：%s" % kind)
+
+    _assert_true(
+        registry.register_handler(ValueSpecProbeHandler.new()),
+        "新 ValueSpec kind 通过单个处理器同时接入注册、校验和解析")
+    _assert_true(
+        not registry.register_handler(ValueSpecProbeHandler.new()),
+        "ValueSpec 注册表拒绝重复 kind")
+    _assert_true(
+        not registry.register_handler(ValueSpecProbeHandler.new("Bad-Kind")),
+        "ValueSpec 注册表拒绝不稳定 kind ID")
+
+    var validation_errors: Array[String] = []
+    var report_error := func(scope: String, message: String) -> void:
+        validation_errors.append(scope + ":" + message)
+    var condition_registry = ConditionSpecRegistryScript.new()
+    var vocabulary := {
+        "attribute_ids": ContentValidatorScript.ATTRIBUTE_IDS,
+        "anomaly_category_ids": ContentValidatorScript.ANOMALY_CATEGORY_IDS,
+        "hand_ids": ContentValidatorScript.HAND_IDS,
+    }
+    registry.configure_validation(
+        vocabulary,
+        func(condition: Dictionary, scope: String) -> bool:
+            return condition_registry.validate_condition(
+                condition, report_error, scope))
+
+    var recursive_spec := {
+        "kind": "add",
+        "values": [
+            {"kind": "constant", "value": 2},
+            {"kind": "multiply", "values": [
+                3,
+                {"kind": "subtract", "left": 10, "right": 4},
+            ]},
+            {"kind": "max", "values": [
+                1,
+                {"kind": "conditional", "when": {"actor_alive": true},
+                    "then": {"kind": "divide_ceil", "value": 5, "divisor": 2},
+                    "else": 0},
+            ]},
+        ],
+    }
+    _assert_true(
+        registry.validate_amount_spec(
+            recursive_spec, report_error, "recursive_value"),
+        "add/subtract/multiply/max/conditional 由处理器递归完成结构校验")
+    _assert_equal(validation_errors, [], "合法递归 ValueSpec 没有校验错误")
+    validation_errors.clear()
+    _assert_true(
+        not registry.validate_amount_spec(
+            {"kind": "unknown_value_kind"}, report_error, "unknown_value"),
+        "未注册 ValueSpec kind 在内容校验入口失败")
+    _assert_true(
+        _array_contains_text(validation_errors, "unknown_value_kind"),
+        "未知 ValueSpec kind 返回稳定诊断")
+
+    var actor := BattleSideScript.new("value-actor", "value-actor")
+    var target := BattleSideScript.new("value-target", "value-target")
+    actor.hand_technique_progression = {
+        "high_card": {"sequence": ["source_tech"]},
+    }
+    actor.source_marker_store.write(
+        "technique", "slot-a", "source_tech", "charge",
+        "battle", "set", 9)
+    actor.source_marker_store.write(
+        "technique", "slot-b", "other_source", "charge",
+        "battle", "set", 4)
+    var runtime = TechniqueEffectContextScript.new().configure({
+        "actor": actor,
+        "target": target,
+        "power": 5,
+        "initial_power": 5,
+        "slot_instance_id": "slot-a",
+        "captures": {
+            "results": [{"amount": 4}, {"amount": 7}],
+            "event": [{"effective_amount": 6}],
+        },
+    })
+    var resolver = EffectValueResolverScript.new()
+    _assert_equal(
+        resolver.resolve(recursive_spec, runtime), 23,
+        "递归 ValueSpec 组合保持既有运行语义")
+    _assert_equal(
+        resolver.resolve({
+            "kind": "capture_field_sum", "capture": "results", "field": "amount"},
+            runtime),
+        11,
+        "capture 聚合由捕获处理器解析")
+    _assert_equal(
+        resolver.resolve({"kind": "event_field", "field": "effective_amount"}, runtime),
+        6,
+        "事件 capture 默认键语义保持")
+    _assert_equal(
+        resolver.resolve({
+            "kind": "source_marker_value", "marker_id": "charge", "scope": "battle"},
+            runtime),
+        9,
+        "来源标识按当前稳定槽位解析")
+    _assert_equal(
+        resolver.resolve({
+            "kind": "equipped_source_marker_sum", "marker_id": "charge",
+            "scope": "battle"}, runtime),
+        9,
+        "装备来源标识聚合保持 content_id 边界")
+    _assert_equal(
+        resolver.resolve({
+            "kind": "power_fraction", "numerator": 1, "denominator": 2}, runtime),
+        2,
+        "功法值分数继续向下取整")
+    _assert_equal(
+        resolver.resolve({"kind": "divide_floor", "value": -5, "divisor": 2}, runtime),
+        -3,
+        "负数除法继续按 floor 取整")
+    _assert_equal(
+        resolver.resolve({"kind": "divide_ceil", "value": -5, "divisor": 2}, runtime),
+        -2,
+        "负数除法继续按 ceil 取整")
+    _assert_equal(
+        resolver.resolve({"kind": "divide_floor", "value": -5, "divisor": 0}, runtime),
+        -5,
+        "除零保护继续把除数钳制为一")
+    _assert_equal(
+        registry.resolve({"kind": "probe_value", "value": 8}, runtime, resolver),
+        9,
+        "动态注册 ValueSpec 处理器直接参与运行解析")
 
 func _test_passive_rule_registry_and_content_contract() -> void:
     var invalid_registry = PassiveRuleHandlerRegistryScript.new(false)

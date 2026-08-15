@@ -254,6 +254,8 @@ func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     warnings.clear()
     for message in _effect_registry.validation_errors():
         _error("effects.registry", str(message))
+    for message in _effect_specs.value_spec_registration_errors():
+        _error("value_specs.registry", str(message))
     for message in _run_effect_registry.registration_errors():
         _error("run_effects.registry", str(message))
     for message in _card_reshape_registry.registration_errors():

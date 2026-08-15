@@ -30,6 +30,27 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### ValueSpec 处理器注册框架（2026-08-16）
+
+本次只重构数值规格底层，不修改任何功法效果语义。`ValueSpecRegistry` 已从中央
+`KIND_IDS` 名单升级为处理器注册框架：当前 66 个 kind 分别由算术／递归、捕获聚合、
+战斗状态和来源标识四个模块登记；每个模块同时拥有本组 kind、字段结构校验与运行解析。
+注册表统一检查处理器接口、稳定 ID 和重复注册，并把内容校验与运行解析路由到同一处理器。
+
+`EffectSpecValidator.validate_amount_spec` 已删除 kind 分类和递归结构分支，只委托
+`ValueSpecRegistry`；`EffectValueResolver` 已删除全部 kind `match`，只保留统一入口、
+`ConditionSpec` 求值以及阵营、捕获集合、有效属性和临时重塑等公共上下文辅助。新增 kind
+不再同时修改中央名单、校验 switch 和运行 switch。未注册 kind 在内容加载时返回稳定错误，
+直接运行入口也会显式诊断，不再无声回落为 0。
+
+既有 `add`、`subtract`、`multiply`、`max`、`conditional` 递归组合、除零钳制、
+`floor`／`ceil`、功法值分数取整、事件／集合 capture、稳定槽位来源标识和装备来源标识聚合
+均保持原语义。新增注册完整性、重复／非法注册、未知 kind、递归表达式、capture、来源标识、
+正负边界取整和除零保护测试；`content-contracts` 1020 条、功法运行直跑 314 条、分组 139 条
+通过。quick 7/7 通过，项目加载覆盖 633 项；最终 quick 日志位于
+`/tmp/taiwu-value-quick-final2-20260816-1786812338`。全部 Godot 调用使用独立 `/tmp` 日志，
+除已知 macOS CA 证书警告外没有脚本加载、文件缺失、解析、运行或退出期资源错误。
+
 ### ConditionSpec 与事件 filters 单一事实源（2026-08-16）
 
 本次只重构条件框架，不新增或实现特殊功法。`ConditionSpecRegistry` 现在以字段定义表同时
