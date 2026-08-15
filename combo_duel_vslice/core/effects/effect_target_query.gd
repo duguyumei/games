@@ -3,7 +3,9 @@ extends RefCounted
 
 const SIDE_IDS := ["actor", "target"]
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
-const ORDER_IDS := ["zone", "top", "bottom", "random"]
+const ORDER_IDS := [
+    "zone", "left", "right", "top", "bottom", "random",
+    "highest_rank", "lowest_rank", "highest_effective_qi"]
 const CARD_KIND_IDS := ["any", "normal"]
 
 var side_id: String = "actor"
@@ -39,7 +41,10 @@ func validate() -> Dictionary:
     var card_kind := str(filters.get("card_kind", "any"))
     if card_kind not in CARD_KIND_IDS:
         return _invalid("未知真气种类筛选：%s" % card_kind)
-    for field in ["attributes", "rank_names", "rank_orders", "definition_ids"]:
+    for field in [
+            "attributes", "exclude_attributes", "base_attributes",
+            "exclude_base_attributes", "rank_names", "rank_orders",
+            "exclude_rank_orders", "definition_ids"]:
         if filters.has(field) and not filters[field] is Array:
             return _invalid("目标筛选 %s 必须是数组" % field)
     if filters.has("anomaly"):
@@ -61,7 +66,7 @@ func validate() -> Dictionary:
             return _invalid("重塑筛选必须是对象")
         if str(reshape.get("category", "")) not in [
                 "origin", "enhancement", "imprint", "other",
-                "temporary_enhancement", "temporary_attribute"]:
+                "temporary_enhancement", "temporary_attribute", "temporary_rank"]:
             return _invalid("重塑筛选缺少合法 category")
     return {"ok": true, "reason": ""}
 
@@ -85,12 +90,31 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
             facts = identity.get("facts")
         if _matches(card, facts, context, side):
             matches.append(card)
-    if order_id == "top":
+    if bool(filters.get("duplicate_rank", false)):
+        var rank_counts: Dictionary = {}
+        for card in matches:
+            var order := int(card.current_rank_order())
+            rank_counts[order] = int(rank_counts.get(order, 0)) + 1
+        matches = matches.filter(func(card):
+            return int(rank_counts.get(card.current_rank_order(), 0)) > 1)
+    if order_id in ["top", "right"]:
         matches.reverse()
     elif order_id == "random":
         if rng == null:
             return {"success": false, "reason": "随机目标查询缺少随机源", "cards": []}
         _shuffle(matches, rng)
+    elif order_id in ["highest_rank", "lowest_rank", "highest_effective_qi"]:
+        var zone_positions: Dictionary = {}
+        for index in range(cards.size()):
+            zone_positions[str(cards[index].id)] = index
+        matches.sort_custom(func(left, right):
+            var left_value := _sort_value(left, context, side)
+            var right_value := _sort_value(right, context, side)
+            if left_value != right_value:
+                return left_value < right_value if order_id == "lowest_rank" \
+                    else left_value > right_value
+            return int(zone_positions.get(str(left.id), -1)) \
+                > int(zone_positions.get(str(right.id), -1)))
     if limit > 0 and matches.size() > limit:
         matches = matches.slice(0, limit)
     return {
@@ -137,6 +161,13 @@ func _matches(card, facts = null, context = null, side = null) -> bool:
         for attribute in filters["exclude_attributes"]:
             if _card_has_attribute(card, str(attribute), facts):
                 return false
+    var base_attribute := str(card.attribute)
+    if filters.has("base_attributes") \
+            and not filters["base_attributes"].has(base_attribute):
+        return false
+    if filters.has("exclude_base_attributes") \
+            and filters["exclude_base_attributes"].has(base_attribute):
+        return false
     var rank_name: String = str(facts.rank_name) if facts != null else card.current_rank_name() \
         if card.has_method("current_rank_name") else str(card.rank_name)
     var rank_order: int = int(facts.rank_order) if facts != null else card.current_rank_order() \
@@ -147,10 +178,19 @@ func _matches(card, facts = null, context = null, side = null) -> bool:
         return false
     if filters.has("rank_orders") and not filters["rank_orders"].has(rank_order):
         return false
+    if filters.has("exclude_rank_orders") and filters["exclude_rank_orders"].has(rank_order):
+        return false
     if filters.has("definition_ids") and not filters["definition_ids"].has(definition_id):
         return false
     if filters.has("temporary") and bool(filters["temporary"]) != bool(card.temporary_card):
         return false
+    if filters.has("has_any_anomaly"):
+        var anomaly_snapshot: Dictionary = card.anomaly_snapshot()
+        var has_any_anomaly := false
+        for values in anomaly_snapshot.values():
+            has_any_anomaly = has_any_anomaly or not values.is_empty()
+        if has_any_anomaly != bool(filters["has_any_anomaly"]):
+            return false
     if filters.has("has_any_reshape"):
         var has_reshape: bool = card.has_any_reshape_storage() \
             if card.has_method("has_any_reshape_storage") else (
@@ -183,7 +223,8 @@ func _matches(card, facts = null, context = null, side = null) -> bool:
             or card.reshape_imprint != ""
             or not card.reshape_others.is_empty()
             or str(card.temporary_reshapes.get("enhancement", "")) != ""
-            or str(card.temporary_reshapes.get("attribute", "")) != "")
+            or str(card.temporary_reshapes.get("attribute", "")) != ""
+            or not card.temporary_reshapes.get("rank", {}).is_empty())
         if active_any != bool(filters["has_active_any_reshape"]):
             return false
     if filters.has("effective_qi_at_most"):
@@ -243,6 +284,12 @@ func _current_effective_qi(card, context, side) -> int:
     return int(card.effective_qi_value()) \
         if card.has_method("effective_qi_value") else int(card.qi_value)
 
+func _sort_value(card, context, side) -> int:
+    if order_id == "highest_effective_qi":
+        return _current_effective_qi(card, context, side)
+    return int(card.current_rank_order()) \
+        if card.has_method("current_rank_order") else int(card.rank_order)
+
 func _card_has_attribute(card, attribute: String, facts = null) -> bool:
     if facts != null:
         return bool(facts.has_attribute(attribute))
@@ -284,6 +331,11 @@ func _matches_reshape(card, spec: Dictionary) -> bool:
             var temporary_attribute := str(card.temporary_reshapes.get("attribute", ""))
             actual = temporary_attribute != "" \
                 and (reshape_id == "" or temporary_attribute == reshape_id)
+        "temporary_rank":
+            var temporary_rank = card.temporary_reshapes.get("rank", {})
+            actual = not temporary_rank.is_empty() \
+                and (reshape_id == "" \
+                    or str(temporary_rank.get("rank_name", "")) == reshape_id)
     return actual == bool(spec.get("present", true))
 
 func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:

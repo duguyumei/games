@@ -132,8 +132,7 @@ func start_player_turn() -> Array:
         }):
             _state_changed.call()
             return drawn
-        var side_drawn: Array = side.draw(
-            maxi(0, effective_hand_limit - side.hand.size()), "normal_draw")
+        var side_drawn: Array = side.draw_to_limit("normal_draw")
         if side == player:
             drawn = side_drawn
         else:

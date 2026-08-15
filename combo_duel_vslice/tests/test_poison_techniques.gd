@@ -7,7 +7,7 @@ const POISON_TECHNIQUES := {
     "pair_forest_hide_poison":"林·蛰蛊藏息", "pair_forest_raise_poison":"林·养蛊",
     "pair_forest_swarm_guard":"林·群蛊护脉", "pair_forest_embrace_poison":"林·抱毒守元",
     "pair_forest_poison_heart":"林·饮鸩攻心", "three_forest_recover_poison_root":"林·回蛊养根",
-    "three_forest_poison_shell":"林·蛊壳", "three_forest_hundred_poison":"林·百蛊侵脉",
+    "three_forest_hundred_poison":"林·百蛊侵脉",
     "three_forest_bone_poison":"林·刮骨渡毒", "straight_forest_hidden_root":"林·潜根",
     "straight_forest_poison_armor":"林·残蛊化甲", "straight_forest_poison_march":"林·毒行千里",
     "straight_forest_five_leaf_poison":"林·五叶归蛊", "bomb_forest_cleanse_poison":"林·洗脉藏蛊",

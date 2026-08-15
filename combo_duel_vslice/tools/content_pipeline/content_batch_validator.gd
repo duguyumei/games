@@ -178,6 +178,9 @@ func _validate_scanned_resources() -> void:
 
 func _audit_resource_paths(value, scope: String) -> void:
     if value is Dictionary:
+        # Technique IDs are dictionary keys here; an ID may legitimately end in `_path`.
+        if scope.ends_with("techniques.json.integration_statuses"):
+            return
         for key_value in value:
             var key := str(key_value)
             var child_scope := scope + "." + key
@@ -297,8 +300,10 @@ func _audit_query(value, scope: String) -> void:
         _add("error", "INVALID_TARGET_SIDE", scope + ".side", "目标策略必须为 actor 或 target")
     if str(value.get("zone", "hand")) not in ZONE_IDS:
         _add("error", "INVALID_TARGET_ZONE", scope + ".zone", "引用未知牌区 %s" % str(value.get("zone", "")))
-    if str(value.get("order", "zone")) not in ["zone", "top", "bottom", "random"]:
-        _add("error", "INVALID_TARGET_ORDER", scope + ".order", "目标顺序必须为 zone、top、bottom 或 random")
+    if str(value.get("order", "zone")) not in [
+            "zone", "left", "right", "top", "bottom", "random",
+            "highest_rank", "lowest_rank", "highest_effective_qi"]:
+        _add("error", "INVALID_TARGET_ORDER", scope + ".order", "目标顺序不在公共查询词表中")
     if value.get("limit") is Dictionary:
         _audit_amount_spec(value["limit"], scope + ".limit")
 

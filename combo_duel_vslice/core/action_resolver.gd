@@ -62,6 +62,18 @@ func begin_action_resolution(actors: Array, metadata: Dictionary = {}) -> void:
 func abort_action_resolution() -> void:
     effect_ports.abort_action_resolution()
 
+func resolve_post_commit_phase() -> Dictionary:
+    if _pending_resolution.is_empty():
+        return {"success": true, "pending_choice": false, "detail": "没有待提交后效果"}
+    if not bool(_pending_resolution.get("awaiting_post_commit", false)):
+        return {"success": false, "pending_choice": false, "detail": "行动尚未完成牌区提交"}
+    _pending_resolution["phases"] = ["post_commit"]
+    _pending_resolution["phase_index"] = 0
+    _pending_resolution["phase_started"] = false
+    _pending_resolution["awaiting_post_commit"] = false
+    _pending_resolution["post_commit_only"] = true
+    return _continue_resolution()
+
 func finish_action_resolution() -> Dictionary:
     var completed: Dictionary = effect_ports.finish_action_resolution()
     if not completed.get("success", false) or timing_system == null:
@@ -287,7 +299,8 @@ func pending_choice_snapshot() -> Dictionary:
     return trigger_queue.pending_choice_snapshot()
 
 func _continue_resolution() -> Dictionary:
-    var phases := ["prepare", "damage", "zones"]
+    var phases: Array = _pending_resolution.get(
+        "phases", ["prepare", "damage", "zones"])
     while int(_pending_resolution.get("phase_index", 0)) < phases.size():
         var phase: String = phases[int(_pending_resolution["phase_index"])]
         var records: Array = _pending_resolution["records"]
@@ -328,7 +341,11 @@ func _continue_resolution() -> Dictionary:
         _pending_resolution["phase_started"] = false
         _pending_resolution.erase("timing")
         _pending_resolution.erase("phase_has_entries")
-    _pending_resolution.clear()
+    if bool(_pending_resolution.get("post_commit_only", false)):
+        _pending_resolution.clear()
+        return {"success": true, "pending_choice": false, "detail": "提交后效果结算完成"}
+    _pending_resolution["phases"] = phases
+    _pending_resolution["awaiting_post_commit"] = true
     return {"success": true, "pending_choice": false, "detail": "行动效果结算完成"}
 
 func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bool:

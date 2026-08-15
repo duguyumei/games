@@ -145,6 +145,7 @@ func temporarily_remove(side, instance_id: String, reason: String = "burn") -> D
         return {"success": false, "reason": "找不到要临时移出战斗的真气"}
     var card = location["card"]
     var source_zone := str(location["zone"])
+    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     zone(side, source_zone).erase(card)
     side.temporarily_removed_cards.append(card)
     return {
@@ -166,6 +167,7 @@ func permanently_remove(side, instance_id: String, reason: String = "permanent_r
         return {"success": false, "reason": "找不到要永久移出的真气"}
     var card = location["card"]
     var source_zone := str(location["zone"])
+    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     if source_zone == "temporarily_removed":
         side.temporarily_removed_cards.erase(card)
     else:
@@ -195,6 +197,7 @@ func temporarily_transfer(
         return {"success": false, "reason": "目标牌区已经存在相同实例 ID"}
     var card = location["card"]
     var source_zone := str(location["zone"])
+    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     zone(source_side, source_zone).erase(card)
     if str(card.original_owner_id) == "":
         card.original_owner_id = source_side.owner_id
@@ -228,7 +231,9 @@ func return_transferred(
     var card = location["card"]
     if str(card.original_owner_id) != original_side.owner_id:
         return {"success": false, "reason": "真气的原持有者不匹配"}
-    zone(holder_side, str(location["zone"])).erase(card)
+    var source_zone := str(location["zone"])
+    _clear_meridian_on_real_hand_departure(card, source_zone, "return_transfer")
+    zone(holder_side, source_zone).erase(card)
     card.original_owner_id = ""
     zone(original_side, destination).append(card)
     var result := {
@@ -236,17 +241,62 @@ func return_transferred(
         "card": card,
         "from_owner": holder_side.owner_id,
         "to_owner": original_side.owner_id,
-        "from": str(location["zone"]),
+        "from": source_zone,
         "to": destination,
         "reason": "return_transfer",
     }
     var event_result := _notify_arrival(
-        original_side, card, str(location["zone"]), destination,
+        original_side, card, source_zone, destination,
         "return_transfer", {})
     if not event_result.get("success", true):
         result["passive_event_success"] = false
         result["passive_event_reason"] = event_result.get("reason", "")
     return result
+
+func return_all_transferred_cards(sides: Array) -> Array:
+    var side_by_owner_id := {}
+    for side in sides:
+        if side != null:
+            side_by_owner_id[str(side.owner_id)] = side
+    var frozen: Array = []
+    for holder in sides:
+        if holder == null:
+            continue
+        for zone_name in ACTIVE_ZONES + ["temporarily_removed"]:
+            var source: Array = (
+                holder.temporarily_removed_cards
+                if zone_name == "temporarily_removed"
+                else zone(holder, zone_name))
+            for card in source:
+                var original_owner_id := str(card.original_owner_id)
+                if original_owner_id != "" and side_by_owner_id.has(original_owner_id):
+                    frozen.append({
+                        "holder": holder,
+                        "source_zone": zone_name,
+                        "card": card,
+                        "original": side_by_owner_id[original_owner_id],
+                    })
+    var returned: Array = []
+    for entry in frozen:
+        var holder = entry["holder"]
+        var original = entry["original"]
+        var card = entry["card"]
+        var source_zone := str(entry["source_zone"])
+        var source: Array = (
+            holder.temporarily_removed_cards
+            if source_zone == "temporarily_removed"
+            else zone(holder, source_zone))
+        if not source.has(card):
+            continue
+        if holder == original:
+            card.original_owner_id = ""
+            returned.append(card)
+            continue
+        source.erase(card)
+        card.original_owner_id = ""
+        original.draw_pile.append(card)
+        returned.append(card)
+    return returned
 
 func add_generated(side, card, destination: String, temporary: bool) -> Dictionary:
     if card == null or destination not in ACTIVE_ZONES:
@@ -293,6 +343,10 @@ func move_card(
     var pre_move_snapshot := _pre_move_snapshot(side, card, source_zone)
     event_metadata = event_metadata.duplicate(true)
     event_metadata["pre_move_snapshot"] = pre_move_snapshot
+    if card.has_anomaly("mark", "void") and reason in ["normal_play", "explicit_discard"]:
+        return _resolve_void_departure(
+            side, source_zone, card, reason, event_metadata, pre_move_snapshot)
+    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     source.erase(card)
     zone(side, destination_zone).append(card)
     var event_result := _notify_arrival(
@@ -309,6 +363,172 @@ func move_card(
         result["passive_event_success"] = false
         result["passive_event_reason"] = event_result.get("reason", "")
     return result
+
+func move_cards_synchronously(records: Array) -> Array:
+    ## Freeze and remove every source first, then publish arrivals in stable order.
+    ## This prevents bilateral discard and exchange responses from observing a half-moved state.
+    var prepared: Array = []
+    var seen: Dictionary = {}
+    for record_value in records:
+        var record: Dictionary = record_value
+        var side = record.get("side")
+        var card = record.get("card")
+        var source_zone := str(record.get("source_zone", "hand"))
+        var destination_zone := str(record.get("destination_zone", "discard_pile"))
+        var reason := str(record.get("reason", "effect"))
+        if side == null or card == null or source_zone not in ACTIVE_ZONES \
+                or destination_zone not in ACTIVE_ZONES or seen.has(str(card.id)):
+            continue
+        if not zone(side, source_zone).has(card):
+            continue
+        if reason == "explicit_discard" \
+                and not _explicit_discard_permission(side, card).get("allowed", true):
+            continue
+        seen[str(card.id)] = true
+        prepared.append({
+            "side": side, "card": card, "source_zone": source_zone,
+            "destination_zone": destination_zone, "reason": reason,
+            "pre_move_snapshot": _pre_move_snapshot(side, card, source_zone),
+            "void": card.has_anomaly("mark", "void") \
+                and reason in ["normal_play", "explicit_discard"],
+        })
+    for entry in prepared:
+        _clear_meridian_on_real_hand_departure(
+            entry["card"], entry["source_zone"], entry["reason"])
+        zone(entry["side"], entry["source_zone"]).erase(entry["card"])
+    for entry in prepared:
+        if not bool(entry["void"]):
+            zone(entry["side"], entry["destination_zone"]).append(entry["card"])
+    var moved: Array = []
+    for entry in prepared:
+        var side = entry["side"]
+        var card = entry["card"]
+        var metadata := {"pre_move_snapshot": entry["pre_move_snapshot"]}
+        if bool(entry["void"]):
+            if entry["reason"] == "explicit_discard":
+                if status_system != null:
+                    status_system.on_card_explicit_discard(side, card, true)
+                _emit_void_explicit_discard_event(
+                    side, card, entry["source_zone"], metadata)
+            side.temporarily_removed_cards.append(card)
+            if status_system != null:
+                status_system.handle_response_event("card_moved", {
+                    "actor": side, "holder": side, "card": card,
+                    "source_card_instance_id": str(card.id),
+                    "from_zone": entry["source_zone"],
+                    "to_zone": "temporarily_removed", "reason": "void",
+                    "round_number": int(round_number_reader.call()) \
+                        if round_number_reader.is_valid() else 0,
+                    "pre_move_snapshot": entry["pre_move_snapshot"],
+                })
+        else:
+            _notify_arrival(side, card, entry["source_zone"],
+                entry["destination_zone"], entry["reason"], metadata)
+        moved.append(card)
+    return moved
+
+func atomic_exchange(
+        actor_side, actor_zone: String, actor_card,
+        target_side, target_zone: String, target_card) -> Dictionary:
+    if actor_side == null or target_side == null or actor_side == target_side:
+        return {"success": false, "reason": "原子交换需要不同的双方"}
+    if not zone(actor_side, actor_zone).has(actor_card) \
+            or not zone(target_side, target_zone).has(target_card):
+        return {"success": false, "reason": "原子交换来源牌已离开冻结牌区"}
+    var actor_snapshot := _pre_move_snapshot(actor_side, actor_card, actor_zone)
+    var target_snapshot := _pre_move_snapshot(target_side, target_card, target_zone)
+    _clear_meridian_on_real_hand_departure(actor_card, actor_zone, "atomic_exchange")
+    _clear_meridian_on_real_hand_departure(target_card, target_zone, "atomic_exchange")
+    zone(actor_side, actor_zone).erase(actor_card)
+    zone(target_side, target_zone).erase(target_card)
+    if str(actor_card.original_owner_id) == "":
+        actor_card.original_owner_id = actor_side.owner_id
+    if str(target_card.original_owner_id) == "":
+        target_card.original_owner_id = target_side.owner_id
+    zone(actor_side, "hand").append(target_card)
+    zone(target_side, "hand").append(actor_card)
+    _notify_arrival(actor_side, target_card, target_zone, "hand", "atomic_exchange", {
+        "pre_move_snapshot": target_snapshot, "original_owner_id": target_side.owner_id})
+    _notify_arrival(target_side, actor_card, actor_zone, "hand", "atomic_exchange", {
+        "pre_move_snapshot": actor_snapshot, "original_owner_id": actor_side.owner_id})
+    return {"success": true, "actor_received": target_card, "target_received": actor_card,
+        "actor_sent_snapshot": actor_snapshot, "target_sent_snapshot": target_snapshot}
+
+func _resolve_void_departure(
+        side,
+        source_zone: String,
+        card,
+        reason: String,
+        event_metadata: Dictionary,
+        pre_move_snapshot: Dictionary) -> Dictionary:
+    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
+    zone(side, source_zone).erase(card)
+    var response_result := {"success": true}
+    if reason == "explicit_discard":
+        if status_system != null:
+            status_system.on_card_explicit_discard(side, card, true)
+        response_result = _emit_void_explicit_discard_event(
+            side, card, source_zone, event_metadata)
+    side.temporarily_removed_cards.append(card)
+    if response_result.get("success", true) and status_system != null:
+        status_system.handle_response_event("card_moved", {
+            "actor": side,
+            "holder": side,
+            "card": card,
+            "source_card_instance_id": str(card.id),
+            "from_zone": source_zone,
+            "to_zone": "temporarily_removed",
+            "reason": "void",
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+            "pre_move_snapshot": pre_move_snapshot,
+        })
+    return {
+        "success": true,
+        "card": card,
+        "from": source_zone,
+        "to": "temporarily_removed",
+        "reason": reason,
+        "dispersed": true,
+        "pre_move_snapshot": pre_move_snapshot,
+        "passive_event_success": response_result.get("success", true),
+        "passive_event_reason": response_result.get("reason", ""),
+    }
+
+func _emit_void_explicit_discard_event(
+        side,
+        card,
+        source_zone: String,
+        metadata: Dictionary) -> Dictionary:
+    if committed_event_service == null:
+        return {"success": true}
+    var event_serial: int = int(committed_event_service.next_serial())
+    return committed_event_service.commit("card_explicitly_discarded", {
+        "actor": side,
+        "owner": side,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "event_serial": event_serial,
+        "event_token": committed_event_service.make_token(
+            "card_explicitly_discarded", side, event_serial, "", str(card.id)),
+        "card": card,
+        "card_instance_id": str(card.id),
+        "from_zone": source_zone,
+        "reason": "explicit_discard",
+        "explicit_discard": true,
+        "normal_play": false,
+        "void_dispersal": true,
+        "metadata": metadata,
+    })
+
+func _clear_meridian_on_real_hand_departure(
+        card,
+        source_zone: String,
+        reason: String) -> void:
+    var real_departure := source_zone == "hand" and reason != "stage"
+    real_departure = real_departure or source_zone == "staging" and reason == "normal_play"
+    if real_departure and card.has_anomaly("mark", "meridian"):
+        card.remove_anomaly("mark", "meridian")
 
 func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
     var effective := int(card.effective_qi_value()) \

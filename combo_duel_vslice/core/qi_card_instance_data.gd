@@ -108,7 +108,10 @@ static func restore(values: Dictionary, reshape_rules = null):
     card.temporary_reshapes = values.get("temporary_reshapes", {
         "enhancement": "",
         "attribute": "",
+        "rank": {},
     }).duplicate(true)
+    if not card.temporary_reshapes.has("rank"):
+        card.temporary_reshapes["rank"] = {}
     card.original_owner_id = str(values.get("original_owner_id", ""))
     card.temporary_card = bool(values.get("temporary_card", false))
     return card
@@ -286,14 +289,30 @@ static func _validate_temporary_reshapes(
     if not values is Dictionary:
         errors.append("temporary_reshapes 必须是对象")
         return
-    if values.size() != 2 or not values.has_all(["enhancement", "attribute"]):
-        errors.append("temporary_reshapes 必须且只能包含 enhancement/attribute")
+    if values.size() != 3 or not values.has_all(["enhancement", "attribute", "rank"]):
+        errors.append("temporary_reshapes 必须且只能包含 enhancement/attribute/rank")
     var enhancement_id := str(values.get("enhancement", ""))
     if enhancement_id != "" and not content_catalog.has_id("enhancement", enhancement_id):
         errors.append("临时强化引用未知强化：%s" % enhancement_id)
     var attribute_id := str(values.get("attribute", ""))
     if attribute_id != "" and attribute_id not in ["wind", "forest", "fire", "mountain"]:
         errors.append("临时属性引用未知基础属性：%s" % attribute_id)
+    var rank = values.get("rank", {})
+    if not rank is Dictionary:
+        errors.append("临时牌阶必须是对象")
+    elif not rank.is_empty():
+        if rank.size() != 3 or not rank.has_all(["rank_name", "rank_order", "qi_value"]):
+            errors.append("临时牌阶必须且只能包含 rank_name/rank_order/qi_value")
+        else:
+            var matched := false
+            for definition in content_catalog.definition("base_deck").get("ranks", []):
+                if str(definition.get("id", "")) == str(rank.get("rank_name", "")) \
+                        and int(definition.get("order", 0)) == int(rank.get("rank_order", 0)) \
+                        and int(definition.get("qi", 0)) == int(rank.get("qi_value", -1)):
+                    matched = true
+                    break
+            if not matched:
+                errors.append("临时牌阶不是标准牌阶")
 
 static func _validate_origin_base_identity(
         values: Dictionary,

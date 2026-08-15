@@ -1,8 +1,10 @@
-# 扩展正式功法索引
+# 扩展功法正式索引
 
-> 状态：当前正式功法目录索引。详细效果正文分别由[蛊毒功法](./25-gongfa-poison-candidate-pool.md)、[成长功法](./26-gongfa-growth-candidate-pool.md)、[桥接功法](./27-gongfa-bridge-candidate-pool.md)与[山系功法](./29-gongfa-mountain-candidate-pool.md)唯一维护；本文件只记录 101 门扩展正式内容的池归属、稳定 ID 与数量，不复制效果正文。高牌池另有[首批 25 门](./24-gongfa-high-card-pool.md)，因此五池总数为 126。
+> 状态：当前正式目录索引。详细效果正文分别由[蛊毒功法](./25-gongfa-poison-candidate-pool.md)、[成长功法](./26-gongfa-growth-candidate-pool.md)、[桥接功法](./27-gongfa-bridge-candidate-pool.md)、[山系功法](./29-gongfa-mountain-candidate-pool.md)与[风系功法](./33-gongfa-wind-pool.md)唯一维护；本文件只记录正式池归属、稳定ID与数量，不复制效果正文。
+>
+> 当前运行时有144门扩展内容，加上首批25门高牌，共169门普通功法；连同散招、守招共171个正式资源。
 
-## **高牌池（16 门）**
+## **高牌池（24门）**
 
 - **林·含毒**（`high_forest_contain_poison`）
 - **林·埋蛊**（`high_forest_bury_poison`）
@@ -14,14 +16,22 @@
 - **林·折枝**（`high_forest_break_branch`）
 - **林·枯木逢春**（`high_forest_deadwood_spring`）
 - **林·饮蛊催生**（`high_forest_drink_poison_growth`）
+- **林·异株**（`high_forest_variant_plant`）
 - **火·焚蛊催势**（`high_fire_burn_poison_momentum`）
 - **山·列石**（`high_mountain_array_stones`）
 - **山·独峰**（`high_mountain_lone_peak`）
 - **山·迎锋**（`high_mountain_meet_edge`）
 - **山·静岳**（`high_mountain_still_peak`）
 - **山·听锋**（`high_mountain_hear_edge`）
+- **风·引伴**（`high_wind_companion`）
+- **风·占先**（`high_wind_take_initiative`）
+- **风·空袖**（`high_wind_empty_sleeve`）
+- **风·断页**（`high_wind_break_page`）
+- **风·乱流**（`high_wind_turbulence`）
+- **风·夺势**（`high_wind_seize_advantage`）
+- **风·扫尾**（`high_wind_sweep_tail`）
 
-## **对子池（31 门）**
+## **对子池（38门）**
 
 - **林·双藏**（`pair_forest_double_cache`）
 - **林·移花接蛊**（`pair_forest_transfer_poison`）
@@ -54,16 +64,22 @@
 - **山·弃石成墙**（`pair_mountain_discard_wall`）
 - **山·无漏壁**（`pair_mountain_flawless_wall`）
 - **山·打铁式**（`pair_mountain_forging_guard`）
+- **风·换羽**（`pair_wind_change_feather`）
+- **风·染袖**（`pair_wind_dyed_sleeve`）
+- **风·回燕**（`pair_wind_returning_swallow`）
+- **风·易手**（`pair_wind_exchange_hands`）
+- **风·断粮**（`pair_wind_cut_supplies`）
+- **风·翻袖**（`pair_wind_turn_sleeve`）
+- **风·折巅**（`pair_wind_break_peak`）
 
-## **三条池（21 门）**
+## **三条池（27门）**
 
 - **林·回蛊养根**（`three_forest_recover_poison_root`）
-- **林·蛊壳**（`three_forest_poison_shell`）
 - **林·百蛊侵脉**（`three_forest_hundred_poison`）
 - **林·刮骨渡毒**（`three_forest_bone_poison`）
 - **林·春雨**（`three_forest_spring_rain`）
 - **林·接木**（`three_forest_graft`）
-- **林·落叶归根**（`three_forest_fallen_leaf_return`）
+- **林·染枝**（`three_forest_dye_branch`）
 - **风·春风满袖**（`three_wind_spring_hand`）
 - **火·蛊焰追身**（`three_fire_poison_pursuit`）
 - **林·连枝并式**（`three_forest_high_card_cooperate`）
@@ -78,8 +94,15 @@
 - **山·灰垒**（`three_mountain_ash_rampart`）
 - **山·横架**（`three_mountain_cross_guard`）
 - **山·擂关**（`three_mountain_challenge_gate`）
+- **风·满帆**（`three_wind_full_sail`）
+- **风·回潮**（`three_wind_return_tide`）
+- **风·乘隙**（`three_wind_exploit_gap`）
+- **风·续式**（`three_wind_continue_form`）
+- **风·追空**（`three_wind_chase_empty`）
+- **风·四散**（`three_wind_scatter_four`）
+- **风·齐坠**（`three_wind_fall_together`）
 
-## **顺子池（16 门）**
+## **顺子池（26门）**
 
 - **林·潜根**（`straight_forest_hidden_root`）
 - **林·残蛊化甲**（`straight_forest_poison_armor`）
@@ -87,6 +110,7 @@
 - **林·五叶归蛊**（`straight_forest_five_leaf_poison`）
 - **林·百木争荣**（`straight_forest_many_tree_glory`）
 - **林·宿根**（`straight_forest_dormant_root`）
+- **林·易形**（`straight_forest_change_form`）
 - **风·涸泽搜蛊**（`straight_wind_drain_poison_deck`）
 - **山·长垣**（`straight_mountain_long_wall`）
 - **山·分岭**（`straight_mountain_split_ridge`）
@@ -97,8 +121,17 @@
 - **山·铁壁**（`straight_mountain_iron_wall`）
 - **山·逆震**（`straight_mountain_true_reflection`）
 - **山·空谷回声**（`straight_mountain_valley_echo`）
+- **风·贯日**（`straight_wind_pierce_sun`）
+- **风·穿林**（`straight_wind_cross_forest`）
+- **风·回环**（`straight_wind_return_cycle`）
+- **风·开路**（`straight_wind_open_path`）
+- **风·截流**（`straight_wind_cut_flow`）
+- **风·逆旅**（`straight_wind_reverse_journey`）
+- **风·改途**（`straight_wind_change_route`）
+- **风·剥形**（`straight_wind_strip_reshape`）
+- **风·沉浮**（`straight_wind_rise_fall`）
 
-## **炸弹池（17 门）**
+## **炸弹池（29门）**
 
 - **林·洗脉藏蛊**（`bomb_forest_cleanse_poison`）
 - **林·万蛊同寂**（`bomb_forest_all_poison`）
@@ -106,6 +139,7 @@
 - **林·万木萌发**（`bomb_forest_all_sprout`）
 - **林·万木归一**（`bomb_forest_all_wood_unite`）
 - **林·四时轮转**（`bomb_forest_four_seasons`）
+- **林·万象化生**（`bomb_forest_myriad_forms`）
 - **山·四象镇岳**（`bomb_mountain_four_symbols`）
 - **山·五岳定极**（`bomb_mountain_five_peaks`）
 - **山·倾岳**（`bomb_mountain_topple_peak`）
@@ -117,10 +151,24 @@
 - **山·碎壁震心**（`bomb_mountain_shattered_wall`）
 - **山·天门**（`bomb_mountain_heaven_gate`）
 - **山·天关索命**（`bomb_mountain_challenge_death`）
+- **风·鲸吸**（`bomb_wind_whale_draw`）
+- **风·凌霄**（`bomb_wind_soar`）
+- **风·乾坤袖**（`bomb_wind_cosmic_sleeve`）
+- **风·遮天**（`bomb_wind_cover_sky`）
+- **风·天幕**（`bomb_wind_sky_curtain`）
+- **风·涸海**（`bomb_wind_drain_sea`）
+- **风·散阵**（`bomb_wind_scatter_formation`）
+- **风·乱海**（`bomb_wind_turbulent_sea`）
+- **风·劫空**（`bomb_wind_plunder_empty`）
+- **风·荡秽**（`bomb_wind_purge_anomaly`）
+- **风·离群**（`bomb_wind_isolate_group`）
 
-## 接入边界
+## 计数与接入状态
 
-- 101 门扩展内容全部为独立 `TechniqueDefinition` 资源、`formal_complete`、普通装配上限 1。
+- 当前扩展索引共144门：高牌24、对子38、三条27、顺子26、炸弹29。加上首批25门高牌后，完整正式池为高牌49、对子38、三条27、顺子26、炸弹29，共169门普通功法。
+- 当前144门扩展内容均为独立`TechniqueDefinition`资源、`formal_complete`、普通装配上限1；本批45个新增资源已经进入正式目录，2个删除资源及其引用已经移除。
+- 新增林系稳定ID为`high_forest_variant_plant`、`three_forest_dye_branch`、`straight_forest_change_form`、`bomb_forest_myriad_forms`；删除`three_forest_poison_shell`与`three_forest_fallen_leaf_return`。
+- 41门新增风功法使用33号文档冻结的稳定ID；`high_wind_startle`与`high_wind_exchange`保留原ID并已更新效果，不增加资源数量。
 - 池资格固定为：高牌只读 `high_card`；对子读 `pair`、`two_pair`、`full_house`；三条读 `three_kind`、`full_house`；顺子只读 `straight`；炸弹读 `four_kind`、`five_kind`。
 - `production_sequences.json` 不因本批正式化改变；八种初始序列仍从内建散招开始。
-- 毒伤、成长与炽气转移、牌区快照、延迟响应、协同限制、反震来源、格挡、邀战、同气收口和 AI 投影均通过通用接口实现，中央流程不识别扩展功法 ID。
+- 毒伤、成长与炽气转移、寄脉、虚无、临时牌阶、牌区快照、筛选抽牌、同步弃置、延迟响应、协同限制、反震来源、格挡、邀战、同气收口和AI投影均通过通用接口实现，中央流程不识别扩展功法ID。

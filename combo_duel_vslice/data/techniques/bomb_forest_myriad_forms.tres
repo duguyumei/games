@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_forest_myriad_forms"
+display_name="林·万象化生"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="获得floor(P/2)点防御。选择至多2张不同手牌；每张各生成随机相邻当前牌阶、随机异基础属性且默认带虚无的临时普通真气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","temporary_card"])
+public_behavior_summary=Array[String](["defense","temporary_card"])
+implementation_category="C"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"myriad_forms","prompt":"选择至多2张化生来源","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"sources"},{"op":"for_each_captured","capture":"sources","effects":[{"op":"generate_temporary_normal_card","source_capture":"each","rank_mode":"random_adjacent","attribute_mode":"random_other_base","capture":"generated"}]}]

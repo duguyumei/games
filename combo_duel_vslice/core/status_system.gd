@@ -94,6 +94,12 @@ func _init(
             "_on_combat_source_turn_end")
         timing_system.register_weak_handler(
             timing_system.BATTLE_END,
+            "status_system.transferred_card_return",
+            90,
+            self,
+            "_on_transferred_card_battle_end")
+        timing_system.register_weak_handler(
+            timing_system.BATTLE_END,
             "status_system.card_battle_end",
             100,
             self,
@@ -183,14 +189,15 @@ func register_response(
     response_records.append(record)
     return {"success": true, "record": record}
 
-func register_next_round_hand_limit(context, amount: int) -> Dictionary:
+func register_next_round_hand_limit(context, amount: int, affected_side = null) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
-    if runtime.actor == null or amount <= 0:
+    var side = affected_side if affected_side != null else runtime.actor
+    if side == null or amount == 0:
         return {"success": false, "reason": "下一回合手牌上限参数无效"}
     var record := {
         "id": "hand-limit-%06d" % _delay_serial,
         "kind": "next_round_hand_limit",
-        "actor": runtime.actor,
+        "actor": side,
         "amount": amount,
         "source_round": _current_round_hint(runtime),
         "active_round": -1,
@@ -466,8 +473,8 @@ func on_card_drawn(holder, card) -> void:
         return
     _dispatch_card_behaviors("draw", holder, card)
 
-func on_card_explicit_discard(holder, card) -> void:
-    if not holder.discard_pile.has(card):
+func on_card_explicit_discard(holder, card, allow_void_departure: bool = false) -> void:
+    if not holder.discard_pile.has(card) and not allow_void_departure:
         return
     _dispatch_card_behaviors("explicit_discard", holder, card)
 
@@ -1054,9 +1061,23 @@ func _on_card_battle_end(event) -> Dictionary:
                     before,
                     card.anomaly_snapshot(),
                     "战斗结束")
+        for card in cards:
+            if bool(card.temporary_card):
+                side.card_zone_service.permanently_remove(
+                    side, str(card.id), "battle_end_temporary")
     return {
         "success": true,
         "detail": "清理 %d 张真气的战斗异状" % cleaned_count,
+    }
+
+func _on_transferred_card_battle_end(event) -> Dictionary:
+    if event.actors.is_empty() or event.actors[0] == null:
+        return {"success": true, "detail": "没有需要归还的临时转移真气"}
+    var returned: Array = event.actors[0].card_zone_service.return_all_transferred_cards(
+        event.actors)
+    return {
+        "success": true,
+        "detail": "归还 %d 张临时转移真气" % returned.size(),
     }
 
 func _on_transient_battle_end(event) -> Dictionary:

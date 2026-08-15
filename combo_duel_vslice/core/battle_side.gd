@@ -186,9 +186,23 @@ func draw_to_limit(draw_reason: String = "normal_draw") -> Array:
     var limit := current_hand_limit()
     if limit < 1:
         return []
-    if hand.size() >= limit:
-        return []
-    return draw(limit - hand.size(), draw_reason)
+    var drawn: Array = []
+    while occupied_meridian_count() < limit and not draw_pile.is_empty():
+        var step := draw(1, draw_reason)
+        if step.is_empty():
+            break
+        drawn.append_array(step)
+    return drawn
+
+func actual_hand_count() -> int:
+    return hand.size()
+
+func occupied_meridian_count() -> int:
+    var count := 0
+    for card in hand:
+        if not card.has_anomaly("mark", "meridian"):
+            count += 1
+    return count
 
 func poison_totals() -> Dictionary:
     var result := {
@@ -730,7 +744,9 @@ func try_consume_block(
         amount: int,
         damage_type: String,
         attacker_owner_id: String,
-        window_id: String) -> Dictionary:
+        window_id: String,
+        defender_hand_count: int = -1,
+        attacker_hand_count: int = -1) -> Dictionary:
     if amount <= 0 or damage_type not in ["normal", "true"]:
         return {"blocked": false}
     var ordered := block_sources.duplicate()
@@ -744,6 +760,9 @@ func try_consume_block(
             continue
         var condition := str(record.get("condition", "unconditional"))
         if condition == "damage_at_most_defense" and amount > defense:
+            continue
+        if condition == "actual_hand_more_than_attacker" \
+                and defender_hand_count <= attacker_hand_count:
             continue
         block_sources.erase(record)
         return {"blocked": true, "source": record, "source_token": record["source_token"]}

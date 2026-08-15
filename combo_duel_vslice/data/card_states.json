@@ -14,7 +14,8 @@
   ],
   "temporary_reshape_subslots": [
     {"id": "enhancement", "capacity": 1, "replaceable": true},
-    {"id": "attribute", "capacity": 1, "replaceable": true}
+    {"id": "attribute", "capacity": 1, "replaceable": true},
+    {"id": "rank", "capacity": 1, "replaceable": true}
   ],
   "origins": [
     {"id": "attribute_change", "name": "转属"},
@@ -353,8 +354,12 @@
     {
       "id": "void", "name": "虚无", "category": "mark",
       "remove_on_enter_discard": false, "remove_on_battle_end": true,
-      "lifecycle": ["turn_end_final", "battle_end", "remove"],
-      "behaviors": [{"trigger": "turn_end_final", "priority": 1000, "handler": "temporarily_remove_if_in_hand", "reason": "void"}]
+      "lifecycle": ["played_response_end", "explicit_discard_response_end", "battle_end", "remove"]
+    },
+    {
+      "id": "meridian", "name": "寄脉", "category": "mark",
+      "remove_on_enter_discard": false, "remove_on_battle_end": true,
+      "lifecycle": ["real_hand_departure", "battle_end", "remove"]
     }
   ]
 }

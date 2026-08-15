@@ -56,22 +56,25 @@ func result() -> Dictionary:
         "not_integrated": not_integrated,
     }
 
-## 从功法池文档解析权威活跃名单。
+## 从唯一名单文档解析权威活跃名单。
 ## 池归属由 `**高牌池（6 门）**` 或 `## **高牌池（6 门）**` 这类分组标题决定；
 ## 条目为 `- **名称**`，其后可以继续携带稳定 ID 或正文。
 ## 同时收集"已废弃"段落中列出的名称，它们不得作为活跃功法出现。
 func _parse_authoritative_pools(pool_dir: String) -> void:
-    var group_pattern := RegEx.create_from_string("^(?:#{1,6}\\s+)?\\*\\*(.+?)（\\d+ 门）\\*\\*")
+    var group_pattern := RegEx.create_from_string(
+        "^(?:#{1,6}\\s+)?\\*\\*(.+?)（\\d+\\s*门）\\*\\*")
     var entry_pattern := RegEx.create_from_string("^- \\*\\*(.+?)\\*\\*")
     var directory := DirAccess.open(pool_dir)
     if directory == null:
         errors.append("无法打开功法池文档目录：%s" % pool_dir)
         return
-    var file_names: Array[String] = []
-    for file_name in directory.get_files():
-        if file_name.ends_with(".md") and file_name.begins_with("2"):
-            file_names.append(file_name)
-    file_names.sort()
+    # 候选池正文与历史迁移文档也以 2 开头，但不是当前运行时名单。
+    # 只读取三份明确维护稳定 ID/池归属的权威目录，避免重叠正文造成假错误。
+    var file_names: Array[String] = [
+        "20-gongfa-framework.md",
+        "24-gongfa-high-card-pool.md",
+        "28-gongfa-expanded-formal-pool-index.md",
+    ]
     if file_names.is_empty():
         errors.append("功法池文档目录中没有找到池文件：%s" % pool_dir)
         return

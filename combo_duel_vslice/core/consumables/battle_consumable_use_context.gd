@@ -105,7 +105,9 @@ func restore_transaction_state(snapshot: Dictionary) -> bool:
 		if not card.restore_anomaly_snapshot(anomalies):
 			restored = false
 		card.temporary_reshapes = values.get("temporary_reshapes", {
-			"enhancement": "", "attribute": ""}).duplicate(true)
+			"enhancement": "", "attribute": "", "rank": {}}).duplicate(true)
+		if not card.temporary_reshapes.has("rank"):
+			card.temporary_reshapes["rank"] = {}
 	growth.hand_technique_progression = snapshot.get(
 		"hand_technique_progression", {}).duplicate(true)
 	growth.owned_technique_ids.assign(snapshot.get("owned_technique_ids", []))

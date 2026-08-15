@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_wind_returning_swallow"
+display_name="风·回燕"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成floor(P/2)点普通伤害。选择对子组成牌1张；其进入弃牌堆且完成响应后，若仍在弃牌堆则返回手牌。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","recover","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","recover","retrigger_sensitive"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_group_cards","kind":"pair_component","capture":"pair_cards"},{"op":"select_cards","choice_id":"returning_swallow","prompt":"选择回手的对子真气","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"skip","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"return_card","candidate_capture":"pair_cards"},{"op":"filter_captured","phase":"post_commit","capture":"return_card","side":"actor","zone":"discard_pile","result_capture":"return_candidate"},{"op":"move_captured","phase":"post_commit","capture":"return_candidate","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"hand","reason":"effect"}]

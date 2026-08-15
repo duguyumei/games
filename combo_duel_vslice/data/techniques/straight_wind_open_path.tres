@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_wind_open_path"
+display_name="风·开路"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成floor(P/2)点普通伤害。查看牌库顶至多5张，选择至多2张入手，其余保持相对顺序置底。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","draw","deck_control"])
+public_behavior_summary=Array[String](["damage","draw","deck_control"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"actor","zone":"draw_pile","order":"top","limit":5,"filters":{"card_kind":"normal"}},"capture":"shown"},{"op":"select_cards","choice_id":"open_path","prompt":"选择至多2张加入手牌","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"draw_pile","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"chosen","candidate_capture":"shown"},{"op":"move_captured","capture":"chosen","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"hand","reason":"draw","result_capture":"drawn"},{"op":"capture_difference","capture":"shown","exclude_capture":"drawn","result_capture":"remaining"},{"op":"move_captured","capture":"remaining","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"draw_pile","reason":"effect","placement":"bottom","preserve_selection_order":true}]

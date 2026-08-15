@@ -98,7 +98,7 @@ const REQUIRED_ANOMALY_IDS := [
     "qi_heat", "growth", "qi_wither", "decay",
     "poison", "vulnerability", "acupoint_block", "forbidden",
     "wind_lure", "turbulence", "regroup", "burned_out",
-    "purification", "return_to_origin", "void",
+    "purification", "return_to_origin", "void", "meridian",
 ]
 const RETIRED_ANOMALY_IDS := [
     "lethal_poison", "stagnant_poison", "qi_dissipation",
@@ -116,7 +116,8 @@ const RETIRED_RESHAPE_IDS := [
 ]
 const ANOMALY_ON_APPLY_POLICIES := ["", "purify_combat_state"]
 const MARK_LIFECYCLE_EVENTS := [
-    "draw", "enter_discard", "turn_end_final", "battle_end", "remove"]
+    "draw", "enter_discard", "turn_end_final", "played_response_end",
+    "explicit_discard_response_end", "real_hand_departure", "battle_end", "remove"]
 const CARD_STATUS_TRIGGERS := [
     "play_attempt", "played", "draw", "explicit_discard", "enter_discard",
     "enter_discard_late", "turn_end", "turn_end_final",
@@ -223,7 +224,8 @@ func _init(
         {
             "attribute_ids": ATTRIBUTE_IDS,
             "anomaly_category_ids": ANOMALY_CATEGORY_IDS,
-            "reshape_category_ids": RESHAPE_CATEGORY_IDS,
+            "reshape_category_ids": RESHAPE_CATEGORY_IDS + [
+                "temporary_enhancement", "temporary_attribute", "temporary_rank"],
             "hand_ids": TECHNIQUE_BRANCH_HAND_IDS,
         },
         _effect_registry)
@@ -2028,11 +2030,11 @@ func _validate_reshape_categories(values) -> void:
                 "必须为 %s" % str(replaceable[category_id]))
 
 func _validate_temporary_reshape_subslots(values) -> void:
-    var required := ["enhancement", "attribute"]
+    var required := ["enhancement", "attribute", "rank"]
     _validate_categories(
         values,
         required,
-        {"enhancement": 1, "attribute": 1},
+        {"enhancement": 1, "attribute": 1, "rank": 1},
         "card_states.temporary_reshape_subslots")
     if not values is Array:
         return

@@ -4105,7 +4105,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.all_of("origin").size(), 3, "内容目录建立三种正式本源索引")
     _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种正式强化索引")
     _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种正式印记索引")
-    _assert_equal(catalog.all_of("anomaly").size(), 15, "内容目录建立完整正式战斗异状索引")
+    _assert_equal(catalog.all_of("anomaly").size(), 16, "内容目录建立完整正式战斗异状索引")
     _assert_equal(catalog.all_of("actor_status").size(), 0, "内容目录不公开旧命名角色层数类型")
     _assert_equal(catalog.get_by_id("actor_status", "probe"), {}, "内容目录不为角色层数建立索引")
     _assert_equal(catalog.get_by_id("anomaly", "poison")["category"], "state", "毒归入唯一状态槽")
@@ -4113,14 +4113,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 128, "统一功法目录包含128门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 128, "正式功法资源路径包含128项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 128, "正式接入状态包含128门功法")
+    _assert_equal(catalog.all_of("technique").size(), 171, "统一功法目录包含171门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 171, "正式功法资源路径包含171项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 171, "正式接入状态包含171门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 128, "正式功法资源目录包含128门功法")
+    _assert_equal(formal_technique_resource_count, 171, "正式功法资源目录包含171门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
@@ -5140,7 +5140,8 @@ func _test_qi_instance_state_contract() -> void:
     _assert_true(purified.reshape_enhancement == "qi_boost" and purified.reshape_imprint == "echo", "净化保留永久重塑")
     _assert_true(purified.anomaly_snapshot()["buffs"].is_empty() and purified.current_state().is_empty(), "净化清除 buff/debuff/state")
     _assert_equal(purified.anomaly_snapshot()["marks"].keys(), ["purification"], "净化最后只建立自身")
-    _assert_equal(purified.temporary_reshapes, {"enhancement": "", "attribute": ""}, "净化清除临时重塑")
+    _assert_equal(purified.temporary_reshapes, {
+        "enhancement": "", "attribute": "", "rank": {}}, "净化清除临时重塑")
     _assert_true(not lifecycle.apply_anomaly(purified, "mark", "purification")["success"], "重复净化被拒绝且不再清理")
     _assert_true(lifecycle.apply_anomaly(purified, "state", "poison")["success"], "净化不是持续免疫")
     lifecycle.on_battle_end(purified)
@@ -6501,6 +6502,7 @@ func _test_battle_timing_system_contract_and_integration() -> void:
         [
             "passives.battle_end.begin",
             "card_reshape_runtime.battle_victory",
+            "status_system.transferred_card_return",
             "status_system.card_battle_end",
             "status_system.transient_battle_end",
             "combat_engine.flow_cleanup",
@@ -7687,7 +7689,12 @@ func _test_f2d2_formal_enhancement_runtime() -> void:
     _assert_true(not midbattle.has_anomaly("mark", "void"), "战斗中途获得虚暴本场不补发虚无")
     engine.status_system.apply_card_anomaly(midbattle, "mark", "void", {}, "测试")
     engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {"actor": engine.player})
-    _assert_true(engine.player.temporarily_removed_cards.has(midbattle), "虚无在其他回合结束效果后最终消散留手牌")
+    _assert_true(engine.player.hand.has(midbattle), "虚无不再因回合结束消散")
+    _assert_true(midbattle.has_anomaly("mark", "void"), "回合结束保留虚无内容")
+    var void_discard: Dictionary = engine.player.card_zone_service.move_card(
+        engine.player, "hand", "discard_pile", midbattle, "explicit_discard")
+    _assert_true(void_discard.get("dispersed", false), "虚无在成功明确弃置响应后消散")
+    _assert_true(engine.player.temporarily_removed_cards.has(midbattle), "虚无明确弃置后进入临时移除区")
     _assert_true(not engine.player.discard_pile.has(midbattle), "虚无消散不进入弃牌堆")
 
 func _test_f2d2_opportunity_freeze_and_progress_sync() -> void:

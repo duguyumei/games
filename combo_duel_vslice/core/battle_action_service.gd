@@ -157,11 +157,21 @@ func resolve_effect_choice(request_id: String, selected_card_ids: Array) -> Dict
     match pending.kind:
         "solo_player":
             return _finish_solo_player_resolution(pending.record, pending.action_preview)
+        "solo_player_post_commit":
+            return _finish_solo_player_post_commit(
+                pending.record, pending.action_preview,
+                pending.metadata.get("played_cards", []))
         "solo_cooperation":
             return _finish_solo_cooperation_resolution(
                 pending.record, pending.action_preview, pending.metadata)
+        "solo_cooperation_post_commit":
+            return _finish_solo_cooperation_post_commit(
+                pending.record, pending.action_preview, pending.metadata)
         "synchronized_cooperation":
             return _finish_synchronized_cooperation_resolution(
+                pending.record, pending.action_preview, pending.metadata)
+        "synchronized_cooperation_post_commit":
+            return _finish_synchronized_cooperation_post_commit(
                 pending.record, pending.action_preview, pending.metadata)
         "synchronized":
             return _finish_synchronized_resolution(
@@ -169,8 +179,14 @@ func resolve_effect_choice(request_id: String, selected_card_ids: Array) -> Dict
                 pending.player_preview,
                 pending.enemy_preview,
                 pending.enemy_will_act)
+        "synchronized_post_commit":
+            return _finish_synchronized_post_commit(pending)
         "enemy_only":
             return _finish_enemy_only_resolution(pending.record, pending.action_preview)
+        "enemy_only_post_commit":
+            return _finish_enemy_only_post_commit(
+                pending.record, pending.action_preview,
+                pending.metadata.get("enemy_cards", []))
     return {"success": false, "reason": "未知的待恢复行动类型"}
 
 func resolve_locked_enemy_action_once() -> Dictionary:
@@ -278,6 +294,27 @@ func _finish_solo_player_resolution(record, action_preview: Dictionary) -> Dicti
         player, action_preview.get("cards", []) if has_cooperation else [])
     var played_cards: Array = player_commit["committed"]
     action_resolver.log_cards_leave(player, played_cards)
+    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
+    if post_commit.get("pending_choice", false):
+        pending_action_resolution.configure_single(
+            "solo_player_post_commit", record, action_preview,
+            {"played_cards": played_cards})
+        emit_state_changed.call()
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": action_resolver.pending_choice_snapshot(),
+            "preview": action_preview,
+            "detail": post_commit.get("detail", "等待提交后选择"),
+        }
+    if not post_commit.get("success", false):
+        action_resolver.abort_action_resolution()
+        return {"success": false, "reason": post_commit.get("detail", "提交后效果失败")}
+    return _finish_solo_player_post_commit(record, action_preview, played_cards)
+
+func _finish_solo_player_post_commit(
+        record, action_preview: Dictionary, played_cards: Array) -> Dictionary:
+    var has_cooperation: bool = not record.cooperation_groups.is_empty()
     action_resolver.finish_action_record(record)
     if has_cooperation:
         return _resolve_solo_cooperation(
@@ -337,9 +374,32 @@ func _finish_solo_cooperation_resolution(
         record, metadata.get("cooperation", {}))
     var cooperation_cards: Array = cooperation_commit["committed"]
     action_resolver.log_cards_leave(player, cooperation_cards)
+    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
+    if post_commit.get("pending_choice", false):
+        metadata["cooperation_cards"] = cooperation_cards
+        pending_action_resolution.configure_single(
+            "solo_cooperation_post_commit", record, cooperation_preview, metadata)
+        emit_state_changed.call()
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": action_resolver.pending_choice_snapshot(),
+            "preview": metadata.get("main_preview", {}),
+            "cooperation_preview": cooperation_preview,
+            "detail": post_commit.get("detail", "等待协同提交后选择"),
+        }
+    if not post_commit.get("success", false):
+        action_resolver.abort_action_resolution()
+        return {"success": false, "reason": post_commit.get("detail", "协同提交后效果失败")}
+    metadata["cooperation_cards"] = cooperation_cards
+    return _finish_solo_cooperation_post_commit(
+        record, cooperation_preview, metadata)
+
+func _finish_solo_cooperation_post_commit(
+        record, cooperation_preview: Dictionary, metadata: Dictionary) -> Dictionary:
     action_resolver.finish_action_record(record)
     var all_cards: Array = metadata.get("main_cards", []).duplicate()
-    all_cards.append_array(cooperation_cards)
+    all_cards.append_array(metadata.get("cooperation_cards", []))
     return _finish_solo_action_outcome(
         metadata.get("main_preview", {}),
         all_cards,
@@ -575,6 +635,48 @@ func _finish_synchronized_resolution(
     action_resolver.log_cards_leave(player, player_cards)
     if enemy_will_act:
         action_resolver.log_cards_leave(enemy, enemy_cards)
+    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
+    if post_commit.get("pending_choice", false):
+        pending_action_resolution.configure_synchronized(
+            records, player_preview, enemy_preview, enemy_will_act)
+        pending_action_resolution.kind = "synchronized_post_commit"
+        pending_action_resolution.metadata = {
+            "player_cards": player_cards,
+            "enemy_cards": enemy_cards,
+        }
+        emit_state_changed.call()
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": action_resolver.pending_choice_snapshot(),
+            "preview": player_preview,
+            "enemy_preview": enemy_preview,
+            "detail": post_commit.get("detail", "等待同步提交后选择"),
+        }
+    if not post_commit.get("success", false):
+        action_resolver.abort_action_resolution()
+        return {"success": false, "reason": post_commit.get("detail", "同步提交后效果失败")}
+    return _finish_synchronized_post_commit_values(
+        records, player_preview, enemy_preview, enemy_will_act,
+        player_cards, enemy_cards)
+
+func _finish_synchronized_post_commit(pending) -> Dictionary:
+    return _finish_synchronized_post_commit_values(
+        pending.records, pending.player_preview, pending.enemy_preview,
+        pending.enemy_will_act, pending.metadata.get("player_cards", []),
+        pending.metadata.get("enemy_cards", []))
+
+func _finish_synchronized_post_commit_values(
+        records: Array,
+        player_preview: Dictionary,
+        enemy_preview: Dictionary,
+        enemy_will_act: bool,
+        player_cards: Array,
+        enemy_cards: Array) -> Dictionary:
+    var player_record = records[0]
+    var has_cooperation: bool = (
+        player_record["triggered"]
+        and not player_record.cooperation_groups.is_empty())
     for record in records:
         action_resolver.finish_action_record(record)
     if has_cooperation:
@@ -650,10 +752,36 @@ func _finish_synchronized_cooperation_resolution(
     _notify_cooperation_pre_commit(record)
     var cooperation_commit: Dictionary = action_resolver.commit_cooperation_staging(
         record, metadata.get("cooperation", {}))
-    var all_player_cards: Array = metadata.get("player_cards", []).duplicate()
-    all_player_cards.append_array(cooperation_commit.get("committed", []))
+    var cooperation_cards: Array = cooperation_commit.get("committed", [])
     action_resolver.log_cards_leave(
-        player, cooperation_commit.get("committed", []))
+        player, cooperation_cards)
+    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
+    if post_commit.get("pending_choice", false):
+        metadata["cooperation_cards"] = cooperation_cards
+        pending_action_resolution.configure_single(
+            "synchronized_cooperation_post_commit", record,
+            cooperation_preview, metadata)
+        emit_state_changed.call()
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": action_resolver.pending_choice_snapshot(),
+            "preview": metadata.get("player_preview", {}),
+            "enemy_preview": metadata.get("enemy_preview", {}),
+            "cooperation_preview": cooperation_preview,
+            "detail": post_commit.get("detail", "等待协同提交后选择"),
+        }
+    if not post_commit.get("success", false):
+        action_resolver.abort_action_resolution()
+        return {"success": false, "reason": post_commit.get("detail", "协同提交后效果失败")}
+    metadata["cooperation_cards"] = cooperation_cards
+    return _finish_synchronized_cooperation_post_commit(
+        record, cooperation_preview, metadata)
+
+func _finish_synchronized_cooperation_post_commit(
+        record, cooperation_preview: Dictionary, metadata: Dictionary) -> Dictionary:
+    var all_player_cards: Array = metadata.get("player_cards", []).duplicate()
+    all_player_cards.append_array(metadata.get("cooperation_cards", []))
     action_resolver.finish_action_record(record)
     return _finish_synchronized_outcome(
         metadata.get("player_preview", {}),
@@ -743,6 +871,26 @@ func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictio
     var enemy_commit: Dictionary = action_resolver.commit_staging_for(enemy)
     var enemy_cards: Array = enemy_commit["committed"]
     action_resolver.log_cards_leave(enemy, enemy_cards)
+    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
+    if post_commit.get("pending_choice", false):
+        pending_action_resolution.configure_single(
+            "enemy_only_post_commit", record, action_preview,
+            {"enemy_cards": enemy_cards})
+        emit_state_changed.call()
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": action_resolver.pending_choice_snapshot(),
+            "enemy_preview": action_preview,
+            "detail": post_commit.get("detail", "等待提交后选择"),
+        }
+    if not post_commit.get("success", false):
+        action_resolver.abort_action_resolution()
+        return {"success": false, "reason": post_commit.get("detail", "敌方提交后效果失败")}
+    return _finish_enemy_only_post_commit(record, action_preview, enemy_cards)
+
+func _finish_enemy_only_post_commit(
+        record, action_preview: Dictionary, enemy_cards: Array) -> Dictionary:
     action_resolver.finish_action_record(record)
     var action_completed: Dictionary = action_resolver.finish_action_resolution()
     if not action_completed.get("success", false):

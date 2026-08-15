@@ -36,7 +36,7 @@ func _test_formal_resources() -> void:
     _assert_true(repository.load_from_file(), "TechniqueRepository加载正式内容")
     var high_ids: Array[String] = repository.formal_technique_ids().filter(
         func(value): return str(value).begins_with("high_"))
-    _assert_equal(high_ids.size(), 41, "完整高牌池41门功法均为formal_complete")
+    _assert_equal(high_ids.size(), 49, "完整高牌池49门功法均为formal_complete")
     for technique_id in high_ids:
         var definition = repository.get_definition(technique_id)
         _assert_equal(definition.pool, "high", "%s属于高牌池" % technique_id)
@@ -45,7 +45,7 @@ func _test_formal_resources() -> void:
         _assert_true(not definition.description.is_empty(), "%s包含完整描述" % technique_id)
         _assert_true(not definition.semantic_tags.is_empty(), "%s包含AI语义" % technique_id)
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
-    _assert_true(catalog.load_all(), "25门功法通过正式内容校验")
+    _assert_true(catalog.load_all(), "高牌正式内容通过校验")
     for hand_id in ["high_card", "pair", "two_pair", "three_kind", "straight", "full_house", "four_kind", "five_kind"]:
         var sequence = catalog.definition("sequences").get(hand_id, [])
         _assert_true(sequence is Array and not sequence.is_empty(), "初始序列没有空槽")

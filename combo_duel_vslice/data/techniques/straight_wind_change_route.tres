@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_wind_change_route"
+display_name="风·改途"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成floor(P/2)点普通伤害。冻结敌方全部手牌当前牌阶，洗回牌库，再抽取等量的不同冻结牌阶真气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","draw","discard","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","draw","discard","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"target","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"cards"},{"op":"capture_metadata","capture":"cards","result_capture":"frozen"},{"op":"move_captured","capture":"cards","from_side":"target","from_zone":"hand","to_side":"target","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true,"result_capture":"returned"},{"op":"draw_filtered","query":{"side":"target","zone":"draw_pile","order":"random","limit":{"kind":"capture_count","capture":"returned"},"filters":{"card_kind":"normal","exclude_rank_orders_from_capture":"frozen"}},"capture":"drawn"}]

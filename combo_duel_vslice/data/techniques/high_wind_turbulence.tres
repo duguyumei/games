@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_wind_turbulence"
+display_name="风·乱流"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。敌方牌库顶1张能够获得乱流的普通真气获得乱流。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","anomaly_apply","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"mark","id":"turbulence"}}},"capture":"target","category":"mark","anomaly":"turbulence"}]

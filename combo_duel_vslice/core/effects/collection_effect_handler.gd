@@ -20,7 +20,7 @@ func operation_ids() -> Array[String]:
         "select_highest_random_captured", "capture_event_cards",
         "capture_value",
         "capture_difference",
-        "filter_captured",
+        "filter_captured", "repeat_effects",
     ]
 
 func group_name() -> String:
@@ -33,6 +33,10 @@ func execute(effect: Dictionary, context):
             var kind := str(effect.get("kind", "played"))
             var cards: Array = runtime.group_snapshot.get(
                 "%s_cards" % kind, []).duplicate()
+            if kind in ["pair_component", "three_component"]:
+                cards = _frozen_rank_component(
+                    runtime.group_snapshot,
+                    2 if kind == "pair_component" else 3)
             if kind == "on_play_success":
                 cards = runtime.group_snapshot.get("on_play_success_cards", []).duplicate()
             if bool(effect.get("require_non_attribute", false)):
@@ -88,7 +92,8 @@ func execute(effect: Dictionary, context):
                         or card.reshape_imprint != ""
                         or not card.reshape_others.is_empty()
                         or str(card.temporary_reshapes.get("enhancement", "")) != ""
-                        or str(card.temporary_reshapes.get("attribute", "")) != ""))
+                        or str(card.temporary_reshapes.get("attribute", "")) != ""
+                        or not card.temporary_reshapes.get("rank", {}).is_empty()))
             runtime.captures[str(effect.get("capture", "group_cards"))] = cards
             return EffectResultScript.succeeded("捕获组内真气 %d 张" % cards.size())
         "select_random_captured":
@@ -139,6 +144,13 @@ func execute(effect: Dictionary, context):
         "filter_captured":
             var cards: Array = runtime.captures.get(str(effect.get("capture", "")), []).duplicate()
             var filters: Dictionary = effect.get("filters", {})
+            if effect.has("zone"):
+                var zone_side = runtime.target \
+                    if str(effect.get("side", "actor")) == "target" else runtime.actor
+                var zone_cards: Array = runtime.ports.zone_cards(
+                    zone_side, str(effect.get("zone", "hand"))) \
+                    if runtime.ports != null and zone_side != null else []
+                cards = cards.filter(func(card): return zone_cards.has(card))
             if filters.has("anomaly"):
                 var anomaly: Dictionary = filters["anomaly"]
                 cards = cards.filter(func(card):
@@ -217,12 +229,59 @@ func execute(effect: Dictionary, context):
                     runtime.captures[str(effect["capture"])] = []
                 return EffectResultScript.succeeded()
             var generated = runtime.ports.generate_temporary_normal_card(
-                runtime.actor, base_card)
+                runtime.actor, base_card, {
+                    "rank_mode": str(effect.get("rank_mode", "same_current")),
+                    "attribute_mode": str(effect.get("attribute_mode", "same_base")),
+                    "add_void": bool(effect.get("add_void", true)),
+                })
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [generated] if generated != null else []
             return EffectResultScript.succeeded("生成临时真气" if generated != null else "")
+        "repeat_effects":
+            if runtime.source_kind == "technique_echo":
+                return EffectResultScript.succeeded("回响不递归")
+            var count: int = value_resolver.resolve(effect.get("count", 0), runtime)
+            var completed := 0
+            for index in range(maxi(0, count)):
+                var child_context = EffectContextScript.new().configure({
+                    "ports": runtime.ports, "actor": runtime.actor, "target": runtime.target,
+                    "hand_result": runtime.hand_result, "played_cards": runtime.played_cards,
+                    "power": runtime.power, "initial_power": runtime.initial_power,
+                    "direct_power_fixed": runtime.direct_power_fixed,
+                    "direct_power_percent": runtime.direct_power_percent,
+                    "pre_momentum_power": runtime.pre_momentum_power,
+                    "momentum_used": runtime.momentum_used,
+                    "technique_id": runtime.technique_id,
+                    "technique_name": runtime.technique_name,
+                    "actual_hand_id": runtime.actual_hand_id,
+                    "branch_hand_id": runtime.branch_hand_id,
+                    "technique_pool": runtime.technique_pool,
+                    "action_token": "%s:echo:%d" % [runtime.action_token, index],
+                    "source_kind": "technique_echo", "captures": {},
+                    "sequence_book": runtime.sequence_book,
+                    "card_identity_policy": runtime.card_identity_policy,
+                    "group_snapshot": runtime.group_snapshot,
+                })
+                var result: Dictionary = runtime.ports.execute_effect_chain(
+                    effect.get("effects", []), child_context)
+                if not result.get("success", false):
+                    return EffectResultScript.failed(str(result.get("reason", "功法回响失败")))
+                completed += 1
+            return EffectResultScript.succeeded("功法回响%d次" % completed)
     return EffectResultScript.failed("集合处理器不支持此操作")
 
+func _frozen_rank_component(snapshot: Dictionary, wanted_count: int) -> Array:
+    var contributing: Array = snapshot.get("contributing_cards", []).duplicate()
+    var counts: Dictionary = {}
+    for card in contributing:
+        var rank_order := int(snapshot.get("facts_by_id", {}).get(
+            str(card.id), {}).get("rank_order_at_freeze", card.current_rank_order()))
+        counts[rank_order] = int(counts.get(rank_order, 0)) + 1
+    return contributing.filter(func(card):
+        var rank_order := int(snapshot.get("facts_by_id", {}).get(
+            str(card.id), {}).get("rank_order_at_freeze", card.current_rank_order()))
+        return int(counts.get(rank_order, 0)) == wanted_count)
+
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
-    if str(effect.get("op", "")) == "for_each_captured":
+    if str(effect.get("op", "")) in ["for_each_captured", "repeat_effects"]:
         validator.validate_nested_battle_effects(effect.get("effects", []), scope + ".effects")

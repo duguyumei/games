@@ -18,7 +18,10 @@ func operation_ids() -> Array[String]:
         "move_captured", "move_query", "draw_filtered", "draw_to_limit",
         "capture_metadata",
         "capture_query", "swap_hands", "reorder_captured_draw_pile",
-        "move_captured_to_hand",
+        "move_captured_to_hand", "atomic_exchange_captured",
+        "synchronous_discard_queries", "discard_duplicate_ranks",
+        "discard_by_visible_attribute", "draw_common_attribute_or_fallback",
+        "discard_captured_by_selected_base_attribute",
     ]
 
 func group_name() -> String:
@@ -32,9 +35,12 @@ func execute(effect: Dictionary, context):
     match str(effect.get("op", "")):
         "draw":
             var count: int = value_resolver.resolve(effect.get("count", {}), runtime)
+            var draw_side = _resolve_side(runtime, str(effect.get("side", "actor")))
+            if draw_side == null:
+                return EffectResultScript.failed("抽牌目标不存在")
             var drawn: Array = (
-                runtime.ports.draw(actor, count, "technique")
-                if runtime.ports != null else actor.draw(count))
+                runtime.ports.draw(draw_side, count, "technique")
+                if runtime.ports != null else draw_side.draw(count))
             if effect.has("capture"):
                 runtime.captures[effect["capture"]] = drawn
             return EffectResultScript.succeeded("抽 %d 张" % drawn.size())
@@ -47,10 +53,15 @@ func execute(effect: Dictionary, context):
                     break
             var drawn: Array = []
             if matches:
+                var draw_side = _resolve_side(
+                    runtime, str(effect.get("side", "actor")))
+                if draw_side == null:
+                    return EffectResultScript.failed("属性追加抽牌目标不存在")
                 drawn = (
-                    runtime.ports.draw(actor, int(effect.get("count", 1)), "technique")
+                    runtime.ports.draw(
+                        draw_side, int(effect.get("count", 1)), "technique")
                     if runtime.ports != null
-                    else actor.draw(int(effect.get("count", 1))))
+                    else draw_side.draw(int(effect.get("count", 1))))
             return EffectResultScript.succeeded(
                 "属性追加抽 %d 张" % drawn.size() if matches else "")
         "discard_random":
@@ -83,16 +94,7 @@ func execute(effect: Dictionary, context):
             return _draw_filtered(effect, runtime)
         "draw_to_limit":
             var side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
-            var hand_limit_result: Dictionary = (
-                side.effective_hand_limit_result() if side != null else {"success": false})
-            if not hand_limit_result.get("success", false):
-                return EffectResultScript.failed("有效手牌上限查询失败")
-            var wanted: int = maxi(
-                0, int(hand_limit_result["effective_value"]) - side.hand.size())
-            var drawn: Array = (
-                runtime.ports.draw(side, wanted, "technique")
-                if runtime.ports != null and side != null
-                else side.draw(wanted) if side != null else [])
+            var drawn: Array = side.draw_to_limit("technique") if side != null else []
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = drawn
             return EffectResultScript.succeeded("补至手牌上限：%d 张" % drawn.size())
@@ -110,6 +112,9 @@ func execute(effect: Dictionary, context):
                     "effective_qi": runtime.ports.current_effective_qi(runtime.actor, card),
                     "base_qi": int(card.current_base_qi_value()) \
                         if card.has_method("current_base_qi_value") else int(card.qi_value),
+                    "rank_name": str(card.current_rank_name()),
+                    "rank_order": int(card.current_rank_order()),
+                    "base_attribute": str(card.attribute),
                     "growth_layers": card.anomaly_layers("buff", "growth"),
                     "heat_layers": card.anomaly_layers("buff", "qi_heat"),
                     "had_poison": card.has_anomaly("state", "poison"),
@@ -134,10 +139,25 @@ func execute(effect: Dictionary, context):
             return EffectResultScript.succeeded("交换双方当前手牌")
         "reorder_captured_draw_pile":
             return _reorder_captured_draw_pile(effect, runtime)
+        "atomic_exchange_captured":
+            return _atomic_exchange_captured(effect, runtime)
+        "synchronous_discard_queries":
+            return _synchronous_discard_queries(effect, runtime)
+        "discard_duplicate_ranks":
+            return _discard_duplicate_ranks(effect, runtime)
+        "discard_by_visible_attribute":
+            return _discard_by_visible_attribute(effect, runtime)
+        "draw_common_attribute_or_fallback":
+            return _draw_common_attribute_or_fallback(effect, runtime)
+        "discard_captured_by_selected_base_attribute":
+            return _discard_captured_by_selected_base_attribute(effect, runtime)
     return EffectResultScript.failed("牌区处理器不支持：%s" % str(effect.get("op", "")))
 
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
     pass
+
+func _resolve_side(runtime, side_key: String):
+    return runtime.target if side_key == "target" else runtime.actor
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("op", "")) in ["move_query", "draw_filtered", "capture_query"]:
@@ -146,6 +166,10 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             validator.report_error(scope + ".query", "必须是对象")
         else:
             validator.validate_target_query(query, scope + ".query")
+    if str(effect.get("op", "")) == "synchronous_discard_queries":
+        for index in range(effect.get("queries", []).size()):
+            validator.validate_target_query(
+                effect.get("queries", [])[index], "%s.queries[%d]" % [scope, index])
 
 func _move_captured(effect: Dictionary, runtime):
     if runtime.ports == null:
@@ -253,6 +277,27 @@ func _query(effect: Dictionary, runtime) -> Dictionary:
     if query_spec.get("limit") is Dictionary:
         query_spec["limit"] = value_resolver.resolve(query_spec["limit"], runtime)
     var filters: Dictionary = query_spec.get("filters", {}).duplicate(true)
+    var excluded_rank_capture := str(filters.get("exclude_rank_orders_from_capture", ""))
+    if excluded_rank_capture != "":
+        var excluded_ranks: Array = []
+        for entry in runtime.captures.get(excluded_rank_capture, []):
+            var rank_order := int(entry.get("rank_order", 0)) if entry is Dictionary \
+                else int(entry.current_rank_order())
+            if not excluded_ranks.has(rank_order):
+                excluded_ranks.append(rank_order)
+        filters.erase("exclude_rank_orders_from_capture")
+        filters["exclude_rank_orders"] = excluded_ranks
+    var excluded_attribute_capture := str(
+        filters.get("exclude_base_attributes_from_capture", ""))
+    if excluded_attribute_capture != "":
+        var excluded_attributes: Array = []
+        for entry in runtime.captures.get(excluded_attribute_capture, []):
+            var attribute := str(entry.get("base_attribute", "")) if entry is Dictionary \
+                else str(entry.attribute)
+            if attribute != "" and not excluded_attributes.has(attribute):
+                excluded_attributes.append(attribute)
+        filters.erase("exclude_base_attributes_from_capture")
+        filters["exclude_base_attributes"] = excluded_attributes
     for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:
         if filters.get(value_field) is Dictionary:
             filters[value_field] = value_resolver.resolve(filters[value_field], runtime)
@@ -266,3 +311,158 @@ func _query(effect: Dictionary, runtime) -> Dictionary:
         result["cards"] = result["cards"].filter(
             func(card): return not excluded_ids.has(str(card.id)))
     return result
+
+func _atomic_exchange_captured(effect: Dictionary, runtime):
+    var actor_cards: Array = runtime.captures.get(str(effect.get("actor_capture", "")), [])
+    var target_cards: Array = runtime.captures.get(str(effect.get("target_capture", "")), [])
+    if actor_cards.is_empty() or target_cards.is_empty():
+        return EffectResultScript.succeeded()
+    var result: Dictionary = runtime.ports.atomic_exchange_cards(
+        runtime.actor, str(effect.get("actor_zone", "hand")), actor_cards[0],
+        runtime.target, str(effect.get("target_zone", "draw_pile")), target_cards[0])
+    if effect.has("actor_received_capture"):
+        runtime.captures[str(effect["actor_received_capture"])] = \
+            [target_cards[0]] if result.get("success", false) else []
+    if effect.has("target_received_capture"):
+        runtime.captures[str(effect["target_received_capture"])] = \
+            [actor_cards[0]] if result.get("success", false) else []
+    return EffectResultScript.succeeded("原子交换1张真气") \
+        if result.get("success", false) else EffectResultScript.failed(
+            str(result.get("reason", "原子交换失败")))
+
+func _synchronous_discard_queries(effect: Dictionary, runtime):
+    var records: Array = []
+    var frozen: Array = []
+    for query_value in effect.get("queries", []):
+        var query_effect := {"query": query_value}
+        var resolved := _query(query_effect, runtime)
+        if not resolved.get("success", false):
+            return EffectResultScript.failed(str(resolved.get("reason", "同步弃置查询失败")))
+        for card in resolved.get("cards", []):
+            if frozen.has(card) or not runtime.ports.can_explicit_discard(
+                    resolved["side"], card).get("allowed", false):
+                continue
+            frozen.append(card)
+            records.append({
+                "side": resolved["side"], "source_zone": str(query_value.get("zone", "hand")),
+                "destination_zone": "discard_pile", "card": card,
+                "reason": "explicit_discard",
+            })
+    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    runtime.captures[str(effect.get("capture", "synchronously_discarded"))] = moved
+    return EffectResultScript.succeeded("同步弃置%d张真气" % moved.size())
+
+func _discard_duplicate_ranks(effect: Dictionary, runtime):
+    var side = runtime.target if str(effect.get("side", "target")) == "target" else runtime.actor
+    var groups: Dictionary = {}
+    for card in side.hand:
+        var rank := int(card.current_rank_order())
+        if not groups.has(rank):
+            groups[rank] = []
+        groups[rank].append(card)
+    var records: Array = []
+    for cards_value in groups.values():
+        var cards: Array = cards_value
+        if cards.size() < 2:
+            continue
+        var keep = cards[rng.randi_range(0, cards.size() - 1)]
+        for card in cards:
+            if card != keep and runtime.ports.can_explicit_discard(side, card).get("allowed", false):
+                records.append({"side": side, "source_zone": "hand",
+                    "destination_zone": "discard_pile", "card": card,
+                    "reason": "explicit_discard"})
+    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    runtime.captures[str(effect.get("capture", "discarded"))] = moved
+    return EffectResultScript.succeeded("重复牌阶弃置%d张" % moved.size())
+
+func _discard_by_visible_attribute(effect: Dictionary, runtime):
+    var side = runtime.target if str(effect.get("side", "target")) == "target" else runtime.actor
+    var attributes := ["wind", "forest", "fire", "mountain"]
+    var selected := ""
+    var mode := str(effect.get("mode", "random"))
+    if mode == "most_common":
+        var counts: Dictionary = {}
+        var maximum := -1
+        for attribute in attributes:
+            var count := 0
+            for card in side.hand:
+                if card.is_attribute(attribute):
+                    count += 1
+            counts[attribute] = count
+            maximum = maxi(maximum, count)
+        var tied: Array = attributes.filter(func(attribute): return counts[attribute] == maximum)
+        selected = str(tied[rng.randi_range(0, tied.size() - 1)]) if not tied.is_empty() else ""
+    else:
+        selected = str(attributes[rng.randi_range(0, attributes.size() - 1)])
+    var records: Array = []
+    for card in side.hand.duplicate():
+        if selected != "" and card.is_attribute(selected) \
+                and runtime.ports.can_explicit_discard(side, card).get("allowed", false):
+            records.append({"side": side, "source_zone": "hand",
+                "destination_zone": "discard_pile", "card": card,
+                "reason": "explicit_discard"})
+    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    runtime.captures[str(effect.get("capture", "discarded"))] = moved
+    runtime.captures[str(effect.get("attribute_capture", "selected_attribute"))] = \
+        [{"attribute": selected}]
+    return EffectResultScript.succeeded("按%s属性弃置%d张" % [selected, moved.size()])
+
+func _draw_common_attribute_or_fallback(effect: Dictionary, runtime):
+    var common := ["wind", "forest", "fire", "mountain"]
+    var played: Array = runtime.group_snapshot.get("played_cards", runtime.played_cards)
+    for card in played:
+        common = common.filter(func(attribute): return card.is_attribute(attribute))
+    var candidates: Array = runtime.actor.draw_pile.filter(func(card):
+        if not card.is_card_kind("normal"):
+            return false
+        for attribute in common:
+            if card.is_attribute(attribute):
+                return true
+        return false)
+    var selected = null
+    if not candidates.is_empty():
+        selected = candidates[rng.randi_range(0, candidates.size() - 1)]
+    elif not runtime.actor.draw_pile.is_empty():
+        selected = runtime.actor.draw_pile.back()
+    var moved: Array = []
+    if selected != null:
+        var result: Dictionary = runtime.ports.move_card(
+            runtime.actor, "draw_pile", runtime.actor, "hand", selected,
+            "draw", "top", "technique")
+        if result.get("success", false):
+            moved.append(selected)
+    runtime.captures[str(effect.get("capture", "drawn"))] = moved
+    return EffectResultScript.succeeded("同属性定向抽牌%d张" % moved.size())
+
+func _discard_captured_by_selected_base_attribute(effect: Dictionary, runtime):
+    var candidates: Array = runtime.captures.get(
+        str(effect.get("capture", "")), []).duplicate()
+    var selected_cards: Array = runtime.captures.get(
+        str(effect.get("selected_capture", "")), [])
+    var source_side = runtime.target \
+        if str(effect.get("side", "target")) == "target" else runtime.actor
+    if source_side == null or selected_cards.is_empty():
+        runtime.captures[str(effect.get("result_capture", "discarded"))] = []
+        return EffectResultScript.succeeded()
+    var selected_attribute := str(selected_cards[0].attribute)
+    var records: Array = []
+    for card in candidates:
+        if str(card.attribute) != selected_attribute \
+                or not source_side.draw_pile.has(card) \
+                or not runtime.ports.can_explicit_discard(
+                    source_side, card).get("allowed", false):
+            continue
+        records.append({
+            "side": source_side,
+            "source_zone": "draw_pile",
+            "destination_zone": "discard_pile",
+            "card": card,
+            "reason": "explicit_discard",
+        })
+    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    runtime.captures[str(effect.get("result_capture", "discarded"))] = moved
+    runtime.captures[str(effect.get("attribute_capture", "selected_attribute"))] = [{
+        "attribute": selected_attribute,
+    }]
+    return EffectResultScript.succeeded(
+        "展示牌按%s基础属性弃置%d张" % [selected_attribute, moved.size()])

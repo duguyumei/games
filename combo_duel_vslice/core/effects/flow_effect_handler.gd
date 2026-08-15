@@ -173,8 +173,12 @@ func execute(effect: Dictionary, context):
                 if result.get("success", false) \
                 else EffectResultScript.failed(str(result.get("reason", "响应建立失败")))
         "register_next_round_hand_limit":
+            var affected_side = runtime.target \
+                if str(effect.get("side", "actor")) == "target" else runtime.actor
             var result: Dictionary = runtime.ports.register_next_round_hand_limit(
-                runtime, value_resolver.resolve(effect.get("amount", 0), runtime))
+                runtime,
+                value_resolver.resolve(effect.get("amount", 0), runtime),
+                affected_side)
             return EffectResultScript.succeeded("建立下一回合手牌上限修正") \
                 if result.get("success", false) \
                 else EffectResultScript.failed(str(result.get("reason", "手牌上限记录失败")))

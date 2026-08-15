@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_wind_soar"
+display_name="风·凌霄"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。结算时我方仍有至少5张普通手牌，再造成C点真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","extra_card_commitment"])
+public_behavior_summary=Array[String](["damage","true_damage","extra_card_commitment"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"damage","damage_type":"true","amount":{"kind":"card_contribution"},"when":{"value_at_least":{"value":{"kind":"hand_count"},"minimum":5}}}]

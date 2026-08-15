@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_forest_dye_branch"
+display_name="林·染枝"
+pool="three"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="获得P点防御。选择1张手牌，使其获得随机异于基础属性的临时属性，并额外视为该属性。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","anomaly_apply"])
+public_behavior_summary=Array[String](["defense","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"dye_branch","prompt":"选择染枝目标","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"skip","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"card"},{"op":"apply_temporary_reshape_to_captured","capture":"card","subslot":"attribute","reshape":"random_other_base"}]

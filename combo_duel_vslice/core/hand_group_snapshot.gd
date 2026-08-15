@@ -27,6 +27,8 @@ static func freeze(
         facts_by_id[str(card.id)] = {
             "card": card,
             "instance_id": str(card.id),
+            "rank_name_at_freeze": _rank_name(card, side, target),
+            "rank_order_at_freeze": _rank_order(card, side, target),
             "base_qi_at_freeze": _base_qi(card),
             "base_attribute_at_freeze": str(card.current_attribute()) \
                 if card.has_method("current_attribute") else str(card.attribute),
@@ -117,3 +119,23 @@ static func _has_attribute(card, attribute: String, side, target) -> bool:
         if resolved.get("success", false):
             return bool(resolved["facts"].has_attribute(attribute))
     return card.is_attribute(attribute)
+
+static func _rank_order(card, side, target) -> int:
+    if side != null and side.card_identity_policy != null:
+        var resolved: Dictionary = side.card_identity_policy.resolve(card, {
+            "owner": side, "actor": side, "target": target,
+        })
+        if resolved.get("success", false):
+            return int(resolved["facts"].rank_order)
+    return int(card.current_rank_order()) \
+        if card.has_method("current_rank_order") else int(card.rank_order)
+
+static func _rank_name(card, side, target) -> String:
+    if side != null and side.card_identity_policy != null:
+        var resolved: Dictionary = side.card_identity_policy.resolve(card, {
+            "owner": side, "actor": side, "target": target,
+        })
+        if resolved.get("success", false):
+            return str(resolved["facts"].rank_name)
+    return str(card.current_rank_name()) \
+        if card.has_method("current_rank_name") else str(card.rank_name)

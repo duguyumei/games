@@ -7,7 +7,7 @@ const CardIdentityFactsScript = preload(
     "res://core/passives/card_identity_facts.gd")
 
 const ANOMALY_CATEGORIES := ["buff", "debuff", "state", "mark"]
-const TEMPORARY_RESHAPE_SUBSLOTS := ["enhancement", "attribute"]
+const TEMPORARY_RESHAPE_SUBSLOTS := ["enhancement", "attribute", "rank"]
 
 var id: String
 var definition_id: String
@@ -33,6 +33,7 @@ var anomalies: Dictionary = {
 var temporary_reshapes: Dictionary = {
     "enhancement": "",
     "attribute": "",
+    "rank": {},
 }
 ## 本源改造提交前的基础身份。只有存在本源时才非空；归元读取此快照，
 ## 不反向猜测已经物化到 definition_id/rank/attribute/qi_value 的旧身份。
@@ -86,6 +87,15 @@ func current_attribute_name() -> String:
 func _effective_identity() -> Dictionary:
     if return_to_origin_active() and not origin_base_identity.is_empty():
         return origin_base_identity
+    if return_to_origin_active():
+        return {}
+    var temporary_rank = temporary_reshapes.get("rank", {})
+    if temporary_rank is Dictionary and not temporary_rank.is_empty():
+        return {
+            "rank_name": str(temporary_rank.get("rank_name", rank_name)),
+            "rank_order": int(temporary_rank.get("rank_order", rank_order)),
+            "qi_value": int(temporary_rank.get("qi_value", qi_value)),
+        }
     return {}
 
 func is_attribute(attribute_id: String) -> bool:
@@ -326,16 +336,27 @@ func set_temporary_attribute(attribute_id: String) -> bool:
     temporary_reshapes["attribute"] = attribute_id
     return true
 
-func clear_temporary_reshape(subslot: String) -> String:
+func set_temporary_rank(rank_id: String, order: int, base_qi: int) -> bool:
+    if rank_id == "" or order < 2 or order > 14 or base_qi < 0:
+        return false
+    temporary_reshapes["rank"] = {
+        "rank_name": rank_id,
+        "rank_order": order,
+        "qi_value": base_qi,
+    }
+    return true
+
+func clear_temporary_reshape(subslot: String):
     if subslot not in TEMPORARY_RESHAPE_SUBSLOTS:
         return ""
-    var previous := str(temporary_reshapes.get(subslot, ""))
-    temporary_reshapes[subslot] = ""
+    var previous = temporary_reshapes.get(subslot, {}).duplicate(true) \
+        if subslot == "rank" else str(temporary_reshapes.get(subslot, ""))
+    temporary_reshapes[subslot] = {} if subslot == "rank" else ""
     return previous
 
 func clear_all_temporary_reshapes() -> Dictionary:
     var previous := temporary_reshapes.duplicate(true)
-    temporary_reshapes = {"enhancement": "", "attribute": ""}
+    temporary_reshapes = {"enhancement": "", "attribute": "", "rank": {}}
     return previous
 
 func active_reshape_state() -> Dictionary:
@@ -355,7 +376,8 @@ func has_any_reshape_storage() -> bool:
         or reshape_imprint != "" \
         or not reshape_others.is_empty() \
         or str(temporary_reshapes.get("enhancement", "")) != "" \
-        or str(temporary_reshapes.get("attribute", "")) != ""
+        or str(temporary_reshapes.get("attribute", "")) != "" \
+        or not temporary_reshapes.get("rank", {}).is_empty()
 
 func _plural_category(category: String) -> String:
     return "buffs" if category == "buff" else "debuffs"
@@ -364,12 +386,16 @@ func to_dict() -> Dictionary:
     return {
         "id": id,
         "instance_id": id,
-        "definition_id": definition_id,
-        "rank_name": rank_name,
-        "rank_order": rank_order,
-        "qi_value": qi_value,
+        "definition_id": current_definition_id(),
+        "rank_name": current_rank_name(),
+        "rank_order": current_rank_order(),
+        "qi_value": current_base_qi_value(),
         "attribute": attribute,
         "attribute_name": attribute_name,
+        "permanent_definition_id": definition_id,
+        "permanent_rank_name": rank_name,
+        "permanent_rank_order": rank_order,
+        "permanent_qi_value": qi_value,
         "origin_base_identity": origin_base_identity.duplicate(true),
         "reshapes": active_reshape_state(),
         "anomalies": anomaly_snapshot(),

@@ -145,8 +145,8 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 128, "正式功法仓库包含128门功法")
-    _assert_equal(repository.resource_paths.size(), 128, "正式功法资源路径包含128项")
+    _assert_equal(repository.techniques.size(), 171, "正式功法仓库包含171门功法")
+    _assert_equal(repository.resource_paths.size(), 171, "正式功法资源路径包含171项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -162,12 +162,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 126, "商店包含126门非内建正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 169, "商店包含169门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 128, "正式目录存在128门正式功法资源")
+    _assert_equal(resource_count, 171, "正式目录存在171门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_wind_turbulent_sea"
+display_name="风·乱海"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。敌方牌库顶K张可获得乱流的真气获得乱流，随后敌方抽1张。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","anomaly_apply","draw","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","anomaly_apply","draw","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":{"kind":"bomb_constituent_count"},"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"mark","id":"turbulence"}}},"capture":"targets","category":"mark","anomaly":"turbulence"},{"op":"draw","side":"target","count":1}]

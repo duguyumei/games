@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_wind_drain_sea"
+display_name="风·涸海"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。敌方牌库顶K张普通真气依次尝试被明确弃掉。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":{"kind":"bomb_constituent_count"},"filters":{"card_kind":"normal"}},"capture":"top_cards"},{"op":"move_captured","capture":"top_cards","from_side":"target","from_zone":"draw_pile","to_side":"target","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"}]

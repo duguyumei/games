@@ -228,6 +228,18 @@ func resolve(spec, context) -> int:
             return runtime.actor.hand.size() if runtime.actor != null else 0
         "target_hand_count":
             return runtime.target.hand.size() if runtime.target != null else 0
+        "occupied_meridian_count":
+            var side = _side(runtime, str(spec.get("side", "actor")))
+            return side.occupied_meridian_count() if side != null else 0
+        "deck_count":
+            var side = _side(runtime, str(spec.get("side", "actor")))
+            return side.draw_pile.size() if side != null else 0
+        "bomb_constituent_count":
+            if runtime.actual_hand_id == "four_kind":
+                return 4
+            if runtime.actual_hand_id == "five_kind":
+                return 5
+            return 0
         "hand_limit":
             return runtime.actor.current_hand_limit() if runtime.actor != null else 0
         "base_hand_limit":
@@ -335,6 +347,12 @@ func condition_met(condition: Dictionary, context) -> bool:
         var minimum: int = resolve(comparison.get("minimum", 0), runtime) \
             if comparison.get("minimum", 0) is Dictionary else int(comparison.get("minimum", 0))
         if resolve(comparison.get("value", 0), runtime) < minimum:
+            return false
+    if condition.has("value_at_most"):
+        var comparison: Dictionary = condition["value_at_most"]
+        var maximum: int = resolve(comparison.get("maximum", 0), runtime) \
+            if comparison.get("maximum", 0) is Dictionary else int(comparison.get("maximum", 0))
+        if resolve(comparison.get("value", 0), runtime) > maximum:
             return false
     if condition.has("value_greater_than"):
         var comparison: Dictionary = condition["value_greater_than"]
@@ -469,7 +487,8 @@ func _has_active_temporary_reshape(card) -> bool:
     if card == null or card.return_to_origin_active():
         return false
     return str(card.temporary_reshapes.get("enhancement", "")) != "" \
-        or str(card.temporary_reshapes.get("attribute", "")) != ""
+        or str(card.temporary_reshapes.get("attribute", "")) != "" \
+        or not card.temporary_reshapes.get("rank", {}).is_empty()
 
 func _hand_strength(hand_id: String) -> int:
     return [

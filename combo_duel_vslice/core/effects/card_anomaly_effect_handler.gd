@@ -19,6 +19,7 @@ func operation_ids() -> Array[String]:
     return [
         "apply_random_card_anomaly", "apply_card_anomaly_to_captured",
         "apply_temporary_reshape_to_captured",
+        "apply_temporary_rank_from_capture",
         "clear_temporary_reshape_from_captured",
         "apply_anomaly_from_query",
     ]
@@ -32,6 +33,8 @@ func execute(effect: Dictionary, context):
         return EffectResultScript.failed("异状处理器缺少内容目录")
     if str(effect.get("op", "")) == "apply_temporary_reshape_to_captured":
         return _apply_temporary_reshape(effect, runtime)
+    if str(effect.get("op", "")) == "apply_temporary_rank_from_capture":
+        return _apply_temporary_rank_from_capture(effect, runtime)
     if str(effect.get("op", "")) == "clear_temporary_reshape_from_captured":
         return _clear_temporary_reshape(effect, runtime)
     if str(effect.get("op", "")) == "apply_card_anomaly_to_captured":
@@ -110,6 +113,7 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             validator.validate_positive_integer(effect["layers"], scope + ".layers", "layers")
     if str(effect.get("op", "")) in [
             "apply_temporary_reshape_to_captured",
+            "apply_temporary_rank_from_capture",
             "clear_temporary_reshape_from_captured"]:
         return
     if str(effect.get("op", "")) == "apply_anomaly_from_query":
@@ -166,14 +170,58 @@ func _apply_temporary_reshape(effect: Dictionary, runtime):
     var reshape_id := str(effect.get("reshape", ""))
     var applied := 0
     for card in runtime.captures.get(str(effect.get("capture", "")), []):
+        var resolved_reshape_id := reshape_id
+        if subslot == "attribute" and reshape_id == "random_other_base":
+            var candidates := ["wind", "forest", "fire", "mountain"]
+            candidates.erase(str(card.attribute))
+            resolved_reshape_id = candidates[rng.randi_range(0, candidates.size() - 1)]
         var result: Dictionary = (
-            runtime.ports.apply_temporary_enhancement(card, reshape_id)
+            runtime.ports.apply_temporary_enhancement(card, resolved_reshape_id)
             if subslot == "enhancement"
-            else runtime.ports.apply_temporary_attribute(card, reshape_id)
+            else runtime.ports.apply_temporary_attribute(card, resolved_reshape_id)
             if subslot == "attribute" else {"success": false})
         if result.get("success", false):
             applied += 1
     return EffectResultScript.succeeded("施加临时重塑 %d 张" % applied)
+
+func _apply_temporary_rank_from_capture(effect: Dictionary, runtime):
+    if runtime.ports == null:
+        return EffectResultScript.failed("临时牌阶缺少战斗端口")
+    var cards: Array = runtime.captures.get(str(effect.get("capture", "")), [])
+    var source_cards: Array = runtime.captures.get(
+        str(effect.get("source_capture", "")), [])
+    var target = cards[0] if not cards.is_empty() else null
+    var source = source_cards[0] if not source_cards.is_empty() else null
+    if bool(effect.get("ordered_pair", false)) and cards.size() >= 2:
+        target = cards[0]
+        source = cards[1]
+    if target == null:
+        return EffectResultScript.succeeded()
+    var rank_name := ""
+    var rank_order := 0
+    var base_qi := 0
+    if str(effect.get("mode", "copy_current")) == "random_adjacent":
+        var wanted_order := int(target.current_rank_order())
+        wanted_order += 1 if wanted_order <= 2 else -1 if wanted_order >= 14 \
+            else [-1, 1][rng.randi_range(0, 1)]
+        var base_deck = JSON.parse_string(FileAccess.get_file_as_string(
+            "res://data/base_deck.json"))
+        for value in base_deck.get("ranks", []) if base_deck is Dictionary else []:
+            if int(value.get("order", 0)) == wanted_order:
+                rank_name = str(value.get("id", ""))
+                rank_order = wanted_order
+                base_qi = int(value.get("qi", 0))
+                break
+    elif source != null:
+        rank_name = str(source.current_rank_name())
+        rank_order = int(source.current_rank_order())
+        base_qi = int(source.current_base_qi_value())
+    var result: Dictionary = runtime.ports.apply_temporary_rank(
+        target, rank_name, rank_order, base_qi)
+    if result.get("success", false) and effect.has("result_capture"):
+        runtime.captures[str(effect["result_capture"])] = [target]
+    return EffectResultScript.succeeded("施加临时牌阶" \
+        if result.get("success", false) else "")
 
 func _clear_temporary_reshape(effect: Dictionary, runtime):
     if runtime.ports == null:

@@ -74,8 +74,8 @@ func _initialize() -> void:
     _finish("MOUNTAIN TECHNIQUE TEST")
 
 func _test_formal_pool_contract(repository) -> void:
-    _assert_equal(repository.techniques.size(), 128, "正式资源总数为128")
-    var expected := {"high":41, "pair":31, "three":21, "straight":16, "bomb":17}
+    _assert_equal(repository.techniques.size(), 171, "正式资源总数为171")
+    var expected := {"high":49, "pair":38, "three":27, "straight":26, "bomb":29}
     var actual := {"high":0, "pair":0, "three":0, "straight":0, "bomb":0}
     for technique in repository.techniques.values():
         if not bool(technique.get("built_in", false)):

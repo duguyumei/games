@@ -10,9 +10,11 @@ const GROWTH_TECHNIQUES := {
     "pair_forest_deep_root":"林·根深", "pair_forest_harvest":"林·采实",
     "pair_forest_store_shade":"林·藏荫", "pair_forest_cutting":"林·扦插",
     "three_forest_spring_rain":"林·春雨", "three_forest_graft":"林·接木",
-    "three_forest_fallen_leaf_return":"林·落叶归根", "straight_forest_many_tree_glory":"林·百木争荣",
+    "three_forest_dye_branch":"林·染枝", "straight_forest_many_tree_glory":"林·百木争荣",
     "straight_forest_dormant_root":"林·宿根", "bomb_forest_all_sprout":"林·万木萌发",
     "bomb_forest_all_wood_unite":"林·万木归一", "bomb_forest_four_seasons":"林·四时轮转",
+    "high_forest_variant_plant":"林·异株", "straight_forest_change_form":"林·易形",
+    "bomb_forest_myriad_forms":"林·万象化生",
 }
 
 func _initialize() -> void:
@@ -23,13 +25,18 @@ func _initialize() -> void:
     _test_g_q_r_reads()
     _test_transfer_atomicity()
     _test_cutting_generation()
+    _test_adjusted_forest_generation_resources()
     _test_discard_share_dependency()
     _test_dormant_root_after_growth_cleanup()
     _finish("GROWTH TECHNIQUE TEST")
 
 func _test_each_base_effect() -> void:
     for technique_id in GROWTH_TECHNIQUES:
-        if technique_id in ["high_forest_tall_tree", "high_forest_break_branch", "straight_forest_many_tree_glory"]:
+        if technique_id == "three_forest_dye_branch":
+            _assert_base_behavior(technique_id, 20, 0)
+        elif technique_id in [
+                "high_forest_tall_tree", "high_forest_break_branch",
+                "straight_forest_many_tree_glory"]:
             _assert_base_behavior(technique_id, 0, 10)
         elif technique_id == "pair_forest_store_shade":
             _assert_base_behavior(technique_id, 10, 0)
@@ -91,8 +98,71 @@ func _test_cutting_generation() -> void:
     _assert_true(generated.temporary_card, "扦插生成临时普通真气")
     _assert_equal(generated.current_rank_name(), "Q", "扦插复制当前牌阶")
     _assert_equal(generated.attribute, "fire", "扦插复制基础属性")
+    _assert_true(generated.has_anomaly("mark", "void"), "扦插生成牌默认获得虚无")
     _assert_equal(generated.anomaly_layers("buff", "growth"), 1, "扦插生成牌获得成长")
     _assert_equal(source.anomaly_layers("buff", "growth"), 1, "扦插入手成功后才扣来源1层")
+
+func _test_adjusted_forest_generation_resources() -> void:
+    var condense_engine = _engine(3006)
+    var condense_source = _card("2", "forest")
+    var condense_context = _context(condense_engine, {})
+    condense_context.group_snapshot = {
+        "played_cards":[condense_source],
+        "contributing_cards":[condense_source],
+        "extra_cards":[],
+    }
+    var condense: Dictionary = condense_engine.effect_executor.execute_all(
+        condense_engine.repository.get_definition("high_forest_condense").effects,
+        condense_context)
+    _assert_true(condense.get("success", false), "林凝气资源链生成临时真气")
+    _assert_equal(condense_engine.player.hand.size(), 1, "林凝气生成牌进入手牌")
+    var condensed = condense_engine.player.hand[0]
+    _assert_equal(condensed.current_rank_order(), 3, "林凝气来源2只能生成相邻3")
+    _assert_equal(condensed.attribute, "forest", "林凝气保持计值牌基础属性")
+    _assert_true(condensed.has_anomaly("mark", "void"), "林凝气生成牌默认获得虚无")
+
+    var variant_engine = _engine(3007)
+    var variant_source = _card("8", "fire")
+    variant_source.set_temporary_rank("10", 10, 10)
+    variant_engine.player.hand = [variant_source]
+    var variant_definition = variant_engine.repository.get_definition(
+        "high_forest_variant_plant")
+    var variant_context = _context(variant_engine, {})
+    var variant: Dictionary = variant_engine.effect_executor.execute_all(
+        variant_definition.effects, variant_context)
+    if variant.get("pending_choice", false):
+        variant = variant_engine.effect_executor.resume(
+            variant.get("_continuation"),
+            str(variant.get("choice_request", {}).get("request_id", "")),
+            [str(variant_source.id)])
+    _assert_true(variant.get("success", false), "林异株选择后生成完成")
+    var variant_generated = variant_engine.player.hand.filter(
+        func(card): return card != variant_source)[0]
+    _assert_equal(variant_generated.current_rank_order(), 10, "林异株复制来源当前牌阶")
+    _assert_true(variant_generated.attribute != "fire", "林异株随机基础属性不同于来源基础属性")
+    _assert_true(variant_generated.has_anomaly("mark", "void"), "林异株生成牌默认获得虚无")
+    _assert_true(not variant_generated.has_any_reshape_storage(), "林异株生成牌不继承来源临时牌阶")
+
+    var myriad_engine = _engine(3008)
+    var low = _card("2", "wind")
+    var high = _card("A", "mountain")
+    myriad_engine.player.hand = [low, high]
+    var myriad_definition = myriad_engine.repository.get_definition(
+        "bomb_forest_myriad_forms")
+    var myriad: Dictionary = myriad_engine.effect_executor.execute_all(
+        myriad_definition.effects, _context(myriad_engine, {}))
+    _assert_true(myriad.get("pending_choice", false), "万象化生资源链等待至多2张来源")
+    myriad = myriad_engine.effect_executor.resume(
+        myriad.get("_continuation"),
+        str(myriad.get("choice_request", {}).get("request_id", "")),
+        [str(low.id), str(high.id)])
+    _assert_true(myriad.get("success", false), "万象化生两张来源分别生成")
+    var generated_cards: Array = myriad_engine.player.hand.filter(
+        func(card): return card != low and card != high)
+    _assert_equal(generated_cards.size(), 2, "万象化生生成2张临时普通真气")
+    _assert_true(generated_cards.any(func(card): return card.current_rank_order() == 3), "万象化生来源2只能升到3")
+    _assert_true(generated_cards.any(func(card): return card.current_rank_order() == 13), "万象化生来源A只能降到K")
+    _assert_true(generated_cards.all(func(card): return card.has_anomaly("mark", "void")), "万象化生生成牌均默认获得虚无")
 
 func _test_discard_share_dependency() -> void:
     var engine = _engine(3004)

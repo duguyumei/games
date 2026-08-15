@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_wind_return_cycle"
+display_name="风·回环"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成P点普通伤害。选择弃牌堆至多2张普通真气洗回牌库。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","recover","deck_control"])
+public_behavior_summary=Array[String](["damage","recover","deck_control"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"return_cycle","prompt":"选择至多2张弃牌洗回","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"discard_pile","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"cards"},{"op":"move_captured","capture":"cards","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true}]

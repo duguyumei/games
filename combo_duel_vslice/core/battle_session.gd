@@ -737,6 +737,7 @@ func _side_snapshot(side) -> Dictionary:
         "inner_skill_limit": int(capacity["effective_capacity"]),
         "draw_count": side.draw_pile.size(),
         "hand_count": side.hand.size(),
+        "occupied_meridian_count": side.occupied_meridian_count(),
         "staging_count": side.staging.size(),
         "discard_count": side.discard_pile.size(),
         "deck_count": side.all_zone_cards().size(),

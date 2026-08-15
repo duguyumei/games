@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_wind_rise_fall"
+display_name="风·沉浮"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成P点普通伤害。冻结双方当前有效真气值最高的至多2张合法手牌，再同步弃置。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"synchronous_discard_queries","queries":[{"side":"actor","zone":"hand","order":"highest_effective_qi","limit":2,"filters":{"card_kind":"normal","explicit_discard_allowed":true}},{"side":"target","zone":"hand","order":"highest_effective_qi","limit":2,"filters":{"card_kind":"normal","explicit_discard_allowed":true}}],"capture":"discarded"}]

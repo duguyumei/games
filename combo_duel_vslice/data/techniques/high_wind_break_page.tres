@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_wind_break_page"
+display_name="风·断页"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。敌方牌库顶1张能够被明确弃掉的普通真气被弃置。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"move_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":1,"filters":{"card_kind":"normal","explicit_discard_allowed":true}},"to_side":"target","to_zone":"discard_pile","reason":"explicit_discard"}]

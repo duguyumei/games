@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_wind_seize_advantage"
+display_name="风·夺势"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成floor(P/2)点普通伤害。可以明确弃掉我方1张手牌；若实际弃掉，从敌方牌库随机获得1张普通真气并使其获得临时风属性。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","discard","recover","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","discard","recover","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"seize_cost","prompt":"可以弃掉1张手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","explicit_discard_allowed":true}},"capture":"cost"},{"op":"move_captured","capture":"cost","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"paid"},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"random","limit":1,"filters":{"card_kind":"normal"}},"capture":"loot","when":{"capture_nonempty":"paid"}},{"op":"move_captured","capture":"loot","from_side":"target","from_zone":"draw_pile","to_side":"actor","to_zone":"hand","reason":"temporary_transfer","result_capture":"gained"},{"op":"apply_temporary_reshape_to_captured","capture":"gained","subslot":"attribute","reshape":"wind"}]

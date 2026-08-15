@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_wind_exchange_hands"
+display_name="风·易手"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。展示敌方牌库顶1张，选择我方1张手牌与其原子交换；若所得牌有效值更高，造成差值真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","true_damage","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":1,"filters":{"card_kind":"normal"}},"capture":"shown"},{"op":"select_cards","choice_id":"exchange_hands","prompt":"选择交换的手牌","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"skip","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"sent"},{"op":"capture_metadata","capture":"shown","result_capture":"received_before"},{"op":"capture_metadata","capture":"sent","result_capture":"sent_before"},{"op":"atomic_exchange_captured","actor_capture":"sent","target_capture":"shown","actor_received_capture":"received","target_received_capture":"given"},{"op":"damage","damage_type":"true","amount":{"kind":"max","values":[0,{"kind":"subtract","left":{"kind":"capture_field_first","capture":"received_before","field":"effective_qi"},"right":{"kind":"capture_field_first","capture":"sent_before","field":"effective_qi"}}]}}]

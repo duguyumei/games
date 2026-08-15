@@ -1,23 +1,19 @@
 [gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
-
 [ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-
 [resource]
-script = ExtResource("1")
-id = "high_forest_condense"
-display_name = "林·凝气"
-pool = "high"
-special = false
-built_in = false
-base_loadout_limit = 1
-eligible_hand_ids = Array[String](["high_card"])
-built_in_fallback_order = 0
-description = "获得 floor(P/2) 点防御。生成1张无重塑、无异状、与计值真气基础属性相同的随机牌阶临时普通真气入手。"
-condition = {}
-cooperation = {}
-power_formation = {}
-semantic_tags = Array[String](["defense","temporary_card"])
-public_behavior_summary = Array[String](["defense","temporary_card"])
-implementation_category = "B"
-effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"generate_temporary_normal_card","capture":"condensed_card"}]
-
+script=ExtResource("1")
+id="high_forest_condense"
+display_name="林·凝气"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得floor(P/2)点防御。以计值真气为来源，生成同基础属性、随机相邻当前牌阶且默认带虚无的战斗临时普通真气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","temporary_card","rank_shift","void"])
+public_behavior_summary=Array[String](["defense","temporary_card","rank_shift","void"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"generate_temporary_normal_card","rank_mode":"random_adjacent","attribute_mode":"same_base","capture":"generated"}]

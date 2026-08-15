@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_wind_change_feather"
+display_name="风·换羽"
+pool="pair"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。选择至多2张手牌，冻结当前牌阶并洗回；再抽取等量的不同冻结牌阶真气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","draw","deck_control","extra_card_commitment"])
+public_behavior_summary=Array[String](["damage","draw","deck_control","extra_card_commitment"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"change_feather","prompt":"选择至多2张手牌洗回","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"cards"},{"op":"capture_metadata","capture":"cards","result_capture":"frozen"},{"op":"move_captured","capture":"cards","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true,"result_capture":"returned"},{"op":"draw_filtered","query":{"side":"actor","zone":"draw_pile","order":"random","limit":{"kind":"capture_count","capture":"returned"},"filters":{"card_kind":"normal","exclude_rank_orders_from_capture":"frozen"}},"capture":"drawn"}]

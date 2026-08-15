@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_wind_cover_sky"
+display_name="风·遮天"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。获得1次实时手牌数格挡；格挡成功后抽2张。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","block","draw"])
+public_behavior_summary=Array[String](["damage","block","draw"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"grant_block","condition":"actual_hand_more_than_attacker","capture":"block"},{"op":"register_response","event":"damage_blocked","expiry":"turn_end","filters":{"holder_is_actor":true,"source_tokens_from_capture":"block","max_triggers":1},"effects":[{"op":"draw","count":2}]}]

@@ -29,13 +29,16 @@ const AMOUNT_KINDS := [
     "played_poison_count", "zone_anomaly_count", "zone_anomaly_qi_sum",
     "capture_field_sum", "capture_field_max", "capture_field_first",
     "extra_attribute_count", "hand_count",
-    "target_hand_count", "hand_limit",
+    "target_hand_count", "occupied_meridian_count", "deck_count",
+    "bomb_constituent_count", "hand_limit",
     "conditional",
     "power_scaled_by_zone_anomaly",
 ]
 
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
-const QUERY_ORDERS := ["zone", "top", "bottom", "random"]
+const QUERY_ORDERS := [
+    "zone", "left", "right", "top", "bottom", "random",
+    "highest_rank", "lowest_rank", "highest_effective_qi"]
 const QUERY_SIDES := ["actor", "target"]
 const CARD_KINDS := ["any", "normal"]
 const INSUFFICIENT_POLICIES := ["use_available", "skip", "fail"]
@@ -218,17 +221,24 @@ func _validate_query_filters(filters: Dictionary, scope: String) -> void:
     if str(filters.get("card_kind", "any")) not in CARD_KINDS:
         _error(scope + ".card_kind", "必须为 any 或 normal")
     for field in [
-            "attributes", "exclude_attributes", "rank_names",
-            "rank_orders", "definition_ids"]:
+            "attributes", "exclude_attributes", "base_attributes",
+            "exclude_base_attributes", "rank_names", "rank_orders",
+            "exclude_rank_orders", "definition_ids"]:
         if filters.has(field) and not filters[field] is Array:
             _error(scope + "." + field, "必须是数组")
-    for attribute_field in ["attributes", "exclude_attributes"]:
+    for attribute_field in [
+            "attributes", "exclude_attributes", "base_attributes",
+            "exclude_base_attributes"]:
         if not filters.has(attribute_field):
             continue
         for attribute in filters[attribute_field]:
             if str(attribute) not in _attribute_ids:
                 _error(scope + "." + attribute_field, "引用未知属性 %s" % str(attribute))
-    for boolean_field in ["temporary", "has_any_reshape", "has_permanent_reshape", "effective_above_base", "explicit_discard_allowed"]:
+    for boolean_field in [
+            "temporary", "has_any_reshape", "has_permanent_reshape",
+            "has_active_permanent_reshape", "has_active_any_reshape",
+            "has_any_anomaly", "duplicate_rank", "effective_above_base",
+            "explicit_discard_allowed"]:
         if filters.has(boolean_field) and not filters[boolean_field] is bool:
             _error(scope + "." + boolean_field, "必须是布尔值")
     for value_field in ["effective_qi_at_most", "effective_qi_at_least"]:

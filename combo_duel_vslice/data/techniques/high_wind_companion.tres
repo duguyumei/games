@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_wind_companion"
+display_name="风·引伴"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成floor(P/2)点普通伤害。从牌库抽1张能与本次全部打出真气共同视为同一属性的牌；无合法目标时普通抽1张。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","draw","deck_control"])
+public_behavior_summary=Array[String](["damage","draw","deck_control"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"draw_common_attribute_or_fallback","capture":"companion"}]

@@ -1,23 +1,19 @@
 [gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
-
 [ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-
 [resource]
-script = ExtResource("1")
-id = "high_forest_transmission"
-display_name = "林·传功"
-pool = "high"
-special = false
-built_in = false
-base_loadout_limit = 1
-eligible_hand_ids = Array[String](["high_card"])
-built_in_fallback_order = 0
-description = "获得 floor(P/2) 点防御。使当前有效真气值高于当前基础真气值的最左侧手牌获得1层成长。"
-condition = {}
-cooperation = {}
-power_formation = {}
-semantic_tags = Array[String](["defense","anomaly_apply"])
-public_behavior_summary = Array[String](["defense","anomaly_apply"])
-implementation_category = "A"
-effects = [{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_query","query":{"side":"actor","zone":"hand","order":"zone","limit":1,"filters":{"card_kind":"normal","effective_above_base":true}},"capture":"transmission_target"},{"op":"apply_card_anomaly_to_captured","capture":"transmission_target","category":"buff","anomaly":"growth","layers":1}]
-
+script=ExtResource("1")
+id="high_forest_transmission"
+display_name="林·传功"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="获得P点防御。选择2张不同的剩余普通手牌，使第一张获得等于第二张当前牌阶的临时牌阶。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["defense","temporary_rank","hand_shaping"])
+public_behavior_summary=Array[String](["defense","temporary_rank","hand_shaping"])
+implementation_category="B"
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"forest_transmission","prompt":"依次选择目标牌与传功来源牌","chooser":"actor","minimum":2,"maximum":2,"insufficient_policy":"skip","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"pair","ordered":true},{"op":"apply_temporary_rank_from_capture","capture":"pair","ordered_pair":true,"result_capture":"changed"}]

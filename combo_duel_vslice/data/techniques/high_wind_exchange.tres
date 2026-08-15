@@ -1,23 +1,19 @@
 [gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
-
 [ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
-
 [resource]
-script = ExtResource("1")
-id = "high_wind_exchange"
-display_name = "风·换流"
-pool = "high"
-special = false
-built_in = false
-base_loadout_limit = 1
-eligible_hand_ids = Array[String](["high_card"])
-built_in_fallback_order = 0
-description = "造成 floor(P/2) 点普通伤害。抽2张牌，然后选择至多2张可明确弃掉的手牌弃掉。"
-condition = {}
-cooperation = {}
-power_formation = {}
-semantic_tags = Array[String](["damage","draw","discard","extra_card_commitment"])
-public_behavior_summary = Array[String](["damage","draw","discard","extra_card_commitment"])
-implementation_category = "A"
-effects = [{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"draw","count":2,"capture":"exchange_draw"},{"op":"select_cards","choice_id":"exchange_discard","prompt":"选择2张手牌明确弃掉","chooser":"actor","minimum":2,"maximum":2,"insufficient_policy":"use_available","selection_purpose":"explicit_discard","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"exchange_discard"},{"op":"move_captured","capture":"exchange_discard","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard"}]
-
+script=ExtResource("1")
+id="high_wind_exchange"
+display_name="风·换流"
+pool="high"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成floor(P/2)点普通伤害。选择我方至多2张普通手牌明确弃掉；每实际弃掉1张，从牌库随机抽1张基础属性不同于该牌的普通真气。实际弃掉2张时获得1次实时手牌数格挡。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","discard","draw","block","extra_card_commitment"])
+public_behavior_summary=Array[String](["damage","discard","draw","block","extra_card_commitment"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","choice_id":"wind_exchange","prompt":"选择至多2张手牌明确弃掉","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","explicit_discard_allowed":true}},"capture":"chosen"},{"op":"move_captured","capture":"chosen","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"for_each_captured","capture":"discarded","effects":[{"op":"draw_filtered","query":{"side":"actor","zone":"draw_pile","order":"random","limit":1,"filters":{"card_kind":"normal","exclude_base_attributes_from_capture":"each"}},"capture":"replacement"}]},{"op":"grant_block","condition":"actual_hand_more_than_attacker","capture":"exchange_block","when":{"capture_count_equals":{"capture":"discarded","value":2}}}]

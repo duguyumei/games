@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_wind_cosmic_sleeve"
+display_name="风·乾坤袖"
+pool="bomb"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。选择任意张手牌洗回，冻结基础属性；抽取等量不同冻结基础属性真气并给予寄脉。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","draw","deck_control","extra_card_commitment"])
+public_behavior_summary=Array[String](["damage","draw","deck_control","extra_card_commitment"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"cosmic_sleeve","prompt":"选择任意张手牌洗回","chooser":"actor","minimum":0,"maximum":{"kind":"hand_count"},"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"cards"},{"op":"capture_metadata","capture":"cards","result_capture":"frozen"},{"op":"move_captured","capture":"cards","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true,"result_capture":"returned"},{"op":"draw_filtered","query":{"side":"actor","zone":"draw_pile","order":"random","limit":{"kind":"capture_count","capture":"returned"},"filters":{"card_kind":"normal","exclude_base_attributes_from_capture":"frozen"}},"capture":"drawn"},{"op":"apply_card_anomaly_to_captured","capture":"drawn","category":"mark","anomaly":"meridian"}]

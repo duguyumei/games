@@ -26,8 +26,10 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
         "same_qi_capacity": int(same_qi_capacity.get("effective_value", 5)),
         "hand_limit": effective_hand_limit,
         "hand_count": side.hand.size(),
+        "occupied_meridian_count": side.occupied_meridian_count(),
+        "meridian_capacity": effective_hand_limit,
         "next_normal_draw_count": mini(
-            side.draw_pile.size(), maxi(0, effective_hand_limit - side.hand.size())),
+            side.draw_pile.size(), maxi(0, effective_hand_limit - side.occupied_meridian_count())),
         "direct_power_fixed": int(side.direct_power_fixed),
         "direct_power_percent": int(side.direct_power_percent),
         "reflection_percent": int(side.current_reflection_percent),

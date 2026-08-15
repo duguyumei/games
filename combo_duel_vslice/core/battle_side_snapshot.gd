@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 5
+const SCHEMA_VERSION := 6
 
 var name: String = ""
 var life: int = 0
@@ -31,6 +31,7 @@ var base_hand_limit: int = 0
 var inner_skill_limit: int = 0
 var draw_count: int = 0
 var hand_count: int = 0
+var occupied_meridian_count: int = 0
 var staging_count: int = 0
 var discard_count: int = 0
 var deck_count: int = 0
@@ -73,7 +74,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "reflection_sources", "reflection_true_damage_sources",
             "block_sources", "challenge_records",
             "inner_skill_limit",
-            "draw_count", "hand_count", "staging_count", "discard_count",
+            "draw_count", "hand_count", "occupied_meridian_count", "staging_count", "discard_count",
             "deck_count", "temporarily_removed_count",
             "poison_hand_count", "poison_hand_amount",
             "poison_draw_pile_count", "poison_draw_pile_amount",
@@ -109,6 +110,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.inner_skill_limit = int(values.get("inner_skill_limit", 0))
     result.draw_count = int(values.get("draw_count", 0))
     result.hand_count = int(values.get("hand_count", 0))
+    result.occupied_meridian_count = int(values.get("occupied_meridian_count", 0))
     result.staging_count = int(values.get("staging_count", 0))
     result.discard_count = int(values.get("discard_count", 0))
     result.deck_count = int(values.get("deck_count", 0))
@@ -160,6 +162,7 @@ func to_dict() -> Dictionary:
         "inner_skill_limit": inner_skill_limit,
         "draw_count": draw_count,
         "hand_count": hand_count,
+        "occupied_meridian_count": occupied_meridian_count,
         "staging_count": staging_count,
         "discard_count": discard_count,
         "deck_count": deck_count,

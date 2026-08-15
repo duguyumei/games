@@ -507,25 +507,58 @@ func gain_battle_experience(side: BattleSide, amount: int) -> int:
     side.experience += gained
     return gained
 
-func generate_temporary_normal_card(side: BattleSide, source):
-    var ranks := [
-        ["2", 2, 2], ["3", 3, 3], ["4", 4, 4], ["5", 5, 5],
-        ["6", 6, 6], ["7", 7, 7], ["8", 8, 8], ["9", 9, 9],
-        ["10", 10, 10], ["J", 11, 11], ["Q", 12, 11],
-        ["K", 13, 11], ["A", 14, 12],
-    ]
-    var attribute: String = str(source.current_attribute()) \
-        if source is Object and source.has_method("current_attribute") else str(source)
-    if _battle_rng == null or attribute not in ["wind", "forest", "fire", "mountain"]:
+func generate_temporary_normal_card(
+        side: BattleSide,
+        source,
+        options: Dictionary = {}):
+    if _battle_rng == null:
         return null
-    var rank: Array = ranks[_battle_rng.randi_range(0, ranks.size() - 1)]
-    if source is Object and source.has_method("current_rank_name"):
-        rank = [source.current_rank_name(), source.current_rank_order(), source.current_base_qi_value()]
+    var base_deck = JSON.parse_string(FileAccess.get_file_as_string(
+        "res://data/base_deck.json"))
+    if not base_deck is Dictionary or not base_deck.get("ranks") is Array:
+        return null
+    var ranks: Array = base_deck["ranks"]
+    var attributes: Array = base_deck.get("attributes", [])
+    var base_attribute: String = str(source.get("attribute")) \
+        if source is Object else str(source)
+    if base_attribute not in ["wind", "forest", "fire", "mountain"]:
+        return null
+    var attribute := base_attribute
+    if str(options.get("attribute_mode", "same_base")) == "random_other_base":
+        var attribute_ids: Array[String] = []
+        for value in attributes:
+            var attribute_id := str(value.get("id", ""))
+            if attribute_id != base_attribute:
+                attribute_ids.append(attribute_id)
+        if attribute_ids.is_empty():
+            return null
+        attribute = attribute_ids[_battle_rng.randi_range(0, attribute_ids.size() - 1)]
+    var rank: Dictionary = ranks[_battle_rng.randi_range(0, ranks.size() - 1)]
+    if source is Object and source.has_method("current_rank_order"):
+        var source_order := int(source.current_rank_order())
+        var wanted_order := source_order
+        match str(options.get("rank_mode", "same_current")):
+            "random_adjacent":
+                wanted_order = source_order + (1 if source_order <= 2 else -1 \
+                    if source_order >= 14 else [-1, 1][
+                        _battle_rng.randi_range(0, 1)])
+            "random":
+                wanted_order = int(rank.get("order", 0))
+        for value in ranks:
+            if int(value.get("order", 0)) == wanted_order:
+                rank = value
+                break
     var card = QiCard.new(
         "%s-temp-%d" % [attribute, _battle_rng.randi()],
-        str(rank[0]), int(rank[1]), int(rank[2]), attribute, attribute,
-        "%s_%s" % [attribute, str(rank[0]).to_lower()])
+        str(rank.get("id", "")), int(rank.get("order", 0)),
+        int(rank.get("qi", 0)), attribute, attribute,
+        "%s_%s" % [attribute, str(rank.get("id", "")).to_lower()])
     card.temporary_card = true
+    if bool(options.get("add_void", true)):
+        var applied: Dictionary = apply_card_anomaly(
+            card, "mark", "void", {}, "临时真气", 1, false)
+        if not applied.get("success", false):
+            return null
     var added: Dictionary = side.card_zone_service.add_generated(side, card, "hand", true)
     return card if added.get("success", false) else null
 
@@ -733,6 +766,24 @@ func move_card(
             _status_system.record_technique_card_flow(source_side, "discard", 1)
     return result
 
+func move_cards_synchronously(records: Array) -> Array:
+    if records.is_empty():
+        return []
+    var first_side = records[0].get("side")
+    if first_side == null:
+        return []
+    var moved: Array = first_side.card_zone_service.move_cards_synchronously(records)
+    for record in records:
+        if moved.has(record.get("card")) and str(record.get("reason", "")) == "explicit_discard":
+            _status_system.record_technique_card_flow(record.get("side"), "discard", 1)
+    return moved
+
+func atomic_exchange_cards(
+        actor_side: BattleSide, actor_zone: String, actor_card,
+        target_side: BattleSide, target_zone: String, target_card) -> Dictionary:
+    return actor_side.card_zone_service.atomic_exchange(
+        actor_side, actor_zone, actor_card, target_side, target_zone, target_card)
+
 func zone_cards(side: BattleSide, zone: String) -> Array:
     match zone:
         "hand": return side.hand.duplicate()
@@ -799,8 +850,22 @@ func apply_temporary_attribute(card, attribute_id: String) -> Dictionary:
         "attribute": attribute_id,
     }
 
+func apply_temporary_rank(
+        card,
+        rank_name: String,
+        rank_order: int,
+        base_qi: int) -> Dictionary:
+    if card == null:
+        return {"success": false, "reason": "临时牌阶参数无效"}
+    return {
+        "success": card.set_temporary_rank(rank_name, rank_order, base_qi),
+        "rank_name": rank_name,
+        "rank_order": rank_order,
+        "base_qi": base_qi,
+    }
+
 func clear_temporary_reshape(card, subslot: String) -> Dictionary:
-    if card == null or subslot not in ["enhancement", "attribute"]:
+    if card == null or subslot not in ["enhancement", "attribute", "rank"]:
         return {"success": false, "reason": "临时重塑子槽无效"}
     return {"success": true, "removed": card.clear_temporary_reshape(subslot)}
 
@@ -851,8 +916,10 @@ func register_response(
     return _status_system.register_response(
         event_kind, expiry, effects, context, filters)
 
-func register_next_round_hand_limit(context, amount: int) -> Dictionary:
-    return _status_system.register_next_round_hand_limit(context, amount)
+func register_next_round_hand_limit(
+        context, amount: int, affected_side = null) -> Dictionary:
+    return _status_system.register_next_round_hand_limit(
+        context, amount, affected_side)
 
 func register_defense_decay_return(context) -> Dictionary:
     return _status_system.register_defense_decay_return(context)
@@ -1145,7 +1212,8 @@ func _try_block_damage(
             or not bool(metadata.get("direct_attack", false)):
         return {"blocked": false}
     return target.try_consume_block(
-        amount, damage_type, str(actor.owner_id), _current_action_window_id())
+        amount, damage_type, str(actor.owner_id), _current_action_window_id(),
+        target.actual_hand_count(), actor.actual_hand_count())
 
 func _emit_damage_blocked(
         actor: BattleSide,

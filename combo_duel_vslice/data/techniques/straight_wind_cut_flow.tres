@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_wind_cut_flow"
+display_name="风·截流"
+pool="straight"
+special=false
+built_in=false
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成P点普通伤害。展示敌方牌库顶至多5张，选择一种基础属性，弃掉展示中该属性合法牌；其余保持相对顺序放回牌库顶。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","discard","deck_control","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","discard","deck_control","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":5,"filters":{"card_kind":"normal"}},"capture":"shown"},{"op":"select_cards","choice_id":"cut_flow_attribute","prompt":"选择展示牌中的一种基础属性","chooser":"actor","minimum":1,"maximum":1,"insufficient_policy":"use_available","query":{"side":"target","zone":"draw_pile","order":"zone","filters":{"card_kind":"normal"}},"candidate_capture":"shown","capture":"attribute_card"},{"op":"discard_captured_by_selected_base_attribute","side":"target","capture":"shown","selected_capture":"attribute_card","result_capture":"discarded","attribute_capture":"selected_attribute"}]
