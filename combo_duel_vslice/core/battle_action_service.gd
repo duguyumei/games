@@ -1001,7 +1001,7 @@ func _apply_same_qi_gain(
         return {"success": false, "reason": "行动没有成功打出的普通真气"}
     var token := "%s:same_qi" % str(
         action_preview.get("reshape_action_token", ""))
-    return action_resolver.effect_ports.gain_same_qi(
+    return action_resolver.settle_same_qi_gain(
         side, int(frozen_action.get("gain", 0)), "同气槽", token)
 
 func _refresh_same_qi_gain(proposal, frozen: bool) -> Dictionary:

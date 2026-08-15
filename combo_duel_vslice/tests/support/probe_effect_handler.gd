@@ -3,9 +3,13 @@ extends EffectHandler
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 
 var _operation_ids: Array[String] = ["probe_effect"]
+var _default_phase: String = "zones"
 
-func _init(operation_ids_override: Array[String] = ["probe_effect"]) -> void:
+func _init(
+        operation_ids_override: Array[String] = ["probe_effect"],
+        default_phase_override: String = "zones") -> void:
     _operation_ids = operation_ids_override.duplicate()
+    _default_phase = default_phase_override
 
 ## 测试探针：验证外部处理器可以通过注册表接口接入统一执行链。
 ##
@@ -17,6 +21,9 @@ func operation_ids() -> Array[String]:
 
 func group_name() -> String:
     return "test_probe"
+
+func default_phase(_operation_id: String) -> String:
+    return _default_phase
 
 func execute(effect: Dictionary, context):
     if context is Dictionary:

@@ -4,7 +4,8 @@ extends RefCounted
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const BattleActionRecordScript = preload("res://core/battle_action_record.gd")
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
-const PowerCalculatorScript = preload("res://core/power_calculator.gd")
+const TechniquePhaseCatalogScript = preload(
+    "res://core/effects/technique_phase_catalog.gd")
 
 var technique_repository
 var passive_rule_runtime
@@ -70,7 +71,7 @@ func resolve_post_commit_phase() -> Dictionary:
         return {"success": true, "pending_choice": false, "detail": "没有待提交后效果"}
     if not bool(_pending_resolution.get("awaiting_post_commit", false)):
         return {"success": false, "pending_choice": false, "detail": "行动尚未完成牌区提交"}
-    _pending_resolution["phases"] = ["post_commit"]
+    _pending_resolution["phases"] = [TechniquePhaseCatalogScript.POST_COMMIT]
     _pending_resolution["phase_index"] = 0
     _pending_resolution["phase_started"] = false
     _pending_resolution["awaiting_post_commit"] = false
@@ -196,57 +197,36 @@ func _freeze_technique_activation(
         actor,
         target,
         action_preview: Dictionary,
-        turn_number: int,
+        _turn_number: int,
         action_token: String) -> Dictionary:
     var technique: Dictionary = action_preview.get("technique", {})
     var condition: Dictionary = action_preview.get("condition", {})
-    if technique.is_empty():
-        action_preview["technique_activation"] = {
-            "success": true, "checked": false, "allowed": false,
-            "reason": "空功法序列", "source_breakdown": [], "errors": [],
-            "frozen": true, "action_token": action_token,
-        }
-        return {"success": true}
-    if not bool(condition.get("ok", false)):
-        action_preview["technique_activation"] = {
-            "success": true, "checked": false, "allowed": false,
-            "reason": str(condition.get("reason", "功法条件不满足")),
-            "source_breakdown": [], "errors": [],
-            "frozen": true, "action_token": action_token,
-        }
-        return {"success": true}
-    var result: Dictionary
-    if technique_resolution_service != null:
-        result = technique_resolution_service.activation_permission(
-            actor, target, str(action_preview.get("technique_id", "")),
-            str(action_preview.get("hand", {}).get("id", "")),
-            action_preview.get("cards", []), action_token,
-            "action_confirmed")
-    else:
-        var permission = actor.battle_permission_service
-        result = permission.can_activate_technique(
-            actor, str(action_preview.get("technique_id", "")),
-            str(action_preview.get("hand", {}).get("id", "")), {
-                "target": target, "round_number": turn_number,
-                "action_token": action_token,
-                "card_instance_ids": action_preview.get("cards", []).map(
-                    func(card): return str(card.id)),
-                "source_kind": "action_confirmed",
-            }) if permission != null else {
-                "allowed": true, "reason": "",
-                "source_breakdown": [], "errors": [],
-            }
-    if not result.get("errors", []).is_empty():
+    var definition = technique_repository.get_definition(
+        str(action_preview.get("technique_id", ""))) \
+        if not technique.is_empty() else null
+    var result: Dictionary = technique_resolution_service.prepare_activation(
+        definition, actor, target, action_preview.get("hand", {}),
+        action_preview.get("cards", []),
+        str(action_preview.get("hand", {}).get("id", "")),
+        action_token, "action_confirmed", true, condition, false,
+        _turn_number)
+    if not result.get("success", false):
         return {
             "success": false,
             "reason": str(result.get("reason", "功法启动权限查询失败")),
         }
-    result["success"] = true
-    result["checked"] = true
     result["frozen"] = true
     result["action_token"] = action_token
     action_preview["technique_activation"] = result
     return {"success": true, "permission": result}
+
+func settle_same_qi_gain(
+        actor,
+        amount: int,
+        source: String,
+        token: String) -> Dictionary:
+    return technique_resolution_service.settle_same_qi(
+        actor, amount, source, token, true)
 
 func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
     if not _pending_resolution.is_empty():
@@ -327,7 +307,7 @@ func pending_choice_snapshot() -> Dictionary:
 
 func _continue_resolution() -> Dictionary:
     var phases: Array = _pending_resolution.get(
-        "phases", ["prepare", "damage", "zones"])
+        "phases", TechniquePhaseCatalogScript.pre_commit_phase_ids())
     while int(_pending_resolution.get("phase_index", 0)) < phases.size():
         var phase: String = phases[int(_pending_resolution["phase_index"])]
         var records: Array = _pending_resolution["records"]
@@ -348,7 +328,7 @@ func _continue_resolution() -> Dictionary:
             _pending_resolution["phase_started"] = true
             _pending_resolution["timing"] = timing
             _pending_resolution["phase_has_entries"] = phase_has_entries
-            if phase == "damage" and synchronized:
+            if phase == TechniquePhaseCatalogScript.DAMAGE and synchronized:
                 effect_ports.begin_synchronized_damage(records)
             if phase_has_entries:
                 var results: Array = trigger_queue.process_timing(timing, effect_executor)
@@ -360,7 +340,7 @@ func _continue_resolution() -> Dictionary:
                         "choice_request": trigger_queue.pending_choice_snapshot(),
                         "detail": "等待功法目标选择",
                     }
-        if phase == "damage":
+        if phase == TechniquePhaseCatalogScript.DAMAGE:
             _resolve_played_card_anomalies(records)
             if synchronized:
                 effect_ports.flush_synchronized_damage()
@@ -383,7 +363,13 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "effects", source_spec["definition"].get("effects", []))
             if source_spec.get("entity") != null:
                 source_effects = source_spec["entity"].effects
-            var effects := _effects_for_phase(source_effects, phase)
+            var phase_result := TechniquePhaseCatalogScript.effects_for_phase(
+                source_effects, phase, effect_executor.registry)
+            if not phase_result.get("success", false):
+                _pending_resolution["runtime_error"] = str(
+                    phase_result.get("reason", "功法阶段解析失败"))
+                return false
+            var effects: Array = phase_result.get("effects", [])
             if effects.is_empty():
                 continue
             phase_has_entries = true
@@ -725,19 +711,6 @@ func combat_order_labels(side, technique_name: String = "当前功法") -> Array
         labels.append(str(entry["label"]))
     return labels
 
-func _effects_for_phase(effects: Array, phase: String) -> Array:
-    if technique_resolution_service != null:
-        return technique_resolution_service.effects_for_phase(effects, phase)
-    var result: Array = []
-    for effect in effects:
-        var explicit_phase: String = effect.get("phase", "")
-        var op: String = effect.get("op", "")
-        var resolved_phase: String = explicit_phase \
-            if explicit_phase != "" else effect_executor.registry.default_phase(op)
-        if resolved_phase == phase:
-            result.append(effect)
-    return result
-
 func _action_trigger_sources(record) -> Array:
     var sources: Array = []
     var actor = record["actor"]
@@ -862,45 +835,7 @@ func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")
 
 func _prepare_successful_technique_momentum(record) -> void:
-    if technique_resolution_service != null:
-        technique_resolution_service.prepare_manual_record(record)
-        return
-    if bool(record["momentum_prepared"]):
-        return
-    record["momentum_prepared"] = true
-    var actor = record["actor"]
-    record["momentum_snapshot"] = maxi(0, int(actor.momentum_value))
-    record["preview"]["momentum_snapshot"] = int(record["momentum_snapshot"])
+    technique_resolution_service.prepare_manual_record(record)
 
 func _settle_successful_technique_momentum(record) -> void:
-    if technique_resolution_service != null:
-        technique_resolution_service.settle_manual_record(record)
-        return
-    var actor = record["actor"]
-    var action_token := str(record["token"])
-    var changed: bool = actor.momentum_changed_for_action(action_token)
-    var preservation := {"preserved": false, "consumed": false}
-    var clear_receipt: Dictionary = {}
-    if not changed:
-        preservation = actor.consume_momentum_preservation_for(action_token)
-        if not bool(preservation.get("preserved", false)):
-            clear_receipt = actor.write_momentum(
-                "clear", 0, "rule_clear", action_token,
-                str(record["preview"].get("technique_id", "")))
-    record["momentum_change_receipts"] = actor.momentum_receipts_for_action(
-        action_token)
-    record["momentum_settlement"] = {
-        "snapshot": int(record["momentum_snapshot"]),
-        "changed_by_technique_or_echo": changed,
-        "preserved": bool(preservation.get("preserved", false)),
-        "preservation_consumed": bool(preservation.get("consumed", false)),
-        "preservation_record": preservation.get("record", {}).duplicate(true),
-        "clear_receipt": clear_receipt.duplicate(true),
-        "remaining": int(actor.momentum_value),
-    }
-    record["preview"]["same_qi_write_results"] = \
-        effect_ports.same_qi_receipts_for_action(actor, action_token)
-    record["preview"]["momentum_change_receipts"] = \
-        record["momentum_change_receipts"].duplicate(true)
-    record["preview"]["momentum_settlement"] = \
-        record["momentum_settlement"].duplicate(true)
+    technique_resolution_service.settle_manual_record(record)

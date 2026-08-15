@@ -6,6 +6,8 @@ const ConditionSpecRegistryScript = preload("res://core/specs/condition_spec_reg
 const TargetQueryFieldRegistryScript = preload(
     "res://core/effects/target_query_field_registry.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
+const TechniquePhaseCatalogScript = preload(
+    "res://core/effects/technique_phase_catalog.gd")
 
 ## 效果规格校验。
 ##
@@ -91,6 +93,13 @@ func _validate_single_effect(
         registered = operation_source.has(op)
     if not registered:
         _error(effect_scope, "未知效果操作码 %s" % op)
+    elif operation_source is String and operation_source == "battle":
+        var phase_result := TechniquePhaseCatalogScript.resolve_effect_phase(
+            effect, _effect_registry)
+        if not phase_result.get("success", false):
+            _error(
+                effect_scope + (".phase" if effect.has("phase") else ""),
+                str(phase_result.get("reason", "功法效果阶段无效")))
     if effect.has("choice_id"):
         var choice_id := str(effect.get("choice_id", ""))
         if choice_id != "" and choice_ids.has(choice_id):

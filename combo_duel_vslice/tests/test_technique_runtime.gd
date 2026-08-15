@@ -19,6 +19,7 @@ const AiBattleStateProjectorScript = preload(
     "res://core/ai/ai_battle_state_projector.gd")
 const AiHistoryProjectorScript = preload("res://core/ai/ai_history_projector.gd")
 const BattleSideSnapshotScript = preload("res://core/battle_side_snapshot.gd")
+const BattleSessionScript = preload("res://core/battle_session.gd")
 const UiMainScript = preload("res://ui/main.gd")
 const RunBuildQueryServiceScript = preload("res://core/run_build_query_service.gd")
 
@@ -159,6 +160,8 @@ func _initialize() -> void:
     _test_nested_invocation_recursion_and_options()
     _test_invocation_rejection_does_not_move_slot()
     _test_invocation_choice_resume_freezes_randomness()
+    _test_manual_automatic_invoked_resolution_consistency()
+    _test_battle_session_invocation_choice_resume()
     _test_source_marker_response_and_private_projections()
     _test_temporary_slots_do_not_duplicate_run_max_life()
     _dispose_tracked_engines()
@@ -1093,6 +1096,227 @@ func _test_invocation_rejection_does_not_move_slot() -> void:
         func(slot): return str(slot["technique_id"])), sequence_before,
         "调用资格拒绝发生在槽位移动前")
     _assert_equal(engine.enemy.life, 100, "拒绝调用不执行目标效果")
+
+func _test_manual_automatic_invoked_resolution_consistency() -> void:
+    var manual_card = _card("5", "wind")
+    var manual_engine = _probe_engine([
+        manual_card], "high_card", [{
+            "op": "damage", "amount": {"kind": "power"},
+        }])
+    manual_engine.player.direct_power_fixed = 2
+    manual_engine.player.direct_power_percent = 20
+    manual_engine.player.momentum_value = 3
+    var manual_life_before: int = manual_engine.enemy.life
+    var manual_result: Dictionary = manual_engine.confirm_play([manual_card.id])
+    _assert_true(manual_result.get("success", false),
+        "手动功法通过统一结算核心完成")
+    var manual_loss: int = manual_life_before - manual_engine.enemy.life
+
+    var invoked_card = _card("5", "wind")
+    var invoked_engine = _engine_with_cards([invoked_card])
+    invoked_engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "caller", "name": "调用者", "pool": "high",
+                "special": false, "effects": []},
+            {"id": "shared_probe", "name": "共核探针", "pool": "high",
+                "special": false, "effects": [{
+                    "op": "damage", "amount": {"kind": "power"},
+                }]},
+        ],
+    })
+    invoked_engine.sequence_book.configure({
+        "high_card": ["caller", "shared_probe"]})
+    invoked_engine.player.direct_power_fixed = 2
+    invoked_engine.player.direct_power_percent = 20
+    invoked_engine.player.momentum_value = 3
+    var caller_slot: Dictionary = invoked_engine.sequence_book.current_slot(
+        "high_card")
+    var invoked_runtime = EffectContextScript.new().configure({
+        "ports": invoked_engine.effect_ports,
+        "actor": invoked_engine.player, "target": invoked_engine.enemy,
+        "hand_result": {"id": "high_card", "contributing": [invoked_card]},
+        "played_cards": [invoked_card],
+        "values": {"initial_power": 5, "technique_value": 5},
+        "initial_power": 5, "power": 5,
+        "technique_id": "caller", "technique_name": "调用者",
+        "slot_instance_id": str(caller_slot["slot_instance_id"]),
+        "actual_hand_id": "high_card",
+        "action_token": "shared-invoked",
+        "root_action_token": "shared-invoked",
+        "sequence_book": invoked_engine.sequence_book,
+        "card_identity_policy": invoked_engine.player.card_identity_policy,
+    })
+    var invoked_life_before: int = invoked_engine.enemy.life
+    var invoked_result: Dictionary = invoked_engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card",
+            "technique_id": "shared_probe"},
+        "p0": {"mode": "fixed", "value": 5},
+        "gain_same_qi": false,
+    }, invoked_runtime)
+    _assert_true(invoked_result.get("success", false),
+        "调用功法通过统一结算核心完成")
+    var invoked_loss: int = invoked_life_before - invoked_engine.enemy.life
+
+    var automatic_card = _card("5", "wind")
+    var automatic_engine = _engine_with_cards([automatic_card])
+    automatic_engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "caller", "name": "调用者", "pool": "high",
+                "special": false, "effects": []},
+            {"id": "shared_auto", "name": "自动共核探针", "pool": "high",
+                "special": false,
+                "automatic_triggers": [{
+                    "id": "shared_event", "event": "defense_gained",
+                    "filters": {"event_actor_is_owner": true},
+                    "p0": {"kind": "constant", "value": 5},
+                    "timing": "immediate",
+                }],
+                "effects": [{
+                    "op": "damage", "amount": {"kind": "power"},
+                }]},
+        ],
+    })
+    automatic_engine.sequence_book.configure({
+        "high_card": ["caller", "shared_auto"]})
+    automatic_engine.player.direct_power_fixed = 2
+    automatic_engine.player.direct_power_percent = 20
+    automatic_engine.player.momentum_value = 3
+    var automatic_life_before: int = automatic_engine.enemy.life
+    automatic_engine.battle_passive_event_service.commit("defense_gained", {
+        "event_token": "shared-auto-event",
+        "event_serial": 99001,
+        "actor": automatic_engine.player,
+        "owner": automatic_engine.player,
+        "target": automatic_engine.player,
+        "effective_amount": 1,
+        "action_token": "shared-auto-root",
+    })
+    var automatic_loss: int = automatic_life_before - automatic_engine.enemy.life
+
+    _assert_equal(manual_loss, 11,
+        "手动 P0=5 经固定2、20%和连势3得到 P=11")
+    _assert_equal(invoked_loss, manual_loss,
+        "调用与手动复用相同 P0/P 和伤害阶段结果")
+    _assert_equal(automatic_loss, manual_loss,
+        "自动与手动复用相同 P0/P 和伤害阶段结果")
+    _assert_equal(manual_engine.player.momentum_value, 0,
+        "手动结算统一清空未改变连势")
+    _assert_equal(invoked_engine.player.momentum_value, 0,
+        "调用结算统一清空未改变连势")
+    _assert_equal(automatic_engine.player.momentum_value, 0,
+        "自动结算统一清空未改变连势")
+
+func _test_battle_session_invocation_choice_resume() -> void:
+    for trigger_mode in ["invoked", "automatic"]:
+        var played = _card("4", "wind")
+        var selectable = _card("9", "fire")
+        var selectable_other = _card("7", "forest")
+        var engine = _engine_with_cards([
+            played, selectable, selectable_other])
+        var waiting_effects := [
+            {"op": "damage", "amount": {
+                "kind": "constant", "value": 1}},
+            {
+                "op": "insert_technique_slots",
+                "source": "self", "target_hands": "current",
+                "copies": 2, "position": "random", "temporary": true,
+            },
+            {
+                "op": "select_cards", "choice_id": "session_wait",
+                "chooser": "actor", "minimum": 1, "maximum": 1,
+                "insufficient_policy": "fail",
+                "query": {
+                    "side": "actor", "zone": "hand", "order": "zone",
+                    "filters": {"card_kind": "normal"},
+                },
+                "capture": "selected",
+            },
+        ]
+        var caller_effects: Array = []
+        var waiting_triggers: Array = []
+        if trigger_mode == "invoked":
+            caller_effects = [{
+                "op": "invoke_sequence_technique",
+                "selection": {"mode": "by_id", "hand_id": "current",
+                    "technique_id": "waiting_probe"},
+                "timing": "immediate", "gain_same_qi": false,
+            }]
+        else:
+            caller_effects = [{
+                "op": "defense", "amount": {
+                    "kind": "constant", "value": 1},
+            }]
+            waiting_triggers = [{
+                "id": "session_auto", "event": "defense_gained",
+                "filters": {"event_actor_is_owner": true},
+                "p0": {"kind": "constant", "value": 4},
+                "timing": "immediate",
+            }]
+        engine.repository.configure({
+            "pool_membership": POOL_MEMBERSHIP,
+            "integration_statuses": {}, "resource_paths": [],
+            "techniques": [
+                {"id": "caller_probe", "name": "会话调用者",
+                    "pool": "high", "special": false,
+                    "effects": caller_effects},
+                {"id": "waiting_probe", "name": "会话等待探针",
+                    "pool": "high", "special": false,
+                    "automatic_triggers": waiting_triggers,
+                    "effects": waiting_effects},
+                {"id": "tail_probe", "name": "会话尾部",
+                    "pool": "high", "special": false, "effects": []},
+            ],
+        })
+        engine.sequence_book.configure({
+            "high_card": ["caller_probe", "waiting_probe", "tail_probe"]})
+        var session = BattleSessionScript.new(engine)
+        var started = session.execute({
+            "type": "play_cards", "card_ids": [str(played.id)],
+        })
+        _assert_true(started.success and bool(started.payload_value(
+            "pending_choice", false)),
+            "%s 等待选择完整进入 BattleSession：%s" % [
+                trigger_mode, str(started.to_dict())])
+        if not started.success or not bool(started.payload_value(
+                "pending_choice", false)):
+            continue
+        var request: Dictionary = started.payload_value("choice_request", {})
+        var request_id := str(request.get("request_id", ""))
+        var selected_id := str(request.get("candidates", [])[0].get("id", ""))
+        var temporary_ids: Array = engine.sequence_book.find_slots({
+            "hand_id": "high_card", "temporary": true,
+        }).map(func(slot): return str(slot["slot_instance_id"]))
+        var sequence_before_resume: Array = engine.sequence_book.ordered_slots(
+            "high_card").map(func(slot): return str(slot["slot_instance_id"]))
+        var rng_state_before_resume: int = engine.rng.state
+        var life_before_resume: int = engine.enemy.life
+        _assert_equal(temporary_ids.size(), 2,
+            "%s 等待前只插入两份临时槽" % trigger_mode)
+        _assert_equal(100 - life_before_resume, 1,
+            "%s 等待前前置伤害只执行一次" % trigger_mode)
+        var resumed = session.execute({
+            "type": "resolve_choice", "request_id": request_id,
+            "card_ids": [selected_id],
+        })
+        _assert_true(resumed.success and not bool(resumed.payload_value(
+            "pending_choice", false)),
+            "%s 选择从 BattleSession 恢复并完成" % trigger_mode)
+        _assert_equal(engine.rng.state, rng_state_before_resume,
+            "%s 会话恢复不重掷随机位置" % trigger_mode)
+        _assert_equal(engine.sequence_book.find_slots({
+            "hand_id": "high_card", "temporary": true,
+        }).map(func(slot): return str(slot["slot_instance_id"])), temporary_ids,
+            "%s 会话恢复不重复插入临时槽" % trigger_mode)
+        _assert_equal(engine.enemy.life, life_before_resume,
+            "%s 会话恢复不重复执行前置伤害" % trigger_mode)
+        _assert_true(sequence_before_resume.all(func(slot_id):
+            return engine.sequence_book.ordered_slots("high_card").any(
+                func(slot): return str(slot["slot_instance_id"]) == slot_id)),
+            "%s 会话恢复沿用首次冻结和移动的稳定槽位" % trigger_mode)
 
 func _test_source_marker_response_and_private_projections() -> void:
     var engine = _engine_with_cards([])

@@ -19,6 +19,7 @@ var effect_executor
 var battle_rule_query_service
 var battle_permission_service
 var same_qi_gauge_service
+var technique_resolution_service
 var round_number_reader: Callable
 
 func _init(
@@ -28,7 +29,8 @@ func _init(
         query_service = null,
         round_reader: Callable = Callable(),
         permission_service = null,
-        gauge_service = null) -> void:
+        gauge_service = null,
+        resolution_service = null) -> void:
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
     effect_executor = executor
@@ -36,6 +38,7 @@ func _init(
     round_number_reader = round_reader
     battle_permission_service = permission_service
     same_qi_gauge_service = gauge_service
+    technique_resolution_service = resolution_service
 
 func preview(
         side,
@@ -269,33 +272,12 @@ func _preview_technique_activation(
         cards: Array,
         technique_definition,
         condition: Dictionary) -> Dictionary:
-    if technique_definition == null:
-        return {
-            "success": true, "checked": false, "allowed": false,
-            "reason": "空功法序列", "source_breakdown": [], "errors": [],
-        }
-    if not bool(condition.get("ok", false)):
-        return {
-            "success": true, "checked": false, "allowed": false,
-            "reason": str(condition.get("reason", "功法条件不满足")),
-            "source_breakdown": [], "errors": [],
-        }
-    if battle_permission_service == null:
-        return {
-            "success": true, "checked": true, "allowed": true,
-            "reason": "", "source_breakdown": [], "errors": [],
-        }
-    var result: Dictionary = battle_permission_service.can_activate_technique(
-        side, technique_id, str(hand_result.get("id", "")), {
-            "target": target,
-            "round_number": int(round_number_reader.call()) \
-                if round_number_reader.is_valid() else 0,
-            "card_instance_ids": cards.map(func(card): return str(card.id)),
-            "source_kind": "preview",
-        })
-    result["success"] = result.get("errors", []).is_empty()
-    result["checked"] = true
-    return result
+    return technique_resolution_service.prepare_activation(
+        technique_definition, side, target, hand_result, cards,
+        str(hand_result.get("id", "")), "", "preview", true,
+        condition, false,
+        int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0)
 
 func recalculate_confirmed_power(
         side,
@@ -515,8 +497,6 @@ func _resolve_power_values(
     var stages := [
         ["base_fixed", "power_base_fixed_query"],
         ["multiplier_bonus", "power_multiplier_bonus_query"],
-        ["power_fixed", "power_fixed_query"],
-        ["power_amp_percent", "power_amp_percent_query"],
     ]
     for stage in stages:
         var field := str(stage[0])
@@ -555,12 +535,33 @@ func _resolve_power_values(
     if side.status_system != null:
         contribution_modifier = Callable(
             side.status_system, "modify_card_contribution").bind(side)
+    var base_modifiers := effective.duplicate(true)
+    base_modifiers["power_fixed"] = 0
+    base_modifiers["power_amp_percent"] = 0
     var values := PowerCalculatorScript.calculate(
         hand_result,
-        effective,
+        base_modifiers,
         contribution_modifier,
         side.card_identity_policy,
         {"owner": side, "actor": side, "target": target})
+    var final_power: Dictionary = technique_resolution_service.resolve_power(
+        side, target, hand_result, cards,
+        int(values.get("initial_power", 0)), action_token, source_kind,
+        false,
+        int(effective.get("power_fixed", 0)),
+        int(effective.get("power_amp_percent", 0)),
+        int(values.get("card_amp_percent", 0)),
+        false,
+        int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0)
+    if not final_power.get("success", false):
+        return final_power
+    var resolved_values: Dictionary = final_power.get("values", {})
+    for field in [
+            "direct_power_fixed", "direct_power_percent",
+            "pre_momentum_power", "momentum_used", "technique_value"]:
+        values[field] = resolved_values.get(field, values.get(field, 0))
+    details.merge(final_power.get("queries", {}), true)
     values["passive_power_queries"] = details.duplicate(true)
     return {"success": true, "values": values, "queries": details}
 

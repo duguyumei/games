@@ -3,6 +3,39 @@
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
 `godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
 
+## 功法阶段与结算入口收敛（2026-08-16，已完成）
+
+本批没有新增、录入或实现 25 门特殊候选功法，正式资源仍为 211 门；牌区移动、虚无、临时
+真气、异状与重塑生命周期均未修改。行动结算权威文档已经先行冻结唯一阶段目录和三入口共核
+规则。
+
+已完成：新增唯一 `TechniquePhaseCatalog`，阶段顺序固定为
+`prepare → damage → zones → post_commit`。Handler 默认阶段注册、显式 `effect.phase` 内容
+校验、手动行动调度和自动／调用功法运行筛选共用该目录。未知默认阶段会令 Handler 注册失败，
+未知或非字符串 `effect.phase` 会令内容加载失败。`ActionResolver` 已删除独立阶段缺省数组、
+备用 `_effects_for_phase` 与连势备用实现；它继续负责出牌事务、被动来源、双方同步队列、牌区
+提交和 `group_end`，同步伤害 begin／flush 仍只发生在 `damage` 阶段。
+
+已完成：手动、自动和调用功法共用 `TechniqueResolutionService` 的条件与启动权限入口；手动
+确认的普通 `P₀` 和自动／调用注入的特殊 `P₀` 共用直接固定值、百分比查询和最终 `P` 计算。
+连势快照、实际修改检测、保留／清空以及同气写入均经同一服务入口。效果执行继续共用
+`EffectExecutor` continuation；即时调用和自动事件产生的选择都完整进入
+`BattleSession.resolve_choice`，恢复时不会重掷随机位置、重复插入临时槽、再次移动冻结槽位或
+重复执行等待前伤害。
+
+测试覆盖：未知阶段、非法 Handler 默认阶段、手动／自动／调用同一 `P₀/P` 与连势结果、即时
+调用顺序、`after_caller_advance` 顺序、拒绝调用不移动，以及调用／自动两条 BattleSession
+等待恢复路径。内容契约 1077 条、功法运行直跑 338 条、分组 163 条；风 349、成长 213、桥接
+112、山 432、蛊毒 171、火 264 条专项断言通过。quick 7/7、full 24/24、设计一致性
+211／211／待接入 0／错误 0；项目加载覆盖 638 项。最终日志位于
+`/tmp/taiwu-phase-refactor-quick-final-20260816-01`、
+`/tmp/taiwu-phase-refactor-full-final-20260816-01` 和
+`/tmp/taiwu-phase-refactor-design-consistency-final-20260816-01.log`。除已知 macOS CA 证书警告外，
+没有脚本加载、文件缺失、解析或运行错误。
+
+尚未接入：25 门特殊候选仍没有稳定 ID、独立 `.tres`、正式池资格、图标或逐门行为测试，
+不得据此把候选加入心得、奖励、修习商店、敌人装配或生产序列。
+
 ## TargetQuery 筛选与校验框架优化（2026-08-16，已完成）
 
 本批只优化公共目标查询框架，没有新增、录入或改写功法效果；正式资源数量仍为 211，

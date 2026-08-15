@@ -314,7 +314,8 @@ func _init(
         battle_rule_query_service,
         Callable(self, "_read_turn_number"),
         battle_permission_service,
-        same_qi_gauge_service)
+        same_qi_gauge_service,
+        technique_resolution_service)
     action_resolver = ActionResolverScript.new(
         effect_ports,
         repository,

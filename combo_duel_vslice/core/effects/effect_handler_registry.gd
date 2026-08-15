@@ -14,6 +14,8 @@ const AnomalyLayerHandlerScript = preload("res://core/effects/anomaly_layer_effe
 const SourceMarkerHandlerScript = preload("res://core/effects/source_marker_effect_handler.gd")
 const LifeHandlerScript = preload("res://core/effects/life_effect_handler.gd")
 const TechniqueSequenceHandlerScript = preload("res://core/effects/technique_sequence_effect_handler.gd")
+const TechniquePhaseCatalogScript = preload(
+    "res://core/effects/technique_phase_catalog.gd")
 
 var value_resolver
 var _handlers_by_op: Dictionary = {}
@@ -55,6 +57,12 @@ func register_handler(handler, replace_existing: bool = false) -> bool:
             return false
         if _handlers_by_op.has(operation_id) and not replace_existing:
             registration_errors.append("效果 ID 重复注册：%s" % operation_id)
+            return false
+        var default_phase := str(handler.default_phase(operation_id))
+        if not TechniquePhaseCatalogScript.has_phase(default_phase):
+            registration_errors.append(
+                "效果 %s 声明未知默认阶段：%s" % [
+                    operation_id, default_phase])
             return false
         seen[operation_id] = true
     for operation_id_value in operation_ids:

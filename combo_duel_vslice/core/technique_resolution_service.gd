@@ -4,8 +4,9 @@ extends RefCounted
 const EffectContextScript = preload(
     "res://core/effects/technique_effect_context.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
+const TechniquePhaseCatalogScript = preload(
+    "res://core/effects/technique_phase_catalog.gd")
 
-const PHASES := ["prepare", "damage", "zones", "post_commit"]
 const PENDING_CAPTURE := "__technique_resolution_pending"
 
 var _repository
@@ -98,32 +99,22 @@ func prepare_invocation(request: Dictionary, context) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
     var slot: Dictionary = request.get("slot", {})
     var definition = _repository.get_definition(str(slot.get("technique_id", "")))
-    if definition == null:
-        return {"success": false, "reason": "调用目标功法不存在"}
     var effect: Dictionary = request.get("effect", {})
     var invocation_hand_result: Dictionary = request.get(
         "hand_result", runtime.hand_result)
-    if bool(effect.get("check_condition", true)):
-        var condition: Dictionary = _repository.conditions_met(
-            definition, invocation_hand_result,
-            runtime.actor.card_identity_policy,
-            true)
-        if not condition.get("ok", false):
-            return {
-                "success": true, "triggered": false,
-                "detail": condition.get("reason", "调用条件不满足"),
-            }
-    var permission := activation_permission(
-        runtime.actor, runtime.target, definition.id,
-        str(request.get("hand_id", "")), runtime.played_cards,
+    var activation := prepare_activation(
+        definition, runtime.actor, runtime.target, invocation_hand_result,
+        runtime.played_cards, str(request.get("hand_id", "")),
         str(request.get("invocation_token", "")),
-        str(effect.get("_trigger_mode", "invoked")))
-    if not permission.get("success", false):
-        return permission
-    if not permission.get("allowed", false):
+        str(effect.get("_trigger_mode", "invoked")),
+        bool(effect.get("check_condition", true)), {}, true)
+    if not activation.get("success", false):
+        return activation
+    if not activation.get("triggered", false):
         return {
             "success": true, "triggered": false,
-            "detail": permission.get("reason", "调用启动被拒绝"),
+            "detail": activation.get("reason", "调用启动被拒绝"),
+            "activation": activation,
         }
     var power_result := resolve_power(
         runtime.actor, runtime.target, invocation_hand_result,
@@ -138,18 +129,72 @@ func prepare_invocation(request: Dictionary, context) -> Dictionary:
         "triggered": true,
         "definition": definition,
         "power_result": power_result,
+        "activation": activation,
     }
+
+func prepare_activation(
+        definition,
+        actor,
+        target,
+        hand_result: Dictionary,
+        cards: Array,
+        hand_id: String,
+        action_token: String,
+        source_kind: String,
+        check_condition: bool = true,
+        frozen_condition: Dictionary = {},
+        allow_host_hand: bool = false,
+        round_number: int = 0) -> Dictionary:
+    if definition == null:
+        return {
+            "success": true, "triggered": false,
+            "checked": false, "allowed": false,
+            "reason": "空功法序列", "condition": {
+                "ok": false, "reason": "空功法序列"},
+            "source_breakdown": [], "errors": [],
+        }
+    var condition: Dictionary = frozen_condition.duplicate(true)
+    if condition.is_empty():
+        condition = {"ok": true, "reason": "跳过功法条件"}
+        if check_condition:
+            condition = _repository.conditions_met(
+                definition, hand_result, actor.card_identity_policy,
+                allow_host_hand)
+    if check_condition and not bool(condition.get("ok", false)):
+        return {
+            "success": true, "triggered": false,
+            "checked": false, "allowed": false,
+            "reason": str(condition.get("reason", "功法条件不满足")),
+            "condition": condition,
+            "source_breakdown": [], "errors": [],
+        }
+    var permission := activation_permission(
+        actor, target, definition.id, hand_id, cards,
+        action_token, source_kind, round_number)
+    permission["triggered"] = bool(permission.get("allowed", false))
+    permission["condition"] = condition
+    return permission
 
 func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
         p0: int, action_token: String, source_kind: String,
-        use_momentum: bool = true) -> Dictionary:
-    var fixed := int(actor.direct_power_fixed)
-    var percent := int(actor.direct_power_percent)
+        use_momentum: bool = true,
+        direct_power_fixed_input = null,
+        direct_power_percent_input = null,
+        post_query_percent_bonus: int = 0,
+        include_pending_sources: bool = true,
+        round_number: int = 0) -> Dictionary:
+    var fixed := int(actor.direct_power_fixed) \
+        if direct_power_fixed_input == null \
+        else int(direct_power_fixed_input)
+    var percent := int(actor.direct_power_percent) \
+        if direct_power_percent_input == null \
+        else int(direct_power_percent_input)
     var pending_tokens: Array[String] = []
-    for source_value in actor.pending_power_fixed_sources:
-        var source: Dictionary = source_value
-        fixed += int(source.get("amount", 0))
-        pending_tokens.append(str(source.get("source_token", "")))
+    if include_pending_sources:
+        for source_value in actor.pending_power_fixed_sources:
+            var source: Dictionary = source_value
+            fixed += int(source.get("amount", 0))
+            pending_tokens.append(str(source.get("source_token", "")))
     var query_service = actor.battle_rule_query_service
     var queries: Dictionary = {}
     for stage in [
@@ -169,6 +214,7 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
             "actor": actor, "target": target,
             "subject_kind": "power_stage", "subject_id": field,
             "base_value": base_value, "action_token": action_token,
+            "round_number": round_number,
             "hand_id": str(hand_result.get("id", "")),
             "source_kind": source_kind,
             "card_facts": _card_facts(cards, actor.card_identity_policy),
@@ -192,7 +238,7 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
             percent = base_value
     var momentum := int(actor.momentum_value) if use_momentum else 0
     var values: Dictionary = PowerCalculatorScript.calculate_from_initial_power(
-        p0, fixed, percent, momentum)
+        p0, fixed, percent + post_query_percent_bonus, momentum)
     values["passive_power_queries"] = queries
     values["group_snapshot"] = {}
     return {
@@ -201,9 +247,19 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
         "pending_power_fixed_tokens": pending_tokens,
     }
 
+func settle_same_qi(
+        actor,
+        amount: int,
+        source: String,
+        token: String,
+        enabled: bool = true) -> Dictionary:
+    if not enabled:
+        return {"success": true, "skipped": true, "amount": 0}
+    return _ports.gain_same_qi(actor, amount, source, token)
+
 func activation_permission(actor, target, technique_id: String,
         hand_id: String, cards: Array, action_token: String,
-        source_kind: String) -> Dictionary:
+        source_kind: String, round_number: int = 0) -> Dictionary:
     var permission = actor.battle_permission_service
     if permission == null:
         return {
@@ -213,6 +269,7 @@ func activation_permission(actor, target, technique_id: String,
     var result: Dictionary = permission.can_activate_technique(
         actor, technique_id, hand_id, {
             "target": target, "action_token": action_token,
+            "round_number": round_number,
             "card_instance_ids": cards.map(func(card): return str(card.id)),
             "source_kind": source_kind,
         })
@@ -220,16 +277,9 @@ func activation_permission(actor, target, technique_id: String,
     result["success"] = result.get("errors", []).is_empty()
     return result
 
-func effects_for_phase(effects: Array, phase: String) -> Array:
-    var result: Array = []
-    for effect_value in effects:
-        var effect: Dictionary = effect_value
-        var explicit_phase := str(effect.get("phase", ""))
-        var resolved_phase: String = explicit_phase if explicit_phase != "" \
-            else _executor.registry.default_phase(str(effect.get("op", "")))
-        if resolved_phase == phase:
-            result.append(effect)
-    return result
+func effects_for_phase(effects: Array, phase: String) -> Dictionary:
+    return TechniquePhaseCatalogScript.effects_for_phase(
+        effects, phase, _executor.registry)
 
 func prepare_manual_record(record) -> void:
     if bool(record["momentum_prepared"]):
@@ -272,7 +322,8 @@ func settle_manual_record(record) -> void:
 func _continue_invocation(state: Dictionary) -> Dictionary:
     var runtime = state["runtime"]
     var invoked_context = state["invoked_context"]
-    while int(state["phase_index"]) < PHASES.size():
+    var phases := TechniquePhaseCatalogScript.phase_ids()
+    while int(state["phase_index"]) < phases.size():
         var result: Dictionary
         if state.get("continuation") != null:
             var request_id := str(state.get("request_id", ""))
@@ -286,9 +337,16 @@ func _continue_invocation(state: Dictionary) -> Dictionary:
             state["continuation"] = null
             state["request_id"] = ""
         else:
-            var effects := effects_for_phase(
+            var phase_result := effects_for_phase(
                 state["definition"].effects,
-                str(PHASES[int(state["phase_index"])]))
+                str(phases[int(state["phase_index"])]))
+            if not phase_result.get("success", false):
+                runtime.captures.erase(PENDING_CAPTURE)
+                return {
+                    "success": false,
+                    "reason": phase_result.get("reason", "功法阶段解析失败"),
+                }
+            var effects: Array = phase_result.get("effects", [])
             if effects.is_empty():
                 state["phase_index"] = int(state["phase_index"]) + 1
                 continue
@@ -342,10 +400,14 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
             runtime.actor, token, state["definition"].id, true)
     runtime.actor.consume_pending_power_fixed_sources(
         state.get("pending_power_fixed_tokens", []))
-    if bool(effect.get("gain_same_qi", true)):
-        var gain := int(runtime.group_snapshot.get("action_same_qi_gain", 0))
-        _ports.gain_same_qi(
-            runtime.actor, gain, "technique_invocation", token + ":same_qi")
+    var same_qi_result := settle_same_qi(
+        runtime.actor,
+        int(runtime.group_snapshot.get("action_same_qi_gain", 0)),
+        "technique_invocation",
+        token + ":same_qi",
+        bool(effect.get("gain_same_qi", true)))
+    if not same_qi_result.get("success", false):
+        return same_qi_result
     var completed := {"success": true}
     if bool(effect.get("advance_sequence", true)):
         completed = runtime.sequence_book.complete_slot(

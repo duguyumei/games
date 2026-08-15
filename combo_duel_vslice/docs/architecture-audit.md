@@ -30,6 +30,35 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### 功法阶段目录与结算入口收敛（2026-08-16）
+
+本次只收敛公共功法阶段和结算入口，不新增或实现 25 门特殊候选功法，也不改动牌区和真气
+生命周期。权威行动规则先冻结唯一阶段顺序 `prepare → damage → zones → post_commit`，随后
+新增 `TechniquePhaseCatalog` 作为阶段 ID、顺序、显式阶段解析和运行筛选的唯一目录。
+Effect Handler 注册时必须声明目录内的默认阶段；`EffectSpecValidator` 会拒绝非字符串或未知
+`effect.phase`，因此非法阶段不能再被运行时静默跳过。
+
+`ActionResolver` 已删除备用 `_effects_for_phase` 和缺省阶段数组，只保留出牌事务、被动来源
+编排、双方同步队列、牌区提交与 `group_end` 边界；同步伤害的 begin／flush 仍只包围唯一
+`damage` 阶段，`post_commit` 仍由打出真气完成提交后显式进入。手动、自动和调用功法的条件／
+启动权限现在共用 `TechniqueResolutionService.prepare_activation`；手动确认和特殊 `P₀` 注入
+共用同一直接固定值、百分比查询与最终 `P` 计算；连势快照／结算、同气写入和阶段筛选也由
+该服务或唯一阶段目录提供。`ActionResolver` 中原有连势备用实现已经删除。
+
+自动或调用功法的等待选择继续使用同一个 `EffectExecutor` continuation，并由
+`ActionResolver → BattleActionService → BattleSession.resolve_choice` 恢复。新增会话级匿名 probe
+分别覆盖即时调用和自动事件触发：等待前先执行伤害、随机插入两份临时槽并移动目标；恢复后
+RNG 状态、临时槽位集合、已冻结槽位身份和敌方生命均不再次变化。既有即时顺序
+`乙→丁→丙→甲`、推进后顺序 `乙→丁→甲→丙` 与拒绝调用不移动槽位测试继续通过。
+
+验证结果：内容契约 1077 条、功法运行直跑 338 条、功法运行分组 163 条；风 349、成长 213、
+桥接 112、山 432、蛊毒 171、火 264 条专项断言全部通过。quick 7/7、full 24/24 通过，项目
+加载覆盖 638 项；设计一致性为权威 211／数据 211／待接入 0／错误 0。最终门禁日志目录为
+`/tmp/taiwu-phase-refactor-quick-final-20260816-01` 和
+`/tmp/taiwu-phase-refactor-full-final-20260816-01`；设计检查日志为
+`/tmp/taiwu-phase-refactor-design-consistency-final-20260816-01.log`。除已知 macOS CA 证书警告外，
+没有脚本加载、文件缺失、解析或运行错误。
+
 ### TargetQuery 字段处理器注册框架（2026-08-16）
 
 本次只重构目标查询筛选与校验框架，不改变四个牌区的存取／移动顺序，也不改变普通真气、

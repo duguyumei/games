@@ -6875,6 +6875,15 @@ func _test_effect_handler_registry_contract() -> void:
     _assert_true(
         not executor.registry.register_handler(ProbeEffectHandlerScript.new(["Bad Effect ID"])),
         "效果 ID 必须使用稳定 snake_case")
+    _assert_true(
+        not executor.registry.register_handler(
+            ProbeEffectHandlerScript.new(["unknown_phase_probe"], "after_damage")),
+        "Handler 未知默认阶段在注册时失败")
+    _assert_true(
+        _array_contains_text(
+            executor.registry.registration_errors,
+            "未知默认阶段：after_damage"),
+        "Handler 默认阶段错误返回稳定诊断")
     var probe_context := {}
     var probe_result: Dictionary = executor.execute_all([{"op": "probe_effect", "amount": 7}], probe_context)
     _assert_true(probe_result["success"], "动态注册处理器可以参与统一执行链")
@@ -6951,6 +6960,29 @@ func _test_effect_extension_entry_contract() -> void:
     _assert_true(
         _array_contains_text(missing_registry_catalog.errors, "未知效果操作码 probe_effect"),
         "缺失注册返回稳定效果 ID")
+
+    var invalid_phase_definitions := _catalog_definitions(catalog)
+    invalid_phase_definitions["techniques"]["techniques"].append({
+        "id": "invalid_phase_probe",
+        "name": "非法阶段探针",
+        "pool": "high",
+        "special": false,
+        "effects": [{
+            "op": "damage",
+            "phase": "after_damage",
+            "amount": {"kind": "constant", "value": 1},
+        }],
+    })
+    var invalid_phase_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not invalid_phase_catalog.load_from_definitions(
+            invalid_phase_definitions),
+        "未知 effect.phase 在内容加载阶段失败")
+    _assert_true(
+        _array_contains_text(
+            invalid_phase_catalog.errors,
+            "未知功法效果阶段 after_damage"),
+        "未知 effect.phase 返回稳定字段诊断")
 
     var actor = BattleSideScript.new("效果探针行动方")
     var executor = EffectExecutorScript.new(rng, registry)

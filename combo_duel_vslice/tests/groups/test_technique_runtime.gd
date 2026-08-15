@@ -20,6 +20,8 @@ func _initialize() -> void:
         "_test_nested_invocation_recursion_and_options",
         "_test_invocation_rejection_does_not_move_slot",
         "_test_invocation_choice_resume_freezes_randomness",
+        "_test_manual_automatic_invoked_resolution_consistency",
+        "_test_battle_session_invocation_choice_resume",
         "_test_source_marker_response_and_private_projections",
         "_test_temporary_slots_do_not_duplicate_run_max_life",
         "_test_reflection_override_sources_and_recursion_guard",
