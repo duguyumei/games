@@ -1,10 +1,13 @@
 class_name BattlePassiveCommittedEventService
 extends RefCounted
 
+signal event_committed(event_kind, values, receipt)
+
 const ContextScript = preload(
     "res://core/passives/battle_passive_committed_event_context.gd")
 const ReceiptStoreScript = preload(
     "res://core/passives/battle_passive_event_receipt_store.gd")
+const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 var execution_history: Array[Dictionary] = []
 var receipt_store := ReceiptStoreScript.new()
@@ -17,6 +20,7 @@ var _side_refs: Array[WeakRef] = []
 var _scenario_error: Callable
 var _battle_instance_id: String = "battle-0"
 var _serial: int = 0
+var _weak_listeners: Array[Dictionary] = []
 
 func _init(passive_runtime, scenario_error_callback: Callable = Callable()) -> void:
     _runtime_ref = weakref(passive_runtime)
@@ -38,6 +42,15 @@ func close_battle() -> void:
     _side_refs.clear()
     _serial = 0
 
+func register_weak_listener(target, method: String) -> bool:
+    if target == null or method == "" or not target.has_method(method):
+        return false
+    for entry in _weak_listeners:
+        if entry["target"].get_ref() == target and str(entry["method"]) == method:
+            return true
+    _weak_listeners.append({"target": weakref(target), "method": method})
+    return true
+
 func next_serial() -> int:
     var result := _serial
     _serial += 1
@@ -55,6 +68,8 @@ func make_token(
         action_token, owner_id, card_instance_id]
 
 func commit(event_kind: String, values: Dictionary) -> Dictionary:
+    if not BattleEventCatalogScript.is_committed(event_kind):
+        return _fail(event_kind, "未知 committed 事件：%s" % event_kind)
     var runtime = _runtime_ref.get_ref()
     if runtime == null:
         return _fail(event_kind, "被动规则运行时已释放")
@@ -110,7 +125,52 @@ func commit(event_kind: String, values: Dictionary) -> Dictionary:
         "owner_ids": owners.map(func(owner): return str(owner.owner_id)),
         "invocation_count": invocation_count,
     }
+    return _publish(event_kind, values, receipt)
+
+func publish_resolved_timing_event(
+        event_kind: String,
+        values: Dictionary) -> Dictionary:
+    if not BattleEventCatalogScript.is_timing(event_kind):
+        return _fail(event_kind, "未知 timing 事件：%s" % event_kind)
+    var runtime = _runtime_ref.get_ref()
+    if runtime == null:
+        return _fail(event_kind, "被动规则运行时已释放")
+    if not runtime.registry.has_hook(event_kind):
+        return _fail(event_kind, "未知细粒度事件 Hook：%s" % event_kind)
+    var event_token := str(values.get("event_token", ""))
+    if event_token == "":
+        return _fail(event_kind, "细粒度事件缺少稳定 event_token")
+    if receipt_store.has(event_token):
+        return {
+            "success": true,
+            "reused": true,
+            "event_token": event_token,
+            "receipt": receipt_store.receipt(event_token),
+        }
+    var receipt := {
+        "event_kind": event_kind,
+        "event_token": event_token,
+        "owner_ids": _event_owners(values).map(
+            func(owner): return str(owner.owner_id)),
+        "invocation_count": 0,
+        "timing_already_resolved": true,
+    }
+    return _publish(event_kind, values, receipt)
+
+func _publish(
+        event_kind: String,
+        values: Dictionary,
+        receipt: Dictionary) -> Dictionary:
+    var event_token := str(receipt.get("event_token", values.get(
+        "event_token", "")))
     receipt_store.record(event_token, receipt)
+    event_committed.emit(event_kind, values.duplicate(false), receipt.duplicate(true))
+    for listener in _weak_listeners.duplicate():
+        var target = listener["target"].get_ref()
+        if target == null:
+            _weak_listeners.erase(listener)
+            continue
+        target.call(str(listener["method"]), event_kind, values.duplicate(false), receipt.duplicate(true))
     return {
         "success": true,
         "reused": false,

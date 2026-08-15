@@ -12,6 +12,15 @@ const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
+const SequenceBookScript = preload("res://core/sequence_book.gd")
+const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
+const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
+const AiBattleStateProjectorScript = preload(
+    "res://core/ai/ai_battle_state_projector.gd")
+const AiHistoryProjectorScript = preload("res://core/ai/ai_history_projector.gd")
+const BattleSideSnapshotScript = preload("res://core/battle_side_snapshot.gd")
+const UiMainScript = preload("res://ui/main.gd")
+const RunBuildQueryServiceScript = preload("res://core/run_build_query_service.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -114,6 +123,11 @@ class LoadoutCatalog:
     func all_of(kind: String) -> Array:
         return techniques.values() if kind == "technique" else []
 
+class EmptyInnerLoadoutService:
+    extends RefCounted
+    func get_loadout(_editable: bool = true, _blocked_reason: String = "") -> Dictionary:
+        return {}
+
 func _initialize() -> void:
     if not RuntimeProfileScript.current().is_test():
         push_error("自动化测试必须显式指定 --launch-mode=test")
@@ -130,8 +144,23 @@ func _initialize() -> void:
     _test_defense_decay_return_records()
     _test_action_resolution_results_and_no_life_loss_disruption()
     _test_synchronized_reflection_matches_normal_damage()
+    _test_unblockable_damage_still_absorbs_and_reflects()
     _test_all_insights_grow_empty_slots()
     _test_s2f6a_basic_techniques_and_loadout_limits()
+    _test_stable_slots_temporary_insert_and_call_orders()
+    _test_source_markers_life_and_defense_ports()
+    _test_manual_advance_only_suppresses_effects()
+    _test_automatic_trigger_uses_special_p0_and_nested_order()
+    _test_equipped_max_life_marker_and_snapshot_migration()
+    _test_poison_damage_modifiers_apply_per_segment()
+    _test_normal_automatic_technique_manual_effects()
+    _test_automatic_multi_threshold_and_event_idempotency()
+    _test_automatic_opponent_event_multi_marker_batches_and_source_kind()
+    _test_nested_invocation_recursion_and_options()
+    _test_invocation_rejection_does_not_move_slot()
+    _test_invocation_choice_resume_freezes_randomness()
+    _test_source_marker_response_and_private_projections()
+    _test_temporary_slots_do_not_duplicate_run_max_life()
     _dispose_tracked_engines()
     if failures.is_empty():
         print("TECHNIQUE TEST PASS: %d assertions" % assertions)
@@ -267,7 +296,7 @@ func _test_changed_momentum_is_used_then_preserved() -> void:
     var engine = _probe_engine([
         _card("5", "wind"), _card("5", "fire")],
         "pair",
-        [{"op": "add_momentum", "amount": {
+        [{"op": "write_momentum", "operation": "add", "amount": {
             "kind": "initial_power_fraction", "numerator": 1, "denominator": 2}}])
     engine.player.momentum_value = 9
     engine.player.last_successful_technique_hand_id = "high_card"
@@ -283,7 +312,8 @@ func _test_changed_momentum_is_used_then_preserved() -> void:
 func _test_retrigger_reuses_frozen_snapshot() -> void:
     var cards := [_card("4", "wind"), _card("4", "fire")]
     var engine = _probe_engine(cards, "pair", [{
-        "op": "add_momentum", "amount": {"kind": "initial_power"}}])
+        "op": "write_momentum", "operation": "add",
+        "amount": {"kind": "initial_power"}}])
     var snapshot := {
         "initial_power": 31,
         "direct_power_fixed": 4,
@@ -319,7 +349,8 @@ func _test_delayed_effect_reuses_frozen_snapshot() -> void:
         "延迟快照探针",
         "turn_end",
         1,
-        [{"op": "add_momentum", "amount": {"kind": "initial_power"}}],
+        [{"op": "write_momentum", "operation": "add",
+            "amount": {"kind": "initial_power"}}],
         context)
     engine.player.momentum_value = 100
     engine.player.set_momentum(0)
@@ -329,6 +360,839 @@ func _test_delayed_effect_reuses_frozen_snapshot() -> void:
     _assert_equal(engine.player.momentum_value, 23, "延迟恢复保留冻结 P₀")
     _assert_equal(registered["record"]["power"], 53, "延迟记录保留最终 P")
     _assert_equal(registered["record"]["momentum_used"], 8, "延迟记录保留连势快照")
+
+func _test_stable_slots_temporary_insert_and_call_orders() -> void:
+    var book = SequenceBookScript.new()
+    book.configure({"high_card": ["a", "b", "c", "d"]})
+    var original_ids: Array = book.ordered_slots("high_card").map(
+        func(slot): return str(slot["slot_instance_id"]))
+    var first_insert := book.insert_temporary_slots(
+        "high_card", "temp", 2, {"position": "after_current"})
+    var second_insert := book.insert_temporary_slots(
+        "high_card", "temp", 2, {"position": "after_current"})
+    _assert_equal(first_insert.size() + second_insert.size(), 4,
+        "临时插入触发两次后按每次份数新增，不存在默认上限")
+    var temporary_ids: Dictionary = {}
+    for slot in first_insert + second_insert:
+        temporary_ids[str(slot["slot_instance_id"])] = true
+    _assert_equal(temporary_ids.size(), 4, "每份临时功法拥有唯一稳定槽位 ID")
+    book.reset()
+    _assert_equal(book.ordered_slots("high_card").size(), 4,
+        "战斗重置删除全部临时槽位")
+    _assert_equal(
+        book.ordered_slots("high_card").map(func(slot): return str(slot["slot_instance_id"])),
+        original_ids, "战斗重置恢复永久槽位稳定身份与原始顺序")
+
+    var engine = _engine_with_cards([_card("9", "wind")])
+    var definitions: Array = []
+    for technique_id in ["a", "b", "c", "d"]:
+        definitions.append({
+            "id": technique_id, "name": technique_id.to_upper(),
+            "pool": "high", "special": false, "effects": [],
+        })
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": definitions,
+    })
+    engine.sequence_book.configure({"high_card": ["a", "b", "c", "d"]})
+    var caller_slot: Dictionary = engine.sequence_book.current_slot("high_card")
+    var runtime = EffectContextScript.new().configure({
+        "ports": engine.effect_ports, "actor": engine.player,
+        "target": engine.enemy,
+        "hand_result": {"id": "high_card", "contributing": engine.player.hand},
+        "played_cards": engine.player.hand, "values": {
+            "initial_power": 9, "technique_value": 9,
+        },
+        "technique_id": "a", "technique_name": "A",
+        "action_token": "call-order", "root_action_token": "call-order",
+        "slot_instance_id": str(caller_slot["slot_instance_id"]),
+        "sequence_book": engine.sequence_book,
+        "card_identity_policy": engine.player.card_identity_policy,
+    })
+    var immediate: Dictionary = engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card", "technique_id": "c"},
+        "timing": "immediate", "check_condition": true,
+        "gain_same_qi": false,
+    }, runtime)
+    _assert_true(immediate.get("success", false), "甲即时调用丙完整成功")
+    engine.sequence_book.complete_slot(
+        "high_card", str(caller_slot["slot_instance_id"]))
+    _assert_equal(
+        engine.sequence_book.ordered_slots("high_card").map(func(slot): return str(slot["technique_id"])),
+        ["b", "d", "c", "a"], "甲即时调用丙后的最终序列为乙丁丙甲")
+
+    engine.sequence_book.configure({"high_card": ["a", "b", "c", "d"]})
+    caller_slot = engine.sequence_book.current_slot("high_card")
+    runtime.slot_instance_id = str(caller_slot["slot_instance_id"])
+    runtime.action_token = "call-after"
+    runtime.root_action_token = "call-after"
+    var delayed: Dictionary = engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card", "technique_id": "c"},
+        "timing": "after_caller_advance", "gain_same_qi": false,
+    }, runtime)
+    _assert_true(delayed.get("deferred", false), "推进后调用先冻结目标而不提前移动")
+    engine.sequence_book.complete_slot(
+        "high_card", str(caller_slot["slot_instance_id"]))
+    var drained: Dictionary = engine.technique_invocation_service.resolve_after_caller_advance("call-after")
+    _assert_true(drained.get("success", false), "调用者推进后成功结算冻结目标")
+    _assert_equal(
+        engine.sequence_book.ordered_slots("high_card").map(func(slot): return str(slot["technique_id"])),
+        ["b", "d", "a", "c"], "推进后调用的最终序列为乙丁甲丙")
+
+func _test_source_markers_life_and_defense_ports() -> void:
+    var store = SourceMarkerStoreScript.new()
+    _assert_true(store.write(
+        "technique", "slot-a", "a", "charge", "battle", "add", 3,
+        {"public": true, "display_name": "蓄力"})["success"],
+        "功法来源标识写入成功")
+    store.write("technique", "slot-a", "a", "guard", "battle", "set", 5,
+        {"public": true, "display_name": "守势"})
+    _assert_equal(store.entries().size(), 2, "同一功法可以同时保存多个标识")
+    _assert_equal(store.public_projection().size(), 2, "多个公开标识全部进入投影")
+    store.clear_scope("battle")
+    _assert_equal(store.entries().size(), 0, "战斗标识在战斗结束边界统一清理")
+
+    var engine = _engine_with_cards([])
+    engine.player.max_life = 100
+    engine.player.life = 95
+    var recovered: Dictionary = engine.effect_ports.recover_life(
+        engine.player, 20, "test", "heal-test", engine.player)
+    _assert_equal(recovered["recovered"], 5, "生命恢复不超过当前有效生命上限")
+    _assert_equal(engine.player.life, 100, "恢复后生命限制在有效上限")
+    engine.enemy.life = 100
+    engine.player.defense = 10
+    engine.player.set_reflection_percent(50)
+    var hostile: Dictionary = engine.effect_ports.remove_defense(
+        engine.player, 0, true, engine.enemy, "test", "remove-hostile",
+        "direct_effect")
+    _assert_equal(hostile["removed"], 10, "统一端口冻结敌方实际移除防御量")
+    _assert_equal(engine.enemy.life, 100, "敌方直接削防不触发反震")
+    engine.player.defense = 10
+    var enemy_life_before: int = engine.enemy.life
+    engine.effect_ports.remove_defense(
+        engine.player, 0, true, engine.player, "test", "remove-self")
+    _assert_equal(engine.enemy.life, enemy_life_before, "主动清空自身防御不触发反震")
+
+func _test_manual_advance_only_suppresses_effects() -> void:
+    var engine = _probe_engine([
+        _card("8", "fire"), _card("7", "fire")], "high_card", [
+        {"op": "damage", "amount": {"kind": "constant", "value": 20}},
+    ])
+    engine.repository.techniques["probe_technique"]["manual_effect_mode"] = "advance_only"
+    engine.repository.techniques["next_probe"] = engine.repository.get_definition(
+        "probe_technique").get_script().new().configure_from_dictionary({
+            "id": "next_probe", "name": "下一功法", "pool": "high",
+            "special": false, "effects": [],
+        }).to_definition()
+    engine.sequence_book.configure({
+        "high_card": ["probe_technique", "next_probe"],
+    })
+    engine.player.momentum_value = 4
+    var committed_events: Array = []
+    engine.battle_passive_event_service.event_committed.connect(
+        func(kind, values, _receipt):
+            if kind in ["action_confirmed", "action_resolved"]:
+                committed_events.append(values.duplicate(true)))
+    var enemy_life_before: int = engine.enemy.life
+    var slot_before: Dictionary = engine.sequence_book.current_slot("high_card")
+    var result: Dictionary = engine.confirm_play(engine.player.hand.map(
+        func(card): return str(card.id)))
+    _assert_true(result.get("technique_triggered", false),
+        "advance_only 主动触发仍视为成功功法")
+    _assert_equal(engine.enemy.life, enemy_life_before,
+        "advance_only 主动触发跳过 effects")
+    _assert_equal(result["preview"]["values"]["momentum_used"], 4,
+        "advance_only 仍正常计算 P 并读取冻结连势")
+    _assert_equal(engine.player.momentum_value, 0,
+        "advance_only 未改变连势时仍执行普通清空规则")
+    _assert_equal(engine.player.same_qi_value, 1,
+        "advance_only 仍按本次两张同属性真气结算同气")
+    _assert_true(str(engine.sequence_book.current_slot(
+        "high_card")["slot_instance_id"]) != str(slot_before["slot_instance_id"]),
+        "advance_only 成功后按冻结稳定槽位推进到下一功法")
+    _assert_equal(committed_events.size(), 2,
+        "advance_only 仍发送 action_confirmed 与 action_resolved")
+    _assert_true(committed_events.all(func(values):
+        return bool(values.get("metadata", {}).get(
+            "manual_effect_suppressed", false))),
+        "advance_only 行动事件明确标记 manual_effect_suppressed")
+    _assert_true(committed_events.all(func(values):
+        return values.get("metadata", {}).has("sequence_before") \
+            and values.get("metadata", {}).has("sequence_after")),
+        "手动确认与完成事件都携带 sequence_before／sequence_after")
+
+func _test_automatic_trigger_uses_special_p0_and_nested_order() -> void:
+    var engine = _engine_with_cards([_card("6", "mountain")])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {
+                "id": "a", "name": "甲", "pool": "high", "special": false,
+                "effects": [
+                    {"op": "defense", "amount": {"kind": "constant", "value": 10}},
+                    {"op": "damage", "amount": {"kind": "constant", "value": 1}},
+                ],
+            },
+            {"id": "b", "name": "乙", "pool": "high", "special": false, "effects": []},
+            {
+                "id": "c", "name": "丙", "pool": "high", "special": false,
+                "manual_effect_mode": "normal",
+                "marker_definitions": [{
+                    "id": "guard_progress", "scope": "battle",
+                    "public": true, "display_name": "守势进度",
+                }],
+                "automatic_triggers": [{
+                    "id": "after_defense_10", "event": "defense_gained",
+                    "filters": {},
+                    "progress": {
+                        "marker_id": "guard_progress",
+                        "add": {"kind": "event_field", "field": "effective_amount"},
+                        "threshold": 10, "consume": 10,
+                        "retain_overflow": true,
+                    },
+                    "p0": {"kind": "consumed_marker_value"},
+                    "timing": "immediate",
+                }],
+                "effects": [{"op": "damage", "amount": {"kind": "power"}}],
+            },
+            {"id": "d", "name": "丁", "pool": "high", "special": false, "effects": []},
+        ],
+    })
+    engine.sequence_book.configure({"high_card": ["a", "b", "c", "d"]})
+    engine.actions_available = 1
+    engine.player.direct_power_fixed = 2
+    engine.player.momentum_value = 3
+    var enemy_life_before: int = engine.enemy.life
+    var result: Dictionary = engine.confirm_play([engine.player.hand[0].id])
+    _assert_true(result.get("success", false), "防御中途达标的自动功法结算成功")
+    _assert_equal(engine.enemy.life, enemy_life_before - 16,
+        "自动条件以10为特殊P₀，再加入2点直接修正与3点连势并在甲下一效果前结算")
+    _assert_equal(
+        engine.sequence_book.ordered_slots("high_card").map(func(slot): return str(slot["technique_id"])),
+        ["b", "d", "c", "a"], "自动即时嵌套采用乙丁丙甲顺序")
+    var c_slot: Dictionary = engine.sequence_book.find_slots({
+        "hand_id": "high_card", "technique_id": "c"})[0]
+    _assert_equal(engine.player.source_marker_store.value(
+        "technique", str(c_slot["slot_instance_id"]), "guard_progress", "battle"),
+        0, "自动阈值按声明消费且不丢失槽位身份")
+
+func _test_equipped_max_life_marker_and_snapshot_migration() -> void:
+    var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
+    _assert_true(catalog.load_all(), "生命上限标识测试载入正式目录")
+    var growth = GrowthInventoryScript.new(catalog)
+    growth.base_max_life = 100
+    growth.max_life = 100
+    growth.life = 60
+    growth.source_marker_store.write(
+        "technique", "technique:basic_scatter", "basic_scatter",
+        "life_origin", "run", "set", 80, {
+            "public": true, "display_name": "命元",
+            "contributes_to": "max_life",
+        })
+    _assert_equal(growth.recalculate_effective_max_life(), 180,
+        "命元80在来源功法装备于任意永久序列时提供生命上限")
+    _assert_equal(growth.life, 60, "装备生命上限标识不会自动回血")
+    for hand_id in HAND_IDS:
+        growth.hand_technique_progression[hand_id]["sequence"] = ["basic_guard"]
+    _assert_equal(growth.recalculate_effective_max_life(), 100,
+        "卸下来源功法后标识保留但生命上限加成失效")
+    growth.life = 95
+    growth.hand_technique_progression["high_card"]["sequence"] = ["basic_scatter"]
+    _assert_equal(growth.recalculate_effective_max_life(), 180,
+        "重新装备来源功法后恢复生命上限")
+    _assert_equal(growth.life, 95, "重新装备生命上限来源不恢复当前生命")
+    var snapshot = growth.to_progress_snapshot()
+    var restored = GrowthInventoryScript.new(catalog)
+    restored.apply_progress_snapshot(snapshot)
+    _assert_equal(restored.base_max_life, 100,
+        "本局快照保存基础生命上限而非含装备加成的有效值")
+    _assert_equal(restored.max_life, 180, "来源标识与装备状态恢复后重新计算有效上限")
+    var legacy = GrowthInventoryScript.new(catalog)
+    legacy.apply_progress_snapshot(RunProgressSnapshotScript.from_dict({
+        "life": 120, "max_life": 150,
+    }))
+    _assert_equal(legacy.base_max_life, 150,
+        "旧快照缺少来源标识时把原 max_life 迁移为 base_max_life")
+
+func _test_poison_damage_modifiers_apply_per_segment() -> void:
+    var engine = _engine_with_cards([
+        _card("3", "forest"), _card("4", "forest")])
+    for card in engine.player.hand:
+        engine.effect_ports.apply_card_anomaly(
+            card, "state", "poison", {}, "test", 1)
+    engine.player.grant_poison_damage_modifier(
+        1, 50, -1, "battle_end", "poison-plus")
+    var context = EffectContextScript.new().configure({
+        "ports": engine.effect_ports, "actor": engine.player,
+        "target": engine.enemy, "action_token": "poison-modifier-test",
+        "technique_id": "poison_probe", "technique_name": "毒伤探针",
+        "captures": {},
+    })
+    var life_before: int = engine.player.life
+    var result: Dictionary = engine.effect_executor.execute_all([{
+        "op": "trigger_all_poison_simultaneously",
+        "result_capture": "segments",
+    }], context)
+    _assert_true(result.get("success", false), "同步毒触发通过通用逐段修正流程")
+    _assert_equal(engine.player.life, life_before - 13,
+        "固定+1与50%按每张毒牌分别执行后再合计同步写入")
+    _assert_equal(context.captures["segments"].map(
+        func(entry): return int(entry["modified_amount"])), [6, 7],
+        "毒伤顺序为B加固定、截零、加百分比并逐段向下取整")
+    _assert_equal(engine.player.poison_damage_modifier_sources.size(), 1,
+        "无限次毒伤修正不会被逐段消费")
+
+    engine.player.poison_damage_modifier_sources.clear()
+    engine.player.poison_damage_modifier_receipts.clear()
+    engine.player.grant_poison_damage_modifier(
+        2, 0, 1, "battle_end", "one-hit")
+    var frozen_once: Dictionary = engine.player.freeze_poison_damage_modifiers(
+        5, "poison-receipt-1")
+    _assert_equal(frozen_once["final_amount"], 7,
+        "有限次数毒伤来源冻结时进入第一段计算")
+    _assert_equal(engine.player.poison_damage_modifier_sources[0]["remaining_hits"], 1,
+        "预览和冻结毒伤修正不消费 remaining_hits")
+    engine.player.commit_poison_damage_modifier_receipt(frozen_once)
+    engine.player.commit_poison_damage_modifier_receipt(frozen_once)
+    _assert_equal(engine.player.freeze_poison_damage_modifiers(
+        5, "poison-receipt-2")["final_amount"], 5,
+        "成功提交后来源耗尽，同 receipt 重放不重复消费")
+
+func _test_normal_automatic_technique_manual_effects() -> void:
+    var engine = _engine_with_cards([_card("7", "fire")])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [{
+            "id": "auto_normal", "name": "普通自动功法",
+            "pool": "high", "special": false,
+            "automatic_triggers": [{
+                "id": "after_defense", "event": "defense_gained",
+                "filters": {}, "p0": {"kind": "constant", "value": 5},
+                "timing": "immediate",
+            }],
+            "effects": [{
+                "op": "damage",
+                "amount": {"kind": "constant", "value": 7},
+            }],
+        }],
+    })
+    engine.sequence_book.configure({"high_card": ["auto_normal"]})
+    var life_before: int = engine.enemy.life
+    var result: Dictionary = engine.confirm_play([engine.player.hand[0].id])
+    _assert_true(result.get("technique_triggered", false),
+        "带自动条件的普通功法仍能随序列主动成功触发")
+    _assert_equal(engine.enemy.life, life_before - 7,
+        "manual_effect_mode 默认 normal，主动触发正常执行 effects")
+
+func _test_automatic_multi_threshold_and_event_idempotency() -> void:
+    var engine = _engine_with_cards([])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "a", "name": "甲", "pool": "high", "special": false, "effects": []},
+            {
+                "id": "charge_auto", "name": "蓄力自动",
+                "pool": "high", "special": false,
+                "marker_definitions": [{
+                    "id": "charge", "scope": "battle",
+                    "public": true, "display_name": "蓄力",
+                }],
+                "automatic_triggers": [{
+                    "id": "charge_ten", "event": "defense_gained",
+                    "filters": {},
+                    "progress": {
+                        "marker_id": "charge",
+                        "add": {"kind": "event_field", "field": "effective_amount"},
+                        "threshold": 10, "consume": 10,
+                        "retain_overflow": true,
+                    },
+                    "p0": {"kind": "consumed_marker_value"},
+                    "timing": "immediate",
+                }],
+                "effects": [{
+                    "op": "damage",
+                    "amount": {"kind": "constant", "value": 1},
+                }],
+            },
+            {"id": "d", "name": "丁", "pool": "high", "special": false, "effects": []},
+        ],
+    })
+    engine.sequence_book.configure({"high_card": ["a", "charge_auto", "d"]})
+    var event_values := {
+        "event_token": "automatic-multi-threshold",
+        "event_serial": 7001,
+        "actor": engine.player, "owner": engine.player,
+        "effective_amount": 25, "action_token": "automatic-root",
+        "round_number": 1,
+    }
+    var life_before: int = engine.enemy.life
+    var first: Dictionary = engine.battle_passive_event_service.commit(
+        "defense_gained", event_values)
+    _assert_true(first.get("success", false), "跨过两个阈值的已提交事件成功写入")
+    _assert_equal(engine.enemy.life, life_before - 2,
+        "单个事件跨过两个完整阈值时自动功法触发两次且没有默认上限")
+    var auto_slot: Dictionary = engine.sequence_book.find_slots({
+        "hand_id": "high_card", "technique_id": "charge_auto"})[0]
+    _assert_equal(engine.player.source_marker_store.value(
+        "technique", str(auto_slot["slot_instance_id"]), "charge", "battle"), 5,
+        "多阈值消费后保留5点溢出")
+    var second: Dictionary = engine.battle_passive_event_service.commit(
+        "defense_gained", event_values)
+    _assert_true(second.get("reused", false), "相同事件 token 的重复提交复用既有回执")
+    _assert_equal(engine.enemy.life, life_before - 2,
+        "相同事件 token 不重复计数、移动或触发自动功法")
+
+func _test_automatic_opponent_event_multi_marker_batches_and_source_kind() -> void:
+    var engine = _engine_with_cards([_card("7", "forest")])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "a", "name": "甲", "pool": "high", "special": false,
+                "effects": []},
+            {
+                "id": "batch_auto", "name": "批次自动探针",
+                "pool": "high", "special": false,
+                "marker_definitions": [
+                    {"id": "poison_count", "scope": "battle",
+                        "public": true, "display_name": "毒伤次数"},
+                    {"id": "poison_total", "scope": "battle",
+                        "public": true, "display_name": "毒伤总额"},
+                ],
+                "automatic_triggers": [
+                    {
+                        "id": "opponent_poison_batch",
+                        "event": "poison_trigger_completed",
+                        "filters": {"event_actor_is_opponent": true},
+                        "progress": {
+                            "marker_id": "poison_count", "add": 1,
+                            "threshold": 3, "consume": 3,
+                            "retain_overflow": true,
+                            "additional": [{
+                                "marker_id": "poison_total",
+                                "add": {"kind": "event_field",
+                                    "field": "final_amount"},
+                                "consume": "all",
+                            }],
+                            "consumed_marker_id": "poison_total",
+                        },
+                        "p0": {"kind": "consumed_marker_value"},
+                        "timing": "immediate",
+                    },
+                    {
+                        "id": "technique_draw_only", "event": "card_drawn",
+                        "filters": {"source_kind": "technique"},
+                        "p0": {"kind": "constant", "value": 1},
+                        "timing": "immediate",
+                    },
+                ],
+                "effects": [{"op": "damage", "amount": {"kind": "power"}}],
+            },
+        ],
+    })
+    engine.sequence_book.configure({"high_card": ["a", "batch_auto"]})
+    var life_before: int = engine.enemy.life
+    for index in range(3):
+        var serial := 8100 + index
+        var committed: Dictionary = engine.battle_passive_event_service.commit(
+            "poison_trigger_completed", {
+                "event_token": "opponent-poison-%d" % index,
+                "event_serial": serial,
+                "actor": engine.enemy, "target": engine.enemy,
+                "owner": engine.enemy, "holder": engine.enemy,
+                "final_amount": index + 2,
+                "actual_life_loss": index + 2,
+                "action_token": "opponent-poison-root",
+            })
+        _assert_true(committed.get("success", false),
+            "敌方毒伤段%d进入统一自动事件桥" % (index + 1))
+    _assert_equal(engine.enemy.life, life_before - 9,
+        "敌方事件可触发我方自动功法，P0读取三段毒伤总额2+3+4")
+    var auto_slot: Dictionary = engine.sequence_book.find_slots({
+        "hand_id": "high_card", "technique_id": "batch_auto"})[0]
+    _assert_equal(engine.player.source_marker_store.value(
+        "technique", str(auto_slot["slot_instance_id"]),
+        "poison_count", "battle"), 0,
+        "毒伤次数阈值消费对应三段批次")
+    _assert_equal(engine.player.source_marker_store.value(
+        "technique", str(auto_slot["slot_instance_id"]),
+        "poison_total", "battle"), 0,
+        "驱动触发时同步消费毒伤总额标识")
+
+    engine.battle_passive_event_service.commit("card_drawn", {
+        "event_token": "item-draw-probe", "event_serial": 8200,
+        "actor": engine.player, "owner": engine.player,
+        "source_kind": "item", "draw_reason": "effect_draw",
+        "action_token": "draw-root",
+    })
+    _assert_equal(engine.enemy.life, life_before - 9,
+        "物品抽牌不会误推进只接受功法来源的自动条件")
+    engine.battle_passive_event_service.commit("card_drawn", {
+        "event_token": "technique-draw-probe", "event_serial": 8201,
+        "actor": engine.player, "owner": engine.player,
+        "source_kind": "technique", "draw_reason": "effect_draw",
+        "action_token": "draw-root",
+    })
+    _assert_equal(engine.enemy.life, life_before - 10,
+        "结构化source_kind=technique的抽牌才触发对应自动条件")
+
+func _test_nested_invocation_recursion_and_options() -> void:
+    var engine = _engine_with_cards([_card("7", "fire")])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "a", "name": "甲", "pool": "high", "special": false, "effects": []},
+            {"id": "b", "name": "乙", "pool": "high", "special": false,
+                "effects": [{"op": "damage", "amount": {"kind": "power"}}]},
+            {"id": "c", "name": "丙", "pool": "high", "special": false,
+                "effects": [
+                    {"op": "invoke_sequence_technique",
+                        "selection": {"mode": "self", "hand_id": "current"},
+                        "gain_same_qi": false},
+                    {"op": "invoke_sequence_technique",
+                        "selection": {"mode": "by_id", "hand_id": "current", "technique_id": "d"},
+                        "gain_same_qi": false},
+                ]},
+            {"id": "d", "name": "丁", "pool": "high", "special": false,
+                "effects": [{"op": "damage", "amount": {"kind": "constant", "value": 1}}]},
+        ],
+    })
+    engine.sequence_book.configure({"high_card": ["a", "b", "c", "d"]})
+    var caller: Dictionary = engine.sequence_book.current_slot("high_card")
+    var runtime = EffectContextScript.new().configure({
+        "ports": engine.effect_ports, "actor": engine.player,
+        "target": engine.enemy,
+        "hand_result": {"id": "high_card", "contributing": engine.player.hand},
+        "played_cards": engine.player.hand,
+        "values": {"initial_power": 7, "technique_value": 7},
+        "initial_power": 7, "power": 7,
+        "group_snapshot": {"action_same_qi_gain": 2},
+        "technique_id": "a", "technique_name": "甲",
+        "action_token": "nested-call", "root_action_token": "nested-call",
+        "slot_instance_id": str(caller["slot_instance_id"]),
+        "sequence_book": engine.sequence_book,
+        "card_identity_policy": engine.player.card_identity_policy,
+    })
+    engine.technique_invocation_service.enter_resolution_slot(
+        str(caller["slot_instance_id"]))
+    var life_before: int = engine.enemy.life
+    var nested: Dictionary = engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card", "technique_id": "c"},
+        "timing": "immediate", "gain_same_qi": false,
+    }, runtime)
+    engine.technique_invocation_service.exit_resolution_slot(
+        str(caller["slot_instance_id"]), true)
+    _assert_true(nested.get("success", false), "其他槽位可以继续形成多层嵌套调用")
+    _assert_equal(engine.enemy.life, life_before - 1,
+        "丙递归调用自身被阻止，但随后调用丁仍正常结算")
+    engine.sequence_book.complete_slot("high_card", str(caller["slot_instance_id"]))
+    _assert_equal(engine.sequence_book.ordered_slots("high_card").map(
+        func(slot): return str(slot["technique_id"])), ["b", "d", "c", "a"],
+        "多层嵌套调用后稳定槽位推进得到乙丁丙甲")
+    _assert_true(engine.technique_invocation_service.stack_slot_ids().is_empty(),
+        "嵌套调用完成后结算栈完整清理")
+
+    engine.sequence_book.configure({"high_card": ["a", "b"]})
+    caller = engine.sequence_book.current_slot("high_card")
+    runtime.slot_instance_id = str(caller["slot_instance_id"])
+    runtime.action_token = "options-on"
+    runtime.root_action_token = "options-on"
+    engine.player.direct_power_fixed = 1
+    engine.player.momentum_value = 5
+    engine.player.same_qi_value = 0
+    life_before = engine.enemy.life
+    var options_on: Dictionary = engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card", "technique_id": "b"},
+        "p0": {"mode": "fixed", "value": 7},
+        "advance_sequence": true, "gain_same_qi": true,
+        "use_momentum": true, "check_condition": true,
+    }, runtime)
+    _assert_true(options_on.get("success", false), "调用默认完整结算成功")
+    _assert_equal(engine.enemy.life, life_before - 13,
+        "固定初始P0=7后仍加入1点直接修正与5点连势")
+    _assert_equal(engine.player.momentum_value, 0, "调用读取并正常结算连势")
+    _assert_equal(engine.player.same_qi_value, 2, "调用再次结算冻结真气组同气")
+    var event_kinds: Array = engine.battle_passive_event_service.receipt_store._receipts.values().map(
+        func(receipt): return str(receipt.get("event_kind", "")))
+    for kind in ["action_confirmed", "technique_invocation_started",
+            "technique_invocation_resolved", "action_resolved"]:
+        _assert_true(event_kinds.has(kind), "调用发送结构化事件 %s" % kind)
+
+    engine.sequence_book.configure({"high_card": ["a", "b"]})
+    caller = engine.sequence_book.current_slot("high_card")
+    runtime.slot_instance_id = str(caller["slot_instance_id"])
+    runtime.action_token = "options-off"
+    runtime.root_action_token = "options-off"
+    engine.player.momentum_value = 7
+    var same_qi_before: int = engine.player.same_qi_value
+    var options_off: Dictionary = engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card", "technique_id": "b"},
+        "p0": {"mode": "fixed", "value": 7},
+        "advance_sequence": false, "gain_same_qi": false,
+        "use_momentum": false, "check_condition": true,
+    }, runtime)
+    _assert_true(options_off.get("success", false), "显式关闭调用选项仍可成功结算效果")
+    _assert_equal(engine.player.momentum_value, 7, "use_momentum=false 不读取或清空连势")
+    _assert_equal(engine.player.same_qi_value, same_qi_before,
+        "gain_same_qi=false 不获得同气")
+    _assert_equal(engine.sequence_book.current_id("high_card"), "b",
+        "advance_sequence=false 保持被调用槽位为当前")
+
+func _test_invocation_choice_resume_freezes_randomness() -> void:
+    var engine = _engine_with_cards([
+        _card("4", "wind"), _card("9", "fire")])
+    var waiting_effects := [
+        {
+            "op": "insert_technique_slots",
+            "source": "self",
+            "target_hands": "current",
+            "copies": 2,
+            "position": "random",
+            "temporary": true,
+        },
+        {
+            "op": "select_cards",
+            "choice_id": "invoked_wait",
+            "chooser": "actor",
+            "minimum": 1,
+            "maximum": 1,
+            "insufficient_policy": "fail",
+            "query": {
+                "side": "actor", "zone": "hand", "order": "zone",
+                "filters": {"card_kind": "normal"},
+            },
+            "capture": "selected",
+        },
+        {"op": "damage", "amount": {"kind": "constant", "value": 1}},
+    ]
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "a", "name": "甲", "pool": "high", "special": false,
+                "effects": []},
+            {"id": "b", "name": "乙", "pool": "high", "special": false,
+                "effects": waiting_effects},
+            {"id": "c", "name": "丙", "pool": "high", "special": false,
+                "effects": waiting_effects},
+        ],
+    })
+    engine.sequence_book.configure({"high_card": ["a", "b", "c"]})
+    var caller: Dictionary = engine.sequence_book.current_slot("high_card")
+    var runtime = EffectContextScript.new().configure({
+        "ports": engine.effect_ports, "actor": engine.player,
+        "target": engine.enemy,
+        "hand_result": {"id": "high_card", "contributing": engine.player.hand},
+        "played_cards": engine.player.hand,
+        "values": {"initial_power": 9, "technique_value": 9},
+        "initial_power": 9, "power": 9,
+        "technique_id": "a", "technique_name": "甲",
+        "action_token": "random-resume", "root_action_token": "random-resume",
+        "slot_instance_id": str(caller["slot_instance_id"]),
+        "sequence_book": engine.sequence_book,
+        "card_identity_policy": engine.player.card_identity_policy,
+    })
+    engine.technique_invocation_service.enter_resolution_slot(
+        str(caller["slot_instance_id"]))
+    var started: Dictionary = engine.effect_executor.execute_all([{
+        "op": "invoke_sequence_technique",
+        "selection": {"mode": "random", "hand_id": "high_card"},
+        "timing": "immediate", "gain_same_qi": false,
+    }], runtime)
+    _assert_true(started.get("pending_choice", false),
+        "随机调用进入被调用功法的等待选择")
+    if not started.get("pending_choice", false):
+        engine.technique_invocation_service.exit_resolution_slot(
+            str(caller["slot_instance_id"]), true)
+        return
+    var request_id := str(started.get("choice_request", {}).get("request_id", ""))
+    var invoked_slot_id := str(engine.sequence_book.current_slot(
+        "high_card").get("slot_instance_id", ""))
+    var frozen_temporary_ids: Array = engine.sequence_book.find_slots({
+        "hand_id": "high_card", "temporary": true,
+    }).map(func(slot): return str(slot["slot_instance_id"]))
+    var sequence_before_resume: Array = engine.sequence_book.ordered_slots(
+        "high_card").map(func(slot): return str(slot["slot_instance_id"]))
+    var rng_state_before_resume: int = engine.rng.state
+    var selected_id := str(started["choice_request"]["candidates"][0]["id"])
+    var resumed: Dictionary = engine.effect_executor.resume(
+        started.get("_continuation"), request_id, [selected_id])
+    engine.technique_invocation_service.exit_resolution_slot(
+        str(caller["slot_instance_id"]), true)
+    _assert_true(resumed.get("success", false), "等待选择恢复后完成同一次调用")
+    _assert_equal(engine.rng.state, rng_state_before_resume,
+        "调用恢复不重新选择随机目标或随机插入位置")
+    _assert_equal(engine.sequence_book.find_slots({
+        "hand_id": "high_card", "temporary": true,
+    }).map(func(slot): return str(slot["slot_instance_id"])), frozen_temporary_ids,
+        "恢复后仍是首次冻结的两份临时槽且没有重复插入")
+    _assert_true(engine.sequence_book.find_slots({
+        "hand_id": "high_card",
+    }).any(func(slot): return str(slot["slot_instance_id"]) == invoked_slot_id),
+        "恢复结算沿用首次随机选中的稳定目标槽位")
+    _assert_true(sequence_before_resume.has(invoked_slot_id),
+        "等待状态保存已移动后的调用目标顺序")
+
+func _test_invocation_rejection_does_not_move_slot() -> void:
+    var engine = _engine_with_cards([_card("7", "forest")])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [
+            {"id": "caller_probe", "name": "调用者探针", "pool": "high",
+                "special": false, "effects": []},
+            {"id": "rejected_probe", "name": "拒绝目标探针", "pool": "high",
+                "special": false, "condition": {"pure_attribute": "fire"},
+                "effects": [{"op": "damage", "amount": 99}]},
+            {"id": "tail_probe", "name": "尾部探针", "pool": "high",
+                "special": false, "effects": []},
+        ],
+    })
+    engine.sequence_book.configure({
+        "high_card": ["caller_probe", "rejected_probe", "tail_probe"]})
+    var runtime = EffectContextScript.new().configure({
+        "ports": engine.effect_ports,
+        "actor": engine.player,
+        "target": engine.enemy,
+        "hand_result": {
+            "id": "high_card",
+            "contributing": engine.player.hand.duplicate(),
+        },
+        "played_cards": engine.player.hand.duplicate(),
+        "group_snapshot": {},
+        "values": {"initial_power": 10, "technique_value": 10},
+        "power": 10,
+        "initial_power": 10,
+        "technique_id": "caller_probe",
+        "technique_name": "调用者探针",
+        "slot_instance_id": str(
+            engine.sequence_book.current_slot(
+                "high_card")["slot_instance_id"]),
+        "actual_hand_id": "high_card",
+        "action_token": "rejected-invocation-root",
+        "root_action_token": "rejected-invocation-root",
+        "sequence_book": engine.sequence_book,
+        "card_identity_policy": engine.player.card_identity_policy,
+    })
+    var sequence_before: Array = engine.sequence_book.ordered_slots(
+        "high_card").map(func(slot): return str(slot["technique_id"]))
+    var result: Dictionary = engine.technique_invocation_service.invoke({
+        "selection": {"mode": "by_id", "hand_id": "high_card",
+            "technique_id": "rejected_probe"},
+        "timing": "immediate", "p0": {"mode": "fixed", "value": 10},
+    }, runtime)
+    _assert_true(result.get("success", false) \
+        and not result.get("triggered", true),
+        "调用目标条件不满足时安全拒绝")
+    _assert_equal(engine.sequence_book.ordered_slots("high_card").map(
+        func(slot): return str(slot["technique_id"])), sequence_before,
+        "调用资格拒绝发生在槽位移动前")
+    _assert_equal(engine.enemy.life, 100, "拒绝调用不执行目标效果")
+
+func _test_source_marker_response_and_private_projections() -> void:
+    var engine = _engine_with_cards([])
+    engine.sequence_book.configure({"high_card": ["marker_source"]})
+    var source_slot: Dictionary = engine.sequence_book.current_slot("high_card")
+    var source_slot_id := str(source_slot["slot_instance_id"])
+    var runtime = EffectContextScript.new().configure({
+        "ports": engine.effect_ports, "actor": engine.player,
+        "target": engine.enemy,
+        "technique_id": "marker_source", "technique_name": "标识来源",
+        "slot_instance_id": source_slot_id,
+        "actual_hand_id": "high_card",
+        "action_token": "marker-response", "root_action_token": "marker-response",
+        "sequence_book": engine.sequence_book,
+        "captures": {},
+    })
+    engine.status_system.register_response(
+        "defense_gained", "battle_end", [{
+            "op": "write_source_marker", "operation": "add",
+            "marker_id": "charge", "scope": "battle", "amount": {
+                "kind": "event_field", "field": "effective_amount"},
+            "public": true, "display_name": "蓄力",
+        }], runtime, {"owner": "actor"})
+    engine.effect_ports.add_defense(
+        engine.player, 6, "test", "marker-response:defense")
+    _assert_equal(engine.player.source_marker_store.value(
+        "technique", source_slot_id, "charge", "battle"), 6,
+        "细粒度防御事件响应修改注册时的原功法槽位标识")
+
+    engine.player.source_marker_store.write(
+        "technique", source_slot_id, "marker_source", "public_probe",
+        "battle", "set", 3, {"public": true, "display_name": "公开"})
+    engine.player.source_marker_store.write(
+        "technique", source_slot_id, "marker_source", "private_probe",
+        "battle", "set", 9, {"public": false, "display_name": "私有"})
+    var ai_state: Dictionary = AiBattleStateProjectorScript.new().project_self(
+        engine.player, engine.sequence_book, engine.battle_flow)
+    _assert_equal(ai_state["public_source_markers"].filter(func(marker):
+        return str(marker.get("marker_id", "")) == "private_probe").size(), 0,
+        "AI 状态投影不包含私有来源标识")
+    var private_history: Dictionary = AiHistoryProjectorScript.new().project({
+        "sequence": 1, "round_number": 1, "action_index": 0,
+        "event_type": "source_marker_changed", "actor_id": "player",
+        "visibility": "public", "payload": {
+            "marker_id": "private_probe", "value": 9, "public": false,
+        },
+    })
+    _assert_true(private_history.is_empty(), "AI 历史投影丢弃私有标识事件")
+
+    var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
+    _assert_true(catalog.load_all(), "私有本局标识投影测试载入正式目录")
+    var growth = GrowthInventoryScript.new(catalog)
+    growth.source_marker_store.write(
+        "technique", "technique:basic_scatter", "basic_scatter",
+        "public_run", "run", "set", 4,
+        {"public": true, "display_name": "公开本局"})
+    growth.source_marker_store.write(
+        "technique", "technique:basic_scatter", "basic_scatter",
+        "private_run", "run", "set", 8,
+        {"public": false, "display_name": "私有本局"})
+    var build = RunBuildQueryServiceScript.new(
+        growth, catalog, EmptyInnerLoadoutService.new()).query(true)
+    var scatter: Dictionary = build.hand_loadout("high_card").sequence[0]
+    _assert_equal(scatter.get("run_markers", []).map(func(marker):
+        return str(marker.get("marker_id", ""))), ["public_run"],
+        "本局功法配装 UI DTO 只显示公开标识")
+    var saved_marker_state: Dictionary = growth.to_progress_snapshot().source_marker_state
+    _assert_equal(saved_marker_state.get("entries", []).size(), 2,
+        "存档内部完整保留公开与私有本局标识以便恢复")
+
+func _test_temporary_slots_do_not_duplicate_run_max_life() -> void:
+    var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
+    _assert_true(catalog.load_all(), "临时槽生命上限测试载入正式目录")
+    var growth = GrowthInventoryScript.new(catalog)
+    growth.base_max_life = 100
+    growth.life = 70
+    growth.source_marker_store.write(
+        "technique", "technique:basic_scatter", "basic_scatter",
+        "life_origin", "run", "set", 80, {
+            "public": true, "display_name": "命元",
+            "contributes_to": "max_life",
+        })
+    _assert_equal(growth.recalculate_effective_max_life(), 180,
+        "永久装备来源先提供一次命元生命上限")
+    var engine = _engine_with_cards([])
+    growth.apply_to_battle_side(engine.player)
+    engine.sequence_book.configure({"high_card": ["basic_scatter"]})
+    var origin: Dictionary = engine.sequence_book.current_slot("high_card")
+    engine.sequence_book.insert_temporary_slots(
+        "high_card", "basic_scatter", 3, {
+            "position": "after_current",
+            "origin_slot_instance_id": str(origin["slot_instance_id"]),
+            "origin_technique_id": "basic_scatter",
+            "marker_mode": "share_origin",
+        })
+    _assert_equal(engine.player.max_life, 180,
+        "三份临时副本不会在战斗中重复提供本局永久生命加成")
+    growth.sync_from_battle_side(engine.player)
+    _assert_equal(growth.max_life, 180,
+        "战后同步只保存原本局标识，临时副本不污染有效生命上限")
 
 func _test_reflection_override_sources_and_recursion_guard() -> void:
     var engine = _engine_with_cards([])
@@ -445,6 +1309,31 @@ func _test_synchronized_reflection_matches_normal_damage() -> void:
     _assert_equal(engine.enemy.life, enemy_life, "缓冲刷新前不提前反震")
     engine.flush_synchronized_damage()
     _assert_equal(engine.enemy.life, enemy_life - 6, "同步刷新按同一反震规则结算")
+
+func _test_unblockable_damage_still_absorbs_and_reflects() -> void:
+    var engine = _engine_with_cards([])
+    engine.enemy.defense = 6
+    engine.enemy.set_reflection_percent(50)
+    engine.enemy.add_block_source(
+        "unconditional", "block-probe", engine.player.owner_id, "")
+    var player_life_before: int = engine.player.life
+    var result: Dictionary = engine.effect_ports.deal_damage(
+        engine.player, engine.enemy, 8, "probe", false,
+        "unblockable-probe", "normal", {
+            "direct_attack": true,
+            "blockable": false,
+        })
+    _assert_true(result.get("success", false) \
+        and not result.get("blocked", false),
+        "blockable=false 只跳过格挡查询")
+    _assert_equal(engine.enemy.defense, 0,
+        "不可格挡伤害仍正常消耗防御")
+    _assert_equal(engine.enemy.life, 98,
+        "不可格挡伤害仍按防御后余量扣除生命")
+    _assert_equal(engine.player.life, player_life_before - 3,
+        "不可格挡伤害吸收防御后仍触发反震")
+    _assert_equal(engine.enemy.block_sources.size(), 1,
+        "跳过格挡查询不会消费格挡来源")
 
 func _test_all_insights_grow_empty_slots() -> void:
     var catalog = ContentCatalogScript.new()

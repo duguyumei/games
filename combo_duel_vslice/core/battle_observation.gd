@@ -27,7 +27,10 @@ var opponent_threat: Dictionary = {
     "confidence": "low", "basis": "public_build_history",
 }
 var sequence_positions: Dictionary = {}
+var technique_sequences: Dictionary = {}
 var action_state: Dictionary = {}
+var actor_public_source_markers: Array = []
+var opponent_public_source_markers: Array = []
 
 func capture(actor, opponent, sequence_book, battle_flow):
     actor_id = str(actor.owner_id)
@@ -55,7 +58,10 @@ func capture(actor, opponent, sequence_book, battle_flow):
     opponent_draw_count = opponent.draw_pile.size()
     opponent_discard_count = opponent.discard_pile.size()
     sequence_positions = sequence_book.positions.duplicate(true)
+    technique_sequences = sequence_book.public_snapshot()
     action_state = battle_flow.snapshot_for(actor)
+    actor_public_source_markers = actor.source_marker_store.public_projection()
+    opponent_public_source_markers = opponent.source_marker_store.public_projection()
     return self
 
 func public_snapshot() -> Dictionary:
@@ -83,5 +89,8 @@ func public_snapshot() -> Dictionary:
         "expected_incoming_damage": expected_incoming_damage,
         "opponent_threat": opponent_threat.duplicate(true),
         "sequence_positions": sequence_positions.duplicate(true),
+        "technique_sequences": technique_sequences.duplicate(true),
         "action_state": action_state.duplicate(true),
+        "actor_public_source_markers": actor_public_source_markers.duplicate(true),
+        "opponent_public_source_markers": opponent_public_source_markers.duplicate(true),
     }

@@ -7,6 +7,7 @@ var _current_name: Label
 var _next_name: Label
 var _pips: Label
 var _description: Label
+var _markers: Label
 var _built := false
 
 func _ready() -> void:
@@ -18,6 +19,7 @@ func present(data: Dictionary) -> void:
     _next_name.text = str(data.get("next_name", "—"))
     _pips.text = str(data.get("pips", "○ ○"))
     _description.text = str(data.get("description", ""))
+    _markers.text = str(data.get("markers", ""))
 
 func _ensure_built() -> void:
     if _built:
@@ -51,6 +53,10 @@ func _ensure_built() -> void:
     _pips.add_theme_font_size_override("font_size", 13)
     _pips.add_theme_color_override("font_color", UiDesignScript.COLORS["muted"])
     row.add_child(_pips)
+    _markers = Label.new()
+    _markers.add_theme_font_size_override("font_size", 11)
+    _markers.add_theme_color_override("font_color", UiDesignScript.COLORS["muted"])
+    row.add_child(_markers)
     _description = Label.new()
     _description.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     _description.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

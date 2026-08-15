@@ -16,5 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","block","damage","enemy_disruption"])
 public_behavior_summary=Array[String](["defense","block","damage","enemy_disruption"])
 implementation_category="C"
-effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"grant_block","condition":"damage_at_most_defense","capture":"forging_block"},{"op":"register_response","phase":"prepare","event":"damage_blocked","expiry":"turn_end","filters":{"holder_is_actor":true,"source_tokens_from_capture":"forging_block","max_triggers":1},"effects":[{"op":"damage","amount":{"kind":"event_field","capture":"event","field":"attack_amount"},"damage_type":"normal","direct_attack":false}]}]
-
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"grant_block","condition_spec":{"block_damage_at_most_defense":true},"capture":"forging_block"},{"op":"register_response","phase":"prepare","event":"damage_blocked","expiry":"turn_end","filters":{"holder_is_actor":true,"source_tokens_from_capture":"forging_block","max_triggers":1},"effects":[{"op":"damage","amount":{"kind":"event_field","capture":"event","field":"attack_amount"},"damage_type":"normal","direct_attack":false}]}]

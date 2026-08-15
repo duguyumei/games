@@ -16,5 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","block"])
 public_behavior_summary=Array[String](["defense","block"])
 implementation_category="C"
-effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"grant_block","condition":"unconditional"}]
-
+effects=[{"op":"defense","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"grant_block","condition_spec":{}}]

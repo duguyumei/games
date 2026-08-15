@@ -14,4 +14,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","momentum","retrigger_sensitive"])
 public_behavior_summary=Array[String](["damage","momentum"])
 implementation_category="B"
-effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"consume_momentum","amount":10,"capture":"paid"},{"op":"gain_extra_action","amount":1,"when":{"capture_nonempty":"paid"}}]
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"write_momentum","operation":"consume","amount":10,"capture":"paid"},{"op":"gain_extra_action","amount":1,"when":{"capture_nonempty":"paid"}}]

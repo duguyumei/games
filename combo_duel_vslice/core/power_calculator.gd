@@ -87,6 +87,24 @@ static func apply_momentum(values: Dictionary, momentum: int) -> Dictionary:
         + int(result["momentum_used"]))
     return result
 
+static func calculate_from_initial_power(
+        initial_power: int,
+        direct_power_fixed: int = 0,
+        direct_power_percent: int = 0,
+        momentum: int = 0) -> Dictionary:
+    var pre_momentum_power := int(floor(
+        (initial_power + direct_power_fixed)
+        * (1.0 + direct_power_percent / 100.0)))
+    return apply_momentum({
+        "initial_power": initial_power,
+        "p0": initial_power,
+        "direct_power_fixed": direct_power_fixed,
+        "direct_power_percent": direct_power_percent,
+        "pre_momentum_power": pre_momentum_power,
+        "momentum_used": 0,
+        "technique_value": maxi(0, pre_momentum_power),
+    }, momentum)
+
 static func apply_direct_power_fixed(values: Dictionary, amount: int) -> Dictionary:
     var result := values.duplicate(true)
     result["direct_power_fixed"] = int(result.get("direct_power_fixed", 0)) + amount

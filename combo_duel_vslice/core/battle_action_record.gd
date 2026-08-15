@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 6
+const SCHEMA_VERSION := 7
 
 var actor
 var target
@@ -78,6 +78,13 @@ func snapshot() -> Dictionary:
         "technique_activation_breakdown": technique_activation_breakdown.duplicate(true),
         "hand_id": str(preview.get("hand", {}).get("id", "")),
         "technique_id": str(preview.get("technique_id", "")),
+        "slot_instance_id": str(preview.get("slot_instance_id", "")),
+        "trigger_mode": "manual",
+        "root_action_token": token,
+        "invocation_token": "",
+        "caller_technique_id": "",
+        "manual_effect_suppressed": str(preview.get(
+            "technique", {}).get("manual_effect_mode", "normal")) == "advance_only",
         "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
         "reshape_action_results": preview.get(
             "reshape_action_results", {}).duplicate(true),

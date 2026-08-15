@@ -271,8 +271,19 @@ func _all_technique_ids(loadout) -> Array[String]:
 func _technique_name(loadout, technique_id: String) -> String:
     for technique in _all_techniques(loadout):
         if str(technique.get("id", "")) == technique_id:
-            return str(technique.get("name", technique_id))
+            return _technique_label(technique, technique_id)
     return technique_id
+
+func _technique_label(technique: Dictionary, fallback: String) -> String:
+    var label := str(technique.get("name", fallback))
+    var markers: Array = technique.get("run_markers", [])
+    if not markers.is_empty():
+        label += " · " + " / ".join(markers.map(func(marker):
+            return "%s %d" % [
+                str(marker.get("display_name", marker.get("marker_id", ""))),
+                int(marker.get("value", 0)),
+            ]))
+    return label
 
 func _technique(loadout, technique_id: String) -> Dictionary:
     for technique in _all_techniques(loadout):

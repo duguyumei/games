@@ -8,37 +8,10 @@ const CounterDefinitionScript = preload(
     "res://core/passives/passive_counter_definition.gd")
 const BattleCounterDefinitionScript = preload(
     "res://core/passives/battle_passive_counter_definition.gd")
+const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
-const BATTLE_TIMING_HOOKS := [
-    "battle_start",
-    "round_start",
-    "turn_start",
-    "before_normal_draw",
-    "after_normal_draw",
-    "action_window_start",
-    "group_end",
-    "action_window_end",
-    "turn_end",
-    "battle_end",
-]
-
-const BATTLE_COMMITTED_EVENT_HOOKS := [
-    "action_confirmed",
-    "action_resolved",
-    "card_drawn",
-    "card_entered_discard",
-    "card_explicitly_discarded",
-    "damage_resolved",
-    "damage_blocked",
-    "reflection_resolved",
-    "reflection_source_changed",
-    "block_source_changed",
-    "challenge_established",
-    "challenge_progressed",
-    "challenge_resolved",
-    "poison_trigger_completed",
-    "defense_gained",
-]
+const BATTLE_TIMING_HOOKS := BattleEventCatalogScript.TIMING_EVENTS
+const BATTLE_COMMITTED_EVENT_HOOKS := BattleEventCatalogScript.COMMITTED_EVENTS
 
 const BATTLE_INT_QUERY_HOOKS := [
     "hand_limit_query",
@@ -52,6 +25,7 @@ const BATTLE_INT_QUERY_HOOKS := [
     "defense_gain_query",
     "defense_retention_percent_query",
     "same_qi_capacity_query",
+    "life_recovery_query",
 ]
 
 const BATTLE_POLICY_QUERY_HOOKS := [
@@ -66,19 +40,9 @@ const BATTLE_POLICY_QUERY_HOOKS := [
     "ai_card_retention_value_query",
 ]
 
-const HOOKS := [
+const NON_EVENT_HOOKS := [
     "action_preview",
     "action_resolve",
-    "battle_start",
-    "round_start",
-    "turn_start",
-    "before_normal_draw",
-    "after_normal_draw",
-    "action_window_start",
-    "group_end",
-    "action_window_end",
-    "turn_end",
-    "battle_end",
     "inner_skill_capacity_query",
     "passive_invocation_plan_query",
     "practice_price_query",
@@ -94,21 +58,6 @@ const HOOKS := [
     "inner_skill_forgotten",
     "battle_completed",
     "node_completed",
-    "action_confirmed",
-    "action_resolved",
-    "card_drawn",
-    "card_entered_discard",
-    "card_explicitly_discarded",
-    "damage_resolved",
-    "damage_blocked",
-    "reflection_resolved",
-    "reflection_source_changed",
-    "block_source_changed",
-    "challenge_established",
-    "challenge_progressed",
-    "challenge_resolved",
-    "poison_trigger_completed",
-    "defense_gained",
     "hand_limit_query",
     "power_base_fixed_query",
     "power_multiplier_bonus_query",
@@ -120,6 +69,7 @@ const HOOKS := [
     "defense_gain_query",
     "defense_retention_percent_query",
     "same_qi_capacity_query",
+    "life_recovery_query",
     "hand_evaluation_options_query",
     "card_identity_query",
     "card_play_permission_query",
@@ -130,6 +80,8 @@ const HOOKS := [
     "ai_card_play_value_query",
     "ai_card_retention_value_query",
 ]
+
+const HOOKS := NON_EVENT_HOOKS + BATTLE_TIMING_HOOKS + BATTLE_COMMITTED_EVENT_HOOKS
 
 var _handlers: Dictionary = {}
 var _known_hooks: Dictionary = {}

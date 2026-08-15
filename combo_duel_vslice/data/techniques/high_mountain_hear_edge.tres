@@ -16,5 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","block","enemy_disruption"])
 public_behavior_summary=Array[String](["defense","block","enemy_disruption"])
 implementation_category="C"
-effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"grant_block","condition":"damage_at_most_defense"}]
-
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"grant_block","condition_spec":{"block_damage_at_most_defense":true}}]

@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 6
+const SCHEMA_VERSION := 7
 
 var name: String = ""
 var life: int = 0
@@ -57,6 +57,9 @@ var consumable_limit: int = 0
 var hand_proficiency_fixed: Dictionary = {}
 var hand_technique_progression: Dictionary = {}
 var owned_technique_ids: Array = []
+var technique_sequences: Dictionary = {}
+var public_source_markers: Array = []
+var poison_damage_modifier_sources: Array = []
 
 ## 从战斗会话产出的字典构建。
 ##
@@ -136,6 +139,11 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.hand_proficiency_fixed = values.get("hand_proficiency_fixed", {}).duplicate(true)
     result.hand_technique_progression = values.get("hand_technique_progression", {}).duplicate(true)
     result.owned_technique_ids = values.get("owned_technique_ids", []).duplicate(true)
+    result.technique_sequences = values.get("technique_sequences", {}).duplicate(true)
+    result.public_source_markers = values.get(
+        "public_source_markers", []).duplicate(true)
+    result.poison_damage_modifier_sources = values.get(
+        "poison_damage_modifier_sources", []).duplicate(true)
     return result
 
 ## 序列化边界。存档、AI 传输和既有测试断言使用。
@@ -188,4 +196,7 @@ func to_dict() -> Dictionary:
         "hand_proficiency_fixed": hand_proficiency_fixed.duplicate(true),
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "owned_technique_ids": owned_technique_ids.duplicate(true),
+        "technique_sequences": technique_sequences.duplicate(true),
+        "public_source_markers": public_source_markers.duplicate(true),
+        "poison_damage_modifier_sources": poison_damage_modifier_sources.duplicate(true),
     }

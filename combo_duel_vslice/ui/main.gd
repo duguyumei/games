@@ -713,11 +713,27 @@ func _refresh_preview_and_staging(
             condition_text, " → ".join(battle_session.combat_order_labels(technique_name))],
         "next_name": next_name,
         "pips": "●  ○" if technique_name != next_name else "●",
+        "markers": _sequence_marker_text(
+            player_state.public_source_markers,
+            [str(preview.get("slot_instance_id", "")),
+             str(preview.get("next_slot_instance_id", ""))]),
     })
     var contributing_count: int = hand.get("contributing_card_ids", []).size()
     board_message.text = "%s · %d 张参与数值计算 · P = %d · 同气 +%d · 内功防御 +%d · 对手计划已锁定" % [
         hand["name"], contributing_count, values["technique_value"],
         int(preview.get("same_qi_gain", 0)), inner_defense]
+
+func _sequence_marker_text(markers: Array, slot_ids: Array) -> String:
+    var labels: Array[String] = []
+    for marker_value in markers:
+        var marker: Dictionary = marker_value
+        if not slot_ids.has(str(marker.get("source_instance_key", ""))):
+            continue
+        labels.append("%s %d" % [
+            str(marker.get("display_name", marker.get("marker_id", ""))),
+            int(marker.get("value", 0)),
+        ])
+    return " / ".join(labels)
 
 func _refresh_consumable_targeting(player_state: BattleSideSnapshot) -> void:
     var definition: Dictionary = player_state.consumables[active_consumable_slot]

@@ -673,6 +673,8 @@ func _record_command_rejected(command_type: String, reason: String) -> void:
     _event_serial += 1
 
 func _side_snapshot(side) -> Dictionary:
+    var sequence_book = engine.sequence_book \
+        if side == engine.player else engine.enemy_sequence_book
     var poison: Dictionary = side.poison_totals()
     var passive_context := {
         "owner": side,
@@ -763,6 +765,9 @@ func _side_snapshot(side) -> Dictionary:
         "hand_proficiency_fixed": side.hand_proficiency_fixed.duplicate(true),
         "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "owned_technique_ids": side.owned_technique_ids.duplicate(),
+        "technique_sequences": sequence_book.public_snapshot(),
+        "public_source_markers": side.source_marker_store.public_projection(),
+        "poison_damage_modifier_sources": side.public_poison_damage_modifier_sources(),
     }
 
 func _safe_preview_snapshot(preview: Dictionary) -> Dictionary:
@@ -787,7 +792,9 @@ func _safe_preview_snapshot(preview: Dictionary) -> Dictionary:
         "condition": preview.get("condition", {}).duplicate(true),
         "intent": preview.get("intent", {}).duplicate(true),
         "technique_id": str(preview.get("technique_id", "")),
+        "slot_instance_id": str(preview.get("slot_instance_id", "")),
         "next_technique_id": str(preview.get("next_technique_id", "")),
+        "next_slot_instance_id": str(preview.get("next_slot_instance_id", "")),
         "technique": preview.get("technique", {}).duplicate(true),
         "next_technique": preview.get("next_technique", {}).duplicate(true),
     }

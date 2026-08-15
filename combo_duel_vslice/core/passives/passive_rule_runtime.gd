@@ -24,18 +24,10 @@ const BattleCounterMutationPortScript = preload(
     "res://core/passives/battle_passive_counter_mutation_port.gd")
 const BattlePassiveEffectPortsScript = preload(
     "res://core/passives/battle_passive_effect_ports.gd")
+const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
-const BATTLE_MUTATION_HOOKS := [
-    "battle_start", "round_start", "turn_start", "before_normal_draw",
-    "after_normal_draw", "action_window_start", "group_end",
-    "action_window_end", "turn_end", "battle_end",
-    "action_confirmed", "action_resolved", "card_drawn",
-    "card_entered_discard", "card_explicitly_discarded",
-    "damage_resolved", "defense_gained", "poison_trigger_completed",
-    "damage_blocked", "reflection_resolved", "reflection_source_changed",
-    "block_source_changed", "challenge_established", "challenge_progressed",
-    "challenge_resolved",
-]
+const BATTLE_MUTATION_HOOKS := \
+    BattleEventCatalogScript.TIMING_EVENTS + BattleEventCatalogScript.COMMITTED_EVENTS
 
 var registry
 var source_resolver

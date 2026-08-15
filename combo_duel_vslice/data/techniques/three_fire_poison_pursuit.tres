@@ -16,4 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","momentum","retrigger_sensitive","enemy_disruption"])
 public_behavior_summary=Array[String](["damage","momentum","enemy_disruption"])
 implementation_category="C"
-effects=[{"op":"register_response","phase":"damage","event":"poison_trigger_completed","expiry":"turn_end","filters":{"holder":"target"},"effects":[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":5,"minimum":0}},{"op":"add_momentum","amount":1}]},{"op":"damage","phase":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]
+effects=[{"op":"register_response","phase":"damage","event":"poison_trigger_completed","expiry":"turn_end","filters":{"holder":"target"},"effects":[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":5,"minimum":0}},{"op":"write_momentum","operation":"add","amount":1}]},{"op":"damage","phase":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]

@@ -16,5 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","true_damage","extra_card_commitment"])
 public_behavior_summary=Array[String](["defense","true_damage","extra_card_commitment"])
 implementation_category="B"
-effects=[{"op":"remove_all_defense","phase":"prepare","capture":"removed_defense"},{"op":"defense","amount":{"kind":"power"}},{"op":"damage","amount":{"kind":"add","values":[{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"removed_defense","field":"amount"},"divisor":2},{"kind":"card_contribution"}]},"damage_type":"true"}]
-
+effects=[{"op":"remove_defense","phase":"prepare","all":true,"cause":"direct_effect","capture":"removed_defense"},{"op":"defense","amount":{"kind":"power"}},{"op":"damage","amount":{"kind":"add","values":[{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"removed_defense","field":"amount"},"divisor":2},{"kind":"card_contribution"}]},"damage_type":"true"}]

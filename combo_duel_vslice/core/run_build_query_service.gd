@@ -218,6 +218,12 @@ func _technique_summary(
         "built_in": bool(definition.get("built_in", false)),
         "eligible": eligible,
         "disabled_reason": disabled_reason,
+        "run_markers": _growth.source_marker_store.entries({
+            "source_kind": "technique",
+            "content_id": technique_id,
+            "scope": "run",
+            "public": true,
+        }),
     }
 
 func _definition_name(content_type: String, content_id: String) -> String:

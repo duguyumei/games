@@ -16,4 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","block"])
 public_behavior_summary=Array[String](["damage","block"])
 implementation_category="B"
-effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"grant_block","condition":"unconditional","when":{"value_at_most":{"value":{"kind":"hand_count"},"maximum":0}}}]
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"grant_block","condition_spec":{},"when":{"value_at_most":{"value":{"kind":"hand_count"},"maximum":0}}}]

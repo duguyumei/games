@@ -18,6 +18,9 @@ const PUBLIC_EVENT_TYPES := [
     "passive_triggered", "passive_counter_changed", "sequence_advanced",
     "consumable_used", "action_resolved", "round_completed",
     "battle_completed",
+    "source_marker_changed", "technique_invocation_started",
+    "technique_invocation_resolved", "technique_sequence_changed",
+    "life_recovered", "defense_reduced",
 ]
 
 func project(raw_event: Dictionary) -> Dictionary:
@@ -28,6 +31,9 @@ func project(raw_event: Dictionary) -> Dictionary:
     if visibility == "private":
         return {}
     var payload: Dictionary = values.get("payload", {}).duplicate(true)
+    if str(values.get("event_type", values.get("type", ""))) == "source_marker_changed" \
+            and not bool(payload.get("public", values.get("public", true))):
+        return {}
     if visibility == "hidden_random_target":
         var hidden_count := [int(payload.get("count", 0))]
         payload = _redact_hidden_targets(payload, hidden_count)

@@ -53,6 +53,7 @@ func draw(side, count: int, draw_reason: String = "rule_draw") -> Array:
         var card = side.draw_pile.back()
         move_card(side, "draw_pile", "hand", card, "draw", {
             "draw_reason": draw_reason,
+            "source_kind": draw_reason,
         })
         drawn.append(card)
     return drawn
@@ -143,18 +144,8 @@ func temporarily_remove(side, instance_id: String, reason: String = "burn") -> D
     var location := find_active_location(side, instance_id)
     if location.is_empty():
         return {"success": false, "reason": "找不到要临时移出战斗的真气"}
-    var card = location["card"]
-    var source_zone := str(location["zone"])
-    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
-    zone(side, source_zone).erase(card)
-    side.temporarily_removed_cards.append(card)
-    return {
-        "success": true,
-        "card": card,
-        "from": source_zone,
-        "to": "temporarily_removed",
-        "reason": reason,
-    }
+    return _temporarily_remove_transaction(
+        side, location["card"], str(location["zone"]), reason)
 
 func permanently_remove(side, instance_id: String, reason: String = "permanent_remove") -> Dictionary:
     var location := find_active_location(side, instance_id)
@@ -393,8 +384,7 @@ func move_card(
     if card.has_anomaly("mark", "void") and reason in ["normal_play", "explicit_discard"]:
         return _resolve_void_departure(
             side, source_zone, card, reason, event_metadata, pre_move_snapshot)
-    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
-    source.erase(card)
+    _remove_from_source_zone(side, card, source_zone, reason)
     zone(side, destination_zone).append(card)
     var event_result := _notify_arrival(
         side, card, source_zone, destination_zone, reason, event_metadata)
@@ -440,9 +430,8 @@ func move_cards_synchronously(records: Array) -> Array:
                 and reason in ["normal_play", "explicit_discard"],
         })
     for entry in prepared:
-        _clear_meridian_on_real_hand_departure(
-            entry["card"], entry["source_zone"], entry["reason"])
-        zone(entry["side"], entry["source_zone"]).erase(entry["card"])
+        _remove_from_source_zone(
+            entry["side"], entry["card"], entry["source_zone"], entry["reason"])
     for entry in prepared:
         if not bool(entry["void"]):
             zone(entry["side"], entry["destination_zone"]).append(entry["card"])
@@ -457,17 +446,8 @@ func move_cards_synchronously(records: Array) -> Array:
                     status_system.on_card_explicit_discard(side, card, true)
                 _emit_void_explicit_discard_event(
                     side, card, entry["source_zone"], metadata)
-            side.temporarily_removed_cards.append(card)
-            if status_system != null:
-                status_system.handle_response_event("card_moved", {
-                    "actor": side, "holder": side, "card": card,
-                    "source_card_instance_id": str(card.id),
-                    "from_zone": entry["source_zone"],
-                    "to_zone": "temporarily_removed", "reason": "void",
-                    "round_number": int(round_number_reader.call()) \
-                        if round_number_reader.is_valid() else 0,
-                    "pre_move_snapshot": entry["pre_move_snapshot"],
-                })
+            _finish_temporary_remove(
+                side, card, entry["source_zone"], "void", metadata)
         else:
             _notify_arrival(side, card, entry["source_zone"],
                 entry["destination_zone"], entry["reason"], metadata)
@@ -484,10 +464,10 @@ func atomic_exchange(
         return {"success": false, "reason": "原子交换来源牌已离开冻结牌区"}
     var actor_snapshot := _pre_move_snapshot(actor_side, actor_card, actor_zone)
     var target_snapshot := _pre_move_snapshot(target_side, target_card, target_zone)
-    _clear_meridian_on_real_hand_departure(actor_card, actor_zone, "atomic_exchange")
-    _clear_meridian_on_real_hand_departure(target_card, target_zone, "atomic_exchange")
-    zone(actor_side, actor_zone).erase(actor_card)
-    zone(target_side, target_zone).erase(target_card)
+    _remove_from_source_zone(
+        actor_side, actor_card, actor_zone, "atomic_exchange")
+    _remove_from_source_zone(
+        target_side, target_card, target_zone, "atomic_exchange")
     if str(actor_card.original_owner_id) == "":
         actor_card.original_owner_id = actor_side.owner_id
     if str(target_card.original_owner_id) == "":
@@ -508,38 +488,61 @@ func _resolve_void_departure(
         reason: String,
         event_metadata: Dictionary,
         pre_move_snapshot: Dictionary) -> Dictionary:
-    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
-    zone(side, source_zone).erase(card)
     var response_result := {"success": true}
     if reason == "explicit_discard":
         if status_system != null:
             status_system.on_card_explicit_discard(side, card, true)
         response_result = _emit_void_explicit_discard_event(
             side, card, source_zone, event_metadata)
-    side.temporarily_removed_cards.append(card)
-    if response_result.get("success", true) and status_system != null:
+    if not response_result.get("success", true):
+        return {
+            "success": false, "reason": response_result.get("reason", ""),
+            "passive_event_success": false,
+        }
+    var result := _temporarily_remove_transaction(
+        side, card, source_zone, "void", event_metadata, pre_move_snapshot)
+    result["reason"] = reason
+    result["dispersed"] = true
+    result["passive_event_success"] = true
+    return result
+
+func _temporarily_remove_transaction(
+        side, card, source_zone: String, reason: String,
+        event_metadata: Dictionary = {}, frozen_snapshot: Dictionary = {}) -> Dictionary:
+    if side == null or card == null or source_zone not in ACTIVE_ZONES \
+            or not zone(side, source_zone).has(card):
+        return {"success": false, "reason": "临时移出来源已失效"}
+    var snapshot := frozen_snapshot.duplicate(true) \
+        if not frozen_snapshot.is_empty() else _pre_move_snapshot(side, card, source_zone)
+    _remove_from_source_zone(side, card, source_zone, reason)
+    var metadata := event_metadata.duplicate(true)
+    metadata["pre_move_snapshot"] = snapshot
+    return _finish_temporary_remove(side, card, source_zone, reason, metadata)
+
+func _remove_from_source_zone(
+        side, card, source_zone: String, reason: String) -> void:
+    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
+    zone(side, source_zone).erase(card)
+
+func _finish_temporary_remove(
+        side, card, source_zone: String, reason: String,
+        event_metadata: Dictionary) -> Dictionary:
+    if not side.temporarily_removed_cards.has(card):
+        side.temporarily_removed_cards.append(card)
+    if status_system != null:
         status_system.handle_response_event("card_moved", {
-            "actor": side,
-            "holder": side,
-            "card": card,
+            "actor": side, "holder": side, "card": card,
             "source_card_instance_id": str(card.id),
-            "from_zone": source_zone,
-            "to_zone": "temporarily_removed",
-            "reason": "void",
+            "from_zone": source_zone, "to_zone": "temporarily_removed",
+            "reason": reason,
             "round_number": int(round_number_reader.call()) \
                 if round_number_reader.is_valid() else 0,
-            "pre_move_snapshot": pre_move_snapshot,
+            "pre_move_snapshot": event_metadata.get("pre_move_snapshot", {}),
         })
     return {
-        "success": true,
-        "card": card,
-        "from": source_zone,
-        "to": "temporarily_removed",
-        "reason": reason,
-        "dispersed": true,
-        "pre_move_snapshot": pre_move_snapshot,
-        "passive_event_success": response_result.get("success", true),
-        "passive_event_reason": response_result.get("reason", ""),
+        "success": true, "card": card, "from": source_zone,
+        "to": "temporarily_removed", "reason": reason,
+        "pre_move_snapshot": event_metadata.get("pre_move_snapshot", {}).duplicate(true),
     }
 
 func _emit_void_explicit_discard_event(
@@ -669,6 +672,8 @@ func _emit_committed_card_events(
     }
     if destination_zone == "hand" and reason == "draw":
         common["draw_reason"] = str(metadata.get("draw_reason", "rule_draw"))
+        common["source_kind"] = str(metadata.get(
+            "source_kind", common["draw_reason"]))
         common["event_token"] = committed_event_service.make_token(
             "card_drawn", side, event_serial, "", str(card.id))
         return committed_event_service.commit("card_drawn", common)

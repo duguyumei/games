@@ -140,11 +140,12 @@ func is_allowed_for_hand(technique, hand_id: String) -> bool:
     var eligible_pools: Array = pool_membership.get(hand_id, [])
     return eligible_pools.has(_definition_value(technique, "pool", ""))
 
-func conditions_met(technique, hand_result: Dictionary, identity_policy = null) -> Dictionary:
+func conditions_met(technique, hand_result: Dictionary, identity_policy = null,
+        host_sequence_qualified: bool = false) -> Dictionary:
     if technique == null or (technique is Dictionary and technique.is_empty()):
         return {"ok": false, "reason": "功法不存在"}
     var hand_id: String = hand_result.get("id", "")
-    if not is_allowed_for_hand(technique, hand_id):
+    if not host_sequence_qualified and not is_allowed_for_hand(technique, hand_id):
         return {"ok": false, "reason": "功法不属于该精确牌型的合格共用池"}
     var condition: Dictionary = _definition_value(technique, "condition", {})
     if condition.is_empty():

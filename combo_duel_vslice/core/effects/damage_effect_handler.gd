@@ -15,6 +15,9 @@ func operation_ids() -> Array[String]:
 func group_name() -> String:
     return "damage"
 
+func default_phase(_operation_id: String) -> String:
+    return "damage"
+
 func execute(effect: Dictionary, context):
     var runtime = EffectContextScript.coerce(context)
     if runtime.ports == null:
@@ -46,6 +49,7 @@ func execute(effect: Dictionary, context):
                         "direct_attack",
                         runtime.source_kind in [
                             "technique", "technique_retrigger", "technique_echo"])),
+                    "blockable": bool(effect.get("blockable", true)),
                 })
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "伤害结算失败")))
@@ -136,7 +140,10 @@ func _execute_multi_damage(effect: Dictionary, runtime):
             damage_type = "true"
         var hit: Dictionary = ports.deal_damage(
             actor, target, amount, "technique", damage_type == "true",
-            runtime.action_token, damage_type, {"direct_attack": true})
+            runtime.action_token, damage_type, {
+                "direct_attack": true,
+                "blockable": bool(effect.get("blockable", true)),
+            })
         if not hit.get("success", false):
             return EffectResultScript.failed(str(hit.get("reason", "多段伤害结算失败")))
         var current_life_hit: bool = int(hit["life_lost"]) > 0

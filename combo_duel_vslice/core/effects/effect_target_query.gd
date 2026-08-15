@@ -1,6 +1,9 @@
 class_name EffectTargetQuery
 extends RefCounted
 
+const TargetQueryFieldCatalogScript = preload(
+    "res://core/effects/target_query_field_catalog.gd")
+
 const SIDE_IDS := ["actor", "target"]
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const ORDER_IDS := [
@@ -39,6 +42,9 @@ func validate() -> Dictionary:
         return _invalid("目标查询 limit 必须为 -1 或正整数")
     if not _filters_type_valid:
         return _invalid("目标筛选必须是对象")
+    var unknown_fields := TargetQueryFieldCatalogScript.unknown_fields(filters)
+    if not unknown_fields.is_empty():
+        return _invalid("未知目标筛选字段：%s" % ",".join(unknown_fields))
     var card_kind := str(filters.get("card_kind", "any"))
     if card_kind not in CARD_KIND_IDS:
         return _invalid("未知真气种类筛选：%s" % card_kind)

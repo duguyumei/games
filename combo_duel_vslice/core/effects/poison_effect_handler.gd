@@ -13,6 +13,7 @@ func operation_ids() -> Array[String]:
     return [
         "trigger_poison_captured", "trigger_all_poison_simultaneously",
         "trigger_highest_poison",
+        "grant_poison_damage_modifier",
     ]
 
 func group_name() -> String:
@@ -40,6 +41,19 @@ func execute(effect: Dictionary, context):
             return _trigger_all(effect, runtime)
         "trigger_highest_poison":
             return _trigger_highest(effect, runtime)
+        "grant_poison_damage_modifier":
+            var side = runtime.target \
+                if str(effect.get("affected_side", "actor")) == "target" \
+                else runtime.actor
+            var source: Dictionary = side.grant_poison_damage_modifier(
+                int(value_resolver.resolve(effect.get("fixed", 0), runtime)),
+                int(value_resolver.resolve(effect.get("percent", 0), runtime)),
+                int(effect.get("remaining_hits", -1)),
+                str(effect.get("expiry", "battle_end")),
+                str(effect.get("source_token", runtime.action_token)),
+                bool(effect.get("public", true)))
+            runtime.captures[str(effect.get("capture", "poison_modifier"))] = [source]
+            return EffectResultScript.succeeded("建立毒伤修正")
     return EffectResultScript.failed("毒处理器不支持此操作")
 
 func _trigger_all(effect: Dictionary, runtime):
@@ -54,10 +68,17 @@ func _trigger_all(effect: Dictionary, runtime):
                         "holder": holder, "card": card, "zone": zone,
                         "amount": runtime.ports.current_effective_qi(holder, card),
                     })
+    for item in frozen:
+        item["modifier"] = runtime.ports.resolve_poison_segment_amount(
+            item["holder"], int(item["amount"]),
+            "%s:sync_poison:%s" % [
+                runtime.action_token, str(item["card"].id)])
+        item["modified_amount"] = int(item["modifier"].get(
+            "final_amount", item["amount"]))
     var totals: Dictionary = {}
     for item in frozen:
         var holder_key := str(item["holder"].owner_id)
-        totals[holder_key] = int(totals.get(holder_key, 0)) + int(item["amount"])
+        totals[holder_key] = int(totals.get(holder_key, 0)) + int(item["modified_amount"])
     runtime.ports.begin_synchronized_damage([
         {"actor": runtime.actor}, {"actor": runtime.target},
     ])
@@ -65,7 +86,9 @@ func _trigger_all(effect: Dictionary, runtime):
         if holder != null:
             runtime.ports.deal_damage(
                 holder, holder, int(totals.get(str(holder.owner_id), 0)),
-                "同步毒爆", false, runtime.action_token, "poison")
+                "同步毒爆", false, runtime.action_token, "poison", {
+                    "skip_poison_modifiers": true,
+                })
     var resolutions: Array = runtime.ports.flush_synchronized_damage()
     var resolution_by_holder: Dictionary = {}
     for resolution in resolutions:
@@ -77,14 +100,16 @@ func _trigger_all(effect: Dictionary, runtime):
     var results: Array = []
     for item in frozen:
         var holder_key := str(item["holder"].owner_id)
-        var life_lost := mini(int(item["amount"]), int(remaining_loss.get(holder_key, 0)))
+        var life_lost := mini(int(item["modified_amount"]), int(remaining_loss.get(holder_key, 0)))
         remaining_loss[holder_key] = int(remaining_loss.get(holder_key, 0)) - life_lost
         runtime.ports.remove_card_anomaly(
             item["card"], "state", "poison", runtime.technique_name)
+        item["holder"].commit_poison_damage_modifier_receipt(
+            item["modifier"])
         var actual := {
             "success": true,
             "requested": int(item["amount"]),
-            "final_amount": int(item["amount"]),
+            "final_amount": int(item["modified_amount"]),
             "defense_lost": 0,
             "life_lost": life_lost,
             "actual_life_loss": life_lost,
@@ -98,6 +123,8 @@ func _trigger_all(effect: Dictionary, runtime):
             "card": item["card"],
             "holder": item["holder"],
             "frozen_amount": int(item["amount"]),
+            "modified_amount": int(item["modified_amount"]),
+            "modifier": item["modifier"].duplicate(true),
             "life_lost": life_lost,
             "actual_life_loss": life_lost,
             "damage_result": actual,
@@ -137,5 +164,19 @@ func _trigger_highest(effect: Dictionary, runtime):
     runtime.captures[str(effect.get("result_capture", "poison_results"))] = results
     return EffectResultScript.succeeded("优先触发毒 %d 张" % results.size())
 
-func validate_effect(_effect: Dictionary, _validator, _scope: String) -> void:
-    pass
+func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    if str(effect.get("op", "")) != "grant_poison_damage_modifier":
+        return
+    for field in ["fixed", "percent"]:
+        if effect.get(field, 0) is Dictionary:
+            validator.validate_amount_spec(effect[field], scope + "." + field)
+        elif not effect.get(field, 0) is int:
+            validator.report_error(scope + "." + field, "必须为整数或 ValueSpec")
+    if effect.has("remaining_hits") \
+            and (not effect["remaining_hits"] is int \
+            or int(effect["remaining_hits"]) == 0 \
+            or int(effect["remaining_hits"]) < -1):
+        validator.report_error(scope + ".remaining_hits", "必须为 -1 或正整数")
+    if str(effect.get("expiry", "battle_end")) not in [
+            "battle_end", "round_end", "turn_end"]:
+        validator.report_error(scope + ".expiry", "引用未知毒伤修正到期时点")

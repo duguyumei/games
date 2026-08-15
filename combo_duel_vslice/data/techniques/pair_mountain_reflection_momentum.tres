@@ -16,5 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","reflection","momentum"])
 public_behavior_summary=Array[String](["defense","reflection","momentum"])
 implementation_category="C"
-effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_response","phase":"prepare","event":"reflection_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"actual_life_loss_positive":true,"max_triggers":1},"effects":[{"op":"add_momentum","amount":{"kind":"event_field","capture":"event","field":"actual_life_loss"}}]}]
-
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_response","phase":"prepare","event":"reflection_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"actual_life_loss_positive":true,"max_triggers":1},"effects":[{"op":"write_momentum","operation":"add","amount":{"kind":"event_field","capture":"event","field":"actual_life_loss"}}]}]

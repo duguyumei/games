@@ -50,7 +50,7 @@ func _test_burn_poison_and_heat_momentum() -> void:
     var result: Dictionary = engine.effect_executor.execute_all([
         {"op":"capture_metadata","capture":"card","result_capture":"before"},
         {"op":"apply_card_anomaly_to_captured","capture":"card","category":"mark","anomaly":"burned_out","result_capture":"burned"},
-        {"op":"add_momentum","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"before","field":"effective_qi"},"divisor":2},"when":{"capture_nonempty":"burned"}},
+        {"op":"write_momentum","operation":"add","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"before","field":"effective_qi"},"divisor":2},"when":{"capture_nonempty":"burned"}},
     ], _context(engine, {"card":[poison]}))
     _assert_true(result.get("success", false), "焚蛊催势依赖链成功")
     _assert_true(poison.has_anomaly("state", "poison") and poison.has_anomaly("mark", "burned_out"), "燃尽不触发或清除毒")
@@ -59,7 +59,7 @@ func _test_burn_poison_and_heat_momentum() -> void:
     engine.status_system.apply_card_anomaly(heat, "buff", "qi_heat", {}, "测试", 6)
     engine.effect_executor.execute_all([
         {"op":"remove_anomaly_layers","capture":"card","category":"buff","anomaly":"qi_heat","all":true,"result_capture":"q"},
-        {"op":"add_momentum","amount":{"kind":"capture_field_first","capture":"q","field":"amount"}},
+        {"op":"write_momentum","operation":"add","amount":{"kind":"capture_field_first","capture":"q","field":"amount"}},
     ], _context(engine, {"card":[heat]}))
     _assert_equal(engine.player.momentum_value, 10, "采薪将全部Q转换为连势")
     _assert_equal(heat.anomaly_layers("buff", "qi_heat"), 0, "采薪移除全部炽气")
@@ -86,7 +86,8 @@ func _test_poison_pursuit_response() -> void:
     engine.enemy.hand = [card]
     engine.status_system.apply_card_anomaly(card, "state", "poison", {}, "测试")
     engine.status_system.register_response("poison_trigger_completed", "turn_end", [
-        {"op":"damage","amount":4}, {"op":"add_momentum","amount":1}
+        {"op":"damage","amount":4},
+        {"op":"write_momentum","operation":"add","amount":1}
     ], _context(engine, {}), {"holder":"target"})
     engine.effect_ports.trigger_poison_card(engine.enemy, card, "test")
     _assert_equal(engine.enemy.life, 92, "一次毒触发完成产生一次普通追击")

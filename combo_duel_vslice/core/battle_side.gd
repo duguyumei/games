@@ -9,6 +9,11 @@ const RunPassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
 const BattlePassiveCounterStoreScript = preload(
     "res://core/passives/battle_passive_counter_store.gd")
+const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
+const SourceContributedStatServiceScript = preload(
+    "res://core/source_contributed_stat_service.gd")
+const ConditionSpecRegistryScript = preload(
+    "res://core/specs/condition_spec_registry.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -18,6 +23,7 @@ const HAND_IDS := [
 var name: String
 var owner_id: String
 var max_life: int = 100
+var base_max_life: int = 100
 var life: int = 100
 var defense: int = 0
 var experience: int = 0
@@ -40,6 +46,8 @@ var block_sources: Array = []
 var challenge_records: Array = []
 var pending_power_fixed_sources: Array = []
 var defense_retention_sources: Array = []
+var poison_damage_modifier_sources: Array = []
+var poison_damage_modifier_receipts: Dictionary = {}
 var _combat_source_serial: int = 0
 var draw_pile: Array = []
 var hand: Array = []
@@ -65,6 +73,9 @@ var passive_rule_runtime = null
 var passive_counter_store = null
 ## 只存在于当前战斗，不进入 RunProgressSnapshot 或存档。
 var battle_passive_counter_store = null
+var source_marker_store = SourceMarkerStoreScript.new()
+var source_contributed_stat_service = SourceContributedStatServiceScript.new()
+var condition_spec_registry = ConditionSpecRegistryScript.new()
 var battle_rule_query_service = null
 var hand_recognition_policy = null
 var card_identity_policy = null
@@ -142,6 +153,8 @@ func reset(
     challenge_records.clear()
     pending_power_fixed_sources.clear()
     defense_retention_sources.clear()
+    poison_damage_modifier_sources.clear()
+    poison_damage_modifier_receipts.clear()
     _combat_source_serial = 0
     equipped_inner_skill_ids.clear()
     item_ids.clear()
@@ -158,9 +171,121 @@ func reset(
         passive_counter_store.clear()
     if battle_passive_counter_store != null:
         battle_passive_counter_store.clear()
+    source_marker_store.clear_scope("battle")
     last_hand_limit_query_result.clear()
     last_same_qi_capacity_query_result.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
+
+func equipped_source_content_ids() -> Dictionary:
+    var equipped: Dictionary = {}
+    for progression_value in hand_technique_progression.values():
+        var progression: Dictionary = progression_value
+        for technique_id_value in progression.get("sequence", []):
+            equipped[str(technique_id_value)] = true
+    for inner_skill_id in equipped_inner_skill_ids:
+        equipped[str(inner_skill_id)] = true
+    return equipped
+
+func recalculate_effective_max_life() -> int:
+    return source_contributed_stat_service.apply_to_side(
+        self, equipped_source_content_ids())
+
+func grant_poison_damage_modifier(
+        fixed: int,
+        percent: int,
+        remaining_hits: int,
+        expiry: String,
+        source_token: String,
+        is_public: bool = true) -> Dictionary:
+    _combat_source_serial += 1
+    var resolved_token := source_token if source_token != "" \
+        else "poison-modifier:%s:%06d" % [owner_id, _combat_source_serial]
+    var source := {
+        "source_token": resolved_token,
+        "fixed": fixed,
+        "percent": percent,
+        "remaining_hits": remaining_hits,
+        "expiry": expiry,
+        "affected_side": owner_id,
+        "public": is_public,
+        "insertion_serial": _combat_source_serial,
+    }
+    poison_damage_modifier_sources.append(source)
+    return source.duplicate(true)
+
+func freeze_poison_damage_modifiers(
+        base_amount: int,
+        receipt_token: String = "") -> Dictionary:
+    if receipt_token != "" and poison_damage_modifier_receipts.has(
+            receipt_token):
+        var reused: Dictionary = poison_damage_modifier_receipts[
+            receipt_token].duplicate(true)
+        reused["reused"] = true
+        return reused
+    var fixed_total := 0
+    var percent_total := 0
+    var applicable_tokens: Array[String] = []
+    poison_damage_modifier_sources.sort_custom(func(left, right):
+        return int(left.get("insertion_serial", 0)) < int(right.get("insertion_serial", 0)))
+    for source in poison_damage_modifier_sources:
+        if int(source.get("remaining_hits", -1)) == 0:
+            continue
+        fixed_total += int(source.get("fixed", 0))
+        percent_total += int(source.get("percent", 0))
+        if int(source.get("remaining_hits", -1)) > 0:
+            applicable_tokens.append(str(source.get("source_token", "")))
+    var after_fixed := maxi(0, base_amount + fixed_total)
+    var final_amount := maxi(0, int(floor(
+        after_fixed * (100 + percent_total) / 100.0)))
+    var result := {
+        "base": base_amount, "fixed": fixed_total,
+        "after_fixed": after_fixed, "percent": percent_total,
+        "final_amount": final_amount,
+        "receipt_token": receipt_token,
+        "applicable_source_tokens": applicable_tokens,
+        "consumed_source_tokens": [],
+        "committed": false, "reused": false,
+    }
+    if receipt_token != "":
+        poison_damage_modifier_receipts[receipt_token] = result.duplicate(true)
+    return result
+
+func commit_poison_damage_modifier_receipt(receipt: Dictionary) -> Dictionary:
+    var receipt_token := str(receipt.get("receipt_token", ""))
+    if receipt_token != "" and poison_damage_modifier_receipts.has(receipt_token) \
+            and bool(poison_damage_modifier_receipts[receipt_token].get(
+                "committed", false)):
+        var reused: Dictionary = poison_damage_modifier_receipts[
+            receipt_token].duplicate(true)
+        reused["reused"] = true
+        return reused
+    var consumed_tokens: Array[String] = []
+    for source_token_value in receipt.get("applicable_source_tokens", []):
+        var source_token := str(source_token_value)
+        for source in poison_damage_modifier_sources:
+            if str(source.get("source_token", "")) != source_token \
+                    or int(source.get("remaining_hits", -1)) <= 0:
+                continue
+            source["remaining_hits"] = int(source["remaining_hits"]) - 1
+            consumed_tokens.append(source_token)
+            break
+    poison_damage_modifier_sources = poison_damage_modifier_sources.filter(
+        func(source): return int(source.get("remaining_hits", -1)) != 0)
+    var committed := receipt.duplicate(true)
+    committed["committed"] = true
+    committed["reused"] = false
+    committed["consumed_source_tokens"] = consumed_tokens
+    if receipt_token != "":
+        poison_damage_modifier_receipts[receipt_token] = committed.duplicate(true)
+    return committed
+
+func resolve_poison_damage_modifiers(base_amount: int) -> Dictionary:
+    return freeze_poison_damage_modifiers(base_amount)
+
+func public_poison_damage_modifier_sources() -> Array:
+    return poison_damage_modifier_sources.filter(
+        func(source): return bool(source.get("public", true))).map(
+            func(source): return source.duplicate(true))
 
 func replace_deck(cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
@@ -766,6 +891,7 @@ func tick_round_limited_sources() -> Dictionary:
     var expired_reflection_records: Array = []
     var expired_true_damage_records: Array = []
     var expired_retention_records: Array = []
+    var expired_poison_modifier_records: Array = []
     for record in reflection_sources.duplicate():
         if str(record.get("expiry_kind", "round_end")) != "round_end" \
                 or int(record.get("remaining_rounds", -1)) < 0:
@@ -791,6 +917,11 @@ func tick_round_limited_sources() -> Dictionary:
             expired_retention.append(str(record.get("source_token", "")))
             expired_retention_records.append(record.duplicate(true))
             defense_retention_sources.erase(record)
+    for record in poison_damage_modifier_sources.duplicate():
+        if str(record.get("expiry", "battle_end")) not in ["round_end", "turn_end"]:
+            continue
+        expired_poison_modifier_records.append(record.duplicate(true))
+        poison_damage_modifier_sources.erase(record)
     _refresh_reflection_aggregate()
     return {
         "reflection": expired_reflection,
@@ -799,6 +930,7 @@ func tick_round_limited_sources() -> Dictionary:
         "reflection_records": expired_reflection_records,
         "true_damage_records": expired_true_damage_records,
         "retention_records": expired_retention_records,
+        "poison_modifier_records": expired_poison_modifier_records,
     }
 
 func expire_action_window_sources(window_id: String) -> Dictionary:
@@ -825,7 +957,7 @@ func expire_action_window_sources(window_id: String) -> Dictionary:
     }
 
 func add_block_source(
-        condition: String,
+        condition,
         source_token: String = "",
         target_owner_id: String = "",
         window_id: String = "",
@@ -836,7 +968,7 @@ func add_block_source(
         else next_combat_source_token("block")
     var record := {
         "source_token": token,
-        "condition": condition,
+        "condition_spec": _normalized_block_condition(condition),
         "established_order": _combat_source_serial,
         "target_owner_id": target_owner_id,
         "window_id": window_id,
@@ -879,15 +1011,27 @@ func try_consume_block(
                 or str(record.get("window_id", "")) != window_id \
                 or str(record.get("target_owner_id", "")) != attacker_owner_id:
             continue
-        var condition := str(record.get("condition", "unconditional"))
-        if condition == "damage_at_most_defense" and amount > defense:
-            continue
-        if condition == "actual_hand_more_than_attacker" \
-                and defender_hand_count <= attacker_hand_count:
+        var condition_spec: Dictionary = record.get("condition_spec", {})
+        if not condition_spec_registry.event_matches(condition_spec, {
+                "amount": amount, "damage_type": damage_type,
+                "defense": defense,
+                "defender_hand_count": defender_hand_count,
+                "attacker_hand_count": attacker_hand_count,
+            }, self):
             continue
         block_sources.erase(record)
         return {"blocked": true, "source": record, "source_token": record["source_token"]}
     return {"blocked": false}
+
+func _normalized_block_condition(condition) -> Dictionary:
+    if condition is Dictionary:
+        return condition.duplicate(true)
+    match str(condition):
+        "damage_at_most_defense":
+            return {"block_damage_at_most_defense": true}
+        "actual_hand_more_than_attacker":
+            return {"block_defender_hand_more_than_attacker": true}
+    return {}
 
 func add_pending_power_fixed_source(
         amount: int,

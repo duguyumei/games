@@ -11,6 +11,9 @@ const ChoiceHandlerScript = preload("res://core/effects/choice_effect_handler.gd
 const CollectionHandlerScript = preload("res://core/effects/collection_effect_handler.gd")
 const PoisonHandlerScript = preload("res://core/effects/poison_effect_handler.gd")
 const AnomalyLayerHandlerScript = preload("res://core/effects/anomaly_layer_effect_handler.gd")
+const SourceMarkerHandlerScript = preload("res://core/effects/source_marker_effect_handler.gd")
+const LifeHandlerScript = preload("res://core/effects/life_effect_handler.gd")
+const TechniqueSequenceHandlerScript = preload("res://core/effects/technique_sequence_effect_handler.gd")
 
 var value_resolver
 var _handlers_by_op: Dictionary = {}
@@ -29,6 +32,9 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
     register_handler(CollectionHandlerScript.new(value_resolver, random_source))
     register_handler(PoisonHandlerScript.new(value_resolver))
     register_handler(AnomalyLayerHandlerScript.new(value_resolver))
+    register_handler(SourceMarkerHandlerScript.new(value_resolver))
+    register_handler(LifeHandlerScript.new(value_resolver))
+    register_handler(TechniqueSequenceHandlerScript.new(value_resolver, random_source))
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
     if not (handler is EffectHandler):
@@ -73,6 +79,12 @@ func handler_group(operation_id: String) -> String:
     if handler == null or not handler.has_method("group_name"):
         return ""
     return str(handler.group_name())
+
+func default_phase(operation_id: String) -> String:
+    var handler = _handlers_by_op.get(operation_id)
+    if handler == null:
+        return ""
+    return str(handler.default_phase(operation_id))
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> bool:
     var operation_id := str(effect.get("op", ""))

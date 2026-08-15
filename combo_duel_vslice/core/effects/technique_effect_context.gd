@@ -19,6 +19,11 @@ var actual_hand_id: String = ""
 var branch_hand_id: String = ""
 var technique_pool: String = ""
 var action_token: String = ""
+var root_action_token: String = ""
+var invocation_token: String = ""
+var caller_technique_id: String = ""
+var slot_instance_id: String = ""
+var trigger_mode: String = "manual"
 var source_kind: String = ""
 var captures: Dictionary = {}
 var ports = null
@@ -31,6 +36,7 @@ var source_trigger: String = ""
 var replay_depth: int = 0
 var card_identity_policy = null
 var group_snapshot: Dictionary = {}
+var consumed_marker_value: int = 0
 
 func configure(values: Dictionary):
     actor = values.get("actor")
@@ -61,6 +67,11 @@ func configure(values: Dictionary):
     if branch_hand_id == "":
         branch_hand_id = _default_branch_hand_id(actual_hand_id, technique_pool)
     action_token = str(values.get("action_token", ""))
+    root_action_token = str(values.get("root_action_token", action_token))
+    invocation_token = str(values.get("invocation_token", ""))
+    caller_technique_id = str(values.get("caller_technique_id", ""))
+    slot_instance_id = str(values.get("slot_instance_id", ""))
+    trigger_mode = str(values.get("trigger_mode", "manual"))
     source_kind = str(values.get("source_kind", ""))
     captures = values.get("captures", {})
     ports = values.get("ports")
@@ -73,6 +84,7 @@ func configure(values: Dictionary):
     replay_depth = int(values.get("replay_depth", 0))
     card_identity_policy = values.get("card_identity_policy")
     group_snapshot = values.get("group_snapshot", {})
+    consumed_marker_value = int(values.get("consumed_marker_value", 0))
     # 旧测试字典仍可传 engine，但上下文只保存它已经装配好的窄效果端口。
     if ports == null and values.get("engine") != null:
         ports = values["engine"].action_resolver.effect_ports
@@ -116,6 +128,11 @@ func public_metadata() -> Dictionary:
         "branch_hand_id": branch_hand_id,
         "technique_pool": technique_pool,
         "action_token": action_token,
+        "root_action_token": root_action_token,
+        "invocation_token": invocation_token,
+        "caller_technique_id": caller_technique_id,
+        "slot_instance_id": slot_instance_id,
+        "trigger_mode": trigger_mode,
         "source_kind": source_kind,
         "source_card_instance_id": source_card_instance_id,
         "source_trigger": source_trigger,

@@ -165,6 +165,7 @@ func _test_life_round_trip_and_legacy_defaults() -> void:
         session.navigation.seed, 2)
     session.growth.life = 90
     session.growth.max_life = 150
+    session.growth.base_max_life = 150
     var data = RunSaveDataScript.new().capture(session)
     var restored: Dictionary = data.restore_session()
     _assert_true(restored.get("success", false), "含生命字段的v1存档可以恢复")
@@ -176,6 +177,8 @@ func _test_life_round_trip_and_legacy_defaults() -> void:
     var legacy: Dictionary = data.to_dict()
     legacy["growth"].erase("life")
     legacy["growth"].erase("max_life")
+    legacy["growth"].erase("base_max_life")
+    legacy["growth"].erase("source_marker_state")
     var legacy_restored: Dictionary = RunSaveDataScript.new(legacy).restore_session()
     _assert_true(legacy_restored.get("success", false), "缺少生命字段的旧v1存档可以恢复")
     _assert_equal(legacy_restored["run_session"].growth.life, 150, "旧v1第2层补齐为150点满生命")

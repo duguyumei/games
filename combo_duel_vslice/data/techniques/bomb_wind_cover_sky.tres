@@ -16,4 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","block","draw"])
 public_behavior_summary=Array[String](["damage","block","draw"])
 implementation_category="C"
-effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"grant_block","condition":"actual_hand_more_than_attacker","capture":"block"},{"op":"register_response","event":"damage_blocked","expiry":"turn_end","filters":{"holder_is_actor":true,"source_tokens_from_capture":"block","max_triggers":1},"effects":[{"op":"draw","count":2}]}]
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"grant_block","condition_spec":{"block_defender_hand_more_than_attacker":true},"capture":"block"},{"op":"register_response","event":"damage_blocked","expiry":"turn_end","filters":{"holder_is_actor":true,"source_tokens_from_capture":"block","max_triggers":1},"effects":[{"op":"draw","count":2}]}]

@@ -15,6 +15,9 @@ func operation_ids() -> Array[String]:
 func group_name() -> String:
     return ""
 
+func default_phase(_operation_id: String) -> String:
+    return "zones"
+
 ## 执行一条效果，返回 TechniqueEffectResult。
 func execute(_effect: Dictionary, _context):
     return null

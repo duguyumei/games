@@ -3128,12 +3128,12 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        15,
-        "Registry 明确登记十五个细粒度已提交事件")
+        22,
+        "Registry 明确登记二十二个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        11,
-        "Registry 明确登记十一个战斗整数查询")
+        12,
+        "Registry 明确登记十二个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -6158,7 +6158,15 @@ func _test_effect_handler_registry_contract() -> void:
         _assert_true(
             not executor.registry.has_handler(retired_op),
             "退役角色层数操作不再注册：%s" % retired_op)
-    _assert_equal(executor.registry.handler_group("add_momentum"), "flow_delay", "连势直接操作进入流程处理器")
+    _assert_equal(executor.registry.handler_group("write_momentum"), "flow_delay", "统一连势写入进入流程处理器")
+    for retired_flow_op in [
+            "add_momentum", "set_momentum", "consume_momentum",
+            "add_same_qi", "clear_same_qi_for_defense",
+            "set_reflection_percent", "set_reflection_until_turn_end",
+            "remove_all_defense"]:
+        _assert_true(
+            not executor.registry.has_handler(retired_flow_op),
+            "重复操作码不再注册：%s" % retired_flow_op)
     _assert_equal(executor.registry.handler_group("register_attack_counter_delay"), "", "旧延迟反击端口已移除")
 
     var unknown_result: Dictionary = executor.execute_all([{"op": "not_registered"}], {})
@@ -8542,7 +8550,7 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         "preview": linked_result["cooperation_preview"],
     }]
     var audit_snapshot: Dictionary = audit_record.snapshot()
-    _assert_equal(audit_snapshot["schema_version"], 6, "行动记录升级为连势与同气回执版本")
+    _assert_equal(audit_snapshot["schema_version"], 7, "行动记录升级为稳定功法槽位版本")
     _assert_equal(audit_snapshot["same_qi"]["gain"], 4, "行动记录保存行动级最优分组与 G")
     _assert_equal(audit_snapshot["same_qi_gain"], 4, "行动记录保存预计同气收益")
     _assert_equal(audit_snapshot["cooperation_groups"][0]["same_qi_group"]["gain"], 1, "行动记录保存协同组独立身份事实")
@@ -11846,6 +11854,7 @@ func _test_layered_life_progression_and_battle_persistence() -> void:
         final_session.execute({"type": "setup_run", "seed": 70405}).success,
         "第三层通关测试可以建立独立本局")
     final_session.growth.max_life = 225
+    final_session.growth.base_max_life = 225
     final_session.growth.life = 77
     final_session.navigation.act = 3
     final_session.navigation.graph = final_session.navigation.map_generator.generate(
@@ -11919,6 +11928,7 @@ func _test_run_save_life_round_trip_legacy_defaults_and_validation() -> void:
         session.navigation.seed, 2)
     session.growth.life = 90
     session.growth.max_life = 150
+    session.growth.base_max_life = 150
     var save_data = RunSaveDataScript.new().capture(session)
     var saved: Dictionary = save_data.to_dict()
     _assert_equal(saved["growth"]["life"], 90, "存档 growth 段保存当前生命")
@@ -11931,6 +11941,8 @@ func _test_run_save_life_round_trip_legacy_defaults_and_validation() -> void:
     var legacy: Dictionary = saved.duplicate(true)
     legacy["growth"].erase("life")
     legacy["growth"].erase("max_life")
+    legacy["growth"].erase("base_max_life")
+    legacy["growth"].erase("source_marker_state")
     var legacy_restored: Dictionary = RunSaveDataScript.new(legacy).restore_session()
     _assert_true(legacy_restored.get("success", false), "缺少生命字段的旧版v1存档仍可读取")
     _assert_equal(legacy_restored["run_session"].growth.life, 150, "第2层旧存档补齐为满血150")

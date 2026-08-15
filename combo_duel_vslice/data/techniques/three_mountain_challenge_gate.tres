@@ -16,4 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","momentum","enemy_disruption","retrigger_sensitive","challenge"])
 public_behavior_summary=Array[String](["defense","momentum","enemy_disruption","challenge"])
 implementation_category="C"
-effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_challenge","threshold":{"kind":"card_contribution"},"effects":[{"op":"add_pending_power_fixed","amount":{"kind":"capture_field_first","capture":"challenge_difference","field":"amount"}}],"met_effects":[{"op":"add_momentum","amount":{"kind":"capture_field_first","capture":"challenge_result","field":"threshold"}}]}]
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"register_challenge","threshold":{"kind":"card_contribution"},"effects":[{"op":"add_pending_power_fixed","amount":{"kind":"capture_field_first","capture":"challenge_difference","field":"amount"}}],"met_effects":[{"op":"write_momentum","operation":"add","amount":{"kind":"capture_field_first","capture":"challenge_result","field":"threshold"}}]}]

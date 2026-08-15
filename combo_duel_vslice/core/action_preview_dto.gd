@@ -2,7 +2,7 @@ class_name ActionPreviewDto
 extends RefCounted
 
 const HandResultDtoScript = preload("res://core/hand_result_dto.gd")
-const SCHEMA_VERSION := 4
+const SCHEMA_VERSION := 5
 
 var valid: bool = false
 var reason: String = ""
@@ -18,6 +18,8 @@ var same_qi_capacity: int = 5
 var same_qi_after: int = 0
 var same_qi_trigger_count: int = 0
 var technique_id: String = ""
+var slot_instance_id: String = ""
+var technique_slot: Dictionary = {}
 var technique: Dictionary = {}
 var condition: Dictionary = {}
 var technique_activation: Dictionary = {}
@@ -26,6 +28,7 @@ var cooperation_permission: Dictionary = {}
 var intent: Dictionary = {}
 var inner_skills: Array = []
 var next_technique_id: String = ""
+var next_slot_instance_id: String = ""
 var next_technique: Dictionary = {}
 
 func configure(snapshot: Dictionary):
@@ -44,6 +47,8 @@ func configure(snapshot: Dictionary):
     same_qi_after = int(snapshot.get("same_qi_after", 0))
     same_qi_trigger_count = int(snapshot.get("same_qi_trigger_count", 0))
     technique_id = str(snapshot.get("technique_id", ""))
+    slot_instance_id = str(snapshot.get("slot_instance_id", ""))
+    technique_slot = snapshot.get("technique_slot", {}).duplicate(true)
     technique = snapshot.get("technique", {}).duplicate(true)
     condition = snapshot.get("condition", {}).duplicate(true)
     technique_activation = snapshot.get(
@@ -54,6 +59,7 @@ func configure(snapshot: Dictionary):
     intent = snapshot.get("intent", {}).duplicate(true)
     inner_skills = snapshot.get("inner_skills", []).duplicate(true)
     next_technique_id = str(snapshot.get("next_technique_id", ""))
+    next_slot_instance_id = str(snapshot.get("next_slot_instance_id", ""))
     next_technique = snapshot.get("next_technique", {}).duplicate(true)
     return self
 
@@ -77,6 +83,8 @@ func to_dict() -> Dictionary:
         "same_qi_after": same_qi_after,
         "same_qi_trigger_count": same_qi_trigger_count,
         "technique_id": technique_id,
+        "slot_instance_id": slot_instance_id,
+        "technique_slot": technique_slot.duplicate(true),
         "technique": technique.duplicate(true),
         "condition": condition.duplicate(true),
         "technique_activation": technique_activation.duplicate(true),
@@ -85,6 +93,7 @@ func to_dict() -> Dictionary:
         "intent": intent.duplicate(true),
         "inner_skills": inner_skills.duplicate(true),
         "next_technique_id": next_technique_id,
+        "next_slot_instance_id": next_slot_instance_id,
         "next_technique": next_technique.duplicate(true),
     }
 

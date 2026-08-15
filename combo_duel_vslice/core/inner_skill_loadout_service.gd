@@ -265,6 +265,12 @@ func forget_inner_skill(
         return {"success": false, "reason": "无法建立遗忘事务工作副本"}
     var matching_index: int = working.learned_inner_skill_ids.find(inner_skill_id)
     working.learned_inner_skill_ids.remove_at(matching_index)
+    if learned_count - 1 <= 0:
+        working.source_marker_store.remove_entries({
+            "source_kind": "inner_skill",
+            "content_id": inner_skill_id,
+            "scope": "run",
+        }, true)
     working.experience = experience_before + forget_value
     working.forgotten_inner_skill_count += 1
     var event_result := _dispatch_forgotten_event(

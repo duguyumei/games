@@ -207,6 +207,15 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Di
             side.learn_technique(technique_id)
     if progress_snapshot.has_max_life:
         side.max_life = progress_snapshot.max_life
+    if progress_snapshot.has_base_max_life:
+        side.base_max_life = progress_snapshot.base_max_life
+    elif progress_snapshot.has_max_life:
+        side.base_max_life = progress_snapshot.max_life
+    if progress_snapshot.has_source_marker_state:
+        var marker_errors: Array[String] = side.source_marker_store.restore_snapshot(
+            progress_snapshot.source_marker_state)
+        if not marker_errors.is_empty():
+            return {"success": false, "reason": "来源标识装配失败：%s" % "；".join(marker_errors)}
     if progress_snapshot.has_life:
         side.life = progress_snapshot.life
     if progress_snapshot.has_experience:
@@ -243,6 +252,8 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "learned_technique_ids": _obtainable_owned_technique_ids(side),
         "life": side.life,
         "max_life": side.max_life,
+        "base_max_life": side.base_max_life,
+        "source_marker_state": side.source_marker_store.snapshot("run"),
         "experience": side.experience,
         "base_hand_limit_modifier": side.base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": side.hand_technique_multiplier_modifiers.duplicate(true),

@@ -3,6 +3,22 @@
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
 `godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
 
+## 特殊功法运行底层改造（2026-08-15，公共底层已完成）
+
+本节只记录当前工作区已经通过门禁的公共能力，不代表 25 门特殊候选已经成为正式资源。冻结规则先写入功法框架、行动结算、伤害防御、真气状态与地图生命权威文档；本批没有新增特殊功法 `.tres`，正式资源数量继续为 211。
+
+已完成：稳定战斗槽位与确定性临时槽位；即时／推进后／行动末／回合末调用调度；唯一调用 token 与根行动 token；调用目标条件和启动权限在槽位移动前预检；统一 `TechniqueResolutionService` 提供功法启动、P₀ 后直接修正、Handler 默认阶段、连势结算和调用 continuation，`ActionResolver` 只保留卡牌行动与同步层调度，不维护第二套功法值或阶段白名单；自动条件通过统一 `ConditionSpec`、`ValueSpec`、`TargetQuery` 与 `BattleEventCatalog` 运行和校验；已提交事件通过统一事件桥转发动态响应，不再在 commit 后重复手动响应。
+
+已完成：唯一临时移出事务承接虚无打出、虚无明确弃置、主动消散与同步移动；防御减少统一携带 `cause`，直接削防、支付、衰减、清空与重置不触发反震，`blockable=false` 只跳过格挡且仍结算伤害增减、防御吸收和反震；来源标识使用统一地址解析器，battle／run／`share_origin` 与独立临时副本边界已接入；生命上限贡献由统一服务在本局库存和战斗方复用；毒伤逐段冻结修正并在成功提交后按稳定 receipt 幂等消费。
+
+已完成：旧效果操作码 `add_momentum`、`set_momentum`、`consume_momentum`、`add_same_qi`、`clear_same_qi_for_defense`、`set_reflection_percent`、`set_reflection_until_turn_end` 与 `remove_all_defense` 已从效果注册表和正式资源中迁移；保留 `dissipate_captured`、`atomic_exchange_captured`、`synchronous_discard_queries`、`insert_technique_slots` 与 `invoke_sequence_technique`，因为它们表达原子批次、同步冻结或嵌套结算时序，不是重复底层包装。底层兼容方法名仍可存在于窄端口或角色对象上，但内容不能再把它们当效果操作码使用。
+
+投影与持久化：公开来源标识、稳定功法槽位和毒伤修正来源已经进入战斗快照、AI 公开状态和历史过滤；私有标识不会进入 AI 历史；功法序列 UI 显示当前／下一槽位公开标识，本局配装 UI 显示 run 标识；存档保存 `base_max_life` 与来源标识状态，旧 `max_life` 存档迁移为基础上限。当前没有已知的 UI／AI 公共字段漏接边界。
+
+验证结果：即时调用顺序 `乙→丁→丙→甲`、`after_caller_advance` 顺序 `乙→丁→甲→丙` 均由匿名 probe 通过；拒绝调用不会移动槽位，等待选择恢复不会重掷或重复插入；专项直跑 wind 349、poison 171、mountain 432、content-contracts 906，project-load 加载 629 项；设计一致性为权威 211／运行时 211／待接入 0／错误 0；quick 7/7、full 24/24 通过，full 输出中可计数断言合计 138495 条，功法运行直跑 314 条、分组 139 条；`verify_test_runner.sh` 的 missing-script 与 missing-resource 故障探针均成功检出失败。全部 Godot 调用使用不同的 `/tmp` 日志，除已知 macOS CA 证书警告外没有脚本缺失、文件缺失、解析错误或脚本运行错误。
+
+尚未接入：25 门特殊候选仍只存在于候选池权威文档，没有稳定正式 ID、独立 `.tres`、正式池资格、图标或逐门行为测试；在逐门内容接入完成前，不得加入心得、奖励、修习商店、敌人装配或生产序列。
+
 ## 当前正式目录（2026-08-15）
 
 正式目录共211门：基础通用功法`basic_scatter`、`basic_guard`与209门普通功法。五个普通正式池分布为高牌55、对子48、三条34、顺子34、炸弹38；完整稳定ID与池归属见[扩展正式功法索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)。全部209门非内建内容均为独立`.tres`、`formal_complete`、`built_in=false`、普通装配上限1，并进入对应正式修习候选。
@@ -21,7 +37,7 @@
 
 专项行为入口为`tests/test_poison_techniques.gd`、`tests/test_growth_techniques.gd`、`tests/test_bridge_techniques.gd`、`tests/test_mountain_techniques.gd`、`tests/test_wind_techniques.gd`与`tests/test_fire_techniques.gd`。前三者覆盖独立毒伤、同步毒爆、五叶／宿根入堆清理、落英余数选择、春风下一回合、护根防御保留、蛊焰追身、连枝协同、涸泽顶5与等待选择恢复；山系专项逐门识别49个ID，并覆盖冻结C、反震恢复、反震真伤、格挡、邀战、灰垒、返璞、同气收口、协同来源窗口、精确牌型与快照清理；风系专项逐门识别51个ID，并覆盖寄脉、虚无、临时牌阶、四门林系生成牌、定向检索、原子交换、同步弃置、实时格挡、四散回响、葫芦组成集合、提交后回手与战后归还；火系专项识别全部49个火系ID，并覆盖连势消费与回滚、护势、同气额外行动排序、燃尽生命周期、对子／葫芦边界、嫁薪原子转移、暗薪抽牌响应、K=4/5与回响禁止递归。
 
-2026-08-15最终门禁：设计一致性为权威211／运行时211／待接入0／错误0；独立quick为7组全通过，full为24组全通过，主完整回归136018条断言通过；火系专项264条、风系专项349条、成长专项213条、山系专项432条、蛊毒专项171条、桥接专项112条断言通过。Godot日志均显式写入独立`/tmp`路径，未出现脚本缺失、文件缺失、解析错误或脚本运行错误。
+2026-08-15最终门禁：设计一致性为权威211／运行时211／待接入0／错误0；独立quick为7组全通过，full为24组全通过，full 输出中可计数断言合计138495条；火系专项264条、风系专项349条、成长专项213条、山系专项432条、蛊毒专项171条、桥接专项112条断言通过。Godot日志均显式写入独立`/tmp`路径，未出现脚本缺失、文件缺失、解析错误或脚本运行错误。
 
 ## 统计口径
 

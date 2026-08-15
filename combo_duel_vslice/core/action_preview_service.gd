@@ -115,7 +115,8 @@ func preview_dto(
         return _invalid_preview(str(power_result.get(
             "reason", "功法值查询失败")))
     var values: Dictionary = power_result["values"]
-    var technique_id: String = sequence_book.current_id(hand_result["id"])
+    var technique_slot: Dictionary = sequence_book.current_slot(hand_result["id"])
+    var technique_id: String = str(technique_slot.get("technique_id", ""))
     var technique_definition = technique_repository.get_definition(technique_id)
     var technique: Dictionary = (
         technique_definition.to_definition()
@@ -225,7 +226,8 @@ func preview_dto(
     intent["same_qi_gain"] = int(same_qi_projection["same_qi_gain"])
     intent["same_qi_trigger_count"] = int(
         same_qi_projection["same_qi_trigger_count"])
-    var next_technique_id: String = sequence_book.next_id(hand_result["id"])
+    var next_technique_slot: Dictionary = sequence_book.next_slot(hand_result["id"])
+    var next_technique_id: String = str(next_technique_slot.get("technique_id", ""))
     return ActionPreviewDtoScript.new().configure({
         "valid": true,
         "cards": cards,
@@ -245,6 +247,8 @@ func preview_dto(
             same_qi_projection["same_qi_trigger_count"]),
         "group_snapshot": group_snapshot,
         "technique_id": technique_id,
+        "slot_instance_id": str(technique_slot.get("slot_instance_id", "")),
+        "technique_slot": technique_slot,
         "technique": technique,
         "condition": condition,
         "technique_activation": technique_activation,
@@ -253,6 +257,7 @@ func preview_dto(
         "intent": intent,
         "inner_skills": _inner_skill_definitions_for(side),
         "next_technique_id": next_technique_id,
+        "next_slot_instance_id": str(next_technique_slot.get("slot_instance_id", "")),
         "next_technique": technique_repository.get_technique(next_technique_id),
     })
 

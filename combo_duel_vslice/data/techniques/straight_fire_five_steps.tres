@@ -14,4 +14,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","momentum","retrigger_sensitive"])
 public_behavior_summary=Array[String](["damage","momentum"])
 implementation_category="C"
-effects=[{"op":"multi_damage","segments":5,"amount":{"kind":"power_fraction","numerator":1,"denominator":5,"minimum":0},"on_life_loss_effects":[{"op":"add_momentum","amount":1}]}]
+effects=[{"op":"multi_damage","segments":5,"amount":{"kind":"power_fraction","numerator":1,"denominator":5,"minimum":0},"on_life_loss_effects":[{"op":"write_momentum","operation":"add","amount":1}]}]

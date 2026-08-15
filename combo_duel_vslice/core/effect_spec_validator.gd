@@ -1,6 +1,12 @@
 class_name EffectSpecValidator
 extends RefCounted
 
+const ValueSpecRegistryScript = preload("res://core/specs/value_spec_registry.gd")
+const ConditionSpecRegistryScript = preload("res://core/specs/condition_spec_registry.gd")
+const TargetQueryFieldCatalogScript = preload(
+    "res://core/effects/target_query_field_catalog.gd")
+const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
+
 ## 效果规格校验。
 ##
 ## 只判断「一条效果规格是否结构合法」：操作码是否已注册、数值规格是否自洽、
@@ -12,30 +18,6 @@ extends RefCounted
 ##
 ## 从 ContentValidator 拆出的原因：效果操作码随功法内容持续增长，而内容定义的
 ## 形状规则基本稳定，两者的变更频率相差很大。
-
-## 数值规格的可用 kind。只有效果规格会用到，因此不放在内容词表里。
-const AMOUNT_KINDS := [
-    "constant", "power", "power_fraction", "initial_power", "initial_power_fraction", "n60", "hand_map", "max",
-    "add", "subtract", "multiply", "divide_floor", "divide_ceil", "modulo", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
-    "capture_attribute_count", "capture_non_attribute_count", "capture_base_qi_sum",
-    "capture_card_base_qi_sum",
-    "capture_current_effective_qi", "group_base_qi_sum", "extra_count",
-    "card_contribution", "extra_effective_qi_sum", "action_same_qi_gain",
-    "action_same_qi_trigger_count", "base_attribute_count", "event_field",
-    "momentum_value",
-    "active_temporary_reshape_base_qi_sum",
-    "capture_effective_qi_sum", "capture_effective_qi_max",
-    "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum",
-    "capture_anomaly_layers_max", "capture_result_count",
-    "capture_actual_life_loss", "current_defense", "played_poison_amount",
-    "played_poison_count", "zone_anomaly_count", "zone_anomaly_qi_sum",
-    "capture_field_sum", "capture_field_max", "capture_field_first",
-    "extra_attribute_count", "hand_count",
-    "target_hand_count", "occupied_meridian_count", "deck_count",
-    "bomb_constituent_count", "hand_limit",
-    "conditional",
-    "power_scaled_by_zone_anomaly",
-]
 
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const QUERY_ORDERS := [
@@ -54,6 +36,8 @@ var _reshape_category_ids: Array
 var _hand_ids: Array
 var _effect_registry
 var _anomalies_by_id: Dictionary = {}
+var _value_spec_registry
+var _condition_spec_registry
 
 ## `report_error` 接收 (scope, message)，由调用方决定错误如何汇总。
 ## `vocabulary` 提供跨内容共用的 ID 集合，避免在这里复制一份常量。
@@ -67,6 +51,14 @@ func _init(
     _reshape_category_ids = vocabulary["reshape_category_ids"]
     _hand_ids = vocabulary["hand_ids"]
     _effect_registry = effect_registry
+    _value_spec_registry = (
+        effect_registry.value_resolver.spec_registry
+        if effect_registry != null and effect_registry.value_resolver != null
+        else ValueSpecRegistryScript.new())
+    _condition_spec_registry = (
+        effect_registry.value_resolver.condition_registry
+        if effect_registry != null and effect_registry.value_resolver != null
+        else ConditionSpecRegistryScript.new())
 
 ## 提供引用检查所需的索引。索引在内容校验过程中增量建立，因此单独设置。
 func use_indexes(anomalies_by_id: Dictionary) -> void:
@@ -130,6 +122,8 @@ func validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> voi
         _error(effect_scope, "异状 %s 不属于类别 %s" % [anomaly_id, category])
 
 func _validate_condition(condition: Dictionary, scope: String) -> void:
+    _condition_spec_registry.validate_condition(
+        condition, Callable(self, "_error"), scope)
     for list_field in ["all", "any"]:
         if not condition.has(list_field):
             continue
@@ -199,6 +193,17 @@ func validate_non_negative_integer(value, scope: String, label: String) -> void:
 func report_error(scope: String, message: String) -> void:
     _error(scope, message)
 
+func validate_response_event(event_id: String, scope: String) -> void:
+    if not BattleEventCatalogScript.forwards_dynamic_response(event_id):
+        _error(scope, "引用未知动态响应事件")
+
+func validate_event_filters(filters, scope: String) -> void:
+    if not filters is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    _condition_spec_registry.validate_event_filters(
+        filters, Callable(self, "_error"), scope)
+
 ## 校验通用目标查询。
 func validate_target_query(query: Dictionary, scope: String) -> void:
     if str(query.get("side", "actor")) not in QUERY_SIDES:
@@ -221,6 +226,8 @@ func validate_target_query(query: Dictionary, scope: String) -> void:
     _validate_query_filters(filters, scope + ".filters")
 
 func _validate_query_filters(filters: Dictionary, scope: String) -> void:
+    for field in TargetQueryFieldCatalogScript.unknown_fields(filters):
+        _error(scope + "." + field, "未知目标查询筛选字段")
     if str(filters.get("card_kind", "any")) not in CARD_KINDS:
         _error(scope + ".card_kind", "必须为 any 或 normal")
     for field in [
@@ -303,7 +310,7 @@ func _validate_target_state_filter(value, category_ids: Array, scope: String) ->
 ## 校验数值规格。递归结构，因此对外公开供嵌套场景复用。
 func validate_amount_spec(spec: Dictionary, scope: String) -> void:
     var kind := str(spec.get("kind", ""))
-    if not AMOUNT_KINDS.has(kind):
+    if not _value_spec_registry.has_kind(kind):
         _error(scope, "未知数值规格 kind %s" % kind)
         return
     match kind:

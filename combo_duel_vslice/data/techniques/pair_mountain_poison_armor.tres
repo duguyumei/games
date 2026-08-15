@@ -16,5 +16,4 @@ power_formation={}
 semantic_tags=Array[String](["defense","block","anomaly_apply"])
 public_behavior_summary=Array[String](["defense","block","anomaly_apply"])
 implementation_category="B"
-effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"grant_block","condition":"unconditional","when":{"value_at_least":{"value":{"kind":"zone_anomaly_qi_sum","side":"actor","zone":"hand","category":"state","anomaly":"poison"},"minimum":24}}}]
-
+effects=[{"op":"defense","amount":{"kind":"power"}},{"op":"grant_block","condition_spec":{},"when":{"value_at_least":{"value":{"kind":"zone_anomaly_qi_sum","side":"actor","zone":"hand","category":"state","anomaly":"poison"},"minimum":24}}}]

@@ -7,7 +7,7 @@ extends RefCounted
 ## `has_*` 为真的字段。这里故意不把缺失字段解释为空值，避免局部同步清空
 ## 仅由本局系统持有的内功与功法位状态。
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 
 var consumable_ids: Array[String] = []
 var item_ids: Array[String] = []
@@ -19,6 +19,8 @@ var forgotten_inner_skill_count: int = 0
 var run_deck: Dictionary = {}
 var life: int = 0
 var max_life: int = 0
+var base_max_life: int = 0
+var source_marker_state: Dictionary = {}
 var experience: int = 0
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
@@ -39,6 +41,8 @@ var has_forgotten_inner_skill_count: bool = false
 var has_run_deck: bool = false
 var has_life: bool = false
 var has_max_life: bool = false
+var has_base_max_life: bool = false
+var has_source_marker_state: bool = false
 var has_experience: bool = false
 var has_hand_technique_progression: bool = false
 var has_practice_shop_state: bool = false
@@ -62,6 +66,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_run_deck = values.has("run_deck")
     result.has_life = values.has("life")
     result.has_max_life = values.has("max_life")
+    result.has_base_max_life = values.has("base_max_life")
+    result.has_source_marker_state = values.has("source_marker_state")
     result.has_experience = values.has("experience")
     result.has_hand_technique_progression = values.has("hand_technique_progression")
     result.has_practice_shop_state = values.has("practice_shop_state")
@@ -92,6 +98,10 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.run_deck = values.get("run_deck", {}).duplicate(true)
     result.life = int(values.get("life", 0))
     result.max_life = int(values.get("max_life", 0))
+    result.base_max_life = int(values.get(
+        "base_max_life", values.get("max_life", 0)))
+    result.source_marker_state = values.get(
+        "source_marker_state", {}).duplicate(true)
     result.experience = int(values.get("experience", 0))
     result.hand_technique_progression = values.get(
         "hand_technique_progression", {}).duplicate(true)
@@ -132,6 +142,10 @@ func to_dict() -> Dictionary:
         result["life"] = life
     if has_max_life:
         result["max_life"] = max_life
+    if has_base_max_life:
+        result["base_max_life"] = base_max_life
+    if has_source_marker_state:
+        result["source_marker_state"] = source_marker_state.duplicate(true)
     if has_experience:
         result["experience"] = experience
     if has_hand_technique_progression:

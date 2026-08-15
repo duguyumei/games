@@ -13,7 +13,7 @@ func operation_ids() -> Array[String]:
     return [
         "transfer_anomaly_layers", "convert_anomaly_layers",
         "apply_layers_from_source", "apply_layers_to_each_captured",
-        "remove_all_defense", "remove_anomaly_layers",
+        "remove_anomaly_layers",
         "transfer_state_captured", "distribute_layers_evenly", "spread_one_layer",
     ]
 
@@ -33,11 +33,6 @@ func execute(effect: Dictionary, context):
             return _apply_from_source(effect, runtime)
         "apply_layers_to_each_captured":
             return _apply_each(effect, runtime)
-        "remove_all_defense":
-            var removed := int(runtime.actor.defense)
-            runtime.actor.defense = 0
-            runtime.captures[str(effect.get("capture", "removed_defense"))] = [{"amount": removed}]
-            return EffectResultScript.succeeded("移除全部防御 %d" % removed)
         "remove_anomaly_layers":
             return _remove_layers(effect, runtime)
         "transfer_state_captured":

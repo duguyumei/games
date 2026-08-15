@@ -20,6 +20,7 @@ const QUERY_HOOKS := [
     "defense_gain_query",
     "defense_retention_percent_query",
     "same_qi_capacity_query",
+    "life_recovery_query",
 ]
 
 var _resolver

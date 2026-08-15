@@ -3,8 +3,16 @@ extends RefCounted
 
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")
+const ValueSpecRegistryScript = preload("res://core/specs/value_spec_registry.gd")
+const ConditionSpecRegistryScript = preload("res://core/specs/condition_spec_registry.gd")
+
+var spec_registry = ValueSpecRegistryScript.new()
+var condition_registry = ConditionSpecRegistryScript.new()
 
 func resolve(spec, context) -> int:
+    return spec_registry.resolve(spec, context, Callable(self, "_resolve_known"))
+
+func _resolve_known(spec, context) -> int:
     var runtime = EffectContextScript.coerce(context)
     if spec is int or spec is float:
         return int(spec)
@@ -152,6 +160,39 @@ func resolve(spec, context) -> int:
         "current_defense":
             var side = _side(runtime, str(spec.get("side", "actor")))
             return int(side.defense) if side != null else 0
+        "source_marker_value":
+            var side = _side(runtime, str(spec.get("side", "actor")))
+            if side == null or side.source_marker_store == null:
+                return 0
+            return side.source_marker_store.value(
+                str(spec.get("source_kind", "technique")),
+                str(spec.get("source_instance_key", runtime.slot_instance_id)),
+                str(spec.get("marker_id", "")), str(spec.get("scope", "")))
+        "source_marker_sum":
+            var side = _side(runtime, str(spec.get("side", "actor")))
+            if side == null or side.source_marker_store == null:
+                return 0
+            var filters: Dictionary = spec.get("filters", {}).duplicate(true)
+            if spec.has("marker_id"):
+                filters["marker_id"] = str(spec["marker_id"])
+            if spec.has("scope"):
+                filters["scope"] = str(spec["scope"])
+            return side.source_marker_store.sum(filters)
+        "equipped_source_marker_sum":
+            return _equipped_source_marker_sum(
+                _side(runtime, str(spec.get("side", "actor"))), spec)
+        "consumed_marker_value":
+            return runtime.consumed_marker_value
+        "missing_life":
+            return maxi(0, int(runtime.actor.max_life) - int(runtime.actor.life)) \
+                if runtime.actor != null else 0
+        "target_missing_life":
+            return maxi(0, int(runtime.target.max_life) - int(runtime.target.life)) \
+                if runtime.target != null else 0
+        "max_life":
+            return int(runtime.actor.max_life) if runtime.actor != null else 0
+        "target_max_life":
+            return int(runtime.target.max_life) if runtime.target != null else 0
         "played_poison_amount":
             return int(runtime.group_snapshot.get("played_poison_amount", 0))
         "played_poison_count":
@@ -274,10 +315,35 @@ func resolve(spec, context) -> int:
             return int(floor(runtime.power * (100 + count * percent) / 100.0))
     return 0
 
+func _equipped_source_marker_sum(side, spec: Dictionary) -> int:
+    if side == null or side.source_marker_store == null:
+        return 0
+    var equipped: Dictionary = {}
+    for progression_value in side.hand_technique_progression.values():
+        var progression: Dictionary = progression_value
+        for technique_id_value in progression.get("sequence", []):
+            equipped[str(technique_id_value)] = true
+    for inner_skill_id in side.equipped_inner_skill_ids:
+        equipped[str(inner_skill_id)] = true
+    var total := 0
+    var filters: Dictionary = spec.get("filters", {}).duplicate(true)
+    if spec.has("marker_id"):
+        filters["marker_id"] = str(spec["marker_id"])
+    if spec.has("scope"):
+        filters["scope"] = str(spec["scope"])
+    for entry_value in side.source_marker_store.entries(filters):
+        if equipped.has(str(entry_value.get("content_id", ""))):
+            total += int(entry_value.get("value", 0))
+    return total
+
 func _side(runtime, side_id: String):
     return runtime.target if side_id == "target" else runtime.actor
 
 func condition_met(condition: Dictionary, context) -> bool:
+    return condition_registry.evaluate(
+        condition, context, Callable(self, "_condition_met_known"))
+
+func _condition_met_known(condition: Dictionary, context) -> bool:
     var runtime = EffectContextScript.coerce(context)
     if condition.is_empty():
         return true

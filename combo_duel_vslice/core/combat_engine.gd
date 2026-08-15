@@ -48,6 +48,9 @@ const CardIdentityPolicyScript = preload(
 const BattlePermissionServiceScript = preload(
     "res://core/passives/battle_permission_service.gd")
 const SameQiGaugeServiceScript = preload("res://core/same_qi_gauge_service.gd")
+const TechniqueInvocationServiceScript = preload("res://core/technique_invocation_service.gd")
+const TechniqueAutoTriggerServiceScript = preload("res://core/technique_auto_trigger_service.gd")
+const TechniqueResolutionServiceScript = preload("res://core/technique_resolution_service.gd")
 
 var rng := RandomNumberGenerator.new()
 var game_log := GameLogScript.new()
@@ -90,6 +93,9 @@ var hand_recognition_policy
 var card_identity_policy
 var battle_permission_service
 var same_qi_gauge_service
+var technique_invocation_service
+var technique_auto_trigger_service
+var technique_resolution_service
 var _battle_instance_serial: int = 0
 
 var turn_number: int:
@@ -269,7 +275,19 @@ func _init(
     enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)
     effect_ports.use_effect_executor(effect_executor)
+    technique_resolution_service = TechniqueResolutionServiceScript.new(
+        repository, effect_executor, effect_ports,
+        battle_passive_event_service)
+    technique_invocation_service = TechniqueInvocationServiceScript.new(
+        technique_resolution_service, effect_executor, effect_ports, rng)
+    effect_ports.use_technique_invocation_service(technique_invocation_service)
+    technique_auto_trigger_service = TechniqueAutoTriggerServiceScript.new(
+        repository, technique_invocation_service, effect_ports,
+        battle_passive_event_service, [player, enemy],
+        [sequence_book, enemy_sequence_book])
     status_system.use_effect_executor(effect_executor)
+    battle_passive_event_service.register_weak_listener(
+        status_system, "on_committed_event_for_responses")
     enemy_action_controller = EnemyActionControllerScript.new(rng)
     timing_system.register_weak_handler(
         BattleTimingSystemScript.BATTLE_END,
@@ -277,6 +295,18 @@ func _init(
         2147483646,
         self,
         "_on_flow_battle_end_timing")
+    timing_system.register_weak_handler(
+        BattleTimingSystemScript.ROUND_START,
+        "combat_engine.automatic_round_start_event",
+        2147483645,
+        self,
+        "_on_automatic_round_start_timing")
+    timing_system.register_weak_handler(
+        BattleTimingSystemScript.TURN_END,
+        "combat_engine.automatic_turn_end_event",
+        2147483645,
+        self,
+        "_on_automatic_turn_end_timing")
     action_preview_service = ActionPreviewServiceScript.new(
         repository,
         passive_rule_runtime,
@@ -295,7 +325,8 @@ func _init(
         timing_system,
         Callable(self, "_set_scenario_error"),
         action_preview_service,
-        battle_passive_event_service)
+        battle_passive_event_service,
+        technique_resolution_service)
     effect_ports.use_hand_retrigger_callback(
         Callable(action_resolver, "retrigger_current_hand_technique"))
     loadout_service = BattleLoadoutServiceScript.new(
@@ -454,6 +485,8 @@ func setup(
     round_service.set_modes(false, false)
     action_service.reset()
     same_qi_gauge_service.reset()
+    technique_invocation_service.reset()
+    technique_auto_trigger_service.reset()
     action_service.set_modes(false, false, false)
     enemy_planning_service.reset()
     enemy_planning_service.set_modes(false, false)
@@ -776,6 +809,52 @@ func damage_target_can_receive(side) -> bool:
 func _update_battle_state() -> void:
     outcome_service.set_mode(scripted_mode)
     outcome_service.update()
+
+func _on_automatic_round_start_timing(event) -> Dictionary:
+    var actors: Array = event.actors if event.actors is Array else []
+    for actor in actors:
+        var token := "timing:round_start:%d:%s" % [
+            int(event.serial), str(actor.owner_id)]
+        var committed: Dictionary = battle_passive_event_service.publish_resolved_timing_event(
+            "round_start", {
+                "event_token": battle_passive_event_service.make_token(
+                    "round_start", actor, event.serial, token),
+                "event_serial": int(event.serial),
+                "actor": actor, "owner": actor,
+                "round_number": int(event.round_number),
+                "action_token": token,
+            })
+        if not committed.get("success", false):
+            return {"success": false, "detail": committed.get("reason", "round_start 提交失败")}
+    return {"success": true}
+
+func _on_automatic_turn_end_timing(event) -> Dictionary:
+    var actor = event.actor
+    if actor == null:
+        return {"success": false, "detail": "turn_end 缺少行动方"}
+    var token := "timing:turn_end:%d:%s" % [
+        int(event.serial), str(actor.owner_id)]
+    var committed: Dictionary = battle_passive_event_service.publish_resolved_timing_event(
+        "turn_end", {
+            "event_token": battle_passive_event_service.make_token(
+                "turn_end", actor, event.serial, token),
+            "event_serial": int(event.serial),
+            "actor": actor, "owner": actor,
+            "round_number": int(event.round_number),
+            "action_token": token,
+        })
+    if not committed.get("success", false):
+        return {"success": false, "detail": committed.get("reason", "turn_end 提交失败")}
+    var actors: Array = event.actors if event.actors is Array else []
+    if actors.is_empty() or actor == actors.back():
+        var resolved: Dictionary = effect_ports.resolve_technique_invocations_at_timing(
+            "round_end")
+        if not resolved.get("success", false):
+            return {
+                "success": false,
+                "detail": resolved.get("reason", "round_end 功法调用失败"),
+            }
+    return {"success": true}
 
 func _on_flow_battle_end_timing(event) -> Dictionary:
     var result: Dictionary = outcome_service.on_battle_end_timing(event)

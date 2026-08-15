@@ -42,8 +42,16 @@ func _continue(continuation) -> Dictionary:
         if not registry.condition_met(effect.get("when", {}), continuation.context):
             continuation.effect_index += 1
             continue
+        var context_ports = (
+            continuation.context.get("ports")
+            if continuation.context is Dictionary
+            else continuation.context.ports)
+        if context_ports != null:
+            context_ports.push_effect_context(continuation.context)
         var result: Dictionary = EffectResultScript.normalize(
             registry.execute(effect, continuation.context))
+        if context_ports != null:
+            context_ports.pop_effect_context(continuation.context)
         continuation.effect_results.append(_public_effect_result(result))
         if result.get("pending_choice", false):
             var request_object = result.get("_choice_request_object")
@@ -68,6 +76,15 @@ func _continue(continuation) -> Dictionary:
                 "detail": result.get("detail", "未知效果失败"),
                 "effect_results": continuation.effect_results.duplicate(true),
             }
+        if context_ports != null \
+                and context_ports.has_method("take_immediate_effects"):
+            var immediate_effects: Array = context_ports.take_immediate_effects(
+                continuation.context)
+            if not immediate_effects.is_empty():
+                var insert_at: int = continuation.effect_index + 1
+                for immediate_effect in immediate_effects:
+                    continuation.effects.insert(insert_at, immediate_effect)
+                    insert_at += 1
         if result.get("detail", "") != "":
             continuation.details.append(str(result["detail"]))
         continuation.effect_index += 1

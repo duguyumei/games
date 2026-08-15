@@ -18,6 +18,7 @@ var _passive_sources_by_token: Dictionary = {}
 var _set_scenario_error: Callable
 var action_preview_service
 var committed_event_service
+var technique_resolution_service
 
 func _init(
         effect_ports_value,
@@ -29,7 +30,8 @@ func _init(
         battle_timing_system = null,
         scenario_error_callback: Callable = Callable(),
         preview_service = null,
-        event_service = null) -> void:
+        event_service = null,
+        resolution_service = null) -> void:
     effect_ports = effect_ports_value
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
@@ -40,6 +42,7 @@ func _init(
     _set_scenario_error = scenario_error_callback
     action_preview_service = preview_service
     committed_event_service = event_service
+    technique_resolution_service = resolution_service
     if timing_system != null:
         timing_system.register_weak_handler(
             timing_system.GROUP_END,
@@ -167,6 +170,17 @@ func confirm_finalized_action(
                 "metadata": {
                     "hand_id": str(action_preview.get("hand", {}).get("id", "")),
                     "power_query_fingerprints": _power_query_fingerprints(action_preview),
+                    "trigger_mode": "manual",
+                    "root_action_token": action_token,
+                    "invocation_token": "",
+                    "caller_technique_id": "",
+                    "slot_instance_id": str(action_preview.get("slot_instance_id", "")),
+                    "manual_effect_suppressed": str(action_preview.get(
+                        "technique", {}).get("manual_effect_mode", "normal")) == "advance_only",
+                    "sequence_before": action_preview.get(
+                        "sequence_before", []).duplicate(true),
+                    "sequence_after": action_preview.get(
+                        "sequence_before", []).duplicate(true),
                 },
             })
         if not confirmed.get("success", false):
@@ -201,22 +215,27 @@ func _freeze_technique_activation(
             "frozen": true, "action_token": action_token,
         }
         return {"success": true}
-    var permission = actor.battle_permission_service
-    var result: Dictionary = (
-        permission.can_activate_technique(
-            actor,
-            str(action_preview.get("technique_id", "")),
+    var result: Dictionary
+    if technique_resolution_service != null:
+        result = technique_resolution_service.activation_permission(
+            actor, target, str(action_preview.get("technique_id", "")),
+            str(action_preview.get("hand", {}).get("id", "")),
+            action_preview.get("cards", []), action_token,
+            "action_confirmed")
+    else:
+        var permission = actor.battle_permission_service
+        result = permission.can_activate_technique(
+            actor, str(action_preview.get("technique_id", "")),
             str(action_preview.get("hand", {}).get("id", "")), {
-                "target": target,
-                "round_number": turn_number,
+                "target": target, "round_number": turn_number,
                 "action_token": action_token,
                 "card_instance_ids": action_preview.get("cards", []).map(
                     func(card): return str(card.id)),
                 "source_kind": "action_confirmed",
-            })
-        if permission != null else {
-            "allowed": true, "reason": "", "source_breakdown": [], "errors": [],
-        })
+            }) if permission != null else {
+                "allowed": true, "reason": "",
+                "source_breakdown": [], "errors": [],
+            }
     if not result.get("errors", []).is_empty():
         return {
             "success": false,
@@ -276,8 +295,6 @@ func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
                 "启动被拒绝", str(activation.get("reason", "功法启动被拒绝")))
             continue
         _prepare_successful_technique_momentum(record)
-        action_preview["values"] = PowerCalculatorScript.apply_momentum(
-            action_preview["values"], int(record["momentum_snapshot"]))
         record["triggered"] = true
     _pending_resolution = {
         "records": records,
@@ -397,6 +414,9 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "source_kind": source_spec["kind"],
                 "captures": captures_by_source[capture_key],
                 "sequence_book": record["book"],
+                "slot_instance_id": str(record["preview"].get("slot_instance_id", "")),
+                "root_action_token": str(record["token"]),
+                "trigger_mode": "manual",
                 "card_identity_policy": record["actor"].card_identity_policy,
             })
             trigger_queue.enqueue(
@@ -604,10 +624,26 @@ func _finish_action_record(record) -> void:
         record["actor"].consume_pending_power_fixed_sources(
             action_preview.get("pending_power_fixed_tokens", []))
         record["actor"].last_successful_technique_hand_id = hand_id
-        record["book"].advance(hand_id)
+        var completed: Dictionary = record["book"].complete_slot(
+            hand_id, str(action_preview.get("slot_instance_id", "")))
+        if not completed.get("success", false):
+            record["failed"] = true
+            trigger_queue.add_history(
+                "group_end", "功法序列推进失败",
+                "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]],
+                "失败", str(completed.get("reason", "冻结槽位不存在")))
+            _passive_sources_by_token.erase(str(record["token"]))
+            return
         trigger_queue.add_history(
             "group_end", "功法序列推进", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]],
             "成功", "下一门：%s" % _technique_name(record["book"].current_id(hand_id)))
+        var deferred: Dictionary = effect_ports.resolve_after_caller_advance(
+            str(record["token"]))
+        if not deferred.get("success", false):
+            record["failed"] = true
+            trigger_queue.add_history(
+                "group_end", "推进后功法调用失败", record["actor"].name,
+                "失败", str(deferred.get("reason", "延后调用失败")))
     elif not technique.is_empty():
         trigger_queue.add_history(
             "group_end", "功法序列保持", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]], "未推进")
@@ -629,8 +665,25 @@ func _emit_action_resolved(record) -> void:
             "staging_count_after": record["actor"].staging.size(),
             "sequence_position_after": record["book"].positions.get(
                 str(record["preview"]["hand"]["id"]), 0),
+            "trigger_mode": "manual",
+            "root_action_token": str(record["token"]),
+            "invocation_token": "",
+            "caller_technique_id": "",
+            "slot_instance_id": str(record["preview"].get("slot_instance_id", "")),
+            "manual_effect_suppressed": str(record["preview"].get(
+                "technique", {}).get("manual_effect_mode", "normal")) == "advance_only",
+            "sequence_before": record["preview"].get(
+                "sequence_before", []).duplicate(true),
+            "sequence_after": record["book"].ordered_slots(
+                str(record["preview"]["hand"]["id"])),
         },
     })
+    var deferred: Dictionary = effect_ports.resolve_technique_invocations_at_timing(
+        "action_end", str(record["token"]))
+    if not deferred.get("success", false) and _set_scenario_error.is_valid():
+        _set_scenario_error.call(
+            "行动结束功法调用失败：%s" % str(deferred.get(
+                "reason", "等待选择尚未由行动层接管")))
 
 func _power_query_fingerprints(action_preview: Dictionary) -> Dictionary:
     var result: Dictionary = {}
@@ -673,29 +726,15 @@ func combat_order_labels(side, technique_name: String = "当前功法") -> Array
     return labels
 
 func _effects_for_phase(effects: Array, phase: String) -> Array:
+    if technique_resolution_service != null:
+        return technique_resolution_service.effects_for_phase(effects, phase)
     var result: Array = []
-    var prepare_ops := [
-        "defense", "defense_from_noncontributing_qi",
-        "add_momentum", "set_momentum", "set_reflection_percent",
-        "set_reflection_until_turn_end",
-        "grant_reflection_source", "grant_reflection_true_damage",
-        "grant_block", "register_challenge", "grant_defense_retention",
-        "add_pending_power_fixed",
-        "steal_random_card_if_power_target_and_same_qi",
-        "add_direct_power_fixed", "add_direct_power_percent"]
-    var damage_ops := ["damage", "multi_damage"]
     for effect in effects:
         var explicit_phase: String = effect.get("phase", "")
-        if explicit_phase != "":
-            if explicit_phase == phase:
-                result.append(effect)
-            continue
         var op: String = effect.get("op", "")
-        if phase == "prepare" and op in prepare_ops:
-            result.append(effect)
-        elif phase == "damage" and op in damage_ops:
-            result.append(effect)
-        elif phase == "zones" and not op in prepare_ops and not op in damage_ops:
+        var resolved_phase: String = explicit_phase \
+            if explicit_phase != "" else effect_executor.registry.default_phase(op)
+        if resolved_phase == phase:
             result.append(effect)
     return result
 
@@ -703,7 +742,9 @@ func _action_trigger_sources(record) -> Array:
     var sources: Array = []
     var actor = record["actor"]
     var technique: Dictionary = record["preview"]["technique"]
-    if record["triggered"] and not technique.is_empty():
+    var suppress_manual_effects := str(technique.get(
+        "manual_effect_mode", "normal")) == "advance_only"
+    if record["triggered"] and not technique.is_empty() and not suppress_manual_effects:
         var technique_entity = technique_repository.get_definition(
             str(technique.get("id", "")))
         sources.append({
@@ -821,6 +862,9 @@ func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")
 
 func _prepare_successful_technique_momentum(record) -> void:
+    if technique_resolution_service != null:
+        technique_resolution_service.prepare_manual_record(record)
+        return
     if bool(record["momentum_prepared"]):
         return
     record["momentum_prepared"] = true
@@ -829,6 +873,9 @@ func _prepare_successful_technique_momentum(record) -> void:
     record["preview"]["momentum_snapshot"] = int(record["momentum_snapshot"])
 
 func _settle_successful_technique_momentum(record) -> void:
+    if technique_resolution_service != null:
+        technique_resolution_service.settle_manual_record(record)
+        return
     var actor = record["actor"]
     var action_token := str(record["token"])
     var changed: bool = actor.momentum_changed_for_action(action_token)

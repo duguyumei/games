@@ -7,6 +7,9 @@ const PassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
+const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
+const SourceContributedStatServiceScript = preload(
+    "res://core/source_contributed_stat_service.gd")
 
 const CONSUMABLE_LIMIT := 3
 const EXPERIENCE_INTEREST_STEP := 5
@@ -25,6 +28,9 @@ var run_deck
 var practice_purchases: Dictionary = {}
 var life: int = 100
 var max_life: int = 100
+var base_max_life: int = 100
+var source_marker_store = SourceMarkerStoreScript.new()
+var source_contributed_stat_service = SourceContributedStatServiceScript.new()
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
@@ -57,6 +63,7 @@ func reset(
         initial_max_life: int = 100) -> void:
     experience = 0
     max_life = initial_max_life
+    base_max_life = initial_max_life
     life = max_life
     consumable_ids.clear()
     item_ids.clear()
@@ -79,6 +86,10 @@ func reset(
     hand_technique_multiplier_modifiers.clear()
     used_unique_consumable_ids.clear()
     passive_counter_store.clear()
+    source_marker_store.restore_snapshot({
+        "schema_version": SourceMarkerStoreScript.SCHEMA_VERSION,
+        "entries": [],
+    })
 
 func use_technique_loadout_policy_resolver(resolver) -> void:
     technique_loadout_policy.use_int_policy_resolver(resolver)
@@ -114,6 +125,8 @@ func capture_mutation_state() -> Dictionary:
         "experience": experience,
         "life": life,
         "max_life": max_life,
+        "base_max_life": base_max_life,
+        "source_marker_state": source_marker_store.snapshot("run"),
         "consumable_ids": consumable_ids.duplicate(),
         "item_ids": item_ids.duplicate(),
         "learned_technique_ids": learned_technique_ids.duplicate(),
@@ -166,6 +179,11 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     experience = int(state["experience"])
     life = int(state["life"])
     max_life = int(state["max_life"])
+    base_max_life = int(state.get("base_max_life", state["max_life"]))
+    source_marker_store.restore_snapshot(state.get("source_marker_state", {
+        "schema_version": SourceMarkerStoreScript.SCHEMA_VERSION,
+        "entries": [],
+    }))
     consumable_ids.assign(state["consumable_ids"])
     item_ids.assign(state.get("item_ids", []))
     learned_technique_ids.assign(state["learned_technique_ids"])
@@ -245,6 +263,7 @@ func set_hand_technique_loadout(hand_id: String, technique_ids: Array) -> Dictio
     if not validation.get("success", false):
         return validation
     hand_technique_progression = proposed
+    recalculate_effective_max_life()
     return {"success": true, "hand_id": hand_id, "sequence": normalized.duplicate()}
 
 func _technique_belongs_to_hand(technique_id: String, hand_id: String) -> bool:
@@ -384,6 +403,8 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "run_deck": run_deck.to_snapshot(),
         "life": life,
         "max_life": max_life,
+        "base_max_life": base_max_life,
+        "source_marker_state": source_marker_store.snapshot("run"),
         "experience": experience,
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "practice_shop_state": practice_shop_snapshot(),
@@ -443,6 +464,15 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
             push_error("无法导入本局牌组：%s" % "；".join(errors))
     if progress_snapshot.has_max_life:
         max_life = progress_snapshot.max_life
+    if progress_snapshot.has_base_max_life:
+        base_max_life = progress_snapshot.base_max_life
+    elif progress_snapshot.has_max_life:
+        base_max_life = progress_snapshot.max_life
+    if progress_snapshot.has_source_marker_state:
+        var marker_errors: Array[String] = source_marker_store.restore_snapshot(
+            progress_snapshot.source_marker_state)
+        if not marker_errors.is_empty():
+            push_error("无法导入本局来源标识：%s" % "；".join(marker_errors))
     if progress_snapshot.has_life:
         life = progress_snapshot.life
     if progress_snapshot.has_experience:
@@ -452,14 +482,31 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
             or progress_snapshot.has_item_ids:
         passive_counter_store.clear_unowned(
             learned_inner_skill_ids, item_ids)
+    recalculate_effective_max_life()
 
 func grow_life_to(new_max_life: int) -> void:
-    var increase := new_max_life - max_life
-    max_life = new_max_life
+    var increase := new_max_life - base_max_life
+    base_max_life = new_max_life
+    recalculate_effective_max_life()
     life = mini(life + increase, max_life)
+
+func recalculate_effective_max_life() -> int:
+    var equipped: Dictionary = {}
+    for progression_value in hand_technique_progression.values():
+        var progression: Dictionary = progression_value
+        for technique_id_value in progression.get("sequence", []):
+            equipped[str(technique_id_value)] = true
+    for inner_skill_id in equipped_inner_skill_ids:
+        equipped[str(inner_skill_id)] = true
+    max_life = source_contributed_stat_service.effective_max_life(
+        base_max_life, source_marker_store, equipped)
+    life = mini(life, max_life)
+    return max_life
 
 func apply_to_battle_side(side) -> void:
     side.max_life = max_life
+    side.base_max_life = base_max_life
+    side.source_marker_store.restore_snapshot(source_marker_store.snapshot())
     side.life = life
     side.experience = experience
     side.configure_consumables(consumable_ids)
@@ -475,7 +522,9 @@ func apply_to_battle_side(side) -> void:
     side.replace_deck(run_deck.create_battle_cards(), no_shuffle_rng, false)
 
 func sync_from_battle_side(side) -> void:
-    max_life = int(side.max_life)
+    base_max_life = int(side.base_max_life)
+    source_marker_store.restore_snapshot(side.source_marker_store.snapshot("run"))
+    recalculate_effective_max_life()
     life = int(side.life)
     consumable_ids.clear()
     for consumable_id in side.consumable_ids:

@@ -8,6 +8,9 @@ const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
 const StatusBehaviorContextScript = preload(
     "res://core/statuses/status_behavior_context.gd")
+const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
+const ConditionSpecRegistryScript = preload(
+    "res://core/specs/condition_spec_registry.gd")
 
 var content_catalog
 var lifecycle
@@ -25,6 +28,7 @@ var behavior_registry
 var _card_trigger_replay_service = null
 var _rng: RandomNumberGenerator = null
 var battle_permission_service = null
+var condition_registry = ConditionSpecRegistryScript.new()
 
 func _init(
         catalog,
@@ -144,6 +148,8 @@ func register_response(
         context,
         filters: Dictionary = {}) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
+    if not BattleEventCatalogScript.forwards_dynamic_response(event_kind):
+        return {"success": false, "reason": "未知动态响应事件：%s" % event_kind}
     var resolved_filters := filters.duplicate(true)
     if resolved_filters.has("card_instance_ids_from_capture"):
         var capture_id := str(resolved_filters["card_instance_ids_from_capture"])
@@ -181,6 +187,12 @@ func register_response(
         "branch_hand_id": runtime.branch_hand_id,
         "technique_pool": runtime.technique_pool,
         "action_token": runtime.action_token,
+        "root_action_token": runtime.root_action_token,
+        "invocation_token": runtime.invocation_token,
+        "caller_technique_id": runtime.caller_technique_id,
+        "slot_instance_id": runtime.slot_instance_id,
+        "trigger_mode": runtime.trigger_mode,
+        "sequence_book": runtime.sequence_book,
         "source_round": _current_round_hint(runtime),
         "resolving": false,
         "remaining_triggers": int(filters.get("max_triggers", -1)),
@@ -235,6 +247,13 @@ func handle_response_event(event_kind: String, values: Dictionary) -> void:
             "branch_hand_id": record["branch_hand_id"],
             "technique_pool": record["technique_pool"],
             "action_token": record["action_token"],
+            "root_action_token": record.get(
+                "root_action_token", record["action_token"]),
+            "invocation_token": record.get("invocation_token", ""),
+            "caller_technique_id": record.get("caller_technique_id", ""),
+            "slot_instance_id": record.get("slot_instance_id", ""),
+            "trigger_mode": record.get("trigger_mode", "manual"),
+            "sequence_book": record.get("sequence_book"),
             "source_kind": "response",
         })
         var response_result: Dictionary = _effect_executor.execute_all(
@@ -246,106 +265,17 @@ func handle_response_event(event_kind: String, values: Dictionary) -> void:
             if int(record["remaining_triggers"]) <= 0:
                 response_records.erase(record)
 
+func on_committed_event_for_responses(
+        event_kind: String,
+        values: Dictionary,
+        _receipt: Dictionary) -> void:
+    if BattleEventCatalogScript.forwards_dynamic_response(event_kind):
+        handle_response_event(event_kind, values)
+
 func _response_matches(record: Dictionary, values: Dictionary) -> bool:
     var filters: Dictionary = record.get("filters", {})
-    if str(filters.get("owner", "")) == "actor" \
-            and values.get("actor") != record.get("actor"):
-        return false
-    if str(filters.get("holder", "")) == "target" \
-            and values.get("holder") != record.get("target"):
-        return false
-    if filters.has("reason") and str(values.get("reason", "")) != str(filters["reason"]):
-        return false
-    if filters.has("from_zone") and str(values.get("from_zone", "")) != str(filters["from_zone"]):
-        return false
-    if filters.has("to_zone") and str(values.get("to_zone", "")) != str(filters["to_zone"]):
-        return false
-    if bool(filters.get("next_round", false)) \
-            and int(values.get("round_number", -1)) != int(record.get("source_round", -1)) + 1:
-        return false
-    if filters.has("card_instance_ids") \
-            and not filters["card_instance_ids"].has(str(values.get("source_card_instance_id", ""))):
-        return false
-    if filters.has("source_card_instance_ids") \
-            and not filters["source_card_instance_ids"].has(str(values.get("source_card_instance_id", ""))):
-        return false
-    if filters.has("source_tokens") \
-            and not filters["source_tokens"].has(str(values.get("source_token", ""))):
-        return false
-    if bool(filters.get("action_token_is_record", false)) \
-            and str(values.get("action_token", "")) != str(record.get("action_token", "")):
-        return false
-    if bool(filters.get("attacker_is_actor", false)) \
-            and values.get("attacker") != record.get("actor"):
-        return false
-    if bool(filters.get("defender_is_actor", false)) \
-            and values.get("defender") != record.get("actor"):
-        return false
-    if bool(filters.get("attacker_is_target", false)) \
-            and values.get("attacker") != record.get("target"):
-        return false
-    if bool(filters.get("holder_is_actor", false)) \
-            and values.get("holder") != record.get("actor"):
-        return false
-    if bool(filters.get("actual_life_loss_positive", false)) \
-            and int(values.get("actual_life_loss", values.get("life_lost", 0))) <= 0:
-        return false
-    if filters.has("life_lost_equals") \
-            and int(values.get("life_lost", values.get("actual_life_loss", 0))) \
-                != int(filters["life_lost_equals"]):
-        return false
-    if filters.has("damage_type") \
-            and str(values.get("damage_type", "")) != str(filters["damage_type"]):
-        return false
-    if filters.has("defense_after_equals") \
-            and int(values.get("defense_after", -1)) != int(filters["defense_after_equals"]):
-        return false
-    if bool(filters.get("defense_lost_positive", false)) \
-            and int(values.get("defense_lost", 0)) <= 0:
-        return false
-    if filters.has("source_kind_in") \
-            and not filters["source_kind_in"].has(str(values.get("source_kind", ""))):
-        return false
-    if filters.has("source_category") \
-            and str(values.get("source_category", "")) != str(filters["source_category"]):
-        return false
-    if filters.has("same_qi_gain_at_least") \
-            and int(values.get("same_qi_gain", values.get("gained", 0))) \
-                < int(filters["same_qi_gain_at_least"]):
-        return false
-    if filters.has("conversion_count_at_least") \
-            and int(values.get("conversion_count", values.get(
-                "same_qi_trigger_count", 0))) \
-                < int(filters["conversion_count_at_least"]):
-        return false
-    if filters.has("is_extra_action") \
-            and bool(values.get("is_extra_action", false)) != bool(filters["is_extra_action"]):
-        return false
-    if filters.has("from_same_qi") \
-            and bool(values.get("from_same_qi", false)) != bool(filters["from_same_qi"]):
-        return false
-    if filters.has("became_burned_out") \
-            and bool(values.get("became_burned_out", false)) \
-                != bool(filters["became_burned_out"]):
-        return false
-    if filters.has("challenge_met") \
-            and bool(values.get("challenge_met", false)) \
-                != bool(filters["challenge_met"]):
-        return false
-    if filters.has("challenge_difference_at_least") \
-            and int(values.get("difference", 0)) \
-                < int(filters["challenge_difference_at_least"]):
-        return false
-    if bool(filters.get("same_action_window", false)) \
-            and not values.get("action_tokens", []).has(str(record.get("action_token", ""))):
-        return false
-    var snapshot: Dictionary = values.get("pre_move_snapshot", {})
-    if bool(filters.get("had_poison", false)) and not bool(snapshot.get("had_poison", false)):
-        return false
-    if bool(filters.get("had_burned_out", false)) \
-            and not bool(snapshot.get("had_burned_out", false)):
-        return false
-    return true
+    return condition_registry.event_matches(
+        filters, values, record.get("actor"), record.get("target"), record)
 
 func card_numeric_modifier(card, modifier_id: String) -> int:
     if card == null or modifier_id == "":
@@ -915,11 +845,6 @@ func _on_round_start_records(event) -> Dictionary:
                     and int(record.get("source_round", -1)) + 1 == event_round:
                 event_actor.base_hand_limit_modifier += int(record.get("amount", 0))
                 record["active_round"] = event_round
-        handle_response_event("round_start", {
-            "actor": event_actor,
-            "holder": event_actor,
-            "round_number": event_round,
-        })
     var due: Array = delayed_records.filter(func(record):
         return record.get("kind") == "defense_decay_return" \
             and int(record.get("return_round", -1)) == event_round)
@@ -1042,11 +967,6 @@ func _on_turn_end(event) -> Dictionary:
             null,
             str(delayed["label"]))
     _dispatch_card_turn_end(event.actor)
-    handle_response_event("turn_end", {
-        "actor": event.actor,
-        "holder": event.actor,
-        "round_number": event_round,
-    })
     for record in delayed_records.duplicate():
         if record.get("kind") == "next_round_hand_limit" \
                 and record.get("actor") == event.actor \
@@ -1145,18 +1065,6 @@ func _resolve_challenges_for_window(side, window_id: String) -> void:
                 current, threshold, difference])
         _effect_ports().notify_source_changed(
             "challenge_resolved", side, record, "resolved", challenge_result)
-        handle_response_event("challenge_resolved", {
-            "actor": side,
-            "holder": side,
-            "target": record.get("target"),
-            "source_token": str(record.get("source_token", "")),
-            "action_token": str(record.get("action_token", "")),
-            "threshold": threshold,
-            "current": current,
-            "difference": difference,
-            "challenge_met": met,
-            "branch": challenge_result["branch"],
-        })
         side.challenge_records.erase(record)
 
 func _on_after_normal_draw_delays(event) -> Dictionary:

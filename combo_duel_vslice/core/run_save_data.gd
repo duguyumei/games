@@ -16,6 +16,7 @@ const PassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
+const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 
 const SCHEMA_VERSION := 1
 const CONTENT_VERSION := 2
@@ -84,6 +85,8 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "experience": int(run_session.growth.experience),
             "life": int(run_session.growth.life),
             "max_life": int(run_session.growth.max_life),
+            "base_max_life": int(run_session.growth.base_max_life),
+            "source_marker_state": run_session.growth.source_marker_store.snapshot("run"),
             "consumable_ids": run_session.growth.consumable_ids.duplicate(),
             "item_ids": run_session.growth.item_ids.duplicate(),
             "hand_technique_progression": run_session.growth.hand_technique_progression.duplicate(true),
@@ -243,6 +246,21 @@ func validate(content_catalog = null) -> Array[String]:
     if growth.has("passive_counter_state") \
             and not growth["passive_counter_state"] is Dictionary:
         errors.append("growth.passive_counter_state 必须是对象")
+    if growth.has("base_max_life") \
+            and (not growth["base_max_life"] is int \
+            or int(growth["base_max_life"]) <= 0):
+        errors.append("growth.base_max_life 必须是正整数")
+    if growth.has("source_marker_state") \
+            and not growth["source_marker_state"] is Dictionary:
+        errors.append("growth.source_marker_state 必须是对象")
+    elif growth.has("source_marker_state"):
+        if not _is_serializable_save_value(growth["source_marker_state"]):
+            errors.append("growth.source_marker_state 不得包含 Callable 或 Object")
+        else:
+            var marker_store = SourceMarkerStoreScript.new()
+            for marker_error in marker_store.restore_snapshot(
+                    growth["source_marker_state"]):
+                errors.append("growth.source_marker_state：%s" % marker_error)
     _validate_life_fields(growth, phase, terminal_value, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
@@ -331,6 +349,11 @@ func restore_session(
         "run_deck": growth_state["run_deck"],
         "life": restored_life["life"],
         "max_life": restored_life["max_life"],
+        "base_max_life": int(growth_state.get(
+            "base_max_life", restored_life["max_life"])),
+        "source_marker_state": growth_state.get("source_marker_state", {
+            "schema_version": 1, "entries": [],
+        }),
     }
     if growth_state.has("hand_technique_progression"):
         progress_values["hand_technique_progression"] = growth_state["hand_technique_progression"]
@@ -759,6 +782,7 @@ func _normalize_v1_types() -> void:
     growth["experience"] = int(growth.get("experience", 0))
     _normalize_optional_integer(growth, "life")
     _normalize_optional_integer(growth, "max_life")
+    _normalize_optional_integer(growth, "base_max_life")
     _normalize_optional_integer(growth, "consumable_use_sequence")
     _normalize_optional_integer(growth, "forgotten_inner_skill_count")
     _normalize_optional_integer(growth, "base_hand_limit_modifier")
@@ -844,3 +868,16 @@ func _normalize_reward(reward) -> void:
     for entry in reward.get("entries", []):
         if entry is Dictionary and entry.has("amount"):
             entry["amount"] = int(entry["amount"])
+
+func _is_serializable_save_value(value) -> bool:
+    if value is Callable or value is Object:
+        return false
+    if value is Dictionary:
+        for child in value.values():
+            if not _is_serializable_save_value(child):
+                return false
+    elif value is Array:
+        for child in value:
+            if not _is_serializable_save_value(child):
+                return false
+    return true

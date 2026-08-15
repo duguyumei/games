@@ -27,6 +27,9 @@ const NodeInteractionHandlerRegistryScript = preload(
 const PassiveRuleHandlerRegistryScript = preload(
     "res://core/passives/passive_rule_handler_registry.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
+const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
+const ConditionSpecRegistryScript = preload(
+    "res://core/specs/condition_spec_registry.gd")
 
 const CONTENT_KEYS := [
     "base_deck",
@@ -88,6 +91,10 @@ const RETIRED_TECHNIQUE_IDS := [
 ]
 const TECHNIQUE_INTEGRATION_STATUSES := [
     "formal_complete", "partial_integration", "regression_fixture",
+]
+const TECHNIQUE_MANUAL_EFFECT_MODES := ["normal", "advance_only"]
+const TECHNIQUE_AUTOMATIC_TIMINGS := [
+    "immediate", "after_caller_advance", "action_end", "round_end",
 ]
 const FORMAL_TECHNIQUE_STATUS := "formal_complete"
 ## 功法辅助语义只用于 AI、预览与内容审计，不参与正式战斗结算。
@@ -978,6 +985,15 @@ func _validate_techniques(definition: Dictionary) -> void:
         _validate_cooperation(value.get("cooperation", {}), scope + ".cooperation")
         if not value.get("special") is bool:
             _error(scope, "special 必须是布尔值")
+        if str(value.get("manual_effect_mode", "normal")) \
+                not in TECHNIQUE_MANUAL_EFFECT_MODES:
+            _error(scope + ".manual_effect_mode", "必须为 normal 或 advance_only")
+        _validate_marker_definitions(
+            value.get("marker_definitions", []), scope + ".marker_definitions")
+        _validate_automatic_triggers(
+            value.get("automatic_triggers", []),
+            value.get("marker_definitions", []),
+            scope + ".automatic_triggers")
         if not value.get("built_in", false) is bool:
             _error(scope + ".built_in", "必须是布尔值")
         if bool(value.get("built_in", false)) \
@@ -1002,6 +1018,142 @@ func _validate_techniques(definition: Dictionary) -> void:
     _validate_technique_integration_statuses(
         integration_statuses,
         definition.get("resource_paths", []))
+
+func _validate_marker_definitions(value, scope: String) -> void:
+    if not value is Array:
+        _error(scope, "必须是数组")
+        return
+    var seen: Dictionary = {}
+    for index in range(value.size()):
+        var marker = value[index]
+        var marker_scope := "%s[%d]" % [scope, index]
+        if not marker is Dictionary:
+            _error(marker_scope, "必须是对象")
+            continue
+        var marker_id := str(marker.get("id", ""))
+        if not _is_snake_case(marker_id):
+            _error(marker_scope + ".id", "必须使用非空 snake_case")
+        elif seen.has(marker_id):
+            _error(marker_scope + ".id", "同一来源内不得重复")
+        seen[marker_id] = true
+        if str(marker.get("scope", "battle")) not in ["battle", "run"]:
+            _error(marker_scope + ".scope", "必须为 battle 或 run")
+        if marker.has("public") and not marker["public"] is bool:
+            _error(marker_scope + ".public", "必须是布尔值")
+        if str(marker.get("forget_policy", "clear")) not in ["clear", "retain"]:
+            _error(marker_scope + ".forget_policy", "必须为 clear 或 retain")
+        if str(marker.get("scope", "battle")) == "run" \
+                and not _is_serializable_content_value(marker):
+            _error(marker_scope, "run 标识不得保存 Callable、Object 或运行时定义")
+
+func _validate_automatic_triggers(value, marker_definitions, scope: String) -> void:
+    if not value is Array:
+        _error(scope, "必须是数组")
+        return
+    var marker_ids: Dictionary = {}
+    if marker_definitions is Array:
+        for marker in marker_definitions:
+            if marker is Dictionary:
+                marker_ids[str(marker.get("id", ""))] = true
+    var seen: Dictionary = {}
+    for index in range(value.size()):
+        var trigger = value[index]
+        var trigger_scope := "%s[%d]" % [scope, index]
+        if not trigger is Dictionary:
+            _error(trigger_scope, "必须是对象")
+            continue
+        var trigger_id := str(trigger.get("id", ""))
+        if not _is_snake_case(trigger_id) or seen.has(trigger_id):
+            _error(trigger_scope + ".id", "必须为来源内唯一 snake_case")
+        seen[trigger_id] = true
+        if not BattleEventCatalogScript.can_automatic_listen(
+                str(trigger.get("event", ""))):
+            _error(trigger_scope + ".event", "引用未知已提交事件")
+        if str(trigger.get("timing", "immediate")) \
+                not in TECHNIQUE_AUTOMATIC_TIMINGS:
+            _error(trigger_scope + ".timing", "引用未知自动时点")
+        if not trigger.get("filters", {}) is Dictionary:
+            _error(trigger_scope + ".filters", "必须是对象")
+        else:
+            ConditionSpecRegistryScript.new().validate_event_filters(
+                trigger.get("filters", {}), Callable(self, "_error"),
+                trigger_scope + ".filters")
+        if trigger.has("p0"):
+            if not trigger["p0"] is Dictionary:
+                _error(trigger_scope + ".p0", "必须是 ValueSpec")
+            else:
+                _effect_specs.validate_amount_spec(trigger["p0"], trigger_scope + ".p0")
+        if not trigger.has("progress"):
+            continue
+        var progress = trigger["progress"]
+        if not progress is Dictionary:
+            _error(trigger_scope + ".progress", "必须是对象")
+            continue
+        if not marker_ids.has(str(progress.get("marker_id", ""))):
+            _error(trigger_scope + ".progress.marker_id", "引用未声明来源标识")
+        for field in ["add", "threshold", "consume"]:
+            if progress.has(field) and progress[field] is Dictionary:
+                _effect_specs.validate_amount_spec(
+                    progress[field], trigger_scope + ".progress." + field)
+            elif progress.has(field) and not _is_integer(progress[field]):
+                _error(trigger_scope + ".progress." + field, "必须是整数或 ValueSpec")
+        if progress.has("retain_overflow") \
+                and not progress["retain_overflow"] is bool:
+            _error(trigger_scope + ".progress.retain_overflow", "必须是布尔值")
+        var progress_marker_ids: Dictionary = {}
+        progress_marker_ids[str(progress.get("marker_id", ""))] = true
+        var additional = progress.get("additional", [])
+        if not additional is Array:
+            _error(trigger_scope + ".progress.additional", "必须是数组")
+            additional = []
+        for additional_index in range(additional.size()):
+            var entry = additional[additional_index]
+            var entry_scope := "%s.progress.additional[%d]" % [
+                trigger_scope, additional_index]
+            if not entry is Dictionary:
+                _error(entry_scope, "必须是对象")
+                continue
+            var marker_id := str(entry.get("marker_id", ""))
+            if not marker_ids.has(marker_id):
+                _error(entry_scope + ".marker_id", "引用未声明来源标识")
+            elif progress_marker_ids.has(marker_id):
+                _error(entry_scope + ".marker_id", "同一进度规格不得重复标识")
+            progress_marker_ids[marker_id] = true
+            if entry.has("add") and entry["add"] is Dictionary:
+                _effect_specs.validate_amount_spec(
+                    entry["add"], entry_scope + ".add")
+            elif entry.has("add") and not _is_integer(entry["add"]):
+                _error(entry_scope + ".add", "必须是整数或 ValueSpec")
+            if entry.has("consume"):
+                if entry["consume"] is Dictionary:
+                    _effect_specs.validate_amount_spec(
+                        entry["consume"], entry_scope + ".consume")
+                elif entry["consume"] is String:
+                    if str(entry["consume"]) != "all":
+                        _error(entry_scope + ".consume", "字符串只允许 all")
+                elif not _is_integer(entry["consume"]):
+                    _error(entry_scope + ".consume", "必须是整数、ValueSpec 或 all")
+            if entry.has("retain_overflow") \
+                    and not entry["retain_overflow"] is bool:
+                _error(entry_scope + ".retain_overflow", "必须是布尔值")
+        if progress.has("consumed_marker_id") \
+                and not progress_marker_ids.has(str(progress["consumed_marker_id"])):
+            _error(
+                trigger_scope + ".progress.consumed_marker_id",
+                "必须引用本进度规格中的标识")
+
+func _is_serializable_content_value(value) -> bool:
+    if value is Callable or value is Object:
+        return false
+    if value is Dictionary:
+        for child in value.values():
+            if not _is_serializable_content_value(child):
+                return false
+    elif value is Array:
+        for child in value:
+            if not _is_serializable_content_value(child):
+                return false
+    return true
 
 func _validate_technique_semantic_tags(value, scope: String) -> void:
     if not value is Array:
