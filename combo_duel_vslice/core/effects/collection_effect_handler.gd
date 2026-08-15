@@ -64,6 +64,13 @@ func execute(effect: Dictionary, context):
                 cards = cards.filter(func(card): return card.has_anomaly(
                     str(anomaly.get("category", "")), str(anomaly.get("id", ""))) \
                     == bool(anomaly.get("present", true)))
+            if effect.has("reshape"):
+                var reshape: Dictionary = effect["reshape"]
+                var category := str(reshape.get("category", ""))
+                var reshape_id := str(reshape.get("id", ""))
+                cards = cards.filter(func(card):
+                    return _matches_reshape(card, category, reshape_id) \
+                        == bool(reshape.get("present", true)))
             for anomaly_value in effect.get("anomalies", []):
                 var anomaly: Dictionary = anomaly_value
                 cards = cards.filter(func(card): return card.has_anomaly(
@@ -205,9 +212,16 @@ func execute(effect: Dictionary, context):
             var removed: Array = []
             for card in runtime.captures.get(str(effect.get("capture", "")), []):
                 if card.has_anomaly(str(effect.get("category", "")), str(effect.get("anomaly", ""))):
-                    var value = card.remove_anomaly(
-                        str(effect.get("category", "")), str(effect.get("anomaly", "")))
-                    if value != null:
+                    var result: Dictionary = runtime.ports.remove_card_anomaly(
+                        card, str(effect.get("category", "")),
+                        str(effect.get("anomaly", "")), runtime.technique_name, {
+                            "source_actor": runtime.actor,
+                            "target": runtime.target,
+                            "action_token": runtime.action_token,
+                            "technique_id": runtime.technique_id,
+                            "source_kind": runtime.source_kind,
+                        })
+                    if result.get("changed", false):
                         removed.append(card)
             runtime.captures[str(effect.get("result_capture", "removed"))] = removed
             return EffectResultScript.succeeded("移除异状 %d 张" % removed.size())
@@ -269,6 +283,22 @@ func execute(effect: Dictionary, context):
                 completed += 1
             return EffectResultScript.succeeded("功法回响%d次" % completed)
     return EffectResultScript.failed("集合处理器不支持此操作")
+
+func _matches_reshape(card, category: String, reshape_id: String) -> bool:
+    match category:
+        "origin":
+            return not card.reshape_origin.is_empty() \
+                and (reshape_id == "" or str(card.reshape_origin.get("id", "")) == reshape_id)
+        "enhancement":
+            return str(card.reshape_enhancement) != "" \
+                and (reshape_id == "" or str(card.reshape_enhancement) == reshape_id)
+        "imprint":
+            return str(card.reshape_imprint) != "" \
+                and (reshape_id == "" or str(card.reshape_imprint) == reshape_id)
+        "other":
+            return not card.reshape_others.is_empty() \
+                if reshape_id == "" else card.reshape_others.has(reshape_id)
+    return false
 
 func _frozen_rank_component(snapshot: Dictionary, wanted_count: int) -> Array:
     var contributing: Array = snapshot.get("contributing_cards", []).duplicate()

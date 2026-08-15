@@ -74,8 +74,8 @@ func _initialize() -> void:
     _finish("MOUNTAIN TECHNIQUE TEST")
 
 func _test_formal_pool_contract(repository) -> void:
-    _assert_equal(repository.techniques.size(), 171, "正式资源总数为171")
-    var expected := {"high":49, "pair":38, "three":27, "straight":26, "bomb":29}
+    _assert_equal(repository.techniques.size(), 211, "正式资源总数为211")
+    var expected := {"high":55, "pair":48, "three":34, "straight":34, "bomb":38}
     var actual := {"high":0, "pair":0, "three":0, "straight":0, "bomb":0}
     for technique in repository.techniques.values():
         if not bool(technique.get("built_in", false)):
@@ -221,6 +221,27 @@ func _test_challenge_contract() -> void:
     _assert_true(finished.get("success", false), "邀战行动窗口完成")
     _assert_equal(engine.player.defense, 7, "邀战按Q-X差额结算效果")
     _assert_equal(engine.player.challenge_records.size(), 0, "邀战来源到期后移除")
+    engine = _engine(5603)
+    engine.action_resolver.begin_action_resolution([engine.player, engine.enemy], {"acting_owner_ids":[str(engine.enemy.owner_id)],"action_tokens":[]})
+    context = _context(
+        engine, "three_mountain_challenge_gate", 20,
+        _snapshot([], [], [], 6), "three_kind")
+    engine.status_system.register_response(
+        "challenge_resolved", "turn_end",
+        [{"op":"defense","amount":1}], context,
+        {"challenge_met":true,"max_triggers":1})
+    var gate: Dictionary = engine.effect_executor.execute_all(
+        engine.repository.get_definition("three_mountain_challenge_gate").effects,
+        context)
+    _assert_true(gate.get("success", false), "擂关通过通用邀战建立双结果分支")
+    engine.effect_ports.deal_damage(
+        engine.enemy, engine.player, 6, "technique", true,
+        "challenge-met", "normal", {"direct_attack":true})
+    finished = engine.action_resolver.finish_action_resolution()
+    _assert_true(finished.get("success", false), "达标邀战行动窗口完成")
+    _assert_equal(engine.player.momentum_value, 6, "擂关达标时获得冻结C点连势")
+    _assert_equal(engine.player.defense, 15, "结构化邀战达标事件可被通用响应监听")
+    _assert_equal(engine.player.challenge_records.size(), 0, "达标邀战同样在结算后移除")
     engine = _engine(5602)
     engine.action_resolver.begin_action_resolution([engine.player, engine.enemy], {"acting_owner_ids":[str(engine.player.owner_id)],"action_tokens":[]})
     context = _context(engine, "waiting", 10, _snapshot([], [], [], 10), "high_card")

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_fire_cast_kindling"
+display_name="火·投薪"
+pool="high"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。使牌库顶1张普通真气获得燃尽并明确弃掉；实际弃掉时，下一门成功功法获得等于该牌基础值的直接固定功法值修正。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","discard","anomaly_apply","momentum"])
+public_behavior_summary=Array[String](["damage","discard","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"actor","zone":"draw_pile","order":"top","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"mark","id":"burned_out"}}},"capture":"kindling"},{"op":"capture_metadata","capture":"kindling","result_capture":"kindling_meta"},{"op":"apply_card_anomaly_to_captured","capture":"kindling","category":"mark","anomaly":"burned_out","result_capture":"burned"},{"op":"move_captured","capture":"burned","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"add_pending_power_fixed","phase":"zones","amount":{"kind":"capture_field_first","capture":"kindling_meta","field":"card_base_qi"},"when":{"capture_nonempty":"discarded"}}]

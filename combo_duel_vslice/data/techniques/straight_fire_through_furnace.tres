@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_fire_through_furnace"
+display_name="火·贯炉"
+pool="straight"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成P点普通伤害，再造成本组燃尽计值牌基础值总和一半的真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage"])
+public_behavior_summary=Array[String](["damage","true_damage"])
+implementation_category="B"
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"contributing","anomaly":{"category":"mark","id":"burned_out","present":true},"capture":"burned"},{"op":"damage","amount":{"kind":"power"}},{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_card_base_qi_sum","capture":"burned"},"divisor":2}}]

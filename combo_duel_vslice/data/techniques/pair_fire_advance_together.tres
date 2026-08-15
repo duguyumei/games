@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_advance_together"
+display_name="火·并进"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P/2点普通伤害。可以从剩余手牌中协同高牌；本组与协同组的功法都成功结算时，同气槽+1。"
+condition={}
+cooperation={"hand_id":"high_card","max_groups":1,"power_rule":"shared_half","exact_card_count":1,"post_commit":{"destination":"own_discard"}}
+power_formation={}
+semantic_tags=Array[String](["damage","same_qi_payoff","extra_card_commitment","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","same_qi_payoff","extra_card_commitment"])
+implementation_category="C"
+effects=[{"op":"register_response","phase":"prepare","event":"cooperation_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"action_token_is_record":true,"max_triggers":1},"effects":[{"op":"write_same_qi","operation":"add","amount":1,"receipt_key":"advance_together"}]},{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]

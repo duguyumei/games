@@ -25,6 +25,11 @@ func execute(behavior: Dictionary, context) -> Dictionary:
         str(behavior["category"]),
         str(behavior["anomaly"]),
         {},
-        "重塑行为")
+        "重塑行为", 1, false, {
+            "holder": context.holder,
+            "actor": context.holder,
+            "action_token": context.action_token,
+            "source_kind": "reshape_behavior",
+        })
     result["applied"] = bool(result.get("success", false))
     return result

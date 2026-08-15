@@ -78,6 +78,15 @@ func resolve(spec, context) -> int:
         "capture_base_qi_sum":
             return HandGroupSnapshotScript.base_qi_sum(
                 runtime.group_snapshot, _capture_cards(runtime, spec))
+        "capture_card_base_qi_sum":
+            var total := 0
+            for card in _capture_cards(runtime, spec):
+                if card is Dictionary:
+                    total += int(card.get("card_base_qi", card.get("qi_value", 0)))
+                    continue
+                total += int(runtime.group_snapshot.get("facts_by_id", {}).get(
+                    str(card.id), {}).get("card_base_qi_at_freeze", card.qi_value))
+            return total
         "capture_current_effective_qi":
             var cards := _capture_cards(runtime, spec)
             if cards.is_empty():
@@ -177,6 +186,8 @@ func resolve(spec, context) -> int:
         "action_same_qi_trigger_count":
             return int(runtime.group_snapshot.get(
                 "action_same_qi_trigger_count", 0))
+        "momentum_value":
+            return int(runtime.actor.momentum_value) if runtime.actor != null else 0
         "base_attribute_count":
             var attributes: Dictionary = {}
             for card in runtime.group_snapshot.get("played_cards", runtime.played_cards):
@@ -336,6 +347,24 @@ func condition_met(condition: Dictionary, context) -> bool:
             return false
     if condition.has("same_qi") and not HandGroupSnapshotScript.is_same_qi(
             runtime.group_snapshot, str(condition["same_qi"])):
+        return false
+    if condition.has("action_same_qi_attribute") \
+            and not runtime.group_snapshot.get(
+                "action_same_qi_common_attributes", []).has(
+                    str(condition["action_same_qi_attribute"])):
+        return false
+    if condition.has("action_is_extra") \
+            and bool(runtime.group_snapshot.get("action_is_extra", false)) \
+                != bool(condition["action_is_extra"]):
+        return false
+    if condition.has("action_from_same_qi") \
+            and bool(runtime.group_snapshot.get("action_from_same_qi", false)) \
+                != bool(condition["action_from_same_qi"]):
+        return false
+    if condition.has("group_snapshot_flag") \
+            and bool(runtime.group_snapshot.get(
+                str(condition["group_snapshot_flag"]), false)) \
+                != bool(condition.get("group_snapshot_flag_value", true)):
         return false
     if condition.has("capture_result_life_lost"):
         var results: Array = runtime.captures.get(

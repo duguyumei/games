@@ -21,7 +21,8 @@ func operation_ids() -> Array[String]:
         "move_captured_to_hand", "atomic_exchange_captured",
         "synchronous_discard_queries", "discard_duplicate_ranks",
         "discard_by_visible_attribute", "draw_common_attribute_or_fallback",
-        "discard_captured_by_selected_base_attribute",
+        "discard_captured_by_selected_base_attribute", "dissipate_captured",
+        "atomic_transfer_captures",
     ]
 
 func group_name() -> String:
@@ -112,6 +113,7 @@ func execute(effect: Dictionary, context):
                     "effective_qi": runtime.ports.current_effective_qi(runtime.actor, card),
                     "base_qi": int(card.current_base_qi_value()) \
                         if card.has_method("current_base_qi_value") else int(card.qi_value),
+                    "card_base_qi": int(card.qi_value),
                     "rank_name": str(card.current_rank_name()),
                     "rank_order": int(card.current_rank_order()),
                     "base_attribute": str(card.attribute),
@@ -151,6 +153,21 @@ func execute(effect: Dictionary, context):
             return _draw_common_attribute_or_fallback(effect, runtime)
         "discard_captured_by_selected_base_attribute":
             return _discard_captured_by_selected_base_attribute(effect, runtime)
+        "dissipate_captured":
+            var dissipated: Array = []
+            for card in runtime.captures.get(str(effect.get("capture", "")), []).duplicate():
+                var location: Dictionary = runtime.ports.locate_active_card(str(card.id))
+                if not location.get("success", false):
+                    continue
+                var result: Dictionary = runtime.ports.temporarily_remove_card(
+                    location["side"], str(card.id),
+                    str(effect.get("reason", "technique_dissipate")))
+                if result.get("success", false):
+                    dissipated.append(card)
+            runtime.captures[str(effect.get("result_capture", "dissipated"))] = dissipated
+            return EffectResultScript.succeeded("消散真气 %d 张" % dissipated.size())
+        "atomic_transfer_captures":
+            return _atomic_transfer_captures(effect, runtime)
     return EffectResultScript.failed("牌区处理器不支持：%s" % str(effect.get("op", "")))
 
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
@@ -329,6 +346,35 @@ func _atomic_exchange_captured(effect: Dictionary, runtime):
     return EffectResultScript.succeeded("原子交换1张真气") \
         if result.get("success", false) else EffectResultScript.failed(
             str(result.get("reason", "原子交换失败")))
+
+func _atomic_transfer_captures(effect: Dictionary, runtime):
+    var source_side = _resolve_side(runtime, str(effect.get("from_side", "actor")))
+    var target_side = _resolve_side(runtime, str(effect.get("to_side", "target")))
+    if source_side == null or target_side == null or source_side == target_side:
+        return EffectResultScript.failed("原子跨阵营转移缺少不同的双方")
+    var records: Array = []
+    var seen: Dictionary = {}
+    for source_value in effect.get("sources", []):
+        var source: Dictionary = source_value
+        var source_zone := str(source.get("zone", "hand"))
+        for card in runtime.captures.get(str(source.get("capture", "")), []):
+            if seen.has(str(card.id)):
+                continue
+            seen[str(card.id)] = true
+            records.append({
+                "source_side": source_side, "target_side": target_side,
+                "source_zone": source_zone,
+                "destination_zone": str(effect.get("to_zone", "draw_pile")),
+                "card": card,
+                "reason": str(effect.get("reason", "temporary_transfer")),
+            })
+    var moved: Array = runtime.ports.transfer_cards_atomically(records)
+    if bool(effect.get("shuffle_destination", false)) \
+            and str(effect.get("to_zone", "draw_pile")) == "draw_pile" \
+            and not moved.is_empty():
+        runtime.ports.shuffle_zone(target_side, "draw_pile", rng)
+    runtime.captures[str(effect.get("result_capture", "transferred"))] = moved
+    return EffectResultScript.succeeded("原子转移真气 %d 张" % moved.size())
 
 func _synchronous_discard_queries(effect: Dictionary, runtime):
     var records: Array = []

@@ -473,6 +473,8 @@ func _add_core_error(message: String) -> void:
         code = "UNKNOWN_OPERATION"
     elif message.contains("未知数值规格"):
         code = "INVALID_VALUE_SPEC"
+    elif message.contains("功法语义标签"):
+        code = "UNKNOWN_SEMANTIC_TAG"
     elif message.contains("引用未知"):
         code = "UNKNOWN_REFERENCE"
     elif message.contains("功法池") or message.contains("合格共用池"):

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_double_kindling"
+display_name="火·双薪"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。选择1张剩余普通手牌；本组对子组成牌完成打出响应后获得燃尽，目标获得等于这些实际获得燃尽牌基础值总和一半的炽气。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","anomaly_apply","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"pair_component","capture":"pair_cards"},{"op":"select_cards","phase":"prepare","choice_id":"double_kindling_target","prompt":"选择获得炽气的手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"heat_target"},{"op":"register_response","phase":"prepare","event":"action_pre_commit","expiry":"turn_end","filters":{"holder_is_actor":true,"action_token_is_record":true,"max_triggers":1},"effects":[{"op":"apply_card_anomaly_to_captured","capture":"pair_cards","category":"mark","anomaly":"burned_out","result_capture":"new_burned"},{"op":"capture_metadata","capture":"new_burned","result_capture":"burned_meta"},{"op":"apply_card_anomaly_to_captured","capture":"heat_target","category":"buff","anomaly":"qi_heat","layers":{"kind":"divide_floor","value":{"kind":"capture_field_sum","capture":"burned_meta","field":"card_base_qi"},"divisor":2},"when":{"capture_nonempty":"new_burned"}}]},{"op":"damage","amount":{"kind":"power"}}]

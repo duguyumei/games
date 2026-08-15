@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_remaining_form"
+display_name="火·余形"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。本组每有1张已经燃尽的对子组成牌，再造成该牌基础值一半的真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","true_damage"])
+implementation_category="B"
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"pair_component","anomaly":{"category":"mark","id":"burned_out","present":true},"capture":"burned_pairs"},{"op":"damage","amount":{"kind":"power"}},{"op":"for_each_captured","capture":"burned_pairs","effects":[{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_card_base_qi_sum","capture":"each"},"divisor":2}}]}]

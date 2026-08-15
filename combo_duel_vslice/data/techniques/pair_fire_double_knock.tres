@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_double_knock"
+display_name="火·双叩"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="一对与葫芦造成2次P/2点普通伤害，两对造成4次P/4点普通伤害。每个实际使敌方损失生命的原始攻击段结算后，获得1点连势。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","momentum"])
+implementation_category="C"
+effects=[{"op":"multi_damage","segments":{"kind":"hand_map","values":{"pair":2,"two_pair":4,"full_house":2}},"amount":{"kind":"conditional","when":{"exact_hand_id":"two_pair"},"then":{"kind":"power_fraction","numerator":1,"denominator":4,"minimum":0},"else":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},"on_life_loss_effects":[{"op":"add_momentum","amount":1}]}]

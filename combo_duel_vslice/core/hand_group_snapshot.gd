@@ -30,6 +30,7 @@ static func freeze(
             "rank_name_at_freeze": _rank_name(card, side, target),
             "rank_order_at_freeze": _rank_order(card, side, target),
             "base_qi_at_freeze": _base_qi(card),
+            "card_base_qi_at_freeze": int(card.qi_value),
             "base_attribute_at_freeze": str(card.current_attribute()) \
                 if card.has_method("current_attribute") else str(card.attribute),
             "effective_qi_at_freeze": current_effective_qi({}, card, side),

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_fire_shift_flame"
+display_name="火·移火"
+pool="three"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="造成P点普通伤害。选择1张燃尽的剩余普通手牌与另1张没有燃尽的剩余普通手牌，将燃尽从前者转移给后者。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","anomaly_apply"])
+public_behavior_summary=Array[String](["damage","anomaly_apply"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"shift_flame_source","prompt":"选择移出燃尽的手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"source"},{"op":"select_cards","choice_id":"shift_flame_target","prompt":"选择获得燃尽的手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"exclude_capture":"source","filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":false},"can_apply_anomaly":{"category":"mark","id":"burned_out"}}},"capture":"target"},{"op":"transfer_card_anomaly","source_capture":"source","target_capture":"target","category":"mark","anomaly":"burned_out","result_capture":"transferred"}]

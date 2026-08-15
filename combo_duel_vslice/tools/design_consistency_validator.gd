@@ -62,7 +62,7 @@ func result() -> Dictionary:
 ## 同时收集"已废弃"段落中列出的名称，它们不得作为活跃功法出现。
 func _parse_authoritative_pools(pool_dir: String) -> void:
     var group_pattern := RegEx.create_from_string(
-        "^(?:#{1,6}\\s+)?\\*\\*(.+?)（\\d+\\s*门）\\*\\*")
+        "^(?:#{1,6}\\s+)?\\*\\*(.+?)（[^）]*\\d+\\s*门[^）]*）\\*\\*")
     var entry_pattern := RegEx.create_from_string("^- \\*\\*(.+?)\\*\\*")
     var directory := DirAccess.open(pool_dir)
     if directory == null:

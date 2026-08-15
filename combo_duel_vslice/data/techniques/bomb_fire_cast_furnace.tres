@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_cast_furnace"
+display_name="火·投炉"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。依次使我方牌库顶至多K张普通真气获得燃尽并明确弃掉，再按实际弃掉牌的基础值总和造成真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","discard","anomaly_apply"])
+public_behavior_summary=Array[String](["damage","true_damage","discard","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"actor","zone":"draw_pile","order":"top","limit":{"kind":"bomb_constituent_count"},"filters":{"card_kind":"normal"}},"capture":"fuel"},{"op":"capture_metadata","capture":"fuel","result_capture":"fuel_meta"},{"op":"apply_card_anomaly_to_captured","capture":"fuel","category":"mark","anomaly":"burned_out","result_capture":"burned"},{"op":"move_captured","capture":"burned","from_side":"actor","from_zone":"draw_pile","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"capture_metadata","capture":"discarded","result_capture":"discarded_meta"},{"op":"damage","phase":"zones","damage_type":"true","direct_attack":false,"amount":{"kind":"capture_field_sum","capture":"discarded_meta","field":"card_base_qi"}}]

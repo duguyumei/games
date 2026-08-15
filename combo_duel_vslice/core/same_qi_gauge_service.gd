@@ -14,6 +14,22 @@ func _init(flow = null) -> void:
 func reset() -> void:
     _receipts.clear()
 
+func receipts_for_action(side, action_token: String) -> Array:
+    var result: Array = []
+    if side == null or action_token == "":
+        return result
+    for receipt_value in _receipts.values():
+        var receipt: Dictionary = receipt_value
+        if str(receipt.get("side", "")) != str(side.owner_id):
+            continue
+        var receipt_action_token := str(receipt.get("action_token", ""))
+        if receipt_action_token == action_token \
+                or receipt_action_token.begins_with(action_token + ":"):
+            result.append(receipt.duplicate(true))
+    result.sort_custom(func(left, right):
+        return str(left.get("write_token", "")) < str(right.get("write_token", "")))
+    return result
+
 func capacity_result(side, context: Dictionary = {}) -> Dictionary:
     if side == null:
         return _failure("同气容量查询缺少战斗方")
@@ -24,24 +40,44 @@ func capacity_result(side, context: Dictionary = {}) -> Dictionary:
     return resolved
 
 func project_gain(side, amount: int, context: Dictionary = {}) -> Dictionary:
+    return project_write(side, "add", amount, context)
+
+func project_write(
+        side,
+        operation: String,
+        amount: int = 0,
+        context: Dictionary = {}) -> Dictionary:
     var capacity_query := capacity_result(side, context)
     if not capacity_query.get("success", false):
         return capacity_query
     var capacity := int(capacity_query["effective_value"])
     var before := maxi(0, int(side.same_qi_value))
-    var raw_after := maxi(0, before + amount)
+    var raw_after := before
+    match operation:
+        "add": raw_after = maxi(0, before + amount)
+        "set": raw_after = maxi(0, amount)
+        "clear": raw_after = 0
+        _:
+            return _failure("未知同气写入操作：%s" % operation)
     var can_continue := bool(context.get(
         "legal_card_available", _has_legal_card(side)))
     var trigger_count := int(floor(float(raw_after) / float(capacity))) \
-        if amount >= 0 and can_continue else 0
+        if raw_after > before and can_continue else 0
     var spent := trigger_count * capacity
     return {
         "success": true,
-        "same_qi_gain": amount,
+        "operation": operation,
+        "requested": amount,
+        "before": before,
+        "after": raw_after - spent,
+        "changed": raw_after - spent != before,
+        "same_qi_gain": raw_after - before,
         "same_qi_before": before,
         "same_qi_capacity": capacity,
+        "effective_capacity": capacity,
         "same_qi_after": raw_after - spent,
         "same_qi_trigger_count": trigger_count,
+        "conversion_count": trigger_count,
         "spent": spent,
         "legal_card_available": can_continue,
         "capacity_query": capacity_query.duplicate(true),
@@ -54,6 +90,17 @@ func apply_gain(
         amount: int,
         source: String,
         token: String) -> Dictionary:
+    return apply_write(side, "add", amount, source, token, {
+        "source_category": "same_qi" if source == "同气槽" else "effect",
+    })
+
+func apply_write(
+        side,
+        operation: String,
+        amount: int,
+        source: String,
+        token: String,
+        metadata: Dictionary = {}) -> Dictionary:
     if side == null:
         return _failure("同气写入缺少战斗方")
     if token == "":
@@ -63,21 +110,43 @@ func apply_gain(
         var reused: Dictionary = _receipts[receipt_key].duplicate(true)
         reused["reused"] = true
         return reused
-    var projection := project_gain(side, amount)
+    var projection := project_write(side, operation, amount, metadata)
     if not projection.get("success", false):
         return projection
     side.same_qi_value = int(projection["same_qi_after"])
     var granted := 0
+    var source_category := str(metadata.get(
+        "source_category", "same_qi" if source == "同气槽" else "effect"))
+    var extra_action_sources: Array = []
     if _battle_flow != null and int(projection["same_qi_trigger_count"]) > 0:
         granted = int(_battle_flow.grant_actions(
-            side, int(projection["same_qi_trigger_count"])))
+            side, int(projection["same_qi_trigger_count"]), {
+                "category": "same_qi",
+                "source": source,
+                "source_category": source_category,
+                "action_token": str(metadata.get("action_token", token)),
+                "from_same_qi": true,
+            }))
+        for index in range(granted):
+            extra_action_sources.append({
+                "category": "same_qi",
+                "source": source,
+                "source_category": source_category,
+                "action_token": str(metadata.get("action_token", token)),
+                "ordinal": index,
+            })
+    var resolved_action_token := str(metadata.get("action_token", token))
     var result := projection.duplicate(true)
     result.merge({
         "side": str(side.owner_id),
-        "gained": amount,
+        "gained": int(projection.get("same_qi_gain", 0)),
         "granted_actions": granted,
         "source": source,
-        "action_token": token,
+        "source_category": source_category,
+        "action_token": resolved_action_token,
+        "write_token": token,
+        "extra_action_source": "same_qi" if granted > 0 else "",
+        "extra_action_sources": extra_action_sources,
         "reused": false,
     }, true)
     _receipts[receipt_key] = result.duplicate(true)

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="three_fire_ember_momentum"
+display_name="火·烬势"
+pool="three"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["three_kind","full_house"])
+description="造成P点普通伤害。可以消散1张燃尽的剩余普通手牌；实际消散后获得等于该牌基础值的连势。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","extra_card_commitment"])
+public_behavior_summary=Array[String](["damage","momentum","extra_card_commitment"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"ember_momentum","prompt":"选择消散的燃尽手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"card"},{"op":"capture_metadata","capture":"card","result_capture":"meta"},{"op":"dissipate_captured","capture":"card","result_capture":"dissipated","reason":"ember_momentum"},{"op":"add_momentum","amount":{"kind":"capture_field_first","capture":"meta","field":"card_base_qi"},"when":{"capture_nonempty":"dissipated"}}]

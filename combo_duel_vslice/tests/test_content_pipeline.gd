@@ -14,7 +14,7 @@ func _run() -> void:
         BatchValidatorScript.new().validate_project())
     _assert_true(project_report["valid"], "合法的全量 JSON/TRES 内容通过独立校验：%s" % JSON.stringify(project_report["diagnostics"]))
     _assert_true(int(project_report["summary"]["json_files"]) >= 12, "扫描全部 JSON")
-    _assert_equal(int(project_report["summary"]["tres_files"]), 171, "正式目录包含171门功法")
+    _assert_equal(int(project_report["summary"]["tres_files"]), 211, "正式目录包含211门功法")
     _assert_equal(int(project_report["schema_version"]), 1, "报告具有机器可读版本")
 
     var catalog = ContentCatalogScript.new()
@@ -117,6 +117,12 @@ func _test_rejected_samples(baseline: Dictionary) -> void:
     var invalid_amount: Dictionary = with_probe.duplicate(true)
     invalid_amount["techniques"]["techniques"][0]["effects"][0]["amount"] = {"kind": "unknown_scale"}
     _assert_rejected(invalid_amount, "INVALID_VALUE_SPEC", "非法数值规格")
+
+    var invalid_semantic: Dictionary = with_probe.duplicate(true)
+    invalid_semantic["techniques"]["techniques"][0]["semantic_tags"] = [
+        "ad_hoc_combo_score"]
+    _assert_rejected(
+        invalid_semantic, "UNKNOWN_SEMANTIC_TAG", "词表外功法语义标签")
 
     var unstable_id: Dictionary = with_probe.duplicate(true)
     unstable_id["techniques"]["techniques"][0]["id"] = "Bad ID"

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_fire_hidden_channel"
+display_name="火·伏脉"
+pool="high"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。下一完整回合正常补牌完成后，同气槽+2。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","delayed_defense","same_qi_payoff"])
+public_behavior_summary=Array[String](["damage","same_qi_payoff"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"register_delayed_effects","timing":"after_normal_draw","occurrences":1,"effects":[{"op":"write_same_qi","operation":"add","amount":2,"receipt_key":"hidden_channel"}]}]

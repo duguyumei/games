@@ -122,8 +122,8 @@ func _initialize() -> void:
     _test_empty_repository_and_production_data()
     _test_power_snapshot_formula_and_initial_power_reader()
     _test_empty_and_failed_techniques_leave_momentum_untouched()
-    _test_same_hand_momentum_is_used_and_retained()
-    _test_changed_hand_uses_old_momentum_then_keeps_new_gain()
+    _test_unchanged_momentum_is_used_then_cleared()
+    _test_changed_momentum_is_used_then_preserved()
     _test_retrigger_reuses_frozen_snapshot()
     _test_delayed_effect_reuses_frozen_snapshot()
     _test_reflection_override_sources_and_recursion_guard()
@@ -145,8 +145,8 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 171, "正式功法仓库包含171门功法")
-    _assert_equal(repository.resource_paths.size(), 171, "正式功法资源路径包含171项")
+    _assert_equal(repository.techniques.size(), 211, "正式功法仓库包含211门功法")
+    _assert_equal(repository.resource_paths.size(), 211, "正式功法资源路径包含211项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -162,12 +162,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 169, "商店包含169门非内建正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 209, "商店包含209门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 171, "正式目录存在171门正式功法资源")
+    _assert_equal(resource_count, 211, "正式目录存在211门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -249,21 +249,21 @@ func _test_empty_and_failed_techniques_leave_momentum_untouched() -> void:
     _assert_equal(failed_engine.player.momentum_value, 7, "条件失败不清空连势")
     _assert_equal(failed_engine.player.last_successful_technique_hand_id, "pair", "失败不更新牌型")
 
-func _test_same_hand_momentum_is_used_and_retained() -> void:
+func _test_unchanged_momentum_is_used_then_cleared() -> void:
     var engine = _probe_engine([_card("6", "wind")], "high_card", [])
     engine.player.momentum_value = 5
     engine.player.last_successful_technique_hand_id = "high_card"
     var preview: Dictionary = engine.preview([engine.player.hand[0].id])
     var result: Dictionary = engine.confirm_play([engine.player.hand[0].id])
-    _assert_true(result["technique_triggered"], "同牌型探针功法成功")
+    _assert_true(result["technique_triggered"], "未改变连势的探针功法成功")
     _assert_equal(preview["values"]["initial_power"], result["preview"]["values"]["initial_power"], "预览与结算 P₀ 一致")
-    _assert_equal(preview["values"]["momentum_used"], 5, "同牌型预览使用当前连势")
+    _assert_equal(preview["values"]["momentum_used"], 5, "成功功法预览使用当前连势")
     _assert_equal(result["preview"]["values"]["momentum_used"], 5, "实际结算使用同一连势")
     _assert_equal(preview["values"]["technique_value"], result["preview"]["values"]["technique_value"], "预览与实际 P 一致")
-    _assert_equal(engine.player.momentum_value, 5, "同牌型成功后保留连势")
+    _assert_equal(engine.player.momentum_value, 0, "本门及回响未改变连势时结算后清空")
     _assert_equal(engine.player.last_successful_technique_hand_id, "high_card", "成功后更新精确牌型")
 
-func _test_changed_hand_uses_old_momentum_then_keeps_new_gain() -> void:
+func _test_changed_momentum_is_used_then_preserved() -> void:
     var engine = _probe_engine([
         _card("5", "wind"), _card("5", "fire")],
         "pair",
@@ -275,10 +275,10 @@ func _test_changed_hand_uses_old_momentum_then_keeps_new_gain() -> void:
     var preview: Dictionary = engine.preview(ids)
     var expected_new := int(floor(preview["values"]["initial_power"] / 2.0))
     var result: Dictionary = engine.confirm_play(ids)
-    _assert_true(result["technique_triggered"], "换牌型探针功法成功")
-    _assert_equal(result["preview"]["values"]["momentum_used"], 9, "换牌型仍完整使用旧连势")
-    _assert_equal(engine.player.momentum_value, expected_new, "旧连势在效果前清空且新连势保留")
-    _assert_equal(engine.player.last_successful_technique_hand_id, "pair", "换牌型成功后更新牌型")
+    _assert_true(result["technique_triggered"], "改变连势的探针功法成功")
+    _assert_equal(result["preview"]["values"]["momentum_used"], 9, "成功功法完整使用冻结连势")
+    _assert_equal(engine.player.momentum_value, 9 + expected_new, "本门实际增加连势后保留结算余量")
+    _assert_equal(engine.player.last_successful_technique_hand_id, "pair", "成功牌型只记录行动历史")
 
 func _test_retrigger_reuses_frozen_snapshot() -> void:
     var cards := [_card("4", "wind"), _card("4", "fire")]

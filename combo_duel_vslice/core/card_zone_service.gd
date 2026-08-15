@@ -218,6 +218,53 @@ func temporarily_transfer(
         result["passive_event_reason"] = event_result.get("reason", "")
     return result
 
+func temporarily_transfer_many(records: Array) -> Array:
+    ## Freeze every cross-side source, remove them all, then publish arrivals.
+    ## Responses therefore cannot observe only part of one atomic transfer batch.
+    var prepared: Array = []
+    var seen: Dictionary = {}
+    for record_value in records:
+        var record: Dictionary = record_value
+        var source_side = record.get("source_side")
+        var target_side = record.get("target_side")
+        var card = record.get("card")
+        var source_zone := str(record.get("source_zone", "hand"))
+        var destination_zone := str(record.get("destination_zone", "draw_pile"))
+        var reason := str(record.get("reason", "temporary_transfer"))
+        if source_side == null or target_side == null or source_side == target_side \
+                or card == null or seen.has(str(card.id)) \
+                or source_zone not in ACTIVE_ZONES \
+                or destination_zone not in ACTIVE_ZONES:
+            continue
+        if not zone(source_side, source_zone).has(card) \
+                or has_instance(target_side, str(card.id)):
+            continue
+        seen[str(card.id)] = true
+        prepared.append({
+            "source_side": source_side, "target_side": target_side,
+            "source_zone": source_zone, "destination_zone": destination_zone,
+            "card": card, "reason": reason,
+            "pre_move_snapshot": _pre_move_snapshot(source_side, card, source_zone),
+        })
+    for entry in prepared:
+        _clear_meridian_on_real_hand_departure(
+            entry["card"], entry["source_zone"], entry["reason"])
+        zone(entry["source_side"], entry["source_zone"]).erase(entry["card"])
+        if str(entry["card"].original_owner_id) == "":
+            entry["card"].original_owner_id = entry["source_side"].owner_id
+    for entry in prepared:
+        zone(entry["target_side"], entry["destination_zone"]).append(entry["card"])
+    var moved: Array = []
+    for entry in prepared:
+        _notify_arrival(
+            entry["target_side"], entry["card"], entry["source_zone"],
+            entry["destination_zone"], entry["reason"], {
+                "pre_move_snapshot": entry["pre_move_snapshot"],
+                "original_owner_id": entry["source_side"].owner_id,
+            })
+        moved.append(entry["card"])
+    return moved
+
 func return_transferred(
         holder_side,
         original_side,
@@ -545,6 +592,7 @@ func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
         "source_zone": source_zone,
         "effective_qi": maxi(0, effective),
         "base_qi": int(card.current_base_qi_value()),
+        "card_base_qi": int(card.qi_value),
         "rank_name": str(card.current_rank_name()),
         "rank_order": int(card.current_rank_order()),
         "base_attribute": str(card.current_attribute()),
@@ -553,6 +601,7 @@ func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
         "growth_layers": card.anomaly_layers("buff", "growth"),
         "heat_layers": card.anomaly_layers("buff", "qi_heat"),
         "had_poison": card.has_anomaly("state", "poison"),
+        "had_burned_out": card.has_anomaly("mark", "burned_out"),
     }
 
 func _notify_arrival(

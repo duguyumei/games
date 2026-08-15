@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_myriad_echoes"
+display_name="火·万响"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P/2点普通伤害。本门功法回响K-2次。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","retrigger_sensitive"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"repeat_effects","count":{"kind":"subtract","left":{"kind":"bomb_constituent_count"},"right":2},"effects":[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]}]

@@ -106,6 +106,44 @@ func gain_same_qi(
         _status_system.handle_response_event("same_qi_gain_resolved", response)
     return result
 
+func write_same_qi(
+        side: BattleSide,
+        operation: String,
+        amount: int,
+        source: String,
+        token: String,
+        source_category: String = "effect",
+        action_token: String = "") -> Dictionary:
+    if _same_qi_gauge_service == null:
+        return {"success": false, "reason": "同气槽服务尚未装配"}
+    var resolved_action_token := action_token if action_token != "" \
+        else token.split(":same_qi")[0]
+    var result: Dictionary = _same_qi_gauge_service.apply_write(
+        side, operation, amount, source, token, {
+            "source_category": source_category,
+            "action_token": resolved_action_token,
+        })
+    if result.get("success", false) and not result.get("reused", false):
+        add_history(
+            "same_qi_changed", "%s同气变化" % side.name, source, "成功",
+            "%d → %d / %d；转换%d次" % [
+                int(result.get("same_qi_before", 0)),
+                int(result.get("same_qi_after", 0)),
+                int(result.get("same_qi_capacity", 5)),
+                int(result.get("conversion_count", 0)),
+            ])
+        var response := result.duplicate(true)
+        response["actor"] = side
+        response["holder"] = side
+        response["action_token"] = resolved_action_token
+        _status_system.handle_response_event("same_qi_gain_resolved", response)
+    return result
+
+func same_qi_receipts_for_action(side: BattleSide, action_token: String) -> Array:
+    if _same_qi_gauge_service == null:
+        return []
+    return _same_qi_gauge_service.receipts_for_action(side, action_token)
+
 func execute_effect_chain(effects: Array, context) -> Dictionary:
     var executor = _effect_executor_ref.get_ref() if _effect_executor_ref != null else null
     return executor.execute_all(effects, context) if executor != null else {
@@ -401,6 +439,26 @@ func add_momentum(side: BattleSide, amount: int) -> int:
 func set_momentum(side: BattleSide, value: int) -> int:
     return side.set_momentum(value)
 
+func write_momentum(
+        side: BattleSide,
+        operation: String,
+        amount: int,
+        source_category: String,
+        action_token: String,
+        source_id: String = "") -> Dictionary:
+    return side.write_momentum(
+        operation, amount, source_category, action_token, source_id)
+
+func transfer_card_anomaly(
+        source_card,
+        target_card,
+        category: String,
+        anomaly_id: String,
+        source: String,
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.transfer_card_anomaly(
+        source_card, target_card, category, anomaly_id, source, event_metadata)
+
 func set_reflection_percent(
         side: BattleSide, value: int, source_token: String = "") -> int:
     return side.set_reflection_percent(value, source_token)
@@ -456,7 +514,8 @@ func register_challenge(
         context,
         threshold: int,
         effects: Array,
-        label: String = "邀战") -> Dictionary:
+        label: String = "邀战",
+        met_effects: Array = []) -> Dictionary:
     var runtime = context
     var token: String = str(runtime.actor.next_combat_source_token("challenge"))
     var target_owner_id := str(runtime.target.owner_id) if runtime.target != null else ""
@@ -469,6 +528,7 @@ func register_challenge(
         "target_owner_id": target_owner_id,
         "window_id": window_id, "waiting_for_action": window_id == "",
         "effects": effects.duplicate(true),
+        "met_effects": met_effects.duplicate(true),
         "power": runtime.power, "initial_power": runtime.initial_power,
         "hand_result": runtime.hand_result.duplicate(true),
         "played_cards": runtime.played_cards.duplicate(),
@@ -491,8 +551,9 @@ func notify_source_changed(
         event_kind: String,
         side: BattleSide,
         record: Dictionary,
-        change: String) -> void:
-    _emit_source_state_changed(event_kind, side, record, change)
+        change: String,
+        payload: Dictionary = {}) -> void:
+    _emit_source_state_changed(event_kind, side, record, change, payload)
 
 func add_direct_power_fixed(side: BattleSide, amount: int) -> int:
     side.direct_power_fixed += amount
@@ -778,6 +839,14 @@ func move_cards_synchronously(records: Array) -> Array:
             _status_system.record_technique_card_flow(record.get("side"), "discard", 1)
     return moved
 
+func transfer_cards_atomically(records: Array) -> Array:
+    if records.is_empty():
+        return []
+    var first_side = records[0].get("source_side")
+    if first_side == null:
+        return []
+    return first_side.card_zone_service.temporarily_transfer_many(records)
+
 func atomic_exchange_cards(
         actor_side: BattleSide, actor_zone: String, actor_card,
         target_side: BattleSide, target_zone: String, target_card) -> Dictionary:
@@ -805,9 +874,11 @@ func apply_card_anomaly(
         payload: Dictionary,
         source: String,
         layers: int = 1,
-        replace_state: bool = false) -> Dictionary:
+        replace_state: bool = false,
+        event_metadata: Dictionary = {}) -> Dictionary:
     return _status_system.apply_card_anomaly(
-        card, category, anomaly_id, payload, source, layers, replace_state)
+        card, category, anomaly_id, payload, source, layers, replace_state,
+        event_metadata)
 
 func can_apply_card_anomaly(
         card,
@@ -821,9 +892,10 @@ func remove_card_anomaly(
         card,
         category: String,
         anomaly_id: String = "",
-        source: String = "效果") -> Dictionary:
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     return _status_system.remove_card_anomaly(
-        card, category, anomaly_id, source)
+        card, category, anomaly_id, source, event_metadata)
 
 func set_card_anomaly_layers(
         card,
@@ -888,8 +960,18 @@ func resolve_played_card_anomalies(
     notify_cards_played(holder, cards, source_values)
     return results
 
-func gain_extra_actions(side: BattleSide, amount: int, source: String) -> int:
-    var gained: int = _battle_flow.grant_actions(side, amount)
+func gain_extra_actions(
+        side: BattleSide,
+        amount: int,
+        source: String,
+        source_category: String = "technique",
+        action_token: String = "") -> int:
+    var gained: int = _battle_flow.grant_actions(side, amount, {
+        "category": source_category,
+        "source": source,
+        "action_token": action_token,
+        "from_same_qi": source_category == "same_qi",
+    })
     add_history(
         "action_end",
         "%s额外出牌机会" % side.name,
@@ -1252,7 +1334,8 @@ func _emit_source_state_changed(
         event_kind: String,
         side: BattleSide,
         record: Dictionary,
-        change: String) -> void:
+        change: String,
+        payload: Dictionary = {}) -> void:
     if _committed_event_service == null:
         return
     var serial: int = int(_committed_event_service.next_serial())
@@ -1261,9 +1344,13 @@ func _emit_source_state_changed(
             event_kind, side, serial, str(record.get("source_token", ""))),
         "event_serial": serial,
         "actor": side, "owner": side,
+        "target": record.get("target"),
         "round_number": _round_number(),
+        "action_token": str(record.get("action_token", "")),
+        "source_kind": str(record.get("source_kind", event_kind)),
         "source_token": str(record.get("source_token", "")),
         "change": change,
+        "payload": payload.duplicate(true),
         "public_state": record.duplicate(true),
     })
 

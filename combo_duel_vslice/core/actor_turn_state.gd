@@ -3,6 +3,8 @@ extends RefCounted
 
 var actor
 var action_count: int = 0
+var action_sources: Array = []
+var last_consumed_action_source: Dictionary = {}
 var current_disabled_reasons: Dictionary = {}
 var scheduled_disabled_reasons: Dictionary = {}
 var combo_claims: Dictionary = {}
@@ -14,6 +16,15 @@ func _init(actor_value = null) -> void:
 
 func begin_round(initial_actions: int) -> void:
     action_count = maxi(0, initial_actions)
+    action_sources.clear()
+    for index in range(action_count):
+        action_sources.append({
+            "category": "normal_first_attack" if index == 0 else "normal_action",
+            "source": "round_start",
+            "is_extra_action": false,
+            "from_same_qi": false,
+        })
+    last_consumed_action_source.clear()
     current_disabled_reasons.clear()
     combo_claims.clear()
     pending_intent.clear()
@@ -37,19 +48,55 @@ func can_act() -> bool:
 func available_action_count() -> int:
     return action_count if current_disabled_reasons.is_empty() else 0
 
+func set_action_count(value: int) -> void:
+    var target := maxi(0, value)
+    if target < action_count:
+        while action_sources.size() > target:
+            action_sources.pop_back()
+    elif target > action_count:
+        for index in range(action_count, target):
+            action_sources.append({
+                "category": "normal_first_attack" if index == 0 else "normal_action",
+                "source": "action_count_set",
+                "is_extra_action": false,
+                "from_same_qi": false,
+            })
+    action_count = target
+
 func consume_action() -> bool:
     if not can_act():
         return false
     action_count -= 1
+    last_consumed_action_source = (
+        action_sources.pop_front()
+        if not action_sources.is_empty()
+        else {
+            "category": "unknown", "source": "unknown",
+            "is_extra_action": false, "from_same_qi": false,
+        })
     return true
 
-func grant_actions(amount: int) -> int:
+func grant_actions(amount: int, source: Dictionary = {}) -> int:
     var gained := maxi(0, amount)
     action_count += gained
+    var normalized := source.duplicate(true)
+    normalized["category"] = str(normalized.get("category", "extra_action"))
+    normalized["source"] = str(normalized.get("source", normalized["category"]))
+    normalized["is_extra_action"] = true
+    normalized["from_same_qi"] = bool(normalized.get(
+        "from_same_qi", normalized["category"] == "same_qi"))
+    for _index in range(gained):
+        action_sources.append(normalized.duplicate(true))
     return gained
+
+func next_action_source() -> Dictionary:
+    if action_sources.is_empty():
+        return {}
+    return action_sources[0].duplicate(true)
 
 func forfeit_remaining(reason: String) -> void:
     action_count = 0
+    action_sources.clear()
     last_forfeit_reason = reason
     pending_intent.clear()
 
@@ -90,6 +137,9 @@ func snapshot() -> Dictionary:
     return {
         "actor_name": str(actor.name) if actor != null else "",
         "action_count": action_count,
+        "action_sources": action_sources.duplicate(true),
+        "next_action_source": next_action_source(),
+        "last_consumed_action_source": last_consumed_action_source.duplicate(true),
         "available_action_count": available_action_count(),
         "can_act": can_act(),
         "disabled_reasons": current_disabled_reasons.keys(),

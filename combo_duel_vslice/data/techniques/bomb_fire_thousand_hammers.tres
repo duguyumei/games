@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_thousand_hammers"
+display_name="火·千锤"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成K次P/K点伤害。第一段为普通伤害；上一段没有使敌方损失生命时，下一段改为真伤，否则为普通伤害。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","true_damage"])
+implementation_category="C"
+effects=[{"op":"multi_damage","segments":{"kind":"bomb_constituent_count"},"amount":{"kind":"divide_floor","value":{"kind":"power"},"divisor":{"kind":"bomb_constituent_count"}},"true_when_previous_no_life_loss":true}]

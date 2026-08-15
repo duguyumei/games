@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 5
+const SCHEMA_VERSION := 6
 
 var actor
 var target
@@ -15,6 +15,9 @@ var token: String = ""
 var captures_by_source: Dictionary = {}
 var cooperation_groups: Array = []
 var momentum_prepared: bool = false
+var momentum_snapshot: int = 0
+var momentum_change_receipts: Array = []
+var momentum_settlement: Dictionary = {}
 var technique_activation_checked: bool = false
 var technique_activation_allowed: bool = false
 var technique_activation_reason: String = ""
@@ -41,6 +44,9 @@ func configure(
     triggered = false
     failed = false
     momentum_prepared = false
+    momentum_snapshot = 0
+    momentum_change_receipts.clear()
+    momentum_settlement.clear()
     var activation: Dictionary = action_preview.get(
         "technique_activation", {})
     technique_activation_checked = bool(activation.get("checked", false))
@@ -61,6 +67,11 @@ func snapshot() -> Dictionary:
         "triggered": triggered,
         "failed": failed,
         "momentum_prepared": momentum_prepared,
+        "momentum_snapshot": momentum_snapshot,
+        "momentum_consume_receipts": preview.get(
+            "momentum_consume_receipts", []).duplicate(true),
+        "momentum_change_receipts": momentum_change_receipts.duplicate(true),
+        "momentum_settlement": momentum_settlement.duplicate(true),
         "technique_activation_checked": technique_activation_checked,
         "technique_activation_allowed": technique_activation_allowed,
         "technique_activation_reason": technique_activation_reason,
@@ -82,6 +93,13 @@ func snapshot() -> Dictionary:
         "same_qi_after": int(preview.get("same_qi_after", 0)),
         "same_qi_trigger_count": int(preview.get(
             "same_qi_trigger_count", 0)),
+        "same_qi_write_results": preview.get(
+            "same_qi_write_results", []).duplicate(true),
+        "action_source": preview.get("action_source", {}).duplicate(true),
+        "extra_action_source": str(preview.get(
+            "action_source", {}).get("category", "")) \
+            if bool(preview.get("action_source", {}).get(
+                "is_extra_action", false)) else "",
         "cooperation_group_count": cooperation_groups.size(),
         "cooperation_groups": cooperation_groups.map(func(group): return {
             "group_index": int(group.get("group_index", 0)),
@@ -104,6 +122,9 @@ func to_dict() -> Dictionary:
         "captures_by_source": captures_by_source,
         "cooperation_groups": cooperation_groups,
         "momentum_prepared": momentum_prepared,
+        "momentum_snapshot": momentum_snapshot,
+        "momentum_change_receipts": momentum_change_receipts,
+        "momentum_settlement": momentum_settlement,
         "technique_activation_checked": technique_activation_checked,
         "technique_activation_allowed": technique_activation_allowed,
         "technique_activation_reason": technique_activation_reason,

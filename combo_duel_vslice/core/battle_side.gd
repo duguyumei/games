@@ -28,6 +28,8 @@ var direct_power_percent: int = 0
 var momentum_value: int = 0
 var same_qi_value: int = 0
 var last_successful_technique_hand_id: String = ""
+var momentum_write_receipts: Array = []
+var momentum_preservation_sources: Array = []
 var current_reflection_percent: int = 0
 var current_reflection_source_token: String = ""
 ## 限时战斗来源是当前反震、格挡、邀战与下一功法修正的事实源。
@@ -130,6 +132,8 @@ func reset(
     momentum_value = 0
     same_qi_value = 0
     last_successful_technique_hand_id = ""
+    momentum_write_receipts.clear()
+    momentum_preservation_sources.clear()
     current_reflection_percent = 0
     current_reflection_source_token = ""
     reflection_sources.clear()
@@ -331,6 +335,8 @@ func capture_passive_query_state() -> Dictionary:
         "momentum_value": momentum_value,
         "same_qi_value": same_qi_value,
         "last_successful_technique_hand_id": last_successful_technique_hand_id,
+        "momentum_write_receipts": momentum_write_receipts.duplicate(true),
+        "momentum_preservation_sources": momentum_preservation_sources.duplicate(true),
         "current_reflection_percent": current_reflection_percent,
         "current_reflection_source_token": current_reflection_source_token,
         "reflection_sources": reflection_sources.duplicate(true),
@@ -382,6 +388,10 @@ func replace_passive_query_state(state: Dictionary) -> void:
     direct_power_percent = int(state.get("direct_power_percent", direct_power_percent))
     momentum_value = int(state.get("momentum_value", momentum_value))
     same_qi_value = int(state.get("same_qi_value", same_qi_value))
+    momentum_write_receipts.assign(state.get(
+        "momentum_write_receipts", momentum_write_receipts))
+    momentum_preservation_sources.assign(state.get(
+        "momentum_preservation_sources", momentum_preservation_sources))
     last_same_qi_capacity_query_result = state.get(
         "last_same_qi_capacity_query_result",
         last_same_qi_capacity_query_result).duplicate(true)
@@ -550,13 +560,124 @@ func add_defense(amount: int) -> int:
     return gained
 
 func add_momentum(amount: int) -> int:
-    var before := momentum_value
-    momentum_value = maxi(0, momentum_value + amount)
-    return momentum_value - before
+    return int(write_momentum(
+        "add", amount, "legacy", "", "legacy").get("delta", 0))
 
 func set_momentum(value: int) -> int:
-    momentum_value = maxi(0, value)
+    write_momentum("set", value, "legacy", "", "legacy")
     return momentum_value
+
+func write_momentum(
+        operation: String,
+        requested: int,
+        source_category: String,
+        action_token: String,
+        source_id: String = "") -> Dictionary:
+    var before := maxi(0, momentum_value)
+    var after := before
+    var paid := 0
+    var success := true
+    match operation:
+        "add":
+            after = maxi(0, before + requested)
+        "set":
+            after = maxi(0, requested)
+        "clear":
+            after = 0
+        "consume":
+            var cost := maxi(0, requested)
+            if cost <= 0 or before < cost:
+                success = false
+            else:
+                after = before - cost
+                paid = cost
+        _:
+            success = false
+    if success:
+        momentum_value = after
+    var receipt := {
+        "success": success,
+        "operation": operation,
+        "requested": requested,
+        "paid": paid,
+        "before": before,
+        "after": momentum_value,
+        "delta": momentum_value - before,
+        "changed": success and momentum_value != before,
+        "source_category": source_category,
+        "action_token": action_token,
+        "source_id": source_id,
+        "receipt_index": momentum_write_receipts.size(),
+        "rolled_back": false,
+    }
+    momentum_write_receipts.append(receipt)
+    return receipt.duplicate(true)
+
+func rollback_momentum_receipt(receipt: Dictionary) -> bool:
+    if receipt.is_empty() or not bool(receipt.get("success", false)) \
+            or bool(receipt.get("rolled_back", false)):
+        return false
+    var index := int(receipt.get("receipt_index", -1))
+    if index < 0 or index >= momentum_write_receipts.size():
+        return false
+    var stored: Dictionary = momentum_write_receipts[index]
+    if bool(stored.get("rolled_back", false)) \
+            or int(momentum_value) != int(stored.get("after", momentum_value)):
+        return false
+    momentum_value = maxi(0, int(stored.get("before", momentum_value)))
+    stored["rolled_back"] = true
+    momentum_write_receipts[index] = stored
+    return true
+
+func momentum_changed_for_action(action_token: String) -> bool:
+    if action_token == "":
+        return false
+    for receipt_value in momentum_write_receipts:
+        var receipt: Dictionary = receipt_value
+        var token := str(receipt.get("action_token", ""))
+        if not bool(receipt.get("rolled_back", false)) \
+                and bool(receipt.get("changed", false)) \
+                and (token == action_token or token.begins_with(action_token + ":")) \
+                and str(receipt.get("source_category", "")) != "rule_clear":
+            return true
+    return false
+
+func momentum_receipts_for_action(action_token: String) -> Array:
+    var result: Array = []
+    if action_token == "":
+        return result
+    for receipt_value in momentum_write_receipts:
+        var receipt: Dictionary = receipt_value
+        var token := str(receipt.get("action_token", ""))
+        if token == action_token or token.begins_with(action_token + ":"):
+            result.append(receipt.duplicate(true))
+    return result
+
+func grant_momentum_preservation(
+        action_token: String,
+        source_id: String = "") -> Dictionary:
+    var record := {
+        "source_token": next_combat_source_token("momentum-preserve"),
+        "created_by_action_token": action_token,
+        "skip_current_action_token": action_token,
+        "source_id": source_id,
+    }
+    momentum_preservation_sources.append(record)
+    return record.duplicate(true)
+
+func consume_momentum_preservation_for(action_token: String) -> Dictionary:
+    for record_value in momentum_preservation_sources.duplicate():
+        var record: Dictionary = record_value
+        if str(record.get("skip_current_action_token", "")) == action_token:
+            record["skip_current_action_token"] = ""
+            var index := momentum_preservation_sources.find(record_value)
+            if index >= 0:
+                momentum_preservation_sources[index] = record
+            return {"preserved": true, "consumed": false, "record": record}
+    if momentum_preservation_sources.is_empty():
+        return {"preserved": false, "consumed": false}
+    var consumed: Dictionary = momentum_preservation_sources.pop_front()
+    return {"preserved": true, "consumed": true, "record": consumed}
 
 func set_reflection_percent(value: int, source_token: String = "") -> int:
     var token := source_token if source_token != "" else next_combat_source_token("reflection")

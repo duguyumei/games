@@ -29,7 +29,7 @@ func state_for(actor):
     return register_actor(actor)
 
 func set_action_count(actor, value: int) -> void:
-    state_for(actor).action_count = maxi(0, value)
+    state_for(actor).set_action_count(value)
 
 func available_action_count(actor) -> int:
     return state_for(actor).available_action_count()
@@ -40,8 +40,14 @@ func can_act(actor) -> bool:
 func consume_action(actor) -> bool:
     return state_for(actor).consume_action()
 
-func grant_actions(actor, amount: int) -> int:
-    return state_for(actor).grant_actions(amount)
+func grant_actions(actor, amount: int, source: Dictionary = {}) -> int:
+    return state_for(actor).grant_actions(amount, source)
+
+func next_action_source(actor) -> Dictionary:
+    return state_for(actor).next_action_source()
+
+func last_consumed_action_source(actor) -> Dictionary:
+    return state_for(actor).last_consumed_action_source.duplicate(true)
 
 func forfeit_remaining(actor, reason: String) -> void:
     state_for(actor).forfeit_remaining(reason)

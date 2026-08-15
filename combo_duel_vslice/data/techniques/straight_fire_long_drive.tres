@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_fire_long_drive"
+display_name="火·长驱"
+pool="straight"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成P点普通伤害。当前行动是额外行动时，同气槽+1。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","same_qi_payoff"])
+public_behavior_summary=Array[String](["damage","same_qi_payoff"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"write_same_qi","operation":"add","amount":1,"receipt_key":"long_drive","when":{"action_is_extra":true}}]

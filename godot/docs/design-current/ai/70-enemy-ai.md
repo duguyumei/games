@@ -19,7 +19,7 @@
 
 敌方 AI 可以读取玩家当前生命、防御、同气槽当前值与有效最大值、当前有效反震及公开剩余持续时间、公开格挡来源、有效邀战的 X/Q 与到期窗口、公开层数与异状、各牌区数量、完整本局牌组构成及重塑、全部功法配置与等级、全部精确牌型序列及当前位置、内功配置与等级、已公开的消耗品和此前公开历史。被反震来源暂时覆盖的旧比例只有在其来源本身属于公开状态时才公开，但不能因投影隐藏而改变本地规则核的恢复结果。敌方不能读取玩家当前手牌的具体内容、玩家抽牌堆顺序、玩家当前选牌草稿、尚未公开的随机结果，以及随机效果命中隐藏手牌时的具体真气身份。已经打出、弃入公开牌区或通过规则明确揭示的真气可以按实例记录；敌方可以根据公开构筑和历史自行推测隐藏信息。
 
-正式功法的即时与未来价值统一由语义标签投影 Provider 估值。`damage`、`defense`、`true_damage`、`draw`、`discard`、`recover`、`deck_control`、`anomaly_apply`、`delayed_defense`、`momentum`、`reflection`、`block`、`temporary_card`、`economic_gain`、`same_qi_payoff`、`extra_card_commitment`、`retrigger_sensitive`、`enemy_disruption` 与 `challenge` 只表达通用行为，不允许在 AI 中按功法 ID 分支。随机收益使用通用期望值，预览、候选枚举和状态哈希不得推进正式随机源。
+正式功法的即时与未来价值统一由语义标签投影 Provider 估值。当前标签词表冻结为：`damage`、`defense`、`true_damage`、`draw`、`discard`、`recover`、`deck_control`、`anomaly_apply`、`delayed_defense`、`delayed_effect`、`momentum`、`reflection`、`block`、`challenge`、`temporary_card`、`temporary_rank`、`rank_shift`、`hand_shaping`、`void`、`economic_gain`、`same_qi_payoff`、`next_technique_power`、`extra_card_commitment`、`retrigger_sensitive`与`enemy_disruption`。这些标签只表达通用行为，不是玩家可见战斗关键词，也不允许AI按功法ID分支；内容校验拒绝词表外标签和同一字段内的重复标签。随机收益使用通用期望值，预览、候选枚举和状态哈希不得推进正式随机源。
 
 一次战斗尝试对应一个本地 AI 会话。完整脱敏请求、模型原始回答、格式校验、纠错重试、超时、本地接管、最终行动、耗时与用量都必须持久化，供审计和回放使用；凭据和请求认证头不得写入战斗存档或日志。战斗中退出后不恢复中间牌区、回合或 AI 对话，而是从战斗开头建立一次新的战斗尝试与新的 AI 会话；旧会话作为只读审计记录保留，不能接入新尝试。服务端会话 ID 和提示词缓存只在当前战斗尝试中作为可选适配能力。发送给 AI 的工作历史默认每 5 个完整回合压缩一次；压缩只替换当前尝试后续请求使用的早期工作历史，不删除本地完整记录。没有触发远程请求的窗口所积累的事件同样参与下一次压缩和发送。
 

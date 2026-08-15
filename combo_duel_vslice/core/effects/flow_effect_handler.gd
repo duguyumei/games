@@ -26,7 +26,8 @@ func operation_ids() -> Array[String]:
         "grant_reflection_source", "grant_reflection_true_damage",
         "grant_block", "register_challenge",
         "grant_defense_retention", "add_pending_power_fixed",
-        "clear_same_qi_for_defense", "add_same_qi",
+        "clear_same_qi_for_defense", "add_same_qi", "write_same_qi",
+        "consume_momentum", "grant_momentum_preservation",
     ]
 
 func group_name() -> String:
@@ -39,16 +40,44 @@ func execute(effect: Dictionary, context):
     match str(effect.get("op", "")):
         "gain_extra_action":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
-            runtime.ports.gain_extra_actions(runtime.actor, amount, "功法")
+            runtime.ports.gain_extra_actions(
+                runtime.actor, amount,
+                runtime.technique_name if runtime.technique_name != "" else "功法",
+                str(effect.get("source_category", "technique")),
+                runtime.action_token)
             return EffectResultScript.succeeded("连击机会 +%d" % amount)
         "add_momentum":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
-            var changed: int = runtime.ports.add_momentum(runtime.actor, amount)
-            return EffectResultScript.succeeded("连势 %+d" % changed)
+            var receipt: Dictionary = runtime.ports.write_momentum(
+                runtime.actor, "add", amount, runtime.source_kind,
+                runtime.action_token, runtime.technique_id)
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [receipt]
+            return EffectResultScript.succeeded(
+                "连势 %+d" % int(receipt.get("delta", 0)))
         "set_momentum":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
-            runtime.ports.set_momentum(runtime.actor, amount)
+            var receipt: Dictionary = runtime.ports.write_momentum(
+                runtime.actor, "set", amount, runtime.source_kind,
+                runtime.action_token, runtime.technique_id)
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [receipt]
             return EffectResultScript.succeeded("连势设为 %d" % runtime.actor.momentum_value)
+        "consume_momentum":
+            var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
+            var receipt: Dictionary = runtime.ports.write_momentum(
+                runtime.actor, "consume", amount, runtime.source_kind,
+                runtime.action_token, runtime.technique_id)
+            runtime.captures[str(effect.get("capture", "momentum_receipt"))] = \
+                [receipt] if bool(receipt.get("success", false)) else []
+            return EffectResultScript.succeeded(
+                "消耗连势%d" % int(receipt.get("paid", 0)))
+        "grant_momentum_preservation":
+            var record: Dictionary = runtime.actor.grant_momentum_preservation(
+                runtime.action_token, runtime.technique_id)
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [record]
+            return EffectResultScript.succeeded("建立一次连势保留保护")
         "set_reflection_percent":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
             runtime.ports.set_reflection_percent(runtime.actor, amount)
@@ -90,7 +119,10 @@ func execute(effect: Dictionary, context):
             var threshold: int = value_resolver.resolve(effect.get("threshold", 0), runtime)
             var result: Dictionary = runtime.ports.register_challenge(
                 runtime, threshold, effect.get("effects", []),
-                runtime.technique_name if runtime.technique_name != "" else "邀战")
+                runtime.technique_name if runtime.technique_name != "" else "邀战",
+                effect.get("met_effects", []))
+            if effect.has("capture") and result.get("success", false):
+                runtime.captures[str(effect["capture"])] = [result.get("record", {})]
             return EffectResultScript.succeeded("邀战%d" % threshold) \
                 if result.get("success", false) else EffectResultScript.failed("邀战建立失败")
         "grant_defense_retention":
@@ -106,8 +138,12 @@ func execute(effect: Dictionary, context):
                 amount, "", runtime.technique_name)
             return EffectResultScript.succeeded("下一门成功功法值+%d" % amount)
         "clear_same_qi_for_defense":
-            var cleared := maxi(0, int(runtime.actor.same_qi_value))
-            runtime.actor.same_qi_value = 0
+            var result: Dictionary = runtime.ports.write_same_qi(
+                runtime.actor, "clear", 0, runtime.technique_name,
+                "%s:%s:clear_same_qi" % [runtime.action_token, runtime.technique_id],
+                runtime.source_kind, runtime.action_token)
+            var cleared := maxi(0, int(result.get("same_qi_before", 0)) \
+                - int(result.get("same_qi_after", 0)))
             var defense := cleared * int(effect.get("defense_per_point", 4))
             runtime.ports.add_defense(
                 runtime.actor, defense, runtime.technique_name, runtime.action_token)
@@ -119,6 +155,27 @@ func execute(effect: Dictionary, context):
                 "%s:%s:add_same_qi" % [runtime.action_token, runtime.technique_id])
             return EffectResultScript.succeeded("同气+%d" % amount) \
                 if result.get("success", false) else EffectResultScript.failed(str(result.get("reason", "同气增加失败")))
+        "write_same_qi":
+            var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
+            var receipt_key := str(effect.get("receipt_key", "default"))
+            if bool(effect.get("receipt_key_from_event", false)):
+                var events: Array = runtime.captures.get("event", [])
+                if not events.is_empty():
+                    receipt_key += ":" + str(events[0].get(
+                        "event_token", events[0].get("event_serial", "event")))
+            var result: Dictionary = runtime.ports.write_same_qi(
+                runtime.actor, str(effect.get("operation", "add")), amount,
+                runtime.technique_name,
+                "%s:%s:write_same_qi:%s" % [
+                    runtime.action_token, runtime.technique_id,
+                    receipt_key],
+                runtime.source_kind, runtime.action_token)
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = [result] \
+                    if result.get("success", false) else []
+            return EffectResultScript.succeeded("同气写入完成") \
+                if result.get("success", false) else EffectResultScript.failed(
+                    str(result.get("reason", "同气写入失败")))
         "register_defense_decay_return":
             runtime.ports.register_defense_decay_return(runtime)
             return EffectResultScript.succeeded("记录本回合自然防御衰减")
@@ -219,3 +276,6 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
         "register_challenge":
             validator.validate_nested_battle_effects(
                 effect.get("effects", []), scope + ".effects")
+            if effect.has("met_effects"):
+                validator.validate_nested_battle_effects(
+                    effect.get("met_effects", []), scope + ".met_effects")

@@ -164,6 +164,24 @@ func _test_adjusted_forest_generation_resources() -> void:
     _assert_true(generated_cards.any(func(card): return card.current_rank_order() == 13), "万象化生来源A只能降到K")
     _assert_true(generated_cards.all(func(card): return card.has_anomaly("mark", "void")), "万象化生生成牌均默认获得虚无")
 
+    var change_engine = _engine(3009)
+    var change_low = _card("2", "forest")
+    var change_high = _card("A", "forest")
+    change_engine.player.hand = [change_low, change_high]
+    var change_definition = change_engine.repository.get_definition(
+        "straight_forest_change_form")
+    var changed: Dictionary = change_engine.effect_executor.execute_all(
+        change_definition.effects, _context(change_engine, {}))
+    _assert_true(changed.get("pending_choice", false), "林易形等待选择1至2张目标")
+    changed = change_engine.effect_executor.resume(
+        changed.get("_continuation"),
+        str(changed.get("choice_request", {}).get("request_id", "")),
+        [str(change_low.id), str(change_high.id)])
+    _assert_true(changed.get("success", false), "林易形可同时处理2张手牌")
+    _assert_equal(change_low.current_rank_order(), 3, "林易形令2只向上易形")
+    _assert_equal(change_high.current_rank_order(), 13, "林易形令A只向下易形")
+    _assert_equal(change_engine.player.defense, 10, "林易形强化不改变基础防御")
+
 func _test_discard_share_dependency() -> void:
     var engine = _engine(3004)
     var source = _card("8")

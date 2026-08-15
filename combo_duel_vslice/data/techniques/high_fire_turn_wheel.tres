@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_fire_turn_wheel"
+display_name="火·点轮"
+pool="high"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。若本次行动冻结的自然同气收益至少为2，结算同气时同气槽额外+1。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","same_qi_payoff"])
+public_behavior_summary=Array[String](["damage","same_qi_payoff"])
+implementation_category="C"
+effects=[{"op":"register_response","phase":"prepare","event":"same_qi_gain_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"action_token_is_record":true,"source_category":"same_qi","same_qi_gain_at_least":2,"max_triggers":1},"effects":[{"op":"write_same_qi","operation":"add","amount":1,"receipt_key":"turn_wheel"}]},{"op":"damage","amount":{"kind":"power"}}]

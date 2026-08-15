@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_turn_back"
+display_name="火·回身"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P/2点普通伤害。若本次行动通过同气获得额外行动，选择本组实际进入弃牌堆的1张计值牌返回手牌。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","recover","same_qi_payoff"])
+public_behavior_summary=Array[String](["damage","recover","same_qi_payoff"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"capture_group_cards","kind":"contributing","capture":"counted"},{"op":"select_cards","choice_id":"turn_back_card","prompt":"预选同气连动后回手的计值牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","candidate_capture":"counted","capture":"chosen"},{"op":"register_response","event":"same_qi_gain_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"action_token_is_record":true,"source_category":"same_qi","conversion_count_at_least":1,"max_triggers":1},"effects":[{"op":"filter_captured","capture":"chosen","side":"actor","zone":"discard_pile","result_capture":"still_discard"},{"op":"move_captured","capture":"still_discard","from_side":"actor","from_zone":"discard_pile","to_side":"actor","to_zone":"hand","reason":"recover"}]}]

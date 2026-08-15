@@ -272,6 +272,12 @@ func _response_matches(record: Dictionary, values: Dictionary) -> bool:
     if filters.has("source_tokens") \
             and not filters["source_tokens"].has(str(values.get("source_token", ""))):
         return false
+    if bool(filters.get("action_token_is_record", false)) \
+            and str(values.get("action_token", "")) != str(record.get("action_token", "")):
+        return false
+    if bool(filters.get("attacker_is_actor", false)) \
+            and values.get("attacker") != record.get("actor"):
+        return false
     if bool(filters.get("defender_is_actor", false)) \
             and values.get("defender") != record.get("actor"):
         return false
@@ -284,6 +290,10 @@ func _response_matches(record: Dictionary, values: Dictionary) -> bool:
     if bool(filters.get("actual_life_loss_positive", false)) \
             and int(values.get("actual_life_loss", values.get("life_lost", 0))) <= 0:
         return false
+    if filters.has("life_lost_equals") \
+            and int(values.get("life_lost", values.get("actual_life_loss", 0))) \
+                != int(filters["life_lost_equals"]):
+        return false
     if filters.has("damage_type") \
             and str(values.get("damage_type", "")) != str(filters["damage_type"]):
         return false
@@ -293,11 +303,47 @@ func _response_matches(record: Dictionary, values: Dictionary) -> bool:
     if bool(filters.get("defense_lost_positive", false)) \
             and int(values.get("defense_lost", 0)) <= 0:
         return false
+    if filters.has("source_kind_in") \
+            and not filters["source_kind_in"].has(str(values.get("source_kind", ""))):
+        return false
+    if filters.has("source_category") \
+            and str(values.get("source_category", "")) != str(filters["source_category"]):
+        return false
+    if filters.has("same_qi_gain_at_least") \
+            and int(values.get("same_qi_gain", values.get("gained", 0))) \
+                < int(filters["same_qi_gain_at_least"]):
+        return false
+    if filters.has("conversion_count_at_least") \
+            and int(values.get("conversion_count", values.get(
+                "same_qi_trigger_count", 0))) \
+                < int(filters["conversion_count_at_least"]):
+        return false
+    if filters.has("is_extra_action") \
+            and bool(values.get("is_extra_action", false)) != bool(filters["is_extra_action"]):
+        return false
+    if filters.has("from_same_qi") \
+            and bool(values.get("from_same_qi", false)) != bool(filters["from_same_qi"]):
+        return false
+    if filters.has("became_burned_out") \
+            and bool(values.get("became_burned_out", false)) \
+                != bool(filters["became_burned_out"]):
+        return false
+    if filters.has("challenge_met") \
+            and bool(values.get("challenge_met", false)) \
+                != bool(filters["challenge_met"]):
+        return false
+    if filters.has("challenge_difference_at_least") \
+            and int(values.get("difference", 0)) \
+                < int(filters["challenge_difference_at_least"]):
+        return false
     if bool(filters.get("same_action_window", false)) \
             and not values.get("action_tokens", []).has(str(record.get("action_token", ""))):
         return false
     var snapshot: Dictionary = values.get("pre_move_snapshot", {})
     if bool(filters.get("had_poison", false)) and not bool(snapshot.get("had_poison", false)):
+        return false
+    if bool(filters.get("had_burned_out", false)) \
+            and not bool(snapshot.get("had_burned_out", false)):
         return false
     return true
 
@@ -377,7 +423,8 @@ func apply_card_anomaly(
         payload: Dictionary = {},
         source: String = "效果",
         layers: int = 1,
-        replace_state: bool = false) -> Dictionary:
+        replace_state: bool = false,
+        event_metadata: Dictionary = {}) -> Dictionary:
     var before = _card_anomaly_value(card, category, anomaly_id)
     var result: Dictionary = lifecycle.apply_anomaly(
         card, category, anomaly_id, payload, layers, replace_state)
@@ -392,6 +439,10 @@ func apply_card_anomaly(
         _card_anomaly_value(card, category, anomaly_id),
         source,
         {"category": category, "refreshed": bool(result.get("refreshed", false))})
+    _emit_card_anomaly_change(
+        card, category, anomaly_id, before,
+        _card_anomaly_value(card, category, anomaly_id), source,
+        event_metadata)
     return result
 
 func can_apply_card_anomaly(
@@ -405,7 +456,8 @@ func remove_card_anomaly(
         card,
         category: String,
         anomaly_id: String = "",
-        source: String = "效果") -> Dictionary:
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     var resolved_id := anomaly_id
     if resolved_id == "" and category == "state":
         resolved_id = str(card.current_state().get("id", ""))
@@ -422,12 +474,104 @@ func remove_card_anomaly(
             null,
             source,
             {"category": category})
+        _emit_card_anomaly_change(
+            card, category, resolved_id, before, null, source,
+            event_metadata)
     return {
         "success": true,
         "changed": changed,
         "removed": removed,
         "anomaly_id": resolved_id,
     }
+
+func transfer_card_anomaly(
+        source_card,
+        target_card,
+        category: String,
+        anomaly_id: String,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    if source_card == null or target_card == null or source_card == target_card:
+        return {"success": false, "reason": "异状转移需要不同的来源与目标"}
+    if not source_card.has_anomaly(category, anomaly_id):
+        return {"success": false, "reason": "异状转移来源不再持有目标异状"}
+    var permission: Dictionary = lifecycle.can_apply_anomaly(
+        target_card, category, anomaly_id, false)
+    if not permission.get("allowed", false):
+        return {"success": false, "reason": permission.get("reason", "目标不能获得异状")}
+    var source_before = _card_anomaly_value(source_card, category, anomaly_id)
+    var target_before = _card_anomaly_value(target_card, category, anomaly_id)
+    var applied: Dictionary = lifecycle.apply_anomaly(
+        target_card, category, anomaly_id, {}, 1, false)
+    if not applied.get("success", false):
+        return applied
+    source_card.remove_anomaly(category, anomaly_id)
+    var target_after = _card_anomaly_value(target_card, category, anomaly_id)
+    _record_change(
+        "card_anomaly_transfer_out", "card", str(source_card.id), anomaly_id,
+        source_before, null, source, {"category": category, "target_id": str(target_card.id)})
+    _record_change(
+        "card_anomaly_transfer_in", "card", str(target_card.id), anomaly_id,
+        target_before, target_after, source,
+        {"category": category, "source_id": str(source_card.id)})
+    var source_metadata := event_metadata.duplicate(true)
+    source_metadata["transfer_peer_card_id"] = str(target_card.id)
+    var target_metadata := event_metadata.duplicate(true)
+    target_metadata["transfer_peer_card_id"] = str(source_card.id)
+    _emit_card_anomaly_change(
+        source_card, category, anomaly_id, source_before, null,
+        source, source_metadata)
+    _emit_card_anomaly_change(
+        target_card, category, anomaly_id, target_before, target_after,
+        source, target_metadata)
+    return {
+        "success": true,
+        "changed": true,
+        "source_card": source_card,
+        "target_card": target_card,
+        "category": category,
+        "anomaly_id": anomaly_id,
+    }
+
+func _emit_card_anomaly_change(
+        card,
+        category: String,
+        anomaly_id: String,
+        before,
+        after,
+        source: String,
+        event_metadata: Dictionary) -> void:
+    if card == null or anomaly_id == "":
+        return
+    var holder = event_metadata.get("holder", event_metadata.get("actor"))
+    if holder == null:
+        var ports = _effect_ports()
+        if ports != null:
+            var location: Dictionary = ports.locate_active_card(str(card.id))
+            holder = location.get("side") if location.get("success", false) else null
+    var values := event_metadata.duplicate(true)
+    values.merge({
+        "actor": holder,
+        "holder": holder,
+        "card": card,
+        "source_card_instance_id": str(card.id),
+        "category": category,
+        "anomaly_id": anomaly_id,
+        "before": before,
+        "after": after,
+        "changed": before != after,
+        "applied": after != null,
+        "removed": after == null,
+        "source": source,
+        "base_qi": int(card.current_base_qi_value()) \
+            if card.has_method("current_base_qi_value") else int(card.qi_value),
+        "card_base_qi": int(card.qi_value),
+    }, true)
+    handle_response_event("card_anomaly_changed", values)
+    if category == "mark" and anomaly_id == "burned_out":
+        values["became_burned_out"] = before == null and after != null
+        values["ceased_burned_out"] = before != null and after == null
+        handle_response_event("card_burned_out_changed", values)
 
 func set_card_anomaly_layers(
         card,
@@ -709,6 +853,7 @@ func register_delayed_effects(
         "branch_hand_id": runtime.branch_hand_id,
         "technique_pool": runtime.technique_pool,
         "sequence_book": runtime.sequence_book,
+        "source_action_token": runtime.action_token,
     }
     _delay_serial += 1
     delayed_records.append(record)
@@ -956,10 +1101,25 @@ func _resolve_challenges_for_window(side, window_id: String) -> void:
         return not bool(record.get("waiting_for_action", false)) \
             and str(record.get("window_id", "")) == window_id)
     for record in due:
+        var threshold := int(record.get("threshold", 0))
+        var current := int(record.get("current", 0))
         var difference := maxi(
-            0, int(record.get("threshold", 0)) - int(record.get("current", 0)))
-        if difference > 0:
+            0, threshold - current)
+        var met := current >= threshold
+        var challenge_result := {
+            "source_token": str(record.get("source_token", "")),
+            "threshold": threshold,
+            "current": current,
+            "difference": difference,
+            "met": met,
+            "branch": "met" if met else "unmet",
+        }
+        record["resolution"] = challenge_result.duplicate(true)
+        var branch_effects: Array = record.get(
+            "met_effects", []) if met else record.get("effects", [])
+        if not branch_effects.is_empty():
             var captures: Dictionary = record.get("captures", {}).duplicate(true)
+            captures["challenge_result"] = [challenge_result.duplicate(true)]
             captures["challenge_difference"] = [{"amount": difference}]
             var context = EffectContextScript.new().configure({
                 "ports": _effect_ports(),
@@ -978,13 +1138,25 @@ func _resolve_challenges_for_window(side, window_id: String) -> void:
                 "action_token": str(record.get("action_token", "")),
                 "source_kind": "challenge",
             })
-            _effect_executor.execute_all(record.get("effects", []), context)
+            _effect_executor.execute_all(branch_effects, context)
         _effect_ports().add_history(
             "challenge_resolved", str(record.get("label", "邀战")),
-            side.name, "成功", "%d/%d，差额%d" % [
-                int(record.get("current", 0)), int(record.get("threshold", 0)), difference])
+            side.name, "达标" if met else "未达标", "%d/%d，差额%d" % [
+                current, threshold, difference])
         _effect_ports().notify_source_changed(
-            "challenge_resolved", side, record, "resolved")
+            "challenge_resolved", side, record, "resolved", challenge_result)
+        handle_response_event("challenge_resolved", {
+            "actor": side,
+            "holder": side,
+            "target": record.get("target"),
+            "source_token": str(record.get("source_token", "")),
+            "action_token": str(record.get("action_token", "")),
+            "threshold": threshold,
+            "current": current,
+            "difference": difference,
+            "challenge_met": met,
+            "branch": challenge_result["branch"],
+        })
         side.challenge_records.erase(record)
 
 func _on_after_normal_draw_delays(event) -> Dictionary:
@@ -1024,6 +1196,10 @@ func _resolve_delayed_effect_chain(record: Dictionary) -> Dictionary:
         "branch_hand_id": str(record.get("branch_hand_id", "")),
         "technique_pool": str(record.get("technique_pool", "")),
         "sequence_book": record.get("sequence_book"),
+        "action_token": "%s:delay:%s" % [
+            str(record.get("source_action_token", "")),
+            str(record.get("id", "delay")),
+        ],
         "source_kind": "delayed_technique",
         "captures": record.get("captures", {}).duplicate(true),
         "group_snapshot": record.get("group_snapshot", {}).duplicate(true),

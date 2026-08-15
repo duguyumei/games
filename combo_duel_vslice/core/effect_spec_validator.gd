@@ -18,9 +18,11 @@ const AMOUNT_KINDS := [
     "constant", "power", "power_fraction", "initial_power", "initial_power_fraction", "n60", "hand_map", "max",
     "add", "subtract", "multiply", "divide_floor", "divide_ceil", "modulo", "capture_count", "capture_qi_sum", "capture_attribute_qi_sum",
     "capture_attribute_count", "capture_non_attribute_count", "capture_base_qi_sum",
+    "capture_card_base_qi_sum",
     "capture_current_effective_qi", "group_base_qi_sum", "extra_count",
     "card_contribution", "extra_effective_qi_sum", "action_same_qi_gain",
     "action_same_qi_trigger_count", "base_attribute_count", "event_field",
+    "momentum_value",
     "active_temporary_reshape_base_qi_sum",
     "capture_effective_qi_sum", "capture_effective_qi_max",
     "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum",
@@ -38,7 +40,8 @@ const AMOUNT_KINDS := [
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const QUERY_ORDERS := [
     "zone", "left", "right", "top", "bottom", "random",
-    "highest_rank", "lowest_rank", "highest_effective_qi"]
+    "highest_rank", "lowest_rank", "highest_effective_qi",
+    "highest_effective_qi_random_ties"]
 const QUERY_SIDES := ["actor", "target"]
 const CARD_KINDS := ["any", "normal"]
 const INSUFFICIENT_POLICIES := ["use_available", "skip", "fail"]
@@ -319,7 +322,8 @@ func validate_amount_spec(spec: Dictionary, scope: String) -> void:
             _validate_nested_specs(spec, ["value", "divisor"], scope)
         "capture_count", "capture_qi_sum", "capture_attribute_qi_sum", \
         "capture_attribute_count", "capture_non_attribute_count", \
-        "capture_base_qi_sum", "capture_current_effective_qi":
+        "capture_base_qi_sum", "capture_card_base_qi_sum", \
+        "capture_current_effective_qi":
             _validate_capture_spec(spec, kind, scope)
         "capture_effective_qi_sum", "capture_effective_qi_max", \
         "capture_r_sum", "capture_r_max", "capture_anomaly_layers_sum", \

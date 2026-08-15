@@ -22,6 +22,7 @@ func operation_ids() -> Array[String]:
         "apply_temporary_rank_from_capture",
         "clear_temporary_reshape_from_captured",
         "apply_anomaly_from_query",
+        "transfer_card_anomaly",
     ]
 
 func group_name() -> String:
@@ -53,6 +54,31 @@ func execute(effect: Dictionary, context):
         apply_effect["op"] = "apply_card_anomaly_to_captured"
         apply_effect["capture"] = str(effect.get("capture", "anomaly_targets"))
         return _apply_to_captured(apply_effect, runtime)
+    if str(effect.get("op", "")) == "transfer_card_anomaly":
+        var sources: Array = runtime.captures.get(
+            str(effect.get("source_capture", "")), [])
+        var targets: Array = runtime.captures.get(
+            str(effect.get("target_capture", "")), [])
+        if sources.is_empty() or targets.is_empty():
+            if effect.has("result_capture"):
+                runtime.captures[str(effect["result_capture"])] = []
+            return EffectResultScript.succeeded()
+        var transferred: Dictionary = runtime.ports.transfer_card_anomaly(
+            sources[0], targets[0], str(effect.get("category", "")),
+            str(effect.get("anomaly", "")),
+            runtime.technique_name if runtime.technique_name != "" else "功法", {
+                "source_actor": runtime.actor,
+                "target": runtime.target,
+                "action_token": runtime.action_token,
+                "technique_id": runtime.technique_id,
+                "source_kind": runtime.source_kind,
+            })
+        if effect.has("result_capture"):
+            runtime.captures[str(effect["result_capture"])] = \
+                [targets[0]] if transferred.get("success", false) else []
+        return EffectResultScript.succeeded("转移异状") \
+            if transferred.get("success", false) \
+            else EffectResultScript.failed(str(transferred.get("reason", "异状转移失败")))
     var target = runtime.target
     if target == null:
         return EffectResultScript.failed("异状处理器缺少目标")
@@ -116,6 +142,9 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             "apply_temporary_rank_from_capture",
             "clear_temporary_reshape_from_captured"]:
         return
+    if str(effect.get("op", "")) == "transfer_card_anomaly":
+        validator.validate_anomaly_reference(effect, scope)
+        return
     if str(effect.get("op", "")) == "apply_anomaly_from_query":
         if not effect.get("query") is Dictionary:
             validator.report_error(scope + ".query", "必须是对象")
@@ -156,7 +185,13 @@ func _apply_to_captured(effect: Dictionary, runtime):
             effect.get("payload", {}),
             runtime.technique_name if runtime.technique_name != "" else "功法",
             _layers(effect, runtime),
-            bool(effect.get("replace_state", false)))
+            bool(effect.get("replace_state", false)), {
+                "source_actor": runtime.actor,
+                "target": runtime.target,
+                "action_token": runtime.action_token,
+                "technique_id": runtime.technique_id,
+                "source_kind": runtime.source_kind,
+            })
         if result.get("success", false):
             applied.append(card)
     if effect.has("result_capture"):

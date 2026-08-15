@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_send_kindling"
+display_name="火·嫁薪"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。一对与葫芦将至多1张、两对将至多2张我方燃尽真气洗入敌方牌库；先选择剩余手牌，不足再从我方牌库随机补足，战斗结束归还。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","enemy_disruption","extra_card_commitment","deck_control"])
+public_behavior_summary=Array[String](["damage","enemy_disruption","deck_control"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"select_cards","choice_id":"send_kindling_hand","prompt":"选择洗入敌方牌库的燃尽手牌","chooser":"actor","minimum":0,"maximum":{"kind":"hand_map","values":{"pair":1,"two_pair":2,"full_house":1}},"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"hand_kindling"},{"op":"capture_query","query":{"side":"actor","zone":"draw_pile","order":"random","limit":{"kind":"subtract","left":{"kind":"hand_map","values":{"pair":1,"two_pair":2,"full_house":1}},"right":{"kind":"capture_count","capture":"hand_kindling"}},"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"deck_kindling"},{"op":"atomic_transfer_captures","from_side":"actor","to_side":"target","to_zone":"draw_pile","reason":"temporary_transfer","sources":[{"capture":"hand_kindling","zone":"hand"},{"capture":"deck_kindling","zone":"draw_pile"}],"shuffle_destination":true,"result_capture":"sent"}]

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_fire_pursue_array"
+display_name="火·逐阵"
+pool="straight"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成P/2点普通伤害。本完整回合后续每次我方额外行动开始时，对敌方进行1次造成C/2点普通伤害的追击。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","retrigger_sensitive"])
+implementation_category="C"
+effects=[{"op":"register_response","phase":"prepare","event":"extra_action_started","expiry":"turn_end","filters":{"holder_is_actor":true,"is_extra_action":true},"effects":[{"op":"damage","source_kind":"chase","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"card_contribution"},"divisor":2}}]},{"op":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]

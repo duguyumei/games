@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_burn_body_empower"
+display_name="火·焚身成法"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="行动确认时，令S为本组未燃尽计值牌当前有效真气值总和，本组直接功法值+2S。造成P点普通伤害；本组完整结算后，全部组成牌获得燃尽。"
+condition={}
+cooperation={}
+power_formation={"kind":"unburned_contributing_effective_qi","multiplier":2}
+semantic_tags=Array[String](["damage","anomaly_apply","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"contributing","capture":"counted"},{"op":"damage","amount":{"kind":"power"}},{"op":"apply_card_anomaly_to_captured","phase":"post_commit","capture":"counted","category":"mark","anomaly":"burned_out","result_capture":"burned"}]

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="straight_fire_five_steps"
+display_name="火·五步"
+pool="straight"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["straight"])
+description="造成5次P/5点普通伤害。每个实际使敌方损失生命的原始攻击段结算后，获得1点连势。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","momentum"])
+implementation_category="C"
+effects=[{"op":"multi_damage","segments":5,"amount":{"kind":"power_fraction","numerator":1,"denominator":5,"minimum":0},"on_life_loss_effects":[{"op":"add_momentum","amount":1}]}]

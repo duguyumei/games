@@ -148,6 +148,12 @@ func confirm_finalized_action(
     if not bool(action_preview.get("action_finalized", false)):
         return {"success": false, "reason": "行动尚未完成正式冻结"}
     var action_token := str(action_preview.get("reshape_action_token", ""))
+    var formation_commit := {"success": true, "changed": false}
+    if action_preview_service != null:
+        formation_commit = action_preview_service.commit_power_formation(
+            actor, action_preview)
+        if not formation_commit.get("success", false):
+            return formation_commit
     if committed_event_service != null:
         var confirmed: Dictionary = committed_event_service.commit(
             "action_confirmed", {
@@ -164,6 +170,10 @@ func confirm_finalized_action(
                 },
             })
         if not confirmed.get("success", false):
+            if action_preview_service != null \
+                    and formation_commit.get("changed", false):
+                action_preview_service.rollback_power_formation(
+                    actor, action_preview)
             return confirmed
     action_preview["passive_action_confirmed"] = true
     return {"success": true, "reused": false, "action_token": action_token}
@@ -265,9 +275,9 @@ func resolve_action_records(records: Array, synchronized: bool) -> Dictionary:
                 "%s功法" % record["actor"].name,
                 "启动被拒绝", str(activation.get("reason", "功法启动被拒绝")))
             continue
+        _prepare_successful_technique_momentum(record)
         action_preview["values"] = PowerCalculatorScript.apply_momentum(
-            action_preview["values"],
-            int(record["actor"].momentum_value))
+            action_preview["values"], int(record["momentum_snapshot"]))
         record["triggered"] = true
     _pending_resolution = {
         "records": records,
@@ -351,9 +361,6 @@ func _continue_resolution() -> Dictionary:
 func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bool:
     var phase_has_entries := false
     for record in records:
-        if record["triggered"] \
-                and not bool(record["momentum_prepared"]):
-            _prepare_successful_technique_momentum(record)
         for source_spec in _action_trigger_sources(record):
             var source_effects: Array = source_spec.get(
                 "effects", source_spec["definition"].get("effects", []))
@@ -593,6 +600,7 @@ func _finish_action_record(record) -> void:
     var technique: Dictionary = action_preview["technique"]
     var hand_id: String = action_preview["hand"]["id"]
     if record["triggered"]:
+        _settle_successful_technique_momentum(record)
         record["actor"].consume_pending_power_fixed_sources(
             action_preview.get("pending_power_fixed_tokens", []))
         record["actor"].last_successful_technique_hand_id = hand_id
@@ -813,8 +821,39 @@ func _technique_name(technique_id: String) -> String:
     return technique_repository.get_technique(technique_id).get("name", "空序列")
 
 func _prepare_successful_technique_momentum(record) -> void:
+    if bool(record["momentum_prepared"]):
+        return
     record["momentum_prepared"] = true
     var actor = record["actor"]
-    var hand_id := str(record["preview"]["hand"]["id"])
-    if actor.last_successful_technique_hand_id != hand_id:
-        actor.set_momentum(0)
+    record["momentum_snapshot"] = maxi(0, int(actor.momentum_value))
+    record["preview"]["momentum_snapshot"] = int(record["momentum_snapshot"])
+
+func _settle_successful_technique_momentum(record) -> void:
+    var actor = record["actor"]
+    var action_token := str(record["token"])
+    var changed: bool = actor.momentum_changed_for_action(action_token)
+    var preservation := {"preserved": false, "consumed": false}
+    var clear_receipt: Dictionary = {}
+    if not changed:
+        preservation = actor.consume_momentum_preservation_for(action_token)
+        if not bool(preservation.get("preserved", false)):
+            clear_receipt = actor.write_momentum(
+                "clear", 0, "rule_clear", action_token,
+                str(record["preview"].get("technique_id", "")))
+    record["momentum_change_receipts"] = actor.momentum_receipts_for_action(
+        action_token)
+    record["momentum_settlement"] = {
+        "snapshot": int(record["momentum_snapshot"]),
+        "changed_by_technique_or_echo": changed,
+        "preserved": bool(preservation.get("preserved", false)),
+        "preservation_consumed": bool(preservation.get("consumed", false)),
+        "preservation_record": preservation.get("record", {}).duplicate(true),
+        "clear_receipt": clear_receipt.duplicate(true),
+        "remaining": int(actor.momentum_value),
+    }
+    record["preview"]["same_qi_write_results"] = \
+        effect_ports.same_qi_receipts_for_action(actor, action_token)
+    record["preview"]["momentum_change_receipts"] = \
+        record["momentum_change_receipts"].duplicate(true)
+    record["preview"]["momentum_settlement"] = \
+        record["momentum_settlement"].duplicate(true)

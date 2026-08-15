@@ -14,6 +14,12 @@ const ESTIMATED_VALUES := {
     "reflection": 3.0,
     "block": 4.0,
     "temporary_card": 2.0,
+    "temporary_rank": 1.5,
+    "rank_shift": 1.5,
+    "hand_shaping": 2.0,
+    "next_technique_power": 2.0,
+    "delayed_effect": 1.0,
+    "void": -0.5,
     "economic_gain": 1.5,
     "same_qi_payoff": 1.5,
     "retrigger_sensitive": 1.0,
@@ -58,4 +64,3 @@ func query(hook: String, context: Dictionary) -> Dictionary:
         "control_value": control,
         "trigger_signatures": signatures,
     }
-

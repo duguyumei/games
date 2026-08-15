@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_scorch_channel"
+display_name="火·焦脉"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。一对与葫芦使敌方有效真气值最高的随机1张合法普通手牌获得燃尽；两对改为按有效真气值从高到低取至多2张，并随机解决并列。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","anomaly_apply","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","anomaly_apply","enemy_disruption"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"hand","order":"highest_effective_qi_random_ties","limit":{"kind":"hand_map","values":{"pair":1,"two_pair":2,"full_house":1}},"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"mark","id":"burned_out"}}},"category":"mark","anomaly":"burned_out","capture":"scorched"}]

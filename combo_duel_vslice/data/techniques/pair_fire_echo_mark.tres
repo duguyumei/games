@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_echo_mark"
+display_name="火·印鸣"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。本组每有1张具有回响印的计值牌，进行1次造成该牌当前有效真气值的普通追击。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","retrigger_sensitive"])
+implementation_category="B"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_group_cards","kind":"contributing","reshape":{"category":"imprint","id":"echo"},"capture":"echo_cards"},{"op":"for_each_captured","capture":"echo_cards","effects":[{"op":"damage","source_kind":"chase","direct_attack":false,"amount":{"kind":"capture_current_effective_qi","capture":"each"}}]}]

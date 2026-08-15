@@ -214,6 +214,8 @@ func resolve_locked_enemy_action_once() -> Dictionary:
 
     battle_flow.lock_intent(enemy, action_preview)
     battle_flow.consume_action(enemy)
+    _freeze_consumed_action_source(enemy, action_preview)
+    _notify_action_started(enemy, action_preview)
     last_preview.clear()
     last_enemy_preview = action_preview
     trigger_queue.add_history(
@@ -260,6 +262,8 @@ func _confirm_solo_player(proposal) -> Dictionary:
         return finalize_result
     battle_flow.lock_intent(player, action_preview)
     battle_flow.consume_action(player)
+    _freeze_consumed_action_source(player, action_preview)
+    _notify_action_started(player, action_preview)
     action_resolver.log_calculation(player, action_preview)
     var record = action_resolver.make_action_record(
         player, enemy, action_preview, sequence_book, 100, turn_number_reader.call())
@@ -290,6 +294,7 @@ func _confirm_solo_player(proposal) -> Dictionary:
 
 func _finish_solo_player_resolution(record, action_preview: Dictionary) -> Dictionary:
     var has_cooperation: bool = not record.cooperation_groups.is_empty()
+    _notify_action_pre_commit(record)
     var player_commit: Dictionary = action_resolver.commit_staging_for(
         player, action_preview.get("cards", []) if has_cooperation else [])
     var played_cards: Array = player_commit["committed"]
@@ -413,6 +418,8 @@ func _finish_solo_action_outcome(
         main_triggered: bool,
         cooperation_triggered: bool,
         cooperation_preview: Dictionary = {}) -> Dictionary:
+    if main_triggered and cooperation_triggered:
+        _notify_cooperation_resolved(action_preview, cooperation_preview)
     var action_completed: Dictionary = action_resolver.finish_action_resolution()
     if not action_completed.get("success", false):
         return {"success": false, "reason": action_completed.get(
@@ -538,6 +545,7 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
     var player_finalize := _finalize_staged_proposal(
         player, player_proposal, false)
     if not player_finalize.get("success", false):
+        _rollback_power_formation_transactions(player, player_proposal)
         player.rollback_staging()
         if enemy_will_act:
             enemy.rollback_staging()
@@ -546,11 +554,13 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         var enemy_finalize: Dictionary = action_resolver.finalize_action_preview(
             enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_finalize.get("success", false):
+            _rollback_power_formation_transactions(player, player_proposal)
             player.rollback_staging()
             enemy.rollback_staging()
             return enemy_finalize
     var player_confirmed := _confirm_finalized_proposal(player, player_proposal)
     if not player_confirmed.get("success", false):
+        _rollback_power_formation_transactions(player, player_proposal)
         player.rollback_staging()
         if enemy_will_act:
             enemy.rollback_staging()
@@ -559,6 +569,7 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         var enemy_confirmed: Dictionary = action_resolver.confirm_finalized_action(
             enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_confirmed.get("success", false):
+            _rollback_power_formation_transactions(player, player_proposal)
             player.rollback_staging()
             enemy.rollback_staging()
             return enemy_confirmed
@@ -568,8 +579,12 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         battle_flow.lock_intent(enemy, enemy_preview)
     var resolution_mode: String = battle_flow.resolution_mode()
     battle_flow.consume_action(player)
+    _freeze_consumed_action_source(player, player_preview)
+    _notify_action_started(player, player_preview)
     if enemy_will_act:
         battle_flow.consume_action(enemy)
+        _freeze_consumed_action_source(enemy, enemy_preview)
+        _notify_action_started(enemy, enemy_preview)
     last_preview = player_preview
     last_enemy_preview = enemy_preview
     trigger_queue.add_history(
@@ -626,6 +641,9 @@ func _finish_synchronized_resolution(
     var has_cooperation: bool = (
         player_record["triggered"]
         and not player_record.cooperation_groups.is_empty())
+    _notify_action_pre_commit(player_record)
+    if enemy_will_act and records.size() > 1:
+        _notify_action_pre_commit(records[1])
     var player_commit: Dictionary = action_resolver.commit_staging_for(
         player, player_preview.get("cards", []) if has_cooperation else [])
     var enemy_commit: Dictionary = action_resolver.commit_staging_for(enemy) \
@@ -795,6 +813,7 @@ func _finish_synchronized_cooperation_post_commit(
         cooperation_preview)
 
 func _notify_cooperation_pre_commit(record) -> void:
+    _notify_action_pre_commit(record)
     var cards: Array = record["preview"].get("cards", []).duplicate()
     action_resolver.effect_ports.notify_response_event("cooperation_pre_commit", {
         "actor": record["actor"],
@@ -804,6 +823,52 @@ func _notify_cooperation_pre_commit(record) -> void:
         "event_cards": cards,
         "source_card_instance_id": str(cards[0].id) if not cards.is_empty() else "",
         "source_card_instance_ids": cards.map(func(card): return str(card.id)),
+    })
+
+func _notify_action_pre_commit(record) -> void:
+    var cards: Array = record["preview"].get("cards", []).duplicate()
+    action_resolver.effect_ports.notify_response_event("action_pre_commit", {
+        "actor": record["actor"], "holder": record["actor"],
+        "target": record["target"], "action_token": str(record["token"]),
+        "round_number": int(turn_number_reader.call()),
+        "event_cards": cards,
+        "source_card_instance_id": str(cards[0].id) if not cards.is_empty() else "",
+        "source_card_instance_ids": cards.map(func(card): return str(card.id)),
+    })
+
+func _freeze_consumed_action_source(side, preview: Dictionary) -> void:
+    var source: Dictionary = battle_flow.last_consumed_action_source(side)
+    preview["action_source"] = source.duplicate(true)
+    var snapshot: Dictionary = preview.get("group_snapshot", {}).duplicate(true)
+    snapshot["action_source"] = source.duplicate(true)
+    snapshot["action_is_extra"] = bool(source.get("is_extra_action", false))
+    snapshot["action_from_same_qi"] = bool(source.get("from_same_qi", false))
+    preview["group_snapshot"] = snapshot
+
+func _notify_action_started(side, preview: Dictionary) -> void:
+    var source: Dictionary = preview.get("action_source", {}).duplicate(true)
+    action_resolver.effect_ports.notify_response_event("extra_action_started", {
+        "actor": side, "holder": side,
+        "action_token": str(preview.get("reshape_action_token", "")),
+        "round_number": int(turn_number_reader.call()),
+        "action_source": source,
+        "is_extra_action": bool(source.get("is_extra_action", false)),
+        "from_same_qi": bool(source.get("from_same_qi", false)),
+        "source_category": str(source.get("category", "")),
+    })
+
+func _notify_cooperation_resolved(
+        main_preview: Dictionary,
+        cooperation_preview: Dictionary) -> void:
+    action_resolver.effect_ports.notify_response_event("cooperation_resolved", {
+        "actor": player, "holder": player, "target": enemy,
+        "action_token": str(main_preview.get("reshape_action_token", "")),
+        "round_number": int(turn_number_reader.call()),
+        "main_technique_id": str(main_preview.get("technique_id", "")),
+        "cooperation_technique_id": str(cooperation_preview.get(
+            "technique_id", "")),
+        "main_triggered": true,
+        "cooperation_triggered": true,
     })
 
 func _finish_synchronized_outcome(
@@ -816,6 +881,8 @@ func _finish_synchronized_outcome(
         enemy_triggered: bool,
         cooperation_triggered: bool = false,
         cooperation_preview: Dictionary = {}) -> Dictionary:
+    if player_triggered and cooperation_triggered:
+        _notify_cooperation_resolved(player_preview, cooperation_preview)
     var action_completed: Dictionary = action_resolver.finish_action_resolution()
     if not action_completed.get("success", false):
         return {"success": false, "reason": action_completed.get(
@@ -868,6 +935,7 @@ func _finish_synchronized_outcome(
     }
 
 func _finish_enemy_only_resolution(record, action_preview: Dictionary) -> Dictionary:
+    _notify_action_pre_commit(record)
     var enemy_commit: Dictionary = action_resolver.commit_staging_for(enemy)
     var enemy_cards: Array = enemy_commit["committed"]
     action_resolver.log_cards_leave(enemy, enemy_cards)
@@ -992,6 +1060,8 @@ func _refresh_same_qi_gain(proposal, frozen: bool) -> Dictionary:
         action_result.get("gain", 0))
     main_snapshot["action_same_qi_trigger_count"] = int(
         projection.get("same_qi_trigger_count", 0))
+    main_snapshot["action_same_qi_common_attributes"] = action_result.get(
+        "common_attributes", []).duplicate()
     proposal.preview["group_snapshot"] = main_snapshot
     for field in [
             "same_qi_gain", "same_qi_before", "same_qi_capacity",
@@ -1005,6 +1075,8 @@ func _refresh_same_qi_gain(proposal, frozen: bool) -> Dictionary:
             action_result.get("gain", 0))
         group_snapshot["action_same_qi_trigger_count"] = int(
             projection.get("same_qi_trigger_count", 0))
+        group_snapshot["action_same_qi_common_attributes"] = action_result.get(
+            "common_attributes", []).duplicate()
         group_preview["group_snapshot"] = group_snapshot
     proposal.preview["intent"]["combo"] = (
         int(projection.get("same_qi_trigger_count", 0)) > 0
@@ -1062,6 +1134,10 @@ func _finalize_staged_proposal(
     var same_qi_freeze := _refresh_same_qi_gain(proposal, true)
     if not same_qi_freeze.get("success", false):
         return same_qi_freeze
+    var formation_commit := _commit_power_formation_transactions(side, proposal)
+    if not formation_commit.get("success", false):
+        _rollback_power_formation_transactions(side, proposal)
+        return formation_commit
     _refresh_cooperation_shared_power(proposal)
     if emit_confirmed:
         return _confirm_finalized_proposal(side, proposal)
@@ -1072,13 +1148,37 @@ func _confirm_finalized_proposal(side, proposal) -> Dictionary:
     var main_result: Dictionary = action_resolver.confirm_finalized_action(
         side, proposal.preview, target, turn_number_reader.call())
     if not main_result.get("success", false):
+        _rollback_power_formation_transactions(side, proposal)
         return main_result
     for group in proposal.groups.slice(1):
         var group_result: Dictionary = action_resolver.confirm_finalized_action(
             side, group.get("preview", {}), target, turn_number_reader.call())
         if not group_result.get("success", false):
+            _rollback_power_formation_transactions(side, proposal)
             return group_result
     return {"success": true}
+
+func _commit_power_formation_transactions(side, proposal) -> Dictionary:
+    var previews: Array = [proposal.preview]
+    for group in proposal.groups.slice(1):
+        previews.append(group.get("preview", {}))
+    var receipts: Array = []
+    for preview_value in previews:
+        var committed: Dictionary = action_resolver.action_preview_service.commit_power_formation(
+            side, preview_value)
+        if not committed.get("success", false):
+            return committed
+        if committed.get("changed", false):
+            receipts.append(committed.get("receipt", {}).duplicate(true))
+    proposal.preview["momentum_consume_receipts"] = receipts
+    return {"success": true, "receipts": receipts}
+
+func _rollback_power_formation_transactions(side, proposal) -> void:
+    for group in proposal.groups.slice(1).duplicate():
+        action_resolver.action_preview_service.rollback_power_formation(
+            side, group.get("preview", {}))
+    action_resolver.action_preview_service.rollback_power_formation(
+        side, proposal.preview)
 
 func _query_cooperation_permission(
         main_preview: Dictionary,

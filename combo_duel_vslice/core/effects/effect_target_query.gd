@@ -5,7 +5,8 @@ const SIDE_IDS := ["actor", "target"]
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const ORDER_IDS := [
     "zone", "left", "right", "top", "bottom", "random",
-    "highest_rank", "lowest_rank", "highest_effective_qi"]
+    "highest_rank", "lowest_rank", "highest_effective_qi",
+    "highest_effective_qi_random_ties"]
 const CARD_KIND_IDS := ["any", "normal"]
 
 var side_id: String = "actor"
@@ -103,7 +104,8 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
         if rng == null:
             return {"success": false, "reason": "随机目标查询缺少随机源", "cards": []}
         _shuffle(matches, rng)
-    elif order_id in ["highest_rank", "lowest_rank", "highest_effective_qi"]:
+    elif order_id in ["highest_rank", "lowest_rank", "highest_effective_qi",
+            "highest_effective_qi_random_ties"]:
         var zone_positions: Dictionary = {}
         for index in range(cards.size()):
             zone_positions[str(cards[index].id)] = index
@@ -115,6 +117,21 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
                     else left_value > right_value
             return int(zone_positions.get(str(left.id), -1)) \
                 > int(zone_positions.get(str(right.id), -1)))
+        if order_id == "highest_effective_qi_random_ties":
+            if rng == null:
+                return {"success": false, "reason": "随机并列目标查询缺少随机源", "cards": []}
+            var reordered: Array = []
+            var index := 0
+            while index < matches.size():
+                var value := _sort_value(matches[index], context, side)
+                var tied: Array = []
+                while index < matches.size() \
+                        and _sort_value(matches[index], context, side) == value:
+                    tied.append(matches[index])
+                    index += 1
+                _shuffle(tied, rng)
+                reordered.append_array(tied)
+            matches = reordered
     if limit > 0 and matches.size() > limit:
         matches = matches.slice(0, limit)
     return {
@@ -285,7 +302,7 @@ func _current_effective_qi(card, context, side) -> int:
         if card.has_method("effective_qi_value") else int(card.qi_value)
 
 func _sort_value(card, context, side) -> int:
-    if order_id == "highest_effective_qi":
+    if order_id in ["highest_effective_qi", "highest_effective_qi_random_ties"]:
         return _current_effective_qi(card, context, side)
     return int(card.current_rank_order()) \
         if card.has_method("current_rank_order") else int(card.rank_order)

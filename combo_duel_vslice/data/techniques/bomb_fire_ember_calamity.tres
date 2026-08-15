@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_ember_calamity"
+display_name="火·烬劫"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。明确弃掉敌方全部合法燃尽手牌，再按实际弃掉牌的基础值总和造成真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","discard","enemy_disruption"])
+public_behavior_summary=Array[String](["damage","true_damage","discard","enemy_disruption"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"target","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","explicit_discard_allowed":true,"anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"embers"},{"op":"move_captured","capture":"embers","from_side":"target","from_zone":"hand","to_side":"target","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"discarded"},{"op":"capture_metadata","capture":"discarded","result_capture":"discarded_meta"},{"op":"damage","phase":"zones","damage_type":"true","direct_attack":false,"amount":{"kind":"capture_field_sum","capture":"discarded_meta","field":"card_base_qi"}}]

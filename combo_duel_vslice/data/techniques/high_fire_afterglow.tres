@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="high_fire_afterglow"
+display_name="火·余明"
+pool="high"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["high_card"])
+description="造成P点普通伤害。本组完整结算期间，每有1张本组计值牌实际获得燃尽，对敌方造成等于该牌基础值的真伤。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","true_damage","anomaly_apply","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","true_damage","anomaly_apply"])
+implementation_category="C"
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"contributing","capture":"counted"},{"op":"register_response","phase":"prepare","event":"card_burned_out_changed","expiry":"turn_end","filters":{"card_instance_ids_from_capture":"counted","action_token_is_record":true,"became_burned_out":true},"effects":[{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"event_field","field":"card_base_qi"}}]},{"op":"damage","amount":{"kind":"power"}}]

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_pour_furnace"
+display_name="火·倾炉"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="造成P点普通伤害。随后清空当前同气槽；每实际清空1点，进行1次造成C/K点普通伤害的追击。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","same_qi_payoff","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","same_qi_payoff"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"write_same_qi","operation":"clear","amount":0,"receipt_key":"pour_furnace","capture":"cleared"},{"op":"repeat_effects","count":{"kind":"subtract","left":{"kind":"capture_field_first","capture":"cleared","field":"same_qi_before"},"right":{"kind":"capture_field_first","capture":"cleared","field":"same_qi_after"}},"effects":[{"op":"damage","source_kind":"chase","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"card_contribution"},"divisor":{"kind":"bomb_constituent_count"}}}]}]

@@ -90,6 +90,17 @@ const TECHNIQUE_INTEGRATION_STATUSES := [
     "formal_complete", "partial_integration", "regression_fixture",
 ]
 const FORMAL_TECHNIQUE_STATUS := "formal_complete"
+## 功法辅助语义只用于 AI、预览与内容审计，不参与正式战斗结算。
+## 词表在此冻结，避免内容批次继续产生同义标签或按功法 ID 写估值分支。
+const TECHNIQUE_SEMANTIC_TAG_IDS := [
+    "damage", "defense", "true_damage",
+    "draw", "discard", "recover", "deck_control",
+    "anomaly_apply", "delayed_defense", "delayed_effect",
+    "momentum", "reflection", "block", "challenge",
+    "temporary_card", "temporary_rank", "rank_shift", "hand_shaping", "void",
+    "economic_gain", "same_qi_payoff", "next_technique_power",
+    "extra_card_commitment", "retrigger_sensitive", "enemy_disruption",
+]
 const PRODUCTION_SEQUENCES_PATH := "res://data/production_sequences.json"
 const ATTRIBUTE_IDS := ["wind", "forest", "fire", "mountain"]
 const RESHAPE_CATEGORY_IDS := ["origin", "enhancement", "imprint", "other"]
@@ -982,10 +993,31 @@ func _validate_techniques(definition: Dictionary) -> void:
             for eligible_hand_id in eligible_hand_ids:
                 if str(eligible_hand_id) not in HAND_IDS:
                     _error(scope + ".eligible_hand_ids", "引用未知精确牌型 %s" % str(eligible_hand_id))
+        _validate_technique_semantic_tags(
+            value.get("semantic_tags", []), scope + ".semantic_tags")
+        _validate_technique_semantic_tags(
+            value.get("public_behavior_summary", []),
+            scope + ".public_behavior_summary")
         _effect_specs.validate_effects(value.get("effects"), "battle", scope + ".effects")
     _validate_technique_integration_statuses(
         integration_statuses,
         definition.get("resource_paths", []))
+
+func _validate_technique_semantic_tags(value, scope: String) -> void:
+    if not value is Array:
+        _error(scope, "功法语义标签必须是数组")
+        return
+    var seen: Dictionary = {}
+    for index in range(value.size()):
+        if not value[index] is String or str(value[index]) == "":
+            _error("%s[%d]" % [scope, index], "功法语义标签必须是非空字符串")
+            continue
+        var tag := str(value[index])
+        if not TECHNIQUE_SEMANTIC_TAG_IDS.has(tag):
+            _error("%s[%d]" % [scope, index], "未知功法语义标签 %s" % tag)
+        if seen.has(tag):
+            _error("%s[%d]" % [scope, index], "功法语义标签不得重复：%s" % tag)
+        seen[tag] = true
 
 func _validate_technique_integration_statuses(value, resource_paths) -> void:
     var scope := "techniques.integration_statuses"

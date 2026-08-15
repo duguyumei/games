@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="bomb_fire_burst_momentum"
+display_name="火·爆势"
+pool="bomb"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["four_kind","five_kind"])
+description="行动确认时，若当前连势不少于10，消耗10点连势并使本组直接功法值+2C。随后造成P点普通伤害。"
+condition={}
+cooperation={}
+power_formation={"kind":"pre_momentum_consume","cost":10,"default_consume":true,"fixed_bonus_kind":"card_contribution_multiplier","multiplier":2}
+semantic_tags=Array[String](["damage","momentum","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","momentum"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}}]

@@ -4113,14 +4113,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 171, "统一功法目录包含171门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 171, "正式功法资源路径包含171项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 171, "正式接入状态包含171门功法")
+    _assert_equal(catalog.all_of("technique").size(), 211, "统一功法目录包含211门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 211, "正式功法资源路径包含211项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 211, "正式接入状态包含211门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 171, "正式功法资源目录包含171门功法")
+    _assert_equal(formal_technique_resource_count, 211, "正式功法资源目录包含211门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
@@ -8542,7 +8542,7 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         "preview": linked_result["cooperation_preview"],
     }]
     var audit_snapshot: Dictionary = audit_record.snapshot()
-    _assert_equal(audit_snapshot["schema_version"], 5, "行动记录升级为同气槽冻结版本")
+    _assert_equal(audit_snapshot["schema_version"], 6, "行动记录升级为连势与同气回执版本")
     _assert_equal(audit_snapshot["same_qi"]["gain"], 4, "行动记录保存行动级最优分组与 G")
     _assert_equal(audit_snapshot["same_qi_gain"], 4, "行动记录保存预计同气收益")
     _assert_equal(audit_snapshot["cooperation_groups"][0]["same_qi_group"]["gain"], 1, "行动记录保存协同组独立身份事实")
@@ -10356,8 +10356,8 @@ func _test_snapshot_boundaries_are_typed() -> void:
         "无被动修正时快照公开基础六格容量")
     _assert_equal(battle.player.same_qi_value, 0, "双方快照公开当前同气")
     _assert_equal(battle.player.same_qi_capacity, 5, "双方快照公开有效同气容量")
-    _assert_equal(battle.SCHEMA_VERSION, 3, "战斗快照升级为同气公开字段版本")
-    _assert_equal(battle.to_dict()["schema_version"], 3, "战斗快照序列化保留同气字段版本号")
+    _assert_equal(battle.SCHEMA_VERSION, 4, "战斗快照升级为行动来源与同气公开字段版本")
+    _assert_equal(battle.to_dict()["schema_version"], 4, "战斗快照序列化包含行动来源与同气字段版本号")
     _assert_equal(
         battle.log_channel("battle"),
         battle.battle_log,

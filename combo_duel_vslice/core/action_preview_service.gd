@@ -400,7 +400,48 @@ func _apply_technique_power_formation(side, target, preview: Dictionary) -> void
         return
     var definition: Dictionary = preview.get("technique", {})
     var formation: Dictionary = definition.get("power_formation", {})
-    if str(formation.get("kind", "")) != "random_extra_current_qi":
+    var kind := str(formation.get("kind", ""))
+    if kind == "pre_momentum_consume":
+        var cost := maxi(0, int(formation.get("cost", 0)))
+        var eligible := cost > 0 and int(side.momentum_value) >= cost
+        var selected := eligible and bool(preview.get(
+            "power_formation_choice",
+            formation.get("default_consume", true)))
+        var fixed_bonus := 0
+        if selected:
+            match str(formation.get("fixed_bonus_kind", "none")):
+                "card_contribution_multiplier":
+                    fixed_bonus = int(preview.get("values", {}).get(
+                        "card_total", 0)) * int(formation.get("multiplier", 1))
+        preview["frozen_power_formation"] = {
+            "kind": kind,
+            "fixed_bonus": fixed_bonus,
+            "target_id": "",
+            "momentum_cost": cost,
+            "consume_requested": selected,
+            "consume_receipt": {},
+        }
+        preview["group_snapshot"]["pre_momentum_consume_selected"] = selected
+        preview["values"] = PowerCalculatorScript.apply_direct_power_fixed(
+            preview["values"], fixed_bonus)
+        return
+    if kind == "unburned_contributing_effective_qi":
+        var total := 0
+        for card in preview.get("group_snapshot", {}).get(
+                "contributing_cards", []):
+            if not card.has_anomaly("mark", "burned_out"):
+                total += HandGroupSnapshotScript.current_effective_qi(
+                    preview.get("group_snapshot", {}), card, side)
+        var fixed_bonus := total * int(formation.get("multiplier", 1))
+        preview["frozen_power_formation"] = {
+            "kind": kind, "fixed_bonus": fixed_bonus, "target_id": "",
+            "frozen_value": total,
+        }
+        preview["group_snapshot"]["power_formation_frozen_value"] = total
+        preview["values"] = PowerCalculatorScript.apply_direct_power_fixed(
+            preview["values"], fixed_bonus)
+        return
+    if kind != "random_extra_current_qi":
         preview["frozen_power_formation"] = {"fixed_bonus": 0, "target_id": ""}
         return
     var snapshot: Dictionary = preview.get("group_snapshot", {})
@@ -422,6 +463,39 @@ func _apply_technique_power_formation(side, target, preview: Dictionary) -> void
         [chosen] if chosen != null else []
     preview["values"] = PowerCalculatorScript.apply_direct_power_fixed(
         preview["values"], bonus)
+
+func commit_power_formation(side, preview: Dictionary) -> Dictionary:
+    var frozen: Dictionary = preview.get("frozen_power_formation", {})
+    if str(frozen.get("kind", "")) != "pre_momentum_consume" \
+            or not bool(frozen.get("consume_requested", false)):
+        return {"success": true, "changed": false, "receipt": {}}
+    if not frozen.get("consume_receipt", {}).is_empty():
+        return {
+            "success": true, "changed": true,
+            "receipt": frozen["consume_receipt"].duplicate(true), "reused": true,
+        }
+    var receipt: Dictionary = side.write_momentum(
+        "consume", int(frozen.get("momentum_cost", 0)),
+        "power_formation", str(preview.get("reshape_action_token", "")),
+        str(preview.get("technique_id", "")))
+    if not receipt.get("success", false):
+        return {"success": false, "reason": "确认期连势不足，前置消费失败"}
+    frozen["consume_receipt"] = receipt.duplicate(true)
+    preview["frozen_power_formation"] = frozen
+    preview["momentum_consume_receipt"] = receipt.duplicate(true)
+    return {"success": true, "changed": true, "receipt": receipt}
+
+func rollback_power_formation(side, preview: Dictionary) -> bool:
+    var receipt: Dictionary = preview.get("momentum_consume_receipt", {})
+    if receipt.is_empty():
+        return false
+    var rolled_back: bool = side.rollback_momentum_receipt(receipt)
+    if rolled_back:
+        preview.erase("momentum_consume_receipt")
+        var frozen: Dictionary = preview.get("frozen_power_formation", {})
+        frozen["consume_receipt"] = {}
+        preview["frozen_power_formation"] = frozen
+    return rolled_back
 
 func _resolve_power_values(
         side,

@@ -53,6 +53,7 @@ func _initialize() -> void:
     _test_live_block_and_echo_guard()
     _test_wind_timing_and_targeting_ports()
     _test_wind_resource_boundaries()
+    _test_break_page_burned_out_bridge()
     _test_continue_form_integrated()
     _test_scatter_four_echoes()
     _test_returning_swallow_post_commit()
@@ -81,8 +82,8 @@ func _test_catalog_and_counts() -> void:
             continue
         normal_count += 1
         counts[definition.pool] = int(counts.get(definition.pool, 0)) + 1
-    _assert_equal(normal_count, 169, "普通正式功法169门")
-    _assert_equal(counts, {"high":49,"pair":38,"three":27,"straight":26,"bomb":29}, "五池数量准确")
+    _assert_equal(normal_count, 209, "普通正式功法209门")
+    _assert_equal(counts, {"high":55,"pair":48,"three":34,"straight":34,"bomb":38}, "五池数量准确")
 
 func _test_meridian_draw_rules() -> void:
     var engine = _engine(4101)
@@ -375,6 +376,45 @@ func _test_continue_form_integrated() -> void:
     _assert_equal(engine.player.hand.size(), 3, "续式在额外行动开始前抽2张并保留原手牌")
     _assert_true(engine.player.hand.has(reserve), "续式抽牌不影响剩余手牌")
     _assert_true(engine.player.hand.has(drawn[0]) and engine.player.hand.has(drawn[1]), "续式抽入冻结牌库中的两张牌")
+
+func _test_break_page_burned_out_bridge() -> void:
+    var plain_engine = _engine(4129)
+    var plain = _card("7", "forest")
+    plain_engine.enemy.draw_pile = [plain]
+    var plain_definition = plain_engine.repository.get_definition(
+        "high_wind_break_page")
+    var plain_result: Dictionary = plain_engine.effect_executor.execute_all(
+        plain_definition.effects, _context(plain_engine))
+    _assert_true(plain_result.get("success", false), "断页非燃尽分支执行成功")
+    _assert_true(plain_engine.enemy.discard_pile.has(plain), "断页明确弃掉非燃尽顶牌")
+    _assert_true(plain_engine.enemy.hand.is_empty(), "断页非燃尽分支不令敌方抽牌")
+
+    var burned_engine = _engine(4130)
+    var burned = _card("10", "fire")
+    burned_engine.status_system.apply_card_anomaly(
+        burned, "mark", "burned_out", {}, "测试")
+    burned_engine.enemy.draw_pile = [burned]
+    var hidden_definition = burned_engine.repository.get_definition(
+        "straight_fire_hidden_kindling")
+    var hidden_context = _context(burned_engine)
+    hidden_context.power = 0
+    hidden_context.initial_power = 0
+    hidden_context.technique_id = "straight_fire_hidden_kindling"
+    hidden_context.technique_name = hidden_definition.display_name
+    var hidden_result: Dictionary = burned_engine.effect_executor.execute_all(
+        hidden_definition.effects, hidden_context)
+    _assert_true(hidden_result.get("success", false), "暗薪响应先行建立")
+    var break_context = _context(burned_engine)
+    break_context.power = 20
+    break_context.initial_power = 20
+    break_context.technique_id = "high_wind_break_page"
+    break_context.technique_name = plain_definition.display_name
+    var burned_result: Dictionary = burned_engine.effect_executor.execute_all(
+        plain_definition.effects, break_context)
+    _assert_true(burned_result.get("success", false), "断页燃尽分支执行成功")
+    _assert_true(burned_engine.enemy.hand.has(burned), "断页强制抽取燃尽顶牌")
+    _assert_true(burned_engine.enemy.discard_pile.is_empty(), "燃尽顶牌不进入断页弃置分支")
+    _assert_equal(100 - burned_engine.enemy.life, 25, "断页触发暗薪并结算P伤害与基础值一半真伤")
 
 func _test_wind_resource_boundaries() -> void:
     var scout_engine = _engine(4126)

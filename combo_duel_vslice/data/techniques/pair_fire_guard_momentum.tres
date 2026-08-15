@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+[resource]
+script=ExtResource("1")
+id="pair_fire_guard_momentum"
+display_name="火·护势"
+pool="pair"
+base_loadout_limit=1
+eligible_hand_ids=Array[String](["pair","two_pair","full_house"])
+description="造成P点普通伤害。保留本门结算后的连势；之后第一门原本会清空连势的成功功法也改为保留连势。"
+condition={}
+cooperation={}
+power_formation={}
+semantic_tags=Array[String](["damage","momentum","retrigger_sensitive"])
+public_behavior_summary=Array[String](["damage","momentum"])
+implementation_category="C"
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"grant_momentum_preservation"}]
