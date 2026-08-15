@@ -28,8 +28,6 @@ const PassiveRuleHandlerRegistryScript = preload(
     "res://core/passives/passive_rule_handler_registry.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
-const ConditionSpecRegistryScript = preload(
-    "res://core/specs/condition_spec_registry.gd")
 
 const CONTENT_KEYS := [
     "base_deck",
@@ -985,6 +983,11 @@ func _validate_techniques(definition: Dictionary) -> void:
         _validate_cooperation(value.get("cooperation", {}), scope + ".cooperation")
         if not value.get("special") is bool:
             _error(scope, "special 必须是布尔值")
+        var condition = value.get("condition", {})
+        if not condition is Dictionary:
+            _error(scope + ".condition", "必须是对象")
+        else:
+            _effect_specs.validate_condition(condition, scope + ".condition")
         if str(value.get("manual_effect_mode", "normal")) \
                 not in TECHNIQUE_MANUAL_EFFECT_MODES:
             _error(scope + ".manual_effect_mode", "必须为 normal 或 advance_only")
@@ -1075,9 +1078,8 @@ func _validate_automatic_triggers(value, marker_definitions, scope: String) -> v
         if not trigger.get("filters", {}) is Dictionary:
             _error(trigger_scope + ".filters", "必须是对象")
         else:
-            ConditionSpecRegistryScript.new().validate_event_filters(
-                trigger.get("filters", {}), Callable(self, "_error"),
-                trigger_scope + ".filters")
+            _effect_specs.validate_event_filters(
+                trigger.get("filters", {}), trigger_scope + ".filters")
         if trigger.has("p0"):
             if not trigger["p0"] is Dictionary:
                 _error(trigger_scope + ".p0", "必须是 ValueSpec")

@@ -151,6 +151,8 @@ const EffectTargetQueryScript = preload(
     "res://core/effects/effect_target_query.gd")
 const EffectValueResolverScript = preload(
     "res://core/effects/effect_value_resolver.gd")
+const ConditionSpecRegistryScript = preload(
+    "res://core/specs/condition_spec_registry.gd")
 const TechniqueEffectContextScript = preload(
     "res://core/effects/technique_effect_context.gd")
 const TechniqueRepositoryPolicyScript = preload(
@@ -959,6 +961,7 @@ func _initialize() -> void:
         quit(2)
         return
     _test_content_catalog_and_validator()
+    _test_condition_spec_registry_contract()
     _test_passive_rule_registry_and_content_contract()
     _test_card_reshape_behavior_registry()
     _test_enemy_pool_content_and_repository()
@@ -1338,6 +1341,217 @@ func _test_card_reshape_behavior_registry() -> void:
             unknown_anomaly_catalog.errors,
             "card_states.origins[2].behaviors[3].anomaly"),
         "重塑异状引用错误稳定报告内容路径")
+
+func _test_condition_spec_registry_contract() -> void:
+    var registry = ConditionSpecRegistryScript.new()
+    var validation_errors: Array[String] = []
+    var report_error := func(scope: String, message: String) -> void:
+        validation_errors.append(scope + ":" + message)
+
+    for drift_field in [
+            "group_snapshot_flag_value",
+            "group_has_no_common_attribute",
+            "group_all_active_permanent_reshape"]:
+        _assert_true(
+            registry.condition_fields().has(drift_field),
+            "运行中出现过的漂移字段已进入唯一 ConditionSpec 注册表：%s" % drift_field)
+
+    var first: QiCard = _card("6", "wind")
+    var second: QiCard = _card("6", "wind")
+    first.reshape_enhancement = "condition_probe"
+    second.reshape_imprint = "condition_probe"
+    var runtime_context = TechniqueEffectContextScript.new().configure({
+        "hand_result": {"id": "pair", "contributing": [first, second]},
+        "played_cards": [first, second],
+        "actual_hand_id": "pair",
+        "group_snapshot": {
+            "played_cards": [first, second],
+            "common_attributes": [],
+            "probe_flag": false,
+        },
+    })
+    var recursive_condition := {
+        "all": [
+            {"any": [
+                {"exact_hand_id": "straight"},
+                {"exact_hand_id": "pair"},
+            ]},
+            {"not": {"group_has_common_attribute": "any"}},
+            {
+                "group_snapshot_flag": "probe_flag",
+                "group_snapshot_flag_value": false,
+            },
+            {"group_has_no_common_attribute": true},
+            {"group_all_active_permanent_reshape": true},
+        ],
+    }
+    _assert_true(
+        registry.validate_condition(
+            recursive_condition, report_error, "condition_probe"),
+        "all/any/not 递归条件由注册表完成结构校验")
+    _assert_equal(validation_errors, [], "合法递归条件没有校验错误")
+    _assert_true(
+        registry.evaluate(recursive_condition, runtime_context),
+        "all/any/not 与漂移字段由同一注册表完成运行判断")
+    _assert_true(
+        not registry.evaluate({"unknown_runtime_field": true}, runtime_context),
+        "运行时未知条件字段不会静默视为满足")
+
+    validation_errors.clear()
+    _assert_true(
+        not registry.validate_condition({
+            "all": [{"not": {"unknown_nested_field": true}}],
+        }, report_error, "nested_unknown"),
+        "递归结构中的未知条件字段被拒绝")
+    _assert_true(
+        _array_contains_text(validation_errors, "unknown_nested_field"),
+        "递归未知字段错误稳定定位到嵌套路径")
+    validation_errors.clear()
+    _assert_true(
+        not registry.validate_condition({
+            "capture_count_equals": {"capture": "cards"},
+        }, report_error, "bad_shape"),
+        "ConditionSpec 注册表校验字段内部结构")
+    _assert_true(
+        _array_contains_text(validation_errors, "缺少必填字段"),
+        "条件内部结构缺字段报告明确错误")
+
+    var repository = TechniqueRepositoryScript.new()
+    var technique_condition := {
+        "pool": "high",
+        "condition": {"attribute": "wind", "minimum": 2},
+    }
+    _assert_true(
+        repository.conditions_met(
+            technique_condition,
+            {"id": "pair", "contributing": [first, second]}, null, true)["ok"],
+        "功法自身属性数量条件由 ConditionSpec 注册表运行")
+    technique_condition["condition"]["minimum"] = 3
+    _assert_true(
+        not repository.conditions_met(
+            technique_condition,
+            {"id": "pair", "contributing": [first, second]}, null, true)["ok"],
+        "功法自身条件不满足时注册表拒绝启动")
+
+    validation_errors.clear()
+    var event_filters := {
+        "event_actor_is_owner": true,
+        "source_kind_in": ["technique", "response"],
+        "actual_life_loss_positive": true,
+        "owner": "actor",
+    }
+    _assert_true(
+        registry.validate_event_filters(
+            event_filters, report_error, "event_filters"),
+        "事件 filters 由注册表完成结构校验")
+    var event_owner = RefCounted.new()
+    var event_opponent = RefCounted.new()
+    _assert_true(
+        registry.event_matches(event_filters, {
+            "actor": event_owner,
+            "source_kind": "technique",
+            "actual_life_loss": 2,
+        }, event_owner, event_opponent, {"actor": event_owner}),
+        "同一事件字段定义同时用于运行匹配")
+    _assert_true(
+        not registry.event_matches(event_filters, {
+            "actor": event_opponent,
+            "source_kind": "technique",
+            "actual_life_loss": 2,
+        }, event_owner, event_opponent, {"actor": event_owner}),
+        "事件关系筛选在运行时拒绝不匹配事件")
+    _assert_true(
+        not registry.event_matches(
+            {"unknown_event_filter": true}, {}, event_owner),
+        "运行时未知事件筛选字段不会静默通过")
+    var resolved_capture_filters := registry.resolve_event_filters({
+        "source_tokens_from_capture": "block_sources",
+        "max_triggers": 1,
+    }, {
+        "block_sources": [{"source_token": "block-probe"}],
+    })
+    _assert_equal(
+        resolved_capture_filters.get("source_tokens", []),
+        ["block-probe"],
+        "捕获引用型事件筛选按注册定义解析为运行字段")
+    _assert_true(
+        not resolved_capture_filters.has("source_tokens_from_capture")
+            and registry.event_matches(
+                resolved_capture_filters,
+                {"source_token": "block-probe"}, event_owner),
+        "事件筛选捕获解析与运行匹配不再由 StatusSystem 维护字段分支")
+    validation_errors.clear()
+    _assert_true(
+        not registry.validate_event_filters({
+            "source_kind_in": "technique",
+            "unknown_event_filter": true,
+        }, report_error, "bad_event_filters"),
+        "事件 filters 同时拒绝未知字段和错误结构")
+    _assert_true(
+        _array_contains_text(validation_errors, "未知事件筛选字段")
+            and _array_contains_text(validation_errors, "非空字符串数组"),
+        "事件 filters 校验错误由注册定义稳定报告")
+
+    var base_catalog = ContentCatalogScript.new()
+    _assert_true(base_catalog.load_all(), "ConditionSpec 内容探针先载入合法基线")
+    var bad_technique_condition_values := _catalog_definitions(base_catalog)
+    var basic_index := _content_entry_index(
+        bad_technique_condition_values["techniques"]["techniques"],
+        "basic_scatter")
+    bad_technique_condition_values["techniques"]["techniques"][basic_index]["condition"] = {
+        "unknown_technique_condition": true,
+    }
+    var bad_technique_condition_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_technique_condition_catalog.load_from_definitions(
+            bad_technique_condition_values, base_catalog.paths),
+        "ContentValidator 校验功法自身 condition")
+    _assert_true(
+        _array_contains_text(
+            bad_technique_condition_catalog.errors,
+            "condition.unknown_technique_condition"),
+        "功法 condition 未知字段错误稳定定位")
+
+    var bad_effect_condition_values := _catalog_definitions(base_catalog)
+    basic_index = _content_entry_index(
+        bad_effect_condition_values["techniques"]["techniques"],
+        "basic_scatter")
+    bad_effect_condition_values["techniques"]["techniques"][basic_index]["effects"][0]["when"] = {
+        "all": [{"not": {"unknown_effect_condition": true}}],
+    }
+    var bad_effect_condition_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_effect_condition_catalog.load_from_definitions(
+            bad_effect_condition_values, base_catalog.paths),
+        "effect.when 继续使用同一递归 ConditionSpec 校验")
+    _assert_true(
+        _array_contains_text(
+            bad_effect_condition_catalog.errors,
+            "unknown_effect_condition"),
+        "effect.when 递归未知字段稳定报错")
+
+    var bad_event_filter_values := _catalog_definitions(base_catalog)
+    var trigger_patched := false
+    for technique in bad_event_filter_values["techniques"]["techniques"]:
+        for effect in technique.get("effects", []):
+            if effect.get("op", "") != "register_response":
+                continue
+            effect["filters"]["unknown_event_filter"] = true
+            trigger_patched = true
+            break
+        if trigger_patched:
+            break
+    _assert_true(trigger_patched, "正式内容中存在动态响应供事件筛选校验探针使用")
+    var bad_event_filter_catalog = ContentCatalogScript.new()
+    _assert_true(
+        not bad_event_filter_catalog.load_from_definitions(
+            bad_event_filter_values, base_catalog.paths),
+        "ContentValidator 通过统一注册表校验事件 filters")
+    _assert_true(
+        _array_contains_text(
+            bad_event_filter_catalog.errors,
+            "filters.unknown_event_filter"),
+        "事件未知 filters 字段稳定定位")
 
 func _test_passive_rule_registry_and_content_contract() -> void:
     var invalid_registry = PassiveRuleHandlerRegistryScript.new(false)

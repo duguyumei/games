@@ -3,6 +3,27 @@
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
 `godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
 
+## ConditionSpec 与事件 filters 框架优化（2026-08-16，已完成）
+
+本批只处理公共条件框架，没有新增、录入或实现特殊功法，正式资源数量仍为 211，25 门特殊
+候选的接入状态没有变化。
+
+已完成：`ConditionSpecRegistry` 成为 42 个实际条件字段的登记、结构校验和运行判断唯一事实
+源；修复 `group_snapshot_flag_value`、`group_has_no_common_attribute`、
+`group_all_active_permanent_reshape` 及全量扫描发现的字段名单漂移；`all`、`any`、`not`
+继续递归校验和递归运行。`EffectSpecValidator` 不再保存条件字段名单或逐字段结构分支，
+`EffectValueResolver` 不再保存条件运行 switch；功法仓库的启动条件也使用同一注册表。
+
+已完成：`ContentValidator` 现在校验功法自身 `condition`，同时继续校验每个 `effect.when`；
+事件 filters 的 57 个字段在同一事件定义表中登记类型、取值、比较与捕获引用解析，
+`StatusSystem` 不再单独维护三个 `*_from_capture` 转换分支。未知条件和未知事件筛选字段在
+内容加载时失败，运行时也不会静默满足。
+
+验证结果：新增未知字段、错误结构、递归条件、功法自身 condition、事件 filters 校验／运行
+与捕获引用解析测试；`content-contracts` 935 条断言、功法运行直跑 314 条断言通过；quick
+7/7 通过，其中项目加载检查覆盖 629 项。所有 Godot 调用使用不同的 `/tmp` 日志，除已知
+macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚本运行错误。
+
 ## 特殊功法运行底层改造（2026-08-15，公共底层已完成）
 
 本节只记录当前工作区已经通过门禁的公共能力，不代表 25 门特殊候选已经成为正式资源。冻结规则先写入功法框架、行动结算、伤害防御、真气状态与地图生命权威文档；本批没有新增特殊功法 `.tres`，正式资源数量继续为 211。

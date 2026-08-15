@@ -30,6 +30,31 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### ConditionSpec 与事件 filters 单一事实源（2026-08-16）
+
+本次只重构条件框架，不新增或实现特殊功法。`ConditionSpecRegistry` 现在以字段定义表同时
+登记条件字段、参数结构、递归规则和运行处理器；当前扫描到的 42 个实际条件字段均已纳入，
+包括此前只存在于运行分支、未进入校验白名单的 `group_snapshot_flag_value`、
+`group_has_no_common_attribute` 与 `group_all_active_permanent_reshape`。`all`、`any`、
+`not` 的子条件由注册表递归校验和递归求值，未知或运行时结构非法的条件不会静默通过。
+
+`EffectSpecValidator` 已删除条件字段、递归形状、属性、牌型与整数规则的平行判断，只把
+校验请求及 `ValueSpec` 回调交给注册表；`EffectValueResolver` 已删除逐字段条件分支，只向
+注册表提供数值解析回调。功法仓库的属性数量与纯属性启动条件也改走同一注册表，
+`ContentValidator` 现在显式校验每门功法自身的 `condition`，不再只校验 `effect.when`。
+
+事件 filters 采用同一登记模式，当前 57 个字段的类型、事件取值、比较方式和捕获引用解析
+均由 `ConditionSpecRegistry` 的事件定义表驱动。`StatusSystem` 已删除
+`card_instance_ids_from_capture`、`source_card_instance_ids_from_capture`、
+`source_tokens_from_capture` 三套字段分支，动态响应、自动触发和格挡运行时共用同一匹配入口。
+以后复用既有条件／事件处理类型的新字段只增加一条注册定义，不再同步修改多个字段白名单
+和多个 switch。
+
+验证证据：ConditionSpec／事件 filters 新增未知字段、内部结构、递归组合、功法自身条件、
+捕获引用解析与运行匹配测试；`content-contracts` 935 条、功法运行直跑 314 条通过；quick
+7/7 通过，项目加载检查覆盖 629 项。全部 Godot 进程使用独立 `/tmp` 日志，除已知 macOS
+CA 证书警告外未出现脚本加载、文件缺失、解析或运行错误。
+
 ### 山系公共底层与49门正式接入（2026-08-14）
 
 山系批次复用了冻结牌型组快照和窄效果端口，不在中央流程识别功法名称。`HandGroupSnapshot` 分别冻结主组／协同组的实际打出牌、计值牌、额外牌、C、基础值、当前有效值、可视属性、共同属性和成功打出时捕获集合；`EffectValueResolver` 与 `EffectTargetQuery` 提供额外牌有效值／数量、共同属性、基础值总和、精确牌型、上一成功牌型和同步敌方普通攻击投影。

@@ -4,6 +4,8 @@ extends RefCounted
 const DATA_PATH := "res://data/techniques.json"
 const DefinitionScript = preload("res://core/technique_definition.gd")
 const InstanceScript = preload("res://core/technique_instance.gd")
+const ConditionSpecRegistryScript = preload(
+    "res://core/specs/condition_spec_registry.gd")
 var techniques: Dictionary = {}
 var pool_membership: Dictionary = {}
 var definitions: Dictionary = {}
@@ -11,6 +13,7 @@ var integration_statuses: Dictionary = {}
 var resource_paths: Array = []
 var loaded_successfully: bool = false
 var last_error: String = ""
+var condition_registry = ConditionSpecRegistryScript.new()
 
 func load_from_file(path: String = DATA_PATH) -> bool:
     loaded_successfully = false
@@ -150,16 +153,13 @@ func conditions_met(technique, hand_result: Dictionary, identity_policy = null,
     var condition: Dictionary = _definition_value(technique, "condition", {})
     if condition.is_empty():
         return {"ok": true, "reason": "条件满足"}
-    if condition.has("attribute"):
-        var wanted: String = condition["attribute"]
-        var count := 0
-        for card in hand_result.get("contributing", []):
-            if _card_has_attribute(card, wanted, identity_policy):
-                count += 1
-        if count < int(condition.get("minimum", 1)):
-            return {"ok": false, "reason": "参与最高牌型的%s属性真气不足" % wanted}
-    if condition.has("pure_attribute") and not is_pure_attribute(hand_result, condition["pure_attribute"], identity_policy):
-        return {"ok": false, "reason": "参与最高牌型的真气不是纯属性"}
+    if not condition_registry.evaluate(condition, {
+            "hand_result": hand_result,
+            "actual_hand_id": hand_id,
+            "played_cards": hand_result.get("played", []),
+            "card_identity_policy": identity_policy,
+        }):
+        return {"ok": false, "reason": "功法条件不满足"}
     return {"ok": true, "reason": "条件满足"}
 
 func _definition_value(technique, key: String, fallback):

@@ -150,23 +150,8 @@ func register_response(
     var runtime = EffectContextScript.coerce(context)
     if not BattleEventCatalogScript.forwards_dynamic_response(event_kind):
         return {"success": false, "reason": "未知动态响应事件：%s" % event_kind}
-    var resolved_filters := filters.duplicate(true)
-    if resolved_filters.has("card_instance_ids_from_capture"):
-        var capture_id := str(resolved_filters["card_instance_ids_from_capture"])
-        resolved_filters["card_instance_ids"] = runtime.captures.get(capture_id, []).map(
-            func(card): return str(card.id))
-        resolved_filters.erase("card_instance_ids_from_capture")
-    if resolved_filters.has("source_card_instance_ids_from_capture"):
-        var capture_id := str(resolved_filters["source_card_instance_ids_from_capture"])
-        resolved_filters["source_card_instance_ids"] = runtime.captures.get(
-            capture_id, []).map(func(card): return str(card.id))
-        resolved_filters.erase("source_card_instance_ids_from_capture")
-    if resolved_filters.has("source_tokens_from_capture"):
-        var capture_id := str(resolved_filters["source_tokens_from_capture"])
-        resolved_filters["source_tokens"] = runtime.captures.get(
-            capture_id, []).map(func(value): return str(
-                value.get("source_token", "") if value is Dictionary else ""))
-        resolved_filters.erase("source_tokens_from_capture")
+    var resolved_filters := condition_registry.resolve_event_filters(
+        filters, runtime.captures)
     var record := {
         "id": "response-%06d" % _delay_serial,
         "event_kind": event_kind,

@@ -59,6 +59,8 @@ func _init(
         effect_registry.value_resolver.condition_registry
         if effect_registry != null and effect_registry.value_resolver != null
         else ConditionSpecRegistryScript.new())
+    _condition_spec_registry.configure_validation(
+        vocabulary, Callable(self, "validate_amount_spec"))
 
 ## 提供引用检查所需的索引。索引在内容校验过程中增量建立，因此单独设置。
 func use_indexes(anomalies_by_id: Dictionary) -> void:
@@ -109,7 +111,7 @@ func _validate_single_effect(
     if not condition is Dictionary:
         _error(effect_scope + ".when", "必须是对象")
     else:
-        _validate_condition(condition, effect_scope + ".when")
+        validate_condition(condition, effect_scope + ".when")
     if registered and operation_source is String and operation_source == "battle":
         _effect_registry.validate_effect(effect, self, effect_scope)
 
@@ -121,40 +123,9 @@ func validate_anomaly_reference(effect: Dictionary, effect_scope: String) -> voi
     elif str(_anomalies_by_id[anomaly_id].get("category", "")) != category:
         _error(effect_scope, "异状 %s 不属于类别 %s" % [anomaly_id, category])
 
-func _validate_condition(condition: Dictionary, scope: String) -> void:
+func validate_condition(condition: Dictionary, scope: String) -> void:
     _condition_spec_registry.validate_condition(
         condition, Callable(self, "_error"), scope)
-    for list_field in ["all", "any"]:
-        if not condition.has(list_field):
-            continue
-        if not condition[list_field] is Array:
-            _error(scope + "." + list_field, "必须是数组")
-            continue
-        for index in range(condition[list_field].size()):
-            var child = condition[list_field][index]
-            var child_scope := "%s.%s[%d]" % [scope, list_field, index]
-            if not child is Dictionary:
-                _error(child_scope, "必须是对象")
-            else:
-                _validate_condition(child, child_scope)
-    if condition.has("not"):
-        if not condition["not"] is Dictionary:
-            _error(scope + ".not", "必须是对象")
-        else:
-            _validate_condition(condition["not"], scope + ".not")
-    if condition.has("pure_attribute") \
-            and not _attribute_ids.has(str(condition["pure_attribute"])):
-        _error(scope + ".pure_attribute", "引用未知属性 %s" % str(condition["pure_attribute"]))
-    if condition.has("hand_id") \
-            and not _hand_ids.has(str(condition["hand_id"])):
-        _error(scope + ".hand_id", "引用未知精确牌型 %s" % str(condition["hand_id"]))
-    if condition.has("exact_hand_id") \
-            and not _hand_ids.has(str(condition["exact_hand_id"])):
-        _error(scope + ".exact_hand_id", "引用未知精确牌型 %s" % str(condition["exact_hand_id"]))
-    if condition.has("actor_defense_equals") \
-            and (not _is_integer(condition["actor_defense_equals"]) \
-            or int(condition["actor_defense_equals"]) < 0):
-        _error(scope + ".actor_defense_equals", "必须是非负整数")
 
 func validate_choice_effect(effect: Dictionary, scope: String) -> void:
     if not effect.get("choice_id") is String or str(effect.get("choice_id", "")) == "":
