@@ -36,7 +36,8 @@ func _damage_holder_by_current_qi(context) -> Dictionary:
     if context.holder == null or context.card == null or context.effect_ports == null:
         return {"success": false, "detail": "真气伤害状态缺少持有者、真气或战斗端口"}
     var amount: int = int(context.behavior.get(
-        "frozen_amount", context.status_system.effective_qi_value(context.card)))
+        "frozen_amount",
+        context.card_anomaly_service.effective_qi_value(context.card)))
     var triggered: Dictionary = context.effect_ports.trigger_poison_card(
         context.holder, context.card, context.action_token,
         context.replay_depth > 0, amount)
@@ -62,7 +63,7 @@ func _grow_anomaly_layers(context) -> Dictionary:
     var layers: int = context.card.anomaly_layers(context.category, context.status_id)
     if layers <= 0:
         return {"success": true, "applied": false}
-    return context.status_system.apply_card_anomaly(
+    return context.card_anomaly_service.apply_card_anomaly(
         context.card,
         str(context.behavior.get("category", "")),
         str(context.behavior.get("anomaly", "")),
@@ -178,7 +179,7 @@ func _source_metadata(context) -> Dictionary:
     }
 
 func _remove_self(context) -> void:
-    context.status_system.remove_card_anomaly(
+    context.card_anomaly_service.remove_card_anomaly(
         context.card,
         context.category,
         context.status_id,

@@ -6,10 +6,8 @@ const StatusHistoryServiceScript = preload(
     "res://core/statuses/status_history_service.gd")
 const CardAnomalyServiceScript = preload(
     "res://core/statuses/card_anomaly_service.gd")
-const StatusBehaviorRegistryScript = preload(
-    "res://core/statuses/status_behavior_registry.gd")
-const StatusBehaviorContextScript = preload(
-    "res://core/statuses/status_behavior_context.gd")
+const CardStatusBehaviorServiceScript = preload(
+    "res://core/statuses/card_status_behavior_service.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 const ConditionSpecRegistryScript = preload(
     "res://core/specs/condition_spec_registry.gd")
@@ -22,11 +20,11 @@ var history: Array = []
 var _delay_serial: int = 0
 var status_history
 var card_anomaly_service
+var card_status_behavior_service
 var _effect_ports_ref
 var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
 var behavior_registry
-var _card_trigger_replay_service = null
 var _rng: RandomNumberGenerator = null
 var battle_permission_service = null
 var condition_registry = ConditionSpecRegistryScript.new()
@@ -37,11 +35,13 @@ func _init(
         game_log_override = null,
         effect_ports = null) -> void:
     content_catalog = catalog
-    behavior_registry = StatusBehaviorRegistryScript.new()
     timing_system = battle_timing_system
     status_history = StatusHistoryServiceScript.new(catalog, game_log_override)
     card_anomaly_service = CardAnomalyServiceScript.new(
         catalog, status_history)
+    card_status_behavior_service = CardStatusBehaviorServiceScript.new(
+        catalog, card_anomaly_service)
+    behavior_registry = card_status_behavior_service.behavior_registry
     history = status_history.history_entries()
     use_effect_ports(effect_ports)
     if timing_system != null:
@@ -127,15 +127,17 @@ func replace_history(entries: Array) -> void:
 func use_effect_ports(effect_ports) -> void:
     _effect_ports_ref = weakref(effect_ports) if effect_ports != null else null
     card_anomaly_service.use_effect_ports(effect_ports)
+    card_status_behavior_service.use_effect_ports(effect_ports)
 
 func use_effect_executor(executor) -> void:
     _effect_executor = executor
 
 func use_card_trigger_replay_service(service) -> void:
-    _card_trigger_replay_service = service
+    card_status_behavior_service.use_card_trigger_replay_service(service)
 
 func use_rng(random_source: RandomNumberGenerator) -> void:
     _rng = random_source
+    card_status_behavior_service.use_rng(random_source)
 
 func use_battle_permission_service(service) -> void:
     battle_permission_service = service

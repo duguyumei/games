@@ -21,7 +21,7 @@ var attacker = null
 var source_kind: String = ""
 var defense_lost: int = 0
 var life_lost: int = 0
-var status_system = null
+var card_anomaly_service = null
 var effect_ports = null
 var source_card_instance_id: String = ""
 var source_trigger: String = ""
@@ -47,7 +47,7 @@ func configure(values: Dictionary):
     source_kind = str(values.get("source_kind", ""))
     defense_lost = int(values.get("defense_lost", 0))
     life_lost = int(values.get("life_lost", 0))
-    status_system = values.get("status_system")
+    card_anomaly_service = values.get("card_anomaly_service")
     effect_ports = values.get("effect_ports")
     source_card_instance_id = str(values.get("source_card_instance_id", ""))
     source_trigger = str(values.get("source_trigger", ""))
