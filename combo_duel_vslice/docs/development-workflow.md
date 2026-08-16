@@ -100,6 +100,7 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 | 效果执行 | `core/effects/` 下对应处理器 |
 | 效果如何修改战斗状态 | `core/effects/battle_effect_ports.gd`（唯一窄端口） |
 | 伤害、防御与生命结算实现 | `core/effects/battle_survival_effect_service.gd`（Facade 内部服务） |
+| 牌区、真气异状与临时重塑实现 | `core/effects/battle_card_effect_service.gd`（Facade 内部服务） |
 | 被动标准效果何时执行 | `passives/battle_effects_passive_handler.gd` 只建立普通效果计划 |
 | 回合生命周期 | `battle_round_service.gd` |
 | 行动事务顺序 | `battle_action_service.gd` |
@@ -123,6 +124,24 @@ Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID �
 `File not found`、`Parse Error` 与 `SCRIPT ERROR`。该批不运行 `quick`／`full`；完整回归统一留到
 `BattleEffectPorts`、`BattleActionService` 和 `StatusSystem` 全部结构优化结束后执行，不能把
 当前最小专项门禁描述为全部回归通过。
+
+第二批牌区／真气／异状／临时重塑拆分同样保留 `BattleEffectPorts` 的全部公开签名。Facade
+负责把 `source_kind`、`source_id`、`source_name`、`source_instance_key`、`trigger_mode` 与
+`draw_reason` 规范化后委托 `BattleCardEffectService`。内部服务可以持有 `StatusSystem` 的真气
+状态窄能力、双方只读集合、统一战斗 RNG 和 `CardReshapeBattleRuntime`，但不得持有完整
+`CombatEngine`、回指 Facade、直接修改 `BattleSide` 牌区数组或自建随机源。牌区写操作必须经过
+`CardZoneService`；明确弃牌沿用明确注入的 `BattlePermissionService`，同步移动和原子交换继续
+先冻结完整合法目标集。异状继续经 `StatusSystem`／`CardStateLifecycle` 合法性与事件路径，临时
+重塑只写战斗槽位，不改变基础身份或本局永久牌组。
+
+`trigger_poison_card` 暂留 Facade，以现有卡牌服务和 `BattleSurvivalEffectService` 组合真气状态、
+毒伤与事务事件，禁止复制毒伤算法。`notify_cards_played`、`notify_poison_triggered`、响应监听、
+来源标识、连势／同气、延迟效果和功法调用留给后续批次。本批只运行项目加载与
+`res://tests/test_battle_card_effects.gd`，每次调用使用独立
+`/tmp/taiwu-battle-effect-card-<用途>-<序号>.log`，并扫描 `Can't load script`、
+`File not found`、`Parse Error` 与 `SCRIPT ERROR`。专项当前覆盖牌区移动、虚无、临时真气、异状、
+临时重塑、同步／原子移动和毒异状桥接；`quick`／`full` 延后到 `BattleEffectPorts`、
+`BattleActionService` 与 `StatusSystem` 全部结构优化完成后统一执行。
 
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、

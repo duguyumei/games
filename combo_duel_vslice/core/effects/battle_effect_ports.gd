@@ -5,6 +5,8 @@ const EffectSourceProtocolScript = preload(
     "res://core/effects/effect_source_protocol.gd")
 const BattleSurvivalEffectServiceScript = preload(
     "res://core/effects/battle_survival_effect_service.gd")
+const BattleCardEffectServiceScript = preload(
+    "res://core/effects/battle_card_effect_service.gd")
 
 ## 效果处理器修改战斗状态的唯一窄端口。
 ##
@@ -17,7 +19,6 @@ var _battle_flow: BattleFlowCoordinator
 var _trigger_queue: VisibleTriggerQueue
 var _sides: Array[BattleSide] = []
 var _hand_retrigger_callback: Callable
-var _card_reshape_runtime_ref: WeakRef
 var _consumable_repository
 var _battle_rule_query_service
 var _committed_event_service
@@ -31,6 +32,7 @@ var _effect_context_stack: Array = []
 var _effect_context_slot_entries: Dictionary = {}
 var _immediate_effects_by_context: Dictionary = {}
 var _survival_effect_service
+var _card_effect_service
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -42,6 +44,7 @@ func _init(
     _trigger_queue = trigger_queue
     _survival_effect_service = BattleSurvivalEffectServiceScript.new(
         damage_resolver, status_system, trigger_queue)
+    _card_effect_service = BattleCardEffectServiceScript.new(status_system)
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
     _trigger_queue = trigger_queue
@@ -50,12 +53,16 @@ func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
 func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
     _survival_effect_service.use_sides(first, second)
+    _card_effect_service.use_sides(first, second)
 
 func use_hand_retrigger_callback(callback: Callable) -> void:
     _hand_retrigger_callback = callback
 
 func use_card_reshape_runtime(runtime) -> void:
-    _card_reshape_runtime_ref = weakref(runtime)
+    _card_effect_service.use_card_reshape_runtime(runtime)
+
+func use_battle_permission_service(service) -> void:
+    _card_effect_service.use_battle_permission_service(service)
 
 func use_consumable_repository(repository) -> void:
     _consumable_repository = repository
@@ -72,6 +79,7 @@ func use_passive_battle_services(
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
+    _card_effect_service.use_battle_rng(rng)
 
 func battle_rng() -> RandomNumberGenerator:
     return _battle_rng
@@ -233,25 +241,7 @@ func is_current_side(side) -> bool:
     return side != null and _sides.has(side)
 
 func locate_active_card(card_instance_id: String) -> Dictionary:
-    if card_instance_id == "":
-        return {"success": false, "reason": "卡牌实例 ID 不能为空"}
-    var matches: Array[Dictionary] = []
-    for side in _sides:
-        var location: Dictionary = side.card_zone_service.find_active_location(
-            side, card_instance_id)
-        if not location.is_empty():
-            matches.append({
-                "side": side,
-                "zone": str(location["zone"]),
-                "card": location["card"],
-            })
-    if matches.is_empty():
-        return {"success": false, "reason": "当前战斗不存在目标卡牌"}
-    if matches.size() > 1:
-        return {"success": false, "reason": "当前战斗存在重复卡牌实例 ID"}
-    var result: Dictionary = matches[0]
-    result["success"] = true
-    return result
+    return _card_effect_service.locate_active_card(card_instance_id)
 
 func opponent_of(side: BattleSide) -> BattleSide:
     for candidate in _sides:
@@ -260,10 +250,7 @@ func opponent_of(side: BattleSide) -> BattleSide:
     return null
 
 func side_holding_card(card, zone: String) -> BattleSide:
-    for side in _sides:
-        if zone_cards(side, zone).has(card):
-            return side
-    return null
+    return _card_effect_service.side_holding_card(card, zone)
 
 func deal_damage(
         actor: BattleSide,
@@ -565,7 +552,7 @@ func transfer_card_anomaly(
         anomaly_id: String,
         source: String,
         event_metadata: Dictionary = {}) -> Dictionary:
-    return _status_system.transfer_card_anomaly(
+    return _card_effect_service.transfer_card_anomaly(
         source_card, target_card, category, anomaly_id, source, event_metadata)
 
 func set_reflection_percent(
@@ -686,115 +673,27 @@ func generate_temporary_normal_card(
         side: BattleSide,
         source,
         options: Dictionary = {}):
-    if _battle_rng == null:
-        return null
-    var base_deck = JSON.parse_string(FileAccess.get_file_as_string(
-        "res://data/base_deck.json"))
-    if not base_deck is Dictionary or not base_deck.get("ranks") is Array:
-        return null
-    var ranks: Array = base_deck["ranks"]
-    var attributes: Array = base_deck.get("attributes", [])
-    var base_attribute: String = str(source.get("attribute")) \
-        if source is Object else str(source)
-    if base_attribute not in ["wind", "forest", "fire", "mountain"]:
-        return null
-    var attribute := base_attribute
-    if str(options.get("attribute_mode", "same_base")) == "random_other_base":
-        var attribute_ids: Array[String] = []
-        for value in attributes:
-            var attribute_id := str(value.get("id", ""))
-            if attribute_id != base_attribute:
-                attribute_ids.append(attribute_id)
-        if attribute_ids.is_empty():
-            return null
-        attribute = attribute_ids[_battle_rng.randi_range(0, attribute_ids.size() - 1)]
-    var rank: Dictionary = ranks[_battle_rng.randi_range(0, ranks.size() - 1)]
-    if source is Object and source.has_method("current_rank_order"):
-        var source_order := int(source.current_rank_order())
-        var wanted_order := source_order
-        match str(options.get("rank_mode", "same_current")):
-            "random_adjacent":
-                wanted_order = source_order + (1 if source_order <= 2 else -1 \
-                    if source_order >= 14 else [-1, 1][
-                        _battle_rng.randi_range(0, 1)])
-            "random":
-                wanted_order = int(rank.get("order", 0))
-        for value in ranks:
-            if int(value.get("order", 0)) == wanted_order:
-                rank = value
-                break
-    var card = QiCard.new(
-        "%s-temp-%d" % [attribute, _battle_rng.randi()],
-        str(rank.get("id", "")), int(rank.get("order", 0)),
-        int(rank.get("qi", 0)), attribute, attribute,
-        "%s_%s" % [attribute, str(rank.get("id", "")).to_lower()])
-    card.temporary_card = true
-    if bool(options.get("add_void", true)):
-        var applied: Dictionary = apply_card_anomaly(
-            card, "mark", "void", {}, "临时真气", 1, false)
-        if not applied.get("success", false):
-            return null
-    var added: Dictionary = side.card_zone_service.add_generated(side, card, "hand", true)
-    return card if added.get("success", false) else null
+    return _card_effect_service.generate_temporary_normal_card(
+        side, source, options)
 
 func steal_random_normal_card(
         actor: BattleSide, target: BattleSide, source_value = "") -> Dictionary:
-    if actor == null or target == null or _battle_rng == null:
-        return {"success": false}
-    var candidates: Array = target.draw_pile.filter(
-        func(card): return card.is_card_kind("normal"))
-    if candidates.is_empty():
-        return {"success": false}
-    var card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
-    return move_card(
-        target, "draw_pile", actor, "hand", card, "steal", "top",
-        source_value)
+    return _card_effect_service.steal_random_normal_card(
+        actor, target, _effect_source_metadata(source_value))
 
 func recover_forest_priority(
         actor: BattleSide,
         maximum_qi: int,
         prefer_permanent: bool,
         source_value = "") -> Dictionary:
-    if actor == null or _battle_rng == null:
-        return {"success": false}
-    var plain: Array = []
-    var reshaped: Array = []
-    for card in actor.discard_pile:
-        if not card.is_card_kind("normal") or current_effective_qi(actor, card) > maximum_qi:
-            continue
-        var permanent: bool = not card.reshape_origin.is_empty() \
-            or card.reshape_enhancement != "" or card.reshape_imprint != "" \
-            or not card.reshape_others.is_empty()
-        (reshaped if permanent else plain).append(card)
-    var candidates: Array = reshaped if prefer_permanent and not reshaped.is_empty() else plain
-    if candidates.is_empty():
-        return {"success": false}
-    var card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
-    return move_card(
-        actor, "discard_pile", actor, "hand", card, "recover", "top",
-        source_value)
+    return _card_effect_service.recover_forest_priority(
+        actor, maximum_qi, prefer_permanent,
+        _effect_source_metadata(source_value))
 
 func burn_deck_then_heat_hand(
         actor: BattleSide, bottom_first: bool, choice_capture: String, context) -> Dictionary:
-    var candidates: Array = actor.draw_pile.filter(func(card):
-        return card.is_card_kind("normal") and not card.is_attribute("fire") \
-            and can_apply_card_anomaly(card, "mark", "burned_out").get("allowed", false))
-    if candidates.is_empty():
-        return {"success": true, "detail": ""}
-    var card = null
-    if bottom_first:
-        card = candidates[0]
-    else:
-        card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
-    var applied := apply_card_anomaly(card, "mark", "burned_out", {}, "引火式")
-    if not applied.get("success", false):
-        return {"success": true, "detail": ""}
-    var heat_targets: Array = context.captures.get(choice_capture, [])
-    if not heat_targets.is_empty():
-        var layers := int(floor(card.current_base_qi_value() / 2.0))
-        if layers > 0:
-            apply_card_anomaly(heat_targets[0], "buff", "qi_heat", {}, "引火式", layers)
-    return {"success": true, "detail": "燃尽并施加炽气"}
+    return _card_effect_service.burn_deck_then_heat_hand(
+        actor, bottom_first, choice_capture, context)
 
 func can_grant_battle_consumable(side: BattleSide) -> bool:
     return side.consumable_ids.size() < side.consumable_limit
@@ -806,27 +705,24 @@ func consumable_ids_by_kind(kind: String) -> Array[String]:
     return _consumable_repository.ids_by_kind(kind)
 
 func place_on_draw_pile_top(side: BattleSide, card) -> Dictionary:
-    return side.card_zone_service.place_on_draw_pile_top(side, card)
+    return _card_effect_service.place_on_draw_pile_top(side, card)
 
 func temporarily_remove_card(
         side: BattleSide,
         instance_id: String,
         reason: String,
         source_value = "") -> Dictionary:
-    return side.temporarily_remove_card(
-        instance_id, reason, _effect_source_metadata(source_value))
+    return _card_effect_service.temporarily_remove_card(
+        side, instance_id, reason, _effect_source_metadata(source_value))
 
 func can_explicit_discard(side: BattleSide, card) -> Dictionary:
-    var runtime = _card_reshape_runtime()
-    if runtime == null:
-        return {"allowed": true}
-    return runtime.can_explicit_discard(side, card)
+    return _card_effect_service.can_explicit_discard(side, card)
 
 func notify_cards_played(
         side: BattleSide,
         cards: Array,
         source_values: Dictionary = {}) -> Array[Dictionary]:
-    var runtime = _card_reshape_runtime()
+    var runtime = _card_effect_service.card_reshape_runtime()
     return runtime.on_card_played(
         side, cards, source_values) if runtime != null else []
 
@@ -845,35 +741,27 @@ func notify_response_event(event_kind: String, values: Dictionary) -> void:
         _status_system.handle_response_event(event_kind, values)
 
 func successful_on_play_ids(action_token: String) -> Array:
-    var runtime = _card_reshape_runtime()
+    var runtime = _card_effect_service.card_reshape_runtime()
     return runtime.successful_on_play_ids(action_token) if runtime != null else []
 
 func register_direct_card_trigger_listener(
         listener_id: String,
         listener) -> bool:
-    var runtime = _card_reshape_runtime()
+    var runtime = _card_effect_service.card_reshape_runtime()
     return runtime != null and runtime.trigger_replay_service \
         .register_direct_listener(listener_id, listener)
 
 func unregister_direct_card_trigger_listener(listener_id: String) -> bool:
-    var runtime = _card_reshape_runtime()
+    var runtime = _card_effect_service.card_reshape_runtime()
     return runtime != null and runtime.trigger_replay_service \
         .unregister_direct_listener(listener_id)
 
 func finalize_reshape_action(side: BattleSide, preview: Dictionary) -> Dictionary:
-    var runtime = _card_reshape_runtime()
-    if runtime == null:
-        return {"success": true, "reused": false}
-    return runtime.finalize_action_preview(side, preview)
+    return _card_effect_service.finalize_reshape_action(side, preview)
 
 func draw(side: BattleSide, count: int, source_value = "") -> Array:
-    var source := _draw_source_metadata(source_value)
-    var draw_reason := str(source.get("draw_reason", "effect_draw"))
-    source.erase("draw_reason")
-    var drawn: Array = side.draw(count, draw_reason, source)
-    if str(source["source_kind"]) == "technique":
-        _status_system.record_technique_card_flow(side, "draw", drawn.size())
-    return drawn
+    return _card_effect_service.draw(
+        side, count, _draw_source_metadata(source_value))
 
 func _draw_source_metadata(source_value) -> Dictionary:
     if source_value is Dictionary:
@@ -926,30 +814,22 @@ func shuffle_zone(
         side: BattleSide,
         zone: String,
         rng: RandomNumberGenerator) -> void:
-    side.card_zone_service.shuffle(side.card_zone_service.zone(side, zone), rng)
+    _card_effect_service.shuffle_zone(side, zone, rng)
 
 func current_effective_qi(side: BattleSide, card) -> int:
-    var reshape_value: int = (
-        card.effective_qi_value()
-        if card.has_method("effective_qi_value") else int(card.qi_value))
-    return maxi(0, _status_system.modify_card_contribution(
-        card, reshape_value, side))
+    return _card_effect_service.current_effective_qi(side, card)
 
 func discard_random(
         side: BattleSide,
         count: int,
         rng: RandomNumberGenerator,
         source_value = "") -> Array:
-    var discarded: Array = side.random_discard(count, rng)
-    if str(_effect_source_metadata(source_value)["source_kind"]) == "technique":
-        _status_system.record_technique_card_flow(side, "discard", discarded.size())
-    return discarded
+    return _card_effect_service.discard_random(
+        side, count, rng, _effect_source_metadata(source_value))
 
 func discard_all(side: BattleSide, source_value = "") -> Array:
-    var discarded: Array = side.discard_all()
-    if str(_effect_source_metadata(source_value)["source_kind"]) == "technique":
-        _status_system.record_technique_card_flow(side, "discard", discarded.size())
-    return discarded
+    return _card_effect_service.discard_all(
+        side, _effect_source_metadata(source_value))
 
 func move_card(
         source_side: BattleSide,
@@ -960,85 +840,31 @@ func move_card(
         reason: String = "effect",
         placement: String = "top",
         source_kind = "") -> Dictionary:
-    var effect_source := _effect_source_metadata(source_kind)
-    var result: Dictionary
-    if source_side == target_side:
-        result = source_side.card_zone_service.move_card(
-            source_side, source_zone, destination_zone, card, reason,
-            effect_source)
-    else:
-        result = source_side.temporarily_transfer_card_to(
-            target_side, str(card.id), destination_zone, reason,
-            effect_source)
-    if result.get("success", false) and placement == "bottom":
-        var destination: Array = target_side.card_zone_service.zone(
-            target_side, destination_zone)
-        destination.erase(card)
-        destination.push_front(card)
-    if result.get("success", false) \
-            and str(effect_source["source_kind"]) == "technique":
-        if destination_zone == "hand" and reason == "draw":
-            _status_system.record_technique_card_flow(target_side, "draw", 1)
-        elif destination_zone == "discard_pile" and reason == "explicit_discard":
-            _status_system.record_technique_card_flow(source_side, "discard", 1)
-    return result
+    return _card_effect_service.move_card(
+        source_side, source_zone, target_side, destination_zone, card,
+        reason, placement, _effect_source_metadata(source_kind))
 
 func move_cards_synchronously(records: Array, source_value = "") -> Array:
-    if records.is_empty():
-        return []
-    var first_side = records[0].get("side")
-    if first_side == null:
-        return []
-    var effect_source := _effect_source_metadata(source_value)
-    var sourced_records: Array = []
-    for record_value in records:
-        var sourced_record: Dictionary = record_value.duplicate(true)
-        sourced_record["source_metadata"] = effect_source.duplicate(true)
-        sourced_records.append(sourced_record)
-    var moved: Array = first_side.card_zone_service.move_cards_synchronously(
-        sourced_records)
-    for record in records:
-        if str(effect_source["source_kind"]) == "technique" \
-                and moved.has(record.get("card")) \
-                and str(record.get("reason", "")) == "explicit_discard":
-            _status_system.record_technique_card_flow(record.get("side"), "discard", 1)
-    return moved
+    return _card_effect_service.move_cards_synchronously(
+        records, _effect_source_metadata(source_value))
 
 func transfer_cards_atomically(records: Array, source_value = "") -> Array:
-    if records.is_empty():
-        return []
-    var first_side = records[0].get("source_side")
-    if first_side == null:
-        return []
-    var effect_source := _effect_source_metadata(source_value)
-    var sourced_records: Array = []
-    for record_value in records:
-        var sourced_record: Dictionary = record_value.duplicate(true)
-        sourced_record["source_metadata"] = effect_source.duplicate(true)
-        sourced_records.append(sourced_record)
-    return first_side.card_zone_service.temporarily_transfer_many(sourced_records)
+    return _card_effect_service.transfer_cards_atomically(
+        records, _effect_source_metadata(source_value))
 
 func atomic_exchange_cards(
         actor_side: BattleSide, actor_zone: String, actor_card,
         target_side: BattleSide, target_zone: String, target_card,
         source_value = "") -> Dictionary:
-    return actor_side.card_zone_service.atomic_exchange(
+    return _card_effect_service.atomic_exchange_cards(
         actor_side, actor_zone, actor_card, target_side, target_zone, target_card,
         _effect_source_metadata(source_value))
 
 func zone_cards(side: BattleSide, zone: String) -> Array:
-    match zone:
-        "hand": return side.hand.duplicate()
-        "draw_pile": return side.draw_pile.duplicate()
-        "staging": return side.staging.duplicate()
-        "discard_pile": return side.discard_pile.duplicate()
-    return []
+    return _card_effect_service.zone_cards(side, zone)
 
 func query_effect_targets(context, query_spec: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
-    var QueryScript = load("res://core/effects/effect_target_query.gd")
-    var values := query_spec.duplicate(true)
-    values["card_identity_policy"] = context.card_identity_policy
-    return QueryScript.new().configure(values).resolve(context, rng)
+    return _card_effect_service.query_effect_targets(context, query_spec, rng)
 
 func apply_card_anomaly(
         card,
@@ -1049,7 +875,7 @@ func apply_card_anomaly(
         layers: int = 1,
         replace_state: bool = false,
         event_metadata: Dictionary = {}) -> Dictionary:
-    return _status_system.apply_card_anomaly(
+    return _card_effect_service.apply_card_anomaly(
         card, category, anomaly_id, payload, source, layers, replace_state,
         event_metadata)
 
@@ -1058,7 +884,7 @@ func can_apply_card_anomaly(
         category: String,
         anomaly_id: String,
         replace_state: bool = false) -> Dictionary:
-    return _status_system.can_apply_card_anomaly(
+    return _card_effect_service.can_apply_card_anomaly(
         card, category, anomaly_id, replace_state)
 
 func remove_card_anomaly(
@@ -1067,7 +893,7 @@ func remove_card_anomaly(
         anomaly_id: String = "",
         source: String = "效果",
         event_metadata: Dictionary = {}) -> Dictionary:
-    return _status_system.remove_card_anomaly(
+    return _card_effect_service.remove_card_anomaly(
         card, category, anomaly_id, source, event_metadata)
 
 func set_card_anomaly_layers(
@@ -1076,59 +902,35 @@ func set_card_anomaly_layers(
         anomaly_id: String,
         layers: int,
         source: String = "效果") -> Dictionary:
-    return _status_system.set_card_anomaly_layers(
+    return _card_effect_service.set_card_anomaly_layers(
         card, category, anomaly_id, layers, source)
 
 func apply_temporary_enhancement(card, enhancement_id: String) -> Dictionary:
-    if card == null or enhancement_id == "":
-        return {"success": false, "reason": "临时强化参数无效"}
-    return {
-        "success": card.set_temporary_enhancement(enhancement_id),
-        "enhancement": enhancement_id,
-    }
+    return _card_effect_service.apply_temporary_enhancement(
+        card, enhancement_id)
 
 func apply_temporary_attribute(card, attribute_id: String) -> Dictionary:
-    if card == null:
-        return {"success": false, "reason": "临时属性目标为空"}
-    return {
-        "success": card.set_temporary_attribute(attribute_id),
-        "attribute": attribute_id,
-    }
+    return _card_effect_service.apply_temporary_attribute(card, attribute_id)
 
 func apply_temporary_rank(
         card,
         rank_name: String,
         rank_order: int,
         base_qi: int) -> Dictionary:
-    if card == null:
-        return {"success": false, "reason": "临时牌阶参数无效"}
-    return {
-        "success": card.set_temporary_rank(rank_name, rank_order, base_qi),
-        "rank_name": rank_name,
-        "rank_order": rank_order,
-        "base_qi": base_qi,
-    }
+    return _card_effect_service.apply_temporary_rank(
+        card, rank_name, rank_order, base_qi)
 
 func clear_temporary_reshape(card, subslot: String) -> Dictionary:
-    if card == null or subslot not in ["enhancement", "attribute", "rank"]:
-        return {"success": false, "reason": "临时重塑子槽无效"}
-    return {"success": true, "removed": card.clear_temporary_reshape(subslot)}
+    return _card_effect_service.clear_temporary_reshape(card, subslot)
 
 func clear_all_temporary_reshapes(card) -> Dictionary:
-    if card == null:
-        return {"success": false, "reason": "临时重塑目标为空"}
-    return {"success": true, "removed": card.clear_all_temporary_reshapes()}
-
-func _card_reshape_runtime():
-    return (
-        _card_reshape_runtime_ref.get_ref()
-        if _card_reshape_runtime_ref != null else null)
+    return _card_effect_service.clear_all_temporary_reshapes(card)
 
 func resolve_played_card_anomalies(
         holder: BattleSide,
         cards: Array,
         source_values: Dictionary = {}) -> Array:
-    var results: Array = _status_system.resolve_played_card_anomalies(
+    var results: Array = _card_effect_service.resolve_played_card_anomalies(
         holder, cards, source_values)
     notify_cards_played(holder, cards, source_values)
     return results

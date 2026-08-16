@@ -30,6 +30,53 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleEffectPorts 牌区／真气／异状／临时重塑职责第二批迁出（2026-08-16）
+
+`BattleEffectPorts` 继续作为 Effect Handler、`PassiveRuleRuntime`、`ActionResolver` 与
+`StatusSystem` 唯一依赖的公开 Facade；相对基线 `5431d8a`，所有公开方法名与签名保持不变。
+Facade 只为牌区写操作整理统一来源元数据和 `draw_reason`，随后委托新增的
+`effects/battle_card_effect_service.gd`，调用方不直接依赖内部服务。
+
+`BattleCardEffectService` 集中以下唯一实现：战斗双方真气实例定位和只读牌区查询；抽牌、洗牌、
+随机／批量明确弃牌、同侧移动、跨侧临时转移、同步移动与原子交换；战斗临时普通真气的确定性
+生成、虚无默认标记、随机夺取、林系优先回收和燃尽／炽气编排；目标查询；真气异状合法性、
+施加、转移、移除和层数设置；临时强化、属性、牌阶及清理；有效真气值读取、打出异状结算和
+行动确认时的重塑冻结。服务持有的依赖只有 `StatusSystem` 的现有真气状态窄能力、
+`BattlePermissionService`、双方只读集合、统一战斗 RNG 和 `CardReshapeBattleRuntime` 弱引用；
+没有接收完整 `CombatEngine`，也没有回指
+`BattleEffectPorts`。所有牌区写入继续经过各方已经装配的 `CardZoneService`；为保留“移动后置于
+牌区底部”语义，`CardZoneService` 新增单一的 `place_on_zone_bottom` 原语，内部服务不直接修改
+`BattleSide` 的牌区数组。
+
+已迁出的 Facade 方法包括 `locate_active_card`、`side_holding_card`、`draw`、`shuffle_zone`、
+`discard_random`、`discard_all`、`move_card`、`move_cards_synchronously`、
+`transfer_cards_atomically`、`atomic_exchange_cards`、`zone_cards`、`place_on_draw_pile_top`、
+`temporarily_remove_card`、`can_explicit_discard`、`generate_temporary_normal_card`、
+`steal_random_normal_card`、`recover_forest_priority`、`burn_deck_then_heat_hand`、
+`transfer_card_anomaly`、全部异状增删／合法性／层数入口、全部临时重塑入口、
+`current_effective_qi`、`finalize_reshape_action`、`resolve_played_card_anomalies` 与
+`query_effect_targets`。Facade 仍保留这些公开签名并负责来源规范化，不保留第二套抽牌、弃牌、
+移动、异状或重塑算法。
+
+`trigger_poison_card` 仍留在 Facade：它跨越真气状态、已经迁出的唯一毒伤流水线和毒触发事务，
+继续通过公开委托调用卡牌服务与 `BattleSurvivalEffectService`，没有复制毒伤算法。
+`notify_cards_played`、`notify_poison_triggered`、直接触发监听和成功打出记录仍留给后续
+“延迟／响应／事件”批次；来源标识、连势与同气槽、反震／格挡／邀战来源建立、额外行动、战斗
+历练、功法调用和通用日志／事件 Facade 也未迁移。`BattleActionService`、`StatusSystem` 内部结构、
+Repository 和内容数据均未修改。`battle_effect_ports.gd` 由约 1248 行缩至约 1050 行。
+
+本批只执行最小专项门禁。首次项目加载调用
+`/tmp/taiwu-battle-effect-card-project-load-01.log` 因漏传测试启动模式被测试基础设施主动拒绝，
+补齐 `--launch-mode=test` 后，
+`/tmp/taiwu-battle-effect-card-project-load-02.log` 完成 661 项项目加载；
+`/tmp/taiwu-battle-effect-card-specialized-03.log` 的 `battle-card-effects` 专项首次通过 54 条断言，
+直接覆盖牌区移动／底部放置、同步弃牌、原子交换、目标查询、虚无、临时真气、战斗结束清理、
+异状转移、临时重塑和毒异状跨服务结算。提交前最终复核使用
+`/tmp/taiwu-battle-effect-card-project-load-final-04.log`（662 项）与
+`/tmp/taiwu-battle-effect-card-specialized-final-05.log`（56 条断言）；错误关键字扫描只保留已知
+macOS CA 证书警告。`quick`／`full` 本批没有运行，待 `BattleEffectPorts`、`BattleActionService` 与
+`StatusSystem` 全部结构优化完成后统一执行完整回归。
+
 ### BattleEffectPorts 伤害／防御／生命职责首批迁出（2026-08-16）
 
 `BattleEffectPorts` 仍是 Effect Handler、`PassiveRuleRuntime`、`ActionResolver` 与

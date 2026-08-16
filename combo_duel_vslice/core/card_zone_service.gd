@@ -86,6 +86,21 @@ func place_on_draw_pile_top(side, card) -> Dictionary:
         "to": "draw_pile_top",
     }
 
+func place_on_zone_bottom(side, zone_name: String, card) -> Dictionary:
+    if zone_name not in ACTIVE_ZONES:
+        return {"success": false, "reason": "目标牌区无效"}
+    var cards: Array = zone(side, zone_name)
+    if not cards.has(card):
+        return {"success": false, "reason": "目标真气不在指定牌区"}
+    cards.erase(card)
+    cards.push_front(card)
+    return {
+        "success": true,
+        "card": card,
+        "from": zone_name,
+        "to": "%s_bottom" % zone_name,
+    }
+
 func stage_cards(side, card_ids: Array) -> bool:
     var found: Array = []
     for card_id in card_ids:

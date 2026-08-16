@@ -236,6 +236,7 @@ func _init(
         status_system,
         battle_flow,
         trigger_queue)
+    effect_ports.use_battle_permission_service(battle_permission_service)
     effect_ports.use_sides(player, enemy)
     effect_ports.use_battle_rng(rng)
     same_qi_gauge_service = SameQiGaugeServiceScript.new(battle_flow)
