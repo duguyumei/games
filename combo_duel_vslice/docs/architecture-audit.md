@@ -50,6 +50,36 @@ BattleEffectPorts 五批 Facade 拆分与 BattleActionService 四批事务／牌
 该结果取代 BattleActionService 分批开发阶段“尚未运行 quick／full”的临时状态，作为
 BattleEffectPorts 与 BattleActionService 优化完成、进入 `StatusSystem` 重构前的稳定行为基线。
 
+### StatusSystem 状态历史职责首批迁出（2026-08-16）
+
+新增 `core/statuses/status_history_service.gd`，作为所有状态子服务共用的唯一状态变化历史记录器。
+它实际持有固定身份的 `history` 数组和下一个 serial，负责建立 `StatusChange`、生成深复制 snapshot、
+按 limit 返回历史快照、通过 `ContentCatalog` 查询异状显示名、写入可选统一 `GameLog`，以及 reset 与
+恢复后的 serial 重建。该服务只依赖 `ContentCatalog`、`StatusChange` 和可选 `GameLog`；不持有
+`StatusSystem`、`CombatEngine`、`BattleSide`、`BattleEffectPorts`、`EffectExecutor`、
+`TimingSystem`，也不知道异状生命周期、动态响应或延迟记录。
+
+`StatusSystem` 保留公开 Facade 兼容。构造时创建历史服务，并令公开 `history` 字段指向
+`status_history.history_entries()` 返回的同一个 Array 实例；之后 reset 和正式恢复只原地清空或 assign，
+不替换数组。因此 `engine.status_system.history`、`history.is_empty()`、`history.size()` 和既有直接
+`history.assign(...)` 调用继续有效。`history_snapshot`、`use_game_log` 与新增 `replace_history` 是薄委托；
+初始化时传入的 `GameLog` 直接注入历史服务，后续日志替换也同步转发。原 `StatusChangeScript` preload、
+`_serial`、`_game_log`、`_record_change` 和 `_status_name` 已从 Facade 删除，九个内部写入点直接调用
+`status_history.record_change(...)`，没有复制历史算法。
+
+`BattleSide.capture_passive_query_state()` 继续保存历史快照，但不再读取历史服务私有 serial；
+`replace_passive_query_state()` 改为调用 `status_system.replace_history(...)`。正式恢复会先原地替换历史
+内容，再扫描所有含 serial 的记录：下一 serial 为最大值加一，空历史从 0 开始。旧快照中即使仍带有
+独立 `serial` 字段也不再作为事实源；恢复不写 `GameLog`，不追加新记录。这样历史内容与序号恢复只由
+一个服务负责，`BattleSide` 不再越过 Facade 修改内部所有权。
+
+本批没有修改真气异状增删／层数、`CardStateLifecycle`、`StatusBehaviorRegistry`、动态响应匹配、
+延迟效果、战斗来源到期、功法抽牌统计或任何功法／内功／物品内容。`status_system.gd` 当前 1263 行，
+`status_history_service.gd` 为 76 行。下一批拆分真气异状变更服务，只迁移异状变更编排，不改现有
+合法性、生命周期与事件顺序。本批只运行静态检查和 headless 项目脚本加载，使用独立日志
+`/tmp/taiwu-status-history-project-load-01.log`，最终加载覆盖 673 项，四类脚本／文件错误无匹配，
+仅有已知非阻塞 macOS CA 证书警告；`quick`／`full` 未运行。
+
 ### BattleActionService 玩家行动准备职责迁出第四批（2026-08-16）
 
 新增 `core/battle_action_preparation_service.gd`，把玩家 `BattleActionProposal` 从预览结果到正式冻结／
@@ -722,7 +752,10 @@ flowchart LR
 - `battle_action_preparation_service.gd`：负责玩家提案的协同准备、整次行动同气冻结、主组／协同组正式冻结与确认，以及功法值形成 receipt 的提交和回滚；不移动牌区或开始行动事务。
 - `battle_action_transaction.gd`：保存统一行动事务的冻结事实、阶段、暂停状态与稳定恢复游标，并提供不含运行时对象引用的版本化快照。
 - `damage_resolver.gd`：提供普通／真／毒伤的纯数值写入、同步伤害 shadow 与攻击段存活原语；查询、格挡、事件、反震和历史由 `BattleSurvivalEffectService` 统一编排。
-- `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。
+- `status_system.gd`、`status_change.gd`、`statuses/status_history_service.gd`、
+  `statuses/status_behavior_registry.gd`：Facade 统一真气异状、延迟与战斗时点编排；历史服务独占
+  结构化状态变化数组和 serial；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统
+  不再点名具体状态 ID。
 - `battle_action_proposal.gd`：统一玩家、脚本敌人和策略敌人的 v1 选牌提案 DTO，不包含实际结算权限。
 - `battle_action_record.gd`：统一实际行动执行记录 DTO，保存参与方、牌型预览、顺序、回合、触发状态和捕获表；内部结算仍可通过属性访问，日志使用 `snapshot()`。
 - `battle_timing_event.gd`、`battle_timing_system.gd`：统一十类战斗生命周期边界，以 `order + 注册序号` 调度处理器并保存结构化时点历史；战斗快照可读取该历史，内建处理器采用弱目标引用避免与战斗核心形成引用环。
@@ -792,7 +825,10 @@ flowchart LR
 - `battle_action_preparation_service.gd`：419 行；集中玩家提案的协同准备、正式冻结／确认、同气投影与功法值形成补偿，不持有行动事务或行动流。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
-- `status_system.gd`：440 行，统一角色状态、真气异状、延迟记录、状态历史与四个战斗时点处理器。
+- `status_system.gd`：1263 行；作为状态 Facade 继续编排真气异状、行为分发、动态响应、延迟效果、
+  战斗来源到期与功法抽牌统计，状态历史已迁入独立服务。
+- `status_history_service.gd`：76 行；唯一持有状态历史数组与 serial，负责 `StatusChange` 快照、名称、
+  `GameLog`、reset 和恢复重建。
 - `action_resolver.gd`：集中三阶段触发、牌上毒异状、待出区提交和序列推进，并在统一日志替换时同步重绑可见触发队列。
 - `effect_executor.gd`：由 229 行中央分支降为 43 行门面；六类处理器与注册表合计约 400 行，职责按能力隔离。
 - `action_preview_service.gd`：118 行，集中行动预览的纯规则编排。
@@ -883,7 +919,9 @@ flowchart LR
 - `BattleOutcomeService`：已建立第一版；负责胜负判定、战斗结束时点、行动清零和一次性清理。
 - `BattleTimingSystem`：已建立第一版，统一十类生命周期时点、稳定处理器顺序、结构化历史、延迟到期、序列推进和战斗结束清理。
 - `DamageResolver`：已建立第一版，负责普通伤害、真伤、连势、同步缓冲与攻击段存活判断；受击响应仍由 `StatusSystem`／`ActionResolver` 协调。
-- `StatusSystem + StatusChange + StatusBehaviorRegistry`：已建立第一版，统一角色状态、真气异状、延迟记录、状态变化历史和战斗结束清理；角色状态与真气异状通过内容定义绑定处理器及数值修正，新增复杂公共状态只增加小型注册处理器，不回填中央状态分支。
+- `StatusSystem + StatusHistoryService + StatusChange + StatusBehaviorRegistry`：已建立第一版；Facade
+  统一真气异状、延迟记录和战斗结束清理，历史服务独占状态变化数组、serial、日志与恢复重建；
+  状态定义通过内容绑定处理器及数值修正，新增复杂公共状态只增加小型注册处理器，不回填中央状态分支。
 - `EffectHandlerRegistry`：已建立第一版，按 `op` 注册六类小型处理器，效果数据继续保持数据驱动。
 - `BattleSnapshot`：已经建立第一版，覆盖生命、牌区、公开计划、卡牌、内功、消耗品、预览、日志和行动状态；后续以有校验的 ViewModel 逐步替代裸字典。
 - `AiBattleConversation + AiDecisionGateway + AiProvider`：已经建立第一版；负责脱敏公开信息、历史增量与压缩、合法候选选择、纠错、持久化和 Provider 适配，不拥有战斗状态。

@@ -480,7 +480,6 @@ func capture_passive_query_state() -> Dictionary:
             "delayed_records": status_system.delayed_records.duplicate(true),
             "response_records": status_system.response_records.duplicate(true),
             "history": status_system.history.duplicate(true),
-            "serial": int(status_system._serial),
             "delay_serial": int(status_system._delay_serial),
             "technique_draw_counts": status_system._technique_draw_counts.duplicate(true),
             "rng_state": int(status_system._rng.state) \
@@ -625,8 +624,7 @@ func replace_passive_query_state(state: Dictionary) -> void:
         status_system.delayed_records.assign(status_state["delayed_records"])
         status_system.response_records.assign(status_state.get(
             "response_records", []))
-        status_system.history.assign(status_state["history"])
-        status_system._serial = int(status_state["serial"])
+        status_system.replace_history(status_state["history"])
         status_system._delay_serial = int(status_state["delay_serial"])
         status_system._technique_draw_counts = (
             status_state["technique_draw_counts"].duplicate(true))

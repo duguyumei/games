@@ -2,8 +2,9 @@ class_name StatusSystem
 extends RefCounted
 
 const CardStateLifecycleScript = preload("res://core/card_state_lifecycle.gd")
-const StatusChangeScript = preload("res://core/status_change.gd")
 const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
+const StatusHistoryServiceScript = preload(
+    "res://core/statuses/status_history_service.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
 const StatusBehaviorContextScript = preload(
@@ -18,9 +19,8 @@ var timing_system
 var delayed_records: Array = []
 var response_records: Array = []
 var history: Array = []
-var _serial: int = 0
 var _delay_serial: int = 0
-var _game_log
+var status_history
 var _effect_ports_ref
 var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
@@ -39,7 +39,8 @@ func _init(
     lifecycle = CardStateLifecycleScript.new(catalog)
     behavior_registry = StatusBehaviorRegistryScript.new()
     timing_system = battle_timing_system
-    _game_log = game_log_override
+    status_history = StatusHistoryServiceScript.new(catalog, game_log_override)
+    history = status_history.history_entries()
     use_effect_ports(effect_ports)
     if timing_system != null:
         timing_system.register_weak_handler(
@@ -116,7 +117,10 @@ func _init(
             "_on_transient_battle_end")
 
 func use_game_log(game_log_override) -> void:
-    _game_log = game_log_override
+    status_history.use_game_log(game_log_override)
+
+func replace_history(entries: Array) -> void:
+    status_history.replace_history(entries)
 
 func use_effect_ports(effect_ports) -> void:
     _effect_ports_ref = weakref(effect_ports) if effect_ports != null else null
@@ -136,8 +140,7 @@ func use_battle_permission_service(service) -> void:
 func reset() -> void:
     delayed_records.clear()
     response_records.clear()
-    history.clear()
-    _serial = 0
+    status_history.reset()
     _delay_serial = 0
     _technique_draw_counts.clear()
 
@@ -365,7 +368,7 @@ func apply_card_anomaly(
         "category": category,
         "refreshed": bool(result.get("refreshed", false)),
     })
-    _record_change(
+    status_history.record_change(
         "card_anomaly_apply",
         "card",
         str(card.id),
@@ -403,7 +406,7 @@ func remove_card_anomaly(
         var change_metadata := _change_history_metadata(event_metadata, {
             "category": category,
         })
-        _record_change(
+        status_history.record_change(
             "card_anomaly_remove",
             "card",
             str(card.id),
@@ -453,10 +456,10 @@ func transfer_card_anomaly(
         "category": category,
         "transfer_source_card_id": str(source_card.id),
     })
-    _record_change(
+    status_history.record_change(
         "card_anomaly_transfer_out", "card", str(source_card.id), anomaly_id,
         source_before, null, source, source_change_metadata)
-    _record_change(
+    status_history.record_change(
         "card_anomaly_transfer_in", "card", str(target_card.id), anomaly_id,
         target_before, target_after, source, target_change_metadata)
     var source_metadata := event_metadata.duplicate(true)
@@ -553,7 +556,7 @@ func set_card_anomaly_layers(
         if not permission.get("allowed", false) and before <= 0:
             return {"success": false, "reason": permission.get("reason", "不能设置异状层数")}
         card.set_anomaly(category, anomaly_id, {}, layers)
-    _record_change(
+    status_history.record_change(
         "card_anomaly_layers_set", "card", str(card.id), anomaly_id,
         before, layers, source, {"category": category})
     return {"success": true, "changed": true, "before": before, "after": layers}
@@ -562,7 +565,7 @@ func on_card_enter_discard(card, source: String = "进入弃牌堆") -> Dictiona
     var removed: Dictionary = lifecycle.on_enter_discard(card)
     if not removed.get("state", {}).is_empty():
         var before_state: Dictionary = removed["state"]
-        _record_change(
+        status_history.record_change(
             "card_anomaly_remove", "card", str(card.id), str(before_state.get("id", "")),
             before_state, null, source, {"category": "state"})
     return removed
@@ -980,7 +983,7 @@ func _on_battle_start(event) -> Dictionary:
                 for result in lifecycle.on_battle_start(card):
                     if result.get("success", false):
                         applied_count += 1
-                        _record_change(
+                        status_history.record_change(
                             "card_anomaly_apply",
                             "card",
                             str(card.id),
@@ -1010,7 +1013,7 @@ func _on_turn_end(event) -> Dictionary:
         delayed["remaining_occurrences"] = int(delayed["remaining_occurrences"]) - 1
         if int(delayed["remaining_occurrences"]) <= 0:
             delayed_records.erase(delayed)
-        _record_change(
+        status_history.record_change(
             "delay_resolve",
             "actor",
             str(event.actor.owner_id),
@@ -1208,7 +1211,7 @@ func _on_card_battle_end(event) -> Dictionary:
             lifecycle.on_battle_end(card)
             cleaned_count += 1
             if before != card.anomaly_snapshot():
-                _record_change(
+                status_history.record_change(
                     "card_battle_end_cleanup",
                     "card",
                     str(card.id),
@@ -1245,46 +1248,7 @@ func _on_transient_battle_end(event) -> Dictionary:
     }
 
 func history_snapshot(limit: int = 0) -> Array:
-    var copied: Array = history.duplicate(true)
-    if limit > 0 and copied.size() > limit:
-        return copied.slice(copied.size() - limit)
-    return copied
-
-func _record_change(
-        change_type: String,
-        target_kind: String,
-        target_id: String,
-        status_id: String,
-        before_value,
-        after_value,
-        source: String,
-        metadata: Dictionary = {}) -> Dictionary:
-    var change = StatusChangeScript.new().configure({
-        "serial": _serial,
-        "change_type": change_type,
-        "target_kind": target_kind,
-        "target_id": target_id,
-        "status_id": status_id,
-        "before_value": before_value,
-        "after_value": after_value,
-        "source": source,
-        "metadata": metadata,
-    })
-    _serial += 1
-    var snapshot: Dictionary = change.snapshot()
-    history.append(snapshot)
-    if _game_log != null:
-        _game_log.record_battle(
-            "status_change",
-            "%s·%s" % [target_id, _status_name(status_id)],
-            source,
-            "成功",
-            "%s → %s" % [str(before_value), str(after_value)])
-    return snapshot
-
-func _status_name(status_id: String) -> String:
-    var anomaly: Dictionary = content_catalog.get_by_id("anomaly", status_id)
-    return str(anomaly.get("name", status_id)) if not anomaly.is_empty() else status_id
+    return status_history.history_snapshot(limit)
 
 func _card_anomaly_value(card, category: String, anomaly_id: String):
     match category:
