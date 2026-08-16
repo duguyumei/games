@@ -1,10 +1,11 @@
 class_name StatusSystem
 extends RefCounted
 
-const CardStateLifecycleScript = preload("res://core/card_state_lifecycle.gd")
 const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const StatusHistoryServiceScript = preload(
     "res://core/statuses/status_history_service.gd")
+const CardAnomalyServiceScript = preload(
+    "res://core/statuses/card_anomaly_service.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
 const StatusBehaviorContextScript = preload(
@@ -14,13 +15,13 @@ const ConditionSpecRegistryScript = preload(
     "res://core/specs/condition_spec_registry.gd")
 
 var content_catalog
-var lifecycle
 var timing_system
 var delayed_records: Array = []
 var response_records: Array = []
 var history: Array = []
 var _delay_serial: int = 0
 var status_history
+var card_anomaly_service
 var _effect_ports_ref
 var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
@@ -36,10 +37,11 @@ func _init(
         game_log_override = null,
         effect_ports = null) -> void:
     content_catalog = catalog
-    lifecycle = CardStateLifecycleScript.new(catalog)
     behavior_registry = StatusBehaviorRegistryScript.new()
     timing_system = battle_timing_system
     status_history = StatusHistoryServiceScript.new(catalog, game_log_override)
+    card_anomaly_service = CardAnomalyServiceScript.new(
+        catalog, status_history)
     history = status_history.history_entries()
     use_effect_ports(effect_ports)
     if timing_system != null:
@@ -124,6 +126,7 @@ func replace_history(entries: Array) -> void:
 
 func use_effect_ports(effect_ports) -> void:
     _effect_ports_ref = weakref(effect_ports) if effect_ports != null else null
+    card_anomaly_service.use_effect_ports(effect_ports)
 
 func use_effect_executor(executor) -> void:
     _effect_executor = executor
@@ -282,36 +285,15 @@ func _response_matches(record: Dictionary, values: Dictionary) -> bool:
         filters, values, record.get("actor"), record.get("target"), record)
 
 func card_numeric_modifier(card, modifier_id: String) -> int:
-    if card == null or modifier_id == "":
-        return 0
-    var total := 0
-    var snapshot: Dictionary = card.anomaly_snapshot()
-    var anomaly_ids: Array = []
-    anomaly_ids.append_array(snapshot.get("buffs", {}).keys())
-    anomaly_ids.append_array(snapshot.get("debuffs", {}).keys())
-    if not snapshot.get("state", {}).is_empty():
-        anomaly_ids.append(str(snapshot["state"].get("id", "")))
-    anomaly_ids.append_array(snapshot.get("marks", {}).keys())
-    for anomaly_id in anomaly_ids:
-        var definition: Dictionary = content_catalog.get_by_id("anomaly", str(anomaly_id))
-        for modifier_value in definition.get("modifiers", []):
-            var modifier: Dictionary = modifier_value
-            if str(modifier.get("id", "")) == modifier_id:
-                var layers := 1
-                var category := str(definition.get("category", ""))
-                if category in ["buff", "debuff", "state"]:
-                    layers = card.anomaly_layers(category, str(anomaly_id))
-                total += layers * int(modifier.get("value", 0))
-    return total
+    return card_anomaly_service.card_numeric_modifier(card, modifier_id)
 
 func actor_hand_card_numeric_modifier(side, modifier_id: String) -> int:
-    var total := 0
-    for card in side.hand:
-        total += card_numeric_modifier(card, modifier_id)
-    return total
+    return card_anomaly_service.actor_hand_card_numeric_modifier(
+        side, modifier_id)
 
 func modify_card_contribution(card, contribution: int, holder = null) -> int:
-    return contribution
+    return card_anomaly_service.modify_card_contribution(
+        card, contribution, holder)
 
 func can_play_card(holder, card) -> Dictionary:
     if battle_permission_service != null:
@@ -359,36 +341,17 @@ func apply_card_anomaly(
         layers: int = 1,
         replace_state: bool = false,
         event_metadata: Dictionary = {}) -> Dictionary:
-    var before = _card_anomaly_value(card, category, anomaly_id)
-    var result: Dictionary = lifecycle.apply_anomaly(
-        card, category, anomaly_id, payload, layers, replace_state)
-    if not result.get("success", false):
-        return result
-    var change_metadata := _change_history_metadata(event_metadata, {
-        "category": category,
-        "refreshed": bool(result.get("refreshed", false)),
-    })
-    status_history.record_change(
-        "card_anomaly_apply",
-        "card",
-        str(card.id),
-        anomaly_id,
-        before,
-        _card_anomaly_value(card, category, anomaly_id),
-        source,
-        change_metadata)
-    _emit_card_anomaly_change(
-        card, category, anomaly_id, before,
-        _card_anomaly_value(card, category, anomaly_id), source,
+    return card_anomaly_service.apply_card_anomaly(
+        card, category, anomaly_id, payload, source, layers, replace_state,
         event_metadata)
-    return result
 
 func can_apply_card_anomaly(
         card,
         category: String,
         anomaly_id: String,
         replace_state: bool = false) -> Dictionary:
-    return lifecycle.can_apply_anomaly(card, category, anomaly_id, replace_state)
+    return card_anomaly_service.can_apply_card_anomaly(
+        card, category, anomaly_id, replace_state)
 
 func remove_card_anomaly(
         card,
@@ -396,34 +359,8 @@ func remove_card_anomaly(
         anomaly_id: String = "",
         source: String = "效果",
         event_metadata: Dictionary = {}) -> Dictionary:
-    var resolved_id := anomaly_id
-    if resolved_id == "" and category == "state":
-        resolved_id = str(card.current_state().get("id", ""))
-    var changed: bool = card.has_anomaly(category, anomaly_id)
-    var before = _card_anomaly_value(card, category, resolved_id)
-    var removed = card.remove_anomaly(category, anomaly_id)
-    if changed:
-        var change_metadata := _change_history_metadata(event_metadata, {
-            "category": category,
-        })
-        status_history.record_change(
-            "card_anomaly_remove",
-            "card",
-            str(card.id),
-            resolved_id if resolved_id != "" else category,
-            before,
-            null,
-            source,
-            change_metadata)
-        _emit_card_anomaly_change(
-            card, category, resolved_id, before, null, source,
-            event_metadata)
-    return {
-        "success": true,
-        "changed": changed,
-        "removed": removed,
-        "anomaly_id": resolved_id,
-    }
+    return card_anomaly_service.remove_card_anomaly(
+        card, category, anomaly_id, source, event_metadata)
 
 func transfer_card_anomaly(
         source_card,
@@ -432,110 +369,9 @@ func transfer_card_anomaly(
         anomaly_id: String,
         source: String = "效果",
         event_metadata: Dictionary = {}) -> Dictionary:
-    if source_card == null or target_card == null or source_card == target_card:
-        return {"success": false, "reason": "异状转移需要不同的来源与目标"}
-    if not source_card.has_anomaly(category, anomaly_id):
-        return {"success": false, "reason": "异状转移来源不再持有目标异状"}
-    var permission: Dictionary = lifecycle.can_apply_anomaly(
-        target_card, category, anomaly_id, false)
-    if not permission.get("allowed", false):
-        return {"success": false, "reason": permission.get("reason", "目标不能获得异状")}
-    var source_before = _card_anomaly_value(source_card, category, anomaly_id)
-    var target_before = _card_anomaly_value(target_card, category, anomaly_id)
-    var applied: Dictionary = lifecycle.apply_anomaly(
-        target_card, category, anomaly_id, {}, 1, false)
-    if not applied.get("success", false):
-        return applied
-    source_card.remove_anomaly(category, anomaly_id)
-    var target_after = _card_anomaly_value(target_card, category, anomaly_id)
-    var source_change_metadata := _change_history_metadata(event_metadata, {
-        "category": category,
-        "target_id": str(target_card.id),
-    })
-    var target_change_metadata := _change_history_metadata(event_metadata, {
-        "category": category,
-        "transfer_source_card_id": str(source_card.id),
-    })
-    status_history.record_change(
-        "card_anomaly_transfer_out", "card", str(source_card.id), anomaly_id,
-        source_before, null, source, source_change_metadata)
-    status_history.record_change(
-        "card_anomaly_transfer_in", "card", str(target_card.id), anomaly_id,
-        target_before, target_after, source, target_change_metadata)
-    var source_metadata := event_metadata.duplicate(true)
-    source_metadata["transfer_peer_card_id"] = str(target_card.id)
-    var target_metadata := event_metadata.duplicate(true)
-    target_metadata["transfer_peer_card_id"] = str(source_card.id)
-    _emit_card_anomaly_change(
-        source_card, category, anomaly_id, source_before, null,
-        source, source_metadata)
-    _emit_card_anomaly_change(
-        target_card, category, anomaly_id, target_before, target_after,
-        source, target_metadata)
-    return {
-        "success": true,
-        "changed": true,
-        "source_card": source_card,
-        "target_card": target_card,
-        "category": category,
-        "anomaly_id": anomaly_id,
-    }
-
-func _change_history_metadata(
-        event_metadata: Dictionary,
-        extra: Dictionary = {}) -> Dictionary:
-    # 状态历史是长生命周期诊断数据，不能保存 holder/actor/card 等领域对象；
-    # 否则 StatusSystem 与 BattleSide 会经历史记录形成引用环。
-    var result: Dictionary = {}
-    for field in [
-            "source_kind", "source_id", "source_name",
-            "source_instance_key", "trigger_mode", "action_token",
-            "technique_id", "source_card_instance_id",
-            "transfer_peer_card_id"]:
-        if event_metadata.has(field):
-            result[field] = str(event_metadata[field])
-    result.merge(extra, true)
-    return result
-
-func _emit_card_anomaly_change(
-        card,
-        category: String,
-        anomaly_id: String,
-        before,
-        after,
-        source: String,
-        event_metadata: Dictionary) -> void:
-    if card == null or anomaly_id == "":
-        return
-    var holder = event_metadata.get("holder", event_metadata.get("actor"))
-    if holder == null:
-        var ports = _effect_ports()
-        if ports != null:
-            var location: Dictionary = ports.locate_active_card(str(card.id))
-            holder = location.get("side") if location.get("success", false) else null
-    var values := event_metadata.duplicate(true)
-    values.merge({
-        "actor": holder,
-        "holder": holder,
-        "card": card,
-        "source_card_instance_id": str(card.id),
-        "category": category,
-        "anomaly_id": anomaly_id,
-        "before": before,
-        "after": after,
-        "changed": before != after,
-        "applied": after != null,
-        "removed": after == null,
-        "source": source,
-        "base_qi": int(card.current_base_qi_value()) \
-            if card.has_method("current_base_qi_value") else int(card.qi_value),
-        "card_base_qi": int(card.qi_value),
-    }, true)
-    handle_response_event("card_anomaly_changed", values)
-    if category == "mark" and anomaly_id == "burned_out":
-        values["became_burned_out"] = before == null and after != null
-        values["ceased_burned_out"] = before != null and after == null
-        handle_response_event("card_burned_out_changed", values)
+    return card_anomaly_service.transfer_card_anomaly(
+        source_card, target_card, category, anomaly_id, source,
+        event_metadata)
 
 func set_card_anomaly_layers(
         card,
@@ -543,32 +379,11 @@ func set_card_anomaly_layers(
         anomaly_id: String,
         layers: int,
         source: String = "效果") -> Dictionary:
-    if card == null or category not in ["buff", "debuff"] or anomaly_id == "" or layers < 0:
-        return {"success": false, "reason": "异状层数设置参数无效"}
-    var before: int = card.anomaly_layers(category, anomaly_id)
-    if before == layers:
-        return {"success": true, "changed": false, "before": before, "after": layers}
-    if layers == 0:
-        card.remove_anomaly(category, anomaly_id)
-    else:
-        var permission: Dictionary = lifecycle.can_apply_anomaly(
-            card, category, anomaly_id, false)
-        if not permission.get("allowed", false) and before <= 0:
-            return {"success": false, "reason": permission.get("reason", "不能设置异状层数")}
-        card.set_anomaly(category, anomaly_id, {}, layers)
-    status_history.record_change(
-        "card_anomaly_layers_set", "card", str(card.id), anomaly_id,
-        before, layers, source, {"category": category})
-    return {"success": true, "changed": true, "before": before, "after": layers}
+    return card_anomaly_service.set_card_anomaly_layers(
+        card, category, anomaly_id, layers, source)
 
 func on_card_enter_discard(card, source: String = "进入弃牌堆") -> Dictionary:
-    var removed: Dictionary = lifecycle.on_enter_discard(card)
-    if not removed.get("state", {}).is_empty():
-        var before_state: Dictionary = removed["state"]
-        status_history.record_change(
-            "card_anomaly_remove", "card", str(card.id), str(before_state.get("id", "")),
-            before_state, null, source, {"category": "state"})
-    return removed
+    return card_anomaly_service.on_card_enter_discard(card, source)
 
 func on_card_enter_discard_behaviors(holder, card) -> void:
     _dispatch_card_behaviors("enter_discard", holder, card)
@@ -610,10 +425,7 @@ func resolve_played_card_anomalies(
     return resolutions
 
 func effective_qi_value(card) -> int:
-    var value: int = (
-        card.effective_qi_value(true)
-        if card.has_method("effective_qi_value") else int(card.qi_value))
-    return maxi(0, value)
+    return card_anomaly_service.effective_qi_value(card)
 
 func _dispatch_card_behaviors(
         trigger: String,
@@ -980,17 +792,9 @@ func _on_battle_start(event) -> Dictionary:
     for side in event.actors:
         for zone in [side.draw_pile, side.hand, side.staging, side.discard_pile]:
             for card in zone:
-                for result in lifecycle.on_battle_start(card):
-                    if result.get("success", false):
-                        applied_count += 1
-                        status_history.record_change(
-                            "card_anomaly_apply",
-                            "card",
-                            str(card.id),
-                            str(result.get("anomaly_id", result.get("reshape_id", "battle_start"))),
-                            null,
-                            "applied",
-                            "战斗开始重塑")
+                var result: Dictionary = (
+                    card_anomaly_service.on_card_battle_start(card))
+                applied_count += int(result.get("applied_count", 0))
     return {
         "success": true,
         "detail": "处理 %d 个战斗开始真气效果" % applied_count,
@@ -1207,18 +1011,8 @@ func _on_card_battle_end(event) -> Dictionary:
                 if not cards.has(card):
                     cards.append(card)
         for card in cards:
-            var before: Dictionary = card.anomaly_snapshot()
-            lifecycle.on_battle_end(card)
+            card_anomaly_service.on_card_battle_end(card)
             cleaned_count += 1
-            if before != card.anomaly_snapshot():
-                status_history.record_change(
-                    "card_battle_end_cleanup",
-                    "card",
-                    str(card.id),
-                    "all_anomalies",
-                    before,
-                    card.anomaly_snapshot(),
-                    "战斗结束")
         for card in cards:
             if bool(card.temporary_card):
                 side.card_zone_service.permanently_remove(
@@ -1249,15 +1043,6 @@ func _on_transient_battle_end(event) -> Dictionary:
 
 func history_snapshot(limit: int = 0) -> Array:
     return status_history.history_snapshot(limit)
-
-func _card_anomaly_value(card, category: String, anomaly_id: String):
-    match category:
-        "buff", "debuff", "state": return card.anomaly_layers(category, anomaly_id)
-        "mark": return card.anomaly_snapshot().get("marks", {}).get(anomaly_id, null)
-    return null
-
-func _effective_qi_value(card) -> int:
-    return effective_qi_value(card)
 
 func _effect_ports():
     return _effect_ports_ref.get_ref() if _effect_ports_ref != null else null

@@ -68,7 +68,6 @@ var action_preview_service
 var action_resolver
 var effect_ports
 var damage_resolver := DamageResolverScript.new()
-var card_state_lifecycle
 var status_system
 var player := BattleSideScript.new("玩家", "player")
 var enemy := BattleSideScript.new("敌人", "enemy")
@@ -263,9 +262,6 @@ func _init(
         battle_rule_query_service, battle_passive_event_service,
         Callable(self, "_read_turn_number"))
     delayed_effects = status_system.delayed_records
-    card_state_lifecycle = status_system.lifecycle
-    player.use_card_state_lifecycle(card_state_lifecycle)
-    enemy.use_card_state_lifecycle(card_state_lifecycle)
     player.use_status_system(status_system)
     enemy.use_status_system(status_system)
     player.use_card_policies(hand_recognition_policy, card_identity_policy)
