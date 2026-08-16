@@ -384,6 +384,10 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
             var technique_pool := ""
             if source_spec["kind"] == "technique":
                 technique_pool = str(source_spec["definition"].get("pool", ""))
+            var source_instance_key := capture_key
+            if source_spec["kind"] == "technique":
+                source_instance_key = str(record["preview"].get(
+                    "slot_instance_id", ""))
             var context = EffectContextScript.new().configure({
                 "ports": effect_ports,
                 "actor": record["actor"],
@@ -398,6 +402,9 @@ func _enqueue_phase_records(records: Array, phase: String, timing: String) -> bo
                 "technique_pool": technique_pool,
                 "action_token": record["token"],
                 "source_kind": source_spec["kind"],
+                "source_id": source_spec["definition"].get("id", ""),
+                "source_name": source_spec["definition"].get("name", ""),
+                "source_instance_key": source_instance_key,
                 "captures": captures_by_source[capture_key],
                 "sequence_book": record["book"],
                 "slot_instance_id": str(record["preview"].get("slot_instance_id", "")),
@@ -505,6 +512,8 @@ func retrigger_current_hand_technique(
             "detail": activation.get("reason", "重触功法启动被拒绝"),
             "technique_activation": activation,
         }
+    var retrigger_slot: Dictionary = sequence_book.current_slot(
+        str(hand_result.get("id", "")))
     var context = EffectContextScript.new().configure({
         "ports": effect_ports,
         "actor": actor,
@@ -516,7 +525,13 @@ func retrigger_current_hand_technique(
         "technique_id": technique_id,
         "technique_name": definition.display_name,
         "technique_pool": definition.pool,
-        "source_kind": "technique_retrigger",
+        "source_kind": "technique",
+        "source_id": technique_id,
+        "source_name": definition.display_name,
+        "source_instance_key": str(retrigger_slot.get(
+            "slot_instance_id", "technique:%s" % technique_id)),
+        "slot_instance_id": str(retrigger_slot.get("slot_instance_id", "")),
+        "trigger_mode": "retrigger",
         "sequence_book": sequence_book,
         "captures": {},
         "group_snapshot": power_snapshot.get("group_snapshot", {}),
@@ -652,6 +667,9 @@ func _emit_technique_succeeded(record) -> void:
         "owner": record["actor"], "round_number": int(record["turn_number"]),
         "action_token": str(record["token"]),
         "source_kind": "technique",
+        "source_id": str(technique.get("id", "")),
+        "source_name": str(technique.get("name", "")),
+        "source_instance_key": str(preview.get("slot_instance_id", "")),
         "hand_id": str(preview.get("hand", {}).get("id", "")),
         "technique_id": str(technique.get("id", "")),
         "technique_pool": str(technique.get("pool", "")),
@@ -688,7 +706,13 @@ func _emit_action_resolved(record) -> void:
         "actor": record["actor"], "target": record["target"],
         "owner": record["actor"], "round_number": int(record["turn_number"]),
         "action_token": str(record["token"]),
-        "source_kind": "technique" if bool(record["triggered"]) else "action",
+        "source_kind": "technique" if bool(record["triggered"]) else "rule",
+        "source_id": str(technique.get("id", "")) \
+            if bool(record["triggered"]) else "action",
+        "source_name": str(technique.get("name", "")) \
+            if bool(record["triggered"]) else "行动",
+        "source_instance_key": str(preview.get("slot_instance_id", "")) \
+            if bool(record["triggered"]) else "rule:action",
         "hand_id": str(preview.get("hand", {}).get("id", "")),
         "technique_id": str(technique.get("id", "")),
         "technique_pool": str(technique.get("pool", "")),

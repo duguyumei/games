@@ -2,6 +2,8 @@ class_name TechniqueEffectContext
 extends RefCounted
 
 const SCRIPT_PATH := "res://core/effects/technique_effect_context.gd"
+const EffectSourceProtocolScript = preload(
+    "res://core/effects/effect_source_protocol.gd")
 
 var actor = null
 var target = null
@@ -25,6 +27,9 @@ var caller_technique_id: String = ""
 var slot_instance_id: String = ""
 var trigger_mode: String = "manual"
 var source_kind: String = ""
+var source_id: String = ""
+var source_name: String = ""
+var source_instance_key: String = ""
 var captures: Dictionary = {}
 var ports = null
 var choice_responses: Dictionary = {}
@@ -71,8 +76,17 @@ func configure(values: Dictionary):
     invocation_token = str(values.get("invocation_token", ""))
     caller_technique_id = str(values.get("caller_technique_id", ""))
     slot_instance_id = str(values.get("slot_instance_id", ""))
-    trigger_mode = str(values.get("trigger_mode", "manual"))
-    source_kind = str(values.get("source_kind", ""))
+    var source: Dictionary = EffectSourceProtocolScript.from_values(values)
+    trigger_mode = str(source["trigger_mode"])
+    source_kind = str(source["source_kind"])
+    source_id = str(source["source_id"])
+    source_name = str(source["source_name"])
+    source_instance_key = str(source["source_instance_key"])
+    if source_kind == "technique":
+        if technique_id == "":
+            technique_id = source_id
+        if technique_name == "":
+            technique_name = source_name
     captures = values.get("captures", {})
     ports = values.get("ports")
     choice_responses = values.get("choice_responses", {})
@@ -134,6 +148,9 @@ func public_metadata() -> Dictionary:
         "slot_instance_id": slot_instance_id,
         "trigger_mode": trigger_mode,
         "source_kind": source_kind,
+        "source_id": source_id,
+        "source_name": source_name,
+        "source_instance_key": source_instance_key,
         "source_card_instance_id": source_card_instance_id,
         "source_trigger": source_trigger,
         "replay_depth": replay_depth,
@@ -142,6 +159,15 @@ func public_metadata() -> Dictionary:
         "capture_keys": captures.keys(),
         "has_ports": ports != null,
         "waiting_choice_count": choice_candidates.size(),
+    }
+
+func source_metadata() -> Dictionary:
+    return {
+        "source_kind": source_kind,
+        "source_id": source_id,
+        "source_name": source_name,
+        "source_instance_key": source_instance_key,
+        "trigger_mode": trigger_mode,
     }
 
 func power_snapshot() -> Dictionary:

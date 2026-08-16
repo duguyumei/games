@@ -66,12 +66,16 @@ func execute(effect: Dictionary, context):
         var transferred: Dictionary = runtime.ports.transfer_card_anomaly(
             sources[0], targets[0], str(effect.get("category", "")),
             str(effect.get("anomaly", "")),
-            runtime.technique_name if runtime.technique_name != "" else "功法", {
+            runtime.source_name if runtime.source_name != "" else "效果", {
                 "source_actor": runtime.actor,
                 "target": runtime.target,
                 "action_token": runtime.action_token,
                 "technique_id": runtime.technique_id,
                 "source_kind": runtime.source_kind,
+                "source_id": runtime.source_id,
+                "source_name": runtime.source_name,
+                "source_instance_key": runtime.source_instance_key,
+                "trigger_mode": runtime.trigger_mode,
             })
         if effect.has("result_capture"):
             runtime.captures[str(effect["result_capture"])] = \
@@ -109,9 +113,19 @@ func execute(effect: Dictionary, context):
                 category,
                 anomaly_id,
                 effect.get("payload", {}),
-                runtime.technique_name if runtime.technique_name != "" else "功法",
+                runtime.source_name if runtime.source_name != "" else "效果",
                 _layers(effect, runtime),
-                replace_state)
+                replace_state, {
+                    "source_actor": runtime.actor,
+                    "target": runtime.target,
+                    "action_token": runtime.action_token,
+                    "technique_id": runtime.technique_id,
+                    "source_kind": runtime.source_kind,
+                    "source_id": runtime.source_id,
+                    "source_name": runtime.source_name,
+                    "source_instance_key": runtime.source_instance_key,
+                    "trigger_mode": runtime.trigger_mode,
+                })
             if runtime.ports != null
             else lifecycle.apply_anomaly(
                 chosen, category, anomaly_id, effect.get("payload", {}),
@@ -183,7 +197,7 @@ func _apply_to_captured(effect: Dictionary, runtime):
             category,
             anomaly_id,
             effect.get("payload", {}),
-            runtime.technique_name if runtime.technique_name != "" else "功法",
+            runtime.source_name if runtime.source_name != "" else "效果",
             _layers(effect, runtime),
             bool(effect.get("replace_state", false)), {
                 "source_actor": runtime.actor,
@@ -191,6 +205,10 @@ func _apply_to_captured(effect: Dictionary, runtime):
                 "action_token": runtime.action_token,
                 "technique_id": runtime.technique_id,
                 "source_kind": runtime.source_kind,
+                "source_id": runtime.source_id,
+                "source_name": runtime.source_name,
+                "source_instance_key": runtime.source_instance_key,
+                "trigger_mode": runtime.trigger_mode,
             })
         if result.get("success", false):
             applied.append(card)

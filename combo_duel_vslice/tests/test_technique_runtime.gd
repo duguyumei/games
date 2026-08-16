@@ -316,7 +316,15 @@ func _test_retrigger_reuses_frozen_snapshot() -> void:
     var cards := [_card("4", "wind"), _card("4", "fire")]
     var engine = _probe_engine(cards, "pair", [{
         "op": "write_momentum", "operation": "add",
-        "amount": {"kind": "initial_power"}}])
+        "amount": {"kind": "initial_power"}},
+        {"op": "draw", "count": 1}])
+    engine.player.draw_pile = [_card("9", "mountain")]
+    var retrigger_draw_events: Array = []
+    engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "probe_technique":
+                retrigger_draw_events.append(values.duplicate(true)))
     var snapshot := {
         "initial_power": 31,
         "direct_power_fixed": 4,
@@ -330,6 +338,19 @@ func _test_retrigger_reuses_frozen_snapshot() -> void:
     _assert_true(result["triggered"], "同组重触内存探针成功")
     _assert_equal(engine.player.momentum_value, 31, "重触按冻结 P₀ 产生连势")
     _assert_equal(engine.sequence_book.position("pair"), 0, "重触自身不重复推进序列")
+    _assert_equal(retrigger_draw_events.size(), 1, "重触功法通过真实效果链抽牌一次")
+    if not retrigger_draw_events.is_empty():
+        _assert_equal(
+            str(retrigger_draw_events[0].get("source_kind", "")),
+            "technique",
+            "重触抽牌仍公开功法来源类别")
+        _assert_equal(
+            str(retrigger_draw_events[0].get("trigger_mode", "")),
+            "retrigger",
+            "重触抽牌独立公开 trigger_mode")
+    _assert_equal(
+        engine.effect_ports.technique_draw_count(engine.player), 1,
+        "重触功法抽牌计入功法效果抽牌")
 
 func _test_delayed_effect_reuses_frozen_snapshot() -> void:
     var engine = _engine_with_cards([])
@@ -1124,17 +1145,22 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     var manual_engine = _probe_engine([
         manual_card], "high_card", [{
             "op": "damage", "amount": {"kind": "power"},
-        }])
+        }, {"op": "draw", "count": 1}])
+    manual_engine.player.draw_pile = [_card("2", "forest")]
     manual_engine.player.direct_power_fixed = 2
     manual_engine.player.direct_power_percent = 20
     manual_engine.player.momentum_value = 3
     manual_engine.player.add_pending_power_fixed_source(
         4, "shared-manual-next-power")
     var manual_success_events: Array = []
+    var manual_draw_events: Array = []
     manual_engine.battle_passive_event_service.event_committed.connect(
         func(kind: String, values: Dictionary, _receipt: Dictionary):
             if kind == "technique_succeeded":
-                manual_success_events.append(values.duplicate(true)))
+                manual_success_events.append(values.duplicate(true))
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "probe_technique":
+                manual_draw_events.append(values.duplicate(true)))
     var manual_life_before: int = manual_engine.enemy.life
     var manual_result: Dictionary = manual_engine.confirm_play([manual_card.id])
     _assert_true(manual_result.get("success", false),
@@ -1150,11 +1176,13 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
             {"id": "caller", "name": "调用者", "pool": "high",
                 "special": false, "effects": []},
             {"id": "shared_probe", "name": "共核探针", "pool": "high",
-                "special": false, "effects": [{
-                    "op": "damage", "amount": {"kind": "power"},
-                }]},
+                "special": false, "effects": [
+                    {"op": "damage", "amount": {"kind": "power"}},
+                    {"op": "draw", "count": 1},
+                ]},
         ],
     })
+    invoked_engine.player.draw_pile = [_card("3", "fire")]
     invoked_engine.sequence_book.configure({
         "high_card": ["caller", "shared_probe"]})
     invoked_engine.player.direct_power_fixed = 2
@@ -1163,10 +1191,14 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     invoked_engine.player.add_pending_power_fixed_source(
         4, "shared-invoked-next-power")
     var invoked_success_events: Array = []
+    var invoked_draw_events: Array = []
     invoked_engine.battle_passive_event_service.event_committed.connect(
         func(kind: String, values: Dictionary, _receipt: Dictionary):
             if kind == "technique_succeeded":
-                invoked_success_events.append(values.duplicate(true)))
+                invoked_success_events.append(values.duplicate(true))
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "shared_probe":
+                invoked_draw_events.append(values.duplicate(true)))
     var caller_slot: Dictionary = invoked_engine.sequence_book.current_slot(
         "high_card")
     var invoked_runtime = EffectContextScript.new().configure({
@@ -1211,11 +1243,13 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
                     "p0": {"kind": "constant", "value": 5},
                     "timing": "immediate",
                 }],
-                "effects": [{
-                    "op": "damage", "amount": {"kind": "power"},
-                }]},
+                "effects": [
+                    {"op": "damage", "amount": {"kind": "power"}},
+                    {"op": "draw", "count": 1},
+                ]},
         ],
     })
+    automatic_engine.player.draw_pile = [_card("4", "mountain")]
     automatic_engine.sequence_book.configure({
         "high_card": ["caller", "shared_auto"]})
     automatic_engine.player.direct_power_fixed = 2
@@ -1224,20 +1258,21 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     automatic_engine.player.add_pending_power_fixed_source(
         4, "shared-automatic-next-power")
     var automatic_success_events: Array = []
+    var automatic_draw_events: Array = []
     automatic_engine.battle_passive_event_service.event_committed.connect(
         func(kind: String, values: Dictionary, _receipt: Dictionary):
             if kind == "technique_succeeded":
-                automatic_success_events.append(values.duplicate(true)))
+                automatic_success_events.append(values.duplicate(true))
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "shared_auto":
+                automatic_draw_events.append(values.duplicate(true)))
     var automatic_life_before: int = automatic_engine.enemy.life
-    automatic_engine.battle_passive_event_service.commit("defense_gained", {
-        "event_token": "shared-auto-event",
-        "event_serial": 99001,
-        "actor": automatic_engine.player,
-        "owner": automatic_engine.player,
-        "target": automatic_engine.player,
-        "effective_amount": 1,
-        "action_token": "shared-auto-root",
-    })
+    var automatic_trigger_result: Dictionary = (
+        automatic_engine.effect_ports.add_defense_result(
+            automatic_engine.player, 1, "rule", "shared-auto-root"))
+    _assert_true(
+        automatic_trigger_result.get("success", false),
+        "自动功法由真实防御写入提交事件触发")
     var automatic_loss: int = automatic_life_before - automatic_engine.enemy.life
 
     _assert_equal(manual_loss, 16,
@@ -1255,6 +1290,28 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     _assert_equal(automatic_success_events.map(func(values):
         return str(values.get("trigger_mode", ""))), ["automatic"],
         "公共成功功法事件覆盖自动触发")
+    for draw_case in [
+            [manual_engine, manual_draw_events, "manual"],
+            [invoked_engine, invoked_draw_events, "invoked"],
+            [automatic_engine, automatic_draw_events, "automatic"],
+        ]:
+        _assert_equal(
+            draw_case[1].size(), 1,
+            "%s 功法通过真实效果链抽牌一次" % draw_case[2])
+        if not draw_case[1].is_empty():
+            _assert_equal(
+                str(draw_case[1][0].get("source_kind", "")),
+                "technique",
+                "%s 抽牌公开功法来源类别" % draw_case[2])
+            _assert_equal(
+                str(draw_case[1][0].get("trigger_mode", "")),
+                str(draw_case[2]),
+                "%s 抽牌公开独立 trigger_mode" % draw_case[2])
+        _assert_equal(
+            draw_case[0].effect_ports.technique_draw_count(
+                draw_case[0].player),
+            1,
+            "%s 抽牌计入功法效果抽牌" % draw_case[2])
     for events in [manual_success_events, invoked_success_events,
             automatic_success_events]:
         _assert_equal(int(events[0].get("initial_power", -1)), 5,

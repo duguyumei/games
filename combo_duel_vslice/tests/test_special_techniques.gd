@@ -770,8 +770,12 @@ func _test_three_breath_return_battle_session_flow() -> void:
         _card("6", "wind"), _card("7", "forest")]
     var automatic_events: Array = []
     var sequence_events: Array = []
+    var technique_draw_events: Array = []
     engine.battle_passive_event_service.event_committed.connect(
         func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "special_draw_six_probe":
+                technique_draw_events.append(values.duplicate(true))
             if kind == "action_resolved" \
                     and str(values.get("technique_id", "")) \
                     == "high_wind_three_breath_return" \
@@ -800,8 +804,31 @@ func _test_three_breath_return_battle_session_flow() -> void:
     _assert_equal(_slot_marker_value(
         engine, wind_slot_id, "technique_draw_count"), 0,
         "抽6张完整消费两组计数且无虚构上限")
+    _assert_equal(
+        technique_draw_events.size(), 6,
+        "主动功法抽六通过正式路径逐张提交 card_drawn")
+    for draw_event in technique_draw_events:
+        _assert_equal(
+            str(draw_event.get("source_kind", "")), "technique",
+            "主动功法 card_drawn 公开功法来源类别")
+        _assert_equal(
+            str(draw_event.get("trigger_mode", "")), "manual",
+            "主动功法 card_drawn 独立公开手动 trigger_mode")
+        _assert_equal(
+            str(draw_event.get("source_instance_key", "")),
+            str(engine.sequence_book.find_slots({
+                "hand_id": "high_card",
+                "technique_id": "special_draw_six_probe",
+            })[0].get("slot_instance_id", "")),
+            "主动功法 card_drawn 使用稳定槽位来源实例键")
+    _assert_equal(
+        engine.effect_ports.technique_draw_count(engine.player), 6,
+        "主动功法抽六计入功法效果抽牌统计")
     var life_while_waiting := int(engine.enemy.life)
     var event_count_while_waiting := automatic_events.size()
+    var draw_count_while_waiting := technique_draw_events.size()
+    var technique_flow_while_waiting := int(
+        engine.effect_ports.technique_draw_count(engine.player))
     var request: Dictionary = started.payload_value("choice_request", {})
     var candidate_ids: Array = request.get("candidate_ids", [])
     var selected_choice_id := str(candidate_ids[0]) \
@@ -817,6 +844,13 @@ func _test_three_breath_return_battle_session_flow() -> void:
         "等待选择恢复不重复执行三息回风伤害")
     _assert_equal(automatic_events.size(), event_count_while_waiting,
         "等待选择恢复不重复触发三息回风")
+    _assert_equal(
+        technique_draw_events.size(), draw_count_while_waiting,
+        "等待选择恢复不重复提交抽牌事件")
+    _assert_equal(
+        engine.effect_ports.technique_draw_count(engine.player),
+        technique_flow_while_waiting,
+        "等待选择恢复不重复记录功法抽牌")
     _assert_equal(str(engine.sequence_book.current_slot(
         "high_card").get("technique_id", "")), "basic_guard",
         "嵌套自动触发后调用者与真实槽位均按稳定身份推进")
@@ -828,7 +862,13 @@ func _test_three_breath_return_battle_session_flow() -> void:
         "high_card").get("slot_instance_id", ""))
     manual.player.draw_pile = [
         _card("2", "wind"), _card("3", "forest")]
-    manual.player.draw(2, "technique")
+    manual.player.draw(2, "effect_draw", {
+        "source_kind": "technique",
+        "source_id": "setup_technique_draw",
+        "source_name": "测试功法抽牌",
+        "source_instance_key": manual_slot,
+        "trigger_mode": "manual",
+    })
     _assert_equal(_slot_marker_value(
         manual, manual_slot, "technique_draw_count"), 2,
         "三息回风主动触发前已有抽牌进度保存在具体槽位")

@@ -179,6 +179,10 @@ func register_response(
         "caller_technique_id": runtime.caller_technique_id,
         "slot_instance_id": runtime.slot_instance_id,
         "trigger_mode": runtime.trigger_mode,
+        "source_kind": runtime.source_kind,
+        "source_id": runtime.source_id,
+        "source_name": runtime.source_name,
+        "source_instance_key": runtime.source_instance_key,
         "sequence_book": runtime.sequence_book,
         "source_round": _current_round_hint(runtime),
         "resolving": false,
@@ -227,7 +231,7 @@ func _execute_response_effects(
         record: Dictionary,
         effects: Array,
         values: Dictionary,
-        source_kind: String) -> Dictionary:
+        trigger_mode: String) -> Dictionary:
     var captures: Dictionary = record.get("captures", {}).duplicate(true)
     captures["event"] = [values.duplicate(true)]
     if values.has("card"):
@@ -253,9 +257,12 @@ func _execute_response_effects(
         "invocation_token": record.get("invocation_token", ""),
         "caller_technique_id": record.get("caller_technique_id", ""),
         "slot_instance_id": record.get("slot_instance_id", ""),
-        "trigger_mode": record.get("trigger_mode", "manual"),
+        "trigger_mode": trigger_mode,
         "sequence_book": record.get("sequence_book"),
-        "source_kind": source_kind,
+        "source_kind": record.get("source_kind", "rule"),
+        "source_id": record.get("source_id", ""),
+        "source_name": record.get("source_name", ""),
+        "source_instance_key": record.get("source_instance_key", ""),
     })
     return _effect_executor.execute_all(effects, response_context)
 
@@ -354,6 +361,10 @@ func apply_card_anomaly(
         card, category, anomaly_id, payload, layers, replace_state)
     if not result.get("success", false):
         return result
+    var change_metadata := _change_history_metadata(event_metadata, {
+        "category": category,
+        "refreshed": bool(result.get("refreshed", false)),
+    })
     _record_change(
         "card_anomaly_apply",
         "card",
@@ -362,7 +373,7 @@ func apply_card_anomaly(
         before,
         _card_anomaly_value(card, category, anomaly_id),
         source,
-        {"category": category, "refreshed": bool(result.get("refreshed", false))})
+        change_metadata)
     _emit_card_anomaly_change(
         card, category, anomaly_id, before,
         _card_anomaly_value(card, category, anomaly_id), source,
@@ -389,6 +400,9 @@ func remove_card_anomaly(
     var before = _card_anomaly_value(card, category, resolved_id)
     var removed = card.remove_anomaly(category, anomaly_id)
     if changed:
+        var change_metadata := _change_history_metadata(event_metadata, {
+            "category": category,
+        })
         _record_change(
             "card_anomaly_remove",
             "card",
@@ -397,7 +411,7 @@ func remove_card_anomaly(
             before,
             null,
             source,
-            {"category": category})
+            change_metadata)
         _emit_card_anomaly_change(
             card, category, resolved_id, before, null, source,
             event_metadata)
@@ -431,13 +445,20 @@ func transfer_card_anomaly(
         return applied
     source_card.remove_anomaly(category, anomaly_id)
     var target_after = _card_anomaly_value(target_card, category, anomaly_id)
+    var source_change_metadata := _change_history_metadata(event_metadata, {
+        "category": category,
+        "target_id": str(target_card.id),
+    })
+    var target_change_metadata := _change_history_metadata(event_metadata, {
+        "category": category,
+        "transfer_source_card_id": str(source_card.id),
+    })
     _record_change(
         "card_anomaly_transfer_out", "card", str(source_card.id), anomaly_id,
-        source_before, null, source, {"category": category, "target_id": str(target_card.id)})
+        source_before, null, source, source_change_metadata)
     _record_change(
         "card_anomaly_transfer_in", "card", str(target_card.id), anomaly_id,
-        target_before, target_after, source,
-        {"category": category, "source_id": str(source_card.id)})
+        target_before, target_after, source, target_change_metadata)
     var source_metadata := event_metadata.duplicate(true)
     source_metadata["transfer_peer_card_id"] = str(target_card.id)
     var target_metadata := event_metadata.duplicate(true)
@@ -456,6 +477,22 @@ func transfer_card_anomaly(
         "category": category,
         "anomaly_id": anomaly_id,
     }
+
+func _change_history_metadata(
+        event_metadata: Dictionary,
+        extra: Dictionary = {}) -> Dictionary:
+    # 状态历史是长生命周期诊断数据，不能保存 holder/actor/card 等领域对象；
+    # 否则 StatusSystem 与 BattleSide 会经历史记录形成引用环。
+    var result: Dictionary = {}
+    for field in [
+            "source_kind", "source_id", "source_name",
+            "source_instance_key", "trigger_mode", "action_token",
+            "technique_id", "source_card_instance_id",
+            "transfer_peer_card_id"]:
+        if event_metadata.has(field):
+            result[field] = str(event_metadata[field])
+    result.merge(extra, true)
+    return result
 
 func _emit_card_anomaly_change(
         card,
@@ -778,6 +815,11 @@ func register_delayed_effects(
         "technique_pool": runtime.technique_pool,
         "sequence_book": runtime.sequence_book,
         "source_action_token": runtime.action_token,
+        "source_kind": runtime.source_kind,
+        "source_id": runtime.source_id,
+        "source_name": runtime.source_name,
+        "source_instance_key": runtime.source_instance_key,
+        "trigger_mode": runtime.trigger_mode,
     }
     _delay_serial += 1
     delayed_records.append(record)
@@ -788,6 +830,11 @@ func register_defense_decay_return(runtime) -> Dictionary:
         "id": "decay-return-%06d" % _delay_serial,
         "kind": "defense_decay_return", "actor": runtime.actor,
         "source_round": _current_round_hint(runtime), "captured_decay": -1,
+        "source_kind": runtime.source_kind,
+        "source_id": runtime.source_id,
+        "source_name": runtime.source_name,
+        "source_instance_key": runtime.source_instance_key,
+        "trigger_mode": "delayed",
     }
     _delay_serial += 1
     delayed_records.append(record)
@@ -808,6 +855,11 @@ func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary
         "target": runtime.target,
         "action_token": runtime.action_token,
         "effect": effect.duplicate(true),
+        "source_kind": runtime.source_kind,
+        "source_id": runtime.source_id,
+        "source_name": runtime.source_name,
+        "source_instance_key": runtime.source_instance_key,
+        "trigger_mode": "delayed",
     })
     _delay_serial += 1
     return {"success": true}
@@ -846,7 +898,8 @@ func _on_round_start_records(event) -> Dictionary:
         var actor = record["actor"]
         if _effect_ports() != null:
             _effect_ports().add_defense(
-                actor, int(record.get("captured_decay", 0)), "delayed_technique")
+                actor, int(record.get("captured_decay", 0)),
+                str(record.get("source_kind", "rule")))
         delayed_records.erase(record)
     return {"success": true, "detail": "返还 %d 份防御衰减记录" % due.size()}
 
@@ -864,7 +917,12 @@ func _on_action_resolution_end_records(event) -> Dictionary:
         if int(actor_result.get("actual_life_loss", 0)) <= 0:
             var context = EffectContextScript.new().configure({
                 "ports": _effect_ports(), "actor": record["actor"],
-                "target": record["target"], "source_kind": "delayed_technique",
+                "target": record["target"],
+                "source_kind": record.get("source_kind", "rule"),
+                "source_id": record.get("source_id", ""),
+                "source_name": record.get("source_name", ""),
+                "source_instance_key": record.get("source_instance_key", ""),
+                "trigger_mode": "delayed",
                 "captures": {},
             })
             _effect_executor.execute_all([record["effect"]], context)
@@ -1060,7 +1118,11 @@ func _resolve_challenges_for_window(side, window_id: String) -> void:
                 "branch_hand_id": str(record.get("branch_hand_id", "")),
                 "technique_pool": str(record.get("technique_pool", "")),
                 "action_token": str(record.get("action_token", "")),
-                "source_kind": "challenge",
+                "source_kind": record.get("source_kind", "rule"),
+                "source_id": record.get("source_id", ""),
+                "source_name": record.get("source_name", ""),
+                "source_instance_key": record.get("source_instance_key", ""),
+                "trigger_mode": "delayed",
             })
             _effect_executor.execute_all(branch_effects, context)
         _effect_ports().add_history(
@@ -1112,7 +1174,11 @@ func _resolve_delayed_effect_chain(record: Dictionary) -> Dictionary:
             str(record.get("source_action_token", "")),
             str(record.get("id", "delay")),
         ],
-        "source_kind": "delayed_technique",
+        "source_kind": record.get("source_kind", "rule"),
+        "source_id": record.get("source_id", ""),
+        "source_name": record.get("source_name", ""),
+        "source_instance_key": record.get("source_instance_key", ""),
+        "trigger_mode": "delayed",
         "captures": record.get("captures", {}).duplicate(true),
         "group_snapshot": record.get("group_snapshot", {}).duplicate(true),
     })

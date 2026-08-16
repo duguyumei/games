@@ -53,10 +53,10 @@ func execute(effect: Dictionary, context):
                 str(effect.get("source_token", runtime.action_token)),
                 bool(effect.get("public", true)),
                 int(effect.get("remaining_rounds", 1)), {
-                    "source_kind": "technique",
-                    "source_instance_key": runtime.slot_instance_id,
-                    "content_id": runtime.technique_id,
-                    "label": runtime.technique_name,
+                    "source_kind": runtime.source_kind,
+                    "source_instance_key": runtime.source_instance_key,
+                    "content_id": runtime.source_id,
+                    "label": runtime.source_name,
                 })
             runtime.captures[str(effect.get("capture", "poison_modifier"))] = [source]
             return EffectResultScript.succeeded("建立毒伤修正")
@@ -92,7 +92,7 @@ func _trigger_all(effect: Dictionary, runtime):
         if holder != null:
             runtime.ports.deal_damage(
                 holder, holder, int(totals.get(str(holder.owner_id), 0)),
-                "同步毒爆", false, runtime.action_token, "poison", {
+                runtime.source_metadata(), false, runtime.action_token, "poison", {
                     "skip_poison_modifiers": true,
                 })
     var resolutions: Array = runtime.ports.flush_synchronized_damage()
@@ -109,7 +109,8 @@ func _trigger_all(effect: Dictionary, runtime):
         var life_lost := mini(int(item["modified_amount"]), int(remaining_loss.get(holder_key, 0)))
         remaining_loss[holder_key] = int(remaining_loss.get(holder_key, 0)) - life_lost
         runtime.ports.remove_card_anomaly(
-            item["card"], "state", "poison", runtime.technique_name)
+            item["card"], "state", "poison", runtime.source_name,
+            runtime.source_metadata())
         item["holder"].commit_poison_damage_modifier_receipt(
             item["modifier"])
         var actual := {

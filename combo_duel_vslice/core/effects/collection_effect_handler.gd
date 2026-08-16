@@ -198,7 +198,11 @@ func execute(effect: Dictionary, context):
                     "technique_id": runtime.technique_id, "technique_name": runtime.technique_name,
                     "actual_hand_id": runtime.actual_hand_id, "branch_hand_id": runtime.branch_hand_id,
                     "technique_pool": runtime.technique_pool, "action_token": runtime.action_token,
-                    "source_kind": runtime.source_kind, "captures": {"each": [card]},
+                    "source_kind": runtime.source_kind,
+                    "source_id": runtime.source_id, "source_name": runtime.source_name,
+                    "source_instance_key": runtime.source_instance_key,
+                    "trigger_mode": runtime.trigger_mode,
+                    "captures": {"each": [card]},
                     "sequence_book": runtime.sequence_book,
                     "card_identity_policy": runtime.card_identity_policy,
                     "group_snapshot": runtime.group_snapshot,
@@ -214,12 +218,16 @@ func execute(effect: Dictionary, context):
                 if card.has_anomaly(str(effect.get("category", "")), str(effect.get("anomaly", ""))):
                     var result: Dictionary = runtime.ports.remove_card_anomaly(
                         card, str(effect.get("category", "")),
-                        str(effect.get("anomaly", "")), runtime.technique_name, {
+                        str(effect.get("anomaly", "")), runtime.source_name, {
                             "source_actor": runtime.actor,
                             "target": runtime.target,
                             "action_token": runtime.action_token,
                             "technique_id": runtime.technique_id,
                             "source_kind": runtime.source_kind,
+                            "source_id": runtime.source_id,
+                            "source_name": runtime.source_name,
+                            "source_instance_key": runtime.source_instance_key,
+                            "trigger_mode": runtime.trigger_mode,
                         })
                     if result.get("changed", false):
                         removed.append(card)
@@ -252,7 +260,7 @@ func execute(effect: Dictionary, context):
                 runtime.captures[str(effect["capture"])] = [generated] if generated != null else []
             return EffectResultScript.succeeded("生成临时真气" if generated != null else "")
         "repeat_effects":
-            if runtime.source_kind == "technique_echo":
+            if runtime.trigger_mode == "echo":
                 return EffectResultScript.succeeded("回响不递归")
             var count: int = value_resolver.resolve(effect.get("count", 0), runtime)
             var completed := 0
@@ -271,7 +279,10 @@ func execute(effect: Dictionary, context):
                     "branch_hand_id": runtime.branch_hand_id,
                     "technique_pool": runtime.technique_pool,
                     "action_token": "%s:echo:%d" % [runtime.action_token, index],
-                    "source_kind": "technique_echo", "captures": {},
+                    "source_kind": runtime.source_kind,
+                    "source_id": runtime.source_id, "source_name": runtime.source_name,
+                    "source_instance_key": runtime.source_instance_key,
+                    "trigger_mode": "echo", "captures": {},
                     "sequence_book": runtime.sequence_book,
                     "card_identity_policy": runtime.card_identity_policy,
                     "group_snapshot": runtime.group_snapshot,

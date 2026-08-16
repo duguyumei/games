@@ -272,12 +272,40 @@ func _test_live_block_and_echo_guard() -> void:
     _assert_true(success.get("blocked", false), "攻击到来时手牌更多则格挡")
     var engine = _engine(4107)
     var context = _context(engine)
-    context.source_kind = "technique_echo"
+    context.source_kind = "technique"
+    context.trigger_mode = "echo"
     var repeat: Dictionary = engine.effect_executor.execute_all([{
         "op":"repeat_effects", "count":2,
         "effects":[{"op":"damage","amount":5}]}], context)
     _assert_true(repeat.get("success", false), "回响来源执行链安全结束")
     _assert_equal(engine.enemy.life, 100, "回响不能递归产生新回响")
+
+    var draw_engine = _engine(4130)
+    draw_engine.player.draw_pile = [
+        _card("2", "wind"), _card("3", "forest")]
+    var draw_context = _context(draw_engine)
+    draw_context.source_id = "echo_draw_probe"
+    draw_context.source_name = "回响抽牌探针"
+    draw_context.source_instance_key = "technique:echo_draw_probe"
+    var draw_events: Array = []
+    draw_engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "echo_draw_probe":
+                draw_events.append(values.duplicate(true)))
+    var echo_draw: Dictionary = draw_engine.effect_executor.execute_all([{
+        "op":"repeat_effects", "count":2,
+        "effects":[{"op":"draw", "count":1}],
+    }], draw_context)
+    _assert_true(echo_draw.get("success", false), "回响子效果通过共享执行器抽牌")
+    _assert_equal(draw_events.size(), 2, "两次回响各提交一次抽牌事件")
+    _assert_true(draw_events.all(func(values):
+        return str(values.get("source_kind", "")) == "technique" \
+            and str(values.get("trigger_mode", "")) == "echo"),
+        "回响抽牌保留功法来源并独立公开 echo trigger_mode")
+    _assert_equal(
+        draw_engine.effect_ports.technique_draw_count(draw_engine.player), 2,
+        "回响功法抽牌计入功法效果抽牌")
 
 func _test_wind_timing_and_targeting_ports() -> void:
     var delayed_engine = _engine(4111)

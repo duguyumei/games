@@ -90,7 +90,8 @@ func _remove_self_and_draw_filtered(context) -> Dictionary:
         if context.rng != null else 0
     var chosen = candidates[index]
     var moved: Dictionary = context.effect_ports.move_card(
-        context.holder, "draw_pile", context.holder, "hand", chosen, "draw")
+        context.holder, "draw_pile", context.holder, "hand", chosen, "draw",
+        "top", _source_metadata(context))
     return {"success": bool(moved.get("success", false)), "card": chosen}
 
 func _remove_self_and_discard_non_attribute(context) -> Dictionary:
@@ -109,7 +110,7 @@ func _remove_self_and_discard_non_attribute(context) -> Dictionary:
     var chosen = candidates[index]
     var moved: Dictionary = context.effect_ports.move_card(
         context.holder, "hand", context.holder, "discard_pile",
-        chosen, "explicit_discard")
+        chosen, "explicit_discard", "top", _source_metadata(context))
     return {
         "success": bool(moved.get("success", false)),
         "stop_card_behaviors": chosen == context.card and bool(moved.get("success", false)),
@@ -124,7 +125,7 @@ func _remove_self_and_shuffle_into_draw_pile(context) -> Dictionary:
     _remove_self(context)
     var moved: Dictionary = context.effect_ports.move_card(
         context.holder, "discard_pile", context.holder, "draw_pile",
-        context.card, "regroup")
+        context.card, "regroup", "top", _source_metadata(context))
     if moved.get("success", false) and context.rng != null:
         context.effect_ports.shuffle_zone(context.holder, "draw_pile", context.rng)
     return {"success": bool(moved.get("success", false))}
@@ -164,6 +165,16 @@ func _remove_self_with_resolution(context) -> Dictionary:
             "effect_kind": str(context.behavior.get("effect_kind", "status")),
             "detail": str(context.behavior.get("detail", "状态已结算")),
         },
+    }
+
+func _source_metadata(context) -> Dictionary:
+    return {
+        "source_kind": "card_status",
+        "source_id": context.status_id,
+        "source_name": str(context.definition.get("name", context.status_id)),
+        "source_instance_key": "card_status:%s:%s" % [
+            str(context.card.id), context.status_id],
+        "trigger_mode": "direct",
     }
 
 func _remove_self(context) -> void:

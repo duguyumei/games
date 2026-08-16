@@ -41,16 +41,22 @@ func execute(effect: Dictionary, context):
                 if str(effect.get("from_side", "actor")) == "target" else runtime.actor
             var damage_target = runtime.actor \
                 if str(effect.get("to_side", "target")) == "actor" else runtime.target
+            var damage_source: Dictionary = runtime.source_metadata()
+            var resolution_metadata := {
+                "direct_attack": bool(effect.get(
+                    "direct_attack",
+                    runtime.source_kind == "technique")),
+                "blockable": bool(effect.get("blockable", true)),
+            }
+            # 228 门功法中少量旧资源用 source_kind="chase" 表示伤害段标签。
+            # 它不是统一来源类别；保留为兼容元数据，不能覆盖 technique/item 等来源。
+            if effect.has("source_kind"):
+                resolution_metadata["legacy_damage_source_label"] = str(
+                    effect["source_kind"])
             var result: Dictionary = runtime.ports.deal_damage(
                 damage_actor, damage_target, amount,
-                str(effect.get("source_kind", "technique")), is_true,
-                runtime.action_token, damage_type, {
-                    "direct_attack": bool(effect.get(
-                        "direct_attack",
-                        runtime.source_kind in [
-                            "technique", "technique_retrigger", "technique_echo"])),
-                    "blockable": bool(effect.get("blockable", true)),
-                })
+                damage_source, is_true,
+                runtime.action_token, damage_type, resolution_metadata)
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "伤害结算失败")))
             if effect.has("capture"):
@@ -139,7 +145,7 @@ func _execute_multi_damage(effect: Dictionary, runtime):
                 and segment_index > 0 and not previous_life_hit:
             damage_type = "true"
         var hit: Dictionary = ports.deal_damage(
-            actor, target, amount, "technique", damage_type == "true",
+            actor, target, amount, runtime.source_metadata(), damage_type == "true",
             runtime.action_token, damage_type, {
                 "direct_attack": true,
                 "blockable": bool(effect.get("blockable", true)),
@@ -170,6 +176,10 @@ func _execute_multi_damage(effect: Dictionary, runtime):
                     "technique_pool": runtime.technique_pool,
                     "action_token": runtime.action_token,
                     "source_kind": runtime.source_kind,
+                    "source_id": runtime.source_id,
+                    "source_name": runtime.source_name,
+                    "source_instance_key": runtime.source_instance_key,
+                    "trigger_mode": runtime.trigger_mode,
                     "captures": child_captures,
                     "sequence_book": runtime.sequence_book,
                     "card_identity_policy": runtime.card_identity_policy,
@@ -185,7 +195,7 @@ func _execute_multi_damage(effect: Dictionary, runtime):
             var chase_amount := int(floor(
                 amount * int(effect["chase_on_consecutive_life_hits_percent"]) / 100.0))
             ports.deal_damage(
-                actor, target, chase_amount, "chase", false,
+                actor, target, chase_amount, runtime.source_metadata(), false,
                 runtime.action_token, "normal", {"direct_attack": true})
             chase_count += 1
         previous_life_hit = current_life_hit

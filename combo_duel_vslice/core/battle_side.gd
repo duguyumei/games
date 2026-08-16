@@ -339,16 +339,21 @@ func mark_permanently_removed(instance_id: String) -> void:
 func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
     card_zone_service.shuffle(cards, rng)
 
-func draw(count: int, draw_reason: String = "rule_draw") -> Array:
-    return card_zone_service.draw(self, count, draw_reason)
+func draw(
+        count: int,
+        draw_reason: String = "rule_draw",
+        source_metadata: Dictionary = {}) -> Array:
+    return card_zone_service.draw(self, count, draw_reason, source_metadata)
 
-func draw_to_limit(draw_reason: String = "normal_draw") -> Array:
+func draw_to_limit(
+        draw_reason: String = "normal_draw",
+        source_metadata: Dictionary = {}) -> Array:
     var limit := current_hand_limit()
     if limit < 1:
         return []
     var drawn: Array = []
     while occupied_meridian_count() < limit and not draw_pile.is_empty():
-        var step := draw(1, draw_reason)
+        var step := draw(1, draw_reason, source_metadata)
         if step.is_empty():
             break
         drawn.append_array(step)
@@ -686,8 +691,12 @@ func discard_all() -> Array:
 func recover_from_discard(count: int, destination: String = "draw_pile") -> Array:
     return card_zone_service.recover_from_discard(self, count, destination)
 
-func temporarily_remove_card(instance_id: String, reason: String = "burn") -> Dictionary:
-    return card_zone_service.temporarily_remove(self, instance_id, reason)
+func temporarily_remove_card(
+        instance_id: String,
+        reason: String = "burn",
+        source_metadata: Dictionary = {}) -> Dictionary:
+    return card_zone_service.temporarily_remove(
+        self, instance_id, reason, source_metadata)
 
 func permanently_remove_card(instance_id: String, reason: String = "permanent_remove") -> Dictionary:
     return card_zone_service.permanently_remove(self, instance_id, reason)
@@ -699,9 +708,10 @@ func temporarily_transfer_card_to(
         target_side,
         instance_id: String,
         destination: String = "draw_pile",
-        reason: String = "temporary_transfer") -> Dictionary:
+        reason: String = "temporary_transfer",
+        source_metadata: Dictionary = {}) -> Dictionary:
     return card_zone_service.temporarily_transfer(
-        self, target_side, instance_id, destination, reason)
+        self, target_side, instance_id, destination, reason, source_metadata)
 
 func return_transferred_card_to(
         original_side,

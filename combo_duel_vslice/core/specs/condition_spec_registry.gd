@@ -3,6 +3,8 @@ extends RefCounted
 
 const EffectContextScript = preload(
     "res://core/effects/technique_effect_context.gd")
+const EffectSourceProtocolScript = preload(
+    "res://core/effects/effect_source_protocol.gd")
 const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")
 
 ## ConditionSpec 的字段、结构规则与运行处理器只在这里登记一次。
@@ -375,7 +377,7 @@ func _scalar_valid(value, validation: String) -> bool:
         "zone": return value is String and ZONE_IDS.has(str(value))
         "damage_type": return value is String and DAMAGE_TYPES.has(str(value))
         "trigger_mode": return value is String \
-            and str(value) in ["manual", "automatic", "invoked"]
+            and str(value) in EffectSourceProtocolScript.TRIGGER_MODES
         "owner_role", "holder_role":
             return value is String and str(value) in ["actor", "target"]
         "string_array":
@@ -400,7 +402,7 @@ func _validation_message(validation: String) -> String:
         "side": return "必须为 actor 或 target"
         "zone": return "引用未知牌区"
         "damage_type": return "引用未知伤害类型"
-        "trigger_mode": return "必须为 manual、automatic 或 invoked"
+        "trigger_mode": return "引用未知 trigger_mode"
         "owner_role", "holder_role": return "必须为 actor 或 target"
         "string_array": return "必须是非空字符串数组"
     return "必须是非空字符串"

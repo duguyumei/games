@@ -30,6 +30,33 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### 战斗效果来源中立协议（2026-08-16）
+
+功法、内功与物品继续共用唯一 `EffectExecutor`、Effect Handler 注册表、
+`BattleEffectPorts` 和领域服务，不建立内功或物品专用效果执行器。统一效果上下文固定公开
+`source_kind`、`source_id`、`source_name`、`source_instance_key` 与 `trigger_mode`：
+
+- `source_kind` 只描述内容或领域来源，稳定值为 `technique`、`inner_skill`、`item`、
+  `card_status`、`card_reshape`、`rule`；
+- `trigger_mode` 只描述执行方式，当前包括 `manual`、`automatic`、`invoked`、`echo`、
+  `retrigger`、`delayed`、`response`、`response_expiry` 与 `direct`；
+- `source_id`／`source_name` 表示来源内容身份与展示名；`source_instance_key` 表示当前装备槽、
+  被动来源实例、真气状态实例或规则实例的稳定身份，不能用来源类别代替；
+- `TechniqueEffectContext` 暂时保留文件名及 `technique_id`／`technique_name` 兼容字段。旧功法
+  上下文会自动映射到统一字段，新处理器和事件必须优先读取统一字段。
+
+抽牌统计只以结构化 `source_kind == "technique"` 判断功法效果抽牌；`draw_reason` 只保留牌区
+动作原因，不能反推来源。主动、自动、调用、回响、重触和延迟功法因来源类别仍为
+`technique` 而计入，内功、物品、真气异状、重塑、正常补牌和规则抽牌不计入。
+`card_drawn`、伤害、牌区移动、异状响应及延迟记录均沿用同一来源元数据，等待选择 continuation
+恢复时复用冻结上下文，不重复抽牌、记数或改变来源。
+
+`PassiveRuleContext` 为内功与物品建立效果上下文时写入各自来源和稳定实例键；
+`on_play_effects` 仍返回普通效果数组交给同一执行器，其他被动时点仍经
+`BattlePassiveEffectPorts → BattleEffectPorts` 写入。来源标识当前只允许 `technique` 与
+`inner_skill`：物品内容若声明 `write_source_marker`、`capture_source_marker` 或
+`transfer_source_marker`，内容加载会明确失败，运行时不得静默按功法或内功存储。
+
 ### 首批4门特殊功法正式接入（2026-08-16）
 
 本批仅正式接入`bomb_wind_empty_hand`、`pair_forest_dissipate_decay`、

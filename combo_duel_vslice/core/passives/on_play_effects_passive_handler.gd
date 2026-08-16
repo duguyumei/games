@@ -6,6 +6,7 @@ const EffectHandlerRegistryScript = preload(
     "res://core/effects/effect_handler_registry.gd")
 
 var _effect_registry
+var _anomalies_by_id: Dictionary = {}
 
 func _init(effect_registry = null) -> void:
     _effect_registry = effect_registry
@@ -17,6 +18,9 @@ func behavior_id() -> String:
 
 func supported_hooks() -> Array[String]:
     return ["action_preview", "action_resolve"] as Array[String]
+
+func use_effect_indexes(anomalies_by_id: Dictionary) -> void:
+    _anomalies_by_id = anomalies_by_id
 
 func validate_configuration(configuration: Dictionary) -> Array[String]:
     var errors: Array[String] = []
@@ -34,6 +38,7 @@ func validate_configuration(configuration: Dictionary) -> Array[String]:
                 "full_house", "four_kind", "five_kind"],
         },
         _effect_registry)
+    validator.use_indexes(_anomalies_by_id)
     validator.validate_effects(configuration.get("effects"), "battle", "effects")
     return errors
 

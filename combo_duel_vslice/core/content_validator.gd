@@ -248,6 +248,7 @@ func _init(
     ## 异状索引在校验过程中增量建立（异状先于功法校验注册）。这里传入的是
     ## 同一份字典引用，因此后续只能 clear 和写入，不能整体重新赋值。
     _effect_specs.use_indexes(_anomalies_by_id)
+    _passive_rule_registry.use_effect_indexes(_anomalies_by_id)
 
 func validate(contents: Dictionary, paths: Dictionary = {}) -> Dictionary:
     errors.clear()
@@ -507,11 +508,15 @@ func _validate_enemy_sequences(values, scope: String) -> void:
                         technique_id, statuses.get(technique_id, "missing"), FORMAL_TECHNIQUE_STATUS])
 
 func result() -> Dictionary:
-    return {
+    var validation_result := {
         "valid": errors.is_empty(),
         "errors": errors.duplicate(),
         "warnings": warnings.duplicate(),
     }
+    # 异状索引只供本轮内容校验；运行时 Handler 走已构建的 ContentCatalog。
+    # 清除临时共享引用，避免短命 ContentValidator 把整份索引留在注册表上。
+    _passive_rule_registry.use_effect_indexes({})
+    return validation_result
 
 func _has_all_content() -> bool:
     for key in CONTENT_KEYS:
@@ -1492,6 +1497,10 @@ func _validate_passive_behaviors(
         if not configuration is Dictionary:
             _error(behavior_scope + ".configuration", "必须是对象")
             continue
+        if kind_name == "物品" and _contains_source_marker_effect(configuration):
+            _error(
+                behavior_scope + ".configuration",
+                "物品暂不允许读写来源标识；不得在运行时降级为 technique 或 inner_skill")
         for message in _passive_rule_registry.validate_configuration(
                 normalized_id, configuration):
             _error(behavior_scope + ".configuration", str(message))
@@ -1533,6 +1542,7 @@ func _validate_passive_behaviors(
                     "状态命名空间 %s 重复声明 counter_id %s" % [
                         state_key, counter_definition.counter_id])
             state_counters[state_key][counter_definition.counter_id] = true
+
         if not battle_state_counters.has(state_key):
             battle_state_counters[state_key] = {}
         for counter_definition in battle_definitions:
@@ -1542,6 +1552,21 @@ func _validate_passive_behaviors(
                     "战斗状态命名空间 %s 重复声明 counter_id %s" % [
                         state_key, counter_definition.counter_id])
             battle_state_counters[state_key][counter_definition.counter_id] = true
+
+func _contains_source_marker_effect(value) -> bool:
+    if value is Dictionary:
+        if str(value.get("op", "")) in [
+                "write_source_marker", "capture_source_marker",
+                "transfer_source_marker"]:
+            return true
+        for child in value.values():
+            if _contains_source_marker_effect(child):
+                return true
+    elif value is Array:
+        for child in value:
+            if _contains_source_marker_effect(child):
+                return true
+    return false
 
 func _validate_practice_shop(definition: Dictionary) -> void:
     if int(definition.get("version", 0)) != 2:

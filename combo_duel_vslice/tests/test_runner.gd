@@ -1061,6 +1061,7 @@ func _initialize() -> void:
     _test_battle_card_policy_ports()
     _test_technique_and_cooperation_permission_wiring()
     _test_battle_passive_effect_command_ports()
+    _test_effect_source_neutrality_runtime_paths()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
     _test_f2d2_opportunity_freeze_and_progress_sync()
@@ -4682,6 +4683,211 @@ func _test_battle_passive_effect_command_ports() -> void:
         mark_result.get("success", false),
         "无漏仍允许普通标记：%s" % str(mark_result))
     _assert_true(mark_card.has_anomaly("mark", "return_to_origin"), "普通标记经窄端口实际写入")
+
+func _test_effect_source_neutrality_runtime_paths() -> void:
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    var shared_effects := [
+        {"op": "damage", "amount": {"kind": "constant", "value": 2}},
+        {"op": "draw", "count": 1, "capture": "source_drawn"},
+        {
+            "op": "apply_card_anomaly_to_captured",
+            "capture": "source_drawn",
+            "category": "mark",
+            "anomaly": "return_to_origin",
+            "result_capture": "source_marked",
+        },
+        {
+            "op": "move_captured",
+            "capture": "source_drawn",
+            "from_zone": "hand",
+            "to_zone": "discard_pile",
+            "reason": "explicit_discard",
+            "result_capture": "source_moved",
+        },
+    ]
+    var inner_definition := {
+        "id": "source_neutral_inner",
+        "name": "来源中立内功",
+        "status": "candidate",
+        "behaviors": [{
+            "id": "on_play_effects",
+            "configuration": {"effects": shared_effects.duplicate(true)},
+        }],
+    }
+    var item_definition := {
+        "id": "source_neutral_item",
+        "name": "来源中立物品",
+        "kind": "item",
+        "status": "candidate",
+        "unique": true,
+        "description": "仅用于统一效果来源正式行动路径测试。",
+        "price": 1,
+        "behaviors": [{
+            "id": "on_play_effects",
+            "configuration": {"effects": shared_effects.duplicate(true)},
+        }],
+    }
+    var catalog_result := _battle_passive_test_catalog(
+        registry, [item_definition], [inner_definition])
+    _assert_true(
+        catalog_result["success"],
+        "统一来源内功与物品内容通过共享效果校验：%s" % str(
+            catalog_result["catalog"].errors))
+    if not catalog_result["success"]:
+        return
+    var catalog = catalog_result["catalog"]
+
+    for source_case in [
+            {
+                "kind": "inner_skill",
+                "id": "source_neutral_inner",
+                "name": "来源中立内功",
+                "items": [],
+                "inner_skills": ["source_neutral_inner"],
+            },
+            {
+                "kind": "item",
+                "id": "source_neutral_item",
+                "name": "来源中立物品",
+                "items": ["source_neutral_item"],
+                "inner_skills": [],
+            },
+        ]:
+        var engine = _battle_passive_test_engine(
+            catalog, registry, source_case["items"], source_case["inner_skills"])
+        engine.sequence_book.configure({
+            "high_card": ["high_wind_three_breath_return"],
+        })
+        var wind_slot: Dictionary = engine.sequence_book.current_slot("high_card")
+        var wind_slot_id := str(wind_slot.get("slot_instance_id", ""))
+        var committed_events: Array = []
+        engine.battle_passive_event_service.event_committed.connect(
+            func(kind: String, values: Dictionary, _receipt: Dictionary):
+                if str(values.get("source_id", "")) == str(source_case["id"]):
+                    committed_events.append({
+                        "kind": kind,
+                        "values": values.duplicate(true),
+                    }))
+        engine.start_player_turn()
+        var selected = engine.player.hand[0]
+        engine.actions_available = 1
+        var result: Dictionary = engine.confirm_play([str(selected.id)])
+        _assert_true(
+            result.get("success", false),
+            "%s on_play_effects 通过真实出牌路径完成" % source_case["kind"])
+
+        for event_kind in ["damage_resolved", "card_drawn", "card_entered_discard"]:
+            var matching: Array = committed_events.filter(
+                func(entry): return str(entry["kind"]) == event_kind)
+            _assert_equal(
+                matching.size(), 1,
+                "%s 正式路径提交一次 %s" % [source_case["kind"], event_kind])
+            if matching.is_empty():
+                continue
+            var values: Dictionary = matching[0]["values"]
+            _assert_equal(
+                str(values.get("source_kind", "")), str(source_case["kind"]),
+                "%s 的 %s 保留统一来源类别" % [source_case["kind"], event_kind])
+            _assert_equal(
+                str(values.get("source_name", "")), str(source_case["name"]),
+                "%s 的 %s 保留来源名称" % [source_case["kind"], event_kind])
+            _assert_true(
+                str(values.get("source_instance_key", "")).contains(
+                    str(source_case["id"])),
+                "%s 的 %s 公开稳定来源实例键" % [source_case["kind"], event_kind])
+            _assert_equal(
+                str(values.get("trigger_mode", "")), "manual",
+                "%s 的 %s 把出牌触发方式与来源类别分离" % [
+                    source_case["kind"], event_kind])
+
+        _assert_equal(
+            engine.effect_ports.technique_draw_count(engine.player), 0,
+            "%s 抽牌不计入功法效果抽牌" % source_case["kind"])
+        _assert_equal(
+            engine.player.source_marker_store.value(
+                "technique", wind_slot_id, "technique_draw_count", "battle"),
+            0,
+            "三息回风不被%s抽牌推进" % source_case["kind"])
+        var anomaly_history: Array = engine.status_system.history_snapshot().filter(
+            func(change):
+                return str(change.get("change_type", "")) == "card_anomaly_apply" \
+                    and str(change.get("status_id", "")) == "return_to_origin" \
+                    and str(change.get("source", "")) == str(source_case["name"]))
+        _assert_equal(
+            anomaly_history.size(), 1,
+            "%s 施加真气异状的状态日志不显示为功法" % source_case["kind"])
+        if not anomaly_history.is_empty():
+            _assert_equal(
+                str(anomaly_history[0].get("metadata", {}).get(
+                    "source_kind", "")),
+                str(source_case["kind"]),
+                "%s 异状日志元数据保留统一来源类别" % source_case["kind"])
+        var source_damage_logs: Array = engine.trigger_queue.history.filter(
+            func(entry):
+                return str(entry.get("timing", "")) == "damage_segment" \
+                    and str(entry.get("source", "")) == str(source_case["kind"]))
+        _assert_equal(
+            source_damage_logs.size(), 1,
+            "%s 伤害日志来源不显示为 technique" % source_case["kind"])
+        _dispose_source_neutrality_engine(engine)
+
+    var invalid_values: Dictionary = catalog_result["base_values"].duplicate(true)
+    invalid_values["items"]["items"].append({
+        "id": "invalid_item_source_marker",
+        "name": "非法物品来源标识",
+        "kind": "item",
+        "status": "candidate",
+        "unique": true,
+        "description": "应被内容校验明确拒绝。",
+        "price": 1,
+        "behaviors": [{
+            "id": "on_play_effects",
+            "configuration": {"effects": [{
+                "op": "write_source_marker",
+                "marker_id": "invalid_item_marker",
+                "operation": "add",
+                "amount": 1,
+            }]},
+        }],
+    })
+    var invalid_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(
+        not invalid_catalog.load_from_definitions(
+            invalid_values, catalog_result["paths"]),
+        "物品来源标识在内容校验阶段明确拒绝")
+    _assert_true(
+        "\n".join(invalid_catalog.errors).contains("物品暂不允许读写来源标识"),
+        "物品来源标识拒绝诊断不允许静默降级")
+
+func _dispose_source_neutrality_engine(engine) -> void:
+    engine.battle_passive_timing_bridge.close_battle()
+    engine.battle_passive_event_service.close_battle()
+    engine.passive_rule_runtime.close_battle_effect_commands()
+    engine.effect_ports.use_hand_retrigger_callback(Callable())
+    engine.battle_passive_event_service._scenario_error = Callable()
+    engine.battle_rule_query_service._scenario_error = Callable()
+    engine.passive_rule_runtime._battle_effect_scenario_error = Callable()
+    engine.player.use_committed_event_service(null)
+    engine.enemy.use_committed_event_service(null)
+    engine.player.use_battle_rule_query_service(null)
+    engine.enemy.use_battle_rule_query_service(null)
+    engine.player.use_status_system(null)
+    engine.enemy.use_status_system(null)
+    engine.player.use_card_state_lifecycle(null)
+    engine.enemy.use_card_state_lifecycle(null)
+    engine.player.use_card_reshape_runtime(null)
+    engine.enemy.use_card_reshape_runtime(null)
+    engine.player.use_card_policies(null, null)
+    engine.enemy.use_card_policies(null, null)
+    engine.player.use_battle_permission_service(null)
+    engine.enemy.use_battle_permission_service(null)
+    engine.status_system.reset()
+    engine.status_system.use_effect_ports(null)
+    engine.status_system.use_effect_executor(null)
+    engine.status_system.use_card_trigger_replay_service(null)
+    engine.status_system.use_battle_permission_service(null)
+    engine.effect_ports._sides.clear()
 
 func _commit_f5e_probe_event(
         engine,

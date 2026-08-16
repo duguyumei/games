@@ -1,6 +1,9 @@
 class_name BattleEffectPorts
 extends RefCounted
 
+const EffectSourceProtocolScript = preload(
+    "res://core/effects/effect_source_protocol.gd")
+
 ## 效果处理器修改战斗状态的唯一窄端口。
 ##
 ## 四个依赖是必需的，不接受 null：端口一旦允许缺依赖，每个方法都要带一条兜底分支，
@@ -254,12 +257,18 @@ func deal_damage(
         actor: BattleSide,
         target: BattleSide,
         amount: int,
-        source_kind: String,
+        source_kind,
         true_damage: bool = false,
         action_token: String = "",
         damage_type: String = "",
         resolution_metadata: Dictionary = {}) -> Dictionary:
+    var effect_source := _effect_source_metadata(source_kind)
+    source_kind = str(effect_source["source_kind"])
     var resolved_metadata := resolution_metadata.duplicate(true)
+    for field in [
+            "source_kind", "source_id", "source_name",
+            "source_instance_key", "trigger_mode"]:
+        resolved_metadata[field] = effect_source[field]
     resolved_metadata["action_token"] = action_token
     var resolved_type := damage_type
     if resolved_type == "":
@@ -292,7 +301,7 @@ func deal_damage(
         if block_result.get("blocked", false):
             _emit_damage_blocked(
                 actor, target, int(final_override), resolved_type, source_kind,
-                action_token, block_result)
+                action_token, block_result, effect_source)
             return {
                 "success": true, "buffered": false, "blocked": true,
                 "final_amount": 0, "requested": int(final_override),
@@ -319,9 +328,10 @@ func deal_damage(
             actor, target, result, source_kind, action_token)
         _emit_damage_resolved(
             actor, target, amount, source_kind, resolved_type, result, false,
-            action_token)
+            action_token, effect_source)
         _resolve_reflection(
-            actor, target, source_kind, resolved_type, result, action_token)
+            actor, target, source_kind, resolved_type, result, action_token,
+            resolved_metadata)
     result["success"] = true
     return result
 
@@ -424,7 +434,13 @@ func trigger_poison_card(
         current_effective_qi(holder, card)
         if frozen_amount_override == null else maxi(0, int(frozen_amount_override)))
     var damage: Dictionary = deal_damage(
-        holder, holder, frozen_amount, "毒", false, action_token, "poison", {
+        holder, holder, frozen_amount, {
+            "source_kind": "card_status",
+            "source_id": "poison",
+            "source_name": "毒",
+            "source_instance_key": "card_status:%s:poison" % str(card.id),
+            "trigger_mode": "direct",
+        }, false, action_token, "poison", {
             "kind": "poison_card_trigger",
             "holder": holder,
             "card": card,
@@ -437,7 +453,13 @@ func trigger_poison_card(
     if not damage.get("success", false):
         return damage
     var removed: Dictionary = remove_card_anomaly(
-        card, "state", "poison", "毒触发")
+        card, "state", "poison", "毒触发", {
+            "source_kind": "card_status",
+            "source_id": "poison",
+            "source_name": "毒",
+            "source_instance_key": "card_status:%s:poison" % str(card.id),
+            "trigger_mode": "direct",
+        })
     if not removed.get("changed", false):
         return {"success": false, "reason": "毒伤完成后清除毒失败", "damage_result": damage}
     if not bool(damage.get("buffered", false)):
@@ -875,6 +897,11 @@ func register_challenge(
         "branch_hand_id": runtime.branch_hand_id,
         "technique_pool": runtime.technique_pool,
         "action_token": runtime.action_token,
+        "source_kind": runtime.source_kind,
+        "source_id": runtime.source_id,
+        "source_name": runtime.source_name,
+        "source_instance_key": runtime.source_instance_key,
+        "trigger_mode": runtime.trigger_mode,
         "label": label, "public": true,
     }
     runtime.actor.challenge_records.append(record)
@@ -958,7 +985,8 @@ func generate_temporary_normal_card(
     var added: Dictionary = side.card_zone_service.add_generated(side, card, "hand", true)
     return card if added.get("success", false) else null
 
-func steal_random_normal_card(actor: BattleSide, target: BattleSide) -> Dictionary:
+func steal_random_normal_card(
+        actor: BattleSide, target: BattleSide, source_value = "") -> Dictionary:
     if actor == null or target == null or _battle_rng == null:
         return {"success": false}
     var candidates: Array = target.draw_pile.filter(
@@ -966,10 +994,15 @@ func steal_random_normal_card(actor: BattleSide, target: BattleSide) -> Dictiona
     if candidates.is_empty():
         return {"success": false}
     var card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
-    return move_card(target, "draw_pile", actor, "hand", card, "steal", "top", "technique")
+    return move_card(
+        target, "draw_pile", actor, "hand", card, "steal", "top",
+        source_value)
 
 func recover_forest_priority(
-        actor: BattleSide, maximum_qi: int, prefer_permanent: bool) -> Dictionary:
+        actor: BattleSide,
+        maximum_qi: int,
+        prefer_permanent: bool,
+        source_value = "") -> Dictionary:
     if actor == null or _battle_rng == null:
         return {"success": false}
     var plain: Array = []
@@ -985,7 +1018,9 @@ func recover_forest_priority(
     if candidates.is_empty():
         return {"success": false}
     var card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
-    return move_card(actor, "discard_pile", actor, "hand", card, "recover", "top", "technique")
+    return move_card(
+        actor, "discard_pile", actor, "hand", card, "recover", "top",
+        source_value)
 
 func burn_deck_then_heat_hand(
         actor: BattleSide, bottom_first: bool, choice_capture: String, context) -> Dictionary:
@@ -1024,8 +1059,10 @@ func place_on_draw_pile_top(side: BattleSide, card) -> Dictionary:
 func temporarily_remove_card(
         side: BattleSide,
         instance_id: String,
-        reason: String) -> Dictionary:
-    return side.temporarily_remove_card(instance_id, reason)
+        reason: String,
+        source_value = "") -> Dictionary:
+    return side.temporarily_remove_card(
+        instance_id, reason, _effect_source_metadata(source_value))
 
 func can_explicit_discard(side: BattleSide, card) -> Dictionary:
     var runtime = _card_reshape_runtime()
@@ -1062,7 +1099,11 @@ func notify_poison_triggered(
             "source_card_instance_id": str(card.id),
             "round_number": _round_number(),
             "action_token": action_token,
-            "source_kind": "poison",
+            "source_kind": "card_status",
+            "source_id": "poison",
+            "source_name": "毒",
+            "source_instance_key": "card_status:%s:poison" % str(card.id),
+            "trigger_mode": "direct",
             "damage_type": "poison",
             "requested_amount": maxi(0, frozen_amount),
             "frozen_amount": maxi(0, frozen_amount),
@@ -1082,6 +1123,11 @@ func notify_poison_triggered(
             "actual_life_loss": int(damage_result.get("life_lost", 0)),
             "damage_result": damage_result.duplicate(true),
             "action_token": action_token, "replayed": replayed,
+            "source_kind": "card_status",
+            "source_id": "poison",
+            "source_name": "毒",
+            "source_instance_key": "card_status:%s:poison" % str(card.id),
+            "trigger_mode": "direct",
         })
 
 func notify_response_event(event_kind: String, values: Dictionary) -> void:
@@ -1110,12 +1156,61 @@ func finalize_reshape_action(side: BattleSide, preview: Dictionary) -> Dictionar
         return {"success": true, "reused": false}
     return runtime.finalize_action_preview(side, preview)
 
-func draw(side: BattleSide, count: int, source_kind: String = "") -> Array:
-    var draw_reason := source_kind if source_kind != "" else "effect_draw"
-    var drawn: Array = side.draw(count, draw_reason)
-    if source_kind == "technique":
+func draw(side: BattleSide, count: int, source_value = "") -> Array:
+    var source := _draw_source_metadata(source_value)
+    var draw_reason := str(source.get("draw_reason", "effect_draw"))
+    source.erase("draw_reason")
+    var drawn: Array = side.draw(count, draw_reason, source)
+    if str(source["source_kind"]) == "technique":
         _status_system.record_technique_card_flow(side, "draw", drawn.size())
     return drawn
+
+func _draw_source_metadata(source_value) -> Dictionary:
+    if source_value is Dictionary:
+        var result := EffectSourceProtocolScript.from_values(source_value)
+        result["draw_reason"] = str(source_value.get("draw_reason", "effect_draw"))
+        return result
+    var legacy := str(source_value)
+    if legacy in EffectSourceProtocolScript.SOURCE_KINDS \
+            or EffectSourceProtocolScript.LEGACY_SOURCE_MODES.has(legacy):
+        var result := EffectSourceProtocolScript.from_values({
+            "source_kind": legacy,
+        })
+        result["draw_reason"] = "effect_draw"
+        return result
+    var reason := legacy if legacy != "" else "effect_draw"
+    return {
+        "source_kind": "rule",
+        "source_id": reason,
+        "source_name": reason,
+        "source_instance_key": "rule:%s" % reason,
+        "trigger_mode": "direct",
+        "draw_reason": reason,
+    }
+
+func _effect_source_metadata(source_value) -> Dictionary:
+    if source_value is Dictionary:
+        return EffectSourceProtocolScript.from_values(source_value)
+    if source_value is Object:
+        return EffectSourceProtocolScript.from_context(source_value)
+    var legacy := str(source_value)
+    if legacy in EffectSourceProtocolScript.SOURCE_KINDS \
+            or EffectSourceProtocolScript.LEGACY_SOURCE_MODES.has(legacy):
+        return EffectSourceProtocolScript.from_values({
+            "source_kind": legacy,
+            "source_id": legacy,
+            "source_name": legacy,
+            "source_instance_key": "%s:%s" % [legacy, legacy],
+            "trigger_mode": "direct",
+        })
+    var rule_id := legacy if legacy != "" else "effect"
+    return EffectSourceProtocolScript.from_values({
+        "source_kind": "rule",
+        "source_id": rule_id,
+        "source_name": rule_id,
+        "source_instance_key": "rule:%s" % rule_id,
+        "trigger_mode": "direct",
+    })
 
 func shuffle_zone(
         side: BattleSide,
@@ -1130,14 +1225,20 @@ func current_effective_qi(side: BattleSide, card) -> int:
     return maxi(0, _status_system.modify_card_contribution(
         card, reshape_value, side))
 
-func discard_random(side: BattleSide, count: int, rng: RandomNumberGenerator) -> Array:
+func discard_random(
+        side: BattleSide,
+        count: int,
+        rng: RandomNumberGenerator,
+        source_value = "") -> Array:
     var discarded: Array = side.random_discard(count, rng)
-    _status_system.record_technique_card_flow(side, "discard", discarded.size())
+    if str(_effect_source_metadata(source_value)["source_kind"]) == "technique":
+        _status_system.record_technique_card_flow(side, "discard", discarded.size())
     return discarded
 
-func discard_all(side: BattleSide) -> Array:
+func discard_all(side: BattleSide, source_value = "") -> Array:
     var discarded: Array = side.discard_all()
-    _status_system.record_technique_card_flow(side, "discard", discarded.size())
+    if str(_effect_source_metadata(source_value)["source_kind"]) == "technique":
+        _status_system.record_technique_card_flow(side, "discard", discarded.size())
     return discarded
 
 func move_card(
@@ -1148,51 +1249,72 @@ func move_card(
         card,
         reason: String = "effect",
         placement: String = "top",
-        source_kind: String = "") -> Dictionary:
+        source_kind = "") -> Dictionary:
+    var effect_source := _effect_source_metadata(source_kind)
     var result: Dictionary
     if source_side == target_side:
         result = source_side.card_zone_service.move_card(
-            source_side, source_zone, destination_zone, card, reason)
+            source_side, source_zone, destination_zone, card, reason,
+            effect_source)
     else:
         result = source_side.temporarily_transfer_card_to(
-            target_side, str(card.id), destination_zone, reason)
+            target_side, str(card.id), destination_zone, reason,
+            effect_source)
     if result.get("success", false) and placement == "bottom":
         var destination: Array = target_side.card_zone_service.zone(
             target_side, destination_zone)
         destination.erase(card)
         destination.push_front(card)
-    if result.get("success", false) and source_kind == "technique":
+    if result.get("success", false) \
+            and str(effect_source["source_kind"]) == "technique":
         if destination_zone == "hand" and reason == "draw":
             _status_system.record_technique_card_flow(target_side, "draw", 1)
         elif destination_zone == "discard_pile" and reason == "explicit_discard":
             _status_system.record_technique_card_flow(source_side, "discard", 1)
     return result
 
-func move_cards_synchronously(records: Array) -> Array:
+func move_cards_synchronously(records: Array, source_value = "") -> Array:
     if records.is_empty():
         return []
     var first_side = records[0].get("side")
     if first_side == null:
         return []
-    var moved: Array = first_side.card_zone_service.move_cards_synchronously(records)
+    var effect_source := _effect_source_metadata(source_value)
+    var sourced_records: Array = []
+    for record_value in records:
+        var sourced_record: Dictionary = record_value.duplicate(true)
+        sourced_record["source_metadata"] = effect_source.duplicate(true)
+        sourced_records.append(sourced_record)
+    var moved: Array = first_side.card_zone_service.move_cards_synchronously(
+        sourced_records)
     for record in records:
-        if moved.has(record.get("card")) and str(record.get("reason", "")) == "explicit_discard":
+        if str(effect_source["source_kind"]) == "technique" \
+                and moved.has(record.get("card")) \
+                and str(record.get("reason", "")) == "explicit_discard":
             _status_system.record_technique_card_flow(record.get("side"), "discard", 1)
     return moved
 
-func transfer_cards_atomically(records: Array) -> Array:
+func transfer_cards_atomically(records: Array, source_value = "") -> Array:
     if records.is_empty():
         return []
     var first_side = records[0].get("source_side")
     if first_side == null:
         return []
-    return first_side.card_zone_service.temporarily_transfer_many(records)
+    var effect_source := _effect_source_metadata(source_value)
+    var sourced_records: Array = []
+    for record_value in records:
+        var sourced_record: Dictionary = record_value.duplicate(true)
+        sourced_record["source_metadata"] = effect_source.duplicate(true)
+        sourced_records.append(sourced_record)
+    return first_side.card_zone_service.temporarily_transfer_many(sourced_records)
 
 func atomic_exchange_cards(
         actor_side: BattleSide, actor_zone: String, actor_card,
-        target_side: BattleSide, target_zone: String, target_card) -> Dictionary:
+        target_side: BattleSide, target_zone: String, target_card,
+        source_value = "") -> Dictionary:
     return actor_side.card_zone_service.atomic_exchange(
-        actor_side, actor_zone, actor_card, target_side, target_zone, target_card)
+        actor_side, actor_zone, actor_card, target_side, target_zone, target_card,
+        _effect_source_metadata(source_value))
 
 func zone_cards(side: BattleSide, zone: String) -> Array:
     match zone:
@@ -1305,7 +1427,7 @@ func gain_extra_actions(
         side: BattleSide,
         amount: int,
         source: String,
-        source_category: String = "technique",
+        source_category: String = "rule",
         action_token: String = "") -> int:
     var gained: int = _battle_flow.grant_actions(side, amount, {
         "category": source_category,
@@ -1409,7 +1531,7 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
             str(resolution.get("damage_type", "normal")),
             str(resolution.get("source_kind", "")),
             resolved_action_token,
-            resolution.get("block_result", {}))
+            resolution.get("block_result", {}), metadata)
         return false
     _record_action_damage(
         resolution["actor"], resolution["target"], resolution["result"])
@@ -1424,7 +1546,7 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         int(resolution.get("requested_amount", resolution["amount"])),
         str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
         resolution["result"], true,
-        str(resolution.get("action_token", "")))
+        str(resolution.get("action_token", "")), metadata)
     resolution["result"]["defense_reduction_cause"] = "damage_absorption"
     _emit_damage_absorption_defense_reduced(
         resolution["actor"], resolution["target"], resolution["result"],
@@ -1433,7 +1555,7 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         resolution["actor"],
         resolution["target"],
         str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
-        resolution["result"], resolved_action_token)
+        resolution["result"], resolved_action_token, metadata)
     if str(metadata.get("kind", "")) == "poison_card_trigger":
         notify_poison_triggered(
             metadata.get("holder"), metadata.get("card"),
@@ -1554,7 +1676,8 @@ func _emit_damage_resolved(
         damage_type: String,
         result: Dictionary,
         synchronized: bool,
-        action_token: String = "") -> void:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> void:
     var values := {
         "actor": actor, "target": target, "owner": actor,
         "attacker": actor, "defender": target, "holder": target,
@@ -1572,6 +1695,10 @@ func _emit_damage_resolved(
         "defense_after": int(target.defense) if target != null else 0,
         "life_after": int(target.life) if target != null else 0,
     }
+    for field in [
+            "source_id", "source_name", "source_instance_key", "trigger_mode"]:
+        if source_metadata.has(field):
+            values[field] = source_metadata[field]
     if _committed_event_service != null:
         var serial: int = int(_committed_event_service.next_serial())
         values["event_token"] = _committed_event_service.make_token(
@@ -1590,9 +1717,10 @@ func _resolve_reflection(
         source_kind: String,
         damage_type: String,
         result: Dictionary,
-        action_token: String = "") -> void:
+        action_token: String = "",
+        resolution_metadata: Dictionary = {}) -> void:
     if attacker == null or defender == null or attacker == defender \
-            or source_kind == "reflection" \
+            or bool(resolution_metadata.get("reflection_damage", false)) \
             or damage_type == "poison":
         return
     if str(result.get(
@@ -1608,8 +1736,16 @@ func _resolve_reflection(
     var reflection_source_token := str(defender.current_reflection_source_token)
     var reflection_type := "true" if defender.reflection_is_true_damage() else "normal"
     var reflected := deal_damage(
-        defender, attacker, amount, "reflection", reflection_type == "true",
-        action_token, reflection_type, {"direct_attack": false})
+        defender, attacker, amount, {
+            "source_kind": "rule",
+            "source_id": "reflection",
+            "source_name": "反震",
+            "source_instance_key": "rule:reflection:%s" % reflection_source_token,
+            "trigger_mode": "response",
+        }, reflection_type == "true", action_token, reflection_type, {
+            "direct_attack": false,
+            "reflection_damage": true,
+        })
     var event_values := {
         "attacker": attacker, "defender": defender,
         "actor": defender, "holder": defender, "target": attacker,
@@ -1641,7 +1777,7 @@ func _try_block_damage(
         metadata: Dictionary) -> Dictionary:
     if actor == null or target == null or actor == target \
             or damage_type not in ["normal", "true"] \
-            or source_kind == "reflection" \
+            or bool(metadata.get("reflection_damage", false)) \
             or not bool(metadata.get("direct_attack", false)):
         return {"blocked": false}
     if not bool(metadata.get("blockable", true)):
@@ -1657,7 +1793,8 @@ func _emit_damage_blocked(
         damage_type: String,
         source_kind: String,
         action_token: String,
-        block_result: Dictionary) -> void:
+        block_result: Dictionary,
+        source_metadata: Dictionary = {}) -> void:
     var source: Dictionary = block_result.get("source", {})
     var values := {
         "actor": actor, "attacker": actor,
@@ -1670,6 +1807,10 @@ func _emit_damage_blocked(
         "action_window_id": _current_action_window_id(),
         "source_metadata": source.get("metadata", {}).duplicate(true),
     }
+    for field in [
+            "source_id", "source_name", "source_instance_key", "trigger_mode"]:
+        if source_metadata.has(field):
+            values[field] = source_metadata[field]
     add_history(
         "damage_blocked", "%s格挡%s攻击" % [target.name, actor.name],
         str(source.get("label", "格挡")), "成功", "%d点%s" % [amount, damage_type])

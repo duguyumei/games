@@ -38,8 +38,9 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
             if side == null or side.source_marker_store == null:
                 return 0
             return side.source_marker_store.value(
-                str(spec.get("source_kind", "technique")),
-                str(spec.get("source_instance_key", runtime.slot_instance_id)),
+                str(spec.get("source_kind", runtime.source_kind)),
+                str(spec.get(
+                    "source_instance_key", runtime.source_instance_key)),
                 str(spec.get("marker_id", "")), str(spec.get("scope", "")))
         "source_marker_sum":
             var side = resolver.side(runtime, str(spec.get("side", "actor")))

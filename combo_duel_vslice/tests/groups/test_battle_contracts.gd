@@ -13,6 +13,7 @@ func _initialize() -> void:
         "_test_battle_card_policy_ports",
         "_test_technique_and_cooperation_permission_wiring",
         "_test_battle_passive_effect_command_ports",
+        "_test_effect_source_neutrality_runtime_paths",
         "_test_awakening_battle_runtime",
         "_test_f2d2_formal_enhancement_runtime",
         "_test_f2d2_opportunity_freeze_and_progress_sync",

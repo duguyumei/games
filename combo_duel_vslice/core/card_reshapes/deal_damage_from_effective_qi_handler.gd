@@ -19,6 +19,12 @@ func execute(behavior: Dictionary, context) -> Dictionary:
         context.holder,
         target,
         amount,
-        str(behavior["source_kind"]))
+        {
+            "source_kind": "card_reshape",
+            "source_id": str(behavior["source_kind"]),
+            "source_name": "真气重塑",
+            "source_instance_key": "card_reshape:%s" % str(context.card.id),
+            "trigger_mode": "direct",
+        })
     result["applied"] = bool(result.get("success", false))
     return result

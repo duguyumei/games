@@ -108,11 +108,31 @@ func effect_context_for(current_source = null):
     var resolved_source = current_source if current_source != null else source
     var values: Dictionary = payload.get("effect_context_values", {}).duplicate(false)
     if resolved_source != null:
+        var source_name := str(resolved_source.definition.get("name", ""))
         values["technique_id"] = resolved_source.content_id
-        values["technique_name"] = str(resolved_source.definition.get("name", ""))
+        values["technique_name"] = source_name
         values["source_kind"] = resolved_source.source_kind
+        values["source_id"] = resolved_source.content_id
+        values["source_name"] = source_name
+        values["source_instance_key"] = resolved_source.source_instance_key
+        values["trigger_mode"] = str(values.get("trigger_mode", "manual"))
         var captures_by_source: Dictionary = payload.get("captures_by_source", {})
         if not captures_by_source.has(resolved_source.source_instance_key):
             captures_by_source[resolved_source.source_instance_key] = {}
         values["captures"] = captures_by_source[resolved_source.source_instance_key]
     return EffectContextScript.new().configure(values)
+
+func effect_source_metadata() -> Dictionary:
+    if source == null:
+        return {
+            "source_kind": "rule", "source_id": hook,
+            "source_name": hook, "source_instance_key": "rule:%s" % hook,
+            "trigger_mode": "direct",
+        }
+    return {
+        "source_kind": str(source.source_kind),
+        "source_id": str(source.content_id),
+        "source_name": str(source.definition.get("name", "")),
+        "source_instance_key": str(source.source_instance_key),
+        "trigger_mode": "direct",
+    }

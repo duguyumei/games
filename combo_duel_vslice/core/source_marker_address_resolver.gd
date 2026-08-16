@@ -2,20 +2,31 @@ class_name SourceMarkerAddressResolver
 extends RefCounted
 
 func resolve(spec: Dictionary, runtime, slot_override: Dictionary = {}) -> Dictionary:
-    var source_kind := str(spec.get("source_kind", "technique"))
+    var runtime_source_kind := str(runtime.get("source_kind", "")) \
+        if runtime is Dictionary else str(runtime.source_kind)
+    var runtime_source_id := str(runtime.get("source_id", "")) \
+        if runtime is Dictionary else str(runtime.source_id)
+    var runtime_source_instance_key := str(runtime.get(
+        "source_instance_key", "")) if runtime is Dictionary \
+        else str(runtime.source_instance_key)
+    var source_kind := str(spec.get("source_kind", runtime_source_kind))
     var runtime_technique_id := str(runtime.get("technique_id", "")) \
         if runtime is Dictionary else str(runtime.technique_id)
     var runtime_slot_id := str(runtime.get("slot_instance_id", "")) \
         if runtime is Dictionary else str(runtime.slot_instance_id)
     var runtime_book = runtime.get("sequence_book") \
         if runtime is Dictionary else runtime.sequence_book
-    var content_id := str(spec.get("content_id", runtime_technique_id))
+    var content_id := str(spec.get(
+        "content_id", runtime_source_id if runtime_source_id != "" \
+        else runtime_technique_id))
     var scope := str(spec.get("scope", "battle"))
     var slot := slot_override.duplicate(true)
     if slot.is_empty() and source_kind == "technique" \
             and runtime_book != null and runtime_slot_id != "":
         slot = _slot(runtime_book, runtime_slot_id)
     var explicit_key := str(spec.get("source_instance_key", ""))
+    if explicit_key == "" and source_kind != "technique":
+        explicit_key = runtime_source_instance_key
     var source_instance_key := explicit_key
     if source_kind == "technique":
         if scope == "run":
@@ -36,6 +47,8 @@ func resolve(spec: Dictionary, runtime, slot_override: Dictionary = {}) -> Dicti
                 source_instance_key = str(slot["origin_slot_instance_id"])
     elif source_instance_key == "":
         source_instance_key = "%s:%s" % [source_kind, content_id]
+    if source_kind not in ["technique", "inner_skill"]:
+        return {"success": false, "reason": "来源标识暂不允许来源类型：%s" % source_kind}
     if source_instance_key == "" or content_id == "":
         return {"success": false, "reason": "来源标识缺少稳定来源地址"}
     return {
@@ -55,6 +68,9 @@ func resolve_for_slot(spec: Dictionary, slot: Dictionary) -> Dictionary:
     var proxy := {
         "technique_id": str(slot.get("technique_id", "")),
         "slot_instance_id": str(slot.get("slot_instance_id", "")),
+        "source_kind": "technique",
+        "source_id": str(slot.get("technique_id", "")),
+        "source_instance_key": str(slot.get("slot_instance_id", "")),
         "sequence_book": null,
     }
     return resolve(spec, proxy, slot)

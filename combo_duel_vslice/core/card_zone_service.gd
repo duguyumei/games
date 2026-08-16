@@ -1,6 +1,9 @@
 class_name CardZoneService
 extends RefCounted
 
+const EffectSourceProtocolScript = preload(
+    "res://core/effects/effect_source_protocol.gd")
+
 ## 单个参战者的牌区移动与索引维护服务。
 ##
 ## 这里只保持抽牌堆、手牌、待出区和弃牌堆的一致性，不判断牌型、不结算功法，
@@ -45,16 +48,29 @@ func reset_zones(side, cards: Array, rng: RandomNumberGenerator, shuffle_cards: 
     if shuffle_cards:
         shuffle(side.draw_pile, rng)
 
-func draw(side, count: int, draw_reason: String = "rule_draw") -> Array:
+func draw(
+        side,
+        count: int,
+        draw_reason: String = "rule_draw",
+        source_metadata: Dictionary = {}) -> Array:
     var drawn: Array = []
+    var source := source_metadata.duplicate(true)
+    if source.is_empty():
+        source = {
+            "source_kind": "rule",
+            "source_id": draw_reason,
+            "source_name": draw_reason,
+            "source_instance_key": "rule:%s" % draw_reason,
+            "trigger_mode": "direct",
+        }
+    source = EffectSourceProtocolScript.from_values(source)
     for _index in range(maxi(0, count)):
         if side.draw_pile.is_empty():
             break
         var card = side.draw_pile.back()
-        move_card(side, "draw_pile", "hand", card, "draw", {
-            "draw_reason": draw_reason,
-            "source_kind": draw_reason,
-        })
+        var metadata := source.duplicate(true)
+        metadata["draw_reason"] = draw_reason
+        move_card(side, "draw_pile", "hand", card, "draw", metadata)
         drawn.append(card)
     return drawn
 
@@ -140,12 +156,17 @@ func recover_from_discard(
         recovered.append(card)
     return recovered
 
-func temporarily_remove(side, instance_id: String, reason: String = "burn") -> Dictionary:
+func temporarily_remove(
+        side,
+        instance_id: String,
+        reason: String = "burn",
+        source_metadata: Dictionary = {}) -> Dictionary:
     var location := find_active_location(side, instance_id)
     if location.is_empty():
         return {"success": false, "reason": "找不到要临时移出战斗的真气"}
     return _temporarily_remove_transaction(
-        side, location["card"], str(location["zone"]), reason)
+        side, location["card"], str(location["zone"]), reason,
+        source_metadata)
 
 func permanently_remove(side, instance_id: String, reason: String = "permanent_remove") -> Dictionary:
     var location := find_active_location(side, instance_id)
@@ -178,7 +199,8 @@ func temporarily_transfer(
         target_side,
         instance_id: String,
         destination: String = "draw_pile",
-        reason: String = "temporary_transfer") -> Dictionary:
+        reason: String = "temporary_transfer",
+        source_metadata: Dictionary = {}) -> Dictionary:
     if destination not in ACTIVE_ZONES:
         return {"success": false, "reason": "临时夺取的目标牌区无效"}
     var location := find_active_location(source_side, instance_id)
@@ -203,7 +225,7 @@ func temporarily_transfer(
         "reason": reason,
     }
     var event_result := _notify_arrival(
-        target_side, card, source_zone, destination, reason, {})
+        target_side, card, source_zone, destination, reason, source_metadata)
     if not event_result.get("success", true):
         result["passive_event_success"] = false
         result["passive_event_reason"] = event_result.get("reason", "")
@@ -236,6 +258,7 @@ func temporarily_transfer_many(records: Array) -> Array:
             "source_zone": source_zone, "destination_zone": destination_zone,
             "card": card, "reason": reason,
             "pre_move_snapshot": _pre_move_snapshot(source_side, card, source_zone),
+            "source_metadata": record.get("source_metadata", {}).duplicate(true),
         })
     for entry in prepared:
         _clear_meridian_on_real_hand_departure(
@@ -247,12 +270,14 @@ func temporarily_transfer_many(records: Array) -> Array:
         zone(entry["target_side"], entry["destination_zone"]).append(entry["card"])
     var moved: Array = []
     for entry in prepared:
+        var metadata: Dictionary = entry["source_metadata"].duplicate(true)
+        metadata.merge({
+            "pre_move_snapshot": entry["pre_move_snapshot"],
+            "original_owner_id": entry["source_side"].owner_id,
+        }, true)
         _notify_arrival(
             entry["target_side"], entry["card"], entry["source_zone"],
-            entry["destination_zone"], entry["reason"], {
-                "pre_move_snapshot": entry["pre_move_snapshot"],
-                "original_owner_id": entry["source_side"].owner_id,
-            })
+            entry["destination_zone"], entry["reason"], metadata)
         moved.append(entry["card"])
     return moved
 
@@ -426,6 +451,7 @@ func move_cards_synchronously(records: Array) -> Array:
             "side": side, "card": card, "source_zone": source_zone,
             "destination_zone": destination_zone, "reason": reason,
             "pre_move_snapshot": _pre_move_snapshot(side, card, source_zone),
+            "source_metadata": record.get("source_metadata", {}).duplicate(true),
             "void": card.has_anomaly("mark", "void") \
                 and reason in ["normal_play", "explicit_discard"],
         })
@@ -439,7 +465,8 @@ func move_cards_synchronously(records: Array) -> Array:
     for entry in prepared:
         var side = entry["side"]
         var card = entry["card"]
-        var metadata := {"pre_move_snapshot": entry["pre_move_snapshot"]}
+        var metadata: Dictionary = entry["source_metadata"].duplicate(true)
+        metadata["pre_move_snapshot"] = entry["pre_move_snapshot"]
         if bool(entry["void"]):
             if entry["reason"] == "explicit_discard":
                 if status_system != null:
@@ -456,7 +483,8 @@ func move_cards_synchronously(records: Array) -> Array:
 
 func atomic_exchange(
         actor_side, actor_zone: String, actor_card,
-        target_side, target_zone: String, target_card) -> Dictionary:
+        target_side, target_zone: String, target_card,
+        event_metadata: Dictionary = {}) -> Dictionary:
     if actor_side == null or target_side == null or actor_side == target_side:
         return {"success": false, "reason": "原子交换需要不同的双方"}
     if not zone(actor_side, actor_zone).has(actor_card) \
@@ -474,10 +502,22 @@ func atomic_exchange(
         target_card.original_owner_id = target_side.owner_id
     zone(actor_side, "hand").append(target_card)
     zone(target_side, "hand").append(actor_card)
-    _notify_arrival(actor_side, target_card, target_zone, "hand", "atomic_exchange", {
-        "pre_move_snapshot": target_snapshot, "original_owner_id": target_side.owner_id})
-    _notify_arrival(target_side, actor_card, actor_zone, "hand", "atomic_exchange", {
-        "pre_move_snapshot": actor_snapshot, "original_owner_id": actor_side.owner_id})
+    var actor_metadata := event_metadata.duplicate(true)
+    actor_metadata.merge({
+        "pre_move_snapshot": target_snapshot,
+        "original_owner_id": target_side.owner_id,
+    }, true)
+    var target_metadata := event_metadata.duplicate(true)
+    target_metadata.merge({
+        "pre_move_snapshot": actor_snapshot,
+        "original_owner_id": actor_side.owner_id,
+    }, true)
+    _notify_arrival(
+        actor_side, target_card, target_zone, "hand", "atomic_exchange",
+        actor_metadata)
+    _notify_arrival(
+        target_side, actor_card, actor_zone, "hand", "atomic_exchange",
+        target_metadata)
     return {"success": true, "actor_received": target_card, "target_received": actor_card,
         "actor_sent_snapshot": actor_snapshot, "target_sent_snapshot": target_snapshot}
 
@@ -530,7 +570,8 @@ func _finish_temporary_remove(
     if not side.temporarily_removed_cards.has(card):
         side.temporarily_removed_cards.append(card)
     if status_system != null:
-        status_system.handle_response_event("card_moved", {
+        var moved_values := event_metadata.duplicate(true)
+        moved_values.merge({
             "actor": side, "holder": side, "card": card,
             "source_card_instance_id": str(card.id),
             "from_zone": source_zone, "to_zone": "temporarily_removed",
@@ -538,7 +579,8 @@ func _finish_temporary_remove(
             "round_number": int(round_number_reader.call()) \
                 if round_number_reader.is_valid() else 0,
             "pre_move_snapshot": event_metadata.get("pre_move_snapshot", {}),
-        })
+        }, true)
+        status_system.handle_response_event("card_moved", moved_values)
     return {
         "success": true, "card": card, "from": source_zone,
         "to": "temporarily_removed", "reason": reason,
@@ -634,7 +676,7 @@ func _notify_arrival(
     var committed: Dictionary = _emit_committed_card_events(
         side, card, source_zone, destination_zone, reason, event_metadata)
     if committed.get("success", true) and status_system != null:
-        status_system.handle_response_event("card_moved", {
+        var moved_values := {
             "actor": side,
             "holder": side,
             "card": card,
@@ -645,7 +687,13 @@ func _notify_arrival(
             "round_number": int(round_number_reader.call()) \
                 if round_number_reader.is_valid() else 0,
             "pre_move_snapshot": event_metadata.get("pre_move_snapshot", {}),
-        })
+        }
+        var source := EffectSourceProtocolScript.from_values(event_metadata)
+        for field in [
+                "source_kind", "source_id", "source_name",
+                "source_instance_key", "trigger_mode"]:
+            moved_values[field] = source[field]
+        status_system.handle_response_event("card_moved", moved_values)
     return committed
 
 func _emit_committed_card_events(
@@ -670,10 +718,13 @@ func _emit_committed_card_events(
         "reason": reason,
         "metadata": metadata,
     }
+    var event_source := EffectSourceProtocolScript.from_values(metadata)
+    for field in [
+            "source_kind", "source_id", "source_name",
+            "source_instance_key", "trigger_mode"]:
+        common[field] = event_source[field]
     if destination_zone == "hand" and reason == "draw":
         common["draw_reason"] = str(metadata.get("draw_reason", "rule_draw"))
-        common["source_kind"] = str(metadata.get(
-            "source_kind", common["draw_reason"]))
         common["effective_qi"] = (
             status_system.effective_qi_value(card)
             if status_system != null else int(card.effective_qi_value()))

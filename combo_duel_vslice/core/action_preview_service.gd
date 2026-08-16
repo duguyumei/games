@@ -164,7 +164,11 @@ func preview_dto(
         "technique_name": str(technique.get("name", "")),
         "technique_pool": str(technique.get("pool", "")),
         "captures": {},
-        "source_kind": "preview",
+        "source_kind": "technique",
+        "source_id": str(technique.get("id", "")),
+        "source_name": str(technique.get("name", "")),
+        "source_instance_key": "technique:%s" % str(technique.get("id", "")),
+        "trigger_mode": "manual",
         "card_identity_policy": side.card_identity_policy,
     })
     var damage_percent := 0

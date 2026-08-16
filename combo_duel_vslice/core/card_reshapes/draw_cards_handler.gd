@@ -16,7 +16,13 @@ func execute(behavior: Dictionary, context) -> Dictionary:
     if not context.matches_origin_attribute(behavior):
         return {"success": true, "drawn": [], "applied": false}
     var drawn: Array = context.effect_ports.draw(
-        context.holder, int(behavior["count"]), "reshape")
+        context.holder, int(behavior["count"]), {
+            "source_kind": "card_reshape",
+            "source_id": str(context.card.reshape_origin.get("id", "reshape")),
+            "source_name": "真气重塑",
+            "source_instance_key": "card_reshape:%s" % str(context.card.id),
+            "trigger_mode": "direct",
+        })
     return {"success": true, "drawn": drawn, "applied": true}
 
 func _validate_attribute(behavior: Dictionary, validator, scope: String) -> void:

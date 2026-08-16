@@ -95,6 +95,11 @@ func _init(register_defaults: bool = true, effect_registry = null) -> void:
     if register_defaults:
         register_handler(OnPlayEffectsHandlerScript.new(effect_registry))
 
+func use_effect_indexes(anomalies_by_id: Dictionary) -> void:
+    for handler in _handlers.values():
+        if handler.has_method("use_effect_indexes"):
+            handler.use_effect_indexes(anomalies_by_id)
+
 func register_handler(handler) -> bool:
     if not (handler is HandlerScript):
         _record_error("invalid_handler", "被动行为处理器必须继承 PassiveRuleHandler", "")

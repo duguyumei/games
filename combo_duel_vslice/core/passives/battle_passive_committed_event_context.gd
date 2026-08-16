@@ -9,6 +9,10 @@ var event_serial: int = -1
 var card = null
 var card_instance_id: String = ""
 var source_kind: String = ""
+var source_id: String = ""
+var source_name: String = ""
+var source_instance_key: String = ""
+var trigger_mode: String = ""
 var requested_amount: int = 0
 var final_amount: int = 0
 var metadata: Dictionary = {}
@@ -43,6 +47,10 @@ func configure(values: Dictionary):
     card_instance_id = str(values.get(
         "card_instance_id", str(card.id) if card != null else ""))
     source_kind = str(values.get("source_kind", ""))
+    source_id = str(values.get("source_id", ""))
+    source_name = str(values.get("source_name", ""))
+    source_instance_key = str(values.get("source_instance_key", ""))
+    trigger_mode = str(values.get("trigger_mode", ""))
     requested_amount = int(values.get("requested_amount", 0))
     final_amount = int(values.get("final_amount", 0))
     metadata = values.get("metadata", {}).duplicate(false)
@@ -82,6 +90,10 @@ func for_invocation(current_invocation):
         "card": card,
         "card_instance_id": card_instance_id,
         "source_kind": source_kind,
+        "source_id": source_id,
+        "source_name": source_name,
+        "source_instance_key": source_instance_key,
+        "trigger_mode": trigger_mode,
         "requested_amount": requested_amount,
         "final_amount": final_amount,
         "metadata": metadata,

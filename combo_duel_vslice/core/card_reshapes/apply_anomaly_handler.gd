@@ -29,7 +29,11 @@ func execute(behavior: Dictionary, context) -> Dictionary:
             "holder": context.holder,
             "actor": context.holder,
             "action_token": context.action_token,
-            "source_kind": "reshape_behavior",
+            "source_kind": "card_reshape",
+            "source_id": str(context.card.reshape_origin.get("id", "reshape")),
+            "source_name": "重塑行为",
+            "source_instance_key": "card_reshape:%s" % str(context.card.id),
+            "trigger_mode": "automatic",
         })
     result["applied"] = bool(result.get("success", false))
     return result

@@ -97,7 +97,8 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
         validator.report_error(scope + ".marker_id", "必须提供 marker_id")
     elif not _is_snake_case(str(effect.get("marker_id", ""))):
         validator.report_error(scope + ".marker_id", "必须使用 snake_case")
-    if str(effect.get("source_kind", "technique")) not in ["technique", "inner_skill"]:
+    if effect.has("source_kind") \
+            and str(effect["source_kind"]) not in ["technique", "inner_skill"]:
         validator.report_error(scope + ".source_kind", "必须为 technique 或 inner_skill")
     if str(effect.get("scope", "battle")) not in ["battle", "run"]:
         validator.report_error(scope + ".scope", "必须为 battle 或 run")

@@ -34,7 +34,8 @@ const DYNAMIC_RESPONSE_EVENTS := \
 
 const PUBLIC_FIELDS := [
     "event_token", "event_serial", "action_token", "round_number",
-    "source_kind", "draw_reason", "damage_type", "hand_id",
+    "source_kind", "source_id", "source_name", "source_instance_key",
+    "draw_reason", "damage_type", "hand_id",
     "technique_id", "technique_pool", "initial_power", "technique_power",
     "trigger_mode", "effective_qi", "requested_amount", "final_amount",
     "effective_amount", "defense_lost", "life_lost", "actual_life_loss",

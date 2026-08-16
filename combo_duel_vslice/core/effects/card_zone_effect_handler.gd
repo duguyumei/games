@@ -40,8 +40,9 @@ func execute(effect: Dictionary, context):
             if draw_side == null:
                 return EffectResultScript.failed("抽牌目标不存在")
             var drawn: Array = (
-                runtime.ports.draw(draw_side, count, "technique")
-                if runtime.ports != null else draw_side.draw(count))
+                runtime.ports.draw(draw_side, count, runtime.source_metadata())
+                if runtime.ports != null
+                else draw_side.draw(count, "effect_draw", runtime.source_metadata()))
             if effect.has("capture"):
                 runtime.captures[effect["capture"]] = drawn
             return EffectResultScript.succeeded("抽 %d 张" % drawn.size())
@@ -60,16 +61,20 @@ func execute(effect: Dictionary, context):
                     return EffectResultScript.failed("属性追加抽牌目标不存在")
                 drawn = (
                     runtime.ports.draw(
-                        draw_side, int(effect.get("count", 1)), "technique")
+                        draw_side, int(effect.get("count", 1)),
+                        runtime.source_metadata())
                     if runtime.ports != null
-                    else draw_side.draw(int(effect.get("count", 1))))
+                    else draw_side.draw(
+                        int(effect.get("count", 1)), "effect_draw",
+                        runtime.source_metadata()))
             return EffectResultScript.succeeded(
                 "属性追加抽 %d 张" % drawn.size() if matches else "")
         "discard_random":
             var count: int = value_resolver.resolve(effect.get("count", {}), runtime)
             var discard_side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
             var discarded: Array = (
-                runtime.ports.discard_random(discard_side, count, rng)
+                runtime.ports.discard_random(
+                    discard_side, count, rng, runtime.source_metadata())
                 if runtime.ports != null else discard_side.random_discard(count, rng))
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = discarded
@@ -77,7 +82,8 @@ func execute(effect: Dictionary, context):
         "discard_all_hand":
             var discard_side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
             var discarded: Array = (
-                runtime.ports.discard_all(discard_side)
+                runtime.ports.discard_all(
+                    discard_side, runtime.source_metadata())
                 if runtime.ports != null else discard_side.discard_all())
             runtime.captures[effect.get("capture", "discarded")] = discarded
             return EffectResultScript.succeeded(
@@ -95,7 +101,8 @@ func execute(effect: Dictionary, context):
             return _draw_filtered(effect, runtime)
         "draw_to_limit":
             var side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
-            var drawn: Array = side.draw_to_limit("technique") if side != null else []
+            var drawn: Array = side.draw_to_limit(
+                "effect_draw", runtime.source_metadata()) if side != null else []
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = drawn
             return EffectResultScript.succeeded("补至手牌上限：%d 张" % drawn.size())
@@ -161,7 +168,8 @@ func execute(effect: Dictionary, context):
                     continue
                 var result: Dictionary = runtime.ports.temporarily_remove_card(
                     location["side"], str(card.id),
-                    str(effect.get("reason", "technique_dissipate")))
+                    str(effect.get("reason", "effect_dissipate")),
+                    runtime.source_metadata())
                 if result.get("success", false):
                     dissipated.append(card)
             runtime.captures[str(effect.get("result_capture", "dissipated"))] = dissipated
@@ -229,7 +237,7 @@ func _move_captured(effect: Dictionary, runtime):
             card,
             str(effect.get("reason", "effect")),
             str(effect.get("placement", "top")),
-            "technique")
+            runtime.source_metadata())
         if result.get("success", false):
             moved.append(card)
     if effect.has("result_capture"):
@@ -286,7 +294,8 @@ func _draw_rank_different_replacements(effect: Dictionary, runtime):
             continue
         var card = query_result["cards"][0]
         var moved: Dictionary = runtime.ports.move_card(
-            side, "draw_pile", side, "hand", card, "draw", "top", "technique")
+            side, "draw_pile", side, "hand", card, "draw", "top",
+            runtime.source_metadata())
         if moved.get("success", false):
             drawn.append(card)
     runtime.captures[str(effect.get("capture", "drawn"))] = drawn
@@ -352,7 +361,8 @@ func _atomic_exchange_captured(effect: Dictionary, runtime):
         return EffectResultScript.succeeded()
     var result: Dictionary = runtime.ports.atomic_exchange_cards(
         runtime.actor, str(effect.get("actor_zone", "hand")), actor_cards[0],
-        runtime.target, str(effect.get("target_zone", "draw_pile")), target_cards[0])
+        runtime.target, str(effect.get("target_zone", "draw_pile")), target_cards[0],
+        runtime.source_metadata())
     if effect.has("actor_received_capture"):
         runtime.captures[str(effect["actor_received_capture"])] = \
             [target_cards[0]] if result.get("success", false) else []
@@ -384,7 +394,8 @@ func _atomic_transfer_captures(effect: Dictionary, runtime):
                 "card": card,
                 "reason": str(effect.get("reason", "temporary_transfer")),
             })
-    var moved: Array = runtime.ports.transfer_cards_atomically(records)
+    var moved: Array = runtime.ports.transfer_cards_atomically(
+        records, runtime.source_metadata())
     if bool(effect.get("shuffle_destination", false)) \
             and str(effect.get("to_zone", "draw_pile")) == "draw_pile" \
             and not moved.is_empty():
@@ -410,7 +421,8 @@ func _synchronous_discard_queries(effect: Dictionary, runtime):
                 "destination_zone": "discard_pile", "card": card,
                 "reason": "explicit_discard",
             })
-    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    var moved: Array = runtime.ports.move_cards_synchronously(
+        records, runtime.source_metadata())
     runtime.captures[str(effect.get("capture", "synchronously_discarded"))] = moved
     return EffectResultScript.succeeded("同步弃置%d张真气" % moved.size())
 
@@ -433,7 +445,8 @@ func _discard_duplicate_ranks(effect: Dictionary, runtime):
                 records.append({"side": side, "source_zone": "hand",
                     "destination_zone": "discard_pile", "card": card,
                     "reason": "explicit_discard"})
-    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    var moved: Array = runtime.ports.move_cards_synchronously(
+        records, runtime.source_metadata())
     runtime.captures[str(effect.get("capture", "discarded"))] = moved
     return EffectResultScript.succeeded("重复牌阶弃置%d张" % moved.size())
 
@@ -463,7 +476,8 @@ func _discard_by_visible_attribute(effect: Dictionary, runtime):
             records.append({"side": side, "source_zone": "hand",
                 "destination_zone": "discard_pile", "card": card,
                 "reason": "explicit_discard"})
-    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    var moved: Array = runtime.ports.move_cards_synchronously(
+        records, runtime.source_metadata())
     runtime.captures[str(effect.get("capture", "discarded"))] = moved
     runtime.captures[str(effect.get("attribute_capture", "selected_attribute"))] = \
         [{"attribute": selected}]
@@ -490,7 +504,7 @@ func _draw_common_attribute_or_fallback(effect: Dictionary, runtime):
     if selected != null:
         var result: Dictionary = runtime.ports.move_card(
             runtime.actor, "draw_pile", runtime.actor, "hand", selected,
-            "draw", "top", "technique")
+            "draw", "top", runtime.source_metadata())
         if result.get("success", false):
             moved.append(selected)
     runtime.captures[str(effect.get("capture", "drawn"))] = moved
@@ -521,7 +535,8 @@ func _discard_captured_by_selected_base_attribute(effect: Dictionary, runtime):
             "card": card,
             "reason": "explicit_discard",
         })
-    var moved: Array = runtime.ports.move_cards_synchronously(records)
+    var moved: Array = runtime.ports.move_cards_synchronously(
+        records, runtime.source_metadata())
     runtime.captures[str(effect.get("result_capture", "discarded"))] = moved
     runtime.captures[str(effect.get("attribute_capture", "selected_attribute"))] = [{
         "attribute": selected_attribute,

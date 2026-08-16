@@ -44,13 +44,14 @@ func draw_cards(
     var target := _resolve_scope(target_scope, command["token"])
     if not target["success"]:
         return target["result"]
-    var drawn: Array = _effect_ports().draw(target["side"], count, source_kind)
+    var source := _source_metadata(source_kind)
+    var drawn: Array = _effect_ports().draw(target["side"], count, source)
     return _success(command["token"], not drawn.is_empty(), {
         "target_scope": target_scope,
         "requested_count": count,
         "drawn_count": drawn.size(),
         "card_instance_ids": _card_ids(drawn),
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
     })
 
 func discard_random_cards(
@@ -68,14 +69,15 @@ func discard_random_cards(
     var rng = _effect_ports().battle_rng()
     if rng == null:
         return _failure(command["token"], "战斗统一 RNG 尚未接入")
+    var source := _source_metadata(source_kind)
     var discarded: Array = _effect_ports().discard_random(
-        target["side"], count, rng)
+        target["side"], count, rng, source)
     return _success(command["token"], not discarded.is_empty(), {
         "target_scope": target_scope,
         "requested_count": count,
         "discarded_count": discarded.size(),
         "card_instance_ids": _card_ids(discarded),
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
     })
 
 func discard_all_cards(
@@ -87,12 +89,13 @@ func discard_all_cards(
     var target := _resolve_scope(target_scope, command["token"])
     if not target["success"]:
         return target["result"]
-    var discarded: Array = _effect_ports().discard_all(target["side"])
+    var source := _source_metadata(source_kind)
+    var discarded: Array = _effect_ports().discard_all(target["side"], source)
     return _success(command["token"], not discarded.is_empty(), {
         "target_scope": target_scope,
         "discarded_count": discarded.size(),
         "card_instance_ids": _card_ids(discarded),
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
     })
 
 func gain_defense(
@@ -112,8 +115,10 @@ func gain_defense(
     if not target["success"]:
         return target["result"]
     var before := int(target["side"].defense)
+    var source := _source_metadata(source_kind)
     var applied: Dictionary = _effect_ports().add_defense_result(
-        target["side"], amount, source_kind, token_check["action_token"])
+        target["side"], amount, str(source["source_kind"]),
+        token_check["action_token"])
     if not applied.get("success", false):
         return _failure(command["token"], str(applied.get(
             "reason", "防御增加查询失败")))
@@ -124,7 +129,7 @@ func gain_defense(
         "gained": gained,
         "before": before,
         "after": int(target["side"].defense),
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
         "action_token": token_check["action_token"],
     })
 
@@ -149,8 +154,9 @@ func deal_damage(
     var target := _resolve_scope(target_scope, command["token"])
     if not target["success"]:
         return target["result"]
+    var source := _source_metadata(source_kind)
     var resolved: Dictionary = _effect_ports().deal_damage(
-        actor["side"], target["side"], amount, source_kind,
+        actor["side"], target["side"], amount, source,
         true_damage, token_check["action_token"])
     if not resolved.get("success", false):
         return _failure(command["token"], str(resolved.get(
@@ -165,7 +171,7 @@ func deal_damage(
         "defense_lost": int(resolved.get("defense_lost", 0)),
         "life_lost": int(resolved.get("life_lost", 0)),
         "true_damage": true_damage,
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
         "action_token": token_check["action_token"],
     })
 
@@ -191,9 +197,10 @@ func move_card(
             "reason", "当前战斗不存在目标卡牌")))
     if str(located["zone"]) != from_zone:
         return _failure(command["token"], "目标卡牌不在声明的来源牌区")
+    var source := _source_metadata(source_kind)
     var moved: Dictionary = _effect_ports().move_card(
         located["side"], from_zone, located["side"], to_zone,
-        located["card"], reason, placement, source_kind)
+        located["card"], reason, placement, source)
     if not moved.get("success", false):
         return _failure(command["token"], str(moved.get(
             "reason", "移动卡牌失败")))
@@ -203,7 +210,7 @@ func move_card(
         "to_zone": to_zone,
         "reason": reason,
         "placement": placement,
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
     })
 
 func temporarily_remove_card(
@@ -260,7 +267,7 @@ func apply_card_anomaly(
             "reason", "卡牌异状被拒绝")))
     var applied: Dictionary = _effect_ports().apply_card_anomaly(
         located["card"], category, anomaly_id, payload,
-        source, layers, replace_state)
+        source, layers, replace_state, _source_metadata())
     if not applied.get("success", false):
         return _failure(command["token"], str(applied.get(
             "reason", "施加卡牌异状失败")))
@@ -325,13 +332,15 @@ func grant_extra_actions(
     var target := _resolve_scope(target_scope, command["token"])
     if not target["success"]:
         return target["result"]
+    var source := _source_metadata(source_kind)
     var gained: int = int(_effect_ports().gain_extra_actions(
-        target["side"], amount, source_kind))
+        target["side"], amount, str(source["source_name"]),
+        str(source["source_kind"])))
     return _success(command["token"], gained > 0, {
         "target_scope": target_scope,
         "requested_amount": amount,
         "gained": gained,
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
     })
 
 func gain_same_qi(
@@ -347,15 +356,16 @@ func gain_same_qi(
         return target["result"]
     var stable_token: String = (
         action_token if action_token != "" else str(command["token"]))
+    var source := _source_metadata(source_kind)
     var applied: Dictionary = _effect_ports().gain_same_qi(
-        target["side"], amount, source_kind, stable_token)
+        target["side"], amount, str(source["source_name"]), stable_token)
     if not applied.get("success", false):
         return _failure(command["token"], str(applied.get(
             "reason", "同气写入失败")))
     return _success(command["token"], not applied.get("reused", false), {
         "target_scope": target_scope,
         "amount": amount,
-        "source_kind": source_kind,
+        "source_kind": source["source_kind"],
         "action_token": stable_token,
         "same_qi_change": applied.duplicate(true),
     })
@@ -516,6 +526,17 @@ func _card_ids(cards: Array) -> Array[String]:
 
 func _effect_ports():
     return _effect_ports_ref.get_ref() if _effect_ports_ref != null else null
+
+func _source_metadata(_legacy_source_kind: String = "") -> Dictionary:
+    if _context != null and _context.has_method("effect_source_metadata"):
+        return _context.effect_source_metadata()
+    var hook := str(_context.hook) if _context != null else "passive_effect"
+    return {
+        "source_kind": "rule", "source_id": hook,
+        "source_name": hook,
+        "source_instance_key": "rule:%s" % hook,
+        "trigger_mode": "direct",
+    }
 
 func _report_scenario_error(reason: String) -> void:
     if _scenario_error.is_valid():
