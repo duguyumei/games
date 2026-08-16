@@ -378,8 +378,9 @@ func _test_delayed_effect_reuses_frozen_snapshot() -> void:
         context)
     engine.player.momentum_value = 100
     engine.player.set_momentum(0)
-    var resolved: Dictionary = engine.status_system._resolve_delayed_effect_chain(
-        registered["record"])
+    var resolved: Dictionary = (
+        engine.status_system.status_delay_service.resolve_turn_end_effects(
+            engine.player, 0))
     _assert_true(resolved["success"], "延迟效果恢复成功")
     _assert_equal(engine.player.momentum_value, 23, "延迟恢复保留冻结 P₀")
     _assert_equal(registered["record"]["power"], 53, "延迟记录保留最终 P")
