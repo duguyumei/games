@@ -674,6 +674,9 @@ func _emit_committed_card_events(
         common["draw_reason"] = str(metadata.get("draw_reason", "rule_draw"))
         common["source_kind"] = str(metadata.get(
             "source_kind", common["draw_reason"]))
+        common["effective_qi"] = (
+            status_system.effective_qi_value(card)
+            if status_system != null else int(card.effective_qi_value()))
         common["event_token"] = committed_event_service.make_token(
             "card_drawn", side, event_serial, "", str(card.id))
         return committed_event_service.commit("card_drawn", common)

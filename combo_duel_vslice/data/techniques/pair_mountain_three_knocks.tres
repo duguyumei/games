@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "pair_mountain_three_knocks"
+display_name = "山·听阵三叩"
+pool = "pair"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["pair", "two_pair", "full_house"] )
+marker_definitions = [{"id":"enemy_pair_technique_count","scope":"battle","public":true,"display_name":"听阵功法记录","forget_policy":"clear"},{"id":"enemy_pair_technique_p0","scope":"battle","public":true,"display_name":"听阵P₀记录","forget_policy":"clear"}]
+automatic_triggers = [{"id":"three_knocks","event":"action_resolved","filters":{"event_actor_is_opponent":true,"technique_triggered":true,"action_succeeded":true,"technique_pool":"pair"},"timing":"immediate","progress":{"marker_id":"enemy_pair_technique_count","add":1,"threshold":3,"consume":3,"retain_overflow":true,"additional":[{"marker_id":"enemy_pair_technique_p0","add":{"kind":"event_field","capture":"event","field":"initial_power"},"consume":"all","retain_overflow":true}],"consumed_marker_id":"enemy_pair_technique_p0"},"p0":{"kind":"divide_floor","value":{"kind":"consumed_marker_value"},"divisor":3}}]
+description = "主动触发时获得P点防御。敌方每成功发动3门对子池功法，记录并消耗这3门功法的P₀；本功法以三者P₀平均值作为特殊P₀自动触发，获得P点防御，并使同气槽+1。主动触发不会清除已经积累的次数或数值。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "same_qi_payoff", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["defense", "same_qi_payoff", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power"}},{"op":"write_same_qi","phase":"prepare","operation":"add","amount":1,"when":{"trigger_mode":"automatic"}}]

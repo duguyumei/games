@@ -1028,6 +1028,9 @@ func notify_poison_triggered(
             "source_card_instance_id": str(card.id),
             "round_number": _round_number(),
             "action_token": action_token,
+            "source_kind": "poison",
+            "damage_type": "poison",
+            "requested_amount": maxi(0, frozen_amount),
             "frozen_amount": maxi(0, frozen_amount),
             "final_amount": int(damage_result.get(
                 "poison_final_amount", damage_result.get("final_amount", 0))),

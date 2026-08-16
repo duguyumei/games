@@ -18,6 +18,7 @@ const CONDITION_DEFINITIONS := {
     "capture_empty": {"validation": "capture_id", "runtime": "capture_empty"},
     "hand_id": {"validation": "hand_id", "runtime": "hand_id"},
     "exact_hand_id": {"validation": "hand_id", "runtime": "exact_hand_id"},
+    "trigger_mode": {"validation": "trigger_mode", "runtime": "trigger_mode"},
     "capture_count_equals": {"validation": "capture_count", "runtime": "capture_count_equals"},
     "capture_count_at_least": {"validation": "capture_count", "runtime": "capture_count_at_least"},
     "capture_all_attribute": {"validation": "capture_attribute", "runtime": "capture_all_attribute"},
@@ -62,6 +63,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "attacker_is_target": {"validation": "bool", "value": "record_relation", "left": "attacker", "right": "target"},
     "defender_is_actor": {"validation": "bool", "value": "record_relation", "left": "defender", "right": "actor"},
     "defense_lost_positive": {"validation": "bool", "value": "positive", "key": "defense_lost"},
+    "requested_amount_positive": {"validation": "bool", "value": "positive", "key": "requested_amount"},
     "actual_life_loss_positive": {"validation": "bool", "value": "positive", "key": "actual_life_loss", "fallback": "life_lost"},
     "life_lost_equals": {"validation": "non_negative_int", "value": "direct", "key": "life_lost"},
     "defense_after_equals": {"validation": "non_negative_int", "value": "direct", "key": "defense_after"},
@@ -94,6 +96,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "draw_reason": {"validation": "nonempty_string", "value": "direct", "key": "draw_reason"},
     "damage_type": {"validation": "damage_type", "value": "direct", "key": "damage_type"},
     "hand_id": {"validation": "hand_id", "value": "direct", "key": "hand_id"},
+    "technique_pool": {"validation": "nonempty_string", "value": "direct", "key": "technique_pool"},
     "technique_power": {"validation": "integer", "value": "direct", "key": "technique_power"},
     "requested_amount": {"validation": "integer", "value": "direct", "key": "requested_amount"},
     "final_amount": {"validation": "integer", "value": "direct", "key": "final_amount"},
@@ -370,6 +373,8 @@ func _scalar_valid(value, validation: String) -> bool:
         "side": return value is String and str(value) in ["actor", "target"]
         "zone": return value is String and ZONE_IDS.has(str(value))
         "damage_type": return value is String and DAMAGE_TYPES.has(str(value))
+        "trigger_mode": return value is String \
+            and str(value) in ["manual", "automatic", "invoked"]
         "owner_role", "holder_role":
             return value is String and str(value) in ["actor", "target"]
         "string_array":
@@ -394,6 +399,7 @@ func _validation_message(validation: String) -> String:
         "side": return "必须为 actor 或 target"
         "zone": return "引用未知牌区"
         "damage_type": return "引用未知伤害类型"
+        "trigger_mode": return "必须为 manual、automatic 或 invoked"
         "owner_role", "holder_role": return "必须为 actor 或 target"
         "string_array": return "必须是非空字符串数组"
     return "必须是非空字符串"
@@ -507,6 +513,8 @@ func _evaluate_condition_field(
                 or runtime.branch_hand_id == str(expected)
         "exact_hand_id":
             return runtime.actual_hand_id == str(expected)
+        "trigger_mode":
+            return runtime.trigger_mode == str(expected)
         "capture_count_equals", "capture_count_at_least":
             var count_spec: Dictionary = expected
             var count: int = runtime.captures.get(

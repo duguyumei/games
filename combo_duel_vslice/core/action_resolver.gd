@@ -638,16 +638,26 @@ func _finish_action_record(record) -> void:
 func _emit_action_resolved(record) -> void:
     if committed_event_service == null:
         return
+    var preview: Dictionary = record["preview"]
+    var technique: Dictionary = preview.get("technique", {})
+    var values: Dictionary = preview.get("values", {})
     committed_event_service.commit("action_resolved", {
         "event_token": committed_event_service.make_token(
             "action_resolved", record["actor"], record["token"], record["token"]),
         "actor": record["actor"], "target": record["target"],
         "owner": record["actor"], "round_number": int(record["turn_number"]),
         "action_token": str(record["token"]),
+        "source_kind": "technique" if bool(record["triggered"]) else "action",
+        "hand_id": str(preview.get("hand", {}).get("id", "")),
+        "technique_id": str(technique.get("id", "")),
+        "technique_pool": str(technique.get("pool", "")),
+        "initial_power": int(values.get("initial_power", 0)),
+        "technique_power": int(values.get("technique_value", 0)),
+        "trigger_mode": "manual",
         "technique_triggered": bool(record["triggered"]),
         "action_succeeded": not bool(record["failed"]),
         "metadata": {
-            "hand_id": str(record["preview"]["hand"]["id"]),
+            "hand_id": str(preview["hand"]["id"]),
             "staging_count_after": record["actor"].staging.size(),
             "sequence_position_after": record["book"].positions.get(
                 str(record["preview"]["hand"]["id"]), 0),

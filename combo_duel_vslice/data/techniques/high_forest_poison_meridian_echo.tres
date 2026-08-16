@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_forest_poison_meridian_echo"
+display_name = "林·蛊脉自鸣"
+pool = "high"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["high_card"] )
+manual_effect_mode = "advance_only"
+marker_definitions = [{"id":"poison_segment_count","scope":"battle","public":true,"display_name":"毒伤段记录","forget_policy":"clear"},{"id":"poison_segment_damage","scope":"battle","public":true,"display_name":"毒伤值记录","forget_policy":"clear"}]
+automatic_triggers = [{"id":"poison_meridian_echo","event":"poison_trigger_completed","filters":{"event_actor_is_owner":true,"requested_amount_positive":true},"timing":"immediate","progress":{"marker_id":"poison_segment_count","add":1,"threshold":3,"consume":3,"retain_overflow":true,"additional":[{"marker_id":"poison_segment_damage","add":{"kind":"event_field","capture":"event","field":"final_amount"},"consume":"all","retain_overflow":true}],"consumed_marker_id":"poison_segment_damage"},"p0":{"kind":"consumed_marker_value"}}]
+description = "我方每受到3个有效毒伤段，消耗3次记录并自动触发本功法。特殊P₀等于这3个毒伤段进入毒防御前的伤害总和。获得P点防御，并使同气槽+1。主动触发时效果无效，但正常计算P、读取和结算连势、结算同气、发送事件并推进序列。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "same_qi_payoff", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["defense", "same_qi_payoff", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power"}},{"op":"write_same_qi","phase":"prepare","operation":"add","amount":1}]

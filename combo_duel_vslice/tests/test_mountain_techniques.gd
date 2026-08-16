@@ -21,6 +21,7 @@ const MOUNTAIN_TECHNIQUES := {
     "pair_mountain_flawless_wall":"山·无漏壁",
     "pair_mountain_forging_guard":"山·打铁式",
     "pair_mountain_broken_armor_qi":"山·折甲行气",
+    "pair_mountain_three_knocks":"山·听阵三叩",
     "three_mountain_guard_jade":"山·护璞",
     "three_mountain_joined_ridge":"山·合脊",
     "three_mountain_high_card_cooperate":"山·列峰并阵",
@@ -77,8 +78,8 @@ func _initialize() -> void:
     _finish("MOUNTAIN TECHNIQUE TEST")
 
 func _test_formal_pool_contract(repository) -> void:
-    _assert_equal(repository.techniques.size(), 223, "正式资源总数为223")
-    var expected := {"high":57, "pair":53, "three":35, "straight":36, "bomb":40}
+    _assert_equal(repository.techniques.size(), 226, "正式资源总数为226")
+    var expected := {"high":59, "pair":54, "three":35, "straight":36, "bomb":40}
     var actual := {"high":0, "pair":0, "three":0, "straight":0, "bomb":0}
     for technique in repository.techniques.values():
         if not bool(technique.get("built_in", false)):

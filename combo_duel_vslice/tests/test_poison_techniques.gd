@@ -13,6 +13,7 @@ const POISON_TECHNIQUES := {
     "straight_forest_five_leaf_poison":"林·五叶归蛊", "bomb_forest_cleanse_poison":"林·洗脉藏蛊",
     "bomb_forest_all_poison":"林·万蛊同寂", "bomb_forest_defense_poison":"林·腐甲生蛊",
     "high_forest_shared_fate_poison":"林·同命淬蛊",
+    "high_forest_poison_meridian_echo":"林·蛊脉自鸣",
     "pair_forest_borrow_momentum_poison":"林·借势催蛊",
 }
 
@@ -32,7 +33,8 @@ func _test_each_base_effect() -> void:
     var defense_ids := POISON_TECHNIQUES.keys().filter(func(id):
         return id not in [
             "pair_forest_poison_heart", "straight_forest_poison_march",
-            "high_forest_shared_fate_poison"])
+            "high_forest_shared_fate_poison",
+            "high_forest_poison_meridian_echo"])
     for technique_id in defense_ids:
         if technique_id == "bomb_forest_defense_poison":
             continue

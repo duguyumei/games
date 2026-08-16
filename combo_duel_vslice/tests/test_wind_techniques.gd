@@ -12,6 +12,7 @@ const WIND_BY_POOL := {
         "high_wind_take_initiative", "high_wind_empty_sleeve",
         "high_wind_break_page", "high_wind_turbulence",
         "high_wind_seize_advantage", "high_wind_sweep_tail",
+        "high_wind_three_breath_return",
     ],
     "pair": [
         "pair_wind_discard_poison", "pair_wind_change_feather",
@@ -75,7 +76,7 @@ func _test_catalog_and_counts() -> void:
                 _assert_equal(definition.pool, pool, "%s池归属" % technique_id)
                 _assert_true(not definition.effects.is_empty(), "%s效果链非空" % technique_id)
                 _assert_true(not definition.semantic_tags.is_empty(), "%s AI语义非空" % technique_id)
-    _assert_equal(wind_count, 54, "风系稳定ID共54门")
+    _assert_equal(wind_count, 55, "风系稳定ID共55门")
     var counts := {"high":0, "pair":0, "three":0, "straight":0, "bomb":0}
     var normal_count := 0
     for technique_id in repository.formal_technique_ids():
@@ -84,8 +85,8 @@ func _test_catalog_and_counts() -> void:
             continue
         normal_count += 1
         counts[definition.pool] = int(counts.get(definition.pool, 0)) + 1
-    _assert_equal(normal_count, 221, "非内建正式功法221门")
-    _assert_equal(counts, {"high":57,"pair":53,"three":35,"straight":36,"bomb":40}, "五池数量准确")
+    _assert_equal(normal_count, 224, "非内建正式功法224门")
+    _assert_equal(counts, {"high":59,"pair":54,"three":35,"straight":36,"bomb":40}, "五池数量准确")
 
 func _test_meridian_draw_rules() -> void:
     var engine = _engine(4101)

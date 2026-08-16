@@ -4806,14 +4806,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 223, "统一功法目录包含223门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 223, "正式功法资源路径包含223项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 223, "正式接入状态包含223门功法")
+    _assert_equal(catalog.all_of("technique").size(), 226, "统一功法目录包含226门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 226, "正式功法资源路径包含226项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 226, "正式接入状态包含226门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 223, "正式功法资源目录包含223门功法")
+    _assert_equal(formal_technique_resource_count, 226, "正式功法资源目录包含226门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()

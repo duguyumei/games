@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_wind_three_breath_return"
+display_name = "风·三息回风"
+pool = "high"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["high_card"] )
+manual_effect_mode = "advance_only"
+marker_definitions = [{"id":"technique_draw_count","scope":"battle","public":true,"display_name":"功法抽牌记录","forget_policy":"clear"},{"id":"technique_draw_qi","scope":"battle","public":true,"display_name":"回风真气值","forget_policy":"clear"}]
+automatic_triggers = [{"id":"three_breath_return","event":"card_drawn","filters":{"event_actor_is_owner":true,"source_kind":"technique"},"timing":"immediate","progress":{"marker_id":"technique_draw_count","add":1,"threshold":3,"consume":3,"retain_overflow":true,"additional":[{"marker_id":"technique_draw_qi","add":{"kind":"event_field","capture":"event","field":"effective_qi"},"consume":"all","retain_overflow":true}],"consumed_marker_id":"technique_draw_qi"},"p0":{"kind":"consumed_marker_value"}}]
+description = "每当我方通过功法效果累计抽到3张真气，消耗这3张记录并自动触发本功法。特殊P₀等于这些真气抽到时的有效真气值总和，造成P点普通伤害。主动触发时效果无效，但正常结算功法值、连势、同气和序列推进。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "draw"] )
+public_behavior_summary = Array[String]( ["damage", "draw"] )
+implementation_category = "S"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power"}}]

@@ -464,6 +464,15 @@ func _commit_event(kind: String, state: Dictionary,
         "owner": runtime.actor, "action_token": token,
         "source_kind": str(state["effect"].get(
             "_trigger_mode", "invoked")),
+        "hand_id": str(request.get("hand_id", "")),
+        "technique_id": str(state["definition"].id),
+        "technique_pool": str(state["definition"].pool),
+        "initial_power": int(state.get("values", {}).get(
+            "initial_power", 0)),
+        "technique_power": int(state.get("values", {}).get(
+            "technique_value", 0)),
+        "trigger_mode": str(state["effect"].get(
+            "_trigger_mode", "invoked")),
         "technique_triggered": true,
         "action_succeeded": true,
         "metadata": {
