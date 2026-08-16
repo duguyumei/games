@@ -593,7 +593,7 @@ flowchart LR
 - `same_qi_rule.gd`：保留具体功法条件所需的全组共同属性纯判断，并对整次行动的普通真气按实例去重、确定性枚举多属性分配，输出最大同气收益、分组、计数与 fingerprint。
 - `same_qi_gauge_service.gd`：维护双方战斗态同气槽，以 `same_qi_capacity_query` 纯查询有效容量，并用稳定 token 幂等处理获得、阈值消耗、溢出和额外行动。
 - `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复，以及全部主组与协同组成功后一次性提交冻结同气收益；不生成内容或决定胜负。
-- `battle_pending_action_transaction.gd`：保存等待功法选择时的可恢复行动事务，区分玩家单方、敌方单方和敌我同步三种形态，并提供版本化快照。
+- `battle_action_transaction.gd`：保存统一行动事务的冻结事实、阶段、暂停状态与稳定恢复游标，并提供不含运行时对象引用的版本化快照。
 - `damage_resolver.gd`：提供普通／真／毒伤的纯数值写入、同步伤害 shadow 与攻击段存活原语；查询、格挡、事件、反震和历史由 `BattleSurvivalEffectService` 统一编排。
 - `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。
 - `battle_action_proposal.gd`：统一玩家、脚本敌人和策略敌人的 v1 选牌提案 DTO，不包含实际结算权限。
@@ -670,7 +670,7 @@ flowchart LR
 - `action_preview_service.gd`：118 行，集中行动预览的纯规则编排。
 - `hand_result_dto.gd`、`action_preview_dto.gd`：牌型与行动预览的 v1 DTO；只在兼容边界转换为字典。
 - `battle_action_proposal.gd`、`battle_action_record.gd`、`node_dispatch_result.gd`：行动提案、实际行动记录和节点调度结果的 v1 DTO。
-- `battle_command_dto.gd`、`command_result.gd`、`battle_pending_action_transaction.gd`：战斗命令、跨会话命令结果和待恢复行动事务的 v1 DTO。
+- `battle_command_dto.gd`、`command_result.gd`、`battle_action_transaction.gd`：战斗命令、跨会话命令结果和统一行动事务的版本化 DTO。
 - `damage_resolver.gd`：140 行，集中普通／真伤、同步缓冲与攻击段存活规则。
 - `game_log.gd`：90 行，统一战斗／本局／系统日志结构和查询边界。
 - `battle_session.gd`：约 550 行，包装命令、预览、只读快照、日志、事件流、成长 DTO 与 AI 窗口编排；AI DTO 投影已拆到 225 行的 `BattleAiAdapter`。
