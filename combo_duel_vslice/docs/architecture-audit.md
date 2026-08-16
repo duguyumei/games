@@ -30,6 +30,37 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleActionService 玩家／敌方单方事务合并第二批（2026-08-16）
+
+`confirm_play` 与 `resolve_locked_enemy_action_once` 的公开签名和现有 `CombatEngine`／`BattleSession`
+调用方式保持不变。玩家入口继续负责 `ActionProposal`、协同选择、玩家序列和整组确认；敌方入口继续
+负责已经锁定的牌、敌方序列、敌方行动索引与锁失效错误。两边完成 stage／finalize／confirm、行动
+次数消费和实际行动记录建立后，现在都进入 `_start_solo_action_transaction`，不再各自复制主组结算、
+牌区提交、post_commit、等待恢复和行动完成流程。
+
+统一单方运行上下文保存在 `BattleActionTransaction.runtime_context["solo_action"]`，明确冻结 actor、
+target、preview、`BattleActionRecord`、sequence book、`player`／`enemy` 稳定角色、协同组、累计已提交
+牌和公开结果字段映射。该上下文允许持有战斗内存对象，但 `BattleActionTransaction.snapshot()` 不公开
+`runtime_context`；外部只能看到既有稳定参与方、记录快照、牌实例 ID、阶段、牌型组、恢复游标和公开
+结果。上下文没有 Callable 配置器，通用流程直接读取 actor、target 与角色字段；角色适配只负责结果
+键名，以及玩家状态通知、敌方行动索引／战斗状态／锁清理等真正不对称的收尾。
+
+单方主组现在只有一条顺序：开始行动统计，结算行动记录，按统一 choice request 暂停／恢复，标记
+组结算完成，提交 actor 待出区，记录离场牌，标记牌区提交，执行并恢复 post_commit，完成行动记录与
+行动统计，按实际累计提交牌结算同气，最后完成并清理事务。玩家有协同组时仍进入原有单方协同牌型组；
+敌方当前没有协同，直接完成。旧 `_finish_solo_player_resolution`、
+`_finish_solo_player_post_commit`、`_finish_enemy_only_resolution` 与
+`_finish_enemy_only_post_commit` 已删除，`_continue_active_transaction` 的单方主组恢复也不再比较
+initiator 来选择玩家／敌方路径。
+
+本批没有改动同步主组、同步协同、`ActionResolver` 效果算法、`BattleEffectPorts` 或
+`StatusSystem`。同步行动与协同仍各自保留一套 resolution／post_commit 辅助函数，玩家单方协同也只
+在最终阶段接回统一单方收尾；这些是下一批 `BattleActionService` 收敛范围，不在本批顺带重构。
+本批只执行静态和项目脚本加载门禁，不运行 `quick`／`full`，完整回归继续延后到
+`BattleActionService` 与 `StatusSystem` 全部优化完成。项目加载日志
+`/tmp/taiwu-battle-action-solo-project-load-02.log` 覆盖 671 项；`Can't load script`、
+`File not found`、`Parse Error` 与 `SCRIPT ERROR` 均无匹配，仅有已知非阻塞 macOS CA 证书警告。
+
 ### BattleEffectPorts 最终 Facade 收口第五批（2026-08-16）
 
 `BattleEffectPorts` 的分批拆分已完成。它继续是 Effect Handler、`PassiveRuleRuntime`、
@@ -661,7 +692,7 @@ flowchart LR
 - `battle_effect_ports.gd`：约 170 行；组合伤害、状态、牌区、行动、延迟和触发日志的最小修改端口。
 - `battle_setup_service.gd`：约 100 行；集中内容仓库、标准牌组、脚本场景与跨战斗成长装配。
 - `enemy_action_planning_service.gd`：205 行；集中敌方候选生成、复核、锁定和公开计划投影。
-- `battle_action_service.gd`：414 行；集中玩家单方、敌我同步、敌方单方及可恢复选择的行动事务，避免三套提交与连击规则留在兼容门面。
+- `battle_action_service.gd`：约 1600 行；集中提案／锁定后的行动事务、玩家单方与敌方单方共用主组管线、同步行动、玩家协同、可恢复选择、牌区提交、post_commit、同气和角色收尾。当前仍偏大，下一批继续收敛同步／协同重复，但不把效果算法或 `StatusSystem` 搬入该服务。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
 - `status_system.gd`：440 行，统一角色状态、真气异状、延迟记录、状态历史与四个战斗时点处理器。

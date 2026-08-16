@@ -14,6 +14,7 @@ func _initialize() -> void:
     _test_synchronized_repeated_choice_transaction()
     _test_cooperation_resolution_choice_transaction()
     _test_cooperation_post_commit_choice_transaction()
+    _test_unified_solo_pipeline_structure()
     _test_legacy_pending_kinds_removed()
     _finish("BATTLE ACTION TRANSACTION TEST")
 
@@ -35,6 +36,10 @@ func _test_state_transitions_and_snapshot_contract() -> void:
                 "callback": Callable(self, "_runtime_probe"),
                 "service": self,
             },
+        },
+        "runtime_context": {
+            "actor": self,
+            "callback": Callable(self, "_runtime_probe"),
         },
         "cooperation_groups": [{
             "group_index": 1,
@@ -98,6 +103,8 @@ func _test_state_transitions_and_snapshot_contract() -> void:
     var snapshot: Dictionary = transaction.snapshot()
     _assert_true(not _contains_runtime_reference(snapshot),
         "事务 snapshot 不包含 Object、Callable 或服务实例")
+    _assert_true(not snapshot.has("runtime_context"),
+        "事务 snapshot 不公开单方行动运行时上下文")
     _assert_equal(snapshot["previews"]["player"]["cards"][0]["id"],
         str(runtime_card.id), "事务 snapshot 将卡牌转换为稳定 DTO")
     _assert_true(transaction.complete_transaction({"success": true}).get(
@@ -205,6 +212,7 @@ func _test_enemy_only_choice_transaction() -> void:
     engine.battle_flow.set_action_count(engine.player, 0)
     engine.battle_flow.set_action_count(engine.enemy, 1)
     engine.locked_enemy_card_ids = [str(selected.id)]
+    var enemy_action_index_before: int = engine.enemy_action_index
     var start: Dictionary = engine.action_service.resolve_locked_enemy_action_once()
     _assert_true(start.get("pending_choice", false),
         "敌方单方行动进入等待选择：%s" % str(start))
@@ -220,6 +228,16 @@ func _test_enemy_only_choice_transaction() -> void:
         str(start["choice_request"]["request_id"]),
         [str(candidates[0])] if not candidates.is_empty() else [])
     _assert_true(finish.get("success", false), "敌方单方选择恢复后完成行动")
+    _assert_true(finish.has("enemy_preview") and finish.has("enemy_played_cards"),
+        "统一单方管线保留敌方结果字段")
+    _assert_equal(engine.enemy_action_index, enemy_action_index_before + 1,
+        "统一单方管线完成后敌方行动索引只递增一次")
+    _assert_true(engine.locked_enemy_card_ids.is_empty(),
+        "统一单方管线完成后清理敌方行动锁")
+    _assert_true(engine.last_player_action_cards.is_empty(),
+        "敌方单方行动清空上一笔玩家行动牌")
+    _assert_equal(engine.last_enemy_action_cards.size(), 1,
+        "敌方单方行动保存实际提交牌")
 
 
 func _test_synchronized_repeated_choice_transaction() -> void:
@@ -339,6 +357,31 @@ func _test_cooperation_post_commit_choice_transaction() -> void:
         [str(candidates[0])] if not candidates.is_empty() else [])
     _assert_true(finish.get("success", false),
         "协同组 post_commit 选择恢复后完成行动")
+
+
+func _test_unified_solo_pipeline_structure() -> void:
+    var source := FileAccess.get_file_as_string(
+        "res://core/battle_action_service.gd")
+    _assert_true(source.contains("func _start_solo_action_transaction("),
+        "玩家与敌方主组共用单方事务入口")
+    _assert_true(source.contains("func _continue_solo_action_transaction("),
+        "单方等待恢复共用同一恢复入口")
+    for context_field in [
+            '"actor"', '"target"', '"preview"', '"record"',
+            '"sequence_book"', '"actor_role"', '"cooperation_groups"',
+            '"committed_cards"', '"result_fields"']:
+        _assert_true(source.contains(context_field),
+            "单方行动上下文冻结字段：%s" % context_field)
+    for removed_function in [
+            "func _confirm_solo_player(",
+            "func _finish_solo_player_resolution(",
+            "func _finish_solo_player_post_commit(",
+            "func _finish_enemy_only_resolution(",
+            "func _finish_enemy_only_post_commit("]:
+        _assert_true(not source.contains(removed_function),
+            "旧玩家／敌方单方重复函数已删除：%s" % removed_function)
+    _assert_true(not source.contains("initiator_owner_id =="),
+        "单方恢复不再按 initiator 分派玩家／敌方私有路径")
 
 
 func _test_legacy_pending_kinds_removed() -> void:
