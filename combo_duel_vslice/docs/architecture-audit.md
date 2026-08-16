@@ -30,6 +30,45 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleActionService 玩家行动准备职责迁出第四批（2026-08-16）
+
+新增 `core/battle_action_preparation_service.gd`，把玩家 `BattleActionProposal` 从预览结果到正式冻结／
+确认之间的独立职责从行动事务编排中迁出。它公开四个窄入口：`prepare_cooperation` 负责协同组的牌数、
+主组重复用牌、目标牌型、异状、共享属性、权限与协同预览；`finalize_staged_proposal` 依次正式冻结主组
+和协同组，复查启动权限、精确牌数和协同权限，冻结整次行动同气分析／投影，并提交各组功法值形成
+receipt 后重算共享功法值；`confirm_finalized_proposal` 依次发送主组和协同组正式确认，任一失败先回滚
+功法值形成事务；`rollback_power_formation` 为同步行动冻结后续失败提供显式补偿入口。
+
+依赖方向保持为 `BattleActionService → BattleActionPreparationService → ActionResolver` 的准备窄能力。
+准备服务另外只接收 player／enemy `BattleSide`、玩家 `SequenceBook`、统一预览回调和回合读取器；它不
+持有 `CombatEngine`、事务、行动流、触发队列、UI 或 AI 控制器，也不移动牌区、消费行动、锁定意图、
+执行效果或写入同气资源。牌型识别、预览数值和功法启动算法仍由 `ActionPreviewService`／
+`ActionResolver` 保留唯一实现，没有复制到新服务。
+
+同步行动的关键顺序没有封装进准备服务：`BattleActionService` 仍显式 stage 双方牌，先 finalize 玩家
+提案，再 finalize 敌方锁定行动；两边都成功后先确认玩家、再确认敌方，随后才锁定意图、消费行动并
+建立事务。所有失败分支继续按“功法值形成回滚 → 双方 staging 回滚 → 不开始事务”的原顺序收束。
+敌方单方行动没有玩家提案或协同，继续直接使用既有敌方 finalize／confirm 入口。
+
+迁移并删除的原私有函数为 `_prepare_cooperation`、`_refresh_same_qi_gain`、
+`_finalize_staged_proposal`、`_confirm_finalized_proposal`、
+`_commit_power_formation_transactions`、`_rollback_power_formation_transactions`、
+`_query_cooperation_permission`、`_cooperation_cards_match`、`_refresh_cooperation_shared_power` 与
+`_restore_individual_cooperation_power`；`ActionPreviewServiceScript`、`SameQiRuleScript` 和
+`SequenceBookScript` 的无用 preload 也从 `BattleActionService` 移除。统一 `_execute_current_group`、
+事务恢复、单方／同步 outcome、`BattleActionTransaction` 与 `StatusSystem` 本批均未修改。
+
+`battle_action_service.gd` 当前 1223 行，集中 stage 后行动编排、唯一牌型组执行器、等待恢复、牌区提交、
+行动完成同气实际结算和角色收尾；`battle_action_preparation_service.gd` 为 419 行，集中玩家提案准备与
+冻结补偿。当前不建议立即拆出 outcome：单方与同步函数虽然共享“完成行动统计和结算同气”的概念，
+但剩余代码主要承载敌方索引／行动锁／后续敌方调度、战斗状态通知和不同返回 DTO 等真实不对称行为；
+若最后审计没有发现新的重复阶段链，应直接进入 `StatusSystem` 优化。
+
+本批不运行 `quick`／`full`，只执行静态检查和项目脚本加载；最终加载覆盖 672 项，日志为
+`/tmp/taiwu-battle-action-preparation-project-load-final-03.log`，stdout 为同名前缀 `.stdout` 文件。
+`Can't load script`、`File not found`、`Parse Error` 与 `SCRIPT ERROR` 均无匹配，仅有已知非阻塞 macOS
+CA 证书警告；完整统一回归继续延后。
+
 ### BattleActionService 唯一牌型组执行器第三批（2026-08-16）
 
 四类实际牌型组——单方主组、同步主组、单方协同、同步行动中的协同——现在都由
@@ -660,6 +699,7 @@ flowchart LR
 - `same_qi_rule.gd`：保留具体功法条件所需的全组共同属性纯判断，并对整次行动的普通真气按实例去重、确定性枚举多属性分配，输出最大同气收益、分组、计数与 fingerprint。
 - `same_qi_gauge_service.gd`：维护双方战斗态同气槽，以 `same_qi_capacity_query` 纯查询有效容量，并用稳定 token 幂等处理获得、阈值消耗、溢出和额外行动。
 - `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复，以及全部主组与协同组成功后一次性提交冻结同气收益；不生成内容或决定胜负。
+- `battle_action_preparation_service.gd`：负责玩家提案的协同准备、整次行动同气冻结、主组／协同组正式冻结与确认，以及功法值形成 receipt 的提交和回滚；不移动牌区或开始行动事务。
 - `battle_action_transaction.gd`：保存统一行动事务的冻结事实、阶段、暂停状态与稳定恢复游标，并提供不含运行时对象引用的版本化快照。
 - `damage_resolver.gd`：提供普通／真／毒伤的纯数值写入、同步伤害 shadow 与攻击段存活原语；查询、格挡、事件、反震和历史由 `BattleSurvivalEffectService` 统一编排。
 - `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。
@@ -728,7 +768,8 @@ flowchart LR
 - `battle_effect_ports.gd`：约 170 行；组合伤害、状态、牌区、行动、延迟和触发日志的最小修改端口。
 - `battle_setup_service.gd`：约 100 行；集中内容仓库、标准牌组、脚本场景与跨战斗成长装配。
 - `enemy_action_planning_service.gd`：205 行；集中敌方候选生成、复核、锁定和公开计划投影。
-- `battle_action_service.gd`：1542 行；集中提案／锁定后的行动事务、唯一牌型组阶段执行器、三种窄牌区提交策略、单方／同步 outcome、可恢复选择、同气和角色收尾。主组与协同的阶段重复已经删除，下一步只做职责拆分或收尾检查，不把效果算法或 `StatusSystem` 搬入该服务。
+- `battle_action_service.gd`：1223 行；集中 stage 后的行动事务建立、唯一牌型组阶段执行器、三种窄牌区提交策略、单方／同步 outcome、可恢复选择、同气实际结算和角色收尾。提案准备已迁出，下一步只审计 outcome 边界，不把效果算法或 `StatusSystem` 搬入该服务。
+- `battle_action_preparation_service.gd`：419 行；集中玩家提案的协同准备、正式冻结／确认、同气投影与功法值形成补偿，不持有行动事务或行动流。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
 - `status_system.gd`：440 行，统一角色状态、真气异状、延迟记录、状态历史与四个战斗时点处理器。

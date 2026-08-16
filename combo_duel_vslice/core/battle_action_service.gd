@@ -7,10 +7,9 @@ extends RefCounted
 ## 不负责生成内容、不负责 UI，也不直接决定战斗胜负。
 ## 待选择功法会把事务记录保存在这里，选择完成后从原位置继续。
 
-const ActionPreviewServiceScript = preload("res://core/action_preview_service.gd")
+const ActionPreparationServiceScript = preload(
+    "res://core/battle_action_preparation_service.gd")
 const ActionTransactionScript = preload("res://core/battle_action_transaction.gd")
-const SequenceBookScript = preload("res://core/sequence_book.gd")
-const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
 
 const ACTION_CONTEXT_KEY := "action_context"
 const CURRENT_GROUP_CONTEXT_KEY := "current_group_context"
@@ -28,6 +27,7 @@ var action_resolver
 var trigger_queue
 var sequence_book
 var enemy_sequence_book
+var action_preparation_service
 
 var scripted_mode: bool = false
 var enemy_ai_enabled: bool = false
@@ -100,6 +100,9 @@ func _init(
     enemy_action_index_writer = write_enemy_action_index
     turn_number_reader = read_turn_number
     locked_enemy_cards_reader = read_locked_enemy_cards
+    action_preparation_service = ActionPreparationServiceScript.new(
+        player, enemy, action_resolver, sequence_book,
+        preview_for_side, turn_number_reader)
 
 func reset() -> void:
     active_action_transaction.clear_transaction(true)
@@ -129,7 +132,9 @@ func confirm_play(card_ids: Array, cooperation_card_ids: Array = []) -> Dictiona
         func(selected_ids: Array): return preview_player.call(selected_ids))
     if not proposal.accepted:
         return {"success": false, "reason": proposal.rejection_reason}
-    var cooperation_result := _prepare_cooperation(proposal, cooperation_card_ids)
+    var cooperation_result: Dictionary = \
+        action_preparation_service.prepare_cooperation(
+        proposal, cooperation_card_ids)
     if not cooperation_result.get("success", false):
         return cooperation_result
     if scripted_mode:
@@ -232,10 +237,16 @@ func _prepare_solo_player_action(proposal) -> Dictionary:
         staged_ids.append_array(group.get("card_ids", []))
     if not player.stage_cards(staged_ids):
         return {"success": false, "reason": "真气无法进入待出区"}
-    var finalize_result := _finalize_staged_proposal(player, proposal)
+    var finalize_result: Dictionary = \
+        action_preparation_service.finalize_staged_proposal(player, proposal)
     if not finalize_result.get("success", false):
         player.rollback_staging()
         return finalize_result
+    var confirmed_result: Dictionary = \
+        action_preparation_service.confirm_finalized_proposal(player, proposal)
+    if not confirmed_result.get("success", false):
+        player.rollback_staging()
+        return confirmed_result
     battle_flow.lock_intent(player, action_preview)
     battle_flow.consume_action(player)
     _freeze_consumed_action_source(player, action_preview)
@@ -392,79 +403,6 @@ func _solo_action_result(
         result["battle_state"] = battle_state_reader.call()
     return result
 
-func _prepare_cooperation(proposal, cooperation_card_ids: Array) -> Dictionary:
-    if cooperation_card_ids.is_empty():
-        return {"success": true}
-    var cooperation: Dictionary = proposal.preview.get("cooperation", {})
-    if cooperation.is_empty():
-        return {"success": false, "reason": "当前功法不能建立协同"}
-    if not proposal.preview.get("condition", {}).get("ok", false):
-        return {"success": false, "reason": "当前功法条件不满足，不能建立协同"}
-    if not proposal.preview.get("technique_activation", {}).get("allowed", false):
-        return {"success": false, "reason": "当前功法启动被拒绝，不能建立协同"}
-    if cooperation_card_ids.size() < 1 or cooperation_card_ids.size() > 5:
-        return {"success": false, "reason": "协同组必须选择1～5张真气"}
-    if cooperation.has("exact_card_count") \
-            and cooperation_card_ids.size() != int(cooperation["exact_card_count"]):
-        return {"success": false, "reason": "协同组必须精确选择%d张真气" % int(cooperation["exact_card_count"])}
-    for card_id in cooperation_card_ids:
-        if proposal.card_ids.has(str(card_id)):
-            return {"success": false, "reason": "同一张真气不能被主组和协同组重复使用"}
-
-    var preview_book = SequenceBookScript.new()
-    preview_book.sequences = sequence_book.sequences.duplicate(true)
-    preview_book.positions = sequence_book.positions.duplicate(true)
-    preview_book.advance(str(proposal.preview["hand"]["id"]))
-    var cooperation_preview: Dictionary = preview_for_side.call(
-        player, cooperation_card_ids, preview_book)
-    if not cooperation_preview.get("valid", false):
-        return {"success": false, "reason": cooperation_preview.get("reason", "协同组无效")}
-    if str(cooperation_preview["hand"]["id"]) != str(cooperation["hand_id"]):
-        return {
-            "success": false,
-            "reason": "协同组必须组成%s" % str(cooperation["hand_id"]),
-        }
-    if not _cooperation_cards_match(
-            cooperation_preview.get("cards", []), cooperation,
-            proposal.preview.get("cards", [])):
-        return {"success": false, "reason": "协同牌不满足功法声明的异状限制"}
-
-    var permission_result := _query_cooperation_permission(
-        proposal.preview, cooperation_preview, "preview")
-    proposal.preview["cooperation_permission"] = permission_result.duplicate(true)
-    if not permission_result.get("errors", []).is_empty():
-        return {"success": false, "reason": permission_result.get(
-            "reason", "协同权限查询失败")}
-    if not permission_result.get("allowed", false):
-        return {"success": false, "reason": permission_result.get(
-            "reason", "当前不能建立协同")}
-
-    var main_individual_power := int(
-        proposal.preview["values"]["technique_value"])
-    var cooperation_individual_power := int(
-        cooperation_preview["values"]["technique_value"])
-    var shared_power: int = int(floor(
-        main_individual_power + cooperation_individual_power * 0.5))
-    proposal.preview["values"]["technique_value"] = shared_power
-    cooperation_preview["values"]["technique_value"] = shared_power
-    proposal.groups.append({
-        "group_index": 1,
-        "kind": "cooperation",
-        "card_ids": cooperation_card_ids.duplicate(),
-        "preview": cooperation_preview,
-        "cooperation": cooperation.duplicate(true),
-        "cooperation_permission": permission_result.duplicate(true),
-        "shared_power": shared_power,
-        "main_individual_power": main_individual_power,
-        "cooperation_individual_power": cooperation_individual_power,
-    })
-    var same_qi_gain_result := _refresh_same_qi_gain(proposal, false)
-    if not same_qi_gain_result.get("success", false):
-        proposal.groups.pop_back()
-        proposal.preview["values"]["technique_value"] = main_individual_power
-        return same_qi_gain_result
-    return {"success": true, "shared_power": shared_power}
-
 func _confirm_synchronized_play(player_proposal) -> Dictionary:
     if not battle_flow.can_act(player):
         return {"success": false, "reason": action_unavailable_reason.call(player)}
@@ -490,10 +428,12 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         set_scenario_error.call(staging_error)
         return {"success": false, "reason": staging_error}
 
-    var player_finalize := _finalize_staged_proposal(
-        player, player_proposal, false)
+    var player_finalize: Dictionary = \
+        action_preparation_service.finalize_staged_proposal(
+            player, player_proposal)
     if not player_finalize.get("success", false):
-        _rollback_power_formation_transactions(player, player_proposal)
+        action_preparation_service.rollback_power_formation(
+            player, player_proposal)
         player.rollback_staging()
         if enemy_will_act:
             enemy.rollback_staging()
@@ -502,13 +442,17 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         var enemy_finalize: Dictionary = action_resolver.finalize_action_preview(
             enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_finalize.get("success", false):
-            _rollback_power_formation_transactions(player, player_proposal)
+            action_preparation_service.rollback_power_formation(
+                player, player_proposal)
             player.rollback_staging()
             enemy.rollback_staging()
             return enemy_finalize
-    var player_confirmed := _confirm_finalized_proposal(player, player_proposal)
+    var player_confirmed: Dictionary = \
+        action_preparation_service.confirm_finalized_proposal(
+            player, player_proposal)
     if not player_confirmed.get("success", false):
-        _rollback_power_formation_transactions(player, player_proposal)
+        action_preparation_service.rollback_power_formation(
+            player, player_proposal)
         player.rollback_staging()
         if enemy_will_act:
             enemy.rollback_staging()
@@ -517,7 +461,8 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         var enemy_confirmed: Dictionary = action_resolver.confirm_finalized_action(
             enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_confirmed.get("success", false):
-            _rollback_power_formation_transactions(player, player_proposal)
+            action_preparation_service.rollback_power_formation(
+                player, player_proposal)
             player.rollback_staging()
             enemy.rollback_staging()
             return enemy_confirmed
@@ -1268,270 +1213,6 @@ func _apply_same_qi_gain(
         action_preview.get("reshape_action_token", ""))
     return action_resolver.settle_same_qi_gain(
         side, int(frozen_action.get("gain", 0)), "同气槽", token)
-
-func _refresh_same_qi_gain(proposal, frozen: bool) -> Dictionary:
-    var cards: Array = proposal.preview.get("cards", []).duplicate()
-    for group in proposal.groups.slice(1):
-        for card in group.get("preview", {}).get("cards", []):
-            if not cards.has(card):
-                cards.append(card)
-    var action_result: Dictionary = SameQiRuleScript.analyze(
-        cards, player.card_identity_policy, {
-            "owner": player, "actor": player, "target": enemy,
-            "action_token": str(proposal.preview.get(
-                "reshape_action_token", "")),
-        })
-    if not action_result.get("success", false):
-        return {
-            "success": false,
-            "reason": str(action_result.get("reason", "同气行动分组失败")),
-        }
-    action_result["frozen"] = frozen
-    action_result["action_token"] = str(
-        proposal.preview.get("reshape_action_token", ""))
-    var excluded_ids: Array[String] = []
-    for card in cards:
-        excluded_ids.append(str(card.id))
-    var legal_after := false
-    for card in player.hand:
-        if excluded_ids.has(str(card.id)):
-            continue
-        if player.status_system == null or bool(
-                player.status_system.can_play_card(player, card).get(
-                    "allowed", false)):
-            legal_after = true
-            break
-    var projection: Dictionary = action_resolver.effect_ports.same_qi_projection(
-        player, int(action_result.get("gain", 0)), {
-            "target": enemy,
-            "round_number": int(turn_number_reader.call()),
-            "action_token": action_result["action_token"],
-            "source_kind": "action_confirmed" if frozen else "preview",
-            "legal_card_available": legal_after,
-        })
-    if not projection.get("success", false):
-        return projection
-    var technique_combo := bool(
-        proposal.preview.get("intent", {}).get("technique_combo", false))
-    for group in proposal.groups.slice(1):
-        technique_combo = (
-            technique_combo
-            or bool(group.get("preview", {}).get(
-                "intent", {}).get("technique_combo", false)))
-    proposal.preview["same_qi"] = action_result.duplicate(true)
-    var main_snapshot: Dictionary = proposal.preview.get(
-        "group_snapshot", {}).duplicate(true)
-    main_snapshot["action_same_qi_gain"] = int(
-        action_result.get("gain", 0))
-    main_snapshot["action_same_qi_trigger_count"] = int(
-        projection.get("same_qi_trigger_count", 0))
-    main_snapshot["action_same_qi_common_attributes"] = action_result.get(
-        "common_attributes", []).duplicate()
-    proposal.preview["group_snapshot"] = main_snapshot
-    for field in [
-            "same_qi_gain", "same_qi_before", "same_qi_capacity",
-            "same_qi_after", "same_qi_trigger_count"]:
-        proposal.preview[field] = int(projection.get(field, 0))
-    for group in proposal.groups.slice(1):
-        var group_preview: Dictionary = group.get("preview", {})
-        var group_snapshot: Dictionary = group_preview.get(
-            "group_snapshot", {}).duplicate(true)
-        group_snapshot["action_same_qi_gain"] = int(
-            action_result.get("gain", 0))
-        group_snapshot["action_same_qi_trigger_count"] = int(
-            projection.get("same_qi_trigger_count", 0))
-        group_snapshot["action_same_qi_common_attributes"] = action_result.get(
-            "common_attributes", []).duplicate()
-        group_preview["group_snapshot"] = group_snapshot
-    proposal.preview["intent"]["combo"] = (
-        int(projection.get("same_qi_trigger_count", 0)) > 0
-        or technique_combo)
-    proposal.preview["intent"]["same_qi_gain"] = int(
-        projection.get("same_qi_gain", 0))
-    proposal.preview["intent"]["same_qi_trigger_count"] = int(
-        projection.get("same_qi_trigger_count", 0))
-    return {"success": true, "same_qi": action_result}
-
-func _finalize_staged_proposal(
-        side, proposal, emit_confirmed: bool = true) -> Dictionary:
-    _restore_individual_cooperation_power(proposal)
-    var main_result: Dictionary = action_resolver.finalize_action_preview(
-        side, proposal.preview,
-        enemy if side == player else player, turn_number_reader.call())
-    if not main_result.get("success", false):
-        return main_result
-    for group in proposal.groups.slice(1):
-        var group_preview: Dictionary = group.get("preview", {})
-        var group_result: Dictionary = action_resolver.finalize_action_preview(
-            side, group_preview,
-            enemy if side == player else player, turn_number_reader.call())
-        if not group_result.get("success", false):
-            return group_result
-    if proposal.groups.size() > 1:
-        if not proposal.preview.get("technique_activation", {}).get(
-                "allowed", false):
-            return {
-                "success": false,
-                "reason": "正式确认时主功法启动被拒绝，协同行动整体失效",
-            }
-        var cooperation_preview: Dictionary = proposal.groups[1].get("preview", {})
-        var cooperation_definition: Dictionary = proposal.groups[1].get("cooperation", {})
-        if cooperation_definition.has("exact_card_count") \
-                and cooperation_preview.get("cards", []).size() != int(cooperation_definition["exact_card_count"]):
-            return {"success": false, "reason": "正式确认时协同牌数量不符"}
-        if not _cooperation_cards_match(
-                cooperation_preview.get("cards", []), cooperation_definition,
-                proposal.preview.get("cards", [])):
-            return {"success": false, "reason": "正式确认时协同牌异状限制不符"}
-        var cooperation_permission := _query_cooperation_permission(
-            proposal.preview, cooperation_preview, "action_confirmed")
-        cooperation_permission["frozen"] = true
-        cooperation_permission["main_action_token"] = str(
-            proposal.preview.get("reshape_action_token", ""))
-        proposal.preview["cooperation_permission"] = cooperation_permission.duplicate(true)
-        proposal.groups[1]["cooperation_permission"] = cooperation_permission.duplicate(true)
-        if not cooperation_permission.get("errors", []).is_empty():
-            return {"success": false, "reason": cooperation_permission.get(
-                "reason", "协同权限查询失败")}
-        if not cooperation_permission.get("allowed", false):
-            return {"success": false, "reason": cooperation_permission.get(
-                "reason", "正式确认时协同被拒绝")}
-    var same_qi_freeze := _refresh_same_qi_gain(proposal, true)
-    if not same_qi_freeze.get("success", false):
-        return same_qi_freeze
-    var formation_commit := _commit_power_formation_transactions(side, proposal)
-    if not formation_commit.get("success", false):
-        _rollback_power_formation_transactions(side, proposal)
-        return formation_commit
-    _refresh_cooperation_shared_power(proposal)
-    if emit_confirmed:
-        return _confirm_finalized_proposal(side, proposal)
-    return {"success": true}
-
-func _confirm_finalized_proposal(side, proposal) -> Dictionary:
-    var target = enemy if side == player else player
-    var main_result: Dictionary = action_resolver.confirm_finalized_action(
-        side, proposal.preview, target, turn_number_reader.call())
-    if not main_result.get("success", false):
-        _rollback_power_formation_transactions(side, proposal)
-        return main_result
-    for group in proposal.groups.slice(1):
-        var group_result: Dictionary = action_resolver.confirm_finalized_action(
-            side, group.get("preview", {}), target, turn_number_reader.call())
-        if not group_result.get("success", false):
-            _rollback_power_formation_transactions(side, proposal)
-            return group_result
-    return {"success": true}
-
-func _commit_power_formation_transactions(side, proposal) -> Dictionary:
-    var previews: Array = [proposal.preview]
-    for group in proposal.groups.slice(1):
-        previews.append(group.get("preview", {}))
-    var receipts: Array = []
-    for preview_value in previews:
-        var committed: Dictionary = action_resolver.action_preview_service.commit_power_formation(
-            side, preview_value)
-        if not committed.get("success", false):
-            return committed
-        if committed.get("changed", false):
-            receipts.append(committed.get("receipt", {}).duplicate(true))
-    proposal.preview["momentum_consume_receipts"] = receipts
-    return {"success": true, "receipts": receipts}
-
-func _rollback_power_formation_transactions(side, proposal) -> void:
-    for group in proposal.groups.slice(1).duplicate():
-        action_resolver.action_preview_service.rollback_power_formation(
-            side, group.get("preview", {}))
-    action_resolver.action_preview_service.rollback_power_formation(
-        side, proposal.preview)
-
-func _query_cooperation_permission(
-        main_preview: Dictionary,
-        cooperation_preview: Dictionary,
-        source_kind: String) -> Dictionary:
-    var permission = player.battle_permission_service
-    if permission == null:
-        return {
-            "checked": true, "allowed": true, "reason": "",
-            "source_breakdown": [], "errors": [],
-        }
-    var main_cards: Array = main_preview.get("cards", [])
-    var cooperation_cards: Array = cooperation_preview.get("cards", [])
-    var result: Dictionary = permission.can_establish_cooperation(
-        player,
-        str(main_preview.get("technique_id", "")),
-        str(main_preview.get("hand", {}).get("id", "")),
-        str(cooperation_preview.get("technique_id", "")),
-        str(cooperation_preview.get("hand", {}).get("id", "")), {
-            "target": enemy,
-            "round_number": int(turn_number_reader.call()),
-            "main_action_token": str(main_preview.get("reshape_action_token", "")),
-            "main_card_instance_ids": main_cards.map(func(card): return str(card.id)),
-            "cooperation_card_instance_ids": cooperation_cards.map(
-                func(card): return str(card.id)),
-            "main_preview": main_preview,
-            "cooperation_preview": cooperation_preview,
-            "source_kind": source_kind,
-        })
-    result["checked"] = true
-    return result
-
-func _cooperation_cards_match(
-        cards: Array,
-        cooperation: Dictionary,
-        main_cards: Array = []) -> bool:
-    var any_anomalies: Array = cooperation.get("card_has_any_anomaly", [])
-    if not any_anomalies.is_empty():
-        for card in cards:
-            var matched := false
-            for anomaly_value in any_anomalies:
-                var anomaly: Dictionary = anomaly_value
-                if card.has_anomaly(str(anomaly.get("category", "")), str(anomaly.get("id", ""))):
-                    matched = true
-                    break
-            if not matched:
-                return false
-    if bool(cooperation.get("shares_attribute_with_main", false)):
-        var shared := false
-        for card in cards:
-            for main_card in main_cards:
-                for attribute in ["wind", "forest", "fire", "mountain"]:
-                    if card.is_attribute(attribute) and main_card.is_attribute(attribute):
-                        shared = true
-                        break
-                if shared:
-                    break
-            if shared:
-                break
-        if not shared:
-            return false
-    return true
-
-func _refresh_cooperation_shared_power(proposal) -> void:
-    if proposal.groups.size() < 2:
-        return
-    var cooperation_group: Dictionary = proposal.groups[1]
-    var cooperation_preview: Dictionary = cooperation_group.get("preview", {})
-    var shared_power: int = int(floor(
-        int(proposal.preview.get("values", {}).get("technique_value", 0))
-        + int(cooperation_preview.get("values", {}).get("technique_value", 0)) * 0.5))
-    proposal.preview["values"]["technique_value"] = shared_power
-    cooperation_preview["values"]["technique_value"] = shared_power
-    cooperation_group["shared_power"] = shared_power
-
-func _restore_individual_cooperation_power(proposal) -> void:
-    if proposal.groups.size() < 2:
-        return
-    var cooperation_group: Dictionary = proposal.groups[1]
-    proposal.preview["values"]["technique_value"] = int(
-        cooperation_group.get(
-            "main_individual_power",
-            proposal.preview["values"].get("technique_value", 0)))
-    var cooperation_preview: Dictionary = cooperation_group.get("preview", {})
-    cooperation_preview["values"]["technique_value"] = int(
-        cooperation_group.get(
-            "cooperation_individual_power",
-            cooperation_preview.get("values", {}).get("technique_value", 0)))
 
 func _reveal_detail(player_preview: Dictionary, enemy_preview: Dictionary) -> String:
     var player_name: String = player_preview["hand"]["name"]
