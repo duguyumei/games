@@ -18,7 +18,7 @@ const FIRE_BY_POOL := {
         "pair_fire_turn_back", "pair_fire_knock_armor",
         "pair_fire_guard_momentum", "pair_fire_double_kindling",
         "pair_fire_remaining_form", "pair_fire_scorch_channel",
-        "pair_fire_send_kindling",
+        "pair_fire_send_kindling", "pair_fire_melt_armor_momentum",
     ],
     "three": [
         "three_fire_poison_pursuit", "three_fire_rekindle",
@@ -31,6 +31,7 @@ const FIRE_BY_POOL := {
         "straight_fire_pursue_array", "straight_fire_return_kindling",
         "straight_fire_through_furnace", "straight_fire_burning_path",
         "straight_fire_hidden_kindling", "straight_fire_transfer_heat",
+        "straight_fire_return_same_qi",
     ],
     "bomb": [
         "bomb_fire_thousand_hammers", "bomb_fire_pour_furnace",
@@ -87,7 +88,7 @@ func _test_catalog_and_each_effect_chain() -> void:
             if definition != null:
                 _assert_equal(definition.pool, pool, "%s池归属" % technique_id)
                 _assert_true(not definition.semantic_tags.is_empty(), "%s AI语义非空" % technique_id)
-    _assert_equal(count, 50, "火系稳定ID共50门")
+    _assert_equal(count, 52, "火系稳定ID共52门")
     for technique_id in NEW_FIRE_IDS:
         var engine = _engine(6100 + assertions)
         var result := _execute_with(engine, technique_id, 20, _snapshot([], [], 8), _hand_for(technique_id))

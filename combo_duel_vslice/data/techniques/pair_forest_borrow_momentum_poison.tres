@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "pair_forest_borrow_momentum_poison"
+display_name = "林·借势催蛊"
+pool = "pair"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["pair", "two_pair", "full_house"] )
+description = "获得floor(P/2)点防御。可以清空当前连势并记录实际消耗值S；从现在起至下一个完整回合结束，敌方受到的毒伤+5S%。百分比修正与剩余时间显示在本功法来源上。该消费发生在本门功法已经取得本次连势快照之后；实际消耗连势算作本门改变过连势。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "momentum", "delayed_effect", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["defense", "momentum", "delayed_effect", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_option","phase":"prepare","choice_id":"borrow_momentum_poison","prompt":"是否清空当前连势催蛊","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","options":[{"id":"consume","label":"清空连势"}],"capture":"consume_choice"},{"op":"write_momentum","phase":"prepare","operation":"clear","amount":0,"capture":"spent_momentum","when":{"capture_nonempty":"consume_choice"}},{"op":"grant_poison_damage_modifier","phase":"prepare","affected_side":"target","fixed":0,"percent":{"kind":"multiply","values":[5,{"kind":"subtract","left":{"kind":"capture_field_first","capture":"spent_momentum","field":"before"},"right":{"kind":"capture_field_first","capture":"spent_momentum","field":"after"}}]},"remaining_hits":-1,"expiry":"round_end","remaining_rounds":2,"public":true,"capture":"borrowed_poison_modifier","when":{"value_greater_than":{"value":{"kind":"capture_field_first","capture":"spent_momentum","field":"before"},"threshold":{"kind":"capture_field_first","capture":"spent_momentum","field":"after"}}}}]

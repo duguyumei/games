@@ -72,6 +72,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "owner": {"validation": "owner_role", "value": "role", "event_key": "actor"},
     "holder": {"validation": "holder_role", "value": "role", "event_key": "holder"},
     "source_kind_in": {"validation": "string_array", "value": "direct", "key": "source_kind", "match": "contains"},
+    "draw_reason_not_in": {"validation": "string_array", "value": "direct", "key": "draw_reason", "match": "excludes"},
     "is_extra_action": {"validation": "bool", "value": "direct", "key": "is_extra_action"},
     "from_same_qi": {"validation": "bool", "value": "direct", "key": "from_same_qi"},
     "became_burned_out": {"validation": "bool", "value": "direct", "key": "became_burned_out"},
@@ -192,6 +193,9 @@ func event_matches(filters: Dictionary, values: Dictionary, owner, opponent = nu
                     return false
             "contains":
                 if not expected is Array or not expected.has(str(actual)):
+                    return false
+            "excludes":
+                if not expected is Array or expected.has(str(actual)):
                     return false
             _:
                 if actual != expected:

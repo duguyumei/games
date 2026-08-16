@@ -1298,9 +1298,10 @@ func register_response(
         expiry: String,
         effects: Array,
         context,
-        filters: Dictionary = {}) -> Dictionary:
+        filters: Dictionary = {},
+        expiry_effects: Array = []) -> Dictionary:
     return _status_system.register_response(
-        event_kind, expiry, effects, context, filters)
+        event_kind, expiry, effects, context, filters, expiry_effects)
 
 func register_next_round_hand_limit(
         context, amount: int, affected_side = null) -> Dictionary:

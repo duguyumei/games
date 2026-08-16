@@ -146,7 +146,8 @@ func register_response(
         expiry: String,
         effects: Array,
         context,
-        filters: Dictionary = {}) -> Dictionary:
+        filters: Dictionary = {},
+        expiry_effects: Array = []) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
     if not BattleEventCatalogScript.forwards_dynamic_response(event_kind):
         return {"success": false, "reason": "未知动态响应事件：%s" % event_kind}
@@ -157,6 +158,7 @@ func register_response(
         "event_kind": event_kind,
         "expiry": expiry,
         "effects": effects.duplicate(true),
+        "expiry_effects": expiry_effects.duplicate(true),
         "filters": resolved_filters,
         "actor": runtime.actor,
         "target": runtime.target,
@@ -212,43 +214,50 @@ func handle_response_event(event_kind: String, values: Dictionary) -> void:
             and _response_matches(record, values))
     for record in matching:
         record["resolving"] = true
-        var captures: Dictionary = record.get("captures", {}).duplicate(true)
-        captures["event"] = [values.duplicate(true)]
-        if values.has("card"):
-            captures["event_card"] = [values["card"]]
-        if values.has("pre_move_snapshot"):
-            captures["event_snapshot"] = [values["pre_move_snapshot"]]
-        var response_context = EffectContextScript.new().configure({
-            "ports": _effect_ports(), "actor": record["actor"],
-            "target": record["target"], "power": int(record["power"]),
-            "initial_power": int(record["initial_power"]),
-            "hand_result": record["hand_result"],
-            "played_cards": record["played_cards"],
-            "group_snapshot": record["group_snapshot"],
-            "captures": captures,
-            "technique_id": record["technique_id"],
-            "technique_name": record["technique_name"],
-            "actual_hand_id": record["actual_hand_id"],
-            "branch_hand_id": record["branch_hand_id"],
-            "technique_pool": record["technique_pool"],
-            "action_token": record["action_token"],
-            "root_action_token": record.get(
-                "root_action_token", record["action_token"]),
-            "invocation_token": record.get("invocation_token", ""),
-            "caller_technique_id": record.get("caller_technique_id", ""),
-            "slot_instance_id": record.get("slot_instance_id", ""),
-            "trigger_mode": record.get("trigger_mode", "manual"),
-            "sequence_book": record.get("sequence_book"),
-            "source_kind": "response",
-        })
-        var response_result: Dictionary = _effect_executor.execute_all(
-            record["effects"], response_context)
+        var response_result: Dictionary = _execute_response_effects(
+            record, record["effects"], values, "response")
         record["resolving"] = false
         if response_result.get("success", false) \
                 and int(record.get("remaining_triggers", -1)) > 0:
             record["remaining_triggers"] = int(record["remaining_triggers"]) - 1
             if int(record["remaining_triggers"]) <= 0:
                 response_records.erase(record)
+
+func _execute_response_effects(
+        record: Dictionary,
+        effects: Array,
+        values: Dictionary,
+        source_kind: String) -> Dictionary:
+    var captures: Dictionary = record.get("captures", {}).duplicate(true)
+    captures["event"] = [values.duplicate(true)]
+    if values.has("card"):
+        captures["event_card"] = [values["card"]]
+    if values.has("pre_move_snapshot"):
+        captures["event_snapshot"] = [values["pre_move_snapshot"]]
+    var response_context = EffectContextScript.new().configure({
+        "ports": _effect_ports(), "actor": record["actor"],
+        "target": record["target"], "power": int(record["power"]),
+        "initial_power": int(record["initial_power"]),
+        "hand_result": record["hand_result"],
+        "played_cards": record["played_cards"],
+        "group_snapshot": record["group_snapshot"],
+        "captures": captures,
+        "technique_id": record["technique_id"],
+        "technique_name": record["technique_name"],
+        "actual_hand_id": record["actual_hand_id"],
+        "branch_hand_id": record["branch_hand_id"],
+        "technique_pool": record["technique_pool"],
+        "action_token": record["action_token"],
+        "root_action_token": record.get(
+            "root_action_token", record["action_token"]),
+        "invocation_token": record.get("invocation_token", ""),
+        "caller_technique_id": record.get("caller_technique_id", ""),
+        "slot_instance_id": record.get("slot_instance_id", ""),
+        "trigger_mode": record.get("trigger_mode", "manual"),
+        "sequence_book": record.get("sequence_book"),
+        "source_kind": source_kind,
+    })
+    return _effect_executor.execute_all(effects, response_context)
 
 func on_committed_event_for_responses(
         event_kind: String,
@@ -961,10 +970,20 @@ func _on_turn_end(event) -> Dictionary:
     for record in response_records.duplicate():
         if record.get("expiry") == "turn_end" \
                 and record.get("actor") == event.actor:
+            if not record.get("expiry_effects", []).is_empty():
+                _execute_response_effects(record, record["expiry_effects"], {
+                    "actor": event.actor,
+                    "round_number": event_round,
+                }, "response_expiry")
             response_records.erase(record)
         elif record.get("expiry") == "next_round_turn_end" \
                 and record.get("actor") == event.actor \
                 and int(record.get("source_round", -1)) + 1 <= event_round:
+            if not record.get("expiry_effects", []).is_empty():
+                _execute_response_effects(record, record["expiry_effects"], {
+                    "actor": event.actor,
+                    "round_number": event_round,
+                }, "response_expiry")
             response_records.erase(record)
     return {
         "success": true,

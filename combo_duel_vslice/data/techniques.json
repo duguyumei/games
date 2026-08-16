@@ -246,7 +246,11 @@
     "pair_wind_returning_tide": "formal_complete",
     "high_forest_shared_fate_poison": "formal_complete",
     "straight_fire_return_same_qi": "formal_complete",
-    "straight_mountain_hidden_edge": "formal_complete"
+    "straight_mountain_hidden_edge": "formal_complete",
+    "three_wind_falling_sign": "formal_complete",
+    "pair_forest_borrow_momentum_poison": "formal_complete",
+    "pair_fire_melt_armor_momentum": "formal_complete",
+    "pair_mountain_broken_armor_qi": "formal_complete"
   },
   "resource_paths": [
     "res://data/techniques/basic_scatter.tres",
@@ -467,6 +471,10 @@
     "res://data/techniques/pair_wind_returning_tide.tres",
     "res://data/techniques/high_forest_shared_fate_poison.tres",
     "res://data/techniques/straight_fire_return_same_qi.tres",
-    "res://data/techniques/straight_mountain_hidden_edge.tres"
+    "res://data/techniques/straight_mountain_hidden_edge.tres",
+    "res://data/techniques/three_wind_falling_sign.tres",
+    "res://data/techniques/pair_forest_borrow_momentum_poison.tres",
+    "res://data/techniques/pair_fire_melt_armor_momentum.tres",
+    "res://data/techniques/pair_mountain_broken_armor_qi.tres"
   ]
 }

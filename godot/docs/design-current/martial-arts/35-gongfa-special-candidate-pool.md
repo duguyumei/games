@@ -1,7 +1,7 @@
 # 特殊功法冻结候选池
 
-> 状态：设计已冻结；其中8门已正式接入，17门仍为候选。
-> 本文记录 25 门特殊功法冻结正文。已接入的8门计入当前217门非内建正式功法与219个正式资源；其余17门不计入正式池、心得候选或生产装配。
+> 状态：设计已冻结；其中12门已正式接入，13门仍为候选。
+> 本文记录 25 门特殊功法冻结正文。已接入的12门计入当前221门非内建正式功法与223个正式资源；其余13门不计入正式池、心得候选或生产装配。
 
 ## 设计方向
 
@@ -52,6 +52,8 @@
 
 ### 4. 风·落签逐影｜三条池
 
+接入状态：已正式接入，稳定ID为`three_wind_falling_sign`。
+
 > 造成`floor(P/2)`点普通伤害。本完整回合内，我方每累计抽到2张真气，敌方随机1张没有破绽的手牌真气获得破绽；没有合法目标时，改为造成`floor(P/5)`点真伤。
 
 每满2次就消耗2次记录，可以重复触发。此处接受任意来源的实际抽牌，不接受正常补牌。
@@ -75,6 +77,8 @@
 例如本功法成功触发3次后，槽位显示“淬蛊×3”，之后每个合格毒伤段固定`+3`。层数保存在本功法来源上，不在角色身上保存“毒伤+3”状态；本功法不再有效装备时不提供修正，临时副本拥有独立层数。
 
 ### 7. 林·借势催蛊｜对子池
+
+接入状态：已正式接入，稳定ID为`pair_forest_borrow_momentum_poison`。
 
 > 获得`floor(P/2)`点防御。可以清空当前连势并记录实际消耗值`S`；从现在起至下一个完整回合结束，敌方受到的毒伤`+5S%`。
 
@@ -138,6 +142,8 @@
 
 ### 16. 火·熔甲成势｜对子池
 
+接入状态：已正式接入，稳定ID为`pair_fire_melt_armor_momentum`。
+
 > 在伤害前建立持续至本完整回合结束的响应，随后造成`floor(P/2)`点普通伤害。本完整回合每当我方效果实际减少敌方`D`点防御，获得`floor(D/3)`点连势。
 
 伤害吸收防御与明确修改防御数值都可以被本功法读取；每次变化分别取整。该读取不等于反震触发资格。
@@ -173,6 +179,8 @@
 ## 山（5 门）
 
 ### 21. 山·折甲行气｜对子池
+
+接入状态：已正式接入，稳定ID为`pair_mountain_broken_armor_qi`。
 
 > 获得`P`点防御。本完整回合内，每当敌方来源令我方累计损失10点防御，消耗10点记录并使同气槽`+1`。
 
@@ -222,7 +230,7 @@
 
 ## 接入状态
 
-- 已正式接入8门：`bomb_wind_empty_hand`、`pair_forest_dissipate_decay`、`bomb_fire_break_city`、`high_mountain_shed_wall`、`pair_wind_returning_tide`、`high_forest_shared_fate_poison`、`straight_fire_return_same_qi`、`straight_mountain_hidden_edge`。八门均具有稳定ID、独立`.tres`、正式池资格、`formal_complete`状态、AI语义与专项行为测试。
-- 其余17门仍没有稳定正式ID、独立`.tres`、正式池资格、AI语义、UI图标或专项行为测试，不得加入心得、奖励、修习商店、敌人装配或生产序列。
-- 当前正式数量为非内建功法217门、基础通用功法2门、正式资源总数219；五池为高牌57、对子50、三条34、顺子36、炸弹40。
-- 已接入8门均没有加入`production_sequences.json`或敌人装配；其余17门在公共底层、权威规则、内容校验、公开投影和专项测试全部完成前继续保持候选状态。
+- 已正式接入12门：`bomb_wind_empty_hand`、`pair_forest_dissipate_decay`、`bomb_fire_break_city`、`high_mountain_shed_wall`、`pair_wind_returning_tide`、`high_forest_shared_fate_poison`、`straight_fire_return_same_qi`、`straight_mountain_hidden_edge`、`three_wind_falling_sign`、`pair_forest_borrow_momentum_poison`、`pair_fire_melt_armor_momentum`、`pair_mountain_broken_armor_qi`。十二门均具有稳定ID、独立`.tres`、正式池资格、`formal_complete`状态、AI语义与专项行为测试。
+- 其余13门仍没有稳定正式ID、独立`.tres`、正式池资格、AI语义、UI图标或专项行为测试，不得加入心得、奖励、修习商店、敌人装配或生产序列。
+- 当前正式数量为非内建功法221门、基础通用功法2门、正式资源总数223；五池为高牌57、对子53、三条35、顺子36、炸弹40。
+- 已接入12门均没有加入`production_sequences.json`或敌人装配；其余13门在公共底层、权威规则、内容校验、公开投影和专项测试全部完成前继续保持候选状态。

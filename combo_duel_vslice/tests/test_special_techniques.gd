@@ -12,6 +12,10 @@ const SPECIAL_TECHNIQUES := {
     "high_forest_shared_fate_poison": {"name":"林·同命淬蛊", "pool":"high"},
     "straight_fire_return_same_qi": {"name":"火·回轮换势", "pool":"straight"},
     "straight_mountain_hidden_edge": {"name":"山·裂壁藏锋", "pool":"straight"},
+    "three_wind_falling_sign": {"name":"风·落签逐影", "pool":"three"},
+    "pair_forest_borrow_momentum_poison": {"name":"林·借势催蛊", "pool":"pair"},
+    "pair_fire_melt_armor_momentum": {"name":"火·熔甲成势", "pool":"pair"},
+    "pair_mountain_broken_armor_qi": {"name":"山·折甲行气", "pool":"pair"},
 }
 
 func _initialize() -> void:
@@ -26,6 +30,10 @@ func _initialize() -> void:
     _test_shared_fate_poison_markers_and_active_slots()
     _test_return_same_qi_after_conversion()
     _test_hidden_edge_full_payment_block_and_next_power()
+    _test_falling_sign_draw_progress_targets_and_expiry()
+    _test_borrow_momentum_poison_choice_snapshot_and_duration()
+    _test_melt_armor_momentum_sources_rounding_and_expiry()
+    _test_broken_armor_qi_progress_sources_and_cleanup()
     _finish("SPECIAL TECHNIQUE TEST")
 
 func _test_formal_resource_contract() -> void:
@@ -459,6 +467,253 @@ func _test_hidden_edge_full_payment_block_and_next_power() -> void:
         "下一门成功功法获得floor(C/2)直接修正")
     _assert_equal(paid.player.pending_power_fixed_sources.size(), 0, "藏锋修正成功后只消费一次")
 
+func _test_falling_sign_draw_progress_targets_and_expiry() -> void:
+    var targeted = _engine(8901)
+    targeted.sequence_book.configure({"three_kind":["three_wind_falling_sign"]})
+    var slot_id := str(targeted.sequence_book.current_slot("three_kind").get(
+        "slot_instance_id", ""))
+    var target_card = _card("7", "forest")
+    targeted.enemy.hand = [target_card]
+    targeted.player.draw_pile = [
+        _card("2", "wind"), _card("3", "forest"), _card("4", "fire")]
+    var context = _context_for(
+        targeted, "three_wind_falling_sign", 20, slot_id)
+    var established: Dictionary = targeted.effect_executor.execute_all(
+        targeted.repository.get_definition("three_wind_falling_sign").effects,
+        context)
+    _assert_true(established.get("success", false), "落签逐影建立本完整回合抽牌响应")
+    targeted.player.draw(1, "normal_draw")
+    _assert_equal(_slot_marker_value(targeted, slot_id, "draw_count"), 0,
+        "正常补牌不推进落签逐影记录")
+    targeted.player.draw(1, "item")
+    _assert_equal(_slot_marker_value(targeted, slot_id, "draw_count"), 1,
+        "其他来源实际抽牌推进1次记录")
+    targeted.effect_ports.draw(targeted.player, 1, "technique")
+    _assert_equal(_slot_marker_value(targeted, slot_id, "draw_count"), 0,
+        "累计2张后消耗2次落签记录")
+    _assert_true(target_card.has_anomaly("state", "vulnerability"),
+        "有合法目标时随机手牌获得破绽")
+
+    var fallback = _engine(8902)
+    fallback.sequence_book.configure({"three_kind":["three_wind_falling_sign"]})
+    var fallback_slot := str(fallback.sequence_book.current_slot("three_kind").get(
+        "slot_instance_id", ""))
+    fallback.player.draw_pile = [
+        _card("2", "wind"), _card("3", "wind"),
+        _card("4", "wind"), _card("5", "wind")]
+    fallback.effect_executor.execute_all(
+        fallback.repository.get_definition("three_wind_falling_sign").effects,
+        _context_for(fallback, "three_wind_falling_sign", 20, fallback_slot))
+    var life_after_initial := int(fallback.enemy.life)
+    fallback.effect_ports.draw(fallback.player, 4, "technique")
+    _assert_equal(fallback.enemy.life, life_after_initial - 8,
+        "单次实际抽4张无目标时触发两次floor(P/5)真伤")
+    _assert_equal(_slot_marker_value(fallback, fallback_slot, "draw_count"), 0,
+        "单次抽4张分别消费两组记录且不留溢出")
+
+    fallback.player.draw_pile = [_card("6", "wind"), _card("7", "wind")]
+    fallback.effect_ports.draw(fallback.player, 1, "item")
+    _assert_equal(_slot_marker_value(fallback, fallback_slot, "draw_count"), 1,
+        "回合结束前未满阈值记录保留在具体槽位")
+    fallback.timing_system.emit_timing("turn_end", {
+        "round_number":1, "actor":fallback.player,
+        "actors":[fallback.player, fallback.enemy]})
+    _assert_equal(_slot_marker_value(fallback, fallback_slot, "draw_count"), 0,
+        "完整回合结束清除未满阈值抽牌记录")
+    var life_after_expiry := int(fallback.enemy.life)
+    fallback.effect_ports.draw(fallback.player, 1, "technique")
+    _assert_equal(fallback.enemy.life, life_after_expiry,
+        "完整回合结束后落签逐影响应彻底失效")
+
+func _test_borrow_momentum_poison_choice_snapshot_and_duration() -> void:
+    var abandoned = _engine(9001)
+    abandoned.player.momentum_value = 7
+    var abandoned_context = _context_for(
+        abandoned, "pair_forest_borrow_momentum_poison", 27)
+    abandoned_context.momentum_used = 7
+    var pending: Dictionary = abandoned.effect_executor.execute_all(
+        abandoned.repository.get_definition(
+            "pair_forest_borrow_momentum_poison").effects,
+        abandoned_context)
+    _assert_true(pending.get("pending_choice", false), "借势催蛊允许选择是否清空连势")
+    var abandoned_result := _resume_effect_choice(abandoned, pending, [])
+    _assert_true(abandoned_result.get("success", false), "借势催蛊可以放弃清空连势")
+    _assert_equal(abandoned.player.momentum_value, 7, "放弃时保留当前连势")
+    _assert_equal(abandoned.player.defense, 13, "放弃时仍按冻结P获得floor(P/2)防御")
+    _assert_true(abandoned.enemy.poison_damage_modifier_sources.is_empty(),
+        "放弃时不建立毒伤百分比来源")
+
+    var consumed = _engine(9002)
+    consumed.sequence_book.configure({
+        "pair":["pair_forest_borrow_momentum_poison"]})
+    var slot_id := str(consumed.sequence_book.current_slot("pair").get(
+        "slot_instance_id", ""))
+    consumed.player.momentum_value = 10
+    var consumed_context = _context_for(
+        consumed, "pair_forest_borrow_momentum_poison", 30, slot_id)
+    consumed_context.initial_power = 20
+    consumed_context.pre_momentum_power = 20
+    consumed_context.momentum_used = 10
+    pending = consumed.effect_executor.execute_all(
+        consumed.repository.get_definition(
+            "pair_forest_borrow_momentum_poison").effects,
+        consumed_context)
+    var consumed_result := _resume_effect_choice(consumed, pending, ["consume"])
+    _assert_true(consumed_result.get("success", false), "借势催蛊选择清空后成功结算")
+    _assert_equal(consumed.player.defense, 15,
+        "本门先使用含连势快照的冻结P再实际消费S")
+    _assert_equal(consumed.player.momentum_value, 0, "实际清空并记录S=10")
+    _assert_true(consumed.player.momentum_changed_for_action(
+        consumed_context.action_token), "实际清空算作本门改变过连势")
+    _assert_equal(consumed.enemy.poison_damage_modifier_sources.size(), 1,
+        "清空正数连势建立一份毒伤修正来源")
+    var source: Dictionary = consumed.enemy.poison_damage_modifier_sources[0]
+    _assert_equal(source.get("percent", 0), 50, "S=10建立+5S%=50%毒伤修正")
+    _assert_equal(source.get("remaining_rounds", 0), 2,
+        "毒伤来源公开当前与下一完整回合两段剩余时间")
+    _assert_equal(source.get("source_instance_key", ""), slot_id,
+        "毒伤修正依附产生它的具体功法槽位")
+    _assert_equal(source.get("content_id", ""),
+        "pair_forest_borrow_momentum_poison", "毒伤修正公开功法来源ID")
+    _assert_equal(source.get("label", ""), "林·借势催蛊",
+        "修正与剩余时间显示在功法来源上")
+    var current_round_poison: Dictionary = consumed.effect_ports.deal_damage(
+        consumed.player, consumed.enemy, 10, "poison-probe", false,
+        "borrow-poison-current", "poison")
+    _assert_equal(current_round_poison.get("final_amount", 0), 15,
+        "建立后的当前剩余完整回合毒伤修正生效")
+    consumed.timing_system.emit_timing("turn_end", {
+        "round_number":1, "actor":consumed.enemy,
+        "actors":[consumed.player, consumed.enemy]})
+    _assert_equal(consumed.enemy.poison_damage_modifier_sources[0].get(
+        "remaining_rounds", 0), 1, "当前完整回合结束后剩余1回合")
+    var next_round_poison: Dictionary = consumed.effect_ports.deal_damage(
+        consumed.player, consumed.enemy, 10, "poison-probe", false,
+        "borrow-poison-next", "poison")
+    _assert_equal(next_round_poison.get("final_amount", 0), 15,
+        "下一个完整回合内毒伤修正仍生效")
+    consumed.timing_system.emit_timing("turn_end", {
+        "round_number":2, "actor":consumed.enemy,
+        "actors":[consumed.player, consumed.enemy]})
+    _assert_true(consumed.enemy.poison_damage_modifier_sources.is_empty(),
+        "下一个完整回合结束后毒伤修正彻底到期")
+    var expired_poison: Dictionary = consumed.effect_ports.deal_damage(
+        consumed.player, consumed.enemy, 10, "poison-probe", false,
+        "borrow-poison-expired", "poison")
+    _assert_equal(expired_poison.get("final_amount", 0), 10,
+        "到期后的后续毒伤不再获得修正")
+
+func _test_melt_armor_momentum_sources_rounding_and_expiry() -> void:
+    var engine = _engine(9101)
+    engine.enemy.defense = 10
+    engine.enemy.add_reflection_source(100, "melt-armor-reflection", 1)
+    var context = _context_for(engine, "pair_fire_melt_armor_momentum", 20)
+    var result: Dictionary = engine.effect_executor.execute_all(
+        engine.repository.get_definition("pair_fire_melt_armor_momentum").effects,
+        context)
+    _assert_true(result.get("success", false), "熔甲成势完整效果链成功")
+    _assert_equal(engine.enemy.defense, 0, "本门伤害实际吸收敌方10点防御")
+    _assert_equal(engine.player.momentum_value, 3,
+        "伤害前建立响应令本门攻击的floor(10/3)计入连势")
+    var actor_life_before := int(engine.player.life)
+
+    engine.enemy.defense = 8
+    engine.effect_ports.remove_defense(
+        engine.enemy, 2, false, engine.player, "technique",
+        "melt-direct-a", "direct_effect")
+    engine.effect_ports.remove_defense(
+        engine.enemy, 2, false, engine.player, "technique",
+        "melt-direct-b", "direct_effect")
+    _assert_equal(engine.player.momentum_value, 3,
+        "两次D=2分别floor(D/3)而非合并后取整")
+    engine.effect_ports.remove_defense(
+        engine.enemy, 4, false, engine.player, "technique",
+        "melt-direct-c", "direct_effect")
+    _assert_equal(engine.player.momentum_value, 4,
+        "我方直接削防D=4单次获得floor(4/3)连势")
+    _assert_equal(engine.player.life, actor_life_before,
+        "直接削防虽可记录但不触发敌方反震")
+
+    engine.enemy.defense = 6
+    engine.effect_ports.remove_defense(
+        engine.enemy, 6, false, engine.enemy, "enemy_effect",
+        "melt-foreign", "direct_effect")
+    _assert_equal(engine.player.momentum_value, 4, "非我方来源削防不触发熔甲响应")
+    engine.timing_system.emit_timing("turn_end", {
+        "round_number":1, "actor":engine.player,
+        "actors":[engine.player, engine.enemy]})
+    engine.enemy.defense = 6
+    engine.effect_ports.remove_defense(
+        engine.enemy, 6, false, engine.player, "technique",
+        "melt-expired", "direct_effect")
+    _assert_equal(engine.player.momentum_value, 4, "完整回合结束后削防不再触发熔甲响应")
+
+func _test_broken_armor_qi_progress_sources_and_cleanup() -> void:
+    var engine = _engine(9201)
+    engine.sequence_book.configure({
+        "pair":["pair_mountain_broken_armor_qi"]})
+    var slot_id := str(engine.sequence_book.current_slot("pair").get(
+        "slot_instance_id", ""))
+    var context = _context_for(
+        engine, "pair_mountain_broken_armor_qi", 20, slot_id)
+    var result: Dictionary = engine.effect_executor.execute_all(
+        engine.repository.get_definition("pair_mountain_broken_armor_qi").effects,
+        context)
+    _assert_true(result.get("success", false), "折甲行气建立本完整回合累计响应")
+    _assert_equal(engine.player.defense, 20, "折甲行气先获得P点防御")
+    engine.player.defense = 25
+    engine.effect_ports.deal_damage(
+        engine.enemy, engine.player, 25, "technique", false,
+        "broken-armor-damage", "normal")
+    _assert_equal(engine.player.same_qi_value, 2,
+        "敌方伤害吸收25点防御触发2次同气收益")
+    _assert_equal(_slot_marker_value(engine, slot_id, "armor_loss"), 5,
+        "25点损失消费20并在具体槽位保留5点溢出")
+
+    engine.player.add_reflection_source(100, "broken-armor-reflection", 1)
+    engine.player.defense = 5
+    var enemy_life_before := int(engine.enemy.life)
+    engine.effect_ports.remove_defense(
+        engine.player, 5, false, engine.enemy, "enemy_effect",
+        "broken-armor-direct", "direct_effect")
+    _assert_equal(engine.player.same_qi_value, 3,
+        "敌方直接削防与已有5点累计共同跨过10点阈值")
+    _assert_equal(_slot_marker_value(engine, slot_id, "armor_loss"), 0,
+        "敌方直接削防跨阈值后正确消费累计值")
+    _assert_equal(engine.enemy.life, enemy_life_before,
+        "敌方直接削防不会因此触发我方反震")
+
+    engine.player.defense = 18
+    engine.effect_ports.remove_defense(
+        engine.player, 4, false, engine.player, "technique",
+        "broken-armor-cost", "cost")
+    engine.effect_ports.remove_defense(
+        engine.player, 4, false, engine.player, "rule",
+        "broken-armor-decay", "decay")
+    engine.effect_ports.remove_defense(
+        engine.player, 4, false, null, "rule",
+        "broken-armor-clear", "reset")
+    _assert_equal(_slot_marker_value(engine, slot_id, "armor_loss"), 0,
+        "我方支付、自然衰减、清空及其他非敌方来源均不计数")
+
+    engine.player.defense = 7
+    engine.effect_ports.remove_defense(
+        engine.player, 7, false, engine.enemy, "enemy_effect",
+        "broken-armor-partial", "direct_effect")
+    _assert_equal(_slot_marker_value(engine, slot_id, "armor_loss"), 7,
+        "未满10点的本次限时累计暂存在槽位")
+    engine.timing_system.emit_timing("turn_end", {
+        "round_number":1, "actor":engine.player,
+        "actors":[engine.player, engine.enemy]})
+    _assert_equal(_slot_marker_value(engine, slot_id, "armor_loss"), 0,
+        "完整回合结束清除未满阈值的折甲记录")
+    engine.player.defense = 10
+    engine.effect_ports.remove_defense(
+        engine.player, 10, false, engine.enemy, "enemy_effect",
+        "broken-armor-expired", "direct_effect")
+    _assert_equal(engine.player.same_qi_value, 3,
+        "响应过期后的敌方削防不再推进同气")
+
 func _context_for(
         engine, technique_id: String, power: int,
         slot_instance_id: String = "", card_contribution: int = 0):
@@ -496,3 +751,8 @@ func _resume_effect_choice(engine, pending: Dictionary, selected_ids: Array) -> 
 func _marker_value(engine, slot_instance_id: String) -> int:
     return int(engine.player.source_marker_store.value(
         "technique", slot_instance_id, "x", "battle"))
+
+func _slot_marker_value(
+        engine, slot_instance_id: String, marker_id: String) -> int:
+    return int(engine.player.source_marker_store.value(
+        "technique", slot_instance_id, marker_id, "battle"))

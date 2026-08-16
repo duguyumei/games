@@ -51,7 +51,13 @@ func execute(effect: Dictionary, context):
                 int(effect.get("remaining_hits", -1)),
                 str(effect.get("expiry", "battle_end")),
                 str(effect.get("source_token", runtime.action_token)),
-                bool(effect.get("public", true)))
+                bool(effect.get("public", true)),
+                int(effect.get("remaining_rounds", 1)), {
+                    "source_kind": "technique",
+                    "source_instance_key": runtime.slot_instance_id,
+                    "content_id": runtime.technique_id,
+                    "label": runtime.technique_name,
+                })
             runtime.captures[str(effect.get("capture", "poison_modifier"))] = [source]
             return EffectResultScript.succeeded("建立毒伤修正")
     return EffectResultScript.failed("毒处理器不支持此操作")
@@ -180,3 +186,7 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("expiry", "battle_end")) not in [
             "battle_end", "round_end", "turn_end"]:
         validator.report_error(scope + ".expiry", "引用未知毒伤修正到期时点")
+    if effect.has("remaining_rounds") \
+            and (not effect["remaining_rounds"] is int \
+            or int(effect["remaining_rounds"]) <= 0):
+        validator.report_error(scope + ".remaining_rounds", "必须是正整数")

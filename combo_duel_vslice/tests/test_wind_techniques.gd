@@ -18,12 +18,14 @@ const WIND_BY_POOL := {
         "pair_wind_dyed_sleeve", "pair_wind_returning_swallow",
         "pair_wind_exchange_hands", "pair_wind_cut_supplies",
         "pair_wind_turn_sleeve", "pair_wind_break_peak",
+        "pair_wind_returning_tide",
     ],
     "three": [
         "three_wind_spring_hand", "three_wind_full_sail",
         "three_wind_return_tide", "three_wind_exploit_gap",
         "three_wind_continue_form", "three_wind_chase_empty",
         "three_wind_scatter_four", "three_wind_fall_together",
+        "three_wind_falling_sign",
     ],
     "straight": [
         "straight_wind_drain_poison_deck", "straight_wind_pierce_sun",
@@ -73,7 +75,7 @@ func _test_catalog_and_counts() -> void:
                 _assert_equal(definition.pool, pool, "%s池归属" % technique_id)
                 _assert_true(not definition.effects.is_empty(), "%s效果链非空" % technique_id)
                 _assert_true(not definition.semantic_tags.is_empty(), "%s AI语义非空" % technique_id)
-    _assert_equal(wind_count, 52, "风系稳定ID共52门")
+    _assert_equal(wind_count, 54, "风系稳定ID共54门")
     var counts := {"high":0, "pair":0, "three":0, "straight":0, "bomb":0}
     var normal_count := 0
     for technique_id in repository.formal_technique_ids():
@@ -82,8 +84,8 @@ func _test_catalog_and_counts() -> void:
             continue
         normal_count += 1
         counts[definition.pool] = int(counts.get(definition.pool, 0)) + 1
-    _assert_equal(normal_count, 217, "非内建正式功法217门")
-    _assert_equal(counts, {"high":57,"pair":50,"three":34,"straight":36,"bomb":40}, "五池数量准确")
+    _assert_equal(normal_count, 221, "非内建正式功法221门")
+    _assert_equal(counts, {"high":57,"pair":53,"three":35,"straight":36,"bomb":40}, "五池数量准确")
 
 func _test_meridian_draw_rules() -> void:
     var engine = _engine(4101)

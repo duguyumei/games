@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "pair_fire_melt_armor_momentum"
+display_name = "火·熔甲成势"
+pool = "pair"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["pair", "two_pair", "full_house"] )
+description = "在伤害前建立持续至本完整回合结束的响应，随后造成floor(P/2)点普通伤害。本完整回合每当我方效果实际减少敌方D点防御，获得floor(D/3)点连势。伤害吸收防御与明确修改防御数值都可以被本功法读取；每次变化分别取整。该读取不等于反震触发资格。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "momentum", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["damage", "momentum", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"register_response","phase":"prepare","event":"defense_reduced","expiry":"turn_end","filters":{"event_actor_is_owner":true,"holder":"target"},"effects":[{"op":"write_momentum","operation":"add","action_token_from_event":true,"amount":{"kind":"divide_floor","value":{"kind":"event_field","capture":"event","field":"effective_amount"},"divisor":3}}]},{"op":"damage","phase":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}}]

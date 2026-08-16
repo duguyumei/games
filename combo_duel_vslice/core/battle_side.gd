@@ -200,7 +200,9 @@ func grant_poison_damage_modifier(
         remaining_hits: int,
         expiry: String,
         source_token: String,
-        is_public: bool = true) -> Dictionary:
+        is_public: bool = true,
+        remaining_rounds: int = 1,
+        source_metadata: Dictionary = {}) -> Dictionary:
     _combat_source_serial += 1
     var resolved_token := source_token if source_token != "" \
         else "poison-modifier:%s:%06d" % [owner_id, _combat_source_serial]
@@ -210,10 +212,12 @@ func grant_poison_damage_modifier(
         "percent": percent,
         "remaining_hits": remaining_hits,
         "expiry": expiry,
+        "remaining_rounds": remaining_rounds,
         "affected_side": owner_id,
         "public": is_public,
         "insertion_serial": _combat_source_serial,
     }
+    source.merge(source_metadata, false)
     poison_damage_modifier_sources.append(source)
     return source.duplicate(true)
 
@@ -947,8 +951,10 @@ func tick_round_limited_sources() -> Dictionary:
     for record in poison_damage_modifier_sources.duplicate():
         if str(record.get("expiry", "battle_end")) not in ["round_end", "turn_end"]:
             continue
-        expired_poison_modifier_records.append(record.duplicate(true))
-        poison_damage_modifier_sources.erase(record)
+        record["remaining_rounds"] = int(record.get("remaining_rounds", 1)) - 1
+        if int(record["remaining_rounds"]) <= 0:
+            expired_poison_modifier_records.append(record.duplicate(true))
+            poison_damage_modifier_sources.erase(record)
     _refresh_reflection_aggregate()
     return {
         "reflection": expired_reflection,

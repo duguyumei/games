@@ -58,9 +58,15 @@ func execute(effect: Dictionary, context):
         "write_momentum":
             var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
             var operation := str(effect.get("operation", "add"))
+            var momentum_action_token: String = runtime.action_token
+            if bool(effect.get("action_token_from_event", false)):
+                var events: Array = runtime.captures.get("event", [])
+                if not events.is_empty():
+                    momentum_action_token = str(events[0].get(
+                        "action_token", momentum_action_token))
             var receipt: Dictionary = runtime.ports.write_momentum(
                 runtime.actor, operation, amount, runtime.source_kind,
-                runtime.action_token, runtime.technique_id)
+                momentum_action_token, runtime.technique_id)
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = \
                     [receipt] if bool(receipt.get("success", false)) else []
@@ -198,7 +204,8 @@ func execute(effect: Dictionary, context):
         "register_response":
             var result: Dictionary = runtime.ports.register_response(
                 str(effect.get("event", "")), str(effect.get("expiry", "turn_end")),
-                effect.get("effects", []), runtime, effect.get("filters", {}))
+                effect.get("effects", []), runtime, effect.get("filters", {}),
+                effect.get("expiry_effects", []))
             return EffectResultScript.succeeded("建立战斗响应") \
                 if result.get("success", false) \
                 else EffectResultScript.failed(str(result.get("reason", "响应建立失败")))
@@ -240,6 +247,10 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             if str(effect.get("operation", "add")) != "clear" \
                     and not effect.has("amount"):
                 validator.report_error(scope + ".amount", "连势写入缺少 amount")
+            if effect.has("action_token_from_event") \
+                    and not effect["action_token_from_event"] is bool:
+                validator.report_error(
+                    scope + ".action_token_from_event", "必须是布尔值")
         "register_delayed_effects":
             if str(effect.get("timing", "")) not in ["turn_end", "after_normal_draw"]:
                 validator.report_error(scope + ".timing", "未知延迟事件时点 %s" % str(effect.get("timing", "")))
@@ -254,6 +265,9 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                 effect.get("filters", {}), scope + ".filters")
             validator.validate_nested_battle_effects(
                 effect.get("effects", []), scope + ".effects")
+            if effect.has("expiry_effects"):
+                validator.validate_nested_battle_effects(
+                    effect.get("expiry_effects", []), scope + ".expiry_effects")
         "register_no_life_loss_disruption":
             validator.validate_nested_battle_effects(
                 [effect.get("effect", {})], scope + ".effect")
