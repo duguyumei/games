@@ -555,7 +555,7 @@ func _on_transferred_card_battle_end(event) -> Dictionary:
     }
 
 func _on_transient_battle_end(event) -> Dictionary:
-    var cleared_delays := status_delay_service.clear()
+    var cleared_delays: int = status_delay_service.clear()
     cleared_delays += status_response_service.clear()
     return {
         "success": true,

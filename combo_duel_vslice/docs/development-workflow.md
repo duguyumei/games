@@ -398,6 +398,36 @@ TURN_END 顺序仍是：先结算 turn_end 延迟效果，再结算真气 turn_e
 677 项，`Can't load script`、`File not found`、`Parse Error` 与 `SCRIPT ERROR` 无匹配，仅有已知非阻塞
 macOS CA 证书警告。
 
+`StatusSystem` 第五批结构优化只迁出四类 `delayed_records` 的注册、冻结、调度、执行和清理，不改邀战、
+行动窗口反震／格挡来源到期、回合末战斗来源到期、战斗结束角色资源清理或功法抽牌统计。新增
+`core/statuses/status_delay_service.gd`，集中持有固定身份的延迟记录数组，并唯一编排 `effect_chain`、
+`next_round_hand_limit`、`defense_decay_return` 与 `no_life_loss_disruption`。该服务通过既有
+`StatusHistoryService` 写入 turn_end 延迟结算历史，和动态响应共用 `StatusRecordIdAllocator`，只以
+`WeakRef` 保存 `BattleEffectPorts`，并直接持有统一 `EffectExecutor`；不依赖 `StatusSystem`、
+`CombatEngine`、`TimingSystem`、响应／异状／行为服务、战斗流或来源生命周期实现。
+
+`StatusSystem.delayed_records` 在构造时一次性绑定到 `StatusDelayService.records()` 返回的同一个 Array。
+`CombatEngine` 的 `delayed_effects`、`BattleSide` 快照复制与恢复时的 `assign` 均继续使用该共享实例；
+reset 和战斗结束清理只调用服务的原地 `clear()`，不会替换公开数组。既有
+`register_delayed_effects`、`register_next_round_hand_limit`、`register_defense_decay_return` 与
+`register_no_life_loss_disruption` 原签名保留为薄 Facade，`register_reflection_expiry` 及来源记录仍留在
+Facade。`use_effect_ports`／`use_effect_executor` 同步更新延迟服务，运行时记录 ID 仍由响应与四类延迟
+记录共享同一 serial，存档字段 `delay_serial` 无需改变。
+
+延迟链继续冻结 P、P₀、直接固定／百分比修正、连势前功法值、已用连势、actor／target、牌型结果、
+打出牌、牌型组快照、captures／frozen targets、功法与来源身份、sequence book 和来源 action token；
+执行时重建 `<source_action_token>:delay:<record_id>` 独立 token，`trigger_mode` 固定为 `delayed`。
+turn_end 的夹层顺序继续由 Facade 显式保证：先 `resolve_turn_end_effects`，再执行真气 turn_end 行为，
+随后 `expire_turn_end_modifiers`，最后处理动态响应到期。正常补牌后延迟不新增历史；延迟链即使执行结果
+失败仍按现有规则消费 occurrence。下一回合手牌上限、防御自然衰减返还和行动结束无生命损失判断的
+激活、捕获、匹配、移除语义均未改变。
+
+迁移后 `status_system.gd` 为 569 行，`status_delay_service.gd` 为 320 行。下一批只拆邀战与战斗来源
+生命周期，不迁移功法抽牌统计或修改内容数值。本批不运行 `quick`／`full`，只执行静态检查和 headless
+项目加载。首次 `/tmp/taiwu-status-delay-project-load-01.log` 正确捕获战斗结束清理计数缺少显式类型的
+Parse Error；修正后 `/tmp/taiwu-status-delay-project-load-02.log` 覆盖 678 项，四类禁止错误关键字无匹配，
+仅有已知非阻塞 macOS CA 证书警告。
+
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、
 额外行动、同气和连势不得在 Handler 中重新包装；旧 `BattlePassiveEffectPorts` 已删除。
