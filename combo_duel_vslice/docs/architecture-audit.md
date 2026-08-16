@@ -30,6 +30,51 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleEffectPorts 效果调用／延迟／响应职责第四批迁出（2026-08-16）
+
+`BattleEffectPorts` 继续作为 Effect Handler、`PassiveRuleRuntime`、`ActionResolver`、
+`TechniqueAutoTriggerService` 与 `StatusSystem` 调用效果能力的唯一公开 Facade；公开方法名、参数、
+默认值和返回结构保持不变。本批新增两个职责分离的内部服务：
+
+- `effects/battle_invocation_effect_service.gd` 维护当前 `BattleEffectContext` 栈、按上下文隔离的即时
+  效果插入队列、父子效果链命令预算继承、功法调用时点委托、序列变化 committed event 和当前功法
+  重触回调；
+- `effects/battle_response_effect_service.gd` 负责延迟效果、动态响应、下一回合手牌上限、防御衰减
+  返还、反震到期、无生命损失打断等注册入口，以及 `CardReshapeBattleRuntime` 的直接真气监听窄入口。
+
+两项服务是内部编排层，不重写领域算法。`EffectExecutor` 仍独占 continuation、等待选择恢复和效果
+命令推进；`TechniqueInvocationService` 仍独占调用请求冻结、稳定槽位选择、递归保护、调用队列和
+序列推进；`StatusSystem` 仍独占延迟／响应记录结构、正式事件匹配、到期扫描与效果恢复；
+`CardReshapeBattleRuntime` 仍独占真气直接触发与重放行为。内部服务均不持有 `CombatEngine`，不回指
+`BattleEffectPorts`，不按功法／内功／物品 ID 分支，也没有建立第二套即时队列、调用队列或事件系统。
+`battle_effect_ports.gd` 从约 859 行缩至 796 行。
+
+已迁出的 Facade 入口包括 `push_effect_context`、`pop_effect_context`、
+`current_effect_context`、`schedule_immediate_effect`、`take_immediate_effects`、
+`execute_effect_chain`、`use_effect_executor`、`use_technique_invocation_service`、
+`invoke_sequence_technique`、`resolve_after_caller_advance`、
+`resolve_technique_invocations_at_timing`、`emit_technique_sequence_changed`、
+`use_hand_retrigger_callback`、`retrigger_current_hand_technique`、`register_delayed_effects`、
+`register_response`、全部专用延迟注册入口、`notify_response_event`、`technique_draw_count`、
+`successful_on_play_ids` 与直接真气监听注册／注销。Facade 保留原签名并只负责装配和委托。
+
+`trigger_poison_card`、`notify_cards_played`、`notify_poison_triggered`、
+`resolve_played_card_anomalies` 的跨服务编排、额外行动、战斗历练、战斗消耗品生成与通用历史入口仍
+留在 Facade；本批没有拆分 `BattleActionService` 或 `StatusSystem`，没有清理 Repository，也没有
+修改内容资源、公开 EffectSpec 操作码、数值或结算顺序。
+
+本批只执行最小专项门禁。首次项目加载
+`/tmp/taiwu-battle-effect-flow-project-load-dev-01.log` 因测试启动参数未放在 Godot 用户参数分隔符
+之后而被测试基础设施拒绝；修正调用后开发期项目加载通过。专项首次运行
+`/tmp/taiwu-battle-effect-flow-specialized-dev-04.log` 暴露新测试错误使用不可重触的散牌牌型，修正
+夹具为对子后 `dev-05` 通过首轮专项，生产实现未因该失败调整。提交前最终复核使用
+`/tmp/taiwu-battle-effect-flow-project-load-final-08.log` 完成 667 项加载，
+`/tmp/taiwu-battle-effect-flow-specialized-final-09.log` 通过 42 条断言；专项覆盖上下文栈、即时队列顺序、自动功法
+即时嵌套、Facade 即时调用、`after_caller_advance`／`action_end` 延后调用、等待选择恢复、延迟冻结值、
+预提交／committed 动态响应、功法重触和直接真气监听。全部本批日志扫描 `Can't load script`、`File not found`、
+`Parse Error` 与 `SCRIPT ERROR`。`quick`／`full` 本批没有运行，完整回归继续延后到全部结构优化完成后
+统一执行。
+
 ### BattleEffectPorts 来源标识／连势／同气／战斗来源职责第三批迁出（2026-08-16）
 
 `BattleEffectPorts` 继续作为 Effect Handler、`PassiveRuleRuntime`、`ActionResolver`、功法调用服务与

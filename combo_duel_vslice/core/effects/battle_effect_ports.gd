@@ -9,6 +9,10 @@ const BattleCardEffectServiceScript = preload(
     "res://core/effects/battle_card_effect_service.gd")
 const BattleSourceResourceEffectServiceScript = preload(
     "res://core/effects/battle_source_resource_effect_service.gd")
+const BattleInvocationEffectServiceScript = preload(
+    "res://core/effects/battle_invocation_effect_service.gd")
+const BattleResponseEffectServiceScript = preload(
+    "res://core/effects/battle_response_effect_service.gd")
 
 ## 效果处理器修改战斗状态的唯一窄端口。
 ##
@@ -16,31 +20,23 @@ const BattleSourceResourceEffectServiceScript = preload(
 ## 而兜底分支会在依赖真的缺失时静默改用另一套判定，把装配错误伪装成正常结果。
 ## 装配失败应当在构造点暴露，不应推迟到某个效果结算时。
 
-var _status_system: StatusSystem
 var _battle_flow: BattleFlowCoordinator
 var _trigger_queue: VisibleTriggerQueue
 var _sides: Array[BattleSide] = []
-var _hand_retrigger_callback: Callable
 var _consumable_repository
 var _battle_rule_query_service
-var _committed_event_service
-var _round_number_reader: Callable
 var _battle_rng: RandomNumberGenerator
-var _effect_executor_ref: WeakRef
-var _technique_invocation_service_ref: WeakRef
-var _effect_context_stack: Array = []
-var _effect_context_slot_entries: Dictionary = {}
-var _immediate_effects_by_context: Dictionary = {}
 var _survival_effect_service
 var _card_effect_service
 var _source_resource_effect_service
+var _invocation_effect_service
+var _response_effect_service
 
 func _init(
         damage_resolver: ComboDamageResolver,
         status_system: StatusSystem,
         battle_flow: BattleFlowCoordinator,
         trigger_queue: VisibleTriggerQueue) -> void:
-    _status_system = status_system
     _battle_flow = battle_flow
     _trigger_queue = trigger_queue
     _survival_effect_service = BattleSurvivalEffectServiceScript.new(
@@ -52,6 +48,8 @@ func _init(
         Callable(_survival_effect_service, "current_action_window_id"),
         Callable(_survival_effect_service, "can_bind_current_source"),
         Callable(_survival_effect_service, "close_current_source_binding_window"))
+    _invocation_effect_service = BattleInvocationEffectServiceScript.new()
+    _response_effect_service = BattleResponseEffectServiceScript.new(status_system)
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
     _trigger_queue = trigger_queue
@@ -64,10 +62,11 @@ func use_sides(first: BattleSide, second: BattleSide) -> void:
     _card_effect_service.use_sides(first, second)
 
 func use_hand_retrigger_callback(callback: Callable) -> void:
-    _hand_retrigger_callback = callback
+    _invocation_effect_service.use_hand_retrigger_callback(callback)
 
 func use_card_reshape_runtime(runtime) -> void:
     _card_effect_service.use_card_reshape_runtime(runtime)
+    _response_effect_service.use_card_reshape_runtime(runtime)
 
 func use_battle_permission_service(service) -> void:
     _card_effect_service.use_battle_permission_service(service)
@@ -80,11 +79,11 @@ func use_passive_battle_services(
         event_service,
         round_reader: Callable = Callable()) -> void:
     _battle_rule_query_service = query_service
-    _committed_event_service = event_service
-    _round_number_reader = round_reader
     _survival_effect_service.use_passive_battle_services(
         query_service, event_service, round_reader)
     _source_resource_effect_service.use_passive_battle_services(
+        event_service, round_reader)
+    _invocation_effect_service.use_passive_battle_services(
         event_service, round_reader)
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
@@ -98,52 +97,28 @@ func use_battle_instance_id(value: String) -> void:
     _source_resource_effect_service.use_battle_instance_id(value)
 
 func use_effect_executor(executor) -> void:
-    _effect_executor_ref = weakref(executor)
+    _invocation_effect_service.use_effect_executor(executor)
 
 func use_same_qi_gauge_service(service) -> void:
     _source_resource_effect_service.use_same_qi_gauge_service(service)
 
 func use_technique_invocation_service(service) -> void:
-    _technique_invocation_service_ref = weakref(service) if service != null else null
+    _invocation_effect_service.use_technique_invocation_service(service)
 
 func push_effect_context(context) -> void:
-    _effect_context_stack.append(context)
-    var invocation_service = _technique_invocation_service()
-    if invocation_service != null:
-        var slot_id := str(context.get("slot_instance_id") \
-            if context is Dictionary else context.slot_instance_id)
-        _effect_context_slot_entries[context] = {
-            "slot_instance_id": slot_id,
-            "entered": invocation_service.enter_resolution_slot(slot_id),
-        }
+    _invocation_effect_service.push_effect_context(context)
 
 func pop_effect_context(context) -> void:
-    if not _effect_context_stack.is_empty() and _effect_context_stack.back() == context:
-        _effect_context_stack.pop_back()
-    else:
-        _effect_context_stack.erase(context)
-    var invocation_service = _technique_invocation_service()
-    if invocation_service != null and _effect_context_slot_entries.has(context):
-        var entry: Dictionary = _effect_context_slot_entries[context]
-        invocation_service.exit_resolution_slot(
-            str(entry.get("slot_instance_id", "")), bool(entry.get("entered", false)))
-        _effect_context_slot_entries.erase(context)
+    _invocation_effect_service.pop_effect_context(context)
 
 func current_effect_context():
-    return _effect_context_stack.back() if not _effect_context_stack.is_empty() else null
+    return _invocation_effect_service.current_effect_context()
 
 func schedule_immediate_effect(context, effect: Dictionary) -> bool:
-    if context == null or effect.is_empty():
-        return false
-    if not _immediate_effects_by_context.has(context):
-        _immediate_effects_by_context[context] = []
-    _immediate_effects_by_context[context].append(effect.duplicate(true))
-    return true
+    return _invocation_effect_service.schedule_immediate_effect(context, effect)
 
 func take_immediate_effects(context) -> Array:
-    var result: Array = _immediate_effects_by_context.get(context, [])
-    _immediate_effects_by_context.erase(context)
-    return result
+    return _invocation_effect_service.take_immediate_effects(context)
 
 func same_qi_projection(side: BattleSide, amount: int, context: Dictionary = {}) -> Dictionary:
     return _source_resource_effect_service.same_qi_projection(side, amount, context)
@@ -172,16 +147,7 @@ func same_qi_receipts_for_action(side: BattleSide, action_token: String) -> Arra
         side, action_token)
 
 func execute_effect_chain(effects: Array, context) -> Dictionary:
-    var executor = _effect_executor_ref.get_ref() if _effect_executor_ref != null else null
-    var parent = current_effect_context()
-    if executor != null and parent != null \
-            and not context is Dictionary \
-            and not parent is Dictionary \
-            and int(parent.effect_command_limit) > 0:
-        context.effect_command_limit = int(parent.effect_command_limit)
-        context.effect_chain_state = parent.effect_chain_state
-    return executor.execute_all(effects, context) if executor != null else {
-        "success": false, "detail": "战斗端口缺少效果执行器"}
+    return _invocation_effect_service.execute_effect_chain(effects, context)
 
 func battle_instance_id() -> String:
     return _source_resource_effect_service.battle_instance_id()
@@ -247,7 +213,7 @@ func finish_action_resolution() -> Dictionary:
 
 func abort_action_resolution() -> void:
     _survival_effect_service.abort_action_resolution()
-    _immediate_effects_by_context.clear()
+    _invocation_effect_service.abort_action_resolution()
 
 func flush_synchronized_damage() -> Array:
     return _survival_effect_service.flush_synchronized_damage()
@@ -378,45 +344,24 @@ func consume_source_marker_records(
         side, source, count, action_token)
 
 func invoke_sequence_technique(effect: Dictionary, context) -> Dictionary:
-    var invocation_service = _technique_invocation_service()
-    if invocation_service == null:
-        return {"success": false, "reason": "功法调用服务尚未装配"}
-    return invocation_service.invoke(effect, context)
+    return _invocation_effect_service.invoke_sequence_technique(effect, context)
 
 func resolve_after_caller_advance(root_action_token: String) -> Dictionary:
-    var invocation_service = _technique_invocation_service()
-    if invocation_service == null:
-        return {"success": true, "results": []}
-    return invocation_service.resolve_after_caller_advance(root_action_token)
+    return _invocation_effect_service.resolve_after_caller_advance(root_action_token)
 
 func resolve_technique_invocations_at_timing(
         timing: String,
         root_action_token: String = "") -> Dictionary:
-    var invocation_service = _technique_invocation_service()
-    if invocation_service == null:
-        return {"success": true, "results": []}
-    return invocation_service.resolve_timing(timing, root_action_token)
-
-func _technique_invocation_service():
-    return _technique_invocation_service_ref.get_ref() \
-        if _technique_invocation_service_ref != null else null
+    return _invocation_effect_service.resolve_technique_invocations_at_timing(
+        timing, root_action_token)
 
 func emit_technique_sequence_changed(
         side: BattleSide,
         action_token: String,
         reason: String,
         changed_slots: Array) -> void:
-    if _committed_event_service == null:
-        return
-    var serial := int(_committed_event_service.next_serial())
-    _committed_event_service.commit("technique_sequence_changed", {
-        "event_token": _committed_event_service.make_token(
-            "technique_sequence_changed", side, serial, action_token),
-        "event_serial": serial, "actor": side, "owner": side,
-        "action_token": action_token, "reason": reason,
-        "changed_slots": changed_slots.duplicate(true),
-        "round_number": _round_number(),
-    })
+    _invocation_effect_service.emit_technique_sequence_changed(
+        side, action_token, reason, changed_slots)
 
 func add_momentum(side: BattleSide, amount: int) -> int:
     return _source_resource_effect_service.add_momentum(side, amount)
@@ -576,24 +521,20 @@ func notify_poison_triggered(
         holder, card, frozen_amount, damage_result, action_token, replayed)
 
 func notify_response_event(event_kind: String, values: Dictionary) -> void:
-    if _status_system != null:
-        _status_system.handle_response_event(event_kind, values)
+    _response_effect_service.notify_response_event(event_kind, values)
 
 func successful_on_play_ids(action_token: String) -> Array:
-    var runtime = _card_effect_service.card_reshape_runtime()
-    return runtime.successful_on_play_ids(action_token) if runtime != null else []
+    return _response_effect_service.successful_on_play_ids(action_token)
 
 func register_direct_card_trigger_listener(
         listener_id: String,
         listener) -> bool:
-    var runtime = _card_effect_service.card_reshape_runtime()
-    return runtime != null and runtime.trigger_replay_service \
-        .register_direct_listener(listener_id, listener)
+    return _response_effect_service.register_direct_card_trigger_listener(
+        listener_id, listener)
 
 func unregister_direct_card_trigger_listener(listener_id: String) -> bool:
-    var runtime = _card_effect_service.card_reshape_runtime()
-    return runtime != null and runtime.trigger_replay_service \
-        .unregister_direct_listener(listener_id)
+    return _response_effect_service.unregister_direct_card_trigger_listener(
+        listener_id)
 
 func finalize_reshape_action(side: BattleSide, preview: Dictionary) -> Dictionary:
     return _card_effect_service.finalize_reshape_action(side, preview)
@@ -800,7 +741,7 @@ func register_delayed_effects(
         occurrences: int,
         effects: Array,
         context) -> Dictionary:
-    return _status_system.register_delayed_effects(
+    return _response_effect_service.register_delayed_effects(
         label, timing, occurrences, effects, context)
 
 func register_response(
@@ -810,25 +751,26 @@ func register_response(
         context,
         filters: Dictionary = {},
         expiry_effects: Array = []) -> Dictionary:
-    return _status_system.register_response(
+    return _response_effect_service.register_response(
         event_kind, expiry, effects, context, filters, expiry_effects)
 
 func register_next_round_hand_limit(
         context, amount: int, affected_side = null) -> Dictionary:
-    return _status_system.register_next_round_hand_limit(
+    return _response_effect_service.register_next_round_hand_limit(
         context, amount, affected_side)
 
 func register_defense_decay_return(context) -> Dictionary:
-    return _status_system.register_defense_decay_return(context)
+    return _response_effect_service.register_defense_decay_return(context)
 
 func register_reflection_expiry(context, percent: int) -> Dictionary:
-    return _status_system.register_reflection_expiry(context, percent)
+    return _response_effect_service.register_reflection_expiry(context, percent)
 
 func register_no_life_loss_disruption(context, effect: Dictionary) -> Dictionary:
-    return _status_system.register_no_life_loss_disruption(context, effect)
+    return _response_effect_service.register_no_life_loss_disruption(
+        context, effect)
 
 func technique_draw_count(side: BattleSide) -> int:
-    return _status_system.technique_draw_count(side)
+    return _response_effect_service.technique_draw_count(side)
 
 func retrigger_current_hand_technique(
         actor: BattleSide,
@@ -837,9 +779,7 @@ func retrigger_current_hand_technique(
         power_snapshot: Dictionary,
         maximum_discard: int,
         excluded_technique_ids: Array) -> Dictionary:
-    if not _hand_retrigger_callback.is_valid():
-        return {"success": false, "detail": "当前未连接功法重触端口"}
-    return _hand_retrigger_callback.call(
+    return _invocation_effect_service.retrigger_current_hand_technique(
         actor,
         target,
         sequence_book,
@@ -854,6 +794,3 @@ func add_history(
         result: String,
         detail: String = "") -> void:
     _trigger_queue.add_history(timing, label, source, result, detail)
-
-func _round_number() -> int:
-    return int(_round_number_reader.call()) if _round_number_reader.is_valid() else 0

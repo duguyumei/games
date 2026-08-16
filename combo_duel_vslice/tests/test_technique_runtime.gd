@@ -1881,8 +1881,8 @@ func _dispose_tracked_engines() -> void:
         engine.status_system.use_battle_permission_service(null)
         engine.effect_ports._sides.clear()
         engine.effect_ports._battle_rule_query_service = null
-        engine.effect_ports._committed_event_service = null
-        engine.effect_ports._round_number_reader = Callable()
+        engine.effect_ports._invocation_effect_service \
+            .use_passive_battle_services(null, Callable())
         engine.effect_ports._consumable_repository = null
         engine.delayed_effects.clear()
         engine.action_service = null
