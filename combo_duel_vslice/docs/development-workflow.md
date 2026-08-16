@@ -101,6 +101,7 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 | 效果如何修改战斗状态 | `core/effects/battle_effect_ports.gd`（唯一窄端口） |
 | 伤害、防御与生命结算实现 | `core/effects/battle_survival_effect_service.gd`（Facade 内部服务） |
 | 牌区、真气异状与临时重塑实现 | `core/effects/battle_card_effect_service.gd`（Facade 内部服务） |
+| 来源标识、连势、同气与战斗来源写入 | `core/effects/battle_source_resource_effect_service.gd`（Facade 内部服务） |
 | 被动标准效果何时执行 | `passives/battle_effects_passive_handler.gd` 只建立普通效果计划 |
 | 回合生命周期 | `battle_round_service.gd` |
 | 行动事务顺序 | `battle_action_service.gd` |
@@ -115,8 +116,9 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 公开方法继续保留原签名，但内部统一委托 `BattleSurvivalEffectService`。该服务只能接收完成
 结算所需的明确依赖：`DamageResolver`、`StatusSystem` 的现有窄能力、战斗规则查询、committed
 event 发布端口、双方集合、回合读取器和统一历史入口；禁止传入完整 `CombatEngine`、回指
-Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID 分支。反震、格挡等来源的建立
-可以留在 Facade，伤害发生时的查询、消费与正式结算必须只有一份实现。
+Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID 分支。反震、格挡与邀战来源的
+建立已经迁入 `BattleSourceResourceEffectService`；伤害发生时的查询、消费与正式结算仍只在
+`BattleSurvivalEffectService` 保留一份实现。
 
 结构优化批次允许采用分阶段门禁，但交付必须明确范围。BattleEffectPorts 伤害／防御／生命首批
 只运行项目加载和 `res://tests/test_battle_survival_effects.gd` 专项；每次 Godot 调用使用独立
@@ -142,6 +144,18 @@ Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID �
 `File not found`、`Parse Error` 与 `SCRIPT ERROR`。专项当前覆盖牌区移动、虚无、临时真气、异状、
 临时重塑、同步／原子移动和毒异状桥接；`quick`／`full` 延后到 `BattleEffectPorts`、
 `BattleActionService` 与 `StatusSystem` 全部结构优化完成后统一执行。
+
+第三批来源标识／连势／同气／战斗来源拆分继续保留 `BattleEffectPorts` 的公开签名。
+`BattleSourceResourceEffectService` 负责来源 marker、`write_momentum`、同气预估／写入／回执、
+直接功法值修正，以及反震／格挡／邀战来源建立和公开变化事件；`SameQiGaugeService` 仍是容量、
+消费与同气额外行动的唯一事实源。服务只能通过窄接口读取当前行动窗口并关闭来源绑定窗口，不能
+持有完整 `BattleFlowCoordinator`、`CombatEngine` 或回指 Facade。生存服务继续只在伤害发生时
+读取和消费来源，`StatusSystem` 继续按既有生命周期推进到期与邀战结算，两边不得复制算法。
+
+该批只运行项目加载与 `res://tests/test_battle_source_resources.gd`，每次调用使用独立
+`/tmp/taiwu-battle-effect-source-<用途>-<序号>.log`，并扫描 `Can't load script`、
+`File not found`、`Parse Error` 与 `SCRIPT ERROR`。专项覆盖来源标识、连势、同气、反震来源、
+格挡来源、邀战来源和直接功法值修正；`quick`／`full` 继续延后到全部结构优化结束后统一执行。
 
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、

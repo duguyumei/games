@@ -30,6 +30,46 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleEffectPorts 来源标识／连势／同气／战斗来源职责第三批迁出（2026-08-16）
+
+`BattleEffectPorts` 继续作为 Effect Handler、`PassiveRuleRuntime`、`ActionResolver`、功法调用服务与
+`StatusSystem` 唯一依赖的公开 Facade，公开方法名、参数默认值与返回结构保持不变。新增
+`effects/battle_source_resource_effect_service.gd`，集中负责“来源化战斗资源的正式写入和公开变化”：
+来源 marker 写入／转移／有序记录追加与消费，连势兼容入口与统一 `write_momentum` 委托，同气预估、
+正式写入、幂等回执和 `same_qi_gain_resolved`，直接固定／百分比功法值修正，以及反震、反震真伤、
+格挡和邀战来源的建立与生命周期 committed event。`battle_effect_ports.gd` 由约 1050 行缩至
+859 行；Facade 中不再保留第二套 marker、momentum、same_qi 或战斗来源写入算法。
+
+`BattleSourceResourceEffectService` 只持有现有 `StatusSystem` 响应窄入口、统一历史入口、
+`SameQiGaugeService`、committed event 发布端口、回合读取器、`battle_instance_id`，以及当前行动窗口
+ID、来源可绑定判断和关闭绑定窗口三个窄 `Callable`。它不持有 `CombatEngine`、
+`BattleFlowCoordinator` 或 `BattleEffectPorts`，也不复制同气容量／额外行动算法。行动窗口事务仍由
+`BattleSurvivalEffectService` 维护；新服务只通过窄窗口接口把反震／格挡／邀战来源绑定到合法窗口。
+伤害发生后，生存服务继续独立读取、消费与结算格挡和反震，并由 `StatusSystem` 在既有时点推进邀战、
+来源到期和公开事件，因此两个内部服务没有相互持有或循环依赖。
+
+已迁出的 Facade 方法包括 `same_qi_projection`、`gain_same_qi`、`write_same_qi`、
+`same_qi_receipts_for_action`、`use_same_qi_gauge_service`、`write_source_marker`、
+`transfer_source_marker`、`append_source_marker_records`、`consume_source_marker_records`、
+`add_momentum`、`set_momentum`、`write_momentum`、`set_reflection_percent`、
+`grant_reflection_source`、`grant_reflection_true_damage_source`、`grant_block_source`、
+`register_challenge`、`notify_source_changed`、`add_direct_power_fixed`、
+`add_direct_power_percent`、`close_current_source_binding_window` 与来源变化事件私有辅助。
+这些公开入口仍保留在 Facade 并只做委托。功法调用和序列变化、延迟效果、动态响应、直接真气监听、
+额外行动、战斗历练、消耗品生成、通用效果上下文栈及 `trigger_poison_card` 仍留给后续批次；
+`BattleActionService`、`StatusSystem` 内部结构、Repository 与内容数据均未修改。
+
+本批只执行最小专项门禁。`/tmp/taiwu-battle-effect-source-project-load-01.log` 在核心迁移后完成
+663 项加载，新增测试后 `/tmp/taiwu-battle-effect-source-project-load-02.log` 完成 664 项加载。
+`/tmp/taiwu-battle-effect-source-specialized-03.log` 首次运行 46 条断言时发现专项自身把五次实际
+marker 变化误写为六次，修正期望后 `/tmp/taiwu-battle-effect-source-specialized-04.log` 通过全部
+46 条断言。专项直接覆盖来源标识地址／转移／有序记录、连势、直接功法值、同气只读预估与稳定
+token 幂等、反震来源覆盖后恢复、格挡窗口绑定与生存服务消费、邀战建立／累计／结算事件。提交前
+最终复核使用 `/tmp/taiwu-battle-effect-source-project-load-final-05.log` 与
+`/tmp/taiwu-battle-effect-source-specialized-final-06.log`；全部本批日志按 `Can't load script`、
+`File not found`、`Parse Error`、`SCRIPT ERROR` 扫描。`quick`／`full` 本批没有运行，待全部结构优化
+完成后统一执行完整回归。
+
 ### BattleEffectPorts 牌区／真气／异状／临时重塑职责第二批迁出（2026-08-16）
 
 `BattleEffectPorts` 继续作为 Effect Handler、`PassiveRuleRuntime`、`ActionResolver` 与

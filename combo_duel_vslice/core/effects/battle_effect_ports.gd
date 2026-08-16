@@ -7,6 +7,8 @@ const BattleSurvivalEffectServiceScript = preload(
     "res://core/effects/battle_survival_effect_service.gd")
 const BattleCardEffectServiceScript = preload(
     "res://core/effects/battle_card_effect_service.gd")
+const BattleSourceResourceEffectServiceScript = preload(
+    "res://core/effects/battle_source_resource_effect_service.gd")
 
 ## 效果处理器修改战斗状态的唯一窄端口。
 ##
@@ -24,15 +26,14 @@ var _battle_rule_query_service
 var _committed_event_service
 var _round_number_reader: Callable
 var _battle_rng: RandomNumberGenerator
-var _battle_instance_id: String = "battle-0"
 var _effect_executor_ref: WeakRef
-var _same_qi_gauge_service
 var _technique_invocation_service_ref: WeakRef
 var _effect_context_stack: Array = []
 var _effect_context_slot_entries: Dictionary = {}
 var _immediate_effects_by_context: Dictionary = {}
 var _survival_effect_service
 var _card_effect_service
+var _source_resource_effect_service
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -45,10 +46,17 @@ func _init(
     _survival_effect_service = BattleSurvivalEffectServiceScript.new(
         damage_resolver, status_system, trigger_queue)
     _card_effect_service = BattleCardEffectServiceScript.new(status_system)
+    _source_resource_effect_service = BattleSourceResourceEffectServiceScript.new(
+        status_system,
+        trigger_queue,
+        Callable(_survival_effect_service, "current_action_window_id"),
+        Callable(_survival_effect_service, "can_bind_current_source"),
+        Callable(_survival_effect_service, "close_current_source_binding_window"))
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
     _trigger_queue = trigger_queue
     _survival_effect_service.use_trigger_queue(trigger_queue)
+    _source_resource_effect_service.use_trigger_queue(trigger_queue)
 
 func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
@@ -76,6 +84,8 @@ func use_passive_battle_services(
     _round_number_reader = round_reader
     _survival_effect_service.use_passive_battle_services(
         query_service, event_service, round_reader)
+    _source_resource_effect_service.use_passive_battle_services(
+        event_service, round_reader)
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
@@ -85,13 +95,13 @@ func battle_rng() -> RandomNumberGenerator:
     return _battle_rng
 
 func use_battle_instance_id(value: String) -> void:
-    _battle_instance_id = value if value != "" else "battle-0"
+    _source_resource_effect_service.use_battle_instance_id(value)
 
 func use_effect_executor(executor) -> void:
     _effect_executor_ref = weakref(executor)
 
 func use_same_qi_gauge_service(service) -> void:
-    _same_qi_gauge_service = service
+    _source_resource_effect_service.use_same_qi_gauge_service(service)
 
 func use_technique_invocation_service(service) -> void:
     _technique_invocation_service_ref = weakref(service) if service != null else null
@@ -136,45 +146,15 @@ func take_immediate_effects(context) -> Array:
     return result
 
 func same_qi_projection(side: BattleSide, amount: int, context: Dictionary = {}) -> Dictionary:
-    if _same_qi_gauge_service == null:
-        return {"success": false, "reason": "同气槽服务尚未装配"}
-    return _same_qi_gauge_service.project_gain(side, amount, context)
+    return _source_resource_effect_service.same_qi_projection(side, amount, context)
 
 func gain_same_qi(
         side: BattleSide,
         amount: int,
         source: String,
         token: String) -> Dictionary:
-    if _same_qi_gauge_service == null:
-        return {"success": false, "reason": "同气槽服务尚未装配"}
-    var result: Dictionary = _same_qi_gauge_service.apply_gain(
+    return _source_resource_effect_service.gain_same_qi(
         side, amount, source, token)
-    if result.get("success", false) and not result.get("reused", false):
-        add_history(
-            "same_qi_changed",
-            "%s同气变化" % side.name,
-            source,
-            "成功",
-            "%d +%d -%d = %d / %d；额外行动 +%d" % [
-                int(result["same_qi_before"]), int(result["gained"]),
-                int(result["spent"]), int(result["same_qi_after"]),
-                int(result["same_qi_capacity"]),
-                int(result["granted_actions"]),
-            ])
-        var response := result.duplicate(true)
-        response["actor"] = side
-        response["owner"] = side
-        response["holder"] = side
-        response["action_token"] = token.trim_suffix(":same_qi")
-        if _committed_event_service != null:
-            var serial := int(_committed_event_service.next_serial())
-            response["event_serial"] = serial
-            response["event_token"] = _committed_event_service.make_token(
-                "same_qi_gain_resolved", side, serial, response["action_token"])
-            _committed_event_service.commit("same_qi_gain_resolved", response)
-        else:
-            _status_system.handle_response_event("same_qi_gain_resolved", response)
-    return result
 
 func write_same_qi(
         side: BattleSide,
@@ -184,43 +164,12 @@ func write_same_qi(
         token: String,
         source_category: String = "effect",
         action_token: String = "") -> Dictionary:
-    if _same_qi_gauge_service == null:
-        return {"success": false, "reason": "同气槽服务尚未装配"}
-    var resolved_action_token := action_token if action_token != "" \
-        else token.split(":same_qi")[0]
-    var result: Dictionary = _same_qi_gauge_service.apply_write(
-        side, operation, amount, source, token, {
-            "source_category": source_category,
-            "action_token": resolved_action_token,
-        })
-    if result.get("success", false) and not result.get("reused", false):
-        add_history(
-            "same_qi_changed", "%s同气变化" % side.name, source, "成功",
-            "%d → %d / %d；转换%d次" % [
-                int(result.get("same_qi_before", 0)),
-                int(result.get("same_qi_after", 0)),
-                int(result.get("same_qi_capacity", 5)),
-                int(result.get("conversion_count", 0)),
-            ])
-        var response := result.duplicate(true)
-        response["actor"] = side
-        response["owner"] = side
-        response["holder"] = side
-        response["action_token"] = resolved_action_token
-        if _committed_event_service != null:
-            var serial := int(_committed_event_service.next_serial())
-            response["event_serial"] = serial
-            response["event_token"] = _committed_event_service.make_token(
-                "same_qi_gain_resolved", side, serial, resolved_action_token)
-            _committed_event_service.commit("same_qi_gain_resolved", response)
-        else:
-            _status_system.handle_response_event("same_qi_gain_resolved", response)
-    return result
+    return _source_resource_effect_service.write_same_qi(
+        side, operation, amount, source, token, source_category, action_token)
 
 func same_qi_receipts_for_action(side: BattleSide, action_token: String) -> Array:
-    if _same_qi_gauge_service == null:
-        return []
-    return _same_qi_gauge_service.receipts_for_action(side, action_token)
+    return _source_resource_effect_service.same_qi_receipts_for_action(
+        side, action_token)
 
 func execute_effect_chain(effects: Array, context) -> Dictionary:
     var executor = _effect_executor_ref.get_ref() if _effect_executor_ref != null else null
@@ -235,7 +184,7 @@ func execute_effect_chain(effects: Array, context) -> Dictionary:
         "success": false, "detail": "战斗端口缺少效果执行器"}
 
 func battle_instance_id() -> String:
-    return _battle_instance_id
+    return _source_resource_effect_service.battle_instance_id()
 
 func is_current_side(side) -> bool:
     return side != null and _sides.has(side)
@@ -291,7 +240,7 @@ func begin_action_resolution(actors: Array, metadata: Dictionary = {}) -> void:
     _survival_effect_service.begin_action_resolution(actors, metadata)
 
 func close_current_source_binding_window() -> void:
-    _survival_effect_service.close_current_source_binding_window()
+    _source_resource_effect_service.close_current_source_binding_window()
 
 func finish_action_resolution() -> Dictionary:
     return _survival_effect_service.finish_action_resolution()
@@ -400,18 +349,8 @@ func write_source_marker(
         operation: String,
         amount: int,
         action_token: String = "") -> Dictionary:
-    var result: Dictionary = side.source_marker_store.write(
-        str(source.get("source_kind", "")),
-        str(source.get("source_instance_key", "")),
-        str(source.get("content_id", "")),
-        str(source.get("marker_id", "")),
-        str(source.get("scope", "battle")), operation, amount, source)
-    if result.get("success", false) and result.get("changed", false):
-        _emit_source_marker_changed(side, source, operation, result, action_token)
-        if str(source.get("scope", "battle")) == "run" \
-                and str(source.get("contributes_to", "")) != "":
-            side.recalculate_effective_max_life()
-    return result
+    return _source_resource_effect_service.write_source_marker(
+        side, source, operation, amount, action_token)
 
 func transfer_source_marker(
         side: BattleSide,
@@ -419,50 +358,24 @@ func transfer_source_marker(
         target: Dictionary,
         amount: int,
         action_token: String = "") -> Dictionary:
-    var result: Dictionary = side.source_marker_store.transfer(source, target, amount)
-    if result.get("success", false) and int(result.get("transferred", 0)) > 0:
-        _emit_source_marker_changed(
-            side, source, "transfer_out", result.get("source", {}), action_token)
-        _emit_source_marker_changed(
-            side, target, "transfer_in", result.get("target", {}), action_token)
-        if str(source.get("scope", "battle")) == "run" \
-                or str(target.get("scope", "battle")) == "run":
-            side.recalculate_effective_max_life()
-    return result
+    return _source_resource_effect_service.transfer_source_marker(
+        side, source, target, amount, action_token)
 
 func append_source_marker_records(
         side: BattleSide,
         source: Dictionary,
         records: Array,
         action_token: String = "") -> Dictionary:
-    var result: Dictionary = side.source_marker_store.append_records(
-        str(source.get("source_kind", "")),
-        str(source.get("source_instance_key", "")),
-        str(source.get("content_id", "")),
-        str(source.get("marker_id", "")),
-        str(source.get("scope", "battle")),
-        records,
-        source)
-    if result.get("success", false):
-        _emit_source_marker_changed(
-            side, source, "append_records", result, action_token)
-    return result
+    return _source_resource_effect_service.append_source_marker_records(
+        side, source, records, action_token)
 
 func consume_source_marker_records(
         side: BattleSide,
         source: Dictionary,
         count: int,
         action_token: String = "") -> Dictionary:
-    var result: Dictionary = side.source_marker_store.consume_records(
-        str(source.get("source_kind", "")),
-        str(source.get("source_instance_key", "")),
-        str(source.get("marker_id", "")),
-        str(source.get("scope", "battle")),
-        count)
-    if result.get("success", false):
-        _emit_source_marker_changed(
-            side, source, "consume_records", result, action_token)
-    return result
+    return _source_resource_effect_service.consume_source_marker_records(
+        side, source, count, action_token)
 
 func invoke_sequence_technique(effect: Dictionary, context) -> Dictionary:
     var invocation_service = _technique_invocation_service()
@@ -505,35 +418,11 @@ func emit_technique_sequence_changed(
         "round_number": _round_number(),
     })
 
-func _emit_source_marker_changed(
-        side: BattleSide,
-        source: Dictionary,
-        operation: String,
-        result: Dictionary,
-        action_token: String) -> void:
-    var values := source.duplicate(true)
-    values.merge({
-        "actor": side, "owner": side, "holder": side,
-        "operation": operation, "before": int(result.get("before", 0)),
-        "after": int(result.get("after", 0)),
-        "delta": int(result.get("delta", 0)),
-        "consumed": int(result.get("consumed", 0)),
-        "action_token": action_token, "round_number": _round_number(),
-    }, true)
-    if _committed_event_service != null:
-        var serial := int(_committed_event_service.next_serial())
-        values["event_serial"] = serial
-        values["event_token"] = _committed_event_service.make_token(
-            "source_marker_changed", side, serial, action_token)
-        _committed_event_service.commit("source_marker_changed", values)
-    if _committed_event_service == null:
-        _status_system.handle_response_event("source_marker_changed", values)
-
 func add_momentum(side: BattleSide, amount: int) -> int:
-    return side.add_momentum(amount)
+    return _source_resource_effect_service.add_momentum(side, amount)
 
 func set_momentum(side: BattleSide, value: int) -> int:
-    return side.set_momentum(value)
+    return _source_resource_effect_service.set_momentum(side, value)
 
 func write_momentum(
         side: BattleSide,
@@ -542,8 +431,8 @@ func write_momentum(
         source_category: String,
         action_token: String,
         source_id: String = "") -> Dictionary:
-    return side.write_momentum(
-        operation, amount, source_category, action_token, source_id)
+    return _source_resource_effect_service.write_momentum(
+        side, operation, amount, source_category, action_token, source_id)
 
 func transfer_card_anomaly(
         source_card,
@@ -557,7 +446,8 @@ func transfer_card_anomaly(
 
 func set_reflection_percent(
         side: BattleSide, value: int, source_token: String = "") -> int:
-    return side.set_reflection_percent(value, source_token)
+    return _source_resource_effect_service.set_reflection_percent(
+        side, value, source_token)
 
 func grant_reflection_source(
         side: BattleSide,
@@ -567,28 +457,17 @@ func grant_reflection_source(
         label: String,
         source_token: String = "",
         target_side: BattleSide = null) -> Dictionary:
-    var window_id := ""
-    if expiry_kind == "action_window_end":
-        var target_owner_id := str(target_side.owner_id) if target_side != null else ""
-        if _can_bind_current_source(target_owner_id):
-            window_id = _current_action_window_id()
-    var record := side.add_reflection_source(
-        percent, source_token, remaining_rounds, expiry_kind,
-        window_id, label, true)
-    _emit_source_state_changed(
-        "reflection_source_changed", side, record, "established")
-    return {"success": true, "record": record, "source_token": record["source_token"]}
+    return _source_resource_effect_service.grant_reflection_source(
+        side, percent, remaining_rounds, expiry_kind, label,
+        source_token, target_side)
 
 func grant_reflection_true_damage_source(
         side: BattleSide,
         remaining_rounds: int,
         label: String,
         source_token: String = "") -> Dictionary:
-    var record := side.add_reflection_true_damage_source(
-        source_token, remaining_rounds, label, true)
-    _emit_source_state_changed(
-        "reflection_source_changed", side, record, "true_damage_established")
-    return {"success": true, "record": record, "source_token": record["source_token"]}
+    return _source_resource_effect_service.grant_reflection_true_damage_source(
+        side, remaining_rounds, label, source_token)
 
 func grant_block_source(
         side: BattleSide,
@@ -597,14 +476,8 @@ func grant_block_source(
         label: String,
         source_token: String = "",
         metadata: Dictionary = {}) -> Dictionary:
-    var target_owner_id := str(target_side.owner_id) if target_side != null else ""
-    var window_id := _current_action_window_id() \
-        if _can_bind_current_source(target_owner_id) else ""
-    var record := side.add_block_source(
-        condition, source_token, target_owner_id, window_id,
-        label, true, metadata)
-    _emit_source_state_changed("block_source_changed", side, record, "established")
-    return {"success": true, "record": record, "source_token": record["source_token"]}
+    return _source_resource_effect_service.grant_block_source(
+        side, target_side, condition, label, source_token, metadata)
 
 func register_challenge(
         context,
@@ -612,41 +485,8 @@ func register_challenge(
         effects: Array,
         label: String = "邀战",
         met_effects: Array = []) -> Dictionary:
-    var runtime = context
-    var token: String = str(runtime.actor.next_combat_source_token("challenge"))
-    var target_owner_id := str(runtime.target.owner_id) if runtime.target != null else ""
-    var window_id := _current_action_window_id() \
-        if _can_bind_current_source(target_owner_id) else ""
-    var record := {
-        "source_token": token,
-        "threshold": maxi(0, threshold), "current": 0,
-        "challenger": runtime.actor, "target": runtime.target,
-        "target_owner_id": target_owner_id,
-        "window_id": window_id, "waiting_for_action": window_id == "",
-        "effects": effects.duplicate(true),
-        "met_effects": met_effects.duplicate(true),
-        "power": runtime.power, "initial_power": runtime.initial_power,
-        "hand_result": runtime.hand_result.duplicate(true),
-        "played_cards": runtime.played_cards.duplicate(),
-        "group_snapshot": runtime.group_snapshot.duplicate(true),
-        "captures": runtime.captures.duplicate(true),
-        "technique_id": runtime.technique_id,
-        "technique_name": runtime.technique_name,
-        "actual_hand_id": runtime.actual_hand_id,
-        "branch_hand_id": runtime.branch_hand_id,
-        "technique_pool": runtime.technique_pool,
-        "action_token": runtime.action_token,
-        "source_kind": runtime.source_kind,
-        "source_id": runtime.source_id,
-        "source_name": runtime.source_name,
-        "source_instance_key": runtime.source_instance_key,
-        "trigger_mode": runtime.trigger_mode,
-        "label": label, "public": true,
-    }
-    runtime.actor.challenge_records.append(record)
-    _emit_source_state_changed(
-        "challenge_established", runtime.actor, record, "established")
-    return {"success": true, "record": record, "source_token": token}
+    return _source_resource_effect_service.register_challenge(
+        context, threshold, effects, label, met_effects)
 
 func notify_source_changed(
         event_kind: String,
@@ -654,15 +494,14 @@ func notify_source_changed(
         record: Dictionary,
         change: String,
         payload: Dictionary = {}) -> void:
-    _emit_source_state_changed(event_kind, side, record, change, payload)
+    _source_resource_effect_service.notify_source_changed(
+        event_kind, side, record, change, payload)
 
 func add_direct_power_fixed(side: BattleSide, amount: int) -> int:
-    side.direct_power_fixed += amount
-    return side.direct_power_fixed
+    return _source_resource_effect_service.add_direct_power_fixed(side, amount)
 
 func add_direct_power_percent(side: BattleSide, amount: int) -> int:
-    side.direct_power_percent += amount
-    return side.direct_power_percent
+    return _source_resource_effect_service.add_direct_power_percent(side, amount)
 
 func gain_battle_experience(side: BattleSide, amount: int) -> int:
     var gained := maxi(0, amount)
@@ -1018,33 +857,3 @@ func add_history(
 
 func _round_number() -> int:
     return int(_round_number_reader.call()) if _round_number_reader.is_valid() else 0
-
-func _emit_source_state_changed(
-        event_kind: String,
-        side: BattleSide,
-        record: Dictionary,
-        change: String,
-        payload: Dictionary = {}) -> void:
-    if _committed_event_service == null:
-        return
-    var serial: int = int(_committed_event_service.next_serial())
-    _committed_event_service.commit(event_kind, {
-        "event_token": _committed_event_service.make_token(
-            event_kind, side, serial, str(record.get("source_token", ""))),
-        "event_serial": serial,
-        "actor": side, "owner": side,
-        "target": record.get("target"),
-        "round_number": _round_number(),
-        "action_token": str(record.get("action_token", "")),
-        "source_kind": str(record.get("source_kind", event_kind)),
-        "source_token": str(record.get("source_token", "")),
-        "change": change,
-        "payload": payload.duplicate(true),
-        "public_state": record.duplicate(true),
-    })
-
-func _current_action_window_id() -> String:
-    return _survival_effect_service.current_action_window_id()
-
-func _can_bind_current_source(target_owner_id: String) -> bool:
-    return _survival_effect_service.can_bind_current_source(target_owner_id)
