@@ -99,6 +99,7 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 | 牌型识别与数值 | `hand_evaluator.gd`、`power_calculator.gd` |
 | 效果执行 | `core/effects/` 下对应处理器 |
 | 效果如何修改战斗状态 | `core/effects/battle_effect_ports.gd`（唯一窄端口） |
+| 伤害、防御与生命结算实现 | `core/effects/battle_survival_effect_service.gd`（Facade 内部服务） |
 | 被动标准效果何时执行 | `passives/battle_effects_passive_handler.gd` 只建立普通效果计划 |
 | 回合生命周期 | `battle_round_service.gd` |
 | 行动事务顺序 | `battle_action_service.gd` |
@@ -108,6 +109,20 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 **约束**：效果处理器只能通过 `BattleEffectPorts` 修改状态，不直接拿完整
 `CombatEngine`。端口的四个依赖是必需的，不接受 null —— 允许缺依赖就意味着每个
 方法都要带兜底分支，而兜底分支会在依赖真的缺失时静默改用另一套判定。
+
+`BattleEffectPorts` 是公开协议 Facade，不是所有效果算法的永久归宿。伤害、防御与生命相关
+公开方法继续保留原签名，但内部统一委托 `BattleSurvivalEffectService`。该服务只能接收完成
+结算所需的明确依赖：`DamageResolver`、`StatusSystem` 的现有窄能力、战斗规则查询、committed
+event 发布端口、双方集合、回合读取器和统一历史入口；禁止传入完整 `CombatEngine`、回指
+Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID 分支。反震、格挡等来源的建立
+可以留在 Facade，伤害发生时的查询、消费与正式结算必须只有一份实现。
+
+结构优化批次允许采用分阶段门禁，但交付必须明确范围。BattleEffectPorts 伤害／防御／生命首批
+只运行项目加载和 `res://tests/test_battle_survival_effects.gd` 专项；每次 Godot 调用使用独立
+`/tmp/taiwu-battle-effect-damage-<用途>-<序号>.log`，并扫描 `Can't load script`、
+`File not found`、`Parse Error` 与 `SCRIPT ERROR`。该批不运行 `quick`／`full`；完整回归统一留到
+`BattleEffectPorts`、`BattleActionService` 和 `StatusSystem` 全部结构优化结束后执行，不能把
+当前最小专项门禁描述为全部回归通过。
 
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、

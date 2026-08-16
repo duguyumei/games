@@ -30,6 +30,52 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleEffectPorts 伤害／防御／生命职责首批迁出（2026-08-16）
+
+`BattleEffectPorts` 仍是 Effect Handler、`PassiveRuleRuntime`、`ActionResolver` 与
+`StatusSystem` 唯一依赖的公开 Facade，原有公开方法名与签名保持不变。Facade 负责把
+`source_kind`、`source_id`、`source_name`、`source_instance_key`、`trigger_mode` 和
+`action_token` 整理为统一来源上下文，然后委托新增的
+`effects/battle_survival_effect_service.gd`；调用方不直接持有内部服务。
+
+```mermaid
+flowchart LR
+    HANDLER["Effect Handler / ActionResolver / StatusSystem"] --> FACADE["BattleEffectPorts Facade"]
+    FACADE -->|"标准化来源上下文"| SURVIVAL["BattleSurvivalEffectService"]
+    SURVIVAL --> QUERY["BattleRuleQueryService"]
+    SURVIVAL --> DAMAGE["DamageResolver 写入 / 同步 shadow"]
+    DAMAGE -->|"正式结果 / flush"| SURVIVAL
+    SURVIVAL --> EVENT["committed events"]
+    SURVIVAL --> HISTORY["统一战斗历史"]
+    SURVIVAL -->|"合格防御损失"| REFLECTION["反震递归回同一伤害流水线"]
+    REFLECTION --> SURVIVAL
+```
+
+`BattleSurvivalEffectService` 集中保存唯一伤害流水线：普通／真／毒伤正式写入，普通伤害
+outgoing／incoming 查询，毒伤修正与防御介入，同步伤害冻结、动态值解析和 flush，格挡消费，
+防御吸收，反震递归保护，`damage_resolved`／`damage_blocked`／`defense_reduced`／
+`reflection_resolved` 与毒触发完成事件，伤害历史、行动伤害统计以及攻击段存活判断。防御增加、
+直接削减和生命恢复也由同一服务执行各自查询、上限约束与 committed event，避免 Facade 与内部
+服务保留两套算法。服务只持有 `DamageResolver`、`StatusSystem`、查询与 committed event 端口、
+双方集合、回合读取器和统一触发历史入口；没有接收完整 `CombatEngine`，也没有回指
+`BattleEffectPorts`。
+
+反震来源、反震真伤来源、格挡来源和邀战记录的建立仍留在 Facade；服务只在伤害发生时读取、
+消费或推进这些来源。牌区移动、真气生成／夺取／归还、真气异状与重塑、来源标识写入、连势与
+同气、延迟效果、动态响应、功法调用和通用事件入口均未迁移；`BattleActionService` 与
+`StatusSystem` 内部结构未修改。`battle_effect_ports.gd` 由约 1891 行缩至 1248 行，公开方法集合
+与内容数据均未变化。
+
+本批只执行最小专项门禁。首次项目加载日志
+`/tmp/taiwu-battle-effect-damage-project-load-01.log` 暴露新服务类型注解的加载顺序 Parse Error，
+当批修正后，`/tmp/taiwu-battle-effect-damage-project-load-02.log` 完成 660 项项目加载；
+`/tmp/taiwu-battle-effect-damage-survival-tests-03.log` 的 `battle-survival-effects` 专项通过
+59 条断言，直接覆盖普通／真／毒伤、防御增减、生命恢复、格挡、同步 flush、行动伤害统计与
+反震。最终复核日志为 `/tmp/taiwu-battle-effect-damage-project-load-final-04.log` 与
+`/tmp/taiwu-battle-effect-damage-survival-final-05.log`；按禁止模式扫描后仅保留已知 macOS CA
+证书警告。`quick`／`full` 本批没有运行，待
+`BattleEffectPorts`、`BattleActionService` 与 `StatusSystem` 全部结构优化完成后统一执行完整回归。
+
 ### 战斗效果来源中立协议（2026-08-16）
 
 功法、内功与物品继续共用唯一 `EffectExecutor`、Effect Handler 注册表、
@@ -314,7 +360,8 @@ flowchart LR
 - `run_effects/`：战斗外本局效果的 Handler 协议、唯一注册表、事务上下文与完整成长库存工作副本；当前正式注册 `gain_experience` 和平台探针 `heal_life`。旧 `rewards/` 脚本只保留为路径兼容门面，不维护第二套分派。
 - `sequence_book.gd`：精确牌型独立功法序列。
 - `effect_executor.gd`：统一执行与预览汇总的 43 行兼容门面。
-- `effects/technique_effect_context.gd`、`effects/battle_effect_ports.gd`：类型化功法上下文与窄修改端口；正式处理器通过伤害、牌区、状态、流程能力访问战斗，不再从上下文字典取得完整引擎。
+- `effects/technique_effect_context.gd`、`effects/battle_effect_ports.gd`：类型化功法上下文与唯一公开窄修改 Facade；正式处理器通过伤害、牌区、状态、流程能力访问战斗，不再从上下文字典取得完整引擎。
+- `effects/battle_survival_effect_service.gd`：Facade 内部的伤害、防御与生命结算服务；集中同步伤害、查询、格挡、防御吸收、反震、细粒度事件、历史和行动伤害统计，不被 Effect Handler 直接依赖。
 - `effects/target_query_field_registry.gd`、`effects/target_query_handlers/`：统一登记目标筛选字段、参数校验和逐牌／集合匹配；内容校验和运行查询不再维护平行字段名单。
 - `effects/effect_target_query.gd`、`battle_choice_request.gd`：统一目标阵营、牌区、顺序、注册式筛选、冻结候选、数量边界和目标不足策略；玩家与敌方效果使用同一选择结果契约。
 - `effects/technique_effect_continuation.gd`、`technique_effect_result.gd`：统一成功、失败与等待选择结果，保存效果下标、已完成结果和上下文引用并从原位置恢复。
@@ -338,7 +385,7 @@ flowchart LR
 - `same_qi_gauge_service.gd`：维护双方战斗态同气槽，以 `same_qi_capacity_query` 纯查询有效容量，并用稳定 token 幂等处理获得、阈值消耗、溢出和额外行动。
 - `battle_action_service.gd`：统一编排玩家单方、敌我同步与敌方单方的行动事务，负责提案锁定、待出区提交、功法选择暂停／恢复，以及全部主组与协同组成功后一次性提交冻结同气收益；不生成内容或决定胜负。
 - `battle_pending_action_transaction.gd`：保存等待功法选择时的可恢复行动事务，区分玩家单方、敌方单方和敌我同步三种形态，并提供版本化快照。
-- `damage_resolver.gd`：独立完成普通伤害、真伤、连势增伤、防御／生命扣减、同步伤害 shadow 和攻击段存活判断，不依赖触发队列或 UI。
+- `damage_resolver.gd`：提供普通／真／毒伤的纯数值写入、同步伤害 shadow 与攻击段存活原语；查询、格挡、事件、反震和历史由 `BattleSurvivalEffectService` 统一编排。
 - `status_system.gd`、`status_change.gd`、`statuses/status_behavior_registry.gd`：统一敌我角色层数、真气异状、延迟快照、战斗时点清理和结构化状态变化历史；状态定义绑定通用处理器，复杂事件顺序留在注册处理器中，中央系统不再点名具体状态 ID。
 - `battle_action_proposal.gd`：统一玩家、脚本敌人和策略敌人的 v1 选牌提案 DTO，不包含实际结算权限。
 - `battle_action_record.gd`：统一实际行动执行记录 DTO，保存参与方、牌型预览、顺序、回合、触发状态和捕获表；内部结算仍可通过属性访问，日志使用 `snapshot()`。
