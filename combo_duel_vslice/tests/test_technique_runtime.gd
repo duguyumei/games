@@ -177,8 +177,8 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 215, "正式功法仓库包含215门功法")
-    _assert_equal(repository.resource_paths.size(), 215, "正式功法资源路径包含215项")
+    _assert_equal(repository.techniques.size(), 219, "正式功法仓库包含219门功法")
+    _assert_equal(repository.resource_paths.size(), 219, "正式功法资源路径包含219项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -194,12 +194,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 213, "商店包含213门非内建正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 217, "商店包含217门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 215, "正式目录存在215门正式功法资源")
+    _assert_equal(resource_count, 219, "正式目录存在219门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -1106,6 +1106,8 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     manual_engine.player.direct_power_fixed = 2
     manual_engine.player.direct_power_percent = 20
     manual_engine.player.momentum_value = 3
+    manual_engine.player.add_pending_power_fixed_source(
+        4, "shared-manual-next-power")
     var manual_life_before: int = manual_engine.enemy.life
     var manual_result: Dictionary = manual_engine.confirm_play([manual_card.id])
     _assert_true(manual_result.get("success", false),
@@ -1131,6 +1133,8 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     invoked_engine.player.direct_power_fixed = 2
     invoked_engine.player.direct_power_percent = 20
     invoked_engine.player.momentum_value = 3
+    invoked_engine.player.add_pending_power_fixed_source(
+        4, "shared-invoked-next-power")
     var caller_slot: Dictionary = invoked_engine.sequence_book.current_slot(
         "high_card")
     var invoked_runtime = EffectContextScript.new().configure({
@@ -1185,6 +1189,8 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     automatic_engine.player.direct_power_fixed = 2
     automatic_engine.player.direct_power_percent = 20
     automatic_engine.player.momentum_value = 3
+    automatic_engine.player.add_pending_power_fixed_source(
+        4, "shared-automatic-next-power")
     var automatic_life_before: int = automatic_engine.enemy.life
     automatic_engine.battle_passive_event_service.commit("defense_gained", {
         "event_token": "shared-auto-event",
@@ -1197,8 +1203,8 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     })
     var automatic_loss: int = automatic_life_before - automatic_engine.enemy.life
 
-    _assert_equal(manual_loss, 11,
-        "手动 P0=5 经固定2、20%和连势3得到 P=11")
+    _assert_equal(manual_loss, 16,
+        "手动 P0=5 经固定2、下一功法固定4、20%和连势3得到 P=16")
     _assert_equal(invoked_loss, manual_loss,
         "调用与手动复用相同 P0/P 和伤害阶段结果")
     _assert_equal(automatic_loss, manual_loss,
@@ -1209,6 +1215,12 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
         "调用结算统一清空未改变连势")
     _assert_equal(automatic_engine.player.momentum_value, 0,
         "自动结算统一清空未改变连势")
+    _assert_equal(manual_engine.player.pending_power_fixed_sources.size(), 0,
+        "正常成功功法消费下一功法固定修正")
+    _assert_equal(invoked_engine.player.pending_power_fixed_sources.size(), 0,
+        "调用成功功法消费下一功法固定修正")
+    _assert_equal(automatic_engine.player.pending_power_fixed_sources.size(), 0,
+        "自动成功功法消费下一功法固定修正")
 
 func _test_battle_session_invocation_choice_resume() -> void:
     for trigger_mode in ["invoked", "automatic"]:

@@ -35,11 +35,11 @@ func validate_definition() -> Dictionary:
     if insufficient_policy not in INSUFFICIENT_POLICIES:
         return _invalid("选择请求必须明确合法的 insufficient_policy")
     var ids: Dictionary = {}
-    for card in candidates:
-        var card_id := str(card.id)
-        if card_id == "" or ids.has(card_id):
+    for candidate in candidates:
+        var candidate_id := _candidate_id(candidate)
+        if candidate_id == "" or ids.has(candidate_id):
             return _invalid("选择候选包含空 ID 或重复实例")
-        ids[card_id] = true
+        ids[candidate_id] = true
     return {"ok": true, "reason": ""}
 
 func effective_limits() -> Dictionary:
@@ -88,8 +88,8 @@ func validate_selection(selected_ids: Array) -> Dictionary:
 
 func selected_cards(selected_ids: Array) -> Array:
     var by_id: Dictionary = {}
-    for card in candidates:
-        by_id[str(card.id)] = card
+    for candidate in candidates:
+        by_id[_candidate_id(candidate)] = candidate
     var result: Array = []
     for selected_id in selected_ids:
         if by_id.has(str(selected_id)):
@@ -98,15 +98,15 @@ func selected_cards(selected_ids: Array) -> Array:
 
 func candidate_ids() -> Array[String]:
     var result: Array[String] = []
-    for card in candidates:
-        result.append(str(card.id))
+    for candidate in candidates:
+        result.append(_candidate_id(candidate))
     return result
 
 func snapshot() -> Dictionary:
     var limits := effective_limits()
     var candidate_snapshots: Array = []
-    for card in candidates:
-        candidate_snapshots.append(card.to_dict())
+    for candidate in candidates:
+        candidate_snapshots.append(_candidate_snapshot(candidate))
     return {
         "request_id": request_id,
         "prompt": prompt,
@@ -122,3 +122,17 @@ func snapshot() -> Dictionary:
 
 func _invalid(reason: String) -> Dictionary:
     return {"ok": false, "reason": reason}
+
+func _candidate_id(candidate) -> String:
+    if candidate is Dictionary:
+        return str(candidate.get("id", ""))
+    if candidate != null:
+        return str(candidate.id)
+    return ""
+
+func _candidate_snapshot(candidate) -> Dictionary:
+    if candidate is Dictionary:
+        return candidate.duplicate(true)
+    if candidate != null and candidate.has_method("to_dict"):
+        return candidate.to_dict()
+    return {"id": _candidate_id(candidate)}

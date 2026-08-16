@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "pool_membership": {
     "high_card": [
       "high"
@@ -242,7 +242,11 @@
     "bomb_fire_return_furnace": "formal_complete",
     "pair_forest_dissipate_decay": "formal_complete",
     "bomb_fire_break_city": "formal_complete",
-    "high_mountain_shed_wall": "formal_complete"
+    "high_mountain_shed_wall": "formal_complete",
+    "pair_wind_returning_tide": "formal_complete",
+    "high_forest_shared_fate_poison": "formal_complete",
+    "straight_fire_return_same_qi": "formal_complete",
+    "straight_mountain_hidden_edge": "formal_complete"
   },
   "resource_paths": [
     "res://data/techniques/basic_scatter.tres",
@@ -459,6 +463,10 @@
     "res://data/techniques/bomb_wind_empty_hand.tres",
     "res://data/techniques/pair_forest_dissipate_decay.tres",
     "res://data/techniques/bomb_fire_break_city.tres",
-    "res://data/techniques/high_mountain_shed_wall.tres"
+    "res://data/techniques/high_mountain_shed_wall.tres",
+    "res://data/techniques/pair_wind_returning_tide.tres",
+    "res://data/techniques/high_forest_shared_fate_poison.tres",
+    "res://data/techniques/straight_fire_return_same_qi.tres",
+    "res://data/techniques/straight_mountain_hidden_edge.tres"
   ]
 }

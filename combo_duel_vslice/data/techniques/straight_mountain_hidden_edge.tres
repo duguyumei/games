@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "straight_mountain_hidden_edge"
+display_name = "山·裂壁藏锋"
+pool = "straight"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["straight"] )
+description = "获得P点防御。可以消耗C点当前防御；实际足额消耗后，获得1次无条件格挡，并使下一门成功功法获得floor(C/2)点直接功法值修正。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "block", "next_technique_power"] )
+public_behavior_summary = Array[String]( ["defense", "block", "next_technique_power"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power"}},{"op":"select_option","phase":"prepare","choice_id":"hidden_edge_payment","prompt":"是否足额消耗C点防御藏锋","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","options":[{"id":"pay","label":"支付C点防御"}],"capture":"payment_choice"},{"op":"remove_defense","phase":"prepare","amount":{"kind":"card_contribution"},"cause":"cost","require_full":true,"capture":"defense_paid","when":{"capture_nonempty":"payment_choice"}},{"op":"grant_block","phase":"prepare","condition_spec":{},"when":{"value_at_least":{"value":{"kind":"capture_field_first","capture":"defense_paid","field":"amount"},"minimum":{"kind":"card_contribution"}}}},{"op":"add_pending_power_fixed","phase":"prepare","amount":{"kind":"divide_floor","value":{"kind":"card_contribution"},"divisor":2},"when":{"value_at_least":{"value":{"kind":"capture_field_first","capture":"defense_paid","field":"amount"},"minimum":{"kind":"card_contribution"}}}}]

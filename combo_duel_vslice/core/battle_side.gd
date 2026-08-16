@@ -75,6 +75,7 @@ var passive_counter_store = null
 var battle_passive_counter_store = null
 var source_marker_store = SourceMarkerStoreScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
+var technique_sequence_book = null
 var condition_spec_registry = ConditionSpecRegistryScript.new()
 var battle_rule_query_service = null
 var hand_recognition_policy = null
@@ -126,6 +127,9 @@ func use_battle_permission_service(service) -> void:
     for card in all_zone_cards():
         if card.has_method("configure_battle_permission_service"):
             card.configure_battle_permission_service(service)
+
+func use_technique_sequence_book(book) -> void:
+    technique_sequence_book = book
 
 func reset(
         cards: Array,
@@ -215,14 +219,15 @@ func grant_poison_damage_modifier(
 
 func freeze_poison_damage_modifiers(
         base_amount: int,
-        receipt_token: String = "") -> Dictionary:
+        receipt_token: String = "",
+        additional_fixed: int = 0) -> Dictionary:
     if receipt_token != "" and poison_damage_modifier_receipts.has(
             receipt_token):
         var reused: Dictionary = poison_damage_modifier_receipts[
             receipt_token].duplicate(true)
         reused["reused"] = true
         return reused
-    var fixed_total := 0
+    var fixed_total := additional_fixed
     var percent_total := 0
     var applicable_tokens: Array[String] = []
     poison_damage_modifier_sources.sort_custom(func(left, right):
@@ -249,6 +254,28 @@ func freeze_poison_damage_modifiers(
     if receipt_token != "":
         poison_damage_modifier_receipts[receipt_token] = result.duplicate(true)
     return result
+
+func active_technique_marker_sum(filters: Dictionary = {}) -> int:
+    if source_marker_store == null:
+        return 0
+    var entries: Array = source_marker_store.entries(filters)
+    if technique_sequence_book == null:
+        var equipped := equipped_source_content_ids()
+        var equipped_total := 0
+        for entry_value in entries:
+            var entry: Dictionary = entry_value
+            if equipped.has(str(entry.get("content_id", ""))):
+                equipped_total += int(entry.get("value", 0))
+        return equipped_total
+    var active_slot_ids: Dictionary = {}
+    for slot_value in technique_sequence_book.find_slots({}):
+        active_slot_ids[str(slot_value.get("slot_instance_id", ""))] = true
+    var total := 0
+    for entry_value in entries:
+        var entry: Dictionary = entry_value
+        if active_slot_ids.has(str(entry.get("source_instance_key", ""))):
+            total += int(entry.get("value", 0))
+    return total
 
 func commit_poison_damage_modifier_receipt(receipt: Dictionary) -> Dictionary:
     var receipt_token := str(receipt.get("receipt_token", ""))
@@ -1037,7 +1064,8 @@ func add_pending_power_fixed_source(
         amount: int,
         source_token: String = "",
         label: String = "下一门成功功法",
-        is_public: bool = true) -> Dictionary:
+        is_public: bool = true,
+        metadata: Dictionary = {}) -> Dictionary:
     var token := source_token if source_token != "" \
         else next_combat_source_token("power-fixed")
     var record := {
@@ -1046,6 +1074,8 @@ func add_pending_power_fixed_source(
         "established_order": _combat_source_serial,
         "label": label,
         "public": is_public,
+        "source_instance_key": str(metadata.get("source_instance_key", "")),
+        "content_id": str(metadata.get("content_id", "")),
     }
     _combat_source_serial += 1
     pending_power_fixed_sources.append(record)

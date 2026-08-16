@@ -37,11 +37,11 @@
 | 顺子池 | 顺子 |
 | 炸弹池 | 四条、五条 |
 
-当前运行时五个正式功法池已经开放，共 213 门非内建功法：高牌 56 门、对子 49 门、三条 34 门、顺子 34 门、炸弹 40 门。高牌池由[首批 25 门高牌功法](./24-gongfa-high-card-pool.md)与当前已实现扩展／特殊索引中的 31 门组成；其余池及扩展高牌的稳定 ID 见[扩展功法正式索引](./28-gongfa-expanded-formal-pool-index.md)。详细效果正文由[蛊毒](./25-gongfa-poison-candidate-pool.md)、[成长](./26-gongfa-growth-candidate-pool.md)、[跨系统桥接](./27-gongfa-bridge-candidate-pool.md)、[山·阵势与壁垒流](./29-gongfa-mountain-candidate-pool.md)、[风·运转与扰乱流](./33-gongfa-wind-pool.md)、[火·连击与燃尽流](./34-gongfa-fire-pool.md)和[特殊功法冻结候选池](./35-gongfa-special-candidate-pool.md)文档唯一维护。
+当前运行时五个正式功法池已经开放，共 217 门非内建功法：高牌 57 门、对子 50 门、三条 34 门、顺子 36 门、炸弹 40 门。高牌池由[首批 25 门高牌功法](./24-gongfa-high-card-pool.md)与当前已实现扩展／特殊索引中的 32 门组成；其余池及扩展高牌的稳定 ID 见[扩展功法正式索引](./28-gongfa-expanded-formal-pool-index.md)。详细效果正文由[蛊毒](./25-gongfa-poison-candidate-pool.md)、[成长](./26-gongfa-growth-candidate-pool.md)、[跨系统桥接](./27-gongfa-bridge-candidate-pool.md)、[山·阵势与壁垒流](./29-gongfa-mountain-candidate-pool.md)、[风·运转与扰乱流](./33-gongfa-wind-pool.md)、[火·连击与燃尽流](./34-gongfa-fire-pool.md)和[特殊功法冻结候选池](./35-gongfa-special-candidate-pool.md)文档唯一维护。
 
-[山·阵势与壁垒流正式目录](./29-gongfa-mountain-candidate-pool.md)记录 56 门山系正式功法，其中本批 49 门均已完成独立资源、运行时、AI／UI／历史投影和专项测试；[特殊功法冻结候选池](./35-gongfa-special-candidate-pool.md)另维护已接入的山·舍壁还生。它们均进入上述 213 门非内建正式数量、心得随机池、奖励池与装配统计。加上散招、守招两门基础通用功法，当前正式资源总数为 215。
+[山·阵势与壁垒流正式目录](./29-gongfa-mountain-candidate-pool.md)记录 56 门山系正式功法，其中本批 49 门均已完成独立资源、运行时、AI／UI／历史投影和专项测试；[特殊功法冻结候选池](./35-gongfa-special-candidate-pool.md)另维护已接入的山·舍壁还生与山·裂壁藏锋。它们均进入上述 217 门非内建正式数量、心得随机池、奖励池与装配统计。加上散招、守招两门基础通用功法，当前正式资源总数为 219。
 
-当前已实现扩展／特殊索引记录 188 门，另加首批 25 门高牌；再加两门基础通用功法，运行时正式资源总数为 215。34号火系目录新增的40门和35号特殊池首批4门已经完成独立资源、正式资格、AI语义、公开预览、战斗历史／存档投影与专项测试接入；`production_sequences.json`保持不变。
+当前已实现扩展／特殊索引记录 192 门，另加首批 25 门高牌；再加两门基础通用功法，运行时正式资源总数为 219。34号火系目录新增的40门和35号特殊池已接入的8门已经完成独立资源、正式资格、AI语义、公开预览、战斗历史／存档投影与专项测试接入；`production_sequences.json`保持不变。
 
 **基础通用功法（2 门）**
 

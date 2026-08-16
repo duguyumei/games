@@ -48,12 +48,15 @@ func execute(effect: Dictionary, context):
                 effect.get("amount", 0), runtime)
             var result: Dictionary = runtime.ports.remove_defense(
                 side, requested, remove_all, runtime.actor, runtime.source_kind,
-                runtime.action_token, str(effect.get("cause", "direct_effect")))
+                runtime.action_token, str(effect.get("cause", "direct_effect")),
+                bool(effect.get("require_full", false)))
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "移除防御失败")))
             var removed: int = int(result.get("removed", 0))
             if effect.has("capture"):
-                runtime.captures[str(effect["capture"])] = [{"amount": removed}]
+                var captured_result := result.duplicate(true)
+                captured_result["amount"] = removed
+                runtime.captures[str(effect["capture"])] = [captured_result]
             return EffectResultScript.succeeded("移除防御 %d" % removed)
     return EffectResultScript.failed("防御处理器不支持：%s" % str(effect.get("op", "")))
 
@@ -73,3 +76,5 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
         validator.report_error(scope + ".cause", "引用未知防御减少 cause")
     if not bool(effect.get("all", false)) and not effect.has("amount"):
         validator.report_error(scope, "remove_defense 必须提供 amount 或 all=true")
+    if effect.has("require_full") and not effect["require_full"] is bool:
+        validator.report_error(scope + ".require_full", "必须是布尔值")

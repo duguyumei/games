@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_forest_shared_fate_poison"
+display_name = "林·同命淬蛊"
+pool = "high"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["high_card"] )
+marker_definitions = [{"id":"quench_poison","scope":"battle","public":true,"display_name":"淬蛊","contributes_to":"poison_damage_fixed_global","forget_policy":"clear"}]
+description = "获得floor(P/2)点防御。本功法获得1层“淬蛊”。双方每个毒伤段的固定毒伤增加等于本功法当前“淬蛊”层数。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["defense", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"write_source_marker","phase":"prepare","operation":"add","marker_id":"quench_poison","scope":"battle","display_name":"淬蛊","contributes_to":"poison_damage_fixed_global","amount":1}]

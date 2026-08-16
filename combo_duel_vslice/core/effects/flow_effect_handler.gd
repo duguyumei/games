@@ -118,8 +118,15 @@ func execute(effect: Dictionary, context):
                 if not record.is_empty() else EffectResultScript.failed("防御保留来源建立失败")
         "add_pending_power_fixed":
             var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)
-            runtime.actor.add_pending_power_fixed_source(
-                amount, "", runtime.technique_name)
+            if amount > 0:
+                runtime.actor.add_pending_power_fixed_source(
+                    amount,
+                    "%s:%s:pending_power_fixed" % [
+                        runtime.action_token, runtime.slot_instance_id],
+                    runtime.technique_name, true, {
+                        "source_instance_key": runtime.slot_instance_id,
+                        "content_id": runtime.technique_id,
+                    })
             return EffectResultScript.succeeded("下一门成功功法值+%d" % amount)
         "write_same_qi":
             var amount: int = value_resolver.resolve(effect.get("amount", 0), runtime)

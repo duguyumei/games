@@ -82,8 +82,8 @@ func _test_catalog_and_counts() -> void:
             continue
         normal_count += 1
         counts[definition.pool] = int(counts.get(definition.pool, 0)) + 1
-    _assert_equal(normal_count, 213, "非内建正式功法213门")
-    _assert_equal(counts, {"high":56,"pair":49,"three":34,"straight":34,"bomb":40}, "五池数量准确")
+    _assert_equal(normal_count, 217, "非内建正式功法217门")
+    _assert_equal(counts, {"high":57,"pair":50,"three":34,"straight":36,"bomb":40}, "五池数量准确")
 
 func _test_meridian_draw_rules() -> void:
     var engine = _engine(4101)

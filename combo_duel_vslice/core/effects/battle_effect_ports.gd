@@ -338,7 +338,8 @@ func resolve_poison_segment_amount(
     if affected_side == null:
         return {"base": base_amount, "fixed": 0, "percent": 0, "final_amount": maxi(0, base_amount)}
     return affected_side.freeze_poison_damage_modifiers(
-        base_amount, receipt_token)
+        base_amount, receipt_token,
+        _active_source_marker_total("poison_damage_fixed_global"))
 
 func begin_synchronized_damage(records: Array) -> void:
     var actors: Array = []
@@ -576,17 +577,32 @@ func remove_defense(
         source_actor = null,
         source_kind: String = "effect",
         action_token: String = "",
-        cause: String = "direct_effect") -> Dictionary:
+        cause: String = "direct_effect",
+        require_full: bool = false) -> Dictionary:
     var before := int(side.defense)
+    var requested := before if remove_all else maxi(0, amount)
+    if require_full and not remove_all and before < requested:
+        return {
+            "success": true, "removed": 0,
+            "before": before, "after": before,
+            "requested": requested, "paid": false,
+            "hostile": source_actor != null and source_actor != side,
+            "cause": cause,
+        }
     var removed := before if remove_all else mini(before, maxi(0, amount))
     side.defense = before - removed
     if removed <= 0:
-        return {"success": true, "removed": 0, "before": before, "after": before}
+        return {
+            "success": true, "removed": 0,
+            "before": before, "after": before,
+            "requested": requested,
+            "paid": remove_all or requested == 0,
+        }
     var hostile: bool = source_actor != null and source_actor != side
     var values := {
         "actor": source_actor if source_actor != null else side,
         "target": side, "owner": side, "holder": side,
-        "requested_amount": before if remove_all else maxi(0, amount),
+        "requested_amount": requested,
         "effective_amount": removed, "defense_before": before,
         "defense_after": int(side.defense), "all": remove_all,
         "hostile": hostile, "source_kind": source_kind,
@@ -604,8 +620,18 @@ func remove_defense(
     return {
         "success": true, "removed": removed,
         "before": before, "after": int(side.defense), "hostile": hostile,
-        "cause": cause,
+        "cause": cause, "requested": requested,
+        "paid": remove_all or removed == requested,
     }
+
+func _active_source_marker_total(contributes_to: String) -> int:
+    var total := 0
+    for side in _sides:
+        if side != null and side.has_method("active_technique_marker_sum"):
+            total += int(side.active_technique_marker_sum({
+                "scope": "battle", "contributes_to": contributes_to,
+            }))
+    return total
 
 func write_source_marker(
         side: BattleSide,

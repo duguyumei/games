@@ -271,6 +271,8 @@ func _init(
     enemy.use_card_policies(hand_recognition_policy, card_identity_policy)
     player.use_battle_permission_service(battle_permission_service)
     enemy.use_battle_permission_service(battle_permission_service)
+    player.use_technique_sequence_book(sequence_book)
+    enemy.use_technique_sequence_book(enemy_sequence_book)
     player.use_card_reshape_runtime(card_reshape_runtime)
     enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)

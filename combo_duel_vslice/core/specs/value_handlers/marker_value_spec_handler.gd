@@ -55,17 +55,21 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
             var side = resolver.side(runtime, str(spec.get("side", "actor")))
             if side == null or side.source_marker_store == null:
                 return 0
-            var equipped: Dictionary = side.equipped_source_content_ids() \
-                if side.has_method("equipped_source_content_ids") else {}
             var filters: Dictionary = spec.get("filters", {}).duplicate(true)
             if spec.has("marker_id"):
                 filters["marker_id"] = str(spec["marker_id"])
             if spec.has("scope"):
                 filters["scope"] = str(spec["scope"])
+            if side.has_method("active_technique_marker_sum") \
+                    and str(filters.get("scope", "")) == "battle":
+                return int(side.active_technique_marker_sum(filters))
+            var equipped: Dictionary = side.equipped_source_content_ids() \
+                if side.has_method("equipped_source_content_ids") else {}
             var total := 0
             for entry_value in side.source_marker_store.entries(filters):
-                if equipped.has(str(entry_value.get("content_id", ""))):
-                    total += int(entry_value.get("value", 0))
+                var entry: Dictionary = entry_value
+                if equipped.has(str(entry.get("content_id", ""))):
+                    total += int(entry.get("value", 0))
             return total
         "consumed_marker_value":
             return runtime.consumed_marker_value

@@ -14,13 +14,15 @@ func _init(random_source: RandomNumberGenerator, resolver = null) -> void:
     value_resolver = resolver
 
 func operation_ids() -> Array[String]:
-    return ["select_cards"]
+    return ["select_cards", "select_option"]
 
 func group_name() -> String:
     return "choice"
 
 func execute(effect: Dictionary, context):
     var runtime = EffectContextScript.coerce(context)
+    if str(effect.get("op", "")) == "select_option":
+        return _select_option(effect, runtime)
     var query_spec = effect.get("query", {}).duplicate(true)
     if not query_spec is Dictionary:
         return EffectResultScript.failed("选择效果缺少 query 对象")
@@ -116,6 +118,26 @@ func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dicti
     pass
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    if str(effect.get("op", "")) == "select_option":
+        var options = effect.get("options", [])
+        if not options is Array or options.is_empty():
+            validator.report_error(scope + ".options", "必须是非空数组")
+            return
+        var seen: Dictionary = {}
+        for index in range(options.size()):
+            var option = options[index]
+            if not option is Dictionary:
+                validator.report_error("%s.options[%d]" % [scope, index], "必须是对象")
+                continue
+            var option_id := str(option.get("id", ""))
+            if option_id == "" or seen.has(option_id):
+                validator.report_error(
+                    "%s.options[%d].id" % [scope, index],
+                    "必须为来源内唯一非空ID")
+            seen[option_id] = true
+        if str(effect.get("choice_id", "")) == "":
+            validator.report_error(scope + ".choice_id", "必须提供 choice_id")
+        return
     if effect.has("candidate_capture"):
         if not effect["candidate_capture"] is String or str(effect["candidate_capture"]) == "":
             validator.report_error(scope + ".candidate_capture", "必须是非空字符串")
@@ -129,3 +151,43 @@ func _resolve_bound(value, runtime) -> int:
     if value is Dictionary and value_resolver != null:
         return maxi(0, value_resolver.resolve(value, runtime))
     return maxi(0, int(value))
+
+func _select_option(effect: Dictionary, runtime):
+    var choice_id := str(effect.get("choice_id", ""))
+    if choice_id == "":
+        return EffectResultScript.failed("选项效果缺少 choice_id")
+    var request_id: String = runtime.choice_request_id(choice_id)
+    var options: Array = effect.get("options", []).duplicate(true)
+    var minimum := _resolve_bound(effect.get("minimum", 0), runtime)
+    var maximum := _resolve_bound(effect.get("maximum", 1), runtime)
+    var request = ChoiceRequestScript.new().configure({
+        "request_id": request_id,
+        "prompt": effect.get("prompt", "请选择是否执行"),
+        "chooser": effect.get("chooser", "actor"),
+        "minimum": minimum,
+        "maximum": maximum,
+        "insufficient_policy": str(effect.get(
+            "insufficient_policy", "use_available")),
+        "ordered": false,
+        "candidates": options,
+        "metadata": {"choice_kind": "option"},
+    })
+    if runtime.choice_responses.has(request_id):
+        var selected_ids: Array = runtime.choice_responses[request_id]
+        var check: Dictionary = request.validate_selection(selected_ids)
+        if not check.get("ok", false):
+            return EffectResultScript.failed(str(check.get("reason", "选项选择不合法")))
+        runtime.captures[str(effect.get("capture", "selected_options"))] = \
+            request.selected_cards(selected_ids)
+        runtime.choice_responses.erase(request_id)
+        runtime.choice_candidates.erase(request_id)
+        return EffectResultScript.succeeded("选择 %d 个选项" % selected_ids.size(), {
+            "selected_option_ids": selected_ids.duplicate(),
+        })
+    var definition_check: Dictionary = request.validate_definition()
+    if not definition_check.get("ok", false):
+        return EffectResultScript.failed(str(
+            definition_check.get("reason", "选项请求无效")))
+    runtime.choice_candidates[request_id] = options.duplicate(true)
+    return EffectResultScript.pending_choice(
+        "等待选择：%s" % request.prompt, request)

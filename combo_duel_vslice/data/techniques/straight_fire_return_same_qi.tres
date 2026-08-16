@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "straight_fire_return_same_qi"
+display_name = "火·回轮换势"
+pool = "straight"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["straight"] )
+description = "造成P点普通伤害。本次行动完成同气阈值结算后，可以清空剩余同气Q，获得4Q点连势。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "same_qi_payoff", "momentum"] )
+public_behavior_summary = Array[String]( ["damage", "same_qi_payoff", "momentum"] )
+implementation_category = "S"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power"}},{"op":"select_option","phase":"zones","choice_id":"return_same_qi","prompt":"本次行动同气结算后是否将余数转为连势","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","options":[{"id":"convert","label":"转换余数同气"}],"capture":"convert_choice"},{"op":"register_response","phase":"zones","event":"same_qi_gain_resolved","expiry":"turn_end","filters":{"holder_is_actor":true,"action_token_is_record":true,"source_category":"same_qi","max_triggers":1},"effects":[{"op":"write_same_qi","operation":"clear","amount":0,"receipt_key":"return_same_qi","capture":"cleared_same_qi"},{"op":"write_momentum","operation":"add","amount":{"kind":"multiply","values":[4,{"kind":"subtract","left":{"kind":"capture_field_first","capture":"cleared_same_qi","field":"same_qi_before"},"right":{"kind":"capture_field_first","capture":"cleared_same_qi","field":"same_qi_after"}}]}}],"when":{"capture_nonempty":"convert_choice"}}]

@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "pair_wind_returning_tide"
+display_name = "风·归潮蓄锋"
+pool = "pair"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["pair", "two_pair", "full_house"] )
+description = "造成floor(P/2)点普通伤害。选择我方至多2张剩余手牌中的真气洗回牌库；每实际洗回1张，抽1张与其当前牌阶不同的真气。令V为洗回牌冻结的有效真气值总和，下一门成功功法获得V点直接功法值修正，随后消耗该修正。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "draw", "hand_shaping", "next_technique_power"] )
+public_behavior_summary = Array[String]( ["damage", "draw", "hand_shaping", "next_technique_power"] )
+implementation_category = "S"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","phase":"zones","choice_id":"returning_tide_cards","prompt":"选择至多2张手牌洗回牌库","chooser":"actor","minimum":0,"maximum":2,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal"}},"capture":"returned_cards"},{"op":"capture_metadata","phase":"zones","capture":"returned_cards","result_capture":"returned_frozen"},{"op":"move_captured","phase":"zones","capture":"returned_cards","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"draw_pile","reason":"shuffle_back","shuffle_destination":true,"result_capture":"actually_returned"},{"op":"draw_rank_different_replacements","phase":"zones","side":"actor","metadata_capture":"returned_frozen","capture":"replacement_draws"},{"op":"add_pending_power_fixed","phase":"zones","amount":{"kind":"capture_field_sum","capture":"returned_frozen","field":"effective_qi"}}]

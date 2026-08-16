@@ -22,7 +22,7 @@ func operation_ids() -> Array[String]:
         "synchronous_discard_queries", "discard_duplicate_ranks",
         "discard_by_visible_attribute", "draw_common_attribute_or_fallback",
         "discard_captured_by_selected_base_attribute", "dissipate_captured",
-        "atomic_transfer_captures",
+        "atomic_transfer_captures", "draw_rank_different_replacements",
     ]
 
 func group_name() -> String:
@@ -168,6 +168,8 @@ func execute(effect: Dictionary, context):
             return EffectResultScript.succeeded("消散真气 %d 张" % dissipated.size())
         "atomic_transfer_captures":
             return _atomic_transfer_captures(effect, runtime)
+        "draw_rank_different_replacements":
+            return _draw_rank_different_replacements(effect, runtime)
     return EffectResultScript.failed("牌区处理器不支持：%s" % str(effect.get("op", "")))
 
 func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dictionary) -> void:
@@ -187,6 +189,9 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
         for index in range(effect.get("queries", []).size()):
             validator.validate_target_query(
                 effect.get("queries", [])[index], "%s.queries[%d]" % [scope, index])
+    if str(effect.get("op", "")) == "draw_rank_different_replacements" \
+            and str(effect.get("metadata_capture", "")) == "":
+        validator.report_error(scope + ".metadata_capture", "必须提供冻结牌阶元数据capture")
 
 func _move_captured(effect: Dictionary, runtime):
     if runtime.ports == null:
@@ -254,6 +259,38 @@ func _draw_filtered(effect: Dictionary, runtime):
     query_effect["to_zone"] = "hand"
     query_effect["reason"] = "draw"
     return _move_query(query_effect, runtime)
+
+func _draw_rank_different_replacements(effect: Dictionary, runtime):
+    if runtime.ports == null:
+        return EffectResultScript.failed("替换抽牌缺少战斗端口")
+    var side = _resolve_side(runtime, str(effect.get("side", "actor")))
+    if side == null:
+        return EffectResultScript.failed("替换抽牌目标不存在")
+    var drawn: Array = []
+    for frozen_value in runtime.captures.get(
+            str(effect.get("metadata_capture", "")), []):
+        if not frozen_value is Dictionary:
+            continue
+        var query_result := _query({"query": {
+            "side": str(effect.get("side", "actor")),
+            "zone": "draw_pile", "order": "random", "limit": 1,
+            "filters": {
+                "card_kind": "normal",
+                "exclude_rank_orders": [int(frozen_value.get("rank_order", -1))],
+            },
+        }}, runtime)
+        if not query_result.get("success", false):
+            return EffectResultScript.failed(str(
+                query_result.get("reason", "替换抽牌查询失败")))
+        if query_result.get("cards", []).is_empty():
+            continue
+        var card = query_result["cards"][0]
+        var moved: Dictionary = runtime.ports.move_card(
+            side, "draw_pile", side, "hand", card, "draw", "top", "technique")
+        if moved.get("success", false):
+            drawn.append(card)
+    runtime.captures[str(effect.get("capture", "drawn"))] = drawn
+    return EffectResultScript.succeeded("逐张替换抽牌 %d 张" % drawn.size())
 
 func _reorder_captured_draw_pile(effect: Dictionary, runtime):
     var inspected: Array = runtime.captures.get(str(effect.get("capture", "")), [])
