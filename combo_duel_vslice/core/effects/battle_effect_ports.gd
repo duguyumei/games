@@ -13,6 +13,10 @@ const BattleInvocationEffectServiceScript = preload(
     "res://core/effects/battle_invocation_effect_service.gd")
 const BattleResponseEffectServiceScript = preload(
     "res://core/effects/battle_response_effect_service.gd")
+const BattlePoisonCardTriggerServiceScript = preload(
+    "res://core/effects/battle_poison_card_trigger_service.gd")
+const BattleActionResourceEffectServiceScript = preload(
+    "res://core/effects/battle_action_resource_effect_service.gd")
 
 ## 效果处理器修改战斗状态的唯一窄端口。
 ##
@@ -20,25 +24,21 @@ const BattleResponseEffectServiceScript = preload(
 ## 而兜底分支会在依赖真的缺失时静默改用另一套判定，把装配错误伪装成正常结果。
 ## 装配失败应当在构造点暴露，不应推迟到某个效果结算时。
 
-var _battle_flow: BattleFlowCoordinator
-var _trigger_queue: VisibleTriggerQueue
 var _sides: Array[BattleSide] = []
-var _consumable_repository
-var _battle_rule_query_service
 var _battle_rng: RandomNumberGenerator
 var _survival_effect_service
 var _card_effect_service
 var _source_resource_effect_service
 var _invocation_effect_service
 var _response_effect_service
+var _poison_card_trigger_service
+var _action_resource_effect_service
 
 func _init(
         damage_resolver: ComboDamageResolver,
         status_system: StatusSystem,
         battle_flow: BattleFlowCoordinator,
         trigger_queue: VisibleTriggerQueue) -> void:
-    _battle_flow = battle_flow
-    _trigger_queue = trigger_queue
     _survival_effect_service = BattleSurvivalEffectServiceScript.new(
         damage_resolver, status_system, trigger_queue)
     _card_effect_service = BattleCardEffectServiceScript.new(status_system)
@@ -49,12 +49,17 @@ func _init(
         Callable(_survival_effect_service, "can_bind_current_source"),
         Callable(_survival_effect_service, "close_current_source_binding_window"))
     _invocation_effect_service = BattleInvocationEffectServiceScript.new()
-    _response_effect_service = BattleResponseEffectServiceScript.new(status_system)
+    _response_effect_service = BattleResponseEffectServiceScript.new(
+        status_system, _card_effect_service)
+    _poison_card_trigger_service = BattlePoisonCardTriggerServiceScript.new(
+        _card_effect_service, _survival_effect_service)
+    _action_resource_effect_service = BattleActionResourceEffectServiceScript.new(
+        battle_flow, trigger_queue)
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
-    _trigger_queue = trigger_queue
     _survival_effect_service.use_trigger_queue(trigger_queue)
     _source_resource_effect_service.use_trigger_queue(trigger_queue)
+    _action_resource_effect_service.use_trigger_queue(trigger_queue)
 
 func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
@@ -72,13 +77,12 @@ func use_battle_permission_service(service) -> void:
     _card_effect_service.use_battle_permission_service(service)
 
 func use_consumable_repository(repository) -> void:
-    _consumable_repository = repository
+    _action_resource_effect_service.use_consumable_repository(repository)
 
 func use_passive_battle_services(
         query_service,
         event_service,
         round_reader: Callable = Callable()) -> void:
-    _battle_rule_query_service = query_service
     _survival_effect_service.use_passive_battle_services(
         query_service, event_service, round_reader)
     _source_resource_effect_service.use_passive_battle_services(
@@ -216,7 +220,7 @@ func abort_action_resolution() -> void:
     _invocation_effect_service.abort_action_resolution()
 
 func flush_synchronized_damage() -> Array:
-    return _survival_effect_service.flush_synchronized_damage()
+    return _poison_card_trigger_service.flush_synchronized_damage()
 
 func trigger_poison_card(
         holder: BattleSide,
@@ -224,52 +228,8 @@ func trigger_poison_card(
         action_token: String = "",
         replayed: bool = false,
         frozen_amount_override = null) -> Dictionary:
-    if holder == null or card == null or not card.has_anomaly("state", "poison"):
-        return {"success": false, "reason": "毒触发目标无效"}
-    var frozen_amount: int = (
-        current_effective_qi(holder, card)
-        if frozen_amount_override == null else maxi(0, int(frozen_amount_override)))
-    var damage: Dictionary = deal_damage(
-        holder, holder, frozen_amount, {
-            "source_kind": "card_status",
-            "source_id": "poison",
-            "source_name": "毒",
-            "source_instance_key": "card_status:%s:poison" % str(card.id),
-            "trigger_mode": "direct",
-        }, false, action_token, "poison", {
-            "kind": "poison_card_trigger",
-            "holder": holder,
-            "card": card,
-            "frozen_amount": frozen_amount,
-            "action_token": action_token,
-            "poison_modifier_receipt_token": "%s:poison:%s" % [
-                action_token, str(card.id)],
-            "replayed": replayed,
-        })
-    if not damage.get("success", false):
-        return damage
-    var removed: Dictionary = remove_card_anomaly(
-        card, "state", "poison", "毒触发", {
-            "source_kind": "card_status",
-            "source_id": "poison",
-            "source_name": "毒",
-            "source_instance_key": "card_status:%s:poison" % str(card.id),
-            "trigger_mode": "direct",
-        })
-    if not removed.get("changed", false):
-        return {"success": false, "reason": "毒伤完成后清除毒失败", "damage_result": damage}
-    if not bool(damage.get("buffered", false)):
-        notify_poison_triggered(
-            holder, card, frozen_amount, damage, action_token, replayed)
-    return {
-        "success": true,
-        "card": card,
-        "frozen_amount": frozen_amount,
-        "life_lost": int(damage.get("life_lost", 0)),
-        "actual_life_loss": int(damage.get("life_lost", 0)),
-        "damage_result": damage,
-        "buffered": bool(damage.get("buffered", false)),
-    }
+    return _poison_card_trigger_service.trigger_poison_card(
+        holder, card, action_token, replayed, frozen_amount_override)
 
 func add_defense(
         side: BattleSide,
@@ -449,9 +409,7 @@ func add_direct_power_percent(side: BattleSide, amount: int) -> int:
     return _source_resource_effect_service.add_direct_power_percent(side, amount)
 
 func gain_battle_experience(side: BattleSide, amount: int) -> int:
-    var gained := maxi(0, amount)
-    side.experience += gained
-    return gained
+    return _action_resource_effect_service.gain_battle_experience(side, amount)
 
 func generate_temporary_normal_card(
         side: BattleSide,
@@ -480,13 +438,14 @@ func burn_deck_then_heat_hand(
         actor, bottom_first, choice_capture, context)
 
 func can_grant_battle_consumable(side: BattleSide) -> bool:
-    return side.consumable_ids.size() < side.consumable_limit
+    return _action_resource_effect_service.can_grant_battle_consumable(side)
 
 func grant_battle_consumable(side: BattleSide, consumable_id: String) -> bool:
-    return side.grant_consumable(consumable_id)
+    return _action_resource_effect_service.grant_battle_consumable(
+        side, consumable_id)
 
 func consumable_ids_by_kind(kind: String) -> Array[String]:
-    return _consumable_repository.ids_by_kind(kind)
+    return _action_resource_effect_service.consumable_ids_by_kind(kind)
 
 func place_on_draw_pile_top(side: BattleSide, card) -> Dictionary:
     return _card_effect_service.place_on_draw_pile_top(side, card)
@@ -506,9 +465,8 @@ func notify_cards_played(
         side: BattleSide,
         cards: Array,
         source_values: Dictionary = {}) -> Array[Dictionary]:
-    var runtime = _card_effect_service.card_reshape_runtime()
-    return runtime.on_card_played(
-        side, cards, source_values) if runtime != null else []
+    return _response_effect_service.notify_cards_played(
+        side, cards, source_values)
 
 func notify_poison_triggered(
         holder: BattleSide,
@@ -517,7 +475,7 @@ func notify_poison_triggered(
         damage_result: Dictionary,
         action_token: String = "",
         replayed: bool = false) -> void:
-    _survival_effect_service.notify_poison_triggered(
+    _poison_card_trigger_service.notify_poison_triggered(
         holder, card, frozen_amount, damage_result, action_token, replayed)
 
 func notify_response_event(event_kind: String, values: Dictionary) -> void:
@@ -710,10 +668,8 @@ func resolve_played_card_anomalies(
         holder: BattleSide,
         cards: Array,
         source_values: Dictionary = {}) -> Array:
-    var results: Array = _card_effect_service.resolve_played_card_anomalies(
+    return _response_effect_service.resolve_played_card_anomalies(
         holder, cards, source_values)
-    notify_cards_played(holder, cards, source_values)
-    return results
 
 func gain_extra_actions(
         side: BattleSide,
@@ -721,19 +677,8 @@ func gain_extra_actions(
         source: String,
         source_category: String = "rule",
         action_token: String = "") -> int:
-    var gained: int = _battle_flow.grant_actions(side, amount, {
-        "category": source_category,
-        "source": source,
-        "action_token": action_token,
-        "from_same_qi": source_category == "same_qi",
-    })
-    add_history(
-        "action_end",
-        "%s额外出牌机会" % side.name,
-        source,
-        "成功",
-        "+%d（连击不自动补牌）" % gained)
-    return gained
+    return _action_resource_effect_service.gain_extra_actions(
+        side, amount, source, source_category, action_token)
 
 func register_delayed_effects(
         label: String,
@@ -793,4 +738,5 @@ func add_history(
         source: String,
         result: String,
         detail: String = "") -> void:
-    _trigger_queue.add_history(timing, label, source, result, detail)
+    _action_resource_effect_service.add_history(
+        timing, label, source, result, detail)

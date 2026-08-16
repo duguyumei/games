@@ -498,11 +498,6 @@ func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
         resolution["target"],
         str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
         resolution["result"], resolved_action_token, metadata)
-    if str(metadata.get("kind", "")) == "poison_card_trigger":
-        notify_poison_triggered(
-            metadata.get("holder"), metadata.get("card"),
-            int(metadata.get("frozen_amount", 0)), resolution["result"],
-            str(metadata.get("action_token", "")), bool(metadata.get("replayed", false)))
     return int(resolution["actor"].life) <= 0
 
 

@@ -104,6 +104,8 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 | 来源标识、连势、同气与战斗来源写入 | `core/effects/battle_source_resource_effect_service.gd`（Facade 内部服务） |
 | 效果上下文、即时嵌套与功法调用编排 | `core/effects/battle_invocation_effect_service.gd`（Facade 内部服务） |
 | 延迟效果、动态响应与直接真气监听编排 | `core/effects/battle_response_effect_service.gd`（Facade 内部服务） |
+| 毒真气触发、清毒与同步完成事件协调 | `core/effects/battle_poison_card_trigger_service.gd`（Facade 内部服务） |
+| 额外行动、战斗历练、战斗消耗品与通用历史写入 | `core/effects/battle_action_resource_effect_service.gd`（Facade 内部服务） |
 | 被动标准效果何时执行 | `passives/battle_effects_passive_handler.gd` 只建立普通效果计划 |
 | 回合生命周期 | `battle_round_service.gd` |
 | 行动事务顺序 | `battle_action_service.gd` |
@@ -174,6 +176,24 @@ Facade。本批只运行项目加载与 `res://tests/test_battle_effect_flow.gd`
 `File not found`、`Parse Error` 与 `SCRIPT ERROR`。专项覆盖自动功法、调用、即时嵌套、延后调用、
 延迟效果、动态响应、功法重触、直接真气监听和等待选择恢复；`quick`／`full` 尚未运行，完整回归
 继续延后到 `BattleEffectPorts`、`BattleActionService` 与 `StatusSystem` 全部结构优化完成后统一执行。
+
+第五批完成 `BattleEffectPorts` 最终收口，公开方法继续保持原签名。`BattlePoisonCardTriggerService`
+只组合既有卡牌状态服务和生存服务，集中毒触发冻结、成功后清毒与同步 flush 后完成事件；不得复制
+毒伤、防御、异状或 receipt 算法。`BattleResponseEffectService` 统一“先结算打出异状、再通知
+card_played 响应”的顺序。`BattleActionResourceEffectService` 只通过 `BattleFlowCoordinator`、
+`BattleSide` 既有资源能力、已装配内容目录和 `VisibleTriggerQueue` 窄入口写入额外行动、战斗历练、
+共享消耗品与历史，不推进 `BattleActionService` 状态机，不计算同气额外行动，也不重新加载内容。
+
+Facade 允许保留来源结构规范化、旧字符串来源转换、`draw_reason` 独立适配、双方窄查询和公开方法
+委托。`notify_poison_triggered` 与 `add_history` 仍有正式运行时调用方；`notify_cards_played` 是既有公开
+能力的兼容委托，但打出后跨域顺序只在响应服务保留一份实现。新内部服务不得持有 `CombatEngine`、
+回指 Facade、通过大量 Callable 模拟 Facade，或互相形成写状态循环。
+
+该批只运行项目加载与 `res://tests/test_battle_effect_finalization.gd`，每次调用使用独立
+`/tmp/taiwu-battle-effect-final-<用途>-<序号>.log`，并扫描 `Can't load script`、
+`File not found`、`Parse Error` 与 `SCRIPT ERROR`。专项覆盖毒触发、同步毒伤、打出后响应、额外行动、
+战斗历练、消耗品发放、历史来源与来源兼容；`quick`／`full` 尚未运行，完整回归继续延后到
+`BattleActionService` 与 `StatusSystem` 全部结构优化完成后统一执行。
 
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、

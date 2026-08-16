@@ -203,6 +203,13 @@ classDiagram
     class StatusSystem
     class CardZoneService
     class BattleEffectPorts
+    class BattleSurvivalEffectService
+    class BattleCardEffectService
+    class BattleSourceResourceEffectService
+    class BattleInvocationEffectService
+    class BattleResponseEffectService
+    class BattlePoisonCardTriggerService
+    class BattleActionResourceEffectService
     class ActionResolver
     class TriggerQueue
     class BattleTimingSystem
@@ -223,9 +230,21 @@ classDiagram
     BattleActionService --> ActionResolver
     BattleActionService --> BattleFlowCoordinator
     ActionResolver --> BattleEffectPorts
-    BattleEffectPorts --> DamageResolver
-    BattleEffectPorts --> StatusSystem
-    BattleEffectPorts --> TriggerQueue
+    BattleEffectPorts --> BattleSurvivalEffectService
+    BattleEffectPorts --> BattleCardEffectService
+    BattleEffectPorts --> BattleSourceResourceEffectService
+    BattleEffectPorts --> BattleInvocationEffectService
+    BattleEffectPorts --> BattleResponseEffectService
+    BattleEffectPorts --> BattlePoisonCardTriggerService
+    BattleEffectPorts --> BattleActionResourceEffectService
+    BattleSurvivalEffectService --> DamageResolver
+    BattleSurvivalEffectService --> StatusSystem
+    BattleCardEffectService --> StatusSystem
+    BattleResponseEffectService --> BattleCardEffectService
+    BattlePoisonCardTriggerService --> BattleCardEffectService
+    BattlePoisonCardTriggerService --> BattleSurvivalEffectService
+    BattleActionResourceEffectService --> BattleFlowCoordinator
+    BattleActionResourceEffectService --> TriggerQueue
     BattleRoundService --> BattleTimingSystem
     BattleActionService --> ActorTurnState
 ```

@@ -7,12 +7,16 @@ extends RefCounted
 ## CardReshapeBattleRuntime 的 replay service 维护。本服务只提供稳定的窄委托边界。
 
 var _status_system
+var _card_effect_service
 var _card_reshape_runtime_ref: WeakRef
 
 
-func _init(status_system) -> void:
+func _init(status_system, card_effect_service) -> void:
     assert(status_system != null, "BattleResponseEffectService requires StatusSystem")
+    assert(card_effect_service != null,
+        "BattleResponseEffectService requires BattleCardEffectService")
     _status_system = status_system
+    _card_effect_service = card_effect_service
 
 
 func use_card_reshape_runtime(runtime) -> void:
@@ -23,6 +27,25 @@ func use_card_reshape_runtime(runtime) -> void:
 
 func notify_response_event(event_kind: String, values: Dictionary) -> void:
     _status_system.handle_response_event(event_kind, values)
+
+
+func notify_cards_played(
+        side,
+        cards: Array,
+        source_values: Dictionary = {}) -> Array[Dictionary]:
+    var runtime = _card_reshape_runtime()
+    return runtime.on_card_played(
+        side, cards, source_values) if runtime != null else []
+
+
+func resolve_played_card_anomalies(
+        holder,
+        cards: Array,
+        source_values: Dictionary = {}) -> Array:
+    var results: Array = _card_effect_service.resolve_played_card_anomalies(
+        holder, cards, source_values)
+    notify_cards_played(holder, cards, source_values)
+    return results
 
 
 func successful_on_play_ids(action_token: String) -> Array:

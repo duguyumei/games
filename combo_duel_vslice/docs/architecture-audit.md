@@ -30,6 +30,65 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleEffectPorts 最终 Facade 收口第五批（2026-08-16）
+
+`BattleEffectPorts` 的分批拆分已完成。它继续是 Effect Handler、`PassiveRuleRuntime`、
+`ActionResolver`、`StatusSystem` 与功法运行时唯一依赖的公开效果能力 Facade；相对基线
+`2eb37d7`，公开方法名、参数、默认值与返回结构保持不变。Facade 现在只负责内部服务装配、统一来源
+参数规范化、双方窄查询、极薄委托和原结果返回，不再保存毒触发、行动资源、历练、消耗品或打出后
+响应的实质领域算法。`battle_effect_ports.gd` 从 796 行缩至 742 行，全部函数签名机械对比为
+115/115 一致；行数不是完成标准，保留的大部分内容来自稳定公开签名本身。
+
+本批新增两个内聚服务：
+
+- `effects/battle_poison_card_trigger_service.gd` 组合 `BattleCardEffectService` 与
+  `BattleSurvivalEffectService`，集中冻结毒牌有效真气值、建立 `card_status` 来源、提交唯一毒伤
+  流水线、成功后清毒，并在同步伤害真实 flush 后发送 `poison_trigger_completed`。生存服务不再根据
+  毒事务 metadata 自行完成跨域事件；新服务不复制毒伤、异状或 receipt 算法，也不回指 Facade。
+- `effects/battle_action_resource_effect_service.gd` 通过 `BattleFlowCoordinator` 正式窄入口写入额外
+  行动，通过 `BattleSide` 既有能力写入战斗历练和共享消耗品栏，并从已装配
+  `ConsumableRepository` 查询候选；它同时承接 `add_history` 的统一 `VisibleTriggerQueue` 窄写入口，
+  不推进 `BattleActionService` 事务、不计算同气容量、不加载内容文件，也不建立日志通信或事件总线。
+
+真气打出后的跨域顺序已经收口进 `BattleResponseEffectService`：它先委托
+`BattleCardEffectService`／`StatusSystem` 结算打出异状，再通知 `CardReshapeBattleRuntime` 的
+`card_played` 响应；`successful_on_play_ids` 和直接监听仍由后者保存。`notify_cards_played` 保留为既有
+公开能力的薄兼容委托，`notify_poison_triggered` 仍有同步批量毒处理器正式调用，`add_history` 仍有
+`StatusSystem` 来源到期与邀战生命周期正式调用，均不是可删除的测试空壳。
+
+Facade 继续保留 `_draw_source_metadata` 与 `_effect_source_metadata` 作为受控兼容边界。结构化来源立即
+交给 `EffectSourceProtocol`；旧字符串只在 Facade 转为正式来源结构。`draw_reason` 独立保存且不能反推
+`source_kind`，本批没有扩大兼容值范围。内部服务只接收结构化来源或自身领域固定来源，不按功法、
+内功、物品、状态或消耗品 ID 建立中央分支。
+
+```mermaid
+flowchart LR
+    CALLER["Effect Handler / Runtime / StatusSystem"] --> FACADE["BattleEffectPorts\n唯一公开 Facade"]
+    FACADE --> SURVIVAL["BattleSurvivalEffectService"]
+    FACADE --> CARD["BattleCardEffectService"]
+    FACADE --> SOURCE["BattleSourceResourceEffectService"]
+    FACADE --> INVOCATION["BattleInvocationEffectService"]
+    FACADE --> RESPONSE["BattleResponseEffectService"]
+    FACADE --> POISON["BattlePoisonCardTriggerService"]
+    FACADE --> RESOURCE["BattleActionResourceEffectService"]
+    POISON --> CARD
+    POISON --> SURVIVAL
+    RESPONSE --> CARD
+    RESOURCE --> FLOW["BattleFlowCoordinator"]
+    RESOURCE --> HISTORY["VisibleTriggerQueue"]
+```
+
+本批只执行最小专项门禁。开发期
+`/tmp/taiwu-battle-effect-final-project-load-dev-01.log` 在核心迁移后完成 669 项加载；新增专项后
+`/tmp/taiwu-battle-effect-final-project-load-dev-02.log` 完成 670 项加载，
+`/tmp/taiwu-battle-effect-final-specialized-dev-03.log` 首次通过 50 条断言。提交前最终复核使用
+`/tmp/taiwu-battle-effect-final-project-load-final-04.log` 与
+`/tmp/taiwu-battle-effect-final-specialized-final-05.log`。专项覆盖立即／重演／同步毒触发、receipt
+幂等、来源 metadata、同步完成事件时点、打出异状与响应顺序、额外行动、历练、消耗品容量、统一
+历史和旧来源兼容；全部日志扫描 `Can't load script`、`File not found`、`Parse Error` 与
+`SCRIPT ERROR`。`quick`／`full` 本批没有运行，完整回归继续延后到 `BattleActionService` 与
+`StatusSystem` 后续结构优化完成后统一执行。
+
 ### BattleEffectPorts 效果调用／延迟／响应职责第四批迁出（2026-08-16）
 
 `BattleEffectPorts` 继续作为 Effect Handler、`PassiveRuleRuntime`、`ActionResolver`、
