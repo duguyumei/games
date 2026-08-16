@@ -37,7 +37,7 @@ const FIRE_BY_POOL := {
         "bomb_fire_myriad_echoes", "bomb_fire_burst_momentum",
         "bomb_fire_ember_burst", "bomb_fire_burn_body_empower",
         "bomb_fire_cast_furnace", "bomb_fire_ember_calamity",
-        "bomb_fire_return_furnace",
+        "bomb_fire_return_furnace", "bomb_fire_break_city",
     ],
 }
 
@@ -87,7 +87,7 @@ func _test_catalog_and_each_effect_chain() -> void:
             if definition != null:
                 _assert_equal(definition.pool, pool, "%s池归属" % technique_id)
                 _assert_true(not definition.semantic_tags.is_empty(), "%s AI语义非空" % technique_id)
-    _assert_equal(count, 49, "火系稳定ID共49门")
+    _assert_equal(count, 50, "火系稳定ID共50门")
     for technique_id in NEW_FIRE_IDS:
         var engine = _engine(6100 + assertions)
         var result := _execute_with(engine, technique_id, 20, _snapshot([], [], 8), _hand_for(technique_id))

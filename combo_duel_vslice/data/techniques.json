@@ -195,6 +195,7 @@
     "bomb_wind_plunder_empty": "formal_complete",
     "bomb_wind_purge_anomaly": "formal_complete",
     "bomb_wind_isolate_group": "formal_complete",
+    "bomb_wind_empty_hand": "formal_complete",
     "high_forest_variant_plant": "formal_complete",
     "three_forest_dye_branch": "formal_complete",
     "straight_forest_change_form": "formal_complete",
@@ -238,7 +239,10 @@
     "bomb_fire_burn_body_empower": "formal_complete",
     "bomb_fire_cast_furnace": "formal_complete",
     "bomb_fire_ember_calamity": "formal_complete",
-    "bomb_fire_return_furnace": "formal_complete"
+    "bomb_fire_return_furnace": "formal_complete",
+    "pair_forest_dissipate_decay": "formal_complete",
+    "bomb_fire_break_city": "formal_complete",
+    "high_mountain_shed_wall": "formal_complete"
   },
   "resource_paths": [
     "res://data/techniques/basic_scatter.tres",
@@ -451,6 +455,10 @@
     "res://data/techniques/bomb_fire_burn_body_empower.tres",
     "res://data/techniques/bomb_fire_cast_furnace.tres",
     "res://data/techniques/bomb_fire_ember_calamity.tres",
-    "res://data/techniques/bomb_fire_return_furnace.tres"
+    "res://data/techniques/bomb_fire_return_furnace.tres",
+    "res://data/techniques/bomb_wind_empty_hand.tres",
+    "res://data/techniques/pair_forest_dissipate_decay.tres",
+    "res://data/techniques/bomb_fire_break_city.tres",
+    "res://data/techniques/high_mountain_shed_wall.tres"
   ]
 }

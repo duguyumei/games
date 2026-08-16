@@ -217,7 +217,11 @@
           "bomb_fire_burn_body_empower",
           "bomb_fire_cast_furnace",
           "bomb_fire_ember_calamity",
-          "bomb_fire_return_furnace"
+          "bomb_fire_return_furnace",
+          "bomb_wind_empty_hand",
+          "pair_forest_dissipate_decay",
+          "bomb_fire_break_city",
+          "high_mountain_shed_wall"
         ]
       },
       {

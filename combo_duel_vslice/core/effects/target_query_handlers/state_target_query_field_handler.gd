@@ -11,6 +11,7 @@ const FIELD_DEFINITIONS := {
     "anomaly_layers_at_least": {"validation": "anomaly_layers"},
     "anomaly": {"validation": "anomaly"},
     "anomalies": {"validation": "anomalies"},
+    "anomaly_any": {"validation": "anomalies"},
     "reshape": {"validation": "reshape"},
     "can_apply_anomaly": {"validation": "can_apply_anomaly"},
 }
@@ -78,6 +79,11 @@ func matches(
                 if not registry.matches_anomaly(card, spec):
                     return false
             return true
+        "anomaly_any":
+            for spec in value:
+                if registry.matches_anomaly(card, spec):
+                    return true
+            return false
         "reshape":
             return registry.matches_reshape(card, value)
         "can_apply_anomaly":

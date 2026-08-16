@@ -6,6 +6,7 @@ const MOUNTAIN_TECHNIQUES := {
     "high_mountain_meet_edge":"山·迎锋",
     "high_mountain_still_peak":"山·静岳",
     "high_mountain_hear_edge":"山·听锋",
+    "high_mountain_shed_wall":"山·舍壁还生",
     "pair_mountain_collect_stone":"山·收石",
     "pair_mountain_crossed_rock":"山·错岩",
     "pair_mountain_embrace_one":"山·抱一",
@@ -74,8 +75,8 @@ func _initialize() -> void:
     _finish("MOUNTAIN TECHNIQUE TEST")
 
 func _test_formal_pool_contract(repository) -> void:
-    _assert_equal(repository.techniques.size(), 211, "正式资源总数为211")
-    var expected := {"high":55, "pair":48, "three":34, "straight":34, "bomb":38}
+    _assert_equal(repository.techniques.size(), 215, "正式资源总数为215")
+    var expected := {"high":56, "pair":49, "three":34, "straight":34, "bomb":40}
     var actual := {"high":0, "pair":0, "three":0, "straight":0, "bomb":0}
     for technique in repository.techniques.values():
         if not bool(technique.get("built_in", false)):
@@ -421,7 +422,14 @@ func _test_existing_reflection_uses_source_op(repository) -> void:
 
 func _execute_with(engine, technique_id: String, power: int, snapshot: Dictionary, hand_id: String = "high_card", captures: Dictionary = {}) -> Dictionary:
     var definition = engine.repository.get_definition(technique_id)
-    return engine.effect_executor.execute_all(definition.effects, _context(engine, technique_id, power, snapshot, hand_id, captures))
+    var context = _context(
+        engine, technique_id, power, snapshot, hand_id, captures)
+    if definition != null and not definition.marker_definitions.is_empty():
+        engine.sequence_book.configure({hand_id:[technique_id]})
+        context.sequence_book = engine.sequence_book
+        context.slot_instance_id = str(engine.sequence_book.current_slot(
+            hand_id).get("slot_instance_id", ""))
+    return engine.effect_executor.execute_all(definition.effects, context)
 
 func _context(engine, technique_id: String, power: int, snapshot: Dictionary, hand_id: String, captures: Dictionary = {}):
     var definition = engine.repository.get_definition(technique_id)

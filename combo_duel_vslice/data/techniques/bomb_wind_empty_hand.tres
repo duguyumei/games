@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bomb_wind_empty_hand"
+display_name = "风·断流无手"
+pool = "bomb"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["four_kind", "five_kind"] )
+description = "结算伤害时，若敌方没有手牌中的真气，造成P点真伤并抽2张牌；否则造成P点普通伤害。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "true_damage", "draw", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["damage", "true_damage", "draw", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"capture_value","phase":"damage","value":{"kind":"target_hand_count"},"capture":"target_hand_count"},{"op":"damage","phase":"damage","amount":{"kind":"power"},"damage_type_when":{"when":{"value_at_most":{"value":{"kind":"capture_field_first","capture":"target_hand_count","field":"amount"},"maximum":0}},"then":"true","else":"normal"}},{"op":"draw","phase":"zones","side":"actor","count":2,"when":{"value_at_most":{"value":{"kind":"capture_field_first","capture":"target_hand_count","field":"amount"},"maximum":0}}}]

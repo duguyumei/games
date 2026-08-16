@@ -1,15 +1,15 @@
 # 组合出招模块化权威设计源
 
 状态：当前 v0.30 权威设计源的模块化入口。
-日期：2026-08-15
+日期：2026-08-16
 
 原权威源元数据：
 
 > 组合出招当前设计源 v0.30
 >
-> 状态：52张完整真气牌组、基础八脉容量8、寄脉、打出／明确弃牌后消散的虚无、临时牌阶、高牌／对子／三条／顺子／炸弹五个普通功法池与葫芦跨池读取、具体牌型独立槽位与循环序列、八种心得、同步出招、协同、属性集中倍率与同气槽连动继续生效。当前运行时五个普通正式池共209门：高牌55门、对子48门、三条34门、顺子34门、炸弹38门；另有“散招”“守招”两门基础通用功法，当前正式资源总数211。火系49门均已完成运行时接入，其中34号目录新增的40门拥有独立资源、AI语义与专项行为测试。实现只承接权威规则，不反向定义设计。
+> 状态：52张完整真气牌组、基础八脉容量8、寄脉、打出／明确弃牌后消散的虚无、临时牌阶、高牌／对子／三条／顺子／炸弹五个功法池与葫芦跨池读取、具体牌型独立槽位与循环序列、八种心得、同步出招、协同、属性集中倍率与同气槽连动继续生效。当前运行时五个正式池共213门非内建功法：高牌56门、对子49门、三条34门、顺子34门、炸弹40门；另有“散招”“守招”两门基础通用功法，当前正式资源总数215。首批4门特殊功法已经正式接入，其余21门仍为冻结候选。实现只承接权威规则，不反向定义设计。
 >
-> 日期：2026-08-15
+> 日期：2026-08-16
 
 本目录中的模块文件共同组成当前唯一权威设计正文；本 README 是唯一入口和治理文件。具体规则只能在一个模块文件中定义，其他模块必须链接引用。原始长文档已转为迁移指针，不能继续作为第二份规则正文。
 
@@ -21,7 +21,7 @@
 4. [行动结算、触发队列与连击](./combat/12-action-resolution.md)
 5. [伤害、防御与对战结果](./combat/13-damage-defense-and-results.md)
 6. [真气效果、重塑与异状](./combat/14-qi-effects-and-statuses.md)
-7. [功法系统框架](./martial-arts/20-gongfa-framework.md)；[首批高牌正式功法目录](./martial-arts/24-gongfa-high-card-pool.md)；[蛊毒功法](./martial-arts/25-gongfa-poison-candidate-pool.md)、[成长功法](./martial-arts/26-gongfa-growth-candidate-pool.md)、[跨系统桥接功法](./martial-arts/27-gongfa-bridge-candidate-pool.md)、[山·阵势与壁垒流](./martial-arts/29-gongfa-mountain-candidate-pool.md)、[风·运转与扰乱流](./martial-arts/33-gongfa-wind-pool.md)与[火·连击与燃尽流](./martial-arts/34-gongfa-fire-pool.md)共同维护当前正式正文，稳定ID、池归属及运行时数量见[扩展功法正式索引](./martial-arts/28-gongfa-expanded-formal-pool-index.md)；[特殊功法冻结候选池](./martial-arts/35-gongfa-special-candidate-pool.md)记录25门尚未接入正式资源的设计，不计入当前211门；[旧蛊毒](./martial-arts/21-gongfa-poison-pool.md)、[旧风运转](./martial-arts/22-gongfa-wind-pool.md)与[旧火反击](./martial-arts/23-gongfa-fire-pool.md)仅为历史归档
+7. [功法系统框架](./martial-arts/20-gongfa-framework.md)；[首批高牌正式功法目录](./martial-arts/24-gongfa-high-card-pool.md)；[蛊毒功法](./martial-arts/25-gongfa-poison-candidate-pool.md)、[成长功法](./martial-arts/26-gongfa-growth-candidate-pool.md)、[跨系统桥接功法](./martial-arts/27-gongfa-bridge-candidate-pool.md)、[山·阵势与壁垒流](./martial-arts/29-gongfa-mountain-candidate-pool.md)、[风·运转与扰乱流](./martial-arts/33-gongfa-wind-pool.md)、[火·连击与燃尽流](./martial-arts/34-gongfa-fire-pool.md)与[特殊功法冻结候选池](./martial-arts/35-gongfa-special-candidate-pool.md)共同维护当前正式正文，稳定ID、池归属及运行时数量见[扩展功法正式索引](./martial-arts/28-gongfa-expanded-formal-pool-index.md)；特殊池25门中首批4门已经正式接入，其余21门仍不计入当前215个正式资源；[旧蛊毒](./martial-arts/21-gongfa-poison-pool.md)、[旧风运转](./martial-arts/22-gongfa-wind-pool.md)与[旧火反击](./martial-arts/23-gongfa-fire-pool.md)仅为历史归档
 8. [内功系统与目录](./martial-arts/30-neigong-framework.md)
 9. [玩家成长与消耗品](./progression/40-progression-overview.md)
 10. [修习与历练经济](./economy/50-training-and-experience.md)及[地图流程](./run/60-map-run-and-health.md)、[正式敌人内容](./run/61-enemy-content.md)

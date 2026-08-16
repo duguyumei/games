@@ -1107,6 +1107,7 @@ func _on_card_battle_end(event) -> Dictionary:
         side.momentum_value = 0
         side.last_successful_technique_hand_id = ""
         side.clear_combat_sources()
+        side.source_marker_store.clear_scope("battle")
         var cards: Array = []
         for zone in [
                 side.draw_pile,

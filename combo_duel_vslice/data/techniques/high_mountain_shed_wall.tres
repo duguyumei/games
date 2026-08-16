@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_mountain_shed_wall"
+display_name = "山·舍壁还生"
+pool = "high"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["high_card"] )
+marker_definitions = [{"id":"x","scope":"battle","public":true,"display_name":"X","forget_policy":"clear"}]
+description = "本功法拥有战斗标识X，初始为3。记录并清空本功法结算前的当前防御F，恢复floor(F/X)点生命，随后获得P点防御。本功法结算完成后，X+1；战斗结束时X恢复为3。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "recover"] )
+public_behavior_summary = Array[String]( ["defense", "recover"] )
+implementation_category = "S"
+effects = [{"op":"write_source_marker","phase":"prepare","operation":"add","marker_id":"x","scope":"battle","amount":3,"when":{"value_at_most":{"value":{"kind":"source_marker_value","marker_id":"x","scope":"battle"},"maximum":0}}},{"op":"capture_source_marker","phase":"prepare","marker_id":"x","scope":"battle","capture":"x"},{"op":"remove_defense","phase":"prepare","all":true,"cause":"direct_effect","capture":"removed_defense"},{"op":"heal_life","phase":"prepare","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"removed_defense","field":"amount"},"divisor":{"kind":"capture_field_first","capture":"x","field":"amount"}}},{"op":"defense","phase":"prepare","amount":{"kind":"power"}},{"op":"write_source_marker","phase":"prepare","operation":"add","marker_id":"x","scope":"battle","amount":1}]

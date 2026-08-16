@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "pair_forest_dissipate_decay"
+display_name = "林·弃腐续生"
+pool = "pair"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["pair", "two_pair", "full_house"] )
+description = "获得floor(P/2)点防御。可以选择手牌中1张具有毒、衰败或燃尽的真气，将其消散；实际消散后，恢复等于该牌基础真气值的生命。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "recover", "hand_shaping"] )
+public_behavior_summary = Array[String]( ["defense", "recover", "hand_shaping"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"select_cards","phase":"zones","choice_id":"dissipate_decay","prompt":"选择消散的毒、衰败或燃尽手牌","chooser":"actor","minimum":0,"maximum":1,"insufficient_policy":"use_available","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly_any":[{"category":"state","id":"poison","present":true},{"category":"debuff","id":"decay","present":true},{"category":"mark","id":"burned_out","present":true}]}},"capture":"selected"},{"op":"capture_metadata","phase":"zones","capture":"selected","result_capture":"selected_meta"},{"op":"dissipate_captured","phase":"zones","capture":"selected","result_capture":"dissipated","reason":"dissipate_decay"},{"op":"heal_life","phase":"zones","amount":{"kind":"capture_field_first","capture":"selected_meta","field":"card_base_qi"},"when":{"capture_nonempty":"dissipated"}}]

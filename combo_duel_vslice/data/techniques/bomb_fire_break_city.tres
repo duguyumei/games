@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bomb_fire_break_city"
+display_name = "火·破城焚关"
+pool = "bomb"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["four_kind", "five_kind"] )
+description = "记录敌方当前防御F，造成P+F点普通伤害。该伤害无法被格挡。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "defense", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["damage", "defense", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"add","values":[{"kind":"power"},{"kind":"current_defense","side":"target"}]},"damage_type":"normal","blockable":false}]

@@ -1772,7 +1772,7 @@ func _test_value_spec_registry_contract() -> void:
 func _test_target_query_field_registry_contract() -> void:
     var registry = TargetQueryFieldRegistryScript.new()
     var expected_fields := [
-        "anomalies", "anomaly", "anomaly_layers_at_least", "attributes",
+        "anomalies", "anomaly", "anomaly_any", "anomaly_layers_at_least", "attributes",
         "base_attributes", "can_apply_anomaly", "card_kind", "definition_ids",
         "duplicate_rank", "effective_above_base", "effective_qi_at_least",
         "effective_qi_at_most", "exclude_attributes",
@@ -4806,14 +4806,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 211, "统一功法目录包含211门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 211, "正式功法资源路径包含211项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 211, "正式接入状态包含211门功法")
+    _assert_equal(catalog.all_of("technique").size(), 215, "统一功法目录包含215门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 215, "正式功法资源路径包含215项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 215, "正式接入状态包含215门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 211, "正式功法资源目录包含211门功法")
+    _assert_equal(formal_technique_resource_count, 215, "正式功法资源目录包含215门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
