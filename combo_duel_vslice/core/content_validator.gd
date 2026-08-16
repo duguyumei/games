@@ -1106,6 +1106,25 @@ func _validate_automatic_triggers(value, marker_definitions, scope: String) -> v
         if progress.has("retain_overflow") \
                 and not progress["retain_overflow"] is bool:
             _error(trigger_scope + ".progress.retain_overflow", "必须是布尔值")
+        if progress.has("ordered_fields"):
+            var ordered_fields = progress["ordered_fields"]
+            if not ordered_fields is Array or ordered_fields.is_empty():
+                _error(
+                    trigger_scope + ".progress.ordered_fields",
+                    "必须是非空数组")
+                ordered_fields = []
+            for ordered_index in range(ordered_fields.size()):
+                var ordered_field = ordered_fields[ordered_index]
+                var ordered_scope := "%s.progress.ordered_fields[%d]" % [
+                    trigger_scope, ordered_index]
+                if not ordered_field is Dictionary:
+                    _error(ordered_scope, "必须是对象")
+                    continue
+                if str(ordered_field.get("field", "")) == "":
+                    _error(ordered_scope + ".field", "必须是非空字符串")
+                if ordered_field.has("id") \
+                        and str(ordered_field.get("id", "")) == "":
+                    _error(ordered_scope + ".id", "必须是非空字符串")
         var progress_marker_ids: Dictionary = {}
         progress_marker_ids[str(progress.get("marker_id", ""))] = true
         var additional = progress.get("additional", [])

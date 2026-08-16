@@ -64,7 +64,8 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
         "slot_instance_id": str(slot.get("slot_instance_id", "")),
         "trigger_mode": str(effect.get("_trigger_mode", "invoked")),
         "source_kind": "technique",
-        "captures": {}, "sequence_book": runtime.sequence_book,
+        "captures": request.get("captures", {}).duplicate(true),
+        "sequence_book": runtime.sequence_book,
         "card_identity_policy": runtime.actor.card_identity_policy,
         "consumed_marker_value": int(request.get(
             "consumed_marker_value", runtime.consumed_marker_value)),
@@ -426,6 +427,7 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
             str(request.get("hand_id", ""))),
         "detail": "调用%s" % state["definition"].display_name,
     }
+    _commit_event("technique_succeeded", state, result)
     _commit_event("technique_invocation_resolved", state, result)
     _commit_event("action_resolved", state, result)
     return result

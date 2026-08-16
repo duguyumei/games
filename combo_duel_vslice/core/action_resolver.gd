@@ -623,6 +623,7 @@ func _finish_action_record(record) -> void:
         trigger_queue.add_history(
             "group_end", "功法序列推进", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]],
             "成功", "下一门：%s" % _technique_name(record["book"].current_id(hand_id)))
+        _emit_technique_succeeded(record)
         var deferred: Dictionary = effect_ports.resolve_after_caller_advance(
             str(record["token"]))
         if not deferred.get("success", false):
@@ -634,6 +635,46 @@ func _finish_action_record(record) -> void:
         trigger_queue.add_history(
             "group_end", "功法序列保持", "%s·%s" % [record["actor"].name, action_preview["hand"]["name"]], "未推进")
     _passive_sources_by_token.erase(str(record["token"]))
+
+func _emit_technique_succeeded(record) -> void:
+    if committed_event_service == null:
+        return
+    var preview: Dictionary = record["preview"]
+    var technique: Dictionary = preview.get("technique", {})
+    var values: Dictionary = preview.get("values", {})
+    var serial := int(committed_event_service.next_serial())
+    committed_event_service.commit("technique_succeeded", {
+        "event_token": committed_event_service.make_token(
+            "technique_succeeded", record["actor"], serial,
+            str(record["token"])),
+        "event_serial": serial,
+        "actor": record["actor"], "target": record["target"],
+        "owner": record["actor"], "round_number": int(record["turn_number"]),
+        "action_token": str(record["token"]),
+        "source_kind": "technique",
+        "hand_id": str(preview.get("hand", {}).get("id", "")),
+        "technique_id": str(technique.get("id", "")),
+        "technique_pool": str(technique.get("pool", "")),
+        "initial_power": int(values.get("initial_power", 0)),
+        "technique_power": int(values.get("technique_value", 0)),
+        "trigger_mode": "manual",
+        "technique_triggered": true,
+        "action_succeeded": true,
+        "metadata": {
+            "hand_id": str(preview.get("hand", {}).get("id", "")),
+            "trigger_mode": "manual",
+            "root_action_token": str(record["token"]),
+            "invocation_token": "",
+            "caller_technique_id": "",
+            "slot_instance_id": str(preview.get("slot_instance_id", "")),
+            "manual_effect_suppressed": str(technique.get(
+                "manual_effect_mode", "normal")) == "advance_only",
+            "sequence_before": preview.get(
+                "sequence_before", []).duplicate(true),
+            "sequence_after": record["book"].ordered_slots(
+                str(preview.get("hand", {}).get("id", ""))),
+        },
+    })
 
 func _emit_action_resolved(record) -> void:
     if committed_event_service == null:

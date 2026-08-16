@@ -3,6 +3,31 @@
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
 `godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
 
+## 第五批2门累计自动功法正式接入（2026-08-16，已完成）
+
+本批且仅本批正式接入`straight_forest_seven_poison_seal`（林·七蛊封心，顺子池）与
+`high_fire_hundred_forms_furnace`（火·百式归炉，高牌池）。两门均为独立
+`TechniqueDefinition`资源、稳定ID、`special=true`、`built_in=false`、普通装配上限1、
+`formal_complete`，并进入对应正式池、心得、奖励、商店与统计候选。正式目录现为228门：
+2门基础通用功法与226门非内建正式功法；五池为高牌60、对子54、三条35、顺子37、炸弹40。
+
+公共底层新增唯一的成功功法事实`technique_succeeded`，正常、自动和调用功法只在完整成功、
+结算并推进冻结槽位后发布，统一公开`P₀`、`P`、精确牌型、触发模式、功法ID与槽位来源。
+`automatic_triggers.progress`新增通用有序字段聚合：记录按具体`slot_instance_id`保存在来源标识，
+按事件顺序追加结构化记录，跨阈值时先冻结全部合格槽位，再按触发前稳定可见顺序逐组消费；
+消费组通过普通capture传入自动功法，可由通用字段求和、平均和精确值去重读取。中央行动流程
+没有按两门功法ID分支；同ID排除由功法自身事件筛选配置声明。
+
+七蛊封心专项覆盖主动仅防御且不清进度、只读取敌方毒伤完成事件的实际生命损失、45点单段
+触发2次留5点、特殊`P₀=20`、先真伤后随机封禁、无合法手牌时追加真伤、自动真伤不回灌，
+以及永久槽与临时副本独立记录。百式归炉专项覆盖正常／自动／调用成功事件、六门连续功法按
+稳定顺序拆成两组、每组`P₀`平均向下取整、精确牌型去重同气、主动正文无效且保留记录、
+所有同ID副本不递归自养、多槽位同时满足时冻结集合与稳定顺序，以及等待选择恢复不重复累计。
+自动分支均经过`BattleSession`、真实槽位移动、结算、事件与推进。
+
+两门没有进入`production_sequences.json`、敌人装配或生产敌人入口；其余8门特殊候选继续保持
+未接入。
+
 ## 第四批3门自动功法正式接入（2026-08-16，已完成）
 
 本批且仅本批正式接入`high_wind_three_breath_return`（风·三息回风，高牌池）、
@@ -267,7 +292,7 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 
 ## 当前正式目录（2026-08-16）
 
-正式目录共226门：基础通用功法`basic_scatter`、`basic_guard`与224门非内建正式功法。五个正式池分布为高牌59、对子54、三条35、顺子36、炸弹40；完整稳定ID与池归属见[扩展正式功法索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)。全部224门非内建内容均为独立`.tres`、`formal_complete`、`built_in=false`、普通装配上限1，并进入对应正式修习候选。
+正式目录共228门：基础通用功法`basic_scatter`、`basic_guard`与226门非内建正式功法。五个正式池分布为高牌60、对子54、三条35、顺子37、炸弹40；完整稳定ID与池归属见[扩展正式功法索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)。全部226门非内建内容均为独立`.tres`、`formal_complete`、`built_in=false`、普通装配上限1，并进入对应正式修习候选。
 
 本批实现分类为A 2门、B 41门、C 9门。A直接组合既有即时能力；B使用通用毒伤、快照、聚合值、捕获集合、原子层数、牌区操作和可恢复选择；C使用通用入堆完成、毒触发完成、下一回合、正常补牌后、防御保留后、完整回合结束和协同时点。中央战斗流程、AI与UI均不按这52门功法ID分支。
 
@@ -275,7 +300,7 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 
 风系现有55门：原51门A/B/C分类保持3/31/17，断流无手复用伤害阶段实时条件，归潮蓄锋复用冻结牌阶替换抽牌，落签逐影复用统一抽牌事件与槽位限时累计，三息回风复用功法来源抽牌事件、冻结有效值与自动结算。原7门调整林系仍为B 6门、C 1门。寄脉、虚无、临时牌阶、占脉查询、冻结排除、原子交换、同步弃置和战后归还均为通用能力；中央流程与敌人AI不按风林功法ID分支。
 
-火系现有52门：原40门新增批次分类保持A 0门、B 15门、C 25门，既有9门继续沿用原正文；破城焚关复用当前防御值与不可格挡伤害元数据，回轮换势复用同气结算回执，熔甲成势复用统一防御减少事件与逐事件取整。`BattleActionRecord`与战斗快照保存连势消费、连势改变来源、同气写入结果和额外行动来源；中央流程与AI不按火系功法ID分支。
+火系现有53门：原40门新增批次分类保持A 0门、B 15门、C 25门，既有9门继续沿用原正文；破城焚关复用当前防御值与不可格挡伤害元数据，回轮换势复用同气结算回执，熔甲成势复用统一防御减少事件与逐事件取整，百式归炉复用公共成功功法事件与有序自动进度聚合。`BattleActionRecord`与战斗快照保存连势消费、连势改变来源、同气写入结果和额外行动来源；中央流程与AI不按火系功法ID分支。
 
 整体功法审计后的优化不增加正式数量：`straight_forest_change_form`支持1至2张临时牌阶目标；`high_wind_break_page`令燃尽顶牌进入敌方手牌、非燃尽合法顶牌明确弃置，可自然触发`straight_fire_hidden_kindling`；`three_mountain_challenge_gate`使用邀战达标分支获得冻结C点连势；`pair_fire_guard_momentum`只简化公开说明。邀战底层现冻结达标／未达标分支并发布结构化`challenge_resolved`事件；内容校验拒绝未登记或重复的功法语义标签。
 
@@ -287,7 +312,7 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 
 ## 统计口径
 
-基础通用实体 `basic_scatter`（散招）与 `basic_guard`（守招）均为 `formal_complete`、`built_in=true`、基础装配上限 99，并用八种 `eligible_hand_ids` 声明通用资格；其余224门非内建正式功法进入对应修习候选。
+基础通用实体 `basic_scatter`（散招）与 `basic_guard`（守招）均为 `formal_complete`、`built_in=true`、基础装配上限 99，并用八种 `eligible_hand_ids` 声明通用资格；其余226门非内建正式功法进入对应修习候选。
 
 `data/production_sequences.json` 的八种精确牌型均为 `["basic_scatter"]`。两门基础功法不进入修习商店、奖励、心得随机候选或 `learned_technique_ids`；构筑 DTO 仍始终把它们作为合格候选公开。旧 47 门流派／纵切资源统计均属历史记录，不再描述当前正式目录。
 `DesignConsistencyValidator` 的 0 错误也只证明名称、共用牌型池与废弃状态一致。
@@ -301,7 +326,7 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 | 回归夹具 | 7 | 早期纵切用于回归协议；不是 S2 正式白名单候选，其中两门另有已确认语义偏差 |
 | 禁用或延期资源 | 0 | 当前 47 个资源内没有；五条心得等禁用内容不属于这 47 门功法实体 |
 
-当前正式口径以开头的226门实体为准；下列47门只解释更早的历史测试与迁移证据，不计入当前正式玩家内容。
+当前正式口径以开头的228门实体为准；下列47门只解释更早的历史测试与迁移证据，不计入当前正式玩家内容。
 
 ## 47 门覆盖矩阵
 
@@ -315,7 +340,7 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 - 顺子：`five_steps_echo`（五步余音）
 - 四条：`seize_qi_return_nest`（夺气归巢）
 
-本段是旧接入证据。当前 `production_sequences.json` 的八种序列仍只装配 `basic_scatter`；正式目录以文件开头的226门为准。
+本段是旧接入证据。当前 `production_sequences.json` 的八种序列仍只装配 `basic_scatter`；正式目录以文件开头的228门为准。
 
 ### 风运转资源：部分接入（32）
 

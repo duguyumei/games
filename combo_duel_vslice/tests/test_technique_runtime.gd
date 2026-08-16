@@ -177,8 +177,8 @@ func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 226, "正式功法仓库包含226门功法")
-    _assert_equal(repository.resource_paths.size(), 226, "正式功法资源路径包含226项")
+    _assert_equal(repository.techniques.size(), 228, "正式功法仓库包含228门功法")
+    _assert_equal(repository.resource_paths.size(), 228, "正式功法资源路径包含228项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -194,12 +194,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 224, "商店包含224门非内建正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 226, "商店包含226门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 226, "正式目录存在226门正式功法资源")
+    _assert_equal(resource_count, 228, "正式目录存在228门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([
@@ -453,6 +453,28 @@ func _test_source_markers_life_and_defense_ports() -> void:
         {"public": true, "display_name": "守势"})
     _assert_equal(store.entries().size(), 2, "同一功法可以同时保存多个标识")
     _assert_equal(store.public_projection().size(), 2, "多个公开标识全部进入投影")
+    var appended: Dictionary = store.append_records(
+        "technique", "slot-a", "a", "ordered", "battle", [
+            {"initial_power":5, "hand_id":"pair"},
+            {"initial_power":8, "hand_id":"straight"}],
+        {"public":true, "display_name":"有序记录"})
+    _assert_true(appended.get("success", false),
+        "来源标识支持追加可序列化有序记录")
+    _assert_equal(store.value(
+        "technique", "slot-a", "ordered", "battle"), 2,
+        "有序来源标识的公开值等于当前记录数")
+    _assert_equal(store.records(
+        "technique", "slot-a", "ordered", "battle").map(func(record):
+            return str(record.get("hand_id", ""))), ["pair", "straight"],
+        "有序来源标识保持追加顺序")
+    var restored_store = SourceMarkerStoreScript.new()
+    _assert_equal(restored_store.restore_snapshot(store.snapshot()), [],
+        "有序来源标识通过统一快照往返")
+    _assert_equal(restored_store.consume_records(
+        "technique", "slot-a", "ordered", "battle", 1).get(
+            "consumed_records", []),
+        [{"initial_power":5, "hand_id":"pair"}],
+        "有序来源标识从队首稳定消费完整记录")
     store.clear_scope("battle")
     _assert_equal(store.entries().size(), 0, "战斗标识在战斗结束边界统一清理")
 
@@ -1108,6 +1130,11 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     manual_engine.player.momentum_value = 3
     manual_engine.player.add_pending_power_fixed_source(
         4, "shared-manual-next-power")
+    var manual_success_events: Array = []
+    manual_engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "technique_succeeded":
+                manual_success_events.append(values.duplicate(true)))
     var manual_life_before: int = manual_engine.enemy.life
     var manual_result: Dictionary = manual_engine.confirm_play([manual_card.id])
     _assert_true(manual_result.get("success", false),
@@ -1135,6 +1162,11 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     invoked_engine.player.momentum_value = 3
     invoked_engine.player.add_pending_power_fixed_source(
         4, "shared-invoked-next-power")
+    var invoked_success_events: Array = []
+    invoked_engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "technique_succeeded":
+                invoked_success_events.append(values.duplicate(true)))
     var caller_slot: Dictionary = invoked_engine.sequence_book.current_slot(
         "high_card")
     var invoked_runtime = EffectContextScript.new().configure({
@@ -1191,6 +1223,11 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
     automatic_engine.player.momentum_value = 3
     automatic_engine.player.add_pending_power_fixed_source(
         4, "shared-automatic-next-power")
+    var automatic_success_events: Array = []
+    automatic_engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "technique_succeeded":
+                automatic_success_events.append(values.duplicate(true)))
     var automatic_life_before: int = automatic_engine.enemy.life
     automatic_engine.battle_passive_event_service.commit("defense_gained", {
         "event_token": "shared-auto-event",
@@ -1209,6 +1246,21 @@ func _test_manual_automatic_invoked_resolution_consistency() -> void:
         "调用与手动复用相同 P0/P 和伤害阶段结果")
     _assert_equal(automatic_loss, manual_loss,
         "自动与手动复用相同 P0/P 和伤害阶段结果")
+    _assert_equal(manual_success_events.map(func(values):
+        return str(values.get("trigger_mode", ""))), ["manual"],
+        "公共成功功法事件覆盖正常触发")
+    _assert_equal(invoked_success_events.map(func(values):
+        return str(values.get("trigger_mode", ""))), ["invoked"],
+        "公共成功功法事件覆盖调用触发")
+    _assert_equal(automatic_success_events.map(func(values):
+        return str(values.get("trigger_mode", ""))), ["automatic"],
+        "公共成功功法事件覆盖自动触发")
+    for events in [manual_success_events, invoked_success_events,
+            automatic_success_events]:
+        _assert_equal(int(events[0].get("initial_power", -1)), 5,
+            "公共成功功法事件公开冻结P₀")
+        _assert_equal(str(events[0].get("hand_id", "")), "high_card",
+            "公共成功功法事件公开精确牌型")
     _assert_equal(manual_engine.player.momentum_value, 0,
         "手动结算统一清空未改变连势")
     _assert_equal(invoked_engine.player.momentum_value, 0,

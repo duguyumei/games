@@ -125,7 +125,7 @@
 
 协同建立另行查询 `cooperation_permission_query`。候选阶段在两组预览完成后查询，拒绝时只取消本次协同选择；正式阶段在主组和协同组都完成数值与启动权限冻结后重新查询，只有允许后才发送各组 `action_confirmed`。正式拒绝或查询错误必须使两组整体回到手牌，不能静默丢弃协同组后只执行主组。主功法启动允许、协同建立允许、协同组自身功法启动被拒绝时，协同组仍存在且其牌与被动照常结算，但该组功法不结算且自身序列不推进。同组明确重触复用原组冻结结果；重新识别牌型建立的新功法触发视为新启动并独立查询。
 
-四阶段冻结成功、效果尚未开始前发送一次 `action_confirmed`。本组完成 `prepare → damage → zones → 打出卡牌离开待出区 → group_end／功法序列推进` 后，才发送一次 `action_resolved`；上下文分别明确 `technique_triggered` 和 `action_succeeded`，不能用功法 ID 是否为空推测。等待选择恢复与重复 finalizer 由行动 token 去重，不能再次发送确认或重新冻结。预览、快照与只读目标数量查询不会发送任何细粒度事件。
+四阶段冻结成功、效果尚未开始前发送一次 `action_confirmed`。一门功法完成自身效果、连势与同气结算并成功推进冻结槽位后，发送且只发送一次公共`technique_succeeded`；该事件统一公开`P₀`、`P`、精确牌型、功法ID、正式池、触发模式与槽位来源，正常、自动和调用功法不得另建成功事件。本组完成 `prepare → damage → zones → 打出卡牌离开待出区 → group_end／功法序列推进` 后，才发送一次 `action_resolved`；上下文分别明确 `technique_triggered` 和 `action_succeeded`，不能用功法 ID 是否为空推测。等待选择恢复与重复 finalizer 由行动 token 去重，不能再次发送确认、成功功法事件或重新冻结。预览、快照与只读目标数量查询不会发送任何细粒度事件。
 
 卡牌实际从抽牌堆进入手牌后，先执行卡牌自身抽牌响应，再发送 `card_drawn`；批次性的 `after_normal_draw` 仍在整批正常补牌完成后发生。正常打出且没有虚无时，完整入堆顺序为：`staging → discard_pile → StatusSystem 入堆行为 → CardReshapeBattleRuntime 入堆行为 → 状态晚期入堆／CardStateLifecycle → card_entered_discard`，不发送 `card_explicitly_discarded`。没有虚无的真气被明确弃牌成功时沿用相同自身响应顺序，随后固定发送 `card_entered_discard → card_explicitly_discarded`，每张牌各一次。
 
@@ -234,7 +234,7 @@ continuation。`ActionResolver` 只保留出牌事务、被动来源编排、双
 - 相同已提交事件 token 只能推进一次自动条件；
 - 等待选择恢复必须复用已经冻结的目标、随机结果、序列移动、标识进度、资源写入和数值快照，不能重复计数、重掷、再次移动或再次触发。
 
-每次调用使用同一 `root_action_token` 下唯一的 `invocation_token`，并发送 `technique_invocation_started`、`technique_invocation_resolved` 与发生移动时的 `technique_sequence_changed`。原有 `action_confirmed` 与 `action_resolved` 继续发送；其元数据至少包含 `trigger_mode`（`manual`／`automatic`／`invoked`）、`root_action_token`、`invocation_token`、`caller_technique_id`、`slot_instance_id`、`manual_effect_suppressed`、`sequence_before` 与 `sequence_after`。功法槽位、自动条件和主动效果模式的定义见[功法系统框架](../martial-arts/20-gongfa-framework.md#战斗槽位临时插入与稳定身份)。
+每次调用使用同一 `root_action_token` 下唯一的 `invocation_token`，并发送 `technique_invocation_started`、`technique_succeeded`、`technique_invocation_resolved` 与发生移动时的 `technique_sequence_changed`。原有 `action_confirmed` 与 `action_resolved` 继续发送；其元数据至少包含 `trigger_mode`（`manual`／`automatic`／`invoked`）、`root_action_token`、`invocation_token`、`caller_technique_id`、`slot_instance_id`、`manual_effect_suppressed`、`sequence_before` 与 `sequence_after`。功法槽位、自动条件和主动效果模式的定义见[功法系统框架](../martial-arts/20-gongfa-framework.md#战斗槽位临时插入与稳定身份)。
 
 #### 邀战
 

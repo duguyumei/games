@@ -20,7 +20,8 @@ func write(
             or marker_id == "" or scope not in SCOPES:
         return {"success": false, "reason": "来源标识键无效"}
     var key := _key(source_kind, source_instance_key, marker_id, scope)
-    var before := int(_entries.get(key, {}).get("value", 0))
+    var existing: Dictionary = _entries.get(key, {})
+    var before := int(existing.get("value", 0))
     var after := before
     match operation:
         "add":
@@ -46,6 +47,8 @@ func write(
         "contributes_to": str(metadata.get("contributes_to", "")),
         "forget_policy": str(metadata.get("forget_policy", "clear")),
     }
+    if existing.has("records"):
+        entry["records"] = existing.get("records", []).duplicate(true)
     if after == 0 and bool(metadata.get("remove_zero", operation == "clear")):
         _entries.erase(key)
     else:
@@ -59,6 +62,102 @@ func write(
         "consumed": consumed,
         "entry": entry.duplicate(true),
     }
+
+func append_records(
+        source_kind: String,
+        source_instance_key: String,
+        content_id: String,
+        marker_id: String,
+        scope: String,
+        records: Array,
+        metadata: Dictionary = {}) -> Dictionary:
+    if source_kind not in SOURCE_KINDS or source_instance_key == "" \
+            or marker_id == "" or scope not in SCOPES:
+        return {"success": false, "reason": "来源标识键无效"}
+    if records.any(func(record):
+            return not record is Dictionary \
+                or not _is_serializable_value(record)):
+        return {"success": false, "reason": "来源标识有序记录必须是可序列化对象数组"}
+    var key := _key(source_kind, source_instance_key, marker_id, scope)
+    var existing: Dictionary = _entries.get(key, {})
+    var before_records: Array = existing.get("records", []).duplicate(true)
+    var after_records: Array = before_records.duplicate(true)
+    after_records.append_array(records.duplicate(true))
+    var entry := {
+        "source_kind": source_kind,
+        "source_instance_key": source_instance_key,
+        "content_id": content_id,
+        "marker_id": marker_id,
+        "scope": scope,
+        "value": after_records.size(),
+        "public": bool(metadata.get("public", true)),
+        "display_name": str(metadata.get("display_name", marker_id)),
+        "contributes_to": str(metadata.get("contributes_to", "")),
+        "forget_policy": str(metadata.get("forget_policy", "clear")),
+        "records": after_records,
+    }
+    _entries[key] = entry
+    return {
+        "success": true,
+        "changed": not records.is_empty(),
+        "before": before_records.size(),
+        "after": after_records.size(),
+        "delta": records.size(),
+        "consumed": 0,
+        "appended_records": records.duplicate(true),
+        "entry": entry.duplicate(true),
+    }
+
+func consume_records(
+        source_kind: String,
+        source_instance_key: String,
+        marker_id: String,
+        scope: String,
+        count: int,
+        remove_zero: bool = false) -> Dictionary:
+    if source_kind not in SOURCE_KINDS or source_instance_key == "" \
+            or marker_id == "" or scope not in SCOPES:
+        return {"success": false, "reason": "来源标识键无效"}
+    var key := _key(source_kind, source_instance_key, marker_id, scope)
+    var existing: Dictionary = _entries.get(key, {})
+    var before_records: Array = existing.get("records", []).duplicate(true)
+    var consumed_count := mini(before_records.size(), maxi(0, count))
+    var consumed_records: Array = before_records.slice(0, consumed_count)
+    var after_records: Array = before_records.slice(
+        consumed_count, before_records.size())
+    var entry: Dictionary = existing.duplicate(true)
+    entry["value"] = after_records.size()
+    entry["records"] = after_records
+    if after_records.is_empty() and remove_zero:
+        _entries.erase(key)
+    elif not existing.is_empty():
+        _entries[key] = entry
+    return {
+        "success": true,
+        "changed": consumed_count > 0,
+        "before": before_records.size(),
+        "after": after_records.size(),
+        "delta": -consumed_count,
+        "consumed": consumed_count,
+        "consumed_records": consumed_records.duplicate(true),
+        "entry": entry.duplicate(true),
+    }
+
+func records(
+        source_kind: String,
+        source_instance_key: String,
+        marker_id: String,
+        scope: String = "") -> Array:
+    var result: Array = []
+    for entry_value in entries({
+            "source_kind": source_kind,
+            "source_instance_key": source_instance_key,
+            "marker_id": marker_id}):
+        var entry: Dictionary = entry_value
+        if scope != "" and str(entry.get("scope", "")) != scope:
+            continue
+        result.append_array(entry.get("records", []).duplicate(true))
+    return result
 
 func value(
         source_kind: String,
@@ -186,7 +285,13 @@ func restore_snapshot(value: Dictionary, replace: bool = true) -> Array[String]:
                 or str(entry.get("scope", "")) not in SCOPES \
                 or str(entry.get("source_instance_key", "")) == "" \
                 or str(entry.get("marker_id", "")) == "" \
-                or not entry.get("value", 0) is int:
+                or not entry.get("value", 0) is int \
+                or not entry.get("records", []) is Array \
+                or entry.get("records", []).any(func(record):
+                    return not record is Dictionary \
+                        or not _is_serializable_value(record)) \
+                or (entry.has("records") and int(entry.get("value", 0)) \
+                    != entry.get("records", []).size()):
             errors.append("来源标识条目键、值或范围无效：%d" % index)
             continue
         seen[key] = true
@@ -206,3 +311,16 @@ func _sort_key(entry: Dictionary) -> String:
         str(entry.get("scope", "")),
         str(entry.get("marker_id", "")),
     ]
+
+func _is_serializable_value(value) -> bool:
+    if value is Callable or value is Object:
+        return false
+    if value is Dictionary:
+        for child in value.values():
+            if not _is_serializable_value(child):
+                return false
+    elif value is Array:
+        for child in value:
+            if not _is_serializable_value(child):
+                return false
+    return true

@@ -97,6 +97,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "damage_type": {"validation": "damage_type", "value": "direct", "key": "damage_type"},
     "hand_id": {"validation": "hand_id", "value": "direct", "key": "hand_id"},
     "technique_pool": {"validation": "nonempty_string", "value": "direct", "key": "technique_pool"},
+    "technique_id_not_in": {"validation": "string_array", "value": "direct", "key": "technique_id", "match": "excludes"},
     "technique_power": {"validation": "integer", "value": "direct", "key": "technique_power"},
     "requested_amount": {"validation": "integer", "value": "direct", "key": "requested_amount"},
     "final_amount": {"validation": "integer", "value": "direct", "key": "final_amount"},

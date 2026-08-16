@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "straight_forest_seven_poison_seal"
+display_name = "林·七蛊封心"
+pool = "straight"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["straight"] )
+marker_definitions = [{"id":"enemy_poison_life_loss","scope":"battle","public":true,"display_name":"敌方毒伤进度","forget_policy":"clear"}]
+automatic_triggers = [{"id":"seven_poison_seal","event":"poison_trigger_completed","filters":{"event_actor_is_opponent":true,"actual_life_loss_positive":true},"timing":"immediate","progress":{"marker_id":"enemy_poison_life_loss","add":{"kind":"event_field","capture":"event","field":"actual_life_loss"},"threshold":20,"consume":20,"retain_overflow":true},"p0":{"kind":"constant","value":20}}]
+description = "主动触发时获得floor(P/2)点防御。敌方每因毒累计实际损失20点生命，消耗20点记录并以特殊P₀=20自动触发：造成floor(P/2)点真伤，并使敌方随机1张手牌中的真气获得1层封禁；没有合法目标时，改为再造成floor(P/2)点真伤。自动分支真伤不加入毒伤进度，溢出生命损失保留。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "damage", "anomaly_apply", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["defense", "damage", "anomaly_apply", "enemy_disruption"] )
+implementation_category = "S"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},"when":{"trigger_mode":"manual"}},{"op":"damage","phase":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},"when":{"trigger_mode":"automatic"}},{"op":"apply_anomaly_from_query","phase":"damage","query":{"side":"target","zone":"hand","order":"random","limit":1,"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"state","id":"forbidden"}}},"capture":"seven_poison_target","category":"state","anomaly":"forbidden","layers":1,"when":{"trigger_mode":"automatic"}},{"op":"damage","phase":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0},"when":{"all":[{"trigger_mode":"automatic"},{"capture_empty":"seven_poison_target"}]}}]

@@ -2,9 +2,9 @@
 
 > 状态：当前正式目录。详细效果正文分别由[蛊毒功法](./25-gongfa-poison-candidate-pool.md)、[成长功法](./26-gongfa-growth-candidate-pool.md)、[桥接功法](./27-gongfa-bridge-candidate-pool.md)、[山系功法](./29-gongfa-mountain-candidate-pool.md)、[风系功法](./33-gongfa-wind-pool.md)与[火系功法](./34-gongfa-fire-pool.md)唯一维护；本文件只记录池归属、稳定ID、接入状态与数量，不复制效果正文。
 >
-> 当前运行时有199门已实现扩展／特殊内容，加上首批25门高牌，共224门非内建正式功法；连同散招、守招共226个正式资源。五池分布为高牌59、对子54、三条35、顺子36、炸弹40。
+> 当前运行时有201门已实现扩展／特殊内容，加上首批25门高牌，共226门非内建正式功法；连同散招、守招共228个正式资源。五池分布为高牌60、对子54、三条35、顺子37、炸弹40。
 
-## **高牌池（当前34门）**
+## **高牌池（当前35门）**
 
 - **林·含毒**（`high_forest_contain_poison`）
 - **林·埋蛊**（`high_forest_bury_poison`）
@@ -40,6 +40,7 @@
 - **火·投薪**（`high_fire_cast_kindling`，已实现）
 - **火·返薪**（`high_fire_return_kindling`，已实现）
 - **火·余明**（`high_fire_afterglow`，已实现）
+- **火·百式归炉**（`high_fire_hundred_forms_furnace`，特殊功法，已实现）
 
 ## **对子池（当前54门）**
 
@@ -136,7 +137,7 @@
 - **火·炉返**（`three_fire_furnace_return`，已实现）
 - **火·烬势**（`three_fire_ember_momentum`，已实现）
 
-## **顺子池（当前36门）**
+## **顺子池（当前37门）**
 
 - **林·潜根**（`straight_forest_hidden_root`）
 - **林·残蛊化甲**（`straight_forest_poison_armor`）
@@ -174,6 +175,7 @@
 - **火·暗薪**（`straight_fire_hidden_kindling`，已实现）
 - **火·转炽**（`straight_fire_transfer_heat`，已实现）
 - **火·回轮换势**（`straight_fire_return_same_qi`，特殊功法，已实现）
+- **林·七蛊封心**（`straight_forest_seven_poison_seal`，特殊功法，已实现）
 
 ## **炸弹池（当前40门）**
 
@@ -220,12 +222,12 @@
 
 ## 计数与接入状态
 
-- 当前已实现扩展／特殊内容共199门：高牌34、对子54、三条35、顺子36、炸弹40。加上首批25门高牌后，运行时正式池为高牌59、对子54、三条35、顺子36、炸弹40，共224门非内建正式功法。
-- 当前199门已实现扩展／特殊内容均为独立`TechniqueDefinition`资源、`formal_complete`、普通装配上限1，并进入奖励、心得、商店、统计与运行时池。
+- 当前已实现扩展／特殊内容共201门：高牌35、对子54、三条35、顺子37、炸弹40。加上首批25门高牌后，运行时正式池为高牌60、对子54、三条35、顺子37、炸弹40，共226门非内建正式功法。
+- 当前201门已实现扩展／特殊内容均为独立`TechniqueDefinition`资源、`formal_complete`、普通装配上限1，并进入奖励、心得、商店、统计与运行时池。
 - 新增林系稳定ID为`high_forest_variant_plant`、`three_forest_dye_branch`、`straight_forest_change_form`、`bomb_forest_myriad_forms`；删除`three_forest_poison_shell`与`three_forest_fallen_leaf_return`。
 - 41门新增风功法使用33号文档冻结的稳定ID；`high_wind_startle`与`high_wind_exchange`保留原ID并已更新效果，不增加资源数量。
 - 40门新增火功法使用34号文档冻结的稳定ID并已全部正式接入；既有9门火功法继续使用24号与27号文档维护的唯一正文，不重复计数。
-- 已接入15门特殊功法使用35号文档冻结正文：此前12门保持不变，本批新增`high_wind_three_breath_return`、`high_forest_poison_meridian_echo`与`pair_mountain_three_knocks`。其余10门仍仅为候选，不计入正式目录。
+- 已接入17门特殊功法使用35号文档冻结正文：此前15门保持不变，本批新增`straight_forest_seven_poison_seal`与`high_fire_hundred_forms_furnace`。其余8门仍仅为候选，不计入正式目录。
 - 池资格固定为：高牌只读 `high_card`；对子读 `pair`、`two_pair`、`full_house`；三条读 `three_kind`、`full_house`；顺子只读 `straight`；炸弹读 `four_kind`、`five_kind`。
 - `production_sequences.json` 不因本批正式化改变；八种初始序列仍从内建散招开始。
 - 毒伤、成长与炽气转移、寄脉、虚无、临时牌阶、牌区快照、筛选抽牌、同步弃置、延迟响应、协同限制、反震来源、格挡、邀战、同气收口和AI投影均通过通用接口实现，中央流程不识别扩展功法ID。

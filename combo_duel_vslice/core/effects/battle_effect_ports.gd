@@ -669,6 +669,40 @@ func transfer_source_marker(
             side.recalculate_effective_max_life()
     return result
 
+func append_source_marker_records(
+        side: BattleSide,
+        source: Dictionary,
+        records: Array,
+        action_token: String = "") -> Dictionary:
+    var result: Dictionary = side.source_marker_store.append_records(
+        str(source.get("source_kind", "")),
+        str(source.get("source_instance_key", "")),
+        str(source.get("content_id", "")),
+        str(source.get("marker_id", "")),
+        str(source.get("scope", "battle")),
+        records,
+        source)
+    if result.get("success", false):
+        _emit_source_marker_changed(
+            side, source, "append_records", result, action_token)
+    return result
+
+func consume_source_marker_records(
+        side: BattleSide,
+        source: Dictionary,
+        count: int,
+        action_token: String = "") -> Dictionary:
+    var result: Dictionary = side.source_marker_store.consume_records(
+        str(source.get("source_kind", "")),
+        str(source.get("source_instance_key", "")),
+        str(source.get("marker_id", "")),
+        str(source.get("scope", "battle")),
+        count)
+    if result.get("success", false):
+        _emit_source_marker_changed(
+            side, source, "consume_records", result, action_token)
+    return result
+
 func invoke_sequence_technique(effect: Dictionary, context) -> Dictionary:
     var invocation_service = _technique_invocation_service()
     if invocation_service == null:

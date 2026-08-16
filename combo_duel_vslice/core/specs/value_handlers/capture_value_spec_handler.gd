@@ -11,7 +11,8 @@ const REGISTERED_KINDS := [
     "capture_effective_qi_max", "capture_r_sum", "capture_r_max",
     "capture_anomaly_layers_sum", "capture_anomaly_layers_max",
     "capture_result_count", "capture_actual_life_loss",
-    "capture_field_sum", "capture_field_max", "capture_field_first", "event_field",
+    "capture_field_sum", "capture_field_max", "capture_field_first",
+    "capture_field_distinct_count", "event_field",
 ]
 
 func kind_ids() -> Array[String]:
@@ -36,7 +37,8 @@ func validate(kind: String, spec: Dictionary, registry, report_error: Callable, 
             and str(spec["category"]) not in registry.anomaly_category_ids():
         report_error.call(scope + ".category", "引用未知异状类别")
         valid = false
-    if kind in ["capture_field_sum", "capture_field_max", "capture_field_first"] \
+    if kind in ["capture_field_sum", "capture_field_max", "capture_field_first",
+            "capture_field_distinct_count"] \
             and spec.has("field") and not spec["field"] is String:
         report_error.call(scope + ".field", "必须是字符串")
         valid = false
@@ -115,6 +117,13 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
                 str(spec.get("capture", "event")), [])
             return int(events[0].get(str(spec.get("field", "amount")), 0)) \
                 if not events.is_empty() and events[0] is Dictionary else 0
+        "capture_field_distinct_count":
+            var distinct: Dictionary = {}
+            var field := str(spec.get("field", "amount"))
+            for entry in runtime.captures.get(str(spec.get("capture", "")), []):
+                if entry is Dictionary:
+                    distinct[str(entry.get(field, ""))] = true
+            return distinct.size()
         "capture_field_sum", "capture_field_max", "capture_field_first":
             var values: Array[int] = []
             var field := str(spec.get("field", "amount"))

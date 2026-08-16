@@ -94,6 +94,7 @@ func _invoke_frozen(runtime, request: Dictionary) -> void:
         "_hand_result_override": request["hand_result"],
         "_consumed_marker_value": int(request.get(
             "consumed_marker_value", 0)),
+        "_captures_override": request.get("captures", {}).duplicate(true),
         "advance_sequence": true, "gain_same_qi": true,
         "use_momentum": true, "check_condition": true,
     }
@@ -109,6 +110,7 @@ func _invoke_frozen(runtime, request: Dictionary) -> void:
             "_trigger_mode": effect["_trigger_mode"],
             "_hand_result_override": effect["_hand_result_override"],
             "_consumed_marker_value": effect["_consumed_marker_value"],
+            "_captures_override": effect["_captures_override"],
             "advance_sequence": true, "gain_same_qi": true,
             "use_momentum": true, "check_condition": true,
         })
@@ -141,12 +143,12 @@ func _freeze_trigger_instances(
     runtime.captures["event"] = [values.duplicate(false)]
     var count := 1
     var consumed_values: Array[int] = [0]
+    var progress_groups: Array = []
     if trigger.has("progress"):
         var progress: Dictionary = trigger["progress"]
         var primary_marker_id := str(progress.get("marker_id", ""))
         var marker_definition := _marker_definition(
             definition.marker_definitions, primary_marker_id)
-        var add := _resolve_value(progress.get("add", 1), runtime)
         var source := _address_resolver.resolve_for_slot({
             "source_kind": "technique",
             "content_id": definition.id,
@@ -162,85 +164,138 @@ func _freeze_trigger_instances(
         var ports = _ports()
         if ports == null:
             return []
-        var added: Dictionary = ports.write_source_marker(
-            actor, source, "add", add, runtime.action_token)
-        if not added.get("success", false):
-            return []
-        var additional_sources: Array = []
-        for additional_value in progress.get("additional", []):
-            var additional: Dictionary = additional_value
-            var additional_marker_id := str(additional.get("marker_id", ""))
-            var additional_definition := _marker_definition(
-                definition.marker_definitions, additional_marker_id)
-            var additional_source := _address_resolver.resolve_for_slot({
-                "source_kind": "technique",
-                "content_id": definition.id,
-                "marker_id": additional_marker_id,
-                "scope": str(additional_definition.get("scope", "battle")),
-                "public": bool(additional_definition.get("public", true)),
-                "display_name": str(additional_definition.get(
-                    "display_name", additional_marker_id)),
-                "contributes_to": str(additional_definition.get(
-                    "contributes_to", "")),
-            }, slot)
-            if not additional_source.get("success", false):
+        var ordered_fields = progress.get("ordered_fields", [])
+        if ordered_fields is Array and not ordered_fields.is_empty():
+            var record: Dictionary = {}
+            for field_value in ordered_fields:
+                var field: Dictionary = field_value
+                var event_field := str(field.get("field", ""))
+                record[str(field.get("id", event_field))] = values.get(
+                    event_field)
+            var appended: Dictionary = ports.append_source_marker_records(
+                actor, source, [record], runtime.action_token)
+            if not appended.get("success", false):
                 return []
-            var additional_added: Dictionary = ports.write_source_marker(
-                actor, additional_source, "add",
-                _resolve_value(additional.get("add", 0), runtime),
-                runtime.action_token)
-            if not additional_added.get("success", false):
+            var threshold := maxi(1, _resolve_value(
+                progress.get("threshold", 1), runtime))
+            count = int(appended.get("after", 0)) / threshold
+            if count <= 0:
                 return []
-            additional_sources.append({
-                "spec": additional,
-                "source": additional_source,
-                "after": int(additional_added.get("after", 0)),
-            })
-        var threshold := maxi(1, _resolve_value(progress.get("threshold", 1), runtime))
-        count = int(added.get("after", 0)) / threshold
-        var primary_consume := maxi(0, _resolve_value(
-            progress.get("consume", threshold), runtime))
-        if count <= 0:
-            return []
-        var total_consume := primary_consume * count
-        if not bool(progress.get("retain_overflow", true)):
-            total_consume = int(added.get("after", 0))
-        var primary_consumed: Dictionary = ports.write_source_marker(
-            actor, source, "consume", total_consume, runtime.action_token)
-        var consumed_by_marker: Dictionary = {}
-        consumed_by_marker[primary_marker_id] = int(
-            primary_consumed.get("consumed", 0))
-        for entry_value in additional_sources:
-            var entry: Dictionary = entry_value
-            var additional: Dictionary = entry["spec"]
-            var consume_value = additional.get("consume", "all")
-            var additional_consume := int(entry.get("after", 0)) \
-                if consume_value is String and str(consume_value) == "all" \
-                else maxi(0, _resolve_value(consume_value, runtime))
-            if not bool(additional.get("retain_overflow", true)):
-                additional_consume = int(entry.get("after", 0))
-            var additional_consumed: Dictionary = ports.write_source_marker(
-                actor, entry["source"], "consume", additional_consume,
-                runtime.action_token)
-            consumed_by_marker[str(additional.get("marker_id", ""))] = int(
-                additional_consumed.get("consumed", 0))
-        var consumed_marker_id := str(progress.get(
-            "consumed_marker_id", primary_marker_id))
-        consumed_values = _split_consumed_value(
-            int(consumed_by_marker.get(consumed_marker_id, 0)), count)
+            var primary_consume := maxi(1, _resolve_value(
+                progress.get("consume", threshold), runtime))
+            var total_consume := primary_consume * count
+            if not bool(progress.get("retain_overflow", true)):
+                total_consume = int(appended.get("after", 0))
+            var consumed: Dictionary = ports.consume_source_marker_records(
+                actor, source, total_consume, runtime.action_token)
+            if not consumed.get("success", false):
+                return []
+            progress_groups = _split_consumed_records(
+                consumed.get("consumed_records", []), count,
+                primary_consume)
+        else:
+            var add := _resolve_value(progress.get("add", 1), runtime)
+            var added: Dictionary = ports.write_source_marker(
+                actor, source, "add", add, runtime.action_token)
+            if not added.get("success", false):
+                return []
+            var additional_sources: Array = []
+            for additional_value in progress.get("additional", []):
+                var additional: Dictionary = additional_value
+                var additional_marker_id := str(additional.get("marker_id", ""))
+                var additional_definition := _marker_definition(
+                    definition.marker_definitions, additional_marker_id)
+                var additional_source := _address_resolver.resolve_for_slot({
+                    "source_kind": "technique",
+                    "content_id": definition.id,
+                    "marker_id": additional_marker_id,
+                    "scope": str(additional_definition.get("scope", "battle")),
+                    "public": bool(additional_definition.get("public", true)),
+                    "display_name": str(additional_definition.get(
+                        "display_name", additional_marker_id)),
+                    "contributes_to": str(additional_definition.get(
+                        "contributes_to", "")),
+                }, slot)
+                if not additional_source.get("success", false):
+                    return []
+                var additional_added: Dictionary = ports.write_source_marker(
+                    actor, additional_source, "add",
+                    _resolve_value(additional.get("add", 0), runtime),
+                    runtime.action_token)
+                if not additional_added.get("success", false):
+                    return []
+                additional_sources.append({
+                    "spec": additional,
+                    "source": additional_source,
+                    "after": int(additional_added.get("after", 0)),
+                })
+            var threshold := maxi(1, _resolve_value(progress.get("threshold", 1), runtime))
+            count = int(added.get("after", 0)) / threshold
+            var primary_consume := maxi(0, _resolve_value(
+                progress.get("consume", threshold), runtime))
+            if count <= 0:
+                return []
+            var total_consume := primary_consume * count
+            if not bool(progress.get("retain_overflow", true)):
+                total_consume = int(added.get("after", 0))
+            var primary_consumed: Dictionary = ports.write_source_marker(
+                actor, source, "consume", total_consume, runtime.action_token)
+            var consumed_by_marker: Dictionary = {}
+            consumed_by_marker[primary_marker_id] = int(
+                primary_consumed.get("consumed", 0))
+            for entry_value in additional_sources:
+                var entry: Dictionary = entry_value
+                var additional: Dictionary = entry["spec"]
+                var consume_value = additional.get("consume", "all")
+                var additional_consume := int(entry.get("after", 0)) \
+                    if consume_value is String and str(consume_value) == "all" \
+                    else maxi(0, _resolve_value(consume_value, runtime))
+                if not bool(additional.get("retain_overflow", true)):
+                    additional_consume = int(entry.get("after", 0))
+                var additional_consumed: Dictionary = ports.write_source_marker(
+                    actor, entry["source"], "consume", additional_consume,
+                    runtime.action_token)
+                consumed_by_marker[str(additional.get("marker_id", ""))] = int(
+                    additional_consumed.get("consumed", 0))
+            var consumed_marker_id := str(progress.get(
+                "consumed_marker_id", primary_marker_id))
+            consumed_values = _split_consumed_value(
+                int(consumed_by_marker.get(consumed_marker_id, 0)), count)
     var result: Array = []
     for index in range(count):
         runtime.consumed_marker_value = int(consumed_values[index]) \
             if index < consumed_values.size() else 0
+        var frozen_captures: Dictionary = {}
+        if index < progress_groups.size():
+            frozen_captures["automatic_progress_group"] = \
+                progress_groups[index].duplicate(true)
+            runtime.captures["automatic_progress_group"] = \
+                progress_groups[index].duplicate(true)
         result.append({
             "hand_id": hand_id,
             "hand_result": _automatic_hand_result(runtime, hand_id),
             "slot_instance_id": str(slot.get("slot_instance_id", "")),
             "consumed_marker_value": runtime.consumed_marker_value,
+            "captures": frozen_captures,
             "p0": _resolve_value(trigger.get("p0", {
                 "kind": "consumed_marker_value"}), runtime),
             "timing": str(trigger.get("timing", "immediate")),
         })
+    runtime.captures.erase("automatic_progress_group")
+    return result
+
+func _split_consumed_records(
+        records: Array, count: int, group_size: int) -> Array:
+    var result: Array = []
+    var offset := 0
+    for index in range(count):
+        var remaining_groups := count - index
+        var remaining_records := records.size() - offset
+        var size := group_size
+        if remaining_groups == 1:
+            size = remaining_records
+        result.append(records.slice(offset, offset + size).duplicate(true))
+        offset += size
     return result
 
 func _split_consumed_value(total: int, count: int) -> Array[int]:

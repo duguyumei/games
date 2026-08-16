@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "high_fire_hundred_forms_furnace"
+display_name = "火·百式归炉"
+pool = "high"
+special = true
+built_in = false
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["high_card"] )
+manual_effect_mode = "advance_only"
+marker_definitions = [{"id":"other_technique_records","scope":"battle","public":true,"display_name":"百式功法记录","forget_policy":"clear"}]
+automatic_triggers = [{"id":"hundred_forms_furnace","event":"technique_succeeded","filters":{"event_actor_is_owner":true,"technique_id_not_in":["high_fire_hundred_forms_furnace"]},"timing":"immediate","progress":{"marker_id":"other_technique_records","threshold":3,"consume":3,"retain_overflow":true,"ordered_fields":[{"field":"initial_power"},{"field":"hand_id"},{"field":"technique_id"},{"field":"trigger_mode"}]},"p0":{"kind":"divide_floor","value":{"kind":"capture_field_sum","capture":"automatic_progress_group","field":"initial_power"},"divisor":3}}]
+description = "每当我方累计成功发动3门其他功法，按稳定顺序记录它们的P₀和精确牌型并自动触发本功法。特殊P₀等于三者P₀平均值，造成P点普通伤害；若三门功法包含至少2种不同的精确牌型，同气槽+1。主动触发时效果无效，但正常结算连势、同气、事件与序列推进，且不清除记录。本功法所有同ID副本的发动均不计数。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "same_qi_payoff", "retrigger_sensitive"] )
+public_behavior_summary = Array[String]( ["damage", "same_qi_payoff"] )
+implementation_category = "S"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power"}},{"op":"write_same_qi","phase":"damage","operation":"add","amount":1,"when":{"value_at_least":{"value":{"kind":"capture_field_distinct_count","capture":"automatic_progress_group","field":"hand_id"},"minimum":2}}}]

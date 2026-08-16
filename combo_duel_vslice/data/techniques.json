@@ -253,7 +253,9 @@
     "pair_mountain_broken_armor_qi": "formal_complete",
     "high_wind_three_breath_return": "formal_complete",
     "high_forest_poison_meridian_echo": "formal_complete",
-    "pair_mountain_three_knocks": "formal_complete"
+    "pair_mountain_three_knocks": "formal_complete",
+    "straight_forest_seven_poison_seal": "formal_complete",
+    "high_fire_hundred_forms_furnace": "formal_complete"
   },
   "resource_paths": [
     "res://data/techniques/basic_scatter.tres",
@@ -481,6 +483,8 @@
     "res://data/techniques/pair_mountain_broken_armor_qi.tres",
     "res://data/techniques/high_wind_three_breath_return.tres",
     "res://data/techniques/high_forest_poison_meridian_echo.tres",
-    "res://data/techniques/pair_mountain_three_knocks.tres"
+    "res://data/techniques/pair_mountain_three_knocks.tres",
+    "res://data/techniques/straight_forest_seven_poison_seal.tres",
+    "res://data/techniques/high_fire_hundred_forms_furnace.tres"
   ]
 }

@@ -22,6 +22,8 @@ const SPECIAL_TECHNIQUES := {
     "high_wind_three_breath_return": {"name":"风·三息回风", "pool":"high"},
     "high_forest_poison_meridian_echo": {"name":"林·蛊脉自鸣", "pool":"high"},
     "pair_mountain_three_knocks": {"name":"山·听阵三叩", "pool":"pair"},
+    "straight_forest_seven_poison_seal": {"name":"林·七蛊封心", "pool":"straight"},
+    "high_fire_hundred_forms_furnace": {"name":"火·百式归炉", "pool":"high"},
 }
 
 func _initialize() -> void:
@@ -43,6 +45,9 @@ func _initialize() -> void:
     _test_three_breath_return_battle_session_flow()
     _test_poison_meridian_echo_battle_session_flow()
     _test_three_knocks_battle_session_flow()
+    _test_seven_poison_seal_battle_session_flow()
+    _test_hundred_forms_furnace_battle_session_flow()
+    _test_hundred_forms_multiple_slots_frozen_order()
     _finish("SPECIAL TECHNIQUE TEST")
 
 func _test_formal_resource_contract() -> void:
@@ -1121,6 +1126,406 @@ func _test_three_knocks_battle_session_flow() -> void:
         "听阵三叩触发后消费对应三门P₀")
     _assert_true(not sequence_events.is_empty(),
         "听阵三叩自动分支移动并推进声明条件的真实槽位")
+
+func _test_seven_poison_seal_battle_session_flow() -> void:
+    var engine = _engine(9601)
+    engine.repository.techniques["special_poison_all_probe"] = {
+        "id":"special_poison_all_probe", "name":"七蛊毒爆探针",
+        "pool":"high", "effects":[{
+            "op":"trigger_all_poison_simultaneously"}],
+    }
+    engine.sequence_book.configure({
+        "high_card":["special_poison_all_probe"],
+        "straight":["straight_forest_seven_poison_seal", "basic_guard"],
+    })
+    var seal_slot := str(engine.sequence_book.current_slot(
+        "straight").get("slot_instance_id", ""))
+    var poison_card = QiCardScript.new(
+        "seven-poison-45", "45", 45, 45, "forest", "forest",
+        "seven-poison-45")
+    engine.status_system.apply_card_anomaly(
+        poison_card, "state", "poison", {}, "七蛊45点专项")
+    engine.enemy.hand = [poison_card]
+    var selected = _card("9", "forest")
+    engine.player.hand = [selected]
+    var automatic_events: Array = []
+    var sequence_events: Array = []
+    engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "action_resolved" \
+                    and str(values.get("technique_id", "")) \
+                    == "straight_forest_seven_poison_seal" \
+                    and str(values.get("trigger_mode", "")) == "automatic":
+                automatic_events.append(values.duplicate(true))
+            if kind == "technique_sequence_changed" \
+                    and values.get("changed_slots", []).any(func(slot):
+                        return str(slot.get("slot_instance_id", "")) \
+                            == seal_slot):
+                sequence_events.append(values.duplicate(true)))
+    var session = BattleSessionScript.new(engine)
+    engine.actions_available = 1
+    var result = session.execute({
+        "type":"play_cards", "card_ids":[str(selected.id)]})
+    _assert_true(result.success, "七蛊封心由BattleSession毒伤完成事件触发")
+    _assert_equal(engine.enemy.life, 35,
+        "单次45点实际毒伤触发两次各10点自动真伤")
+    _assert_equal(automatic_events.map(func(values):
+        return int(values.get("initial_power", -1))), [20, 20],
+        "七蛊封心两次自动触发均冻结特殊P₀=20")
+    _assert_equal(poison_card.anomaly_layers("state", "forbidden"), 2,
+        "唯一合法敌方手牌连续获得两层封禁")
+    _assert_equal(_slot_marker_value(
+        engine, seal_slot, "enemy_poison_life_loss"), 5,
+        "45点实际生命损失消费40并保留5点")
+    _assert_true(not sequence_events.is_empty(),
+        "七蛊封心自动分支移动并推进真实顺子槽位")
+    _assert_equal(_slot_marker_value(
+        engine, seal_slot, "enemy_poison_life_loss"), 5,
+        "自动分支真伤不反向加入毒伤进度")
+
+    var no_target = _engine(9602)
+    no_target.repository.techniques["special_poison_all_probe"] = \
+        engine.repository.techniques["special_poison_all_probe"].duplicate(true)
+    no_target.sequence_book.configure({
+        "high_card":["special_poison_all_probe"],
+        "straight":["straight_forest_seven_poison_seal"],
+    })
+    var no_target_poison = QiCardScript.new(
+        "seven-poison-20", "20", 20, 20, "forest", "forest",
+        "seven-poison-20")
+    no_target.status_system.apply_card_anomaly(
+        no_target_poison, "state", "poison", {}, "七蛊无目标专项")
+    no_target.enemy.draw_pile = [no_target_poison]
+    var no_target_selected = _card("9", "forest")
+    no_target.player.hand = [no_target_selected]
+    var no_target_session = BattleSessionScript.new(no_target)
+    no_target.actions_available = 1
+    var no_target_result = no_target_session.execute({
+        "type":"play_cards", "card_ids":[str(no_target_selected.id)]})
+    _assert_true(no_target_result.success, "七蛊封心无合法手牌目标行动完成")
+    _assert_equal(no_target.enemy.life, 60,
+        "无合法目标时20毒伤后连续造成两段10点真伤")
+
+    var manual = _engine(9603)
+    manual.repository.techniques["special_poison_all_probe"] = \
+        engine.repository.techniques["special_poison_all_probe"].duplicate(true)
+    manual.sequence_book.configure({
+        "high_card":["special_poison_all_probe"],
+        "straight":["straight_forest_seven_poison_seal", "basic_guard"],
+    })
+    var manual_slot := str(manual.sequence_book.current_slot(
+        "straight").get("slot_instance_id", ""))
+    var five_poison = QiCardScript.new(
+        "seven-poison-5", "5", 5, 5, "forest", "forest",
+        "seven-poison-5")
+    manual.status_system.apply_card_anomaly(
+        five_poison, "state", "poison", {}, "七蛊主动专项")
+    manual.enemy.draw_pile = [five_poison]
+    var starter = _card("9", "forest")
+    manual.player.hand = [starter]
+    var manual_session = BattleSessionScript.new(manual)
+    manual.actions_available = 1
+    _assert_true(manual_session.execute({
+        "type":"play_cards", "card_ids":[str(starter.id)]}).success,
+        "七蛊封心主动前先累计5点实际毒伤")
+    var straight_cards = [
+        _card("2", "forest"), _card("3", "forest"),
+        _card("4", "forest"), _card("5", "forest"),
+        _card("6", "forest")]
+    manual.player.hand = straight_cards
+    manual.actions_available = 1
+    var manual_result = manual_session.execute({
+        "type":"play_cards", "card_ids":straight_cards.map(
+            func(card): return str(card.id))})
+    _assert_true(manual_result.success, "七蛊封心主动分支正常完成")
+    var manual_power := int(manual_result.payload_value(
+        "preview", {}).get("values", {}).get("technique_value", 0))
+    _assert_equal(manual.player.defense, int(floor(manual_power / 2.0)),
+        "七蛊封心主动触发只获得floor(P/2)防御")
+    _assert_equal(_slot_marker_value(
+        manual, manual_slot, "enemy_poison_life_loss"), 5,
+        "七蛊封心主动触发不清除毒伤进度")
+
+    var copies = _engine(9604)
+    copies.repository.techniques["special_poison_all_probe"] = \
+        engine.repository.techniques["special_poison_all_probe"].duplicate(true)
+    copies.sequence_book.configure({
+        "high_card":["special_poison_all_probe"],
+        "straight":["basic_guard", "straight_forest_seven_poison_seal"],
+    })
+    var permanent_slot := str(copies.sequence_book.find_slots({
+        "hand_id":"straight",
+        "technique_id":"straight_forest_seven_poison_seal"})[0].get(
+            "slot_instance_id", ""))
+    var first_poison = QiCardScript.new(
+        "seven-copy-5", "5", 5, 5, "forest", "forest",
+        "seven-copy-5")
+    copies.status_system.apply_card_anomaly(
+        first_poison, "state", "poison", {}, "七蛊副本首段")
+    copies.enemy.draw_pile = [first_poison]
+    var first_high = _card("9", "wind")
+    copies.player.hand = [first_high]
+    var copies_session = BattleSessionScript.new(copies)
+    copies.actions_available = 1
+    _assert_true(copies_session.execute({
+        "type":"play_cards", "card_ids":[str(first_high.id)]}).success,
+        "七蛊永久槽先累计5点")
+    var inserted: Array = copies.sequence_book.insert_temporary_slots(
+        "straight", "straight_forest_seven_poison_seal", 1,
+        {"position":"after_current", "marker_mode":"independent"})
+    var temporary_slot := str(inserted[0].get("slot_instance_id", ""))
+    var second_poison = QiCardScript.new(
+        "seven-copy-7", "7", 7, 7, "forest", "forest",
+        "seven-copy-7")
+    copies.status_system.apply_card_anomaly(
+        second_poison, "state", "poison", {}, "七蛊副本后段")
+    copies.enemy.draw_pile = [second_poison]
+    var second_high = _card("10", "wind")
+    copies.player.hand = [second_high]
+    copies.actions_available = 1
+    _assert_true(copies_session.execute({
+        "type":"play_cards", "card_ids":[str(second_high.id)]}).success,
+        "插入七蛊临时副本后第二次毒伤行动完成")
+    _assert_equal(_slot_marker_value(
+        copies, permanent_slot, "enemy_poison_life_loss"), 12,
+        "七蛊永久槽累计插入前后实际毒伤")
+    _assert_equal(_slot_marker_value(
+        copies, temporary_slot, "enemy_poison_life_loss"), 7,
+        "七蛊临时副本只记录插入后的实际毒伤")
+
+func _test_hundred_forms_furnace_battle_session_flow() -> void:
+    var engine = _engine(9701)
+    engine.repository.techniques["special_six_success_probe"] = {
+        "id":"special_six_success_probe", "name":"百式六门探针",
+        "pool":"high", "effects":_invocation_probe_effects(6, true),
+    }
+    engine.sequence_book.configure({
+        "high_card":["special_six_success_probe",
+            "high_fire_hundred_forms_furnace", "basic_guard"],
+        "pair":["basic_guard"], "two_pair":["basic_guard"],
+        "three_kind":["basic_guard"], "straight":["basic_guard"],
+        "four_kind":["basic_guard"], "five_kind":["basic_guard"],
+    })
+    var furnace_slot := str(engine.sequence_book.find_slots({
+        "hand_id":"high_card",
+        "technique_id":"high_fire_hundred_forms_furnace"})[0].get(
+            "slot_instance_id", ""))
+    var automatic_events: Array = []
+    var success_events: Array = []
+    var record_snapshots: Array = []
+    var marker_store = engine.player.source_marker_store
+    engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "action_resolved" \
+                    and str(values.get("technique_id", "")) \
+                    == "high_fire_hundred_forms_furnace" \
+                    and str(values.get("trigger_mode", "")) == "automatic":
+                automatic_events.append(values.duplicate(true))
+            if kind == "technique_succeeded" \
+                    and str(values.get("technique_id", "")) == "basic_guard":
+                success_events.append(values.duplicate(true))
+            if kind == "source_marker_changed" \
+                    and str(values.get("marker_id", "")) \
+                    == "other_technique_records" \
+                    and str(values.get("operation", "")) == "append_records" \
+                    and str(values.get("source_instance_key", "")) \
+                    == furnace_slot:
+                record_snapshots.append(marker_store.records(
+                    "technique", furnace_slot,
+                    "other_technique_records", "battle")))
+    var selected = _card("9", "fire")
+    var reserve = _card("10", "forest")
+    engine.player.hand = [selected, reserve]
+    var session = BattleSessionScript.new(engine)
+    engine.actions_available = 1
+    var life_before := int(engine.enemy.life)
+    var started = session.execute({
+        "type":"play_cards", "card_ids":[str(selected.id)]})
+    _assert_true(started.success and bool(started.payload_value(
+        "pending_choice", false)),
+        "百式归炉由BattleSession连续六门调用触发并进入等待选择")
+    _assert_equal(success_events.map(func(values):
+        return str(values.get("hand_id", ""))), [
+            "pair", "two_pair", "three_kind",
+            "straight", "four_kind", "five_kind"],
+        "公共成功功法事件按调用顺序公开六门精确牌型")
+    _assert_true(success_events.all(func(values):
+        return str(values.get("trigger_mode", "")) == "invoked"),
+        "调用功法成功事件统一公开invoked触发模式")
+    _assert_equal(automatic_events.map(func(values):
+        return int(values.get("initial_power", -1))), [8, 21],
+        "六门P₀按[5,8,11]与[20,21,22]稳定分组并平均向下取整")
+    _assert_equal(engine.enemy.life, life_before - 29,
+        "百式归炉两组自动分支分别造成8与21点普通伤害")
+    _assert_equal(engine.player.same_qi_value, 2,
+        "两组三门均包含至少两种精确牌型并各使同气+1")
+    _assert_equal(_slot_marker_value(
+        engine, furnace_slot, "other_technique_records"), 0,
+        "六门成功功法完整消费两组记录")
+    _assert_equal(record_snapshots[2].map(func(record):
+        return [int(record.get("initial_power", -1)),
+            str(record.get("hand_id", ""))]), [
+            [5, "pair"], [8, "two_pair"], [11, "three_kind"]],
+        "第一组有序来源记录冻结每门P₀与精确牌型")
+    _assert_equal(record_snapshots[5].map(func(record):
+        return [int(record.get("initial_power", -1)),
+            str(record.get("hand_id", ""))]), [
+            [20, "straight"], [21, "four_kind"], [22, "five_kind"]],
+        "第二组有序来源记录保持稳定可见顺序")
+    var life_while_waiting := int(engine.enemy.life)
+    var event_count_while_waiting := automatic_events.size()
+    var request: Dictionary = started.payload_value("choice_request", {})
+    var resumed = session.execute({
+        "type":"resolve_choice",
+        "request_id":str(request.get("request_id", "")),
+        "card_ids":[],
+    })
+    _assert_true(resumed.success and not bool(resumed.payload_value(
+        "pending_choice", false)), "百式归炉等待选择恢复完成")
+    _assert_equal(engine.enemy.life, life_while_waiting,
+        "等待选择恢复不重复执行百式归炉伤害")
+    _assert_equal(automatic_events.size(), event_count_while_waiting,
+        "等待选择恢复不重复累计或自动触发")
+    var remaining_records: Array = engine.player.source_marker_store.records(
+        "technique", furnace_slot, "other_technique_records", "battle")
+    _assert_equal(remaining_records.size(), 1,
+        "调用者恢复成功后只新增自身一门正常功法记录")
+    _assert_equal(str(remaining_records[0].get("trigger_mode", "")), "manual",
+        "正常功法成功事件统一公开manual触发模式")
+
+    var manual = _engine(9702)
+    manual.sequence_book.configure({"high_card":[
+        "high_fire_hundred_forms_furnace", "basic_guard"]})
+    var manual_slot := str(manual.sequence_book.current_slot(
+        "high_card").get("slot_instance_id", ""))
+    _commit_technique_success_event(
+        manual, manual.player, "pair", "basic_guard", 7, "automatic")
+    _commit_technique_success_event(
+        manual, manual.player, "straight", "basic_guard", 9, "invoked")
+    var manual_before: Array = manual.player.source_marker_store.records(
+        "technique", manual_slot, "other_technique_records", "battle")
+    var manual_card = _card("9", "fire")
+    manual.player.hand = [manual_card]
+    var manual_session = BattleSessionScript.new(manual)
+    manual.actions_available = 1
+    var manual_life_before := int(manual.enemy.life)
+    var manual_result = manual_session.execute({
+        "type":"play_cards", "card_ids":[str(manual_card.id)]})
+    _assert_true(manual_result.success, "百式归炉主动无效模式正常完成")
+    _assert_equal(manual.enemy.life, manual_life_before,
+        "百式归炉主动触发正文效果无效")
+    _assert_equal(manual.player.source_marker_store.records(
+        "technique", manual_slot, "other_technique_records", "battle"),
+        manual_before,
+        "百式归炉主动触发不清除或自计已有记录")
+    _assert_equal(str(manual.sequence_book.current_slot(
+        "high_card").get("technique_id", "")), "basic_guard",
+        "百式归炉主动无效仍推进真实槽位")
+
+func _test_hundred_forms_multiple_slots_frozen_order() -> void:
+    var engine = _engine(9801)
+    engine.repository.techniques["special_three_success_probe"] = {
+        "id":"special_three_success_probe", "name":"百式三门探针",
+        "pool":"high", "effects":_invocation_probe_effects(3, true),
+    }
+    engine.sequence_book.configure({
+        "high_card":["special_three_success_probe",
+            "high_fire_hundred_forms_furnace", "basic_guard"],
+        "pair":["basic_guard"], "two_pair":["basic_guard"],
+        "three_kind":["basic_guard"],
+    })
+    var inserted: Array = engine.sequence_book.insert_temporary_slots(
+        "high_card", "high_fire_hundred_forms_furnace", 1,
+        {"position":"after_current", "marker_mode":"independent"})
+    var temporary_slot := str(inserted[0].get("slot_instance_id", ""))
+    var visible_order: Array = engine.sequence_book.ordered_slots(
+        "high_card").filter(func(slot):
+            return str(slot.get("technique_id", "")) \
+                == "high_fire_hundred_forms_furnace").map(func(slot):
+                    return str(slot.get("slot_instance_id", "")))
+    var automatic_slot_order: Array = []
+    engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "action_resolved" \
+                    and str(values.get("technique_id", "")) \
+                    == "high_fire_hundred_forms_furnace" \
+                    and str(values.get("trigger_mode", "")) == "automatic":
+                automatic_slot_order.append(str(values.get(
+                    "metadata", {}).get("slot_instance_id", ""))))
+    var selected = _card("9", "fire")
+    var reserve = _card("10", "forest")
+    engine.player.hand = [selected, reserve]
+    var session = BattleSessionScript.new(engine)
+    engine.actions_available = 1
+    var started = session.execute({
+        "type":"play_cards", "card_ids":[str(selected.id)]})
+    _assert_true(started.success and bool(started.payload_value(
+        "pending_choice", false)), "百式多槽位同时满足自动条件")
+    _assert_equal(automatic_slot_order, visible_order,
+        "多槽位先冻结集合并按触发前稳定可见顺序结算")
+    for slot_id in visible_order:
+        _assert_equal(_slot_marker_value(
+            engine, str(slot_id), "other_technique_records"), 0,
+            "百式同ID副本发动不反向喂养任一副本进度")
+    _assert_true(visible_order.has(temporary_slot),
+        "百式临时副本以独立槽位身份进入冻结集合")
+    var request: Dictionary = started.payload_value("choice_request", {})
+    var resumed = session.execute({
+        "type":"resolve_choice",
+        "request_id":str(request.get("request_id", "")),
+        "card_ids":[],
+    })
+    _assert_true(resumed.success and not bool(resumed.payload_value(
+        "pending_choice", false)), "百式多槽位专项释放等待选择事务")
+
+func _invocation_probe_effects(count: int, wait_for_choice: bool) -> Array:
+    var hands := [
+        ["pair", 5], ["two_pair", 8], ["three_kind", 11],
+        ["straight", 20], ["four_kind", 21], ["five_kind", 22],
+    ]
+    var effects: Array = []
+    for index in range(mini(count, hands.size())):
+        effects.append({
+            "op":"invoke_sequence_technique",
+            "selection":{"mode":"by_id", "hand_id":hands[index][0],
+                "technique_id":"basic_guard"},
+            "p0":{"mode":"fixed", "value":hands[index][1]},
+            "gain_same_qi":false,
+        })
+    if wait_for_choice:
+        effects.append({
+            "op":"select_cards", "choice_id":"hundred_forms_wait",
+            "prompt":"百式等待选择专项", "chooser":"actor",
+            "minimum":0, "maximum":1, "insufficient_policy":"use_available",
+            "query":{"side":"actor", "zone":"hand", "order":"zone",
+                "limit":-1, "filters":{"card_kind":"normal"}},
+            "capture":"hundred_forms_choice",
+        })
+    return effects
+
+func _commit_technique_success_event(
+        engine, actor, hand_id: String, technique_id: String, p0: int,
+        trigger_mode: String) -> void:
+    var serial_value := int(engine.battle_passive_event_service.next_serial())
+    engine.battle_passive_event_service.commit("technique_succeeded", {
+        "event_token":engine.battle_passive_event_service.make_token(
+            "technique_succeeded", actor, serial_value,
+            "hundred-forms-%d" % serial_value),
+        "event_serial":serial_value,
+        "actor":actor,
+        "target":engine.enemy if actor == engine.player else engine.player,
+        "owner":actor,
+        "action_token":"hundred-forms-%d" % serial_value,
+        "source_kind":"technique",
+        "hand_id":hand_id,
+        "technique_id":technique_id,
+        "technique_pool":"high",
+        "initial_power":p0,
+        "technique_power":p0,
+        "trigger_mode":trigger_mode,
+        "technique_triggered":true,
+        "action_succeeded":true,
+    })
 
 func _commit_technique_action_event(
         engine, actor, hand_id: String, pool: String, p0: int,

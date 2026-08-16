@@ -153,6 +153,7 @@ func _freeze_request(effect: Dictionary, runtime) -> Dictionary:
             "_hand_result_override", runtime.hand_result).duplicate(false),
         "consumed_marker_value": int(effect.get(
             "_consumed_marker_value", runtime.consumed_marker_value)),
+        "captures": effect.get("_captures_override", {}).duplicate(true),
         "p0": int(effect.get(
             "_p0_override", _resolve_p0(effect.get("p0", {}), runtime))),
     }

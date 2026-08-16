@@ -17,7 +17,7 @@ const COMMITTED_EVENTS := [
     "reflection_source_changed", "block_source_changed",
     "challenge_established", "challenge_progressed", "challenge_resolved",
     "poison_trigger_completed", "defense_gained", "defense_reduced",
-    "life_recovered", "source_marker_changed",
+    "life_recovered", "source_marker_changed", "technique_succeeded",
     "technique_invocation_started", "technique_invocation_resolved",
     "technique_sequence_changed", "same_qi_gain_resolved",
 ]

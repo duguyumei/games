@@ -1635,7 +1635,7 @@ func _test_value_spec_registry_contract() -> void:
         registry.registration_errors(), [],
         "内建 ValueSpec 处理器没有重复或非法 kind")
     _assert_equal(
-        registry.kind_ids().size(), 66,
+        registry.kind_ids().size(), 67,
         "第一批实际 ValueSpec kind 全部迁入处理器注册框架")
     for kind in registry.kind_ids():
         var handler = registry.handler_for_kind(kind)
@@ -3821,8 +3821,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        22,
-        "Registry 明确登记二十二个细粒度已提交事件")
+        23,
+        "Registry 明确登记二十三个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
         12,
@@ -4806,14 +4806,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 226, "统一功法目录包含226门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 226, "正式功法资源路径包含226项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 226, "正式接入状态包含226门功法")
+    _assert_equal(catalog.all_of("technique").size(), 228, "统一功法目录包含228门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 228, "正式功法资源路径包含228项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 228, "正式接入状态包含228门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 226, "正式功法资源目录包含226门功法")
+    _assert_equal(formal_technique_resource_count, 228, "正式功法资源目录包含228门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()
