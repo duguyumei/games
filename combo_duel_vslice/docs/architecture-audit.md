@@ -30,6 +30,26 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleEffectPorts／BattleActionService 阶段统一验收（2026-08-16）
+
+BattleEffectPorts 五批 Facade 拆分与 BattleActionService 四批事务／牌型组／准备职责优化均已完成。
+在进入 `StatusSystem` 重构前执行阶段性统一验收，未修改业务代码：项目加载 672 项通过，
+`BattleActionTransaction` 专项 117 条断言通过，`quick` 7/7 组通过，当前完整测试发现集 `full` 31/31
+组通过；设计一致性检查得到权威活跃 228 门、正式资源接入 228 门、待接入 0 门、错误 0 条。
+
+最终项目加载和事务专项日志分别为 `/tmp/taiwu-stage-acceptance-project-load-01.log` 与
+`/tmp/taiwu-stage-acceptance-battle-action-transaction-02.log`；quick 每组日志为
+`/tmp/taiwu-stage-acceptance-quick-<组名>-<序号>.log`，full 每组日志为
+`/tmp/taiwu-stage-acceptance-full-<组名>-<序号>.log`；设计一致性日志为
+`/tmp/taiwu-stage-acceptance-design-consistency-03.log`。独立检查与设计检查 stdout 使用同名前缀
+`.stdout`，quick／full stdout 使用对应 `.log.stdout`。所有进程均 headless、串行运行并写入不同的
+显式 `/tmp` 日志；日志与 stdout 中没有 `Can't load script`、`File not found`、`Parse Error`、
+`SCRIPT ERROR`、ObjectDB／RID 泄漏、orphan `StringName`／`NodePath`、资源泄漏或退出阶段错误，只有
+已知非阻塞 macOS CA 证书警告。
+
+该结果取代 BattleActionService 分批开发阶段“尚未运行 quick／full”的临时状态，作为
+BattleEffectPorts 与 BattleActionService 优化完成、进入 `StatusSystem` 重构前的稳定行为基线。
+
 ### BattleActionService 玩家行动准备职责迁出第四批（2026-08-16）
 
 新增 `core/battle_action_preparation_service.gd`，把玩家 `BattleActionProposal` 从预览结果到正式冻结／
