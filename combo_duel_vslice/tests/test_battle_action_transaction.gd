@@ -14,7 +14,8 @@ func _initialize() -> void:
     _test_synchronized_repeated_choice_transaction()
     _test_cooperation_resolution_choice_transaction()
     _test_cooperation_post_commit_choice_transaction()
-    _test_unified_solo_pipeline_structure()
+    _test_cooperation_context_preservation()
+    _test_unified_group_executor_structure()
     _test_legacy_pending_kinds_removed()
     _finish("BATTLE ACTION TRANSACTION TEST")
 
@@ -359,27 +360,81 @@ func _test_cooperation_post_commit_choice_transaction() -> void:
         "协同组 post_commit 选择恢复后完成行动")
 
 
-func _test_unified_solo_pipeline_structure() -> void:
+func _test_cooperation_context_preservation() -> void:
+    var transaction = ActionTransactionScript.new()
+    transaction.begin_transaction({
+        "transaction_id": "tx-context-001",
+        "root_action_token": "root-context-001",
+        "resolution_mode": ActionTransactionScript.RESOLUTION_SOLO,
+        "runtime_context": {
+            "action_context": {"main_trigger_results": {"player": true}},
+            "current_group_context": {"group_kind": "main"},
+        },
+    })
+    transaction.advance_phase(ActionTransactionScript.PHASE_RESOLVING)
+    transaction.mark_group_resolution_completed()
+    transaction.advance_phase(ActionTransactionScript.PHASE_COMMITTING_ZONES)
+    transaction.mark_zones_committed({"player": ["main-card"]})
+    transaction.advance_phase(ActionTransactionScript.PHASE_POST_COMMIT)
+    transaction.mark_post_commit_completed()
+    transaction.advance_phase(ActionTransactionScript.PHASE_COOPERATION)
+    var started: Dictionary = transaction.begin_cooperation_group(
+        1, [], {}, {
+            "current_group_context": {"group_kind": "cooperation"},
+        })
+    _assert_true(started.get("success", false),
+        "协同组从主组 post_commit 后进入统一 resolving")
+    _assert_true(transaction.runtime_context.has("action_context"),
+        "切换协同组保留行动级上下文")
+    _assert_equal(transaction.runtime_context.get(
+        "current_group_context", {}).get("group_kind"), "cooperation",
+        "切换协同组只替换当前组上下文")
+    _assert_true(transaction.committed_card_instance_ids.get(
+        "player", []).has("main-card"),
+        "切换协同组保留主组累计提交牌 ID")
+
+
+func _test_unified_group_executor_structure() -> void:
     var source := FileAccess.get_file_as_string(
         "res://core/battle_action_service.gd")
     _assert_true(source.contains("func _start_solo_action_transaction("),
-        "玩家与敌方主组共用单方事务入口")
-    _assert_true(source.contains("func _continue_solo_action_transaction("),
-        "单方等待恢复共用同一恢复入口")
+        "玩家与敌方仍共用单方事务准备入口")
+    _assert_equal(source.count("func _execute_current_group("), 1,
+        "四类牌型组只有一个阶段执行入口")
+    _assert_true(source.contains('const ACTION_CONTEXT_KEY := "action_context"'),
+        "事务运行时明确保存行动级上下文")
+    _assert_true(source.contains(
+        'const CURRENT_GROUP_CONTEXT_KEY := "current_group_context"'),
+        "事务运行时明确保存当前牌型组上下文")
     for context_field in [
-            '"actor"', '"target"', '"preview"', '"record"',
-            '"sequence_book"', '"actor_role"', '"cooperation_groups"',
-            '"committed_cards"', '"result_fields"']:
+            '"resolution_mode"', '"player_preview"', '"enemy_preview"',
+            '"main_trigger_results"', '"enemy_will_act"',
+            '"main_committed_cards"', '"cooperation_groups"',
+            '"committed_cards"']:
         _assert_true(source.contains(context_field),
-            "单方行动上下文冻结字段：%s" % context_field)
+            "行动级上下文冻结字段：%s" % context_field)
+    for group_field in [
+            '"group_kind"', '"records"', '"previews"', '"actor"',
+            '"target"', '"use_synchronized_damage"', '"commit_strategy"',
+            '"cooperation_definition"', '"choice_display_previews"']:
+        _assert_true(source.contains(group_field),
+            "当前牌型组上下文冻结字段：%s" % group_field)
     for removed_function in [
             "func _confirm_solo_player(",
             "func _finish_solo_player_resolution(",
             "func _finish_solo_player_post_commit(",
             "func _finish_enemy_only_resolution(",
-            "func _finish_enemy_only_post_commit("]:
+            "func _finish_enemy_only_post_commit(",
+            "func _resolve_solo_cooperation(",
+            "func _finish_solo_cooperation_resolution(",
+            "func _finish_solo_cooperation_post_commit(",
+            "func _finish_synchronized_resolution(",
+            "func _finish_synchronized_post_commit_values(",
+            "func _resolve_synchronized_player_cooperation(",
+            "func _finish_synchronized_cooperation_resolution(",
+            "func _finish_synchronized_cooperation_post_commit("]:
         _assert_true(not source.contains(removed_function),
-            "旧玩家／敌方单方重复函数已删除：%s" % removed_function)
+            "旧牌型组重复函数已删除：%s" % removed_function)
     _assert_true(not source.contains("initiator_owner_id =="),
         "单方恢复不再按 initiator 分派玩家／敌方私有路径")
 

@@ -249,11 +249,13 @@ func begin_cooperation_group(
     group_kind = GROUP_COOPERATION
     records = next_records.duplicate()
     previews = next_previews.duplicate()
-    runtime_context = next_runtime_context.duplicate()
+    var preserved_runtime_context := runtime_context.duplicate()
+    for key in next_runtime_context:
+        preserved_runtime_context[key] = next_runtime_context[key]
+    runtime_context = preserved_runtime_context
     group_resolution_completed = false
     group_zones_committed = false
     post_commit_completed = false
-    committed_card_instance_ids.clear()
     return advance_phase(PHASE_RESOLVING)
 
 

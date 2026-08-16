@@ -12,9 +12,13 @@ const ActionTransactionScript = preload("res://core/battle_action_transaction.gd
 const SequenceBookScript = preload("res://core/sequence_book.gd")
 const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
 
-const SOLO_CONTEXT_KEY := "solo_action"
+const ACTION_CONTEXT_KEY := "action_context"
+const CURRENT_GROUP_CONTEXT_KEY := "current_group_context"
 const SOLO_ROLE_PLAYER := "player"
 const SOLO_ROLE_ENEMY := "enemy"
+const GROUP_COMMIT_SOLO_MAIN := "solo_main"
+const GROUP_COMMIT_SYNCHRONIZED_MAIN := "synchronized_main"
+const GROUP_COMMIT_COOPERATION := "cooperation"
 
 var player
 var enemy
@@ -262,30 +266,47 @@ func _make_solo_action_context(
         "include_battle_state": actor_role == SOLO_ROLE_ENEMY,
     }
     return {
+        "resolution_mode": ActionTransactionScript.RESOLUTION_SOLO,
         "actor": actor,
         "target": target,
-        "preview": action_preview,
-        "record": record,
         "sequence_book": action_sequence_book,
         "actor_role": actor_role,
+        "player_preview": action_preview if actor_role == SOLO_ROLE_PLAYER else {},
+        "enemy_preview": action_preview if actor_role == SOLO_ROLE_ENEMY else {},
+        "main_trigger_results": {},
+        "enemy_will_act": false,
         "cooperation_groups": cooperation_groups.duplicate(true),
-        "committed_cards": [],
-        "main_triggered": false,
+        "next_cooperation_index": 0,
+        "main_committed_cards": {
+            SOLO_ROLE_PLAYER: [],
+            SOLO_ROLE_ENEMY: [],
+        },
+        "committed_cards": {
+            SOLO_ROLE_PLAYER: [],
+            SOLO_ROLE_ENEMY: [],
+        },
+        "cooperation_preview": {},
+        "cooperation_triggered": false,
         "result_fields": result_fields,
+        "main_records": [record],
     }
 
-func _start_solo_action_transaction(solo_context: Dictionary) -> Dictionary:
-    var actor = solo_context["actor"]
-    var record = solo_context["record"]
-    var actor_role := str(solo_context["actor_role"])
+func _start_solo_action_transaction(action_context: Dictionary) -> Dictionary:
+    var actor = action_context["actor"]
+    var record = action_context["main_records"][0]
+    var actor_role := str(action_context["actor_role"])
     var previews := {}
-    previews[actor_role] = solo_context["preview"]
-    var runtime_context := {}
-    runtime_context[SOLO_CONTEXT_KEY] = solo_context
+    previews[actor_role] = _solo_action_preview(action_context)
+    var group_context := _make_group_context(
+        ActionTransactionScript.GROUP_MAIN,
+        [record], previews, actor, action_context["target"], false,
+        GROUP_COMMIT_SOLO_MAIN, {}, _action_choice_previews(action_context))
+    var runtime_context := _action_runtime_context(
+        action_context, group_context)
     var transaction_started: Dictionary = _begin_action_transaction(
         [record], previews,
         ActionTransactionScript.RESOLUTION_SOLO, actor, false,
-        solo_context.get("cooperation_groups", []), runtime_context)
+        action_context.get("cooperation_groups", []), runtime_context)
     if not transaction_started.get("success", false):
         action_resolver.abort_action_resolution()
         return transaction_started
@@ -295,210 +316,21 @@ func _start_solo_action_transaction(solo_context: Dictionary) -> Dictionary:
         "action_tokens": [str(record["token"])],
         "acting_owner_ids": [str(actor.owner_id)],
     })
-    var resolution: Dictionary = action_resolver.resolve_action_records(
-        [record], false)
-    if resolution.get("pending_choice", false):
-        return _suspend_solo_action(
-            solo_context,
-            ActionTransactionScript.CURSOR_GROUP_EFFECTS,
-            resolution.get("detail", "等待选择"))
-    if not resolution.get("success", false):
-        return _fail_active_transaction(
-            resolution.get("detail", "功法结算失败"), "group_resolution_failed")
-    return _continue_solo_action_transaction(
-        ActionTransactionScript.CURSOR_GROUP_EFFECTS)
-
-func _continue_solo_action_transaction(resume_cursor: String) -> Dictionary:
-    var solo_context: Dictionary = active_action_transaction.runtime_context.get(
-        SOLO_CONTEXT_KEY, {})
-    if solo_context.is_empty():
-        return _fail_active_transaction(
-            "单方行动事务缺少运行上下文", "missing_solo_action_context")
-    if resume_cursor == ActionTransactionScript.CURSOR_GROUP_EFFECTS:
-        var commit_ready: Dictionary = _enter_zone_commit_phase()
-        if not commit_ready.get("success", false):
-            return commit_ready
-        return _finish_solo_group_resolution(solo_context)
-    if resume_cursor == ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS:
-        var post_commit_completed: Dictionary = active_action_transaction.mark_post_commit_completed()
-        if not post_commit_completed.get("success", false):
-            return _fail_active_transaction(
-                post_commit_completed.get("reason", "无法完成 post_commit"),
-                str(post_commit_completed.get("code", "post_commit_state_failed")))
-        return _finish_solo_group_post_commit(solo_context)
-    return _fail_active_transaction(
-        "单方行动事务恢复位置无效", "invalid_resume_cursor")
-
-func _finish_solo_group_resolution(solo_context: Dictionary) -> Dictionary:
-    var actor = solo_context["actor"]
-    var record = solo_context["record"]
-    var action_preview: Dictionary = solo_context["preview"]
-    var has_cooperation: bool = not solo_context.get(
-        "cooperation_groups", []).is_empty()
-    _notify_action_pre_commit(record)
-    var commit: Dictionary = action_resolver.commit_staging_for(
-        actor, action_preview.get("cards", []) if has_cooperation else [])
-    var committed_cards: Array = commit["committed"]
-    solo_context["committed_cards"] = committed_cards
-    action_resolver.log_cards_leave(actor, committed_cards)
-    var runtime_context := {}
-    runtime_context[SOLO_CONTEXT_KEY] = solo_context
-    var post_commit_ready: Dictionary = _enter_post_commit_phase({
-        str(actor.owner_id): _card_ids(committed_cards),
-    }, runtime_context)
-    if not post_commit_ready.get("success", false):
-        return post_commit_ready
-    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
-    if post_commit.get("pending_choice", false):
-        return _suspend_solo_action(
-            solo_context,
-            ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS,
-            post_commit.get("detail", "等待提交后选择"))
-    if not post_commit.get("success", false):
-        var failure_detail := "敌方提交后效果失败" \
-            if str(solo_context["actor_role"]) == SOLO_ROLE_ENEMY \
-            else "提交后效果失败"
-        return _fail_active_transaction(
-            post_commit.get("detail", failure_detail), "post_commit_failed")
-    var post_commit_completed: Dictionary = active_action_transaction.mark_post_commit_completed()
-    if not post_commit_completed.get("success", false):
-        var completion_detail := "无法完成敌方 post_commit" \
-            if str(solo_context["actor_role"]) == SOLO_ROLE_ENEMY \
-            else "无法完成 post_commit"
-        return _fail_active_transaction(
-            post_commit_completed.get("reason", completion_detail),
-            str(post_commit_completed.get("code", "post_commit_state_failed")))
-    return _finish_solo_group_post_commit(solo_context)
-
-func _finish_solo_group_post_commit(solo_context: Dictionary) -> Dictionary:
-    var record = solo_context["record"]
-    var cooperation_groups: Array = solo_context.get("cooperation_groups", [])
-    solo_context["main_triggered"] = true \
-        if not cooperation_groups.is_empty() else bool(record["triggered"])
-    action_resolver.finish_action_record(record)
-    if not cooperation_groups.is_empty():
-        return _resolve_solo_cooperation(cooperation_groups[0], solo_context)
-    return _finish_solo_action_outcome(solo_context)
-
-func _suspend_solo_action(
-        solo_context: Dictionary,
-        resume_cursor: String,
-        detail) -> Dictionary:
-    var suspended: Dictionary = _suspend_active_transaction(resume_cursor)
-    if not suspended.get("success", false):
-        return suspended
-    emit_state_changed.call()
-    var result_fields: Dictionary = solo_context["result_fields"]
-    var result := {
-        "success": true,
-        "pending_choice": true,
-        "choice_request": action_resolver.pending_choice_snapshot(),
-        "detail": str(detail),
-    }
-    result[str(result_fields["preview"])] = solo_context["preview"]
-    return result
-
-func _resolve_solo_cooperation(
-        group: Dictionary,
-        solo_context: Dictionary) -> Dictionary:
-    action_resolver.effect_ports.close_current_source_binding_window()
-    var cooperation_preview: Dictionary = group["preview"]
-    var cooperation_record = action_resolver.make_action_record(
-        player, enemy, cooperation_preview, sequence_book, 101, turn_number_reader.call())
-    var metadata := {"cooperation": group.get("cooperation", {})}
-    metadata[SOLO_CONTEXT_KEY] = solo_context
-    var cooperation_started: Dictionary = _begin_cooperation_transaction_group(
-        cooperation_record, cooperation_preview, metadata)
-    if not cooperation_started.get("success", false):
-        return cooperation_started
-    var resolution: Dictionary = action_resolver.resolve_action_records(
-        [cooperation_record], false)
-    if resolution.get("pending_choice", false):
-        var suspended: Dictionary = _suspend_active_transaction(
-            ActionTransactionScript.CURSOR_GROUP_EFFECTS)
-        if not suspended.get("success", false):
-            return suspended
-        emit_state_changed.call()
-        return {
-            "success": true,
-            "pending_choice": true,
-            "choice_request": action_resolver.pending_choice_snapshot(),
-            "preview": solo_context.get("preview", {}),
-            "cooperation_preview": cooperation_preview,
-            "detail": resolution.get("detail", "等待协同功法选择"),
-        }
-    if not resolution.get("success", false):
-        return _fail_active_transaction(
-            resolution.get("detail", "协同组结算失败"), "cooperation_resolution_failed")
-    var commit_ready: Dictionary = _enter_zone_commit_phase()
-    if not commit_ready.get("success", false):
-        return commit_ready
-    return _finish_solo_cooperation_resolution(
-        cooperation_record,
-        cooperation_preview,
-        metadata)
-
-func _finish_solo_cooperation_resolution(
-        record,
-        cooperation_preview: Dictionary,
-        metadata: Dictionary) -> Dictionary:
-    _notify_cooperation_pre_commit(record)
-    var cooperation_commit: Dictionary = action_resolver.commit_cooperation_staging(
-        record, metadata.get("cooperation", {}))
-    var cooperation_cards: Array = cooperation_commit["committed"]
-    action_resolver.log_cards_leave(player, cooperation_cards)
-    var solo_context: Dictionary = metadata.get(SOLO_CONTEXT_KEY, {})
-    var all_cards: Array = solo_context.get("committed_cards", []).duplicate()
-    all_cards.append_array(cooperation_cards)
-    solo_context["committed_cards"] = all_cards
-    var post_commit_ready: Dictionary = _enter_post_commit_phase({
-        str(player.owner_id): _card_ids(cooperation_cards),
-    }, metadata)
-    if not post_commit_ready.get("success", false):
-        return post_commit_ready
-    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
-    if post_commit.get("pending_choice", false):
-        var suspended: Dictionary = _suspend_active_transaction(
-            ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS)
-        if not suspended.get("success", false):
-            return suspended
-        emit_state_changed.call()
-        return {
-            "success": true,
-            "pending_choice": true,
-            "choice_request": action_resolver.pending_choice_snapshot(),
-            "preview": solo_context.get("preview", {}),
-            "cooperation_preview": cooperation_preview,
-            "detail": post_commit.get("detail", "等待协同提交后选择"),
-        }
-    if not post_commit.get("success", false):
-        return _fail_active_transaction(
-            post_commit.get("detail", "协同提交后效果失败"),
-            "cooperation_post_commit_failed")
-    var post_commit_completed: Dictionary = active_action_transaction.mark_post_commit_completed()
-    if not post_commit_completed.get("success", false):
-        return _fail_active_transaction(
-            post_commit_completed.get("reason", "无法完成协同 post_commit"),
-            str(post_commit_completed.get("code", "post_commit_state_failed")))
-    return _finish_solo_cooperation_post_commit(
-        record, cooperation_preview, metadata)
-
-func _finish_solo_cooperation_post_commit(
-        record, cooperation_preview: Dictionary, metadata: Dictionary) -> Dictionary:
-    action_resolver.finish_action_record(record)
-    var solo_context: Dictionary = metadata.get(SOLO_CONTEXT_KEY, {})
-    return _finish_solo_action_outcome(
-        solo_context, cooperation_preview, bool(record["triggered"]))
+    return _execute_current_group()
 
 func _finish_solo_action_outcome(
-        solo_context: Dictionary,
-        cooperation_preview: Dictionary = {},
-        cooperation_triggered: bool = false) -> Dictionary:
-    var actor = solo_context["actor"]
-    var action_preview: Dictionary = solo_context["preview"]
-    var played_cards: Array = solo_context.get("committed_cards", [])
-    var main_triggered := bool(solo_context.get("main_triggered", false))
-    var actor_role := str(solo_context["actor_role"])
+        action_context: Dictionary) -> Dictionary:
+    var actor = action_context["actor"]
+    var action_preview: Dictionary = _solo_action_preview(action_context)
+    var actor_role := str(action_context["actor_role"])
+    var played_cards: Array = action_context.get(
+        "committed_cards", {}).get(actor_role, [])
+    var main_triggered := bool(action_context.get(
+        "main_trigger_results", {}).get(actor_role, false))
+    var cooperation_preview: Dictionary = action_context.get(
+        "cooperation_preview", {})
+    var cooperation_triggered := bool(action_context.get(
+        "cooperation_triggered", false))
     if main_triggered and cooperation_triggered:
         _notify_cooperation_resolved(action_preview, cooperation_preview)
     var action_completed: Dictionary = action_resolver.finish_action_resolution()
@@ -526,8 +358,7 @@ func _finish_solo_action_outcome(
         update_battle_state.call()
         clear_enemy_action_lock.call()
     var result: Dictionary = _solo_action_result(
-        solo_context, same_qi_change, cooperation_preview,
-        cooperation_triggered)
+        action_context, same_qi_change)
     var completed: Dictionary = _complete_active_transaction(result)
     if not completed.get("success", false):
         return completed
@@ -536,26 +367,27 @@ func _finish_solo_action_outcome(
     return result
 
 func _solo_action_result(
-        solo_context: Dictionary,
-        same_qi_change: Dictionary,
-        cooperation_preview: Dictionary,
-        cooperation_triggered: bool) -> Dictionary:
-    var result_fields: Dictionary = solo_context["result_fields"]
-    var actor = solo_context["actor"]
+        action_context: Dictionary,
+        same_qi_change: Dictionary) -> Dictionary:
+    var result_fields: Dictionary = action_context["result_fields"]
+    var actor = action_context["actor"]
+    var actor_role := str(action_context["actor_role"])
     var result := {
         "success": true,
         "same_qi_changes": [same_qi_change],
     }
-    result[str(result_fields["preview"])] = solo_context["preview"]
-    result[str(result_fields["played_cards"])] = solo_context.get(
-        "committed_cards", [])
+    result[str(result_fields["preview"])] = _solo_action_preview(action_context)
+    result[str(result_fields["played_cards"])] = action_context.get(
+        "committed_cards", {}).get(actor_role, [])
     result[str(result_fields["technique_triggered"])] = bool(
-        solo_context.get("main_triggered", false))
+        action_context.get("main_trigger_results", {}).get(actor_role, false))
     result[str(result_fields["actions_available"])] = battle_flow.available_action_count(
         actor)
     if bool(result_fields["include_cooperation"]):
-        result["cooperation_preview"] = cooperation_preview
-        result["cooperation_technique_triggered"] = cooperation_triggered
+        result["cooperation_preview"] = action_context.get(
+            "cooperation_preview", {})
+        result["cooperation_technique_triggered"] = bool(action_context.get(
+            "cooperation_triggered", false))
     if bool(result_fields["include_battle_state"]):
         result["battle_state"] = battle_state_reader.call()
     return result
@@ -718,13 +550,43 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         action_resolver.log_calculation(enemy, enemy_preview, enemy_ai_enabled)
         records.append(action_resolver.make_action_record(
             enemy, player, enemy_preview, enemy_sequence_book, 200, turn_number_reader.call()))
+    var action_context := {
+        "resolution_mode": ActionTransactionScript.RESOLUTION_SYNCHRONIZED,
+        "actor": player,
+        "target": enemy,
+        "actor_role": SOLO_ROLE_PLAYER,
+        "player_preview": player_preview,
+        "enemy_preview": enemy_preview,
+        "main_trigger_results": {},
+        "enemy_will_act": enemy_will_act,
+        "cooperation_groups": player_record.cooperation_groups.duplicate(true),
+        "next_cooperation_index": 0,
+        "main_committed_cards": {
+            SOLO_ROLE_PLAYER: [],
+            SOLO_ROLE_ENEMY: [],
+        },
+        "committed_cards": {
+            SOLO_ROLE_PLAYER: [],
+            SOLO_ROLE_ENEMY: [],
+        },
+        "cooperation_preview": {},
+        "cooperation_triggered": false,
+        "main_records": records,
+    }
+    var group_context := _make_group_context(
+        ActionTransactionScript.GROUP_MAIN,
+        records, {"player": player_preview, "enemy": enemy_preview},
+        player, enemy, resolution_mode == "synchronized",
+        GROUP_COMMIT_SYNCHRONIZED_MAIN, {},
+        _action_choice_previews(action_context))
     var transaction_started: Dictionary = _begin_action_transaction(
         records,
         {"player": player_preview, "enemy": enemy_preview},
         ActionTransactionScript.RESOLUTION_SYNCHRONIZED,
         player,
         enemy_will_act,
-        player_record.cooperation_groups)
+        player_record.cooperation_groups,
+        _action_runtime_context(action_context, group_context))
     if not transaction_started.get("success", false):
         action_resolver.abort_action_resolution()
         return transaction_started
@@ -735,235 +597,348 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
         "acting_owner_ids": records.map(
             func(record): return str(record["actor"].owner_id)),
     })
-    var resolution: Dictionary = action_resolver.resolve_action_records(
-        records, resolution_mode == "synchronized")
-    if resolution.get("pending_choice", false):
-        var suspended: Dictionary = _suspend_active_transaction(
-            ActionTransactionScript.CURSOR_GROUP_EFFECTS)
-        if not suspended.get("success", false):
-            return suspended
-        emit_state_changed.call()
-        return {
-            "success": true,
-            "pending_choice": true,
-            "choice_request": action_resolver.pending_choice_snapshot(),
-            "preview": player_preview,
-            "enemy_preview": enemy_preview,
-            "detail": resolution.get("detail", "等待选择"),
-        }
-    if not resolution.get("success", false):
-        return _fail_active_transaction(
-            resolution.get("detail", "功法结算失败"), "group_resolution_failed")
-    var commit_ready: Dictionary = _enter_zone_commit_phase()
-    if not commit_ready.get("success", false):
-        return commit_ready
-    return _finish_synchronized_resolution(
-        records, player_preview, enemy_preview, enemy_will_act)
+    return _execute_current_group()
 
-func _finish_synchronized_resolution(
+func _make_group_context(
+        group_kind: String,
         records: Array,
-        player_preview: Dictionary,
-        enemy_preview: Dictionary,
-        enemy_will_act: bool) -> Dictionary:
-    var player_record = records[0]
-    var has_cooperation: bool = (
-        player_record["triggered"]
-        and not player_record.cooperation_groups.is_empty())
-    _notify_action_pre_commit(player_record)
-    if enemy_will_act and records.size() > 1:
-        _notify_action_pre_commit(records[1])
-    var player_commit: Dictionary = action_resolver.commit_staging_for(
-        player, player_preview.get("cards", []) if has_cooperation else [])
-    var enemy_commit: Dictionary = action_resolver.commit_staging_for(enemy) \
-        if enemy_will_act else {"committed": []}
-    var player_cards: Array = player_commit["committed"]
-    var enemy_cards: Array = enemy_commit["committed"]
-    action_resolver.log_cards_leave(player, player_cards)
-    if enemy_will_act:
-        action_resolver.log_cards_leave(enemy, enemy_cards)
-    var committed_by_owner := {
-        str(player.owner_id): _card_ids(player_cards),
+        previews: Dictionary,
+        actor,
+        target,
+        use_synchronized_damage: bool,
+        commit_strategy: String,
+        cooperation_definition: Dictionary,
+        choice_display_previews: Dictionary) -> Dictionary:
+    return {
+        "group_kind": group_kind,
+        "records": records.duplicate(),
+        "previews": previews.duplicate(),
+        "actor": actor,
+        "target": target,
+        "use_synchronized_damage": use_synchronized_damage,
+        "commit_strategy": commit_strategy,
+        "committed_cards": {},
+        "cooperation_definition": cooperation_definition.duplicate(true),
+        "choice_display_previews": choice_display_previews.duplicate(),
     }
-    if enemy_will_act:
-        committed_by_owner[str(enemy.owner_id)] = _card_ids(enemy_cards)
-    var post_commit_ready: Dictionary = _enter_post_commit_phase(
-        committed_by_owner,
-        {"player_cards": player_cards, "enemy_cards": enemy_cards})
-    if not post_commit_ready.get("success", false):
-        return post_commit_ready
-    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
-    if post_commit.get("pending_choice", false):
-        var suspended: Dictionary = _suspend_active_transaction(
-            ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS)
-        if not suspended.get("success", false):
-            return suspended
-        emit_state_changed.call()
-        return {
-            "success": true,
-            "pending_choice": true,
-            "choice_request": action_resolver.pending_choice_snapshot(),
-            "preview": player_preview,
-            "enemy_preview": enemy_preview,
-            "detail": post_commit.get("detail", "等待同步提交后选择"),
-        }
-    if not post_commit.get("success", false):
-        return _fail_active_transaction(
-            post_commit.get("detail", "同步提交后效果失败"),
-            "post_commit_failed")
-    var post_commit_completed: Dictionary = active_action_transaction.mark_post_commit_completed()
-    if not post_commit_completed.get("success", false):
-        return _fail_active_transaction(
-            post_commit_completed.get("reason", "无法完成同步 post_commit"),
-            str(post_commit_completed.get("code", "post_commit_state_failed")))
-    return _finish_synchronized_post_commit_values(
-        records, player_preview, enemy_preview, enemy_will_act,
-        player_cards, enemy_cards)
 
-func _finish_synchronized_post_commit_values(
-        records: Array,
-        player_preview: Dictionary,
-        enemy_preview: Dictionary,
-        enemy_will_act: bool,
-        player_cards: Array,
-        enemy_cards: Array) -> Dictionary:
-    var player_record = records[0]
-    var has_cooperation: bool = (
-        player_record["triggered"]
-        and not player_record.cooperation_groups.is_empty())
+func _action_runtime_context(
+        action_context: Dictionary,
+        group_context: Dictionary) -> Dictionary:
+    return {
+        ACTION_CONTEXT_KEY: action_context,
+        CURRENT_GROUP_CONTEXT_KEY: group_context,
+    }
+
+func _action_choice_previews(action_context: Dictionary) -> Dictionary:
+    var result := {}
+    var player_preview: Dictionary = action_context.get("player_preview", {})
+    var enemy_preview: Dictionary = action_context.get("enemy_preview", {})
+    if str(action_context.get("resolution_mode", "")) \
+            == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
+        result["preview"] = player_preview
+        result["enemy_preview"] = enemy_preview
+        return result
+    if not player_preview.is_empty():
+        result["preview"] = player_preview
+    if not enemy_preview.is_empty():
+        result["enemy_preview"] = enemy_preview
+    return result
+
+func _solo_action_preview(action_context: Dictionary) -> Dictionary:
+    if str(action_context.get("actor_role", "")) == SOLO_ROLE_ENEMY:
+        return action_context.get("enemy_preview", {})
+    return action_context.get("player_preview", {})
+
+func _execute_current_group(resume_cursor: String = "") -> Dictionary:
+    var runtime_context: Dictionary = active_action_transaction.runtime_context
+    var action_context: Dictionary = runtime_context.get(ACTION_CONTEXT_KEY, {})
+    var group_context: Dictionary = runtime_context.get(
+        CURRENT_GROUP_CONTEXT_KEY, {})
+    if action_context.is_empty() or group_context.is_empty():
+        return _fail_active_transaction(
+            "行动事务缺少行动级或牌型组运行上下文",
+            "missing_action_group_context")
+    if resume_cursor == "":
+        var resolution: Dictionary = action_resolver.resolve_action_records(
+            group_context.get("records", []),
+            bool(group_context.get("use_synchronized_damage", false)))
+        if resolution.get("pending_choice", false):
+            return _suspend_current_group(
+                ActionTransactionScript.CURSOR_GROUP_EFFECTS,
+                resolution.get("detail", _group_wait_detail(
+                    action_context, group_context, false)))
+        if not resolution.get("success", false):
+            return _fail_active_transaction(
+                resolution.get("detail", _group_resolution_failure_detail(
+                    group_context)),
+                "cooperation_resolution_failed"
+                if str(group_context.get("group_kind", "")) \
+                    == ActionTransactionScript.GROUP_COOPERATION
+                else "group_resolution_failed")
+        return _execute_current_group(
+            ActionTransactionScript.CURSOR_GROUP_EFFECTS)
+    if resume_cursor == ActionTransactionScript.CURSOR_GROUP_EFFECTS:
+        var commit_ready: Dictionary = _enter_zone_commit_phase()
+        if not commit_ready.get("success", false):
+            return commit_ready
+        _notify_current_group_pre_commit(group_context)
+        var commit_result: Dictionary = _commit_current_group_zones(
+            action_context, group_context)
+        if not commit_result.get("success", false):
+            return commit_result
+        var post_commit_ready: Dictionary = _enter_post_commit_phase(
+            commit_result.get("committed_by_owner", {}))
+        if not post_commit_ready.get("success", false):
+            return post_commit_ready
+        var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
+        if post_commit.get("pending_choice", false):
+            return _suspend_current_group(
+                ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS,
+                post_commit.get("detail", _group_wait_detail(
+                    action_context, group_context, true)))
+        if not post_commit.get("success", false):
+            return _fail_active_transaction(
+                post_commit.get("detail", _group_post_commit_failure_detail(
+                    action_context, group_context)),
+                "cooperation_post_commit_failed"
+                if str(group_context.get("group_kind", "")) \
+                    == ActionTransactionScript.GROUP_COOPERATION
+                else "post_commit_failed")
+        var marked: Dictionary = _mark_current_group_post_commit_completed()
+        if not marked.get("success", false):
+            return marked
+        return _finish_current_group(action_context, group_context)
+    if resume_cursor == ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS:
+        var marked: Dictionary = _mark_current_group_post_commit_completed()
+        if not marked.get("success", false):
+            return marked
+        return _finish_current_group(action_context, group_context)
+    return _fail_active_transaction(
+        "行动事务恢复位置无效", "invalid_resume_cursor")
+
+func _notify_current_group_pre_commit(group_context: Dictionary) -> void:
+    var records: Array = group_context.get("records", [])
+    if str(group_context.get("group_kind", "")) \
+            == ActionTransactionScript.GROUP_COOPERATION:
+        if not records.is_empty():
+            _notify_cooperation_pre_commit(records[0])
+        return
+    for record in records:
+        _notify_action_pre_commit(record)
+
+func _commit_current_group_zones(
+        action_context: Dictionary,
+        group_context: Dictionary) -> Dictionary:
+    var committed_by_owner := {}
+    match str(group_context.get("commit_strategy", "")):
+        GROUP_COMMIT_SOLO_MAIN:
+            var actor = group_context["actor"]
+            var actor_role := str(action_context["actor_role"])
+            var preview: Dictionary = group_context.get(
+                "previews", {}).get(actor_role, {})
+            var has_cooperation: bool = not action_context.get(
+                "cooperation_groups", []).is_empty()
+            var commit: Dictionary = action_resolver.commit_staging_for(
+                actor, preview.get("cards", []) if has_cooperation else [])
+            _record_group_commit(
+                action_context, group_context, actor_role, actor,
+                commit.get("committed", []), true, committed_by_owner)
+        GROUP_COMMIT_SYNCHRONIZED_MAIN:
+            var records: Array = group_context.get("records", [])
+            var player_record = records[0]
+            var has_cooperation: bool = (
+                bool(player_record["triggered"])
+                and not action_context.get("cooperation_groups", []).is_empty())
+            var player_commit: Dictionary = action_resolver.commit_staging_for(
+                player,
+                action_context.get("player_preview", {}).get("cards", [])
+                if has_cooperation else [])
+            _record_group_commit(
+                action_context, group_context, SOLO_ROLE_PLAYER, player,
+                player_commit.get("committed", []), true, committed_by_owner)
+            if bool(action_context.get("enemy_will_act", false)):
+                var enemy_commit: Dictionary = action_resolver.commit_staging_for(
+                    enemy)
+                _record_group_commit(
+                    action_context, group_context, SOLO_ROLE_ENEMY, enemy,
+                    enemy_commit.get("committed", []), true,
+                    committed_by_owner)
+        GROUP_COMMIT_COOPERATION:
+            var records: Array = group_context.get("records", [])
+            if records.is_empty():
+                return _fail_active_transaction(
+                    "协同牌型组缺少行动记录", "missing_cooperation_record")
+            var record = records[0]
+            var cooperation_commit: Dictionary = \
+                action_resolver.commit_cooperation_staging(
+                    record, group_context.get("cooperation_definition", {}))
+            _record_group_commit(
+                action_context, group_context, SOLO_ROLE_PLAYER, player,
+                cooperation_commit.get("committed", []), false,
+                committed_by_owner)
+        _:
+            return _fail_active_transaction(
+                "牌型组提交策略无效", "invalid_group_commit_strategy")
+    return {"success": true, "committed_by_owner": committed_by_owner}
+
+func _record_group_commit(
+        action_context: Dictionary,
+        group_context: Dictionary,
+        role: String,
+        side,
+        cards: Array,
+        is_main_group: bool,
+        committed_by_owner: Dictionary) -> void:
+    var group_cards: Dictionary = group_context.get("committed_cards", {})
+    group_cards[role] = cards
+    group_context["committed_cards"] = group_cards
+    var all_cards: Dictionary = action_context.get("committed_cards", {})
+    var accumulated: Array = all_cards.get(role, []).duplicate()
+    accumulated.append_array(cards)
+    all_cards[role] = accumulated
+    action_context["committed_cards"] = all_cards
+    if is_main_group:
+        var main_cards: Dictionary = action_context.get(
+            "main_committed_cards", {})
+        main_cards[role] = cards
+        action_context["main_committed_cards"] = main_cards
+    action_resolver.log_cards_leave(side, cards)
+    committed_by_owner[str(side.owner_id)] = _card_ids(cards)
+
+func _mark_current_group_post_commit_completed() -> Dictionary:
+    var completed: Dictionary = \
+        active_action_transaction.mark_post_commit_completed()
+    if completed.get("success", false):
+        return completed
+    return _fail_active_transaction(
+        completed.get("reason", "无法完成 post_commit"),
+        str(completed.get("code", "post_commit_state_failed")))
+
+func _finish_current_group(
+        action_context: Dictionary,
+        group_context: Dictionary) -> Dictionary:
+    var records: Array = group_context.get("records", [])
+    var group_kind := str(group_context.get("group_kind", ""))
+    if group_kind == ActionTransactionScript.GROUP_MAIN:
+        var trigger_results: Dictionary = action_context.get(
+            "main_trigger_results", {})
+        if str(action_context.get("resolution_mode", "")) \
+                == ActionTransactionScript.RESOLUTION_SOLO:
+            var actor_role := str(action_context.get("actor_role", ""))
+            trigger_results[actor_role] = (
+                true if not action_context.get(
+                    "cooperation_groups", []).is_empty()
+                else bool(records[0]["triggered"]))
+        else:
+            trigger_results[SOLO_ROLE_PLAYER] = bool(records[0]["triggered"])
+            trigger_results[SOLO_ROLE_ENEMY] = (
+                bool(records[1]["triggered"]) if records.size() > 1 else false)
+        action_context["main_trigger_results"] = trigger_results
+    elif group_kind == ActionTransactionScript.GROUP_COOPERATION:
+        action_context["cooperation_preview"] = group_context.get(
+            "previews", {}).get("cooperation", {})
+        action_context["cooperation_triggered"] = (
+            bool(records[0]["triggered"]) if not records.is_empty() else false)
+    else:
+        return _fail_active_transaction(
+            "牌型组类型无效", "invalid_group_kind")
     for record in records:
         action_resolver.finish_action_record(record)
-    if has_cooperation:
-        return _resolve_synchronized_player_cooperation(
-            player_record.cooperation_groups[0],
-            player_preview,
-            enemy_preview,
-            enemy_will_act,
-            player_cards,
-            enemy_cards,
-            player_record["triggered"],
-            records[1]["triggered"] if records.size() > 1 else false)
-    return _finish_synchronized_outcome(
-        player_preview,
-        enemy_preview,
-        enemy_will_act,
-        player_cards,
-        enemy_cards,
-        player_record["triggered"],
-        records[1]["triggered"] if records.size() > 1 else false)
+    if _has_next_cooperation_group(action_context):
+        return _start_next_cooperation_group(action_context)
+    if str(action_context.get("resolution_mode", "")) \
+            == ActionTransactionScript.RESOLUTION_SOLO:
+        return _finish_solo_action_outcome(action_context)
+    return _finish_synchronized_outcome(action_context)
 
-func _resolve_synchronized_player_cooperation(
-        group: Dictionary,
-        player_preview: Dictionary,
-        enemy_preview: Dictionary,
-        enemy_will_act: bool,
-        player_cards: Array,
-        enemy_cards: Array,
-        player_triggered: bool,
-        enemy_triggered: bool) -> Dictionary:
+func _has_next_cooperation_group(action_context: Dictionary) -> bool:
+    var cooperation_groups: Array = action_context.get(
+        "cooperation_groups", [])
+    var next_index := int(action_context.get("next_cooperation_index", 0))
+    if next_index >= cooperation_groups.size():
+        return false
+    if str(action_context.get("resolution_mode", "")) \
+            == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
+        return bool(action_context.get("main_trigger_results", {}).get(
+            SOLO_ROLE_PLAYER, false))
+    return str(action_context.get("actor_role", "")) == SOLO_ROLE_PLAYER
+
+func _start_next_cooperation_group(action_context: Dictionary) -> Dictionary:
     action_resolver.effect_ports.close_current_source_binding_window()
-    var cooperation_preview: Dictionary = group["preview"]
+    var next_index := int(action_context.get("next_cooperation_index", 0))
+    var cooperation_groups: Array = action_context.get(
+        "cooperation_groups", [])
+    var group: Dictionary = cooperation_groups[next_index]
+    action_context["next_cooperation_index"] = next_index + 1
+    var cooperation_preview: Dictionary = group.get("preview", {})
     var cooperation_record = action_resolver.make_action_record(
-        player, enemy, cooperation_preview, sequence_book, 101, turn_number_reader.call())
-    var metadata := {
-        "player_preview": player_preview,
-        "enemy_preview": enemy_preview,
-        "enemy_will_act": enemy_will_act,
-        "player_cards": player_cards,
-        "enemy_cards": enemy_cards,
-        "player_triggered": player_triggered,
-        "enemy_triggered": enemy_triggered,
-        "cooperation": group.get("cooperation", {}),
+        player, enemy, cooperation_preview, sequence_book, 101,
+        turn_number_reader.call())
+    var choice_previews := _action_choice_previews(action_context)
+    choice_previews["cooperation_preview"] = cooperation_preview
+    var group_context := _make_group_context(
+        ActionTransactionScript.GROUP_COOPERATION,
+        [cooperation_record], {"cooperation": cooperation_preview},
+        player, enemy, false, GROUP_COMMIT_COOPERATION,
+        group.get("cooperation", {}), choice_previews)
+    var started: Dictionary = _begin_cooperation_transaction_group(
+        cooperation_record, cooperation_preview,
+        _action_runtime_context(action_context, group_context))
+    if not started.get("success", false):
+        return started
+    return _execute_current_group()
+
+func _suspend_current_group(
+        resume_cursor: String,
+        detail) -> Dictionary:
+    var suspended: Dictionary = _suspend_active_transaction(resume_cursor)
+    if not suspended.get("success", false):
+        return suspended
+    emit_state_changed.call()
+    var group_context: Dictionary = active_action_transaction.runtime_context.get(
+        CURRENT_GROUP_CONTEXT_KEY, {})
+    var result := {
+        "success": true,
+        "pending_choice": true,
+        "choice_request": action_resolver.pending_choice_snapshot(),
+        "detail": str(detail),
     }
-    var cooperation_started: Dictionary = _begin_cooperation_transaction_group(
-        cooperation_record, cooperation_preview, metadata)
-    if not cooperation_started.get("success", false):
-        return cooperation_started
-    var resolution: Dictionary = action_resolver.resolve_action_records(
-        [cooperation_record], false)
-    if resolution.get("pending_choice", false):
-        var suspended: Dictionary = _suspend_active_transaction(
-            ActionTransactionScript.CURSOR_GROUP_EFFECTS)
-        if not suspended.get("success", false):
-            return suspended
-        emit_state_changed.call()
-        return {
-            "success": true,
-            "pending_choice": true,
-            "choice_request": action_resolver.pending_choice_snapshot(),
-            "preview": player_preview,
-            "enemy_preview": enemy_preview,
-            "cooperation_preview": cooperation_preview,
-            "detail": resolution.get("detail", "等待协同功法选择"),
-        }
-    if not resolution.get("success", false):
-        return _fail_active_transaction(
-            resolution.get("detail", "协同组结算失败"),
-            "cooperation_resolution_failed")
-    var commit_ready: Dictionary = _enter_zone_commit_phase()
-    if not commit_ready.get("success", false):
-        return commit_ready
-    return _finish_synchronized_cooperation_resolution(
-        cooperation_record, cooperation_preview, metadata)
+    for field_name in group_context.get("choice_display_previews", {}):
+        result[str(field_name)] = group_context["choice_display_previews"][
+            field_name]
+    return result
 
-func _finish_synchronized_cooperation_resolution(
-        record,
-        cooperation_preview: Dictionary,
-        metadata: Dictionary) -> Dictionary:
-    _notify_cooperation_pre_commit(record)
-    var cooperation_commit: Dictionary = action_resolver.commit_cooperation_staging(
-        record, metadata.get("cooperation", {}))
-    var cooperation_cards: Array = cooperation_commit.get("committed", [])
-    action_resolver.log_cards_leave(
-        player, cooperation_cards)
-    metadata["cooperation_cards"] = cooperation_cards
-    var post_commit_ready: Dictionary = _enter_post_commit_phase({
-        str(player.owner_id): _card_ids(cooperation_cards),
-    }, metadata)
-    if not post_commit_ready.get("success", false):
-        return post_commit_ready
-    var post_commit: Dictionary = action_resolver.resolve_post_commit_phase()
-    if post_commit.get("pending_choice", false):
-        var suspended: Dictionary = _suspend_active_transaction(
-            ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS)
-        if not suspended.get("success", false):
-            return suspended
-        emit_state_changed.call()
-        return {
-            "success": true,
-            "pending_choice": true,
-            "choice_request": action_resolver.pending_choice_snapshot(),
-            "preview": metadata.get("player_preview", {}),
-            "enemy_preview": metadata.get("enemy_preview", {}),
-            "cooperation_preview": cooperation_preview,
-            "detail": post_commit.get("detail", "等待协同提交后选择"),
-        }
-    if not post_commit.get("success", false):
-        return _fail_active_transaction(
-            post_commit.get("detail", "协同提交后效果失败"),
-            "cooperation_post_commit_failed")
-    var post_commit_completed: Dictionary = active_action_transaction.mark_post_commit_completed()
-    if not post_commit_completed.get("success", false):
-        return _fail_active_transaction(
-            post_commit_completed.get("reason", "无法完成协同 post_commit"),
-            str(post_commit_completed.get("code", "post_commit_state_failed")))
-    return _finish_synchronized_cooperation_post_commit(
-        record, cooperation_preview, metadata)
+func _group_wait_detail(
+        action_context: Dictionary,
+        group_context: Dictionary,
+        post_commit: bool) -> String:
+    if str(group_context.get("group_kind", "")) \
+            == ActionTransactionScript.GROUP_COOPERATION:
+        return "等待协同提交后选择" if post_commit else "等待协同功法选择"
+    if str(action_context.get("resolution_mode", "")) \
+            == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
+        return "等待同步提交后选择" if post_commit else "等待选择"
+    return "等待提交后选择" if post_commit else "等待选择"
 
-func _finish_synchronized_cooperation_post_commit(
-        record, cooperation_preview: Dictionary, metadata: Dictionary) -> Dictionary:
-    var all_player_cards: Array = metadata.get("player_cards", []).duplicate()
-    all_player_cards.append_array(metadata.get("cooperation_cards", []))
-    action_resolver.finish_action_record(record)
-    return _finish_synchronized_outcome(
-        metadata.get("player_preview", {}),
-        metadata.get("enemy_preview", {}),
-        bool(metadata.get("enemy_will_act", false)),
-        all_player_cards,
-        metadata.get("enemy_cards", []),
-        bool(metadata.get("player_triggered", false)),
-        bool(metadata.get("enemy_triggered", false)),
-        record["triggered"],
-        cooperation_preview)
+func _group_resolution_failure_detail(group_context: Dictionary) -> String:
+    if str(group_context.get("group_kind", "")) \
+            == ActionTransactionScript.GROUP_COOPERATION:
+        return "协同组结算失败"
+    return "功法结算失败"
+
+func _group_post_commit_failure_detail(
+        action_context: Dictionary,
+        group_context: Dictionary) -> String:
+    if str(group_context.get("group_kind", "")) \
+            == ActionTransactionScript.GROUP_COOPERATION:
+        return "协同提交后效果失败"
+    if str(action_context.get("resolution_mode", "")) \
+            == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
+        return "同步提交后效果失败"
+    if str(action_context.get("actor_role", "")) == SOLO_ROLE_ENEMY:
+        return "敌方提交后效果失败"
+    return "提交后效果失败"
 
 func _notify_cooperation_pre_commit(record) -> void:
     _notify_action_pre_commit(record)
@@ -1025,15 +1000,21 @@ func _notify_cooperation_resolved(
     })
 
 func _finish_synchronized_outcome(
-        player_preview: Dictionary,
-        enemy_preview: Dictionary,
-        enemy_will_act: bool,
-        player_cards: Array,
-        enemy_cards: Array,
-        player_triggered: bool,
-        enemy_triggered: bool,
-        cooperation_triggered: bool = false,
-        cooperation_preview: Dictionary = {}) -> Dictionary:
+        action_context: Dictionary) -> Dictionary:
+    var player_preview: Dictionary = action_context.get("player_preview", {})
+    var enemy_preview: Dictionary = action_context.get("enemy_preview", {})
+    var enemy_will_act := bool(action_context.get("enemy_will_act", false))
+    var committed_cards: Dictionary = action_context.get("committed_cards", {})
+    var player_cards: Array = committed_cards.get(SOLO_ROLE_PLAYER, [])
+    var enemy_cards: Array = committed_cards.get(SOLO_ROLE_ENEMY, [])
+    var trigger_results: Dictionary = action_context.get(
+        "main_trigger_results", {})
+    var player_triggered := bool(trigger_results.get(SOLO_ROLE_PLAYER, false))
+    var enemy_triggered := bool(trigger_results.get(SOLO_ROLE_ENEMY, false))
+    var cooperation_triggered := bool(action_context.get(
+        "cooperation_triggered", false))
+    var cooperation_preview: Dictionary = action_context.get(
+        "cooperation_preview", {})
     if player_triggered and cooperation_triggered:
         _notify_cooperation_resolved(player_preview, cooperation_preview)
     var action_completed: Dictionary = action_resolver.finish_action_resolution()
@@ -1211,15 +1192,13 @@ func _enter_zone_commit_phase() -> Dictionary:
     return advanced
 
 func _enter_post_commit_phase(
-        committed_by_owner: Dictionary,
-        runtime_context: Dictionary) -> Dictionary:
+        committed_by_owner: Dictionary) -> Dictionary:
     var committed: Dictionary = active_action_transaction.mark_zones_committed(
         committed_by_owner)
     if not committed.get("success", false):
         return _fail_active_transaction(
             committed.get("reason", "无法标记牌区提交完成"),
             str(committed.get("code", "zone_commit_state_failed")))
-    active_action_transaction.runtime_context = runtime_context.duplicate()
     var advanced: Dictionary = active_action_transaction.advance_phase(
         ActionTransactionScript.PHASE_POST_COMMIT)
     if not advanced.get("success", false):
@@ -1229,63 +1208,19 @@ func _enter_post_commit_phase(
     return advanced
 
 func _continue_active_transaction(resume_cursor: String) -> Dictionary:
-    var transaction = active_action_transaction
-    if transaction.resolution_mode == ActionTransactionScript.RESOLUTION_SOLO \
-            and transaction.group_kind == ActionTransactionScript.GROUP_MAIN:
-        return _continue_solo_action_transaction(resume_cursor)
-    if resume_cursor == ActionTransactionScript.CURSOR_GROUP_EFFECTS:
-        var commit_ready: Dictionary = _enter_zone_commit_phase()
-        if not commit_ready.get("success", false):
-            return commit_ready
-        if transaction.group_kind == ActionTransactionScript.GROUP_COOPERATION:
-            var cooperation_record = transaction.records[0]
-            var cooperation_preview: Dictionary = transaction.previews.get(
-                "cooperation", {})
-            if transaction.resolution_mode == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
-                return _finish_synchronized_cooperation_resolution(
-                    cooperation_record, cooperation_preview,
-                    transaction.runtime_context)
-            return _finish_solo_cooperation_resolution(
-                cooperation_record, cooperation_preview,
-                transaction.runtime_context)
-        if transaction.resolution_mode == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
-            return _finish_synchronized_resolution(
-                transaction.records,
-                transaction.previews.get("player", {}),
-                transaction.previews.get("enemy", {}),
-                transaction.enemy_will_act)
+    var expected_phase := (
+        ActionTransactionScript.PHASE_RESOLVING
+        if resume_cursor == ActionTransactionScript.CURSOR_GROUP_EFFECTS
+        else ActionTransactionScript.PHASE_POST_COMMIT
+        if resume_cursor == ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS
+        else "")
+    if expected_phase == "":
         return _fail_active_transaction(
-            "行动事务结算模式无效", "invalid_resolution_mode")
-
-    if resume_cursor == ActionTransactionScript.CURSOR_POST_COMMIT_EFFECTS:
-        var post_commit_completed: Dictionary = transaction.mark_post_commit_completed()
-        if not post_commit_completed.get("success", false):
-            return _fail_active_transaction(
-                post_commit_completed.get("reason", "无法完成 post_commit"),
-                str(post_commit_completed.get("code", "post_commit_state_failed")))
-        if transaction.group_kind == ActionTransactionScript.GROUP_COOPERATION:
-            var cooperation_record = transaction.records[0]
-            var cooperation_preview: Dictionary = transaction.previews.get(
-                "cooperation", {})
-            if transaction.resolution_mode == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
-                return _finish_synchronized_cooperation_post_commit(
-                    cooperation_record, cooperation_preview,
-                    transaction.runtime_context)
-            return _finish_solo_cooperation_post_commit(
-                cooperation_record, cooperation_preview,
-                transaction.runtime_context)
-        if transaction.resolution_mode == ActionTransactionScript.RESOLUTION_SYNCHRONIZED:
-            return _finish_synchronized_post_commit_values(
-                transaction.records,
-                transaction.previews.get("player", {}),
-                transaction.previews.get("enemy", {}),
-                transaction.enemy_will_act,
-                transaction.runtime_context.get("player_cards", []),
-                transaction.runtime_context.get("enemy_cards", []))
+            "行动事务恢复位置无效", "invalid_resume_cursor")
+    if active_action_transaction.phase() != expected_phase:
         return _fail_active_transaction(
-            "行动事务结算模式无效", "invalid_resolution_mode")
-    return _fail_active_transaction(
-        "行动事务恢复位置无效", "invalid_resume_cursor")
+            "行动事务阶段与恢复位置不匹配", "resume_phase_mismatch")
+    return _execute_current_group(resume_cursor)
 
 func _complete_active_transaction(result: Dictionary) -> Dictionary:
     var completed: Dictionary = active_action_transaction.complete_transaction(result)

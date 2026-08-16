@@ -30,6 +30,42 @@
 >
 > 当前流程、门禁与剩余债务见 `docs/development-workflow.md`。
 
+### BattleActionService 唯一牌型组执行器第三批（2026-08-16）
+
+四类实际牌型组——单方主组、同步主组、单方协同、同步行动中的协同——现在都由
+`_execute_current_group` 推进唯一阶段链：结算 records，按统一 request 暂停／恢复，进入牌区提交阶段，
+发送 `action_pre_commit` 或 `cooperation_pre_commit`，委托窄牌区提交策略，记录离场牌，进入并恢复
+post_commit，标记组完成，完成全部 action records，然后进入下一协同组或行动 outcome。
+`_continue_active_transaction` 只验证 phase 与 `group_effects`／`post_commit_effects` 游标是否匹配，再回到
+该执行器；不再按 resolution mode 与 group kind 组合分派四套恢复函数。
+
+`BattleActionTransaction.runtime_context` 明确分成两层。`action_context` 在整次事务内保留
+resolution mode、player／enemy preview、主组触发结果、`enemy_will_act`、主组提交牌、双方累计提交牌、
+协同组、下一个协同索引和最终结果所需字段；`current_group_context` 只描述当前 group kind、records、
+previews、actor／target、是否使用同步伤害、提交策略、本组提交牌、协同定义和等待选择展示字段。
+`begin_cooperation_group` 现在合并运行时上下文而不是丢弃行动层，并保留事务已经累计的主组提交牌 ID；
+版本化 snapshot 继续完全排除 runtime context，因此不会暴露 Object、Callable 或服务引用。
+
+组执行器不使用 Callable 配置器。合法差异只收窄为三种提交策略：单方主组提交 actor staging；同步主组
+按原顺序提交玩家及实际行动敌方 staging；协同调用既有 `commit_cooperation_staging`。同步伤害布尔值
+随当前组冻结，只有实际同步主组传入 true；协同始终为 false，不会重新进入已经 flush 的同步伤害层。
+单方与同步 outcome 仍分别负责同气、敌方行动索引／锁、额外敌方行动调度、状态通知和既有结果 DTO，
+这些是真正的角色差异，没有重新复制 resolve／commit／post_commit 阶段。
+
+本批删除 `_resolve_solo_cooperation`、`_finish_solo_cooperation_resolution`、
+`_finish_solo_cooperation_post_commit`、`_finish_synchronized_resolution`、
+`_finish_synchronized_post_commit_values`、`_resolve_synchronized_player_cooperation`、
+`_finish_synchronized_cooperation_resolution` 与 `_finish_synchronized_cooperation_post_commit`；连同第二批
+已经删除的玩家／敌方单方重复函数，服务内 `resolve_action_records`、`resolve_post_commit_phase` 与
+`finish_action_record` 各只剩一个阶段调用点。`battle_action_service.gd` 当前 1542 行；下一步只剩职责
+拆分或收尾检查，然后进入 `StatusSystem` 优化。
+
+本批不运行 `quick`／`full`，只执行静态检查和项目脚本加载。开发期项目加载日志为
+`/tmp/taiwu-battle-action-group-project-load-dev-01.log`，最终复核日志为
+`/tmp/taiwu-battle-action-group-project-load-final-02.log`，两次均覆盖 671 项。所有日志扫描
+`Can't load script`、`File not found`、`Parse Error` 与 `SCRIPT ERROR` 均无匹配，仅有已知非阻塞 macOS
+CA 证书警告；该门禁不是完整统一回归。
+
 ### BattleActionService 玩家／敌方单方事务合并第二批（2026-08-16）
 
 `confirm_play` 与 `resolve_locked_enemy_action_once` 的公开签名和现有 `CombatEngine`／`BattleSession`
@@ -692,7 +728,7 @@ flowchart LR
 - `battle_effect_ports.gd`：约 170 行；组合伤害、状态、牌区、行动、延迟和触发日志的最小修改端口。
 - `battle_setup_service.gd`：约 100 行；集中内容仓库、标准牌组、脚本场景与跨战斗成长装配。
 - `enemy_action_planning_service.gd`：205 行；集中敌方候选生成、复核、锁定和公开计划投影。
-- `battle_action_service.gd`：约 1600 行；集中提案／锁定后的行动事务、玩家单方与敌方单方共用主组管线、同步行动、玩家协同、可恢复选择、牌区提交、post_commit、同气和角色收尾。当前仍偏大，下一批继续收敛同步／协同重复，但不把效果算法或 `StatusSystem` 搬入该服务。
+- `battle_action_service.gd`：1542 行；集中提案／锁定后的行动事务、唯一牌型组阶段执行器、三种窄牌区提交策略、单方／同步 outcome、可恢复选择、同气和角色收尾。主组与协同的阶段重复已经删除，下一步只做职责拆分或收尾检查，不把效果算法或 `StatusSystem` 搬入该服务。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
 - `status_system.gd`：440 行，统一角色状态、真气异状、延迟记录、状态历史与四个战斗时点处理器。
