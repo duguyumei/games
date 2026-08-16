@@ -37,7 +37,7 @@ preload 三个 core 文件（组合根、战斗会话、战斗引擎）。**新�
 它比对权威文档的活跃名单与 `data/techniques/` 实际接入内容，报出名称、池归属和废弃状态
 问题。它不解析自然语言公式，也不证明条件、目标、时点或失败边界已经实现。
 
-**当前结构基线：215 门正式资源，其中 2 门基础通用功法与 213 门非内建正式功法。五个正式池分布为56／49／34／34／40；50门火系、52门风系、57门山系和调整后的林系内容已经完成独立资源、公共底层与专项测试接入。**
+**当前结构基线：228 门正式资源，其中 2 门基础通用功法与 226 门非内建正式功法。五个正式池分布为60／54／35／37／40；全部正式内容已经完成独立资源、公共底层与专项测试接入。**
 正式资源的池归属、实现分类与行为证据见 `technique-content-status.md`。设计一致性检查必须保持结构错误 0 条，但不能用这个结果替代行为验收。
 
 两门功法已按权威源移除：`清风过隙` 随风池重写移出活跃名单（提交 `d66b4a3` 同时
@@ -189,11 +189,19 @@ Facade 允许保留来源结构规范化、旧字符串来源转换、`draw_reas
 能力的兼容委托，但打出后跨域顺序只在响应服务保留一份实现。新内部服务不得持有 `CombatEngine`、
 回指 Facade、通过大量 Callable 模拟 Facade，或互相形成写状态循环。
 
-该批只运行项目加载与 `res://tests/test_battle_effect_finalization.gd`，每次调用使用独立
-`/tmp/taiwu-battle-effect-final-<用途>-<序号>.log`，并扫描 `Can't load script`、
-`File not found`、`Parse Error` 与 `SCRIPT ERROR`。专项覆盖毒触发、同步毒伤、打出后响应、额外行动、
-战斗历练、消耗品发放、历史来源与来源兼容；`quick`／`full` 尚未运行，完整回归继续延后到
-`BattleActionService` 与 `StatusSystem` 全部结构优化完成后统一执行。
+第五批开发阶段先运行项目加载与 `res://tests/test_battle_effect_finalization.gd`；五批全部完成后已执行
+最终统一验收：项目加载 670 项、第五批专项 50 条断言、`quick` 7/7、`full` 30/30、设计一致性
+228/228／待接入0／错误0。项目加载与专项日志分别为
+`/tmp/taiwu-battle-effect-final-acceptance-project-load-06.log`、
+`/tmp/taiwu-battle-effect-final-acceptance-specialized-07.log`；quick／full 每组日志分别使用
+`/tmp/taiwu-battle-effect-final-quick-<组名>-<序号>.log` 与
+`/tmp/taiwu-battle-effect-final-full-<组名>-<序号>.log`；设计检查日志为
+`/tmp/taiwu-battle-effect-final-design-consistency-08.log`。
+
+全部 Godot 日志和 stdout 旁路必须扫描 `Can't load script`、`File not found`、`Parse Error`、
+`SCRIPT ERROR`、ObjectDB／RID／资源泄漏、orphan `StringName`／`NodePath` 与退出阶段错误。当前最终验收
+无上述匹配，仅有已知非阻塞 macOS CA 警告。BattleEffectPorts 阶段不得再写“quick／full延后”；
+后续 `BattleActionService` 与 `StatusSystem` 重构必须保持本次 7/7 quick、30/30 full 基线。
 
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、
@@ -259,7 +267,7 @@ Facade 允许保留来源结构规范化、旧字符串来源转换、`draw_reas
 
 ```bash
 ./scripts/run_tests.sh quick   # 7 组：项目加载、运行档、内容、牌型、功法契约、确定性
-./scripts/run_tests.sh full    # 17 组：加上存档、功法运行时、战斗、AI、地图、UI
+./scripts/run_tests.sh full    # 当前 30 组：加上存档、功法运行时、战斗、AI、地图、UI 与独立专项
 ./scripts/verify_test_runner.sh  # 验证运行器本身能检出失败（防止测试假绿）
 ```
 
@@ -315,7 +323,7 @@ S0 已在基线 `0555d0f` 完成验收。旧 `BattleCommandResult`、裸的跨�
    `test_runner.gd` 的合成夹具（`probe_attack_counter_delay`、
    `probe_draw_discard_chain`）覆盖运行时行为。前者的替代设计在火池「待确认」中
    明确列出；替代功法落地后应把测试换回真实功法。
-6. **扩展功法仍需持续数值验收**：215 门正式资源已经完成结构与专项行为门禁，但随机目标、同步毒爆、成长转移、跨回合响应、反震覆盖、格挡／邀战、连势／同气额外行动和协同组合仍需通过长期战斗样本验证收益分布；行为测试不能替代平衡数据。
+6. **扩展功法仍需持续数值验收**：228 门正式资源已经完成结构与专项行为门禁，但随机目标、同步毒爆、成长转移、跨回合响应、反震覆盖、格挡／邀战、连势／同气额外行动和协同组合仍需通过长期战斗样本验证收益分布；行为测试不能替代平衡数据。
 
 ## 不做什么
 

@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_DIR="${REPOSITORY_ROOT}/combo_duel_vslice"
 LOG_DIR="${TAIWU_TEST_LOG_DIR:-/tmp/taiwu-test-logs}"
+LOG_PREFIX="${TAIWU_TEST_LOG_PREFIX:-}"
 MODE="${1:-quick}"
 
 case "${LOG_DIR}" in
@@ -16,6 +17,16 @@ case "${LOG_DIR}" in
         exit 2
         ;;
 esac
+
+if [ -n "${LOG_PREFIX}" ]; then
+    case "${LOG_PREFIX}" in
+        /tmp/*) ;;
+        *)
+            printf 'ERROR: TAIWU_TEST_LOG_PREFIX must be under /tmp: %s\n' "${LOG_PREFIX}" >&2
+            exit 2
+            ;;
+    esac
+fi
 
 resolve_godot() {
     if [ -n "${GODOT_BIN:-}" ]; then
@@ -60,6 +71,8 @@ scan_diagnostics() {
             pending_ca_error = ""
         }
         /ERROR|Can.t load script|File not found/ { print }
+        /ObjectDB instances leaked at exit|Resources still in use at exit|RID allocations leaked at exit/ { print }
+        /orphan StringName|orphan NodePath|resource leak|leaked resource|exit phase/ { print }
         END {
             if (pending_ca_error != "") {
                 print pending_ca_error
@@ -71,6 +84,7 @@ scan_diagnostics() {
 PASSED=0
 FAILED=0
 SUMMARY_LINES=""
+SUITE_SERIAL=0
 
 verify_group_coverage() {
     main_expected="$(mktemp /tmp/taiwu-main-tests-expected.XXXXXX)"
@@ -128,7 +142,13 @@ verify_group_coverage() {
 run_suite() {
     suite_name="$1"
     script_path="$2"
-    godot_log="$(mktemp "${LOG_DIR}/taiwu-${suite_name}.XXXXXX")"
+    SUITE_SERIAL=$((SUITE_SERIAL + 1))
+    if [ -n "${LOG_PREFIX}" ]; then
+        godot_log="$(printf '%s-%s-%02d.log' \
+            "${LOG_PREFIX}" "${suite_name}" "${SUITE_SERIAL}")"
+    else
+        godot_log="$(mktemp "${LOG_DIR}/taiwu-${suite_name}.XXXXXX")"
+    fi
     stdout_log="${godot_log}.stdout"
 
     "${GODOT_EXECUTABLE}" \

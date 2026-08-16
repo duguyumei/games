@@ -24,7 +24,7 @@
 >   持有，外部代码通过公开窄查询访问。
 > - S0 最终验收已通过，当前执行阶段为 S1；大型战斗核心瘦身、状态系统继续拆分、
 >   UI／美术、测试拆分和文档维护继续保留在长期轨道。
-> - 2026-08-16 已接入 215 门正式功法；正文中的“107 门旧候选／9 门纵切样本”只描述
+> - 2026-08-16 已接入 228 门正式功法；正文中的“107 门旧候选／9 门纵切样本”只描述
 >   2026-08-06 审计当时的历史状态，不再作为当前内容口径。当前证据见
 >   `docs/technique-content-status.md`。
 >
@@ -78,16 +78,34 @@ flowchart LR
     RESOURCE --> HISTORY["VisibleTriggerQueue"]
 ```
 
-本批只执行最小专项门禁。开发期
+第五批开发期先执行最小专项门禁：
 `/tmp/taiwu-battle-effect-final-project-load-dev-01.log` 在核心迁移后完成 669 项加载；新增专项后
 `/tmp/taiwu-battle-effect-final-project-load-dev-02.log` 完成 670 项加载，
 `/tmp/taiwu-battle-effect-final-specialized-dev-03.log` 首次通过 50 条断言。提交前最终复核使用
 `/tmp/taiwu-battle-effect-final-project-load-final-04.log` 与
 `/tmp/taiwu-battle-effect-final-specialized-final-05.log`。专项覆盖立即／重演／同步毒触发、receipt
 幂等、来源 metadata、同步完成事件时点、打出异状与响应顺序、额外行动、历练、消耗品容量、统一
-历史和旧来源兼容；全部日志扫描 `Can't load script`、`File not found`、`Parse Error` 与
-`SCRIPT ERROR`。`quick`／`full` 本批没有运行，完整回归继续延后到 `BattleActionService` 与
-`StatusSystem` 后续结构优化完成后统一执行。
+历史和旧来源兼容。
+
+BattleEffectPorts 五批拆分完成后已经执行最终统一验收，不再延后完整回归：
+
+- 项目加载：`/tmp/taiwu-battle-effect-final-acceptance-project-load-06.log`，670 项通过；
+- 第五批专项：`/tmp/taiwu-battle-effect-final-acceptance-specialized-07.log`，50 条断言通过；
+- `quick`：7/7 组通过，每组日志为
+  `/tmp/taiwu-battle-effect-final-quick-<组名>-<序号>.log`；
+- `full`：30/30 组通过，每组日志为
+  `/tmp/taiwu-battle-effect-final-full-<组名>-<序号>.log`，其中包含五批 BattleEffectPorts 专项、
+  功法运行时、战斗契约／规则、存档、AI、地图、UI 与全部正式功法专项；
+- 设计一致性：`/tmp/taiwu-battle-effect-final-design-consistency-08.log`，权威活跃 228 门、数据接入
+  228 门、待接入 0 门、错误 0 条。
+
+所有 Godot 调用串行执行且使用独立显式 `/tmp` 日志。上述 Godot 日志及 quick／full 的 stdout
+旁路日志统一扫描 `Can't load script`、`File not found`、`Parse Error`、`SCRIPT ERROR`、
+`ObjectDB instances leaked at exit`、`Resources still in use at exit`、RID 泄漏、orphan
+`StringName`／`NodePath`、资源泄漏和退出阶段错误，均无匹配；只有已知非阻塞 macOS CA 证书警告。
+本阶段未修改任何正式功法资源、内容数据、公开 EffectSpec 操作码、数值或玩法顺序，当前 228 门
+正式功法的内容与玩法语义保持不变。BattleEffectPorts 拆分阶段可以进入完成状态；后续
+`BattleActionService` 与 `StatusSystem` 优化以本次 7/7 quick、30/30 full 基线为起点。
 
 ### BattleEffectPorts 效果调用／延迟／响应职责第四批迁出（2026-08-16）
 
@@ -540,7 +558,7 @@ flowchart LR
 - `game_composition_root.gd`：应用组合根；创建共享内容目录、日志、初始构筑仓库、构筑装配器和战斗会话工厂，再为每局创建独立导航、成长和节点调度实例。
 - `technique_definition.gd`、`technique_instance.gd`：所有功法共用的内容实体和运行时实例类型。
 - `techniques.json`：独立功法资源清单与共用池映射；不再保存功法正文。
-- `data/techniques/*.tres`：每门功法一个独立文件，当前 215 门正式功法从这里加载。
+- `data/techniques/*.tres`：每门功法一个独立文件，当前 228 门正式功法从这里加载。
 - `starter_builds.json`：当前唯一构筑显式声明 52 个基础真气 ID；`StarterBuildAssembler` 将其装配为 `RunDeck`，不再把构筑 ID 只当作快照标签。
 - `node_rewards.json`：注册可扩展奖励类型，并只录入已确认的普通、精英、Boss 基础历练。
 - `battle_statuses.json`：角色战斗状态定义；声明叠层、清理时点、数值修正与事件行为，不由战斗流程按状态 ID 分支。
