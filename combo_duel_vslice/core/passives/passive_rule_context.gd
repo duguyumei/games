@@ -2,7 +2,7 @@ class_name PassiveRuleContext
 extends RefCounted
 
 const EffectContextScript = preload(
-    "res://core/effects/technique_effect_context.gd")
+    "res://core/effects/battle_effect_context.gd")
 
 var actor = null
 var target = null
@@ -107,20 +107,57 @@ func for_plan_target(target_source):
 func effect_context_for(current_source = null):
     var resolved_source = current_source if current_source != null else source
     var values: Dictionary = payload.get("effect_context_values", {}).duplicate(false)
+    values["actor"] = values.get("actor", actor if actor != null else owner)
+    values["target"] = values.get("target", target)
+    values["owner"] = owner
+    values["opponent"] = _opponent_for(owner)
+    values["action_token"] = str(values.get(
+        "action_token", battle_effect_scope.get(
+            "action_token", payload.get("action_token", ""))))
+    values["event_token"] = str(battle_effect_scope.get(
+        "event_token", payload.get("event_token", "")))
+    values["card_identity_policy"] = values.get(
+        "card_identity_policy", _property_value(owner, "card_identity_policy"))
+    values["sequence_book"] = values.get(
+        "sequence_book", _property_value(owner, "technique_sequence_book"))
+    values["effect_command_limit"] = 64
     if resolved_source != null:
         var source_name := str(resolved_source.definition.get("name", ""))
-        values["technique_id"] = resolved_source.content_id
-        values["technique_name"] = source_name
         values["source_kind"] = resolved_source.source_kind
         values["source_id"] = resolved_source.content_id
         values["source_name"] = source_name
         values["source_instance_key"] = resolved_source.source_instance_key
-        values["trigger_mode"] = str(values.get("trigger_mode", "manual"))
+        values["trigger_mode"] = str(values.get(
+            "trigger_mode", "manual" if hook == "action_resolve" else "direct"))
         var captures_by_source: Dictionary = payload.get("captures_by_source", {})
         if not captures_by_source.has(resolved_source.source_instance_key):
             captures_by_source[resolved_source.source_instance_key] = {}
         values["captures"] = captures_by_source[resolved_source.source_instance_key]
+        var public_event := public_effect_values()
+        if not public_event.is_empty() \
+                and not values["captures"].has("event"):
+            values["captures"]["event"] = [public_event]
     return EffectContextScript.new().configure(values)
+
+func public_effect_values() -> Dictionary:
+    return {}
+
+func _opponent_for(origin):
+    if origin == null:
+        return null
+    if actor != null and actor != origin:
+        return actor
+    if target != null and target != origin:
+        return target
+    return null
+
+func _property_value(object, property_name: String):
+    if object == null or not object.has_method("get_property_list"):
+        return null
+    for property in object.get_property_list():
+        if str(property.get("name", "")) == property_name:
+            return object.get(property_name)
+    return null
 
 func effect_source_metadata() -> Dictionary:
     if source == null:

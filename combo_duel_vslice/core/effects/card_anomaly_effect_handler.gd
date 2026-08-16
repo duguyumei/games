@@ -2,7 +2,7 @@ class_name CardAnomalyEffectHandler
 extends EffectHandler
 
 const CardStateLifecycleScript = preload("res://core/card_state_lifecycle.gd")
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver

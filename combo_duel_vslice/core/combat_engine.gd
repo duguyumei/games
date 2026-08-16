@@ -277,6 +277,7 @@ func _init(
     enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)
     effect_ports.use_effect_executor(effect_executor)
+    passive_rule_runtime.use_effect_executor(effect_executor)
     technique_resolution_service = TechniqueResolutionServiceScript.new(
         repository, effect_executor, effect_ports,
         battle_passive_event_service)

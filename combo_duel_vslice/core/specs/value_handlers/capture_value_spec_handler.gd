@@ -29,8 +29,9 @@ func validate(kind: String, spec: Dictionary, registry, report_error: Callable, 
     var valid: bool = registry.validate_capture(
         spec, report_error, scope,
         kind in ["capture_attribute_qi_sum", "capture_attribute_count", "capture_non_attribute_count"])
-    if spec.has("side") and str(spec["side"]) not in ["actor", "target"]:
-        report_error.call(scope + ".side", "必须为 actor 或 target")
+    if spec.has("side") and str(spec["side"]) not in [
+            "actor", "target", "owner", "opponent"]:
+        report_error.call(scope + ".side", "必须为 actor、target、owner 或 opponent")
         valid = false
     if kind in ["capture_anomaly_layers_sum", "capture_anomaly_layers_max"] \
             and spec.has("category") \

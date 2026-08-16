@@ -1,7 +1,7 @@
 class_name SourceMarkerEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 const AddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")

@@ -42,8 +42,8 @@
   `retrigger`、`delayed`、`response`、`response_expiry` 与 `direct`；
 - `source_id`／`source_name` 表示来源内容身份与展示名；`source_instance_key` 表示当前装备槽、
   被动来源实例、真气状态实例或规则实例的稳定身份，不能用来源类别代替；
-- `TechniqueEffectContext` 暂时保留文件名及 `technique_id`／`technique_name` 兼容字段。旧功法
-  上下文会自动映射到统一字段，新处理器和事件必须优先读取统一字段。
+- `BattleEffectContext` 是唯一正式上下文；`TechniqueEffectContext` 只保留为继承前者的薄
+  preload／`class_name` 兼容入口，不再拥有配置、恢复或来源逻辑。新代码只读统一来源字段。
 
 抽牌统计只以结构化 `source_kind == "technique"` 判断功法效果抽牌；`draw_reason` 只保留牌区
 动作原因，不能反推来源。主动、自动、调用、回响、重触和延迟功法因来源类别仍为
@@ -51,11 +51,48 @@
 `card_drawn`、伤害、牌区移动、异状响应及延迟记录均沿用同一来源元数据，等待选择 continuation
 恢复时复用冻结上下文，不重复抽牌、记数或改变来源。
 
-`PassiveRuleContext` 为内功与物品建立效果上下文时写入各自来源和稳定实例键；
-`on_play_effects` 仍返回普通效果数组交给同一执行器，其他被动时点仍经
-`BattlePassiveEffectPorts → BattleEffectPorts` 写入。来源标识当前只允许 `technique` 与
-`inner_skill`：物品内容若声明 `write_source_marker`、`capture_source_marker` 或
-`transfer_source_marker`，内容加载会明确失败，运行时不得静默按功法或内功存储。
+### 被动标准战斗效果统一入口（2026-08-16）
+
+`battle_effects` 是来源中立的通用被动行为。内功与物品在 `action_resolve`、十个正式战斗
+生命周期 Hook 或 `BattleEventCatalog.COMMITTED_EVENTS` 中声明普通 `effects`；内容加载时直接
+复用 `EffectSpecValidator`、`EffectHandlerRegistry`、`ValueSpec`、`ConditionSpec` 与
+`TargetQuery`，运行时建立 `PassiveRuleInvocation` 后交给同一个 `EffectExecutor →
+BattleEffectPorts` 链。未知 op、未知规格、任意 Hook 字符串和内容伪造的执行来源／令牌都会在
+加载期失败。`on_play_effects` 只保留兼容 behavior ID，其校验和计划结果均委托
+`battle_effects`，没有第二套执行实现。
+
+功法的 `action_resolve` 仍按唯一 `prepare → damage → zones → post_commit` 阶段目录与功法、
+内功、物品的槽位顺序共同编排；生命周期及已提交事件 Hook 不套用功法阶段，而是按
+Invocation 顺序执行一次有序效果链。查询 Hook 不在 `battle_effects` 的支持目录；
+`action_preview` 只能对 `action_resolve` 配置调用 `EffectExecutor.summarize_intent`，不获得
+`BattleEffectPorts`、战斗 RNG 或计数器写端口。已提交 Hook 不允许产生无人接管的选择挂起；
+需要玩家选择的标准效果应在 `action_resolve` 中使用共享 continuation，以冻结候选、来源、
+随机结果和恢复位置。
+
+`BattlePassiveEffectPorts` 已删除，不保留任何战斗写命令。抽牌、弃牌、防御、伤害、牌区移动、临时移除、异状、
+置顶、战斗历练、额外行动、同气与连势全部由普通 Effect Handler 调用 `BattleEffectPorts`。
+未来只有无法预先形成效果数组的动态循环、不可拆分原子事务、依赖上一条真实写入结果的同步
+决策，或尚无公共 EffectSpec 语义时，才可评估新增窄能力；触发来源或 Hook 不构成理由。
+
+新增内功或物品的标准战斗效果应声明 `behavior.id = "battle_effects"`，配置只含正式 `hook`、
+生命周期所需整数 `order` 与普通 `effects`。来源字段、`source_instance_key`、`trigger_mode`、
+`event_token` 和 `action_token` 均由运行时注入；事件公开字段通过统一 `event` capture 供
+ValueSpec／ConditionSpec 读取。来源标识效果当前只允许 `technique` 与 `inner_skill`：物品若
+声明 `write_source_marker`、`capture_source_marker` 或 `transfer_source_marker`，内容加载会
+明确失败，运行时不得静默按功法或内功存储。
+
+受控兼容债务只剩 `BattleEffectContext.technique_id`／`technique_name`。它们当前仍由
+`TechniqueResolutionService` 的嵌套调用、`TechniqueSequenceEffectHandler` 的“当前功法”语义、
+`StatusSystem` 的旧响应／延迟记录、`SourceMarkerAddressResolver` 的旧地址回退及少量嵌套效果
+上下文读取；删除条件是这些记录和功法专属 Handler 改为显式的功法 payload，同时旧存档／测试
+不再依赖兼容键。通用异状日志和反震显示已经改读 `source_name`，不会把内功或物品显示为空功法。
+
+本批只统一被动效果执行入口：没有实现剩余 8 门功法，没有录入正式内功或物品，也没有修改
+任何现有内容数值、功法资源或玩法公式。最终 `quick` 为 7/7，`full` 为 25/25；内容契约 1079、
+功法运行时 197、battle-contracts 836 条断言通过。最终日志目录为
+`/tmp/taiwu-passive-effects-quick-final-20260816-02` 与
+`/tmp/taiwu-passive-effects-full-final-20260816-03`，除已知 macOS CA 证书警告外没有脚本加载、
+文件缺失、解析、运行或资源残留错误。
 
 ### 首批4门特殊功法正式接入（2026-08-16）
 

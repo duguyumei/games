@@ -4,7 +4,7 @@ extends RefCounted
 const TargetQueryFieldRegistryScript = preload(
     "res://core/effects/target_query_field_registry.gd")
 
-const SIDE_IDS := ["actor", "target"]
+const SIDE_IDS := ["actor", "target", "owner", "opponent"]
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
 const ORDER_IDS := [
     "zone", "left", "right", "top", "bottom", "random",
@@ -57,7 +57,9 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
     var check := validate()
     if not check["ok"]:
         return {"success": false, "reason": check["reason"], "cards": []}
-    var side = context.actor if side_id == "actor" else context.target
+    var side = context.resolve_side(side_id) \
+        if context.has_method("resolve_side") \
+        else context.actor if side_id == "actor" else context.target
     if side == null:
         return {"success": false, "reason": "目标查询缺少%s" % side_id, "cards": []}
     var cards: Array = _zone_cards(context, side)

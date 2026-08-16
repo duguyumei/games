@@ -1,7 +1,7 @@
 class_name PoisonEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver

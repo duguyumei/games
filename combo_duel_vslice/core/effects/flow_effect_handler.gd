@@ -1,7 +1,7 @@
 class_name FlowEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver
@@ -49,8 +49,11 @@ func execute(effect: Dictionary, context):
     match str(effect.get("op", "")):
         "gain_extra_action":
             var amount: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            var side = runtime.resolve_side(str(effect.get("side", "actor")))
+            if side == null:
+                return EffectResultScript.failed("额外行动目标作用域不存在")
             runtime.ports.gain_extra_actions(
-                runtime.actor, amount,
+                side, amount,
                 runtime.source_name if runtime.source_name != "" else "效果",
                 str(effect.get("source_category", runtime.source_kind)),
                 runtime.action_token)
@@ -64,8 +67,11 @@ func execute(effect: Dictionary, context):
                 if not events.is_empty():
                     momentum_action_token = str(events[0].get(
                         "action_token", momentum_action_token))
+            var side = runtime.resolve_side(str(effect.get("side", "actor")))
+            if side == null:
+                return EffectResultScript.failed("连势目标作用域不存在")
             var receipt: Dictionary = runtime.ports.write_momentum(
-                runtime.actor, operation, amount, runtime.source_kind,
+                side, operation, amount, runtime.source_kind,
                 momentum_action_token, runtime.source_id)
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = \
@@ -143,8 +149,11 @@ func execute(effect: Dictionary, context):
                 if not events.is_empty():
                     receipt_key += ":" + str(events[0].get(
                         "event_token", events[0].get("event_serial", "event")))
+            var side = runtime.resolve_side(str(effect.get("side", "actor")))
+            if side == null:
+                return EffectResultScript.failed("同气目标作用域不存在")
             var result: Dictionary = runtime.ports.write_same_qi(
-                runtime.actor, str(effect.get("operation", "add")), amount,
+                side, str(effect.get("operation", "add")), amount,
                 runtime.source_name,
                 "%s:%s:write_same_qi:%s" % [
                     runtime.action_token, runtime.source_id,
@@ -212,8 +221,8 @@ func execute(effect: Dictionary, context):
                 if result.get("success", false) \
                 else EffectResultScript.failed(str(result.get("reason", "响应建立失败")))
         "register_next_round_hand_limit":
-            var affected_side = runtime.target \
-                if str(effect.get("side", "actor")) == "target" else runtime.actor
+            var affected_side = runtime.resolve_side(str(
+                effect.get("side", "actor")))
             var result: Dictionary = runtime.ports.register_next_round_hand_limit(
                 runtime,
                 value_resolver.resolve(effect.get("amount", 0), runtime),

@@ -1,7 +1,7 @@
 class_name EffectValueResolver
 extends RefCounted
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const ValueSpecRegistryScript = preload("res://core/specs/value_spec_registry.gd")
 const ConditionSpecRegistryScript = preload("res://core/specs/condition_spec_registry.gd")
 
@@ -19,7 +19,7 @@ func condition_met(condition: Dictionary, context) -> bool:
 
 ## Common context helpers shared by ValueSpec handlers.
 func side(runtime, side_id: String):
-    return runtime.target if side_id == "target" else runtime.actor
+    return runtime.resolve_side(side_id)
 
 func capture_cards(runtime, spec: Dictionary) -> Array:
     return runtime.captures.get(str(spec.get("capture", "")), [])

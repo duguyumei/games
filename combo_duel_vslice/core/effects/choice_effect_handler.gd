@@ -1,7 +1,7 @@
 class_name ChoiceEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 const TargetQueryScript = preload("res://core/effects/effect_target_query.gd")
 const ChoiceRequestScript = preload("res://core/effects/battle_choice_request.gd")
@@ -73,7 +73,7 @@ func execute(effect: Dictionary, context):
         "success": true,
         "reason": "",
         "cards": runtime.captures.get(candidate_capture, []).duplicate(),
-        "side": runtime.actor if str(effect.get("chooser", "actor")) == "actor" else runtime.target,
+        "side": runtime.resolve_side(str(effect.get("chooser", "actor"))),
     } if candidate_capture != "" else query.resolve(runtime, rng))
     if not query_result.get("success", false):
         return EffectResultScript.failed(str(query_result.get("reason", "目标查询失败")))

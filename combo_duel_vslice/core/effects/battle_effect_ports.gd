@@ -211,6 +211,13 @@ func same_qi_receipts_for_action(side: BattleSide, action_token: String) -> Arra
 
 func execute_effect_chain(effects: Array, context) -> Dictionary:
     var executor = _effect_executor_ref.get_ref() if _effect_executor_ref != null else null
+    var parent = current_effect_context()
+    if executor != null and parent != null \
+            and not context is Dictionary \
+            and not parent is Dictionary \
+            and int(parent.effect_command_limit) > 0:
+        context.effect_command_limit = int(parent.effect_command_limit)
+        context.effect_chain_state = parent.effect_chain_state
     return executor.execute_all(effects, context) if executor != null else {
         "success": false, "detail": "战斗端口缺少效果执行器"}
 

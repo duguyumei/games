@@ -11,8 +11,9 @@ func kind_ids() -> Array[String]:
 
 func validate(kind: String, spec: Dictionary, _registry, report_error: Callable, scope: String) -> bool:
     var valid := true
-    if spec.has("side") and str(spec["side"]) not in ["actor", "target"]:
-        report_error.call(scope + ".side", "必须为 actor 或 target")
+    if spec.has("side") and str(spec["side"]) not in [
+            "actor", "target", "owner", "opponent"]:
+        report_error.call(scope + ".side", "必须为 actor、target、owner 或 opponent")
         valid = false
     for field in ["marker_id", "source_instance_key"]:
         if spec.has(field) and not spec[field] is String:

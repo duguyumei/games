@@ -1,7 +1,7 @@
 class_name TechniqueAutoTriggerService
 extends RefCounted
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const ConditionSpecRegistryScript = preload(
     "res://core/specs/condition_spec_registry.gd")
 const AddressResolverScript = preload(

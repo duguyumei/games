@@ -1,7 +1,7 @@
 class_name CollectionEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")
 

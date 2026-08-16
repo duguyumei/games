@@ -556,12 +556,12 @@ flowchart LR
     REG --> INT["PassiveIntPolicyResolver<br/>价格/遗忘/冥想/补充包纯查询"]
     REG --> EVENT["RunPassiveEventService<br/>成功提交后一次"]
     REG --> BRIDGE["BattlePassiveTimingBridge<br/>十个 BattleTimingSystem 时点"]
-    REG --> BEVENT["BattlePassiveCommittedEventService<br/>七个实际提交事实"]
+    REG --> BEVENT["BattlePassiveCommittedEventService<br/>正式 committed event 目录"]
     REG --> BQUERY["BattleRuleQueryService<br/>九个只读整数查询"]
     REG --> BPERM["BattlePermissionService<br/>操作否决查询"]
-    BRIDGE --> BPWRITE["BattlePassiveEffectPorts<br/>Invocation 作用域写命令"]
-    BEVENT --> BPWRITE
-    BPWRITE --> EPORT["BattleEffectPorts<br/>既有领域服务适配"]
+    REG --> BFX["battle_effects<br/>普通 EffectSpec 计划"]
+    BFX --> EXEC["EffectExecutor<br/>共享 HandlerRegistry"]
+    EXEC --> EPORT["BattleEffectPorts<br/>既有领域服务适配"]
     EVENT --> PORTS["RunPassiveEffectPorts<br/>受控 RunMutationService"]
     INV --> CPORT["Counter Port<br/>查询只读/事件可写"]
     CPORT --> CSTORE["RunPassiveCounterStore<br/>版本化整数 entries"]
@@ -601,11 +601,17 @@ Invocation 顺序执行；双方同 Hook 都有效时由 `unconfirmed_cross_side
 
 战斗整数查询继续复用 `PassiveIntPolicyResolver` 的逐 Invocation 归并。`ActionPreviewService` 用它生成纯预览，正式确认再冻结四阶段功法输入；`BattleEffectPorts` 在实际普通伤害和防御写入前查询，`DefenseRetentionPolicy` 从基础 50 查询最终比例。`BattleSide` 同时公开基础与有效手牌上限，战斗快照保存两者，UI 和 AI 读取有效值。本层没有第二套 Runtime，也没有内容 ID 分支。
 
-战斗真实写入由 `BattlePassiveEffectPorts` 按 Invocation 创建窄门面。Bridge 的十个生命周期和 CommittedEventService 的七个事实事件可以注入；预览、AI 枚举、整数查询、牌型、身份和权限查询不注入。四个 scope 在端口内部解析为当前战斗方，Handler 不能传入任意 `BattleSide` 或自带 RNG。端口调用既有 `BattleEffectPorts`，所以明确弃牌、无漏／磐石、伤害与防御查询以及写入后的细粒度事件均保持同一路径。
+战斗真实写入由 `battle_effects` 在 Invocation 中返回普通 effects，再交给共享
+`EffectExecutor → BattleEffectPorts`。Bridge 的十个生命周期、CommittedEventService 的全部正式
+事实事件和 `action_resolve` 使用同一入口；预览只调用 intent 汇总，AI 枚举、整数查询、牌型、
+身份和权限查询没有写端口。四个 scope 由 `BattleEffectContext` 解析，明确弃牌、无漏／磐石、
+伤害与防御查询以及写入后的细粒度事件继续保持同一路径。
 
 功法权限链为 `ActionPreviewService → BattlePermissionService → PassiveRuleRuntime`，结果进入 `ActionPreviewDto.technique_activation`；正式阶段由 `ActionResolver` 在牌进入待出区、重塑和四阶段值完成后重新查询，并冻结到 `BattleActionRecord`。`BattleActionService` 对协同执行候选与正式两次 `cooperation_permission_query`，正式允许后才批量发送各组 `action_confirmed`。解析阶段不再以功法 ID 或 condition 推测触发。UI、玩家、本地 AI 与远程 AI 都读取同一个 preview，等待恢复只读 record，因此不存在第二套权限运行时或 AI 专用规则。
 
-事件 token 防止整个已提交事实重放；命令 token 再以来源、behavior、execution 与调用下标防止等待恢复或重复 Invocation 重放单条写入。嵌套调用链共享 64 条命令上限，失败锁住当前端口并进入 `scenario_error`。领域写入一旦成功不由新端口伪造反向回滚；现有时点／事件事务仍只回滚两类计数器。
+事件 token 防止整个已提交事实重放；标准效果以来源、behavior 和 execution 组成稳定 Invocation
+receipt。嵌套效果链共享 64 条命令上限，首个 Handler 失败即停止并进入 `scenario_error`。
+领域写入一旦成功不伪造反向回滚；现有时点／事件事务仍只回滚两类计数器。
 
 ## 8. 一张表：Java 概念 ↔ Godot 本项目对照
 

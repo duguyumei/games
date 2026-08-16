@@ -42,6 +42,17 @@ func _continue(continuation) -> Dictionary:
         if not registry.condition_met(effect.get("when", {}), continuation.context):
             continuation.effect_index += 1
             continue
+        if continuation.command_consumed_index != continuation.effect_index:
+            var command_gate := _consume_effect_command(continuation.context)
+            if not command_gate.get("success", false):
+                return {
+                    "status": EffectResultScript.FAILED,
+                    "success": false,
+                    "pending_choice": false,
+                    "detail": str(command_gate.get("reason", "效果命令上限已触发")),
+                    "effect_results": continuation.effect_results.duplicate(true),
+                }
+            continuation.command_consumed_index = continuation.effect_index
         var context_ports = (
             continuation.context.get("ports")
             if continuation.context is Dictionary
@@ -87,6 +98,7 @@ func _continue(continuation) -> Dictionary:
                     insert_at += 1
         if result.get("detail", "") != "":
             continuation.details.append(str(result["detail"]))
+        continuation.command_consumed_index = -1
         continuation.effect_index += 1
     return {
         "status": EffectResultScript.SUCCEEDED,
@@ -115,6 +127,24 @@ func _public_effect_result(result: Dictionary) -> Dictionary:
     var public_result := result.duplicate(true)
     public_result.erase("_choice_request_object")
     return public_result
+
+func _consume_effect_command(context) -> Dictionary:
+    if context is Dictionary:
+        return {"success": true}
+    var limit := int(context.effect_command_limit)
+    if limit <= 0:
+        return {"success": true}
+    var state: Dictionary = context.effect_chain_state
+    if state.is_empty():
+        state["command_count"] = 0
+    var count := int(state.get("command_count", 0))
+    if count >= limit:
+        return {
+            "success": false,
+            "reason": "单次被动调用链效果命令超过 %d 次" % limit,
+        }
+    state["command_count"] = count + 1
+    return {"success": true}
 
 func summarize_intent(effects: Array, context, initial_damage_percent: int = 0) -> Dictionary:
     var intent := {

@@ -38,7 +38,7 @@ func collect_sources(context) -> Array:
         var content_id := str(item_ids[item_index])
         _append_behaviors(
             result, "item", content_id,
-            "item:%s:%s" % [owner_id, content_id],
+            "item:%s:%d:%s" % [owner_id, item_index, content_id],
             _catalog.get_by_id("item", content_id),
             10000 + item_index)
     result.sort_custom(func(left, right):

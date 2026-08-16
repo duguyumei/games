@@ -41,3 +41,17 @@ func for_invocation(current_invocation):
         "battle_effect_ports": battle_effect_ports,
         "battle_effect_scope": battle_effect_scope,
     })
+
+func public_effect_values() -> Dictionary:
+    var result := payload.duplicate(true)
+    result.merge({
+        "event_token": "%s:%d" % [hook, timing_serial],
+        "event_serial": timing_serial,
+        "action_token": str(payload.get("action_token", "")),
+        "round_number": round_number,
+        "battle_state": battle_state,
+        "owner_id": owner_id,
+        "drawn_cards": drawn_cards.duplicate(),
+        "metadata": metadata.duplicate(true),
+    }, true)
+    return result

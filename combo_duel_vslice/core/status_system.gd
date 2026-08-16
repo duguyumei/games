@@ -3,7 +3,7 @@ extends RefCounted
 
 const CardStateLifecycleScript = preload("res://core/card_state_lifecycle.gd")
 const StatusChangeScript = preload("res://core/status_change.gd")
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const StatusBehaviorRegistryScript = preload(
     "res://core/statuses/status_behavior_registry.gd")
 const StatusBehaviorContextScript = preload(
@@ -845,7 +845,7 @@ func register_reflection_expiry(runtime, percent: int) -> Dictionary:
     _delay_serial += 1
     return _effect_ports().grant_reflection_source(
         runtime.actor, percent, 1, "round_end",
-        runtime.technique_name if runtime.technique_name != "" else "反震",
+        runtime.source_name if runtime.source_name != "" else "反震",
         token, runtime.target)
 
 func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary:

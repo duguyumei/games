@@ -26,7 +26,7 @@ const QUERY_ORDERS := [
     "zone", "left", "right", "top", "bottom", "random",
     "highest_rank", "lowest_rank", "highest_effective_qi",
     "highest_effective_qi_random_ties"]
-const QUERY_SIDES := ["actor", "target"]
+const QUERY_SIDES := ["actor", "target", "owner", "opponent"]
 const INSUFFICIENT_POLICIES := ["use_available", "skip", "fail"]
 const SELECTION_PURPOSES := ["", "explicit_discard"]
 
@@ -110,7 +110,7 @@ func _validate_single_effect(
             validate_amount_spec(effect[field], effect_scope + "." + field)
     for field in ["side", "from_side", "to_side", "chooser"]:
         if effect.has(field) and str(effect[field]) not in QUERY_SIDES:
-            _error(effect_scope + "." + field, "必须为 actor 或 target")
+            _error(effect_scope + "." + field, "必须为 actor、target、owner 或 opponent")
     for field in ["zone", "from_zone", "to_zone"]:
         if effect.has(field) and str(effect[field]) not in ZONE_IDS:
             _error(effect_scope + "." + field, "引用未知牌区")
@@ -153,7 +153,7 @@ func validate_choice_effect(effect: Dictionary, scope: String) -> void:
     if str(effect.get("insufficient_policy", "")) not in INSUFFICIENT_POLICIES:
         _error(scope + ".insufficient_policy", "必须明确为 use_available、skip 或 fail")
     if effect.has("chooser") and str(effect.get("chooser")) not in QUERY_SIDES:
-        _error(scope + ".chooser", "必须为 actor 或 target")
+        _error(scope + ".chooser", "必须为 actor、target、owner 或 opponent")
     if str(effect.get("selection_purpose", "")) not in SELECTION_PURPOSES:
         _error(scope + ".selection_purpose", "必须为空或 explicit_discard")
 
@@ -191,7 +191,7 @@ func validate_event_filters(filters, scope: String) -> void:
 ## 校验通用目标查询。
 func validate_target_query(query: Dictionary, scope: String) -> void:
     if str(query.get("side", "actor")) not in QUERY_SIDES:
-        _error(scope + ".side", "必须为 actor 或 target")
+        _error(scope + ".side", "必须为 actor、target、owner 或 opponent")
     if str(query.get("zone", "hand")) not in ZONE_IDS:
         _error(scope + ".zone", "引用未知牌区")
     if str(query.get("order", "zone")) not in QUERY_ORDERS:

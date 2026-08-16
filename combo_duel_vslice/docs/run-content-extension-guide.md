@@ -581,7 +581,12 @@ order；`battle_end` Handler 完成后才清临时 Store。
 
 ## 6.13 战斗细粒度事件与持续整数查询
 
-生命周期边界与实际事实必须分开选用。阶段开始／结束使用 6.12 的十个 `BattleTimingSystem` Hook；只有玩法修改已经成功提交时，才使用 `action_confirmed`、`action_resolved`、`card_drawn`、`card_entered_discard`、`card_explicitly_discarded`、`damage_resolved` 或 `defense_gained`。`BattlePassiveCommittedEventService` 为事件建立由 battle instance、事件种类、行动／区域／伤害序号、owner 与卡牌实例 ID 组成的稳定 token；重复提交直接复用 receipt。事件获得两类 mutation port，失败只回滚计数器并转场景错误，不反向搬牌或恢复生命。
+生命周期边界与实际事实必须分开选用。阶段开始／结束使用 6.12 的十个
+`BattleTimingSystem` Hook；只有玩法修改已经成功提交时，才使用
+`BattleEventCatalog.COMMITTED_EVENTS` 登记的正式事件。内容不能通过任意字符串绕过该目录。
+`BattlePassiveCommittedEventService` 为事件建立由 battle instance、事件种类、行动／区域／伤害
+序号、owner 与卡牌实例 ID 组成的稳定 token；重复提交直接复用 receipt。事件获得两类 mutation
+port，失败只回滚计数器并转场景错误，不反向搬牌或恢复生命。
 
 持续整数读取使用 `BattleRuleQueryService`，底层仍是既有 `PassiveIntPolicyResolver`，不得复制整数引擎或增加 add／multiply／set DSL。允许的 Hook 为 `hand_limit_query`、四个 `power_*_query`、`outgoing_damage_query`、`incoming_damage_query`、`defense_gain_query` 与 `defense_retention_percent_query`。每个 Invocation 读取上一个有效整数并返回新的确定 `value`；上下文只注入两类 read port。被压制来源不进入计划，额外 Invocation 在来源位置连续执行且不重新规划。
 
@@ -603,13 +608,37 @@ order；`battle_end` Handler 完成后才清临时 Store。
 
 功法启动与协同不要复用出牌布尔值推断。当前功法非空且自身条件满足后，由 `can_activate_technique()` 查询；预览把 `checked/allowed/reason/source_breakdown` 写入 `ActionPreviewDto.technique_activation`，明确拒绝时仍保留功法定义但裁掉其伤害、防御和协同入口。正式确认在重塑及四阶段值冻结后重新查询，把结果写入 `BattleActionRecord`；解析、等待恢复、`action_confirmed/action_resolved`、连势和序列只读冻结结果。协同在候选建立和正式确认分别调用 `can_establish_cooperation()`，正式失败整单回滚。主组、协同建立、协同组自身启动是三个独立结果。玩家、本地 Utility AI 与远程候选只消费同一个预览，不复制权限规则。
 
-## 6.15 战斗被动写命令端口
+## 6.15 战斗被动标准效果
 
-内功或物品 Handler 需要真正修改战斗时，只能调用 `context.battle_effect_ports` 中的 `BattlePassiveEffectPorts`。该对象按 Invocation 创建，不暴露完整 `BattleEffectPorts`、战斗方对象、状态系统、牌区服务或 RNG。目标只能写为 `owner`、`actor`、`target`、`opponent`；无法解析到当前战斗方时结构化失败，不默认回退玩家或敌人。第一版命令包括 `draw_cards`、`discard_random_cards`、`discard_all_cards`、`gain_defense`、`deal_damage`、`move_card`、`temporarily_remove_card`、`apply_card_anomaly`、`place_on_draw_pile_top`、`gain_battle_experience`，以及复用稳定底层能力的额外行动和气势接口。
+内功或物品需要执行已有战斗效果时，声明 `battle_effects` behavior，不在专属 Handler 中重新
+包装领域写入：
 
-每个结果至少带 `success`、`changed`、`reason`、`payload` 和 `command_token`。底层继续由 `BattleEffectPorts` 执行，因此随机弃牌使用战斗统一 RNG，明确弃牌经过 `BattlePermissionService`，防御和普通伤害经过数值查询，真实伤害保持原边界，异状先执行 `can_apply_card_anomaly`，成功写入后继续提交既有细粒度事件。正常打出使用 `normal_play`，不能改写为明确弃牌。
+```json
+{
+  "id": "battle_effects",
+  "configuration": {
+    "hook": "action_resolved",
+    "effects": [{"op": "draw", "side": "owner", "count": 1}]
+  }
+}
+```
 
-只有十个生命周期 Hook 与七个已提交事件获得写端口。`action_preview`、所有整数查询、牌型 Options、卡牌身份与四个权限 Hook 都只有查询能力；预览或 AI 枚举不能写战斗。命令 token 由战斗实例、当前事件／行动 token、来源实例键、behavior、execution 和命令下标组成，事件收据与命令收据分别去重；单条嵌套调用链最多 64 条写命令。首条命令失败后本 Invocation 的后续命令不再执行。不要把这些窄命令组合成 JSON 脚本语言；新语义应新增小 Handler 或专属领域服务。本节只描述平台，没有新增正式内容或白名单。
+`hook` 只能是 `action_resolve`、十个正式生命周期 Hook 或
+`BattleEventCatalog.COMMITTED_EVENTS`；生命周期还必须声明整数 `order`。普通 effects 与功法
+共用 `EffectSpecValidator`、`EffectHandlerRegistry`、ValueSpec、ConditionSpec、TargetQuery、
+`EffectExecutor`、`BattleEffectPorts` 和领域服务。`owner`、`actor`、`target`、`opponent` 是统一
+作用域；随机效果只使用战斗 RNG，明确弃牌仍经过权限链，异状仍经过合法性判断。
+
+来源、来源实例、触发方式和事件／行动 token 由 Runtime 注入，内容不得自行填写。已提交事件
+公开字段放入统一 `event` capture，可由 `event_field` 等公共规格读取。`action_preview` 只为
+`action_resolve` 配置生成只读 intent；查询 Hook、AI 枚举和预览都不获得写端口或计数器 mutation
+port。需要等待玩家选择的效果放在 `action_resolve`，复用共享 continuation；生命周期和已提交
+事件链不得留下无人接管的 pending choice。单次 Invocation 链仍最多执行 64 条效果命令，首个
+Handler 失败即停止后续效果，稳定 Invocation receipt 防止同一已提交事件重放。
+
+旧 `BattlePassiveEffectPorts` 已删除。只有必须在 Handler 内动态循环、必须原子提交、必须读取
+上一条真实写入结果再决定下一步，或当前确实没有公共 EffectSpec 语义时，才讨论新增窄领域能力；
+来源是内功／物品或触发时点不同都不是理由。本节只描述平台，没有新增正式内容或白名单。
 
 ## 7. 什么时候只写 JSON
 

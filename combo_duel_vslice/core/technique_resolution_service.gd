@@ -2,7 +2,7 @@ class_name TechniqueResolutionService
 extends RefCounted
 
 const EffectContextScript = preload(
-    "res://core/effects/technique_effect_context.gd")
+    "res://core/effects/battle_effect_context.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
 const TechniquePhaseCatalogScript = preload(
     "res://core/effects/technique_phase_catalog.gd")

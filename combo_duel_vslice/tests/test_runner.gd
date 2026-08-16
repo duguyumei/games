@@ -637,124 +637,6 @@ class BattleFineGrainedProbeHandler:
             return {"success": false, "reason": "Fake 已提交事件失败"}
         return {"success": true}
 
-class BattlePassiveEffectProbeHandler:
-    extends "res://core/passives/passive_rule_handler.gd"
-
-    var calls: Array[Dictionary] = []
-
-    func behavior_id() -> String:
-        return "battle_passive_effect_probe"
-
-    func supported_hooks() -> Array[String]:
-        var result: Array[String] = ["action_preview"]
-        result.append_array(PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS)
-        result.append_array(
-            PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS)
-        return result
-
-    func battle_timing_bindings(configuration: Dictionary) -> Array:
-        var hook := str(configuration.get("hook", ""))
-        if hook not in PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS:
-            return []
-        return [{"hook": hook, "order": int(configuration.get("order", 100))}]
-
-    func handle(hook: String, context, configuration: Dictionary) -> Dictionary:
-        if hook != str(configuration.get("hook", "")):
-            return {"success": true, "skipped": true}
-        var operation := str(configuration.get("operation", ""))
-        if operation == "preview_write":
-            var preview_result := {
-                "success": false,
-                "reason": "action_preview 未获得战斗写端口",
-            }
-            if context.battle_effect_ports != null:
-                preview_result = context.battle_effect_ports.gain_defense(
-                    "owner", 1, "preview_probe")
-            calls.append({
-                "hook": hook, "operation": operation,
-                "write_port_available": context.battle_effect_ports != null,
-                "results": [preview_result],
-            })
-            return preview_result
-        if context.battle_effect_ports == null:
-            return {"success": false, "reason": "mutation Hook 缺少战斗写端口"}
-        var ports = context.battle_effect_ports
-        var results: Array[Dictionary] = []
-        match operation:
-            "draw":
-                results.append(ports.draw_cards(
-                    str(configuration.get("target_scope", "owner")),
-                    int(configuration.get("amount", 2)), "fake_draw"))
-            "defense":
-                results.append(ports.gain_defense(
-                    str(configuration.get("target_scope", "owner")),
-                    int(configuration.get("amount", 3)), "fake_defense",
-                    str(context.battle_effect_scope.get("action_token", ""))))
-            "damage":
-                results.append(ports.deal_damage(
-                    str(configuration.get("actor_scope", "actor")),
-                    str(configuration.get("target_scope", "target")),
-                    int(configuration.get("amount", 7)), "fake_damage",
-                    bool(configuration.get("true_damage", false)),
-                    str(context.battle_effect_scope.get("action_token", ""))))
-            "temporary_remove":
-                results.append(ports.temporarily_remove_card(
-                    str(configuration.get("target_scope", "owner")),
-                    str(context.battle_effect_scope.get("card_instance_id", "")),
-                    "fake_temporary_remove"))
-            "experience":
-                results.append(ports.gain_battle_experience(
-                    str(configuration.get("target_scope", "owner")),
-                    int(configuration.get("amount", 2))))
-            "discard_random":
-                results.append(ports.discard_random_cards(
-                    str(configuration.get("target_scope", "owner")),
-                    int(configuration.get("amount", 2)), "fake_discard"))
-            "discard_all":
-                results.append(ports.discard_all_cards(
-                    str(configuration.get("target_scope", "owner")),
-                    "fake_discard"))
-            "move":
-                results.append(ports.move_card(
-                    str(context.battle_effect_scope.get("card_instance_id", "")),
-                    str(configuration.get("from_zone", "hand")),
-                    str(configuration.get("to_zone", "discard_pile")),
-                    str(configuration.get("reason", "explicit_discard")),
-                    str(configuration.get("placement", "top")), "fake_move"))
-            "anomaly":
-                results.append(ports.apply_card_anomaly(
-                    str(context.battle_effect_scope.get("card_instance_id", "")),
-                    str(configuration.get("category", "state")),
-                    str(configuration.get("anomaly_id", "poison")), {},
-                    "F5E Fake", 1, bool(configuration.get("replace_state", false))))
-            "place_top":
-                results.append(ports.place_on_draw_pile_top(
-                    str(configuration.get("target_scope", "owner")),
-                    str(context.battle_effect_scope.get("card_instance_id", ""))))
-            "sequence":
-                results.append(ports.gain_defense("owner", 2, "sequence_first"))
-                results.append(ports.gain_battle_experience("owner", 3))
-            "invalid_then_defense":
-                results.append(ports.gain_defense("invalid", 5, "invalid_scope"))
-                results.append(ports.gain_defense("owner", 5, "must_not_continue"))
-            "overflow":
-                for _index in range(65):
-                    var command: Dictionary = ports.add_momentum("owner", 0)
-                    results.append(command)
-                    if not command.get("success", false):
-                        break
-        calls.append({
-            "hook": hook,
-            "operation": operation,
-            "event_token": str(context.battle_effect_scope.get("event_token", "")),
-            "action_token": str(context.battle_effect_scope.get("action_token", "")),
-            "results": results.duplicate(true),
-        })
-        for result in results:
-            if not result.get("success", false):
-                return result
-        return {"success": true, "results": results}
-
 class DirectCardTriggerProbe:
     extends RefCounted
 
@@ -1060,7 +942,7 @@ func _initialize() -> void:
     _test_battle_fine_grained_events_and_int_queries()
     _test_battle_card_policy_ports()
     _test_technique_and_cooperation_permission_wiring()
-    _test_battle_passive_effect_command_ports()
+    _test_unified_passive_effect_execution()
     _test_effect_source_neutrality_runtime_paths()
     _test_awakening_battle_runtime()
     _test_f2d2_formal_enhancement_runtime()
@@ -4350,340 +4232,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "事件失败回滚战斗临时计数器")
     _assert_equal(event_failure_engine.battle_state, "scenario_error", "事件失败进入 scenario_error")
 
-func _test_battle_passive_effect_command_ports() -> void:
-    var handler := BattlePassiveEffectProbeHandler.new()
-    var query_handler := BattleFineGrainedProbeHandler.new()
-    var registry = PassiveRuleHandlerRegistryScript.new()
-    _assert_true(registry.register_handler(handler), "注册 F5E Fake 写命令 Handler")
-    _assert_true(
-        registry.register_handler(query_handler),
-        "F5E 复用 F5D2 数值查询 Fake Handler")
-    var items: Array = []
-    for definition in [
-            ["f5e_battle_start_draw", "battle_start", "draw", {"amount": 2}],
-            ["f5e_after_draw_defense", "after_normal_draw", "defense", {"amount": 4}],
-            ["f5e_defense_experience", "defense_gained", "experience", {"amount": 3}],
-            ["f5e_action_damage", "action_resolved", "damage", {"amount": 7}],
-            ["f5e_action_true_damage", "action_resolved", "damage", {
-                "amount": 5, "true_damage": true, "target_scope": "opponent"}],
-            ["f5e_draw_remove", "card_drawn", "temporary_remove", {}],
-            ["f5e_discard_random", "action_confirmed", "discard_random", {"amount": 2}],
-            ["f5e_discard_all", "action_confirmed", "discard_all", {}],
-            ["f5e_move", "action_confirmed", "move", {}],
-            ["f5e_place_top", "action_confirmed", "place_top", {}],
-            ["f5e_exp", "action_confirmed", "experience", {"amount": 5}],
-            ["f5e_sequence", "action_confirmed", "sequence", {}],
-            ["f5e_invalid", "action_confirmed", "invalid_then_defense", {}],
-            ["f5e_overflow", "action_confirmed", "overflow", {}],
-            ["f5e_preview", "action_preview", "preview_write", {}],
-            ["f5e_anomaly_poison", "card_drawn", "anomaly", {
-                "category": "state", "anomaly_id": "poison"}],
-            ["f5e_anomaly_vulnerability", "card_drawn", "anomaly", {
-                "category": "debuff", "anomaly_id": "vulnerability"}],
-            ["f5e_anomaly_acupoint", "card_drawn", "anomaly", {
-                "category": "debuff", "anomaly_id": "acupoint_block"}],
-            ["f5e_anomaly_mark", "card_drawn", "anomaly", {
-                "category": "mark", "anomaly_id": "return_to_origin"}],
-        ]:
-        var configuration: Dictionary = {
-            "hook": definition[1],
-            "operation": definition[2],
-        }
-        configuration.merge(definition[3], true)
-        items.append(_f5e_probe_item(str(definition[0]), configuration))
-    items.append(_f5d2_probe_item("f5e_damage_query", {
-        "increment_events": false,
-        "query_deltas": {
-            "outgoing_damage_query": 2,
-            "incoming_damage_query": 3,
-            "defense_gain_query": 2,
-        },
-    }))
-    var catalog_result := _battle_passive_test_catalog(registry, items, [])
-    _assert_true(catalog_result["success"], "F5E Fake 内容仅在测试目录通过校验")
-    var catalog = catalog_result["catalog"]
-
-    handler.calls.clear()
-    var draw_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_battle_start_draw"])
-    draw_engine.start_player_turn()
-    var start_draw_calls := handler.calls.filter(
-        func(call): return call["operation"] == "draw")
-    _assert_equal(start_draw_calls.size(), 1, "battle_start 只执行一次抽牌命令")
-    _assert_equal(
-        start_draw_calls[0]["results"][0]["payload"]["drawn_count"], 2,
-        "battle_start 通过 BattleEffectPorts 实际抽取两张牌")
-    _assert_equal(draw_engine.player.hand.size(), 8, "额外抽牌后正常补牌仍补到统一手牌上限")
-
-    handler.calls.clear()
-    var defense_engine = _battle_passive_test_engine(
-        catalog, registry,
-        ["f5e_after_draw_defense", "f5e_defense_experience", "f5e_damage_query"])
-    defense_engine.start_player_turn()
-    _assert_equal(defense_engine.player.defense, 6, "after_normal_draw 通过 defense_gain_query 获得防御")
-    _assert_equal(defense_engine.player.experience, 3, "defense_gained 通过写端口获得战斗历练")
-    _assert_equal(
-        handler.calls.filter(func(call): return call["operation"] == "experience").size(),
-        1,
-        "防御实际增加后只提交一次 defense_gained")
-
-    handler.calls.clear()
-    query_handler.calls.clear()
-    var damage_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_action_damage", "f5e_damage_query"])
-    damage_engine.enemy.configure_items(["f5e_damage_query"])
-    var damage_life_before: int = int(damage_engine.enemy.life)
-    var damage_result := _commit_f5e_probe_event(
-        damage_engine, "action_resolved", "f5e-damage", {
-            "actor": damage_engine.player,
-            "target": damage_engine.enemy,
-            "owner": damage_engine.player,
-            "action_token": "f5e-action-damage",
-        })
-    _assert_true(damage_result.get("success", false), "action_resolved 普通伤害命令成功")
-    _assert_equal(
-        damage_engine.enemy.life, damage_life_before - 12,
-        "普通伤害继续经过 outgoing/incoming 查询后写入生命")
-    _assert_true(
-        handler.calls.filter(func(call): return call["operation"] == "damage")[0]
-            ["results"][0]["payload"]["action_token"] == "f5e-action-damage",
-        "伤害命令沿用当前 Invocation action_token")
-    _assert_equal(
-        query_handler.calls.filter(func(call): return call["kind"] == "query" \
-            and call["hook"] in [
-                "outgoing_damage_query", "incoming_damage_query"]).size(),
-        2,
-        "普通被动伤害恰好执行一次 outgoing 与 incoming 查询")
-
-    handler.calls.clear()
-    query_handler.calls.clear()
-    var true_damage_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_action_true_damage", "f5e_damage_query"])
-    true_damage_engine.enemy.configure_items(["f5e_damage_query"])
-    var true_life_before: int = int(true_damage_engine.enemy.life)
-    var true_result := _commit_f5e_probe_event(
-        true_damage_engine, "action_resolved", "f5e-true-damage", {
-            "actor": true_damage_engine.player,
-            "target": true_damage_engine.enemy,
-            "owner": true_damage_engine.player,
-            "action_token": "f5e-action-true-damage",
-        })
-    _assert_true(true_result.get("success", false), "真实伤害命令成功")
-    _assert_equal(true_damage_engine.enemy.life, true_life_before - 5, "真实伤害保持既有穿透边界")
-    _assert_equal(
-        query_handler.calls.filter(func(call): return call["kind"] == "query" \
-            and call["hook"] in [
-                "outgoing_damage_query", "incoming_damage_query"]).size(),
-        0,
-        "真实伤害不进入普通 outgoing/incoming 查询")
-
-    handler.calls.clear()
-    var remove_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_draw_remove"])
-    var removed_card = remove_engine.player.draw_pile.back()
-    remove_engine.effect_ports.draw(remove_engine.player, 1, "f5e_remove_draw")
-    _assert_true(
-        remove_engine.player.temporarily_removed_cards.has(removed_card),
-        "card_drawn 写端口临时移除卡牌且不进入弃牌堆")
-    _assert_true(
-        not remove_engine.player.discard_pile.has(removed_card),
-        "临时移除不触发明确弃牌路径")
-
-    for discard_case in [
-            ["f5e_discard_random", "discard_random"],
-            ["f5e_discard_all", "discard_all"]]:
-        handler.calls.clear()
-        var discard_engine = _battle_passive_test_engine(
-            catalog, registry, [discard_case[0]])
-        var rock = _card("8", "mountain")
-        rock.set_enhancement("rock_solid")
-        var ordinary = _card("6", "wind")
-        discard_engine.player.hand = [rock, ordinary]
-        discard_engine.player.draw_pile.clear()
-        var discarded := _commit_f5e_probe_event(
-            discard_engine, "action_confirmed",
-            "f5e-%s" % discard_case[1], {
-                "actor": discard_engine.player,
-                "owner": discard_engine.player,
-                "action_token": "f5e-%s-action" % discard_case[1],
-            })
-        _assert_true(discarded.get("success", false), "%s 命令完成" % discard_case[1])
-        _assert_true(discard_engine.player.hand.has(rock), "%s 不移动磐石" % discard_case[1])
-        _assert_true(
-            discard_engine.player.discard_pile.has(ordinary),
-            "%s 仍移动可明确弃掉的普通牌" % discard_case[1])
-
-    handler.calls.clear()
-    var move_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_move"])
-    var move_rock = _card("9", "mountain")
-    move_rock.set_enhancement("rock_solid")
-    move_engine.player.hand = [move_rock]
-    move_engine.player.draw_pile.clear()
-    var move_result := _commit_f5e_probe_event(
-        move_engine, "action_confirmed", "f5e-move-rock", {
-            "actor": move_engine.player, "owner": move_engine.player,
-            "card": move_rock, "card_instance_id": str(move_rock.id),
-        })
-    _assert_true(not move_result.get("success", true), "move_card 明确弃牌继续经过统一权限")
-    _assert_true(move_engine.player.hand.has(move_rock), "权限拒绝时 move_card 不移动磐石")
-
-    handler.calls.clear()
-    var top_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_place_top"])
-    var top_card = top_engine.player.draw_pile.front()
-    var top_result := _commit_f5e_probe_event(
-        top_engine, "action_confirmed", "f5e-place-top", {
-            "actor": top_engine.player, "owner": top_engine.player,
-            "card": top_card, "card_instance_id": str(top_card.id),
-        })
-    _assert_true(top_result.get("success", false), "抽牌堆置顶只调用既有窄能力")
-    _assert_true(top_engine.player.draw_pile.back() == top_card, "置顶命令未直接修改数组仍生效")
-
-    handler.calls.clear()
-    var duplicate_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_exp"])
-    var duplicate_context = BattlePassiveCommittedEventContextScript.new().configure({
-        "hook": "action_confirmed",
-        "event_kind": "action_confirmed",
-        "event_token": "f5e-command-duplicate",
-        "action_token": "f5e-command-action",
-        "actor": duplicate_engine.player,
-        "owner": duplicate_engine.player,
-        "owner_id": duplicate_engine.player.owner_id,
-    })
-    var duplicate_plan = duplicate_engine.passive_rule_runtime.build_execution_plan(
-        "action_confirmed", duplicate_context)
-    var duplicate_invocation = duplicate_plan.invocations[0]
-    var first_command: Dictionary = duplicate_engine.passive_rule_runtime.execute_invocation(
-        duplicate_invocation,
-        duplicate_context.for_invocation(duplicate_invocation), "mutation")
-    var second_command: Dictionary = duplicate_engine.passive_rule_runtime.execute_invocation(
-        duplicate_invocation,
-        duplicate_context.for_invocation(duplicate_invocation), "mutation")
-    _assert_true(first_command["success"] and second_command["success"], "同 token 两次 Invocation 都返回成功")
-    _assert_true(second_command["result"]["results"][0]["reused"], "第二次命令命中 command_token 收据")
-    _assert_equal(duplicate_engine.player.experience, 5, "重复 command_token 不重复增加历练")
-
-    handler.calls.clear()
-    var wait_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_exp"])
-    var wait_selected = _card("8", "wind")
-    var wait_reserve = _card("3", "forest")
-    var wait_reserve_second = _card("5", "fire")
-    wait_engine.player.hand = [wait_selected, wait_reserve, wait_reserve_second]
-    wait_engine.player.draw_pile.clear()
-    wait_engine.actions_available = 1
-    wait_engine.repository.techniques["f5e_wait_probe"] = {
-        "id": "f5e_wait_probe", "name": "F5E 等待探针", "pool": "high",
-        "effects": [{
-            "op": "select_cards", "choice_id": "f5e_wait_once",
-            "prompt": "请选择保留手牌", "chooser": "actor",
-            "minimum": 1, "maximum": 1,
-            "insufficient_policy": "fail",
-            "query": {"side": "actor", "zone": "hand", "order": "zone"},
-            "capture": "f5e_waited",
-        }],
-    }
-    wait_engine.sequence_book.configure({"high_card": ["f5e_wait_probe"]})
-    var wait_start: Dictionary = wait_engine.confirm_play([str(wait_selected.id)])
-    _assert_true(
-        wait_start.get("pending_choice", false),
-        "F5E 行动进入等待选择：%s" % str(wait_start))
-    if not wait_start.get("pending_choice", false):
-        return
-    var wait_experience: int = int(wait_engine.player.experience)
-    var wait_request: Dictionary = wait_start["choice_request"]
-    var wait_finish: Dictionary = wait_engine.resolve_effect_choice(
-        str(wait_request["request_id"]), [str(wait_reserve.id)])
-    _assert_true(wait_finish.get("success", false), "F5E 等待选择恢复后完成")
-    _assert_equal(
-        wait_engine.player.experience, wait_experience,
-        "等待恢复不重复执行 action_confirmed 写命令")
-    _assert_equal(wait_experience, 5, "等待前写命令只增加一次战斗历练")
-
-    handler.calls.clear()
-    var sequence_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_sequence"])
-    var sequence_result := _commit_f5e_probe_event(
-        sequence_engine, "action_confirmed", "f5e-sequence", {
-            "actor": sequence_engine.player, "owner": sequence_engine.player,
-        })
-    _assert_true(sequence_result.get("success", false), "同一 Handler 多命令顺序执行成功")
-    var sequence_call: Dictionary = handler.calls.filter(
-        func(call): return call["operation"] == "sequence")[0]
-    _assert_true(
-        sequence_call["results"][0]["command_token"].ends_with("|0") \
-            and sequence_call["results"][1]["command_token"].ends_with("|1"),
-        "命令 token 按 Handler 调用顺序分配 command_index")
-    _assert_equal(sequence_engine.player.defense, 2, "顺序命令先增加防御")
-    _assert_equal(sequence_engine.player.experience, 3, "顺序命令随后增加历练")
-
-    handler.calls.clear()
-    var invalid_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_invalid"])
-    var invalid_result := _commit_f5e_probe_event(
-        invalid_engine, "action_confirmed", "f5e-invalid", {
-            "actor": invalid_engine.player, "owner": invalid_engine.player,
-        })
-    _assert_true(not invalid_result.get("success", true), "无效 target_scope 明确失败")
-    _assert_equal(invalid_engine.player.defense, 0, "首命令失败后后续命令不修改防御")
-    _assert_equal(invalid_engine.battle_state, "scenario_error", "命令失败进入 scenario_error")
-
-    handler.calls.clear()
-    var overflow_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_overflow"])
-    var overflow_result := _commit_f5e_probe_event(
-        overflow_engine, "action_confirmed", "f5e-overflow", {
-            "actor": overflow_engine.player, "owner": overflow_engine.player,
-        })
-    _assert_true(not overflow_result.get("success", true), "第 65 个写命令被递归保护拒绝")
-    _assert_equal(overflow_engine.battle_state, "scenario_error", "超过 64 命令进入 scenario_error")
-
-    handler.calls.clear()
-    var preview_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_preview"])
-    var preview_result: Dictionary = preview_engine.passive_rule_runtime.dispatch_event(
-        "action_preview", {"owner": preview_engine.player, "actor": preview_engine.player})
-    _assert_true(not preview_result.get("success", true), "action_preview 调用写能力明确失败")
-    _assert_true(
-        not handler.calls[-1]["write_port_available"],
-        "预览与 AI 枚举上下文不注入 BattlePassiveEffectPorts")
-
-    for anomaly_id in ["poison", "vulnerability", "acupoint_block"]:
-        handler.calls.clear()
-        var anomaly_engine = _battle_passive_test_engine(
-            catalog, registry, ["f5e_anomaly_%s" % (
-                "acupoint" if anomaly_id == "acupoint_block" else anomaly_id)])
-        var flawless = anomaly_engine.player.draw_pile.back()
-        flawless.set_enhancement("flawless")
-        var anomaly_result := _commit_f5e_probe_event(
-            anomaly_engine, "card_drawn", "f5e-anomaly-%s" % anomaly_id, {
-                "actor": anomaly_engine.player,
-                "owner": anomaly_engine.player,
-                "card": flawless,
-                "card_instance_id": str(flawless.id),
-            })
-        _assert_true(not anomaly_result.get("success", true), "无漏继续拒绝 %s" % anomaly_id)
-        _assert_true(not flawless.has_anomaly(
-            "state" if anomaly_id == "poison" else "debuff", anomaly_id),
-            "被拒绝异状不写入卡牌：%s" % anomaly_id)
-
-    handler.calls.clear()
-    var mark_engine = _battle_passive_test_engine(
-        catalog, registry, ["f5e_anomaly_mark"])
-    var mark_card = mark_engine.player.draw_pile.back()
-    mark_card.set_enhancement("flawless")
-    var mark_result := _commit_f5e_probe_event(
-        mark_engine, "card_drawn", "f5e-anomaly-mark", {
-            "actor": mark_engine.player, "owner": mark_engine.player,
-            "card": mark_card, "card_instance_id": str(mark_card.id),
-        })
-    _assert_true(
-        mark_result.get("success", false),
-        "无漏仍允许普通标记：%s" % str(mark_result))
-    _assert_true(mark_card.has_anomaly("mark", "return_to_origin"), "普通标记经窄端口实际写入")
-
+func _test_unified_passive_effect_execution() -> void:
+    _assert_unified_passive_effect_entry()
 func _test_effect_source_neutrality_runtime_paths() -> void:
     var registry = PassiveRuleHandlerRegistryScript.new()
     var shared_effects := [
@@ -4889,6 +4439,482 @@ func _dispose_source_neutrality_engine(engine) -> void:
     engine.status_system.use_battle_permission_service(null)
     engine.effect_ports._sides.clear()
 
+func _assert_unified_passive_effect_entry() -> void:
+    var registry = PassiveRuleHandlerRegistryScript.new()
+    _assert_true(registry.has_handler("battle_effects"),
+        "默认注册来源中立 battle_effects 行为")
+    var shared_damage_and_draw := [
+        {"op": "damage", "from_side": "owner", "to_side": "opponent",
+            "amount": 4},
+        {"op": "draw", "side": "owner", "count": 1},
+    ]
+    var standard_effects := [
+        {"op": "capture_query", "capture": "picked", "query": {
+            "side": "owner", "zone": "hand", "order": "left", "limit": 1,
+            "filters": {},
+        }},
+        {"op": "apply_card_anomaly_to_captured", "capture": "picked",
+            "category": "mark", "anomaly": "return_to_origin",
+            "when": {"capture_nonempty": "picked"}},
+        {"op": "move_captured", "capture": "picked",
+            "from_side": "owner", "to_side": "owner",
+            "from_zone": "hand", "to_zone": "discard_pile",
+            "reason": "explicit_discard",
+            "when": {"capture_nonempty": "picked"}},
+        {"op": "defense", "side": "owner", "amount": {
+            "kind": "event_field", "field": "requested_amount"},
+            "when": {"value_at_least": {
+                "value": {"kind": "event_field", "field": "requested_amount"},
+                "minimum": 3,
+            }}},
+        {"op": "write_momentum", "side": "owner",
+            "operation": "add", "amount": 2},
+        {"op": "write_same_qi", "side": "owner",
+            "operation": "add", "amount": 1,
+            "receipt_key": "unified_passive_probe"},
+    ]
+    var inner_damage := _standard_passive_inner(
+        "anonymous_inner_damage", "action_resolved",
+        shared_damage_and_draw)
+    var item_damage := _standard_passive_item(
+        "anonymous_item_damage", "action_resolved",
+        shared_damage_and_draw)
+    var lifecycle_item := _standard_passive_item(
+        "anonymous_lifecycle_item", "battle_start", [
+            {"op": "draw", "side": "owner", "count": 1},
+            {"op": "defense", "side": "owner", "amount": 2},
+        ], 25)
+    var lifecycle_inner := _standard_passive_inner(
+        "anonymous_lifecycle_inner", "battle_start", [
+            {"op": "draw", "side": "owner", "count": 1},
+            {"op": "defense", "side": "owner", "amount": 2},
+        ], 25)
+    var standard_item := _standard_passive_item(
+        "anonymous_standard_ops", "action_confirmed", standard_effects)
+    var preview_item := _standard_passive_item(
+        "anonymous_preview", "action_resolve", [
+            {"op": "defense", "side": "owner", "amount": 5},
+        ])
+    var duplicate_item := _standard_passive_item(
+        "anonymous_duplicate_item", "action_resolved", [
+            {"op": "defense", "side": "owner", "amount": 1},
+        ])
+    var duplicate_item_second := _standard_passive_item(
+        "anonymous_duplicate_item_second", "action_resolved", [
+            {"op": "defense", "side": "owner", "amount": 1},
+        ])
+    var duplicate_inner := _standard_passive_inner(
+        "anonymous_duplicate_inner", "action_resolved", [
+            {"op": "defense", "side": "owner", "amount": 1},
+        ])
+    var receipt_item := _standard_passive_item(
+        "anonymous_receipt", "action_confirmed", [
+            {"op": "defense", "side": "owner", "amount": 3},
+        ])
+    var failure_item := _standard_passive_item(
+        "anonymous_failure", "action_confirmed", [
+            {"op": "select_cards", "choice_id": "must_fail",
+                "prompt": "必须有一张牌", "chooser": "owner",
+                "minimum": 1, "maximum": 1, "insufficient_policy": "fail",
+                "query": {"side": "owner", "zone": "hand",
+                    "order": "zone", "filters": {}},
+                "capture": "selected"},
+            {"op": "defense", "side": "owner", "amount": 99},
+        ])
+    var overflow_effects: Array = []
+    for _index in range(65):
+        overflow_effects.append({
+            "op": "defense", "side": "owner", "amount": 0})
+    var overflow_item := _standard_passive_item(
+        "anonymous_overflow", "action_confirmed", overflow_effects)
+    var waiting_item := _standard_passive_item(
+        "anonymous_waiting", "action_resolve", [
+            {"op": "discard_random", "side": "owner", "count": 1,
+                "capture": "random_discarded"},
+            {"op": "select_cards", "choice_id": "resume_once",
+                "prompt": "选择一张剩余手牌", "chooser": "owner",
+                "minimum": 1, "maximum": 1, "insufficient_policy": "fail",
+                "query": {"side": "owner", "zone": "hand",
+                    "order": "zone", "filters": {}},
+                "capture": "selected"},
+        ])
+    var catalog_result := _battle_passive_test_catalog(registry, [
+        item_damage, lifecycle_item, standard_item, preview_item,
+        duplicate_item, duplicate_item_second, receipt_item, failure_item,
+        overflow_item, waiting_item,
+    ], [inner_damage, lifecycle_inner, duplicate_inner])
+    _assert_true(catalog_result["success"],
+        "匿名通用被动效果内容通过同一 EffectSpecValidator：%s" % str(
+            catalog_result["catalog"].errors))
+    if not catalog_result["success"]:
+        return
+    var catalog = catalog_result["catalog"]
+
+    var technique_engine = _battle_passive_test_engine(catalog, registry, [])
+    var technique_events: Array = []
+    var technique_draw_events: Array = []
+    technique_engine.battle_passive_event_service.event_committed.connect(
+        func(kind: String, values: Dictionary, _receipt: Dictionary):
+            if kind == "damage_resolved" \
+                    and str(values.get("source_id", "")) == "anonymous_technique":
+                technique_events.append(values.duplicate(true))
+            if kind == "card_drawn" \
+                    and str(values.get("source_id", "")) == "anonymous_technique":
+                technique_draw_events.append(values.duplicate(true)))
+    var technique_life_before := int(technique_engine.enemy.life)
+    var technique_context = TechniqueEffectContextScript.new().configure({
+        "ports": technique_engine.effect_ports,
+        "actor": technique_engine.player,
+        "target": technique_engine.enemy,
+        "owner": technique_engine.player,
+        "opponent": technique_engine.enemy,
+        "action_token": "anonymous-technique-action",
+        "source_kind": "technique",
+        "source_id": "anonymous_technique",
+        "source_name": "匿名功法",
+        "source_instance_key": "technique:anonymous_technique",
+        "trigger_mode": "manual",
+    })
+    _assert_true(technique_engine.effect_executor.execute_all(
+        shared_damage_and_draw, technique_context).get("success", false),
+        "匿名功法执行共享 damage 与 draw")
+    _assert_equal(technique_life_before - technique_engine.enemy.life, 4,
+        "功法共享 damage 领域结果为4")
+    _assert_equal(technique_events.size(), 1, "功法共享 damage 提交一次来源事件")
+    _assert_equal(technique_draw_events.size(), 1,
+        "功法共享 draw 提交一次来源事件")
+    _assert_equal(technique_engine.effect_ports.technique_draw_count(
+        technique_engine.player), 1, "只有功法来源抽牌计入功法抽牌")
+    _dispose_source_neutrality_engine(technique_engine)
+
+    for source_case in [
+            ["inner_skill", "anonymous_inner_damage", [],
+                ["anonymous_inner_damage"]],
+            ["item", "anonymous_item_damage", ["anonymous_item_damage"], []],
+        ]:
+        var engine = _battle_passive_test_engine(
+            catalog, registry, source_case[2], source_case[3])
+        var damage_events: Array = []
+        var draw_events: Array = []
+        engine.battle_passive_event_service.event_committed.connect(
+            func(kind: String, values: Dictionary, _receipt: Dictionary):
+                if kind == "damage_resolved" \
+                        and str(values.get("source_id", "")) == source_case[1]:
+                    damage_events.append(values.duplicate(true))
+                if kind == "card_drawn" \
+                        and str(values.get("source_id", "")) == source_case[1]:
+                    draw_events.append(values.duplicate(true)))
+        var life_before := int(engine.enemy.life)
+        var committed := _commit_f5e_probe_event(
+            engine, "action_resolved", "anonymous-%s-damage" % source_case[0], {
+                "actor": engine.player, "target": engine.enemy,
+                "owner": engine.player,
+                "action_token": "anonymous-%s-action" % source_case[0],
+            })
+        _assert_true(committed.get("success", false),
+            "%s 已提交事件执行共享 damage" % source_case[0])
+        _assert_equal(life_before - engine.enemy.life, 4,
+            "%s 与功法共享相同伤害领域语义" % source_case[0])
+        _assert_equal(damage_events.size(), 1,
+            "%s 伤害只提交一次来源事件" % source_case[0])
+        _assert_equal(draw_events.size(), 1,
+            "%s 抽牌只提交一次来源事件" % source_case[0])
+        _assert_equal(engine.effect_ports.technique_draw_count(engine.player), 0,
+            "%s 共享 draw 不计入功法抽牌" % source_case[0])
+        if not damage_events.is_empty():
+            _assert_equal(str(damage_events[0].get("source_kind", "")),
+                source_case[0], "%s 伤害保留独立来源类别" % source_case[0])
+            _assert_equal(str(damage_events[0].get("trigger_mode", "")),
+                "direct", "%s 已提交 Hook 使用 direct trigger_mode" % source_case[0])
+        _dispose_source_neutrality_engine(engine)
+
+    for lifecycle_case in [
+            ["item", "anonymous_lifecycle_item",
+                ["anonymous_lifecycle_item"], []],
+            ["inner_skill", "anonymous_lifecycle_inner", [],
+                ["anonymous_lifecycle_inner"]],
+        ]:
+        var lifecycle_engine = _battle_passive_test_engine(
+            catalog, registry, lifecycle_case[2], lifecycle_case[3])
+        var lifecycle_draw_events: Array = []
+        lifecycle_engine.battle_passive_event_service.event_committed.connect(
+            func(kind: String, values: Dictionary, _receipt: Dictionary):
+                if kind == "card_drawn" \
+                        and str(values.get("source_id", "")) == lifecycle_case[1]:
+                    lifecycle_draw_events.append(values.duplicate(true)))
+        lifecycle_engine.start_player_turn()
+        _assert_equal(lifecycle_engine.player.defense, 2,
+            "%s 在生命周期 Hook 通过共享 defense 生效" % lifecycle_case[0])
+        _assert_equal(lifecycle_draw_events.size(), 1,
+            "%s 在生命周期 Hook 通过共享 draw 生效" % lifecycle_case[0])
+        _assert_equal(lifecycle_engine.effect_ports.technique_draw_count(
+            lifecycle_engine.player), 0,
+            "%s 生命周期抽牌不计功法抽牌" % lifecycle_case[0])
+        _dispose_source_neutrality_engine(lifecycle_engine)
+
+    var standard_engine = _battle_passive_test_engine(
+        catalog, registry, ["anonymous_standard_ops"])
+    var standard_card = _card("7", "forest")
+    standard_engine.player.hand = [standard_card]
+    standard_engine.player.draw_pile.clear()
+    var standard_result := _commit_f5e_probe_event(
+        standard_engine, "action_confirmed", "anonymous-standard-event", {
+            "actor": standard_engine.player, "target": standard_engine.enemy,
+            "owner": standard_engine.player,
+            "action_token": "anonymous-standard-action",
+            "requested_amount": 3,
+        })
+    _assert_true(standard_result.get("success", false),
+        "弃牌、牌区移动、异状、防御、连势和同气走共享效果链")
+    _assert_true(standard_engine.player.discard_pile.has(standard_card),
+        "TargetQuery 捕获后由 move_captured 移入弃牌堆")
+    _assert_true(standard_card.has_anomaly("mark", "return_to_origin"),
+        "被动来源正常执行共享异状 Handler")
+    _assert_equal(standard_engine.player.defense, 3,
+        "ValueSpec event_field 与 ConditionSpec 在被动来源下生效")
+    _assert_equal(standard_engine.player.momentum_value, 2,
+        "连势通过共享 write_momentum 生效")
+    _assert_equal(standard_engine.player.same_qi_value, 1,
+        "同气通过共享 write_same_qi 生效")
+    _assert_true(not FileAccess.file_exists(
+        "res://core/passives/battle_passive_effect_ports.gd"),
+        "BattlePassiveEffectPorts 第二写入口已经删除")
+    _dispose_source_neutrality_engine(standard_engine)
+
+    var preview_engine = _battle_passive_test_engine(
+        catalog, registry, ["anonymous_preview"])
+    var preview_defense := int(preview_engine.player.defense)
+    var preview_rng := int(preview_engine.rng.state)
+    var preview_result: Dictionary = preview_engine.passive_rule_runtime.dispatch_event(
+        "action_preview", {
+            "owner": preview_engine.player,
+            "actor": preview_engine.player,
+            "target": preview_engine.enemy,
+            "payload": {"effect_executor": preview_engine.effect_executor,
+                "damage_percent": 0, "captures_by_source": {}},
+        })
+    _assert_true(preview_result.get("success", false),
+        "action_preview 只生成共享效果意图")
+    _assert_equal(preview_engine.player.defense, preview_defense,
+        "action_preview 不写防御")
+    _assert_equal(preview_engine.rng.state, preview_rng,
+        "action_preview 不推进战斗 RNG")
+    _assert_true(preview_result["results"][0]["result"]["intent"].get(
+        "defense", 0) == 5, "action_preview 返回只读防御意图")
+    _dispose_source_neutrality_engine(preview_engine)
+
+    for duplicate_case in [
+            [["anonymous_duplicate_item", "anonymous_duplicate_item_second"],
+                [], "item"],
+            [[], ["anonymous_duplicate_inner", "anonymous_duplicate_inner"],
+                "inner_skill"],
+        ]:
+        var duplicate_engine = _battle_passive_test_engine(
+            catalog, registry, duplicate_case[0], duplicate_case[1])
+        var duplicate_result := _commit_f5e_probe_event(
+            duplicate_engine, "action_resolved",
+            "anonymous-duplicate-%s" % duplicate_case[2], {
+                "actor": duplicate_engine.player,
+                "target": duplicate_engine.enemy,
+                "owner": duplicate_engine.player,
+            })
+        _assert_true(duplicate_result.get("success", false),
+            "多副本%s分别建立 Invocation" % duplicate_case[2])
+        _assert_equal(duplicate_engine.player.defense, 2,
+            "多副本%s各执行一次共享效果" % duplicate_case[2])
+        var duplicate_context = BattlePassiveCommittedEventContextScript.new().configure({
+            "hook": "action_resolved", "event_kind": "action_resolved",
+            "event_token": "anonymous-duplicate-plan-%s" % duplicate_case[2],
+            "actor": duplicate_engine.player, "target": duplicate_engine.enemy,
+            "owner": duplicate_engine.player,
+        })
+        var duplicate_plan = duplicate_engine.passive_rule_runtime.build_execution_plan(
+            "action_resolved", duplicate_context)
+        var keys: Array = duplicate_plan.invocations.map(
+            func(invocation): return str(invocation.source.source_instance_key))
+        _assert_equal(keys.size(), 2, "多副本%s建立两个 Invocation" % duplicate_case[2])
+        if keys.size() == 2:
+            _assert_true(keys[0] != keys[1],
+                "多副本%s使用不同稳定实例键" % duplicate_case[2])
+            _assert_true(keys[0].contains(":0:") and keys[1].contains(":1:"),
+                "多副本%s 按稳定槽位顺序建立 Invocation" % duplicate_case[2])
+        _dispose_source_neutrality_engine(duplicate_engine)
+
+    var receipt_engine = _battle_passive_test_engine(
+        catalog, registry, ["anonymous_receipt"])
+    var receipt_context = BattlePassiveCommittedEventContextScript.new().configure({
+        "hook": "action_confirmed", "event_kind": "action_confirmed",
+        "event_token": "anonymous-receipt-event",
+        "action_token": "anonymous-receipt-action",
+        "actor": receipt_engine.player, "target": receipt_engine.enemy,
+        "owner": receipt_engine.player,
+        "owner_id": receipt_engine.player.owner_id,
+    })
+    var receipt_plan = receipt_engine.passive_rule_runtime.build_execution_plan(
+        "action_confirmed", receipt_context)
+    var receipt_invocation = receipt_plan.invocations[0]
+    var first_receipt: Dictionary = receipt_engine.passive_rule_runtime.execute_invocation(
+        receipt_invocation, receipt_context.for_invocation(receipt_invocation),
+        "mutation")
+    var second_receipt: Dictionary = receipt_engine.passive_rule_runtime.execute_invocation(
+        receipt_invocation, receipt_context.for_invocation(receipt_invocation),
+        "mutation")
+    _assert_true(first_receipt.get("success", false) \
+            and second_receipt.get("success", false),
+        "重复 Invocation 返回稳定成功收据")
+    _assert_true(second_receipt["result"].get("reused", false),
+        "重复 Invocation 复用标准效果收据")
+    _assert_equal(receipt_engine.player.defense, 3,
+        "稳定收据阻止标准效果重复写入")
+    _dispose_source_neutrality_engine(receipt_engine)
+
+    var failure_engine = _battle_passive_test_engine(
+        catalog, registry, ["anonymous_failure"])
+    failure_engine.player.hand.clear()
+    failure_engine.player.draw_pile.clear()
+    var failure_result := _commit_f5e_probe_event(
+        failure_engine, "action_confirmed", "anonymous-failure-event", {
+            "actor": failure_engine.player, "target": failure_engine.enemy,
+            "owner": failure_engine.player,
+        })
+    _assert_true(not failure_result.get("success", true),
+        "Effect Handler 失败终止当前 Invocation")
+    _assert_equal(failure_engine.player.defense, 0,
+        "失败后不执行同一 Invocation 的后续效果")
+    _dispose_source_neutrality_engine(failure_engine)
+
+    var overflow_engine = _battle_passive_test_engine(
+        catalog, registry, ["anonymous_overflow"])
+    var overflow_result := _commit_f5e_probe_event(
+        overflow_engine, "action_confirmed", "anonymous-overflow-event", {
+            "actor": overflow_engine.player, "target": overflow_engine.enemy,
+            "owner": overflow_engine.player,
+        })
+    _assert_true(not overflow_result.get("success", true),
+        "共享 EffectExecutor 保留单链64命令上限")
+    _dispose_source_neutrality_engine(overflow_engine)
+
+    var waiting_engine = _battle_passive_test_engine(
+        catalog, registry, ["anonymous_waiting"])
+    waiting_engine.start_player_turn()
+    waiting_engine.actions_available = 1
+    var waiting_selected = waiting_engine.player.hand[0]
+    var waiting_start: Dictionary = waiting_engine.confirm_play([
+        str(waiting_selected.id)])
+    _assert_true(waiting_start.get("pending_choice", false),
+        "action_resolve 通用被动效果可进入共享 continuation")
+    if waiting_start.get("pending_choice", false):
+        var discard_count: int = waiting_engine.player.discard_pile.size()
+        var waiting_rng := int(waiting_engine.rng.state)
+        var random_discarded_card = waiting_engine.player.discard_pile.back()
+        var candidates: Array = waiting_start["choice_request"].get(
+            "candidate_ids", [])
+        var waiting_finish: Dictionary = waiting_engine.resolve_effect_choice(
+            str(waiting_start["choice_request"]["request_id"]),
+            [str(candidates[0])] if not candidates.is_empty() else [])
+        _assert_true(waiting_finish.get("success", false),
+            "等待选择从共享 EffectExecutor 恢复")
+        _assert_equal(waiting_engine.player.discard_pile.size(), discard_count + 1,
+            "恢复选择只提交行动牌，不重复执行前置随机弃牌")
+        _assert_equal(waiting_engine.player.discard_pile.count(random_discarded_card), 1,
+            "恢复选择不重复移动前置随机弃牌")
+        _assert_equal(waiting_engine.rng.state, waiting_rng,
+            "恢复选择不重掷统一战斗 RNG")
+    _dispose_source_neutrality_engine(waiting_engine)
+
+    var invalid_values: Dictionary = catalog_result["base_values"].duplicate(true)
+    for invalid_definition in [
+            _standard_passive_item("anonymous_invalid_op", "action_resolved", [
+                {"op": "unknown_passive_effect"}]),
+            _standard_passive_item("anonymous_invalid_value", "action_resolved", [
+                {"op": "damage", "amount": {"kind": "unknown_value"}}]),
+            _standard_passive_item("anonymous_invalid_condition", "action_resolved", [
+                {"op": "damage", "amount": 1,
+                    "when": {"unknown_condition": true}}]),
+            _standard_passive_item("anonymous_invalid_target", "action_resolved", [
+                {"op": "capture_query", "capture": "x", "query": {
+                    "side": "owner", "zone": "hand", "order": "zone",
+                    "filters": {"unknown_target_field": true}}}]),
+            _standard_passive_item("anonymous_invalid_hook", "arbitrary_hook", [
+                {"op": "defense", "amount": 1}]),
+            _standard_passive_item("anonymous_invalid_phase", "action_resolved", [
+                {"op": "defense", "phase": "prepare", "amount": 1}]),
+            _standard_passive_item("anonymous_forged_source", "action_resolved", [
+                {"op": "damage", "amount": 1,
+                    "source_id": "forged", "event_token": "forged"}]),
+        ]:
+        invalid_values["items"]["items"].append(invalid_definition)
+    var invalid_catalog = ContentCatalogScript.new(
+        RuntimeProfileScript.test(), null, null, null, null, null, registry)
+    _assert_true(not invalid_catalog.load_from_definitions(
+        invalid_values, catalog_result["paths"]),
+        "非法 op、ValueSpec、ConditionSpec、TargetQuery、Hook 与伪造来源均在加载期失败")
+    var invalid_text := "\n".join(invalid_catalog.errors)
+    for expected_error in [
+            "未知效果操作码", "未知数值规格 kind", "未知条件字段",
+            "未知目标查询筛选字段", "不是正式可写战斗 Hook",
+            "只允许 action_resolve 参与功法阶段编排", "内容不得伪造"]:
+        _assert_true(invalid_text.contains(expected_error),
+            "加载期诊断包含：%s" % expected_error)
+
+    for core_path in [
+            "res://core/action_resolver.gd",
+            "res://core/passives/passive_rule_runtime.gd",
+            "res://core/effects/damage_effect_handler.gd",
+            "res://core/effects/card_zone_effect_handler.gd"]:
+        var core_text := FileAccess.get_file_as_string(core_path)
+        for anonymous_id in [
+                "anonymous_inner_damage", "anonymous_item_damage",
+                "anonymous_standard_ops"]:
+            _assert_true(not core_text.contains(anonymous_id),
+                "%s 不按匿名内容 ID 分支" % core_path)
+
+func _standard_passive_item(
+        content_id: String,
+        hook: String,
+        effects: Array,
+        order: int = 100) -> Dictionary:
+    var configuration := {
+        "hook": hook,
+        "effects": effects.duplicate(true),
+    }
+    if hook in PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS:
+        configuration["order"] = order
+    return {
+        "id": content_id,
+        "name": "匿名物品·%s" % content_id,
+        "kind": "item",
+        "status": "candidate",
+        "unique": true,
+        "description": "仅用于统一被动效果入口测试。",
+        "price": 1,
+        "behaviors": [{
+            "id": "battle_effects",
+            "configuration": configuration,
+        }],
+    }
+
+func _standard_passive_inner(
+        content_id: String,
+        hook: String,
+        effects: Array,
+        order: int = 100) -> Dictionary:
+    var configuration := {
+        "hook": hook,
+        "effects": effects.duplicate(true),
+    }
+    if hook in PassiveRuleHandlerRegistryScript.BATTLE_TIMING_HOOKS:
+        configuration["order"] = order
+    return {
+        "id": content_id,
+        "name": "匿名内功·%s" % content_id,
+        "status": "candidate",
+        "behaviors": [{
+            "id": "battle_effects",
+            "configuration": configuration,
+        }],
+    }
+
 func _commit_f5e_probe_event(
         engine,
         event_kind: String,
@@ -4898,18 +4924,6 @@ func _commit_f5e_probe_event(
     payload["event_token"] = event_token
     payload["event_serial"] = engine.battle_passive_event_service.next_serial()
     return engine.battle_passive_event_service.commit(event_kind, payload)
-
-func _f5e_probe_item(content_id: String, configuration: Dictionary) -> Dictionary:
-    return {
-        "id": content_id,
-        "name": "F5E 战斗写命令探针·%s" % content_id,
-        "kind": "item", "status": "candidate", "unique": true,
-        "description": "仅用于 F5E 自动化测试。", "price": 1,
-        "behaviors": [{
-            "id": "battle_passive_effect_probe",
-            "configuration": configuration.duplicate(true),
-        }],
-    }
 
 func _battle_passive_test_item(
         content_id: String,

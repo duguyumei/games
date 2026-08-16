@@ -1,7 +1,7 @@
 class_name DefenseEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver
@@ -25,11 +25,14 @@ func execute(effect: Dictionary, context):
     match str(effect.get("op", "")):
         "defense":
             var resolved: int = value_resolver.resolve(effect.get("amount", {}), runtime)
+            var side = runtime.resolve_side(str(effect.get("side", "actor")))
+            if side == null:
+                return EffectResultScript.failed("防御目标作用域不存在")
             var amount: int = (
                 runtime.ports.add_defense(
-                    runtime.actor, resolved, runtime.source_kind,
+                    side, resolved, runtime.source_kind,
                     runtime.action_token)
-                if runtime.ports != null else runtime.actor.add_defense(resolved))
+                if runtime.ports != null else side.add_defense(resolved))
             return EffectResultScript.succeeded("获得 %d 防御" % amount)
         "defense_from_noncontributing_qi":
             var resolved: int = value_resolver.noncontributing_qi_total(runtime)
@@ -40,9 +43,9 @@ func execute(effect: Dictionary, context):
                 if runtime.ports != null else runtime.actor.add_defense(resolved))
             return EffectResultScript.succeeded("额外真气转化 %d 防御" % amount)
         "remove_defense":
-            var side = runtime.target \
-                if str(effect.get("side", "actor")) == "target" \
-                else runtime.actor
+            var side = runtime.resolve_side(str(effect.get("side", "actor")))
+            if side == null:
+                return EffectResultScript.failed("防御移除目标作用域不存在")
             var remove_all := bool(effect.get("all", false))
             var requested: int = value_resolver.resolve(
                 effect.get("amount", 0), runtime)

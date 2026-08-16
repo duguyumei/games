@@ -1,7 +1,7 @@
 class_name ActionResolver
 extends RefCounted
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const BattleActionRecordScript = preload("res://core/battle_action_record.gd")
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const TechniquePhaseCatalogScript = preload(

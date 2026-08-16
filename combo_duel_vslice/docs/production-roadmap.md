@@ -404,6 +404,11 @@ S2-F5D3 在同一个 Runtime 上补齐牌型 Options、卡牌身份 Facts 和战
 
 S2-F5E 又为十个生命周期与七个已提交事件补齐 Invocation 作用域的 `BattlePassiveEffectPorts`。被动 Handler 只能通过 `owner`／`actor`／`target`／`opponent` 和卡牌实例 ID 请求抽弃牌、防御、伤害、牌区移动、临时移除、异状、置顶、战斗历练、额外行动或气势；底层统一复用 `BattleEffectPorts`、战斗 RNG、数值查询、权限否决和细粒度事件。查询与预览不获得写端口，事件级和命令级 token 分别去重，嵌套调用链有 64 命令上限。本阶段仍未录入正式内功、物品或功法，也没有增加万能效果 DSL。
 
+第二批底层优化已经替代上述过渡门面：`BattlePassiveEffectPorts` 删除，标准战斗写效果改由
+`battle_effects` 计划携带普通 EffectSpec，统一进入功法使用的 `EffectExecutor →
+BattleEffectPorts`。`on_play_effects` 仅保留兼容 behavior ID；生命周期与全部已登记 committed
+event 可以建立有序效果链，查询和预览仍只读。该优化没有录入正式内功、物品或新增功法。
+
 S2-F5F 已把预留的功法启动与协同权限完整接入预览、玩家／敌方确认和本地／远程 AI 共用链。出牌、功法条件、功法启动三层判断分离；主组和协同组分别冻结启动权限，协同候选与正式确认分别查询建立权限。启动明确拒绝仍正常打牌和结算合格被动，但不读取连势、不结算功法、不推进序列；查询错误或正式协同拒绝整单回滚且不发送确认事件。等待恢复与重复 finalizer 只读冻结结果。该阶段只有接口接线与 Fake Provider 测试，没有录入正式内容或内容 ID 分支。
 
 ### S4.0 · 双方同名时点权威门禁

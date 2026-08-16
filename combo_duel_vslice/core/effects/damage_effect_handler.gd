@@ -1,7 +1,7 @@
 class_name DamageEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver
@@ -37,10 +37,12 @@ func execute(effect: Dictionary, context):
                     if value_resolver.condition_met(typed.get("when", {}), runtime) \
                     else str(typed.get("else", "normal"))
             is_true = damage_type == "true"
-            var damage_actor = runtime.target \
-                if str(effect.get("from_side", "actor")) == "target" else runtime.actor
-            var damage_target = runtime.actor \
-                if str(effect.get("to_side", "target")) == "actor" else runtime.target
+            var damage_actor = runtime.resolve_side(str(
+                effect.get("from_side", "actor")))
+            var damage_target = runtime.resolve_side(str(
+                effect.get("to_side", "target")))
+            if damage_actor == null or damage_target == null:
+                return EffectResultScript.failed("伤害来源或目标作用域不存在")
             var damage_source: Dictionary = runtime.source_metadata()
             var resolution_metadata := {
                 "direct_attack": bool(effect.get(

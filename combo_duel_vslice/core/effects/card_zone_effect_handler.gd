@@ -1,7 +1,7 @@
 class_name CardZoneEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 const TargetQueryScript = preload("res://core/effects/effect_target_query.gd")
 
@@ -71,7 +71,7 @@ func execute(effect: Dictionary, context):
                 "属性追加抽 %d 张" % drawn.size() if matches else "")
         "discard_random":
             var count: int = value_resolver.resolve(effect.get("count", {}), runtime)
-            var discard_side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
+            var discard_side = _resolve_side(runtime, str(effect.get("side", "actor")))
             var discarded: Array = (
                 runtime.ports.discard_random(
                     discard_side, count, rng, runtime.source_metadata())
@@ -80,7 +80,7 @@ func execute(effect: Dictionary, context):
                 runtime.captures[str(effect["capture"])] = discarded
             return EffectResultScript.succeeded("随机弃 %d 张" % discarded.size())
         "discard_all_hand":
-            var discard_side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
+            var discard_side = _resolve_side(runtime, str(effect.get("side", "actor")))
             var discarded: Array = (
                 runtime.ports.discard_all(
                     discard_side, runtime.source_metadata())
@@ -100,7 +100,7 @@ func execute(effect: Dictionary, context):
         "draw_filtered":
             return _draw_filtered(effect, runtime)
         "draw_to_limit":
-            var side = runtime.actor if str(effect.get("side", "actor")) == "actor" else runtime.target
+            var side = _resolve_side(runtime, str(effect.get("side", "actor")))
             var drawn: Array = side.draw_to_limit(
                 "effect_draw", runtime.source_metadata()) if side != null else []
             if effect.has("capture"):
@@ -184,7 +184,7 @@ func summarize(_effect: Dictionary, _context, _intent: Dictionary, _state: Dicti
     pass
 
 func _resolve_side(runtime, side_key: String):
-    return runtime.target if side_key == "target" else runtime.actor
+    return runtime.resolve_side(side_key)
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("op", "")) in ["move_query", "draw_filtered", "capture_query"]:
@@ -205,8 +205,8 @@ func _move_captured(effect: Dictionary, runtime):
     if runtime.ports == null:
         return EffectResultScript.failed("牌区移动缺少战斗端口")
     var cards: Array = runtime.captures.get(str(effect.get("capture", "")), []).duplicate()
-    var source_side = runtime.actor if str(effect.get("from_side", "actor")) == "actor" else runtime.target
-    var target_side = runtime.actor if str(effect.get("to_side", "actor")) == "actor" else runtime.target
+    var source_side = _resolve_side(runtime, str(effect.get("from_side", "actor")))
+    var target_side = _resolve_side(runtime, str(effect.get("to_side", "actor")))
     var source_zone := str(effect.get("from_zone", "hand"))
     var destination_zone := str(effect.get("to_zone", "discard_pile"))
     var moved: Array = []
@@ -304,7 +304,7 @@ func _draw_rank_different_replacements(effect: Dictionary, runtime):
 func _reorder_captured_draw_pile(effect: Dictionary, runtime):
     var inspected: Array = runtime.captures.get(str(effect.get("capture", "")), [])
     var ordered: Array = runtime.captures.get(str(effect.get("ordered_capture", "")), [])
-    var side = runtime.target if str(effect.get("side", "actor")) == "target" else runtime.actor
+    var side = _resolve_side(runtime, str(effect.get("side", "actor")))
     if not ordered.is_empty():
         var valid := ordered.size() == inspected.size()
         for card in inspected:
@@ -427,7 +427,7 @@ func _synchronous_discard_queries(effect: Dictionary, runtime):
     return EffectResultScript.succeeded("同步弃置%d张真气" % moved.size())
 
 func _discard_duplicate_ranks(effect: Dictionary, runtime):
-    var side = runtime.target if str(effect.get("side", "target")) == "target" else runtime.actor
+    var side = _resolve_side(runtime, str(effect.get("side", "target")))
     var groups: Dictionary = {}
     for card in side.hand:
         var rank := int(card.current_rank_order())
@@ -451,7 +451,7 @@ func _discard_duplicate_ranks(effect: Dictionary, runtime):
     return EffectResultScript.succeeded("重复牌阶弃置%d张" % moved.size())
 
 func _discard_by_visible_attribute(effect: Dictionary, runtime):
-    var side = runtime.target if str(effect.get("side", "target")) == "target" else runtime.actor
+    var side = _resolve_side(runtime, str(effect.get("side", "target")))
     var attributes := ["wind", "forest", "fire", "mountain"]
     var selected := ""
     var mode := str(effect.get("mode", "random"))
@@ -515,8 +515,7 @@ func _discard_captured_by_selected_base_attribute(effect: Dictionary, runtime):
         str(effect.get("capture", "")), []).duplicate()
     var selected_cards: Array = runtime.captures.get(
         str(effect.get("selected_capture", "")), [])
-    var source_side = runtime.target \
-        if str(effect.get("side", "target")) == "target" else runtime.actor
+    var source_side = _resolve_side(runtime, str(effect.get("side", "target")))
     if source_side == null or selected_cards.is_empty():
         runtime.captures[str(effect.get("result_capture", "discarded"))] = []
         return EffectResultScript.succeeded()

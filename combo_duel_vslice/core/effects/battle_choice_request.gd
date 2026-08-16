@@ -28,8 +28,8 @@ func configure(values: Dictionary):
 func validate_definition() -> Dictionary:
     if request_id == "":
         return _invalid("选择请求缺少 request_id")
-    if chooser not in ["actor", "target"]:
-        return _invalid("选择请求 chooser 必须为 actor 或 target")
+    if chooser not in ["actor", "target", "owner", "opponent"]:
+        return _invalid("选择请求 chooser 必须为 actor、target、owner 或 opponent")
     if minimum < 0 or maximum < minimum:
         return _invalid("选择数量范围无效")
     if insufficient_policy not in INSUFFICIENT_POLICIES:

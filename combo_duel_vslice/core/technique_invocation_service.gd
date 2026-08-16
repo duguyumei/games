@@ -2,7 +2,7 @@ class_name TechniqueInvocationService
 extends RefCounted
 
 const EffectContextScript = preload(
-    "res://core/effects/technique_effect_context.gd")
+    "res://core/effects/battle_effect_context.gd")
 
 var _resolution_service
 var _ports

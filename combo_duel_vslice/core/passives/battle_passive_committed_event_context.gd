@@ -123,3 +123,38 @@ func for_invocation(current_invocation):
         "battle_effect_ports": battle_effect_ports,
         "battle_effect_scope": battle_effect_scope,
     })
+
+func public_effect_values() -> Dictionary:
+    var result := payload.duplicate(true)
+    result.merge({
+        "event_token": event_token,
+        "event_serial": event_serial,
+        "action_token": action_token,
+        "round_number": round_number,
+        "source_kind": source_kind,
+        "source_id": source_id,
+        "source_name": source_name,
+        "source_instance_key": source_instance_key,
+        "trigger_mode": trigger_mode,
+        "requested_amount": requested_amount,
+        "final_amount": final_amount,
+        "effective_amount": effective_amount,
+        "defense_lost": defense_lost,
+        "life_lost": life_lost,
+        "actual_life_loss": actual_life_loss,
+        "damage_type": damage_type,
+        "defense_before": defense_before,
+        "defense_after": defense_after,
+        "frozen_amount": frozen_amount,
+        "draw_reason": draw_reason,
+        "from_zone": from_zone,
+        "reason": reason,
+        "explicit_discard": explicit_discard,
+        "normal_play": normal_play,
+        "technique_triggered": technique_triggered,
+        "action_succeeded": action_succeeded,
+        "source_card_instance_id": source_card_instance_id,
+        "pre_move_snapshot": pre_move_snapshot.duplicate(true),
+        "metadata": metadata.duplicate(true),
+    }, true)
+    return result

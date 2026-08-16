@@ -60,6 +60,24 @@ preload 三个 core 文件（组合根、战斗会话、战斗引擎）。**新�
 `ContentValidator` 负责内容文件之间的整体形状和引用；效果规格本身由
 `EffectSpecValidator` 负责，操作码新增时改后者。文件规模会随协议演进，不在流程文档记录行数。
 
+内功或物品需要执行标准战斗写效果时，使用 `battle_effects` behavior：
+
+```json
+{
+  "id": "battle_effects",
+  "configuration": {
+    "hook": "action_resolved",
+    "effects": [{"op": "defense", "side": "owner", "amount": 2}]
+  }
+}
+```
+
+十个生命周期 Hook 还必须声明整数 `order`；`action_resolve` 与已提交事件 Hook 不声明
+`order`。只有 `action_resolve` effects 可以声明 `phase`；其他 Hook 是单条有序链，显式 phase
+会在加载期失败。效果规格与功法完全共用同一校验器、Handler、ValueSpec、ConditionSpec 和
+TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得用未登记 Hook。需要选择并等待
+恢复的效果放在 `action_resolve`；已提交事件与生命周期效果链必须一次完成。
+
 ### 硬编码边界
 
 - 功法、异状、角色状态、奖励和修习商品等**内容 ID**不得散落在会话、战斗流程或
@@ -81,6 +99,7 @@ preload 三个 core 文件（组合根、战斗会话、战斗引擎）。**新�
 | 牌型识别与数值 | `hand_evaluator.gd`、`power_calculator.gd` |
 | 效果执行 | `core/effects/` 下对应处理器 |
 | 效果如何修改战斗状态 | `core/effects/battle_effect_ports.gd`（唯一窄端口） |
+| 被动标准效果何时执行 | `passives/battle_effects_passive_handler.gd` 只建立普通效果计划 |
 | 回合生命周期 | `battle_round_service.gd` |
 | 行动事务顺序 | `battle_action_service.gd` |
 | 配装顺序 | `battle_loadout_service.gd` |
@@ -89,6 +108,12 @@ preload 三个 core 文件（组合根、战斗会话、战斗引擎）。**新�
 **约束**：效果处理器只能通过 `BattleEffectPorts` 修改状态，不直接拿完整
 `CombatEngine`。端口的四个依赖是必需的，不接受 null —— 允许缺依赖就意味着每个
 方法都要带兜底分支，而兜底分支会在依赖真的缺失时静默改用另一套判定。
+
+`PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
+压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、
+额外行动、同气和连势不得在 Handler 中重新包装；旧 `BattlePassiveEffectPorts` 已删除。
+功法 `action_resolve` 可以继续参与四阶段编排，其他被动 Hook 执行单条有序效果链，不复制阶段
+目录或 Effect Handler。
 
 **门禁**：
 

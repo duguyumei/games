@@ -8,7 +8,7 @@ extends RefCounted
 
 const HandEvaluatorScript = preload("res://core/hand_evaluator.gd")
 const PowerCalculatorScript = preload("res://core/power_calculator.gd")
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const ActionPreviewDtoScript = preload("res://core/action_preview_dto.gd")
 const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
 const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")

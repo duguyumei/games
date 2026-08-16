@@ -4,6 +4,8 @@ extends RefCounted
 const HandlerScript = preload("res://core/passives/passive_rule_handler.gd")
 const OnPlayEffectsHandlerScript = preload(
     "res://core/passives/on_play_effects_passive_handler.gd")
+const BattleEffectsHandlerScript = preload(
+    "res://core/passives/battle_effects_passive_handler.gd")
 const CounterDefinitionScript = preload(
     "res://core/passives/passive_counter_definition.gd")
 const BattleCounterDefinitionScript = preload(
@@ -93,7 +95,13 @@ func _init(register_defaults: bool = true, effect_registry = null) -> void:
     for hook in HOOKS:
         _known_hooks[str(hook)] = true
     if register_defaults:
+        register_handler(BattleEffectsHandlerScript.new(effect_registry))
         register_handler(OnPlayEffectsHandlerScript.new(effect_registry))
+
+func use_effect_registry(effect_registry) -> void:
+    for handler_value in _handlers.values():
+        if handler_value.has_method("use_effect_registry"):
+            handler_value.use_effect_registry(effect_registry)
 
 func use_effect_indexes(anomalies_by_id: Dictionary) -> void:
     for handler in _handlers.values():
@@ -248,7 +256,7 @@ func validate_battle_timing_bindings(
         return ["battle_timing_bindings 必须返回数组"] as Array[String]
     var errors: Array[String] = []
     var seen: Dictionary = {}
-    var supported: Array[String] = current.supported_hooks()
+    var supported: Array = current.supported_hooks()
     for index in range(values.size()):
         var value = values[index]
         if not value is Dictionary:

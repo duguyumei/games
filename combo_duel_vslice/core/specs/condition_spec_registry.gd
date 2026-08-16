@@ -2,7 +2,7 @@ class_name ConditionSpecRegistry
 extends RefCounted
 
 const EffectContextScript = preload(
-    "res://core/effects/technique_effect_context.gd")
+    "res://core/effects/battle_effect_context.gd")
 const EffectSourceProtocolScript = preload(
     "res://core/effects/effect_source_protocol.gd")
 const HandGroupSnapshotScript = preload("res://core/hand_group_snapshot.gd")
@@ -373,7 +373,8 @@ func _scalar_valid(value, validation: String) -> bool:
         "anomaly_category": return value is String \
             and _anomaly_category_ids.has(str(value))
         "hand_id": return value is String and _hand_ids.has(str(value))
-        "side": return value is String and str(value) in ["actor", "target"]
+        "side": return value is String and str(value) in [
+            "actor", "target", "owner", "opponent"]
         "zone": return value is String and ZONE_IDS.has(str(value))
         "damage_type": return value is String and DAMAGE_TYPES.has(str(value))
         "trigger_mode": return value is String \
@@ -399,7 +400,7 @@ func _validation_message(validation: String) -> String:
         "attribute_or_any": return "必须为 any 或已登记属性"
         "anomaly_category": return "引用未知异状类别"
         "hand_id": return "引用未知精确牌型"
-        "side": return "必须为 actor 或 target"
+        "side": return "必须为 actor、target、owner 或 opponent"
         "zone": return "引用未知牌区"
         "damage_type": return "引用未知伤害类型"
         "trigger_mode": return "引用未知 trigger_mode"

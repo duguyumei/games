@@ -16,6 +16,8 @@ const NodeInteractionHandlerRegistryScript = preload(
     "res://core/node_interactions/node_interaction_handler_registry.gd")
 const PassiveRuleHandlerRegistryScript = preload(
     "res://core/passives/passive_rule_handler_registry.gd")
+const EffectHandlerRegistryScript = preload(
+    "res://core/effects/effect_handler_registry.gd")
 
 const CONTENT_ORDER := [
     "base_deck",
@@ -82,7 +84,10 @@ func _init(
         runtime_profile_override
         if runtime_profile_override != null
         else RuntimeProfileScript.current())
-    effect_registry = effect_registry_override
+    effect_registry = (
+        effect_registry_override
+        if effect_registry_override != null
+        else EffectHandlerRegistryScript.new(RandomNumberGenerator.new()))
     run_effect_registry = (
         run_effect_registry_override
         if run_effect_registry_override != null
@@ -103,6 +108,8 @@ func _init(
         passive_rule_registry_override
         if passive_rule_registry_override != null
         else PassiveRuleHandlerRegistryScript.new(true, effect_registry))
+    if passive_rule_registry.has_method("use_effect_registry"):
+        passive_rule_registry.use_effect_registry(effect_registry)
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()

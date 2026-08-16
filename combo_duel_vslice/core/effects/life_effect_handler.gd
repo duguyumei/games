@@ -1,7 +1,7 @@
 class_name LifeEffectHandler
 extends EffectHandler
 
-const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
+const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver
@@ -19,7 +19,9 @@ func execute(effect: Dictionary, context):
     var runtime = EffectContextScript.coerce(context)
     if runtime.ports == null:
         return EffectResultScript.failed("生命处理器缺少战斗端口")
-    var side = runtime.target if str(effect.get("side", "actor")) == "target" else runtime.actor
+    var side = runtime.resolve_side(str(effect.get("side", "actor")))
+    if side == null:
+        return EffectResultScript.failed("生命恢复目标作用域不存在")
     var amount: int = int(value_resolver.resolve(effect.get("amount", 0), runtime))
     var result: Dictionary = runtime.ports.recover_life(
         side, amount, runtime.source_kind, runtime.action_token, runtime.actor)

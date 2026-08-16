@@ -22,8 +22,6 @@ const BattleCounterReadPortScript = preload(
     "res://core/passives/battle_passive_counter_read_port.gd")
 const BattleCounterMutationPortScript = preload(
     "res://core/passives/battle_passive_counter_mutation_port.gd")
-const BattlePassiveEffectPortsScript = preload(
-    "res://core/passives/battle_passive_effect_ports.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 const BATTLE_MUTATION_HOOKS := \
@@ -35,8 +33,9 @@ var suppression_service
 var activation_policy
 var capacity_policy
 var _battle_effect_ports_ref: WeakRef
+var _effect_executor_ref: WeakRef
 var _battle_effect_scenario_error: Callable
-var _battle_effect_command_receipts: Dictionary = {}
+var _battle_effect_invocation_receipts: Dictionary = {}
 var _active_effect_chain: Dictionary = {}
 var _effect_execution_depth: int = 0
 
@@ -67,13 +66,19 @@ func use_battle_effect_ports(
     _battle_effect_ports_ref = weakref(ports) if ports != null else null
     _battle_effect_scenario_error = scenario_error_callback
 
+func use_effect_executor(executor) -> void:
+    _effect_executor_ref = weakref(executor) if executor != null else null
+    if registry != null and registry.has_method("use_effect_registry") \
+            and executor != null:
+        registry.use_effect_registry(executor.registry)
+
 func open_battle_effect_commands(_battle_instance_id: String = "") -> void:
-    _battle_effect_command_receipts.clear()
+    _battle_effect_invocation_receipts.clear()
     _active_effect_chain.clear()
     _effect_execution_depth = 0
 
 func close_battle_effect_commands() -> void:
-    _battle_effect_command_receipts.clear()
+    _battle_effect_invocation_receipts.clear()
     _active_effect_chain.clear()
     _effect_execution_depth = 0
 
@@ -190,8 +195,7 @@ func execute_invocation(
     var mutation_hook: bool = invocation.hook in BATTLE_MUTATION_HOOKS
     if mutation_hook:
         _begin_effect_chain()
-        _attach_battle_effect_port(invocation, invocation_context)
-    elif invocation_context.has_method("use_battle_effect_ports"):
+    if invocation_context.has_method("use_battle_effect_ports"):
         invocation_context.use_battle_effect_ports(null, {})
     var ports: Array = _attach_counter_ports(
         invocation.source, invocation_context, counter_access)
@@ -209,11 +213,16 @@ func execute_invocation(
             "success": false,
             "reason": "；".join(port_errors),
         }
+    if result.get("success", false) \
+            and mutation_hook \
+            and invocation.hook != "action_resolve" \
+            and result.get("effects") is Array \
+            and not result.get("effects", []).is_empty():
+        result = _execute_standard_effects(
+            invocation, invocation_context, result)
     # The scoped port retains its Invocation context while the Handler runs.  Clear
     # both references before returning so a RefCounted context/port cycle cannot
     # survive a completed event.
-    if mutation_hook and invocation_context.has_method("use_battle_effect_ports"):
-        invocation_context.use_battle_effect_ports(null, {})
     if mutation_hook:
         _end_effect_chain()
     if not result.get("success", false):
@@ -235,31 +244,67 @@ func execute_invocation(
         "result": result,
     }
 
-func _attach_battle_effect_port(invocation, context) -> void:
-    var base_ports = (
-        _battle_effect_ports_ref.get_ref()
-        if _battle_effect_ports_ref != null else null)
-    if base_ports == null or not context.has_method("use_battle_effect_ports"):
-        if context.has_method("use_battle_effect_ports"):
-            context.use_battle_effect_ports(null, {})
-        return
-    var existing_scope: Dictionary = context.battle_effect_scope.duplicate(false)
-    existing_scope["hook"] = invocation.hook
-    var action_token := str(existing_scope.get("action_token", ""))
-    if action_token == "":
-        action_token = str(context.payload.get("action_token", ""))
-    existing_scope["action_token"] = action_token
-    var event_token := str(existing_scope.get("event_token", ""))
-    if event_token == "":
-        event_token = str(context.payload.get("event_token", ""))
-    existing_scope["event_token"] = event_token
-    var port = BattlePassiveEffectPortsScript.new(
-        base_ports,
+func _execute_standard_effects(
+        invocation,
         context,
-        _battle_effect_command_receipts,
-        _active_effect_chain,
-        _battle_effect_scenario_error)
-    context.use_battle_effect_ports(port, existing_scope)
+        handler_result: Dictionary) -> Dictionary:
+    var executor = _effect_executor_ref.get_ref() \
+        if _effect_executor_ref != null else null
+    var effect_ports = _battle_effect_ports_ref.get_ref() \
+        if _battle_effect_ports_ref != null else null
+    if executor == null or effect_ports == null:
+        return {"success": false, "reason": "被动标准效果执行入口尚未装配"}
+    var receipt_token := _effect_invocation_token(invocation, context)
+    if _battle_effect_invocation_receipts.has(receipt_token):
+        var reused: Dictionary = _battle_effect_invocation_receipts[
+            receipt_token].duplicate(true)
+        reused["reused"] = true
+        return reused
+    var effect_context = context.effect_context_for(invocation.source)
+    effect_context.ports = effect_ports
+    effect_context.effect_chain_state = _active_effect_chain
+    var executed: Dictionary = executor.execute_all(
+        handler_result.get("effects", []), effect_context)
+    if executed.get("pending_choice", false):
+        return {
+            "success": false,
+            "reason": "%s 不允许悬挂未接管的被动选择；请在 action_resolve 建立选择链" \
+                % invocation.hook,
+        }
+    if not executed.get("success", false):
+        var reason := str(executed.get("detail", "被动标准效果执行失败"))
+        if _battle_effect_scenario_error.is_valid():
+            _battle_effect_scenario_error.call(
+                "战斗被动标准效果失败：%s" % reason)
+        return {"success": false, "reason": reason, "effect_result": executed}
+    var result := handler_result.duplicate(true)
+    result["effect_result"] = executed
+    result["receipt_token"] = receipt_token
+    result["reused"] = false
+    _battle_effect_invocation_receipts[receipt_token] = result.duplicate(true)
+    return result
+
+func _effect_invocation_token(invocation, context) -> String:
+    var effect_ports = _battle_effect_ports_ref.get_ref() \
+        if _battle_effect_ports_ref != null else null
+    var battle_id: String = effect_ports.battle_instance_id() \
+        if effect_ports != null else "battle-unavailable"
+    var semantic_token := str(context.battle_effect_scope.get(
+        "event_token", context.payload.get("event_token", "")))
+    if semantic_token == "":
+        semantic_token = str(context.battle_effect_scope.get(
+            "action_token", context.payload.get("action_token", "")))
+    if semantic_token == "":
+        semantic_token = "%s:%s" % [
+            invocation.hook,
+            str(context.battle_effect_scope.get("timing_serial", -1))]
+    return "%s|%s|%s|%d|%d" % [
+        battle_id,
+        semantic_token,
+        invocation.source.source_instance_key,
+        invocation.source.behavior_index,
+        invocation.execution_index,
+    ]
 
 func _begin_effect_chain() -> void:
     if _effect_execution_depth == 0:
