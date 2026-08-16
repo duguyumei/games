@@ -117,6 +117,47 @@ BattleEffectPorts 与 BattleActionService 优化完成、进入 `StatusSystem` �
 `/tmp/taiwu-status-anomaly-project-load-01.log`，覆盖 674 项；`Can't load script`、`File not found`、
 `Parse Error` 与 `SCRIPT ERROR` 无匹配，仅有已知非阻塞 macOS CA 证书警告。
 
+### StatusSystem 真气行为职责第三批迁出（2026-08-17）
+
+新增 `core/statuses/card_status_behavior_service.gd`，作为真气异状行为收集、排序、执行、合格触发重演
+与聚合的唯一服务。依赖方向固定为
+`StatusSystem → CardStatusBehaviorService → ContentCatalog / CardAnomalyService /
+StatusBehaviorRegistry / StatusBehaviorContext`；服务另外只持有可选 RNG、可选
+`CardTriggerReplayService` 和 `BattleEffectPorts` 弱引用，不持有 `StatusSystem`、`CombatEngine`、
+`TimingSystem`、动态响应／延迟记录、`StatusHistoryService` 或 `BattlePermissionService`。
+
+`CardStatusBehaviorService` 独占正式运行路径的 `StatusBehaviorRegistry` 实例。`StatusSystem` 的公开
+`behavior_registry` 字段在构造时指向该同一实例，现有测试、内容诊断和外部处理器注册不需要改调用。
+`StatusBehaviorContext` 删除完整 `status_system` 字段，改为窄依赖 `card_anomaly_service`；
+`CardStatusBehaviorHandler` 的有效真气读取、异状施加和异状移除均直接调用这一服务。效果写操作仍只
+通过统一 `BattleEffectPorts` 完成，因此行为服务没有反向依赖 Facade。
+
+`StatusSystem` 保留 `on_card_enter_discard_behaviors`、`on_card_enter_discard_late`、`on_card_drawn`、
+`on_card_explicit_discard`、`resolve_played_card_anomalies`、`can_play_card`、`can_play_cards` 与
+`permission_query` 的原签名作为薄 Facade。统一权限服务存在时 `can_play_card` 仍先调用它；权限服务
+查询 StatusSystem provider 时，`permission_query` 直接委托行为服务的 `play_attempt`，不会再次进入
+权限服务。`use_effect_ports`、`use_rng`、`use_card_trigger_replay_service` 继续由 Facade 接收并同步
+转发；Facade 的 `_rng` 因现有 `BattleSide` 快照协议仍然保留。
+
+稳定顺序和重演语义没有变化：entries 按 priority、status ID、behavior index 排序；普通执行前逐项
+确认当前异状，首次成功执行的 entries 才组成重演链，重演不再检查首次过程中已经移除的异状。
+`damage_holder_by_current_qi` 在首次执行前通过 `CardAnomalyService` 冻结有效真气，后续重演沿用同一
+`frozen_amount`。`stop_card_behaviors` 立即截断当前链，blocked 使用或聚合，reason 只填充首个非空值。
+合格映射仍只有 played→card_played、draw→card_drawn、explicit_discard→card_explicitly_discarded、
+enter_discard→card_entered_discard、turn_end→turn_end；`enter_discard_late` 与 `turn_end_final` 不重演。
+
+回合时点的外层所有权仍在 `StatusSystem`：TURN_END 在延迟效果结算后委托
+`card_status_behavior_service.on_turn_end`，随后继续处理手牌上限和动态响应到期；TURN_END_FINAL 只做
+空 actor 判断并委托 `on_turn_end_final`。牌区合法性与早期／晚期弃牌顺序继续由 `CardZoneService`
+保证。本批从 Facade 删除 Registry／Context preload、五个行为分发私有算法、`_dispatch_card_turn_end`、
+`_legacy_can_play_card` 算法和重演服务实际所有权。
+
+迁移后 `status_system.gd` 为 866 行，`card_status_behavior_service.gd` 为 250 行。下一批拆动态响应注册
+与执行服务，不迁移延迟记录、来源到期或功法抽牌统计。本批只运行静态检查和 headless 项目脚本加载，
+不运行 `quick`／`full`。最终项目加载使用 `/tmp/taiwu-status-behavior-project-load-01.log`，覆盖 675 项；
+`Can't load script`、`File not found`、`Parse Error` 与 `SCRIPT ERROR` 无匹配，仅有已知非阻塞 macOS
+CA 证书警告。
+
 ### BattleActionService 玩家行动准备职责迁出第四批（2026-08-16）
 
 新增 `core/battle_action_preparation_service.gd`，把玩家 `BattleActionProposal` 从预览结果到正式冻结／
@@ -862,12 +903,14 @@ flowchart LR
 - `battle_action_preparation_service.gd`：419 行；集中玩家提案的协同准备、正式冻结／确认、同气投影与功法值形成补偿，不持有行动事务或行动流。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
-- `status_system.gd`：1048 行；作为状态 Facade 继续编排真气行为分发、动态响应、延迟效果、战斗来源
-  到期与功法抽牌统计，状态历史和真气异状变更／查询已迁入独立服务。
+- `status_system.gd`：866 行；作为状态 Facade 继续编排动态响应、延迟效果、战斗来源到期与功法抽牌
+  统计，状态历史、真气异状变更／查询和真气行为分发已迁入独立服务。
 - `status_history_service.gd`：76 行；唯一持有状态历史数组与 serial，负责 `StatusChange` 快照、名称、
   `GameLog`、reset 和恢复重建。
 - `card_anomaly_service.gd`：357 行；唯一编排真气异状数值、增删／转移／层数、异状事件和单张真气
   生命周期，只弱引用统一效果端口。
+- `card_status_behavior_service.gd`：250 行；唯一编排真气异状行为收集、排序、执行、合格重演与聚合，
+  独占 Registry、RNG 和重演服务引用，只弱引用统一效果端口。
 - `action_resolver.gd`：集中三阶段触发、牌上毒异状、待出区提交和序列推进，并在统一日志替换时同步重绑可见触发队列。
 - `effect_executor.gd`：由 229 行中央分支降为 43 行门面；六类处理器与注册表合计约 400 行，职责按能力隔离。
 - `action_preview_service.gd`：118 行，集中行动预览的纯规则编排。
@@ -958,10 +1001,11 @@ flowchart LR
 - `BattleOutcomeService`：已建立第一版；负责胜负判定、战斗结束时点、行动清零和一次性清理。
 - `BattleTimingSystem`：已建立第一版，统一十类生命周期时点、稳定处理器顺序、结构化历史、延迟到期、序列推进和战斗结束清理。
 - `DamageResolver`：已建立第一版，负责普通伤害、真伤、连势、同步缓冲与攻击段存活判断；受击响应仍由 `StatusSystem`／`ActionResolver` 协调。
-- `StatusSystem + StatusHistoryService + CardAnomalyService + StatusChange + StatusBehaviorRegistry`：已建立
-  第一版；Facade 统一状态时点、行为、响应与延迟记录，历史服务独占状态变化数组、serial、日志与恢复
-  重建，异状服务独占真气异状变更、数值查询和单张牌生命周期；状态定义通过内容绑定处理器及数值修正，
-  新增复杂公共状态只增加小型注册处理器，不回填中央状态分支。
+- `StatusSystem + StatusHistoryService + CardAnomalyService + CardStatusBehaviorService + StatusChange +
+  StatusBehaviorRegistry`：已建立第一版；Facade 统一状态时点、响应与延迟记录，历史服务独占状态变化
+  数组、serial、日志与恢复重建，异状服务独占真气异状变更、数值查询和单张牌生命周期，行为服务独占
+  真气行为分发与重演；状态定义通过内容绑定处理器及数值修正，新增复杂公共状态只增加小型注册处理器，
+  不回填中央状态分支。
 - `EffectHandlerRegistry`：已建立第一版，按 `op` 注册六类小型处理器，效果数据继续保持数据驱动。
 - `BattleSnapshot`：已经建立第一版，覆盖生命、牌区、公开计划、卡牌、内功、消耗品、预览、日志和行动状态；后续以有校验的 ViewModel 逐步替代裸字典。
 - `AiBattleConversation + AiDecisionGateway + AiProvider`：已经建立第一版；负责脱敏公开信息、历史增量与压缩、合法候选选择、纠错、持久化和 Provider 适配，不拥有战斗状态。
