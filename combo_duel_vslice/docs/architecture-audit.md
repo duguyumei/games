@@ -158,6 +158,44 @@ enter_discard→card_entered_discard、turn_end→turn_end；`enter_discard_late
 `Can't load script`、`File not found`、`Parse Error` 与 `SCRIPT ERROR` 无匹配，仅有已知非阻塞 macOS
 CA 证书警告。
 
+### StatusSystem 动态响应职责第四批迁出（2026-08-17）
+
+新增 `core/statuses/status_response_service.gd`，作为动态响应记录、注册时冻结、事件匹配、效果执行和
+到期处理的唯一服务。它独占固定身份的 `response_records` 数组与 `ConditionSpecRegistry`，通过
+`BattleEventCatalog` 拒绝未知事件，并冻结 actor／target、P／P₀、牌型结果、打出牌、牌型组快照、
+captures、功法／来源身份、action／root／invocation／slot token、sequence book 和 source round。
+依赖方向固定为 `StatusSystem → StatusResponseService → EffectContext / BattleEventCatalog /
+ConditionSpecRegistry / StatusRecordIdAllocator / EffectExecutor`；`BattleEffectPorts` 只保存弱引用。服务不
+持有 `StatusSystem`、`CombatEngine`、`TimingSystem`、延迟记录、真气异状／行为服务或状态历史服务。
+
+`StatusSystem` 继续保留 `register_response`、`handle_response_event`、
+`on_committed_event_for_responses` 的公开签名，但只委托新服务；原事件目录／条件注册表 preload、
+`condition_registry`、注册算法、匹配算法、响应效果上下文建立和 TURN_END 到期循环均已删除。公开
+`response_records` 在 Facade 初始化时指向 `status_response_service.records()` 返回的同一 Array，reset、
+战斗结束清理和到期处理都只原地修改，因此测试、快照和既有外部读取继续有效。
+
+响应执行继续在开始处理前冻结 matching 列表；`resolving` 记录不能递归触发自身，只有效果执行成功才
+减少正数 `remaining_triggers`，负数仍表示不限次数，归零立即移除。每次执行以冻结 captures 为基础，
+加入完整事件副本 `event`，并在存在对应字段时加入 `event_card` 与 `event_snapshot`。到期处理先冻结候选，
+依次执行 `trigger_mode=response_expiry` 的 expiry effects，随后无条件移除原记录；本次 effects 新注册的
+响应不会进入当前到期批次。
+
+新增 `core/statuses/status_record_id_allocator.gd`，统一响应与尚未迁移的延迟记录 serial。响应及
+`delay`、`hand-limit`、`decay-return`、`reflection`、`window-check` 全部调用
+`next_id(prefix)`，继续得到 `prefix-000000` 格式并共享同一递增序列。`StatusSystem` 不再持有
+`_delay_serial`，只公开 `runtime_record_serial` 与 `restore_runtime_record_serial`；`BattleSide` 仍保存旧协议
+字段 `delay_serial`，但通过上述正式接口捕获／恢复，避免越过 Facade 读写私有状态。
+
+`BattleResponseEffectService` 没有删除或合并。它仍属于 `BattleEffectPorts` 内部公开适配链，负责把
+Effect Handler 的延迟／响应注册和事件通知转给 `StatusSystem` Facade；`StatusResponseService` 才是最终
+实际记录、匹配、执行与到期所有者。TURN_END 外层顺序继续由 Facade 保证：延迟效果 → 真气行为 →
+手牌上限修正移除 → 响应到期。
+
+迁移后 `status_system.gd` 为 756 行，`status_response_service.gd` 为 204 行，
+`status_record_id_allocator.gd` 为 22 行。下一批只拆延迟效果调度服务。本批未运行 `quick`／`full`；最终
+headless 项目加载使用 `/tmp/taiwu-status-response-project-load-02.log`，覆盖 677 项，四类禁止错误关键字
+无匹配，仅有已知非阻塞 macOS CA 证书警告。
+
 ### BattleActionService 玩家行动准备职责迁出第四批（2026-08-16）
 
 新增 `core/battle_action_preparation_service.gd`，把玩家 `BattleActionProposal` 从预览结果到正式冻结／
@@ -831,9 +869,11 @@ flowchart LR
 - `battle_action_transaction.gd`：保存统一行动事务的冻结事实、阶段、暂停状态与稳定恢复游标，并提供不含运行时对象引用的版本化快照。
 - `damage_resolver.gd`：提供普通／真／毒伤的纯数值写入、同步伤害 shadow 与攻击段存活原语；查询、格挡、事件、反震和历史由 `BattleSurvivalEffectService` 统一编排。
 - `status_system.gd`、`status_change.gd`、`statuses/status_history_service.gd`、
-  `statuses/card_anomaly_service.gd`、`statuses/status_behavior_registry.gd`：Facade 统一状态时点、行为、
-  响应与延迟编排；历史服务独占结构化状态变化数组和 serial；异状服务独占真气异状变更、数值查询
-  与单张牌生命周期；状态定义绑定通用处理器，中央系统不再点名具体状态 ID。
+  `statuses/card_anomaly_service.gd`、`statuses/card_status_behavior_service.gd`、
+  `statuses/status_response_service.gd`、`statuses/status_record_id_allocator.gd`、
+  `statuses/status_behavior_registry.gd`：Facade 统一状态时点与尚未迁移的延迟编排；历史、异状、行为和
+  动态响应分别由独立服务持有唯一实现，响应与延迟共享运行时记录 ID；状态定义绑定通用处理器，中央
+  系统不再点名具体状态 ID。
 - `battle_action_proposal.gd`：统一玩家、脚本敌人和策略敌人的 v1 选牌提案 DTO，不包含实际结算权限。
 - `battle_action_record.gd`：统一实际行动执行记录 DTO，保存参与方、牌型预览、顺序、回合、触发状态和捕获表；内部结算仍可通过属性访问，日志使用 `snapshot()`。
 - `battle_timing_event.gd`、`battle_timing_system.gd`：统一十类战斗生命周期边界，以 `order + 注册序号` 调度处理器并保存结构化时点历史；战斗快照可读取该历史，内建处理器采用弱目标引用避免与战斗核心形成引用环。
@@ -903,14 +943,18 @@ flowchart LR
 - `battle_action_preparation_service.gd`：419 行；集中玩家提案的协同准备、正式冻结／确认、同气投影与功法值形成补偿，不持有行动事务或行动流。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
-- `status_system.gd`：866 行；作为状态 Facade 继续编排动态响应、延迟效果、战斗来源到期与功法抽牌
-  统计，状态历史、真气异状变更／查询和真气行为分发已迁入独立服务。
+- `status_system.gd`：756 行；作为状态 Facade 继续编排延迟效果、战斗来源到期与功法抽牌统计，状态
+  历史、真气异状变更／查询、真气行为分发和动态响应已迁入独立服务。
 - `status_history_service.gd`：76 行；唯一持有状态历史数组与 serial，负责 `StatusChange` 快照、名称、
   `GameLog`、reset 和恢复重建。
 - `card_anomaly_service.gd`：357 行；唯一编排真气异状数值、增删／转移／层数、异状事件和单张真气
   生命周期，只弱引用统一效果端口。
 - `card_status_behavior_service.gd`：250 行；唯一编排真气异状行为收集、排序、执行、合格重演与聚合，
   独占 Registry、RNG 和重演服务引用，只弱引用统一效果端口。
+- `status_response_service.gd`：204 行；唯一持有动态响应记录与条件注册表，负责注册冻结、事件匹配、
+  效果执行、防重入、次数消费和回合结束到期，只弱引用统一效果端口。
+- `status_record_id_allocator.gd`：22 行；为响应与延迟记录分配共享递增 ID，并提供 reset 与存档 serial
+  恢复边界。
 - `action_resolver.gd`：集中三阶段触发、牌上毒异状、待出区提交和序列推进，并在统一日志替换时同步重绑可见触发队列。
 - `effect_executor.gd`：由 229 行中央分支降为 43 行门面；六类处理器与注册表合计约 400 行，职责按能力隔离。
 - `action_preview_service.gd`：118 行，集中行动预览的纯规则编排。
@@ -1001,11 +1045,11 @@ flowchart LR
 - `BattleOutcomeService`：已建立第一版；负责胜负判定、战斗结束时点、行动清零和一次性清理。
 - `BattleTimingSystem`：已建立第一版，统一十类生命周期时点、稳定处理器顺序、结构化历史、延迟到期、序列推进和战斗结束清理。
 - `DamageResolver`：已建立第一版，负责普通伤害、真伤、连势、同步缓冲与攻击段存活判断；受击响应仍由 `StatusSystem`／`ActionResolver` 协调。
-- `StatusSystem + StatusHistoryService + CardAnomalyService + CardStatusBehaviorService + StatusChange +
-  StatusBehaviorRegistry`：已建立第一版；Facade 统一状态时点、响应与延迟记录，历史服务独占状态变化
-  数组、serial、日志与恢复重建，异状服务独占真气异状变更、数值查询和单张牌生命周期，行为服务独占
-  真气行为分发与重演；状态定义通过内容绑定处理器及数值修正，新增复杂公共状态只增加小型注册处理器，
-  不回填中央状态分支。
+- `StatusSystem + StatusHistoryService + CardAnomalyService + CardStatusBehaviorService +
+  StatusResponseService + StatusRecordIdAllocator + StatusChange + StatusBehaviorRegistry`：已建立第一版；
+  Facade 统一状态时点与尚未迁移的延迟记录，历史、异状、行为和动态响应分别由独立服务持有唯一实现，
+  响应与延迟通过统一分配器共享运行时记录 serial；状态定义通过内容绑定处理器及数值修正，新增复杂公共
+  状态只增加小型注册处理器，不回填中央状态分支。
 - `EffectHandlerRegistry`：已建立第一版，按 `op` 注册六类小型处理器，效果数据继续保持数据驱动。
 - `BattleSnapshot`：已经建立第一版，覆盖生命、牌区、公开计划、卡牌、内功、消耗品、预览、日志和行动状态；后续以有校验的 ViewModel 逐步替代裸字典。
 - `AiBattleConversation + AiDecisionGateway + AiProvider`：已经建立第一版；负责脱敏公开信息、历史增量与压缩、合法候选选择、纠错、持久化和 Provider 适配，不拥有战斗状态。

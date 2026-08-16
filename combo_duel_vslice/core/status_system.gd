@@ -8,26 +8,27 @@ const CardAnomalyServiceScript = preload(
     "res://core/statuses/card_anomaly_service.gd")
 const CardStatusBehaviorServiceScript = preload(
     "res://core/statuses/card_status_behavior_service.gd")
-const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
-const ConditionSpecRegistryScript = preload(
-    "res://core/specs/condition_spec_registry.gd")
+const StatusResponseServiceScript = preload(
+    "res://core/statuses/status_response_service.gd")
+const StatusRecordIdAllocatorScript = preload(
+    "res://core/statuses/status_record_id_allocator.gd")
 
 var content_catalog
 var timing_system
 var delayed_records: Array = []
 var response_records: Array = []
 var history: Array = []
-var _delay_serial: int = 0
 var status_history
 var card_anomaly_service
 var card_status_behavior_service
+var status_response_service
+var runtime_record_id_allocator
 var _effect_ports_ref
 var _effect_executor = null
 var _technique_draw_counts: Dictionary = {}
 var behavior_registry
 var _rng: RandomNumberGenerator = null
 var battle_permission_service = null
-var condition_registry = ConditionSpecRegistryScript.new()
 
 func _init(
         catalog,
@@ -41,8 +42,12 @@ func _init(
         catalog, status_history)
     card_status_behavior_service = CardStatusBehaviorServiceScript.new(
         catalog, card_anomaly_service)
+    runtime_record_id_allocator = StatusRecordIdAllocatorScript.new()
+    status_response_service = StatusResponseServiceScript.new(
+        runtime_record_id_allocator)
     behavior_registry = card_status_behavior_service.behavior_registry
     history = status_history.history_entries()
+    response_records = status_response_service.records()
     use_effect_ports(effect_ports)
     if timing_system != null:
         timing_system.register_weak_handler(
@@ -128,9 +133,11 @@ func use_effect_ports(effect_ports) -> void:
     _effect_ports_ref = weakref(effect_ports) if effect_ports != null else null
     card_anomaly_service.use_effect_ports(effect_ports)
     card_status_behavior_service.use_effect_ports(effect_ports)
+    status_response_service.use_effect_ports(effect_ports)
 
 func use_effect_executor(executor) -> void:
     _effect_executor = executor
+    status_response_service.use_effect_executor(executor)
 
 func use_card_trigger_replay_service(service) -> void:
     card_status_behavior_service.use_card_trigger_replay_service(service)
@@ -144,9 +151,9 @@ func use_battle_permission_service(service) -> void:
 
 func reset() -> void:
     delayed_records.clear()
-    response_records.clear()
+    status_response_service.clear()
     status_history.reset()
-    _delay_serial = 0
+    runtime_record_id_allocator.reset()
     _technique_draw_counts.clear()
 
 func register_response(
@@ -156,49 +163,8 @@ func register_response(
         context,
         filters: Dictionary = {},
         expiry_effects: Array = []) -> Dictionary:
-    var runtime = EffectContextScript.coerce(context)
-    if not BattleEventCatalogScript.forwards_dynamic_response(event_kind):
-        return {"success": false, "reason": "未知动态响应事件：%s" % event_kind}
-    var resolved_filters := condition_registry.resolve_event_filters(
-        filters, runtime.captures)
-    var record := {
-        "id": "response-%06d" % _delay_serial,
-        "event_kind": event_kind,
-        "expiry": expiry,
-        "effects": effects.duplicate(true),
-        "expiry_effects": expiry_effects.duplicate(true),
-        "filters": resolved_filters,
-        "actor": runtime.actor,
-        "target": runtime.target,
-        "power": runtime.power,
-        "initial_power": runtime.initial_power,
-        "hand_result": runtime.hand_result.duplicate(true),
-        "played_cards": runtime.played_cards.duplicate(),
-        "group_snapshot": runtime.group_snapshot.duplicate(true),
-        "captures": runtime.captures.duplicate(true),
-        "technique_id": runtime.technique_id,
-        "technique_name": runtime.technique_name,
-        "actual_hand_id": runtime.actual_hand_id,
-        "branch_hand_id": runtime.branch_hand_id,
-        "technique_pool": runtime.technique_pool,
-        "action_token": runtime.action_token,
-        "root_action_token": runtime.root_action_token,
-        "invocation_token": runtime.invocation_token,
-        "caller_technique_id": runtime.caller_technique_id,
-        "slot_instance_id": runtime.slot_instance_id,
-        "trigger_mode": runtime.trigger_mode,
-        "source_kind": runtime.source_kind,
-        "source_id": runtime.source_id,
-        "source_name": runtime.source_name,
-        "source_instance_key": runtime.source_instance_key,
-        "sequence_book": runtime.sequence_book,
-        "source_round": _current_round_hint(runtime),
-        "resolving": false,
-        "remaining_triggers": int(filters.get("max_triggers", -1)),
-    }
-    _delay_serial += 1
-    response_records.append(record)
-    return {"success": true, "record": record}
+    return status_response_service.register_response(
+        event_kind, expiry, effects, context, filters, expiry_effects)
 
 func register_next_round_hand_limit(context, amount: int, affected_side = null) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
@@ -206,85 +172,30 @@ func register_next_round_hand_limit(context, amount: int, affected_side = null) 
     if side == null or amount == 0:
         return {"success": false, "reason": "下一回合手牌上限参数无效"}
     var record := {
-        "id": "hand-limit-%06d" % _delay_serial,
+        "id": runtime_record_id_allocator.next_id("hand-limit"),
         "kind": "next_round_hand_limit",
         "actor": side,
         "amount": amount,
         "source_round": _current_round_hint(runtime),
         "active_round": -1,
     }
-    _delay_serial += 1
     delayed_records.append(record)
     return {"success": true, "record": record}
 
 func handle_response_event(event_kind: String, values: Dictionary) -> void:
-    if _effect_executor == null:
-        return
-    var matching: Array = response_records.filter(func(record):
-        return str(record.get("event_kind", "")) == event_kind \
-            and not bool(record.get("resolving", false)) \
-            and _response_matches(record, values))
-    for record in matching:
-        record["resolving"] = true
-        var response_result: Dictionary = _execute_response_effects(
-            record, record["effects"], values, "response")
-        record["resolving"] = false
-        if response_result.get("success", false) \
-                and int(record.get("remaining_triggers", -1)) > 0:
-            record["remaining_triggers"] = int(record["remaining_triggers"]) - 1
-            if int(record["remaining_triggers"]) <= 0:
-                response_records.erase(record)
-
-func _execute_response_effects(
-        record: Dictionary,
-        effects: Array,
-        values: Dictionary,
-        trigger_mode: String) -> Dictionary:
-    var captures: Dictionary = record.get("captures", {}).duplicate(true)
-    captures["event"] = [values.duplicate(true)]
-    if values.has("card"):
-        captures["event_card"] = [values["card"]]
-    if values.has("pre_move_snapshot"):
-        captures["event_snapshot"] = [values["pre_move_snapshot"]]
-    var response_context = EffectContextScript.new().configure({
-        "ports": _effect_ports(), "actor": record["actor"],
-        "target": record["target"], "power": int(record["power"]),
-        "initial_power": int(record["initial_power"]),
-        "hand_result": record["hand_result"],
-        "played_cards": record["played_cards"],
-        "group_snapshot": record["group_snapshot"],
-        "captures": captures,
-        "technique_id": record["technique_id"],
-        "technique_name": record["technique_name"],
-        "actual_hand_id": record["actual_hand_id"],
-        "branch_hand_id": record["branch_hand_id"],
-        "technique_pool": record["technique_pool"],
-        "action_token": record["action_token"],
-        "root_action_token": record.get(
-            "root_action_token", record["action_token"]),
-        "invocation_token": record.get("invocation_token", ""),
-        "caller_technique_id": record.get("caller_technique_id", ""),
-        "slot_instance_id": record.get("slot_instance_id", ""),
-        "trigger_mode": trigger_mode,
-        "sequence_book": record.get("sequence_book"),
-        "source_kind": record.get("source_kind", "rule"),
-        "source_id": record.get("source_id", ""),
-        "source_name": record.get("source_name", ""),
-        "source_instance_key": record.get("source_instance_key", ""),
-    })
-    return _effect_executor.execute_all(effects, response_context)
+    status_response_service.handle_event(event_kind, values)
 
 func on_committed_event_for_responses(
         event_kind: String,
         values: Dictionary,
-        _receipt: Dictionary) -> void:
-    if BattleEventCatalogScript.forwards_dynamic_response(event_kind):
-        handle_response_event(event_kind, values)
+        receipt: Dictionary) -> void:
+    status_response_service.on_committed_event(event_kind, values, receipt)
 
-func _response_matches(record: Dictionary, values: Dictionary) -> bool:
-    var filters: Dictionary = record.get("filters", {})
-    return condition_registry.event_matches(
-        filters, values, record.get("actor"), record.get("target"), record)
+func runtime_record_serial() -> int:
+    return runtime_record_id_allocator.current_serial()
+
+func restore_runtime_record_serial(value: int) -> void:
+    runtime_record_id_allocator.restore_serial(value)
 
 func card_numeric_modifier(card, modifier_id: String) -> int:
     return card_anomaly_service.card_numeric_modifier(card, modifier_id)
@@ -427,7 +338,7 @@ func register_delayed_effects(
         return {"success": false, "reason": "不支持的延迟时点：%s" % timing}
     var runtime = EffectContextScript.coerce(context)
     var record := {
-        "id": "delay-%06d" % _delay_serial,
+        "id": runtime_record_id_allocator.next_id("delay"),
         "kind": "effect_chain",
         "label": label,
         "timing": timing,
@@ -459,13 +370,12 @@ func register_delayed_effects(
         "source_instance_key": runtime.source_instance_key,
         "trigger_mode": runtime.trigger_mode,
     }
-    _delay_serial += 1
     delayed_records.append(record)
     return {"success": true, "record": record}
 
 func register_defense_decay_return(runtime) -> Dictionary:
     var record := {
-        "id": "decay-return-%06d" % _delay_serial,
+        "id": runtime_record_id_allocator.next_id("decay-return"),
         "kind": "defense_decay_return", "actor": runtime.actor,
         "source_round": _current_round_hint(runtime), "captured_decay": -1,
         "source_kind": runtime.source_kind,
@@ -474,13 +384,11 @@ func register_defense_decay_return(runtime) -> Dictionary:
         "source_instance_key": runtime.source_instance_key,
         "trigger_mode": "delayed",
     }
-    _delay_serial += 1
     delayed_records.append(record)
     return {"success": true, "record": record}
 
 func register_reflection_expiry(runtime, percent: int) -> Dictionary:
-    var token := "reflection-%06d" % _delay_serial
-    _delay_serial += 1
+    var token: String = runtime_record_id_allocator.next_id("reflection")
     return _effect_ports().grant_reflection_source(
         runtime.actor, percent, 1, "round_end",
         runtime.source_name if runtime.source_name != "" else "反震",
@@ -488,7 +396,7 @@ func register_reflection_expiry(runtime, percent: int) -> Dictionary:
 
 func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary:
     delayed_records.append({
-        "id": "window-check-%06d" % _delay_serial,
+        "id": runtime_record_id_allocator.next_id("window-check"),
         "kind": "no_life_loss_disruption", "actor": runtime.actor,
         "target": runtime.target,
         "action_token": runtime.action_token,
@@ -499,7 +407,6 @@ func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary
         "source_instance_key": runtime.source_instance_key,
         "trigger_mode": "delayed",
     })
-    _delay_serial += 1
     return {"success": true}
 
 func _on_defense_decay_resolved(event) -> Dictionary:
@@ -655,24 +562,7 @@ func _on_turn_end(event) -> Dictionary:
                 and int(record.get("active_round", -1)) == event_round:
             event.actor.base_hand_limit_modifier -= int(record.get("amount", 0))
             delayed_records.erase(record)
-    for record in response_records.duplicate():
-        if record.get("expiry") == "turn_end" \
-                and record.get("actor") == event.actor:
-            if not record.get("expiry_effects", []).is_empty():
-                _execute_response_effects(record, record["expiry_effects"], {
-                    "actor": event.actor,
-                    "round_number": event_round,
-                }, "response_expiry")
-            response_records.erase(record)
-        elif record.get("expiry") == "next_round_turn_end" \
-                and record.get("actor") == event.actor \
-                and int(record.get("source_round", -1)) + 1 <= event_round:
-            if not record.get("expiry_effects", []).is_empty():
-                _execute_response_effects(record, record["expiry_effects"], {
-                    "actor": event.actor,
-                    "round_number": event_round,
-                }, "response_expiry")
-            response_records.erase(record)
+    status_response_service.expire_turn_end(event.actor, event_round)
     return {
         "success": true,
         "detail": "%s结算 %d 个到期延迟效果" % [event.actor.name, due.size()],
@@ -851,9 +741,9 @@ func _on_transferred_card_battle_end(event) -> Dictionary:
     }
 
 func _on_transient_battle_end(event) -> Dictionary:
-    var cleared_delays := delayed_records.size() + response_records.size()
+    var cleared_delays := delayed_records.size()
     delayed_records.clear()
-    response_records.clear()
+    cleared_delays += status_response_service.clear()
     return {
         "success": true,
         "detail": "清理 %d 个延迟记录" % cleared_delays,
