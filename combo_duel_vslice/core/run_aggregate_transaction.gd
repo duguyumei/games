@@ -4,7 +4,8 @@ extends RefCounted
 ## 一次 RunSession 业务提交的内存原子边界。
 ##
 ## 这里只捕获和恢复状态，不理解胜负、奖励或被动规则。恢复不发送信号、
-## 不写日志、不重新执行效果，也不推进任何随机源。
+## 不写日志、不重新执行效果，也不推进任何随机源。事件级 source_snapshot
+## 是 dispatch 的局部输入，不是可恢复状态，因此不进入本聚合快照。
 
 var _session = null
 var _snapshot: Dictionary = {}

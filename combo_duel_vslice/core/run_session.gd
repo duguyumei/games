@@ -214,10 +214,6 @@ func configure_passive_services(
     growth.use_technique_loadout_policy_resolver(int_policy_resolver)
     _inner_skill_loadout_service.use_passive_services(
         passive_runtime, int_policy_resolver, event_service, _run_state)
-    if _run_state.node_passive_source_node_id == "" \
-            and navigation.current_node_id != "" \
-            and navigation.phase in ["node_in_progress", "awaiting_reward"]:
-        _freeze_current_node_passive_sources(navigation.current_node_id)
 
 func ai_settings_snapshot() -> Dictionary:
     if _ai_settings_service == null \
@@ -463,7 +459,6 @@ func _begin_node(node_id: String) -> Dictionary:
             _node_interaction_service.clear()
         return result
     _run_state.practice_is_open = false
-    _freeze_current_node_passive_sources(node_id)
     _run_state.changed.emit()
     result["dispatch"] = dispatch.duplicate(true)
     if not interaction_result.is_empty():
@@ -541,7 +536,7 @@ func _dispatch_battle_completed_event(battle_result) -> Dictionary:
                 "turn_number": int(battle_result.turn_number),
                 "detail": str(battle_result.detail),
             },
-        }, _current_node_passive_sources())
+        })
 
 func _record_battle_growth_sync_if_changed(state_before: Dictionary) -> void:
     if state_before != growth.capture_mutation_state():
@@ -883,6 +878,8 @@ func _claim_reward(bundle_id: String) -> Dictionary:
         return {"success": false, "reason": "奖励包已过期或不匹配"}
     var bundle_snapshot: Dictionary = _pending_reward.to_dict()
     var growth_state_before: Dictionary = growth.capture_mutation_state()
+    # node_completed 固定奖励应用前的有效来源，防止新奖励追溯触发自身事件。
+    var node_event_sources := _capture_run_passive_sources(growth)
     var working = growth.create_mutation_copy()
     if working == null:
         return {"success": false, "reason": "无法建立节点结算事务工作副本"}
@@ -905,7 +902,7 @@ func _claim_reward(bundle_id: String) -> Dictionary:
                 "applied": apply_result.get("applied", []).duplicate(true),
                 "experience_interest": interest.duplicate(true),
             },
-        }, _current_node_passive_sources())
+        }, node_event_sources)
     if not node_event.get("success", false):
         return node_event
     var commit_errors: Array[String] = growth.replace_mutation_state(
@@ -952,20 +949,15 @@ func _claim_reward(bundle_id: String) -> Dictionary:
     navigation_result["experience"] = growth.experience
     navigation_result["passive_event"] = node_event
     if navigation_result.get("phase", "") == "awaiting_node":
-        _clear_node_passive_sources()
         _practice_service.start_new_shop(
             growth, navigation.seed, navigation.act,
             int(growth.practice_shop_state.get("shop_index", 0)) + 1)
     elif navigation_result.get("phase", "") == "run_complete":
-        _clear_node_passive_sources()
         var terminal_result := _complete_victory_terminal()
         if not terminal_result.get("success", false):
             return terminal_result
         navigation_result["terminal_result"] = terminal_result.get(
             "terminal_result", {}).duplicate(true)
-    elif navigation_result.get("phase", "") == "boss_chest":
-        _freeze_current_node_passive_sources(
-            "boss_chest:%d" % int(bundle_snapshot.get("act", navigation.act)))
     return navigation_result
 
 func _reward_snapshot() -> Dictionary:
@@ -986,6 +978,8 @@ func _complete_boss_chest() -> Dictionary:
         return {"success": false, "reason": "当前没有待完成的 Boss 宝箱"}
     var act_before: int = navigation.act
     var growth_state_before: Dictionary = growth.capture_mutation_state()
+    # Boss 宝箱的 node_completed 固定宝箱结算修改前的当前有效来源。
+    var node_event_sources := _capture_run_passive_sources(growth)
     var working = growth.create_mutation_copy()
     if working == null:
         return {"success": false, "reason": "无法建立 Boss 宝箱事务工作副本"}
@@ -999,7 +993,7 @@ func _complete_boss_chest() -> Dictionary:
             "transaction_token": "node_completed:%d:%s" % [
                 act_before, chest_node_id],
             "payload": {"experience_interest": interest.duplicate(true)},
-        }, _current_node_passive_sources())
+        }, node_event_sources)
     if not node_event.get("success", false):
         return node_event
     var commit_errors: Array[String] = growth.replace_mutation_state(
@@ -1015,7 +1009,6 @@ func _complete_boss_chest() -> Dictionary:
     result["experience_interest"] = interest.duplicate(true)
     result["experience"] = growth.experience
     result["passive_event"] = node_event
-    _clear_node_passive_sources()
     growth.grow_life_to(_player_max_life_for_act(navigation.act))
     _practice_service.start_new_shop(
         growth, navigation.seed, navigation.act,
@@ -1495,18 +1488,10 @@ func _practice_event_values() -> Dictionary:
         "shop_index": int(growth.practice_shop_state.get("shop_index", 0)),
     }
 
-func _freeze_current_node_passive_sources(node_id: String) -> void:
-    _run_state.node_passive_source_node_id = node_id
-    _run_state.node_passive_source_snapshot = (
-        _run_passive_event_service.capture_source_snapshot(growth)
-        if _run_passive_event_service != null else [])
-
-func _current_node_passive_sources() -> Array:
-    return _run_state.node_passive_source_snapshot.duplicate(true)
-
-func _clear_node_passive_sources() -> void:
-    _run_state.node_passive_source_snapshot.clear()
-    _run_state.node_passive_source_node_id = ""
+func _capture_run_passive_sources(owner) -> Array:
+    if _run_passive_event_service == null:
+        return []
+    return _run_passive_event_service.capture_source_snapshot(owner)
 
 func _dispatch_run_passive_event(
         hook: String,
@@ -1521,8 +1506,10 @@ func _dispatch_run_passive_event(
             "transaction_token": str(specific_values.get(
                 "transaction_token", "")),
         }
+    # 每次派发只扫描一次 owner；ExecutionPlan 在 dispatch_event 开始时由该
+    # 快照建立，因此本事件内固定，而下一事件会重新读取最新工作状态。
     var resolved_source_snapshot: Array = (
-        _run_passive_event_service.capture_source_snapshot(event_growth)
+        _capture_run_passive_sources(event_growth)
         if source_snapshot == null else source_snapshot.duplicate(true))
     var values := {
         "hook": hook,
@@ -1566,8 +1553,6 @@ func _capture_persistence_state() -> Dictionary:
             if _run_state.terminal_result != null else {}),
         "practice_is_open": _run_state.practice_is_open,
         "practice_open_sequence": _run_state.practice_open_sequence,
-        "node_passive_source_snapshot": _run_state.node_passive_source_snapshot.duplicate(true),
-        "node_passive_source_node_id": _run_state.node_passive_source_node_id,
         "committed_passive_event_tokens": _run_state.committed_passive_event_tokens.duplicate(),
     }
 

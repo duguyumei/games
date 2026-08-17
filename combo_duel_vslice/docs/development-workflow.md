@@ -162,6 +162,14 @@ unique 限制、目标冻结、准备令牌、Handler 顺序、库存扣除、�
 `BattleSession` 与终局快照，不发送 changed、不触发自动存档，调用方可以重试同一正式
 结果。玩家主动退出仍只丢弃战斗会话，并从既有节点入口检查点重新开始。
 
+本局被动来源不再按节点长期冻结。`RunPassiveEventService` 在一次事件开始时从当前
+`GrowthInventory` 捕获来源并建立唯一 `ExecutionPlan`；本次执行期间新增或失去的来源
+不会加入或移除该计划，下一次事件则重新读取最新的内功、物品和来源标识状态。
+`battle_completed` 在战斗进度合入后捕获，`node_completed` 在奖励应用前捕获，Boss 宝箱
+在宝箱结算变更前捕获。节点存档不保存可派生来源列表；旧 schema v1 若带有旧字段只做
+格式／内容校验，恢复时忽略，下一次保存自然移除。行动级功法槽、P／P₀、牌型组和选择
+候选快照仍按原协议冻结，与事件级来源计划无关。
+
 `BattleEffectPorts` 是公开协议 Facade，不是所有效果算法的永久归宿。伤害、防御与生命相关
 公开方法继续保留原签名，但内部统一委托 `BattleSurvivalEffectService`。该服务只能接收完成
 结算所需的明确依赖：`DamageResolver`、`StatusSystem` 的现有窄能力、战斗规则查询、committed

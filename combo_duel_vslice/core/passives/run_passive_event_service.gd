@@ -61,6 +61,11 @@ func dispatch(context, growth, event_state) -> Dictionary:
     var state_before: Dictionary = growth.capture_mutation_state()
     context.owner = growth
     context.actor = growth
+    # 调用方可在命令变更前显式提供局部快照；否则在事件真正开始时从当前
+    # owner 捕获一次。即使结果为空也标记为已有快照，避免 Invocation 间重扫。
+    if not context.has_source_snapshot:
+        context.has_source_snapshot = true
+        context.source_snapshot = capture_source_snapshot(growth)
     var ports = EffectPortsScript.new(
         growth, _mutation_service, context.to_dict())
     context.payload["effect_ports"] = ports

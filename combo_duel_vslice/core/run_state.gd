@@ -11,8 +11,6 @@ var growth = GrowthInventoryScript.new()
 var terminal_result = null
 var practice_is_open: bool = false
 var practice_open_sequence: int = 0
-var node_passive_source_snapshot: Array = []
-var node_passive_source_node_id: String = ""
 var committed_passive_event_tokens: Array[String] = []
 
 func _init(navigation_override = null, growth_override = null) -> void:
@@ -97,8 +95,6 @@ func setup(seed_value: int = 2308) -> void:
 func reset_passive_run_state() -> void:
     practice_is_open = false
     practice_open_sequence = 0
-    node_passive_source_snapshot.clear()
-    node_passive_source_node_id = ""
     committed_passive_event_tokens.clear()
 
 func capture_transaction_state() -> Dictionary:
@@ -106,8 +102,6 @@ func capture_transaction_state() -> Dictionary:
         "terminal_result": terminal_result,
         "practice_is_open": practice_is_open,
         "practice_open_sequence": practice_open_sequence,
-        "node_passive_source_snapshot": node_passive_source_snapshot.duplicate(true),
-        "node_passive_source_node_id": node_passive_source_node_id,
         "committed_passive_event_tokens": committed_passive_event_tokens.duplicate(),
     }
 
@@ -116,10 +110,6 @@ func restore_transaction_state(state: Dictionary) -> void:
     terminal_result = state.get("terminal_result")
     practice_is_open = bool(state.get("practice_is_open", false))
     practice_open_sequence = int(state.get("practice_open_sequence", 0))
-    node_passive_source_snapshot.assign(
-        state.get("node_passive_source_snapshot", []))
-    node_passive_source_node_id = str(
-        state.get("node_passive_source_node_id", ""))
     committed_passive_event_tokens.assign(
         state.get("committed_passive_event_tokens", []))
 

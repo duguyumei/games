@@ -12,7 +12,7 @@ v1 保存种子、初始构筑稳定 ID、层数、完整生成地图、当前/�
 
 存档只允许以下节点边界：`awaiting_node`、`node_in_progress`、`awaiting_reward`、`boss_chest`、`run_complete`、`run_terminated`。`node_state` 可选保存 `pending_node_interaction` 与 `terminal_result`；这些是 v1 的向后兼容可选字段，不提高 schema 版本。
 
-`node_in_progress` 只表示已经进入节点。普通进行中节点返回 `restart_node_from_start`；存在冻结 `pending_node_interaction` 时返回 `resume_interaction`。存档不包含手牌、牌堆顺序、战斗异状、行动队列、待出牌或远程 AI 会话。战斗中退出后按同一 node ID、content seed 与内容候选新建 BattleSession，并从节点开头重启；这里保存的是此前稳定边界的本局生命，不保存本场战斗中间态。`run_complete` 与 `run_terminated` 使用 `show_terminal`，直接恢复原 `terminal_result`。
+`node_in_progress` 只表示已经进入节点。普通进行中节点返回 `restart_node_from_start`；存在冻结 `pending_node_interaction` 时返回 `resume_interaction`。存档不包含手牌、牌堆顺序、战斗异状、行动队列、待出牌、远程 AI 会话或节点级被动来源列表。战斗中退出后按同一 node ID、content seed 与内容候选新建 BattleSession，并从节点开头重启；这里保存的是此前稳定边界的本局生命，不保存本场战斗中间态。`run_complete` 与 `run_terminated` 使用 `show_terminal`，直接恢复原 `terminal_result`。
 
 磁盘格式是带 `schema_version`、`content_version`、payload SHA-256 的 envelope。写入先落同目录临时文件并回读校验，再替换主文件；替换前将上一份可解析主文件原子更新到 `.bak`。主文件 JSON 或校验和损坏时读取备份并尝试恢复主文件；未知未来 schema 会拒绝读取，不会静默回退旧备份。
 
@@ -24,7 +24,11 @@ v1 保存种子、初始构筑稳定 ID、层数、完整生成地图、当前/�
 
 ## 恢复装配与 UI 路由
 
-`GameCompositionRoot` 持有共享 `RunSaveApplicationService`。`RunSaveData` 只重建 `RunState` 与冻结字段，应用服务再通过组合根的 `create_run_session(run_state_override)` 注入同一套 `ContentCatalog`、Registry、`RunMutationService`、`BattleSessionFactory`、`RuntimeProfile`、`NodeInteractionService` 与 `AISettingsService`。恢复不调用 `setup_run`，不重新生成地图、修习商品、奖励或冻结交互，也不调用 Handler.prepare。
+`GameCompositionRoot` 持有共享 `RunSaveApplicationService`。`RunSaveData` 只重建 `RunState` 与稳定边界字段，应用服务再通过组合根的 `create_run_session(run_state_override)` 注入同一套 `ContentCatalog`、Registry、`RunMutationService`、`BattleSessionFactory`、`RuntimeProfile`、`NodeInteractionService` 与 `AISettingsService`。恢复不调用 `setup_run`，不重新生成地图、修习商品、奖励或冻结交互，也不调用 Handler.prepare。schema v1 旧存档若仍包含 `node_passive_source_snapshot` 或 `node_passive_source_node_id`，完成既有格式／内容校验后忽略，不恢复为运行时状态；下一次保存不再写出这两个字段。
+
+被动来源采用事件级一致性：事件开始时从当前 growth 捕获一次来源并固定 `ExecutionPlan`，
+事件间重新解析最新永久来源。`battle_completed` 使用战斗进度合入后的来源；普通
+`node_completed` 使用奖励应用前的来源；Boss 宝箱使用宝箱结算变更前的来源。
 
 四种策略的正式页面路由如下：
 

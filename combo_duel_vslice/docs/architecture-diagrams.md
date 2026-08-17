@@ -599,8 +599,10 @@ suppression，执行计划不进入本局存档。
 
 本局整数查询从基础值开始，每个 Invocation 读取上一个 Invocation 的有效值；Runtime 只校验整数
 返回并记录来源，不解释通用数值 DSL。购买、冥想、遗忘和开包在 `GrowthInventory` 工作副本中把
-基础修改与事件组成同一事务。节点开始来源快照和已提交事件令牌以稳定 ID 存档，因此当前节点或
-当前购买中新获得的来源不会追溯触发，读档也不会重放成功事件。
+基础修改与事件组成同一事务。每次事件开始从当前 owner 捕获一次来源并建立稳定
+`ExecutionPlan`；执行期间新增或失去的来源不改变本次计划，下一次事件重新解析。奖励应用前
+的局部快照防止奖励来源追溯触发自身事件；节点存档只保存已提交事件令牌，不保存可派生的
+节点来源列表，读档也不会重放成功事件。
 
 有状态 behavior 由 Handler 声明计数器定义，内容提供稳定 `state_key`。Counter Port 以
 `source_kind + content_id + state_key + counter_id` 限定当前 Invocation，只允许查询读取、提交事件

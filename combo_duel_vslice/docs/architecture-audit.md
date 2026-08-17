@@ -88,8 +88,8 @@ SequenceBook 部分修改。本批不改 `RunProgressSnapshot`、`BattleSetupSer
 rollback 出口。没有使用 `RunSaveData` 充当内存事务快照，也没有建立第二套成长或奖励算法。
 
 聚合事务覆盖 `GrowthInventory.capture_mutation_state()`、`MapNavigationService` 的 seed／act／
-graph／phase／current node／completed nodes、`ComboRunState` 的 terminal／修习开关与序号／节点
-被动来源快照／committed token、待领取奖励对象、待结算胜利结果、节点交互运行状态、
+graph／phase／current node／completed nodes、`ComboRunState` 的 terminal／修习开关与序号／
+committed token、待领取奖励对象、待结算胜利结果、节点交互运行状态、
 `StructuredGameLog` 内容与 serial、`RunEvent` 队列与 serial，以及本次提交相关的 persistent change
 serial。地图的 graph 与 completed node 容器、终局附属数组、节点交互字典和事件队列均尽量
 原地恢复；restore 不发送信号、不写日志、不重新生成奖励、不重新执行被动，也不推进 RNG。
@@ -109,6 +109,16 @@ serial。地图的 graph 与 completed node 容器、终局附属数组、节点
 静态检查 `git diff --check` 通过；Godot 4.7.1 项目加载日志为
 `/tmp/taiwu-run-aggregate-project-load-20260817-final.log`，未出现 `Can't load script`、
 `File not found`、`Parse Error` 或 `SCRIPT ERROR`，仅有约定可忽略的 macOS CA 证书警告。
+
+### 事件级被动来源执行快照（2026-08-17）
+
+运行时删除了 `ComboRunState.node_passive_source_snapshot` 与
+`node_passive_source_node_id` 及其节点入口冻结／清理方法。来源解析仍唯一复用
+`PassiveRuleRuntime.capture_source_snapshot`、`PassiveRuleSourceResolver.sources_from_snapshot`
+和 `RunPassiveEventContext.source_snapshot`，但快照只属于当前事件的 `ExecutionPlan`，不再
+进入节点存档或聚合事务。永久来源变化对后续事件实时生效；同一事件内的执行顺序和来源集合
+保持固定。奖励前的局部快照保证新奖励不会反向触发本次 `node_completed`，奖励提交成功后
+该来源立即对下一事件可见。
 
 ### StatusSystem 状态历史职责首批迁出（2026-08-16）
 

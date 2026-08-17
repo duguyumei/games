@@ -368,6 +368,9 @@ class RunPassiveProbeHandler:
                 "offer_delta", "choose_delta", "event_experience"]:
             if configuration.has(field) and not configuration[field] is int:
                 return ["%s 必须是整数" % field] as Array[String]
+        for field in ["grant_item_id", "grant_hook"]:
+            if configuration.has(field) and not configuration[field] is String:
+                return ["%s 必须是字符串" % field] as Array[String]
         return []
 
     func handle(hook: String, context, configuration: Dictionary) -> Dictionary:
@@ -410,6 +413,14 @@ class RunPassiveProbeHandler:
             }])
             if not applied.get("success", false):
                 return applied
+        var grant_item_id := str(configuration.get("grant_item_id", ""))
+        if grant_item_id != "" \
+                and str(configuration.get("grant_hook", hook)) == hook:
+            var granted: Dictionary = ports.apply_effects([{
+                "op": "grant_items", "item_ids": [grant_item_id],
+            }])
+            if not granted.get("success", false):
+                return granted
         if str(configuration.get("fail_hook", "")) == hook:
             return {"success": false, "reason": "Fake Handler 提交失败"}
         return {"success": true}
@@ -2246,6 +2257,21 @@ func _test_passive_runtime_capacity_suppression_invocations_and_items() -> void:
     _assert_true(
         actor.configure_inner_skills(["state_inner", "state_inner"], 1)["success"],
         "同 ID 两个副本分别装备")
+    var frozen_battle_sources := runtime.capture_source_snapshot({"owner": actor})
+    _assert_true(actor.configure_items([])["success"], "战斗工作状态可以实时移除物品来源")
+    _assert_equal(
+        runtime.build_execution_plan(
+            "action_resolve", {"actor": actor}).invocations.size(),
+        2,
+        "后续尚未开始的战斗事件读取移除后的最新来源")
+    _assert_equal(
+        runtime.build_execution_plan("action_resolve", {
+            "actor": actor,
+            "source_snapshot": frozen_battle_sources,
+        }).invocations.size(),
+        4,
+        "已捕获的战斗事件来源快照不因工作状态变化而改变")
+    _assert_true(actor.configure_items(["repeat_item"])["success"], "恢复后续战斗事件来源")
     var dispatch: Dictionary = runtime.dispatch_event("action_resolve", {
         "actor": actor,
         "payload": {"direct_runtime_probe": true},
@@ -2395,11 +2421,32 @@ func _test_run_passive_queries_events_and_transactions() -> void:
         },
         {
             "id": "self_price_probe", "name": "自身价格探针",
-            "kind": "item", "status": "candidate", "unique": true,
+            "kind": "item", "status": "formal", "unique": true,
             "description": "未持有时不能修改自己的价格。", "price": 9,
             "behaviors": [{
                 "id": "run_passive_probe",
                 "configuration": {"target_id": "self_price_probe", "price_delta": -9},
+            }],
+        },
+        {
+            "id": "event_source_granter", "name": "事件来源授予探针",
+            "kind": "item", "status": "candidate", "unique": true,
+            "description": "事件执行中增加来源，验证当前计划固定。", "price": 1,
+            "behaviors": [{
+                "id": "run_passive_probe",
+                "configuration": {
+                    "grant_item_id": "self_price_probe",
+                    "grant_hook": "battle_completed",
+                },
+            }],
+        },
+        {
+            "id": "reward_source_probe", "name": "奖励来源探针",
+            "kind": "item", "status": "formal", "unique": true,
+            "description": "验证奖励来源不追溯触发自身事件。", "price": 1,
+            "behaviors": [{
+                "id": "run_passive_probe",
+                "configuration": {},
             }],
         },
         {
@@ -2616,24 +2663,31 @@ func _test_run_passive_queries_events_and_transactions() -> void:
     victory_session.execute({"type": "setup_run", "seed": 4341})
     victory_session.configure_passive_services(
         runtime, int_resolver, event_service)
-    victory_session.growth.item_ids.assign(["run_policy_probe"])
+    victory_session.growth.item_ids.assign(["event_source_granter"])
     var victory_node := str(victory_session.snapshot().available_node_ids[0])
     var victory_begin := victory_session.execute({
         "type": "begin_node", "node_id": victory_node})
-    victory_session.growth.item_ids.append("self_price_probe")
     var victory_dispatch: Dictionary = victory_begin.payload_value("dispatch", {})
+    var victory_progress_values := victory_session.progress_snapshot().to_dict()
+    victory_progress_values["item_ids"] = [
+        "event_source_granter", "run_policy_probe"]
     var victory_result := victory_session.execute({
         "type": "resolve_battle_result",
         "battle_result": _battle_final_result_for_test(
             victory_dispatch, "player_victory", "F5B Fake 胜利", 3),
-        "progress_snapshot": victory_session.progress_snapshot(),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            victory_progress_values),
     })
     _assert_true(victory_result.success, "胜利正式结果触发本局结算")
     _assert_equal(
         probe_handler.event_calls.filter(
             func(value): return value["hook"] == "battle_completed").size(),
-        battle_events_before + 1,
-        "player_victory 触发一次 battle_completed")
+        battle_events_before + 2,
+        "battle_completed 使用合入战斗进度后的两个有效来源")
+    _assert_equal(
+        victory_session.growth.item_ids,
+        ["event_source_granter", "run_policy_probe", "self_price_probe"],
+        "事件执行中获得的新来源立即进入工作状态")
     _assert_equal(
         victory_result.payload_value("passive_event", {}).get(
             "invocation_count"),
@@ -2642,6 +2696,11 @@ func _test_run_passive_queries_events_and_transactions() -> void:
 
     var node_events_before: int = probe_handler.event_calls.filter(
         func(value): return value["hook"] == "node_completed").size()
+    victory_session._pending_reward._data["entries"].append({
+        "kind": "special",
+        "op": "grant_items",
+        "item_ids": ["reward_source_probe"],
+    })
     var reward_bundle: Dictionary = victory_session.snapshot().reward.get(
         "bundle", {})
     var claim := victory_session.execute({
@@ -2650,12 +2709,17 @@ func _test_run_passive_queries_events_and_transactions() -> void:
     })
     _assert_true(claim.success, "节点奖励、功行与完成事件完整提交")
     var node_event: Dictionary = claim.payload_value("passive_event", {})
-    _assert_equal(node_event.get("invocation_count"), 1, "节点开始只冻结原有一个被动来源")
+    _assert_equal(
+        node_event.get("invocation_count"), 3,
+        "node_completed 固定奖励应用前已有的三个来源")
     _assert_equal(
         probe_handler.event_calls.filter(
             func(value): return value["hook"] == "node_completed").size(),
-        node_events_before + 1,
-        "节点完整奖励和功行后只触发一次 node_completed")
+        node_events_before + 3,
+        "奖励新来源不追溯加入同一次 node_completed")
+    _assert_true(
+        victory_session.growth.item_ids.has("reward_source_probe"),
+        "奖励来源在 node_completed 后提交到当前 growth")
     var last_node_call: Dictionary = probe_handler.event_calls.filter(
         func(value): return value["hook"] == "node_completed")[-1]
     _assert_equal(
@@ -2665,6 +2729,14 @@ func _test_run_passive_queries_events_and_transactions() -> void:
     _assert_true(
         claim.payload_value("phase", "") != "awaiting_reward",
         "node_completed 成功后才推进离开奖励阶段")
+    var next_event := victory_session._dispatch_run_passive_event(
+        "practice_opened", victory_session.growth, {
+            "transaction_token": "practice_opened:event-source-next",
+            "payload": {},
+        })
+    _assert_equal(
+        next_event.get("invocation_count"), 4,
+        "下一事件重新读取并包含事件内与奖励中新获得的来源")
     var node_count_after_claim: int = probe_handler.event_calls.filter(
         func(value): return value["hook"] == "node_completed").size()
     _assert_true(not victory_session.execute({
@@ -2685,17 +2757,20 @@ func _test_run_passive_queries_events_and_transactions() -> void:
     var defeat_begin := defeat_session.execute({
         "type": "begin_node", "node_id": defeat_node})
     var defeat_dispatch: Dictionary = defeat_begin.payload_value("dispatch", {})
+    var defeat_progress_values := defeat_session.progress_snapshot().to_dict()
+    defeat_progress_values["item_ids"] = []
     _assert_true(defeat_session.execute({
         "type": "resolve_battle_result",
         "battle_result": _battle_final_result_for_test(
             defeat_dispatch, "player_defeat", "F5B Fake 战败", 4),
-        "progress_snapshot": defeat_session.progress_snapshot(),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            defeat_progress_values),
     }).success, "战败正式结果触发本局终局")
     _assert_equal(
         probe_handler.event_calls.filter(
             func(value): return value["hook"] == "battle_completed").size(),
         battle_events_before + 2,
-        "player_defeat 也只触发一次 battle_completed")
+        "战斗进度中已移除的来源不参与 battle_completed")
     _assert_equal(
         probe_handler.event_calls.filter(
             func(value): return value["hook"] == "node_completed").size(),
@@ -2725,6 +2800,24 @@ func _test_run_passive_queries_events_and_transactions() -> void:
             func(value): return value["hook"] == "battle_completed").size(),
         battle_events_before + 2,
         "unresolved_draw 与 scenario_error 均不触发 battle_completed")
+
+    var boss_navigation = MapNavigationServiceScript.new()
+    boss_navigation.setup(4351)
+    boss_navigation.current_node_id = str(boss_navigation.graph.get("boss_id", ""))
+    boss_navigation.phase = "boss_chest"
+    var boss_growth = GrowthInventoryScript.new(catalog)
+    boss_growth.item_ids.assign(["run_policy_probe"])
+    var boss_session: RunSession = RunSessionScript.new(
+        RunStateScript.new(boss_navigation, boss_growth),
+        null, null, null, catalog)
+    boss_session.configure_passive_services(runtime, int_resolver, event_service)
+    var boss_completed := boss_session.execute({"type": "complete_boss_chest"})
+    _assert_true(boss_completed.success, "Boss 宝箱事件使用自身结算命令")
+    _assert_equal(
+        boss_completed.payload_value("passive_event", {}).get(
+            "invocation_count"),
+        1,
+        "Boss 宝箱在自身结算修改前读取当时的当前来源")
 
     var suppressed_growth = GrowthInventoryScript.new(catalog, false)
     suppressed_growth.item_ids.assign(["run_policy_probe"])
@@ -2813,15 +2906,30 @@ func _test_run_passive_queries_events_and_transactions() -> void:
         "type": "setup_run", "seed": 4242}).success, "建立旧存档兼容测试本局")
     var old_save_values: Dictionary = RunSaveDataScript.new().capture(
         old_save_session).to_dict()
+    _assert_true(
+        not old_save_values["node_state"].has("node_passive_source_snapshot")
+        and not old_save_values["node_state"].has(
+            "node_passive_source_node_id"),
+        "新 RunSaveData 不再写入可派生的节点来源列表")
+    old_save_session.growth.item_ids.assign(["run_policy_probe"])
+    old_save_values["growth"]["item_ids"] = ["run_policy_probe"]
+    old_save_values["node_state"]["node_passive_source_snapshot"] = (
+        event_service.capture_source_snapshot(old_save_session.growth))
+    old_save_values["node_state"]["node_passive_source_node_id"] = "legacy-node"
     for field in [
             "practice_is_open", "practice_open_sequence",
-            "node_passive_source_snapshot", "node_passive_source_node_id",
             "committed_passive_event_tokens"]:
         old_save_values["node_state"].erase(field)
+    var legacy_restore := RunSaveDataScript.new(old_save_values).restore_session(
+        catalog)
+    _assert_true(legacy_restore.get("success", false), "schema v1 旧节点来源字段仍可校验并载入")
+    var resaved_legacy: Dictionary = RunSaveDataScript.new().capture(
+        legacy_restore.get("run_session")).to_dict()
     _assert_true(
-        RunSaveDataScript.new(old_save_values).restore_session(
-            catalog).get("success", false),
-        "旧存档缺少 F5B 可选字段仍可载入")
+        not resaved_legacy["node_state"].has("node_passive_source_snapshot")
+        and not resaved_legacy["node_state"].has(
+            "node_passive_source_node_id"),
+        "旧来源字段恢复后被忽略并在下一次保存自然移除")
 
 func _test_run_passive_persistent_counters_and_state_ports() -> void:
     var registry = PassiveRuleHandlerRegistryScript.new()
@@ -12614,6 +12722,10 @@ func _test_battle_outcome_aggregate_transaction_contract() -> void:
         var growth_before: Dictionary = failed_session.growth.capture_mutation_state()
         var map_before: Dictionary = failed_session.navigation.capture_transaction_state()
         var run_state_before: Dictionary = failed_session._run_state.capture_transaction_state()
+        _assert_true(
+            not run_state_before.has("node_passive_source_snapshot")
+            and not run_state_before.has("node_passive_source_node_id"),
+            "%s 聚合事务不捕获节点级来源派生状态" % failure_stage)
         var log_before: Dictionary = failed_session.game_log.capture_runtime_state()
         var events_before: Array = failed_session._event_queue.duplicate()
         var event_serial_before: int = failed_session._event_serial
@@ -12643,7 +12755,7 @@ func _test_battle_outcome_aggregate_transaction_contract() -> void:
         _assert_true(failed.payload_value("rolled_back", false), "%s 统一报告完成回滚" % failure_stage)
         _assert_equal(failed_session.growth.capture_mutation_state(), growth_before, "%s 恢复完整成长与被动计数" % failure_stage)
         _assert_equal(failed_session.navigation.capture_transaction_state(), map_before, "%s 恢复地图阶段与完成节点" % failure_stage)
-        _assert_equal(failed_session._run_state.capture_transaction_state(), run_state_before, "%s 恢复终局、来源快照与被动 token" % failure_stage)
+        _assert_equal(failed_session._run_state.capture_transaction_state(), run_state_before, "%s 恢复终局与被动 token" % failure_stage)
         _assert_equal(failed_session.game_log.capture_runtime_state(), log_before, "%s 恢复日志与日志序号" % failure_stage)
         _assert_equal(failed_session._event_queue, events_before, "%s 恢复 RunEvent 队列" % failure_stage)
         _assert_equal(failed_session._event_serial, event_serial_before, "%s 恢复 RunEvent 序号" % failure_stage)

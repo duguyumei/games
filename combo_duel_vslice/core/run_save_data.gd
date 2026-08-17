@@ -68,8 +68,6 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "terminal_result": terminal_result,
             "practice_is_open": run_session._run_state.practice_is_open,
             "practice_open_sequence": run_session._run_state.practice_open_sequence,
-            "node_passive_source_snapshot": run_session._run_state.node_passive_source_snapshot.duplicate(true),
-            "node_passive_source_node_id": run_session._run_state.node_passive_source_node_id,
             "committed_passive_event_tokens": run_session._run_state.committed_passive_event_tokens.duplicate(),
             "resume_policy": (
                 "show_terminal"
@@ -165,6 +163,9 @@ func validate(content_catalog = null) -> Array[String]:
     elif node_state.has("node_passive_source_snapshot"):
         _validate_passive_source_snapshot(
             node_state["node_passive_source_snapshot"], errors)
+    if node_state.has("node_passive_source_node_id") \
+            and not node_state["node_passive_source_node_id"] is String:
+        errors.append("node_passive_source_node_id 必须是字符串")
     if node_state.has("committed_passive_event_tokens"):
         var tokens = node_state["committed_passive_event_tokens"]
         if not tokens is Array:
@@ -383,10 +384,8 @@ func restore_session(
     var state = RunStateScript.new(navigation, growth)
     state.practice_is_open = bool(node_state.get("practice_is_open", false))
     state.practice_open_sequence = int(node_state.get("practice_open_sequence", 0))
-    state.node_passive_source_snapshot = node_state.get(
-        "node_passive_source_snapshot", []).duplicate(true)
-    state.node_passive_source_node_id = str(node_state.get(
-        "node_passive_source_node_id", ""))
+    # schema v1 旧存档可能带节点级来源字段；validate 已检查其格式和内容，
+    # 但来源是可派生状态，恢复时明确忽略，后续事件从当前 growth 重新捕获。
     state.committed_passive_event_tokens.assign(node_state.get(
         "committed_passive_event_tokens", []))
     var terminal_value: Dictionary = node_state.get("terminal_result", {})
