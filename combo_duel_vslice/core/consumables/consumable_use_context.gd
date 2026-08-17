@@ -34,7 +34,7 @@ func insight_candidates(_hand_id: String, _pools: Array) -> Array[String]:
 func apply_insight(hand_id: String, candidates: Array) -> Dictionary:
 	if growth == null or not growth.has_method("apply_insight_growth"):
 		return {"success": false, "reason": "该场景不支持心得成长"}
-	return growth.apply_insight_growth(hand_id, candidates, rng)
+	return growth.apply_insight_growth(hand_id, candidates, rng, metadata)
 
 func apply_enhancement(_instance_id: String, _enhancement_id: String) -> Dictionary:
 	return {"success": false, "reason": "该场景不支持强化施加"}

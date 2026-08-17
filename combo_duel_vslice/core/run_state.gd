@@ -150,8 +150,13 @@ func purchase_consumable(consumable_id: String, price: int) -> Dictionary:
         changed.emit()
     return result
 
-func apply_insight_growth(hand_id: String, candidates: Array = [], rng = null) -> Dictionary:
-    var result: Dictionary = growth.apply_insight_growth(hand_id, candidates, rng)
+func apply_insight_growth(
+        hand_id: String,
+        candidates: Array = [],
+        rng = null,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var result: Dictionary = growth.apply_insight_growth(
+        hand_id, candidates, rng, source_metadata)
     if result.get("success", false):
         changed.emit()
     return result

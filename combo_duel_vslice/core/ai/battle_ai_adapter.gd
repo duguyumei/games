@@ -348,6 +348,7 @@ func _side_build(side, sequence_book) -> Dictionary:
         "hand_proficiency_fixed": side.hand_proficiency_fixed.duplicate(true),
         "sequences": sequence_book.sequences.duplicate(true),
         "sequence_positions": sequence_book.positions.duplicate(true),
+        "technique_slot_usage": sequence_book.public_slot_usage_snapshot(),
     }
 
 func _state_hash(observation, candidates: Array) -> String:

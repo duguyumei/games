@@ -363,8 +363,10 @@ func _test_shared_fate_poison_markers_and_active_slots() -> void:
     _assert_equal(after_unload.get("final_amount", 0), 5, "卸下功法后来源层数不再生效")
 
     var copies = _engine(8602)
-    copies.sequence_book.configure({"high_card":["high_forest_shared_fate_poison"]})
-    var temporary: Array = copies.sequence_book.insert_temporary_slots(
+    copies.sequence_book.configure_with_capacities({
+        "high_card":["high_forest_shared_fate_poison"], "pair":[]}, {
+        "high_card":1, "pair":2})
+    var temporary: Array = _generate_test_temporary_slots(copies.sequence_book,
         "pair", "high_forest_shared_fate_poison", 2)
     var first_id := str(temporary[0].get("slot_instance_id", ""))
     var second_id := str(temporary[1].get("slot_instance_id", ""))
@@ -1027,7 +1029,7 @@ func _test_poison_meridian_echo_battle_session_flow() -> void:
     _assert_equal(_slot_marker_value(
         copies, permanent_slot, "poison_segment_count"), 1,
         "临时副本插入前永久蛊脉槽独立保存首段")
-    var inserted: Array = copies.sequence_book.insert_temporary_slots(
+    var inserted: Array = _generate_test_temporary_slots(copies.sequence_book,
         "high_card", "high_forest_poison_meridian_echo", 1,
         {"position":"after_current", "marker_mode":"independent"})
     var temporary_slot := str(inserted[0].get("slot_instance_id", ""))
@@ -1310,7 +1312,7 @@ func _test_seven_poison_seal_battle_session_flow() -> void:
     _assert_true(copies_session.execute({
         "type":"play_cards", "card_ids":[str(first_high.id)]}).success,
         "七蛊永久槽先累计5点")
-    var inserted: Array = copies.sequence_book.insert_temporary_slots(
+    var inserted: Array = _generate_test_temporary_slots(copies.sequence_book,
         "straight", "straight_forest_seven_poison_seal", 1,
         {"position":"after_current", "marker_mode":"independent"})
     var temporary_slot := str(inserted[0].get("slot_instance_id", ""))
@@ -1474,7 +1476,7 @@ func _test_hundred_forms_multiple_slots_frozen_order() -> void:
         "pair":["basic_guard"], "two_pair":["basic_guard"],
         "three_kind":["basic_guard"],
     })
-    var inserted: Array = engine.sequence_book.insert_temporary_slots(
+    var inserted: Array = _generate_test_temporary_slots(engine.sequence_book,
         "high_card", "high_fire_hundred_forms_furnace", 1,
         {"position":"after_current", "marker_mode":"independent"})
     var temporary_slot := str(inserted[0].get("slot_instance_id", ""))
@@ -1624,6 +1626,37 @@ func _resume_effect_choice(engine, pending: Dictionary, selected_ids: Array) -> 
         pending.get("_continuation"),
         str(pending.get("choice_request", {}).get("request_id", "")),
         selected_ids)
+
+func _generate_test_temporary_slots(
+        book,
+        hand_id: String,
+        technique_id: String,
+        copies: int,
+        options: Dictionary = {}) -> Array:
+    var missing := maxi(0, copies - book.remaining_slot_count(hand_id))
+    if missing > 0:
+        book.change_slot_capacity(hand_id, missing)
+    var requests: Array = []
+    for copy_index in range(copies):
+        requests.append({
+            "hand_id": hand_id,
+            "copy_index": copy_index,
+            "technique_id": technique_id,
+            "position": str(options.get("position", "after_current")),
+            "marker_mode": str(options.get("marker_mode", "independent")),
+            "origin_technique_id": str(options.get(
+                "origin_technique_id", technique_id)),
+            "origin_slot_instance_id": str(options.get(
+                "origin_slot_instance_id", "")),
+            "generation_batch_token": "test-generation",
+            "generator_source_kind": "rule",
+            "generator_source_id": "test",
+            "generator_source_instance_key": "rule:test",
+        })
+    var test_rng := RandomNumberGenerator.new()
+    test_rng.seed = 2308
+    return book.commit_temporary_generation(
+        requests, "partial", test_rng).get("generated_slots", [])
 
 func _marker_value(engine, slot_instance_id: String) -> int:
     return int(engine.player.source_marker_store.value(

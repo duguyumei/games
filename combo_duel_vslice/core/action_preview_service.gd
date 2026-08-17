@@ -131,10 +131,12 @@ func preview_dto(
         condition = technique_repository.conditions_met(
             technique_definition,
             hand_result,
-            side.card_identity_policy)
+            side.card_identity_policy,
+            bool(technique_slot.get("host_sequence_qualified", false)))
     var technique_activation := _preview_technique_activation(
         side, target, technique_id, hand_result, cards,
-        technique_definition, condition)
+        technique_definition, condition,
+        bool(technique_slot.get("host_sequence_qualified", false)))
     if not technique_activation.get("success", false):
         return _invalid_preview(str(technique_activation.get(
             "reason", "功法启动权限查询失败")))
@@ -275,11 +277,12 @@ func _preview_technique_activation(
         hand_result: Dictionary,
         cards: Array,
         technique_definition,
-        condition: Dictionary) -> Dictionary:
+        condition: Dictionary,
+        host_sequence_qualified: bool) -> Dictionary:
     return technique_resolution_service.prepare_activation(
         technique_definition, side, target, hand_result, cards,
         str(hand_result.get("id", "")), "", "preview", true,
-        condition, false,
+        condition, host_sequence_qualified,
         int(round_number_reader.call()) \
             if round_number_reader.is_valid() else 0)
 

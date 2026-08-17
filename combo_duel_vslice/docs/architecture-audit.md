@@ -1141,6 +1141,20 @@ flowchart LR
 
 当前不需要继续增加一层全局事件总线。下一步应把牌型结果、预览、节点调度和应用命令中的运行时字典逐步替换为版本化 DTO，并为 DTO 增加字段契约测试。
 
+### 已完成：实时功法槽容量与临时功法生成收口
+
+`TechniqueSequenceBook` 现在同时保存每个精确牌型的实时容量、永久／临时实际实例、当前位置、稳定
+`slot_instance_id`、插入序号和快照，是战斗功法槽状态的唯一事实源。空余容量不实例化空槽；旧
+`configure()` 没有容量信息时按实际序列长度初始化，玩家进度入口则读取已经由
+`TechniqueLoadoutPolicy` 校验的 `slot_count`。
+
+`BattleTechniqueSequenceEffectService` 负责容量变化提交、`generate_temporary_techniques` 的
+partial／atomic 批次编排、随机位置的一次性确定以及容量、生成和序列变化事件。Handler 只解析
+ValueSpec 和请求，`BattleEffectPorts` 继续作为来源中立 Facade；调用服务不再拥有第二份序列事件
+实现。临时功法占用已有容量，跨牌型资格由实例的 `host_sequence_qualified` 交回现有
+`TechniqueRepository.conditions_met()`，不复制条件系统。战斗结束最终清理只释放临时实例，保留
+本场通过心得获得的实时永久容量。
+
 ### 已缓解：本局牌组已成为权威状态
 
 `GrowthInventory` 已持有完整 `RunDeck`，不再使用基础真气 ID 到少量字段的 `deck_modifiers`。`RunDeck` 保存 `QiCardInstanceData v3` 列表、实例 ID 序列及全部重塑；`BattleSetupService` 从它创建独立战斗实例，并在战后同步已知实例、新增的非临时实例和明确登记的永久移出，异状不会进入本局快照。

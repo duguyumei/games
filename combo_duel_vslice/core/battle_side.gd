@@ -81,6 +81,7 @@ var battle_passive_counter_store = null
 var source_marker_store = SourceMarkerStoreScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
 var technique_sequence_book = null
+var _battle_effect_ports_ref: WeakRef
 var condition_spec_registry = ConditionSpecRegistryScript.new()
 var battle_rule_query_service = null
 var hand_recognition_policy = null
@@ -138,6 +139,9 @@ func use_battle_permission_service(service) -> void:
 
 func use_technique_sequence_book(book) -> void:
     technique_sequence_book = book
+
+func use_battle_effect_ports(ports) -> void:
+    _battle_effect_ports_ref = weakref(ports) if ports != null else null
 
 func reset(
         cards: Array,
@@ -535,6 +539,8 @@ func capture_passive_query_state() -> Dictionary:
             if battle_passive_counter_store != null else {},
         "last_same_qi_capacity_query_result": (
             last_same_qi_capacity_query_result.duplicate(true)),
+        "technique_sequence_state": technique_sequence_book.snapshot() \
+            if technique_sequence_book != null else {},
     }
 
 func replace_passive_query_state(state: Dictionary) -> void:
@@ -626,6 +632,9 @@ func replace_passive_query_state(state: Dictionary) -> void:
         passive_counter_store.replace_state(state.get("persistent_counters", {}))
     if battle_passive_counter_store != null:
         battle_passive_counter_store.replace_state(state.get("battle_counters", {}))
+    var sequence_state: Dictionary = state.get("technique_sequence_state", {})
+    if technique_sequence_book != null and not sequence_state.is_empty():
+        technique_sequence_book.restore_snapshot(sequence_state)
 
 func stage_cards(card_ids: Array) -> bool:
     return card_zone_service.stage_cards(self, card_ids)
@@ -1260,7 +1269,8 @@ func consume_at(slot_index: int) -> String:
 func apply_insight_growth(
         hand_id: String,
         candidates: Array = [],
-        rng: RandomNumberGenerator = null) -> Dictionary:
+        rng: RandomNumberGenerator = null,
+        source_metadata: Dictionary = {}) -> Dictionary:
     if not HAND_IDS.has(hand_id):
         return {"success": false, "reason": "未知牌型：%s" % hand_id}
     var progression: Dictionary = hand_technique_progression.get(hand_id, {
@@ -1307,9 +1317,50 @@ func apply_insight_growth(
             self, proposed, proposed_learned, hand_id)
         if not validation.get("success", false):
             return validation
+    var progression_before := hand_technique_progression.duplicate(true)
+    var owned_before := owned_technique_ids.duplicate()
     hand_technique_progression = proposed
     if acquired != "":
         learn_technique(acquired)
+    var capacity_sync := {"success": true, "changed": false}
+    if slot_gain > 0 and technique_sequence_book != null:
+        if technique_sequence_book.slot_capacity(hand_id) != before:
+            hand_technique_progression = progression_before
+            owned_technique_ids.assign(owned_before)
+            return {
+                "success": false,
+                "reason": "永久功法槽容量与当前战斗容量不一致",
+                "rolled_back": true,
+            }
+        var ports = _battle_effect_ports_ref.get_ref() \
+            if _battle_effect_ports_ref != null else null
+        if ports == null:
+            hand_technique_progression = progression_before
+            owned_technique_ids.assign(owned_before)
+            return {
+                "success": false,
+                "reason": "战斗中心得缺少统一功法槽容量端口",
+                "rolled_back": true,
+            }
+        var metadata := source_metadata.duplicate(true)
+        metadata["requested_delta"] = requested_gain
+        metadata["minimum_capacity"] = \
+            TechniqueLoadoutPolicyScript.MIN_SLOT_COUNT
+        metadata["maximum_capacity"] = \
+            TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT
+        capacity_sync = ports.change_technique_slot_capacity(
+            self, hand_id, slot_gain, metadata)
+        if not capacity_sync.get("success", false) \
+                or int(capacity_sync.get("actual_delta", 0)) != slot_gain:
+            hand_technique_progression = progression_before
+            owned_technique_ids.assign(owned_before)
+            return {
+                "success": false,
+                "reason": str(capacity_sync.get(
+                    "reason", "战斗功法槽容量同步失败")),
+                "rolled_back": true,
+                "capacity_sync": capacity_sync,
+            }
     return {
         "success": true,
         "hand_id": hand_id,
@@ -1321,6 +1372,7 @@ func apply_insight_growth(
         "technique_acquired": acquired,
         "technique_equipped": false,
         "no_technique_available": acquired == "",
+        "battle_capacity_sync": capacity_sync.duplicate(true),
     }
 
 func _actual_technique_ids(hand_id: String) -> Array:

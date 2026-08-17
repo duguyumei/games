@@ -208,7 +208,9 @@ func _freeze_technique_activation(
         definition, actor, target, action_preview.get("hand", {}),
         action_preview.get("cards", []),
         str(action_preview.get("hand", {}).get("id", "")),
-        action_token, "action_confirmed", true, condition, false,
+        action_token, "action_confirmed", true, condition,
+        bool(action_preview.get("technique_slot", {}).get(
+            "host_sequence_qualified", false)),
         _turn_number)
     if not result.get("success", false):
         return {
@@ -494,8 +496,11 @@ func retrigger_current_hand_technique(
     var definition = technique_repository.get_definition(technique_id)
     if definition == null:
         return {"success": false, "triggered": false, "detail": "重触功法不存在"}
+    var retrigger_slot: Dictionary = sequence_book.current_slot(
+        str(hand_result.get("id", "")))
     var condition: Dictionary = technique_repository.conditions_met(
-        definition, hand_result, actor.card_identity_policy)
+        definition, hand_result, actor.card_identity_policy,
+        bool(retrigger_slot.get("host_sequence_qualified", false)))
     if not condition.get("ok", false):
         return {"success": true, "triggered": false, "detail": condition.get("reason", "条件失败")}
     var activation := _query_additional_technique_activation(
@@ -512,8 +517,6 @@ func retrigger_current_hand_technique(
             "detail": activation.get("reason", "重触功法启动被拒绝"),
             "technique_activation": activation,
         }
-    var retrigger_slot: Dictionary = sequence_book.current_slot(
-        str(hand_result.get("id", "")))
     var context = EffectContextScript.new().configure({
         "ports": effect_ports,
         "actor": actor,

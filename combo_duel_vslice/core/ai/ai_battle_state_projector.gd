@@ -44,6 +44,7 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
         "poison": poison.duplicate(true),
         "sequence_positions": sequence_book.positions.duplicate(true),
         "technique_sequences": sequence_book.public_snapshot(),
+        "technique_slot_usage": sequence_book.public_slot_usage_snapshot(),
         "action_state": battle_flow.snapshot_for(side),
         "public_statuses": _public_statuses(side),
         "public_passive_progress": _passive_progress(side, false),

@@ -111,7 +111,8 @@ func prepare_invocation(request: Dictionary, context) -> Dictionary:
         runtime.played_cards, str(request.get("hand_id", "")),
         str(request.get("invocation_token", "")),
         str(effect.get("_trigger_mode", "invoked")),
-        bool(effect.get("check_condition", true)), {}, true)
+        bool(effect.get("check_condition", true)), {},
+        bool(slot.get("host_sequence_qualified", false)))
     if not activation.get("success", false):
         return activation
     if not activation.get("triggered", false):

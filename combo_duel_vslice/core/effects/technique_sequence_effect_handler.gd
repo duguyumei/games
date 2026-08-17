@@ -5,7 +5,6 @@ const EffectContextScript = preload("res://core/effects/battle_effect_context.gd
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
 var value_resolver
-var random_source: RandomNumberGenerator
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
     "full_house", "four_kind", "five_kind",
@@ -13,22 +12,19 @@ const HAND_IDS := [
 
 func _init(resolver, rng: RandomNumberGenerator) -> void:
     value_resolver = resolver
-    random_source = rng
 
 func operation_ids() -> Array[String]:
-    return ["insert_technique_slots", "invoke_sequence_technique"]
+    return ["generate_temporary_techniques", "invoke_sequence_technique"]
 
 func group_name() -> String:
     return "technique_sequence"
 
 func execute(effect: Dictionary, context):
     var runtime = EffectContextScript.coerce(context)
-    if runtime.sequence_book == null:
-        return EffectResultScript.failed("功法序列处理器缺少序列簿")
-    if str(effect.get("op", "")) == "insert_technique_slots":
-        return _insert(effect, runtime)
     if runtime.ports == null:
-        return EffectResultScript.failed("功法调用缺少战斗端口")
+        return EffectResultScript.failed("功法序列效果缺少战斗端口")
+    if str(effect.get("op", "")) == "generate_temporary_techniques":
+        return _generate(effect, runtime)
     var result: Dictionary = runtime.ports.invoke_sequence_technique(effect, runtime)
     if result.get("pending_choice", false):
         return EffectResultScript.pending_choice(
@@ -38,57 +34,27 @@ func execute(effect: Dictionary, context):
         return EffectResultScript.failed(str(result.get("reason", "功法调用失败")))
     return EffectResultScript.succeeded(str(result.get("detail", "功法调用完成")))
 
-func _insert(effect: Dictionary, runtime):
-    if not bool(effect.get("temporary", true)):
-        return EffectResultScript.failed("战斗插入当前只允许 temporary=true")
+func _generate(effect: Dictionary, runtime):
     var copies := maxi(0, value_resolver.resolve(effect.get("copies", 1), runtime))
-    var source := str(effect.get("source", "self"))
-    var technique_id: String = runtime.technique_id if source == "self" else str(
-        effect.get("technique_id", source))
-    var hand_ids := _target_hands(effect.get("target_hands", "current"), runtime)
-    var all_inserted: Array = []
-    for hand_id_value in hand_ids:
-        var hand_id := str(hand_id_value)
-        var frozen_indices: Array = []
-        if str(effect.get("position", "after_current")) == "random":
-            var slot_count: int = runtime.sequence_book.ordered_slots(hand_id).size()
-            for _copy in range(copies):
-                frozen_indices.append(random_source.randi_range(0, slot_count))
-                slot_count += 1
-        all_inserted.append_array(runtime.sequence_book.insert_temporary_slots(
-            hand_id, technique_id, copies, {
-                "position": str(effect.get("position", "after_current")),
-                "frozen_indices": frozen_indices,
-                "origin_slot_instance_id": runtime.slot_instance_id,
-                "origin_technique_id": runtime.technique_id,
-                "marker_mode": str(effect.get("marker_mode", "independent")),
-            }))
+    var request := effect.duplicate(true)
+    request["copies"] = copies
+    var result: Dictionary = runtime.ports.generate_temporary_techniques(
+        request, runtime)
+    if not result.get("success", false):
+        return EffectResultScript.failed(str(result.get(
+            "reason", "临时功法生成失败")))
     var capture_id := str(effect.get("capture", ""))
     if capture_id != "":
-        runtime.captures[capture_id] = all_inserted.duplicate(true)
-    if runtime.ports != null and not all_inserted.is_empty():
-        runtime.ports.emit_technique_sequence_changed(
-            runtime.actor, runtime.action_token, "insert", all_inserted)
-    return EffectResultScript.succeeded("临时插入 %d 个功法槽位" % all_inserted.size())
-
-func _target_hands(spec, runtime) -> Array:
-    if spec is Array:
-        return spec.duplicate()
-    if str(spec) == "all_other":
-        var result: Array = []
-        for hand_id in runtime.sequence_book.sequences:
-            if str(hand_id) != runtime.actual_hand_id:
-                result.append(str(hand_id))
-        result.sort()
-        return result
-    return [runtime.actual_hand_id]
+        runtime.captures[capture_id] = [result.duplicate(true)]
+    return EffectResultScript.succeeded(
+        "生成 %d/%d 门临时功法" % [
+            int(result.get("generated_count", 0)),
+            int(result.get("requested_count", 0)),
+        ])
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
-    if str(effect.get("op", "")) == "insert_technique_slots":
-        var source := str(effect.get("source", "self"))
-        if source == "" or (source != "self" and str(
-                effect.get("technique_id", source)) == ""):
-            validator.report_error(scope + ".source", "必须为 self 或功法 ID")
+    if str(effect.get("op", "")) == "generate_temporary_techniques":
+        _validate_generation_source(effect, validator, scope)
         var target_hands = effect.get("target_hands", "current")
         if target_hands is String:
             if str(target_hands) not in ["current", "all_other"] \
@@ -104,14 +70,19 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             validator.validate_amount_spec(effect["copies"], scope + ".copies")
         elif not effect.get("copies", 1) is int or int(effect.get("copies", 1)) < 0:
             validator.report_error(scope + ".copies", "必须为非负整数或 ValueSpec")
-        if effect.has("temporary") and not bool(effect.get("temporary", true)):
-            validator.report_error(scope + ".temporary", "当前阶段必须为 true")
         if str(effect.get("position", "after_current")) not in [
                 "random", "before_current", "after_current"]:
             validator.report_error(scope + ".position", "引用未知插入位置")
         if str(effect.get("marker_mode", "independent")) not in [
                 "independent", "share_origin"]:
             validator.report_error(scope + ".marker_mode", "引用未知标识模式")
+        if str(effect.get("batch_mode", "partial")) not in [
+                "partial", "atomic"]:
+            validator.report_error(scope + ".batch_mode", "引用未知批次模式")
+        if effect.has("capture") and (
+                not effect["capture"] is String \
+                or str(effect["capture"]) == ""):
+            validator.report_error(scope + ".capture", "必须是非空字符串")
         return
     var selection = effect.get("selection", {})
     if not selection is Dictionary:
@@ -147,3 +118,34 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     for field in ["advance_sequence", "gain_same_qi", "use_momentum", "check_condition"]:
         if effect.has(field) and not effect[field] is bool:
             validator.report_error(scope + "." + field, "必须是布尔值")
+
+func _validate_generation_source(
+        effect: Dictionary,
+        validator,
+        scope: String) -> void:
+    var source = effect.get("technique_source", effect.get(
+        "source", "current_source"))
+    if effect.has("technique_id") and not effect.has("technique_source") \
+            and not effect.has("source"):
+        source = {"mode": "by_id", "technique_id": effect["technique_id"]}
+    if source is String:
+        if str(source) == "":
+            validator.report_error(scope + ".technique_source", "不能为空")
+        return
+    if not source is Dictionary:
+        validator.report_error(scope + ".technique_source", "必须是字符串或对象")
+        return
+    var mode := str(source.get("mode", "current_source"))
+    if mode not in ["current_source", "current_slot", "by_slot", "by_id"]:
+        validator.report_error(scope + ".technique_source.mode", "引用未知来源模式")
+    if mode == "by_id" and str(source.get("technique_id", "")) == "":
+        validator.report_error(
+            scope + ".technique_source.technique_id", "by_id 必须提供功法 ID")
+    if mode == "by_slot" and str(source.get("slot_instance_id", "")) == "":
+        validator.report_error(
+            scope + ".technique_source.slot_instance_id",
+            "by_slot 必须提供槽位实例 ID")
+    var hand_id := str(source.get("hand_id", "current"))
+    if hand_id != "current" and hand_id not in HAND_IDS:
+        validator.report_error(
+            scope + ".technique_source.hand_id", "引用未知精确牌型")

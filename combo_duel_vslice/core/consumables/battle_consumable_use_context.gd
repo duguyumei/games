@@ -77,6 +77,9 @@ func capture_transaction_state() -> Dictionary:
 		"hand_technique_progression": growth.hand_technique_progression.duplicate(true),
 		"owned_technique_ids": growth.owned_technique_ids.duplicate(),
 		"consumable_ids": growth.consumable_ids.duplicate(),
+		"technique_sequence_state": (
+			growth.technique_sequence_book.snapshot()
+			if growth.technique_sequence_book != null else {}),
 	}
 
 func restore_transaction_state(snapshot: Dictionary) -> bool:
@@ -112,6 +115,10 @@ func restore_transaction_state(snapshot: Dictionary) -> bool:
 		"hand_technique_progression", {}).duplicate(true)
 	growth.owned_technique_ids.assign(snapshot.get("owned_technique_ids", []))
 	growth.consumable_ids.assign(snapshot.get("consumable_ids", []))
+	var sequence_state: Dictionary = snapshot.get(
+		"technique_sequence_state", {})
+	if growth.technique_sequence_book != null and not sequence_state.is_empty():
+		growth.technique_sequence_book.restore_snapshot(sequence_state)
 	return restored
 
 func _find_card(instance_id: String):

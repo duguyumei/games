@@ -16,6 +16,9 @@ func between(before: Dictionary, after: Dictionary) -> Dictionary:
         "passive_changes": _changed(before, after, "public_passive_progress"),
         "sequence_changes": _dictionary_changes(
             before.get("sequence_positions", {}), after.get("sequence_positions", {})),
+        "technique_slot_usage_changes": _dictionary_changes(
+            before.get("technique_slot_usage", {}),
+            after.get("technique_slot_usage", {})),
     }
 
 func _scalar_delta(before: Dictionary, after: Dictionary, key: String) -> Dictionary:

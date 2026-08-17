@@ -86,7 +86,7 @@ func _dispose_engines() -> void:
             .use_passive_battle_services(null, null, Callable())
         engine.effect_ports._source_resource_effect_service \
             .use_passive_battle_services(null, Callable())
-        engine.effect_ports._invocation_effect_service \
+        engine.effect_ports._technique_sequence_effect_service \
             .use_passive_battle_services(null, Callable())
         engine.effect_ports._action_resource_effect_service \
             ._consumable_repository = null

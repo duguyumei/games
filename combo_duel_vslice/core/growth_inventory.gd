@@ -267,7 +267,8 @@ func _technique_belongs_to_hand(technique_id: String, hand_id: String) -> bool:
 func apply_insight_growth(
         hand_id: String,
         candidates: Array = [],
-        rng: RandomNumberGenerator = null) -> Dictionary:
+        rng: RandomNumberGenerator = null,
+        _source_metadata: Dictionary = {}) -> Dictionary:
     if not HAND_IDS.has(hand_id):
         return {"success": false, "reason": "未知牌型：%s" % hand_id}
     var progression: Dictionary = hand_technique_progression.get(hand_id, {

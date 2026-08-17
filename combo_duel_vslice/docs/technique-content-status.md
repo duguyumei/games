@@ -281,7 +281,7 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 
 已完成：唯一临时移出事务承接虚无打出、虚无明确弃置、主动消散与同步移动；防御减少统一携带 `cause`，直接削防、支付、衰减、清空与重置不触发反震，`blockable=false` 只跳过格挡且仍结算伤害增减、防御吸收和反震；来源标识使用统一地址解析器，battle／run／`share_origin` 与独立临时副本边界已接入；生命上限贡献由统一服务在本局库存和战斗方复用；毒伤逐段冻结修正并在成功提交后按稳定 receipt 幂等消费。
 
-已完成：旧效果操作码 `add_momentum`、`set_momentum`、`consume_momentum`、`add_same_qi`、`clear_same_qi_for_defense`、`set_reflection_percent`、`set_reflection_until_turn_end` 与 `remove_all_defense` 已从效果注册表和正式资源中迁移；保留 `dissipate_captured`、`atomic_exchange_captured`、`synchronous_discard_queries`、`insert_technique_slots` 与 `invoke_sequence_technique`，因为它们表达原子批次、同步冻结或嵌套结算时序，不是重复底层包装。底层兼容方法名仍可存在于窄端口或角色对象上，但内容不能再把它们当效果操作码使用。
+已完成：旧效果操作码 `add_momentum`、`set_momentum`、`consume_momentum`、`add_same_qi`、`clear_same_qi_for_defense`、`set_reflection_percent`、`set_reflection_until_turn_end`、`remove_all_defense` 与无容量限制的 `insert_technique_slots` 已从效果注册表和正式资源中迁移。保留 `dissipate_captured`、`atomic_exchange_captured`、`synchronous_discard_queries`、容量感知的 `generate_temporary_techniques` 与 `invoke_sequence_technique`，因为它们表达原子批次、同步冻结或嵌套结算时序，不是重复底层包装。
 
 投影与持久化：公开来源标识、稳定功法槽位和毒伤修正来源已经进入战斗快照、AI 公开状态和历史过滤；私有标识不会进入 AI 历史；功法序列 UI 显示当前／下一槽位公开标识，本局配装 UI 显示 run 标识；存档保存 `base_max_life` 与来源标识状态，旧 `max_life` 存档迁移为基础上限。当前没有已知的 UI／AI 公共字段漏接边界。
 

@@ -429,15 +429,16 @@ func _test_delayed_effect_reuses_frozen_snapshot() -> void:
 
 func _test_stable_slots_temporary_insert_and_call_orders() -> void:
     var book = SequenceBookScript.new()
-    book.configure({"high_card": ["a", "b", "c", "d"]})
+    book.configure_with_capacities(
+        {"high_card": ["a", "b", "c", "d"]}, {"high_card": 8})
     var original_ids: Array = book.ordered_slots("high_card").map(
         func(slot): return str(slot["slot_instance_id"]))
-    var first_insert := book.insert_temporary_slots(
+    var first_insert := _generate_test_temporary_slots(book,
         "high_card", "temp", 2, {"position": "after_current"})
-    var second_insert := book.insert_temporary_slots(
+    var second_insert := _generate_test_temporary_slots(book,
         "high_card", "temp", 2, {"position": "after_current"})
     _assert_equal(first_insert.size() + second_insert.size(), 4,
-        "临时插入触发两次后按每次份数新增，不存在默认上限")
+        "临时生成触发两次后只占用明确空余容量")
     var temporary_ids: Dictionary = {}
     for slot in first_insert + second_insert:
         temporary_ids[str(slot["slot_instance_id"])] = true
@@ -1036,12 +1037,12 @@ func _test_invocation_choice_resume_freezes_randomness() -> void:
         _card("4", "wind"), _card("9", "fire")])
     var waiting_effects := [
         {
-            "op": "insert_technique_slots",
-            "source": "self",
+            "op": "generate_temporary_techniques",
+            "technique_source": "current_source",
             "target_hands": "current",
             "copies": 2,
             "position": "random",
-            "temporary": true,
+            "batch_mode": "partial",
         },
         {
             "op": "select_cards",
@@ -1070,7 +1071,8 @@ func _test_invocation_choice_resume_freezes_randomness() -> void:
                 "effects": waiting_effects},
         ],
     })
-    engine.sequence_book.configure({"high_card": ["a", "b", "c"]})
+    engine.sequence_book.configure_with_capacities(
+        {"high_card": ["a", "b", "c"]}, {"high_card": 5})
     var caller: Dictionary = engine.sequence_book.current_slot("high_card")
     var runtime = EffectContextScript.new().configure({
         "ports": engine.effect_ports, "actor": engine.player,
@@ -1384,9 +1386,10 @@ func _test_battle_session_invocation_choice_resume() -> void:
             {"op": "damage", "amount": {
                 "kind": "constant", "value": 1}},
             {
-                "op": "insert_technique_slots",
-                "source": "self", "target_hands": "current",
-                "copies": 2, "position": "random", "temporary": true,
+                "op": "generate_temporary_techniques",
+                "technique_source": "current_source",
+                "target_hands": "current",
+                "copies": 2, "position": "random", "batch_mode": "partial",
             },
             {
                 "op": "select_cards", "choice_id": "session_wait",
@@ -1434,8 +1437,10 @@ func _test_battle_session_invocation_choice_resume() -> void:
                     "pool": "high", "special": false, "effects": []},
             ],
         })
-        engine.sequence_book.configure({
-            "high_card": ["caller_probe", "waiting_probe", "tail_probe"]})
+        engine.sequence_book.configure_with_capacities({
+            "high_card": ["caller_probe", "waiting_probe", "tail_probe"]}, {
+            "high_card": 5,
+        })
         var session = BattleSessionScript.new(engine)
         var started = session.execute({
             "type": "play_cards", "card_ids": [str(played.id)],
@@ -1568,7 +1573,7 @@ func _test_temporary_slots_do_not_duplicate_run_max_life() -> void:
     growth.apply_to_battle_side(engine.player)
     engine.sequence_book.configure({"high_card": ["basic_scatter"]})
     var origin: Dictionary = engine.sequence_book.current_slot("high_card")
-    engine.sequence_book.insert_temporary_slots(
+    _generate_test_temporary_slots(engine.sequence_book,
         "high_card", "basic_scatter", 3, {
             "position": "after_current",
             "origin_slot_instance_id": str(origin["slot_instance_id"]),
@@ -1736,12 +1741,25 @@ func _test_all_insights_grow_empty_slots() -> void:
             if str(pack["id"]) == pack_id:
                 found = pack["candidate_ids"]
         _assert_equal(found.size(), 8, "%s 继续包含八种心得" % pack_id)
-    var side = CombatEngineScript.new().player
+    var insight_engine = CombatEngineScript.new()
+    var side = insight_engine.player
+    var initial_progression: Dictionary = {}
+    for hand_id in HAND_IDS:
+        initial_progression[hand_id] = {
+            "slot_count": 1,
+            "sequence": ["basic_scatter"],
+        }
+    side.hand_technique_progression = initial_progression.duplicate(true)
+    side.hand_technique_progression_active = true
+    insight_engine.sequence_book.configure_hand_progression(initial_progression)
     for hand_id in HAND_IDS:
         var before := int(side.hand_technique_progression.get(
             hand_id, {"slot_count": 1})["slot_count"])
         var result: Dictionary = side.apply_insight_growth(hand_id, [])
-        _assert_true(result["success"], "%s 心得在空池成功使用" % hand_id)
+        _assert_true(result.get("success", false),
+            "%s 心得在空池成功使用：%s" % [hand_id, str(result)])
+        if not result.get("success", false):
+            continue
         _assert_equal(result["slot_count_after"], before + 1, "%s 槽位增加一" % hand_id)
         _assert_equal(result["technique_acquired"], "", "%s 不生成功法" % hand_id)
         _assert_equal(result["technique_equipped"], false, "%s 不自动装备功法" % hand_id)
@@ -1819,27 +1837,22 @@ func _test_s2f6a_basic_techniques_and_loadout_limits() -> void:
         "所有 Fake 次数查询使用统一 hook")
 
     policy.use_int_policy_resolver(null)
-    var ninety_nine: Dictionary = baseline.duplicate(true)
-    var remaining := 99
+    var maximum_built_in: Dictionary = baseline.duplicate(true)
+    var remaining := HAND_IDS.size() * TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT
     for hand_id in HAND_IDS:
-        var count := mini(remaining, 13)
-        ninety_nine[hand_id] = {
+        var count := mini(
+            remaining, TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT)
+        maximum_built_in[hand_id] = {
             "slot_count": count,
             "sequence": [],
         }
         for _index in range(count):
-            ninety_nine[hand_id]["sequence"].append("basic_scatter")
+            maximum_built_in[hand_id]["sequence"].append("basic_scatter")
         remaining -= count
-    _assert_equal(remaining, 0, "测试夹具恰好生成 99 个散招")
+    _assert_equal(remaining, 0, "测试夹具填满八种牌型的合法容量")
     _assert_true(policy.validate_complete(
-        growth, ninety_nine, growth.learned_technique_ids)["success"],
-        "散招全局装配 99 次合法")
-    var hundred: Dictionary = ninety_nine.duplicate(true)
-    hundred["high_card"]["slot_count"] += 1
-    hundred["high_card"]["sequence"].append("basic_scatter")
-    _assert_true(not policy.validate_complete(
-        growth, hundred, growth.learned_technique_ids)["success"],
-        "第 100 个散招被拒绝")
+        growth, maximum_built_in, growth.learned_technique_ids)["success"],
+        "基础功法可以填满全部 72 个当前合法永久槽位")
 
     var original: Dictionary = growth.hand_technique_progression.duplicate(true)
     _assert_true(not growth.set_hand_technique_loadout("pair", [])["success"],
@@ -2122,7 +2135,7 @@ func _dispose_tracked_engines() -> void:
             .use_passive_battle_services(null, null, Callable())
         engine.effect_ports._source_resource_effect_service \
             .use_passive_battle_services(null, Callable())
-        engine.effect_ports._invocation_effect_service \
+        engine.effect_ports._technique_sequence_effect_service \
             .use_passive_battle_services(null, Callable())
         engine.effect_ports._action_resource_effect_service \
             ._consumable_repository = null
@@ -2150,6 +2163,37 @@ func _empty_sequences() -> Dictionary:
     for hand_id in HAND_IDS:
         result[hand_id] = []
     return result
+
+func _generate_test_temporary_slots(
+        book,
+        hand_id: String,
+        technique_id: String,
+        copies: int,
+        options: Dictionary = {}) -> Array:
+    var missing := maxi(0, copies - book.remaining_slot_count(hand_id))
+    if missing > 0:
+        book.change_slot_capacity(hand_id, missing)
+    var requests: Array = []
+    for copy_index in range(copies):
+        requests.append({
+            "hand_id": hand_id,
+            "copy_index": copy_index,
+            "technique_id": technique_id,
+            "position": str(options.get("position", "after_current")),
+            "marker_mode": str(options.get("marker_mode", "independent")),
+            "origin_technique_id": str(options.get(
+                "origin_technique_id", technique_id)),
+            "origin_slot_instance_id": str(options.get(
+                "origin_slot_instance_id", "")),
+            "generation_batch_token": "test-generation",
+            "generator_source_kind": "rule",
+            "generator_source_id": "test",
+            "generator_source_instance_key": "rule:test",
+        })
+    var test_rng := RandomNumberGenerator.new()
+    test_rng.seed = 2308
+    return book.commit_temporary_generation(
+        requests, "partial", test_rng).get("generated_slots", [])
 
 func _card(rank: String, attribute: String):
     card_serial += 1

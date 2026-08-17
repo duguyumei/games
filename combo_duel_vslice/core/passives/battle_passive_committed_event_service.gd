@@ -184,13 +184,8 @@ func _context(
         owner,
         event_token: String):
     var payload: Dictionary = values.get("payload", {}).duplicate(false)
-    for field in [
-            "technique_triggered", "action_succeeded",
-            "from_zone", "reason", "explicit_discard", "normal_play",
-            "draw_reason", "defense_lost", "life_lost",
-            "true_damage", "damage_type", "synchronized", "effective_amount",
-            "defense_before", "defense_after", "frozen_amount",
-            "actual_life_loss", "source_card_instance_id", "pre_move_snapshot"]:
+    for field in BattleEventCatalogScript.PUBLIC_FIELDS + [
+            "true_damage", "synchronized"]:
         if values.has(field):
             payload[field] = values[field]
     return ContextScript.new().configure({

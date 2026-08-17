@@ -11,6 +11,8 @@ const BattleSourceResourceEffectServiceScript = preload(
     "res://core/effects/battle_source_resource_effect_service.gd")
 const BattleInvocationEffectServiceScript = preload(
     "res://core/effects/battle_invocation_effect_service.gd")
+const BattleTechniqueSequenceEffectServiceScript = preload(
+    "res://core/effects/battle_technique_sequence_effect_service.gd")
 const BattleResponseEffectServiceScript = preload(
     "res://core/effects/battle_response_effect_service.gd")
 const BattlePoisonCardTriggerServiceScript = preload(
@@ -30,6 +32,7 @@ var _survival_effect_service
 var _card_effect_service
 var _source_resource_effect_service
 var _invocation_effect_service
+var _technique_sequence_effect_service
 var _response_effect_service
 var _poison_card_trigger_service
 var _action_resource_effect_service
@@ -49,6 +52,8 @@ func _init(
         Callable(_survival_effect_service, "can_bind_current_source"),
         Callable(_survival_effect_service, "close_current_source_binding_window"))
     _invocation_effect_service = BattleInvocationEffectServiceScript.new()
+    _technique_sequence_effect_service = \
+        BattleTechniqueSequenceEffectServiceScript.new()
     _response_effect_service = BattleResponseEffectServiceScript.new(
         status_system, _card_effect_service)
     _poison_card_trigger_service = BattlePoisonCardTriggerServiceScript.new(
@@ -87,12 +92,16 @@ func use_passive_battle_services(
         query_service, event_service, round_reader)
     _source_resource_effect_service.use_passive_battle_services(
         event_service, round_reader)
-    _invocation_effect_service.use_passive_battle_services(
+    _technique_sequence_effect_service.use_passive_battle_services(
         event_service, round_reader)
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
     _card_effect_service.use_battle_rng(rng)
+    _technique_sequence_effect_service.use_battle_rng(rng)
+
+func use_technique_repository(repository) -> void:
+    _technique_sequence_effect_service.use_technique_repository(repository)
 
 func battle_rng() -> RandomNumberGenerator:
     return _battle_rng
@@ -306,6 +315,29 @@ func consume_source_marker_records(
 func invoke_sequence_technique(effect: Dictionary, context) -> Dictionary:
     return _invocation_effect_service.invoke_sequence_technique(effect, context)
 
+func technique_slot_usage(side: BattleSide, hand_id: String) -> Dictionary:
+    return _technique_sequence_effect_service.slot_usage(side, hand_id)
+
+func change_technique_slot_capacity(
+        side: BattleSide,
+        hand_id: String,
+        delta: int,
+        metadata: Dictionary = {}) -> Dictionary:
+    return _technique_sequence_effect_service.change_slot_capacity(
+        side, hand_id, delta, metadata)
+
+func generate_temporary_techniques(
+        effect: Dictionary,
+        context) -> Dictionary:
+    return _technique_sequence_effect_service.generate_temporary_techniques(
+        effect, context)
+
+func clear_temporary_techniques(
+        side: BattleSide,
+        action_token: String = "") -> Dictionary:
+    return _technique_sequence_effect_service.clear_temporary_techniques(
+        side, action_token)
+
 func resolve_after_caller_advance(root_action_token: String) -> Dictionary:
     return _invocation_effect_service.resolve_after_caller_advance(root_action_token)
 
@@ -320,7 +352,7 @@ func emit_technique_sequence_changed(
         action_token: String,
         reason: String,
         changed_slots: Array) -> void:
-    _invocation_effect_service.emit_technique_sequence_changed(
+    _technique_sequence_effect_service.emit_technique_sequence_changed(
         side, action_token, reason, changed_slots)
 
 func add_momentum(side: BattleSide, amount: int) -> int:

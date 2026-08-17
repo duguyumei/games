@@ -5,13 +5,11 @@ extends RefCounted
 ##
 ## EffectExecutor 仍是效果 continuation 的唯一事实源，TechniqueInvocationService
 ## 仍是功法调用冻结、排序、推进与递归保护的唯一事实源。本服务只维护 Facade 所需
-## 的当前上下文栈和即时插入队列，并把调用时点、序列事件与重触回调收束到窄边界。
+## 的当前上下文栈和即时插入队列，并把调用时点与重触回调收束到窄边界。
 
 var _effect_executor_ref: WeakRef
 var _technique_invocation_service_ref: WeakRef
 var _hand_retrigger_callback: Callable
-var _committed_event_service
-var _round_number_reader: Callable
 var _effect_context_stack: Array = []
 var _effect_context_slot_entries: Dictionary = {}
 var _immediate_effects_by_context: Dictionary = {}
@@ -27,13 +25,6 @@ func use_technique_invocation_service(service) -> void:
 
 func use_hand_retrigger_callback(callback: Callable) -> void:
     _hand_retrigger_callback = callback
-
-
-func use_passive_battle_services(
-        event_service,
-        round_reader: Callable = Callable()) -> void:
-    _committed_event_service = event_service
-    _round_number_reader = round_reader
 
 
 func push_effect_context(context) -> void:
@@ -120,24 +111,6 @@ func resolve_technique_invocations_at_timing(
     return invocation_service.resolve_timing(timing, root_action_token)
 
 
-func emit_technique_sequence_changed(
-        side,
-        action_token: String,
-        reason: String,
-        changed_slots: Array) -> void:
-    if _committed_event_service == null:
-        return
-    var serial := int(_committed_event_service.next_serial())
-    _committed_event_service.commit("technique_sequence_changed", {
-        "event_token": _committed_event_service.make_token(
-            "technique_sequence_changed", side, serial, action_token),
-        "event_serial": serial, "actor": side, "owner": side,
-        "action_token": action_token, "reason": reason,
-        "changed_slots": changed_slots.duplicate(true),
-        "round_number": _round_number(),
-    })
-
-
 func retrigger_current_hand_technique(
         actor,
         target,
@@ -164,7 +137,3 @@ func _effect_executor():
 func _technique_invocation_service():
     return _technique_invocation_service_ref.get_ref() \
         if _technique_invocation_service_ref != null else null
-
-
-func _round_number() -> int:
-    return int(_round_number_reader.call()) if _round_number_reader.is_valid() else 0

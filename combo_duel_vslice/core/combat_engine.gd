@@ -238,6 +238,7 @@ func _init(
     effect_ports.use_battle_permission_service(battle_permission_service)
     effect_ports.use_sides(player, enemy)
     effect_ports.use_battle_rng(rng)
+    effect_ports.use_technique_repository(repository)
     same_qi_gauge_service = SameQiGaugeServiceScript.new(battle_flow)
     effect_ports.use_same_qi_gauge_service(same_qi_gauge_service)
     passive_rule_runtime.use_battle_effect_ports(
@@ -270,6 +271,8 @@ func _init(
     enemy.use_battle_permission_service(battle_permission_service)
     player.use_technique_sequence_book(sequence_book)
     enemy.use_technique_sequence_book(enemy_sequence_book)
+    player.use_battle_effect_ports(effect_ports)
+    enemy.use_battle_effect_ports(effect_ports)
     player.use_card_reshape_runtime(card_reshape_runtime)
     enemy.use_card_reshape_runtime(card_reshape_runtime)
     effect_executor = EffectExecutorScript.new(rng, null, content_catalog)
@@ -859,6 +862,16 @@ func _on_automatic_turn_end_timing(event) -> Dictionary:
 
 func _on_flow_battle_end_timing(event) -> Dictionary:
     var result: Dictionary = outcome_service.on_battle_end_timing(event)
+    var cleanup_token := "timing:battle_end:%d" % int(event.serial)
+    for side in [player, enemy]:
+        var temporary_cleanup: Dictionary = \
+            effect_ports.clear_temporary_techniques(side, cleanup_token)
+        if not temporary_cleanup.get("success", false):
+            return {
+                "success": false,
+                "detail": str(temporary_cleanup.get(
+                    "reason", "战斗结束临时功法清理失败")),
+            }
     player.same_qi_value = 0
     enemy.same_qi_value = 0
     passive_rule_runtime.suppression_service.clear()

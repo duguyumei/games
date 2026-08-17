@@ -19,7 +19,8 @@ const COMMITTED_EVENTS := [
     "poison_trigger_completed", "defense_gained", "defense_reduced",
     "life_recovered", "source_marker_changed", "technique_succeeded",
     "technique_invocation_started", "technique_invocation_resolved",
-    "technique_sequence_changed", "same_qi_gain_resolved",
+    "technique_sequence_changed", "technique_slot_capacity_changed",
+    "temporary_technique_generated", "same_qi_gain_resolved",
 ]
 
 const AUTOMATIC_EVENTS := COMMITTED_EVENTS + ["round_start", "turn_end"]
@@ -43,6 +44,11 @@ const PUBLIC_FIELDS := [
     "life_after", "from_zone", "to_zone", "reason", "explicit_discard",
     "normal_play", "technique_triggered", "action_succeeded",
     "source_card_instance_id", "pre_move_snapshot", "metadata",
+    "host_hand_id", "slot_instance_id", "origin_technique_id",
+    "origin_slot_instance_id", "insertion_serial", "insertion_position",
+    "marker_mode", "generation_batch_token", "temporary",
+    "capacity_before", "capacity_after", "requested_delta", "actual_delta",
+    "occupied_count", "remaining_capacity", "changed_slots",
 ]
 
 static func event_ids() -> Array[String]:

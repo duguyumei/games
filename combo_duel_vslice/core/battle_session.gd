@@ -779,6 +779,7 @@ func _side_snapshot(side) -> Dictionary:
         "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "owned_technique_ids": side.owned_technique_ids.duplicate(),
         "technique_sequences": sequence_book.public_snapshot(),
+        "technique_slot_usage": sequence_book.public_slot_usage_snapshot(),
         "public_source_markers": side.source_marker_store.public_projection(),
         "poison_damage_modifier_sources": side.public_poison_damage_modifier_sources(),
     }

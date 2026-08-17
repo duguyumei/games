@@ -28,6 +28,7 @@ var opponent_threat: Dictionary = {
 }
 var sequence_positions: Dictionary = {}
 var technique_sequences: Dictionary = {}
+var technique_slot_usage: Dictionary = {}
 var action_state: Dictionary = {}
 var actor_public_source_markers: Array = []
 var opponent_public_source_markers: Array = []
@@ -59,6 +60,7 @@ func capture(actor, opponent, sequence_book, battle_flow):
     opponent_discard_count = opponent.discard_pile.size()
     sequence_positions = sequence_book.positions.duplicate(true)
     technique_sequences = sequence_book.public_snapshot()
+    technique_slot_usage = sequence_book.public_slot_usage_snapshot()
     action_state = battle_flow.snapshot_for(actor)
     actor_public_source_markers = actor.source_marker_store.public_projection()
     opponent_public_source_markers = opponent.source_marker_store.public_projection()
@@ -90,6 +92,7 @@ func public_snapshot() -> Dictionary:
         "opponent_threat": opponent_threat.duplicate(true),
         "sequence_positions": sequence_positions.duplicate(true),
         "technique_sequences": technique_sequences.duplicate(true),
+        "technique_slot_usage": technique_slot_usage.duplicate(true),
         "action_state": action_state.duplicate(true),
         "actor_public_source_markers": actor_public_source_markers.duplicate(true),
         "opponent_public_source_markers": opponent_public_source_markers.duplicate(true),

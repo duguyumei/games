@@ -104,6 +104,11 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
     var context = BattleConsumableUseContextScript.new(
         player, instance_ids, rng, technique_repository, {
             "consumable_id": consumable_id,
+            "source_kind": "rule",
+            "source_id": consumable_id,
+            "source_name": str(definition.get("name", consumable_id)),
+            "source_instance_key": "consumable:%s" % consumable_id,
+            "action_token": "consumable:%s" % consumable_id,
         })
     var state_before: Dictionary = context.capture_transaction_state()
     var rng_state_before := rng.state
