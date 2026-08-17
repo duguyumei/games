@@ -461,6 +461,57 @@ Parse Error；修正后 `/tmp/taiwu-status-delay-project-load-02.log` 覆盖 678
 `/tmp/taiwu-status-combat-source-project-load-02.log` 覆盖 679 项，`Can't load script`、
 `File not found`、`Parse Error` 与 `SCRIPT ERROR` 无匹配，仅有已知非阻塞 macOS CA 证书警告。
 
+`StatusSystem` 收尾批不再建立新服务。功法抽牌统计继续由 Facade 持有：
+`record_technique_card_flow`、`technique_draw_count`、`_on_turn_start` 与
+`_technique_draw_counts` 只是少量跨事件战斗统计，同时已经是正式公开查询能力；单独抽服务会增加装配和
+恢复间接层，却没有可独立演进的算法边界。Facade 最终只保留子服务装配与公开委托、TimingSystem
+处理器注册、严格跨服务时点顺序、功法抽牌统计、BattlePermissionService 兼容入口、战斗开始／结束
+跨双方遍历，以及正式运行状态快照／恢复。
+
+新增 `capture_runtime_state()` 与 `restore_runtime_state(state)`，统一承接 `BattleSide` 被动纯查询回滚所需
+的状态协议。快照字段继续使用 `delayed_records`、`response_records`、`history`、`delay_serial`、
+`technique_draw_counts` 与 `rng_state`，前三项和统计字典均为深副本。恢复时延迟和响应数组原地 assign，
+历史通过 `replace_history` 原地恢复并重建历史 serial，共享记录序号通过
+`restore_runtime_record_serial` 恢复；只有已注入 RNG 且保存值非负时才恢复 RNG。整个恢复过程不执行
+记录、不发布事件、不写日志，也不替换三个公开 Array 实例。
+
+`BattleSide.capture_passive_query_state()` 与 `replace_passive_query_state()` 现在只调用上述两个正式接口，
+不再读取或写入 `StatusSystem._technique_draw_counts`、`StatusSystem._rng`，也不再逐项操作状态子服务公开
+数组。`StatusSystem` 同时删除仅在构造阶段转交给子服务的 `content_catalog` 成员；`timing_system` 仍作为
+明确装配与注册依赖保留。最终 `status_system.gd` 为 494 行；状态目录中的实际职责组件为：历史服务
+76 行、异状服务 357 行、行为服务 250 行、行为处理器 186 行、行为上下文 58 行、行为注册表 44 行、
+响应服务 204 行、延迟服务 320 行、战斗来源生命周期服务 176 行、共享记录 ID 分配器 22 行。
+
+至此 `StatusSystem` 全部结构优化完成。下一阶段不再以减少 Facade 行数为目标继续拆分；状态相关变更
+应进入已经明确拥有该职责的服务，跨服务严格顺序仍留在 Facade。本批完成后执行项目加载、行动事务、
+BattleEffectPorts、状态契约专项以及统一 `quick`／`full` 和设计一致性完整回归，最终结果记录在本节
+后续验收说明中。
+
+最终统一回归已经完成：独立项目加载 679 项；`BattleActionTransaction` 117 条断言；
+BattleEffectPorts 五项专项分别为 59／56／46／42／50 条，共 253 条；`battle-contracts` 845 条，包含本批
+运行状态协议与三个公开 Array 身份断言；山系专项 460 条，包含既有响应／来源快照恢复；`quick` 7/7，
+当前完整发现集 `full` 31/31；设计一致性为权威活跃 228 门、数据接入 228 门、待接入 0 门、错误 0 条。
+
+独立最终日志依次为 `/tmp/taiwu-status-final-project-load-01.log`、
+`/tmp/taiwu-status-final-battle-action-transaction-02.log`、
+`/tmp/taiwu-status-final-battle-survival-effects-03.log`、
+`/tmp/taiwu-status-final-battle-card-effects-04.log`、
+`/tmp/taiwu-status-final-battle-source-resources-05.log`、
+`/tmp/taiwu-status-final-battle-effect-flow-06.log`、
+`/tmp/taiwu-status-final-battle-effect-finalization-07.log`、
+`/tmp/taiwu-status-final-mountain-techniques-09.log`、
+`/tmp/taiwu-status-final-battle-contracts-retry-10.log` 与
+`/tmp/taiwu-status-final-design-consistency-11.log`；对应 stdout 均为同名前缀 `.stdout`。quick／full 每组
+最终日志分别使用 `/tmp/taiwu-status-final-quick-<组名>-<序号>.log` 与
+`/tmp/taiwu-status-final-full-<组名>-<序号>.log`，stdout 为 `.log.stdout`，汇总为
+`/tmp/taiwu-status-final-quick-summary.stdout` 与 `/tmp/taiwu-status-final-full-summary.stdout`。
+
+状态契约首次专项 `/tmp/taiwu-status-final-battle-contracts-08.log` 只暴露新增测试夹具使用了负 RNG state，
+而正式协议按既定要求仅恢复非负值；生产实现未调整，夹具固定为正 state 后重跑通过。所有最终验收日志
+与 stdout 排除已知 macOS CA 警告后，`Can't load script`、`File not found`、`Parse Error`、
+`SCRIPT ERROR`、ObjectDB／RID 泄漏、orphan `StringName`／`NodePath`、资源泄漏和退出阶段错误均无匹配。
+本批没有修改玩法数值、功法／内功／物品／异状内容、时点优先级、记录结构或 RNG 推进规则。
+
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、
 额外行动、同气和连势不得在 Handler 中重新包装；旧 `BattlePassiveEffectPorts` 已删除。
@@ -525,7 +576,7 @@ Parse Error；修正后 `/tmp/taiwu-status-delay-project-load-02.log` 覆盖 678
 
 ```bash
 ./scripts/run_tests.sh quick   # 7 组：项目加载、运行档、内容、牌型、功法契约、确定性
-./scripts/run_tests.sh full    # 当前 30 组：加上存档、功法运行时、战斗、AI、地图、UI 与独立专项
+./scripts/run_tests.sh full    # 当前 31 组：加上存档、功法运行时、战斗、AI、地图、UI 与独立专项
 ./scripts/verify_test_runner.sh  # 验证运行器本身能检出失败（防止测试假绿）
 ```
 

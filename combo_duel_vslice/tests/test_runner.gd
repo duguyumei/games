@@ -7716,6 +7716,46 @@ func _test_status_system_contract() -> void:
     _assert_true(system.apply_card_anomaly(
         flawless, "state", "poison", {}, "测试", 1, true)["success"], "归元期间无漏效果失效")
 
+    var delayed_entries: Array = system.delayed_records
+    var response_entries: Array = system.response_records
+    var history_entries: Array = system.history
+    system.delayed_records.append({"id": "runtime-state-delay"})
+    system.response_records.append({"id": "runtime-state-response"})
+    system.record_technique_card_flow(engine.player, "draw", 3)
+    system.restore_runtime_record_serial(37)
+    engine.rng.state = 123456789
+    var runtime_state: Dictionary = system.capture_runtime_state()
+    var restored_history: Array = runtime_state["history"].duplicate(true)
+    var restored_rng_state := int(runtime_state["rng_state"])
+    system.delayed_records.clear()
+    system.response_records.clear()
+    system.history.clear()
+    system.record_technique_card_flow(engine.player, "draw", 4)
+    system.restore_runtime_record_serial(0)
+    engine.rng.randi()
+    system.restore_runtime_state(runtime_state)
+    _assert_equal(system.delayed_records, [{"id": "runtime-state-delay"}],
+        "状态运行快照恢复延迟记录")
+    _assert_equal(system.response_records, [{"id": "runtime-state-response"}],
+        "状态运行快照恢复响应记录")
+    _assert_equal(system.history, restored_history, "状态运行快照恢复历史且不追加记录")
+    _assert_equal(system.runtime_record_serial(), 37, "状态运行快照恢复共享记录序号")
+    _assert_equal(system.technique_draw_count(engine.player), 3,
+        "状态运行快照恢复功法抽牌统计")
+    _assert_equal(engine.rng.state, restored_rng_state, "状态运行快照恢复已注入 RNG")
+    delayed_entries.append({"id": "runtime-state-array-identity"})
+    _assert_equal(system.delayed_records.back()["id"],
+        "runtime-state-array-identity", "延迟记录恢复保持公开 Array 实例")
+    delayed_entries.pop_back()
+    response_entries.append({"id": "runtime-state-array-identity"})
+    _assert_equal(system.response_records.back()["id"],
+        "runtime-state-array-identity", "响应记录恢复保持公开 Array 实例")
+    response_entries.pop_back()
+    history_entries.append({"change_type": "runtime-state-array-identity"})
+    _assert_equal(system.history.back()["change_type"],
+        "runtime-state-array-identity", "历史恢复保持公开 Array 实例")
+    history_entries.pop_back()
+
     var snapshot = BattleSessionScript.new(engine).snapshot()
     _assert_equal(snapshot.status_history.size(), system.history.size(), "战斗快照公开完整状态变化历史")
     engine.player.hand = [flawless]

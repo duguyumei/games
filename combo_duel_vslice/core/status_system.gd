@@ -16,7 +16,6 @@ const StatusRecordIdAllocatorScript = preload(
 const CombatSourceLifecycleServiceScript = preload(
     "res://core/statuses/combat_source_lifecycle_service.gd")
 
-var content_catalog
 var timing_system
 var delayed_records: Array = []
 var response_records: Array = []
@@ -38,7 +37,6 @@ func _init(
         battle_timing_system = null,
         game_log_override = null,
         effect_ports = null) -> void:
-    content_catalog = catalog
     timing_system = battle_timing_system
     status_history = StatusHistoryServiceScript.new(catalog, game_log_override)
     card_anomaly_service = CardAnomalyServiceScript.new(
@@ -194,6 +192,27 @@ func runtime_record_serial() -> int:
 
 func restore_runtime_record_serial(value: int) -> void:
     runtime_record_id_allocator.restore_serial(value)
+
+func capture_runtime_state() -> Dictionary:
+    return {
+        "delayed_records": delayed_records.duplicate(true),
+        "response_records": response_records.duplicate(true),
+        "history": history.duplicate(true),
+        "delay_serial": runtime_record_serial(),
+        "technique_draw_counts": _technique_draw_counts.duplicate(true),
+        "rng_state": int(_rng.state) if _rng != null else -1,
+    }
+
+func restore_runtime_state(state: Dictionary) -> void:
+    delayed_records.assign(state.get("delayed_records", []))
+    response_records.assign(state.get("response_records", []))
+    replace_history(state.get("history", []))
+    restore_runtime_record_serial(int(state.get("delay_serial", 0)))
+    _technique_draw_counts = state.get(
+        "technique_draw_counts", {}).duplicate(true)
+    var rng_state := int(state.get("rng_state", -1))
+    if _rng != null and rng_state >= 0:
+        _rng.state = rng_state
 
 func card_numeric_modifier(card, modifier_id: String) -> int:
     return card_anomaly_service.card_numeric_modifier(card, modifier_id)

@@ -476,15 +476,7 @@ func capture_passive_query_state() -> Dictionary:
         }
     var status_state: Dictionary = {}
     if status_system != null:
-        status_state = {
-            "delayed_records": status_system.delayed_records.duplicate(true),
-            "response_records": status_system.response_records.duplicate(true),
-            "history": status_system.history.duplicate(true),
-            "delay_serial": status_system.runtime_record_serial(),
-            "technique_draw_counts": status_system._technique_draw_counts.duplicate(true),
-            "rng_state": int(status_system._rng.state) \
-                if status_system._rng != null else -1,
-        }
+        status_state = status_system.capture_runtime_state()
     return {
         "max_life": max_life,
         "life": life, "defense": defense, "experience": experience,
@@ -621,16 +613,7 @@ func replace_passive_query_state(state: Dictionary) -> void:
         card.reshape_rule_service = card_state["reshape_rule_service"]
     var status_state: Dictionary = state.get("status_state", {})
     if status_system != null and not status_state.is_empty():
-        status_system.delayed_records.assign(status_state["delayed_records"])
-        status_system.response_records.assign(status_state.get(
-            "response_records", []))
-        status_system.replace_history(status_state["history"])
-        status_system.restore_runtime_record_serial(
-            int(status_state["delay_serial"]))
-        status_system._technique_draw_counts = (
-            status_state["technique_draw_counts"].duplicate(true))
-        if status_system._rng != null and int(status_state["rng_state"]) >= 0:
-            status_system._rng.state = int(status_state["rng_state"])
+        status_system.restore_runtime_state(status_state)
     if passive_counter_store != null:
         passive_counter_store.replace_state(state.get("persistent_counters", {}))
     if battle_passive_counter_store != null:

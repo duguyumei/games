@@ -276,6 +276,61 @@ EffectExecutor`；`BattleEffectPorts` 只保存弱引用。服务不持有 `Stat
 修正后 `/tmp/taiwu-status-combat-source-project-load-02.log` 覆盖 679 项，四类禁止错误关键字无匹配，
 仅有已知非阻塞 macOS CA 证书警告。
 
+### StatusSystem 最终收口与运行状态协议（2026-08-17）
+
+本批不再建立细碎状态服务。`StatusSystem` 的最终职责固定为：装配状态子服务并保留公开 Facade；注册
+`BattleTimingSystem` 处理器；明示多个子服务之间不可交换的外层顺序；遍历双方真气完成战斗开始／结束；
+保留 `BattlePermissionService` 兼容入口；持有少量功法抽牌统计；提供运行状态快照和恢复。功法抽牌统计
+继续留在 Facade，因为它只有一次写入、一次查询和回合开始清理，是跨事件的正式公开战斗统计，没有
+独立复杂算法；为它新建服务只会扩大依赖和存档装配面。
+
+新增 `capture_runtime_state()` 与 `restore_runtime_state(state)` 作为唯一运行状态协议。捕获深复制延迟记录、
+动态响应、状态历史与功法抽牌统计，并保存共享记录 serial 和已注入 RNG 的 state。恢复严格执行：原地
+assign 延迟记录；原地 assign 响应记录；通过 `replace_history` 恢复历史并按最大历史 serial 重建下一值；
+通过 `restore_runtime_record_serial` 恢复响应／延迟／反震共享记录序号；恢复抽牌统计；最后仅在 RNG 已
+注入且保存值不小于 0 时恢复 RNG。恢复不执行效果、不重新匹配响应、不追加历史、不发布事件、不写
+`GameLog`，并保持 `delayed_records`、`response_records` 与 `history` 三个公开 Array 的对象身份不变。
+
+`BattleSide` 不再了解上述所有权细节。`capture_passive_query_state()` 只保存
+`status_system.capture_runtime_state()` 的正式结果，`replace_passive_query_state()` 只调用
+`status_system.restore_runtime_state(status_state)`；它不再读取 `_technique_draw_counts` 或 `_rng`，也不再
+逐项 assign Facade 字段或调用 serial／历史恢复辅助。这样纯查询回滚、状态服务所有权和 RNG 恢复协议
+全部收口在 `StatusSystem`，字段名仍兼容既有快照。
+
+最终时点不变量保持不变。TURN_END 依次为延迟链、真气 turn_end 行为、手牌上限修正撤销、动态响应
+到期，后续独立处理器再执行最终真气行为与回合来源到期。ACTION_RESOLUTION_END 依次为无生命损失
+判断、行动完成响应、全部邀战结算、全部行动窗口来源清理。BATTLE_END 依次为临时转移真气归还、角色
+来源与真气战斗状态清理、临时真气永久移除、延迟与响应记录清理。
+
+`StatusSystem` 删除只在构造阶段保存、后续从未读取的 `content_catalog` 成员；`timing_system` 继续作为
+明确的装配依赖保留。最终 `status_system.gd` 为 494 行。状态目录职责和行数为：
+`status_history_service.gd` 76 行，唯一历史与历史 serial；`card_anomaly_service.gd` 357 行，唯一异状与
+单张真气生命周期；`card_status_behavior_service.gd` 250 行，唯一行为收集／排序／执行／重演；
+`card_status_behavior_handler.gd` 186 行，登记的具体通用行为；`status_behavior_context.gd` 58 行，行为
+类型化上下文；`status_behavior_registry.gd` 44 行，行为 ID 注册与路由；
+`status_response_service.gd` 204 行，唯一动态响应记录与匹配／到期；`status_delay_service.gd` 320 行，
+唯一四类延迟记录与调度；`combat_source_lifecycle_service.gd` 176 行，唯一邀战及战斗来源生命周期；
+`status_record_id_allocator.gd` 22 行，响应／延迟／反震共享记录 ID。下一阶段不再继续拆
+`StatusSystem`，而是在这些既定所有权边界内演进。
+
+最终统一回归确认该边界没有改变行为：项目加载 679 项，行动事务专项 117 条断言，BattleEffectPorts
+五项专项合计 253 条断言，状态主契约 `battle-contracts` 845 条断言，含既有快照恢复的山系专项 460 条
+断言；`quick` 7/7、当前完整发现集 `full` 31/31，设计一致性 228/228、待接入 0、错误 0。最终独立日志
+使用 `/tmp/taiwu-status-final-project-load-01.log`、
+`/tmp/taiwu-status-final-battle-action-transaction-02.log`、
+`/tmp/taiwu-status-final-battle-survival-effects-03.log` 至
+`/tmp/taiwu-status-final-battle-effect-finalization-07.log`、
+`/tmp/taiwu-status-final-mountain-techniques-09.log`、
+`/tmp/taiwu-status-final-battle-contracts-retry-10.log` 与
+`/tmp/taiwu-status-final-design-consistency-11.log`；quick／full 使用
+`/tmp/taiwu-status-final-quick-<组名>-<序号>.log` 和
+`/tmp/taiwu-status-final-full-<组名>-<序号>.log`。所有最终日志及 stdout 排除已知 macOS CA 警告后，
+脚本／资源加载、解析、运行、ObjectDB／RID、orphan 名称、资源泄漏与退出阶段错误均为 0。
+
+状态契约首次运行只发现新增测试夹具把负 RNG state 当作可恢复值，与正式“仅恢复非负 state”协议冲突；
+实现未修改，夹具固定为正值后专项和完整回归均通过。本批没有修改任何玩法值、内容数据、时点优先级、
+延迟／响应记录结构、`BattleSide` 来源结构或 RNG 推进规则。
+
 ### BattleActionService 玩家行动准备职责迁出第四批（2026-08-16）
 
 新增 `core/battle_action_preparation_service.gd`，把玩家 `BattleActionProposal` 从预览结果到正式冻结／
@@ -1025,8 +1080,9 @@ flowchart LR
 - `battle_action_preparation_service.gd`：419 行；集中玩家提案的协同准备、正式冻结／确认、同气投影与功法值形成补偿，不持有行动事务或行动流。
 - `battle_consumable_service.gd`：135 行；集中消耗品目标校验和数据效果执行。
 - `battle_outcome_service.gd`：119 行；集中胜负判定和一次性战斗结束清理。
-- `status_system.gd`：475 行；作为状态 Facade 继续注册并编排外层时点、真气战斗开始／结束、临时真气
-  清理、转移真气归还、延迟／响应战斗结束清理与功法抽牌统计，具体状态算法已迁入独立服务。
+- `status_system.gd`：494 行；作为状态 Facade 继续注册并编排外层时点、真气战斗开始／结束、临时真气
+  清理、转移真气归还、延迟／响应战斗结束清理、运行状态快照／恢复与功法抽牌统计，具体状态算法已
+  迁入独立服务。
 - `status_history_service.gd`：76 行；唯一持有状态历史数组与 serial，负责 `StatusChange` 快照、名称、
   `GameLog`、reset 和恢复重建。
 - `card_anomaly_service.gd`：357 行；唯一编排真气异状数值、增删／转移／层数、异状事件和单张真气
