@@ -116,6 +116,8 @@ const ConsumableEffectHandlerRegistryScript = preload(
     "res://core/consumables/consumable_effect_handler_registry.gd")
 const ConsumableUseServiceScript = preload(
     "res://core/consumables/consumable_use_service.gd")
+const RunConsumableUseContextScript = preload(
+    "res://core/consumables/run_consumable_use_context.gd")
 const CardWorkshopServiceScript = preload("res://core/card_workshop_service.gd")
 const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
 const NodeInteractionHandlerRegistryScript = preload(
@@ -773,6 +775,31 @@ class BattleWorkingStateMutationProbeHandler:
             },
         }
 
+class ConsumableOrderProbeHandler:
+    extends RefCounted
+
+    var calls: Array[String] = []
+
+    func operation_ids() -> Array:
+        return ["transaction_order_a", "transaction_order_b"]
+
+    func validate_effect(_effect: Dictionary, _context, _scope: String) -> void:
+        pass
+
+    func apply(effect: Dictionary, context) -> Dictionary:
+        var source_key := str(context.metadata.get("source_instance_key", ""))
+        calls.append("%s:%s" % [
+            "battle" if source_key.begins_with("battle-") else "run",
+            str(effect.get("op", "")),
+        ])
+        return {
+            "success": true,
+            "applied": {
+                "op": str(effect.get("op", "")),
+                "details": [str(effect.get("op", ""))],
+            },
+        }
+
 class NodeInteractionProbeHandler:
     extends RefCounted
 
@@ -1001,6 +1028,8 @@ func _initialize() -> void:
     _test_inner_skill_equipment_and_extra_qi_defense()
     _test_inner_skill_preview_and_enemy_plan()
     _test_consumable_shared_slots_and_generation_limit()
+    _test_unified_run_and_battle_consumable_order_and_records()
+    _test_battle_unique_consumable_and_query_purity()
     _test_battle_consumable_multi_effect_rollback()
     _test_zengyuan_pill_enhancement_and_preview()
     _test_simple_reshape_behaviors()
@@ -9989,9 +10018,144 @@ func _test_consumable_shared_slots_and_generation_limit() -> void:
     _assert_equal(engine.grant_consumable(engine.player, "straight_insight", "测试"), false, "没有空位时不生成消耗品")
     var used := engine.use_player_consumable(0, [])
     _assert_true(used["success"], "无目标心得可以直接使用")
+    _assert_equal(engine.player.consumable_use_sequence, 1, "战斗成功使用只递增一次序号")
+    _assert_equal(
+        engine.player.last_recallable_consumable_id,
+        "high_card_insight",
+        "战斗心得成功记录最近可溯忆消耗品")
     _assert_equal(engine.player.consumable_ids.size(), 2, "使用后立即释放共享槽位")
     _assert_true(engine.grant_consumable(engine.player, "straight_insight", "测试"), "释放槽位后可以生成消耗品")
     _assert_equal(engine.player.consumable_ids.size(), 3, "重新生成后占满三格")
+
+func _test_unified_run_and_battle_consumable_order_and_records() -> void:
+    var definition := {
+        "id": "transaction_order_probe",
+        "name": "统一事务顺序探针",
+        "kind": "pill",
+        "targeting": {
+            "zone": "none",
+            "selection": "deterministic_random",
+            "minimum": 0,
+            "maximum": 0,
+        },
+        "effects": [
+            {"op": "transaction_order_a"},
+            {"op": "transaction_order_b"},
+        ],
+    }
+    var probe := ConsumableOrderProbeHandler.new()
+    var registry := ConsumableEffectHandlerRegistryScript.new()
+    _assert_true(registry.register_handler(probe), "Run 统一事务顺序探针注册成功")
+    var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
+    _assert_true(catalog.load_all(), "统一消耗品事务测试内容目录可加载")
+    var service = ConsumableUseServiceScript.new(
+        registry, catalog, ContentValidatorScript.HAND_IDS,
+        ContentValidatorScript.POOL_IDS)
+    var growth = GrowthInventoryScript.new()
+    growth.consumable_ids.append("transaction_order_probe")
+    var run_context = RunConsumableUseContextScript.new(
+        growth, [], null, catalog, {
+            "source_kind": "consumable",
+            "source_instance_key": "run-consumable:order-probe",
+            "action_token": "run-consumable-use:order-probe",
+        })
+    var run_result: Dictionary = service.use(
+        run_context, 0, [], 9981, definition)
+    _assert_true(run_result.get("success", false), "Run 入口通过统一事务使用成功")
+
+    var engine = CombatEngineScript.new()
+    engine.setup(9981, false)
+    _assert_true(engine.consumable_repository.configure({
+        "practice_offer_ids": ["transaction_order_probe"],
+        "consumables": [definition],
+    }), "Battle 统一事务顺序探针仓库配置成功")
+    _assert_true(
+        engine.consumable_service._handler_registry.register_handler(probe),
+        "Battle 统一事务顺序探针注册成功")
+    engine.player.configure_consumables(["transaction_order_probe"])
+    var battle_result: Dictionary = engine.use_player_consumable(0, [])
+    _assert_true(
+        battle_result.get("success", false),
+        "Battle 入口通过同一 ConsumableUseService 使用成功")
+    _assert_equal(probe.calls, [
+        "run:transaction_order_a",
+        "run:transaction_order_b",
+        "battle:transaction_order_a",
+        "battle:transaction_order_b",
+    ], "Run 与 Battle 使用完全相同的 Handler 顺序")
+    _assert_equal(
+        battle_result.get("consumable_use_sequence"), 1,
+        "统一成功结果包含递增后的使用序号")
+    _assert_equal(
+        engine.player.last_recallable_consumable_id,
+        "transaction_order_probe",
+        "Battle pill 通过公共提交步骤记录最近使用")
+
+func _test_battle_unique_consumable_and_query_purity() -> void:
+    var unique_definition := {
+        "id": "battle_unique_probe",
+        "name": "战斗唯一事务探针",
+        "kind": "curio",
+        "unique": true,
+        "record_last_used": false,
+        "targeting": {
+            "zone": "none",
+            "selection": "deterministic_random",
+            "minimum": 0,
+            "maximum": 0,
+        },
+        "effects": [{"op": "transaction_order_a"}],
+    }
+    var probe := ConsumableOrderProbeHandler.new()
+    var run_only_definition := {
+        "id": "battle_run_only_probe",
+        "name": "战斗外能力探针",
+        "kind": "curio",
+        "targeting": {
+            "zone": "run_deck",
+            "selection": "deterministic_random",
+            "minimum": 1,
+            "maximum": 1,
+        },
+        "effects": [{"op": "remove_run_cards"}],
+    }
+    var engine = CombatEngineScript.new()
+    engine.setup(9982, false)
+    _assert_true(engine.consumable_repository.configure({
+        "practice_offer_ids": ["battle_unique_probe"],
+        "consumables": [unique_definition, run_only_definition],
+    }), "战斗唯一消耗品探针仓库配置成功")
+    _assert_true(
+        engine.consumable_service._handler_registry.register_handler(probe),
+        "战斗唯一消耗品探针 Handler 注册成功")
+    engine.player.configure_consumables([
+        "battle_unique_probe", "battle_unique_probe", "battle_run_only_probe"])
+    var rng_before := int(engine.rng.state)
+    var query: Dictionary = engine.consumable_service.query_player(0)
+    _assert_true(query.get("can_use", false), "战斗 query_use 返回可用")
+    _assert_equal(engine.rng.state, rng_before, "战斗 query_use 不推进 RNG")
+    _assert_equal(
+        engine.player.consumable_use_sequence, 0,
+        "战斗 query_use 不修改使用序号")
+    var first: Dictionary = engine.use_player_consumable(0, [])
+    _assert_true(first.get("success", false), "战斗唯一消耗品首次使用成功")
+    _assert_true(
+        engine.player.used_unique_consumable_ids.has("battle_unique_probe"),
+        "战斗成功后记录 unique 使用")
+    var second: Dictionary = engine.use_player_consumable(0, [])
+    _assert_true(not second.get("success", false), "战斗唯一消耗品不能再次使用")
+    _assert_equal(
+        engine.player.consumable_ids,
+        ["battle_unique_probe", "battle_run_only_probe"],
+        "重复失败不扣库存")
+    _assert_equal(engine.player.consumable_use_sequence, 1, "重复失败不推进使用序号")
+    var unsupported: Dictionary = engine.consumable_service.query_player(1)
+    _assert_true(
+        not unsupported.get("can_use", true),
+        "战斗外专属能力在 Battle 查询阶段明确不可用")
+    _assert_true(
+        str(unsupported.get("reason", "")).contains("不支持"),
+        "Battle 查询返回不支持能力的明确原因")
 
 func _test_battle_consumable_multi_effect_rollback() -> void:
     var target = _card("9", "wind")
@@ -10002,7 +10166,13 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
         "consumables": [{
             "id": "battle_transaction_probe",
             "name": "战斗事务探针",
-            "targeting": {"zone": "hand", "minimum": 1, "maximum": 1},
+            "kind": "pill",
+            "targeting": {
+                "zone": "run_deck",
+                "selection": "player_selected",
+                "minimum": 1,
+                "maximum": 1,
+            },
             "effects": [
                 {"op": "battle_working_state_mutation", "amount": 0},
                 {"op": "gain_insight", "hand": "high_card", "pools": ["high"]},
@@ -10034,7 +10204,15 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
         engine.player.used_unique_consumable_ids.duplicate())
     var source_markers_before: Dictionary = (
         engine.player.source_marker_store.snapshot())
+    var sequence_book_before: Dictionary = engine.sequence_book.snapshot()
+    var event_state_before: Dictionary = (
+        engine.battle_passive_event_service.capture_transaction_state())
+    var trigger_state_before: Dictionary = engine.trigger_queue.capture_runtime_state()
     var rng_state_before: int = int(engine.rng.state)
+    var observed_events: Array[String] = []
+    engine.battle_passive_event_service.event_committed.connect(
+        func(event_kind, _values, _receipt):
+            observed_events.append(str(event_kind)))
 
     var result := engine.use_player_consumable(0, [target.id])
 
@@ -10065,6 +10243,15 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
     _assert_equal(
         engine.player.source_marker_store.snapshot(), source_markers_before,
         "失败恢复本局来源标识")
+    _assert_equal(engine.sequence_book.snapshot(), sequence_book_before, "失败恢复 SequenceBook")
+    _assert_equal(
+        engine.battle_passive_event_service.capture_transaction_state(),
+        event_state_before,
+        "失败恢复事件 serial、receipt 与 execution history")
+    _assert_equal(
+        engine.trigger_queue.capture_runtime_state(), trigger_state_before,
+        "失败恢复触发历史及结构化战斗日志")
+    _assert_true(observed_events.is_empty(), "失败事务不会向监听器发布已回滚事件")
     _assert_equal(engine.rng.state, rng_state_before, "失败恢复战斗消耗品随机状态")
 
 func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
@@ -11706,6 +11893,27 @@ func _test_battle_run_progress_working_state_protocol() -> void:
         _assert_equal(
             growth_round_trip[field], progress.to_dict()[field],
             "GrowthInventory 完整往返字段：%s" % field)
+
+    var entry_growth = GrowthInventoryScript.new(catalog, false)
+    entry_growth.apply_progress_snapshot(progress)
+    var entry_state: Dictionary = entry_growth.to_progress_snapshot().to_dict()
+    var battle_use: Dictionary = engine.use_player_consumable(1, [])
+    _assert_true(battle_use.get("success", false), "战斗工作状态可使用正式心得消耗品")
+    _assert_equal(
+        entry_growth.to_progress_snapshot().to_dict(), entry_state,
+        "战斗中使用消耗品但未提交 progress 时 GrowthInventory 保持入口状态")
+    var used_progress = setup_service.capture_progress(engine.player, run_deck)
+    entry_growth.apply_progress_snapshot(used_progress)
+    _assert_true(
+        not entry_growth.consumable_ids.has("high_card_insight"),
+        "正式同步 progress 后提交一次战斗消耗")
+    _assert_equal(
+        entry_growth.consumable_use_sequence, 9,
+        "正式同步 progress 后提交一次使用序号")
+    _assert_equal(
+        entry_growth.last_recallable_consumable_id,
+        "high_card_insight",
+        "正式同步 progress 后提交最近可溯忆记录")
 
     engine.player.consumable_ids.assign(["pair_insight"])
     engine.player.used_unique_consumable_ids.append("shuangji_huasheng")

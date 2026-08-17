@@ -414,7 +414,10 @@ func _init(
         trigger_queue,
         rng,
         Callable(self, "_read_battle_state"),
-        Callable(self, "_emit_state_changed"))
+        Callable(self, "_emit_state_changed"),
+        enemy,
+        battle_passive_event_service,
+        content_catalog)
 
 func use_game_log(shared_game_log) -> void:
     if shared_game_log == null:

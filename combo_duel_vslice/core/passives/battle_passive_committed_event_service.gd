@@ -21,6 +21,8 @@ var _scenario_error: Callable
 var _battle_instance_id: String = "battle-0"
 var _serial: int = 0
 var _weak_listeners: Array[Dictionary] = []
+var _publication_transaction_depth: int = 0
+var _pending_publications: Array[Dictionary] = []
 
 func _init(passive_runtime, scenario_error_callback: Callable = Callable()) -> void:
     _runtime_ref = weakref(passive_runtime)
@@ -41,6 +43,43 @@ func close_battle() -> void:
     execution_history.clear()
     _side_refs.clear()
     _serial = 0
+    _publication_transaction_depth = 0
+    _pending_publications.clear()
+
+func capture_transaction_state() -> Dictionary:
+    return {
+        "serial": _serial,
+        "receipts": receipt_store.snapshot(),
+        "execution_history": execution_history.duplicate(true),
+    }
+
+func restore_transaction_state(state: Dictionary) -> void:
+    _serial = int(state.get("serial", _serial))
+    receipt_store.restore_snapshot(state.get("receipts", {}))
+    execution_history.assign(state.get("execution_history", []))
+    _publication_transaction_depth = 0
+    _pending_publications.clear()
+
+func begin_publication_transaction() -> void:
+    _publication_transaction_depth += 1
+
+func commit_publication_transaction() -> void:
+    if _publication_transaction_depth <= 0:
+        return
+    _publication_transaction_depth -= 1
+    if _publication_transaction_depth > 0:
+        return
+    var publications := _pending_publications.duplicate(true)
+    _pending_publications.clear()
+    for publication in publications:
+        _notify_publication(
+            str(publication.get("event_kind", "")),
+            publication.get("values", {}),
+            publication.get("receipt", {}))
+
+func rollback_publication_transaction() -> void:
+    _publication_transaction_depth = 0
+    _pending_publications.clear()
 
 func register_weak_listener(target, method: String) -> bool:
     if target == null or method == "" or not target.has_method(method):
@@ -164,6 +203,30 @@ func _publish(
     var event_token := str(receipt.get("event_token", values.get(
         "event_token", "")))
     receipt_store.record(event_token, receipt)
+    if _publication_transaction_depth > 0:
+        _pending_publications.append({
+            "event_kind": event_kind,
+            "values": values.duplicate(false),
+            "receipt": receipt.duplicate(true),
+        })
+        return {
+            "success": true,
+            "reused": false,
+            "event_token": event_token,
+            "receipt": receipt,
+        }
+    _notify_publication(event_kind, values, receipt)
+    return {
+        "success": true,
+        "reused": false,
+        "event_token": event_token,
+        "receipt": receipt,
+    }
+
+func _notify_publication(
+        event_kind: String,
+        values: Dictionary,
+        receipt: Dictionary) -> void:
     event_committed.emit(event_kind, values.duplicate(false), receipt.duplicate(true))
     for listener in _weak_listeners.duplicate():
         var target = listener["target"].get_ref()
@@ -171,12 +234,6 @@ func _publish(
             _weak_listeners.erase(listener)
             continue
         target.call(str(listener["method"]), event_kind, values.duplicate(false), receipt.duplicate(true))
-    return {
-        "success": true,
-        "reused": false,
-        "event_token": event_token,
-        "receipt": receipt,
-    }
 
 func _context(
         event_kind: String,

@@ -3,9 +3,9 @@ extends RefCounted
 
 ## 消耗品效果执行的窄端口。
 ##
-## 正式本局入口使用 RunConsumableUseContext（目标为 RunDeck 真气实例），纵切
-## 战斗兼容入口使用 BattleConsumableUseContext（目标为当前手牌 QiCard）。两个
-## 实现只适配目标区域和查询来源，Handler 不区分具体场景，也不直接访问引擎。
+## 正式本局入口使用 RunConsumableUseContext（目标为 RunDeck 真气实例），战斗
+## 入口使用 BattleConsumableUseContext（目标为当前手牌 QiCard）。两个实现只适配
+## 状态、目标区域、随机源和事务边界；Handler 与公共用例服务不区分 owner 类型。
 ##
 ## growth 在两种实现中都提供 apply_insight_growth(hand_id, candidates, rng)，
 ## 因此心得成长可以在基类完成；其余能力由具体实现提供。
@@ -25,6 +25,98 @@ func _init(
 		instance_ids.append(str(value))
 	rng = rng_override
 	metadata = metadata_override.duplicate(true)
+
+func inventory_size() -> int:
+	return growth.consumable_ids.size() if growth != null else 0
+
+func consumable_id_at(slot_index: int) -> String:
+	if slot_index < 0 or slot_index >= inventory_size():
+		return ""
+	return str(growth.consumable_ids[slot_index])
+
+func consumable_use_sequence() -> int:
+	return int(growth.consumable_use_sequence) if growth != null else 0
+
+func has_used_unique_consumable(consumable_id: String) -> bool:
+	return growth != null and growth.used_unique_consumable_ids.has(consumable_id)
+
+func consume_inventory_slot(slot_index: int) -> String:
+	if slot_index < 0 or slot_index >= inventory_size():
+		return ""
+	if growth.has_method("consume_at"):
+		return str(growth.consume_at(slot_index))
+	var result := str(growth.consumable_ids[slot_index])
+	growth.consumable_ids.remove_at(slot_index)
+	return result
+
+func record_unique_consumable(consumable_id: String) -> void:
+	if growth != null and not growth.used_unique_consumable_ids.has(consumable_id):
+		growth.used_unique_consumable_ids.append(consumable_id)
+
+func advance_consumable_use_sequence() -> int:
+	if growth == null:
+		return 0
+	growth.consumable_use_sequence += 1
+	return int(growth.consumable_use_sequence)
+
+## 公共服务只依赖这组事务窄端口。Run 实现使用工作副本提交；Battle 实现对真实
+## 战斗 Runtime 捕获并恢复完整事务状态。
+func begin_transaction() -> Dictionary:
+	return {
+		"success": true,
+		"context": self,
+		"snapshot": capture_transaction_state(),
+	}
+
+func capture_transaction_state() -> Dictionary:
+	return {}
+
+func commit_transaction(_transaction: Dictionary) -> Dictionary:
+	return {"success": true}
+
+func rollback_transaction(transaction: Dictionary) -> bool:
+	return restore_transaction_state(transaction.get("snapshot", {}))
+
+func restore_transaction_state(_snapshot: Dictionary) -> bool:
+	return true
+
+func create_effect_context(
+		resolved_instance_ids: Array,
+		random_source: RandomNumberGenerator,
+		metadata_override: Dictionary):
+	return ConsumableUseContext.new(
+		growth, resolved_instance_ids, random_source, metadata_override)
+
+## Run 上下文按本局种子派生独立随机源；Battle 上下文覆写为共享战斗 RNG。
+func random_source_for(
+		_run_seed: int,
+		_sequence: int,
+		_consumable_id: String,
+		_effect_index: int,
+		preview_stream: RandomNumberGenerator = null) -> RandomNumberGenerator:
+	return preview_stream if preview_stream != null else rng
+
+func preview_random_stream() -> RandomNumberGenerator:
+	if rng == null:
+		return null
+	var result := RandomNumberGenerator.new()
+	result.state = rng.state
+	return result
+
+func supports_effect(_effect: Dictionary) -> Dictionary:
+	return {"supported": true, "reason": ""}
+
+func eligible_targets(_zone: String) -> Array:
+	return []
+
+func owns_target(_zone: String, _instance_id: String) -> bool:
+	return false
+
+func current_target_limit(targeting: Dictionary) -> int:
+	return int(targeting.get("maximum", 0))
+
+func state_fingerprint() -> Dictionary:
+	return capture_transaction_state()
 
 ## 返回该效果可以抽取的正式功法白名单。本局实现按效果的功法池过滤，战斗实现
 ## 按共享功法仓库过滤；两者都只返回尚未决定的目标信息，不消费随机数。
@@ -81,6 +173,9 @@ func enhancement_name(enhancement_id: String) -> String:
 
 func target_display_name(instance_id: String) -> String:
 	return instance_id
+
+func card_data(_instance_id: String) -> Dictionary:
+	return {}
 
 ## 以下是正式本局 Handler 的领域窄接口。基类默认返回不支持，战斗上下文
 ## 可以继续只实现自己拥有的能力，不会把成长库存泄漏给战斗中央流程。

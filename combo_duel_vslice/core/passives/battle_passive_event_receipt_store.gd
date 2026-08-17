@@ -20,3 +20,9 @@ func clear() -> void:
 
 func size() -> int:
     return _receipts.size()
+
+func snapshot() -> Dictionary:
+    return _receipts.duplicate(true)
+
+func restore_snapshot(values: Dictionary) -> void:
+    _receipts = values.duplicate(true)

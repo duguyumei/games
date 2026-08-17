@@ -18,6 +18,25 @@ func clear() -> void:
     if _game_log != null:
         _game_log.clear("battle")
 
+func capture_runtime_state() -> Dictionary:
+    return {
+        "pending": pending.duplicate(true),
+        "history": history.duplicate(true),
+        "serial": _serial,
+        "choice_state": _choice_state.duplicate(true),
+        "game_log": _game_log.capture_runtime_state() \
+            if _game_log != null and _game_log.has_method(
+                "capture_runtime_state") else {},
+    }
+
+func restore_runtime_state(state: Dictionary) -> void:
+    pending.assign(state.get("pending", []))
+    history.assign(state.get("history", []))
+    _serial = int(state.get("serial", 0))
+    _choice_state = state.get("choice_state", {}).duplicate(true)
+    if _game_log != null and _game_log.has_method("restore_runtime_state"):
+        _game_log.restore_runtime_state(state.get("game_log", {}))
+
 func enqueue(timing: String, label: String, source: String, order: int, effects: Array, context) -> void:
     pending.append({
         "timing": timing,

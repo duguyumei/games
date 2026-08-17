@@ -524,6 +524,10 @@ func capture_passive_query_state() -> Dictionary:
         "challenge_records": challenge_records.duplicate(true),
         "pending_power_fixed_sources": pending_power_fixed_sources.duplicate(true),
         "defense_retention_sources": defense_retention_sources.duplicate(true),
+        "poison_damage_modifier_sources": (
+            poison_damage_modifier_sources.duplicate(true)),
+        "poison_damage_modifier_receipts": (
+            poison_damage_modifier_receipts.duplicate(true)),
         "combat_source_serial": _combat_source_serial,
         "draw_ids": draw_pile.map(func(card): return str(card.id)),
         "hand_ids": hand.map(func(card): return str(card.id)),
@@ -560,6 +564,7 @@ func capture_passive_query_state() -> Dictionary:
         "source_marker_state": source_marker_store.snapshot(),
         "last_same_qi_capacity_query_result": (
             last_same_qi_capacity_query_result.duplicate(true)),
+        "last_hand_limit_query_result": last_hand_limit_query_result.duplicate(true),
         "technique_sequence_state": technique_sequence_book.snapshot() \
             if technique_sequence_book != null else {},
     }
@@ -583,6 +588,9 @@ func replace_passive_query_state(state: Dictionary) -> void:
     last_same_qi_capacity_query_result = state.get(
         "last_same_qi_capacity_query_result",
         last_same_qi_capacity_query_result).duplicate(true)
+    last_hand_limit_query_result = state.get(
+        "last_hand_limit_query_result",
+        last_hand_limit_query_result).duplicate(true)
     last_successful_technique_hand_id = str(state.get(
         "last_successful_technique_hand_id", last_successful_technique_hand_id))
     current_reflection_percent = int(state.get(
@@ -598,6 +606,11 @@ func replace_passive_query_state(state: Dictionary) -> void:
         "pending_power_fixed_sources", pending_power_fixed_sources))
     defense_retention_sources.assign(state.get(
         "defense_retention_sources", defense_retention_sources))
+    poison_damage_modifier_sources.assign(state.get(
+        "poison_damage_modifier_sources", poison_damage_modifier_sources))
+    poison_damage_modifier_receipts = state.get(
+        "poison_damage_modifier_receipts",
+        poison_damage_modifier_receipts).duplicate(true)
     _combat_source_serial = int(state.get(
         "combat_source_serial", _combat_source_serial))
     _refresh_reflection_aggregate()

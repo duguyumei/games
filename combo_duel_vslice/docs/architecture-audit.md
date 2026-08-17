@@ -1226,7 +1226,12 @@ ValueSpec 和请求，`BattleEffectPorts` 继续作为来源中立 Facade；调�
 - `BattleActionService`：已建立第一版；负责行动提案到牌区提交的事务、单方／同步结算、连击推进和功法选择恢复，`CombatEngine` 只保留兼容调用。
 - `ActorTurnState + BattleFlowCoordinator`：已建立第一版；通用管理参与者行动资格、行动次数、当前／后续禁用、零合法手牌放弃、连击占用、意图锁定，以及单方／同步结算模式。
 - `BattleRoundService`：已建立第一版；承接战斗开始、回合开始／结束、正常补牌、行动窗口和外部敌方回合收束，`CombatEngine` 保留兼容门面。
-- `BattleConsumableService`：已建立第一版；负责消耗品获得、目标校验、强化／品相／心得效果和功法获取。
+- `ConsumableUseService + ConsumableUseContext`：战斗内外消耗品使用的唯一用例编排；
+  `RunConsumableUseContext` 与 `BattleConsumableUseContext` 只适配状态、目标区域、
+  随机源和事务快照，不复制 Handler 顺序、unique、库存扣除或使用序号规则。
+- `BattleConsumableService`：只负责战斗状态门禁、成功日志、一次状态通知和旧 UI
+  结果投影；战斗内效果写入 `BattleSide` 工作状态，失败统一恢复 RNG、事件回执、
+  战斗 Runtime 与日志，正式结算才通过 `RunProgressSnapshot` 提交。
 - `BattleOutcomeService`：已建立第一版；负责胜负判定、战斗结束时点、行动清零和一次性清理。
 - `BattleTimingSystem`：已建立第一版，统一十类生命周期时点、稳定处理器顺序、结构化历史、延迟到期、序列推进和战斗结束清理。
 - `DamageResolver`：已建立第一版，负责普通伤害、真伤、连势、同步缓冲与攻击段存活判断；受击响应仍由 `StatusSystem`／`ActionResolver` 协调。

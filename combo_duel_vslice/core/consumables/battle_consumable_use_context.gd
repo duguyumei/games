@@ -1,24 +1,97 @@
 class_name BattleConsumableUseContext
 extends "res://core/consumables/consumable_use_context.gd"
 
-## 纵切战斗兼容入口的消耗品效果上下文。
+## 战斗内消耗品效果上下文。
 ##
 ## growth 是 BattleSide 玩家方；目标按当前手牌实例 ID 解析。功法候选沿用共享
 ## 功法仓库的正式白名单（与历史纵切行为一致，不按效果的功法池过滤）；随机数
 ## 沿用战斗引擎的 rng，保证已有纵切确定性测试继续成立。
 
 const ENHANCEMENT_NAMES := {"qi_boost": "增元", "momentum": "乘势", "hunyuan": "混元"}
+const QiCardInstanceDataScript = preload("res://core/qi_card_instance_data.gd")
+
+## 这些操作依赖 RunDeck、战斗外配装编辑或本局构筑能力。公共服务在查询阶段
+## 通过上下文能力拒绝，避免执行到一半才发现 BattleSide 不拥有对应端口。
+const RUN_ONLY_OPERATIONS := {
+	"remove_run_cards": true,
+	"copy_run_card": true,
+	"generate_random_base_cards": true,
+	"apply_origin": true,
+	"apply_prepared_group_origin": true,
+	"apply_imprint": true,
+	"apply_random_imprint": true,
+	"apply_random_enhancement": true,
+	"remove_run_cards_for_experience": true,
+	"rewrite_technique_progression": true,
+	"apply_origin_to_matching_rank": true,
+	"modify_base_hand_limit": true,
+	"grant_random_inner_skill": true,
+	"duplicate_equipped_inner_skill": true,
+	"gain_equipped_inner_skill_forget_value": true,
+}
 
 var _technique_repository
+var _consumable_repository
+var _event_service
+var _trigger_queue
+var _battle_sides: Array = []
 
 func _init(
 		player_side,
 		instance_ids_override: Array = [],
 		rng_override: RandomNumberGenerator = null,
 		technique_repository = null,
+		consumable_repository = null,
+		event_service = null,
+		trigger_queue = null,
+		battle_sides: Array = [],
 		metadata_override: Dictionary = {}) -> void:
 	super(player_side, instance_ids_override, rng_override, metadata_override)
 	_technique_repository = technique_repository
+	_consumable_repository = consumable_repository
+	_event_service = event_service
+	_trigger_queue = trigger_queue
+	_battle_sides = battle_sides.duplicate()
+	if _battle_sides.is_empty() and player_side != null:
+		_battle_sides.append(player_side)
+
+func create_effect_context(
+		resolved_instance_ids: Array,
+		random_source: RandomNumberGenerator,
+		metadata_override: Dictionary):
+	return BattleConsumableUseContext.new(
+		growth, resolved_instance_ids, random_source, _technique_repository,
+		_consumable_repository, _event_service, _trigger_queue,
+		_battle_sides, metadata_override)
+
+func supports_effect(effect: Dictionary) -> Dictionary:
+	var operation_id := str(effect.get("op", ""))
+	if RUN_ONLY_OPERATIONS.has(operation_id):
+		return {
+			"supported": false,
+			"reason": "当前战斗上下文不支持该本局构筑能力：%s" % operation_id,
+		}
+	return {"supported": true, "reason": ""}
+
+func eligible_targets(zone: String) -> Array:
+	if zone != "run_deck" or growth == null:
+		return []
+	var result: Array = []
+	for card in growth.hand:
+		result.append(_target_summary(card))
+	return result
+
+func owns_target(zone: String, instance_id: String) -> bool:
+	return zone == "run_deck" and _find_card(instance_id) != null
+
+func current_target_limit(targeting: Dictionary) -> int:
+	if str(targeting.get("maximum_source", "")) == "base_hand_limit":
+		return int(growth.hand_limit) + int(growth.base_hand_limit_modifier)
+	return int(targeting.get("maximum", 0))
+
+func card_data(instance_id: String) -> Dictionary:
+	var card = _find_card(instance_id)
+	return QiCardInstanceDataScript.capture(card, true) if card != null else {}
 
 func insight_candidates(hand_id: String, _pools: Array) -> Array[String]:
 	if _technique_repository == null:
@@ -35,6 +108,37 @@ func apply_enhancement(instance_id: String, enhancement_id: String) -> Dictionar
 	card.set_enhancement(enhancement_id)
 	return {"success": true, "instance_id": instance_id, "enhancement": enhancement_id}
 
+func add_consumable(consumable_id: String) -> Dictionary:
+	if growth == null or _consumable_repository == null:
+		return {"success": false, "reason": "战斗消耗品仓库不存在"}
+	var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
+	if definition.is_empty():
+		return {"success": false, "reason": "未知消耗品：%s" % consumable_id}
+	if growth.consumable_ids.size() >= consumable_capacity():
+		return {"success": false, "reason": "共享消耗品栏已满"}
+	## 当前消耗品会在全部 Handler 成功后统一扣除；reserved slot 只存在于本次
+	## 工作事务，提交后的库存仍必须回到正式容量以内。
+	growth.consumable_ids.append(consumable_id)
+	return {"success": true, "consumable_id": consumable_id}
+
+func consumable_capacity() -> int:
+	return (
+		int(growth.consumable_limit) + int(metadata.get(
+			"reserved_consumable_slots", 0))
+		if growth != null else 0)
+
+func consumable_candidates(kind: String) -> Array[String]:
+	return (
+		_consumable_repository.ids_by_kind(kind)
+		if _consumable_repository != null else [])
+
+func last_recallable_consumable_id() -> String:
+	return str(growth.last_recallable_consumable_id) if growth != null else ""
+
+func record_last_recallable_consumable(consumable_id: String) -> void:
+	if growth != null:
+		growth.last_recallable_consumable_id = consumable_id
+
 func technique_name(technique_id: String) -> String:
 	if _technique_repository == null:
 		return technique_id
@@ -47,15 +151,88 @@ func target_display_name(instance_id: String) -> String:
 	var card = _find_card(instance_id)
 	return card.display_name() if card != null else instance_id
 
-## 战斗兼容入口复用 BattleSide 的统一事务快照，不按 operation id 区分补偿逻辑。
+## 战斗入口复用正式 Runtime 快照，不按 operation id 区分补偿逻辑。事件服务在
+## 事务期间延迟对外发布；失败时恢复 serial、receipt 与 execution history，因而
+## 监听器不会观察到已经回滚的半次消耗品使用。
+func begin_transaction() -> Dictionary:
+	var snapshot := capture_transaction_state()
+	if _event_service != null:
+		_event_service.begin_publication_transaction()
+	return {"success": true, "context": self, "snapshot": snapshot}
+
 func capture_transaction_state() -> Dictionary:
-	return growth.capture_passive_query_state() if growth != null else {}
+	var side_states: Array = []
+	for side in _battle_sides:
+		if side != null:
+			side_states.append({
+				"side": side,
+				"state": side.capture_passive_query_state(),
+			})
+	return {
+		"side_states": side_states,
+		"rng_state": int(rng.state) if rng != null else -1,
+		"event_state": _event_service.capture_transaction_state() \
+			if _event_service != null else {},
+		"trigger_state": _trigger_queue.capture_runtime_state() \
+			if _trigger_queue != null and _trigger_queue.has_method(
+				"capture_runtime_state") else {},
+	}
+
+func commit_transaction(_transaction: Dictionary) -> Dictionary:
+	if _event_service != null:
+		_event_service.commit_publication_transaction()
+	return {"success": true}
+
+func rollback_transaction(transaction: Dictionary) -> bool:
+	if _event_service != null:
+		_event_service.rollback_publication_transaction()
+	return restore_transaction_state(transaction.get("snapshot", {}))
 
 func restore_transaction_state(snapshot: Dictionary) -> bool:
-	if growth == null:
-		return false
-	growth.replace_passive_query_state(snapshot)
+	for entry in snapshot.get("side_states", []):
+		var side = entry.get("side")
+		if side != null:
+			side.replace_passive_query_state(entry.get("state", {}))
+	if _event_service != null:
+		_event_service.restore_transaction_state(snapshot.get("event_state", {}))
+	if _trigger_queue != null and _trigger_queue.has_method("restore_runtime_state"):
+		_trigger_queue.restore_runtime_state(snapshot.get("trigger_state", {}))
+	var rng_state := int(snapshot.get("rng_state", -1))
+	if rng != null and rng_state >= 0:
+		rng.state = rng_state
 	return true
+
+func state_fingerprint() -> Dictionary:
+	if growth == null:
+		return {}
+	return {
+		"consumable_ids": growth.consumable_ids.duplicate(),
+		"consumable_use_sequence": growth.consumable_use_sequence,
+		"last_recallable_consumable_id": growth.last_recallable_consumable_id,
+		"used_unique_consumable_ids": growth.used_unique_consumable_ids.duplicate(),
+		"experience": growth.experience,
+		"hand_technique_progression": (
+			growth.hand_technique_progression.duplicate(true)),
+		"owned_technique_ids": growth.owned_technique_ids.duplicate(),
+		"targets": eligible_targets("run_deck"),
+		"rng_state": int(rng.state) if rng != null else -1,
+	}
+
+func _target_summary(card) -> Dictionary:
+	var values: Dictionary = QiCardInstanceDataScript.capture(card, true)
+	var reshapes: Dictionary = values.get("reshapes", {})
+	return {
+		"instance_id": str(card.id),
+		"card_id": str(card.definition_id),
+		"rank": str(card.rank_name),
+		"suit": str(card.attribute),
+		"attribute": str(card.attribute),
+		"origin": reshapes.get("origin", {}).duplicate(true),
+		"enhancement": str(reshapes.get("enhancement", "")),
+		"imprint": str(reshapes.get("imprint", "")),
+		"others": reshapes.get("others", {}).duplicate(true),
+		"display_name": card.display_name(),
+	}
 
 func _find_card(instance_id: String):
 	if growth == null or not growth.has_method("find_hand_card"):

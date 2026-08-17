@@ -88,3 +88,10 @@ func latest(channel: String = "") -> Dictionary:
         if channel == "" or str(entry.get("channel", "")) == channel:
             return entry.duplicate(true)
     return {}
+
+func capture_runtime_state() -> Dictionary:
+    return {"entries": _entries.duplicate(true), "serial": _serial}
+
+func restore_runtime_state(state: Dictionary) -> void:
+    _entries.assign(state.get("entries", []))
+    _serial = int(state.get("serial", 0))

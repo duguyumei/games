@@ -132,6 +132,22 @@ RNG 选择、已拥有／已在序列去重以及完整配装校验，只返回�
 容量端口或事件提交失败时，适配器必须立即恢复成长状态、已拥有集合、
 `SequenceBook` 快照与本次候选抽取前的 RNG；不得等待下一次快照覆盖。
 
+`ConsumableUseService` 是战斗内外唯一的消耗品用例编排：槽位与定义校验、
+unique 限制、目标冻结、准备令牌、Handler 顺序、库存扣除、最近可溯忆记录、
+`consumable_use_sequence` 推进及提交／回滚都只在该服务保留一份实现。
+`RunConsumableUseContext` 负责把公共事务适配到 `GrowthInventory` 工作副本、
+`RunDeck` 目标与本局种子派生随机源；`BattleConsumableUseContext` 负责把同一事务
+适配到 `BattleSide`、当前手牌、战斗 RNG 以及战斗 Runtime 快照。不支持的战斗外
+能力在 Battle 查询阶段拒绝，不会执行一半后失败。
+
+`BattleConsumableService` 只保留战斗 active／待选择门禁、成功日志、一次
+`state_changed` 与旧 UI 结果投影，不遍历 effects、不扣库存、不推进序号，也不维护
+第二套补偿清单。战斗内消耗只修改 `BattleSide` 工作状态；退出节点时丢弃，正式
+结算时才经 `RunProgressSnapshot` 提交。失败回滚同时覆盖双方战斗状态、牌区、
+`SequenceBook`、来源标识、run／battle 计数器、`StatusSystem`、战斗 RNG、触发日志，
+以及 `BattlePassiveCommittedEventService` 的 serial、receipt 和 execution history；
+事务中的 committed event 延迟到成功提交后才对监听器发布。
+
 `BattleEffectPorts` 是公开协议 Facade，不是所有效果算法的永久归宿。伤害、防御与生命相关
 公开方法继续保留原签名，但内部统一委托 `BattleSurvivalEffectService`。该服务只能接收完成
 结算所需的明确依赖：`DamageResolver`、`StatusSystem` 的现有窄能力、战斗规则查询、committed

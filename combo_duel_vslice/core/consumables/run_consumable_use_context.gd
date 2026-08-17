@@ -22,6 +22,81 @@ func _init(
 		_inner_skill_repository.configure(
 			_content_catalog.definition("inner_skills"))
 
+func begin_transaction() -> Dictionary:
+	if growth == null or not growth.has_method("create_mutation_copy"):
+		return {"success": false, "reason": "无法建立消耗品事务工作副本"}
+	var working = growth.create_mutation_copy()
+	if working == null:
+		return {"success": false, "reason": "无法建立消耗品事务工作副本"}
+	return {
+		"success": true,
+		"snapshot": growth.capture_mutation_state(),
+		"context": RunConsumableUseContext.new(
+			working, instance_ids, rng, _content_catalog, metadata),
+	}
+
+func capture_transaction_state() -> Dictionary:
+	return growth.capture_mutation_state() if growth != null else {}
+
+func commit_transaction(transaction: Dictionary) -> Dictionary:
+	var working_context = transaction.get("context")
+	if growth == null or working_context == null:
+		return {"success": false, "reason": "消耗品事务工作状态不存在"}
+	var errors: Array[String] = growth.replace_mutation_state(
+		working_context.growth.capture_mutation_state())
+	return {
+		"success": errors.is_empty(),
+		"reason": "；".join(errors),
+	}
+
+func rollback_transaction(_transaction: Dictionary) -> bool:
+	## 正式本局效果始终写入工作副本；失败时丢弃副本即可，真实状态从未改变。
+	return true
+
+func create_effect_context(
+		resolved_instance_ids: Array,
+		random_source: RandomNumberGenerator,
+		metadata_override: Dictionary):
+	return RunConsumableUseContext.new(
+		growth, resolved_instance_ids, random_source,
+		_content_catalog, metadata_override)
+
+func random_source_for(
+		run_seed: int,
+		sequence: int,
+		consumable_id: String,
+		effect_index: int,
+		_preview_stream: RandomNumberGenerator = null) -> RandomNumberGenerator:
+	var result := RandomNumberGenerator.new()
+	result.seed = int(run_seed) * 1000003 \
+		+ int(sequence) * 7919 \
+		+ int(effect_index) * 9176 \
+		+ _stable_id_mix(consumable_id) * 131
+	return result
+
+func preview_random_stream() -> RandomNumberGenerator:
+	return null
+
+func eligible_targets(zone: String) -> Array:
+	if zone != "run_deck" or growth == null or growth.run_deck == null:
+		return []
+	var result: Array = []
+	for values in growth.run_deck.cards_snapshot():
+		result.append(_target_summary(values))
+	return result
+
+func owns_target(zone: String, instance_id: String) -> bool:
+	return zone == "run_deck" and growth != null and growth.run_deck != null \
+		and growth.run_deck.has_card(instance_id)
+
+func current_target_limit(targeting: Dictionary) -> int:
+	if str(targeting.get("maximum_source", "")) == "base_hand_limit":
+		return growth.current_base_hand_limit()
+	return int(targeting.get("maximum", 0))
+
+func state_fingerprint() -> Dictionary:
+	return growth.capture_mutation_state() if growth != null else {}
+
 ## 正式白名单：按效果的功法池过滤，只保留当前牌型成员资格内的正式功法。
 func insight_candidates(hand_id: String, pools: Array) -> Array[String]:
 	var result: Array[String] = []
@@ -151,6 +226,35 @@ func card_data(instance_id: String) -> Dictionary:
 	if growth == null or growth.run_deck == null:
 		return {}
 	return growth.run_deck.card_data(instance_id)
+
+func _target_summary(values: Dictionary) -> Dictionary:
+	var reshapes: Dictionary = values.get("reshapes", {})
+	return {
+		"instance_id": str(values.get("instance_id", "")),
+		"card_id": str(values.get("definition_id", "")),
+		"rank": str(values.get("rank_name", "")),
+		"suit": str(values.get("attribute", "")),
+		"attribute": str(values.get("attribute", "")),
+		"origin": reshapes.get("origin", {}).duplicate(true),
+		"enhancement": str(reshapes.get("enhancement", "")),
+		"imprint": str(reshapes.get("imprint", "")),
+		"others": reshapes.get("others", {}).duplicate(true),
+		"display_name": _display_name(values),
+	}
+
+func _display_name(values: Dictionary) -> String:
+	if values.is_empty():
+		return ""
+	return "%s·%s" % [
+		str(values.get("attribute_name", "")),
+		str(values.get("rank_name", "")),
+	]
+
+func _stable_id_mix(content_id: String) -> int:
+	var mixed := 0
+	for index in range(content_id.length()):
+		mixed = (mixed * 31 + content_id.unicode_at(index)) & 0x7FFFFFFF
+	return mixed
 
 func _content_definition(content_type: String, content_id: String) -> Dictionary:
 	if _content_catalog == null:

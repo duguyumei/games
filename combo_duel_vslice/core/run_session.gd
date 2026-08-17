@@ -28,6 +28,8 @@ const RunMutationServiceScript = preload(
     "res://core/run_effects/run_mutation_service.gd")
 const ConsumableUseServiceScript = preload(
     "res://core/consumables/consumable_use_service.gd")
+const RunConsumableUseContextScript = preload(
+    "res://core/consumables/run_consumable_use_context.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const PracticeServiceScript = preload("res://core/practice_service.gd")
 const InnerSkillRepositoryScript = preload(
@@ -1106,8 +1108,18 @@ func _query_consumable_use(slot_index: int, run_seed: int = 0) -> Dictionary:
         }
     var consumable_id := str(growth.consumable_ids[slot_index])
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
+    var context = RunConsumableUseContextScript.new(
+        growth, [], null, _content_catalog, {
+            "source_kind": "consumable",
+            "source_id": consumable_id,
+            "source_name": str(definition.get("name", consumable_id)),
+            "source_instance_key": "run-consumable:%d:%d:%s" % [
+                growth.consumable_use_sequence, slot_index, consumable_id],
+            "action_token": "run-consumable-use:%d:%d:%s" % [
+                growth.consumable_use_sequence, slot_index, consumable_id],
+        })
     var result: Dictionary = _consumable_use_service.query_use(
-        growth, slot_index, definition, run_seed)
+        context, slot_index, definition, run_seed)
     if not result.get("success", false):
         return {
             "success": true,
@@ -1145,8 +1157,18 @@ func _use_consumable(
         return {"success": false, "reason": "消耗品槽位无效"}
     var consumable_id := str(growth.consumable_ids[slot_index])
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
+    var context = RunConsumableUseContextScript.new(
+        growth, [], null, _content_catalog, {
+            "source_kind": "consumable",
+            "source_id": consumable_id,
+            "source_name": str(definition.get("name", consumable_id)),
+            "source_instance_key": "run-consumable:%d:%d:%s" % [
+                growth.consumable_use_sequence, slot_index, consumable_id],
+            "action_token": "run-consumable-use:%d:%d:%s" % [
+                growth.consumable_use_sequence, slot_index, consumable_id],
+        })
     var result: Dictionary = _consumable_use_service.use(
-        growth, slot_index, selected_instance_ids, navigation.seed, definition,
+        context, slot_index, selected_instance_ids, navigation.seed, definition,
         choice_payload)
     if not result.get("success", false):
         return result
