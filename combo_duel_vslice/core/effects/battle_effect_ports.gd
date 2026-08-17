@@ -228,7 +228,7 @@ func abort_action_resolution() -> void:
     _survival_effect_service.abort_action_resolution()
     _invocation_effect_service.abort_action_resolution()
 
-func flush_synchronized_damage() -> Array:
+func flush_synchronized_damage() -> Dictionary:
     return _poison_card_trigger_service.flush_synchronized_damage()
 
 func trigger_poison_card(

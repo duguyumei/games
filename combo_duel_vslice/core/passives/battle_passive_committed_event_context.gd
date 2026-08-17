@@ -54,6 +54,20 @@ var defense_before: int = 0
 var defense_after: int = 0
 var frozen_amount: int = 0
 var actual_life_loss: int = 0
+var requested_damage: int = 0
+var final_damage: int = 0
+var damage_segment_token: String = ""
+var cause: String = ""
+var direct_attack: bool = false
+var reflection_damage: bool = false
+var life_before: int = 0
+var life_after: int = 0
+var life_loss_before_intervention: int = 0
+var life_loss_prevented: int = 0
+var life_loss_canceled: bool = false
+var life_loss_intervention_breakdown: Array = []
+var life_loss_source_fingerprint: String = ""
+var life_loss_query_fingerprint: String = ""
 var source_card_instance_id: String = ""
 var pre_move_snapshot: Dictionary = {}
 var operation_token: String = ""
@@ -136,6 +150,24 @@ func configure(values: Dictionary):
     defense_after = int(values.get("defense_after", 0))
     frozen_amount = int(values.get("frozen_amount", 0))
     actual_life_loss = int(values.get("actual_life_loss", life_lost))
+    requested_damage = int(values.get("requested_damage", requested_amount))
+    final_damage = int(values.get("final_damage", final_amount))
+    damage_segment_token = str(values.get("damage_segment_token", ""))
+    cause = str(values.get("cause", ""))
+    direct_attack = bool(values.get("direct_attack", false))
+    reflection_damage = bool(values.get("reflection_damage", false))
+    life_before = int(values.get("life_before", 0))
+    life_after = int(values.get("life_after", 0))
+    life_loss_before_intervention = int(values.get(
+        "life_loss_before_intervention", life_lost))
+    life_loss_prevented = int(values.get("life_loss_prevented", 0))
+    life_loss_canceled = bool(values.get("life_loss_canceled", false))
+    life_loss_intervention_breakdown = values.get(
+        "life_loss_intervention_breakdown", []).duplicate(true)
+    life_loss_source_fingerprint = str(values.get(
+        "life_loss_source_fingerprint", ""))
+    life_loss_query_fingerprint = str(values.get(
+        "life_loss_query_fingerprint", ""))
     source_card_instance_id = str(values.get("source_card_instance_id", ""))
     pre_move_snapshot = values.get("pre_move_snapshot", {}).duplicate(true)
     operation_token = str(values.get("operation_token", ""))
@@ -223,6 +255,20 @@ func for_invocation(current_invocation):
         "defense_after": defense_after,
         "frozen_amount": frozen_amount,
         "actual_life_loss": actual_life_loss,
+        "requested_damage": requested_damage,
+        "final_damage": final_damage,
+        "damage_segment_token": damage_segment_token,
+        "cause": cause,
+        "direct_attack": direct_attack,
+        "reflection_damage": reflection_damage,
+        "life_before": life_before,
+        "life_after": life_after,
+        "life_loss_before_intervention": life_loss_before_intervention,
+        "life_loss_prevented": life_loss_prevented,
+        "life_loss_canceled": life_loss_canceled,
+        "life_loss_intervention_breakdown": life_loss_intervention_breakdown,
+        "life_loss_source_fingerprint": life_loss_source_fingerprint,
+        "life_loss_query_fingerprint": life_loss_query_fingerprint,
         "source_card_instance_id": source_card_instance_id,
         "pre_move_snapshot": pre_move_snapshot,
         "operation_token": operation_token,
@@ -277,6 +323,21 @@ func public_effect_values() -> Dictionary:
         "defense_lost": defense_lost,
         "life_lost": life_lost,
         "actual_life_loss": actual_life_loss,
+        "requested_damage": requested_damage,
+        "final_damage": final_damage,
+        "damage_segment_token": damage_segment_token,
+        "cause": cause,
+        "direct_attack": direct_attack,
+        "reflection_damage": reflection_damage,
+        "life_before": life_before,
+        "life_after": life_after,
+        "life_loss_before_intervention": life_loss_before_intervention,
+        "life_loss_prevented": life_loss_prevented,
+        "life_loss_canceled": life_loss_canceled,
+        "life_loss_intervention_breakdown": (
+            life_loss_intervention_breakdown.duplicate(true)),
+        "life_loss_source_fingerprint": life_loss_source_fingerprint,
+        "life_loss_query_fingerprint": life_loss_query_fingerprint,
         "damage_type": damage_type,
         "defense_before": defense_before,
         "defense_after": defense_after,

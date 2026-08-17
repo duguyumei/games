@@ -3933,12 +3933,12 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        25,
-        "Registry 明确登记二十五个细粒度已提交事件")
+        27,
+        "Registry 明确登记二十七个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        13,
-        "Registry 明确登记十三个战斗整数查询")
+        14,
+        "Registry 明确登记十四个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -4108,6 +4108,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
     _assert_true(discarded.has(explicit_card), "明确弃牌移动成功")
     var explicit_slice: Array = handler.calls.slice(event_count_before_discard).filter(
         func(call): return call["kind"] == "event" \
+            and call["hook"] in [
+                "card_entered_discard", "card_explicitly_discarded"] \
             and call["card_instance_id"] == str(explicit_card.id))
     _assert_equal(
         explicit_slice.map(func(call): return call["hook"]),
@@ -4184,7 +4186,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
             and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size(),
         sync_queries_before,
         "同步 shadow 不执行动态伤害查询")
-    engine.flush_synchronized_damage()
+    _assert_true(engine.flush_synchronized_damage().get("success", false),
+        "同步伤害结构化 flush 成功")
     _assert_equal(
         handler.calls.filter(func(call): return call["kind"] == "query" \
             and call["hook"] in ["outgoing_damage_query", "incoming_damage_query"]).size(),
@@ -9957,7 +9960,20 @@ func _test_damage_resolver_rules_and_facade() -> void:
     _assert_true(not resolver.target_can_receive(second), "同步伤害 shadow 能判定目标已被本击击倒")
     _assert_true(resolver.actor_can_continue(second), "同步行动方按本击开始时存活状态完成已锁定伤害")
     resolver.resolve(second, first, 4, "technique")
-    var synchronized: Array = resolver.flush_synchronized()
+    var synchronized_flush: Dictionary = resolver.flush_synchronized(
+        func(intent: Dictionary) -> Dictionary:
+            var actual := ComboDamageResolver.apply_to_target(
+                intent["target"], int(intent["amount"]),
+                str(intent.get("damage_type", "normal")),
+                int(intent.get("poison_defense_intervention", 0)))
+            return {
+                "success": true,
+                "resolution": {"result": actual},
+                "stop_actor": int(intent["actor"].life) <= 0,
+            })
+    _assert_true(synchronized_flush.get("success", false),
+        "低层同步伤害结构化刷新成功")
+    var synchronized: Array = synchronized_flush.get("resolutions", [])
     _assert_equal(synchronized.size(), 2, "同步伤害刷新全部已锁定意图")
     _assert_equal(first.life, 0, "同步双方致命时第一方正常倒下")
     _assert_equal(second.life, 0, "同步双方致命时第二方正常倒下")

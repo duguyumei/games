@@ -104,7 +104,8 @@ func _test_synchronized_poison_completion() -> void:
         "owner":"actor", "source_card_instance_ids_from_capture":"source"})
     engine.effect_ports.begin_synchronized_damage([{"actor":engine.player}])
     engine.effect_ports.trigger_poison_card(engine.player, card, "sync-poison")
-    engine.effect_ports.flush_synchronized_damage()
+    _assert_true(engine.effect_ports.flush_synchronized_damage().get(
+        "success", false), "同步毒触发结构化 flush 成功")
     _assert_equal(engine.player.life, 96, "同步毒触发在真实写入时扣除持有者生命")
     _assert_equal(engine.enemy.life, 96, "同步毒触发完成事件在flush后携带实际生命损失")
 

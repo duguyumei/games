@@ -15,6 +15,7 @@ var _committed_event_service
 var _round_number_reader: Callable
 var _action_resolution_scope: Dictionary = {}
 var _action_window_serial: int = 0
+var _damage_segment_serial: int = 0
 
 
 func _init(
@@ -55,6 +56,7 @@ func deal_damage(
         source_metadata: Dictionary = {}) -> Dictionary:
     var resolved_metadata := resolution_metadata.duplicate(true)
     resolved_metadata["action_token"] = action_token
+    resolved_metadata["cause"] = str(resolved_metadata.get("cause", "damage"))
     var resolved_type := damage_type
     if resolved_type == "":
         resolved_type = "true" if true_damage else "normal"
@@ -78,45 +80,55 @@ func deal_damage(
             resolved_metadata["poison_modifier"] = modifier
         poison_defense_intervention = _poison_defense_intervention(
             actor, target, int(resolved_amount["amount"]), source_kind, action_token)
-    if not _damage_resolver.is_buffering():
-        final_override = int(resolved_amount["amount"])
-        var block_result := _try_block_damage(
+    if _damage_resolver.is_buffering():
+        var buffered: Dictionary = _damage_resolver.resolve(
+            actor, target, amount, source_kind, resolved_type == "true",
+            _status_system, null, resolved_type,
+            poison_defense_intervention, resolved_metadata)
+        buffered["success"] = true
+        return buffered
+
+    final_override = int(resolved_amount["amount"])
+    var damage_segment_token := _next_damage_segment_token(
+        actor, target, action_token)
+    resolved_metadata["damage_segment_token"] = damage_segment_token
+    var block_result := _try_block_damage(
+        actor, target, int(final_override), resolved_type, source_kind,
+        action_token, resolved_metadata)
+    if block_result.get("blocked", false):
+        _emit_damage_blocked(
             actor, target, int(final_override), resolved_type, source_kind,
-            action_token, resolved_metadata)
-        if block_result.get("blocked", false):
-            _emit_damage_blocked(
-                actor, target, int(final_override), resolved_type, source_kind,
-                action_token, block_result, source_metadata)
-            return {
-                "success": true, "buffered": false, "blocked": true,
-                "final_amount": 0, "requested": int(final_override),
-                "defense_lost": 0, "life_lost": 0,
-                "damage_type": resolved_type,
-                "true_damage": resolved_type == "true",
-                "block_result": block_result,
-            }
-    var result: Dictionary = _damage_resolver.resolve(
-        actor, target, amount, source_kind, resolved_type == "true",
-        _status_system, final_override, resolved_type,
-        poison_defense_intervention, resolved_metadata)
-    if not bool(result["buffered"]):
-        if resolved_type == "poison" \
-                and resolved_metadata.has("poison_modifier"):
-            result["poison_modifier"] = target \
-                .commit_poison_damage_modifier_receipt(
-                    resolved_metadata["poison_modifier"])
-        result["defense_reduction_cause"] = "damage_absorption"
-        _record_action_damage(actor, target, result)
-        _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
-        _emit_damage_absorption_defense_reduced(
-            actor, target, result, source_kind, action_token)
-        _emit_damage_resolved(
-            actor, target, amount, source_kind, resolved_type, result, false,
-            action_token, source_metadata)
-        _resolve_reflection(
-            actor, target, source_kind, resolved_type, result, action_token,
-            resolved_metadata)
-    result["success"] = true
+            action_token, block_result, resolved_metadata,
+            damage_segment_token)
+        return _blocked_damage_result(
+            int(final_override), resolved_type, block_result,
+            damage_segment_token, resolved_metadata, target)
+
+    var plan := ComboDamageResolver.plan_to_target(
+        target, int(final_override), resolved_type,
+        poison_defense_intervention)
+    var committed := _commit_damage_plan(
+        actor, target, amount, int(final_override), source_kind,
+        resolved_type, plan, false, action_token, resolved_metadata)
+    if not committed.get("success", false):
+        return committed
+    var result: Dictionary = committed
+    if resolved_type == "poison" \
+            and resolved_metadata.has("poison_modifier"):
+        result["poison_modifier"] = target \
+            .commit_poison_damage_modifier_receipt(
+                resolved_metadata["poison_modifier"])
+    result["defense_reduction_cause"] = "damage_absorption"
+    _record_action_damage(actor, target, result)
+    _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
+    _emit_damage_resolved(
+        actor, target, amount, source_kind, resolved_type, result, false,
+        action_token, source_metadata)
+    _emit_damage_absorption_defense_reduced(
+        actor, target, result, source_kind, action_token)
+    result["reflection_result"] = _resolve_reflection(
+        actor, target, source_kind, resolved_type, result, action_token,
+        resolved_metadata)
     return result
 
 
@@ -149,10 +161,33 @@ func begin_synchronized_damage(records: Array) -> void:
     _damage_resolver.begin_synchronized(actors)
 
 
-func flush_synchronized_damage() -> Array:
-    return _damage_resolver.flush_synchronized(
-        Callable(self, "_on_synchronized_damage_resolved"),
-        Callable(self, "_resolve_synchronized_damage_amount"))
+func flush_synchronized_damage(
+        before_commit: Callable = Callable()) -> Dictionary:
+    var transaction := _capture_synchronized_flush_state()
+    if _committed_event_service != null:
+        _committed_event_service.begin_publication_transaction()
+    var flushed: Dictionary = _damage_resolver.flush_synchronized(
+        Callable(self, "_resolve_synchronized_damage_segment"))
+    if flushed.get("success", false) and before_commit.is_valid():
+        var finalized: Dictionary = before_commit.call(
+            flushed.get("resolutions", []))
+        if not finalized.get("success", false):
+            flushed = {
+                "success": false,
+                "reason": str(finalized.get(
+                    "reason", "同步伤害提交前收尾失败")),
+                "resolutions": flushed.get("resolutions", []),
+            }
+    if not flushed.get("success", false):
+        if _committed_event_service != null:
+            _committed_event_service.rollback_publication_transaction()
+        _restore_synchronized_flush_state(transaction)
+        flushed["rolled_back"] = true
+        return flushed
+    if _committed_event_service != null:
+        _committed_event_service.commit_publication_transaction()
+    flushed["rolled_back"] = false
+    return flushed
 
 
 func begin_action_resolution(actors: Array, metadata: Dictionary = {}) -> void:
@@ -462,43 +497,140 @@ func notify_poison_triggered(
         })
 
 
-func _on_synchronized_damage_resolved(resolution: Dictionary) -> bool:
-    var metadata: Dictionary = resolution.get("resolution_metadata", {})
-    var resolved_action_token := str(resolution.get(
-        "action_token", metadata.get("action_token", "")))
-    if bool(resolution.get("blocked", false)):
-        _emit_damage_blocked(
-            resolution["actor"], resolution["target"],
-            int(resolution.get("requested_amount", resolution.get("amount", 0))),
-            str(resolution.get("damage_type", "normal")),
-            str(resolution.get("source_kind", "")),
-            resolved_action_token,
-            resolution.get("block_result", {}), metadata)
-        return false
-    _record_action_damage(
-        resolution["actor"], resolution["target"], resolution["result"])
-    _log_damage(
-        resolution["actor"],
-        resolution["target"],
-        int(resolution["amount"]),
-        str(resolution["source_kind"]),
-        resolution["result"])
-    _emit_damage_resolved(
-        resolution["actor"], resolution["target"],
-        int(resolution.get("requested_amount", resolution["amount"])),
-        str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
-        resolution["result"], true,
-        str(resolution.get("action_token", "")), metadata)
-    resolution["result"]["defense_reduction_cause"] = "damage_absorption"
-    _emit_damage_absorption_defense_reduced(
-        resolution["actor"], resolution["target"], resolution["result"],
-        str(resolution["source_kind"]), resolved_action_token)
-    _resolve_reflection(
-        resolution["actor"],
-        resolution["target"],
-        str(resolution["source_kind"]), str(resolution.get("damage_type", "normal")),
-        resolution["result"], resolved_action_token, metadata)
-    return int(resolution["actor"].life) <= 0
+func _capture_synchronized_flush_state() -> Dictionary:
+    var side_states: Array = []
+    for side in _sides:
+        if side != null:
+            side_states.append({
+                "side": side,
+                "state": side.capture_passive_query_state(),
+            })
+    return {
+        "side_states": side_states,
+        "event_state": _committed_event_service.capture_transaction_state() \
+            if _committed_event_service != null else {},
+        "trigger_state": _trigger_queue.capture_runtime_state() \
+            if _trigger_queue != null else {},
+        "action_resolution_scope": _action_resolution_scope.duplicate(true),
+        "damage_segment_serial": _damage_segment_serial,
+    }
+
+
+func _restore_synchronized_flush_state(snapshot: Dictionary) -> void:
+    for entry in snapshot.get("side_states", []):
+        var side = entry.get("side")
+        if side != null:
+            side.replace_passive_query_state(entry.get("state", {}))
+    if _committed_event_service != null:
+        _committed_event_service.restore_transaction_state(
+            snapshot.get("event_state", {}))
+    if _trigger_queue != null:
+        _trigger_queue.restore_runtime_state(snapshot.get("trigger_state", {}))
+    _action_resolution_scope = snapshot.get(
+        "action_resolution_scope", {}).duplicate(true)
+    _damage_segment_serial = int(snapshot.get(
+        "damage_segment_serial", _damage_segment_serial))
+
+
+func _commit_damage_plan(
+        actor,
+        target,
+        requested_damage: int,
+        final_damage: int,
+        source_kind: String,
+        damage_type: String,
+        plan: Dictionary,
+        synchronized: bool,
+        action_token: String,
+        metadata: Dictionary) -> Dictionary:
+    var proposed := int(plan.get("proposed_life_loss", 0))
+    var cause := str(metadata.get("cause", "damage"))
+    var effective := proposed
+    var query_values := {
+        "source_breakdown": [],
+        "source_fingerprint": "",
+        "request_fingerprint": "",
+    }
+    if proposed > 0 and cause != "cost" \
+            and _battle_rule_query_service != null:
+        var query_context := {
+            "actor": actor,
+            "target": target,
+            "damage_segment_token": str(metadata.get(
+                "damage_segment_token", "")),
+            "action_token": action_token,
+            "action_window_id": current_action_window_id(),
+            "source_kind": source_kind,
+            "source_id": str(metadata.get("source_id", "")),
+            "source_instance_key": str(metadata.get(
+                "source_instance_key", "")),
+            "trigger_mode": str(metadata.get("trigger_mode", "")),
+            "cause": cause,
+            "damage_type": damage_type,
+            "direct_attack": bool(metadata.get("direct_attack", false)),
+            "reflection_damage": bool(metadata.get(
+                "reflection_damage", false)),
+            "synchronized": synchronized,
+            "requested_damage": requested_damage,
+            "final_damage": final_damage,
+            "defense_before": int(plan.get("defense_before", 0)),
+            "defense_lost": int(plan.get("defense_lost", 0)),
+            "defense_after": int(plan.get("defense_after", 0)),
+            "life_before": int(plan.get("life_before", 0)),
+            "proposed_life_loss": proposed,
+            "lethal": proposed >= int(plan.get("life_before", 0)) \
+                and int(plan.get("life_before", 0)) > 0,
+            "round_number": _round_number(),
+            "metadata": metadata.duplicate(true),
+        }
+        if metadata.has("source_snapshot"):
+            query_context["source_snapshot"] = metadata.get(
+                "source_snapshot", []).duplicate(true)
+        var query = _battle_rule_query_service.resolve_pre_life_loss(
+            target, query_context)
+        query_values = query.to_dict()
+        if not query.success:
+            _battle_rule_query_service.report_failure(
+                query, "pre_life_loss")
+            return {
+                "success": false,
+                "reason": "；".join(query.errors),
+                "damage_segment_token": str(metadata.get(
+                    "damage_segment_token", "")),
+                "life_loss_before_intervention": proposed,
+                "query_result": query_values,
+            }
+        effective = int(query.effective_value)
+    var committed := ComboDamageResolver.commit_plan(
+        target, plan, effective)
+    if not committed.get("success", false):
+        return committed
+    committed.merge({
+        "success": true,
+        "buffered": false,
+        "blocked": false,
+        "final_amount": final_damage,
+        "source_kind": source_kind,
+        "damage_type": damage_type,
+        "true_damage": damage_type == "true",
+        "damage_segment_token": str(metadata.get(
+            "damage_segment_token", "")),
+        "cause": cause,
+        "direct_attack": bool(metadata.get("direct_attack", false)),
+        "reflection_damage": bool(metadata.get("reflection_damage", false)),
+        "synchronized": synchronized,
+        "life_loss_intervention_breakdown": query_values.get(
+            "source_breakdown", []).duplicate(true),
+        "life_loss_source_fingerprint": str(query_values.get(
+            "source_fingerprint", query_values.get("fingerprint", ""))),
+        "life_loss_query_fingerprint": str(query_values.get(
+            "request_fingerprint", "")),
+        "life_loss_intervention_skipped": proposed <= 0 or cause == "cost",
+        "life_loss_intervention_skip_reason": (
+            "cost" if cause == "cost" else "no_life_loss" \
+                if proposed <= 0 else ""),
+    }, true)
+    return committed
 
 
 func _record_action_damage(actor, target, result: Dictionary) -> void:
@@ -588,26 +720,150 @@ func _poison_defense_intervention(
     return maxi(0, mini(requested_amount, int(query.effective_value)))
 
 
-func _resolve_synchronized_damage_amount(intent: Dictionary) -> Dictionary:
+func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
     var metadata: Dictionary = intent.get("resolution_metadata", {})
-    var resolved_action_token := str(intent.get(
-        "action_token", metadata.get("action_token", "")))
+    var resolved_action_token := str(metadata.get("action_token", ""))
+    var actor = intent["actor"]
+    var target = intent["target"]
+    var requested_amount := int(intent.get(
+        "requested_amount", intent.get("amount", 0)))
+    var source_kind := str(intent.get("source_kind", ""))
+    var damage_type := str(intent.get("damage_type", "normal"))
     var resolved := _resolve_actual_damage_amount(
-        intent["actor"], intent["target"],
-        int(intent.get("requested_amount", intent["amount"])),
-        str(intent["source_kind"]), str(intent.get("damage_type", "normal")),
+        actor, target, requested_amount, source_kind, damage_type,
         resolved_action_token)
     if not resolved.get("success", false):
         return resolved
+    var final_amount := maxi(0, int(resolved.get("amount", 0)))
+    var segment_token := _next_damage_segment_token(
+        actor, target, resolved_action_token)
+    metadata["damage_segment_token"] = segment_token
     var block_result := _try_block_damage(
-        intent["actor"], intent["target"], int(resolved.get("amount", 0)),
-        str(intent.get("damage_type", "normal")), str(intent.get("source_kind", "")),
+        actor, target, final_amount, damage_type, source_kind,
         resolved_action_token, metadata)
     if block_result.get("blocked", false):
-        resolved["amount"] = 0
-        resolved["blocked"] = true
-        resolved["block_result"] = block_result
-    return resolved
+        _emit_damage_blocked(
+            actor, target, final_amount, damage_type, source_kind,
+            resolved_action_token, block_result, metadata, segment_token)
+        var blocked_result := _blocked_damage_result(
+            final_amount, damage_type, block_result, segment_token, metadata,
+            target)
+        var blocked_resolution := _synchronized_resolution(
+            intent, final_amount, blocked_result, metadata, true, block_result)
+        return {
+            "success": true,
+            "resolution": blocked_resolution,
+            "stop_actor": false,
+        }
+    var poison_defense_intervention := 0
+    if damage_type == "poison":
+        poison_defense_intervention = _poison_defense_intervention(
+            actor, target, final_amount, source_kind, resolved_action_token)
+    var plan := ComboDamageResolver.plan_to_target(
+        target, final_amount, damage_type, poison_defense_intervention)
+    var result := _commit_damage_plan(
+        actor, target, requested_amount, final_amount, source_kind,
+        damage_type, plan, true, resolved_action_token, metadata)
+    if not result.get("success", false):
+        return result
+    if damage_type == "poison" and metadata.has("poison_modifier"):
+        result["poison_modifier"] = target \
+            .commit_poison_damage_modifier_receipt(metadata["poison_modifier"])
+    result["defense_reduction_cause"] = "damage_absorption"
+    _record_action_damage(actor, target, result)
+    _log_damage(actor, target, final_amount, source_kind, result)
+    _emit_damage_resolved(
+        actor, target, requested_amount, source_kind, damage_type,
+        result, true, resolved_action_token, metadata)
+    _emit_damage_absorption_defense_reduced(
+        actor, target, result, source_kind, resolved_action_token)
+    var reflection := _resolve_reflection(
+        actor, target, source_kind, damage_type, result,
+        resolved_action_token, metadata)
+    if not reflection.get("success", false):
+        return {
+            "success": false,
+            "reason": str(reflection.get("reason", "同步反震伤害结算失败")),
+        }
+    result["reflection_result"] = reflection
+    return {
+        "success": true,
+        "resolution": _synchronized_resolution(
+            intent, final_amount, result, metadata, false, {}),
+        "stop_actor": int(actor.life) <= 0,
+    }
+
+
+func _synchronized_resolution(
+        intent: Dictionary,
+        final_amount: int,
+        result: Dictionary,
+        metadata: Dictionary,
+        blocked: bool,
+        block_result: Dictionary) -> Dictionary:
+    return {
+        "actor": intent["actor"],
+        "target": intent["target"],
+        "amount": final_amount,
+        "requested_amount": intent.get("requested_amount", intent["amount"]),
+        "source_kind": intent["source_kind"],
+        "true_damage": str(intent.get("damage_type", "normal")) == "true",
+        "damage_type": intent.get("damage_type", "normal"),
+        "preview": intent["preview"],
+        "resolution_metadata": metadata.duplicate(true),
+        "action_token": str(metadata.get("action_token", "")),
+        "blocked": blocked,
+        "block_result": block_result.duplicate(true),
+        "result": result,
+    }
+
+
+func _blocked_damage_result(
+        final_amount: int,
+        damage_type: String,
+        block_result: Dictionary,
+        segment_token: String,
+        metadata: Dictionary,
+        target = null) -> Dictionary:
+    var defense := int(target.defense) if target != null else 0
+    var life := int(target.life) if target != null else 0
+    return {
+        "success": true,
+        "buffered": false,
+        "blocked": true,
+        "final_amount": 0,
+        "requested": final_amount,
+        "defense_before": defense,
+        "defense_lost": 0,
+        "defense_after": defense,
+        "life_before": life,
+        "life_loss_before_intervention": 0,
+        "life_loss_prevented": 0,
+        "life_lost": 0,
+        "actual_life_loss": 0,
+        "life_loss_canceled": false,
+        "life_after": life,
+        "damage_type": damage_type,
+        "true_damage": damage_type == "true",
+        "damage_segment_token": segment_token,
+        "cause": str(metadata.get("cause", "damage")),
+        "direct_attack": bool(metadata.get("direct_attack", false)),
+        "reflection_damage": bool(metadata.get("reflection_damage", false)),
+        "life_loss_intervention_breakdown": [],
+        "life_loss_query_fingerprint": "",
+        "block_result": block_result,
+    }
+
+
+func _next_damage_segment_token(actor, target, action_token: String) -> String:
+    var token := "damage-segment|%06d|%s|%s|%s" % [
+        _damage_segment_serial,
+        action_token,
+        str(actor.owner_id) if actor != null else "none",
+        str(target.owner_id) if target != null else "none",
+    ]
+    _damage_segment_serial += 1
+    return token
 
 
 func _resolve_reflection(
@@ -617,21 +873,21 @@ func _resolve_reflection(
         damage_type: String,
         result: Dictionary,
         action_token: String = "",
-        resolution_metadata: Dictionary = {}) -> void:
+        resolution_metadata: Dictionary = {}) -> Dictionary:
     if attacker == null or defender == null or attacker == defender \
             or bool(resolution_metadata.get("reflection_damage", false)) \
             or damage_type == "poison":
-        return
+        return {"success": true, "applied": false}
     if str(result.get(
             "defense_reduction_cause", "damage_absorption")) != "damage_absorption":
-        return
+        return {"success": true, "applied": false}
     var defense_lost := int(result.get("defense_lost", 0))
     var percent := int(defender.current_reflection_percent)
     if defense_lost <= 0 or percent <= 0:
-        return
+        return {"success": true, "applied": false}
     var amount := int(floor(defense_lost * percent / 100.0))
     if amount <= 0:
-        return
+        return {"success": true, "applied": false}
     var reflection_source_token := str(defender.current_reflection_source_token)
     var reflection_type := "true" if defender.reflection_is_true_damage() else "normal"
     var reflection_source := {
@@ -652,6 +908,13 @@ func _resolve_reflection(
             "source_instance_key": reflection_source["source_instance_key"],
             "trigger_mode": reflection_source["trigger_mode"],
         }, reflection_source)
+    if not reflected.get("success", false):
+        return {
+            "success": false,
+            "applied": false,
+            "reason": str(reflected.get("reason", "反震伤害结算失败")),
+            "damage_result": reflected,
+        }
     var event_values := {
         "attacker": attacker, "defender": defender,
         "actor": defender, "holder": defender, "target": attacker,
@@ -672,6 +935,11 @@ func _resolve_reflection(
         _committed_event_service.commit("reflection_resolved", event_values)
     if _committed_event_service == null:
         _status_system.handle_response_event("reflection_resolved", event_values)
+    return {
+        "success": true,
+        "applied": true,
+        "damage_result": reflected,
+    }
 
 
 func _try_block_damage(
@@ -684,6 +952,7 @@ func _try_block_damage(
         metadata: Dictionary) -> Dictionary:
     if actor == null or target == null or actor == target \
             or damage_type not in ["normal", "true"] \
+            or str(metadata.get("cause", "damage")) == "cost" \
             or bool(metadata.get("reflection_damage", false)) \
             or not bool(metadata.get("direct_attack", false)):
         return {"blocked": false}
@@ -712,14 +981,35 @@ func _emit_damage_resolved(
         "action_token": action_token,
         "source_kind": source_kind,
         "requested_amount": requested_amount,
+        "requested_damage": requested_amount,
         "final_amount": int(result.get("final_amount", result.get("requested", 0))),
+        "final_damage": int(result.get("final_amount", result.get("requested", 0))),
+        "damage_segment_token": str(result.get("damage_segment_token", "")),
+        "cause": str(result.get("cause", "damage")),
+        "direct_attack": bool(result.get("direct_attack", false)),
+        "reflection_damage": bool(result.get("reflection_damage", false)),
+        "defense_before": int(result.get("defense_before", 0)),
         "defense_lost": int(result.get("defense_lost", 0)),
+        "life_loss_before_intervention": int(result.get(
+            "life_loss_before_intervention", result.get("life_lost", 0))),
+        "life_loss_prevented": int(result.get("life_loss_prevented", 0)),
         "life_lost": int(result.get("life_lost", 0)),
+        "actual_life_loss": int(result.get("life_lost", 0)),
+        "life_loss_canceled": bool(result.get("life_loss_canceled", false)),
+        "life_loss_intervention_breakdown": result.get(
+            "life_loss_intervention_breakdown", []).duplicate(true),
+        "life_loss_source_fingerprint": str(result.get(
+            "life_loss_source_fingerprint", "")),
+        "life_loss_query_fingerprint": str(result.get(
+            "life_loss_query_fingerprint", "")),
         "true_damage": damage_type == "true",
         "damage_type": damage_type,
         "synchronized": synchronized,
-        "defense_after": int(target.defense) if target != null else 0,
-        "life_after": int(target.life) if target != null else 0,
+        "defense_after": int(result.get(
+            "defense_after", target.defense if target != null else 0)),
+        "life_before": int(result.get("life_before", 0)),
+        "life_after": int(result.get(
+            "life_after", target.life if target != null else 0)),
     }
     for field in [
             "source_id", "source_name", "source_instance_key", "trigger_mode"]:
@@ -743,7 +1033,8 @@ func _emit_damage_blocked(
         source_kind: String,
         action_token: String,
         block_result: Dictionary,
-        source_metadata: Dictionary = {}) -> void:
+        source_metadata: Dictionary = {},
+        damage_segment_token: String = "") -> void:
     var source: Dictionary = block_result.get("source", {})
     var values := {
         "actor": actor, "attacker": actor,
@@ -754,6 +1045,9 @@ func _emit_damage_blocked(
         "source_token": str(source.get("source_token", "")),
         "action_token": action_token,
         "action_window_id": current_action_window_id(),
+        "damage_segment_token": damage_segment_token,
+        "cause": str(source_metadata.get("cause", "damage")),
+        "direct_attack": bool(source_metadata.get("direct_attack", false)),
         "source_metadata": source.get("metadata", {}).duplicate(true),
     }
     for field in [
@@ -781,11 +1075,12 @@ func _emit_damage_absorption_defense_reduced(
     var removed := int(result.get("defense_lost", 0))
     if removed <= 0 or target == null:
         return
-    var after := int(target.defense)
+    var after := int(result.get("defense_after", target.defense))
     var values := {
         "actor": actor, "target": target, "owner": target, "holder": target,
         "requested_amount": removed, "effective_amount": removed,
-        "defense_before": after + removed, "defense_after": after,
+        "defense_before": int(result.get("defense_before", after + removed)),
+        "defense_after": after,
         "all": false, "hostile": actor != null and actor != target,
         "source_kind": source_kind, "cause": "damage_absorption",
         "action_token": action_token, "round_number": _round_number(),

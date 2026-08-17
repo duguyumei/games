@@ -345,7 +345,18 @@ func _continue_resolution() -> Dictionary:
         if phase == TechniquePhaseCatalogScript.DAMAGE:
             _resolve_played_card_anomalies(records)
             if synchronized:
-                effect_ports.flush_synchronized_damage()
+                var flushed: Dictionary = effect_ports.flush_synchronized_damage()
+                if not flushed.get("success", false):
+                    var flush_error := str(flushed.get(
+                        "reason", "同步伤害结算失败"))
+                    for failed_record in records:
+                        _passive_sources_by_token.erase(str(failed_record["token"]))
+                    _pending_resolution.clear()
+                    return {
+                        "success": false,
+                        "pending_choice": false,
+                        "detail": flush_error,
+                    }
         _pending_resolution["phase_index"] = int(_pending_resolution["phase_index"]) + 1
         _pending_resolution["phase_started"] = false
         _pending_resolution.erase("timing")

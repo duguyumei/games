@@ -26,7 +26,7 @@
 
 当前不设置全局防御上限；默认保留比例与具体内容修正仍需在后续试玩中继续校验数值，但上述结算时点与取整方式作为公共规则保持一致。
 
-普通伤害的持续规则顺序固定为：基础伤害 → 现有状态百分比 → 攻击方 `outgoing_damage_query` → 受击方 `incoming_damage_query` → `floor/max(0)` → 合格直接攻击的格挡查询 → 防御与生命承伤 → `damage_resolved`。预览可以纯查询预计值，但每条实际伤害记录只在写入前按最新状态重新查询一次。同步伤害的 shadow 既不查询动态伤害被动，也不发送事件；只有 `flush_synchronized_damage()` 的真实写入逐条完成后才发送真实事件。真伤继续绕过普通伤害百分比、防御与上述两个普通伤害查询，但属于直接攻击段的真伤仍在扣除生命前接受同一格挡查询；未被格挡的真伤写入后发送带 `true_damage` 标志的结果事件。
+普通伤害的持续规则顺序固定为：基础伤害 → 现有状态百分比 → 攻击方 `outgoing_damage_query` → 受击方 `incoming_damage_query` → `floor/max(0)` → 合格直接攻击的格挡查询 → 计算防御实际吸收量与预计生命损失 → `pre_life_loss_query` → 一次提交防御与生命 → `damage_resolved` → 反震及后续响应。预览可以纯查询预计值，但每条实际伤害记录只在写入前按最新状态重新查询一次。同步伤害的 shadow 既不查询动态伤害被动或生命干预，也不消费来源或发送事件；只有 `flush_synchronized_damage()` 的真实写入按稳定伤害段顺序完成。真伤继续绕过普通伤害百分比、防御与上述两个普通伤害查询，但属于直接攻击段的真伤仍在扣除生命前接受同一格挡查询；未被格挡的真伤与普通、毒、反震伤害共用生命写入前查询，并在写入后发送带 `true_damage` 标志的结果事件。
 
 通用 `damage` 操作具有 `blockable` 字段，默认 `true`。`blockable=false` 只跳过格挡查询，
 不跳过伤害增减、防御吸收、反震或其他伤害事件，也不建立专用伤害端口。格挡来源条件使用
@@ -45,6 +45,31 @@
 按 `amount` 或 `all` 计算实际减少值，再写入并发送一次 `defense_reduced`。`remove`、`set`、
 `clear`、`consume`、自然衰减与战斗重置都只改变防御并发送对应事件，不直接触发反震。
 效果可以捕获实际减少量，但 Handler 不得直接写角色 `defense` 字段。
+
+### 生命写入前干预
+
+`pre_life_loss_query`是防御实际吸收已经计算完成、生命尚未写入时的唯一来源中立查询。它的
+`base_value`等于本段`proposed_life_loss`，请求同时公开伤害段/行动窗口令牌、来源身份、`cause`、
+伤害类型、直接攻击/反震/同步标志、请求与最终伤害、防御前值/实际吸收/后值、生命前值和致命标志。
+多个来源按既有Invocation顺序读取并改写`current_value`，最终值只能位于
+`0..proposed_life_loss`；越界或Handler失败会令该段在防御、生命、事件和日志写入前失败。
+
+- 普通伤害只查询击穿防御后的溢出生命损失；真伤不减少防御；毒伤默认仍绕过普通防御；反震明确带
+  `reflection_damage=true`、`direct_attack=false`。四者使用同一查询和提交函数。
+- `cause=cost`的燃命、支付生命等代价明确跳过干预。战斗初始化、存档恢复、最大生命变化截断、设置或
+  清空防御不是生命损失，也不进入查询。
+- 生命损失被减为0时，防御实际吸收仍提交并可触发反震；这不是格挡，不发送`damage_blocked`，仍发送
+  `damage_resolved`且`life_lost=0`、`life_loss_canceled=true`。
+- `damage_resolved`同时公开干预前损失、阻止量、实际损失、取消标志、breakdown、source/request
+  fingerprint、伤害段令牌、cause及防御/生命前后事实。统计、邀战、毒/反震结果、条件与ValueSpec只
+  使用干预后的实际`life_lost`。
+- 查询是纯读，不支付真气或层数。未来代价型保护以`damage_segment_token`将支付事务原子绑定到查询
+  结果，不得在Handler内消费来源。
+
+同步伤害flush使用既有BattleSide状态快照、committed-event事务状态与publication transaction，并
+同时保存触发队列/结构化日志及行动统计。任一后段查询或其反震失败时，整次flush恢复生命、防御、
+被动状态、receipt、execution history、事件序号、待发布通知与日志，返回结构化失败；调用方不得忽略。
+同步毒来源也只在flush提交前的同一事务内清除。不存在长期并存的数组flush协议。
 
 ### 格挡
 

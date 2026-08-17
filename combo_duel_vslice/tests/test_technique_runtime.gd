@@ -1743,7 +1743,8 @@ func _test_synchronized_reflection_matches_normal_damage() -> void:
         engine.enemy, engine.player, 12, "technique")
     _assert_true(buffered["buffered"], "同步伤害先进入缓冲")
     _assert_equal(engine.enemy.life, enemy_life, "缓冲刷新前不提前反震")
-    engine.flush_synchronized_damage()
+    _assert_true(engine.flush_synchronized_damage().get("success", false),
+        "同步反震结构化 flush 成功")
     _assert_equal(engine.enemy.life, enemy_life - 6, "同步刷新按同一反震规则结算")
 
 func _test_unblockable_damage_still_absorbs_and_reflects() -> void:

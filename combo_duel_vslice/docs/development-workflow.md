@@ -775,3 +775,23 @@ Godot 进程串行运行并使用独立 `/tmp` 日志。运行器自检的缺失
 能够返回结果对象的边界直接失败；只返回整数的窄端口报告scenario error并返回0。合法保留的直接
 `card.effective_qi_value()`仅限查询服务内部的卡牌自身阶段、`CardReshapeRuleService/PowerCalculator`
 内部数值包，以及未装配BattleRuntime查询服务的兼容/测试fallback。
+
+## 生命写入前干预协议（2026-08-18）
+
+正式伤害段统一执行：伤害值修正 → 格挡 → `ComboDamageResolver.plan_to_target`计算防御吸收与
+`proposed_life_loss` → `BattleRuleQueryService.resolve_pre_life_loss` →
+`ComboDamageResolver.commit_plan`一次提交防御与生命 → `damage_resolved` → 反震及后续响应。
+普通伤害、真伤、毒伤和反震共用这一写入边界；`cause=cost`明确跳过查询。初始化、存档恢复、
+最大生命变化截断以及单纯设置/清空防御不属于该协议。
+
+`pre_life_loss_query`是来源中立的纯整数查询。请求由查询服务统一构造，公开伤害段令牌、行动窗口、
+来源身份、伤害类型、直接攻击/反震/同步标志、请求/最终伤害、防御与生命前后计划、预计损失和致命
+标志。Handler只能把当前值改到`0..proposed_life_loss`；越界即失败，不能借保护查询放大伤害。查询
+不得写状态、推进RNG、发送事件、消费来源或写历史，并保留source breakdown、source fingerprint和
+request fingerprint。后续需要支付代价的保护必须以伤害段令牌绑定独立支付事务，不能在纯查询内支付。
+
+同步伤害的shadow只预览，不执行生命干预、不消费毒/格挡等来源、不发送事件。真实flush按缓冲顺序
+逐段重新查询，并只返回`{success, resolutions, reason, rolled_back}`结构；不存在旧数组协议。
+flush开始时复用BattleSide状态快照、`BattlePassiveCommittedEventService`事务状态与publication
+transaction、触发队列/结构化日志快照。任一后段或反震段失败时恢复整批生命、防御、被动状态、
+receipt、事件序号、待发布事件、行动统计与日志；`ActionResolver`必须把失败升级为当前行动失败。

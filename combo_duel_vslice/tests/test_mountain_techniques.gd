@@ -206,7 +206,8 @@ func _test_synchronized_block_consumes_only_on_flush() -> void:
     var buffered: Dictionary = engine.effect_ports.deal_damage(engine.enemy, engine.player, 7, "technique", false, "sync", "normal", {"direct_attack":true})
     _assert_true(buffered.get("buffered", false), "同步攻击先进入shadow缓冲")
     _assert_equal(engine.player.block_sources.size(), 1, "shadow阶段不消费格挡")
-    engine.effect_ports.flush_synchronized_damage()
+    _assert_true(engine.effect_ports.flush_synchronized_damage().get(
+        "success", false), "同步格挡结构化 flush 成功")
     _assert_equal(engine.player.block_sources.size(), 0, "真实flush才消费格挡")
     _assert_equal(engine.player.life, 100, "同步flush格挡后不写入生命")
     engine.effect_ports.abort_action_resolution()
@@ -469,6 +470,7 @@ func _snapshot(played: Array, contributing: Array, extra: Array, contribution: i
         facts[str(card.id)] = {
             "card":card,
             "base_qi_at_freeze":card.current_base_qi_value(),
+            "effective_qi_at_freeze":card.effective_qi_value(),
             "base_attribute_at_freeze":card.current_attribute(),
             "attributes_at_freeze":attributes,
         }

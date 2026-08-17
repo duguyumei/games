@@ -95,7 +95,11 @@ func _trigger_all(effect: Dictionary, runtime):
                 runtime.source_metadata(), false, runtime.action_token, "poison", {
                     "skip_poison_modifiers": true,
                 })
-    var resolutions: Array = runtime.ports.flush_synchronized_damage()
+    var flushed: Dictionary = runtime.ports.flush_synchronized_damage()
+    if not flushed.get("success", false):
+        return EffectResultScript.failed(str(flushed.get(
+            "reason", "同步毒伤结算失败")))
+    var resolutions: Array = flushed.get("resolutions", [])
     var resolution_by_holder: Dictionary = {}
     for resolution in resolutions:
         resolution_by_holder[str(resolution["target"].owner_id)] = resolution

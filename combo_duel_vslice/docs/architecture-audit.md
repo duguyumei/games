@@ -1490,3 +1490,24 @@ content pipeline 与项目加载门禁。项目加载覆盖 684 个脚本／场�
 并公开完整行动牌集合、实际数量和精确牌型。请求指纹只包含稳定值和来源执行计划，不包含Object地址。
 纯查询检查覆盖双方战斗状态、战斗RNG和committed事件禁入；失败通过既有scenario error边界报告。
 具体内功、物品和暂缓功法均未接入，本节只证明公共协议所有权已经收口。
+
+## 2026-08-18 生命写入前唯一干预边界
+
+`BattleRuleQueryService`新增正式`pre_life_loss_query`及唯一请求构造方法
+`resolve_pre_life_loss`，继续复用`PassiveIntPolicyResolver`、稳定Invocation计划、纯查询状态/RNG/
+committed事件守卫与既有失败报告协议，没有增加生命Service、伤害执行器、Provider或事务框架。
+查询的`base_value`是防御实际吸收后的预计生命损失，最终值必须位于`0..base_value`。
+
+`ComboDamageResolver`现只负责类型统一的承伤计划和stale-plan校验提交；正式编排仍归
+`BattleSurvivalEffectService`。真实顺序固定为伤害修正、格挡、承伤计划、生命查询、一次性防御/生命
+提交、`damage_resolved`、反震。普通、真伤、毒伤与反震没有各自的生命写入算法；生命取消不回退已
+吸收防御、不伪造`damage_blocked`，并仍以`life_lost=0`提交`damage_resolved`。行动统计、邀战、毒结果、
+反震结果、条件和ValueSpec继续只读取干预后的`life_lost`。
+
+同步flush的公开协议已从数组迁移为单一结构化结果。shadow阶段不运行生命干预或消费毒来源；flush
+阶段在既有BattleSide快照、committed-event事务状态、publication transaction和触发队列/日志快照内
+逐段执行。任一后段失败会恢复生命、防御、来源/计数器、功法序列、receipt、execution history、事件
+序号、待发布通知、行动统计和日志；`ActionResolver`显式检查失败。低层
+`ComboDamageResolver.apply_to_target`与`BattleSide.receive_damage`仅作为无BattleRuntime装配的兼容/
+测试入口保留，正式战斗写入只经`BattleEffectPorts`Facade。本批未实现余垣护命、一甲断锋、万木代命、
+护焰周天、真气支付、护焰层数或卸力。

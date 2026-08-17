@@ -809,8 +809,8 @@ func deal_damage(actor, target, base_amount: int, source_kind: String, true_dama
 func begin_synchronized_damage(records: Array) -> void:
     effect_ports.begin_synchronized_damage(records)
 
-func flush_synchronized_damage() -> void:
-    effect_ports.flush_synchronized_damage()
+func flush_synchronized_damage() -> Dictionary:
+    return effect_ports.flush_synchronized_damage()
 
 func damage_actor_can_continue(side) -> bool:
     return damage_resolver.actor_can_continue(side)

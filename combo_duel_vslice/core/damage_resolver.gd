@@ -52,9 +52,7 @@ func begin_synchronized(actors: Array) -> void:
     for actor in actors:
         _actor_start_alive[actor.get_instance_id()] = actor.life > 0
 
-func flush_synchronized(
-        after_resolution: Callable = Callable(),
-        actual_amount_resolver: Callable = Callable()) -> Array:
+func flush_synchronized(segment_resolver: Callable) -> Dictionary:
     var buffered := _buffer.duplicate()
     _buffer_active = false
     var resolved: Array = []
@@ -63,48 +61,28 @@ func flush_synchronized(
         var actor_id: int = int(intent["actor"].get_instance_id())
         if stopped_actor_ids.has(actor_id):
             continue
-        var actual_amount := int(intent["amount"])
-        var amount_result: Dictionary = {}
-        if actual_amount_resolver.is_valid():
-            amount_result = actual_amount_resolver.call(intent)
-            if not amount_result.get("success", false):
-                break
-            actual_amount = maxi(0, int(amount_result["amount"]))
-        var blocked := bool(amount_result.get("blocked", false)) \
-            if actual_amount_resolver.is_valid() else false
-        var actual := {
-            "requested": actual_amount,
-            "defense_lost": 0,
-            "life_lost": 0,
-            "true_damage": str(intent.get("damage_type", "normal")) == "true",
-            "damage_type": str(intent.get("damage_type", "normal")),
-        } if blocked else apply_to_target(
-            intent["target"],
-            actual_amount,
-            str(intent.get("damage_type", "true" if bool(intent["true_damage"]) else "normal")),
-            int(intent.get("poison_defense_intervention", 0)))
-        actual["final_amount"] = actual_amount
-        var resolution := {
-            "actor": intent["actor"],
-            "target": intent["target"],
-            "amount": actual_amount,
-            "requested_amount": intent.get("requested_amount", intent["amount"]),
-            "source_kind": intent["source_kind"],
-            "true_damage": intent["true_damage"],
-            "damage_type": intent.get("damage_type", "normal"),
-            "preview": intent["preview"],
-            "resolution_metadata": intent.get("resolution_metadata", {}).duplicate(true),
-            "blocked": blocked,
-            "block_result": amount_result.get("block_result", {}).duplicate(true) \
-                if actual_amount_resolver.is_valid() else {},
-            "result": actual,
-        }
+        if not segment_resolver.is_valid():
+            reset()
+            return {
+                "success": false,
+                "reason": "同步伤害缺少正式伤害段结算器",
+                "resolutions": resolved,
+            }
+        var segment: Dictionary = segment_resolver.call(intent)
+        if not segment.get("success", false):
+            reset()
+            return {
+                "success": false,
+                "reason": str(segment.get("reason", "同步伤害段结算失败")),
+                "resolutions": resolved,
+                "failed_intent": intent,
+            }
+        var resolution: Dictionary = segment.get("resolution", {})
         resolved.append(resolution)
-        if after_resolution.is_valid() \
-                and bool(after_resolution.call(resolution)):
+        if bool(segment.get("stop_actor", false)):
             stopped_actor_ids[actor_id] = true
     reset()
-    return resolved
+    return {"success": true, "resolutions": resolved}
 
 func actor_can_continue(side) -> bool:
     if not _buffer_active:
@@ -146,11 +124,46 @@ static func apply_to_target(
         amount: int,
         damage_type = "normal",
         poison_defense_intervention: int = 0) -> Dictionary:
-    var state := {"life": target.life, "defense": target.defense}
-    var result := preview_receive_damage(
+    var plan := plan_to_target(
+        target, amount, damage_type, poison_defense_intervention)
+    return commit_plan(target, plan, int(plan["proposed_life_loss"]))
+
+## 只读取目标当前状态并计算本伤害段计划，不做任何真实写入。
+static func plan_to_target(
+        target,
+        amount: int,
+        damage_type = "normal",
+        poison_defense_intervention: int = 0) -> Dictionary:
+    var state := {"life": int(target.life), "defense": int(target.defense)}
+    return preview_receive_damage(
         state, amount, damage_type, poison_defense_intervention)
-    target.life = int(state["life"])
-    target.defense = int(state["defense"])
+
+## 将已经验证的承伤计划一次提交到目标。生命干预只能在预计损失范围内减量；
+## stale plan 或越界值在写入前失败，因此不会留下只扣防御的半提交状态。
+static func commit_plan(
+        target, plan: Dictionary, effective_life_loss: int) -> Dictionary:
+    var proposed := int(plan.get("proposed_life_loss", 0))
+    if effective_life_loss < 0 or effective_life_loss > proposed:
+        return {"success": false, "reason": "生命损失干预结果越界"}
+    if int(target.life) != int(plan.get("life_before", target.life)) \
+            or int(target.defense) != int(plan.get(
+                "defense_before", target.defense)):
+        return {"success": false, "reason": "伤害承伤计划已经过期"}
+    var defense_after := int(plan.get("defense_after", target.defense))
+    var life_after := int(plan.get("life_before", target.life)) \
+        - effective_life_loss
+    target.defense = defense_after
+    target.life = life_after
+    var result := plan.duplicate(true)
+    result.merge({
+        "success": true,
+        "life_loss_before_intervention": proposed,
+        "life_loss_prevented": proposed - effective_life_loss,
+        "life_lost": effective_life_loss,
+        "actual_life_loss": effective_life_loss,
+        "life_loss_canceled": proposed > 0 and effective_life_loss == 0,
+        "life_after": life_after,
+    }, true)
     return result
 
 static func preview_receive_damage(
@@ -162,6 +175,8 @@ static func preview_receive_damage(
     if damage_type is bool:
         resolved_type = "true" if bool(damage_type) else "normal"
     var incoming := maxi(0, amount)
+    var defense_before := int(state["defense"])
+    var life_before := int(state["life"])
     var defense_lost := 0
     var life_lost := 0
     if resolved_type == "true":
@@ -183,8 +198,17 @@ static func preview_receive_damage(
         state["life"] = int(state["life"]) - life_lost
     return {
         "requested": incoming,
+        "defense_before": defense_before,
         "defense_lost": defense_lost,
+        "defense_after": int(state["defense"]),
+        "life_before": life_before,
+        "proposed_life_loss": life_lost,
+        "life_loss_before_intervention": life_lost,
+        "life_loss_prevented": 0,
         "life_lost": life_lost,
+        "actual_life_loss": life_lost,
+        "life_loss_canceled": false,
+        "life_after": int(state["life"]),
         "true_damage": resolved_type == "true",
         "damage_type": resolved_type,
     }

@@ -54,15 +54,15 @@ func trigger_poison_card(
         source_metadata)
     if not damage.get("success", false):
         return damage
-    var removed: Dictionary = _card_effect_service.remove_card_anomaly(
-        card, "state", "poison", "毒触发", source_metadata)
-    if not removed.get("changed", false):
-        return {
-            "success": false,
-            "reason": "毒伤完成后清除毒失败",
-            "damage_result": damage,
-        }
     if not bool(damage.get("buffered", false)):
+        var removed: Dictionary = _card_effect_service.remove_card_anomaly(
+            card, "state", "poison", "毒触发", source_metadata)
+        if not removed.get("changed", false):
+            return {
+                "success": false,
+                "reason": "毒伤完成后清除毒失败",
+                "damage_result": damage,
+            }
         notify_poison_triggered(
             holder, card, frozen_amount, damage, action_token, replayed)
     return {
@@ -76,21 +76,30 @@ func trigger_poison_card(
     }
 
 
-func flush_synchronized_damage() -> Array:
-    var resolutions: Array = _survival_effect_service.flush_synchronized_damage()
+func flush_synchronized_damage() -> Dictionary:
+    return _survival_effect_service.flush_synchronized_damage(
+        Callable(self, "_finalize_synchronized_poison"))
+
+
+func _finalize_synchronized_poison(resolutions: Array) -> Dictionary:
     for resolution_value in resolutions:
         var resolution: Dictionary = resolution_value
         var metadata: Dictionary = resolution.get("resolution_metadata", {})
         if str(metadata.get("kind", "")) != "poison_card_trigger":
             continue
+        var card = metadata.get("card")
+        var removed: Dictionary = _card_effect_service.remove_card_anomaly(
+            card, "state", "poison", "毒触发", _poison_source_metadata(card))
+        if not removed.get("changed", false):
+            return {"success": false, "reason": "同步毒伤完成后清除毒失败"}
         notify_poison_triggered(
             metadata.get("holder"),
-            metadata.get("card"),
+            card,
             int(metadata.get("frozen_amount", 0)),
             resolution.get("result", {}),
             str(metadata.get("action_token", "")),
             bool(metadata.get("replayed", false)))
-    return resolutions
+    return {"success": true}
 
 
 func notify_poison_triggered(

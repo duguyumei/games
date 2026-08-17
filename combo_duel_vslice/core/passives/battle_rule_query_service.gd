@@ -22,6 +22,7 @@ const QUERY_HOOKS := [
     "same_qi_capacity_query",
     "life_recovery_query",
     "effective_qi_query",
+    "pre_life_loss_query",
 ]
 
 const EFFECTIVE_QI_PURPOSES := [
@@ -100,6 +101,24 @@ func resolve(request):
         "subject_card_facts": _stable_value(request.subject_card_facts),
         "actual_played_count": request.actual_played_count,
         "exact_hand": _stable_value(request.exact_hand),
+        "damage_segment_token": request.damage_segment_token,
+        "action_window_id": request.action_window_id,
+        "source_id": request.source_id,
+        "source_instance_key": request.source_instance_key,
+        "trigger_mode": request.trigger_mode,
+        "cause": request.cause,
+        "damage_type": request.damage_type,
+        "direct_attack": request.direct_attack,
+        "reflection_damage": request.reflection_damage,
+        "synchronized": request.synchronized,
+        "requested_damage": request.requested_damage,
+        "final_damage": request.final_damage,
+        "defense_before": request.defense_before,
+        "defense_lost": request.defense_lost,
+        "defense_after": request.defense_after,
+        "life_before": request.life_before,
+        "proposed_life_loss": request.proposed_life_loss,
+        "lethal": request.lethal,
         "metadata": _stable_value(request.metadata),
         "source_snapshot": _stable_value(request.source_snapshot) \
             if request.has_source_snapshot else [],
@@ -204,6 +223,60 @@ func resolve_effective_qi(owner, card, context: Dictionary = {}):
         result.effective_value = maxi(0, int(result.effective_value))
     return result
 
+## 防御吸收完成后、正式生命写入前的唯一查询入口。查询只能减少或取消本段
+## proposed_life_loss；任何越界结果都作为失败返回，不能用此 Hook 放大伤害。
+func resolve_pre_life_loss(owner, context: Dictionary):
+    if owner == null:
+        return _pre_life_loss_failure(context, "生命写入前查询缺少 owner/target")
+    var segment_token := str(context.get("damage_segment_token", ""))
+    if segment_token == "":
+        return _pre_life_loss_failure(context, "生命写入前查询缺少 damage_segment_token")
+    var proposed := int(context.get("proposed_life_loss", -1))
+    if proposed < 0:
+        return _pre_life_loss_failure(context, "预计生命损失不能为负数")
+    var request_values := {
+        "hook": "pre_life_loss_query",
+        "owner": owner,
+        "actor": context.get("actor"),
+        "target": context.get("target", owner),
+        "subject_kind": "life_loss",
+        "subject_id": segment_token,
+        "base_value": proposed,
+        "round_number": int(context.get("round_number", 0)),
+        "action_token": str(context.get("action_token", "")),
+        "source_kind": str(context.get("source_kind", "")),
+        "damage_segment_token": segment_token,
+        "action_window_id": str(context.get("action_window_id", "")),
+        "source_id": str(context.get("source_id", "")),
+        "source_instance_key": str(context.get("source_instance_key", "")),
+        "trigger_mode": str(context.get("trigger_mode", "")),
+        "cause": str(context.get("cause", "damage")),
+        "damage_type": str(context.get("damage_type", "normal")),
+        "direct_attack": bool(context.get("direct_attack", false)),
+        "reflection_damage": bool(context.get("reflection_damage", false)),
+        "synchronized": bool(context.get("synchronized", false)),
+        "requested_damage": int(context.get("requested_damage", 0)),
+        "final_damage": int(context.get("final_damage", 0)),
+        "defense_before": int(context.get("defense_before", 0)),
+        "defense_lost": int(context.get("defense_lost", 0)),
+        "defense_after": int(context.get("defense_after", 0)),
+        "life_before": int(context.get("life_before", 0)),
+        "proposed_life_loss": proposed,
+        "lethal": bool(context.get("lethal", false)),
+        "metadata": context.get("metadata", {}).duplicate(true),
+    }
+    if context.has("source_snapshot"):
+        request_values["source_snapshot"] = context.get(
+            "source_snapshot", []).duplicate(true)
+    var result = resolve_values(request_values)
+    if result.success and (result.effective_value < 0 \
+            or result.effective_value > proposed):
+        result.success = false
+        result.errors.append(
+            "生命写入前查询结果越界：%d 不在 0..%d" % [
+                result.effective_value, proposed])
+    return result
+
 func card_fact(card, owner = null, target = null, participating: bool = false) -> Dictionary:
     var identity: Dictionary = {}
     var identity_policy = owner.card_identity_policy \
@@ -285,6 +358,18 @@ func _effective_failure(card, reason: String):
         "subject_id": str(card.id) if card != null else "",
         "base_value": 0,
         "effective_value": 0,
+        "errors": [reason],
+    })
+
+func _pre_life_loss_failure(context: Dictionary, reason: String):
+    var proposed := maxi(0, int(context.get("proposed_life_loss", 0)))
+    return ResultScript.new().configure({
+        "success": false,
+        "hook": "pre_life_loss_query",
+        "subject_kind": "life_loss",
+        "subject_id": str(context.get("damage_segment_token", "")),
+        "base_value": proposed,
+        "effective_value": proposed,
         "errors": [reason],
     })
 

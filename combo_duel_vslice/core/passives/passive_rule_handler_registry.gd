@@ -29,6 +29,7 @@ const BATTLE_INT_QUERY_HOOKS := [
     "same_qi_capacity_query",
     "life_recovery_query",
     "effective_qi_query",
+    "pre_life_loss_query",
 ]
 
 const BATTLE_POLICY_QUERY_HOOKS := [
@@ -75,6 +76,7 @@ const NON_EVENT_HOOKS := [
     "same_qi_capacity_query",
     "life_recovery_query",
     "effective_qi_query",
+    "pre_life_loss_query",
     "hand_evaluation_options_query",
     "card_identity_query",
     "card_play_permission_query",

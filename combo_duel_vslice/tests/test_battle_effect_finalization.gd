@@ -89,14 +89,18 @@ func _test_synchronized_poison_completion_waits_for_flush() -> void:
         "flush 前不正式写入同步毒伤")
     _assert_true(poison_events.is_empty(),
         "同步毒完成事件不会在 flush 前提前发送")
-    _assert_true(not card.has_anomaly("state", "poison"),
-        "同步请求成功进入缓冲后保持既有清毒时点")
+    _assert_true(card.has_anomaly("state", "poison"),
+        "同步 shadow 只预览，不提前消费毒来源")
 
-    var resolutions: Array = engine.effect_ports.flush_synchronized_damage()
+    var flushed: Dictionary = engine.effect_ports.flush_synchronized_damage()
+    _assert_true(flushed.get("success", false), "同步毒伤结构化 flush 成功")
+    var resolutions: Array = flushed.get("resolutions", [])
     _assert_equal(resolutions.size(), 1,
         "同步毒伤继续由唯一生存流水线 flush 一次")
     _assert_equal(engine.player.life, life_before - 3,
         "flush 后按冻结值正式写入生命损失")
+    _assert_true(not card.has_anomaly("state", "poison"),
+        "真实 flush 才消费毒来源")
     _assert_equal(poison_events.size(), 1,
         "同步真实写入后发送一次毒完成事件")
     _assert_equal(poison_events[0].get("actual_life_loss", 0), 3,
