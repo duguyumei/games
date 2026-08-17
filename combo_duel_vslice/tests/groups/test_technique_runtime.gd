@@ -27,4 +27,5 @@ func _initialize() -> void:
         "_test_reflection_override_sources_and_recursion_guard",
         "_test_synchronized_reflection_matches_normal_damage",
         "_test_unblockable_damage_still_absorbs_and_reflects",
+        "_test_permanent_loadout_capacity_insight_and_runtime_compatibility",
     ])

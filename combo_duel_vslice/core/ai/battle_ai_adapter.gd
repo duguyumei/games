@@ -271,7 +271,8 @@ func record_consumable_use(
         "payload": {
             "consumable_id": str(result.get("consumable_id", "")),
             "hidden_target_count": card_ids.size(),
-            "acquired_technique_id": str(result.get("acquired_technique_id", "")),
+            "technique_acquired": str(result.get("technique_acquired", "")),
+            "technique_equipped": bool(result.get("technique_equipped", false)),
         },
     })
 

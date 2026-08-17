@@ -21,10 +21,7 @@ func resolve(request):
         return _failure(request, "被动规则运行时已释放")
     if not runtime.registry.has_hook(request.hook):
         return _failure(request, "未知被动 hook：%s" % request.hook)
-    var owner_state: Dictionary = {}
-    if request.owner != null \
-            and request.owner.has_method("capture_mutation_state"):
-        owner_state = request.owner.capture_mutation_state()
+    var owner_state: Dictionary = _capture_owner_state(request.owner)
     var context_values := {
         "owner": request.owner,
         "actor": request.actor,
@@ -103,12 +100,33 @@ func _failure(request, reason: String):
     })
 
 func _restore_if_query_mutated(owner, state_before: Dictionary) -> String:
-    if owner == null or state_before.is_empty() \
-            or not owner.has_method("capture_mutation_state"):
+    if owner == null or state_before.is_empty():
         return ""
-    if owner.capture_mutation_state() == state_before:
+    var state_kind := str(state_before.get("kind", ""))
+    var snapshot: Dictionary = state_before.get("state", {})
+    var current: Dictionary = {}
+    if state_kind == "run" and owner.has_method("capture_mutation_state"):
+        current = owner.capture_mutation_state()
+    elif state_kind == "battle" \
+            and owner.has_method("capture_passive_query_state"):
+        current = owner.capture_passive_query_state()
+    else:
         return ""
-    var restore_errors: Array[String] = owner.replace_mutation_state(state_before)
-    if not restore_errors.is_empty():
-        return "纯查询修改了本局状态且回滚失败：%s" % "；".join(restore_errors)
+    if current == snapshot:
+        return ""
+    if state_kind == "run":
+        var restore_errors: Array[String] = owner.replace_mutation_state(snapshot)
+        if not restore_errors.is_empty():
+            return "纯查询修改了本局状态且回滚失败：%s" % "；".join(restore_errors)
+    else:
+        owner.replace_passive_query_state(snapshot)
     return "纯查询 Handler 不得修改本局状态"
+
+func _capture_owner_state(owner) -> Dictionary:
+    if owner == null:
+        return {}
+    if owner.has_method("capture_mutation_state"):
+        return {"kind": "run", "state": owner.capture_mutation_state()}
+    if owner.has_method("capture_passive_query_state"):
+        return {"kind": "battle", "state": owner.capture_passive_query_state()}
+    return {}

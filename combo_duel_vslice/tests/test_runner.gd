@@ -11540,7 +11540,7 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     var manual_progress = RunProgressSnapshotScript.from_dict({
         "consumable_ids": ["zengyuan_pill"],
         "hand_technique_progression": {
-            "high_card": {"slot_count": 2, "sequence": []},
+            "high_card": {"slot_count": 2, "sequence": ["basic_scatter"]},
         },
         "learned_technique_ids": [],
         "run_deck": manual_deck.to_snapshot(),
@@ -12875,7 +12875,7 @@ func _test_run_state_battle_growth_persistence() -> void:
     state.consumable_ids.append("zengyuan_pill")
     state.hand_technique_progression["high_card"] = {
         "slot_count": 2,
-        "sequence": [],
+        "sequence": ["basic_scatter"],
     }
     var run_cards: Array = state.run_deck.create_battle_cards()
     for card in run_cards:
@@ -12896,6 +12896,9 @@ func _test_run_state_battle_growth_persistence() -> void:
         engine.player.hand_technique_progression.get("high_card", {}).get("slot_count", 0),
         2,
         "跨战斗保留高牌功法槽位")
+    _assert_equal(engine.sequence_book.find_slots({
+        "hand_id": "high_card"}).size(), 1,
+        "旧RunState入口也只按实际sequence实例化功法")
     _assert_equal(engine.player.consumable_ids, ["zengyuan_pill"], "跨战斗保留共享消耗品")
     modified.set_enhancement("momentum")
     engine.player.consume_at(0)
@@ -13156,6 +13159,12 @@ func _test_s2f6a_repeated_technique_slot_index_operations() -> void:
     _assert_true(panel.remove_technique_at("pair", 2), "重复基础功法可按第三槽下标删除")
     _assert_equal(panel.draft_sequence("pair"), ["basic_scatter", "basic_guard"],
         "删除第三槽不会误删第一个同 ID 功法")
+    var underfilled_saved := {"ids": []}
+    panel.save_requested.connect(func(_hand_id: String, ids: Array):
+        underfilled_saved["ids"] = ids.duplicate())
+    _assert_true(panel.request_save("pair"), "容量3时装备2门可以提交保存")
+    _assert_equal(underfilled_saved["ids"], ["basic_scatter", "basic_guard"],
+        "未填满配装保存只提交实际功法，不写入占位")
     panel.discard_drafts()
     _assert_true(panel.move_technique_at("pair", 2, -1), "重复基础功法可按槽位下标移动")
     _assert_equal(panel.draft_sequence("pair"),

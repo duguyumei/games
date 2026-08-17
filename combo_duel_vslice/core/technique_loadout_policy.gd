@@ -7,6 +7,11 @@ extends RefCounted
 const IntQueryRequestScript = preload(
     "res://core/passives/passive_int_query_request.gd")
 
+const MIN_SLOT_COUNT := 1
+const MAX_SLOT_COUNT := 9
+const MIN_SEQUENCE_COUNT := 1
+const BASE_INSIGHT_SLOT_GAIN := 1
+
 var _catalog
 var _resolver = null
 
@@ -16,6 +21,9 @@ func _init(content_catalog = null, int_policy_resolver = null) -> void:
 
 func use_int_policy_resolver(value) -> void:
     _resolver = value
+
+func has_catalog() -> bool:
+    return _catalog != null
 
 func definition(technique_id: String) -> Dictionary:
     return _catalog.get_by_id("technique", technique_id) \
@@ -51,23 +59,24 @@ func is_hand_eligible(technique_id: String, hand_id: String) -> bool:
         "pool_membership", {}).get(hand_id, [])
     return pools.has(str(value.get("pool", "")))
 
-func built_in_fallback_ids(hand_id: String) -> Array[String]:
-    var result: Array[String] = []
-    if _catalog == null:
-        return result
-    for value in _catalog.all_of("technique"):
-        var technique_id := str(value.get("id", ""))
-        if bool(value.get("built_in", false)) \
-                and is_hand_eligible(technique_id, hand_id):
-            result.append(technique_id)
-    result.sort_custom(func(left, right):
-        var left_definition := definition(str(left))
-        var right_definition := definition(str(right))
-        var left_order := int(left_definition.get("built_in_fallback_order", 0))
-        var right_order := int(right_definition.get("built_in_fallback_order", 0))
-        return left_order < right_order \
-            if left_order != right_order else str(left) < str(right))
-    return result
+static func is_slot_count_valid(slot_count: int) -> bool:
+    return slot_count >= MIN_SLOT_COUNT and slot_count <= MAX_SLOT_COUNT
+
+static func is_sequence_size_valid(
+        sequence_size: int,
+        slot_count: int) -> bool:
+    return is_slot_count_valid(slot_count) \
+        and sequence_size >= MIN_SEQUENCE_COUNT \
+        and sequence_size <= slot_count
+
+static func has_sequence_capacity(
+        sequence_size: int,
+        slot_count: int) -> bool:
+    return is_slot_count_valid(slot_count) and sequence_size < slot_count
+
+static func unused_slot_count(sequence_size: int, slot_count: int) -> int:
+    return maxi(0, slot_count - sequence_size) \
+        if is_slot_count_valid(slot_count) else 0
 
 func counts_by_hand(progressions: Dictionary) -> Dictionary:
     var result: Dictionary = {}
@@ -133,6 +142,52 @@ func resolve_limit(
         return {"success": false, "reason": "功法有效装配上限必须是非负整数"}
     return result
 
+func resolve_insight_slot_gain(
+        owner,
+        exact_hand_type: String,
+        current_slot_count: int,
+        base_slot_gain: int = BASE_INSIGHT_SLOT_GAIN) -> Dictionary:
+    if not is_slot_count_valid(current_slot_count):
+        return {
+            "success": false,
+            "reason": "%s 功法槽位容量必须位于 %d～%d" % [
+                exact_hand_type, MIN_SLOT_COUNT, MAX_SLOT_COUNT],
+        }
+    if base_slot_gain < 0:
+        return {"success": false, "reason": "心得基础槽位增量不能为负数"}
+    if _resolver == null:
+        return {
+            "success": true,
+            "base_value": base_slot_gain,
+            "effective_value": base_slot_gain,
+            "modifier_breakdown": [],
+            "source_fingerprint": "no_runtime",
+        }
+    var result = _resolver.resolve(IntQueryRequestScript.new().configure({
+        "hook": "insight_slot_gain_query",
+        "owner": owner,
+        "subject_kind": "exact_hand_type",
+        "subject_id": exact_hand_type,
+        "base_value": base_slot_gain,
+        "metadata": {
+            "exact_hand_type": exact_hand_type,
+            "current_slot_count": current_slot_count,
+            "base_slot_gain": base_slot_gain,
+            "maximum_slot_count": MAX_SLOT_COUNT,
+        },
+    })).to_dict()
+    if not result.get("success", false):
+        return {
+            "success": false,
+            "reason": "心得槽位增量查询失败：%s" % \
+                "；".join(result.get("errors", [])),
+            "query": result,
+        }
+    var effective = result.get("effective_value")
+    if not effective is int or int(effective) < 0:
+        return {"success": false, "reason": "心得有效槽位增量必须是非负整数"}
+    return result
+
 func validate_complete(
         owner,
         progressions: Dictionary,
@@ -145,12 +200,19 @@ func validate_complete(
         var progression: Dictionary = progressions[hand_id]
         var slot_count = progression.get("slot_count")
         var sequence = progression.get("sequence")
-        if not slot_count is int or int(slot_count) < 1:
-            return {"success": false, "reason": "%s 功法槽位必须至少为 1" % hand_id}
-        if not sequence is Array or sequence.size() != int(slot_count):
+        if not slot_count is int or not is_slot_count_valid(int(slot_count)):
             return {
                 "success": false,
-                "reason": "%s 功法序列必须填满 %d 个槽位" % [hand_id, int(slot_count)],
+                "reason": "%s 功法槽位容量必须位于 %d～%d" % [
+                    hand_id, MIN_SLOT_COUNT, MAX_SLOT_COUNT],
+            }
+        if not sequence is Array:
+            return {"success": false, "reason": "%s 功法序列必须是数组" % hand_id}
+        if not is_sequence_size_valid(sequence.size(), int(slot_count)):
+            return {
+                "success": false,
+                "reason": "%s 必须装备 1～%d 门功法，当前为 %d 门" % [
+                    hand_id, int(slot_count), sequence.size()],
             }
         for technique_id_value in sequence:
             var technique_id := str(technique_id_value)

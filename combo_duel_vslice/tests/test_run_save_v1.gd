@@ -18,6 +18,7 @@ const RunScene = preload("res://ui/run_main.tscn")
 const FrontScene = preload("res://ui/front_main.tscn")
 const AutosaveStatusScript = preload(
     "res://ui/components/autosave_status.gd")
+const CombatEngineScript = preload("res://core/combat_engine.gd")
 
 const SAVE_PATH := "/tmp/taiwu-run-save-v1-test.json"
 
@@ -582,8 +583,45 @@ func _test_s2f6a_content_version_and_complete_loadout_round_trip() -> void:
         var progression: Dictionary = restored["run_session"].growth.hand_progression(hand_id)
         _assert_true(int(progression["slot_count"]) >= 1,
             "%s 往返后槽位至少为 1" % hand_id)
-        _assert_equal(progression["sequence"].size(), progression["slot_count"],
-            "%s 往返后序列仍完整填满" % hand_id)
+        _assert_true(progression["sequence"].size() >= 1 \
+            and progression["sequence"].size() <= progression["slot_count"],
+            "%s 往返后实际序列位于合法容量范围" % hand_id)
+    _assert_equal(
+        restored["run_session"].growth.hand_progression(
+            "high_card")["sequence"].size(), 2,
+        "旧的填满序列存档仍按原样恢复")
+
+    session.growth.hand_technique_progression["pair"] = {
+        "slot_count": 3,
+        "sequence": ["basic_scatter"],
+    }
+    var underfilled = RunSaveDataScript.new().capture(session)
+    _assert_true(underfilled.validate().is_empty(),
+        "新存档允许保存未使用的永久功法槽容量")
+    var underfilled_restored: Dictionary = underfilled.restore_session()
+    _assert_true(underfilled_restored.get("success", false),
+        "未填满永久配装存档可以恢复")
+    var pair_progression: Dictionary = underfilled_restored[
+        "run_session"].growth.hand_progression("pair")
+    _assert_equal(pair_progression["slot_count"], 3,
+        "未填满配装往返后保留容量")
+    _assert_equal(pair_progression["sequence"], ["basic_scatter"],
+        "未填满配装往返后不写入空值或补位功法")
+    var restored_session = underfilled_restored["run_session"]
+    var battle_engine = CombatEngineScript.new(
+        null, restored_session._content_catalog)
+    var progress_snapshot = restored_session.growth.to_progress_snapshot()
+    var non_deck: Dictionary = battle_engine.battle_setup_service.apply_non_deck_progress(
+        battle_engine.player, progress_snapshot)
+    _assert_true(non_deck.get("success", false), "未填满配装可通过战斗非牌组装配")
+    var progression_setup: Dictionary = \
+        battle_engine.battle_setup_service.apply_player_technique_progression(
+            battle_engine.player, battle_engine.sequence_book, progress_snapshot)
+    _assert_true(progression_setup.get("success", false),
+        "未填满配装通过统一策略进入战斗")
+    _assert_equal(battle_engine.sequence_book.find_slots({
+        "hand_id": "pair"}).size(), pair_progression["sequence"].size(),
+        "战斗实例数量等于实际sequence大小而不是slot_count")
 
 func _configured_session(seed_value: int, experience: int):
     var session: RunSession = RunSessionScript.new()

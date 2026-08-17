@@ -1,6 +1,9 @@
 class_name RunTechniqueLoadoutPanel
 extends VBoxContainer
 
+const TechniqueLoadoutPolicyScript = preload(
+    "res://core/technique_loadout_policy.gd")
+
 ## 输入 RunBuildDTO.hand_loadouts，为八种精确牌型维护彼此独立的本地草稿。
 ## 输出 save_requested(hand_id, complete_technique_ids)，始终提交完整序列。
 ## 不判断池归属、槽位合法性或阶段门禁，最终结果由核心命令复验。
@@ -56,7 +59,8 @@ func add_technique(hand_id: String, technique_id: String) -> bool:
     if loadout == null or not loadout.editable:
         return false
     var draft: Array = _drafts.get(hand_id, []).duplicate()
-    if draft.size() >= loadout.slot_count:
+    if not TechniqueLoadoutPolicyScript.has_sequence_capacity(
+            draft.size(), loadout.slot_count):
         return false
     var allowed := _all_technique_ids(loadout)
     if not allowed.has(technique_id):
@@ -83,6 +87,9 @@ func remove_technique_at(hand_id: String, slot_index: int) -> bool:
         return false
     var draft: Array = _drafts.get(hand_id, []).duplicate()
     if slot_index < 0 or slot_index >= draft.size():
+        return false
+    if not TechniqueLoadoutPolicyScript.is_sequence_size_valid(
+            draft.size() - 1, loadout.slot_count):
         return false
     draft.remove_at(slot_index)
     _set_draft(hand_id, draft)
@@ -111,7 +118,8 @@ func request_save(hand_id: String) -> bool:
     var loadout = _loadout(hand_id)
     if loadout == null or not loadout.editable \
             or not _dirty_hands.has(hand_id) \
-            or draft_sequence(hand_id).size() != loadout.slot_count:
+            or not TechniqueLoadoutPolicyScript.is_sequence_size_valid(
+                draft_sequence(hand_id).size(), loadout.slot_count):
         return false
     save_requested.emit(hand_id, draft_sequence(hand_id))
     return true
@@ -225,17 +233,22 @@ func _render_selected() -> void:
     if not is_editable:
         _summary.text += " · 只读：%s" % loadout.blocked_reason
     elif draft.size() < loadout.slot_count:
-        _summary.text += " · 还缺 %d 个功法" % (loadout.slot_count - draft.size())
+        _summary.text += " · 空余 %d 个槽位" % (loadout.slot_count - draft.size())
     _empty_state.visible = (
         _all_techniques(loadout).is_empty()
         and loadout.sequence.is_empty())
-    _add_button.disabled = not is_editable or draft.size() >= loadout.slot_count
-    _remove_button.disabled = not is_editable
+    _add_button.disabled = not is_editable \
+        or not TechniqueLoadoutPolicyScript.has_sequence_capacity(
+            draft.size(), loadout.slot_count)
+    _remove_button.disabled = not is_editable \
+        or not TechniqueLoadoutPolicyScript.is_sequence_size_valid(
+            draft.size() - 1, loadout.slot_count)
     _up_button.disabled = not is_editable
     _down_button.disabled = not is_editable
     _save_button.disabled = not is_editable \
         or not _dirty_hands.has(hand_id) \
-        or draft.size() != loadout.slot_count
+        or not TechniqueLoadoutPolicyScript.is_sequence_size_valid(
+            draft.size(), loadout.slot_count)
 
 func _set_draft(hand_id: String, draft: Array) -> void:
     _drafts[hand_id] = draft.duplicate()

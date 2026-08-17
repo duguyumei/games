@@ -1,8 +1,8 @@
 class_name GainInsightConsumableHandler
 extends "res://core/consumables/consumable_effect_handler.gd"
 
-## 心得：使对应具体牌型功法槽位 +1，并从正式白名单中确定性抽取尚未进入该
-## 牌型序列的功法；没有合格普通功法时由统一配装策略使用基础功法补满新槽。
+## 心得：通过统一查询增加对应精确牌型的功法槽容量，并从正式白名单中确定性
+## 获得一门功法进入功法库。获得功法与配装完全分离，不自动填补空余容量。
 ##
 ## 候选范围由上下文按效果的功法池解析（本局）或按共享功法仓库解析（战斗）；
 ## 没有合格功法时仍成功增加槽位，不跨池抽取。五条与四条可以共用功法候选池，
@@ -48,13 +48,6 @@ func validate_effect(effect: Dictionary, context, scope: String) -> void:
 func apply(effect: Dictionary, context) -> Dictionary:
 	var hand_id := str(effect.get("hand", ""))
 	var pools: Array = effect.get("pools", [])
-	var current_sequence: Array = []
-	if context.growth != null:
-		var progressions = context.growth.get("hand_technique_progression")
-		if progressions is Dictionary:
-			var progression = progressions.get(hand_id, {})
-			if progression is Dictionary:
-				current_sequence = progression.get("sequence", [])
 	var candidates: Array[String] = []
 	for candidate_value in context.insight_candidates(hand_id, pools):
 		var candidate := str(candidate_value)
@@ -65,22 +58,26 @@ func apply(effect: Dictionary, context) -> Dictionary:
 	var result: Dictionary = context.apply_insight(hand_id, candidates)
 	if not result.get("success", false):
 		return result
-	var acquired_id := str(result.get("acquired_technique_id", ""))
+	var slot_gain := int(result.get("slot_gain", 0))
+	var acquired_id := str(result.get("technique_acquired", ""))
 	var details: Array[String] = []
-	details.append("%s功法槽位 +1" % hand_id)
+	if slot_gain > 0:
+		details.append("%s功法槽位 +%d" % [hand_id, slot_gain])
+	else:
+		details.append("%s功法槽位已达上限" % hand_id)
 	if acquired_id != "":
 		details.append("获得功法：%s" % context.technique_name(acquired_id))
-	if bool(result.get("used_built_in_fallback", false)):
-		details.append("合格池暂无可抽功法，装配基础功法：%s" % context.technique_name(acquired_id))
 	return {
 		"success": true,
 		"applied": {
 			"op": "gain_insight",
 			"hand_id": hand_id,
 			"slot_count_before": int(result.get("slot_count_before", 1)),
-			"slot_count_after": int(result.get("slot_count_after", 2)),
-			"acquired_technique_id": acquired_id,
-			"technique_available": acquired_id != "",
+			"slot_count_after": int(result.get("slot_count_after", 1)),
+			"slot_gain": slot_gain,
+			"slot_gain_requested": int(result.get("slot_gain_requested", 1)),
+			"technique_acquired": acquired_id,
+			"technique_equipped": false,
 			"candidates": candidates.duplicate(),
 			"details": details,
 		},

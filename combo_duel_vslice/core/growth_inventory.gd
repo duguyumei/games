@@ -218,7 +218,8 @@ func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> 
         if not sequence.is_empty():
             var technique_id := str(sequence[0])
             initial.append(technique_id)
-            if not technique_loadout_policy.is_built_in(technique_id) \
+            if _content_catalog != null \
+                    and not technique_loadout_policy.is_built_in(technique_id) \
                     and not learned_technique_ids.has(technique_id):
                 learned_technique_ids.append(technique_id)
         hand_technique_progression[hand_id] = {
@@ -227,8 +228,7 @@ func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> 
         }
 
 func _player_initial_sequences() -> Dictionary:
-    if _content_catalog == null \
-            or not FileAccess.file_exists(PLAYER_INITIAL_SEQUENCES_PATH):
+    if not FileAccess.file_exists(PLAYER_INITIAL_SEQUENCES_PATH):
         return {}
     var parsed = JSON.parse_string(FileAccess.get_file_as_string(
         PLAYER_INITIAL_SEQUENCES_PATH))
@@ -246,15 +246,9 @@ func set_hand_technique_loadout(hand_id: String, technique_ids: Array) -> Dictio
         return {"success": false, "reason": "未知牌型：%s" % hand_id}
     var progression: Dictionary = hand_technique_progression.get(
         hand_id, {}).duplicate(true)
-    var slot_count := int(progression.get("slot_count", 1))
     var normalized: Array[String] = []
     for technique_id_value in technique_ids:
-        var technique_id := str(technique_id_value)
-        if technique_id == "":
-            return {"success": false, "reason": "功法序列包含空值"}
-        if normalized.size() >= slot_count:
-            return {"success": false, "reason": "功法序列超过当前槽位数"}
-        normalized.append(technique_id)
+        normalized.append(str(technique_id_value))
     var proposed := hand_technique_progression.duplicate(true)
     progression["sequence"] = normalized
     proposed[hand_id] = progression
@@ -282,6 +276,17 @@ func apply_insight_growth(
     }).duplicate(true)
     var before := int(progression.get("slot_count", 1))
     var sequence: Array = progression.get("sequence", []).duplicate()
+    var gain_query: Dictionary = technique_loadout_policy.resolve_insight_slot_gain(
+        self, hand_id, before)
+    if not gain_query.get("success", false):
+        return gain_query
+    var requested_gain := int(gain_query.get(
+        "effective_value",
+        TechniqueLoadoutPolicyScript.BASE_INSIGHT_SLOT_GAIN))
+    var after := mini(
+        TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT,
+        before + requested_gain)
+    var slot_gain := maxi(0, after - before)
     var available: Array[String] = []
     for candidate_value in candidates:
         var candidate := str(candidate_value)
@@ -289,64 +294,40 @@ func apply_insight_growth(
                 and technique_loadout_policy.is_hand_eligible(candidate, hand_id) \
                 and not technique_loadout_policy.is_built_in(candidate) \
                 and not available.has(candidate) \
-                and _can_append_to_insight(hand_id, candidate):
+                and not learned_technique_ids.has(candidate) \
+                and not sequence.has(candidate):
             available.append(candidate)
     available.sort()
     var acquired := ""
     if not available.is_empty():
         var index := rng.randi_range(0, available.size() - 1) if rng != null else 0
         acquired = available[index]
-    else:
-        for fallback_id in technique_loadout_policy.built_in_fallback_ids(hand_id):
-            if _can_append_to_insight(hand_id, fallback_id):
-                acquired = fallback_id
-                break
-    if acquired == "":
-        return {"success": false, "reason": "没有仍可装配的功法，心得未生效"}
-    sequence.append(acquired)
-    progression["slot_count"] = before + 1
+    progression["slot_count"] = after
     progression["sequence"] = sequence
     var proposed := hand_technique_progression.duplicate(true)
     proposed[hand_id] = progression
     var proposed_learned := learned_technique_ids.duplicate()
-    if not technique_loadout_policy.is_built_in(acquired) \
-            and not proposed_learned.has(acquired):
+    if acquired != "" and not proposed_learned.has(acquired):
         proposed_learned.append(acquired)
     var validation: Dictionary = technique_loadout_policy.validate_complete(
         self, proposed, proposed_learned, hand_id)
     if not validation.get("success", false):
         return validation
     hand_technique_progression = proposed
-    if not technique_loadout_policy.is_built_in(acquired) \
-            and not learned_technique_ids.has(acquired):
+    if acquired != "" and not learned_technique_ids.has(acquired):
         learned_technique_ids.append(acquired)
     return {
         "success": true,
         "hand_id": hand_id,
         "slot_count_before": before,
-        "slot_count_after": before + 1,
-        "acquired_technique_id": acquired,
-        "technique_available": true,
-        "no_technique_available": false,
-        "used_built_in_fallback": technique_loadout_policy.is_built_in(acquired),
+        "slot_count_after": after,
+        "slot_gain": slot_gain,
+        "slot_gain_requested": requested_gain,
+        "slot_gain_query": gain_query.duplicate(true),
+        "technique_acquired": acquired,
+        "technique_equipped": false,
+        "no_technique_available": acquired == "",
     }
-
-func _can_append_to_insight(hand_id: String, technique_id: String) -> bool:
-    if not technique_loadout_policy.is_hand_eligible(technique_id, hand_id):
-        return false
-    var proposed := hand_technique_progression.duplicate(true)
-    var progression: Dictionary = proposed.get(hand_id, {}).duplicate(true)
-    progression["slot_count"] = int(progression.get("slot_count", 1)) + 1
-    var sequence: Array = progression.get("sequence", []).duplicate()
-    sequence.append(technique_id)
-    progression["sequence"] = sequence
-    proposed[hand_id] = progression
-    var proposed_learned := learned_technique_ids.duplicate()
-    if not technique_loadout_policy.is_built_in(technique_id) \
-            and not proposed_learned.has(technique_id):
-        proposed_learned.append(technique_id)
-    return technique_loadout_policy.validate_complete(
-        self, proposed, proposed_learned, hand_id).get("success", false)
 
 func apply_insight(
         hand_id: String,
@@ -504,6 +485,19 @@ func recalculate_effective_max_life() -> int:
     return max_life
 
 func apply_to_battle_side(side) -> void:
+    var loadout_policy = technique_loadout_policy \
+        if technique_loadout_policy.has_catalog() \
+        else side.technique_loadout_policy
+    var loadout_owner = self \
+        if loadout_policy == technique_loadout_policy else side
+    var loadout_validation: Dictionary = \
+        loadout_policy.validate_complete(
+            loadout_owner, hand_technique_progression,
+            learned_technique_ids, "")
+    if not loadout_validation.get("success", false):
+        push_error("无法应用玩家功法配装：%s" % str(
+            loadout_validation.get("reason", "配装校验失败")))
+        return
     side.max_life = max_life
     side.base_max_life = base_max_life
     side.source_marker_store.restore_snapshot(source_marker_store.snapshot())
@@ -512,6 +506,9 @@ func apply_to_battle_side(side) -> void:
     side.configure_consumables(consumable_ids)
     side.hand_technique_progression = hand_technique_progression.duplicate(true)
     side.hand_technique_progression_active = true
+    if side.technique_sequence_book != null:
+        side.technique_sequence_book.configure_hand_progression(
+            hand_technique_progression)
     side.base_hand_limit_modifier = base_hand_limit_modifier
     side.hand_technique_multiplier_modifiers = (
         hand_technique_multiplier_modifiers.duplicate(true))

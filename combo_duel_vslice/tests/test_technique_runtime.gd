@@ -22,6 +22,12 @@ const BattleSideSnapshotScript = preload("res://core/battle_side_snapshot.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
 const UiMainScript = preload("res://ui/main.gd")
 const RunBuildQueryServiceScript = preload("res://core/run_build_query_service.gd")
+const PassiveRuleHandlerRegistryScript = preload(
+    "res://core/passives/passive_rule_handler_registry.gd")
+const PassiveRuleRuntimeScript = preload(
+    "res://core/passives/passive_rule_runtime.gd")
+const PassiveIntPolicyResolverScript = preload(
+    "res://core/passives/passive_int_policy_resolver.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -71,6 +77,7 @@ class LoadoutLimitTwoResolver:
 class LoadoutCatalog:
     extends RefCounted
     var techniques: Dictionary = {}
+    var items: Dictionary = {}
     var statuses: Dictionary = {}
     var sequences: Dictionary = {}
     func _init() -> void:
@@ -101,11 +108,24 @@ class LoadoutCatalog:
             "basic_guard": "formal_complete",
             "normal_probe": "formal_complete",
         }
+        items = {
+            "insight_gain_probe": {
+                "id": "insight_gain_probe",
+                "name": "心得增量探针",
+                "behaviors": [{
+                    "id": "insight_slot_gain_probe",
+                    "configuration": {"delta": 1},
+                }],
+            },
+        }
         for hand_id in hands:
             sequences[hand_id] = ["basic_scatter"]
     func get_by_id(kind: String, content_id: String) -> Dictionary:
-        return techniques.get(content_id, {}).duplicate(true) \
-            if kind == "technique" else {}
+        if kind == "technique":
+            return techniques.get(content_id, {}).duplicate(true)
+        if kind == "item":
+            return items.get(content_id, {}).duplicate(true)
+        return {}
     func definition(key: String) -> Dictionary:
         if key == "sequences":
             return sequences.duplicate(true)
@@ -129,6 +149,26 @@ class EmptyInnerLoadoutService:
     func get_loadout(_editable: bool = true, _blocked_reason: String = "") -> Dictionary:
         return {}
 
+class InsightSlotGainProbeHandler:
+    extends "res://core/passives/passive_rule_handler.gd"
+
+    var requests: Array[Dictionary] = []
+
+    func behavior_id() -> String:
+        return "insight_slot_gain_probe"
+
+    func supported_hooks() -> Array[String]:
+        return ["insight_slot_gain_query"] as Array[String]
+
+    func handle(_hook: String, context, configuration: Dictionary) -> Dictionary:
+        var request = context.payload.get("int_query")
+        requests.append(request.to_dict())
+        return {
+            "success": true,
+            "value": int(context.payload.get("current_value", 0)) \
+                + int(configuration.get("delta", 0)),
+        }
+
 func _initialize() -> void:
     if not RuntimeProfileScript.current().is_test():
         push_error("自动化测试必须显式指定 --launch-mode=test")
@@ -148,6 +188,7 @@ func _initialize() -> void:
     _test_unblockable_damage_still_absorbs_and_reflects()
     _test_all_insights_grow_empty_slots()
     _test_s2f6a_basic_techniques_and_loadout_limits()
+    _test_permanent_loadout_capacity_insight_and_runtime_compatibility()
     _test_stable_slots_temporary_insert_and_call_orders()
     _test_source_markers_life_and_defense_ports()
     _test_manual_advance_only_suppresses_effects()
@@ -1702,7 +1743,8 @@ func _test_all_insights_grow_empty_slots() -> void:
         var result: Dictionary = side.apply_insight_growth(hand_id, [])
         _assert_true(result["success"], "%s 心得在空池成功使用" % hand_id)
         _assert_equal(result["slot_count_after"], before + 1, "%s 槽位增加一" % hand_id)
-        _assert_equal(result["acquired_technique_id"], "", "%s 不生成功法" % hand_id)
+        _assert_equal(result["technique_acquired"], "", "%s 不生成功法" % hand_id)
+        _assert_equal(result["technique_equipped"], false, "%s 不自动装备功法" % hand_id)
         _assert_true(result["no_technique_available"], "%s 明确报告池空" % hand_id)
 
 func _test_s2f6a_basic_techniques_and_loadout_limits() -> void:
@@ -1801,18 +1843,213 @@ func _test_s2f6a_basic_techniques_and_loadout_limits() -> void:
 
     var original: Dictionary = growth.hand_technique_progression.duplicate(true)
     _assert_true(not growth.set_hand_technique_loadout("pair", [])["success"],
-        "未填满序列不能保存")
+        "每个精确牌型不能卸下最后一门功法")
     _assert_equal(growth.hand_technique_progression, original,
-        "不完整提交失败时八牌型原状态不变")
+        "空序列提交失败时八牌型原状态不变")
     var insight := growth.apply_insight_growth("high_card", [])
     _assert_true(insight["success"], "心得无普通候选时仍成功")
-    _assert_equal(insight["acquired_technique_id"], "basic_scatter",
-        "心得无普通候选时自动填入散招")
-    _assert_equal(growth.hand_progression("high_card")["sequence"].size(),
-        growth.hand_progression("high_card")["slot_count"],
-        "心得完成后序列仍填满")
+    _assert_equal(insight["technique_acquired"], "",
+        "心得无普通候选时不使用散招补位")
+    _assert_equal(growth.hand_progression("high_card")["sequence"].size(), 1,
+        "心得完成后实际序列保持原装备数量")
+    _assert_equal(growth.hand_progression("high_card")["slot_count"], 2,
+        "心得完成后允许保留空余容量")
     _assert_equal(growth.learned_technique_ids, ["normal_probe"],
         "基础功法不写入已习得功法集合")
+
+func _test_permanent_loadout_capacity_insight_and_runtime_compatibility() -> void:
+    var catalog := LoadoutCatalog.new()
+    var growth = GrowthInventoryScript.new(catalog, false)
+    var policy = growth.technique_loadout_policy
+    var baseline: Dictionary = growth.hand_technique_progression.duplicate(true)
+    for count in [1, 2, 3]:
+        var proposed := baseline.duplicate(true)
+        var sequence := ["basic_scatter", "basic_guard", "basic_scatter"].slice(
+            0, count)
+        proposed["pair"] = {"slot_count": 3, "sequence": sequence}
+        _assert_true(policy.validate_complete(
+            growth, proposed, growth.learned_technique_ids, "pair")["success"],
+            "容量3时装备%d门功法合法" % count)
+    var empty := baseline.duplicate(true)
+    empty["pair"] = {"slot_count": 3, "sequence": []}
+    _assert_true(not policy.validate_complete(
+        growth, empty, growth.learned_technique_ids, "pair")["success"],
+        "每个精确牌型装备0门功法非法")
+    var overflow := baseline.duplicate(true)
+    overflow["pair"] = {
+        "slot_count": 3,
+        "sequence": [
+            "basic_scatter", "basic_guard",
+            "basic_scatter", "basic_guard"],
+    }
+    _assert_true(not policy.validate_complete(
+        growth, overflow, growth.learned_technique_ids, "pair")["success"],
+        "装备数量超过容量非法")
+    var too_many_slots := baseline.duplicate(true)
+    too_many_slots["pair"] = {"slot_count": 10, "sequence": ["basic_scatter"]}
+    _assert_true(not policy.validate_complete(
+        growth, too_many_slots, growth.learned_technique_ids, "pair")["success"],
+        "单个精确牌型容量超过9非法")
+    var missing_capacity := baseline.duplicate(true)
+    missing_capacity["pair"] = {"slot_count": 0, "sequence": ["basic_scatter"]}
+    _assert_true(not policy.validate_complete(
+        growth, missing_capacity, growth.learned_technique_ids, "pair")["success"],
+        "单个精确牌型容量低于1非法")
+
+    growth.hand_technique_progression["pair"] = {
+        "slot_count": 3, "sequence": ["basic_scatter"]}
+    var before_sequence: Array = growth.hand_progression("pair")["sequence"]
+    var insight := growth.apply_insight_growth("pair", ["normal_probe"])
+    _assert_true(insight["success"], "心得容量成长与功法获得可以同时成功")
+    _assert_equal(insight["slot_gain"], 1, "心得默认实际增加1个槽位")
+    _assert_equal(insight["technique_acquired"], "normal_probe",
+        "心得获得合法功法进入功法库")
+    _assert_equal(insight["technique_equipped"], false,
+        "心得回执明确不自动装备功法")
+    _assert_equal(growth.hand_progression("pair")["sequence"], before_sequence,
+        "心得所得功法不改变实际装备序列")
+    _assert_true(growth.learned_technique_ids.has("normal_probe"),
+        "心得所得功法写入本局功法库")
+
+    var empty_pool_growth = GrowthInventoryScript.new(catalog, false)
+    var empty_pool_sequence: Array = empty_pool_growth.hand_progression(
+        "pair")["sequence"]
+    var empty_pool := empty_pool_growth.apply_insight_growth("pair", [])
+    _assert_true(empty_pool["success"], "没有功法候选时仍可增加容量")
+    _assert_equal(empty_pool["slot_gain"], 1, "空候选心得仍实际增加1个槽位")
+    _assert_equal(empty_pool["technique_acquired"], "", "空候选心得不伪造所得功法")
+    _assert_equal(empty_pool_growth.hand_progression("pair")["sequence"],
+        empty_pool_sequence, "空候选心得不使用基础功法补位")
+
+    var handler := InsightSlotGainProbeHandler.new()
+    var registry = PassiveRuleHandlerRegistryScript.new(false)
+    _assert_true(registry.register_handler(handler), "心得增量测试 Handler 注册成功")
+    var runtime = PassiveRuleRuntimeScript.new(registry, catalog)
+    var resolver = PassiveIntPolicyResolverScript.new(runtime)
+    var modified_growth = GrowthInventoryScript.new(catalog, false)
+    modified_growth.item_ids.assign(["insight_gain_probe"])
+    modified_growth.use_technique_loadout_policy_resolver(resolver)
+    var modified_sequence: Array = modified_growth.hand_progression("pair")["sequence"]
+    var modified := modified_growth.apply_insight_growth("pair", [])
+    _assert_equal(modified["slot_gain_requested"], 2,
+        "insight_slot_gain_query把基础+1改为+2")
+    _assert_equal(modified["slot_gain"], 2, "远离上限时实际增加2个槽位")
+    _assert_equal(modified_growth.hand_progression("pair")["sequence"],
+        modified_sequence, "查询修改容量仍不自动装备功法")
+    _assert_equal(handler.requests[0]["metadata"], {
+        "exact_hand_type": "pair",
+        "current_slot_count": 1,
+        "base_slot_gain": 1,
+        "maximum_slot_count": 9,
+    }, "心得增量查询公开精确牌型、当前容量、基础增量与上限")
+
+    var capped_growth = GrowthInventoryScript.new(catalog, false)
+    capped_growth.item_ids.assign(["insight_gain_probe"])
+    capped_growth.use_technique_loadout_policy_resolver(resolver)
+    capped_growth.hand_technique_progression["pair"] = {
+        "slot_count": 8, "sequence": ["basic_scatter"]}
+    var capped := capped_growth.apply_insight_growth("pair", [])
+    _assert_equal(capped["slot_gain_requested"], 2, "接近上限仍记录查询理论增量")
+    _assert_equal(capped["slot_gain"], 1, "接近9槽时按上限裁剪实际增量")
+    _assert_equal(capped["slot_count_after"], 9, "裁剪后容量恰为9")
+    var at_cap_sequence: Array = capped_growth.hand_progression("pair")["sequence"]
+    var at_cap := capped_growth.apply_insight_growth("pair", ["normal_probe"])
+    _assert_true(at_cap["success"], "达到9槽后仍正常结算心得其他结果")
+    _assert_equal(at_cap["slot_gain"], 0, "达到9槽时实际槽位增量为0")
+    _assert_equal(at_cap["technique_acquired"], "normal_probe",
+        "达到9槽后仍可获得合法功法")
+    _assert_equal(capped_growth.hand_progression("pair")["sequence"],
+        at_cap_sequence, "达到9槽获得功法仍不自动装备")
+
+    var engine = _engine_with_cards([])
+    engine.repository.configure({
+        "pool_membership": POOL_MEMBERSHIP,
+        "integration_statuses": {}, "resource_paths": [],
+        "techniques": [{
+            "id": "underfilled_auto", "name": "未满槽自动功法",
+            "pool": "high", "special": false,
+            "automatic_triggers": [{
+                "id": "after_defense", "event": "defense_gained",
+                "filters": {}, "p0": {"kind": "constant", "value": 1},
+                "timing": "immediate",
+            }],
+            "effects": [{
+                "op": "damage",
+                "amount": {"kind": "constant", "value": 2},
+            }],
+        }],
+    })
+    engine.sequence_book.configure_hand_progression({
+        "high_card": {
+            "slot_count": 3,
+            "sequence": ["underfilled_auto"],
+        },
+    })
+    var actual_slots: Array = engine.sequence_book.find_slots({
+        "hand_id": "high_card"})
+    _assert_equal(actual_slots.size(), 1,
+        "容量3但装备1门时只实例化1个实际功法槽位")
+    var stable_slot_id := str(actual_slots[0]["slot_instance_id"])
+    var life_before: int = engine.enemy.life
+    engine.battle_passive_event_service.commit("defense_gained", {
+        "event_token": "underfilled-auto", "event_serial": 9101,
+        "actor": engine.player, "owner": engine.player,
+        "effective_amount": 1, "action_token": "underfilled-root",
+        "round_number": 1,
+    })
+    _assert_equal(engine.enemy.life, life_before - 2,
+        "未填满永久容量时实际装备的自动功法仍正常触发")
+    _assert_equal(engine.sequence_book.find_slots({
+        "hand_id": "high_card"}).size(), 1,
+        "空余2格不会产生自动触发候选或空槽实例")
+    var caller: Dictionary = engine.sequence_book.current_slot("high_card")
+    var context = EffectContextScript.new().configure({
+        "ports": engine.effect_ports, "actor": engine.player,
+        "target": engine.enemy,
+        "hand_result": {"id": "high_card", "contributing": []},
+        "played_cards": [], "initial_power": 1, "power": 1,
+        "technique_id": "underfilled_auto",
+        "technique_name": "未满槽自动功法",
+        "action_token": "underfilled-call",
+        "root_action_token": "underfilled-call",
+        "slot_instance_id": stable_slot_id,
+        "sequence_book": engine.sequence_book,
+        "card_identity_policy": engine.player.card_identity_policy,
+    })
+    var next_call: Dictionary = engine.effect_ports.invoke_sequence_technique({
+        "selection": {"mode": "next", "hand_id": "high_card"},
+    }, context)
+    _assert_true(next_call.get("success", false) \
+        and not next_call.get("triggered", true),
+        "容量3但只装备1门时调用下一门没有合法目标")
+    var random_candidates: Array = engine.technique_invocation_service._candidates(
+        {"mode": "random", "hand_id": "high_card"}, context, "high_card")
+    _assert_equal(random_candidates.size(), 1, "随机调用只从实际装备功法中选择")
+    _assert_equal(str(random_candidates[0]["slot_instance_id"]), stable_slot_id,
+        "随机调用候选保留实际稳定功法实例身份")
+    var random_call: Dictionary = engine.effect_ports.invoke_sequence_technique({
+        "selection": {"mode": "random", "hand_id": "high_card"},
+    }, context)
+    _assert_true(random_call.get("success", false) \
+        and random_call.get("triggered", false),
+        "随机调用可以触发唯一实际装备功法")
+    _assert_equal(str(engine.sequence_book.current_slot(
+        "high_card")["slot_instance_id"]), stable_slot_id,
+        "调用并推进功法后原slot_instance_id保持稳定")
+    engine.player.source_marker_store.write(
+        "technique", stable_slot_id, "underfilled_auto",
+        "underfilled_probe", "battle", "set", 3)
+    engine.player.source_marker_store.write(
+        "technique", "missing-slot", "underfilled_auto",
+        "underfilled_probe", "battle", "set", 7)
+    _assert_equal(engine.player.active_technique_marker_sum({
+        "marker_id": "underfilled_probe", "scope": "battle"}), 3,
+        "active_technique_marker_sum不统计不存在的功法实例")
+    engine.sequence_book.complete_slot("high_card", stable_slot_id)
+    engine.sequence_book.move_slot_to_current("high_card", stable_slot_id)
+    _assert_equal(str(engine.sequence_book.current_slot(
+        "high_card")["slot_instance_id"]), stable_slot_id,
+        "推进和移动后实际功法slot_instance_id保持稳定")
 
 func _probe_engine(
         cards: Array,

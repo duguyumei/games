@@ -51,12 +51,23 @@ func seed_owned_techniques(side, book) -> void:
         for technique_id_value in book.sequences[hand_id]:
             side.learn_technique(str(technique_id_value))
 
-func apply_player_technique_progression(side, book, progress_snapshot) -> void:
+func apply_player_technique_progression(side, book, progress_snapshot) -> Dictionary:
     if progress_snapshot == null or not progress_snapshot.has_hand_technique_progression:
-        return
-    book.configure_hand_progression(progress_snapshot.hand_technique_progression)
-    side.hand_technique_progression = progress_snapshot.hand_technique_progression.duplicate(true)
+        return {"success": true}
+    var values: Dictionary = progress_snapshot.hand_technique_progression
+    var learned_ids: Array = progress_snapshot.learned_technique_ids \
+        if progress_snapshot.has_learned_technique_ids else []
+    var validation: Dictionary = side.technique_loadout_policy.validate_complete(
+        side, values, learned_ids, "")
+    if not validation.get("success", false):
+        return validation
+    book.configure_hand_progression(values)
+    side.hand_technique_progression = values.duplicate(true)
     side.hand_technique_progression_active = true
+    return {
+        "success": true,
+        "instance_count": book.find_slots({}).size(),
+    }
 
 func load_scenario(scenario, path: String) -> bool:
     if _content_catalog != null \
@@ -194,9 +205,6 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Di
             return inner_result
     if progress_snapshot.has_consumable_ids:
         side.configure_consumables(progress_snapshot.consumable_ids)
-    if progress_snapshot.has_hand_technique_progression:
-        side.hand_technique_progression = progress_snapshot.hand_technique_progression.duplicate(true)
-        side.hand_technique_progression_active = true
     if progress_snapshot.has_base_hand_limit_modifier:
         side.base_hand_limit_modifier = progress_snapshot.base_hand_limit_modifier
     if progress_snapshot.has_hand_technique_multiplier_modifiers:

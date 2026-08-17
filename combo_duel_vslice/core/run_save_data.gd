@@ -701,27 +701,6 @@ func _validate_hand_progression(values, catalog, errors: Array[String]) -> void:
     if not values is Dictionary:
         errors.append("growth.hand_technique_progression 必须是对象")
         return
-    for hand_id in GrowthInventoryScript.HAND_IDS:
-        if not values.has(hand_id):
-            errors.append("growth.hand_technique_progression 缺少牌型：%s" % hand_id)
-            continue
-        var progression = values[hand_id]
-        if not progression is Dictionary:
-            errors.append("growth.hand_technique_progression.%s 必须是对象" % hand_id)
-            continue
-        var slot_count = progression.get("slot_count", 0)
-        var sequence = progression.get("sequence", [])
-        if not slot_count is int or int(slot_count) < 1:
-            errors.append("growth.hand_technique_progression.%s.slot_count 必须是正整数" % hand_id)
-        if not sequence is Array or sequence.size() != int(slot_count):
-            errors.append("growth.hand_technique_progression.%s.sequence 必须填满槽位" % hand_id)
-            continue
-        for technique_id_value in sequence:
-            var technique_id := str(technique_id_value)
-            if not catalog.has_id("technique", technique_id):
-                errors.append("growth.hand_technique_progression 引用未知功法：%s" % technique_id)
-    if not errors.is_empty():
-        return
     var owner := GrowthInventoryScript.new(catalog, false)
     owner.hand_technique_progression = values.duplicate(true)
     owner.learned_technique_ids.assign(

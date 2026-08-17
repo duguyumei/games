@@ -178,8 +178,8 @@ func _build_hand_loadout(
         "available_techniques": available,
         "editable": editable,
         "blocked_reason": blocked_reason,
-        "missing_slot_count": maxi(
-            0, int(progression.get("slot_count", 1)) - sequence_ids.size()),
+        "unused_slot_count": _technique_loadout_policy.unused_slot_count(
+            sequence_ids.size(), int(progression.get("slot_count", 1))),
     })
 
 func _technique_summary(

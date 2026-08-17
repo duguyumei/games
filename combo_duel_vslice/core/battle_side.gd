@@ -14,6 +14,10 @@ const SourceContributedStatServiceScript = preload(
     "res://core/source_contributed_stat_service.gd")
 const ConditionSpecRegistryScript = preload(
     "res://core/specs/condition_spec_registry.gd")
+const TechniqueLoadoutPolicyScript = preload(
+    "res://core/technique_loadout_policy.gd")
+const PassiveIntPolicyResolverScript = preload(
+    "res://core/passives/passive_int_policy_resolver.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -69,6 +73,7 @@ var card_state_lifecycle
 var status_system
 var card_zone_service := CardZoneServiceScript.new()
 var passive_rule_runtime = null
+var technique_loadout_policy = TechniqueLoadoutPolicyScript.new()
 ## 本局持久状态在战斗内使用独立副本；战后只通过绝对快照回写。
 var passive_counter_store = null
 ## 只存在于当前战斗，不进入 RunProgressSnapshot 或存档。
@@ -110,6 +115,9 @@ func use_passive_rule_runtime(runtime) -> void:
         else null)
     passive_counter_store = RunPassiveCounterStoreScript.new(catalog)
     battle_passive_counter_store = BattlePassiveCounterStoreScript.new()
+    technique_loadout_policy = TechniqueLoadoutPolicyScript.new(
+        catalog,
+        PassiveIntPolicyResolverScript.new(runtime) if runtime != null else null)
 
 func use_battle_rule_query_service(service) -> void:
     battle_rule_query_service = service
@@ -1257,32 +1265,71 @@ func apply_insight_growth(
         return {"success": false, "reason": "未知牌型：%s" % hand_id}
     var progression: Dictionary = hand_technique_progression.get(hand_id, {
         "slot_count": 1,
-        "sequence": [],
+        "sequence": _actual_technique_ids(hand_id),
     }).duplicate(true)
     var before := int(progression.get("slot_count", 1))
-    progression["slot_count"] = before + 1
     var sequence: Array = progression.get("sequence", []).duplicate()
+    var gain_query: Dictionary = technique_loadout_policy.resolve_insight_slot_gain(
+        self, hand_id, before)
+    if not gain_query.get("success", false):
+        return gain_query
+    var requested_gain := int(gain_query.get(
+        "effective_value",
+        TechniqueLoadoutPolicyScript.BASE_INSIGHT_SLOT_GAIN))
+    var after := mini(
+        TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT,
+        before + requested_gain)
+    var slot_gain := maxi(0, after - before)
     var available: Array[String] = []
     for candidate_value in candidates:
         var candidate := str(candidate_value)
-        if candidate != "" and not sequence.has(candidate) and not available.has(candidate):
+        if candidate != "" \
+                and technique_loadout_policy.is_hand_eligible(candidate, hand_id) \
+                and not technique_loadout_policy.is_built_in(candidate) \
+                and not sequence.has(candidate) \
+                and not owned_technique_ids.has(candidate) \
+                and not available.has(candidate):
             available.append(candidate)
     available.sort()
     var acquired := ""
     if not available.is_empty():
         var index := rng.randi_range(0, available.size() - 1) if rng != null else 0
         acquired = available[index]
-        sequence.append(acquired)
-        learn_technique(acquired)
+    progression["slot_count"] = after
     progression["sequence"] = sequence
-    hand_technique_progression[hand_id] = progression
+    var proposed := hand_technique_progression.duplicate(true)
+    proposed[hand_id] = progression
+    var proposed_learned := owned_technique_ids.duplicate()
+    if acquired != "" and not proposed_learned.has(acquired):
+        proposed_learned.append(acquired)
+    if hand_technique_progression_active:
+        var validation := technique_loadout_policy.validate_complete(
+            self, proposed, proposed_learned, hand_id)
+        if not validation.get("success", false):
+            return validation
+    hand_technique_progression = proposed
+    if acquired != "":
+        learn_technique(acquired)
     return {
         "success": true,
+        "hand_id": hand_id,
         "slot_count_before": before,
-        "slot_count_after": before + 1,
-        "acquired_technique_id": acquired,
+        "slot_count_after": after,
+        "slot_gain": slot_gain,
+        "slot_gain_requested": requested_gain,
+        "slot_gain_query": gain_query.duplicate(true),
+        "technique_acquired": acquired,
+        "technique_equipped": false,
         "no_technique_available": acquired == "",
     }
+
+func _actual_technique_ids(hand_id: String) -> Array:
+    var result: Array = []
+    if technique_sequence_book == null:
+        return result
+    for slot_value in technique_sequence_book.ordered_slots(hand_id):
+        result.append(str(slot_value.get("technique_id", "")))
+    return result
 
 func learn_technique(technique_id: String) -> bool:
     if technique_id == "" or owned_technique_ids.has(technique_id):

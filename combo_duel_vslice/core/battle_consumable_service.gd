@@ -85,7 +85,7 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
         return {"success": false, "reason": target_check["reason"]}
 
     var details: Array[String] = []
-    var acquired_technique_id := ""
+    var technique_acquired := ""
     var effects: Array = definition.get("effects", [])
     if not effects is Array or effects.is_empty():
         return {"success": false, "reason": "消耗品没有效果"}
@@ -121,8 +121,8 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
                     result.get("reason", "消耗品效果执行失败"))
             return result
         var applied: Dictionary = result.get("applied", {})
-        if applied.has("acquired_technique_id"):
-            acquired_technique_id = str(applied.get("acquired_technique_id", ""))
+        if applied.has("technique_acquired"):
+            technique_acquired = str(applied.get("technique_acquired", ""))
         details.append_array(applied.get("details", []))
 
     var consumed_id: String = str(player.consume_at(slot_index))
@@ -138,6 +138,7 @@ func use_player(slot_index: int, card_ids: Array = []) -> Dictionary:
         "success": true,
         "consumable_id": consumable_id,
         "cards": cards,
-        "acquired_technique_id": acquired_technique_id,
+        "technique_acquired": technique_acquired,
+        "technique_equipped": false,
         "detail": "；".join(details),
     }

@@ -215,8 +215,14 @@ func setup_battle(
                 "error", "player_progress", "玩家战斗装配失败",
                 str(progress_setup.get("reason", "未知错误")))
             return false
-        _battle_setup_service.apply_player_technique_progression(
+        var progression_setup: Dictionary = \
+            _battle_setup_service.apply_player_technique_progression(
             engine.player, engine.sequence_book, progress_snapshot)
+        if not progression_setup.get("success", false):
+            engine.game_log.record_system(
+                "error", "player_progress", "玩家功法配装失败",
+                str(progression_setup.get("reason", "未知错误")))
+            return false
         engine.use_external_enemy_actions(_remote_ai_enabled)
         if _remote_ai_enabled:
             _configure_ai_coordinator()
@@ -321,6 +327,13 @@ func apply_player_progress_from(progress_snapshot: RunProgressSnapshot) -> void:
         engine.player, progress_snapshot)
     if not result.get("success", false):
         push_error("玩家战斗装配失败：%s" % str(result.get("reason", "未知错误")))
+        return
+    var progression_result: Dictionary = \
+        _battle_setup_service.apply_player_technique_progression(
+            engine.player, engine.sequence_book, progress_snapshot)
+    if not progression_result.get("success", false):
+        push_error("玩家功法配装失败：%s" % str(
+            progression_result.get("reason", "未知错误")))
 
 func player_progress_snapshot() -> RunProgressSnapshot:
     return _battle_setup_service.capture_progress(engine.player, _player_run_deck)
