@@ -635,6 +635,10 @@ func _freeze_state_change(
         "current_base_qi": int(card.current_base_qi_value()),
         "metadata": metadata,
     }
+    var effective_query := _event_effective_qi(
+        holder, card, "card_state_changed")
+    values["effective_qi"] = int(effective_query.get("effective_value", 0))
+    values["effective_qi_query"] = effective_query
     if not primary.is_empty():
         values["category"] = str(primary.get("category", ""))
         values["anomaly_id"] = str(primary.get("content_id", "")) \
@@ -643,6 +647,34 @@ func _freeze_state_change(
         values["reshape_id"] = str(primary.get("content_id", "")) \
             if str(primary.get("domain", "")) == "temporary_reshape" else ""
     return values
+
+func _event_effective_qi(holder, card, boundary: String) -> Dictionary:
+    if holder != null and holder.battle_rule_query_service != null:
+        var query = holder.battle_rule_query_service.resolve_effective_qi(
+            holder, card, {
+                "actor": holder,
+                "purpose": "event_snapshot",
+                "evaluation_mode": "runtime",
+                "cards": [card],
+                "participating_card_ids": [],
+                "source_kind": "committed_event",
+            })
+        if query.success:
+            return query.to_dict()
+        holder.battle_rule_query_service.report_failure(
+            query, "%s_effective_qi" % boundary)
+        return query.to_dict()
+    var value := int(card.effective_qi_value()) \
+        if card.has_method("effective_qi_value") else int(card.qi_value)
+    return {
+        "success": true,
+        "base_value": value,
+        "effective_value": maxi(0, value),
+        "source_breakdown": [],
+        "fingerprint": "",
+        "request_fingerprint": "",
+        "errors": [],
+    }
 
 func _publish_frozen_state_change(values: Dictionary) -> Dictionary:
     if values.is_empty():

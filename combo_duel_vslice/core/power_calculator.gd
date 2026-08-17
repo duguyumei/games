@@ -8,7 +8,8 @@ static func calculate(
         modifiers: Dictionary = {},
         contribution_modifier: Callable = Callable(),
         identity_policy = null,
-        identity_context: Dictionary = {}) -> Dictionary:
+        identity_context: Dictionary = {},
+        effective_qi_provider: Callable = Callable()) -> Dictionary:
     if hand_result.is_empty():
         return {}
     var card_total := 0
@@ -23,7 +24,8 @@ static func calculate(
     }
     for card in numeric_cards:
         var bundle := _qualified_card_numeric_bundle(
-            card, contribution_modifier, identity_policy, identity_context)
+            card, contribution_modifier, identity_policy, identity_context,
+            effective_qi_provider)
         card_total += int(bundle["contribution"])
         card_multiplier_bonus += int(bundle["technique_multiplier_bonus"])
         card_amp_percent += int(bundle["power_amp_percent"])
@@ -118,7 +120,8 @@ static func _qualified_card_numeric_bundle(
         card,
         contribution_modifier: Callable,
         identity_policy = null,
-        identity_context: Dictionary = {}) -> Dictionary:
+        identity_context: Dictionary = {},
+        effective_qi_provider: Callable = Callable()) -> Dictionary:
     var identity: Dictionary = {}
     if identity_policy != null and identity_policy.has_method("resolve"):
         var identity_result: Dictionary = identity_policy.resolve(
@@ -140,17 +143,24 @@ static func _qualified_card_numeric_bundle(
             and card.has_method("reshape_card_contribution"):
         # 读取一次会确保旧卡牌夹具也完成 fallback rules 绑定；该调用纯计算且结果
         # 不参与累加，真正数值统一由单牌触发包从相同原始输入分别计算。
-        card.effective_qi_value(false, {"participating": true})
+        var calculation_context := {"participating": true}
+        if effective_qi_provider.is_valid():
+            calculation_context["effective_qi_override"] = int(
+                effective_qi_provider.call(card))
+        else:
+            card.effective_qi_value(false, calculation_context)
         var rules = card.reshape_rule_service
         if rules != null and rules.has_method(
                 "calculate_qualified_numeric_bundle"):
             var bundle: Dictionary = rules.calculate_qualified_numeric_bundle(
                 card,
-                {"participating": true},
+                calculation_context,
                 contribution_modifier)
             bundle["identity"] = identity
             return bundle
-    var contribution := int(card.qi_value)
+    var effective_qi := int(effective_qi_provider.call(card)) \
+        if effective_qi_provider.is_valid() else int(card.qi_value)
+    var contribution := effective_qi
     if contribution_modifier.is_valid():
         contribution = int(contribution_modifier.call(card, contribution))
     return {
@@ -158,7 +168,7 @@ static func _qualified_card_numeric_bundle(
         "source_trigger": "numeric_bundle",
         "replay_count": 0,
         "trigger_count": 1,
-        "effective_qi": int(card.qi_value),
+        "effective_qi": effective_qi,
         "contribution": contribution,
         "technique_multiplier_bonus": 0,
         "power_amp_percent": 0,

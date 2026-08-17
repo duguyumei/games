@@ -125,7 +125,8 @@ func preview_dto(
         technique_definition.to_definition()
         if technique_definition != null else {})
     var group_snapshot := HandGroupSnapshotScript.freeze(
-        cards, hand_result, side, target)
+        cards, hand_result, side, target, [],
+        power_result.get("effective_qi_queries", {}))
     var condition := {"ok": true, "reason": "空序列"}
     if technique_definition != null:
         condition = technique_repository.conditions_met(
@@ -245,6 +246,8 @@ func preview_dto(
         "passive_power_query_inputs": {
             "modifiers": modifiers,
             "queries": power_result["queries"],
+            "effective_qi_source_snapshot": power_result.get(
+                "effective_qi_source_snapshot", []),
         },
         "same_qi": same_qi_group.duplicate(true),
         "same_qi_group": same_qi_group,
@@ -292,8 +295,6 @@ func recalculate_confirmed_power(
         preview: Dictionary,
         action_token: String,
         frozen_multiplier_bonus: int = 0) -> Dictionary:
-    preview["group_snapshot"] = HandGroupSnapshotScript.freeze(
-        preview.get("cards", []), preview.get("hand", {}), side, target)
     var inputs: Dictionary = preview.get(
         "passive_power_query_inputs", {})
     var modifiers: Dictionary = inputs.get("modifiers", {}).duplicate(true)
@@ -310,8 +311,12 @@ func recalculate_confirmed_power(
     preview["pending_power_fixed_amount"] = pending_total
     var result := _resolve_power_values(
         side, target, preview.get("hand", {}), preview.get("cards", []),
-        modifiers, action_token, "action_confirmed")
+        modifiers, action_token, "action_confirmed",
+        inputs.get("effective_qi_source_snapshot", []))
     if result.get("success", false):
+        preview["group_snapshot"] = HandGroupSnapshotScript.freeze(
+            preview.get("cards", []), preview.get("hand", {}), side, target,
+            [], result.get("effective_qi_queries", {}))
         preview["values"] = result["values"]
         preview["group_snapshot"]["card_contribution"] = int(
             preview["values"].get("card_total", 0))
@@ -424,8 +429,8 @@ func _apply_technique_power_formation(side, target, preview: Dictionary) -> void
         for card in preview.get("group_snapshot", {}).get(
                 "contributing_cards", []):
             if not card.has_anomaly("mark", "burned_out"):
-                total += HandGroupSnapshotScript.current_effective_qi(
-                    preview.get("group_snapshot", {}), card, side)
+                total += HandGroupSnapshotScript.frozen_effective_qi(
+                    preview.get("group_snapshot", {}), card)
         var fixed_bonus := total * int(formation.get("multiplier", 1))
         preview["frozen_power_formation"] = {
             "kind": kind, "fixed_bonus": fixed_bonus, "target_id": "",
@@ -446,7 +451,7 @@ func _apply_technique_power_formation(side, target, preview: Dictionary) -> void
     var chosen = null
     if not candidates.is_empty():
         chosen = candidates[effect_executor.rng.randi_range(0, candidates.size() - 1)]
-    var bonus := HandGroupSnapshotScript.current_effective_qi(snapshot, chosen, side) \
+    var bonus := HandGroupSnapshotScript.frozen_effective_qi(snapshot, chosen) \
         if chosen != null else 0
     preview["frozen_power_formation"] = {
         "fixed_bonus": bonus,
@@ -498,9 +503,22 @@ func _resolve_power_values(
         cards: Array,
         modifiers: Dictionary,
         action_token: String,
-        source_kind: String) -> Dictionary:
+        source_kind: String,
+        effective_qi_source_snapshot: Array = []) -> Dictionary:
     var effective := modifiers.duplicate(true)
     var details: Dictionary = {}
+    var effective_input := _resolve_effective_qi_inputs(
+        side, target, hand_result, cards, action_token, source_kind,
+        effective_qi_source_snapshot)
+    if not effective_input.get("success", false):
+        return effective_input
+    var source_snapshot: Array = effective_input.get("source_snapshot", [])
+    var effective_qi_queries: Dictionary = effective_input.get("queries", {})
+    var effective_qi_values: Dictionary = effective_input.get("values", {})
+    var participating_ids: Array = effective_input.get("participating_ids", [])
+    var query_card_facts := _card_facts(
+        cards, side.card_identity_policy, effective_qi_values,
+        side, target, participating_ids)
     var stages := [
         ["base_fixed", "power_base_fixed_query"],
         ["multiplier_bonus", "power_multiplier_bonus_query"],
@@ -523,7 +541,7 @@ func _resolve_power_values(
                 if round_number_reader.is_valid() else 0,
             "hand_id": str(hand_result.get("id", "")),
             "source_kind": source_kind,
-            "card_facts": _card_facts(cards, side.card_identity_policy),
+            "card_facts": query_card_facts,
             "metadata": {"stage": field},
         })
         if not query.success:
@@ -538,19 +556,16 @@ func _resolve_power_values(
             "source_breakdown": query.modifier_breakdown.duplicate(true),
             "fingerprint": query.source_fingerprint,
         }
-    var contribution_modifier := Callable()
-    if side.status_system != null:
-        contribution_modifier = Callable(
-            side.status_system, "modify_card_contribution").bind(side)
     var base_modifiers := effective.duplicate(true)
     base_modifiers["power_fixed"] = 0
     base_modifiers["power_amp_percent"] = 0
     var values := PowerCalculatorScript.calculate(
         hand_result,
         base_modifiers,
-        contribution_modifier,
+        Callable(),
         side.card_identity_policy,
-        {"owner": side, "actor": side, "target": target})
+        {"owner": side, "actor": side, "target": target},
+        func(card): return int(effective_qi_values.get(str(card.id), 0)))
     var final_power: Dictionary = technique_resolution_service.resolve_power(
         side, target, hand_result, cards,
         int(values.get("initial_power", 0)), action_token, source_kind,
@@ -560,7 +575,8 @@ func _resolve_power_values(
         int(values.get("card_amp_percent", 0)),
         false,
         int(round_number_reader.call()) \
-            if round_number_reader.is_valid() else 0)
+            if round_number_reader.is_valid() else 0,
+        query_card_facts)
     if not final_power.get("success", false):
         return final_power
     var resolved_values: Dictionary = final_power.get("values", {})
@@ -570,24 +586,93 @@ func _resolve_power_values(
         values[field] = resolved_values.get(field, values.get(field, 0))
     details.merge(final_power.get("queries", {}), true)
     values["passive_power_queries"] = details.duplicate(true)
-    return {"success": true, "values": values, "queries": details}
+    values["effective_qi_queries"] = effective_qi_queries.duplicate(true)
+    return {
+        "success": true, "values": values, "queries": details,
+        "effective_qi_queries": effective_qi_queries,
+        "effective_qi_source_snapshot": source_snapshot,
+    }
 
-func _card_facts(cards: Array, identity_policy = null) -> Array:
+func _resolve_effective_qi_inputs(
+        side, target, hand_result: Dictionary, cards: Array,
+        action_token: String, source_kind: String,
+        provided_source_snapshot: Array) -> Dictionary:
+    var source_snapshot := provided_source_snapshot.duplicate(true)
+    if source_snapshot.is_empty() and battle_rule_query_service != null \
+            and source_kind != "action_confirmed":
+        source_snapshot = battle_rule_query_service.capture_source_snapshot(
+            side, {"actor": side, "target": target})
+    var queries: Dictionary = {}
+    var values: Dictionary = {}
+    var participating: Array = hand_result.get(
+        "numeric_contributing", hand_result.get("contributing", []))
+    var participating_ids: Array = participating.map(
+        func(card): return str(card.id))
+    for card in cards:
+        if battle_rule_query_service == null:
+            var base_value := int(card.effective_qi_value(
+                false, {"participating": participating_ids.has(str(card.id))}))
+            queries[str(card.id)] = {
+                "success": true, "base_value": base_value,
+                "effective_value": base_value, "source_breakdown": [],
+                "fingerprint": "", "request_fingerprint": "",
+            }
+            values[str(card.id)] = base_value
+            continue
+        var query = battle_rule_query_service.resolve_effective_qi(side, card, {
+            "actor": side, "target": target,
+            "purpose": "power_calculation",
+            "evaluation_mode": "confirm" if action_token != "" else "preview",
+            "cards": cards,
+            "participating_card_ids": participating_ids,
+            "hand_result": hand_result,
+            "action_token": action_token,
+            "round_number": int(round_number_reader.call()) \
+                if round_number_reader.is_valid() else 0,
+            "source_kind": source_kind,
+            "source_snapshot": source_snapshot,
+        })
+        if not query.success:
+            battle_rule_query_service.report_failure(
+                query, "action_power_effective_qi")
+            return {
+                "success": false,
+                "reason": "effective_qi_query：%s" % "；".join(query.errors),
+            }
+        queries[str(card.id)] = query.to_dict()
+        values[str(card.id)] = int(query.effective_value)
+    return {
+        "success": true,
+        "source_snapshot": source_snapshot,
+        "queries": queries,
+        "values": values,
+        "participating_ids": participating_ids,
+    }
+
+func _card_facts(
+        cards: Array, identity_policy = null,
+        effective_qi_values: Dictionary = {}, owner = null, target = null,
+        participating_ids: Array = []) -> Array:
     var result: Array = []
     for card in cards:
         var attributes: Array[String] = []
         for attribute in ["wind", "forest", "fire", "mountain"]:
             if _card_has_attribute(card, attribute, identity_policy):
                 attributes.append(attribute)
-        result.append({
-            "instance_id": str(card.id),
-            "definition_id": str(card.current_definition_id()) \
-                if card.has_method("current_definition_id") else str(card.definition_id),
-            "qi": int(card.effective_qi_value()) \
-                if card.has_method("effective_qi_value") else int(card.qi_value),
-            "attributes": attributes,
-            "identity": _card_identity_dict(card, identity_policy),
-        })
+        var fact: Dictionary = battle_rule_query_service.card_fact(
+            card, owner, target, participating_ids.has(str(card.id))) \
+            if battle_rule_query_service != null and owner != null else {
+                "instance_id": str(card.id),
+                "definition_id": str(card.current_definition_id()) \
+                    if card.has_method("current_definition_id") \
+                    else str(card.definition_id),
+                "participating": participating_ids.has(str(card.id)),
+            }
+        fact["qi"] = int(effective_qi_values.get(str(card.id), 0))
+        fact["effective_qi"] = int(effective_qi_values.get(str(card.id), 0))
+        fact["attributes"] = attributes
+        fact["identity"] = _card_identity_dict(card, identity_policy)
+        result.append(fact)
     return result
 
 func _card_identity_dict(card, identity_policy) -> Dictionary:

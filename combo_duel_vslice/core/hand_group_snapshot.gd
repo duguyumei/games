@@ -12,7 +12,8 @@ static func freeze(
         hand_result: Dictionary,
         side,
         target = null,
-        on_play_success_ids: Array = []) -> Dictionary:
+        on_play_success_ids: Array = [],
+        effective_qi_receipts: Dictionary = {}) -> Dictionary:
     var contributing: Array = hand_result.get("contributing", []).duplicate()
     var extra: Array = []
     for card in played_cards:
@@ -24,6 +25,11 @@ static func freeze(
         for attribute in ATTRIBUTES:
             if _has_attribute(card, attribute, side, target):
                 attributes.append(attribute)
+        var effective_receipt: Dictionary = effective_qi_receipts.get(
+            str(card.id), {})
+        var effective_value := int(effective_receipt.get("effective_value", 0)) \
+            if not effective_receipt.is_empty() \
+            else current_effective_qi({}, card, side)
         facts_by_id[str(card.id)] = {
             "card": card,
             "instance_id": str(card.id),
@@ -33,7 +39,8 @@ static func freeze(
             "card_base_qi_at_freeze": int(card.qi_value),
             "base_attribute_at_freeze": str(card.current_attribute()) \
                 if card.has_method("current_attribute") else str(card.attribute),
-            "effective_qi_at_freeze": current_effective_qi({}, card, side),
+            "effective_qi_at_freeze": effective_value,
+            "effective_qi_query_at_freeze": effective_receipt.duplicate(true),
             "growth_at_freeze": card.anomaly_layers("buff", "growth"),
             "heat_at_freeze": card.anomaly_layers("buff", "qi_heat"),
             "poison_at_freeze": card.has_anomaly("state", "poison"),
@@ -58,6 +65,7 @@ static func freeze(
     for card in played_poison_cards:
         played_poison_amount += int(facts_by_id[str(card.id)]["effective_qi_at_freeze"])
     return {
+        "hand_id": str(hand_result.get("id", "")),
         "played_cards": played_cards.duplicate(),
         "contributing_cards": contributing,
         "extra_cards": extra,
@@ -71,10 +79,22 @@ static func freeze(
     }
 
 static func current_effective_qi(snapshot: Dictionary, card, side) -> int:
-    if side != null and side.status_system != null:
-        var value: int = int(card.effective_qi_value()) \
-            if card.has_method("effective_qi_value") else int(card.qi_value)
-        return maxi(0, side.status_system.modify_card_contribution(card, value, side))
+    if side != null and side.battle_rule_query_service != null:
+        var query = side.battle_rule_query_service.resolve_effective_qi(side, card, {
+            "actor": side,
+            "purpose": "effect_value",
+            "evaluation_mode": "runtime",
+            "cards": snapshot.get("played_cards", [card]),
+            "participating_card_ids": snapshot.get(
+                "contributing_cards", [card]).map(
+                    func(value): return str(value.id)),
+            "hand_result": {"id": str(snapshot.get("hand_id", ""))},
+        })
+        if query.success:
+            return int(query.effective_value)
+        side.battle_rule_query_service.report_failure(
+            query, "hand_group_snapshot_current_effective_qi")
+        return 0
     return maxi(0, int(card.effective_qi_value()) \
         if card.has_method("effective_qi_value") else int(card.qi_value))
 
@@ -99,6 +119,16 @@ static func base_qi_sum(snapshot: Dictionary, cards: Array) -> int:
 static func frozen_effective_qi(snapshot: Dictionary, card) -> int:
     return int(snapshot.get("facts_by_id", {}).get(
         str(card.id), {}).get("effective_qi_at_freeze", 0))
+
+static func frozen_base_qi(snapshot: Dictionary, card) -> int:
+    return int(snapshot.get("facts_by_id", {}).get(
+        str(card.id), {}).get("base_qi_at_freeze", _base_qi(card)))
+
+static func confirmed_or_current_effective_qi(
+        snapshot: Dictionary, card, side) -> int:
+    if snapshot.get("facts_by_id", {}).has(str(card.id)):
+        return frozen_effective_qi(snapshot, card)
+    return current_effective_qi(snapshot, card, side)
 
 static func frozen_growth(snapshot: Dictionary, card) -> int:
     return int(snapshot.get("facts_by_id", {}).get(

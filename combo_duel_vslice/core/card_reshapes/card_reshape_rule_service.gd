@@ -93,8 +93,10 @@ func calculate_numeric_bundle_once(
         card,
         calculation_context: Dictionary = {},
         contribution_modifier: Callable = Callable()) -> Dictionary:
-    var effective_qi := maxi(0, _run_numeric(
-        card, "effective_qi", _base_qi_value(card), calculation_context))
+    var effective_qi := maxi(0, int(calculation_context.get(
+        "effective_qi_override",
+        _run_numeric(
+            card, "effective_qi", _base_qi_value(card), calculation_context))))
     var contribution := _run_numeric(
         card, "card_contribution", effective_qi, calculation_context)
     if contribution_modifier.is_valid():

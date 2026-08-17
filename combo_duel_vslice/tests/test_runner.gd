@@ -3937,8 +3937,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "Registry 明确登记二十五个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        12,
-        "Registry 明确登记十二个战斗整数查询")
+        13,
+        "Registry 明确登记十三个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:

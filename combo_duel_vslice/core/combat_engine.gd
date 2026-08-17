@@ -198,6 +198,9 @@ func _init(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
     battle_rule_query_service = BattleRuleQueryServiceScript.new(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
+    battle_rule_query_service.use_rng(rng)
+    battle_rule_query_service.use_committed_event_service(
+        battle_passive_event_service)
     hand_recognition_policy = HandRecognitionPolicyScript.new(passive_rule_runtime)
     card_identity_policy = CardIdentityPolicyScript.new(passive_rule_runtime)
     battle_permission_service = BattlePermissionServiceScript.new(passive_rule_runtime)

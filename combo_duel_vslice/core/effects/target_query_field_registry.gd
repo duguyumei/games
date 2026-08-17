@@ -226,10 +226,24 @@ func card_has_attribute(card, attribute: String, facts, match_context: Dictionar
     return card.is_attribute(attribute)
 
 func current_effective_qi(card, match_context: Dictionary) -> int:
+    var values: Dictionary = match_context.get("effective_qi_values", {})
+    if values.has(str(card.id)):
+        return int(values[str(card.id)])
     var context = match_context.get("context")
     var side = match_context.get("side")
     if context != null and context.ports != null and side != null:
-        return int(context.ports.current_effective_qi(side, card))
+        return int(context.ports.current_effective_qi(side, card, {
+            "actor": context.actor,
+            "target": context.target,
+            "purpose": "target_query",
+            "evaluation_mode": "runtime",
+            "cards": match_context.get("query_cards", [card]),
+            "participating_card_ids": [],
+            "hand_result": context.hand_result,
+            "action_token": context.action_token,
+            "source_kind": context.source_kind,
+            "boundary": "target_query_field_registry",
+        }))
     return int(card.effective_qi_value()) \
         if card.has_method("effective_qi_value") else int(card.qi_value)
 

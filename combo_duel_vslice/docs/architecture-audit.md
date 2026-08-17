@@ -1472,3 +1472,21 @@ content pipeline 与项目加载门禁。项目加载覆盖 684 个脚本／场�
 `/tmp/taiwu-run-transaction-final-design.log`）。成功 stdout 与 Godot 日志的禁止诊断词扫描结果为
 零匹配，CA 证书警告按 AGENTS.md 规则记为非阻塞。该证据与本节结论共同构成最终架构验收，不改写
 此前各批次的历史回归记录。
+
+## 2026-08-17 有效真气值唯一战斗查询管线
+
+`BattleRuleQueryService`现登记正式`effective_qi_query`，并由
+`resolve_effective_qi`独占战斗请求构造。卡牌自身阶段仍唯一属于`QiCard`与
+`CardReshapeRuleService`；来源修正沿用`PassiveRuleRuntime`的来源解析、稳定Invocation顺序、来源
+快照与纯查询计数端口。没有新增`EffectiveQiService`、Provider、数值总线或内容ID分支。
+
+调用链已迁移到同一入口：`ActionPreviewService`与确认重算先取得逐牌回执，再把值交给
+`PowerCalculator`；`PowerCalculator`继续独立执行card_contribution/倍率/增幅；
+`HandGroupSnapshot`冻结确认值；`TechniqueResolutionService`、`BattleCardEffectService`、
+`EffectTargetQuery/TargetQueryFieldRegistry`、ValueSpec、AI候选画像及`card_moved/card_state_changed`
+事实快照均消费该协议。确认快照和runtime当前值有明确API区分。
+
+查询公开稳定卡牌实例/定义、当前基础值/牌阶/属性、异状分类摘要、永久/临时重塑、燃尽与参与标识，
+并公开完整行动牌集合、实际数量和精确牌型。请求指纹只包含稳定值和来源执行计划，不包含Object地址。
+纯查询检查覆盖双方战斗状态、战斗RNG和committed事件禁入；失败通过既有scenario error边界报告。
+具体内功、物品和暂缓功法均未接入，本节只证明公共协议所有权已经收口。

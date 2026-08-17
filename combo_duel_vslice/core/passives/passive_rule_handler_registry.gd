@@ -28,6 +28,7 @@ const BATTLE_INT_QUERY_HOOKS := [
     "defense_retention_percent_query",
     "same_qi_capacity_query",
     "life_recovery_query",
+    "effective_qi_query",
 ]
 
 const BATTLE_POLICY_QUERY_HOOKS := [
@@ -73,6 +74,7 @@ const NON_EVENT_HOOKS := [
     "defense_retention_percent_query",
     "same_qi_capacity_query",
     "life_recovery_query",
+    "effective_qi_query",
     "hand_evaluation_options_query",
     "card_identity_query",
     "card_play_permission_query",

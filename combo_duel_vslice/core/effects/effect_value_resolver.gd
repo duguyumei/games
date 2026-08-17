@@ -51,3 +51,22 @@ func noncontributing_qi_total(context) -> int:
         if not contributing.has(card):
             total += int(card.qi_value)
     return maxi(0, total)
+
+func effective_qi_context(runtime, purpose: String) -> Dictionary:
+    var cards: Array = runtime.group_snapshot.get(
+        "played_cards", runtime.played_cards)
+    var contributing: Array = runtime.group_snapshot.get(
+        "contributing_cards", runtime.hand_result.get("contributing", []))
+    return {
+        "actor": runtime.actor,
+        "target": runtime.target,
+        "purpose": purpose,
+        "evaluation_mode": "runtime",
+        "cards": cards,
+        "participating_card_ids": contributing.map(
+            func(card): return str(card.id)),
+        "hand_result": runtime.hand_result,
+        "action_token": runtime.action_token,
+        "source_kind": runtime.source_kind,
+        "boundary": "value_spec",
+    }

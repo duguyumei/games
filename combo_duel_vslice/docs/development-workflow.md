@@ -756,3 +756,22 @@ Godot 进程串行运行并使用独立 `/tmp` 日志。运行器自检的缺失
 `/tmp/taiwu-run-transaction-final-design-capture.log`（此前同一检查的指定日志为
 `/tmp/taiwu-run-transaction-final-design.log`）。五批链路已达到进入功法、内功和物品内容接入阶段
 的门槛；下一步应由内容与数值验收驱动，不因架构形式继续拆分。
+
+## 有效真气值阶段查询协议（2026-08-17）
+
+战斗层读取单张真气“当前算多少”时，统一调用
+`BattleRuleQueryService.resolve_effective_qi(owner, card, context)`。该方法先让
+`QiCard/CardReshapeRuleService`完成基础值、永久/临时重塑、异状与燃尽的卡牌自身阶段，再派发来源中立
+`effective_qi_query`，最后统一截断到不低于0。内容Handler只能改写查询当前值，不能复制卡牌自身
+算法；`effective_qi`与`PowerCalculator`中的`card_contribution`、牌型倍率和功法增幅是不同概念。
+
+正式上下文必须使用`purpose`（`power_calculation/effect_value/target_query/event_snapshot`）和
+`evaluation_mode`（`preview/confirm/runtime/ai`），并由查询服务统一构造逐牌事实、完整参与集合、实际
+出牌数、精确牌型和稳定请求指纹。调用方不得自行拼装`effective_qi_query`字典。预览捕获一次来源
+快照；确认以同一快照重验并把逐牌回执写入`HandGroupSnapshot`。未明确要求current的行动内效果优先
+读取确认快照；明确current时才走runtime查询。
+
+纯查询沿用战斗状态快照检查，并额外守卫战斗RNG和committed事件发布。失败不得回退到另一套算法：
+能够返回结果对象的边界直接失败；只返回整数的窄端口报告scenario error并返回0。合法保留的直接
+`card.effective_qi_value()`仅限查询服务内部的卡牌自身阶段、`CardReshapeRuleService/PowerCalculator`
+内部数值包，以及未装配BattleRuntime查询服务的兼容/测试fallback。

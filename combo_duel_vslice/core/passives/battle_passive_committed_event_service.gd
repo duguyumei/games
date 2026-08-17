@@ -23,6 +23,8 @@ var _serial: int = 0
 var _weak_listeners: Array[Dictionary] = []
 var _publication_transaction_depth: int = 0
 var _pending_publications: Array[Dictionary] = []
+var _pure_query_depth: int = 0
+var _pure_query_violation: bool = false
 
 func _init(passive_runtime, scenario_error_callback: Callable = Callable()) -> void:
     _runtime_ref = weakref(passive_runtime)
@@ -45,6 +47,8 @@ func close_battle() -> void:
     _serial = 0
     _publication_transaction_depth = 0
     _pending_publications.clear()
+    _pure_query_depth = 0
+    _pure_query_violation = false
 
 func capture_transaction_state() -> Dictionary:
     return {
@@ -59,6 +63,21 @@ func restore_transaction_state(state: Dictionary) -> void:
     execution_history.assign(state.get("execution_history", []))
     _publication_transaction_depth = 0
     _pending_publications.clear()
+    _pure_query_depth = 0
+    _pure_query_violation = false
+
+func begin_pure_query() -> void:
+    if _pure_query_depth == 0:
+        _pure_query_violation = false
+    _pure_query_depth += 1
+
+func end_pure_query() -> bool:
+    _pure_query_depth = maxi(0, _pure_query_depth - 1)
+    if _pure_query_depth > 0:
+        return _pure_query_violation
+    var violated := _pure_query_violation
+    _pure_query_violation = false
+    return violated
 
 func begin_publication_transaction() -> void:
     _publication_transaction_depth += 1
@@ -107,6 +126,12 @@ func make_token(
         action_token, owner_id, card_instance_id]
 
 func commit(event_kind: String, values: Dictionary) -> Dictionary:
+    if _pure_query_depth > 0:
+        _pure_query_violation = true
+        return {
+            "success": false, "reused": false,
+            "reason": "纯查询期间不得发送 committed 事件",
+        }
     if not BattleEventCatalogScript.is_committed(event_kind):
         return _fail(event_kind, "未知 committed 事件：%s" % event_kind)
     var runtime = _runtime_ref.get_ref()

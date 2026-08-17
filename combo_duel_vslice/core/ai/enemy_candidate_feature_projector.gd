@@ -74,6 +74,11 @@ func project(
     })
     if not action_query.get("success", false):
         return action_query
+    var played_qi := _effective_qi_total(
+        played_cards, actor, target, preview, round_number,
+        contributing_ids)
+    if not played_qi.get("success", false):
+        return played_qi
     var retained_potential := _retained_hand_potential(retained_cards, actor)
     var future_discount := clampf(float(policy.get("future_value_discount", 0.5)), 0.0, 1.0)
     result["future"] = {
@@ -88,7 +93,7 @@ func project(
     }
     result["card_state"] = {
         "positive_play_value": (
-            _effective_qi_total(played_cards) * 0.05
+            int(played_qi.get("value", 0)) * 0.05
             + float(play_query.get("estimated_value", 0.0))),
         "negative_card_cleanup_value": float(
             play_query.get("negative_card_cleanup_value", 0.0)),
@@ -229,11 +234,42 @@ func _card_ids(cards: Array) -> Array[String]:
         result.append(str(card.id))
     return result
 
-func _effective_qi_total(cards: Array) -> int:
+func _effective_qi_total(
+        cards: Array, actor, target, preview: Dictionary,
+        round_number: int, contributing_ids: Array[String]) -> Dictionary:
     var total := 0
+    var query_service = actor.battle_rule_query_service \
+        if actor != null else null
     for card in cards:
-        total += maxi(0, int(card.effective_qi_value()))
-    return total
+        if query_service == null:
+            total += maxi(0, int(card.effective_qi_value()))
+            continue
+        var query_context := {
+            "actor": actor,
+            "target": target,
+            "purpose": "power_calculation",
+            "evaluation_mode": "ai",
+            "cards": cards,
+            "participating_card_ids": contributing_ids,
+            "hand_result": preview.get("hand", {}),
+            "round_number": round_number,
+            "source_kind": "ai_candidate",
+        }
+        var power_inputs: Dictionary = preview.get(
+            "passive_power_query_inputs", {})
+        if power_inputs.has("effective_qi_source_snapshot"):
+            query_context["source_snapshot"] = power_inputs.get(
+                "effective_qi_source_snapshot", []).duplicate(true)
+        var query = query_service.resolve_effective_qi(
+            actor, card, query_context)
+        if not query.success:
+            query_service.report_failure(query, "enemy_candidate_effective_qi")
+            return {
+                "success": false,
+                "reason": "effective_qi_query：%s" % "；".join(query.errors),
+            }
+        total += int(query.effective_value)
+    return {"success": true, "value": total}
 
 func _unique_strings(values: Array) -> Array[String]:
     var result: Array[String] = []

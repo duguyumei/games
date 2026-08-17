@@ -251,12 +251,22 @@ func shuffle_zone(side, zone: String, rng: RandomNumberGenerator) -> void:
         side.card_zone_service.zone(side, zone), rng)
 
 
-func current_effective_qi(side, card) -> int:
-    var reshape_value: int = (
-        card.effective_qi_value()
+func current_effective_qi(side, card, query_context: Dictionary = {}) -> int:
+    if side != null and side.battle_rule_query_service != null:
+        var values := query_context.duplicate(false)
+        values["actor"] = values.get("actor", side)
+        values["purpose"] = str(values.get("purpose", "effect_value"))
+        values["evaluation_mode"] = str(values.get(
+            "evaluation_mode", "runtime"))
+        var query = side.battle_rule_query_service.resolve_effective_qi(
+            side, card, values)
+        if query.success:
+            return int(query.effective_value)
+        side.battle_rule_query_service.report_failure(
+            query, str(values.get("boundary", "battle_card_effect_service")))
+        return 0
+    return maxi(0, int(card.effective_qi_value()) \
         if card.has_method("effective_qi_value") else int(card.qi_value))
-    return maxi(0, _status_system.modify_card_contribution(
-        card, reshape_value, side))
 
 
 func discard_random(

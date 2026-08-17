@@ -407,8 +407,23 @@ func poison_totals() -> Dictionary:
             if not card.is_card_kind("normal") or not card.has_anomaly("state", "poison"):
                 continue
             result["%s_count" % zone_name] += 1
-            result["%s_amount" % zone_name] += status_system.effective_qi_value(card) \
-                if status_system != null else card.effective_qi_value()
+            if battle_rule_query_service != null:
+                var query = battle_rule_query_service.resolve_effective_qi(
+                    self, card, {
+                        "actor": self,
+                        "purpose": "effect_value",
+                        "evaluation_mode": "runtime",
+                        "cards": zone_entry[1],
+                        "participating_card_ids": [],
+                        "source_kind": "battle_state",
+                    })
+                if query.success:
+                    result["%s_amount" % zone_name] += int(query.effective_value)
+                else:
+                    battle_rule_query_service.report_failure(
+                        query, "battle_side_poison_totals")
+            else:
+                result["%s_amount" % zone_name] += card.effective_qi_value()
     result["total_count"] = int(result["hand_count"]) + int(result["draw_pile_count"])
     result["total_amount"] = int(result["hand_amount"]) + int(result["draw_pile_amount"])
     return result

@@ -775,10 +775,8 @@ func _apply_state_lifecycle(
         card, source_zone, destination_zone, reason, metadata)
 
 func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
-    var effective := int(card.effective_qi_value()) \
-        if card.has_method("effective_qi_value") else int(card.qi_value)
-    if status_system != null:
-        effective = status_system.effective_qi_value(card)
+    var effective_query := _event_effective_qi(side, card, "card_moved")
+    var effective := int(effective_query.get("effective_value", 0))
     var attributes: Array[String] = []
     for attribute in ["wind", "forest", "fire", "mountain"]:
         if card.is_attribute(attribute):
@@ -788,6 +786,7 @@ func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
         "instance_id": str(card.id),
         "source_zone": source_zone,
         "effective_qi": maxi(0, effective),
+        "effective_qi_query": effective_query,
         "base_qi": int(card.current_base_qi_value()),
         "card_base_qi": int(card.qi_value),
         "rank_name": str(card.current_rank_name()),
@@ -925,6 +924,9 @@ func _publish_card_moved(
             "movement_batch_token", "")),
         "movement_batch_index": int(metadata.get(
             "movement_batch_index", -1)),
+        "effective_qi": int(snapshot.get("effective_qi", 0)),
+        "effective_qi_query": snapshot.get(
+            "effective_qi_query", {}).duplicate(true),
         "pre_move_snapshot": snapshot,
         "metadata": metadata,
         "source_kind": source["source_kind"],
@@ -1134,9 +1136,11 @@ func _emit_specialized_card_events(
         common[field] = event_source[field]
     if destination_zone == "hand" and reason == "draw":
         common["draw_reason"] = str(metadata.get("draw_reason", "rule_draw"))
-        common["effective_qi"] = (
-            status_system.effective_qi_value(card)
-            if status_system != null else int(card.effective_qi_value()))
+        var effective_query := _event_effective_qi(
+            side, card, "card_drawn")
+        common["effective_qi"] = int(effective_query.get(
+            "effective_value", 0))
+        common["effective_qi_query"] = effective_query
         common["event_token"] = committed_event_service.make_token(
             "card_drawn", side, event_serial, "", str(card.id))
         return committed_event_service.commit("card_drawn", common)
@@ -1158,6 +1162,34 @@ func _emit_specialized_card_events(
 
 func _can_explicit_discard(side, card) -> bool:
     return bool(_explicit_discard_permission(side, card).get("allowed", true))
+
+func _event_effective_qi(side, card, boundary: String) -> Dictionary:
+    if side != null and side.battle_rule_query_service != null:
+        var query = side.battle_rule_query_service.resolve_effective_qi(
+            side, card, {
+                "actor": side,
+                "purpose": "event_snapshot",
+                "evaluation_mode": "runtime",
+                "cards": [card],
+                "participating_card_ids": [],
+                "source_kind": "committed_event",
+            })
+        if query.success:
+            return query.to_dict()
+        side.battle_rule_query_service.report_failure(
+            query, "%s_effective_qi" % boundary)
+        return query.to_dict()
+    var value := int(card.effective_qi_value()) \
+        if card.has_method("effective_qi_value") else int(card.qi_value)
+    return {
+        "success": true,
+        "base_value": value,
+        "effective_value": maxi(0, value),
+        "source_breakdown": [],
+        "fingerprint": "",
+        "request_fingerprint": "",
+        "errors": [],
+    }
 
 func _explicit_discard_permission(side, card) -> Dictionary:
     if battle_permission_service != null:

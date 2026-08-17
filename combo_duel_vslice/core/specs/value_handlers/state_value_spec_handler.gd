@@ -78,7 +78,9 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
                 return cards.size()
             var total := 0
             for card in cards:
-                total += runtime.ports.current_effective_qi(side, card)
+                total += runtime.ports.current_effective_qi(
+                    side, card,
+                    resolver.effective_qi_context(runtime, "effect_value"))
             return total
         "group_base_qi_sum":
             return HandGroupSnapshotScript.base_qi_sum(
@@ -87,7 +89,8 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
         "extra_effective_qi_sum":
             var total := 0
             for card in runtime.group_snapshot.get("extra_cards", []):
-                total += runtime.ports.current_effective_qi(runtime.actor, card)
+                total += HandGroupSnapshotScript.frozen_effective_qi(
+                    runtime.group_snapshot, card)
             return total
         "action_same_qi_gain":
             return int(runtime.group_snapshot.get("action_same_qi_gain", 0))

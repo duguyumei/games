@@ -63,6 +63,17 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
     if side == null:
         return {"success": false, "reason": "目标查询缺少%s" % side_id, "cards": []}
     var cards: Array = _zone_cards(context, side)
+    var effective_values_result := _effective_qi_values(context, side, cards) \
+        if _uses_effective_qi() else {"success": true, "values": {}}
+    if not effective_values_result.get("success", false):
+        return {
+            "success": false,
+            "reason": effective_values_result.get(
+                "reason", "目标查询有效真气值读取失败"),
+            "cards": [],
+        }
+    var effective_qi_values: Dictionary = effective_values_result.get(
+        "values", {})
     var matches: Array = []
     for card in cards:
         var facts = null
@@ -74,10 +85,14 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
                 return {"success": false, "reason": identity.get("reason", "卡牌身份查询失败"), "cards": []}
             facts = identity.get("facts")
         if field_registry.matches(filters, card, facts, {
-                "query": self, "context": context, "side": side}):
+                "query": self, "context": context, "side": side,
+                "query_cards": cards,
+                "effective_qi_values": effective_qi_values}):
             matches.append(card)
     matches = field_registry.apply_post_filters(
-        filters, matches, {"query": self, "context": context, "side": side})
+        filters, matches, {"query": self, "context": context, "side": side,
+            "query_cards": cards,
+            "effective_qi_values": effective_qi_values})
     if order_id in ["top", "right"]:
         matches.reverse()
     elif order_id == "random":
@@ -90,8 +105,10 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
         for index in range(cards.size()):
             zone_positions[str(cards[index].id)] = index
         matches.sort_custom(func(left, right):
-            var left_value := _sort_value(left, context, side)
-            var right_value := _sort_value(right, context, side)
+            var left_value := _sort_value(
+                left, context, side, effective_qi_values)
+            var right_value := _sort_value(
+                right, context, side, effective_qi_values)
             if left_value != right_value:
                 return left_value < right_value if order_id == "lowest_rank" \
                     else left_value > right_value
@@ -103,10 +120,13 @@ func resolve(context, rng: RandomNumberGenerator = null) -> Dictionary:
             var reordered: Array = []
             var index := 0
             while index < matches.size():
-                var value := _sort_value(matches[index], context, side)
+                var value := _sort_value(
+                    matches[index], context, side, effective_qi_values)
                 var tied: Array = []
                 while index < matches.size() \
-                        and _sort_value(matches[index], context, side) == value:
+                        and _sort_value(
+                            matches[index], context, side,
+                            effective_qi_values) == value:
                     tied.append(matches[index])
                     index += 1
                 _shuffle(tied, rng)
@@ -142,13 +162,17 @@ func _zone_cards(context, side) -> Array:
         "discard_pile": return side.discard_pile.duplicate()
     return []
 
-func _current_effective_qi(card, context, side) -> int:
+func _current_effective_qi(
+        card, context, side, effective_qi_values: Dictionary = {}) -> int:
     return field_registry.current_effective_qi(
-        card, {"query": self, "context": context, "side": side})
+        card, {"query": self, "context": context, "side": side,
+            "effective_qi_values": effective_qi_values})
 
-func _sort_value(card, context, side) -> int:
+func _sort_value(
+        card, context, side, effective_qi_values: Dictionary = {}) -> int:
     if order_id in ["highest_effective_qi", "highest_effective_qi_random_ties"]:
-        return _current_effective_qi(card, context, side)
+        return _current_effective_qi(
+            card, context, side, effective_qi_values)
     return int(card.current_rank_order()) \
         if card.has_method("current_rank_order") else int(card.rank_order)
 
@@ -158,6 +182,47 @@ func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
         var temporary = cards[index]
         cards[index] = cards[other]
         cards[other] = temporary
+
+func _effective_qi_values(context, side, cards: Array) -> Dictionary:
+    if side == null or side.battle_rule_query_service == null:
+        var fallback: Dictionary = {}
+        for card in cards:
+            fallback[str(card.id)] = int(card.effective_qi_value()) \
+                if card.has_method("effective_qi_value") else int(card.qi_value)
+        return {"success": true, "values": fallback}
+    var result: Dictionary = {}
+    for card in cards:
+        var query = side.battle_rule_query_service.resolve_effective_qi(
+            side, card, {
+                "actor": context.actor,
+                "target": context.target,
+                "purpose": "target_query",
+                "evaluation_mode": "runtime",
+                "cards": cards,
+                "participating_card_ids": [],
+                "hand_result": context.hand_result,
+                "action_token": context.action_token,
+                "source_kind": context.source_kind,
+            })
+        if not query.success:
+            side.battle_rule_query_service.report_failure(
+                query, "effect_target_query")
+            return {
+                "success": false,
+                "reason": "effective_qi_query：%s" % "；".join(query.errors),
+            }
+        result[str(card.id)] = int(query.effective_value)
+    return {"success": true, "values": result}
+
+func _uses_effective_qi() -> bool:
+    if order_id in ["highest_effective_qi", "highest_effective_qi_random_ties"]:
+        return true
+    for field in [
+            "effective_above_base", "effective_qi_at_most",
+            "effective_qi_at_least"]:
+        if filters.has(field):
+            return true
+    return false
 
 func _invalid(reason: String) -> Dictionary:
     return {"ok": false, "reason": reason}

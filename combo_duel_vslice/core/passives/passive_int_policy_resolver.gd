@@ -3,6 +3,8 @@ extends RefCounted
 
 const RequestScript = preload(
     "res://core/passives/passive_int_query_request.gd")
+const BattleRequestScript = preload(
+    "res://core/passives/battle_passive_int_query_request.gd")
 const ResultScript = preload(
     "res://core/passives/passive_int_query_result.gd")
 const ContextScript = preload(
@@ -50,6 +52,15 @@ func resolve(request):
             "current_value": current,
             "metadata": request.metadata.duplicate(true),
         }
+        if request is BattleRequestScript:
+            invocation_context.payload.merge({
+                "purpose": request.purpose,
+                "evaluation_mode": request.evaluation_mode,
+                "subject_card_facts": request.subject_card_facts.duplicate(true),
+                "card_facts": request.card_facts.duplicate(true),
+                "actual_played_count": request.actual_played_count,
+                "exact_hand": request.exact_hand.duplicate(true),
+            }, true)
         var executed: Dictionary = runtime.execute_invocation(
             invocation, invocation_context, "read")
         purity_error = _restore_if_query_mutated(request.owner, owner_state)

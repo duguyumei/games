@@ -187,7 +187,8 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
         direct_power_percent_input = null,
         post_query_percent_bonus: int = 0,
         include_pending_sources: bool = true,
-        round_number: int = 0) -> Dictionary:
+        round_number: int = 0,
+        card_facts_override: Array = []) -> Dictionary:
     var fixed := int(actor.direct_power_fixed) \
         if direct_power_fixed_input == null \
         else int(direct_power_fixed_input)
@@ -201,6 +202,14 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
             fixed += int(source.get("amount", 0))
             pending_tokens.append(str(source.get("source_token", "")))
     var query_service = actor.battle_rule_query_service
+    var query_card_facts: Array = card_facts_override.duplicate(true)
+    if query_card_facts.is_empty() and not cards.is_empty():
+        var card_facts_result := _card_facts(
+            cards, actor, target, hand_result, action_token, source_kind,
+            round_number)
+        if not card_facts_result.get("success", false):
+            return card_facts_result
+        query_card_facts = card_facts_result.get("facts", [])
     var queries: Dictionary = {}
     for stage in [
             ["power_fixed_query", "power_fixed"],
@@ -222,7 +231,7 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
             "round_number": round_number,
             "hand_id": str(hand_result.get("id", "")),
             "source_kind": source_kind,
-            "card_facts": _card_facts(cards, actor.card_identity_policy),
+            "card_facts": query_card_facts,
             "metadata": {"stage": field},
         })
         if not query.success:
@@ -501,22 +510,61 @@ func _commit_event(kind: String, state: Dictionary,
         },
     })
 
-func _card_facts(cards: Array, identity_policy) -> Array:
+func _card_facts(
+        cards: Array, actor, target, hand_result: Dictionary,
+        action_token: String, source_kind: String,
+        round_number: int) -> Dictionary:
     var result: Array = []
+    var identity_policy = actor.card_identity_policy if actor != null else null
+    var participating_ids: Array = hand_result.get(
+        "numeric_contributing", hand_result.get("contributing", [])).map(
+            func(card): return str(card.id))
     for card in cards:
         var identity: Dictionary = {}
         if identity_policy != null and identity_policy.has_method("resolve"):
             var resolved: Dictionary = identity_policy.resolve(card, {})
             if resolved.get("success", false):
                 identity = resolved["facts"].to_dict()
-        result.append({
-            "instance_id": str(card.id),
-            "definition_id": str(card.current_definition_id()) \
-                if card.has_method("current_definition_id") \
-                else str(card.definition_id),
-            "qi": int(card.effective_qi_value()) \
-                if card.has_method("effective_qi_value") else int(card.qi_value),
-            "identity": identity,
-            "attributes": identity.get("effective_attributes", []),
-        })
-    return result
+        var fact: Dictionary = actor.battle_rule_query_service.card_fact(
+            card, actor, target, participating_ids.has(str(card.id))) \
+            if actor != null and actor.battle_rule_query_service != null else {
+                "instance_id": str(card.id),
+                "definition_id": str(card.current_definition_id()) \
+                    if card.has_method("current_definition_id") \
+                    else str(card.definition_id),
+                "effective_attributes": identity.get("effective_attributes", []),
+                "participating": participating_ids.has(str(card.id)),
+            }
+        var effective := 0
+        if actor != null and actor.battle_rule_query_service != null:
+            var query = actor.battle_rule_query_service.resolve_effective_qi(
+                actor, card, {
+                    "actor": actor, "target": target,
+                    "purpose": "power_calculation",
+                    "evaluation_mode": "preview" if source_kind == "preview" \
+                        else "confirm" if source_kind == "action_confirmed" \
+                        else "runtime",
+                    "cards": cards,
+                    "participating_card_ids": participating_ids,
+                    "hand_result": hand_result,
+                    "action_token": action_token,
+                    "source_kind": source_kind,
+                    "round_number": round_number,
+                })
+            if not query.success:
+                actor.battle_rule_query_service.report_failure(
+                    query, "technique_resolution_card_facts")
+                return {
+                    "success": false,
+                    "reason": "effective_qi_query：%s" % "；".join(query.errors),
+                }
+            effective = int(query.effective_value)
+        else:
+            effective = int(card.effective_qi_value()) \
+                if card.has_method("effective_qi_value") else int(card.qi_value)
+        fact["qi"] = effective
+        fact["effective_qi"] = effective
+        fact["identity"] = identity
+        fact["attributes"] = identity.get("effective_attributes", [])
+        result.append(fact)
+    return {"success": true, "facts": result}

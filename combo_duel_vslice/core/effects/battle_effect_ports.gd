@@ -587,8 +587,10 @@ func shuffle_zone(
         rng: RandomNumberGenerator) -> void:
     _card_effect_service.shuffle_zone(side, zone, rng)
 
-func current_effective_qi(side: BattleSide, card) -> int:
-    return _card_effect_service.current_effective_qi(side, card)
+func current_effective_qi(
+        side: BattleSide, card, query_context: Dictionary = {}) -> int:
+    return _card_effect_service.current_effective_qi(
+        side, card, query_context)
 
 func discard_random(
         side: BattleSide,

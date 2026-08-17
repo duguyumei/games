@@ -152,8 +152,16 @@ func _execute_card_behavior_entries(
         if replay_depth == 0 \
                 and str(entry.get("behavior", {}).get("handler", "")) \
                     == "damage_holder_by_current_qi":
+            var ports = _effect_ports()
             entry["behavior"]["frozen_amount"] = (
-                card_anomaly_service.effective_qi_value(card))
+                ports.current_effective_qi(holder, card, {
+                    "actor": holder,
+                    "purpose": "effect_value",
+                    "evaluation_mode": "runtime",
+                    "action_token": str(source_values.get("action_token", "")),
+                    "source_kind": str(source_values.get("source_kind", "status")),
+                    "boundary": "card_status_behavior_freeze",
+                }) if ports != null else card.effective_qi_value())
         var context_values := source_values.duplicate()
         context_values.merge({
             "trigger": trigger,

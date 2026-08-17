@@ -76,7 +76,9 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
             var values: Array[int] = []
             var owner = resolver.side(runtime, str(spec.get("side", "actor")))
             for card in resolver.capture_cards(runtime, spec):
-                values.append(runtime.ports.current_effective_qi(owner, card))
+                values.append(
+                    HandGroupSnapshotScript.confirmed_or_current_effective_qi(
+                        runtime.group_snapshot, card, owner))
             if kind == "capture_effective_qi_max":
                 return values.max() if not values.is_empty() else 0
             var total := 0
@@ -87,8 +89,11 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
             var values: Array[int] = []
             var owner = resolver.side(runtime, str(spec.get("side", "actor")))
             for card in resolver.capture_cards(runtime, spec):
-                values.append(maxi(0, runtime.ports.current_effective_qi(owner, card) \
-                    - int(card.current_base_qi_value())))
+                values.append(maxi(0,
+                    HandGroupSnapshotScript.confirmed_or_current_effective_qi(
+                        runtime.group_snapshot, card, owner) \
+                    - HandGroupSnapshotScript.frozen_base_qi(
+                        runtime.group_snapshot, card)))
             if kind == "capture_r_max":
                 return values.max() if not values.is_empty() else 0
             var total := 0

@@ -37,7 +37,14 @@ func _damage_holder_by_current_qi(context) -> Dictionary:
         return {"success": false, "detail": "真气伤害状态缺少持有者、真气或战斗端口"}
     var amount: int = int(context.behavior.get(
         "frozen_amount",
-        context.card_anomaly_service.effective_qi_value(context.card)))
+        context.effect_ports.current_effective_qi(context.holder, context.card, {
+            "actor": context.holder,
+            "purpose": "effect_value",
+            "evaluation_mode": "runtime",
+            "action_token": context.action_token,
+            "source_kind": "status",
+            "boundary": "card_status_behavior",
+        })))
     var triggered: Dictionary = context.effect_ports.trigger_poison_card(
         context.holder, context.card, context.action_token,
         context.replay_depth > 0, amount)
