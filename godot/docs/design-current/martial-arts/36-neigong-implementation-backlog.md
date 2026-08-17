@@ -1572,6 +1572,8 @@
 
 本次按当前 `main` 代码重新核对后的逐门统计为：A 35、B 39、C 91、D 1（内功合计166）。其中B只缺来源中立Handler、Registry注册或Context适配；C才表示缺通用底层能力。
 
+后续C类收缩审计进一步确认：C只表示该内容尚缺至少一个语义接口，不表示需要新建Service。47个原始能力键按实现形态收缩为B 15、C1（现有Service窄能力）23、C2（跨系统公共协议）9；91门C类内功不能等同于91项架构建设。实施必须按矩阵中的`merge_family`合并，单内容窄机制随所属领域Service实现。
+
 | 第15节旧清单 | 当前状态 | 代码证据与仍缺部分 |
 |---|---|---|
 | A. 功法槽容量、配装与心得 | 已有 | `TechniqueLoadoutPolicy`已允许空余容量并保持至少一门；`InsightGrowthService`是唯一规则源；战斗中通过`BattleEffectPorts.change_technique_slot_capacity`实时同步`TechniqueSequenceBook`。 |

@@ -8,6 +8,7 @@
 - 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。35号仍明确为17门已接入、其余8门候选，指定名单无差异。
 - Readiness：A=35，B=47，C=103，D=1，E=8，合计194。
 - C类缺口引用（去重前）114次；合并后通用能力47项。
+- C类收缩形态：B 15、C1 23、C2 9；D 1（D不计入47项C能力）。这里的B/C1/C2描述实现形态，不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -346,7 +347,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 9. `qi_consumption_transaction`：cause=cost、逐牌事实、原子支付与战后归还。
 10. `temporary_blazing_source_layers`：来源级层数及入堆生命周期。
 
-每批先事件/状态，再查询，再端口，再Handler，最后集中接A/B内容；8门E类不作为阻塞。第一推荐批次是`committed_card_transition_event`。
+本节是原始能力键排序，不等于47个独立实现批次。收缩后的实际批次见第11节；8门E类不作为阻塞。第一推荐的C2批次仍是`committed_card_transition_event`，但应先按事件族边界完成设计。
 
 ## 10. 旧待实现清单校正摘要
 
@@ -354,3 +355,95 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 - 部分已有：回响（能重演但不能通用修改计划次数）、格挡（无卸力）、追击（伤害兼容标签但无结构化完成事件）、最大生命来源贡献（marker统计已有但item地址不支持）、牌区移动（response-only通用事实未成为committed hook）。
 - 仍缺：本文件C类47项。
 - 规则待确认：化虚为实的固化提交表示。
+
+## 11. C类收缩审计：B / C1 / C2 / D
+
+### 11.1 口径
+
+- **B（已有框架小扩展）**：已有事件、查询、端口或执行阶段，只需补字段、Context、Handler、Registry注册或同一类的窄分支；不建立新协议所有权。
+- **C1（现有Service窄能力）**：需要一个可验证的窄语义，但落点已经明确在现有 Service、Store、策略查询或事务中；随领域内容批次实现，不单独建立平行系统。
+- **C2（跨系统公共协议）**：需要跨两个以上生命周期/状态边界共享的事实、阶段或原子边界，必须先确定公共事件/查询/事务契约。
+- **D**：规则、提交表示或时点仍有冲突，不能进入实现排序。
+
+### 11.2 47项收缩结果
+
+| capability_key | implementation_shape | merge_family | consumer_count | 推荐落点 |
+|---|---|---|---:|---|
+| `committed_card_transition_event` | C2 | card_lifecycle_fact | 10 | BattleEventCatalog + CardZoneService |
+| `committed_anomaly_change_event` | C2 | qi_state_lifecycle_fact | 6 | CardAnomalyService + BattleEventCatalog |
+| `effective_qi_staged_query` | C2 | qi_value_query | 14 | BattleRuleQueryService / CardIdentityPolicy |
+| `card_disposition_replacement` | C1 | card_zone_transaction | 3 | CardZoneService移动准备/提交 |
+| `draw_depletion_replacement_transaction` | C1 | card_zone_transaction | 1 | CardZoneService.draw缺牌分支 |
+| `run_combat_history_facts` | C1 | run_history_state | 2 | BattleSide + RunProgressSnapshot既有映射 |
+| `run_experience_changed_event` | C1 | run_resource_fact | 3 | RunMutationService |
+| `temporary_qi_generated_event` | B | card_lifecycle_fact | 1 | BattleCardEffectService生成入口；作为`reason=generated`字段 |
+| `battle_resource_changed_event` | B | battle_resource_fact | 2 | BattleSourceResourceEffectService现有写端口回执 |
+| `effect_card_batch_committed_summary` | B | card_lifecycle_fact | 1 | TechniqueEffectExecutor批次汇总 |
+| `technique_execution_summary_event` | C2 | technique_resolution_fact | 2 | TechniqueResolutionService统一汇总 |
+| `technique_post_success_pre_advance_stage` | B | technique_resolution_stage | 1 | TechniqueResolutionService既有推进边界 |
+| `technique_echo_plan_mutation` | C1 | technique_invocation_plan | 8 | TechniqueInvocationService / TechniqueResolutionService |
+| `pre_life_loss_intervention` | C2 | survival_write_boundary | 4 | BattleSurvivalEffectService最终生命写入前 |
+| `pre_technique_cost_transaction` | B | technique_payment_stage | 1 | TechniqueResolutionService.prepare |
+| `temporary_blazing_source_layers` | C1 | qi_state_lifecycle_fact | 6 | AnomalyLayerEffectHandler + CardStateLifecycle |
+| `deflection_attack_cancel_protocol` | C2 | survival_write_boundary | 4 | BattleSurvivalEffectService既有block事务 |
+| `battle_lifecycle_choice_transaction` | C1 | choice_continuation | 2 | BattlePassiveTimingBridge + BattleChoiceRequest |
+| `qi_consumption_transaction` | C2 | qi_payment_transaction | 6 | BattleCardEffectService + CardZoneService |
+| `run_free_meditation_charge` | C1 | run_command_state | 1 | GrowthInventory + meditation command |
+| `growth_trigger_committed_event` | C1 | qi_state_lifecycle_fact | 3 | CardStateLifecycle成长完成事实 |
+| `temporary_qi_clone_protocol` | B | card_lifecycle_fact | 1 | BattleCardEffectService生成入口扩展复制字段 |
+| `defense_decay_policy_query` | C1 | survival_policy_query | 2 | DefenseRetentionPolicy |
+| `momentum_cap_query` | C1 | battle_resource_policy | 1 | BattleSourceResourceEffectService统一截断 |
+| `burnout_debuff_and_flourish_status` | C1 | qi_state_lifecycle_fact | 2 | StatusSystem异状生命周期 |
+| `battle_permanent_card_mutation_port` | C1 | battle_to_run_card_mutation | 1 | BattleCardEffectService → BattleSetupService映射 |
+| `action_confirmation_resource_payment` | C1 | action_payment | 1 | BattleActionPreparationService |
+| `extra_action_preflight_projection` | B | action_window_projection | 1 | BattleFlowCoordinator已有额外行动入口 |
+| `card_lifecycle_removed_state_claim` | B | qi_state_lifecycle_fact | 1 | CardStateLifecycle入堆清理回执 |
+| `card_trigger_target_policy_query` | B | target_policy_query | 1 | CardStatusBehaviorService / EffectTargetQuery |
+| `pre_effect_operation_event` | B | effect_executor_boundary | 1 | TechniqueEffectExecutor命令边界 |
+| `growth_trigger_execution_plan` | B | qi_state_lifecycle_fact | 1 | PassiveRuleRuntime既有ExecutionPlan |
+| `technique_sequence_extra_advance` | B | technique_sequence_mutation | 1 | TechniqueSequenceBook.advance窄端口 |
+| `chase_resolved_event` | B | damage_resolved_context | 1 | BattleSurvivalEffectService扩展现有damage_resolved字段 |
+| `passive_behavior_copy_projection` | C1 | passive_execution_plan | 3 | PassiveRuleRuntime.build_execution_plan |
+| `charging_primary_value_protocol` | C2 | technique_delay_state | 1（另服务3门E功法） | TechniqueDefinition + StatusDelayService |
+| `practice_normal_slot_count_query` | C1 | practice_strategy_query | 1 | 修习候选规划器既有query族 |
+| `practice_offer_weight_query` | B | practice_strategy_query | 3 | 现有候选权重query增加可配置key |
+| `consumable_capacity_query` | C1 | inventory_capacity_query | 1 | GrowthInventory + ConsumableUseContext |
+| `source_behavior_transformation` | C1 | passive_source_projection | 1 | PassiveRuleSourceResolver + schema |
+| `insight_pack_history_plan` | C1 | practice_strategy_query | 1 | InsightGrowthService候选计划 |
+| `experience_interest_cap_query` | B | run_calculation_query | 1 | node completion calculation现有公式 |
+| `practice_offer_category_unlock` | C1 | practice_strategy_query | 1 | 修习候选规划器 |
+| `map_regeneration_transaction` | C1 | run_command_transaction | 1 | RunSession + MapNavigationService + RunAggregateTransaction |
+| `rest_multi_select_session` | C1 | choice_continuation | 1 | NodeInteractionService既有continuation |
+| `item_source_marker_state` | C2 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
+| `run_qi_added_and_reshape_events` | C1 | run_card_mutation_fact | 1 | RunMutationService；不新增平行事件系统 |
+
+收缩后的数量为：B 15、C1 23、C2 9、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+
+### 11.3 合并后的核心协议与领域窄能力
+
+真正需要先做公共协议设计的核心 C2 只有 9 项：
+
+1. `committed_card_transition_event`：将已有 `card_moved` response-only事实提升为可配置 committed事实；临时真气生成以 `reason=generated` 纳入同一生命周期族，不另建平行事件。
+2. `committed_anomaly_change_event`：统一异状、净化、临时重塑和层数变化的 before/after 与实际变化字段。
+3. `effective_qi_staged_query`：统一逐牌有效真气值阶段，供预览、正式冻结和内容查询复用。
+4. `technique_execution_summary_event`：在已有 `technique_succeeded`、`technique_invocation_resolved`和伤害/防御回执上补稳定执行汇总。
+5. `pre_life_loss_intervention`：统一所有非代价生命写入前的减量/取消边界。
+6. `deflection_attack_cancel_protocol`：在既有格挡/伤害事务中加入卸力阈值、击穿和成功事实。
+7. `qi_consumption_transaction`：在既有临时移出与战斗事务上统一 `cause=cost`、逐牌事实和支付后效原子性。
+8. `charging_primary_value_protocol`：把功法实例主要蓄力值声明接入既有延迟服务；不是新建蓄力执行器。
+9. `item_source_marker_state`：扩展现有来源标识地址和最大生命贡献，使物品与内功/功法共用同一 marker 协议。
+
+其余 38 项是 B 或 C1，分别落在现有 CardZone/CardState、TechniqueResolution/Invocation、BattleSurvival、RunMutation、Practice、NodeInteraction 和策略查询体系中。`run_qi_added_and_reshape_events`明确收口到`RunMutationService`；`chase_resolved_event`明确是`damage_resolved`上下文扩展；修习商品槽位、权重、容量和类别均是同一策略查询族的 key，不建立多个商品 Service。
+
+### 11.4 收缩后的推荐实现顺序
+
+1. `card_lifecycle_fact`：先在CardZone/CardState现有事务内统一移动、生成、异状变化和移除回执字段，明确哪些提升为committed hook。
+2. `qi_value_query` + `survival_write_boundary`：分别完成有效真气值阶段与生命写入前干预；两者是最广的跨内容公共协议。
+3. `qi_payment_transaction` + `technique_resolution_fact`：收口真气消耗和功法执行汇总，不新增执行器。
+4. `source_marker_protocol` + `technique_delay_state`：扩展物品来源地址及功法蓄力声明，复用现有marker/delay。
+5. `technique_invocation_plan` + `technique_sequence_mutation`：在InvocationService/SequenceBook中支持回响计划修改和额外推进。
+6. `practice_strategy_query`：一次性补齐商品槽位、权重、类别解锁和心得包历史计划的查询族。
+7. `run_card_mutation_fact` + `run_history_state`：扩展RunMutationService和既有RunProgressSnapshot映射。
+8. `choice_continuation`：在现有BattleChoiceRequest/NodeInteraction continuation上补生命周期多选。
+9. `battle_resource_policy` + `survival_policy_query`：补连势上限和防御衰减策略。
+10. B类适配与A类内容接入：最后补Handler/Context/Registry和内容数据；8门E类保持暂缓。

@@ -206,6 +206,8 @@
 
 本次按当前 `main` 代码重新核对后的逐件统计为：A 0、B 8、C 12（物品合计20）。B类语义已存在，只缺来源中立Handler或Context适配；C类才缺通用底层。
 
+后续C类收缩审计进一步确认：C只表示内容尚缺至少一个语义接口，不表示需要新建Service。47个原始能力键按实现形态收缩为B 15、C1（现有Service窄能力）23、C2（跨系统公共协议）9。地图重生成、休息多选和商品类别解锁等单内容机制均作为现有领域Service的窄能力随内容实现，不提前建立公共底层。
+
 | 第7节旧清单 | 当前状态 | 代码证据与仍缺部分 |
 |---|---|---|
 | A. 物品来源与统一被动运行时 | 部分已有 | `PassiveRuleSourceResolver`已经从`item_ids`建立稳定物品来源并与内功共用`PassiveRuleRuntime`、ExecutionPlan和排序；但`SourceMarkerStore.SOURCE_KINDS`尚不支持item来源marker。 |
