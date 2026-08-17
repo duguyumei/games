@@ -122,7 +122,7 @@ func query_use(
 	var eligible: Array = eligibility.get("eligible_targets", [])
 	var can_use := bool(eligibility.get("can_use", true))
 	var reason := str(eligibility.get("reason", ""))
-	if zone != "none" and eligible.size() < minimum:
+	if can_use and zone != "none" and eligible.size() < minimum:
 		can_use = false
 		reason = "目标不足：需要至少 %d 张真气" % minimum
 	var choice_info := _choice_query(context.growth, definition, eligible)

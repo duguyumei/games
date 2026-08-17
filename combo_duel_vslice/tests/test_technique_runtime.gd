@@ -1990,9 +1990,9 @@ func _test_shared_insight_growth_service_contract() -> void:
     failing_side.use_technique_sequence_book(failing_book)
     var failing_port := MutatingFailingCapacityPort.new()
     failing_side.use_battle_effect_ports(failing_port)
-    var progression_before := \
+    var progression_before: Dictionary = \
         failing_side.hand_technique_progression.duplicate(true)
-    var owned_before := failing_side.owned_technique_ids.duplicate()
+    var owned_before: Array = failing_side.owned_technique_ids.duplicate()
     var book_before := failing_book.snapshot()
     var failing_rng := RandomNumberGenerator.new()
     failing_rng.seed = 2718

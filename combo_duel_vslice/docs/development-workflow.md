@@ -696,3 +696,22 @@ S0 已在基线 `0555d0f` 完成验收。旧 `BattleCommandResult`、裸的跨�
 - 不保留兼容旁路。上一次 DTO 迁移因为兼容层与新路径并存而停在半路：仍有少量
   `*_dto()` 调用和大量字典读取。本轮快照边界改造删掉了
   `value()` / `section()` 而不是留着它们，就是为了不重复这个结果。
+
+## 五批战斗事务底层改造：最终验收（2026-08-17）
+
+最终验收在保留各批“当批未运行 quick/full”历史记录的前提下重新执行。顺序为
+`verify_test_runner.sh`、`run_tests.sh quick`、`run_tests.sh full`，以及设计一致性检查；所有
+Godot 进程串行运行并使用独立 `/tmp` 日志。运行器自检的缺失脚本与缺失资源探针均按预期失败，
+证明 Godot 可能的退出码 0 不会掩盖加载错误。
+
+- quick：7/7，通过项目加载 684 个脚本／场景／资源／JSON 文件。
+- full：32/32；报告断言合计 140,130 条。
+- design consistency：权威活跃 228 门、数据接入 228 门、待接入 0 门、错误 0 条。
+- 最终成功 stdout 与 Godot 日志没有 `Can't load script`、`File not found`、解析／脚本错误、
+  ObjectDB／RID／资源泄漏、orphan 或退出阶段错误；仅保留已知的 macOS CA 证书警告。
+
+日志路径前缀为 `/tmp/taiwu-run-transaction-final-quick-*` 与
+`/tmp/taiwu-run-transaction-final-full-*`；设计检查日志为
+`/tmp/taiwu-run-transaction-final-design-capture.log`（此前同一检查的指定日志为
+`/tmp/taiwu-run-transaction-final-design.log`）。五批链路已达到进入功法、内功和物品内容接入阶段
+的门槛；下一步应由内容与数值验收驱动，不因架构形式继续拆分。

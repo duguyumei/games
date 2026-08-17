@@ -685,3 +685,25 @@ flowchart LR
 4. 本文 4.1 状态机，对照 `core/map_navigation_service.gd`
 5. 本文 5 时序图，对照 `core/battle_session.gd` 的 `execute()`
 6. `tests/` 里跑 `./scripts/run_tests.sh quick` 看行为契约
+
+## 10. 五批战斗事务底层改造最终验收（2026-08-17）
+
+最终架构的状态流保持为：
+
+```mermaid
+flowchart LR
+    G["RunSession / GrowthInventory<br/>已提交本局"] -->|RunProgressSnapshot| B["BattleSide<br/>战斗工作副本"]
+    B -->|正式胜负结果| T["RunAggregateTransaction<br/>整聚合原子事务"]
+    T -->|成功后一次| G
+    B --> R["BattleRuntime<br/>手牌、牌库、异状、临时真气、响应"]
+    G -->|事件开始捕获| P["PassiveRuleRuntime<br/>ExecutionPlan"]
+    P --> E["本次事件固定顺序"]
+    E -.->|下一事件重新捕获| G
+```
+
+图中虚线表示事件间实时性，而不是节点或战斗级冻结。一次事件只固定自己的来源列表与
+`ExecutionPlan`；事件执行中新增来源不追溯加入本次事件，下一事件会读取最新的内功、物品、功法
+与来源标识。行动确认的牌型／P／P0／功法槽、选择候选、随机目标和等待响应仍是必要的局部快照。
+
+节点存档不再保存可从 growth 派生的来源列表；旧 v1 字段只读兼容并忽略。最终验收 quick 7/7、
+full 32/32，设计一致性权威活跃 228、数据接入 228、待接入 0、错误 0。

@@ -231,6 +231,9 @@ class BattleCompletedMutationProbe:
     func _init(mutate_counter: bool = false) -> void:
         mutate_uncommittable_counter = mutate_counter
 
+    func capture_source_snapshot(_owner) -> Array:
+        return []
+
     func dispatch(context, growth, event_state) -> Dictionary:
         call_count += 1
         growth.experience += 7
@@ -2491,11 +2494,15 @@ func _test_run_passive_queries_events_and_transactions() -> void:
             }]},
         }],
     })
+    values["practice_shop"]["items"]["candidate_ids"].append_array([
+        "self_price_probe", "reward_source_probe",
+    ])
     var catalog = ContentCatalogScript.new(
         RuntimeProfileScript.test(), null, null, null, null, null, registry)
     _assert_true(
         catalog.load_from_definitions(values, base_catalog.paths),
-        "F5B Fake 内容通过共享 Registry 校验")
+        "F5B Fake 内容通过共享 Registry 校验：%s" % "；".join(
+            catalog.errors))
     var runtime = PassiveRuleRuntimeScript.new(registry, catalog)
     var int_resolver = PassiveIntPolicyResolverScript.new(runtime)
     var mutation_service = RunMutationServiceScript.new(
@@ -3926,8 +3933,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        23,
-        "Registry 明确登记二十三个细粒度已提交事件")
+        25,
+        "Registry 明确登记二十五个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
         12,
@@ -5214,6 +5221,7 @@ func _battle_passive_test_engine(
     var engine = CombatEngineScript.new(null, catalog, registry)
     engine.setup(5512, false)
     engine.player.configure_items(item_ids)
+    engine.player.learned_inner_skill_ids.assign(inner_skill_ids)
     engine.player.configure_inner_skills(inner_skill_ids, 0)
     return engine
 
@@ -6522,6 +6530,8 @@ func _test_remote_ai_action_window_session_gate() -> void:
         },
     }
     _assert_true(session.setup_battle(configuration), "远程 AI 行动窗口战斗建立成功")
+    session.engine.sequence_book.configure_with_capacities(
+        {"high_card": []}, {"high_card": 1})
     session.engine.enemy.hand = [
         _card("2", "wind"), _card("3", "wind"), _card("4", "wind"),
         _card("5", "wind"), _card("6", "wind")]
@@ -10176,6 +10186,8 @@ func _test_inner_skill_preview_and_enemy_plan() -> void:
 func _test_consumable_shared_slots_and_generation_limit() -> void:
     var engine = CombatEngineScript.new()
     engine.setup(77, false)
+    GrowthInventoryScript.new(
+        engine.content_catalog, false).apply_to_battle_side(engine.player)
     engine.player.configure_consumables([
         "high_card_insight", "zengyuan_pill", "pair_insight", "zengyuan_pill"])
     _assert_equal(engine.player.consumable_ids.size(), 3, "三类消耗品共用三格容量")
@@ -10320,7 +10332,8 @@ func _test_battle_unique_consumable_and_query_purity() -> void:
         "战斗外专属能力在 Battle 查询阶段明确不可用")
     _assert_true(
         str(unsupported.get("reason", "")).contains("不支持"),
-        "Battle 查询返回不支持能力的明确原因")
+        "Battle 查询返回不支持能力的明确原因：%s" % str(
+            unsupported.get("reason", "")))
 
 func _test_battle_consumable_multi_effect_rollback() -> void:
     var target = _card("9", "wind")
@@ -10709,9 +10722,12 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     _assert_true(catalog.load_all(), "跨战斗强化测试载入内容目录")
     var run_deck = RunDeckScript.new(catalog)
     run_deck.reset_standard("consumable-reshape")
+    var default_growth = GrowthInventoryScript.new(catalog, false)
     var progress = RunProgressSnapshotScript.from_dict({
         "consumable_ids": ["zengyuan_pill"],
-        "learned_technique_ids": [],
+        "learned_technique_ids": default_growth.learned_technique_ids,
+        "hand_technique_progression": (
+            default_growth.hand_technique_progression),
         "run_deck": run_deck.to_snapshot(),
     })
     var first_battle: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
@@ -10729,7 +10745,12 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     var after_progress = first_battle.player_progress_snapshot()
     _assert_true(after_progress.consumable_ids.is_empty(), "战斗中使用消耗品后释放本局槽位")
     var second_battle = BattleSessionScript.new(CombatEngineScript.new())
-    _assert_true(second_battle.setup_battle({"content_seed": 4405}, after_progress), "重塑后的 RunDeck 可以建立下一场战斗")
+    var second_loaded: bool = second_battle.setup_battle(
+        {"content_seed": 4405}, after_progress)
+    _assert_true(
+        second_loaded,
+        "重塑后的 RunDeck 可以建立下一场战斗：%s" % JSON.stringify(
+            second_battle.engine.game_log.entries("system")))
     var restored = null
     for card in second_battle.engine.player.all_zone_cards():
         if card.id == target_id:

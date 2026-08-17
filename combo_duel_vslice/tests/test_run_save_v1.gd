@@ -513,17 +513,66 @@ func _test_resume_policy_ui_routes_and_restart_identity() -> void:
         "type": "setup_run", "seed": 71008,
         "starter_build_id": "standard_52",
     })
+    battle_source.growth.consumable_ids.assign(["high_card_insight"])
     var battle_node := str(battle_source.snapshot().available_node_ids[0])
     var battle_begin = battle_source.execute({
         "type": "begin_node", "node_id": battle_node,
     })
     var original_dispatch: Dictionary = battle_begin.payload_value("dispatch", {})
+    var entry_progress: Dictionary = battle_source.progress_snapshot().to_dict()
+    _assert_true(service.save_run(battle_source).get("success", false),
+        "节点选择提交后立即保存战斗入口检查点")
     var original_battle = battle_source.create_battle_session()
     original_battle.setup_battle(original_dispatch, battle_source.progress_snapshot())
     var original_enemy: Dictionary = _enemy_signature(original_battle)
+    var insight_use = original_battle.execute({
+        "type": "use_consumable",
+        "slot_index": 0,
+        "card_ids": [],
+    })
+    _assert_true(insight_use.success, "战斗工作状态成功使用心得消耗品")
+    _assert_equal(
+        original_battle.engine.player.hand_technique_progression[
+            "high_card"]["slot_count"],
+        2,
+        "战斗内心得立即扩展永久功法槽工作状态")
+    _assert_equal(
+        original_battle.engine.sequence_book.slot_capacity("high_card"),
+        2,
+        "战斗内心得立即同步当前 SequenceBook")
+    var changed_card = original_battle.engine.player.all_cards_for_run_sync()[0]
+    changed_card.set_enhancement("momentum")
+    _assert_true(
+        original_battle.engine.player.source_marker_store.write(
+            "technique", "technique:restart-probe", "basic_scatter",
+            "restart_probe", "run", "add", 1).get("success", false),
+        "战斗工作状态可立即写入本局来源标识")
+    var working_progress: Dictionary = (
+        original_battle.player_progress_snapshot().to_dict())
+    _assert_true(
+        working_progress != entry_progress
+        and working_progress["consumable_ids"].is_empty()
+        and working_progress["source_marker_state"]["entries"].size() == 1,
+        "战斗工作快照立即反映消耗品、牌组成长和来源标识变化")
+    _assert_equal(
+        battle_source.progress_snapshot().to_dict(), entry_progress,
+        "未结算战斗不会污染 RunSession 已提交成长")
     battle_source.close_active_battle()
-    service.save_run(battle_source)
     var battle_loaded: Dictionary = service.load_run()
+    var loaded_entry_progress: Dictionary = (
+        battle_loaded["run_session"].progress_snapshot().to_dict())
+    var comparable_entry_progress := entry_progress.duplicate(true)
+    comparable_entry_progress.erase("practice_shop_state")
+    loaded_entry_progress.erase("practice_shop_state")
+    _assert_equal(
+        loaded_entry_progress,
+        comparable_entry_progress,
+        "退出后载入节点入口检查点会丢弃全部战斗工作状态变化")
+    _assert_true(
+        not battle_loaded["run_session"].execute({
+            "type": "begin_node", "node_id": battle_node,
+        }).success,
+        "进行中节点恢复后不能重新选择节点")
     var battle_ui = RunScene.instantiate()
     battle_ui.configure_composition_root(composition)
     battle_ui.configure_restored_run(
@@ -541,6 +590,15 @@ func _test_resume_policy_ui_routes_and_restart_identity() -> void:
     _assert_equal(resumed_configuration.get("content_seed"), original_dispatch.get("content_seed"), "重启战斗保持同一 content seed")
     _assert_equal(resumed_configuration.get("content_id"), original_dispatch.get("content_id"), "重启战斗保持同一敌人内容候选")
     _assert_equal(_enemy_signature(battle_ui.current_battle.battle_session), original_enemy, "重启战斗保持同一敌人装配与牌组")
+    _assert_equal(
+        battle_ui.current_battle.battle_session.engine.player.consumable_ids,
+        ["high_card_insight"],
+        "重启战斗恢复入口消耗品而非已消耗工作状态")
+    _assert_equal(
+        battle_ui.current_battle.battle_session.engine.sequence_book.slot_capacity(
+            "high_card"),
+        1,
+        "重启战斗恢复入口永久功法槽容量")
     _assert_true(battle_ui.toast_label.text.contains("战斗从节点开头重新开始"), "节点重启显示明确恢复提示")
     battle_ui.queue_free()
     _remove_paths(save_path)

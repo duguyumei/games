@@ -94,6 +94,8 @@ func apply_scripted_scenario(scenario, player, enemy, rng, enemy_deck: Array) ->
         int(player_definition.get("technique_slot_index", 0)))
     if not player_inner.get("success", false):
         return player_inner
+    player.learned_inner_skill_ids.assign(
+        player_definition.get("inner_skills", []))
     player.configure_consumables(player_definition.get("consumables", []))
     var enemy_items: Dictionary = enemy.configure_items(
         enemy_definition.get("item_ids", []))
@@ -104,6 +106,8 @@ func apply_scripted_scenario(scenario, player, enemy, rng, enemy_deck: Array) ->
         int(enemy_definition.get("technique_slot_index", 0)))
     if not enemy_inner.get("success", false):
         return enemy_inner
+    enemy.learned_inner_skill_ids.assign(
+        enemy_definition.get("inner_skills", []))
     enemy.max_life = int(enemy_definition.get("life", 100))
     enemy.life = enemy.max_life
     enemy.replace_deck(scenario.arrange_enemy_deck(enemy_deck), rng, false)

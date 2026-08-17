@@ -7,6 +7,7 @@ func _initialize() -> void:
         "_test_run_service_boundaries_and_progress_snapshot",
         "_test_node_interaction_platform_contract",
         "_test_run_session_commands_snapshots_events_and_logs",
+        "_test_battle_outcome_aggregate_transaction_contract",
         "_test_run_terminal_result_contract_and_closure",
         "_test_inner_skill_loadout_and_forgetting",
         "_test_run_passive_queries_events_and_transactions",

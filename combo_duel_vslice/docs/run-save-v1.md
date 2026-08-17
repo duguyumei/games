@@ -40,3 +40,20 @@ v1 保存种子、初始构筑稳定 ID、层数、完整生成地图、当前/�
 | `show_terminal` | 直接显示原终局结果，不重复结算或记录终局日志 |
 
 首页先以 `has_run_save` 决定“继续游戏”可用性，再以 `load_run` 恢复。`source == "backup"` 会显示非阻断恢复提示；损坏、未知版本和领域校验失败均保留原文件并阻断进入游戏。已有存档时开始新行旅必须先确认，确认后的首次 `setup_run` 自动存档才覆盖旧记录。
+
+## 五批战斗事务底层改造最终验收（2026-08-17）
+
+五批改造的最终回归确认 v1 存档仍只保存已提交本局状态，不保存战斗现场。状态所有权保持三层：
+`RunSession/GrowthInventory` 是已提交状态，`BattleSide` 是当前战斗工作副本，
+`BattleSession`、`CombatEngine` 及牌区／异状／响应服务是纯战斗 Runtime。战斗退出会丢弃
+`BattleSide`，按同一 node ID、content ID 与 content seed 从入口检查点重建；只有成功的
+`RunAggregateTransaction` 才把 `RunProgressSnapshot` 合入 growth 并触发一次稳定存档边界。
+
+被动来源不再按节点长期保存。旧 schema v1 中若存在 `node_passive_source_snapshot` 或
+`node_passive_source_node_id`，读取时完成原有格式和领域校验后忽略，恢复运行态不使用它们；下一次
+保存自然移除字段。事件开始时捕获一次当前来源并固定 `ExecutionPlan`：`battle_completed` 在
+战斗进度合入后捕获，普通 `node_completed` 在奖励应用前捕获，Boss 宝箱在自身结算变更前捕获；
+事件之间重新解析最新永久来源。
+
+最终 quick 7/7、full 32/32，设计一致性为 228/228/0/0（活跃／接入／待接入／错误）。
+本节是最终验收记录，不改变此前各批次的历史验证说明。

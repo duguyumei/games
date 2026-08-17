@@ -28,4 +28,5 @@ func _initialize() -> void:
         "_test_synchronized_reflection_matches_normal_damage",
         "_test_unblockable_damage_still_absorbs_and_reflects",
         "_test_permanent_loadout_capacity_insight_and_runtime_compatibility",
+        "_test_shared_insight_growth_service_contract",
     ])

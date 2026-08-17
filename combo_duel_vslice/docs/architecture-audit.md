@@ -1320,3 +1320,109 @@ ValueSpec 和请求，`BattleEffectPorts` 继续作为来源中立 Facade；调�
 10. 战斗 AI 会话的脱敏审计落盘已经完成；下一阶段按系统纵向推进正式功法、内功、物品与修习接口，UI 组件、回放和测试拆分随对应产品系统推进。
 
 这个顺序允许每一步都由现有确定性测试保护，并避免为了追求架构形式而中断可玩纵切。
+
+## 五批战斗事务底层改造最终验收（2026-08-17）
+
+验收范围为 `633f052`、`4d781c9`、`3da43e3`、`3e938da`、`f2bbc9a`。最终结论是：
+五批改造已经组成一条完整业务链，可以进入功法、内功和物品内容接入阶段；当前没有需要先行
+继续拆类或建立新 Runtime 的架构阻断项。
+
+### 三层状态所有权
+
+| 层 | 核心类 | 所有权与代码证据 |
+|---|---|---|
+| 已提交本局状态 | `RunSession`、`ComboRunState`、`GrowthInventory`、`RunDeck`、`MapNavigationService` | `RunSession.progress_snapshot()` 只从 `GrowthInventory` 建立入口快照；`RunSession._apply_battle_progress_snapshot()` 只在正式结果事务中合入绝对进度。 |
+| 战斗工作状态 | `BattleSide`、玩家 `TechniqueSequenceBook` | `BattleSetupService.apply_non_deck_progress()` 装入，`capture_progress()` 捕获；`BattleSide` 持有可提交字段的工作副本，心得成功后同步当前 SequenceBook。 |
+| 纯战斗运行状态 | `BattleSession`、`CombatEngine`、`ActionResolver`、`CardZoneService`、`StatusSystem` 及其子服务、战斗时点／响应／临时计数服务 | 这些对象只进入战斗 Runtime 捕获与回滚；正式提交边界只读取 `BattleSession.player_progress_snapshot()`，不会序列化完整战斗现场。 |
+
+不存在第四份平行成长状态。`GrowthInventory.apply_to_battle_side()` 和
+`sync_from_battle_side()` 是兼容入口，但都委托 `BattleSetupService`；消耗品 Handler 中的
+`context.growth` 在 Run Context 指向工作副本，在 Battle Context 指向 `BattleSide`，不持有或修改
+`RunSession.growth`。
+
+### 五个唯一事实源
+
+| 唯一事实源 | 职责 | 合理的适配／Facade |
+|---|---|---|
+| `RunProgressSnapshot + BattleSetupService` | 唯一可提交战斗进度 DTO 及唯一 GrowthInventory↔BattleSide 字段映射；RunDeck 同步仍过滤临时、夺取、异状和临时重塑。 | `GrowthInventory.apply_to_battle_side/sync_from_battle_side`、`BattleSession.player_progress_snapshot` 只委托。 |
+| `InsightGrowthService` | 唯一槽位增量、上限、候选过滤、稳定排序、RNG 获得与配装校验规则。 | `GrowthInventory` 提交本局字段；`BattleSide` 提交工作字段并经 `BattleEffectPorts` 同步容量。 |
+| `ConsumableUseService` | 唯一校验、目标解析、Handler 循环、库存扣除、unique、last used、sequence 与事务顺序。 | `RunConsumableUseContext`、`BattleConsumableUseContext` 提供不同状态端口；`BattleConsumableService` 只做门禁、日志和 CombatEngine 适配。 |
+| `RunAggregateTransaction` | 唯一整聚合内存事务，捕获／恢复 growth、地图、奖励、终局、token、日志和 RunEvent。 | `BattleOutcomeCommitService` 只编排业务顺序，`RunSession` 只在成功后发一次 changed、关闭 BattleSession 并形成一次持久化边界。 |
+| `PassiveRuleRuntime` | 唯一来源解析后的计划、稳定 Invocation 顺序和效果／查询派发 Runtime。 | `RunPassiveEventService` 在事件开始时捕获一次当前来源并派发；`PassiveRuleSourceResolver` 只负责来源解析，不是第二套 Runtime。 |
+
+### RunProgressSnapshot 完整性与排除项
+
+GrowthInventory→RunProgressSnapshot→BattleSide→RunProgressSnapshot→GrowthInventory 的契约测试完整覆盖：
+`consumable_ids`、`item_ids`、`learned_technique_ids`、`learned_inner_skill_ids`、
+`equipped_inner_skill_ids`、`technique_slot_index`、`forgotten_inner_skill_count`、`run_deck`、
+`life`、`max_life`、`base_max_life`、run 范围 `source_marker_state`、`experience`、
+`hand_technique_progression`、`consumable_use_sequence`、`last_recallable_consumable_id`、
+`base_hand_limit_modifier`、`hand_technique_multiplier_modifiers`、
+`used_unique_consumable_ids` 与 `passive_counter_state`。`practice_shop_state` 仍是 DTO 的战斗外
+兼容字段，但 `BattleSetupService` 不把它装入或从 `BattleSide` 捕获。
+
+明确不提交的 BattleRuntime 状态包括：防御、连势、同气、有效手牌上限查询结果、手牌／抽牌堆／
+待出区／弃牌堆顺序、临时功法、临时真气、夺取真气、异状、临时重塑、延迟记录、动态响应、
+战斗范围来源标识、战斗临时计数、行动／事件 receipt 和公开历史。永久移出和永久重塑只通过
+过滤后的 `RunDeck` 绝对快照表达，不另建平行字段。
+
+### 冻结语义分类
+
+允许且必要的冻结均限定在一次执行：已确认行动的牌型组、P／P₀、功法槽和启动权限；选择候选与
+随机目标；延迟／响应上下文；毒伤等需要重演的冻结数值；一次事件的 `ExecutionPlan`；事务幂等
+token／receipt；以及文档中的设计规则定稿语义。它们保证等待恢复、重演和稳定顺序，不阻止下一次
+行动或事件读取新状态。
+
+禁止的长期冻结已不存在：没有开战时冻结永久槽位，没有节点入口内功／物品来源快照，没有整场
+战斗成长冻结，也没有因缺少战斗内配装 UI 而复制静态配装。源码中的
+`node_passive_source_snapshot`／`node_passive_source_node_id` 只保留在 schema v1 旧存档校验与兼容
+测试中；新存档不写、恢复不装入运行时。
+
+### 重复逻辑审计
+
+- 心得计算只有 `InsightGrowthService.resolve()`；两个 owner 入口只提交方案。
+- 消耗品效果循环只有 `ConsumableUseService.use()`；Battle Facade 不执行 Handler。
+- 战斗字段映射只有 `BattleSetupService`；GrowthInventory 兼容入口不再手写清单。
+- 战斗结果只走 `BattleOutcomeCommitService → RunAggregateTransaction`。
+- 来源执行只走 `PassiveRuleRuntime`；Resolver、Context、Facade 是职责适配，不是平行实现。
+- `EffectExecutor → Handler → Ports/Context` 仍为功法、内功、物品共享效果结构；中央底层未发现按内容
+  ID 分支。内容仓库各自校验库存语义不构成同义条件或效果执行重复。
+
+### 本次发现并修复的问题
+
+1. 五批新增的五个契约漏入分组清单，`verify_test_runner.sh` 能发现但此前各批未执行；现已归入
+   battle-rules、run-map、save-contracts 和 technique-runtime。
+2. 心得回滚测试的两个动态值在全资源编译时无法推断类型，现显式标注 Dictionary／Array。
+3. `ConsumableUseService.query_use()` 会用“目标不足”覆盖 Battle Context 已返回的“不支持能力”；
+   现在仅在此前仍可用时计算目标不足，保留真实失败原因。
+4. 脚本战斗只配置已装备内功却没有建立对应已习得工作集合，捕获后无法再次装配；现在脚本装配
+   同步建立 learned 集合，正式 RunProgressSnapshot 随后仍可绝对覆盖。
+5. 新增退出重开端到端契约，覆盖入口保存、心得消耗与实时扩容、RunDeck／来源标识工作变化、
+   未结算退出、同 node/content/seed 重建、入口成长恢复及禁止重新选节点。
+
+### 当前规模、验证与剩余风险
+
+核心 GDScript 共 54,303 行，测试 GDScript 共 25,087 行。重点类当前行数：`RunSession` 1,581，
+`BattleSide` 1,434，`CombatEngine` 884，`BattleSession` 841，`ConsumableUseService` 667，
+`GrowthInventory` 482，`BattleSetupService` 335，`RunProgressSnapshot` 182，
+`BattleOutcomeCommitService` 111，`RunAggregateTransaction` 83，`InsightGrowthService` 96。
+这些大类仍值得随真实内容接入观察，但当前职责边界明确；无证据支持在内容接入前继续无目的拆分。
+
+最终 `quick` 为 7/7，最终 `full` 为 32/32；30 个报告断言数的 suite 合计 140,130 条断言，另有
+content pipeline 与项目加载门禁。项目加载覆盖 684 个脚本／场景／资源／JSON。设计一致性为权威
+活跃 228 门、数据接入 228 门、待接入 0 门、错误 0 条。最终成功 stdout 与 Godot 日志未出现脚本／
+文件加载错误、解析或脚本错误、ObjectDB／RID 泄漏、orphan、资源泄漏或退出阶段错误；只有已知
+非阻塞 macOS CA 证书警告。
+
+剩余风险是：JSON v1 存档仍依赖严格领域校验；聚合事务为内存原子性，磁盘原子性继续由现有 JSON
+临时文件＋回读＋替换负责；大型契约测试对夹具合法性较敏感。它们均不是进入下一阶段的阻断项。
+
+### 最终回归证据
+
+本次验收实际重新执行了 `./scripts/verify_test_runner.sh`、quick 7/7、full 32/32 和设计一致性
+检查。quick 日志使用 `/tmp/taiwu-run-transaction-final-quick-<suite>-<序号>.log`，full 日志使用
+`/tmp/taiwu-run-transaction-final-full-<suite>-<序号>.log`；设计检查使用
+`/tmp/taiwu-run-transaction-final-design-capture.log`（指定路径检查亦已成功，日志为
+`/tmp/taiwu-run-transaction-final-design.log`）。成功 stdout 与 Godot 日志的禁止诊断词扫描结果为
+零匹配，CA 证书警告按 AGENTS.md 规则记为非阻塞。该证据与本节结论共同构成最终架构验收，不改写
+此前各批次的历史回归记录。
