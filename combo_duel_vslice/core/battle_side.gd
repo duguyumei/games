@@ -58,11 +58,17 @@ var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
 var temporarily_removed_cards: Array = []
+## 可提交本局状态在战斗内使用工作副本；正式结算前不写回 GrowthInventory。
+var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
 var item_ids: Array[String] = []
 var technique_slot_index: int = 0
+var forgotten_inner_skill_count: int = 0
 var consumable_ids: Array[String] = []
 var consumable_limit: int = 3
+var consumable_use_sequence: int = 0
+var last_recallable_consumable_id: String = ""
+var used_unique_consumable_ids: Array[String] = []
 var hand_proficiency_fixed: Dictionary = {}
 var hand_technique_progression: Dictionary = {}
 var hand_technique_progression_active: bool = false
@@ -172,11 +178,16 @@ func reset(
     poison_damage_modifier_sources.clear()
     poison_damage_modifier_receipts.clear()
     _combat_source_serial = 0
+    learned_inner_skill_ids.clear()
     equipped_inner_skill_ids.clear()
     item_ids.clear()
     technique_slot_index = 0
+    forgotten_inner_skill_count = 0
     consumable_ids.clear()
     consumable_limit = 3
+    consumable_use_sequence = 0
+    last_recallable_consumable_id = ""
+    used_unique_consumable_ids.clear()
     hand_proficiency_fixed.clear()
     hand_technique_progression.clear()
     hand_technique_progression_active = false
@@ -188,6 +199,7 @@ func reset(
     if battle_passive_counter_store != null:
         battle_passive_counter_store.clear()
     source_marker_store.clear_scope("battle")
+    source_marker_store.clear_scope("run")
     last_hand_limit_query_result.clear()
     last_same_qi_capacity_query_result.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
@@ -491,6 +503,7 @@ func capture_passive_query_state() -> Dictionary:
         status_state = status_system.capture_runtime_state()
     return {
         "max_life": max_life,
+        "base_max_life": base_max_life,
         "life": life, "defense": defense, "experience": experience,
         "hand_limit": hand_limit,
         "base_hand_limit_modifier": base_hand_limit_modifier,
@@ -519,11 +532,16 @@ func capture_passive_query_state() -> Dictionary:
         "staging_cards": staging.duplicate(),
         "discard_cards": discard_pile.duplicate(),
         "temporarily_removed_cards": temporarily_removed_cards.duplicate(),
+        "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
         "item_ids": item_ids.duplicate(),
         "technique_slot_index": technique_slot_index,
+        "forgotten_inner_skill_count": forgotten_inner_skill_count,
         "consumable_ids": consumable_ids.duplicate(),
         "consumable_limit": consumable_limit,
+        "consumable_use_sequence": consumable_use_sequence,
+        "last_recallable_consumable_id": last_recallable_consumable_id,
+        "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
         "hand_proficiency_fixed": hand_proficiency_fixed.duplicate(true),
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "hand_technique_progression_active": hand_technique_progression_active,
@@ -537,6 +555,7 @@ func capture_passive_query_state() -> Dictionary:
             if passive_counter_store != null else {},
         "battle_counters": battle_passive_counter_store.capture_state() \
             if battle_passive_counter_store != null else {},
+        "source_marker_state": source_marker_store.snapshot(),
         "last_same_qi_capacity_query_result": (
             last_same_qi_capacity_query_result.duplicate(true)),
         "technique_sequence_state": technique_sequence_book.snapshot() \
@@ -545,6 +564,7 @@ func capture_passive_query_state() -> Dictionary:
 
 func replace_passive_query_state(state: Dictionary) -> void:
     max_life = int(state.get("max_life", max_life))
+    base_max_life = int(state.get("base_max_life", base_max_life))
     life = int(state.get("life", life))
     defense = int(state.get("defense", defense))
     experience = int(state.get("experience", experience))
@@ -585,12 +605,22 @@ func replace_passive_query_state(state: Dictionary) -> void:
     discard_pile.assign(state.get("discard_cards", discard_pile))
     temporarily_removed_cards.assign(state.get(
         "temporarily_removed_cards", temporarily_removed_cards))
+    learned_inner_skill_ids.assign(state.get(
+        "learned_inner_skill_ids", learned_inner_skill_ids))
     equipped_inner_skill_ids.assign(state.get(
         "equipped_inner_skill_ids", equipped_inner_skill_ids))
     item_ids.assign(state.get("item_ids", item_ids))
     technique_slot_index = int(state.get("technique_slot_index", technique_slot_index))
+    forgotten_inner_skill_count = int(state.get(
+        "forgotten_inner_skill_count", forgotten_inner_skill_count))
     consumable_ids.assign(state.get("consumable_ids", consumable_ids))
     consumable_limit = int(state.get("consumable_limit", consumable_limit))
+    consumable_use_sequence = int(state.get(
+        "consumable_use_sequence", consumable_use_sequence))
+    last_recallable_consumable_id = str(state.get(
+        "last_recallable_consumable_id", last_recallable_consumable_id))
+    used_unique_consumable_ids.assign(state.get(
+        "used_unique_consumable_ids", used_unique_consumable_ids))
     hand_proficiency_fixed = state.get(
         "hand_proficiency_fixed", hand_proficiency_fixed).duplicate(true)
     hand_technique_progression = state.get(
@@ -632,6 +662,9 @@ func replace_passive_query_state(state: Dictionary) -> void:
         passive_counter_store.replace_state(state.get("persistent_counters", {}))
     if battle_passive_counter_store != null:
         battle_passive_counter_store.replace_state(state.get("battle_counters", {}))
+    var source_marker_state: Dictionary = state.get("source_marker_state", {})
+    if not source_marker_state.is_empty():
+        source_marker_store.restore_snapshot(source_marker_state)
     var sequence_state: Dictionary = state.get("technique_sequence_state", {})
     if technique_sequence_book != null and not sequence_state.is_empty():
         technique_sequence_book.restore_snapshot(sequence_state)

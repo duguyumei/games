@@ -2,6 +2,7 @@ class_name GrowthInventory
 extends RefCounted
 
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
+const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 const RunDeckScript = preload("res://core/run_deck.gd")
 const PassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
@@ -486,66 +487,37 @@ func recalculate_effective_max_life() -> int:
     return max_life
 
 func apply_to_battle_side(side) -> void:
-    var loadout_policy = technique_loadout_policy \
-        if technique_loadout_policy.has_catalog() \
-        else side.technique_loadout_policy
-    var loadout_owner = self \
-        if loadout_policy == technique_loadout_policy else side
-    var loadout_validation: Dictionary = \
-        loadout_policy.validate_complete(
-            loadout_owner, hand_technique_progression,
-            learned_technique_ids, "")
-    if not loadout_validation.get("success", false):
-        push_error("无法应用玩家功法配装：%s" % str(
-            loadout_validation.get("reason", "配装校验失败")))
+    var setup_service = _battle_setup_service_for(side)
+    var progress_snapshot := to_progress_snapshot()
+    var non_deck_result: Dictionary = setup_service.apply_non_deck_progress(
+        side, progress_snapshot)
+    if not non_deck_result.get("success", false):
+        push_error("无法应用玩家战斗进度：%s" % str(
+            non_deck_result.get("reason", "战斗进度校验失败")))
         return
-    side.max_life = max_life
-    side.base_max_life = base_max_life
-    side.source_marker_store.restore_snapshot(source_marker_store.snapshot())
-    side.life = life
-    side.experience = experience
-    side.configure_consumables(consumable_ids)
-    side.hand_technique_progression = hand_technique_progression.duplicate(true)
-    side.hand_technique_progression_active = true
     if side.technique_sequence_book != null:
-        side.technique_sequence_book.configure_hand_progression(
-            hand_technique_progression)
-    side.base_hand_limit_modifier = base_hand_limit_modifier
-    side.hand_technique_multiplier_modifiers = (
-        hand_technique_multiplier_modifiers.duplicate(true))
-    for technique_id in learned_technique_ids:
-        side.learn_technique(technique_id)
-    side.configure_inner_skills(equipped_inner_skill_ids, technique_slot_index)
+        var progression_result: Dictionary = (
+            setup_service.apply_player_technique_progression(
+                side, side.technique_sequence_book, progress_snapshot))
+        if not progression_result.get("success", false):
+            push_error("无法应用玩家功法配装：%s" % str(
+                progression_result.get("reason", "配装校验失败")))
+            return
+    var battle_run_deck = setup_service.run_deck_from_progress(progress_snapshot)
     var no_shuffle_rng := RandomNumberGenerator.new()
-    side.replace_deck(run_deck.create_battle_cards(), no_shuffle_rng, false)
+    side.replace_deck(battle_run_deck.create_battle_cards(), no_shuffle_rng, false)
 
 func sync_from_battle_side(side) -> void:
-    base_max_life = int(side.base_max_life)
-    source_marker_store.restore_snapshot(side.source_marker_store.snapshot("run"))
-    recalculate_effective_max_life()
-    life = int(side.life)
-    consumable_ids.clear()
-    for consumable_id in side.consumable_ids:
-        consumable_ids.append(str(consumable_id))
-    if side.get("hand_technique_progression") is Dictionary:
-        hand_technique_progression = side.hand_technique_progression.duplicate(true)
-    base_hand_limit_modifier = int(side.get("base_hand_limit_modifier"))
-    if side.get("hand_technique_multiplier_modifiers") is Dictionary:
-        hand_technique_multiplier_modifiers = (
-            side.hand_technique_multiplier_modifiers.duplicate(true))
-    learned_technique_ids.clear()
-    for technique_id in side.owned_technique_ids:
-        if not technique_loadout_policy.is_built_in(str(technique_id)):
-            learned_technique_ids.append(str(technique_id))
-    equipped_inner_skill_ids.clear()
-    for inner_skill_id in side.equipped_inner_skill_ids:
-        equipped_inner_skill_ids.append(str(inner_skill_id))
-        if not learned_inner_skill_ids.has(str(inner_skill_id)):
-            learned_inner_skill_ids.append(str(inner_skill_id))
-    technique_slot_index = int(side.technique_slot_index)
-    run_deck.sync_from_battle_cards(
-        side.all_cards_for_run_sync(),
-        side.permanently_removed_card_ids)
+    var progress_snapshot: RunProgressSnapshot = _battle_setup_service_for(
+        side).capture_progress(side, run_deck)
+    apply_progress_snapshot(progress_snapshot)
+
+func _battle_setup_service_for(side):
+    var catalog = _content_catalog
+    if catalog == null and side != null \
+            and side.technique_loadout_policy != null:
+        catalog = side.technique_loadout_policy._catalog
+    return BattleSetupServiceScript.new(catalog)
 
 func current_base_hand_limit() -> int:
     return maxi(1, 8 + base_hand_limit_modifier)

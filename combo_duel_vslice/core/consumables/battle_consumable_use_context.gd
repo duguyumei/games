@@ -47,79 +47,15 @@ func target_display_name(instance_id: String) -> String:
 	var card = _find_card(instance_id)
 	return card.display_name() if card != null else instance_id
 
-## 战斗兼容入口的统一事务快照。只覆盖消耗品 Handler 可持久修改的状态，
-## 不按 operation id 区分补偿逻辑。
+## 战斗兼容入口复用 BattleSide 的统一事务快照，不按 operation id 区分补偿逻辑。
 func capture_transaction_state() -> Dictionary:
-	var card_states: Dictionary = {}
-	for instance_id in instance_ids:
-		var card = _find_card(instance_id)
-		if card == null:
-			continue
-		card_states[instance_id] = {
-			"identity": {
-				"definition_id": card.definition_id,
-				"rank_name": card.rank_name,
-				"rank_order": card.rank_order,
-				"qi_value": card.qi_value,
-				"attribute": card.attribute,
-				"attribute_name": card.attribute_name,
-			},
-			"origin_base_identity": card.origin_base_identity.duplicate(true),
-			"origin": card.reshape_origin.duplicate(true),
-			"enhancement": str(card.reshape_enhancement),
-			"imprint": str(card.reshape_imprint),
-			"others": card.reshape_others.duplicate(true),
-			"anomalies": card.anomaly_snapshot(),
-			"temporary_reshapes": card.temporary_reshapes.duplicate(true),
-		}
-	return {
-		"cards": card_states,
-		"hand_technique_progression": growth.hand_technique_progression.duplicate(true),
-		"owned_technique_ids": growth.owned_technique_ids.duplicate(),
-		"consumable_ids": growth.consumable_ids.duplicate(),
-		"technique_sequence_state": (
-			growth.technique_sequence_book.snapshot()
-			if growth.technique_sequence_book != null else {}),
-	}
+	return growth.capture_passive_query_state() if growth != null else {}
 
 func restore_transaction_state(snapshot: Dictionary) -> bool:
 	if growth == null:
 		return false
-	var restored := true
-	for instance_id in snapshot.get("cards", {}):
-		var card = _find_card(str(instance_id))
-		if card == null:
-			restored = false
-			continue
-		var values: Dictionary = snapshot["cards"][instance_id]
-		var identity: Dictionary = values.get("identity", {})
-		card.definition_id = str(identity.get("definition_id", card.definition_id))
-		card.rank_name = str(identity.get("rank_name", card.rank_name))
-		card.rank_order = int(identity.get("rank_order", card.rank_order))
-		card.qi_value = int(identity.get("qi_value", card.qi_value))
-		card.attribute = str(identity.get("attribute", card.attribute))
-		card.attribute_name = str(identity.get("attribute_name", card.attribute_name))
-		card.origin_base_identity = values.get("origin_base_identity", {}).duplicate(true)
-		card.reshape_origin = values.get("origin", {}).duplicate(true)
-		card.reshape_enhancement = str(values.get("enhancement", ""))
-		card.reshape_imprint = str(values.get("imprint", ""))
-		card.reshape_others = values.get("others", {}).duplicate(true)
-		var anomalies: Dictionary = values.get("anomalies", {})
-		if not card.restore_anomaly_snapshot(anomalies):
-			restored = false
-		card.temporary_reshapes = values.get("temporary_reshapes", {
-			"enhancement": "", "attribute": "", "rank": {}}).duplicate(true)
-		if not card.temporary_reshapes.has("rank"):
-			card.temporary_reshapes["rank"] = {}
-	growth.hand_technique_progression = snapshot.get(
-		"hand_technique_progression", {}).duplicate(true)
-	growth.owned_technique_ids.assign(snapshot.get("owned_technique_ids", []))
-	growth.consumable_ids.assign(snapshot.get("consumable_ids", []))
-	var sequence_state: Dictionary = snapshot.get(
-		"technique_sequence_state", {})
-	if growth.technique_sequence_book != null and not sequence_state.is_empty():
-		growth.technique_sequence_book.restore_snapshot(sequence_state)
-	return restored
+	growth.replace_passive_query_state(snapshot)
+	return true
 
 func _find_card(instance_id: String):
 	if growth == null or not growth.has_method("find_hand_card"):

@@ -180,39 +180,66 @@ func run_deck_from_progress(progress_snapshot: RunProgressSnapshot):
 func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Dictionary:
     if progress_snapshot == null:
         return {"success": true}
-    var previous_item_ids: Array = side.item_ids.duplicate()
+    var state_before: Dictionary = side.capture_passive_query_state()
+    var result: Dictionary = _apply_non_deck_progress(side, progress_snapshot)
+    if not result.get("success", false):
+        side.replace_passive_query_state(state_before)
+        result["rolled_back"] = true
+    return result
+
+func _apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Dictionary:
     if progress_snapshot.has_item_ids:
         var item_result: Dictionary = side.configure_items(
             progress_snapshot.item_ids)
         if not item_result.get("success", false):
             return item_result
-    if progress_snapshot.has_equipped_inner_skill_ids:
+    if progress_snapshot.has_learned_inner_skill_ids:
+        side.learned_inner_skill_ids.assign(
+            progress_snapshot.learned_inner_skill_ids)
+    if progress_snapshot.has_equipped_inner_skill_ids \
+            or progress_snapshot.has_technique_slot_index:
         if progress_snapshot.has_learned_inner_skill_ids:
             var learned_counts := _counts(progress_snapshot.learned_inner_skill_ids)
-            var equipped_counts := _counts(progress_snapshot.equipped_inner_skill_ids)
+            var equipped_counts := _counts(
+                progress_snapshot.equipped_inner_skill_ids
+                if progress_snapshot.has_equipped_inner_skill_ids
+                else side.equipped_inner_skill_ids)
             for content_id in equipped_counts:
                 if int(equipped_counts[content_id]) > int(learned_counts.get(content_id, 0)):
-                    side.item_ids.assign(previous_item_ids)
                     return {
                         "success": false,
                         "reason": "装备数量超过已获得副本数：%s" % str(content_id),
                     }
         var inner_result: Dictionary = side.configure_inner_skills(
-            progress_snapshot.equipped_inner_skill_ids,
-            progress_snapshot.technique_slot_index)
+            progress_snapshot.equipped_inner_skill_ids
+                if progress_snapshot.has_equipped_inner_skill_ids
+                else side.equipped_inner_skill_ids,
+            progress_snapshot.technique_slot_index
+                if progress_snapshot.has_technique_slot_index
+                else side.technique_slot_index)
         if not inner_result.get("success", false):
-            side.item_ids.assign(previous_item_ids)
             return inner_result
+    if progress_snapshot.has_forgotten_inner_skill_count:
+        side.forgotten_inner_skill_count = (
+            progress_snapshot.forgotten_inner_skill_count)
     if progress_snapshot.has_consumable_ids:
         side.configure_consumables(progress_snapshot.consumable_ids)
+    if progress_snapshot.has_consumable_use_sequence:
+        side.consumable_use_sequence = progress_snapshot.consumable_use_sequence
+    if progress_snapshot.has_last_recallable_consumable_id:
+        side.last_recallable_consumable_id = (
+            progress_snapshot.last_recallable_consumable_id)
+    if progress_snapshot.has_used_unique_consumable_ids:
+        side.used_unique_consumable_ids.assign(
+            progress_snapshot.used_unique_consumable_ids)
     if progress_snapshot.has_base_hand_limit_modifier:
         side.base_hand_limit_modifier = progress_snapshot.base_hand_limit_modifier
     if progress_snapshot.has_hand_technique_multiplier_modifiers:
         side.hand_technique_multiplier_modifiers = (
             progress_snapshot.hand_technique_multiplier_modifiers.duplicate(true))
     if progress_snapshot.has_learned_technique_ids:
-        for technique_id in progress_snapshot.learned_technique_ids:
-            side.learn_technique(technique_id)
+        _replace_obtainable_owned_technique_ids(
+            side, progress_snapshot.learned_technique_ids)
     if progress_snapshot.has_max_life:
         side.max_life = progress_snapshot.max_life
     if progress_snapshot.has_base_max_life:
@@ -229,7 +256,9 @@ func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Di
     if progress_snapshot.has_experience:
         side.experience = progress_snapshot.experience
     if progress_snapshot.has_passive_counter_state \
-            and side.passive_counter_store != null:
+            and side.passive_counter_store == null:
+        return {"success": false, "reason": "玩家本局被动计数器尚未装配"}
+    if progress_snapshot.has_passive_counter_state:
         var counter_errors: Array[String] = side.passive_counter_store.replace_state(
             progress_snapshot.passive_counter_state)
         if not counter_errors.is_empty():
@@ -254,8 +283,10 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
     var values := {
         "consumable_ids": side.consumable_ids.duplicate(),
         "item_ids": side.item_ids.duplicate(),
+        "learned_inner_skill_ids": side.learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
         "technique_slot_index": side.technique_slot_index,
+        "forgotten_inner_skill_count": side.forgotten_inner_skill_count,
         "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "learned_technique_ids": _obtainable_owned_technique_ids(side),
         "life": side.life,
@@ -263,8 +294,11 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "base_max_life": side.base_max_life,
         "source_marker_state": side.source_marker_store.snapshot("run"),
         "experience": side.experience,
+        "consumable_use_sequence": side.consumable_use_sequence,
+        "last_recallable_consumable_id": side.last_recallable_consumable_id,
         "base_hand_limit_modifier": side.base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": side.hand_technique_multiplier_modifiers.duplicate(true),
+        "used_unique_consumable_ids": side.used_unique_consumable_ids.duplicate(),
         "run_deck": run_deck.to_snapshot(),
     }
     if side.passive_counter_store != null:
@@ -276,8 +310,22 @@ func _obtainable_owned_technique_ids(side) -> Array[String]:
     var result: Array[String] = []
     for technique_id_value in side.owned_technique_ids:
         var technique_id := str(technique_id_value)
-        var definition: Dictionary = _content_catalog.get_by_id(
-            "technique", technique_id) if _content_catalog != null else {}
-        if not bool(definition.get("built_in", false)):
+        if not _is_built_in_technique(side, technique_id):
             result.append(technique_id)
     return result
+
+func _replace_obtainable_owned_technique_ids(side, learned_ids: Array) -> void:
+    var built_in_ids: Array[String] = []
+    for technique_id_value in side.owned_technique_ids:
+        var technique_id := str(technique_id_value)
+        if _is_built_in_technique(side, technique_id):
+            built_in_ids.append(technique_id)
+    side.owned_technique_ids.assign(built_in_ids)
+    for technique_id_value in learned_ids:
+        side.learn_technique(str(technique_id_value))
+
+func _is_built_in_technique(side, technique_id: String) -> bool:
+    if _content_catalog != null:
+        return bool(_content_catalog.get_by_id(
+            "technique", technique_id).get("built_in", false))
+    return side.technique_loadout_policy.is_built_in(technique_id)

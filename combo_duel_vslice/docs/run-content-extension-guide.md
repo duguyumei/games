@@ -454,8 +454,8 @@ kind、种子、configuration 与完整冻结 DTO；`resume_policy=resume_intera
 `forgotten_inner_skill_count`；奇珍清理、替换、自动消失及其他永久移除不增加该计数。
 
 `forgotten_inner_skill_count` 属于 `GrowthInventory` 的完整 mutation state、
-`RunProgressSnapshot`、v1 存档 `growth` 段与本局成长快照。战斗返回的局部快照不携带该字段，
-因此不会清空本局累计；旧存档缺省时恢复为 0。
+`RunProgressSnapshot`、v1 存档 `growth` 段与本局成长快照。玩家战斗工作状态会绝对装入并回传该字段；
+旧存档缺省时恢复为 0。
 
 ## 6.9 内功与物品被动行为
 

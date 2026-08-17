@@ -746,6 +746,33 @@ class ConsumableProbeHandler:
             },
         }
 
+class BattleWorkingStateMutationProbeHandler:
+    extends RefCounted
+
+    func operation_ids() -> Array:
+        return ["battle_working_state_mutation"]
+
+    func validate_effect(effect: Dictionary, context, scope: String) -> void:
+        if not effect.get("amount") is int:
+            context.report_error(scope + ".amount", "探针 amount 必须是整数")
+
+    func apply(_effect: Dictionary, context) -> Dictionary:
+        context.growth.learned_inner_skill_ids.append("rollback_inner")
+        context.growth.forgotten_inner_skill_count += 1
+        context.growth.consumable_use_sequence += 1
+        context.growth.last_recallable_consumable_id = "rollback_consumable"
+        context.growth.used_unique_consumable_ids.append("rollback_unique")
+        context.growth.source_marker_store.write(
+            "inner_skill", "rollback:inner:0", "rollback_inner",
+            "rollback_marker", "run", "add", 1)
+        return {
+            "success": true,
+            "applied": {
+                "op": "battle_working_state_mutation",
+                "details": ["修改战斗可提交工作状态"],
+            },
+        }
+
 class NodeInteractionProbeHandler:
     extends RefCounted
 
@@ -1000,6 +1027,7 @@ func _initialize() -> void:
     _test_node_dispatcher_is_data_driven_and_deterministic()
     _test_run_state_node_and_practice_gate()
     _test_run_service_boundaries_and_progress_snapshot()
+    _test_battle_run_progress_working_state_protocol()
     _test_node_interaction_platform_contract()
     _test_run_session_commands_snapshots_events_and_logs()
     _test_run_terminal_result_contract_and_closure()
@@ -9976,6 +10004,7 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
             "name": "战斗事务探针",
             "targeting": {"zone": "hand", "minimum": 1, "maximum": 1},
             "effects": [
+                {"op": "battle_working_state_mutation", "amount": 0},
                 {"op": "gain_insight", "hand": "high_card", "pools": ["high"]},
                 {"op": "apply_enhancement", "enhancement": "qi_boost"},
                 {"op": "battle_transaction_fail", "amount": 0},
@@ -9985,6 +10014,10 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
     _assert_true(configured, "战斗事务探针消耗品仓库配置成功")
     _assert_true(
         engine.consumable_service._handler_registry.register_handler(
+            BattleWorkingStateMutationProbeHandler.new()),
+        "战斗工作状态修改探针注册成功")
+    _assert_true(
+        engine.consumable_service._handler_registry.register_handler(
             ConsumableProbeHandler.new(["battle_transaction_fail"], true)),
         "战斗事务失败探针注册成功")
     engine.player.configure_consumables(["battle_transaction_probe"])
@@ -9992,6 +10025,15 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
     var progression_before: Dictionary = engine.player.hand_technique_progression.duplicate(true)
     var owned_before: Array[String] = engine.player.owned_technique_ids.duplicate()
     var consumables_before: Array[String] = engine.player.consumable_ids.duplicate()
+    var learned_inner_before: Array[String] = (
+        engine.player.learned_inner_skill_ids.duplicate())
+    var forgotten_before: int = engine.player.forgotten_inner_skill_count
+    var use_sequence_before: int = engine.player.consumable_use_sequence
+    var last_recallable_before: String = engine.player.last_recallable_consumable_id
+    var used_unique_before: Array[String] = (
+        engine.player.used_unique_consumable_ids.duplicate())
+    var source_markers_before: Dictionary = (
+        engine.player.source_marker_store.snapshot())
     var rng_state_before: int = int(engine.rng.state)
 
     var result := engine.use_player_consumable(0, [target.id])
@@ -10005,6 +10047,24 @@ func _test_battle_consumable_multi_effect_rollback() -> void:
         "失败恢复牌型功法成长")
     _assert_equal(engine.player.owned_technique_ids, owned_before, "失败恢复已拥有功法")
     _assert_equal(engine.player.consumable_ids, consumables_before, "失败不消费指定消耗品槽")
+    _assert_equal(
+        engine.player.learned_inner_skill_ids, learned_inner_before,
+        "失败恢复战斗中新获得内功")
+    _assert_equal(
+        engine.player.forgotten_inner_skill_count, forgotten_before,
+        "失败恢复战斗内功遗忘计数")
+    _assert_equal(
+        engine.player.consumable_use_sequence, use_sequence_before,
+        "失败恢复消耗品使用序号")
+    _assert_equal(
+        engine.player.last_recallable_consumable_id, last_recallable_before,
+        "失败恢复最近可溯忆消耗品")
+    _assert_equal(
+        engine.player.used_unique_consumable_ids, used_unique_before,
+        "失败恢复唯一消耗品使用记录")
+    _assert_equal(
+        engine.player.source_marker_store.snapshot(), source_markers_before,
+        "失败恢复本局来源标识")
     _assert_equal(engine.rng.state, rng_state_before, "失败恢复战斗消耗品随机状态")
 
 func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
@@ -11565,6 +11625,151 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
     _assert_true(
         not manual_progress.to_dict().has("equipped_inner_skill_ids"),
         "局部快照序列化保留字段缺失语义")
+
+func _test_battle_run_progress_working_state_protocol() -> void:
+    var catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
+    _assert_true(catalog.load_all(), "战斗工作状态协议测试载入内容目录")
+    var engine = CombatEngineScript.new(null, catalog)
+    engine.setup(260817, false)
+    var setup_service = BattleSetupServiceScript.new(catalog)
+    var run_deck = RunDeckScript.new(catalog)
+    run_deck.reset_standard("working-state")
+    var initial_growth = GrowthInventoryScript.new(catalog)
+    var learned_technique_id := ""
+    for definition in catalog.all_of("technique"):
+        if not bool(definition.get("built_in", false)):
+            learned_technique_id = str(definition.get("id", ""))
+            break
+    var learned_technique_ids: Array[String] = (
+        initial_growth.learned_technique_ids.duplicate())
+    if learned_technique_id != "" \
+            and not learned_technique_ids.has(learned_technique_id):
+        learned_technique_ids.append(learned_technique_id)
+    var marker_state := {
+        "schema_version": 1,
+        "entries": [{
+            "source_kind": "inner_skill",
+            "source_instance_key": "inner:player:0:extra_qi_to_defense",
+            "content_id": "extra_qi_to_defense",
+            "marker_id": "working_state_probe",
+            "scope": "run",
+            "value": 6,
+            "public": true,
+            "display_name": "协议探针",
+            "contributes_to": "max_life",
+            "forget_policy": "clear",
+        }],
+    }
+    var values := {
+        "consumable_ids": ["zengyuan_pill", "high_card_insight"],
+        "item_ids": ["gift_card"],
+        "learned_technique_ids": learned_technique_ids,
+        "learned_inner_skill_ids": [
+            "extra_qi_to_defense", "extra_qi_to_defense"],
+        "equipped_inner_skill_ids": ["extra_qi_to_defense"],
+        "technique_slot_index": 1,
+        "forgotten_inner_skill_count": 4,
+        "run_deck": run_deck.to_snapshot(),
+        "life": 93,
+        "max_life": 137,
+        "base_max_life": 131,
+        "source_marker_state": marker_state,
+        "experience": 17,
+        "hand_technique_progression": (
+            initial_growth.hand_technique_progression.duplicate(true)),
+        "consumable_use_sequence": 8,
+        "last_recallable_consumable_id": "zengyuan_pill",
+        "base_hand_limit_modifier": 2,
+        "hand_technique_multiplier_modifiers": {
+            "high_card": {"multiplier_bonus": 3}},
+        "used_unique_consumable_ids": ["zhenyuan_huasheng"],
+        "passive_counter_state": {"version": 1, "entries": []},
+    }
+    var progress = RunProgressSnapshotScript.from_dict(values)
+    _assert_true(
+        setup_service.apply_non_deck_progress(
+            engine.player, progress).get("success", false),
+        "完整 RunProgressSnapshot 装入 BattleSide")
+    _assert_true(
+        setup_service.apply_player_technique_progression(
+            engine.player, engine.sequence_book, progress).get("success", false),
+        "完整功法进度装入战斗序列")
+    engine.player.replace_deck(
+        setup_service.run_deck_from_progress(progress).create_battle_cards(),
+        RandomNumberGenerator.new(), false)
+    var captured = setup_service.capture_progress(engine.player, run_deck)
+    _assert_equal(captured.to_dict(), progress.to_dict(), "战斗可提交字段装入再捕获完整无损")
+    var round_trip_growth = GrowthInventoryScript.new(catalog, false)
+    round_trip_growth.apply_progress_snapshot(captured)
+    var growth_round_trip: Dictionary = round_trip_growth.to_progress_snapshot().to_dict()
+    for field in values:
+        _assert_equal(
+            growth_round_trip[field], progress.to_dict()[field],
+            "GrowthInventory 完整往返字段：%s" % field)
+
+    engine.player.consumable_ids.assign(["pair_insight"])
+    engine.player.used_unique_consumable_ids.append("shuangji_huasheng")
+    engine.player.consumable_use_sequence = 9
+    engine.player.last_recallable_consumable_id = "pair_insight"
+    engine.player.experience = 23
+    engine.player.hand_technique_progression["high_card"]["slot_count"] = 2
+    engine.player.learn_technique("working_state_technique")
+    engine.player.learned_inner_skill_ids.append("extra_qi_to_defense")
+    engine.player.forgotten_inner_skill_count = 5
+    engine.player.item_ids.append("astronomer")
+    engine.player.base_max_life = 140
+    engine.player.max_life = 146
+    engine.player.source_marker_store.write(
+        "inner_skill", "inner:player:0:extra_qi_to_defense",
+        "extra_qi_to_defense", "working_state_probe", "run", "add", 1)
+    var changed = setup_service.capture_progress(engine.player, run_deck)
+    _assert_equal(changed.consumable_ids, ["pair_insight"], "捕获战斗消耗品变化")
+    _assert_equal(changed.consumable_use_sequence, 9, "捕获消耗品使用序号变化")
+    _assert_equal(changed.last_recallable_consumable_id, "pair_insight", "捕获最近可溯忆消耗品变化")
+    _assert_true(changed.used_unique_consumable_ids.has("shuangji_huasheng"), "捕获唯一使用记录变化")
+    _assert_equal(changed.experience, 23, "捕获战斗心得与历练变化")
+    _assert_equal(changed.hand_technique_progression["high_card"]["slot_count"], 2, "捕获永久功法槽变化")
+    _assert_true(changed.learned_technique_ids.has("working_state_technique"), "捕获战斗获得功法")
+    _assert_equal(changed.learned_inner_skill_ids.size(), 3, "捕获战斗获得内功")
+    _assert_equal(changed.forgotten_inner_skill_count, 5, "捕获战斗内功遗忘计数")
+    _assert_true(changed.item_ids.has("astronomer"), "捕获战斗获得物品")
+    _assert_equal(changed.base_max_life, 140, "捕获基础最大生命变化")
+    _assert_equal(changed.max_life, 146, "捕获有效最大生命变化")
+    _assert_equal(changed.source_marker_state["entries"][0]["value"], 7, "捕获 run 来源标识变化")
+
+    engine.player.defense = 88
+    engine.player.momentum_value = 7
+    engine.player.same_qi_value = 4
+    engine.player.source_marker_store.write(
+        "technique", "temporary:battle", "basic_scatter",
+        "temporary_marker", "battle", "add", 5)
+    var runtime_filtered: Dictionary = setup_service.capture_progress(
+        engine.player, run_deck).to_dict()
+    for runtime_field in [
+            "defense", "momentum_value", "same_qi_value", "hand",
+            "draw_pile", "status_state", "battle_counters"]:
+        _assert_true(
+            not runtime_filtered.has(runtime_field),
+            "纯战斗字段不进入 RunProgressSnapshot：%s" % runtime_field)
+    _assert_true(
+        runtime_filtered["source_marker_state"]["entries"].all(
+            func(entry): return str(entry.get("scope", "")) == "run"),
+        "battle 范围来源标识不进入 RunProgressSnapshot")
+
+    var deck_before_temporary_state: Dictionary = run_deck.to_snapshot()
+    var first_card = engine.player.all_zone_cards()[0]
+    first_card.set_anomaly("state", "poison")
+    first_card.set_temporary_enhancement("momentum")
+    var temporary_card = QiCardScript.new(
+        "temporary-probe", "A", 14, 14, "fire", "火", "fire_A")
+    temporary_card.temporary_card = true
+    engine.player.hand.append(temporary_card)
+    var stolen_card = engine.player.all_zone_cards()[1]
+    stolen_card.original_owner_id = "enemy"
+    setup_service.capture_progress(engine.player, run_deck)
+    _assert_equal(
+        run_deck.to_snapshot(), deck_before_temporary_state,
+        "临时真气、夺取真气、异状和临时重塑不写入 RunDeck")
 
 func _test_node_interaction_platform_contract() -> void:
     var invalid_registry = NodeInteractionHandlerRegistryScript.new()

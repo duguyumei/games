@@ -9,11 +9,13 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 8
+const SCHEMA_VERSION := 9
 
 var name: String = ""
+var experience: int = 0
 var life: int = 0
 var max_life: int = 0
+var base_max_life: int = 0
 var defense: int = 0
 var direct_power_fixed: int = 0
 var direct_power_percent: int = 0
@@ -47,9 +49,11 @@ var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
 var temporarily_removed: Array = []
+var learned_inner_skill_ids: Array = []
 var equipped_inner_skill_ids: Array = []
 var equipped_inner_skills: Array = []
 var technique_slot_index: int = 0
+var forgotten_inner_skill_count: int = 0
 var item_ids: Array = []
 var consumable_ids: Array = []
 var consumables: Array = []
@@ -70,7 +74,8 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     var result := BattleSideSnapshot.new()
     var missing: Array[String] = []
     for required in [
-            "name", "life", "max_life", "defense", "hand_limit",
+            "name", "experience", "life", "max_life", "base_max_life",
+            "defense", "hand_limit",
             "base_hand_limit",
             "direct_power_fixed", "direct_power_percent", "momentum_value",
             "same_qi_value", "same_qi_capacity",
@@ -83,7 +88,8 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "poison_hand_count", "poison_hand_amount",
             "poison_draw_pile_count", "poison_draw_pile_amount",
             "poison_total_count", "poison_total_amount",
-            "technique_slot_index", "consumable_limit",
+            "technique_slot_index", "forgotten_inner_skill_count",
+            "consumable_limit",
             "technique_slot_usage"]:
         if not values.has(required):
             missing.append(str(required))
@@ -91,8 +97,10 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
         push_error("参战者快照缺少字段：%s" % ", ".join(missing))
 
     result.name = str(values.get("name", ""))
+    result.experience = int(values.get("experience", 0))
     result.life = int(values.get("life", 0))
     result.max_life = int(values.get("max_life", 0))
+    result.base_max_life = int(values.get("base_max_life", 0))
     result.defense = int(values.get("defense", 0))
     result.direct_power_fixed = int(values.get("direct_power_fixed", 0))
     result.direct_power_percent = int(values.get("direct_power_percent", 0))
@@ -131,9 +139,13 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.staging = values.get("staging", []).duplicate(true)
     result.discard_pile = values.get("discard_pile", []).duplicate(true)
     result.temporarily_removed = values.get("temporarily_removed", []).duplicate(true)
+    result.learned_inner_skill_ids = values.get(
+        "learned_inner_skill_ids", []).duplicate(true)
     result.equipped_inner_skill_ids = values.get("equipped_inner_skill_ids", []).duplicate(true)
     result.equipped_inner_skills = values.get("equipped_inner_skills", []).duplicate(true)
     result.technique_slot_index = int(values.get("technique_slot_index", 0))
+    result.forgotten_inner_skill_count = int(values.get(
+        "forgotten_inner_skill_count", 0))
     result.item_ids = values.get("item_ids", []).duplicate(true)
     result.consumable_ids = values.get("consumable_ids", []).duplicate(true)
     result.consumables = values.get("consumables", []).duplicate(true)
@@ -155,8 +167,10 @@ func to_dict() -> Dictionary:
     return {
         "schema_version": SCHEMA_VERSION,
         "name": name,
+        "experience": experience,
         "life": life,
         "max_life": max_life,
+        "base_max_life": base_max_life,
         "defense": defense,
         "direct_power_fixed": direct_power_fixed,
         "direct_power_percent": direct_power_percent,
@@ -190,9 +204,11 @@ func to_dict() -> Dictionary:
         "staging": staging.duplicate(true),
         "discard_pile": discard_pile.duplicate(true),
         "temporarily_removed": temporarily_removed.duplicate(true),
+        "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(true),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(true),
         "equipped_inner_skills": equipped_inner_skills.duplicate(true),
         "technique_slot_index": technique_slot_index,
+        "forgotten_inner_skill_count": forgotten_inner_skill_count,
         "item_ids": item_ids.duplicate(true),
         "consumable_ids": consumable_ids.duplicate(true),
         "consumables": consumables.duplicate(true),

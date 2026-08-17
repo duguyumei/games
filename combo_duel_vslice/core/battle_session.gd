@@ -733,8 +733,10 @@ func _side_snapshot(side) -> Dictionary:
     })
     return {
         "name": side.name,
+        "experience": side.experience,
         "life": side.life,
         "max_life": side.max_life,
+        "base_max_life": side.base_max_life,
         "defense": side.defense,
         "direct_power_fixed": side.direct_power_fixed,
         "direct_power_percent": side.direct_power_percent,
@@ -768,9 +770,11 @@ func _side_snapshot(side) -> Dictionary:
         "staging": _card_snapshots(side.staging),
         "discard_pile": _card_snapshots(side.discard_pile),
         "temporarily_removed": _card_snapshots(side.temporarily_removed_cards),
+        "learned_inner_skill_ids": side.learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": side.equipped_inner_skill_ids.duplicate(),
         "equipped_inner_skills": equipped_inner_skills,
         "technique_slot_index": side.technique_slot_index,
+        "forgotten_inner_skill_count": side.forgotten_inner_skill_count,
         "item_ids": side.item_ids.duplicate(),
         "consumable_ids": side.consumable_ids.duplicate(),
         "consumables": consumables,
