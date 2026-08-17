@@ -558,7 +558,8 @@ func _draw_source_metadata(source_value) -> Dictionary:
 
 func _effect_source_metadata(source_value) -> Dictionary:
     if source_value is Dictionary:
-        return EffectSourceProtocolScript.from_values(source_value)
+        return EffectSourceProtocolScript.merge_into(
+            source_value, source_value)
     if source_value is Object:
         return EffectSourceProtocolScript.from_context(source_value)
     var legacy := str(source_value)

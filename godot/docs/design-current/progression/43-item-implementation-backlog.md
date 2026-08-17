@@ -176,6 +176,11 @@
 
 ### E. 战斗 Hook、牌区与功法值查询
 
+- **底层状态校正（2026-08-17）**：统一`card_moved` committed事实已经完成；回收魔法所需的逐牌
+  discard→draw_pile事实、双方持有方、来源和批次字段可读，并继续兼容动态响应。生成事实使用
+  `from_zone=generated`和`temporary_generate/permanent_generate`，不使用`reason=generated`。
+  抓手、回收魔法、调色板及20件物品内容仍未接入，本项完成不代表物品已实现。
+
 - 抓手接入“第一完整回合正常补牌完成后”生命周期 Hook，复用通用抽牌至上限端口与额外行动端口；额外行动继续遵守当前排队规则。
 - 回收魔法接入第三完整回合结束门禁，复用弃牌堆整批洗回与稳定洗牌端口，并发送逐牌已提交移动事件；重复收口不得再次执行。
 - 调色板通过功法倍率只读查询提供`+1`，在功法值正式冻结时合并；查询、预览和 AI 评估不得写状态，回响复用冻结结果。
@@ -214,7 +219,7 @@
 | B. 修习陈列、权重、价格与冥想 | 部分已有 | `practice_price_query`、`meditation_cost_query`、补充包展示/选择数量查询已存在；普通商品槽位、类别权重和类别解锁查询仍缺。 |
 | C. 消耗品容量、心得包与功法槽 | 部分已有 | `ConsumableUseService`统一事务、`InsightGrowthService`、`insight_slot_gain_query`、槽位上限9和战斗实时扩容已有；共享容量查询、本局牌型历史及心得包保证候选计划仍缺。 |
 | D. 功法与内功配装容量 | 已有 | `technique_loadout_copy_limit_query`、`inner_skill_capacity_query`、稳定功法实例和空余槽位校验均已存在；三才并位、反物质只缺物品查询Handler。 |
-| E. 战斗Hook、牌区与功法值查询 | 部分已有 | `after_normal_draw`、`turn_end`、额外行动、抽至上限、牌区移动、功法倍率查询均有基础；抓手/回收魔法/调色板缺薄适配，通用移动完成事实另见矩阵。 |
+| E. 战斗Hook、牌区与功法值查询 | 部分已有 | `after_normal_draw`、`turn_end`、额外行动、抽至上限、`card_moved` committed事实和功法倍率查询已有；抓手/回收魔法/调色板仍缺薄适配，不能标记物品已实现。 |
 | F. 节点功行、地图与休息会话 | 部分已有 | `node_completed`、`RunAggregateTransaction`和单选continuation已有；功行上限查询、地图重建原子命令和休息多选会话仍缺。 |
 | G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、`SourceContributedStatService`、`RunProgressSnapshot`往返和恢复端口已有；item marker地址、永久新增真气及重塑提交事件仍缺。 |
 | H. 数据、存档与验证 | 已有结构／内容未接入 | `ContentValidator._validate_items`、`ItemRepository`和被动schema验证已存在；20件物品仍须在对应能力完成后逐批接入数据与专项测试。 |

@@ -95,6 +95,8 @@ func on_committed_event(
         event_kind: String,
         values: Dictionary,
         _receipt: Dictionary) -> void:
+    if bool(values.get("defer_dynamic_response", false)):
+        return
     if BattleEventCatalogScript.forwards_dynamic_response(event_kind):
         handle_event(event_kind, values)
 

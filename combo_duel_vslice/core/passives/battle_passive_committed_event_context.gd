@@ -20,7 +20,27 @@ var technique_triggered: bool = false
 var action_succeeded: bool = false
 var draw_reason: String = ""
 var from_zone: String = ""
+var to_zone: String = ""
 var reason: String = ""
+var placement: String = "top"
+var transition_kind: String = "move"
+var from_holder = null
+var to_holder = null
+var from_holder_id: String = ""
+var to_holder_id: String = ""
+var original_owner_id: String = ""
+var from_zone_count_before: int = 0
+var from_zone_count_after: int = 0
+var to_zone_count_before: int = 0
+var to_zone_count_after: int = 0
+var hand_count_before: int = 0
+var hand_count_after: int = 0
+var from_hand_count_before: int = 0
+var from_hand_count_after: int = 0
+var to_hand_count_before: int = 0
+var to_hand_count_after: int = 0
+var movement_batch_token: String = ""
+var movement_batch_index: int = -1
 var explicit_discard: bool = false
 var normal_play: bool = false
 var defense_lost: int = 0
@@ -58,7 +78,27 @@ func configure(values: Dictionary):
     action_succeeded = bool(values.get("action_succeeded", false))
     draw_reason = str(values.get("draw_reason", ""))
     from_zone = str(values.get("from_zone", ""))
+    to_zone = str(values.get("to_zone", ""))
     reason = str(values.get("reason", ""))
+    placement = str(values.get("placement", "top"))
+    transition_kind = str(values.get("transition_kind", "move"))
+    from_holder = values.get("from_holder")
+    to_holder = values.get("to_holder")
+    from_holder_id = str(values.get("from_holder_id", ""))
+    to_holder_id = str(values.get("to_holder_id", ""))
+    original_owner_id = str(values.get("original_owner_id", ""))
+    from_zone_count_before = int(values.get("from_zone_count_before", 0))
+    from_zone_count_after = int(values.get("from_zone_count_after", 0))
+    to_zone_count_before = int(values.get("to_zone_count_before", 0))
+    to_zone_count_after = int(values.get("to_zone_count_after", 0))
+    hand_count_before = int(values.get("hand_count_before", 0))
+    hand_count_after = int(values.get("hand_count_after", 0))
+    from_hand_count_before = int(values.get("from_hand_count_before", 0))
+    from_hand_count_after = int(values.get("from_hand_count_after", 0))
+    to_hand_count_before = int(values.get("to_hand_count_before", 0))
+    to_hand_count_after = int(values.get("to_hand_count_after", 0))
+    movement_batch_token = str(values.get("movement_batch_token", ""))
+    movement_batch_index = int(values.get("movement_batch_index", -1))
     explicit_discard = bool(values.get("explicit_discard", false))
     normal_play = bool(values.get("normal_play", false))
     defense_lost = int(values.get("defense_lost", 0))
@@ -101,7 +141,27 @@ func for_invocation(current_invocation):
         "action_succeeded": action_succeeded,
         "draw_reason": draw_reason,
         "from_zone": from_zone,
+        "to_zone": to_zone,
         "reason": reason,
+        "placement": placement,
+        "transition_kind": transition_kind,
+        "from_holder": from_holder,
+        "to_holder": to_holder,
+        "from_holder_id": from_holder_id,
+        "to_holder_id": to_holder_id,
+        "original_owner_id": original_owner_id,
+        "from_zone_count_before": from_zone_count_before,
+        "from_zone_count_after": from_zone_count_after,
+        "to_zone_count_before": to_zone_count_before,
+        "to_zone_count_after": to_zone_count_after,
+        "hand_count_before": hand_count_before,
+        "hand_count_after": hand_count_after,
+        "from_hand_count_before": from_hand_count_before,
+        "from_hand_count_after": from_hand_count_after,
+        "to_hand_count_before": to_hand_count_before,
+        "to_hand_count_after": to_hand_count_after,
+        "movement_batch_token": movement_batch_token,
+        "movement_batch_index": movement_batch_index,
         "explicit_discard": explicit_discard,
         "normal_play": normal_play,
         "defense_lost": defense_lost,
@@ -131,6 +191,8 @@ func public_effect_values() -> Dictionary:
         "event_serial": event_serial,
         "action_token": action_token,
         "round_number": round_number,
+        "card": card,
+        "card_instance_id": card_instance_id,
         "source_kind": source_kind,
         "source_id": source_id,
         "source_name": source_name,
@@ -148,7 +210,25 @@ func public_effect_values() -> Dictionary:
         "frozen_amount": frozen_amount,
         "draw_reason": draw_reason,
         "from_zone": from_zone,
+        "to_zone": to_zone,
         "reason": reason,
+        "placement": placement,
+        "transition_kind": transition_kind,
+        "from_holder_id": from_holder_id,
+        "to_holder_id": to_holder_id,
+        "original_owner_id": original_owner_id,
+        "from_zone_count_before": from_zone_count_before,
+        "from_zone_count_after": from_zone_count_after,
+        "to_zone_count_before": to_zone_count_before,
+        "to_zone_count_after": to_zone_count_after,
+        "hand_count_before": hand_count_before,
+        "hand_count_after": hand_count_after,
+        "from_hand_count_before": from_hand_count_before,
+        "from_hand_count_after": from_hand_count_after,
+        "to_hand_count_before": to_hand_count_before,
+        "to_hand_count_after": to_hand_count_after,
+        "movement_batch_token": movement_batch_token,
+        "movement_batch_index": movement_batch_index,
         "explicit_discard": explicit_discard,
         "normal_play": normal_play,
         "technique_triggered": technique_triggered,

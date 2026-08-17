@@ -11,7 +11,7 @@ const TIMING_EVENTS := [
 ]
 
 const COMMITTED_EVENTS := [
-    "action_confirmed", "action_resolved", "card_drawn",
+    "action_confirmed", "action_resolved", "card_moved", "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
     "damage_resolved", "damage_blocked", "reflection_resolved",
     "reflection_source_changed", "block_source_changed",
@@ -26,7 +26,7 @@ const COMMITTED_EVENTS := [
 const AUTOMATIC_EVENTS := COMMITTED_EVENTS + ["round_start", "turn_end"]
 const RESPONSE_ONLY_EVENTS := [
     "action_pre_commit", "action_resolution_end", "after_normal_draw",
-    "card_anomaly_changed", "card_burned_out_changed", "card_moved",
+    "card_anomaly_changed", "card_burned_out_changed",
     "cooperation_pre_commit", "cooperation_resolved",
     "defense_decay_resolved", "extra_action_started",
 ]
@@ -41,9 +41,17 @@ const PUBLIC_FIELDS := [
     "trigger_mode", "effective_qi", "requested_amount", "final_amount",
     "effective_amount", "defense_lost", "life_lost", "actual_life_loss",
     "frozen_amount", "defense_before", "defense_after", "life_before",
-    "life_after", "from_zone", "to_zone", "reason", "explicit_discard",
+    "life_after", "from_zone", "to_zone", "reason", "placement",
+    "transition_kind", "explicit_discard",
     "normal_play", "technique_triggered", "action_succeeded",
-    "source_card_instance_id", "pre_move_snapshot", "metadata",
+    "card_instance_id", "source_card_instance_id", "pre_move_snapshot",
+    "from_holder_id", "to_holder_id", "original_owner_id",
+    "from_zone_count_before", "from_zone_count_after",
+    "to_zone_count_before", "to_zone_count_after",
+    "hand_count_before", "hand_count_after",
+    "from_hand_count_before", "from_hand_count_after",
+    "to_hand_count_before", "to_hand_count_after",
+    "movement_batch_token", "movement_batch_index", "metadata",
     "host_hand_id", "slot_instance_id", "origin_technique_id",
     "origin_slot_instance_id", "insertion_serial", "insertion_position",
     "marker_mode", "generation_batch_token", "temporary",

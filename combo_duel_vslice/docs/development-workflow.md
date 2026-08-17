@@ -194,6 +194,27 @@ Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID �
 先冻结完整合法目标集。异状继续经 `StatusSystem`／`CardStateLifecycle` 合法性与事件路径，临时
 重塑只写战斗槽位，不改变基础身份或本局永久牌组。
 
+`card_moved`现为唯一的牌区变化committed事实，同时仍在`DYNAMIC_RESPONSE_EVENTS`中供
+`StatusSystem`既有动态响应使用。`CardZoneService`在真实写入和牌状态生命周期完成后集中冻结
+同一份事件数据：事件/行动令牌、牌实例、逻辑from/to、reason、placement、移动前快照、双方持有方、
+原始所有者、来源协议、牌区与手牌before/after，以及同步批次令牌和批次内序号。生成使用
+`from_zone=generated`；临时与非临时生成分别保留`temporary_generate`、`permanent_generate`，
+不得改写为笼统的`generated`原因，也不得新增平行生成事件。
+
+事件顺序固定为：完成真实牌区写入和既有牌状态生命周期；执行`card_moved`被动Hook；提交既有
+`card_drawn`、`card_entered_discard`、`card_explicitly_discarded`专项事实（专项事实之间的旧顺序
+不变）；最后用同一份冻结数据分发现有动态响应。动态桥对带延迟标记的committed通知不立即重放，
+由`CardZoneService`在专项事实后分发一次，因此committed与动态响应不会双触发或各自拼装字段。
+行动stage与stage rollback只表示提案，不发布事实；正式确认按逐张逻辑
+`hand→discard_pile/temporarily_removed`及`hand_count_before/after`提交。预览、失败请求、初始牌库
+装载/洗牌、快照恢复、战斗结束临时牌清理和战后批量归还同样不发布。
+
+`placement=bottom`由`CardZoneService.move_card`在目标数组写入时一次完成，事件发布时牌已经位于
+底部；`BattleCardEffectService`不再在移动后第二次调用重排。同步移动、批量转移和原子交换先完成
+全批移除与写入，再按冻结顺序逐牌发布；观察者不会读取半完成交换。`card_moved`使用
+`observe_all_sides`让双方被动来源都建立计划，但每个Invocation的效果actor仍重绑定为该被动来源
+owner，观察敌方移动不会把收益默认施加给敌方。
+
 `trigger_poison_card` 暂留 Facade，以现有卡牌服务和 `BattleSurvivalEffectService` 组合真气状态、
 毒伤与事务事件，禁止复制毒伤算法。`notify_cards_played`、`notify_poison_triggered`、响应监听、
 来源标识、连势／同气、延迟效果和功法调用留给后续批次。本批只运行项目加载与

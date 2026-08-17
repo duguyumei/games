@@ -111,8 +111,18 @@ const EVENT_FILTER_DEFINITIONS := {
     "defense_before": {"validation": "non_negative_int", "value": "direct", "key": "defense_before"},
     "defense_after": {"validation": "non_negative_int", "value": "direct", "key": "defense_after"},
     "reason": {"validation": "nonempty_string", "value": "direct", "key": "reason"},
-    "from_zone": {"validation": "zone", "value": "direct", "key": "from_zone"},
-    "to_zone": {"validation": "zone", "value": "direct", "key": "to_zone"},
+    "from_zone": {"validation": "event_zone", "value": "direct", "key": "from_zone"},
+    "to_zone": {"validation": "event_zone", "value": "direct", "key": "to_zone"},
+    "placement": {"validation": "placement", "value": "direct", "key": "placement"},
+    "from_holder_id": {"validation": "nonempty_string", "value": "direct", "key": "from_holder_id"},
+    "to_holder_id": {"validation": "nonempty_string", "value": "direct", "key": "to_holder_id"},
+    "original_owner_id": {"validation": "nonempty_string", "value": "direct", "key": "original_owner_id"},
+    "from_zone_count_before": {"validation": "non_negative_int", "value": "direct", "key": "from_zone_count_before"},
+    "from_zone_count_after": {"validation": "non_negative_int", "value": "direct", "key": "from_zone_count_after"},
+    "to_zone_count_before": {"validation": "non_negative_int", "value": "direct", "key": "to_zone_count_before"},
+    "to_zone_count_after": {"validation": "non_negative_int", "value": "direct", "key": "to_zone_count_after"},
+    "hand_count_before": {"validation": "non_negative_int", "value": "direct", "key": "hand_count_before"},
+    "hand_count_after": {"validation": "non_negative_int", "value": "direct", "key": "hand_count_after"},
     "explicit_discard": {"validation": "bool", "value": "direct", "key": "explicit_discard"},
     "normal_play": {"validation": "bool", "value": "direct", "key": "normal_play"},
     "technique_triggered": {"validation": "bool", "value": "direct", "key": "technique_triggered"},
@@ -121,6 +131,8 @@ const EVENT_FILTER_DEFINITIONS := {
 }
 
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
+const EVENT_ZONE_IDS := ZONE_IDS + [
+    "generated", "temporarily_removed", "permanently_removed"]
 const DAMAGE_TYPES := ["normal", "true", "poison"]
 
 var _attribute_ids: Array = ["wind", "forest", "fire", "mountain"]
@@ -376,6 +388,8 @@ func _scalar_valid(value, validation: String) -> bool:
         "side": return value is String and str(value) in [
             "actor", "target", "owner", "opponent"]
         "zone": return value is String and ZONE_IDS.has(str(value))
+        "event_zone": return value is String and EVENT_ZONE_IDS.has(str(value))
+        "placement": return value is String and str(value) in ["top", "bottom"]
         "damage_type": return value is String and DAMAGE_TYPES.has(str(value))
         "trigger_mode": return value is String \
             and str(value) in EffectSourceProtocolScript.TRIGGER_MODES
@@ -402,6 +416,8 @@ func _validation_message(validation: String) -> String:
         "hand_id": return "引用未知精确牌型"
         "side": return "必须为 actor、target、owner 或 opponent"
         "zone": return "引用未知牌区"
+        "event_zone": return "引用未知事件牌区"
+        "placement": return "必须为 top 或 bottom"
         "damage_type": return "引用未知伤害类型"
         "trigger_mode": return "引用未知 trigger_mode"
         "owner_role", "holder_role": return "必须为 actor 或 target"

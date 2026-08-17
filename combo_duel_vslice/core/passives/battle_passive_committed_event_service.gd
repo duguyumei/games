@@ -245,7 +245,12 @@ func _context(
             "true_damage", "synchronized"]:
         if values.has(field):
             payload[field] = values[field]
-    return ContextScript.new().configure({
+    if bool(values.get("observe_all_sides", false)):
+        payload["effect_context_values"] = {
+            "actor": owner,
+            "target": _opponent_of(owner),
+        }
+    var context_values := {
         "hook": event_kind,
         "event_kind": event_kind,
         "event_token": event_token,
@@ -286,11 +291,24 @@ func _context(
         "source_card_instance_id": str(values.get("source_card_instance_id", "")),
         "pre_move_snapshot": values.get("pre_move_snapshot", {}),
         "payload": payload,
-    })
+    }
+    for field in BattleEventCatalogScript.PUBLIC_FIELDS + [
+            "from_holder", "to_holder"]:
+        if values.has(field):
+            context_values[field] = values[field]
+    return ContextScript.new().configure(context_values)
+
+func _opponent_of(owner):
+    for side in _battle_sides():
+        if side != owner:
+            return side
+    return null
 
 func _event_owners(values: Dictionary) -> Array:
     var result: Array = []
     var sides := _battle_sides()
+    if bool(values.get("observe_all_sides", false)):
+        return sides
     var actor = values.get("actor")
     var target = values.get("target")
     if actor != null and sides.has(actor):

@@ -287,14 +287,11 @@ func move_card(
     if source_side == target_side:
         result = source_side.card_zone_service.move_card(
             source_side, source_zone, destination_zone, card, reason,
-            source_metadata)
+            source_metadata, placement)
     else:
         result = source_side.card_zone_service.temporarily_transfer(
             source_side, target_side, str(card.id), destination_zone, reason,
-            source_metadata)
-    if result.get("success", false) and placement == "bottom":
-        target_side.card_zone_service.place_on_zone_bottom(
-            target_side, destination_zone, card)
+            source_metadata, placement)
     if result.get("success", false) \
             and str(source_metadata["source_kind"]) == "technique":
         if destination_zone == "hand" and reason == "draw":

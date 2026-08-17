@@ -685,7 +685,8 @@ func _commit_current_group_zones(
             var has_cooperation: bool = not action_context.get(
                 "cooperation_groups", []).is_empty()
             var commit: Dictionary = action_resolver.commit_staging_for(
-                actor, preview.get("cards", []) if has_cooperation else [])
+                actor, preview.get("cards", []) if has_cooperation else [],
+                {"action_token": _group_action_token(group_context, actor)})
             _record_group_commit(
                 action_context, group_context, actor_role, actor,
                 commit.get("committed", []), true, committed_by_owner)
@@ -698,13 +699,15 @@ func _commit_current_group_zones(
             var player_commit: Dictionary = action_resolver.commit_staging_for(
                 player,
                 action_context.get("player_preview", {}).get("cards", [])
-                if has_cooperation else [])
+                if has_cooperation else [],
+                {"action_token": _group_action_token(group_context, player)})
             _record_group_commit(
                 action_context, group_context, SOLO_ROLE_PLAYER, player,
                 player_commit.get("committed", []), true, committed_by_owner)
             if bool(action_context.get("enemy_will_act", false)):
                 var enemy_commit: Dictionary = action_resolver.commit_staging_for(
-                    enemy)
+                    enemy, [],
+                    {"action_token": _group_action_token(group_context, enemy)})
                 _record_group_commit(
                     action_context, group_context, SOLO_ROLE_ENEMY, enemy,
                     enemy_commit.get("committed", []), true,
@@ -726,6 +729,12 @@ func _commit_current_group_zones(
             return _fail_active_transaction(
                 "牌型组提交策略无效", "invalid_group_commit_strategy")
     return {"success": true, "committed_by_owner": committed_by_owner}
+
+func _group_action_token(group_context: Dictionary, side) -> String:
+    for record in group_context.get("records", []):
+        if record["actor"] == side:
+            return str(record["token"])
+    return ""
 
 func _record_group_commit(
         action_context: Dictionary,

@@ -128,8 +128,8 @@ func _test_void_departures() -> void:
     _assert_equal(engine.player.temporarily_removed_cards.size(), 2, "虚无牌进入战斗临时移除区")
     _assert_equal(
         engine.battle_passive_event_service.receipt_store.size() - receipt_count_before,
-        1,
-        "虚无两条路径只发送一次明确弃牌事件且不发送入堆事件")
+        3,
+        "虚无两条路径各发送一次card_moved，明确弃置另发一次专项事件且不发送入堆事件")
 
 func _test_temporary_rank_lifecycle() -> void:
     var card = _card("4", "forest")

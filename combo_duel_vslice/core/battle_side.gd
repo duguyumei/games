@@ -713,8 +713,10 @@ func resolve_hand_definition_ids(definition_ids: Array) -> Array[String]:
 func commit_staging() -> Array:
     return card_zone_service.commit_staging(self)
 
-func commit_selected_staging(cards: Array) -> Array:
-    return card_zone_service.commit_selected_staging(self, cards)
+func commit_selected_staging(
+        cards: Array, source_metadata: Dictionary = {}) -> Array:
+    return card_zone_service.commit_selected_staging(
+        self, cards, source_metadata)
 
 func count_anomaly_in_zone(zone: String, category: String, anomaly_id: String) -> int:
     var cards: Array = []

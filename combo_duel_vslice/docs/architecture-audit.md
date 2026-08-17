@@ -683,9 +683,9 @@ Facade 只为牌区写操作整理统一来源元数据和 `draw_reason`，随�
 行动确认时的重塑冻结。服务持有的依赖只有 `StatusSystem` 的现有真气状态窄能力、
 `BattlePermissionService`、双方只读集合、统一战斗 RNG 和 `CardReshapeBattleRuntime` 弱引用；
 没有接收完整 `CombatEngine`，也没有回指
-`BattleEffectPorts`。所有牌区写入继续经过各方已经装配的 `CardZoneService`；为保留“移动后置于
-牌区底部”语义，`CardZoneService` 新增单一的 `place_on_zone_bottom` 原语，内部服务不直接修改
-`BattleSide` 的牌区数组。
+`BattleEffectPorts`。所有牌区写入继续经过各方已经装配的 `CardZoneService`；显式同区重排仍可用
+`place_on_zone_bottom`，跨区移动的`placement=bottom`则已并入`move_card`同一次目标写入，内部服务
+不直接修改`BattleSide`的牌区数组，也不再移动后二次重排。
 
 已迁出的 Facade 方法包括 `locate_active_card`、`side_holding_card`、`draw`、`shuffle_zone`、
 `discard_random`、`discard_all`、`move_card`、`move_cards_synchronously`、
@@ -715,6 +715,26 @@ Repository 和内容数据均未修改。`battle_effect_ports.gd` 由约 1248 �
 `/tmp/taiwu-battle-effect-card-specialized-final-05.log`（56 条断言）；错误关键字扫描只保留已知
 macOS CA 证书警告。`quick`／`full` 本批没有运行，待 `BattleEffectPorts`、`BattleActionService` 与
 `StatusSystem` 全部结构优化完成后统一执行完整回归。
+
+### 牌区移动committed事实收口（2026-08-17）
+
+`BattleEventCatalog.COMMITTED_EVENTS`现登记`card_moved`，并从`RESPONSE_ONLY_EVENTS`移除；它仍由
+目录自动进入`DYNAMIC_RESPONSE_EVENTS`、`PassiveRuleHandlerRegistry`和
+`BattleEffectsPassiveHandler`，没有本地Hook白名单。`CardZoneService`新增的内部冻结/发布边界是
+唯一事实构造点，覆盖普通移动、抽牌/弃牌/正常打出、回收、生成、临时/永久移出、跨方转移、
+批量转移、原子交换、显式归还、语义化顶/底重排和同步移动。初始化、预览/stage、失败请求、恢复
+与战后清理不经过该边界。
+
+事实公开`event_token/event_serial/action_token/round_number`、牌与来源牌实例、逻辑from/to、reason、
+placement、from/to holder及ID、original owner、移动前快照、来源协议、各牌区和手牌before/after，
+以及批次令牌/序号。普通效果目标仍只接受四个活动牌区；ConditionSpec事件字段另用event-zone口径
+接受`generated/temporarily_removed/permanently_removed`，没有扩大普通移动目标。
+
+发布顺序为牌状态生命周期→`card_moved`被动Hook→既有专项事实→同一冻结事实的动态响应。
+`StatusResponseService`只跳过带`defer_dynamic_response`的即时committed桥接，由牌区边界在专项事实后
+分发一次；不建立第二事件总线。双方都可观察同一事实，执行上下文则把效果actor绑定到各自来源
+owner。同步批次先完成全批写入，随后按冻结逻辑计数发布；placement bottom也在同一次写入完成，
+删除了`BattleCardEffectService`移动后的二次放底路径。
 
 ### BattleEffectPorts 伤害／防御／生命职责首批迁出（2026-08-16）
 

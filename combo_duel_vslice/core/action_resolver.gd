@@ -439,23 +439,40 @@ func _mark_failed_records(results: Array) -> void:
                 record["failed"] = true
                 record["triggered"] = false
 
-func commit_staging_for(side, cards: Array = []) -> Dictionary:
+func commit_staging_for(
+        side,
+        cards: Array = [],
+        source_metadata: Dictionary = {}) -> Dictionary:
     var committed: Array = (
-        side.commit_staging()
+        side.card_zone_service.commit_selected_staging(
+            side, side.staging.duplicate(), source_metadata)
         if cards.is_empty()
-        else side.commit_selected_staging(cards))
+        else side.commit_selected_staging(cards, source_metadata))
     return {"committed": committed}
 
 func commit_cooperation_staging(record, cooperation: Dictionary) -> Dictionary:
     var destination := str(cooperation.get("post_commit", {}).get("destination", "own_discard"))
     var cards: Array = record["preview"]["cards"]
     if destination != "target_draw_pile_top":
-        return commit_staging_for(record["actor"], cards)
+        return commit_staging_for(record["actor"], cards, {
+            "action_token": str(record["token"]),
+        })
     var committed: Array = []
     for card in cards:
+        var logical_hand_before: int = record["actor"].hand.size() \
+            + record["actor"].staging.size()
         var result: Dictionary = effect_ports.move_card(
             record["actor"], "staging", record["target"], "draw_pile", card,
-            "cooperation_commit", "top")
+            "cooperation_commit", "top", {
+                "action_token": str(record["token"]),
+                "logical_from_zone": "hand",
+                "hand_count_before": logical_hand_before,
+                "hand_count_after": maxi(0, logical_hand_before - 1),
+                "from_hand_count_before": logical_hand_before,
+                "from_hand_count_after": maxi(0, logical_hand_before - 1),
+                "from_zone_count_before": logical_hand_before,
+                "from_zone_count_after": maxi(0, logical_hand_before - 1),
+            })
         if result.get("success", false):
             committed.append(card)
     return {"committed": committed}
