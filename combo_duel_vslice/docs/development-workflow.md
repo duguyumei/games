@@ -111,10 +111,26 @@ TargetQuery。内容不得填写来源字段或事件／行动令牌，也不得
 | 行动事务顺序 | `battle_action_service.gd` |
 | 配装顺序 | `battle_loadout_service.gd` |
 | 牌区移动 | `card_zone_service.gd` |
+| 心得增长规则 | `insight_growth_service.gd` |
 
 **约束**：效果处理器只能通过 `BattleEffectPorts` 修改状态，不直接拿完整
 `CombatEngine`。端口的四个依赖是必需的，不接受 null —— 允许缺依赖就意味着每个
 方法都要带兜底分支，而兜底分支会在依赖真的缺失时静默改用另一套判定。
+
+`InsightGrowthService` 是心得成长的唯一规则事实源：它统一负责精确牌型
+校验、`insight_slot_gain_query` 被动查询、容量上限裁剪、候选过滤与稳定排序、
+RNG 选择、已拥有／已在序列去重以及完整配装校验，只返回可提交方案。
+`GrowthInventory.apply_insight_growth` 只把方案提交到本局
+`hand_technique_progression` 与 `learned_technique_ids`；
+`BattleSide.apply_insight_growth` 只把方案提交到战斗工作状态，再通过
+`BattleEffectPorts.change_technique_slot_capacity` 立即同步 `SequenceBook`，不直接修改
+序列内部数组，也不自动装备新获得的功法。
+
+战斗内永久槽位不在开战时冻结。心得提交成功后，工作状态与
+`SequenceBook` 容量在同一调用内完成同步，后续尚未确认的行动立即读取新容量。
+已确认行动冻结的功法槽、P／P₀ 与牌型组快照只保护当前行动，不冻结后续永久成长。
+容量端口或事件提交失败时，适配器必须立即恢复成长状态、已拥有集合、
+`SequenceBook` 快照与本次候选抽取前的 RNG；不得等待下一次快照覆盖。
 
 `BattleEffectPorts` 是公开协议 Facade，不是所有效果算法的永久归宿。伤害、防御与生命相关
 公开方法继续保留原签名，但内部统一委托 `BattleSurvivalEffectService`。该服务只能接收完成

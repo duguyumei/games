@@ -8,6 +8,8 @@ const PassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
+const InsightGrowthServiceScript = preload(
+    "res://core/insight_growth_service.gd")
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 const SourceContributedStatServiceScript = preload(
     "res://core/source_contributed_stat_service.gd")
@@ -261,75 +263,32 @@ func set_hand_technique_loadout(hand_id: String, technique_ids: Array) -> Dictio
     recalculate_effective_max_life()
     return {"success": true, "hand_id": hand_id, "sequence": normalized.duplicate()}
 
-func _technique_belongs_to_hand(technique_id: String, hand_id: String) -> bool:
-    return technique_loadout_policy.is_eligible(
-        technique_id, hand_id, learned_technique_ids)
-
 func apply_insight_growth(
         hand_id: String,
         candidates: Array = [],
         rng: RandomNumberGenerator = null,
         _source_metadata: Dictionary = {}) -> Dictionary:
-    if not HAND_IDS.has(hand_id):
-        return {"success": false, "reason": "未知牌型：%s" % hand_id}
     var progression: Dictionary = hand_technique_progression.get(hand_id, {
         "slot_count": 1,
         "sequence": [],
     }).duplicate(true)
-    var before := int(progression.get("slot_count", 1))
-    var sequence: Array = progression.get("sequence", []).duplicate()
-    var gain_query: Dictionary = technique_loadout_policy.resolve_insight_slot_gain(
-        self, hand_id, before)
-    if not gain_query.get("success", false):
-        return gain_query
-    var requested_gain := int(gain_query.get(
-        "effective_value",
-        TechniqueLoadoutPolicyScript.BASE_INSIGHT_SLOT_GAIN))
-    var after := mini(
-        TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT,
-        before + requested_gain)
-    var slot_gain := maxi(0, after - before)
-    var available: Array[String] = []
-    for candidate_value in candidates:
-        var candidate := str(candidate_value)
-        if candidate != "" \
-                and technique_loadout_policy.is_hand_eligible(candidate, hand_id) \
-                and not technique_loadout_policy.is_built_in(candidate) \
-                and not available.has(candidate) \
-                and not learned_technique_ids.has(candidate) \
-                and not sequence.has(candidate):
-            available.append(candidate)
-    available.sort()
-    var acquired := ""
-    if not available.is_empty():
-        var index := rng.randi_range(0, available.size() - 1) if rng != null else 0
-        acquired = available[index]
-    progression["slot_count"] = after
-    progression["sequence"] = sequence
-    var proposed := hand_technique_progression.duplicate(true)
-    proposed[hand_id] = progression
-    var proposed_learned := learned_technique_ids.duplicate()
-    if acquired != "" and not proposed_learned.has(acquired):
-        proposed_learned.append(acquired)
-    var validation: Dictionary = technique_loadout_policy.validate_complete(
-        self, proposed, proposed_learned, hand_id)
-    if not validation.get("success", false):
-        return validation
-    hand_technique_progression = proposed
-    if acquired != "" and not learned_technique_ids.has(acquired):
-        learned_technique_ids.append(acquired)
-    return {
-        "success": true,
-        "hand_id": hand_id,
-        "slot_count_before": before,
-        "slot_count_after": after,
-        "slot_gain": slot_gain,
-        "slot_gain_requested": requested_gain,
-        "slot_gain_query": gain_query.duplicate(true),
-        "technique_acquired": acquired,
-        "technique_equipped": false,
-        "no_technique_available": acquired == "",
-    }
+    var rng_state_before := rng.state if rng != null else 0
+    var plan: Dictionary = InsightGrowthServiceScript.resolve(
+        self,
+        technique_loadout_policy,
+        hand_id,
+        progression,
+        hand_technique_progression,
+        learned_technique_ids,
+        candidates,
+        rng)
+    if not plan.get("success", false):
+        if rng != null:
+            rng.state = rng_state_before
+        return plan
+    hand_technique_progression = plan["proposed_progression"].duplicate(true)
+    learned_technique_ids.assign(plan["proposed_learned_ids"])
+    return InsightGrowthServiceScript.public_result(plan)
 
 func apply_insight(
         hand_id: String,

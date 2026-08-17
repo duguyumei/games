@@ -399,13 +399,17 @@ func _test_battle_insight_and_same_action_generation() -> void:
         "high_card"]["slot_count"], 3, "永久容量立即增加2")
     _assert_equal(engine.sequence_book.slot_capacity("high_card"), 3,
         "当前战斗容量立即同步实际+2")
+    var later_usage: Dictionary = engine.effect_ports.technique_slot_usage(
+        engine.player, "high_card")
+    _assert_equal(later_usage["capacity"], 3,
+        "后续预览窄查询立即读取新的永久容量")
     _assert_equal(engine.sequence_book.occupied_slot_count("high_card"), 1,
         "心得不重建或自动装备当前序列")
     _assert_equal(engine.sequence_book.position("high_card"), position_before,
         "实时增容不改变当前位置")
     _assert_equal(engine.sequence_book.current_slot("high_card")[
         "slot_instance_id"], slot_before["slot_instance_id"],
-        "实时增容不改变已有稳定实例ID")
+        "实时增容不改变已确认行动的功法槽快照实例")
     _assert_true(not insight["technique_equipped"], "心得所得功法明确不自动装备")
     var context = _context(
         engine, engine.sequence_book.current_slot("high_card"),

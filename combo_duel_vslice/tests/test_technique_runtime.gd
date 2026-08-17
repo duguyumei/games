@@ -10,6 +10,7 @@ const EffectContextScript = preload("res://core/effects/technique_effect_context
 const EffectValueResolverScript = preload("res://core/effects/effect_value_resolver.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
+const BattleSideScript = preload("res://core/battle_side.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
 const SequenceBookScript = preload("res://core/sequence_book.gd")
@@ -74,6 +75,42 @@ class LoadoutLimitTwoResolver:
             "source_fingerprint": "fake_limit_two",
         })
 
+class InsightGainTwoPolicyResolver:
+    extends RefCounted
+    var calls: Array[Dictionary] = []
+    func resolve(request):
+        calls.append(request.to_dict())
+        return LoadoutQueryResult.new({
+            "success": true,
+            "hook": request.hook,
+            "subject_kind": request.subject_kind,
+            "subject_id": request.subject_id,
+            "base_value": request.base_value,
+            "effective_value": request.base_value + 1 \
+                if request.hook == "insight_slot_gain_query" \
+                else request.base_value,
+            "modifier_breakdown": [],
+            "source_fingerprint": "shared_insight_gain_two",
+        })
+
+class CapacityPortProbe:
+    extends RefCounted
+    var last_metadata: Dictionary = {}
+    func change_technique_slot_capacity(
+            side, hand_id: String, delta: int,
+            metadata: Dictionary = {}) -> Dictionary:
+        last_metadata = metadata.duplicate(true)
+        return side.technique_sequence_book.change_slot_capacity(
+            hand_id, delta, metadata)
+
+class MutatingFailingCapacityPort:
+    extends CapacityPortProbe
+    func change_technique_slot_capacity(
+            side, hand_id: String, delta: int,
+            metadata: Dictionary = {}) -> Dictionary:
+        super.change_technique_slot_capacity(side, hand_id, delta, metadata)
+        return {"success": false, "reason": "注入容量端口失败"}
+
 class LoadoutCatalog:
     extends RefCounted
     var techniques: Dictionary = {}
@@ -102,11 +139,17 @@ class LoadoutCatalog:
                 "built_in": false, "base_loadout_limit": 1,
                 "eligible_hand_ids": [],
             },
+            "normal_probe_two": {
+                "id": "normal_probe_two", "name": "普通探针二", "pool": "pair",
+                "built_in": false, "base_loadout_limit": 1,
+                "eligible_hand_ids": [],
+            },
         }
         statuses = {
             "basic_scatter": "formal_complete",
             "basic_guard": "formal_complete",
             "normal_probe": "formal_complete",
+            "normal_probe_two": "formal_complete",
         }
         items = {
             "insight_gain_probe": {
@@ -188,6 +231,7 @@ func _initialize() -> void:
     _test_unblockable_damage_still_absorbs_and_reflects()
     _test_all_insights_grow_empty_slots()
     _test_s2f6a_basic_techniques_and_loadout_limits()
+    _test_shared_insight_growth_service_contract()
     _test_permanent_loadout_capacity_insight_and_runtime_compatibility()
     _test_stable_slots_temporary_insert_and_call_orders()
     _test_source_markers_life_and_defense_ports()
@@ -1869,6 +1913,104 @@ func _test_s2f6a_basic_techniques_and_loadout_limits() -> void:
         "心得完成后允许保留空余容量")
     _assert_equal(growth.learned_technique_ids, ["normal_probe"],
         "基础功法不写入已习得功法集合")
+
+func _test_shared_insight_growth_service_contract() -> void:
+    var catalog := LoadoutCatalog.new()
+    var growth = GrowthInventoryScript.new(catalog, false)
+    var side = BattleSideScript.new("心得战斗适配器", "insight-side")
+    side.technique_loadout_policy = TechniqueLoadoutPolicyScript.new(catalog)
+    side.hand_technique_progression = \
+        growth.hand_technique_progression.duplicate(true)
+    side.hand_technique_progression_active = true
+    side.owned_technique_ids.assign(growth.learned_technique_ids)
+    var book = SequenceBookScript.new()
+    book.configure_hand_progression(side.hand_technique_progression)
+    side.use_technique_sequence_book(book)
+    var capacity_port := CapacityPortProbe.new()
+    side.use_battle_effect_ports(capacity_port)
+
+    var growth_resolver := InsightGainTwoPolicyResolver.new()
+    var side_resolver := InsightGainTwoPolicyResolver.new()
+    growth.use_technique_loadout_policy_resolver(growth_resolver)
+    side.technique_loadout_policy.use_int_policy_resolver(side_resolver)
+    var growth_rng := RandomNumberGenerator.new()
+    var side_rng := RandomNumberGenerator.new()
+    growth_rng.seed = 8128
+    side_rng.seed = 8128
+    var candidates := ["normal_probe_two", "basic_guard", "normal_probe"]
+    var growth_result: Dictionary = growth.apply_insight_growth(
+        "pair", candidates, growth_rng)
+    var side_result: Dictionary = side.apply_insight_growth(
+        "pair", candidates, side_rng, {
+            "source_kind": "item",
+            "source_id": "insight_probe",
+            "source_name": "心得探针",
+            "source_instance_key": "item:insight_probe",
+            "action_token": "insight-contract",
+        })
+    _assert_true(growth_result.get("success", false) \
+        and side_result.get("success", false),
+        "本局与战斗适配器均成功提交同一心得方案")
+    for field in ["slot_count_after", "slot_gain", "slot_gain_requested",
+            "technique_acquired", "no_technique_available"]:
+        _assert_equal(side_result[field], growth_result[field],
+            "同初始状态、候选与RNG的两种适配器共享字段 %s" % field)
+    _assert_equal(growth_result["slot_gain_requested"], 2,
+        "本局心得使用统一被动查询修正")
+    _assert_equal(side_result["slot_gain_requested"], 2,
+        "战斗心得使用同一被动查询结果")
+    _assert_equal(growth_resolver.calls[0], side_resolver.calls[0],
+        "两种上下文提交完全相同的心得增量查询")
+    _assert_equal(book.slot_capacity("pair"), 3,
+        "战斗适配器立即同步SequenceBook永久容量")
+    _assert_true(side.owned_technique_ids.has(
+        str(side_result["technique_acquired"])),
+        "战斗心得所得功法进入已拥有集合")
+    _assert_true(not side.hand_technique_progression["pair"]["sequence"].has(
+        str(side_result["technique_acquired"])),
+        "战斗心得所得功法不自动插入永久序列")
+    for source_field in ["source_kind", "source_id", "source_name",
+            "source_instance_key", "action_token"]:
+        _assert_equal(capacity_port.last_metadata[source_field], {
+            "source_kind": "item",
+            "source_id": "insight_probe",
+            "source_name": "心得探针",
+            "source_instance_key": "item:insight_probe",
+            "action_token": "insight-contract",
+        }[source_field], "容量端口保留来源字段 %s" % source_field)
+
+    var failing_side = BattleSideScript.new("心得回滚适配器", "rollback-side")
+    failing_side.technique_loadout_policy = TechniqueLoadoutPolicyScript.new(catalog)
+    failing_side.hand_technique_progression = \
+        GrowthInventoryScript.new(catalog, false).hand_technique_progression.duplicate(true)
+    failing_side.hand_technique_progression_active = true
+    var failing_book = SequenceBookScript.new()
+    failing_book.configure_hand_progression(
+        failing_side.hand_technique_progression)
+    failing_side.use_technique_sequence_book(failing_book)
+    var failing_port := MutatingFailingCapacityPort.new()
+    failing_side.use_battle_effect_ports(failing_port)
+    var progression_before := \
+        failing_side.hand_technique_progression.duplicate(true)
+    var owned_before := failing_side.owned_technique_ids.duplicate()
+    var book_before := failing_book.snapshot()
+    var failing_rng := RandomNumberGenerator.new()
+    failing_rng.seed = 2718
+    var rng_before := failing_rng.state
+    var failed: Dictionary = failing_side.apply_insight_growth(
+        "pair", ["normal_probe", "normal_probe_two"], failing_rng)
+    _assert_true(not failed.get("success", false) \
+        and failed.get("rolled_back", false),
+        "容量端口失败时心得提交明确回滚")
+    _assert_equal(failing_side.hand_technique_progression,
+        progression_before, "容量端口失败回滚永久成长工作状态")
+    _assert_equal(failing_side.owned_technique_ids,
+        owned_before, "容量端口失败回滚已拥有功法集合")
+    _assert_equal(failing_book.snapshot(), book_before,
+        "容量端口失败即使已写SequenceBook也完整恢复")
+    _assert_equal(failing_rng.state, rng_before,
+        "容量端口失败恢复心得候选抽取RNG")
+
 
 func _test_permanent_loadout_capacity_insight_and_runtime_compatibility() -> void:
     var catalog := LoadoutCatalog.new()

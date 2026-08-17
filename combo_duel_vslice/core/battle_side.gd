@@ -16,6 +16,8 @@ const ConditionSpecRegistryScript = preload(
     "res://core/specs/condition_spec_registry.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
+const InsightGrowthServiceScript = preload(
+    "res://core/insight_growth_service.gd")
 const PassiveIntPolicyResolverScript = preload(
     "res://core/passives/passive_int_policy_resolver.gd")
 
@@ -1304,62 +1306,42 @@ func apply_insight_growth(
         candidates: Array = [],
         rng: RandomNumberGenerator = null,
         source_metadata: Dictionary = {}) -> Dictionary:
-    if not HAND_IDS.has(hand_id):
-        return {"success": false, "reason": "未知牌型：%s" % hand_id}
     var progression: Dictionary = hand_technique_progression.get(hand_id, {
         "slot_count": 1,
         "sequence": _actual_technique_ids(hand_id),
     }).duplicate(true)
-    var before := int(progression.get("slot_count", 1))
-    var sequence: Array = progression.get("sequence", []).duplicate()
-    var gain_query: Dictionary = technique_loadout_policy.resolve_insight_slot_gain(
-        self, hand_id, before)
-    if not gain_query.get("success", false):
-        return gain_query
-    var requested_gain := int(gain_query.get(
-        "effective_value",
-        TechniqueLoadoutPolicyScript.BASE_INSIGHT_SLOT_GAIN))
-    var after := mini(
-        TechniqueLoadoutPolicyScript.MAX_SLOT_COUNT,
-        before + requested_gain)
-    var slot_gain := maxi(0, after - before)
-    var available: Array[String] = []
-    for candidate_value in candidates:
-        var candidate := str(candidate_value)
-        if candidate != "" \
-                and technique_loadout_policy.is_hand_eligible(candidate, hand_id) \
-                and not technique_loadout_policy.is_built_in(candidate) \
-                and not sequence.has(candidate) \
-                and not owned_technique_ids.has(candidate) \
-                and not available.has(candidate):
-            available.append(candidate)
-    available.sort()
-    var acquired := ""
-    if not available.is_empty():
-        var index := rng.randi_range(0, available.size() - 1) if rng != null else 0
-        acquired = available[index]
-    progression["slot_count"] = after
-    progression["sequence"] = sequence
-    var proposed := hand_technique_progression.duplicate(true)
-    proposed[hand_id] = progression
-    var proposed_learned := owned_technique_ids.duplicate()
-    if acquired != "" and not proposed_learned.has(acquired):
-        proposed_learned.append(acquired)
-    if hand_technique_progression_active:
-        var validation := technique_loadout_policy.validate_complete(
-            self, proposed, proposed_learned, hand_id)
-        if not validation.get("success", false):
-            return validation
+    var rng_state_before := rng.state if rng != null else 0
+    var plan: Dictionary = InsightGrowthServiceScript.resolve(
+        self,
+        technique_loadout_policy,
+        hand_id,
+        progression,
+        hand_technique_progression,
+        owned_technique_ids,
+        candidates,
+        rng,
+        hand_technique_progression_active)
+    if not plan.get("success", false):
+        if rng != null:
+            rng.state = rng_state_before
+        return plan
+    var before := int(plan["slot_count_before"])
+    var slot_gain := int(plan["slot_gain"])
+    var requested_gain := int(plan["slot_gain_requested"])
     var progression_before := hand_technique_progression.duplicate(true)
     var owned_before := owned_technique_ids.duplicate()
-    hand_technique_progression = proposed
-    if acquired != "":
-        learn_technique(acquired)
+    var sequence_before: Dictionary = technique_sequence_book.snapshot() \
+        if technique_sequence_book != null else {}
+    hand_technique_progression = plan["proposed_progression"].duplicate(true)
+    owned_technique_ids.assign(plan["proposed_learned_ids"])
     var capacity_sync := {"success": true, "changed": false}
     if slot_gain > 0 and technique_sequence_book != null:
+        ## 这是工作状态与 SequenceBook 的完整性校验，不是战斗开始时
+        ## 冻结永久容量；合法增长会在下方立即同步。
         if technique_sequence_book.slot_capacity(hand_id) != before:
-            hand_technique_progression = progression_before
-            owned_technique_ids.assign(owned_before)
+            _rollback_insight_growth(
+                progression_before, owned_before, sequence_before,
+                rng, rng_state_before)
             return {
                 "success": false,
                 "reason": "永久功法槽容量与当前战斗容量不一致",
@@ -1368,8 +1350,9 @@ func apply_insight_growth(
         var ports = _battle_effect_ports_ref.get_ref() \
             if _battle_effect_ports_ref != null else null
         if ports == null:
-            hand_technique_progression = progression_before
-            owned_technique_ids.assign(owned_before)
+            _rollback_insight_growth(
+                progression_before, owned_before, sequence_before,
+                rng, rng_state_before)
             return {
                 "success": false,
                 "reason": "战斗中心得缺少统一功法槽容量端口",
@@ -1385,8 +1368,12 @@ func apply_insight_growth(
             self, hand_id, slot_gain, metadata)
         if not capacity_sync.get("success", false) \
                 or int(capacity_sync.get("actual_delta", 0)) != slot_gain:
-            hand_technique_progression = progression_before
-            owned_technique_ids.assign(owned_before)
+            ## 容量端口是事件/回执的事务边界：事件失败时它已撤销
+            ## 容量且不会发布成功回执。此处恢复快照以同时覆盖端口
+            ## 实现在返回失败前已修改 SequenceBook 的情况。
+            _rollback_insight_growth(
+                progression_before, owned_before, sequence_before,
+                rng, rng_state_before)
             return {
                 "success": false,
                 "reason": str(capacity_sync.get(
@@ -1394,19 +1381,24 @@ func apply_insight_growth(
                 "rolled_back": true,
                 "capacity_sync": capacity_sync,
             }
-    return {
-        "success": true,
-        "hand_id": hand_id,
-        "slot_count_before": before,
-        "slot_count_after": after,
-        "slot_gain": slot_gain,
-        "slot_gain_requested": requested_gain,
-        "slot_gain_query": gain_query.duplicate(true),
-        "technique_acquired": acquired,
-        "technique_equipped": false,
-        "no_technique_available": acquired == "",
-        "battle_capacity_sync": capacity_sync.duplicate(true),
-    }
+    var result: Dictionary = InsightGrowthServiceScript.public_result(plan)
+    result["battle_capacity_sync"] = capacity_sync.duplicate(true)
+    return result
+
+func _rollback_insight_growth(
+        progression_before: Dictionary,
+        owned_before: Array,
+        sequence_before: Dictionary,
+        rng: RandomNumberGenerator,
+        rng_state_before: int) -> void:
+    hand_technique_progression = progression_before
+    owned_technique_ids.assign(owned_before)
+    if technique_sequence_book != null and not sequence_before.is_empty():
+        technique_sequence_book.restore_snapshot(sequence_before)
+    ## apply_insight_growth 拥有“单次心得解算”的 RNG 回滚责任，
+    ## 因此直接调用与消耗品外层事务都不会留下随机数推进。
+    if rng != null:
+        rng.state = rng_state_before
 
 func _actual_technique_ids(hand_id: String) -> Array:
     var result: Array = []

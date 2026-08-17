@@ -50,6 +50,35 @@ BattleEffectPorts 五批 Facade 拆分与 BattleActionService 四批事务／牌
 该结果取代 BattleActionService 分批开发阶段“尚未运行 quick／full”的临时状态，作为
 BattleEffectPorts 与 BattleActionService 优化完成、进入 `StatusSystem` 重构前的稳定行为基线。
 
+### 心得成长规则合并与战斗内实时扩容（2026-08-17）
+
+新增 `core/insight_growth_service.gd`，作为本局与战斗两种上下文共用的唯一心得规则
+事实源。精确牌型合法性、当前容量、统一被动增量查询、九槽上限、正式非内建
+候选过滤、已拥有／已装备去重、稳定排序与 RNG 选择、以及八牌型完整配装校验现只有
+一份实现。服务只返回包含拟提交成长状态、拟提交已拥有集合、容量前后值、理论／实际
+增量、查询回执和所得功法的方案，不自动装备功法。
+
+`GrowthInventory.apply_insight_growth` 现只负责准备当前本局状态、委托服务，并在
+方案成功后原子替换 `hand_technique_progression` 与 `learned_technique_ids`。
+`BattleSide.apply_insight_growth` 是战斗工作状态提交适配器：它替换
+`hand_technique_progression` 与 `owned_technique_ids`，然后保留完整 `source_metadata`
+调用 `BattleEffectPorts.change_technique_slot_capacity`。容量修改仍只由
+`BattleTechniqueSequenceEffectService → TechniqueSequenceBook` 完成，继续发布
+`technique_slot_capacity_changed`，没有按功法、内功、物品或消耗品 ID 分支。
+
+这条同步链意味着战斗内心得一旦成功，战斗工作状态的永久槽位与当前
+`SequenceBook` 容量立即同时增长，后续预览、临时功法生成和尚未确认的行动都读取新容量。
+“永久功法槽容量与当前战斗容量不一致”只是提交前的完整性校验，不是开战时冻结规则。
+已确认行动的功法槽、P／P₀ 和牌型组快照仍保持不变；该快照边界不会冻结后续行动的永久成长。
+
+战斗适配器在委托规则前捕获 RNG，并在容量端口失败时立即恢复成长字段、已拥有集合、
+`SequenceBook` 完整快照与 RNG。容量端口自身仍是容量事件的事务边界：事件提交失败时它先
+恢复容量，且不发布成功回执；成长适配器的快照恢复再确保任何失败端口实现都不留下
+SequenceBook 部分修改。本批不改 `RunProgressSnapshot`、`BattleSetupService`、战斗结算或消耗品事务框架。
+本批只执行 `git diff --check` 与 headless 项目加载，未运行 `quick`／`full`。最终加载日志为
+`/tmp/taiwu-insight-growth-project-load-02.log`；`Can't load script`、`File not found`、
+`Parse Error`、`SCRIPT ERROR` 与其他 `ERROR` 均无匹配。
+
 ### StatusSystem 状态历史职责首批迁出（2026-08-16）
 
 新增 `core/statuses/status_history_service.gd`，作为所有状态子服务共用的唯一状态变化历史记录器。
