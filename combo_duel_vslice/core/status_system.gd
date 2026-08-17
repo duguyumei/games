@@ -1,7 +1,6 @@
 class_name StatusSystem
 extends RefCounted
 
-const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const StatusHistoryServiceScript = preload(
     "res://core/statuses/status_history_service.gd")
 const CardAnomalyServiceScript = preload(
@@ -14,6 +13,8 @@ const StatusDelayServiceScript = preload(
     "res://core/statuses/status_delay_service.gd")
 const StatusRecordIdAllocatorScript = preload(
     "res://core/statuses/status_record_id_allocator.gd")
+const CombatSourceLifecycleServiceScript = preload(
+    "res://core/statuses/combat_source_lifecycle_service.gd")
 
 var content_catalog
 var timing_system
@@ -26,8 +27,7 @@ var card_status_behavior_service
 var status_response_service
 var status_delay_service
 var runtime_record_id_allocator
-var _effect_ports_ref
-var _effect_executor = null
+var combat_source_lifecycle_service
 var _technique_draw_counts: Dictionary = {}
 var behavior_registry
 var _rng: RandomNumberGenerator = null
@@ -50,6 +50,8 @@ func _init(
         runtime_record_id_allocator)
     status_delay_service = StatusDelayServiceScript.new(
         status_history, runtime_record_id_allocator)
+    combat_source_lifecycle_service = CombatSourceLifecycleServiceScript.new(
+        runtime_record_id_allocator)
     behavior_registry = card_status_behavior_service.behavior_registry
     history = status_history.history_entries()
     response_records = status_response_service.records()
@@ -136,16 +138,16 @@ func replace_history(entries: Array) -> void:
     status_history.replace_history(entries)
 
 func use_effect_ports(effect_ports) -> void:
-    _effect_ports_ref = weakref(effect_ports) if effect_ports != null else null
     card_anomaly_service.use_effect_ports(effect_ports)
     card_status_behavior_service.use_effect_ports(effect_ports)
     status_response_service.use_effect_ports(effect_ports)
     status_delay_service.use_effect_ports(effect_ports)
+    combat_source_lifecycle_service.use_effect_ports(effect_ports)
 
 func use_effect_executor(executor) -> void:
-    _effect_executor = executor
     status_response_service.use_effect_executor(executor)
     status_delay_service.use_effect_executor(executor)
+    combat_source_lifecycle_service.use_effect_executor(executor)
 
 func use_card_trigger_replay_service(service) -> void:
     card_status_behavior_service.use_card_trigger_replay_service(service)
@@ -337,11 +339,8 @@ func register_defense_decay_return(runtime) -> Dictionary:
     return status_delay_service.register_defense_decay_return(runtime)
 
 func register_reflection_expiry(runtime, percent: int) -> Dictionary:
-    var token: String = runtime_record_id_allocator.next_id("reflection")
-    return _effect_ports().grant_reflection_source(
-        runtime.actor, percent, 1, "round_end",
-        runtime.source_name if runtime.source_name != "" else "反震",
-        token, runtime.target)
+    return combat_source_lifecycle_service.register_reflection_expiry(
+        runtime, percent)
 
 func register_no_life_loss_disruption(runtime, effect: Dictionary) -> Dictionary:
     return status_delay_service.register_no_life_loss_disruption(
@@ -379,24 +378,8 @@ func _on_action_resolution_end_records(event) -> Dictionary:
     var window_id := str(event.context.get(
         "metadata", {}).get("action_window_id", ""))
     if window_id != "":
-        for side in event.actors:
-            _resolve_challenges_for_window(side, window_id)
-        for side in event.actors:
-            var expired: Dictionary = side.expire_action_window_sources(window_id)
-            for record in expired.get("reflection_records", []):
-                _effect_ports().notify_source_changed(
-                    "reflection_source_changed", side, record, "expired")
-            for record in expired.get("block_records", []):
-                _effect_ports().notify_source_changed(
-                    "block_source_changed", side, record, "expired")
-            if not expired.get("reflection", []).is_empty() \
-                    or not expired.get("blocks", []).is_empty():
-                _effect_ports().add_history(
-                    "source_expiry", "%s行动窗来源到期" % side.name,
-                    "战斗来源", "成功",
-                    "反震%d／格挡%d" % [
-                        expired.get("reflection", []).size(),
-                        expired.get("blocks", []).size()])
+        combat_source_lifecycle_service.resolve_action_window(
+            event.actors, window_id)
     return {"success": true}
 
 func _on_battle_start(event) -> Dictionary:
@@ -437,76 +420,7 @@ func _on_card_turn_end_final(event) -> Dictionary:
 func _on_combat_source_turn_end(event) -> Dictionary:
     if event.actor == null:
         return {"success": false, "detail": "战斗来源到期缺少行动方"}
-    var expired: Dictionary = event.actor.tick_round_limited_sources()
-    for record in expired.get("reflection_records", []):
-        _effect_ports().notify_source_changed(
-            "reflection_source_changed", event.actor, record, "expired")
-    for record in expired.get("true_damage_records", []):
-        _effect_ports().notify_source_changed(
-            "reflection_source_changed", event.actor, record, "true_damage_expired")
-    return {
-        "success": true,
-        "detail": "反震来源到期%d／真伤修改到期%d" % [
-            expired.get("reflection", []).size(),
-            expired.get("true_damage", []).size()],
-    }
-
-func _resolve_challenges_for_window(side, window_id: String) -> void:
-    if _effect_executor == null or side == null:
-        return
-    var due: Array = side.challenge_records.filter(func(record):
-        return not bool(record.get("waiting_for_action", false)) \
-            and str(record.get("window_id", "")) == window_id)
-    for record in due:
-        var threshold := int(record.get("threshold", 0))
-        var current := int(record.get("current", 0))
-        var difference := maxi(
-            0, threshold - current)
-        var met := current >= threshold
-        var challenge_result := {
-            "source_token": str(record.get("source_token", "")),
-            "threshold": threshold,
-            "current": current,
-            "difference": difference,
-            "met": met,
-            "branch": "met" if met else "unmet",
-        }
-        record["resolution"] = challenge_result.duplicate(true)
-        var branch_effects: Array = record.get(
-            "met_effects", []) if met else record.get("effects", [])
-        if not branch_effects.is_empty():
-            var captures: Dictionary = record.get("captures", {}).duplicate(true)
-            captures["challenge_result"] = [challenge_result.duplicate(true)]
-            captures["challenge_difference"] = [{"amount": difference}]
-            var context = EffectContextScript.new().configure({
-                "ports": _effect_ports(),
-                "actor": record["challenger"], "target": record["target"],
-                "power": int(record.get("power", 0)),
-                "initial_power": int(record.get("initial_power", 0)),
-                "hand_result": record.get("hand_result", {}),
-                "played_cards": record.get("played_cards", []),
-                "group_snapshot": record.get("group_snapshot", {}),
-                "captures": captures,
-                "technique_id": str(record.get("technique_id", "")),
-                "technique_name": str(record.get("technique_name", "")),
-                "actual_hand_id": str(record.get("actual_hand_id", "")),
-                "branch_hand_id": str(record.get("branch_hand_id", "")),
-                "technique_pool": str(record.get("technique_pool", "")),
-                "action_token": str(record.get("action_token", "")),
-                "source_kind": record.get("source_kind", "rule"),
-                "source_id": record.get("source_id", ""),
-                "source_name": record.get("source_name", ""),
-                "source_instance_key": record.get("source_instance_key", ""),
-                "trigger_mode": "delayed",
-            })
-            _effect_executor.execute_all(branch_effects, context)
-        _effect_ports().add_history(
-            "challenge_resolved", str(record.get("label", "邀战")),
-            side.name, "达标" if met else "未达标", "%d/%d，差额%d" % [
-                current, threshold, difference])
-        _effect_ports().notify_source_changed(
-            "challenge_resolved", side, record, "resolved", challenge_result)
-        side.challenge_records.erase(record)
+    return combat_source_lifecycle_service.expire_round_sources(event.actor)
 
 func _on_after_normal_draw_delays(event) -> Dictionary:
     if event.actor == null:
@@ -516,12 +430,7 @@ func _on_after_normal_draw_delays(event) -> Dictionary:
 func _on_card_battle_end(event) -> Dictionary:
     var cleaned_count := 0
     for side in event.actors:
-        side.direct_power_fixed = 0
-        side.direct_power_percent = 0
-        side.momentum_value = 0
-        side.last_successful_technique_hand_id = ""
-        side.clear_combat_sources()
-        side.source_marker_store.clear_scope("battle")
+        combat_source_lifecycle_service.clear_battle_sources(side)
         var cards: Array = []
         for zone in [
                 side.draw_pile,
@@ -564,6 +473,3 @@ func _on_transient_battle_end(event) -> Dictionary:
 
 func history_snapshot(limit: int = 0) -> Array:
     return status_history.history_snapshot(limit)
-
-func _effect_ports():
-    return _effect_ports_ref.get_ref() if _effect_ports_ref != null else null

@@ -428,6 +428,39 @@ turn_end 的夹层顺序继续由 Facade 显式保证：先 `resolve_turn_end_ef
 Parse Error；修正后 `/tmp/taiwu-status-delay-project-load-02.log` 覆盖 678 项，四类禁止错误关键字无匹配，
 仅有已知非阻塞 macOS CA 证书警告。
 
+`StatusSystem` 第六批结构优化只迁出邀战结算和角色级战斗来源生命周期，不改邀战建立／累计、反震／
+格挡伤害、真气战斗结束、临时真气移除、临时转移真气归还、动态响应／延迟记录清理、功法抽牌统计或
+时点注册。新增 `core/statuses/combat_source_lifecycle_service.gd`，集中负责反震临时来源注册、行动窗口
+邀战结算、行动窗口反震／格挡来源到期、回合限时反震／反震真伤来源到期，以及战斗结束角色级来源、
+直接功法值修正、连势、上一成功牌型和 battle scope 来源标识清理。
+
+新服务只持有 `StatusRecordIdAllocator`、`BattleEffectPorts` 弱引用和统一 `EffectExecutor`，并用
+`BattleEffectContext` 重建邀战延迟效果上下文；不持有 `StatusSystem`、`CombatEngine`、`TimingSystem`、
+`StatusDelayService`、`StatusResponseService`、真气异状／行为服务或内容 Repository。反震注册继续使用
+共享分配器生成 `reflection-%06d` token，再调用既有 `BattleEffectPorts.grant_reflection_source(...)`，
+不建立延迟或响应记录。邀战记录仍由来源写入服务建立并保存在 `BattleSide.challenge_records`，新服务
+只读取冻结 threshold／current 和上下文，执行达标／未达标分支，写公开历史与 `challenge_resolved`，
+最后移除原记录。
+
+行动窗口结束顺序继续由 `StatusSystem` 明示为：无生命损失延迟记录 → `action_resolution_end` 动态响应 →
+来源生命周期服务。服务内部必须先按参与方顺序结算所有邀战，再按参与方顺序清理所有行动窗来源；
+禁止改成单个参与方“邀战后立即清来源”。行动窗到期继续调用
+`BattleSide.expire_action_window_sources(window_id)`，逐条发布既有反震／格挡来源变化事件，并且只有
+实际到期时才写一条 `source_expiry`／`战斗来源` 历史。回合到期继续调用
+`tick_round_limited_sources()`；`StatusSystem._on_combat_source_turn_end` 只保留 actor 空检查和委托。
+
+战斗结束时，`StatusSystem._on_card_battle_end` 在处理每个参与方真气前先委托新服务清理角色级战斗
+来源；随后仍由 Facade 遍历不重复真气、调用 `CardAnomalyService.on_card_battle_end` 并永久移除
+`temporary_card`。转移真气归还和延迟／响应记录清理仍留在原 BATTLE_END 处理器。迁移后
+`status_system.gd` 为 475 行，`combat_source_lifecycle_service.gd` 为 176 行。下一步进行
+`StatusSystem` 收尾审计，只评估功法抽牌统计和剩余时点编排，不重建已经迁出的状态服务算法。
+
+本批不运行 `quick`／`full`，只执行 `git diff --check` 和 headless 项目加载。首次
+`/tmp/taiwu-status-combat-source-project-load-01.log` 虽退出码为 0 且打印 PASS，但扫描发现新服务四处
+动态计数缺少显式整数类型的 Parse Error，因此按规则判定失败；修正后
+`/tmp/taiwu-status-combat-source-project-load-02.log` 覆盖 679 项，`Can't load script`、
+`File not found`、`Parse Error` 与 `SCRIPT ERROR` 无匹配，仅有已知非阻塞 macOS CA 证书警告。
+
 `PassiveRuleHandler` 负责 Hook、触发条件、计数器、Invocation、计划，以及查询、权限、复制、
 压制等被动专属语义。可以由普通 EffectSpec 表达的抽牌、弃牌、伤害、防御、牌区、异状、
 额外行动、同气和连势不得在 Handler 中重新包装；旧 `BattlePassiveEffectPorts` 已删除。
