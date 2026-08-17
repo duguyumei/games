@@ -1565,3 +1565,28 @@
 - 蓄力：三门现有功法正确声明累计值、伏火延烧逐实例`+10`、不缩短倒计时、临时副本独立、预览不写状态。
 - 追击：现有追击内容全部提交统一事件、不会递归、一次令牌只计一次、追焰留痕每三次触发且无目标仍重置。
 - 格挡／卸力、消耗、燃尽／焕发及166门内功分别建立专项行为、重复装备、压制、顺序、存档和AI／预览无副作用测试。
+
+## 16. 2026-08-17 底层能力矩阵审计状态
+
+> 本节只校正第15节的工程状态，不修改上文166门内功的效果、数值或边界，也不表示任何一门已经进入正式内容池。逐门证据、readiness和去重后的通用能力见[已设计内容—现有底层能力矩阵](../../../../combo_duel_vslice/docs/content-capability-matrix.md)。
+
+本次按当前 `main` 代码重新核对后的逐门统计为：A 35、B 39、C 91、D 1（内功合计166）。其中B只缺来源中立Handler、Registry注册或Context适配；C才表示缺通用底层能力。
+
+| 第15节旧清单 | 当前状态 | 代码证据与仍缺部分 |
+|---|---|---|
+| A. 功法槽容量、配装与心得 | 已有 | `TechniqueLoadoutPolicy`已允许空余容量并保持至少一门；`InsightGrowthService`是唯一规则源；战斗中通过`BattleEffectPorts.change_technique_slot_capacity`实时同步`TechniqueSequenceBook`。 |
+| B. 战斗临时功法 | 已有 | `generate_temporary_techniques`、`TechniqueSequenceBook.remaining_slot_count`、稳定`slot_instance_id`、`temporary_technique_generated`和战后清理均已存在。 |
+| C. 功法实例、槽位容量与标记身份 | 已有 | 永久/临时实例、空余槽位、来源身份与`SourceMarkerAddressResolver`均已存在；具体内功仍可能只缺薄Handler。 |
+| D. 连势上限与既有清空规则 | 仍缺 | 统一`write_momentum`及清空回执已有；`momentum_cap_query`、冻结基础上限和统一截断尚无。 |
+| E. 蓄力累计值 | 仍缺 | `StatusDelayService`、来源marker、自动触发已有；缺功法实例的主要蓄力值声明、枚举和通用写端口。 |
+| F. 追击统一 | 部分已有 | 追击复用正式伤害，旧`source_kind="chase"`仍有兼容处理；缺结构化追击令牌和`chase_resolved`提交事件。 |
+| G. 格挡、卸力与攻击取消 | 部分已有 | `block_sources`、`damage_blocked`、防御/生命实际减少量和反震已存在；缺卸力阈值、击穿/消费和取消子类型。 |
+| H. 消耗真气 | 部分已有 | `temporarily_remove_card`与战斗事务快照可复用；缺`cause=cost`、逐牌`qi_consumed`事实及支付—后效原子协议。 |
+| I. 燃尽、焕发与异状迁移 | 仍缺 | `StatusSystem`、净化、分类和生命周期可复用；燃尽尚未完成debuff迁移，焕发尚无统一状态与有效真气值阶段。 |
+| J. 新事件、查询、计数器与效果端口 | 部分已有 | run/battle计数器、临时功法事件、来源marker、调用/响应/延迟均已有；只保留矩阵中精确缺口，禁止照旧表重复建设。 |
+| K. 现有内容迁移 | 部分已有 | 8门候选仍统一暂缓；万法传薪所需临时功法底层和稳定实例已经存在，三门蓄力仍等待通用声明。 |
+| L. 回归测试 | 仍缺 | 本次只做文档审计，未接入166门内容，也未补内容行为测试。 |
+
+特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、心得实时扩容、事件级来源ExecutionPlan和战斗结果原子提交均为“已有”，后续不得再建立平行Service。回响“计划次数修改”、卸力、追击完成事件和蓄力主要累计值仍是独立缺口。
+
+规则待确认仅一项：`化虚为实`要求把异状和临时重塑固化进本局牌组，而当前`RunProgressSnapshot`明确排除这两类BattleRuntime状态；在确定固化后的可提交永久表示前不得实现。

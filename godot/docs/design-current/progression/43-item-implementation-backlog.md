@@ -200,3 +200,21 @@
 - 存档记录物品唯一持有、物品来源计数、象形文字获得时门禁、心得牌型成功历史、动态最大生命与必要的本局计数器；恢复时不得重新触发获得时或战斗结束效果。
 - 专项测试至少覆盖：价格与权重纯查询、动态商店槽位、基础消耗品容量 2／预兆球容量 4、心得`+1`／望远镜`+2`与槽位上限 9、三才并位跨牌型三份装配、首回合额外行动、第三回合整堆洗回、功行上限 20、地图原子重建、休息多选、永久新增真气成长及重塑逐牌恢复。
 
+## 8. 2026-08-17 底层能力矩阵审计状态
+
+> 本节只校正第7节的工程状态，不修改20件物品的效果、数值或边界，也不表示尚未接入的物品已经正式实现。逐件证据见[已设计内容—现有底层能力矩阵](../../../../combo_duel_vslice/docs/content-capability-matrix.md)。
+
+本次按当前 `main` 代码重新核对后的逐件统计为：A 0、B 8、C 12（物品合计20）。B类语义已存在，只缺来源中立Handler或Context适配；C类才缺通用底层。
+
+| 第7节旧清单 | 当前状态 | 代码证据与仍缺部分 |
+|---|---|---|
+| A. 物品来源与统一被动运行时 | 部分已有 | `PassiveRuleSourceResolver`已经从`item_ids`建立稳定物品来源并与内功共用`PassiveRuleRuntime`、ExecutionPlan和排序；但`SourceMarkerStore.SOURCE_KINDS`尚不支持item来源marker。 |
+| B. 修习陈列、权重、价格与冥想 | 部分已有 | `practice_price_query`、`meditation_cost_query`、补充包展示/选择数量查询已存在；普通商品槽位、类别权重和类别解锁查询仍缺。 |
+| C. 消耗品容量、心得包与功法槽 | 部分已有 | `ConsumableUseService`统一事务、`InsightGrowthService`、`insight_slot_gain_query`、槽位上限9和战斗实时扩容已有；共享容量查询、本局牌型历史及心得包保证候选计划仍缺。 |
+| D. 功法与内功配装容量 | 已有 | `technique_loadout_copy_limit_query`、`inner_skill_capacity_query`、稳定功法实例和空余槽位校验均已存在；三才并位、反物质只缺物品查询Handler。 |
+| E. 战斗Hook、牌区与功法值查询 | 部分已有 | `after_normal_draw`、`turn_end`、额外行动、抽至上限、牌区移动、功法倍率查询均有基础；抓手/回收魔法/调色板缺薄适配，通用移动完成事实另见矩阵。 |
+| F. 节点功行、地图与休息会话 | 部分已有 | `node_completed`、`RunAggregateTransaction`和单选continuation已有；功行上限查询、地图重建原子命令和休息多选会话仍缺。 |
+| G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、`SourceContributedStatService`、`RunProgressSnapshot`往返和恢复端口已有；item marker地址、永久新增真气及重塑提交事件仍缺。 |
+| H. 数据、存档与验证 | 已有结构／内容未接入 | `ContentValidator._validate_items`、`ItemRepository`和被动schema验证已存在；20件物品仍须在对应能力完成后逐批接入数据与专项测试。 |
+
+特别校正：物品稳定来源解析、事件级ExecutionPlan、心得槽位实时扩容、统一消耗品事务和战果聚合回滚已经完成。后续只能在现有Runtime、查询解析器、TechniqueEffectExecutor和RunAggregateTransaction上补窄能力，不得建立物品专用平行系统。
