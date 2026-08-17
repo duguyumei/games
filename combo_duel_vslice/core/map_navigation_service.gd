@@ -110,6 +110,29 @@ func node_dispatch_context() -> Dictionary:
 func can_open_practice() -> bool:
     return phase == "awaiting_node"
 
+## 捕获本局聚合事务会修改的完整地图状态。
+func capture_transaction_state() -> Dictionary:
+    return {
+        "seed": seed,
+        "act": act,
+        "graph": graph.duplicate(true),
+        "phase": phase,
+        "current_node_id": current_node_id,
+        "completed_node_ids": completed_node_ids.duplicate(true),
+    }
+
+## 只恢复字段，不重新生成地图、不发送通知，也不推进随机状态。
+func restore_transaction_state(state: Dictionary) -> void:
+    seed = int(state.get("seed", seed))
+    act = int(state.get("act", act))
+    graph.clear()
+    graph.merge(state.get("graph", {}).duplicate(true), true)
+    phase = str(state.get("phase", phase))
+    current_node_id = str(state.get("current_node_id", current_node_id))
+    completed_node_ids.clear()
+    completed_node_ids.merge(
+        state.get("completed_node_ids", {}).duplicate(true), true)
+
 func terminate_run() -> Dictionary:
     if is_terminal():
         return {"success": false, "reason": "本局已经结束"}

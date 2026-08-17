@@ -44,6 +44,8 @@ const BattleFinalResultDTOScript = preload(
     "res://core/battle_final_result_dto.gd")
 const RunTerminalResultDTOScript = preload(
     "res://core/run_terminal_result_dto.gd")
+const BattleOutcomeCommitServiceScript = preload(
+    "res://core/battle_outcome_commit_service.gd")
 const EventContextScript = preload(
     "res://core/passives/run_passive_event_context.gd")
 
@@ -70,6 +72,7 @@ var _node_interaction_service
 var _passive_rule_runtime
 var _passive_int_policy_resolver
 var _run_passive_event_service
+var _battle_outcome_commit_service
 var _pending_reward = null
 var _active_battle_session = null
 var _pending_victory_battle_result: Dictionary = {}
@@ -89,7 +92,8 @@ func _init(
         node_reward_service_override = null,
         runtime_profile_override = null,
         consumable_use_service_override = null,
-        node_interaction_service_override = null) -> void:
+        node_interaction_service_override = null,
+        battle_outcome_commit_service_override = null) -> void:
     runtime_profile = (
         runtime_profile_override
         if runtime_profile_override != null
@@ -171,6 +175,10 @@ func _init(
             _content_catalog.node_interaction_registry,
             _node_reward_service.mutation_service,
             _content_catalog))
+    _battle_outcome_commit_service = (
+        battle_outcome_commit_service_override
+        if battle_outcome_commit_service_override != null
+        else BattleOutcomeCommitServiceScript.new())
     if not _content_catalog.loaded:
         game_log.record_system(
             "error",
@@ -487,55 +495,40 @@ func _resolve_battle_result(
         return {
             "success": false,
             "reason": "当前没有可结算的进行中战斗",
-            "suppress_rejection_log": navigation.is_terminal(),
+            "suppress_rejection_log": true,
         }
     var gate := _validate_battle_final_result(battle_result)
     if not gate.get("success", false):
         return gate
     var state := str(battle_result.battle_state)
-    if state in ["player_victory", "player_defeat"] \
-            and not progress_snapshot is RunProgressSnapshot:
-        return {"success": false, "reason": "战斗结果缺少绝对 progress_snapshot"}
+    if state in ["player_victory", "player_defeat"]:
+        var progress_gate := _validate_battle_progress_snapshot(
+            progress_snapshot)
+        if not progress_gate.get("success", false):
+            return progress_gate
+    var committed: Dictionary = _battle_outcome_commit_service.commit(
+        self, battle_result, progress_snapshot)
+    if not committed.get("success", false):
+        return committed
+    # 战斗结果业务状态已经完整提交；通知和会话关闭只发生一次，且都在事务外。
+    _run_state.changed.emit()
     _close_active_battle_session()
-    match state:
-        "player_victory":
-            var victory_sync := _sync_battle_progress_and_event(
-                progress_snapshot, battle_result)
-            if not victory_sync.get("success", false):
-                return victory_sync
-            _pending_victory_battle_result = battle_result.to_dict()
-            var completion := _complete_node_to_reward()
-            if not completion.get("success", false):
-                _pending_victory_battle_result.clear()
-                return completion
-            return completion
-        "player_defeat":
-            var defeat_sync := _sync_battle_progress_and_event(
-                progress_snapshot, battle_result)
-            if not defeat_sync.get("success", false):
-                return defeat_sync
-            return _terminate_from_battle_result(
-                battle_result, "defeat", "玩家在战斗中失败")
-        "unresolved_draw":
-            return _terminate_from_battle_result(
-                battle_result,
-                "unresolved_rule",
-                "双方同时倒下\n当前胜负规则尚未确认，本局无法继续结算。")
-        "scenario_error":
-            return _terminate_from_battle_result(
-                battle_result, "scenario_error", str(battle_result.detail))
-    return {"success": false, "reason": "未知战斗终止状态"}
+    return committed
 
-func _sync_battle_progress_and_event(
-        progress_snapshot,
-        battle_result) -> Dictionary:
-    var state_before: Dictionary = growth.capture_mutation_state()
+func _apply_battle_progress_snapshot(progress_snapshot) -> Dictionary:
     var working = growth.create_mutation_copy()
     if working == null:
         return {"success": false, "reason": "无法建立战斗结果事务工作副本"}
     working.apply_progress_snapshot(progress_snapshot)
-    var event_result := _dispatch_run_passive_event(
-        "battle_completed", working, {
+    var commit_errors: Array[String] = growth.replace_mutation_state(
+        working.capture_mutation_state())
+    if not commit_errors.is_empty():
+        return {"success": false, "reason": "；".join(commit_errors)}
+    return {"success": true}
+
+func _dispatch_battle_completed_event(battle_result) -> Dictionary:
+    return _dispatch_run_passive_event(
+        "battle_completed", growth, {
             "node_id": str(battle_result.node_id),
             "node_type": str(battle_result.node_type),
             "content_id": str(battle_result.content_id),
@@ -549,15 +542,9 @@ func _sync_battle_progress_and_event(
                 "detail": str(battle_result.detail),
             },
         }, _current_node_passive_sources())
-    if not event_result.get("success", false):
-        return event_result
-    var commit_errors: Array[String] = growth.replace_mutation_state(
-        working.capture_mutation_state())
-    if not commit_errors.is_empty():
-        _rollback_passive_event_token(event_result)
-        return {"success": false, "reason": "；".join(commit_errors)}
-    var state_after: Dictionary = growth.capture_mutation_state()
-    if state_before != state_after:
+
+func _record_battle_growth_sync_if_changed(state_before: Dictionary) -> void:
+    if state_before != growth.capture_mutation_state():
         var entry: Dictionary = game_log.record_run(
             "growth_sync",
             "战斗成长同步到本局",
@@ -570,8 +557,6 @@ func _sync_battle_progress_and_event(
             "consumable_count": growth.consumable_ids.size(),
             "learned_technique_count": growth.learned_technique_ids.size(),
         })
-        _run_state.changed.emit()
-    return {"success": true, "passive_event": event_result}
 
 func _validate_battle_final_result(battle_result) -> Dictionary:
     if battle_result == null \
@@ -595,16 +580,43 @@ func _validate_battle_final_result(battle_result) -> Dictionary:
         return {"success": false, "reason": "战斗结果 node_type 不匹配"}
     return {"success": true, "dispatch": dispatch}
 
-func _terminate_from_battle_result(
-        battle_result,
-        kind: String,
-        default_detail: String) -> Dictionary:
+func _validate_battle_progress_snapshot(progress_snapshot) -> Dictionary:
+    if not progress_snapshot is RunProgressSnapshot:
+        return {"success": false, "reason": "战斗结果缺少绝对 progress_snapshot"}
+    var missing: Array[String] = []
+    for field in [
+            "consumable_ids", "item_ids", "learned_technique_ids",
+            "learned_inner_skill_ids", "equipped_inner_skill_ids",
+            "technique_slot_index", "forgotten_inner_skill_count", "run_deck",
+            "life", "max_life", "base_max_life", "source_marker_state",
+            "experience", "hand_technique_progression",
+            "consumable_use_sequence", "last_recallable_consumable_id",
+            "base_hand_limit_modifier", "hand_technique_multiplier_modifiers",
+            "used_unique_consumable_ids", "passive_counter_state"]:
+        if not bool(progress_snapshot.get("has_%s" % field)):
+            missing.append(field)
+    if not missing.is_empty():
+        return {
+            "success": false,
+            "reason": "战斗结果 progress_snapshot 不是完整绝对快照，缺少：%s" % (
+                "、".join(missing)),
+        }
+    return {"success": true}
+
+func _build_terminal_from_battle_result(battle_result):
+    var kind: String = {
+        "player_defeat": "defeat",
+        "unresolved_draw": "unresolved_rule",
+        "scenario_error": "scenario_error",
+    }.get(str(battle_result.battle_state), "")
+    if kind == "":
+        return null
     var detail := str(battle_result.detail)
     if kind == "unresolved_rule":
-        detail = default_detail
+        detail = "双方同时倒下\n当前胜负规则尚未确认，本局无法继续结算。"
     elif detail == "":
-        detail = default_detail
-    var terminal = RunTerminalResultDTOScript.from_dict({
+        detail = "玩家在战斗中失败" if kind == "defeat" else "场景执行失败"
+    return RunTerminalResultDTOScript.from_dict({
         "schema_version": RunTerminalResultDTOScript.SCHEMA_VERSION,
         "kind": kind,
         "source": "battle",
@@ -615,9 +627,6 @@ func _terminate_from_battle_result(
         "node_type": str(battle_result.node_type),
         "turn_number": int(battle_result.turn_number),
     })
-    if terminal == null:
-        return {"success": false, "reason": "无法建立本局终局结果"}
-    return _enter_terminal(terminal, false)
 
 func _abandon_run() -> Dictionary:
     if navigation.is_terminal() or _run_state.terminal_result != null:
@@ -644,6 +653,14 @@ func _abandon_run() -> Dictionary:
     return _enter_terminal(terminal, false)
 
 func _enter_terminal(terminal_result, already_complete: bool) -> Dictionary:
+    var result := _apply_terminal_state(terminal_result, already_complete)
+    if not result.get("success", false):
+        return result
+    _close_active_battle_session()
+    _run_state.changed.emit()
+    return result
+
+func _apply_terminal_state(terminal_result, already_complete: bool) -> Dictionary:
     if terminal_result == null or not terminal_result.is_valid():
         return {"success": false, "reason": "终局结果无效"}
     if _run_state.terminal_result != null:
@@ -652,7 +669,6 @@ func _enter_terminal(terminal_result, already_complete: bool) -> Dictionary:
             "reason": "本局终局已经记录",
             "suppress_rejection_log": true,
         }
-    _close_active_battle_session()
     if already_complete:
         if navigation.phase != "run_complete" or not terminal_result.is_victory():
             return {"success": false, "reason": "通关终局与本局阶段不一致"}
@@ -664,7 +680,6 @@ func _enter_terminal(terminal_result, already_complete: bool) -> Dictionary:
     _pending_victory_battle_result.clear()
     _node_interaction_service.clear()
     _run_state.terminal_result = terminal_result
-    _run_state.changed.emit()
     var event_type := _terminal_event_type(terminal_result.kind)
     var metadata := {
         "kind": terminal_result.kind,
@@ -737,15 +752,32 @@ func _complete_node() -> Dictionary:
 
 func _complete_node_to_reward() -> Dictionary:
     var act_before: int = navigation.act
-    var result: Dictionary = navigation.complete_current_node_to_reward()
+    var result: Dictionary = _apply_node_completion_transition()
     if not result.get("success", false):
         return result
+    result = _create_pending_reward_for_completion(result, act_before)
+    if not result.get("success", false):
+        return result
+    _run_state.changed.emit()
+    return result
+
+func _apply_node_completion_transition() -> Dictionary:
+    return navigation.complete_current_node_to_reward()
+
+func _create_pending_reward_for_completion(
+        completion: Dictionary,
+        act_before: int) -> Dictionary:
+    var result: Dictionary = completion.duplicate(true)
     var node: Dictionary = result.get("node", {})
     _pending_reward = _node_reward_service.create_bundle(node, {
         "seed": navigation.seed,
         "act": act_before,
     })
-    _run_state.changed.emit()
+    if _pending_reward == null \
+            or not _pending_reward.has_method("total") \
+            or not _pending_reward.has_method("bundle_id") \
+            or not _pending_reward.has_method("to_dict"):
+        return {"success": false, "reason": "无法建立节点奖励包"}
     var entry: Dictionary = game_log.record_run(
         "reward_lifecycle",
         "建立节点奖励",

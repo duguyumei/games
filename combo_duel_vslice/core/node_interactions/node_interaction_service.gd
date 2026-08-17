@@ -188,6 +188,18 @@ func capture_pending() -> Dictionary:
         return {}
     return _pending.duplicate(true)
 
+func capture_transaction_state() -> Dictionary:
+    return {
+        "pending": _pending.duplicate(true),
+        "committed": _committed,
+    }
+
+## 聚合事务已经捕获过受信任的运行状态；恢复不得重新执行 prepare/commit。
+func restore_transaction_state(state: Dictionary) -> void:
+    _pending.clear()
+    _pending.merge(state.get("pending", {}).duplicate(true), true)
+    _committed = bool(state.get("committed", false))
+
 func restore_pending(snapshot: Dictionary) -> Dictionary:
     if snapshot.is_empty():
         clear()

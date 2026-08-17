@@ -200,6 +200,62 @@ class DefenseRetentionProbe:
             "prevent_decay": prevents_decay,
         }
 
+class BattleOutcomeFailureProbe:
+    extends "res://core/battle_outcome_commit_service.gd"
+
+    var failure_stage: String
+
+    func _init(stage: String) -> void:
+        failure_stage = stage
+
+    func _checkpoint(stage: String, _run_session) -> Dictionary:
+        if stage == failure_stage:
+            return {"success": false, "reason": "聚合事务注入失败：%s" % stage}
+        return {"success": true}
+
+class BattleCloseProbe:
+    extends RefCounted
+
+    var close_count: int = 0
+
+    func close_battle() -> bool:
+        close_count += 1
+        return false
+
+class BattleCompletedMutationProbe:
+    extends RefCounted
+
+    var call_count: int = 0
+    var mutate_uncommittable_counter: bool = false
+
+    func _init(mutate_counter: bool = false) -> void:
+        mutate_uncommittable_counter = mutate_counter
+
+    func dispatch(context, growth, event_state) -> Dictionary:
+        call_count += 1
+        growth.experience += 7
+        growth.base_hand_limit_modifier += 2
+        growth.source_marker_store.write(
+            "inner_skill", "inner:probe:0", "probe_inner",
+            "battle_completed_probe", "run", "add", 3)
+        if mutate_uncommittable_counter:
+            growth.passive_counter_store._values["aggregate-probe"] = {
+                "key": {
+                    "source_kind": "item", "content_id": "probe_item",
+                    "state_key": "aggregate", "counter_id": "completed",
+                },
+                "value": 1,
+            }
+        event_state.committed_passive_event_tokens.append(
+            str(context.transaction_token))
+        return {
+            "success": true,
+            "duplicate": false,
+            "hook": str(context.hook),
+            "transaction_token": str(context.transaction_token),
+            "results": [],
+        }
+
 class InnerSkillForgetValueProbe:
     extends RefCounted
 
@@ -1059,6 +1115,7 @@ func _initialize() -> void:
     _test_battle_run_progress_working_state_protocol()
     _test_node_interaction_platform_contract()
     _test_run_session_commands_snapshots_events_and_logs()
+    _test_battle_outcome_aggregate_transaction_contract()
     _test_run_terminal_result_contract_and_closure()
     _test_inner_skill_loadout_and_forgetting()
     _test_experience_interest_node_settlement()
@@ -12490,6 +12547,162 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
     _assert_true(boss_session.execute({"type": "complete_boss_chest"}).success, "Boss 宝箱流程通过本局命令完成")
     _assert_equal(boss_session.snapshot().act, 2, "Boss 宝箱命令推进到下一层")
     _assert_equal(boss_session.snapshot().run_log.size(), 3, "Boss奖励建立、领取与宝箱流程均写入本局日志")
+
+func _test_battle_outcome_aggregate_transaction_contract() -> void:
+    var prepared := _prepare_battle_outcome_transaction_case()
+    var victory: RunSession = prepared["session"]
+    var victory_close: BattleCloseProbe = prepared["close_probe"]
+    var victory_passive: BattleCompletedMutationProbe = prepared["passive_probe"]
+    victory.growth.consumable_ids.assign(["zengyuan_pill"])
+    var victory_progress_values := victory.progress_snapshot().to_dict()
+    victory_progress_values["life"] = 73
+    victory_progress_values["consumable_ids"] = []
+    victory_progress_values["consumable_use_sequence"] = 1
+    var changed_count := [0]
+    var persistence_count := [0]
+    victory._run_state.changed.connect(func(): changed_count[0] += 1)
+    victory.persistence_boundary_reached.connect(
+        func(_command_type): persistence_count[0] += 1)
+    var victory_result := victory.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            prepared["dispatch"], "player_victory", "聚合事务胜利", 4),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            victory_progress_values),
+    })
+    _assert_true(victory_result.success, "战斗胜利通过完整本局聚合事务提交")
+    _assert_equal(victory.snapshot().phase, "awaiting_reward", "胜利事务推进到 awaiting_reward")
+    _assert_true(victory.snapshot().reward.get("available", false), "胜利事务建立待领取奖励")
+    _assert_equal(victory.snapshot().growth.get("life"), 73, "绝对战斗进度只提交一次")
+    _assert_equal(victory.growth.consumable_ids, [], "战斗消耗品消耗进入同一提交")
+    _assert_equal(victory.growth.consumable_use_sequence, 1, "消耗品使用序号进入同一提交")
+    _assert_equal(victory_passive.call_count, 1, "battle_completed 在胜利事务中只触发一次")
+    _assert_equal(victory.growth.experience, 7, "battle_completed 成长与 progress 同属一次提交")
+    _assert_equal(victory._run_state.committed_passive_event_tokens.size(), 1, "battle_completed token 与被动变化一起提交")
+    _assert_equal(
+        victory.growth.source_marker_store.value(
+            "inner_skill", "inner:probe:0", "battle_completed_probe", "run"),
+        3,
+        "battle_completed 本局来源标识与聚合事务一起提交")
+    _assert_equal(victory_close.close_count, 1, "成功事务只关闭一次 BattleSession")
+    _assert_equal(victory._active_battle_session, null, "成功后释放活动 BattleSession 引用")
+    _assert_equal(changed_count[0], 1, "胜利聚合提交只发送一次 changed")
+    _assert_equal(persistence_count[0], 1, "胜利聚合提交只形成一次持久化边界")
+    var event_count_before_repeat: int = victory._event_queue.size()
+    var log_state_before_repeat: Dictionary = victory.game_log.capture_runtime_state()
+    var repeated := victory.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            prepared["dispatch"], "player_victory", "重复提交", 4),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            victory_progress_values),
+    })
+    _assert_true(not repeated.success, "同一成功结果重复提交按阶段不匹配拒绝")
+    _assert_equal(victory_passive.call_count, 1, "重复结果不重复触发 battle_completed")
+    _assert_equal(victory._event_queue.size(), event_count_before_repeat, "重复结果不追加 RunEvent")
+    _assert_equal(victory.game_log.capture_runtime_state(), log_state_before_repeat, "重复结果不追加日志")
+
+    for failure_stage in [
+            "progress_applied", "battle_completed", "node_advanced",
+            "reward_created", "terminal_created", "terminal_applied"]:
+        var failure_case := _prepare_battle_outcome_transaction_case(
+            failure_stage, true)
+        var failed_session: RunSession = failure_case["session"]
+        var failed_close: BattleCloseProbe = failure_case["close_probe"]
+        var failed_passive: BattleCompletedMutationProbe = failure_case["passive_probe"]
+        failed_session.growth.consumable_ids.assign(["zengyuan_pill"])
+        var growth_before: Dictionary = failed_session.growth.capture_mutation_state()
+        var map_before: Dictionary = failed_session.navigation.capture_transaction_state()
+        var run_state_before: Dictionary = failed_session._run_state.capture_transaction_state()
+        var log_before: Dictionary = failed_session.game_log.capture_runtime_state()
+        var events_before: Array = failed_session._event_queue.duplicate()
+        var event_serial_before: int = failed_session._event_serial
+        var persistent_serial_before: int = failed_session._persistent_change_serial
+        var retained_battle = failed_session._active_battle_session
+        var failure_changed := [0]
+        var failure_persistence := [0]
+        failed_session._run_state.changed.connect(func(): failure_changed[0] += 1)
+        failed_session.persistence_boundary_reached.connect(
+            func(_command_type): failure_persistence[0] += 1)
+        var failure_progress_values := failed_session.progress_snapshot().to_dict()
+        failure_progress_values["life"] = 19
+        failure_progress_values["consumable_ids"] = []
+        var failure_state := (
+            "player_defeat" if failure_stage in [
+                "terminal_created", "terminal_applied"]
+            else "player_victory")
+        var failed := failed_session.execute({
+            "type": "resolve_battle_result",
+            "battle_result": _battle_final_result_for_test(
+                failure_case["dispatch"], failure_state,
+                "聚合事务失败注入", 6),
+            "progress_snapshot": RunProgressSnapshotScript.from_dict(
+                failure_progress_values),
+        })
+        _assert_true(not failed.success, "%s 注入失败拒绝正式提交" % failure_stage)
+        _assert_true(failed.payload_value("rolled_back", false), "%s 统一报告完成回滚" % failure_stage)
+        _assert_equal(failed_session.growth.capture_mutation_state(), growth_before, "%s 恢复完整成长与被动计数" % failure_stage)
+        _assert_equal(failed_session.navigation.capture_transaction_state(), map_before, "%s 恢复地图阶段与完成节点" % failure_stage)
+        _assert_equal(failed_session._run_state.capture_transaction_state(), run_state_before, "%s 恢复终局、来源快照与被动 token" % failure_stage)
+        _assert_equal(failed_session.game_log.capture_runtime_state(), log_before, "%s 恢复日志与日志序号" % failure_stage)
+        _assert_equal(failed_session._event_queue, events_before, "%s 恢复 RunEvent 队列" % failure_stage)
+        _assert_equal(failed_session._event_serial, event_serial_before, "%s 恢复 RunEvent 序号" % failure_stage)
+        _assert_equal(failed_session._persistent_change_serial, persistent_serial_before, "%s 不推进持久变化序号" % failure_stage)
+        _assert_equal(failed_session._active_battle_session, retained_battle, "%s 保留原 BattleSession 供重试" % failure_stage)
+        _assert_equal(failed_close.close_count, 0, "%s 失败不关闭 BattleSession" % failure_stage)
+        _assert_equal(failure_changed[0], 0, "%s 回滚不发送 changed" % failure_stage)
+        _assert_equal(failure_persistence[0], 0, "%s 失败不形成持久化边界" % failure_stage)
+        _assert_equal(failed_session._pending_reward, null, "%s 不保留新奖励" % failure_stage)
+        if failure_stage == "progress_applied":
+            _assert_equal(failed_passive.call_count, 0, "progress 后失败不触发 battle_completed")
+        else:
+            _assert_equal(failed_passive.call_count, 1, "%s 前 battle_completed 只执行一次" % failure_stage)
+
+    var defeat_case := _prepare_battle_outcome_transaction_case()
+    var defeat_session: RunSession = defeat_case["session"]
+    var defeat_close: BattleCloseProbe = defeat_case["close_probe"]
+    var defeat_changed := [0]
+    var defeat_persistence := [0]
+    defeat_session._run_state.changed.connect(func(): defeat_changed[0] += 1)
+    defeat_session.persistence_boundary_reached.connect(
+        func(_command_type): defeat_persistence[0] += 1)
+    var defeat_progress_values := defeat_session.progress_snapshot().to_dict()
+    defeat_progress_values["life"] = 0
+    var defeat_result := defeat_session.execute({
+        "type": "resolve_battle_result",
+        "battle_result": _battle_final_result_for_test(
+            defeat_case["dispatch"], "player_defeat", "聚合事务战败", 5),
+        "progress_snapshot": RunProgressSnapshotScript.from_dict(
+            defeat_progress_values),
+    })
+    _assert_true(defeat_result.success, "战败通过同一聚合事务进入终局")
+    _assert_equal(defeat_session.snapshot().phase, "run_terminated", "战败事务进入 run_terminated")
+    _assert_equal(defeat_session.snapshot().terminal_result.get("kind"), "defeat", "战败事务建立正确 terminal_result")
+    _assert_equal(defeat_session.snapshot().growth.get("life"), 0, "战败仍提交现有绝对 progress")
+    _assert_equal(defeat_close.close_count, 1, "战败成功后关闭一次 BattleSession")
+    _assert_equal(defeat_changed[0], 1, "战败只发送一次 changed")
+    _assert_equal(defeat_persistence[0], 1, "战败只形成一次持久化边界")
+
+func _prepare_battle_outcome_transaction_case(
+        failure_stage: String = "",
+        mutate_counter: bool = false) -> Dictionary:
+    var session: RunSession = RunSessionScript.new()
+    session.execute({"type": "setup_run", "seed": 94600})
+    var node_id := str(session.snapshot().available_node_ids[0])
+    var begun := session.execute({"type": "begin_node", "node_id": node_id})
+    var close_probe := BattleCloseProbe.new()
+    var passive_probe := BattleCompletedMutationProbe.new(mutate_counter)
+    session._active_battle_session = close_probe
+    session._run_passive_event_service = passive_probe
+    if failure_stage != "":
+        session._battle_outcome_commit_service = (
+            BattleOutcomeFailureProbe.new(failure_stage))
+    return {
+        "session": session,
+        "dispatch": begun.payload_value("dispatch", {}),
+        "close_probe": close_probe,
+        "passive_probe": passive_probe,
+    }
 
 func _test_run_terminal_result_contract_and_closure() -> void:
     _assert_equal(

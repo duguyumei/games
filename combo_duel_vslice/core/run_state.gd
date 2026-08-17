@@ -101,6 +101,28 @@ func reset_passive_run_state() -> void:
     node_passive_source_node_id = ""
     committed_passive_event_tokens.clear()
 
+func capture_transaction_state() -> Dictionary:
+    return {
+        "terminal_result": terminal_result,
+        "practice_is_open": practice_is_open,
+        "practice_open_sequence": practice_open_sequence,
+        "node_passive_source_snapshot": node_passive_source_snapshot.duplicate(true),
+        "node_passive_source_node_id": node_passive_source_node_id,
+        "committed_passive_event_tokens": committed_passive_event_tokens.duplicate(),
+    }
+
+## 聚合事务恢复只写内存状态；调用方负责决定何时统一通知观察者。
+func restore_transaction_state(state: Dictionary) -> void:
+    terminal_result = state.get("terminal_result")
+    practice_is_open = bool(state.get("practice_is_open", false))
+    practice_open_sequence = int(state.get("practice_open_sequence", 0))
+    node_passive_source_snapshot.assign(
+        state.get("node_passive_source_snapshot", []))
+    node_passive_source_node_id = str(
+        state.get("node_passive_source_node_id", ""))
+    committed_passive_event_tokens.assign(
+        state.get("committed_passive_event_tokens", []))
+
 func available_node_ids() -> Array[String]:
     return navigation.available_node_ids()
 

@@ -79,6 +79,37 @@ SequenceBook 部分修改。本批不改 `RunProgressSnapshot`、`BattleSetupSer
 `/tmp/taiwu-insight-growth-project-load-02.log`；`Can't load script`、`File not found`、
 `Parse Error`、`SCRIPT ERROR` 与其他 `ERROR` 均无匹配。
 
+### 战斗结果本局聚合原子提交（2026-08-17）
+
+新增 `core/run_aggregate_transaction.gd` 与
+`core/battle_outcome_commit_service.gd`。前者只负责捕获、提交和恢复一次
+`RunSession` 业务变更涉及的完整内存状态，不理解胜负、奖励或被动规则；后者只负责
+调用现有成长、被动、地图、奖励、终局、日志与事件能力，并把所有失败收束到同一个
+rollback 出口。没有使用 `RunSaveData` 充当内存事务快照，也没有建立第二套成长或奖励算法。
+
+聚合事务覆盖 `GrowthInventory.capture_mutation_state()`、`MapNavigationService` 的 seed／act／
+graph／phase／current node／completed nodes、`ComboRunState` 的 terminal／修习开关与序号／节点
+被动来源快照／committed token、待领取奖励对象、待结算胜利结果、节点交互运行状态、
+`StructuredGameLog` 内容与 serial、`RunEvent` 队列与 serial，以及本次提交相关的 persistent change
+serial。地图的 graph 与 completed node 容器、终局附属数组、节点交互字典和事件队列均尽量
+原地恢复；restore 不发送信号、不写日志、不重新生成奖励、不重新执行被动，也不推进 RNG。
+
+胜利顺序固定为：验证正式战斗 DTO 与绝对进度 → begin 聚合事务 → 提交战斗进度 →
+触发一次 `battle_completed` → 记录必要的 growth sync → 标记节点完成并进入
+`awaiting_reward` → 建立确定性奖励包与胜利结果 → 写奖励日志和 RunEvent → commit。
+战败使用同一前半段，然后建立 defeat terminal、终止本局并写终局日志与事件；
+`unresolved_draw` 与 `scenario_error` 保持原语义，不应用缺失或不可信的战斗进度。
+
+事务成功之后 `RunSession` 才发送一次 `_run_state.changed` 并关闭一次活动
+`BattleSession`；`execute` 因唯一 persistent serial 变化只发布一次
+`persistence_boundary_reached("resolve_battle_result")`，数据库／JSON 保存仍位于该稳定业务提交
+之后。任一步失败会同时恢复成长、被动计数与来源标识、committed token、地图、奖励、终局、
+日志和 RunEvent，且保留原 BattleSession 供重试；主动退出战斗的节点入口检查点语义未改变。
+本批只补充聚焦契约测试，不运行 `quick`／`full`，统一回归继续留到全部底层批次完成后执行。
+静态检查 `git diff --check` 通过；Godot 4.7.1 项目加载日志为
+`/tmp/taiwu-run-aggregate-project-load-20260817-final.log`，未出现 `Can't load script`、
+`File not found`、`Parse Error` 或 `SCRIPT ERROR`，仅有约定可忽略的 macOS CA 证书警告。
+
 ### StatusSystem 状态历史职责首批迁出（2026-08-16）
 
 新增 `core/statuses/status_history_service.gd`，作为所有状态子服务共用的唯一状态变化历史记录器。

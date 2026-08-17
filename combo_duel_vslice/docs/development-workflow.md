@@ -148,6 +148,20 @@ unique 限制、目标冻结、准备令牌、Handler 顺序、库存扣除、�
 以及 `BattlePassiveCommittedEventService` 的 serial、receipt 和 execution history；
 事务中的 committed event 延迟到成功提交后才对监听器发布。
 
+`RunAggregateTransaction` 是正式战斗结果提交的完整本局聚合事务边界。
+`BattleOutcomeCommitService` 只编排以下既有能力：把绝对 `RunProgressSnapshot`
+提交到 `GrowthInventory`、触发一次 `battle_completed`、推进地图、建立奖励或终局、
+写统一日志与 `RunEvent`，最后提交聚合事务。事务捕获成长完整 mutation state、
+地图状态、`ComboRunState` 终局与被动附属状态、节点交互状态、待领取奖励、
+胜利结果、日志、事件队列及序号；恢复只写状态，不重新执行效果或随机奖励。
+
+战斗工作状态的实时变化不等于立即修改正式 `RunState`。胜利或战败的全部业务状态
+成功后，`RunSession` 才统一发送一次 `changed`、关闭一次 `BattleSession`，随后由
+命令边界产生一次 `persistence_boundary_reached("resolve_battle_result")`；数据库／JSON
+保存只能发生在这个成功边界之后。任一步失败都恢复整个聚合并保留已终止的
+`BattleSession` 与终局快照，不发送 changed、不触发自动存档，调用方可以重试同一正式
+结果。玩家主动退出仍只丢弃战斗会话，并从既有节点入口检查点重新开始。
+
 `BattleEffectPorts` 是公开协议 Facade，不是所有效果算法的永久归宿。伤害、防御与生命相关
 公开方法继续保留原签名，但内部统一委托 `BattleSurvivalEffectService`。该服务只能接收完成
 结算所需的明确依赖：`DamageResolver`、`StatusSystem` 的现有窄能力、战斗规则查询、committed
