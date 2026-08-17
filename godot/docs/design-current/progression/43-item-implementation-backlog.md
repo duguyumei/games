@@ -196,7 +196,9 @@
 - 所有最大生命修改都从`base_max_life`与稳定来源修正重算。延寿玉提供固定`+20`；纳气养命提供本局持久的来源级累计修正。不能把已经包含物品加成的有效最大生命反写为基础值。
 - 调息玉监听正式战斗胜利及战后同步完成事件，调用统一生命恢复端口；恢复顺序必须位于节点奖励前，并记录实际恢复量。
 - 永久新增真气事务提交后发送逐实例`run_qi_permanently_added`事件，公开新增原因和实例身份；复制、生成与购买走同一事件，恢复存档和牌区移动不发送。
-- 永久与战斗临时重塑统一在实际改变提交后发送`qi_reshape_committed`，按卡牌实例和操作令牌去重，并公开改变的重塑槽集合。纳气养命按一次操作中的不同卡牌实例恢复生命，不按槽数量重复恢复。
+- 战斗临时重塑的实际新增、替换与清除已经由`card_state_changed`公开，并按卡牌实例和操作令牌
+  去重；永久RunDeck重塑仍需独立的可提交`qi_reshape_committed`边界。纳气养命最终应合并读取两类
+  来源中立事实，按一次操作中的不同卡牌实例恢复生命，不按槽数量重复恢复。
 - 生命恢复和最大生命变化必须进入本局快照、战斗建立、战后同步、UI、日志及 AI 公开状态；失败事务完整回滚。
 
 ### H. 数据、存档与验证
@@ -221,7 +223,18 @@
 | D. 功法与内功配装容量 | 已有 | `technique_loadout_copy_limit_query`、`inner_skill_capacity_query`、稳定功法实例和空余槽位校验均已存在；三才并位、反物质只缺物品查询Handler。 |
 | E. 战斗Hook、牌区与功法值查询 | 部分已有 | `after_normal_draw`、`turn_end`、额外行动、抽至上限、`card_moved` committed事实和功法倍率查询已有；抓手/回收魔法/调色板仍缺薄适配，不能标记物品已实现。 |
 | F. 节点功行、地图与休息会话 | 部分已有 | `node_completed`、`RunAggregateTransaction`和单选continuation已有；功行上限查询、地图重建原子命令和休息多选会话仍缺。 |
-| G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、`SourceContributedStatService`、`RunProgressSnapshot`往返和恢复端口已有；item marker地址、永久新增真气及重塑提交事件仍缺。 |
+| G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、`SourceContributedStatService`、`RunProgressSnapshot`往返和恢复端口已有；`card_state_changed`已覆盖战斗临时重塑事实，item marker地址、永久新增真气及永久重塑提交事件仍缺。 |
 | H. 数据、存档与验证 | 已有结构／内容未接入 | `ContentValidator._validate_items`、`ItemRepository`和被动schema验证已存在；20件物品仍须在对应能力完成后逐批接入数据与专项测试。 |
 
 特别校正：物品稳定来源解析、事件级ExecutionPlan、心得槽位实时扩容、统一消耗品事务和战果聚合回滚已经完成。后续只能在现有Runtime、查询解析器、TechniqueEffectExecutor和RunAggregateTransaction上补窄能力，不得建立物品专用平行系统。
+
+## 9. 2026-08-17 真气状态committed事实状态
+
+canonical事件`card_state_changed`已经覆盖BattleRuntime中的异状和临时重塑实际变化，包括临时
+enhancement/attribute/rank的首次施加、同槽替换和清除；事件公开完整before/after、changes、
+holder、来源与operation token，无实际变化和战斗结束清理不发送。双方物品来源可以观察同一事实，
+但效果owner仍保持为物品持有者。
+
+这只满足《纳气养命》中“战斗临时重塑实际改变”的事实来源，不代表该物品已经实现。该物品仍缺
+永久新增真气事实、永久RunDeck重塑提交事实、生命恢复内容接入及相关存档/测试；本批没有修改20件
+物品的效果或数值，也没有把战斗状态写入RunDeck。

@@ -125,6 +125,17 @@ const EVENT_FILTER_DEFINITIONS := {
     "hand_count_after": {"validation": "non_negative_int", "value": "direct", "key": "hand_count_after"},
     "explicit_discard": {"validation": "bool", "value": "direct", "key": "explicit_discard"},
     "normal_play": {"validation": "bool", "value": "direct", "key": "normal_play"},
+    "change_domain": {"validation": "change_domain", "value": "direct", "key": "change_domain"},
+    "operation": {"validation": "nonempty_string", "value": "direct", "key": "operation"},
+    "holder_id": {"validation": "nonempty_string", "value": "direct", "key": "holder_id"},
+    "added_count": {"validation": "non_negative_int", "value": "direct", "key": "added_count"},
+    "removed_count": {"validation": "non_negative_int", "value": "direct", "key": "removed_count"},
+    "updated_count": {"validation": "non_negative_int", "value": "direct", "key": "updated_count"},
+    "actual_change_count": {"validation": "non_negative_int", "value": "direct", "key": "actual_change_count"},
+    "anomaly_category": {"validation": "anomaly_category", "value": "direct", "key": "category"},
+    "anomaly_id": {"validation": "nonempty_string", "value": "direct", "key": "anomaly_id"},
+    "temporary_reshape_subslot": {"validation": "temporary_reshape_subslot", "value": "direct", "key": "subslot"},
+    "temporary_reshape_id": {"validation": "nonempty_string", "value": "direct", "key": "reshape_id"},
     "technique_triggered": {"validation": "bool", "value": "direct", "key": "technique_triggered"},
     "action_succeeded": {"validation": "bool", "value": "direct", "key": "action_succeeded"},
     "source_category": {"validation": "nonempty_string", "value": "direct", "key": "source_category"},
@@ -393,6 +404,10 @@ func _scalar_valid(value, validation: String) -> bool:
         "damage_type": return value is String and DAMAGE_TYPES.has(str(value))
         "trigger_mode": return value is String \
             and str(value) in EffectSourceProtocolScript.TRIGGER_MODES
+        "change_domain": return value is String \
+            and str(value) in ["anomaly", "temporary_reshape", "mixed"]
+        "temporary_reshape_subslot": return value is String \
+            and str(value) in ["enhancement", "attribute", "rank"]
         "owner_role", "holder_role":
             return value is String and str(value) in ["actor", "target"]
         "string_array":
@@ -420,6 +435,8 @@ func _validation_message(validation: String) -> String:
         "placement": return "必须为 top 或 bottom"
         "damage_type": return "引用未知伤害类型"
         "trigger_mode": return "引用未知 trigger_mode"
+        "change_domain": return "必须为 anomaly、temporary_reshape 或 mixed"
+        "temporary_reshape_subslot": return "引用未知临时重塑子槽"
         "owner_role", "holder_role": return "必须为 actor 或 target"
         "string_array": return "必须是非空字符串数组"
     return "必须是非空字符串"

@@ -76,7 +76,10 @@ func _decrement_state_layer(context) -> Dictionary:
     if layers <= 1:
         _remove_self(context)
     else:
-        context.card.set_state_layers(layers - 1)
+        context.card_anomaly_service.set_card_anomaly_layers(
+            context.card, "state", context.status_id, layers - 1,
+            "%s触发" % str(context.definition.get("name", context.status_id)),
+            _source_metadata(context))
     return {"success": true, "applied": true}
 
 func _remove_self_and_draw_filtered(context) -> Dictionary:
@@ -170,6 +173,9 @@ func _remove_self_with_resolution(context) -> Dictionary:
 
 func _source_metadata(context) -> Dictionary:
     return {
+        "holder": context.holder,
+        "source_actor": context.holder,
+        "action_token": context.action_token,
         "source_kind": "card_status",
         "source_id": context.status_id,
         "source_name": str(context.definition.get("name", context.status_id)),
@@ -183,4 +189,5 @@ func _remove_self(context) -> void:
         context.card,
         context.category,
         context.status_id,
-        "%s触发" % str(context.definition.get("name", context.status_id)))
+        "%s触发" % str(context.definition.get("name", context.status_id)),
+        _source_metadata(context))

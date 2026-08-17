@@ -72,7 +72,7 @@ func _transfer(effect: Dictionary, runtime):
         runtime.ports.set_card_anomaly_layers(
             card, category, anomaly,
             card.anomaly_layers(category, anomaly) - take,
-            runtime.source_name)
+            runtime.source_name, _state_event_metadata(runtime))
         remaining -= take
         if remaining <= 0:
             break
@@ -80,7 +80,7 @@ func _transfer(effect: Dictionary, runtime):
         if distribution[index] > 0:
             runtime.ports.apply_card_anomaly(
                 targets[index], category, anomaly, {}, runtime.source_name,
-                distribution[index])
+                distribution[index], false, _state_event_metadata(runtime))
     return EffectResultScript.succeeded("转移 %d 层%s" % [wanted, anomaly])
 
 func _convert(effect: Dictionary, runtime):
@@ -97,10 +97,11 @@ func _convert(effect: Dictionary, runtime):
                 card, target_category, target_anomaly).get("allowed", false):
             continue
         runtime.ports.set_card_anomaly_layers(
-            card, source_category, source_anomaly, 0, runtime.source_name)
+            card, source_category, source_anomaly, 0, runtime.source_name,
+            _state_event_metadata(runtime))
         runtime.ports.apply_card_anomaly(
             card, target_category, target_anomaly, {}, runtime.source_name,
-            layers * multiplier)
+            layers * multiplier, false, _state_event_metadata(runtime))
         converted += layers
     return EffectResultScript.succeeded("转换 %d 层" % converted)
 
@@ -115,7 +116,8 @@ func _apply_from_source(effect: Dictionary, runtime):
     if layers > 0:
         runtime.ports.apply_card_anomaly(
             targets[0], str(effect.get("target_category", "buff")),
-            str(effect.get("target_anomaly", "")), {}, runtime.source_name, layers)
+            str(effect.get("target_anomaly", "")), {}, runtime.source_name, layers,
+            false, _state_event_metadata(runtime))
     return EffectResultScript.succeeded("按来源施加 %d 层" % layers)
 
 func _apply_each(effect: Dictionary, runtime):
@@ -129,7 +131,8 @@ func _apply_each(effect: Dictionary, runtime):
                 * int(spec.get("multiplier", 1))
         if amount > 0 and runtime.ports.apply_card_anomaly(
                 card, str(effect.get("category", "buff")), str(effect.get("anomaly", "")),
-                {}, runtime.source_name, amount).get("success", false):
+                {}, runtime.source_name, amount, false,
+                _state_event_metadata(runtime)).get("success", false):
             applied += 1
     return EffectResultScript.succeeded("逐张施加 %d 张" % applied)
 
@@ -142,7 +145,8 @@ func _remove_layers(effect: Dictionary, runtime):
         var amount: int = current if bool(effect.get("all", true)) \
             else mini(current, value_resolver.resolve(effect.get("amount", 0), runtime))
         runtime.ports.set_card_anomaly_layers(
-            card, category, anomaly, current - amount, runtime.source_name)
+            card, category, anomaly, current - amount, runtime.source_name,
+            _state_event_metadata(runtime))
         removed += amount
     runtime.captures[str(effect.get("result_capture", "removed_layers"))] = [{"amount": removed}]
     return EffectResultScript.succeeded("移除 %d 层" % removed)
@@ -159,13 +163,13 @@ func _transfer_state(effect: Dictionary, runtime):
             targets[0], "state", anomaly, false).get("allowed", false):
         runtime.captures[str(effect.get("result_capture", "transferred"))] = []
         return EffectResultScript.succeeded()
-    var applied: Dictionary = runtime.ports.apply_card_anomaly(
-        targets[0], "state", anomaly, {}, runtime.source_name, 1, false)
-    if not applied.get("success", false) or not applied.get("changed", true):
+    var transferred: Dictionary = runtime.ports.transfer_card_anomaly(
+        sources[0], targets[0], "state", anomaly,
+        runtime.source_name if runtime.source_name != "" else "效果",
+        _state_event_metadata(runtime))
+    if not transferred.get("success", false):
         runtime.captures[str(effect.get("result_capture", "transferred"))] = []
         return EffectResultScript.succeeded()
-    runtime.ports.remove_card_anomaly(
-        sources[0], "state", anomaly, runtime.source_name)
     runtime.captures[str(effect.get("result_capture", "transferred"))] = [targets[0]]
     return EffectResultScript.succeeded("转移状态%s" % anomaly)
 
@@ -185,7 +189,8 @@ func _distribute_evenly(effect: Dictionary, runtime):
         var amount := base + (1 if extras.has(card) else 0)
         if amount > 0:
             runtime.ports.apply_card_anomaly(
-                card, category, anomaly, {}, runtime.source_name, amount)
+                card, category, anomaly, {}, runtime.source_name, amount,
+                false, _state_event_metadata(runtime))
     return EffectResultScript.succeeded("平均分配 %d 层" % total)
 
 func _spread_one(effect: Dictionary, runtime):
@@ -203,12 +208,23 @@ func _spread_one(effect: Dictionary, runtime):
             return EffectResultScript.succeeded()
     for card in targets:
         runtime.ports.apply_card_anomaly(
-            card, category, anomaly, {}, runtime.source_name, 1)
+            card, category, anomaly, {}, runtime.source_name, 1, false,
+            _state_event_metadata(runtime))
     runtime.ports.set_card_anomaly_layers(
         sources[0], category, anomaly,
         sources[0].anomaly_layers(category, anomaly) - 1,
-        runtime.source_name)
+        runtime.source_name, _state_event_metadata(runtime))
     return EffectResultScript.succeeded("扩散1层%s" % anomaly)
 
 func validate_effect(_effect: Dictionary, _validator, _scope: String) -> void:
     pass
+
+func _state_event_metadata(runtime) -> Dictionary:
+    var metadata: Dictionary = runtime.source_metadata()
+    metadata.merge({
+        "source_actor": runtime.actor,
+        "target": runtime.target,
+        "action_token": runtime.action_token,
+        "source_card_instance_id": runtime.source_card_instance_id,
+    }, true)
+    return metadata

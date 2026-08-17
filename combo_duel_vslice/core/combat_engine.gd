@@ -262,6 +262,8 @@ func _init(
     effect_ports.use_passive_battle_services(
         battle_rule_query_service, battle_passive_event_service,
         Callable(self, "_read_turn_number"))
+    status_system.use_committed_event_service(
+        battle_passive_event_service, Callable(self, "_read_turn_number"))
     delayed_effects = status_system.delayed_records
     player.use_status_system(status_system)
     enemy.use_status_system(status_system)

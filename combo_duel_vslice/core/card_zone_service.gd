@@ -237,17 +237,18 @@ func permanently_remove(
     var source_zone := str(location["zone"])
     var metadata := _with_frozen_counts(
         side, side, source_zone, "permanently_removed", source_metadata)
-    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     if source_zone == "temporarily_removed":
         side.temporarily_removed_cards.erase(card)
     else:
         zone(side, source_zone).erase(card)
+    var lifecycle_event_result := _apply_state_lifecycle(
+        side, card, source_zone, "permanently_removed", reason, metadata)
     if not bool(card.temporary_card) and str(card.original_owner_id) == "":
         side.mark_permanently_removed(instance_id)
     metadata = _complete_frozen_counts(
         side, side, source_zone, "permanently_removed", metadata)
-    var event_result := {"success": true}
-    if reason != "battle_end_temporary":
+    var event_result := lifecycle_event_result
+    if event_result.get("success", true) and reason != "battle_end_temporary":
         event_result = _publish_card_moved(
             side, side, card, source_zone, "permanently_removed",
             reason, "top", metadata)
@@ -285,7 +286,6 @@ func temporarily_transfer(
         if str(card.original_owner_id) != "" else str(source_side.owner_id)
     metadata = _with_frozen_counts(
         source_side, target_side, source_zone, destination, metadata)
-    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     zone(source_side, source_zone).erase(card)
     if str(card.original_owner_id) == "":
         card.original_owner_id = source_side.owner_id
@@ -351,8 +351,6 @@ func temporarily_transfer_many(records: Array) -> Array:
         })
     _stamp_movement_batch(prepared, "temporary_transfer")
     for entry in prepared:
-        _clear_meridian_on_real_hand_departure(
-            entry["card"], entry["source_zone"], entry["reason"])
         zone(entry["source_side"], entry["source_zone"]).erase(entry["card"])
         if str(entry["card"].original_owner_id) == "":
             entry["card"].original_owner_id = entry["source_side"].owner_id
@@ -388,7 +386,6 @@ func return_transferred(
         holder_side, original_side, source_zone, destination, {
             "original_owner_id": str(card.original_owner_id),
         })
-    _clear_meridian_on_real_hand_departure(card, source_zone, "return_transfer")
     zone(holder_side, source_zone).erase(card)
     card.original_owner_id = ""
     zone(original_side, destination).append(card)
@@ -704,7 +701,6 @@ func _temporarily_remove_transaction(
 
 func _remove_from_source_zone(
         side, card, source_zone: String, reason: String) -> void:
-    _clear_meridian_on_real_hand_departure(card, source_zone, reason)
     zone(side, source_zone).erase(card)
 
 func _finish_temporary_remove(
@@ -712,11 +708,16 @@ func _finish_temporary_remove(
         event_metadata: Dictionary) -> Dictionary:
     if not side.temporarily_removed_cards.has(card):
         side.temporarily_removed_cards.append(card)
+    var lifecycle_event_result := _apply_state_lifecycle(
+        side, card, source_zone, "temporarily_removed", reason,
+        event_metadata)
     var metadata := _complete_frozen_counts(
         side, side, source_zone, "temporarily_removed", event_metadata)
-    var moved_event_result := _publish_card_moved(
-        side, side, card, source_zone, "temporarily_removed",
-        reason, "top", metadata, true)
+    var moved_event_result := lifecycle_event_result
+    if moved_event_result.get("success", true):
+        moved_event_result = _publish_card_moved(
+            side, side, card, source_zone, "temporarily_removed",
+            reason, "top", metadata, true)
     var event_result := moved_event_result
     if moved_event_result.get("success", true) \
             and bool(metadata.get("explicit_discard", false)):
@@ -758,14 +759,20 @@ func _emit_void_explicit_discard_event(
         "metadata": metadata,
     })
 
-func _clear_meridian_on_real_hand_departure(
-        card,
-        source_zone: String,
-        reason: String) -> void:
-    var real_departure := source_zone == "hand" and reason != "stage"
-    real_departure = real_departure or source_zone == "staging" and reason == "normal_play"
-    if real_departure and card.has_anomaly("mark", "meridian"):
-        card.remove_anomaly("mark", "meridian")
+func _apply_state_lifecycle(
+        holder, card, source_zone: String, destination_zone: String,
+        reason: String, event_metadata: Dictionary) -> Dictionary:
+    if status_system == null or bool(event_metadata.get(
+            "state_lifecycle_applied", false)):
+        return {"success": true}
+    event_metadata["state_lifecycle_applied"] = true
+    var metadata := event_metadata.duplicate(true)
+    metadata["holder"] = holder
+    metadata["holder_frozen"] = true
+    if not metadata.has("source_actor") and not metadata.has("actor"):
+        metadata["source_actor"] = holder
+    return status_system.on_card_zone_transition(
+        card, source_zone, destination_zone, reason, metadata)
 
 func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
     var effective := int(card.effective_qi_value()) \
@@ -803,6 +810,11 @@ func _notify_arrival(
         reason: String,
         placement: String,
         event_metadata: Dictionary) -> Dictionary:
+    var lifecycle_event_result := _apply_state_lifecycle(
+        from_side if from_side != null else to_side, card,
+        source_zone, destination_zone, reason, event_metadata)
+    if not lifecycle_event_result.get("success", true):
+        return lifecycle_event_result
     if destination_zone == "discard_pile":
         if status_system != null:
             status_system.on_card_enter_discard_behaviors(to_side, card)
@@ -811,7 +823,6 @@ func _notify_arrival(
         if card_reshape_runtime != null:
             card_reshape_runtime.on_card_entered_discard(to_side, card, reason)
         if status_system != null:
-            status_system.on_card_enter_discard(card, reason)
             status_system.on_card_enter_discard_late(to_side, card)
         elif card_state_lifecycle != null:
             card_state_lifecycle.on_enter_discard(card)

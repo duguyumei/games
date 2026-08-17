@@ -7,6 +7,7 @@ var owner_id: String = ""
 var action_token: String = ""
 var event_serial: int = -1
 var card = null
+var holder = null
 var card_instance_id: String = ""
 var source_kind: String = ""
 var source_id: String = ""
@@ -55,6 +56,29 @@ var frozen_amount: int = 0
 var actual_life_loss: int = 0
 var source_card_instance_id: String = ""
 var pre_move_snapshot: Dictionary = {}
+var operation_token: String = ""
+var holder_id: String = ""
+var change_domain: String = ""
+var operation: String = ""
+var before_state: Dictionary = {}
+var after_state: Dictionary = {}
+var changes: Array = []
+var added_changes: Array = []
+var removed_changes: Array = []
+var updated_changes: Array = []
+var added_count: int = 0
+var removed_count: int = 0
+var updated_count: int = 0
+var actual_change_count: int = 0
+var category: String = ""
+var anomaly_id: String = ""
+var subslot: String = ""
+var reshape_id: String = ""
+var transfer_batch_token: String = ""
+var transfer_peer_card_id: String = ""
+var transfer_direction: String = ""
+var card_base_qi: int = 0
+var current_base_qi: int = 0
 
 func configure(values: Dictionary):
     super.configure(values)
@@ -64,6 +88,7 @@ func configure(values: Dictionary):
     action_token = str(values.get("action_token", ""))
     event_serial = int(values.get("event_serial", -1))
     card = values.get("card")
+    holder = values.get("holder")
     card_instance_id = str(values.get(
         "card_instance_id", str(card.id) if card != null else ""))
     source_kind = str(values.get("source_kind", ""))
@@ -113,6 +138,29 @@ func configure(values: Dictionary):
     actual_life_loss = int(values.get("actual_life_loss", life_lost))
     source_card_instance_id = str(values.get("source_card_instance_id", ""))
     pre_move_snapshot = values.get("pre_move_snapshot", {}).duplicate(true)
+    operation_token = str(values.get("operation_token", ""))
+    holder_id = str(values.get("holder_id", ""))
+    change_domain = str(values.get("change_domain", ""))
+    operation = str(values.get("operation", ""))
+    before_state = values.get("before_state", {}).duplicate(true)
+    after_state = values.get("after_state", {}).duplicate(true)
+    changes = values.get("changes", []).duplicate(true)
+    added_changes = values.get("added_changes", []).duplicate(true)
+    removed_changes = values.get("removed_changes", []).duplicate(true)
+    updated_changes = values.get("updated_changes", []).duplicate(true)
+    added_count = int(values.get("added_count", 0))
+    removed_count = int(values.get("removed_count", 0))
+    updated_count = int(values.get("updated_count", 0))
+    actual_change_count = int(values.get("actual_change_count", 0))
+    category = str(values.get("category", ""))
+    anomaly_id = str(values.get("anomaly_id", ""))
+    subslot = str(values.get("subslot", ""))
+    reshape_id = str(values.get("reshape_id", ""))
+    transfer_batch_token = str(values.get("transfer_batch_token", ""))
+    transfer_peer_card_id = str(values.get("transfer_peer_card_id", ""))
+    transfer_direction = str(values.get("transfer_direction", ""))
+    card_base_qi = int(values.get("card_base_qi", 0))
+    current_base_qi = int(values.get("current_base_qi", 0))
     return self
 
 func for_invocation(current_invocation):
@@ -128,6 +176,7 @@ func for_invocation(current_invocation):
         "action_token": action_token,
         "event_serial": event_serial,
         "card": card,
+        "holder": holder,
         "card_instance_id": card_instance_id,
         "source_kind": source_kind,
         "source_id": source_id,
@@ -176,6 +225,29 @@ func for_invocation(current_invocation):
         "actual_life_loss": actual_life_loss,
         "source_card_instance_id": source_card_instance_id,
         "pre_move_snapshot": pre_move_snapshot,
+        "operation_token": operation_token,
+        "holder_id": holder_id,
+        "change_domain": change_domain,
+        "operation": operation,
+        "before_state": before_state,
+        "after_state": after_state,
+        "changes": changes,
+        "added_changes": added_changes,
+        "removed_changes": removed_changes,
+        "updated_changes": updated_changes,
+        "added_count": added_count,
+        "removed_count": removed_count,
+        "updated_count": updated_count,
+        "actual_change_count": actual_change_count,
+        "category": category,
+        "anomaly_id": anomaly_id,
+        "subslot": subslot,
+        "reshape_id": reshape_id,
+        "transfer_batch_token": transfer_batch_token,
+        "transfer_peer_card_id": transfer_peer_card_id,
+        "transfer_direction": transfer_direction,
+        "card_base_qi": card_base_qi,
+        "current_base_qi": current_base_qi,
         "payload": payload,
         "source": current_invocation.source,
         "invocation": current_invocation,
@@ -192,6 +264,7 @@ func public_effect_values() -> Dictionary:
         "action_token": action_token,
         "round_number": round_number,
         "card": card,
+        "holder": holder,
         "card_instance_id": card_instance_id,
         "source_kind": source_kind,
         "source_id": source_id,
@@ -235,6 +308,29 @@ func public_effect_values() -> Dictionary:
         "action_succeeded": action_succeeded,
         "source_card_instance_id": source_card_instance_id,
         "pre_move_snapshot": pre_move_snapshot.duplicate(true),
+        "operation_token": operation_token,
+        "holder_id": holder_id,
+        "change_domain": change_domain,
+        "operation": operation,
+        "before_state": before_state.duplicate(true),
+        "after_state": after_state.duplicate(true),
+        "changes": changes.duplicate(true),
+        "added_changes": added_changes.duplicate(true),
+        "removed_changes": removed_changes.duplicate(true),
+        "updated_changes": updated_changes.duplicate(true),
+        "added_count": added_count,
+        "removed_count": removed_count,
+        "updated_count": updated_count,
+        "actual_change_count": actual_change_count,
+        "category": category,
+        "anomaly_id": anomaly_id,
+        "subslot": subslot,
+        "reshape_id": reshape_id,
+        "transfer_batch_token": transfer_batch_token,
+        "transfer_peer_card_id": transfer_peer_card_id,
+        "transfer_direction": transfer_direction,
+        "card_base_qi": card_base_qi,
+        "current_base_qi": current_base_qi,
         "metadata": metadata.duplicate(true),
     }, true)
     return result

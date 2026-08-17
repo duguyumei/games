@@ -262,6 +262,7 @@ func _context(
         "owner_id": str(owner.owner_id),
         "round_number": int(values.get("round_number", 0)),
         "card": values.get("card"),
+        "holder": values.get("holder"),
         "card_instance_id": str(values.get("card_instance_id", "")),
         "source_kind": str(values.get("source_kind", "")),
         "source_id": str(values.get("source_id", "")),

@@ -229,9 +229,15 @@ func _apply_temporary_reshape(effect: Dictionary, runtime):
             candidates.erase(str(card.attribute))
             resolved_reshape_id = candidates[rng.randi_range(0, candidates.size() - 1)]
         var result: Dictionary = (
-            runtime.ports.apply_temporary_enhancement(card, resolved_reshape_id)
+            runtime.ports.apply_temporary_enhancement(
+                card, resolved_reshape_id,
+                runtime.source_name if runtime.source_name != "" else "效果",
+                _state_event_metadata(runtime))
             if subslot == "enhancement"
-            else runtime.ports.apply_temporary_attribute(card, resolved_reshape_id)
+            else runtime.ports.apply_temporary_attribute(
+                card, resolved_reshape_id,
+                runtime.source_name if runtime.source_name != "" else "效果",
+                _state_event_metadata(runtime))
             if subslot == "attribute" else {"success": false})
         if result.get("success", false):
             applied += 1
@@ -270,7 +276,9 @@ func _apply_temporary_rank_from_capture(effect: Dictionary, runtime):
         rank_order = int(source.current_rank_order())
         base_qi = int(source.current_base_qi_value())
     var result: Dictionary = runtime.ports.apply_temporary_rank(
-        target, rank_name, rank_order, base_qi)
+        target, rank_name, rank_order, base_qi,
+        runtime.source_name if runtime.source_name != "" else "效果",
+        _state_event_metadata(runtime))
     if result.get("success", false) and effect.has("result_capture"):
         runtime.captures[str(effect["result_capture"])] = [target]
     return EffectResultScript.succeeded("施加临时牌阶" \
@@ -283,15 +291,15 @@ func _clear_temporary_reshape(effect: Dictionary, runtime):
     var cleared_cards: Array = []
     for card in runtime.captures.get(str(effect.get("capture", "")), []):
         var subslot := str(effect.get("subslot", ""))
-        var result: Dictionary = runtime.ports.clear_all_temporary_reshapes(card) \
-            if subslot == "all" else runtime.ports.clear_temporary_reshape(card, subslot)
-        var removed = result.get("removed")
-        var changed := false
-        if removed is Dictionary:
-            for value in removed.values():
-                changed = changed or str(value) != ""
-        else:
-            changed = str(removed) != ""
+        var result: Dictionary = runtime.ports.clear_all_temporary_reshapes(
+            card,
+            runtime.source_name if runtime.source_name != "" else "效果",
+            _state_event_metadata(runtime)) \
+            if subslot == "all" else runtime.ports.clear_temporary_reshape(
+                card, subslot,
+                runtime.source_name if runtime.source_name != "" else "效果",
+                _state_event_metadata(runtime))
+        var changed := bool(result.get("changed", false))
         if result.get("success", false) and changed:
             cleared += 1
             cleared_cards.append(card)
@@ -314,6 +322,16 @@ func _resolved_query(value: Dictionary, runtime) -> Dictionary:
             filters[value_field] = value_resolver.resolve(filters[value_field], runtime)
     query["filters"] = filters
     return query
+
+func _state_event_metadata(runtime) -> Dictionary:
+    var metadata: Dictionary = runtime.source_metadata()
+    metadata.merge({
+        "source_actor": runtime.actor,
+        "target": runtime.target,
+        "action_token": runtime.action_token,
+        "source_card_instance_id": runtime.source_card_instance_id,
+    }, true)
+    return metadata
 
 func _zone_cards(side, zone: String) -> Array:
     match zone:

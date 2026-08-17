@@ -672,30 +672,50 @@ func set_card_anomaly_layers(
         category: String,
         anomaly_id: String,
         layers: int,
-        source: String = "效果") -> Dictionary:
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     return _card_effect_service.set_card_anomaly_layers(
-        card, category, anomaly_id, layers, source)
+        card, category, anomaly_id, layers, source, event_metadata)
 
-func apply_temporary_enhancement(card, enhancement_id: String) -> Dictionary:
+func apply_temporary_enhancement(
+        card, enhancement_id: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     return _card_effect_service.apply_temporary_enhancement(
-        card, enhancement_id)
+        card, enhancement_id, source, event_metadata)
 
-func apply_temporary_attribute(card, attribute_id: String) -> Dictionary:
-    return _card_effect_service.apply_temporary_attribute(card, attribute_id)
+func apply_temporary_attribute(
+        card, attribute_id: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.apply_temporary_attribute(
+        card, attribute_id, source, event_metadata)
 
 func apply_temporary_rank(
         card,
         rank_name: String,
         rank_order: int,
-        base_qi: int) -> Dictionary:
+        base_qi: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     return _card_effect_service.apply_temporary_rank(
-        card, rank_name, rank_order, base_qi)
+        card, rank_name, rank_order, base_qi, source, event_metadata)
 
-func clear_temporary_reshape(card, subslot: String) -> Dictionary:
-    return _card_effect_service.clear_temporary_reshape(card, subslot)
+func clear_temporary_reshape(
+        card, subslot: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.clear_temporary_reshape(
+        card, subslot, source, event_metadata)
 
-func clear_all_temporary_reshapes(card) -> Dictionary:
-    return _card_effect_service.clear_all_temporary_reshapes(card)
+func clear_all_temporary_reshapes(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.clear_all_temporary_reshapes(
+        card, source, event_metadata)
+
+func clear_card_anomalies(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.clear_card_anomalies(
+        card, source, event_metadata)
 
 func resolve_played_card_anomalies(
         holder: BattleSide,

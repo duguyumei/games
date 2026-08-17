@@ -124,7 +124,13 @@ func generate_temporary_normal_card(side, source, options: Dictionary = {}):
     card.temporary_card = true
     if bool(options.get("add_void", true)):
         var applied: Dictionary = apply_card_anomaly(
-            card, "mark", "void", {}, "临时真气", 1, false)
+            card, "mark", "void", {}, "临时真气", 1, false, {
+                "holder": side, "actor": side,
+                "source_kind": "rule", "source_id": "temporary_card",
+                "source_name": "临时真气",
+                "source_instance_key": "rule:temporary_card",
+                "trigger_mode": "direct",
+            })
         if not applied.get("success", false):
             return null
     var added: Dictionary = side.card_zone_service.add_generated(
@@ -411,54 +417,55 @@ func set_card_anomaly_layers(
         category: String,
         anomaly_id: String,
         layers: int,
-        source: String = "效果") -> Dictionary:
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     return _status_system.set_card_anomaly_layers(
-        card, category, anomaly_id, layers, source)
+        card, category, anomaly_id, layers, source, event_metadata)
 
 
-func apply_temporary_enhancement(card, enhancement_id: String) -> Dictionary:
-    if card == null or enhancement_id == "":
-        return {"success": false, "reason": "临时强化参数无效"}
-    return {
-        "success": card.set_temporary_enhancement(enhancement_id),
-        "enhancement": enhancement_id,
-    }
+func apply_temporary_enhancement(
+        card, enhancement_id: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.apply_temporary_enhancement(
+        card, enhancement_id, source, event_metadata)
 
 
-func apply_temporary_attribute(card, attribute_id: String) -> Dictionary:
-    if card == null:
-        return {"success": false, "reason": "临时属性目标为空"}
-    return {
-        "success": card.set_temporary_attribute(attribute_id),
-        "attribute": attribute_id,
-    }
+func apply_temporary_attribute(
+        card, attribute_id: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.apply_temporary_attribute(
+        card, attribute_id, source, event_metadata)
 
 
 func apply_temporary_rank(
         card,
         rank_name: String,
         rank_order: int,
-        base_qi: int) -> Dictionary:
-    if card == null:
-        return {"success": false, "reason": "临时牌阶参数无效"}
-    return {
-        "success": card.set_temporary_rank(rank_name, rank_order, base_qi),
-        "rank_name": rank_name,
-        "rank_order": rank_order,
-        "base_qi": base_qi,
-    }
+        base_qi: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.apply_temporary_rank(
+        card, rank_name, rank_order, base_qi, source, event_metadata)
 
 
-func clear_temporary_reshape(card, subslot: String) -> Dictionary:
-    if card == null or subslot not in ["enhancement", "attribute", "rank"]:
-        return {"success": false, "reason": "临时重塑子槽无效"}
-    return {"success": true, "removed": card.clear_temporary_reshape(subslot)}
+func clear_temporary_reshape(
+        card, subslot: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.clear_temporary_reshape(
+        card, subslot, source, event_metadata)
 
 
-func clear_all_temporary_reshapes(card) -> Dictionary:
-    if card == null:
-        return {"success": false, "reason": "临时重塑目标为空"}
-    return {"success": true, "removed": card.clear_all_temporary_reshapes()}
+func clear_all_temporary_reshapes(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.clear_all_temporary_reshapes(
+        card, source, event_metadata)
+
+
+func clear_card_anomalies(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.clear_card_anomalies(card, source, event_metadata)
 
 
 func resolve_played_card_anomalies(

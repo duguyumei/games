@@ -8,5 +8,17 @@ func triggers() -> Array[String]:
     return ["reshape_applied"]
 
 func execute(behavior: Dictionary, context) -> Dictionary:
-    var removed = context.card.clear_anomalies() if context.card != null else {}
-    return {"success": true, "removed": removed}
+    if context.card == null or context.effect_ports == null:
+        return {"success": false, "removed": {}}
+    return context.effect_ports.clear_card_anomalies(
+        context.card, "永久重塑清除异状", {
+            "holder": context.holder,
+            "source_actor": context.holder,
+            "action_token": context.action_token,
+            "source_kind": "card_reshape",
+            "source_id": str(context.card.reshape_origin.get("id", "reshape")),
+            "source_name": "永久重塑清除异状",
+            "source_instance_key": "card_reshape:%s" % str(context.card.id),
+            "trigger_mode": "direct",
+            "operation": "clear",
+        })

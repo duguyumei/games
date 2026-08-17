@@ -215,6 +215,26 @@ Facade、复制 `BattleSide` 规则或按功法／内功／物品／状态 ID �
 `observe_all_sides`让双方被动来源都建立计划，但每个Invocation的效果actor仍重绑定为该被动来源
 owner，观察敌方移动不会把收益默认施加给敌方。
 
+`card_state_changed`现为唯一的BattleRuntime真气状态committed事实。`CardAnomalyService`负责统一
+冻结`anomalies + temporary_reshapes`的before/after，并在一处计算`changes`、added/removed/updated
+分组、实际层数差、净化清除集合和转移批次；异状、层数、临时强化/属性/牌阶、单槽/全槽清除、
+永久重塑要求的异状清除、经脉离手和入弃牌堆生命周期都经`StatusSystem`薄Facade进入该服务。
+`BattleCardEffectService`、`CardZoneService`和`CardReshapeClearAnomaliesHandler`不得再直接调用
+`QiCard` setter/remover。战斗结束清理、快照恢复、预览/校验和失败操作不发布事实。
+
+一次同牌业务操作只发布一个canonical事实；净化把全部实际移除项和净化自身新增放进同一
+`changes`，其中`removed_count`不包含净化自身。异状转移先完成来源移除和目标写入，再冻结两张牌，
+以共享`transfer_batch_token/operation_token`按`transfer_out→transfer_in`发布。临时牌阶替换的
+before/after都包含`rank_name/rank_order/base_qi`。进入弃牌堆或真实离手的顺序为
+`card_state_changed(lifecycle_remove) → card_moved → 既有专项事件/响应`。
+
+兼容事件`card_anomaly_changed`和`card_burned_out_changed`仍是response-only，但只在
+`card_state_changed`实际发布后从同一冻结事实各投影一次：临时重塑不会误投异状响应，燃尽新增/
+移除从对应change投影。投影挂在committed publication监听之后，因此外层发布事务回滚不会提前
+泄露legacy响应；canonical动态响应先处理，legacy随后处理，不会把同一注册响应执行两次。
+`observe_all_sides=true`让双方来源观察事实，事件`holder`表示实际持牌方，而Invocation效果actor
+仍重绑定为各自被动来源owner。
+
 `trigger_poison_card` 暂留 Facade，以现有卡牌服务和 `BattleSurvivalEffectService` 组合真气状态、
 毒伤与事务事件，禁止复制毒伤算法。`notify_cards_played`、`notify_poison_triggered`、响应监听、
 来源标识、连势／同气、延迟效果和功法调用留给后续批次。本批只运行项目加载与

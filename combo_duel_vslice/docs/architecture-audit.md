@@ -736,6 +736,32 @@ placement、from/to holder及ID、original owner、移动前快照、来源协�
 owner。同步批次先完成全批写入，随后按冻结逻辑计数发布；placement bottom也在同一次写入完成，
 删除了`BattleCardEffectService`移动后的二次放底路径。
 
+### 真气状态变化committed事实收口（2026-08-17）
+
+`BattleEventCatalog.COMMITTED_EVENTS`新增唯一canonical Hook：`card_state_changed`。现有
+`card_anomaly_changed`与`card_burned_out_changed`继续保留在`RESPONSE_ONLY_EVENTS`，但不再各自
+读取`QiCard`拼装before/after；它们在canonical publication后从同一冻结事实投影。无实际变化时
+三者均不发送，临时重塑只产生canonical事实，不会误触发异状legacy响应。
+
+`CardAnomalyService`现为BattleRuntime真气状态唯一业务写入口。权威快照覆盖buff/debuff/state/mark
+及层数/载荷，并覆盖临时enhancement/attribute/rank；rank使用完整
+`rank_name/rank_order/base_qi`。唯一diff实现生成`changes`及added/removed/updated分组、各项
+before/after和实际`layer_delta`。净化在一次操作中聚合全部旧异状与临时重塑移除和净化自身新增；
+`removed_count`只计旧内容。转移先写完两张牌，再冻结并按`transfer_out→transfer_in`发布共享批次令牌
+的两条事实，因此观察者不会看到半完成状态。
+
+生产直写已经收口：`BattleCardEffectService`的临时重塑setter、`CardZoneService`的meridian删除、
+`CardReshapeClearAnomaliesHandler.clear_anomalies`及状态行为的`set_state_layers`均改走
+`StatusSystem/CardAnomalyService`。`BattleEffectPorts`相关方法新增向后兼容metadata参数，Effect
+Handler传递统一`source_*`、source actor与action token。`CombatEngine`通过正式装配接口注入
+committed service与回合读取器，不形成StatusSystem→Ports→StatusSystem事件服务查找环。
+
+离手和入弃牌堆状态生命周期在同一聚合入口完成，时序为
+`card_state_changed(lifecycle_remove)→card_moved→既有专项事实/响应`。战斗开始的明确重塑施加可发布，
+初始装载、恢复、预览与战斗结束清理不发布。事实使用`observe_all_sides`，holder记录实际持牌方，
+被动Invocation的owner仍是来源持有者。事件serial/receipt和CardAnomalyService operation serial均进入
+现有事务快照恢复；没有新增递归队列或回滚器。
+
 ### BattleEffectPorts 伤害／防御／生命职责首批迁出（2026-08-16）
 
 `BattleEffectPorts` 仍是 Effect Handler、`PassiveRuleRuntime`、`ActionResolver` 与

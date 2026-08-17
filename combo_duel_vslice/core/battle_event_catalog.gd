@@ -11,7 +11,8 @@ const TIMING_EVENTS := [
 ]
 
 const COMMITTED_EVENTS := [
-    "action_confirmed", "action_resolved", "card_moved", "card_drawn",
+    "action_confirmed", "action_resolved", "card_moved", "card_state_changed",
+    "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
     "damage_resolved", "damage_blocked", "reflection_resolved",
     "reflection_source_changed", "block_source_changed",
@@ -52,6 +53,13 @@ const PUBLIC_FIELDS := [
     "from_hand_count_before", "from_hand_count_after",
     "to_hand_count_before", "to_hand_count_after",
     "movement_batch_token", "movement_batch_index", "metadata",
+    "operation_token", "holder_id", "change_domain", "operation",
+    "before_state", "after_state", "changes",
+    "added_changes", "removed_changes", "updated_changes",
+    "added_count", "removed_count", "updated_count", "actual_change_count",
+    "category", "anomaly_id", "subslot", "reshape_id",
+    "transfer_batch_token", "transfer_peer_card_id", "transfer_direction",
+    "card_base_qi", "current_base_qi",
     "host_hand_id", "slot_instance_id", "origin_technique_id",
     "origin_slot_instance_id", "insertion_serial", "insertion_position",
     "marker_mode", "generation_batch_token", "temporary",

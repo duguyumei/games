@@ -142,6 +142,10 @@ func use_effect_ports(effect_ports) -> void:
     status_delay_service.use_effect_ports(effect_ports)
     combat_source_lifecycle_service.use_effect_ports(effect_ports)
 
+func use_committed_event_service(
+        service, round_reader: Callable = Callable()) -> void:
+    card_anomaly_service.use_committed_event_service(service, round_reader)
+
 func use_effect_executor(executor) -> void:
     status_response_service.use_effect_executor(executor)
     status_delay_service.use_effect_executor(executor)
@@ -162,6 +166,7 @@ func reset() -> void:
     status_response_service.clear()
     status_history.reset()
     runtime_record_id_allocator.reset()
+    card_anomaly_service.reset_runtime_state()
     _technique_draw_counts.clear()
 
 func register_response(
@@ -186,6 +191,7 @@ func on_committed_event_for_responses(
         values: Dictionary,
         receipt: Dictionary) -> void:
     status_response_service.on_committed_event(event_kind, values, receipt)
+    card_anomaly_service.on_committed_event_published(event_kind, values)
 
 func runtime_record_serial() -> int:
     return runtime_record_id_allocator.current_serial()
@@ -201,6 +207,7 @@ func capture_runtime_state() -> Dictionary:
         "delay_serial": runtime_record_serial(),
         "technique_draw_counts": _technique_draw_counts.duplicate(true),
         "rng_state": int(_rng.state) if _rng != null else -1,
+        "card_anomaly_runtime": card_anomaly_service.capture_runtime_state(),
     }
 
 func restore_runtime_state(state: Dictionary) -> void:
@@ -213,6 +220,8 @@ func restore_runtime_state(state: Dictionary) -> void:
     var rng_state := int(state.get("rng_state", -1))
     if _rng != null and rng_state >= 0:
         _rng.state = rng_state
+    card_anomaly_service.restore_runtime_state(
+        state.get("card_anomaly_runtime", {}))
 
 func card_numeric_modifier(card, modifier_id: String) -> int:
     return card_anomaly_service.card_numeric_modifier(card, modifier_id)
@@ -303,12 +312,59 @@ func set_card_anomaly_layers(
         category: String,
         anomaly_id: String,
         layers: int,
-        source: String = "效果") -> Dictionary:
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
     return card_anomaly_service.set_card_anomaly_layers(
-        card, category, anomaly_id, layers, source)
+        card, category, anomaly_id, layers, source, event_metadata)
 
-func on_card_enter_discard(card, source: String = "进入弃牌堆") -> Dictionary:
-    return card_anomaly_service.on_card_enter_discard(card, source)
+func apply_temporary_enhancement(
+        card, enhancement_id: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.apply_temporary_enhancement(
+        card, enhancement_id, source, event_metadata)
+
+func apply_temporary_attribute(
+        card, attribute_id: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.apply_temporary_attribute(
+        card, attribute_id, source, event_metadata)
+
+func apply_temporary_rank(
+        card, rank_name: String, rank_order: int, base_qi: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.apply_temporary_rank(
+        card, rank_name, rank_order, base_qi, source, event_metadata)
+
+func clear_temporary_reshape(
+        card, subslot: String, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.clear_temporary_reshape(
+        card, subslot, source, event_metadata)
+
+func clear_all_temporary_reshapes(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.clear_all_temporary_reshapes(
+        card, source, event_metadata)
+
+func clear_card_anomalies(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.clear_card_anomalies(
+        card, source, event_metadata)
+
+func on_card_zone_transition(
+        card, source_zone: String, destination_zone: String,
+        reason: String, event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.on_card_zone_transition(
+        card, source_zone, destination_zone, reason, event_metadata)
+
+func on_card_enter_discard(
+        card, source: String = "进入弃牌堆",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.on_card_enter_discard(
+        card, source, event_metadata)
 
 func on_card_enter_discard_behaviors(holder, card) -> void:
     card_status_behavior_service.on_card_enter_discard(holder, card)
@@ -407,7 +463,15 @@ func _on_battle_start(event) -> Dictionary:
         for zone in [side.draw_pile, side.hand, side.staging, side.discard_pile]:
             for card in zone:
                 var result: Dictionary = (
-                    card_anomaly_service.on_card_battle_start(card))
+                    card_anomaly_service.on_card_battle_start(card, "战斗开始重塑", {
+                        "holder": side,
+                        "actor": side,
+                        "source_kind": "card_reshape",
+                        "source_id": "battle_start",
+                        "source_name": "战斗开始重塑",
+                        "source_instance_key": "card_reshape:%s" % str(card.id),
+                        "trigger_mode": "automatic",
+                    }))
                 applied_count += int(result.get("applied_count", 0))
     return {
         "success": true,
