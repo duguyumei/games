@@ -107,9 +107,12 @@ func _init(
     passive_rule_registry = (
         passive_rule_registry_override
         if passive_rule_registry_override != null
-        else PassiveRuleHandlerRegistryScript.new(true, effect_registry))
+        else PassiveRuleHandlerRegistryScript.new(
+            true, effect_registry, run_effect_registry))
     if passive_rule_registry.has_method("use_effect_registry"):
         passive_rule_registry.use_effect_registry(effect_registry)
+    if passive_rule_registry.has_method("use_run_effect_registry"):
+        passive_rule_registry.use_run_effect_registry(run_effect_registry)
 
 func load_all(path_overrides: Dictionary = {}) -> bool:
     errors.clear()

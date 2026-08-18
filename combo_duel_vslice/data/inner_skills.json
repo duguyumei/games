@@ -240,6 +240,38 @@
           }
         }
       ]
+    },
+    {
+      "id": "fortune_rank_cycle",
+      "name": "机缘不空",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "机缘真气参与数值计算时，若本次机缘的功法倍率判定和历练判定均未成功，则该真气的牌阶永久提高1级；A提高后变为2。",
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "technique_execution_resolved",
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "advance_permanent_qi_rank",
+                    "targets_from": "frozen_reshape_results",
+                    "required_false_flags": [
+                      "multiplier_success",
+                      "experience_success"
+                    ],
+                    "reshape_id": "fortune_rank_advance"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

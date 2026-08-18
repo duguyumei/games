@@ -7,6 +7,8 @@ const EffectPortsScript = preload(
     "res://core/passives/run_passive_effect_ports.gd")
 
 const COMMITTED_EVENT_HOOKS := [
+    "run_qi_permanently_added",
+    "qi_reshape_committed",
     "practice_opened",
     "practice_purchase_committed",
     "practice_pack_opened",
@@ -45,14 +47,20 @@ func dispatch(context, growth, event_state) -> Dictionary:
         return {"success": false, "reason": "不是已登记的本局提交事件：%s" % context.hook}
     if context.transaction_token == "":
         return {"success": false, "reason": "%s 缺少 transaction_token" % context.hook}
-    if event_state == null:
+    var committed_tokens: Variant = _committed_tokens(event_state)
+    if committed_tokens == null:
         return {"success": false, "reason": "本局被动事件缺少类型化事件状态"}
-    if event_state.committed_passive_event_tokens.has(context.transaction_token):
+    var committed_token: String = (
+        context.event_token
+        if str(context.event_token) != ""
+        else context.transaction_token)
+    if committed_tokens.has(committed_token):
         return {
             "success": true,
             "duplicate": true,
             "hook": context.hook,
             "transaction_token": context.transaction_token,
+            "event_token": committed_token,
             "results": [],
         }
     var runtime = _runtime_ref.get_ref()
@@ -83,16 +91,36 @@ func dispatch(context, growth, event_state) -> Dictionary:
             "transaction_token": context.transaction_token,
             "results": dispatched.get("results", []),
         }
-    event_state.committed_passive_event_tokens.append(
-        context.transaction_token)
+    committed_tokens.append(committed_token)
     return {
         "success": true,
         "duplicate": false,
         "hook": context.hook,
         "transaction_token": context.transaction_token,
+        "event_token": committed_token,
         "invocation_count": dispatched.get("results", []).size(),
         "results": _result_breakdown(dispatched.get("results", [])),
     }
+
+## RunMutationService 的 working-copy 事务不拥有正式 ComboRunState。它通过
+## 本窄入口把去重 token 暂存在调用栈内；只有 Growth 最终提交成功后，调用方
+## 才能看到返回的 canonical 事实，失败不会污染正式 RunState token。
+func dispatch_staged(
+        context,
+        growth,
+        committed_event_tokens: Array) -> Dictionary:
+    return dispatch(context, growth, {
+        "committed_passive_event_tokens": committed_event_tokens,
+    })
+
+func _committed_tokens(event_state):
+    if event_state == null:
+        return null
+    if event_state is Dictionary:
+        var values = event_state.get("committed_passive_event_tokens")
+        return values if values is Array else null
+    var values = event_state.get("committed_passive_event_tokens")
+    return values if values is Array else null
 
 func _result_breakdown(values: Array) -> Array:
     var result: Array = []

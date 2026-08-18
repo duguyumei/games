@@ -1639,8 +1639,8 @@ canonical marker事实，失败不泄漏事件或token；存档恢复只恢复ma
 最大生命仍由`SourceContributedStatService`唯一计算：`base_max_life + active max_life markers`。
 来源增加不恢复生命，来源减少立即截断，`base_max_life`不被反写；战斗建立、战后同步、Run工作副本和
 存档恢复都调用同一重算入口。专项覆盖地址稳定、三类来源对照、持有校验、clear/retain、压制、公开投影、
-最大生命、Run往返与失败回滚。九项核心C2公共协议至此全部完成，但延寿玉、纳气养命、其余物品、内功
-和暂缓功法仍未接入。
+最大生命、Run往返与失败回滚。九项核心C2公共协议至此全部完成；在该协议批次结束时延寿玉、纳气养命、
+其余物品、内功和暂缓功法仍未接入，纳气养命由后续永久真气事实批次完成。
 
 ## 2026-08-18 九项核心C2统一架构收口
 
@@ -1828,8 +1828,8 @@ RNG输入；确认检测来源/历史变化，不重新枚举或重掷。其他�
 增量通过同一通用Handler从1变2，上限仍为9。
 
 库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人和幻象已作为formal/unique内容接入，基础价格统一为8；
-幻象动态真气价格4、类别基础权重5。完成后能力矩阵为已有/合并17、B 12、C1 18、C2 0、D 1；仍未接入
-156门内功、14件物品和8门暂缓功法。本批没有开始下一个merge family。
+幻象动态真气价格4、类别基础权重5。该批完成时能力矩阵为已有/合并17、B 12、C1 18、C2 0、D 1；
+仍未接入156门内功、14件物品和8门暂缓功法。该批没有开始下一个merge family。
 
 专项`test_practice_strategy_query.gd`以99条断言覆盖四查询纯度与顺序、冻结商店、六件内容、动态实例购买、
 望远镜历史计划、失败回滚和旧状态迁移。直接回归结果为：主runner 136,527条、Run历史115条、功法/心得
@@ -1837,3 +1837,68 @@ RNG输入；确认检测来源/历史变化，不重新枚举或重掷。其他�
 加载704项，设计一致性228/228、待接入0、错误0，最终`quick` 7/7。日志使用
 `/tmp/taiwu-practice-strategy-*.log`与`/tmp/taiwu-practice-strategy-quick-final2-*.log`，stdout和日志扫描均未
 发现加载、解析、脚本、ObjectDB/RID、orphan、资源泄漏或退出阶段错误；只有允许忽略的macOS CA警告。
+
+## 26. 2026-08-19 本局永久真气事实、战斗永久改牌与内容接入
+
+### 架构结论与唯一所有者
+
+`run_qi_added_and_reshape_events`与`battle_permanent_card_mutation_port`已经在既有Run／Battle事务上完成，
+没有新增Run卡牌事件总线、永久牌组Service、内容专用监听器或第二套回滚框架。生产`core/`不判断
+`fortune_rank_cycle`或`deck_growth_and_reshape_vitality`；两项内容只通过统一Handler、Effect op、条件和
+canonical事实表达。
+
+- `RunDeck`仍唯一持有Run永久真气实例；调用方不得访问其私有数组。
+- `RunMutationService`仍唯一编排Run永久新增、完整实例新增、复制、购买和永久重塑，并从工作副本
+  before/after派生canonical事实。
+- `BattleCardEffectService`是战斗永久真气变更的唯一有状态入口，公开面继续是`BattleEffectPorts`；
+  `PermanentQiMutationService`只是Run／Battle可共用的纯快照转换算法。
+- `BattleSide`只持有本场工作实例与幂等回执；`BattleSetupService/RunProgressSnapshot`继续承担建立与胜利
+  绝对同步，战败、退出、重开不提交工作牌组。
+- `PassiveRuleRuntime`、`RunPassiveEventService`和既有ExecutionPlan是内功／物品统一消费端；
+  `SourceMarkerStore/SourceContributedStatService`继续独占纳气养命的累计与最大生命贡献。
+
+### Canonical事实与事务边界
+
+`run_qi_permanently_added`由`RunMutationService`按每个实际新增实例提交，公开稳定transaction／operation
+token、operation、原因、来源协议、holder、instance／definition ID及完整持久真气快照。正式
+`add_run_cards/add_run_card_instances/copy_run_card`、永久生成和修习购买共用该派生；消耗品事务通过
+`stage_card_mutation_facts`窄adapter复用同一规则。初始牌组、存档恢复、抽牌、洗回、移动、临时生成、
+重复实例与失败事务不发送。
+
+`qi_reshape_committed`是Run永久重塑和战斗永久改牌的同一事实族，公开scope、persistence、holder、
+card instance、before/after、逐字段changes、来源、operation token和实际变化数。Run侧同一操作每张牌
+最多一份；战斗侧同一根行动、卡实例与变更类型由`permanent_qi_mutation_receipts`幂等。无实际变化不
+发送。临时重塑继续只使用`card_state_changed(persistence=temporary)`，因此永久改牌不会被消费者按两类
+事实重复结算。
+
+Run命令先在`GrowthInventory`工作副本改牌，再派生并同步消费事实，最后连同牌组、生命、marker和
+committed结果一起替换正式状态；任何Handler或提交失败都会丢弃整个工作副本。战斗端口在既有
+`BattleRuntimeMutationTransaction`中写卡、登记回执并提交事实；事件Invocation失败恢复双方状态、卡牌、
+来源counter／marker、receipt、event serial、publication、日志和RNG。外层行动失败也恢复相同状态。
+因此不存在“卡已升阶但事件／治疗失败”的半提交。
+
+### 两项正式内容
+
+《机缘不空》作为formal rare内功接入。正式Hook是canonical `technique_execution_resolved`，即原功法执行
+完成、回响开始前；不使用较晚的兼容`technique_succeeded`。行动确认阶段已将实际参与牌的机缘
+`multiplier_success/experience_success`冻结到`HandGroupSnapshot.reshape_action_results`，Handler只读取这份
+快照。两项均失败时，通用`advance_permanent_qi_rank`效果按`2→3→…→K→A→2`更新definition、牌阶和
+基础真气值，并增加可展示的`重塑·其他/机缘升阶`。根行动+卡实例回执保证功法回响、卡牌重演、等待
+恢复与receipt重放不重复升阶；下一独立行动仍可再次触发。
+
+《纳气养命》作为formal unique item接入，基础价格8。Run事实由通用`run_fact_effects`消费；收窄后的
+`RunPassiveEffectPorts`注入真实item来源地址、marker声明与来源专属transaction token，通用
+`write_source_marker`效果只允许写当前Invocation自己的run marker。每个永久新增实例令公开
+`permanent_qi_growth`加1，`SourceContributedStatService`据此增加有效最大生命；当前生命不恢复，
+`base_max_life`不改变。Run／Battle永久重塑读取`qi_reshape_committed`，临时重塑读取
+`card_state_changed`，只对我方实际施加或替换逐牌调用既有治疗端口；清除和生命周期移除不算成功重塑。
+同牌同operation多字段仍一次；机缘升阶
+因而与纳气养命形成恰好一次回血桥接。
+
+本批完成后能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1；未接入内容剩余155门内功、13件物品和
+8门暂缓功法。下一阶段继续按`merge_family`组织，不按单内容复制事实、来源解析或事务。
+
+专项`test_run_card_mutation_fact.gd`以150条断言覆盖Run新增／重塑事实、消耗品与购买adapter、机缘冻结与
+幂等、纳气养命marker／治疗、存档及胜败同步；item marker 87条、battle-contracts 861条、Run存档202条、
+content-contracts 1081条均通过。最终`quick`为7/7；`/tmp/taiwu-run-card-mutation-final-*.log`及对应stdout
+未发现脚本加载、解析、ObjectDB／RID、orphan、资源泄漏或退出阶段错误，只有允许忽略的macOS CA警告。

@@ -1,6 +1,6 @@
 # 待实现物品目录
 
-> 状态：当前共20件已确认效果；库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人和幻象共6件已正式接入，剩余14件尚未进入正式物品池。
+> 状态：当前共20件已确认效果；库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人、幻象和纳气养命共7件已正式接入，剩余13件尚未进入正式物品池。
 >
 > 本文是这些物品及其所需后续底层调整的当前唯一正文，并同步记录已接入状态；未标记正式接入的条目仍只表示设计。实现必须复用来源中立的被动规则运行时、查询、已提交事件和效果端口，不得在中央流程按物品 ID 写分支。
 
@@ -11,7 +11,7 @@
 - 物品通过独立物品持有区激活，但与内功共用`PassiveRuleRuntime`、稳定来源身份、来源顺序、压制、Invocation、只读查询、生命周期 Hook、已提交事件及 Battle／Run 效果端口。
 - 新买到的物品不追溯参与自己的购买价格、候选生成或购买事件；购买完整提交后才激活。
 - 下列“倍率 +1”均指功法倍率加法修正，不是最终伤害乘区；“出现权重 ×4”只修改合格候选的抽取权重，不凭空绕过候选资格。
-- 首批6件正式物品的基础价格统一为8点历练；幻象生成的单张永久觉醒真气基础价格为4点历练。清仓特卖等普通商品折扣不修改物品栏价格。
+- 当前7件正式物品的基础价格统一为8点历练；幻象生成的单张永久觉醒真气基础价格为4点历练。清仓特卖等普通商品折扣不修改物品栏价格。
 
 ## 2. 修习、消耗品与经济物品
 
@@ -148,6 +148,7 @@
 ### 纳气养命
 
 - **稳定 ID 候选**：`deck_growth_and_reshape_vitality`
+- **接入状态**：已作为formal/unique物品正式接入，基础价格8点历练。
 - **合并来源**：原“纳气养命”与“炼形补命”合并为一件物品。
 - **效果**：每向本局牌组中永久新增 1 张真气，最大生命 +1。每成功重塑 1 张我方真气，恢复 1 点生命。
 - **边界**：新增真气按实际新增实例逐张计算，永久复制和永久生成满足；抽牌、洗回、牌区移动、夺回旧牌和生成战斗临时真气不满足。最大生命成长本局常驻并按物品来源保存，当前生命不随该项成长自动增加。重塑可以是永久或临时重塑；同一已提交操作对多张真气分别触发，同一张真气在同一操作中同时改变多个重塑槽仍只恢复 1 点。没有实际改变时不触发。
@@ -191,7 +192,8 @@
 - **底层状态校正（2026-08-17）**：统一`card_moved` committed事实已经完成；回收魔法所需的逐牌
   discard→draw_pile事实、双方持有方、来源和批次字段可读，并继续兼容动态响应。生成事实使用
   `from_zone=generated`和`temporary_generate/permanent_generate`，不使用`reason=generated`。
-  抓手、回收魔法、调色板及其余14件物品内容仍未接入，本项完成不代表这些物品已实现。
+  抓手、回收魔法、调色板及其余13件未完成物品仍未接入，本项完成不代表这些物品已实现；纳气养命已在
+  后续永久真气事实批次单独接入。
 
 - 抓手接入“第一完整回合正常补牌完成后”生命周期 Hook，复用通用抽牌至上限端口与额外行动端口；额外行动继续遵守当前排队规则。
 - 回收魔法接入第三完整回合结束门禁，复用弃牌堆整批洗回与稳定洗牌端口，并发送逐牌已提交移动事件；重复收口不得再次执行。
@@ -207,10 +209,12 @@
 
 - 所有最大生命修改都从`base_max_life`与稳定来源修正重算。延寿玉提供固定`+20`；纳气养命提供本局持久的来源级累计修正。不能把已经包含物品加成的有效最大生命反写为基础值。
 - 调息玉监听正式战斗胜利及战后同步完成事件，调用统一生命恢复端口；恢复顺序必须位于节点奖励前，并记录实际恢复量。
-- 永久新增真气事务提交后发送逐实例`run_qi_permanently_added`事件，公开新增原因和实例身份；复制、生成与购买走同一事件，恢复存档和牌区移动不发送。
-- 战斗临时重塑的实际新增、替换与清除已经由`card_state_changed`公开，并按卡牌实例和操作令牌
-  去重；永久RunDeck重塑仍需独立的可提交`qi_reshape_committed`边界。纳气养命最终应合并读取两类
-  来源中立事实，按一次操作中的不同卡牌实例恢复生命，不按槽数量重复恢复。
+- **底层状态校正（2026-08-19）**：永久新增真气事务已按实际实例提交canonical
+  `run_qi_permanently_added`，公开新增原因、来源、transaction／operation token和完整持久快照；复制、
+  生成与购买走同一事实，恢复存档、初始牌组和牌区移动不发送。
+- 战斗临时重塑的实际新增、替换与清除由`card_state_changed(persistence=temporary)`公开；Run永久重塑
+  与战斗永久改牌已经统一提交`qi_reshape_committed(scope=run|battle,persistence=permanent)`。纳气养命
+  已合并读取两类来源中立事实，按一次操作中的不同卡牌实例恢复生命，不按槽或字段数量重复恢复。
 - 生命恢复和最大生命变化必须进入本局快照、战斗建立、战后同步、UI、日志及 AI 公开状态；失败事务完整回滚。
 
 ### H. 数据、存档与验证
@@ -229,14 +233,14 @@
 
 | 第7节旧清单 | 当前状态 | 代码证据与仍缺部分 |
 |---|---|---|
-| A. 物品来源与统一被动运行时 | 底层协议已有／6件内容已接入 | item已正式加入统一marker、Runtime、ExecutionPlan、Run事务、事件和压制语义；地址不含库存下标。修习策略6件已接入，其余14件待后续家族。 |
+| A. 物品来源与统一被动运行时 | 底层协议已有／7件内容已接入 | item已正式加入统一marker、Runtime、ExecutionPlan、Run事务、事件和压制语义；地址不含库存下标。修习策略6件及纳气养命已接入，其余13件待后续家族。 |
 | B. 修习陈列、权重、价格与冥想 | 策略查询完成／其余内容待接入 | `PracticeService`已统一槽位、类别启用、候选提供和权重查询；本批6件物品已接入。清仓特卖、多次重掷及其他消费者仍待后续家族。 |
 | C. 消耗品容量、心得包与功法槽 | 心得包计划完成／容量待接入 | `InsightGrowthService`、`insight_slot_gain_query`、槽位上限9、`RunCombatHistory`及望远镜保证候选均已接入；共享消耗品容量查询仍缺。 |
 | D. 功法与内功配装容量 | 已有 | `technique_loadout_copy_limit_query`、`inner_skill_capacity_query`、稳定功法实例和空余槽位校验均已存在；三才并位、反物质只缺物品查询Handler。 |
 | E. 战斗Hook、牌区与功法值查询 | 部分已有 | `after_normal_draw`、`turn_end`、额外行动、抽至上限、`card_moved` committed事实和功法倍率查询已有；抓手/回收魔法/调色板仍缺薄适配，不能标记物品已实现。 |
 | F. 节点功行、地图与休息会话 | 部分已有 | `node_completed`、`RunAggregateTransaction`和单选continuation已有；功行上限查询、地图重建原子命令和休息多选会话仍缺。 |
-| G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、item marker最大生命贡献、`RunProgressSnapshot`往返和恢复端口已有；`card_state_changed`已覆盖战斗临时重塑事实，永久新增真气及永久重塑提交事件仍缺。 |
-| H. 数据、存档与验证 | 已有结构／内容未接入 | `ContentValidator._validate_items`、`ItemRepository`和被动schema验证已存在；20件物品仍须在对应能力完成后逐批接入数据与专项测试。 |
+| G. 生命、牌组成长与重塑事件 | 公共事实完成／纳气养命已接入 | `run_qi_permanently_added`逐实例、`qi_reshape_committed`逐牌和临时重塑`card_state_changed`已完成；item run marker经唯一最大生命贡献入口生效，机缘永久升阶可形成一次回血桥接。 |
+| H. 数据、存档与验证 | 已有结构／7件内容已接入 | `ContentValidator._validate_items`、`ItemRepository`和被动schema验证已存在；纳气养命已通过统一来源中立Handler接入，其余13件仍按对应能力分批实现。 |
 
 特别校正：物品稳定来源解析、item marker/最大生命协议、事件级ExecutionPlan、心得槽位实时扩容、统一消耗品事务和战果聚合回滚已经完成。后续只能在现有Runtime、查询解析器、TechniqueEffectExecutor和RunAggregateTransaction上补窄能力，不得建立物品专用平行系统。
 
@@ -247,9 +251,9 @@ enhancement/attribute/rank的首次施加、同槽替换和清除；事件公开
 holder、来源与operation token，无实际变化和战斗结束清理不发送。双方物品来源可以观察同一事实，
 但效果owner仍保持为物品持有者。
 
-这只满足《纳气养命》中“战斗临时重塑实际改变”的事实来源，不代表该物品已经实现。该物品仍缺
-永久新增真气事实、永久RunDeck重塑提交事实、生命恢复内容接入及相关存档/测试；本批没有修改20件
-物品的效果或数值，也没有把战斗状态写入RunDeck。
+这只表示当时完成了《纳气养命》中“战斗临时重塑实际改变”的事实来源；该物品在后续
+`run_qi_added_and_reshape_events`批次补齐永久新增、永久重塑、生命恢复与存档／事务验证。战斗临时状态
+仍不会写入RunDeck。
 
 ## 10. 2026-08-18 物品来源标识底层协议状态
 
@@ -265,7 +269,8 @@ holder、来源与operation token，无实际变化和战斗结束清理不发�
 
 有效最大生命固定为`base_max_life + 所有活跃来源的max_life marker`。物品贡献增加不恢复当前生命，
 贡献下降立即截断生命，任何来源贡献都不反写`base_max_life`。压制复用`PassiveRuleRuntime`，只暂停贡献
-而不删除marker；UI/AI只公开`public=true`条目。延寿玉、纳气养命及其余14件具体物品仍未接入。
+而不删除marker；UI/AI只公开`public=true`条目。该底层协议完成时延寿玉、纳气养命及其余14件具体物品
+仍未接入；纳气养命由后续永久真气事实批次接入。
 
 ## 11. 2026-08-18 修习策略家族正式接入
 
@@ -289,4 +294,37 @@ holder、来源与operation token，无实际变化和战斗结束清理不发�
 输入；心得槽位增量仍通过既有`insight_slot_gain_query`从1变为2且最终上限9。存档恢复不重新生成商店
 offer，也不重新触发物品获得或历史事实。
 
-当前20件物品中6件已正式接入、14件仍待后续家族；延寿玉、纳气养命及其他未列入本批的物品保持未接入。
+该批完成时20件物品中6件已正式接入、14件仍待后续家族；纳气养命在后续永久真气事实批次接入，
+延寿玉及其他未列入本批的物品保持未接入。
+
+## 12. 2026-08-19 永久真气事实与纳气养命接入
+
+`run_qi_added_and_reshape_events`已经完成，不新增物品牌组监听器。`RunMutationService`在同一个
+Growth工作副本内从每个正式操作的牌组before/after派生事实：实际新增按实例提交
+`run_qi_permanently_added`，永久重塑按卡实例提交`qi_reshape_committed(scope=run,
+persistence=permanent)`。事实在原操作后、正式Growth替换前由`RunPassiveEventService/PassiveRuleRuntime`
+同步消费；任何后效失败都会连同牌组、生命、marker、事件与token一起丢弃。修习购买通过
+`add_run_card_instances`进入同一路径，消耗品永久生成／复制通过既有事务adapter复用，存档恢复不重演。
+
+战斗永久改牌由`BattleCardEffectService`提交同一`qi_reshape_committed`事实族；临时重塑仍只使用
+`card_state_changed(persistence=temporary)`。两类事实都公开holder、卡实例、operation token、实际变化
+数量和before/after；无变化不发送，同牌同operation的多个字段只形成一份事实。战斗事件和治疗进入既有
+`BattleRuntimeMutationTransaction`，失败恢复卡牌、生命、marker、receipt、publication、日志和RNG。
+
+《纳气养命》（`deck_growth_and_reshape_vitality`）以formal/unique item接入，价格8，正文保持：
+“每向本局牌组中永久新增1张真气，最大生命+1。每成功重塑1张我方真气，恢复1点生命。”它没有专用
+Handler：
+
+- `run_fact_effects`逐实例消费`run_qi_permanently_added`，通过通用`write_source_marker`把当前item来源的
+  `permanent_qi_growth`加1；Invocation注入的地址仍是`item:<stable_owner_id>:<content_id>`，与库存顺序
+  无关。
+- 该public/run/clear marker以`contributes_to=max_life`进入`SourceContributedStatService`；有效最大生命
+  实时增加，但当前生命不恢复且`base_max_life`不改变。压制只暂停贡献，失败／移除按既有事务和
+  forget policy处理。
+- Run／Battle永久重塑读取`qi_reshape_committed`，战斗临时重塑读取`card_state_changed`；
+  `holder_is_owner`、scope／persistence和实际变化过滤确保非我方、无变化及永久／临时双事实不会重复。
+  临时重塑只把施加／替换视为成功，清除与生命周期移除不回血；恢复生命只走既有`heal_life`端口。
+  内功《机缘不空》的永久升阶因此触发一次、仅一次恢复。
+
+纳气养命已加入正式物品候选池；获得时不追溯现有牌组，存档恢复只恢复marker，不重演获得或历史新增。
+当前7件物品正式接入，剩余13件；能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1。延寿玉仍未实现。

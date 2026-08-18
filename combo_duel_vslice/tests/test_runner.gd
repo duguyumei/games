@@ -3936,8 +3936,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        31,
-        "Registry 明确登记三十一个细粒度已提交事件")
+        32,
+        "Registry 明确登记三十二个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
         14,
@@ -5936,10 +5936,13 @@ func _test_run_effect_platform_contract() -> void:
             "remove_items",
             "remove_run_cards",
             "transform_run_card",
+            "write_source_marker",
         ],
-        "本局效果默认注册表按稳定顺序公开十四个正式操作")
+        "本局效果默认注册表按稳定顺序公开十五个正式操作")
     _assert_true(registry.has_handler("gain_experience"), "历练增加操作已注册")
     _assert_true(registry.has_handler("heal_life"), "生命回复操作已注册")
+    _assert_true(registry.has_handler("write_source_marker"),
+        "来源标识写入操作已注册")
 
     var invalid_id_registry = RunEffectHandlerRegistryScript.new(false)
     _assert_true(

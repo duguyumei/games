@@ -168,7 +168,8 @@ func _init(
             _content_catalog.consumable_effect_registry,
             _content_catalog,
             ContentValidator.HAND_IDS,
-            ContentValidator.POOL_IDS))
+            ContentValidator.POOL_IDS,
+            _node_reward_service.mutation_service))
     _node_interaction_service = (
         node_interaction_service_override
         if node_interaction_service_override != null

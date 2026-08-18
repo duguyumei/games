@@ -236,7 +236,9 @@ func _init(
     _passive_rule_registry = passive_rule_registry_override
     if _passive_rule_registry == null:
         _passive_rule_registry = PassiveRuleHandlerRegistryScript.new(
-            true, _effect_registry)
+            true, _effect_registry, _run_effect_registry)
+    if _passive_rule_registry.has_method("use_run_effect_registry"):
+        _passive_rule_registry.use_run_effect_registry(_run_effect_registry)
     _effect_specs = EffectSpecValidatorScript.new(
         Callable(self, "_error"),
         {

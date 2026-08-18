@@ -107,7 +107,8 @@ func use_passive_battle_services(
         event_service, round_reader)
     _technique_sequence_effect_service.use_passive_battle_services(
         event_service, round_reader)
-    _card_effect_service.use_committed_event_service(event_service)
+    _card_effect_service.use_committed_event_service(
+        event_service, round_reader)
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
@@ -688,6 +689,18 @@ func consume_qi_batch(
     if not prepared.get("success", false):
         return prepared
     return commit_qi_consumption(prepared, options)
+
+func advance_permanent_qi_rank(
+        side: BattleSide,
+        card_instance_id: String,
+        reshape_id: String,
+        reshape_payload: Dictionary = {},
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var resolved := _effect_source_metadata(source_metadata)
+    resolved.merge(source_metadata, true)
+    return _card_effect_service.advance_permanent_qi_rank(
+        side, card_instance_id, reshape_id, reshape_payload, resolved)
+
 
 func can_explicit_discard(side: BattleSide, card) -> Dictionary:
     return _card_effect_service.can_explicit_discard(side, card)

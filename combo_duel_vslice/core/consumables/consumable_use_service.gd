@@ -26,12 +26,14 @@ var handler_registry
 var _content_catalog
 var _hand_ids: Array = []
 var _pool_ids: Array = []
+var _run_mutation_service
 
 func _init(
 		registry_override = null,
 		content_catalog = null,
 		hand_ids: Array = [],
-		pool_ids: Array = []) -> void:
+		pool_ids: Array = [],
+		run_mutation_service = null) -> void:
 	handler_registry = (
 		registry_override
 		if registry_override != null
@@ -39,6 +41,10 @@ func _init(
 	_content_catalog = content_catalog
 	_hand_ids = hand_ids.duplicate()
 	_pool_ids = pool_ids.duplicate()
+	_run_mutation_service = run_mutation_service
+
+func use_run_mutation_service(service) -> void:
+	_run_mutation_service = service
 
 ## 查询一次可用的消耗品使用信息。纯查询，不建立副本、不消费随机数。
 func query_use(
@@ -259,13 +265,16 @@ func use(
 		return _rollback_failure(context, transaction, resolved)
 	var instance_ids: Array = resolved.get("instance_ids", []).duplicate()
 	var applied: Array = []
+	var committed_events: Array = []
 	for effect_index in range(effects.size()):
 		var effect: Dictionary = effects[effect_index]
+		var cards_before = working_context.run_card_mutation_snapshot()
 		var metadata: Dictionary = working_context.metadata.duplicate(true)
 		metadata.merge({
 			"run_seed": run_seed,
 			"consumable_use_sequence": sequence,
 			"consumable_id": consumable_id,
+			"consumable_slot_index": slot_index,
 			"effect_index": effect_index,
 			"reserved_consumable_slots": 1,
 			"choice_payload": normalized_choice.duplicate(true),
@@ -285,7 +294,24 @@ func use(
 				"failed_effect_index": effect_index,
 				"failed_operation_id": str(effect.get("op", "")),
 			})
-		applied.append(result.get("applied", {}).duplicate(true))
+		var fact_result := _stage_run_card_mutation_facts(
+			working_context, effect, cards_before, metadata, effect_index)
+		if not fact_result.get("success", false):
+			return _rollback_failure(context, transaction, {
+				"success": false,
+				"reason": str(fact_result.get(
+					"reason", "消耗品真气提交事实派发失败")),
+				"failed_effect_index": effect_index,
+				"failed_operation_id": str(effect.get("op", "")),
+			})
+		var applied_entry: Dictionary = result.get(
+			"applied", {}).duplicate(true)
+		if not fact_result.get("facts", []).is_empty():
+			applied_entry["committed_facts"] = fact_result.get(
+				"facts", []).duplicate(true)
+		applied.append(applied_entry)
+		committed_events.append_array(fact_result.get(
+			"committed_events", []).duplicate(true))
 
 	var consumed_id: String = working_context.consume_inventory_slot(slot_index)
 	if consumed_id != consumable_id:
@@ -314,7 +340,47 @@ func use(
 		"choice_payload": normalized_choice,
 		"prepared_preview": preparation.get("prepared_preview", {}).duplicate(true),
 		"changed": state_before != state_after,
+		"committed_events": committed_events,
 	}
+
+func _stage_run_card_mutation_facts(
+		working_context,
+		effect: Dictionary,
+		cards_before,
+		metadata: Dictionary,
+		effect_index: int) -> Dictionary:
+	if _run_mutation_service == null or not cards_before is Array:
+		return {"success": true, "skipped": true, "facts": [], "committed_events": []}
+	var fact_context := metadata.duplicate(true)
+	var transaction_token := str(fact_context.get(
+		"transaction_token", fact_context.get("action_token", "")))
+	var consumable_id := str(fact_context.get("consumable_id", ""))
+	var sequence := int(fact_context.get("consumable_use_sequence", 0))
+	var slot_index := int(fact_context.get("consumable_slot_index", -1))
+	if transaction_token == "":
+		# RunSession 会提供同形 action_token；直接调用旧兼容入口时也必须由
+		# 本事务上下文产生稳定且互不碰撞的 canonical token。
+		transaction_token = "run-consumable-use:%d:%d:%s" % [
+			sequence, slot_index, consumable_id]
+	fact_context["transaction_token"] = transaction_token
+	if str(fact_context.get("source_kind", "")) == "":
+		fact_context["source_kind"] = "consumable"
+	if str(fact_context.get("source_id", "")) == "":
+		fact_context["source_id"] = consumable_id
+	if str(fact_context.get("source_name", "")) == "":
+		fact_context["source_name"] = consumable_id
+	if str(fact_context.get("source_instance_key", "")) == "":
+		fact_context["source_instance_key"] = "run-consumable:%d:%d:%s" % [
+			sequence, slot_index, consumable_id]
+	fact_context["reason"] = str(fact_context.get(
+		"reason", "consumable:%s" % str(effect.get("op", ""))))
+	return _run_mutation_service.stage_card_mutation_facts(
+		str(effect.get("op", "")),
+		cards_before,
+		working_context.run_card_mutation_snapshot(),
+		working_context.growth,
+		fact_context,
+		effect_index)
 
 func _query_effect_eligibility(
 		context,

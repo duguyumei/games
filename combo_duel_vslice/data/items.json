@@ -187,6 +187,90 @@
           }
         }
       ]
+    },
+    {
+      "id": "deck_growth_and_reshape_vitality",
+      "name": "纳气养命",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "每向本局牌组中永久新增1张真气，最大生命+1。每成功重塑1张我方真气，恢复1点生命。",
+      "marker_definitions": [
+        {
+          "id": "permanent_qi_growth",
+          "scope": "run",
+          "public": true,
+          "display_name": "纳气养命",
+          "contributes_to": "max_life",
+          "forget_policy": "clear",
+          "initial_value": 0
+        }
+      ],
+      "behaviors": [
+        {
+          "id": "run_fact_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "run_qi_permanently_added",
+                "filters": {"scope": "run"},
+                "effects": [
+                  {
+                    "op": "write_source_marker",
+                    "marker_id": "permanent_qi_growth",
+                    "operation": "add",
+                    "amount": 1
+                  }
+                ]
+              },
+              {
+                "hook": "qi_reshape_committed",
+                "filters": {
+                  "scope": "run",
+                  "persistence": "permanent",
+                  "actual_change_count_positive": true
+                },
+                "effects": [
+                  {"op": "heal_life", "amount": 1}
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "qi_reshape_committed",
+                "filters": {
+                  "holder_is_owner": true,
+                  "scope": "battle",
+                  "persistence": "permanent",
+                  "actual_change_count_positive": true
+                },
+                "effects": [
+                  {"op": "heal_life", "side": "owner", "amount": 1}
+                ]
+              },
+              {
+                "hook": "card_state_changed",
+                "filters": {
+                  "holder_is_owner": true,
+                  "persistence": "temporary",
+                  "change_domain": "temporary_reshape",
+                  "operation_in": ["apply", "replace"],
+                  "actual_change_count_positive": true
+                },
+                "effects": [
+                  {"op": "heal_life", "side": "owner", "amount": 1}
+                ]
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

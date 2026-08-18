@@ -12,7 +12,7 @@ const TIMING_EVENTS := [
 
 const COMMITTED_EVENTS := [
     "action_confirmed", "action_resolved", "card_moved", "card_state_changed",
-    "qi_consumed",
+    "qi_consumed", "qi_reshape_committed",
     "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
     "damage_resolved", "damage_blocked", "deflection_resolved",
@@ -70,6 +70,8 @@ const PUBLIC_FIELDS := [
     "consumption_batch_token", "consumption_batch_index",
     "consumption_batch_size", "metadata",
     "operation_token", "holder_id", "change_domain", "operation",
+    "scope", "persistence", "mutation_kind", "request_fingerprint",
+    "before", "after",
     "created", "removed", "existed_before", "exists_after", "changed",
     "marker_role",
     "before_state", "after_state", "changes",

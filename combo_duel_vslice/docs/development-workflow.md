@@ -915,24 +915,25 @@ Run内容通过`GrowthInventory.grant_item/remove_item`执行物品原语，并�
 `base_max_life + active source max_life markers`。活跃来源包含配装功法、配装内功和当前持有物品；
 物品压制复用`PassiveRuleRuntime`并只暂停贡献。增加上限不治疗，降低上限立即截断当前生命，绝不能
 把来源贡献反写进`base_max_life`。marker变化仍只发布`source_marker_changed`，UI/AI只读取public投影。
-延寿玉、纳气养命及其他具体内容不属于该公共协议批次。
+延寿玉、纳气养命及其他具体内容不属于该公共协议批次；纳气养命在后续永久真气事实批次单独接入。
 
 ## 九项核心C2完成后的内容接入门禁（2026-08-18）
 
-九项核心C2均已完成，剩余C2为0；`run_combat_history_facts`与卫星接入后，能力矩阵当前为B 13、C1 21、D 1。后续任务必须按
+九项核心C2均已完成，剩余C2为0；`run_combat_history_facts`与卫星接入后的当时矩阵为B 13、C1 21、D 1。后续任务必须按
 `merge_family`组织同类消费者，不再把一个`capability_key`机械等同于一个新Service或一个独立批次。
 
 内容接入前先选择下列唯一边界：
 
 - 牌区真实变化只走`BattleEffectPorts/BattleCardEffectService/CardZoneService`，事实只认`card_moved`；
-- 异状、重塑、成长和离场清理只走`CardAnomalyService/CardStateLifecycle`，事实只认
-  `card_state_changed`；
+- 异状、临时重塑、成长和离场清理只走`CardAnomalyService/CardStateLifecycle`，事实只认
+  `card_state_changed`；Run／Battle永久重塑只认`qi_reshape_committed`；
 - 战斗有效真气只走`BattleRuleQueryService.resolve_effective_qi`，确认值写现有`HandGroupSnapshot`；
 - 伤害取消、生命干预和防御／生命提交只走`BattleSurvivalEffectService`与`ComboDamageResolver`；
 - 每次功法汇总只由`TechniqueResolutionService`提交`technique_execution_resolved`；
 - 真气支付只用`prepare_qi_consumption/commit_qi_consumption`和公共运行时事务；
 - 蓄力和物品marker都复用`SourceMarkerStore/SourceMarkerAddressResolver/source_marker_changed`；
-- 最大生命贡献只由`SourceContributedStatService`重算；Run变化只在`RunMutationService`工作副本提交。
+- 最大生命贡献只由`SourceContributedStatService`重算；Run变化只在`RunMutationService`工作副本提交，
+  战斗永久改牌只修改`BattleSide`工作实例并通过既有战果绝对同步。
 
 Handler只解释通用op和条件，不得直接改牌区、生命／防御、功法序列、marker或最大生命，也不得自行拼
 `source_instance_key`。preview/query/freeze、AI与UI观察必须使用peek／projection入口，不能覆盖正式查询
@@ -1033,5 +1034,40 @@ pack RNG输入都必须冻结；确认发现来源或历史改变时明确失效
 保证候选占一个展示位且从普通候选去重。
 
 首批正式内容为库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人和幻象；物品基础价格8点，动态觉醒真气
-价格4点、类别基础权重5。当前计数为已有/合并17、B 12、C1 18、C2 0、D 1，剩余156门内功、14件物品和
-8门暂缓功法。后续仍按merge family扩展，不机械新增底层Service。
+价格4点、类别基础权重5。该批完成时计数为已有/合并17、B 12、C1 18、C2 0、D 1，剩余156门内功、
+14件物品和8门暂缓功法。后续仍按merge family扩展，不机械新增底层Service。
+
+## 本局永久真气变更与内容消费工作流（2026-08-19）
+
+永久真气变化不得由内容Handler直接写`RunDeck`或`QiCard`。Run侧统一调用`RunMutationService`已登记的
+新增／复制／生成／购买／重塑效果；Service在独立`GrowthInventory`工作副本中比较每个操作的牌组
+before/after，再生成canonical事实。新增只对实际出现的新实例逐张提交`run_qi_permanently_added`；永久
+重塑只对持久快照实际变化的卡实例提交`qi_reshape_committed(scope=run,persistence=permanent)`。多字段
+变化仍是一张牌一份事实。事实及其来源中立被动后效在正式Growth提交成功后才对外可见；后效失败时丢弃
+工作副本，不泄漏牌、生命、marker、事实或token。消耗品自己的RNG／库存事务通过窄adapter提供同一
+before/after，不能另发一套事件。
+
+战斗侧永久改牌统一经`BattleEffectPorts.advance_permanent_qi_rank`进入
+`BattleCardEffectService.advance_permanent_qi_rank`。共享`PermanentQiMutationService`只负责稳定持久快照
+转换；端口负责所有权、临时牌／夺取牌拒绝、稳定请求指纹、同一根行动+卡实例幂等、工作实例写入及
+`qi_reshape_committed(scope=battle,persistence=permanent)`发布。内部与外层行动均使用现有
+`BattleRuntimeMutationTransaction`状态和publication边界；Handler、事件或后续功法阶段失败时恢复卡牌、
+来源状态、receipt、事件、日志和RNG。战斗胜利沿`BattleSetupService/RunProgressSnapshot`绝对同步，
+战败、退出与重开不提交战斗永久改牌。临时重塑继续使用`card_state_changed(persistence=temporary)`。
+
+《机缘不空》只能监听canonical `technique_execution_resolved`，不得监听较晚的兼容
+`technique_succeeded`再补写。行动确认将机缘`multiplier_success/experience_success`逐牌冻结在现有
+`HandGroupSnapshot.reshape_action_results`；原执行完成、回响开始前的Invocation只读取冻结结果，两项均为
+false才调用通用升阶效果。操作token绑定根行动和卡实例，所以同根行动的功法回响、卡牌回响、等待恢复和
+receipt重放不重复升阶；新的独立行动可再次满足。
+
+Run committed事实的来源中立消费者使用`run_fact_effects`与收窄后的`RunPassiveEffectPorts`；来源身份、
+marker声明和transaction token由当前Invocation注入，Handler不得拼`source_instance_key`。因此《纳气养命》
+只声明三条数据规则：逐张永久新增令自身`permanent_qi_growth` run marker `+1`；Run／Battle永久重塑实际
+变化逐牌恢复1；战斗临时重塑实际apply/replace逐牌恢复1。marker经既有
+`SourceContributedStatService`增加最大生命但不恢复当前生命、不反写`base_max_life`；治疗只走统一
+`heal_life`端口。机缘升阶只发布永久重塑事实，所以与该物品形成一次且仅一次回血。
+
+本批完成后能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1；剩余155门内功、13件物品和8门暂缓
+功法。后续继续按`merge_family`接入，不新增Run卡牌事件总线、内容专用监听器、永久改牌Service或物品
+marker运行时。

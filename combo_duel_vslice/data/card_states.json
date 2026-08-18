@@ -202,7 +202,12 @@
       ]
     }
   ],
-  "other_reshapes": [],
+  "other_reshapes": [
+    {
+      "id": "fortune_rank_advance",
+      "name": "机缘升阶"
+    }
+  ],
   "anomalies": [
     {
       "id": "qi_heat", "name": "炽气", "category": "buff",

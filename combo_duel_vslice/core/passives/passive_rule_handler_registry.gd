@@ -16,6 +16,8 @@ const RunValueEffectHandlerScript = preload(
     "res://core/passives/run_value_effect_passive_handler.gd")
 const RunIntQueryModifierHandlerScript = preload(
     "res://core/passives/run_int_query_modifier_passive_handler.gd")
+const RunFactEffectsHandlerScript = preload(
+    "res://core/passives/run_fact_effects_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 const BATTLE_TIMING_HOOKS := BattleEventCatalogScript.TIMING_EVENTS
@@ -73,6 +75,8 @@ const NON_EVENT_HOOKS := [
     "inner_skill_forgotten",
     "battle_completed",
     "node_completed",
+    "run_qi_permanently_added",
+    "qi_reshape_committed",
     "hand_limit_query",
     "power_base_fixed_query",
     "power_multiplier_bonus_query",
@@ -105,7 +109,10 @@ var _known_hooks: Dictionary = {}
 var _registration_errors: Array[Dictionary] = []
 var _id_pattern := RegEx.new()
 
-func _init(register_defaults: bool = true, effect_registry = null) -> void:
+func _init(
+        register_defaults: bool = true,
+        effect_registry = null,
+        run_effect_registry = null) -> void:
     _id_pattern.compile("^[a-z][a-z0-9_]*$")
     for hook in HOOKS:
         _known_hooks[str(hook)] = true
@@ -115,11 +122,20 @@ func _init(register_defaults: bool = true, effect_registry = null) -> void:
         register_handler(TechniqueExecutionPlanHandlerScript.new())
         register_handler(RunValueEffectHandlerScript.new())
         register_handler(RunIntQueryModifierHandlerScript.new())
+        register_handler(RunFactEffectsHandlerScript.new(run_effect_registry))
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():
         if handler_value.has_method("use_effect_registry"):
             handler_value.use_effect_registry(effect_registry)
+
+
+func use_run_effect_registry(run_effect_registry) -> void:
+    if run_effect_registry == null:
+        return
+    for handler_value in _handlers.values():
+        if handler_value.has_method("use_run_effect_registry"):
+            handler_value.use_run_effect_registry(run_effect_registry)
 
 func use_effect_indexes(anomalies_by_id: Dictionary) -> void:
     for handler in _handlers.values():

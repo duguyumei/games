@@ -118,6 +118,11 @@ func current_target_limit(targeting: Dictionary) -> int:
 func state_fingerprint() -> Dictionary:
 	return capture_transaction_state()
 
+## Run 实现覆写为当前工作副本的永久牌组快照。Battle 上下文返回 null，公共
+## ConsumableUseService 因而不会把战斗临时牌误投影为 Run committed 事实。
+func run_card_mutation_snapshot():
+	return null
+
 ## 返回该效果可以抽取的正式功法白名单。本局实现按效果的功法池过滤，战斗实现
 ## 按共享功法仓库过滤；两者都只返回尚未决定的目标信息，不消费随机数。
 func insight_candidates(_hand_id: String, _pools: Array) -> Array[String]:

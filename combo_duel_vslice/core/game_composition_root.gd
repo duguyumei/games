@@ -90,6 +90,8 @@ func initialize() -> bool:
         passive_rule_runtime)
     run_passive_event_service = RunPassiveEventServiceScript.new(
         passive_rule_runtime, run_mutation_service)
+    run_mutation_service.use_passive_event_service(
+        run_passive_event_service)
     run_mutation_service.content_catalog = content_catalog
     node_interaction_service = NodeInteractionServiceScript.new(
         node_interaction_registry, run_mutation_service, content_catalog)
@@ -97,7 +99,8 @@ func initialize() -> bool:
         consumable_effect_registry,
         content_catalog,
         ContentValidatorScript.HAND_IDS,
-        ContentValidatorScript.POOL_IDS)
+        ContentValidatorScript.POOL_IDS,
+        run_mutation_service)
     game_log = GameLogScript.new()
     enemy_repository = EnemyRepositoryScript.new(content_catalog)
     if loaded:

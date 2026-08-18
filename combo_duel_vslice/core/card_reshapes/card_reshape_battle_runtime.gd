@@ -100,6 +100,9 @@ func permission_query(hook: String, context: Dictionary) -> Dictionary:
 
 func finalize_action_preview(holder, preview: Dictionary) -> Dictionary:
     if bool(preview.get("reshape_action_confirmed", false)):
+        if preview.get("group_snapshot") is Dictionary:
+            preview["group_snapshot"]["reshape_action_results"] = preview.get(
+                "reshape_action_results", {}).duplicate(true)
         return {"success": true, "reused": true}
     if str(preview.get("reshape_action_token", "")) == "":
         preview["reshape_action_token"] = "%s:card-trigger:%06d" % [
@@ -126,6 +129,11 @@ func finalize_action_preview(holder, preview: Dictionary) -> Dictionary:
                 if frozen_results.size() == 1 else frozen_results)
     preview["reshape_action_confirmed"] = true
     preview["reshape_action_results"] = frozen_by_card
+    # 冻结结果同时进入既有行动 group snapshot。后续手动、调用、自动与回响
+    # 都复用这一份上下文；被动效果只能读取，不得重新掷机缘判定。
+    if preview.get("group_snapshot") is Dictionary:
+        preview["group_snapshot"]["reshape_action_results"] = \
+            frozen_by_card.duplicate(true)
     preview["values"] = PowerCalculatorScript.apply_frozen_card_multiplier_bonus(
         preview.get("values", {}), multiplier_bonus)
     return {

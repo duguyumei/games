@@ -21,19 +21,13 @@ func commit(run_session, battle_result, progress_snapshot) -> Dictionary:
 
     if state in ["player_victory", "player_defeat"]:
         outcome = run_session._apply_battle_progress_snapshot(progress_snapshot)
-        # 战败虽然沿用既有规则同步生命、牌组等终局事实，但本场尚未成为
-        # 成功 Run 历史。恢复战斗前的绝对历史，避免失败 execution 之外再
-        # 产生一条“战败也提交历史”的旁路。
+        # 战败仍提交生命、消耗品等终局事实，但 BattleSide 上声明为 permanent
+        # 的改牌只允许胜利同步；同时本场不成为成功 Run 历史。两项都从聚合
+        # 事务的战前 Growth 恢复，随后 battle_completed 仍可按战败结果产生其
+        # 自己的合法 Run 变化。
         if outcome.get("success", false) and state != "player_victory":
-            var history_errors: Array[String] = run_session.growth \
-                .run_combat_history.restore_snapshot(growth_before.get(
-                    "run_combat_history_state", {}))
-            if not history_errors.is_empty():
-                outcome = {
-                    "success": false,
-                    "reason": "战败历史恢复失败：%s" % \
-                        "；".join(history_errors),
-                }
+            outcome = _restore_defeat_excluded_progress(
+                run_session, growth_before)
         if outcome.get("success", false):
             outcome = _checkpoint("progress_applied", run_session)
         if outcome.get("success", false):
@@ -106,6 +100,22 @@ func commit(run_session, battle_result, progress_snapshot) -> Dictionary:
 
 ## 契约测试可通过子类覆盖该窄检查点注入跨服务故障；正式实现永远成功。
 func _checkpoint(_stage: String, _run_session) -> Dictionary:
+    return {"success": true}
+
+func _restore_defeat_excluded_progress(
+        run_session, growth_before: Dictionary) -> Dictionary:
+    var retained_state: Dictionary = run_session.growth.capture_mutation_state()
+    retained_state["run_deck"] = growth_before.get(
+        "run_deck", {}).duplicate(true)
+    retained_state["run_combat_history_state"] = growth_before.get(
+        "run_combat_history_state", {}).duplicate(true)
+    var errors: Array[String] = run_session.growth.replace_mutation_state(
+        retained_state)
+    if not errors.is_empty():
+        return {
+            "success": false,
+            "reason": "战败牌组/历史恢复失败：%s" % "；".join(errors),
+        }
     return {"success": true}
 
 func _rollback_failure(transaction, failure: Dictionary) -> Dictionary:

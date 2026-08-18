@@ -5,6 +5,12 @@ const EffectTargetQueryScript = preload(
     "res://core/effects/effect_target_query.gd")
 const BattleRuntimeMutationTransactionScript = preload(
     "res://core/battle_runtime_mutation_transaction.gd")
+const DeckFactoryScript = preload("res://core/deck_factory.gd")
+const QiCardInstanceDataScript = preload("res://core/qi_card_instance_data.gd")
+const PermanentQiMutationServiceScript = preload(
+    "res://core/permanent_qi_mutation_service.gd")
+const EffectSourceProtocolScript = preload(
+    "res://core/effects/effect_source_protocol.gd")
 
 ## BattleEffectPorts 内部的牌区、真气实例、异状与临时重塑服务。
 ##
@@ -19,6 +25,8 @@ var _card_reshape_runtime_ref: WeakRef
 var _battle_permission_service
 var _trigger_queue
 var _committed_event_service
+var _round_number_reader: Callable
+var _permanent_qi_mutation_service := PermanentQiMutationServiceScript.new()
 
 
 func _init(status_system) -> void:
@@ -41,8 +49,10 @@ func use_trigger_queue(trigger_queue) -> void:
     _trigger_queue = trigger_queue
 
 
-func use_committed_event_service(service) -> void:
+func use_committed_event_service(
+        service, round_number_reader: Callable = Callable()) -> void:
     _committed_event_service = service
+    _round_number_reader = round_number_reader
 
 
 func use_card_reshape_runtime(runtime) -> void:
@@ -379,6 +389,258 @@ func commit_qi_consumption(
         return committed
     BattleRuntimeMutationTransactionScript.commit(transaction)
     return committed
+
+
+func advance_permanent_qi_rank(
+        owner,
+        card_instance_id: String,
+        reshape_id: String,
+        reshape_payload: Dictionary = {},
+        source_metadata: Dictionary = {}) -> Dictionary:
+    if owner == null or not _sides.has(owner):
+        return _permanent_mutation_failure(
+            "战斗永久真气变更持有者不属于当前战斗")
+    if card_instance_id == "":
+        return _permanent_mutation_failure(
+            "战斗永久真气变更缺少卡牌实例 ID")
+    if reshape_id == "":
+        return _permanent_mutation_failure(
+            "战斗永久真气变更缺少重塑·其他 ID")
+    if not _is_json_value(reshape_payload):
+        return _permanent_mutation_failure(
+            "战斗永久真气变更 payload 必须是稳定 JSON 值")
+    var root_action_token := str(source_metadata.get(
+        "root_action_token", source_metadata.get(
+            "action_token", source_metadata.get("event_token", ""))))
+    if root_action_token == "":
+        return _permanent_mutation_failure(
+            "战斗永久真气变更缺少稳定 root action token")
+    var operation_token := "%s|permanent_qi_mutation|%s|%s" % [
+        root_action_token,
+        card_instance_id,
+        PermanentQiMutationServiceScript.ADVANCE_RANK_CYCLE,
+    ]
+    var requested_operation_token := str(source_metadata.get(
+        "operation_token", ""))
+    if requested_operation_token != "" \
+            and requested_operation_token != operation_token:
+        return _permanent_mutation_failure(
+            "战斗永久真气变更 operation token 不是端口生成的 canonical 地址")
+    var request_fingerprint := _permanent_qi_mutation_service.stable_fingerprint({
+        "version": 1,
+        "operation_token": operation_token,
+        "owner_id": str(owner.owner_id),
+        "card_instance_id": card_instance_id,
+        "mutation_kind": PermanentQiMutationServiceScript.ADVANCE_RANK_CYCLE,
+        "reshape_id": reshape_id,
+        "reshape_payload": reshape_payload,
+    })
+    if owner.permanent_qi_mutation_receipts.has(operation_token):
+        var existing: Dictionary = owner.permanent_qi_mutation_receipts[
+            operation_token]
+        if str(existing.get("request_fingerprint", "")) != request_fingerprint:
+            return _permanent_mutation_failure(
+                "战斗永久真气变更 operation token 已绑定另一请求")
+        var reused := existing.duplicate(true)
+        reused["success"] = true
+        reused["reused"] = true
+        return reused
+    var location := locate_active_card(card_instance_id)
+    if not location.get("success", false):
+        return _permanent_mutation_failure(str(location.get(
+            "reason", "找不到战斗永久真气变更目标")))
+    if location.get("side") != owner:
+        return _permanent_mutation_failure(
+            "战斗永久真气变更目标不属于请求持有者")
+    var card = location.get("card")
+    if card == null:
+        return _permanent_mutation_failure("战斗永久真气变更目标为空")
+    if bool(card.temporary_card):
+        return _permanent_mutation_failure("战斗临时真气不能永久变更")
+    if str(card.original_owner_id) != "":
+        return _permanent_mutation_failure("临时夺取的真气不能永久变更")
+    if _committed_event_service == null:
+        return _permanent_mutation_failure(
+            "战斗永久真气变更缺少 committed 事件服务")
+    var before := QiCardInstanceDataScript.capture(card)
+    var transformed := _permanent_qi_mutation_service.advance_rank_cycle(
+        before, _base_deck_definition(owner), reshape_id, reshape_payload)
+    if not transformed.get("success", false):
+        return _permanent_mutation_failure(str(transformed.get(
+            "reason", "永久真气牌阶转换失败")))
+    if not transformed.get("changed", false):
+        return {
+            "success": true,
+            "reused": false,
+            "changed": false,
+            "operation_token": operation_token,
+            "request_fingerprint": request_fingerprint,
+        }
+
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    _apply_persistent_card_snapshot(card, transformed["after"])
+    var actual_after := QiCardInstanceDataScript.capture(card)
+    if actual_after != transformed["after"]:
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return _permanent_mutation_failure(
+            "战斗永久真气变更提交后的持久快照不一致", true)
+    var event_serial := int(_committed_event_service.next_serial())
+    var source := EffectSourceProtocolScript.from_values(source_metadata)
+    var actor = source_metadata.get(
+        "source_actor", source_metadata.get("actor", owner))
+    if actor == null or not _sides.has(actor):
+        actor = owner
+    var changes: Array = transformed.get("changes", []).duplicate(true)
+    var added_changes: Array = changes.filter(func(change):
+        return str(change.get("change_kind", "")) == "added")
+    var removed_changes: Array = changes.filter(func(change):
+        return str(change.get("change_kind", "")) == "removed")
+    var updated_changes: Array = changes.filter(func(change):
+        return str(change.get("change_kind", "")) == "updated")
+    var event_values := {
+        "event_token": _committed_event_service.make_token(
+            "qi_reshape_committed", actor, event_serial,
+            operation_token, card_instance_id),
+        "event_serial": event_serial,
+        "scope": "battle",
+        "persistence": "permanent",
+        "mutation_kind": str(transformed.get("mutation_kind", "")),
+        "operation_token": operation_token,
+        "request_fingerprint": request_fingerprint,
+        "action_token": str(source_metadata.get(
+            "action_token", root_action_token)),
+        "root_action_token": root_action_token,
+        "round_number": int(_round_number_reader.call()) \
+            if _round_number_reader.is_valid() else 0,
+        "actor": actor,
+        "target": source_metadata.get("target"),
+        "owner": owner,
+        "holder": owner,
+        "holder_id": str(owner.owner_id),
+        "observe_all_sides": true,
+        "card": card,
+        "card_instance_id": card_instance_id,
+        "source_card_instance_id": card_instance_id,
+        "before": transformed["before"].duplicate(true),
+        "after": actual_after.duplicate(true),
+        "before_state": transformed["before"].duplicate(true),
+        "after_state": actual_after.duplicate(true),
+        "changes": changes,
+        "added_changes": added_changes,
+        "removed_changes": removed_changes,
+        "updated_changes": updated_changes,
+        "added_count": added_changes.size(),
+        "removed_count": removed_changes.size(),
+        "updated_count": updated_changes.size(),
+        "actual_change_count": changes.size(),
+        "change_domain": "permanent_reshape",
+        "operation": PermanentQiMutationServiceScript.ADVANCE_RANK_CYCLE,
+        "category": "other",
+        "reshape_id": reshape_id,
+        "card_base_qi": int(card.qi_value),
+        "current_base_qi": int(card.current_base_qi_value()),
+        "source_kind": source["source_kind"],
+        "source_id": source["source_id"],
+        "source_name": source["source_name"],
+        "source_instance_key": source["source_instance_key"],
+        "trigger_mode": source["trigger_mode"],
+        "reason": str(source_metadata.get(
+            "reason", source["source_name"])),
+        "metadata": _permanent_mutation_event_metadata(
+            source_metadata, root_action_token, request_fingerprint),
+    }
+    var receipt := {
+        "success": true,
+        "reused": false,
+        "changed": true,
+        "operation_token": operation_token,
+        "request_fingerprint": request_fingerprint,
+        "mutation_kind": str(transformed.get("mutation_kind", "")),
+        "card_instance_id": card_instance_id,
+        "before": transformed["before"].duplicate(true),
+        "after": actual_after.duplicate(true),
+        "changes": changes.duplicate(true),
+        "event_token": str(event_values["event_token"]),
+    }
+    # 先登记回执再发布事实，使同一事实链中的递归重放也只能复用本次请求；
+    # committed Handler 失败时外层事务会连同回执和卡牌一起恢复。
+    owner.permanent_qi_mutation_receipts[operation_token] = receipt.duplicate(true)
+    var committed: Dictionary = _committed_event_service.commit(
+        "qi_reshape_committed", event_values)
+    if not committed.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return _permanent_mutation_failure(str(committed.get(
+            "reason", "永久真气重塑事实提交失败")), true)
+    receipt["event_receipt"] = committed.get("receipt", {}).duplicate(true)
+    owner.permanent_qi_mutation_receipts[operation_token] = receipt.duplicate(true)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return receipt
+
+
+func _base_deck_definition(owner) -> Dictionary:
+    if owner != null and owner.has_method("content_catalog"):
+        var catalog = owner.content_catalog()
+        if catalog != null and catalog.has_method("definition"):
+            var definition = catalog.definition("base_deck")
+            if definition is Dictionary and not definition.is_empty():
+                return definition.duplicate(true)
+    return DeckFactoryScript.load_definition()
+
+
+func _apply_persistent_card_snapshot(card, values: Dictionary) -> void:
+    card.definition_id = str(values.get("definition_id", card.definition_id))
+    card.rank_name = str(values.get("rank_name", card.rank_name))
+    card.rank_order = int(values.get("rank_order", card.rank_order))
+    card.qi_value = int(values.get("qi_value", card.qi_value))
+    card.attribute = str(values.get("attribute", card.attribute))
+    card.attribute_name = str(values.get("attribute_name", card.attribute_name))
+    card.origin_base_identity = values.get(
+        "origin_base_identity", card.origin_base_identity).duplicate(true)
+    var reshapes: Dictionary = values.get("reshapes", {})
+    card.reshape_origin = reshapes.get("origin", {}).duplicate(true)
+    card.reshape_enhancement = str(reshapes.get("enhancement", ""))
+    card.reshape_imprint = str(reshapes.get("imprint", ""))
+    card.reshape_others = reshapes.get("others", {}).duplicate(true)
+
+
+func _permanent_mutation_event_metadata(
+        source_metadata: Dictionary,
+        root_action_token: String,
+        request_fingerprint: String) -> Dictionary:
+    var result := source_metadata.duplicate(false)
+    result["root_action_token"] = root_action_token
+    result["request_fingerprint"] = request_fingerprint
+    result["persistence"] = "permanent"
+    result["mutation_kind"] = \
+        PermanentQiMutationServiceScript.ADVANCE_RANK_CYCLE
+    return result
+
+
+func _permanent_mutation_failure(
+        reason: String, rolled_back: bool = false) -> Dictionary:
+    return {
+        "success": false,
+        "reason": reason,
+        "rolled_back": rolled_back,
+    }
+
+
+func _is_json_value(value) -> bool:
+    if value == null or value is bool or value is int \
+            or value is float or value is String:
+        return true
+    if value is Array:
+        for entry in value:
+            if not _is_json_value(entry):
+                return false
+        return true
+    if value is Dictionary:
+        for key in value:
+            if not key is String or not _is_json_value(value[key]):
+                return false
+        return true
+    return false
 
 
 func _default_consumption_operation_token(

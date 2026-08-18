@@ -635,6 +635,10 @@ func _freeze_state_change(
         "current_base_qi": int(card.current_base_qi_value()),
         "metadata": metadata,
     }
+    # 临时重塑沿用 card_state_changed，但明确标注持久性；异状事件不借用
+    # reshape persistence 语义。永久改牌只发布 qi_reshape_committed。
+    if change_domain == "temporary_reshape":
+        values["persistence"] = "temporary"
     var effective_query := _event_effective_qi(
         holder, card, "card_state_changed")
     values["effective_qi"] = int(effective_query.get("effective_value", 0))

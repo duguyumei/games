@@ -97,6 +97,11 @@ func current_target_limit(targeting: Dictionary) -> int:
 func state_fingerprint() -> Dictionary:
 	return growth.capture_mutation_state() if growth != null else {}
 
+func run_card_mutation_snapshot():
+	if growth == null or growth.run_deck == null:
+		return []
+	return growth.run_deck.cards_snapshot()
+
 ## 正式白名单：按效果的功法池过滤，只保留当前牌型成员资格内的正式功法。
 func insight_candidates(hand_id: String, pools: Array) -> Array[String]:
 	var result: Array[String] = []

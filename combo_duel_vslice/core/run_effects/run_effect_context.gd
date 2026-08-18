@@ -26,12 +26,15 @@ func record_committed_events(values: Array) -> void:
             var transaction_token := str(metadata.get(
                 "transaction_token", "run_mutation"))
             event["event_serial"] = serial
-            event["event_token"] = "%s:%s:%s:%s:%s:%d" % [
-                str(event.get("event_type", "source_marker_changed")),
-                transaction_token,
-                str(event.get("source_kind", "")),
-                str(event.get("source_instance_key", "")),
-                str(event.get("marker_id", "")),
-                serial,
-            ]
+            # 逐牌 canonical 事实已经持有由 transaction/operation/card 构成的
+            # 稳定 token；来源标识等既有事件则继续在这里取得事务内序号。
+            if str(event.get("event_token", "")) == "":
+                event["event_token"] = "%s:%s:%s:%s:%s:%d" % [
+                    str(event.get("event_type", "source_marker_changed")),
+                    transaction_token,
+                    str(event.get("source_kind", "")),
+                    str(event.get("source_instance_key", "")),
+                    str(event.get("marker_id", "")),
+                    serial,
+                ]
             committed_events.append(event)

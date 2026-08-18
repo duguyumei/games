@@ -97,11 +97,20 @@ var source_card_instance_id: String = ""
 var pre_move_snapshot: Dictionary = {}
 var operation_token: String = ""
 var holder_id: String = ""
+var scope: String = ""
+var persistence: String = ""
+var mutation_kind: String = ""
+var request_fingerprint: String = ""
 var change_domain: String = ""
 var operation: String = ""
+## marker 事实的 before/after 可以是标量；永久真气重塑使用完整 Dictionary。
+var before: Variant = {}
+var after: Variant = {}
 var before_state: Dictionary = {}
 var after_state: Dictionary = {}
-var changes: Array = []
+## source_marker_changed 的 legacy `changes` 是整数，卡牌状态/重塑事实则是数组；
+## 保留 Variant，避免公共上下文强迫不同事实复用同一数据形状。
+var changes: Variant = []
 var added_changes: Array = []
 var removed_changes: Array = []
 var updated_changes: Array = []
@@ -252,11 +261,17 @@ func configure(values: Dictionary):
     pre_move_snapshot = values.get("pre_move_snapshot", {}).duplicate(true)
     operation_token = str(values.get("operation_token", ""))
     holder_id = str(values.get("holder_id", ""))
+    scope = str(values.get("scope", ""))
+    persistence = str(values.get("persistence", ""))
+    mutation_kind = str(values.get("mutation_kind", ""))
+    request_fingerprint = str(values.get("request_fingerprint", ""))
     change_domain = str(values.get("change_domain", ""))
     operation = str(values.get("operation", ""))
+    before = _duplicate_event_value(values.get("before", {}))
+    after = _duplicate_event_value(values.get("after", {}))
     before_state = values.get("before_state", {}).duplicate(true)
     after_state = values.get("after_state", {}).duplicate(true)
-    changes = values.get("changes", []).duplicate(true)
+    changes = _duplicate_event_value(values.get("changes", []))
     added_changes = values.get("added_changes", []).duplicate(true)
     removed_changes = values.get("removed_changes", []).duplicate(true)
     updated_changes = values.get("updated_changes", []).duplicate(true)
@@ -415,8 +430,14 @@ func for_invocation(current_invocation):
         "pre_move_snapshot": pre_move_snapshot,
         "operation_token": operation_token,
         "holder_id": holder_id,
+        "scope": scope,
+        "persistence": persistence,
+        "mutation_kind": mutation_kind,
+        "request_fingerprint": request_fingerprint,
         "change_domain": change_domain,
         "operation": operation,
+        "before": before,
+        "after": after,
         "before_state": before_state,
         "after_state": after_state,
         "changes": changes,
@@ -561,11 +582,17 @@ func public_effect_values() -> Dictionary:
         "pre_move_snapshot": pre_move_snapshot.duplicate(true),
         "operation_token": operation_token,
         "holder_id": holder_id,
+        "scope": scope,
+        "persistence": persistence,
+        "mutation_kind": mutation_kind,
+        "request_fingerprint": request_fingerprint,
         "change_domain": change_domain,
         "operation": operation,
+        "before": _duplicate_event_value(before),
+        "after": _duplicate_event_value(after),
         "before_state": before_state.duplicate(true),
         "after_state": after_state.duplicate(true),
-        "changes": changes.duplicate(true),
+        "changes": _duplicate_event_value(changes),
         "added_changes": added_changes.duplicate(true),
         "removed_changes": removed_changes.duplicate(true),
         "updated_changes": updated_changes.duplicate(true),
@@ -614,3 +641,8 @@ func public_effect_values() -> Dictionary:
         "metadata": metadata.duplicate(true),
     }, true)
     return result
+
+
+func _duplicate_event_value(value):
+    return value.duplicate(true) \
+        if value is Array or value is Dictionary else value

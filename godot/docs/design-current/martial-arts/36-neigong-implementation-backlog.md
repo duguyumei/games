@@ -1,6 +1,6 @@
 # 待实现内功目录
 
-> 状态：本文保留166门权威正文。2026-08-18已有首批9门回响/序列内功及卫星共10门接入运行时JSON；其余156门仍待实现。已接入内功暂未进入商店、修习随机池或production内功池。
+> 状态：本文保留166门权威正文。首批9门回响／序列内功、卫星及机缘不空共11门已接入运行时JSON；其余155门仍待实现。已接入内功暂未进入商店、修习随机池或production内功池。
 >
 > 本文是下列同名候选的当前唯一正文。`31-neigong-general-catalog.md` 中的同名旧文本仅作来源迁移记录；发生差异时以本文为准。本文不因当前底层尚未支持而缩窄设计，后续实现必须补充通用事件、查询、选择和效果端口。
 
@@ -349,6 +349,7 @@
 - **对应重塑**：机缘强化
 - **效果**：机缘真气参与数值计算时，若本次机缘的功法倍率判定和历练判定均未成功，则该真气的牌阶永久提高 1 级；A 提高后变为 2。
 - **边界**：提高顺序为 `2→3→…→10→J→Q→K→A→2`；A 提高后轮回为 2。基础真气值同步更新。变化属于重塑·其他，不占用本源槽，可以反复发生。回响和功法回响复用冻结的机缘结果，不重复改变牌阶。
+- **实现状态（2026-08-19）**：已正式接入。行动确认把逐牌`multiplier_success/experience_success`冻结进现有`HandGroupSnapshot.reshape_action_results`；来源中立被动只在canonical `technique_execution_resolved`窗口读取，不监听较晚的兼容`technique_succeeded`，也不重新掷骰。两项均失败时通过`BattleEffectPorts`调用`BattleCardEffectService`统一永久升阶入口，提交`qi_reshape_committed(scope=battle,persistence=permanent)`；同一根行动与卡实例幂等，回响、重演和等待恢复不重复升阶。变化只写BattleSide工作实例，胜利同步、战败／退出／重开丢弃。
 
 ### 先天开脉
 
@@ -1570,7 +1571,7 @@
 - 功法：火·万法传薪适配空余槽位；风·长风蓄海、火·三劫悬炉、山·悬岳待敌声明主要蓄力累计值；所有现有追击功法迁移到统一`chase`攻击段和事件。
 - 内功：首章立意、演法成章、群法归型、双位同鸣、应机复响适配容量与功法实例分离；广炉容火接入连势上限；伏火延烧接入蓄力查询；追焰留痕接入追击事件。普通功法重复配装上限的改写由物品“三才并位”承接。
 - 奇珍：归墟的槽位下限为 1，超容量时由玩家选择移出，但每个牌型必须至少保留一门功法。
-- 数据：`inner_skills.json`已加入首批9门回响/序列formal内功及卫星；`config/production_inner_skills.json`仍为空。其他156门仍只有在用户明确要求实现后才能分批进入 JSON、资源、正式白名单、商店和生产池。
+- 数据：`inner_skills.json`已加入首批9门回响／序列formal内功、卫星及机缘不空；`config/production_inner_skills.json`仍为空。其他155门仍只有在用户明确要求实现后才能分批进入JSON、资源、正式白名单、商店和生产池。
 
 #### L. 必须补充的回归测试
 
@@ -1637,7 +1638,7 @@
 
 本节只表示公共底层可用，不表示《风/林/火/山息增元》《异气增元》《百炼增元》《清气无瑕》、
 《同阶共鸣》《孤阶自守》《孤气凝神》《高阶凝气》《五气并举》《余烬存真》《镜海藏脉》或
-《毒木生甲》已经接入。本批9门回响/序列内功与卫星也已接入；其他156门内功和暂缓8门功法仍保持原内容状态，后续必须以来源中立Handler逐项
+《毒木生甲》已经接入。本批9门回响／序列内功、卫星及机缘不空也已接入；其他155门内功和暂缓8门功法仍保持原内容状态，后续必须以来源中立Handler逐项
 实现，不得绕过查询协议或复制有效真气值算法。
 
 ## 19. 2026-08-18 生命写入前干预状态
@@ -1780,7 +1781,7 @@ invocation、execution token。BattleSession和AI只读公开按槽位组织的`
 - 烬步催轮 `burnout_technique_advances_extra`（稀有）。
 
 上述9门已通过ContentValidator和独立专项；卫星另通过`run_combat_history_facts`专项正式接入。原A/B/C分类只保留为历史复杂度，不再表示这些内功未实现。
-其他156门内功、20件物品与8门暂缓功法未接入；本批也未把10门新内功加入商店、修习随机池或production内功池。
+该批完成时其他156门内功、20件物品与8门暂缓功法未接入；该批也未把10门新内功加入商店、修习随机池或production内功池。
 
 ## 24. 2026-08-18 本局战斗成功历史与卫星状态
 
@@ -1792,3 +1793,27 @@ invocation、execution token。BattleSession和AI只读公开按槽位组织的`
 execution按自身牌型计次。卫星在`battle_completed`胜利计划中读取合并后的累计不同功法数，并经
 `RunMutationService`获得等量历练；多个副本独立执行，晚获得时可读取此前历史。未实现望远镜或
 `practice_strategy_query`。
+
+## 25. 2026-08-19 战斗永久真气变更与机缘不空状态
+
+`battle_permanent_card_mutation_port`已经完成。战斗内容只能通过`BattleEffectPorts`进入
+`BattleCardEffectService.advance_permanent_qi_rank`；Handler不得直接改`QiCard`。Run与Battle共用的
+`PermanentQiMutationService`只接收并返回持久快照，按基础牌阶定义完成`2→3→…→K→A→2`，同步更新
+definition、rank与基础qi值，并写入`重塑·其他/机缘升阶`，不复制RunDeck或BattleSide写入逻辑。
+
+实际变更只发生在BattleSide本场工作真气，立即参与之后的牌型、有效真气值和UI；临时牌、敌方临时
+夺取牌及非持有牌明确拒绝。同一根行动、卡实例与变更类型生成稳定operation token和请求指纹；重复请求
+复用回执，不能绑定另一请求。成功只发布一份`qi_reshape_committed(scope=battle,
+persistence=permanent)`；临时重塑仍只使用`card_state_changed(persistence=temporary)`。内部及外层行动
+复用`BattleRuntimeMutationTransaction`，失败恢复卡牌、来源状态、事件、receipt、日志和RNG。胜利由既有
+BattleSetup／RunProgress绝对同步，战败、退出与重开恢复战前RunDeck。
+
+《机缘不空》（`fortune_rank_cycle`）已作为稀有formal内功接入，遗忘所得保持权威配置。它监听
+canonical `technique_execution_resolved`，在原功法执行完成、回响开始前读取行动确认冻结的逐牌机缘
+判定。只有实际参与功法值计算且同时满足`multiplier_success=false`、`experience_success=false`的卡实例
+才请求升阶；多张牌分别处理，同一根行动每张至多一次。功法回响、卡牌回响、等待恢复和receipt重放
+不会重新掷骰或重复升阶，下一独立行动可以再次满足。永久升阶提交统一重塑事实，因而能被物品
+《纳气养命》来源中立地观察并形成一次回血，不建立两项内容之间的ID依赖。
+
+接入后正式内功为11门，剩余155门；能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1。8门暂缓
+功法仍未实现，D类《化虚为实》仍等待持久表示确认。

@@ -10,6 +10,21 @@ var content_kind: String = ""
 var shop_index: int = 0
 var outcome: String = ""
 var transaction_token: String = ""
+var operation_token: String = ""
+var operation_id: String = ""
+var event_token: String = ""
+var fact_scope: String = ""
+var persistence: String = ""
+var holder_id: String = ""
+var card_instance_id: String = ""
+var definition_id: String = ""
+var reason: String = ""
+var fact_source: Dictionary = {}
+var card_snapshot: Dictionary = {}
+var before: Dictionary = {}
+var after: Dictionary = {}
+var changes: Array = []
+var actual_change_count: int = 0
 
 func configure(values: Dictionary):
     super.configure(values)
@@ -22,13 +37,40 @@ func configure(values: Dictionary):
     shop_index = int(values.get("shop_index", 0))
     outcome = str(values.get("outcome", ""))
     transaction_token = str(values.get("transaction_token", ""))
+    operation_token = str(values.get("operation_token", ""))
+    operation_id = str(values.get("operation_id", ""))
+    event_token = str(values.get("event_token", ""))
+    fact_scope = str(values.get("scope", values.get("fact_scope", "")))
+    persistence = str(values.get("persistence", ""))
+    holder_id = str(values.get("holder_id", values.get("holder", "")))
+    card_instance_id = str(values.get(
+        "card_instance_id", values.get("instance_id", "")))
+    definition_id = str(values.get("definition_id", ""))
+    reason = str(values.get("reason", ""))
+    fact_source = values.get(
+        "fact_source", values.get("source_description", {})).duplicate(true)
+    card_snapshot = values.get(
+        "card_snapshot", values.get("persistent_card_snapshot", {})).duplicate(true)
+    before = values.get("before", {}).duplicate(true)
+    after = values.get("after", {}).duplicate(true)
+    changes = values.get("changes", []).duplicate(true)
+    actual_change_count = int(values.get(
+        "actual_change_count", changes.size()))
     return self
 
 func for_invocation(current_invocation):
     var values := _event_values()
     values["source"] = current_invocation.source
     values["invocation"] = current_invocation
-    return get_script().new().configure(values)
+    var result = get_script().new().configure(values)
+    # RunPassiveEventService 在事件开始时只建立一次基础端口；真正执行某个
+    # Invocation 时收窄成带来源身份的端口，避免 Handler 自行拼 source key。
+    var base_ports = result.payload.get("effect_ports")
+    if base_ports != null and base_ports.has_method("for_invocation"):
+        result.payload = result.payload.duplicate(false)
+        result.payload["effect_ports"] = base_ports.for_invocation(
+            current_invocation)
+    return result
 
 func for_plan_target(target_source):
     var values := _event_values()
@@ -53,6 +95,21 @@ func to_dict() -> Dictionary:
         "shop_index": shop_index,
         "outcome": outcome,
         "transaction_token": transaction_token,
+        "operation_token": operation_token,
+        "operation_id": operation_id,
+        "event_token": event_token,
+        "scope": fact_scope,
+        "persistence": persistence,
+        "holder_id": holder_id,
+        "card_instance_id": card_instance_id,
+        "definition_id": definition_id,
+        "reason": reason,
+        "fact_source": fact_source.duplicate(true),
+        "card_snapshot": card_snapshot.duplicate(true),
+        "before": before.duplicate(true),
+        "after": after.duplicate(true),
+        "changes": changes.duplicate(true),
+        "actual_change_count": actual_change_count,
         "payload": payload.duplicate(true),
     }
 
@@ -73,6 +130,21 @@ func _event_values() -> Dictionary:
         "shop_index": shop_index,
         "outcome": outcome,
         "transaction_token": transaction_token,
+        "operation_token": operation_token,
+        "operation_id": operation_id,
+        "event_token": event_token,
+        "scope": fact_scope,
+        "persistence": persistence,
+        "holder_id": holder_id,
+        "card_instance_id": card_instance_id,
+        "definition_id": definition_id,
+        "reason": reason,
+        "fact_source": fact_source,
+        "card_snapshot": card_snapshot,
+        "before": before,
+        "after": after,
+        "changes": changes,
+        "actual_change_count": actual_change_count,
     }
     if has_source_snapshot:
         values["source_snapshot"] = source_snapshot

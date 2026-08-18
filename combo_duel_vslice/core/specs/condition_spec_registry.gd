@@ -63,6 +63,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "event_actor_is_owner": {"validation": "bool", "value": "relation", "left": "actor", "right": "owner"},
     "event_actor_is_opponent": {"validation": "bool", "value": "relation", "left": "actor", "right": "opponent"},
     "event_target_is_owner": {"validation": "bool", "value": "relation", "left": "target", "right": "owner"},
+    "holder_is_owner": {"validation": "bool", "value": "relation", "left": "holder", "right": "owner"},
     "holder_is_actor": {"validation": "bool", "value": "record_relation", "left": "holder", "right": "actor"},
     "attacker_is_actor": {"validation": "bool", "value": "record_relation", "left": "attacker", "right": "actor"},
     "attacker_is_target": {"validation": "bool", "value": "record_relation", "left": "attacker", "right": "target"},
@@ -70,6 +71,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "defense_lost_positive": {"validation": "bool", "value": "positive", "key": "defense_lost"},
     "requested_amount_positive": {"validation": "bool", "value": "positive", "key": "requested_amount"},
     "actual_life_loss_positive": {"validation": "bool", "value": "positive", "key": "actual_life_loss", "fallback": "life_lost"},
+    "actual_change_count_positive": {"validation": "bool", "value": "positive", "key": "actual_change_count"},
     "life_lost_equals": {"validation": "non_negative_int", "value": "direct", "key": "life_lost"},
     "defense_after_equals": {"validation": "non_negative_int", "value": "direct", "key": "defense_after"},
     "same_qi_gain_at_least": {"validation": "non_negative_int", "value": "same_qi_gain", "match": "at_least"},
@@ -79,6 +81,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "owner": {"validation": "owner_role", "value": "role", "event_key": "actor"},
     "holder": {"validation": "holder_role", "value": "role", "event_key": "holder"},
     "source_kind_in": {"validation": "string_array", "value": "direct", "key": "source_kind", "match": "contains"},
+    "operation_in": {"validation": "string_array", "value": "direct", "key": "operation", "match": "contains"},
     "draw_reason_not_in": {"validation": "string_array", "value": "direct", "key": "draw_reason", "match": "excludes"},
     "is_extra_action": {"validation": "bool", "value": "direct", "key": "is_extra_action"},
     "from_same_qi": {"validation": "bool", "value": "direct", "key": "from_same_qi"},
@@ -98,6 +101,8 @@ const EVENT_FILTER_DEFINITIONS := {
     "source_tokens_from_capture": {"validation": "capture_id", "value": "registration_only", "resolve_to": "source_tokens", "capture_projection": "source_token"},
     "max_triggers": {"validation": "positive_int", "value": "registration_only"},
     "source_kind": {"validation": "nonempty_string", "value": "direct", "key": "source_kind"},
+    "scope": {"validation": "qi_mutation_scope", "value": "direct", "key": "scope"},
+    "persistence": {"validation": "qi_mutation_persistence", "value": "direct", "key": "persistence"},
     "draw_reason": {"validation": "nonempty_string", "value": "direct", "key": "draw_reason"},
     "damage_type": {"validation": "damage_type", "value": "direct", "key": "damage_type"},
     "hand_id": {"validation": "hand_id", "value": "direct", "key": "hand_id"},
@@ -453,6 +458,10 @@ func _scalar_valid(value, validation: String) -> bool:
             and str(value) in ["anomaly", "temporary_reshape", "mixed"]
         "temporary_reshape_subslot": return value is String \
             and str(value) in ["enhancement", "attribute", "rank"]
+        "qi_mutation_scope": return value is String \
+            and str(value) in ["run", "battle"]
+        "qi_mutation_persistence": return value is String \
+            and str(value) in ["permanent", "temporary"]
         "owner_role", "holder_role":
             return value is String and str(value) in ["actor", "target"]
         "string_array":
@@ -482,6 +491,8 @@ func _validation_message(validation: String) -> String:
         "trigger_mode": return "引用未知 trigger_mode"
         "change_domain": return "必须为 anomaly、temporary_reshape 或 mixed"
         "temporary_reshape_subslot": return "引用未知临时重塑子槽"
+        "qi_mutation_scope": return "必须为 run 或 battle"
+        "qi_mutation_persistence": return "必须为 permanent 或 temporary"
         "owner_role", "holder_role": return "必须为 actor 或 target"
         "string_array": return "必须是非空字符串数组"
     return "必须是非空字符串"

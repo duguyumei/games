@@ -19,6 +19,8 @@ const GrantConsumablesHandlerScript = preload(
     "res://core/run_effects/grant_consumables_run_effect_handler.gd")
 const GrantItemsHandlerScript = preload(
     "res://core/run_effects/grant_items_run_effect_handler.gd")
+const SourceMarkerHandlerScript = preload(
+    "res://core/run_effects/run_source_marker_effect_handler.gd")
 
 var _handlers_by_operation: Dictionary = {}
 var _registration_errors: Array[String] = []
@@ -36,6 +38,7 @@ func _init(register_defaults: bool = true) -> void:
         register_handler(GrantInnerSkillsHandlerScript.new())
         register_handler(GrantConsumablesHandlerScript.new())
         register_handler(GrantItemsHandlerScript.new())
+        register_handler(SourceMarkerHandlerScript.new())
 
 func register_handler(handler) -> bool:
     if handler == null \
