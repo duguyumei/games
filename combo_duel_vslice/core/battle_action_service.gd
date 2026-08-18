@@ -798,7 +798,11 @@ func _finish_current_group(
         return _fail_active_transaction(
             "牌型组类型无效", "invalid_group_kind")
     for record in records:
-        action_resolver.finish_action_record(record)
+        var finalized: Dictionary = action_resolver.finish_action_record(record)
+        if not finalized.get("success", false):
+            return _fail_active_transaction(
+                str(finalized.get("reason", "功法执行收尾失败")),
+                "action_record_finalization_failed")
     if _has_next_cooperation_group(action_context):
         return _start_next_cooperation_group(action_context)
     if str(action_context.get("resolution_mode", "")) \

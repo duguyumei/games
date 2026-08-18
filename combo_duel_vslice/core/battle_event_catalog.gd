@@ -19,6 +19,7 @@ const COMMITTED_EVENTS := [
     "challenge_established", "challenge_progressed", "challenge_resolved",
     "poison_trigger_completed", "defense_gained", "defense_reduced",
     "life_recovered", "source_marker_changed", "technique_succeeded",
+    "technique_execution_resolved",
     "technique_invocation_started", "technique_invocation_resolved",
     "technique_sequence_changed", "technique_slot_capacity_changed",
     "temporary_technique_generated", "same_qi_gain_resolved",
@@ -70,6 +71,16 @@ const PUBLIC_FIELDS := [
     "marker_mode", "generation_batch_token", "temporary",
     "capacity_before", "capacity_after", "requested_delta", "actual_delta",
     "occupied_count", "remaining_capacity", "changed_slots",
+    "technique_execution_token", "root_action_token", "invocation_token",
+    "caller_technique_id", "is_echo", "manual_effect_suppressed",
+    "sequence_advance_requested", "same_qi_gain_enabled", "momentum_enabled",
+    "actor_defense_gained", "actor_defense_lost", "target_defense_lost",
+    "actor_life_lost", "target_life_lost", "target_total_reduction",
+    "life_recovered", "recovered_amount", "requested_damage_total",
+    "final_damage_total", "damage_segment_count", "normal_segment_count",
+    "true_segment_count", "poison_segment_count", "blocked_segment_count",
+    "life_loss_canceled_segment_count", "damage_segment_tokens",
+    "sequence_before",
 ]
 
 static func event_ids() -> Array[String]:

@@ -244,26 +244,30 @@ func add_defense(
         side: BattleSide,
         amount: int,
         source_kind: String = "effect",
-        action_token: String = "") -> int:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> int:
     return _survival_effect_service.add_defense(
-        side, amount, source_kind, action_token)
+        side, amount, source_kind, action_token, source_metadata)
 
 func add_defense_result(
         side: BattleSide,
         amount: int,
         source_kind: String = "effect",
-        action_token: String = "") -> Dictionary:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> Dictionary:
     return _survival_effect_service.add_defense_result(
-        side, amount, source_kind, action_token)
+        side, amount, source_kind, action_token, source_metadata)
 
 func recover_life(
         side: BattleSide,
         amount: int,
         source_kind: String = "effect",
         action_token: String = "",
-        source_actor = null) -> Dictionary:
+        source_actor = null,
+        source_metadata: Dictionary = {}) -> Dictionary:
     return _survival_effect_service.recover_life(
-        side, amount, source_kind, action_token, source_actor)
+        side, amount, source_kind, action_token, source_actor,
+        source_metadata)
 
 func remove_defense(
         side: BattleSide,
@@ -273,10 +277,11 @@ func remove_defense(
         source_kind: String = "effect",
         action_token: String = "",
         cause: String = "direct_effect",
-        require_full: bool = false) -> Dictionary:
+        require_full: bool = false,
+        source_metadata: Dictionary = {}) -> Dictionary:
     return _survival_effect_service.remove_defense(
         side, amount, remove_all, source_actor, source_kind,
-        action_token, cause, require_full)
+        action_token, cause, require_full, source_metadata)
 
 func write_source_marker(
         side: BattleSide,
@@ -778,14 +783,16 @@ func retrigger_current_hand_technique(
         sequence_book,
         power_snapshot: Dictionary,
         maximum_discard: int,
-        excluded_technique_ids: Array) -> Dictionary:
+        excluded_technique_ids: Array,
+        execution_context = null) -> Dictionary:
     return _invocation_effect_service.retrigger_current_hand_technique(
         actor,
         target,
         sequence_book,
         power_snapshot,
         maximum_discard,
-        excluded_technique_ids)
+        excluded_technique_ids,
+        execution_context)
 
 func add_history(
         timing: String,

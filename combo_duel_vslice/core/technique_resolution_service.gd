@@ -13,12 +13,169 @@ var _repository
 var _executor
 var _ports
 var _event_service
+var _active_executions: Dictionary = {}
+var _completed_summaries: Dictionary = {}
 
 func _init(repository, executor, ports, event_service) -> void:
     _repository = repository
     _executor = executor
     _ports = ports
     _event_service = event_service
+    if _event_service != null:
+        _event_service.register_weak_listener(
+            self, "_on_committed_fact_for_execution")
+
+func reset() -> void:
+    _active_executions.clear()
+    _completed_summaries.clear()
+
+func discard_all_pending_executions() -> void:
+    _active_executions.clear()
+
+func pending_execution_count() -> int:
+    return _active_executions.size()
+
+func begin_manual_execution(record) -> Dictionary:
+    var preview: Dictionary = record["preview"]
+    var technique: Dictionary = preview.get("technique", {})
+    if technique.is_empty():
+        return {"success": false, "reason": "手动功法执行缺少功法定义"}
+    var root_token := str(record["token"])
+    var hand_id := str(preview.get("hand", {}).get("id", ""))
+    var slot_id := str(preview.get("slot_instance_id", ""))
+    var sequence_before: Array = record["book"].ordered_slots(hand_id) \
+        if record.get("book") != null else []
+    var token := "%s:technique:%s:%s" % [root_token, hand_id, slot_id]
+    record.technique_execution_token = token
+    record.technique_execution_state = {
+        "pending_echo_plans": [],
+        "next_echo_index": 0,
+    }
+    return _begin_execution({
+        "technique_execution_token": token,
+        "root_action_token": root_token,
+        "invocation_token": "",
+        "caller_technique_id": "",
+        "actor": record["actor"],
+        "target": record["target"],
+        "source_kind": "technique",
+        "source_id": str(technique.get("id", "")),
+        "source_name": str(technique.get("name", "")),
+        "source_instance_key": slot_id,
+        "technique_id": str(technique.get("id", "")),
+        "technique_pool": str(technique.get("pool", "")),
+        "slot_instance_id": slot_id,
+        "hand_id": hand_id,
+        "initial_power": int(preview.get("values", {}).get("initial_power", 0)),
+        "technique_power": int(preview.get("values", {}).get("technique_value", 0)),
+        "trigger_mode": "manual",
+        "is_echo": false,
+        "manual_effect_suppressed": str(technique.get(
+            "manual_effect_mode", "normal")) == "advance_only",
+        "sequence_advance_requested": true,
+        "same_qi_gain_enabled": true,
+        "momentum_enabled": true,
+        "sequence_before": sequence_before.duplicate(true),
+        "round_number": int(record["turn_number"]),
+    })
+
+func finish_manual_execution(record) -> Dictionary:
+    var preview: Dictionary = record["preview"]
+    var technique: Dictionary = preview.get("technique", {})
+    var context = EffectContextScript.new().configure({
+        "ports": _ports,
+        "actor": record["actor"],
+        "target": record["target"],
+        "hand_result": preview.get("hand", {}),
+        "played_cards": preview.get("cards", []),
+        "group_snapshot": preview.get("group_snapshot", {}),
+        "values": preview.get("values", {}),
+        "power": int(preview.get("values", {}).get("technique_value", 0)),
+        "initial_power": int(preview.get("values", {}).get("initial_power", 0)),
+        "technique_id": str(technique.get("id", "")),
+        "technique_name": str(technique.get("name", "")),
+        "technique_pool": str(technique.get("pool", "")),
+        "action_token": str(record.technique_execution_token),
+        "technique_execution_token": str(record.technique_execution_token),
+        "technique_execution_state": record.technique_execution_state,
+        "root_action_token": str(record["token"]),
+        "slot_instance_id": str(preview.get("slot_instance_id", "")),
+        "source_kind": "technique",
+        "source_id": str(technique.get("id", "")),
+        "source_name": str(technique.get("name", "")),
+        "source_instance_key": str(preview.get("slot_instance_id", "")),
+        "trigger_mode": "manual",
+        "captures": record["captures_by_source"].get("technique", {}),
+        "sequence_book": record["book"],
+        "card_identity_policy": record["actor"].card_identity_policy,
+    })
+    return finish_execution(context)
+
+func resolve_direct_execution(
+        definition,
+        context,
+        effects: Array,
+        options: Dictionary = {}) -> Dictionary:
+    var runtime = EffectContextScript.coerce(context)
+    var begun := _begin_execution(_execution_info_from_context(runtime, options))
+    if not begun.get("success", false):
+        return begun
+    var result: Dictionary = _executor.execute_all(effects, runtime)
+    if result.get("pending_choice", false):
+        discard_execution(runtime.technique_execution_token)
+        return {
+            "success": false,
+            "pending_choice": true,
+            "reason": "直接功法执行尚未接管 continuation",
+        }
+    if not result.get("success", false):
+        discard_execution(runtime.technique_execution_token)
+        return {
+            "success": false,
+            "reason": str(result.get("detail", "功法效果执行失败")),
+        }
+    var completed := finish_execution(runtime)
+    completed["effect_result"] = result
+    return completed
+
+func discard_execution(technique_execution_token: String) -> void:
+    _active_executions.erase(technique_execution_token)
+
+func finish_execution(context) -> Dictionary:
+    var runtime = EffectContextScript.coerce(context)
+    var token := str(runtime.technique_execution_token)
+    if token == "":
+        return {"success": false, "reason": "功法执行汇总缺少 execution token"}
+    if _completed_summaries.has(token):
+        return {
+            "success": true,
+            "reused": true,
+            "summary": _completed_summaries[token].duplicate(true),
+            "echo_results": [],
+        }
+    if not _active_executions.has(token):
+        return {"success": false, "reason": "功法执行累计器不存在或已失效"}
+    var summary_result := _commit_execution_summary(token)
+    _active_executions.erase(token)
+    if not summary_result.get("success", false):
+        return summary_result
+    _completed_summaries[token] = summary_result.get(
+        "summary", {}).duplicate(true)
+    var echoes := _resolve_echo_plans(runtime)
+    if not echoes.get("success", false):
+        return {
+            "success": false,
+            "reason": str(echoes.get("reason", "功法回响执行失败")),
+            "summary": summary_result.get("summary", {}),
+            "echo_results": echoes.get("results", []),
+        }
+    return {
+        "success": true,
+        "reused": false,
+        "summary": summary_result.get("summary", {}),
+        "receipt": summary_result.get("receipt", {}),
+        "echo_results": echoes.get("results", []),
+    }
 
 func has_pending_invocation(context) -> bool:
     var runtime = EffectContextScript.coerce(context)
@@ -47,6 +204,10 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
     var power_result: Dictionary = prepared["power_result"]
     var values: Dictionary = power_result["values"]
     var token := str(request.get("invocation_token", ""))
+    var execution_state := {
+        "pending_echo_plans": [],
+        "next_echo_index": 0,
+    }
     var invoked_context = EffectContextScript.new().configure({
         "ports": _ports, "actor": runtime.actor, "target": runtime.target,
         "hand_result": invocation_hand_result,
@@ -58,6 +219,8 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
         "technique_name": definition.display_name,
         "technique_pool": definition.pool,
         "action_token": token,
+        "technique_execution_token": token,
+        "technique_execution_state": execution_state,
         "root_action_token": str(request.get("root_action_token", token)),
         "invocation_token": token,
         "caller_technique_id": runtime.technique_id,
@@ -87,6 +250,16 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
         "pending_power_fixed_tokens": power_result.get(
             "pending_power_fixed_tokens", []).duplicate(),
     }
+    var begun := _begin_execution(_execution_info_from_context(
+        invoked_context, {
+            "sequence_advance_requested": bool(effect.get(
+                "advance_sequence", true)),
+            "same_qi_gain_enabled": bool(effect.get("gain_same_qi", true)),
+            "momentum_enabled": bool(effect.get("use_momentum", true)),
+            "sequence_before": request.get("sequence_before", []).duplicate(true),
+        }))
+    if not begun.get("success", false):
+        return begun
     _commit_event("action_confirmed", state, {
         "sequence_before": request.get("sequence_before", []),
         "sequence_after": runtime.sequence_book.ordered_slots(
@@ -356,6 +529,7 @@ func _continue_invocation(state: Dictionary) -> Dictionary:
                 str(phases[int(state["phase_index"])]))
             if not phase_result.get("success", false):
                 runtime.captures.erase(PENDING_CAPTURE)
+                discard_execution(invoked_context.technique_execution_token)
                 return {
                     "success": false,
                     "reason": phase_result.get("reason", "功法阶段解析失败"),
@@ -370,12 +544,14 @@ func _continue_invocation(state: Dictionary) -> Dictionary:
             var request_object = state["continuation"].choice_request \
                 if state["continuation"] != null else null
             if request_object == null:
+                discard_execution(invoked_context.technique_execution_token)
                 return {"success": false, "reason": "功法结算等待选择缺少 continuation"}
             state["request_id"] = str(request_object.request_id)
             runtime.captures[PENDING_CAPTURE] = state
             return _pending_result(state)
         if not result.get("success", false):
             runtime.captures.erase(PENDING_CAPTURE)
+            discard_execution(invoked_context.technique_execution_token)
             return {
                 "success": false,
                 "reason": result.get("detail", "功法阶段结算失败"),
@@ -421,7 +597,11 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
         token + ":same_qi",
         bool(effect.get("gain_same_qi", true)))
     if not same_qi_result.get("success", false):
+        discard_execution(token)
         return same_qi_result
+    var summarized := finish_execution(state["invoked_context"])
+    if not summarized.get("success", false):
+        return summarized
     var completed := {"success": true}
     if bool(effect.get("advance_sequence", true)):
         completed = runtime.sequence_book.complete_slot(
@@ -509,6 +689,331 @@ func _commit_event(kind: String, state: Dictionary,
             "sequence_after": extra.get("sequence_after", []),
         },
     })
+
+func _begin_execution(info: Dictionary) -> Dictionary:
+    var token := str(info.get("technique_execution_token", ""))
+    if token == "":
+        return {"success": false, "reason": "功法执行缺少稳定 execution token"}
+    if str(info.get("source_kind", "")) != "technique":
+        return {"success": false, "reason": "功法执行汇总只接受 technique 来源"}
+    if _completed_summaries.has(token):
+        return {"success": true, "reused": true, "token": token}
+    if _active_executions.has(token):
+        return {"success": true, "reused": true, "token": token}
+    var accumulator := info.duplicate(false)
+    accumulator.merge({
+        "actor_defense_gained": 0,
+        "actor_defense_lost": 0,
+        "target_defense_lost": 0,
+        "actor_life_lost": 0,
+        "target_life_lost": 0,
+        "life_recovered": 0,
+        "requested_damage_total": 0,
+        "final_damage_total": 0,
+        "damage_segment_count": 0,
+        "normal_segment_count": 0,
+        "true_segment_count": 0,
+        "poison_segment_count": 0,
+        "blocked_segment_count": 0,
+        "life_loss_canceled_segment_count": 0,
+        "damage_segment_tokens": [],
+    }, true)
+    _active_executions[token] = accumulator
+    return {"success": true, "reused": false, "token": token}
+
+func _execution_info_from_context(
+        runtime,
+        options: Dictionary = {}) -> Dictionary:
+    return {
+        "technique_execution_token": str(runtime.technique_execution_token),
+        "root_action_token": str(runtime.root_action_token),
+        "invocation_token": str(runtime.invocation_token),
+        "caller_technique_id": str(runtime.caller_technique_id),
+        "actor": runtime.actor,
+        "target": runtime.target,
+        "source_kind": str(runtime.source_kind),
+        "source_id": str(runtime.source_id),
+        "source_name": str(runtime.source_name),
+        "source_instance_key": str(runtime.source_instance_key),
+        "technique_id": str(runtime.technique_id),
+        "technique_pool": str(runtime.technique_pool),
+        "slot_instance_id": str(runtime.slot_instance_id),
+        "hand_id": str(runtime.hand_result.get("id", runtime.actual_hand_id)),
+        "initial_power": int(runtime.initial_power),
+        "technique_power": int(runtime.power),
+        "trigger_mode": str(runtime.trigger_mode),
+        "is_echo": bool(options.get("is_echo", runtime.trigger_mode == "echo")),
+        "manual_effect_suppressed": bool(options.get(
+            "manual_effect_suppressed", false)),
+        "sequence_advance_requested": bool(options.get(
+            "sequence_advance_requested", false)),
+        "same_qi_gain_enabled": bool(options.get(
+            "same_qi_gain_enabled", false)),
+        "momentum_enabled": bool(options.get("momentum_enabled", false)),
+        "sequence_before": options.get("sequence_before", []).duplicate(true),
+        "round_number": int(options.get("round_number", 0)),
+    }
+
+func _commit_execution_summary(token: String) -> Dictionary:
+    if not _active_executions.has(token):
+        return {"success": false, "reason": "功法执行累计器不存在"}
+    var accumulator: Dictionary = _active_executions[token]
+    var summary := accumulator.duplicate(false)
+    summary["damage_segment_tokens"] = accumulator.get(
+        "damage_segment_tokens", []).duplicate()
+    summary["sequence_before"] = accumulator.get(
+        "sequence_before", []).duplicate(true)
+    summary["target_total_reduction"] = int(summary.get(
+        "target_defense_lost", 0)) + int(summary.get("target_life_lost", 0))
+    if _event_service == null:
+        return {"success": true, "summary": summary, "receipt": {}}
+    var serial := int(_event_service.next_serial())
+    var event_token: String = str(_event_service.make_token(
+        "technique_execution_resolved", summary.get("actor"), token, token))
+    var values := {
+        "event_token": event_token,
+        "event_serial": serial,
+        "technique_execution_token": token,
+        "root_action_token": str(summary.get("root_action_token", token)),
+        "invocation_token": str(summary.get("invocation_token", "")),
+        "caller_technique_id": str(summary.get("caller_technique_id", "")),
+        "actor": summary.get("actor"),
+        "target": summary.get("target"),
+        "owner": summary.get("actor"),
+        "action_token": token,
+        "round_number": int(summary.get("round_number", 0)),
+        "source_kind": "technique",
+        "source_id": str(summary.get("source_id", "")),
+        "source_name": str(summary.get("source_name", "")),
+        "source_instance_key": str(summary.get("source_instance_key", "")),
+        "technique_id": str(summary.get("technique_id", "")),
+        "technique_pool": str(summary.get("technique_pool", "")),
+        "slot_instance_id": str(summary.get("slot_instance_id", "")),
+        "hand_id": str(summary.get("hand_id", "")),
+        "initial_power": int(summary.get("initial_power", 0)),
+        "technique_power": int(summary.get("technique_power", 0)),
+        "trigger_mode": str(summary.get("trigger_mode", "")),
+        "is_echo": bool(summary.get("is_echo", false)),
+        "manual_effect_suppressed": bool(summary.get(
+            "manual_effect_suppressed", false)),
+        "sequence_advance_requested": bool(summary.get(
+            "sequence_advance_requested", false)),
+        "same_qi_gain_enabled": bool(summary.get(
+            "same_qi_gain_enabled", false)),
+        "momentum_enabled": bool(summary.get("momentum_enabled", false)),
+        "actor_defense_gained": int(summary.get("actor_defense_gained", 0)),
+        "actor_defense_lost": int(summary.get("actor_defense_lost", 0)),
+        "target_defense_lost": int(summary.get("target_defense_lost", 0)),
+        "actor_life_lost": int(summary.get("actor_life_lost", 0)),
+        "target_life_lost": int(summary.get("target_life_lost", 0)),
+        "target_total_reduction": int(summary.get("target_total_reduction", 0)),
+        "life_recovered": int(summary.get("life_recovered", 0)),
+        "requested_damage_total": int(summary.get("requested_damage_total", 0)),
+        "final_damage_total": int(summary.get("final_damage_total", 0)),
+        "damage_segment_count": int(summary.get("damage_segment_count", 0)),
+        "normal_segment_count": int(summary.get("normal_segment_count", 0)),
+        "true_segment_count": int(summary.get("true_segment_count", 0)),
+        "poison_segment_count": int(summary.get("poison_segment_count", 0)),
+        "blocked_segment_count": int(summary.get("blocked_segment_count", 0)),
+        "life_loss_canceled_segment_count": int(summary.get(
+            "life_loss_canceled_segment_count", 0)),
+        "damage_segment_tokens": summary.get(
+            "damage_segment_tokens", []).duplicate(),
+        "sequence_before": summary.get("sequence_before", []).duplicate(true),
+        "technique_triggered": true,
+        "action_succeeded": true,
+        "metadata": {
+            "technique_execution_token": token,
+            "root_action_token": str(summary.get("root_action_token", token)),
+            "invocation_token": str(summary.get("invocation_token", "")),
+            "caller_technique_id": str(summary.get("caller_technique_id", "")),
+            "slot_instance_id": str(summary.get("slot_instance_id", "")),
+            "manual_effect_suppressed": bool(summary.get(
+                "manual_effect_suppressed", false)),
+            "sequence_before": summary.get("sequence_before", []).duplicate(true),
+        },
+    }
+    var committed: Dictionary = _event_service.commit(
+        "technique_execution_resolved", values)
+    if not committed.get("success", false):
+        return {
+            "success": false,
+            "reason": str(committed.get(
+                "reason", "功法执行汇总事件处理失败")),
+            "summary": values,
+        }
+    return {
+        "success": true,
+        "summary": values,
+        "receipt": committed.get("receipt", {}).duplicate(true),
+        "reused": bool(committed.get("reused", false)),
+    }
+
+func _resolve_echo_plans(parent) -> Dictionary:
+    var state: Dictionary = parent.technique_execution_state
+    var plans: Array = state.get("pending_echo_plans", []).duplicate(true)
+    state["pending_echo_plans"] = []
+    var results: Array = []
+    for plan_value in plans:
+        var plan: Dictionary = plan_value
+        var echo_index := int(plan.get("echo_index", results.size()))
+        var token := "%s:echo:%06d" % [
+            parent.technique_execution_token, echo_index]
+        var child_state := {
+            "pending_echo_plans": [],
+            "next_echo_index": 0,
+        }
+        var child = EffectContextScript.new().configure({
+            "ports": parent.ports,
+            "actor": parent.actor,
+            "target": parent.target,
+            "hand_result": parent.hand_result,
+            "played_cards": parent.played_cards,
+            "group_snapshot": parent.group_snapshot,
+            "power": parent.power,
+            "initial_power": parent.initial_power,
+            "direct_power_fixed": parent.direct_power_fixed,
+            "direct_power_percent": parent.direct_power_percent,
+            "pre_momentum_power": parent.pre_momentum_power,
+            "momentum_used": parent.momentum_used,
+            "technique_id": parent.technique_id,
+            "technique_name": parent.technique_name,
+            "actual_hand_id": parent.actual_hand_id,
+            "branch_hand_id": parent.branch_hand_id,
+            "technique_pool": parent.technique_pool,
+            "action_token": token,
+            "technique_execution_token": token,
+            "technique_execution_state": child_state,
+            "root_action_token": parent.root_action_token,
+            "invocation_token": parent.invocation_token,
+            "caller_technique_id": parent.caller_technique_id,
+            "slot_instance_id": parent.slot_instance_id,
+            "source_kind": "technique",
+            "source_id": parent.source_id,
+            "source_name": parent.source_name,
+            "source_instance_key": parent.source_instance_key,
+            "trigger_mode": "echo",
+            "captures": {},
+            "sequence_book": parent.sequence_book,
+            "card_identity_policy": parent.card_identity_policy,
+        })
+        var begun := _begin_execution(_execution_info_from_context(child, {
+            "is_echo": true,
+            "sequence_advance_requested": false,
+            "same_qi_gain_enabled": false,
+            "momentum_enabled": false,
+            "sequence_before": _completed_summaries.get(
+                parent.technique_execution_token, {}).get(
+                    "sequence_before", []).duplicate(true),
+        }))
+        if not begun.get("success", false):
+            return {"success": false, "reason": begun.get("reason", "回响启动失败"), "results": results}
+        var executed: Dictionary = _executor.execute_all(
+            plan.get("effects", []), child)
+        if executed.get("pending_choice", false) \
+                or not executed.get("success", false):
+            discard_execution(token)
+            return {
+                "success": false,
+                "reason": str(executed.get(
+                    "detail", "回响不支持等待选择" if executed.get(
+                        "pending_choice", false) else "回响效果失败")),
+                "results": results,
+            }
+        var completed := finish_execution(child)
+        results.append(completed)
+        if not completed.get("success", false):
+            return {
+                "success": false,
+                "reason": completed.get("reason", "回响汇总失败"),
+                "results": results,
+            }
+    return {"success": true, "results": results}
+
+func _on_committed_fact_for_execution(
+        event_kind: String,
+        values: Dictionary,
+        _receipt: Dictionary) -> void:
+    if event_kind == "technique_execution_resolved":
+        return
+    var token := str(values.get("action_token", ""))
+    if token == "" or not _active_executions.has(token):
+        return
+    var accumulator: Dictionary = _active_executions[token]
+    if str(values.get("source_kind", "")) != "technique" \
+            or str(values.get("source_id", "")) != str(accumulator.get(
+                "source_id", "")) \
+            or str(values.get("source_instance_key", "")) != str(
+                accumulator.get("source_instance_key", "")):
+        return
+    var actor = accumulator.get("actor")
+    var target = accumulator.get("target")
+    match event_kind:
+        "defense_gained":
+            if values.get("actor") == actor:
+                accumulator["actor_defense_gained"] = int(accumulator.get(
+                    "actor_defense_gained", 0)) + int(values.get(
+                        "effective_amount", 0))
+        "defense_reduced":
+            if str(values.get("cause", "direct_effect")) != "direct_effect":
+                return
+            var removed := int(values.get("effective_amount", 0))
+            if values.get("target") == actor:
+                accumulator["actor_defense_lost"] = int(accumulator.get(
+                    "actor_defense_lost", 0)) + removed
+            elif values.get("target") == target:
+                accumulator["target_defense_lost"] = int(accumulator.get(
+                    "target_defense_lost", 0)) + removed
+        "life_recovered":
+            accumulator["life_recovered"] = int(accumulator.get(
+                "life_recovered", 0)) + int(values.get(
+                    "recovered_amount", values.get("effective_amount", 0)))
+        "damage_resolved", "damage_blocked":
+            _accumulate_damage_fact(
+                accumulator, event_kind, values, actor, target)
+
+func _accumulate_damage_fact(
+        accumulator: Dictionary,
+        event_kind: String,
+        values: Dictionary,
+        actor,
+        target) -> void:
+    accumulator["requested_damage_total"] = int(accumulator.get(
+        "requested_damage_total", 0)) + int(values.get(
+            "requested_damage", values.get("requested_amount", values.get(
+                "amount", 0))))
+    accumulator["final_damage_total"] = int(accumulator.get(
+        "final_damage_total", 0)) + int(values.get(
+            "final_damage", values.get("final_amount", values.get("amount", 0))))
+    accumulator["damage_segment_count"] = int(accumulator.get(
+        "damage_segment_count", 0)) + 1
+    var damage_type := str(values.get("damage_type", "normal"))
+    var count_field := "%s_segment_count" % damage_type
+    if accumulator.has(count_field):
+        accumulator[count_field] = int(accumulator[count_field]) + 1
+    if event_kind == "damage_blocked":
+        accumulator["blocked_segment_count"] = int(accumulator.get(
+            "blocked_segment_count", 0)) + 1
+    else:
+        var defense_lost := int(values.get("defense_lost", 0))
+        var life_lost := int(values.get("life_lost", 0))
+        if values.get("target") == actor:
+            accumulator["actor_defense_lost"] = int(accumulator.get(
+                "actor_defense_lost", 0)) + defense_lost
+            accumulator["actor_life_lost"] = int(accumulator.get(
+                "actor_life_lost", 0)) + life_lost
+        elif values.get("target") == target:
+            accumulator["target_defense_lost"] = int(accumulator.get(
+                "target_defense_lost", 0)) + defense_lost
+            accumulator["target_life_lost"] = int(accumulator.get(
+                "target_life_lost", 0)) + life_lost
+        if bool(values.get("life_loss_canceled", false)):
+            accumulator["life_loss_canceled_segment_count"] = int(
+                accumulator.get("life_loss_canceled_segment_count", 0)) + 1
+    var segment_token := str(values.get("damage_segment_token", ""))
+    if segment_token != "" \
+            and not accumulator["damage_segment_tokens"].has(segment_token):
+        accumulator["damage_segment_tokens"].append(segment_token)
 
 func _card_facts(
         cards: Array, actor, target, hand_result: Dictionary,

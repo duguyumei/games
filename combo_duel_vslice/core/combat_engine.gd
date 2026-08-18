@@ -869,6 +869,7 @@ func _on_automatic_turn_end_timing(event) -> Dictionary:
     return {"success": true}
 
 func _on_flow_battle_end_timing(event) -> Dictionary:
+    technique_resolution_service.discard_all_pending_executions()
     var result: Dictionary = outcome_service.on_battle_end_timing(event)
     var cleanup_token := "timing:battle_end:%d" % int(event.serial)
     for side in [player, enemy]:

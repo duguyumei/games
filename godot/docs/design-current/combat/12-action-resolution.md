@@ -128,6 +128,8 @@
 
 四阶段冻结成功、效果尚未开始前发送一次 `action_confirmed`。一门功法完成自身效果、连势与同气结算并成功推进冻结槽位后，发送且只发送一次公共`technique_succeeded`；该事件统一公开`P₀`、`P`、精确牌型、功法ID、正式池、触发模式与槽位来源，正常、自动和调用功法不得另建成功事件。本组完成 `prepare → damage → zones → 打出卡牌离开待出区 → group_end／功法序列推进` 后，才发送一次 `action_resolved`；上下文分别明确 `technique_triggered` 和 `action_succeeded`，不能用功法 ID 是否为空推测。等待选择恢复与重复 finalizer 由行动 token 去重，不能再次发送确认、成功功法事件或重新冻结。预览、快照与只读目标数量查询不会发送任何细粒度事件。
 
+每次实际功法执行另在推进前发送唯一committed事实`technique_execution_resolved`。manual、automatic、invoked、echo和retrigger各自建立稳定`technique_execution_token`；delayed、response及response_expiry不属于新执行。该事实精确累计同一token和功法来源的已提交伤害、防御与恢复结果，原执行不包含回响或嵌套子功法结果。固定顺序是“本执行自身收尾 → 执行汇总 → 每次回响及其独立汇总 → 序列推进 → `technique_succeeded`／`technique_invocation_resolved`”。汇总Handler失败不得推进槽位；等待选择只保留累计器，恢复后提交一次；预览、启动拒绝、效果失败和行动中止不发送。
+
 卡牌实际从抽牌堆进入手牌后，先执行卡牌自身抽牌响应，再发送 `card_drawn`；批次性的 `after_normal_draw` 仍在整批正常补牌完成后发生。正常打出且没有虚无时，完整入堆顺序为：`staging → discard_pile → StatusSystem 入堆行为 → CardReshapeBattleRuntime 入堆行为 → 状态晚期入堆／CardStateLifecycle → card_entered_discard`，不发送 `card_explicitly_discarded`。没有虚无的真气被明确弃牌成功时沿用相同自身响应顺序，随后固定发送 `card_entered_discard → card_explicitly_discarded`，每张牌各一次。
 
 虚无牌在正式提交打出或成功明确弃牌后进入短暂的动作响应区，而不进入弃牌堆。正常打出时先完成该牌与本次打出直接相关的响应，再消散；明确弃牌时仍视为弃牌成功，冻结离手前信息并发送一次 `card_explicitly_discarded`，完成全部明确弃牌响应后再消散。两条路径都不发送 `card_entered_discard`，也不运行任何入堆行为。仅为预览进入待出区不会触发虚无；等待选择恢复或重复收口必须按卡牌实体与动作 token 去重，不能重复发送响应或重复消散。

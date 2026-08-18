@@ -290,6 +290,22 @@ macOS CA 证书警告外没有脚本加载、文件缺失、解析错误或脚�
 后续状态：首批4门已经按本文件顶部证据正式接入；其余21门仍只存在于候选池权威文档，
 不得加入心得、奖励、修习商店、敌人装配或生产序列。
 
+## 功法执行汇总事实（2026-08-18，公共底层已完成）
+
+唯一正式事件`technique_execution_resolved`由`TechniqueResolutionService`在一门功法自身效果与
+连势/同气收尾完成、回响及序列推进前提交。manual、automatic、invoked、echo和retrigger共用同一
+执行边界，但每次实际执行拥有独立稳定token；delayed、response、response_expiry、预览、失败和
+启动拒绝不产生汇总。
+
+汇总按精确execution token和完整功法来源身份累计既有committed事实，公开实际防御获得/减少、实际
+生命损失/恢复、请求与最终伤害、普通/真伤/毒伤/格挡/生命取消段数及segment tokens。原执行先汇总，
+再按序执行并分别汇总回响，最后推进序列并保留既有`technique_succeeded`与调用完成事件。
+continuation恢复和receipt重放不会重复发送；失败、中止、重置与战斗结束会清理未完成累计器。
+
+本节只表示公共底层可用。《厚壁通脉》和《护焰周天》仍未接入；护焰层数、来源计数器、具体Handler
+及下一批`technique_echo_plan_mutation`均未实现。新增独立专项入口为
+`tests/test_technique_execution_summary.gd`。
+
 ## 当前正式目录（2026-08-16）
 
 正式目录共228门：基础通用功法`basic_scatter`、`basic_guard`与226门非内建正式功法。五个正式池分布为高牌60、对子54、三条35、顺子37、炸弹40；完整稳定ID与池归属见[扩展正式功法索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)。全部226门非内建内容均为独立`.tres`、`formal_complete`、`built_in=false`、普通装配上限1，并进入对应正式修习候选。

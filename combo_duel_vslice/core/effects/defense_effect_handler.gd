@@ -31,7 +31,7 @@ func execute(effect: Dictionary, context):
             var amount: int = (
                 runtime.ports.add_defense(
                     side, resolved, runtime.source_kind,
-                    runtime.action_token)
+                    runtime.action_token, runtime.source_metadata())
                 if runtime.ports != null else side.add_defense(resolved))
             return EffectResultScript.succeeded("获得 %d 防御" % amount)
         "defense_from_noncontributing_qi":
@@ -39,7 +39,7 @@ func execute(effect: Dictionary, context):
             var amount: int = (
                 runtime.ports.add_defense(
                     runtime.actor, resolved, runtime.source_kind,
-                    runtime.action_token)
+                    runtime.action_token, runtime.source_metadata())
                 if runtime.ports != null else runtime.actor.add_defense(resolved))
             return EffectResultScript.succeeded("额外真气转化 %d 防御" % amount)
         "remove_defense":
@@ -52,7 +52,8 @@ func execute(effect: Dictionary, context):
             var result: Dictionary = runtime.ports.remove_defense(
                 side, requested, remove_all, runtime.actor, runtime.source_kind,
                 runtime.action_token, str(effect.get("cause", "direct_effect")),
-                bool(effect.get("require_full", false)))
+                bool(effect.get("require_full", false)),
+                runtime.source_metadata())
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "移除防御失败")))
             var removed: int = int(result.get("removed", 0))

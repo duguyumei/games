@@ -263,37 +263,63 @@ func execute(effect: Dictionary, context):
             if runtime.trigger_mode == "echo":
                 return EffectResultScript.succeeded("回响不递归")
             var count: int = value_resolver.resolve(effect.get("count", 0), runtime)
-            var completed := 0
-            for index in range(maxi(0, count)):
-                var child_context = EffectContextScript.new().configure({
-                    "ports": runtime.ports, "actor": runtime.actor, "target": runtime.target,
-                    "hand_result": runtime.hand_result, "played_cards": runtime.played_cards,
-                    "power": runtime.power, "initial_power": runtime.initial_power,
-                    "direct_power_fixed": runtime.direct_power_fixed,
-                    "direct_power_percent": runtime.direct_power_percent,
-                    "pre_momentum_power": runtime.pre_momentum_power,
-                    "momentum_used": runtime.momentum_used,
-                    "technique_id": runtime.technique_id,
-                    "technique_name": runtime.technique_name,
-                    "actual_hand_id": runtime.actual_hand_id,
-                    "branch_hand_id": runtime.branch_hand_id,
-                    "technique_pool": runtime.technique_pool,
-                    "action_token": "%s:echo:%d" % [runtime.action_token, index],
-                    "source_kind": runtime.source_kind,
-                    "source_id": runtime.source_id, "source_name": runtime.source_name,
-                    "source_instance_key": runtime.source_instance_key,
-                    "trigger_mode": "echo", "captures": {},
-                    "sequence_book": runtime.sequence_book,
-                    "card_identity_policy": runtime.card_identity_policy,
-                    "group_snapshot": runtime.group_snapshot,
+            if runtime.source_kind != "technique":
+                return EffectResultScript.failed("回响缺少正式功法执行上下文")
+            # 仅保留给直接 EffectExecutor 内容测试的低层兼容路径；正式战斗入口
+            # 都显式提供 execution token，并走下方的推进前计划队列。
+            if runtime.technique_execution_token == "":
+                return _execute_legacy_echoes(
+                    runtime, maxi(0, count), effect.get("effects", []))
+            var state: Dictionary = runtime.technique_execution_state
+            if not state.has("pending_echo_plans"):
+                state["pending_echo_plans"] = []
+            if not state.has("next_echo_index"):
+                state["next_echo_index"] = 0
+            for _index in range(maxi(0, count)):
+                var echo_index := int(state["next_echo_index"])
+                state["next_echo_index"] = echo_index + 1
+                state["pending_echo_plans"].append({
+                    "echo_index": echo_index,
+                    "effects": effect.get("effects", []).duplicate(true),
                 })
-                var result: Dictionary = runtime.ports.execute_effect_chain(
-                    effect.get("effects", []), child_context)
-                if not result.get("success", false):
-                    return EffectResultScript.failed(str(result.get("reason", "功法回响失败")))
-                completed += 1
-            return EffectResultScript.succeeded("功法回响%d次" % completed)
+            return EffectResultScript.succeeded("登记功法回响%d次" % maxi(0, count))
     return EffectResultScript.failed("集合处理器不支持此操作")
+
+func _execute_legacy_echoes(runtime, count: int, effects: Array):
+    var completed := 0
+    for index in range(count):
+        var child_context = EffectContextScript.new().configure({
+            "ports": runtime.ports, "actor": runtime.actor,
+            "target": runtime.target, "hand_result": runtime.hand_result,
+            "played_cards": runtime.played_cards, "power": runtime.power,
+            "initial_power": runtime.initial_power,
+            "direct_power_fixed": runtime.direct_power_fixed,
+            "direct_power_percent": runtime.direct_power_percent,
+            "pre_momentum_power": runtime.pre_momentum_power,
+            "momentum_used": runtime.momentum_used,
+            "technique_id": runtime.technique_id,
+            "technique_name": runtime.technique_name,
+            "actual_hand_id": runtime.actual_hand_id,
+            "branch_hand_id": runtime.branch_hand_id,
+            "technique_pool": runtime.technique_pool,
+            "action_token": "%s:echo:%d" % [runtime.action_token, index],
+            "root_action_token": runtime.root_action_token,
+            "source_kind": runtime.source_kind,
+            "source_id": runtime.source_id,
+            "source_name": runtime.source_name,
+            "source_instance_key": runtime.source_instance_key,
+            "trigger_mode": "echo", "captures": {},
+            "sequence_book": runtime.sequence_book,
+            "card_identity_policy": runtime.card_identity_policy,
+            "group_snapshot": runtime.group_snapshot,
+        })
+        var result: Dictionary = runtime.ports.execute_effect_chain(
+            effects, child_context)
+        if not result.get("success", false):
+            return EffectResultScript.failed(str(result.get(
+                "reason", result.get("detail", "功法回响失败"))))
+        completed += 1
+    return EffectResultScript.succeeded("功法回响%d次" % completed)
 
 func _matches_reshape(card, category: String, reshape_id: String) -> bool:
     match category:

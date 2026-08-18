@@ -93,6 +93,32 @@ var transfer_peer_card_id: String = ""
 var transfer_direction: String = ""
 var card_base_qi: int = 0
 var current_base_qi: int = 0
+var technique_execution_token: String = ""
+var root_action_token: String = ""
+var invocation_token: String = ""
+var caller_technique_id: String = ""
+var is_echo: bool = false
+var manual_effect_suppressed: bool = false
+var sequence_advance_requested: bool = false
+var same_qi_gain_enabled: bool = false
+var momentum_enabled: bool = false
+var actor_defense_gained: int = 0
+var actor_defense_lost: int = 0
+var target_defense_lost: int = 0
+var actor_life_lost: int = 0
+var target_life_lost: int = 0
+var target_total_reduction: int = 0
+var life_recovered: int = 0
+var requested_damage_total: int = 0
+var final_damage_total: int = 0
+var damage_segment_count: int = 0
+var normal_segment_count: int = 0
+var true_segment_count: int = 0
+var poison_segment_count: int = 0
+var blocked_segment_count: int = 0
+var life_loss_canceled_segment_count: int = 0
+var damage_segment_tokens: Array = []
+var sequence_before: Array = []
 
 func configure(values: Dictionary):
     super.configure(values)
@@ -193,6 +219,37 @@ func configure(values: Dictionary):
     transfer_direction = str(values.get("transfer_direction", ""))
     card_base_qi = int(values.get("card_base_qi", 0))
     current_base_qi = int(values.get("current_base_qi", 0))
+    technique_execution_token = str(values.get(
+        "technique_execution_token", ""))
+    root_action_token = str(values.get("root_action_token", action_token))
+    invocation_token = str(values.get("invocation_token", ""))
+    caller_technique_id = str(values.get("caller_technique_id", ""))
+    is_echo = bool(values.get("is_echo", false))
+    manual_effect_suppressed = bool(values.get(
+        "manual_effect_suppressed", false))
+    sequence_advance_requested = bool(values.get(
+        "sequence_advance_requested", false))
+    same_qi_gain_enabled = bool(values.get("same_qi_gain_enabled", false))
+    momentum_enabled = bool(values.get("momentum_enabled", false))
+    actor_defense_gained = int(values.get("actor_defense_gained", 0))
+    actor_defense_lost = int(values.get("actor_defense_lost", 0))
+    target_defense_lost = int(values.get("target_defense_lost", 0))
+    actor_life_lost = int(values.get("actor_life_lost", 0))
+    target_life_lost = int(values.get("target_life_lost", 0))
+    target_total_reduction = int(values.get("target_total_reduction", 0))
+    life_recovered = int(values.get("life_recovered", 0))
+    requested_damage_total = int(values.get("requested_damage_total", 0))
+    final_damage_total = int(values.get("final_damage_total", 0))
+    damage_segment_count = int(values.get("damage_segment_count", 0))
+    normal_segment_count = int(values.get("normal_segment_count", 0))
+    true_segment_count = int(values.get("true_segment_count", 0))
+    poison_segment_count = int(values.get("poison_segment_count", 0))
+    blocked_segment_count = int(values.get("blocked_segment_count", 0))
+    life_loss_canceled_segment_count = int(values.get(
+        "life_loss_canceled_segment_count", 0))
+    damage_segment_tokens = values.get(
+        "damage_segment_tokens", []).duplicate()
+    sequence_before = values.get("sequence_before", []).duplicate(true)
     return self
 
 func for_invocation(current_invocation):
@@ -294,6 +351,32 @@ func for_invocation(current_invocation):
         "transfer_direction": transfer_direction,
         "card_base_qi": card_base_qi,
         "current_base_qi": current_base_qi,
+        "technique_execution_token": technique_execution_token,
+        "root_action_token": root_action_token,
+        "invocation_token": invocation_token,
+        "caller_technique_id": caller_technique_id,
+        "is_echo": is_echo,
+        "manual_effect_suppressed": manual_effect_suppressed,
+        "sequence_advance_requested": sequence_advance_requested,
+        "same_qi_gain_enabled": same_qi_gain_enabled,
+        "momentum_enabled": momentum_enabled,
+        "actor_defense_gained": actor_defense_gained,
+        "actor_defense_lost": actor_defense_lost,
+        "target_defense_lost": target_defense_lost,
+        "actor_life_lost": actor_life_lost,
+        "target_life_lost": target_life_lost,
+        "target_total_reduction": target_total_reduction,
+        "life_recovered": life_recovered,
+        "requested_damage_total": requested_damage_total,
+        "final_damage_total": final_damage_total,
+        "damage_segment_count": damage_segment_count,
+        "normal_segment_count": normal_segment_count,
+        "true_segment_count": true_segment_count,
+        "poison_segment_count": poison_segment_count,
+        "blocked_segment_count": blocked_segment_count,
+        "life_loss_canceled_segment_count": life_loss_canceled_segment_count,
+        "damage_segment_tokens": damage_segment_tokens,
+        "sequence_before": sequence_before,
         "payload": payload,
         "source": current_invocation.source,
         "invocation": current_invocation,
@@ -392,6 +475,32 @@ func public_effect_values() -> Dictionary:
         "transfer_direction": transfer_direction,
         "card_base_qi": card_base_qi,
         "current_base_qi": current_base_qi,
+        "technique_execution_token": technique_execution_token,
+        "root_action_token": root_action_token,
+        "invocation_token": invocation_token,
+        "caller_technique_id": caller_technique_id,
+        "is_echo": is_echo,
+        "manual_effect_suppressed": manual_effect_suppressed,
+        "sequence_advance_requested": sequence_advance_requested,
+        "same_qi_gain_enabled": same_qi_gain_enabled,
+        "momentum_enabled": momentum_enabled,
+        "actor_defense_gained": actor_defense_gained,
+        "actor_defense_lost": actor_defense_lost,
+        "target_defense_lost": target_defense_lost,
+        "actor_life_lost": actor_life_lost,
+        "target_life_lost": target_life_lost,
+        "target_total_reduction": target_total_reduction,
+        "life_recovered": life_recovered,
+        "requested_damage_total": requested_damage_total,
+        "final_damage_total": final_damage_total,
+        "damage_segment_count": damage_segment_count,
+        "normal_segment_count": normal_segment_count,
+        "true_segment_count": true_segment_count,
+        "poison_segment_count": poison_segment_count,
+        "blocked_segment_count": blocked_segment_count,
+        "life_loss_canceled_segment_count": life_loss_canceled_segment_count,
+        "damage_segment_tokens": damage_segment_tokens.duplicate(),
+        "sequence_before": sequence_before.duplicate(true),
         "metadata": metadata.duplicate(true),
     }, true)
     return result

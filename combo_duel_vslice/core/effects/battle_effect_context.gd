@@ -33,6 +33,11 @@ var root_action_token: String = ""
 var invocation_token: String = ""
 var caller_technique_id: String = ""
 var slot_instance_id: String = ""
+## 一次实际功法执行的稳定身份。root action 与 execution identity 分离，
+## 细粒度事实仍统一使用这个 token 作为 action_token。
+var technique_execution_token: String = ""
+## 同一次执行跨 phase/continuation 共用的窄状态，只保存待运行回响计划及稳定序号。
+var technique_execution_state: Dictionary = {}
 var trigger_mode: String = "manual"
 var source_kind: String = ""
 var source_id: String = ""
@@ -94,6 +99,10 @@ func configure(values: Dictionary):
     invocation_token = str(values.get("invocation_token", ""))
     caller_technique_id = str(values.get("caller_technique_id", ""))
     slot_instance_id = str(values.get("slot_instance_id", ""))
+    technique_execution_token = str(values.get(
+        "technique_execution_token", ""))
+    technique_execution_state = values.get(
+        "technique_execution_state", {})
     var source: Dictionary = EffectSourceProtocolScript.from_values(values)
     trigger_mode = str(source["trigger_mode"])
     source_kind = str(source["source_kind"])
@@ -173,6 +182,7 @@ func public_metadata() -> Dictionary:
         "invocation_token": invocation_token,
         "caller_technique_id": caller_technique_id,
         "slot_instance_id": slot_instance_id,
+        "technique_execution_token": technique_execution_token,
         "trigger_mode": trigger_mode,
         "source_kind": source_kind,
         "source_id": source_id,

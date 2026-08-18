@@ -24,7 +24,8 @@ func execute(effect: Dictionary, context):
         return EffectResultScript.failed("生命恢复目标作用域不存在")
     var amount: int = int(value_resolver.resolve(effect.get("amount", 0), runtime))
     var result: Dictionary = runtime.ports.recover_life(
-        side, amount, runtime.source_kind, runtime.action_token, runtime.actor)
+        side, amount, runtime.source_kind, runtime.action_token, runtime.actor,
+        runtime.source_metadata())
     if not result.get("success", false):
         return EffectResultScript.failed(str(result.get("reason", "生命恢复失败")))
     var capture_id := str(effect.get("capture", ""))

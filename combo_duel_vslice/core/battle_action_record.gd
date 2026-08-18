@@ -1,7 +1,7 @@
 class_name BattleActionRecord
 extends RefCounted
 
-const SCHEMA_VERSION := 7
+const SCHEMA_VERSION := 8
 
 var actor
 var target
@@ -22,6 +22,8 @@ var technique_activation_checked: bool = false
 var technique_activation_allowed: bool = false
 var technique_activation_reason: String = ""
 var technique_activation_breakdown: Array = []
+var technique_execution_token: String = ""
+var technique_execution_state: Dictionary = {}
 
 func configure(
         action_actor,
@@ -54,6 +56,8 @@ func configure(
     technique_activation_reason = str(activation.get("reason", ""))
     technique_activation_breakdown = activation.get(
         "source_breakdown", []).duplicate(true)
+    technique_execution_token = ""
+    technique_execution_state.clear()
     return self
 
 func snapshot() -> Dictionary:
@@ -85,6 +89,7 @@ func snapshot() -> Dictionary:
         "caller_technique_id": "",
         "manual_effect_suppressed": str(preview.get(
             "technique", {}).get("manual_effect_mode", "normal")) == "advance_only",
+        "technique_execution_token": technique_execution_token,
         "reshape_action_confirmed": bool(preview.get("reshape_action_confirmed", false)),
         "reshape_action_results": preview.get(
             "reshape_action_results", {}).duplicate(true),
@@ -136,4 +141,6 @@ func to_dict() -> Dictionary:
         "technique_activation_allowed": technique_activation_allowed,
         "technique_activation_reason": technique_activation_reason,
         "technique_activation_breakdown": technique_activation_breakdown,
+        "technique_execution_token": technique_execution_token,
+        "technique_execution_state": technique_execution_state,
     }

@@ -89,6 +89,8 @@ func deal_damage(
         return buffered
 
     final_override = int(resolved_amount["amount"])
+    resolved_metadata["requested_damage"] = amount
+    resolved_metadata["final_damage"] = int(final_override)
     var damage_segment_token := _next_damage_segment_token(
         actor, target, action_token)
     resolved_metadata["damage_segment_token"] = damage_segment_token
@@ -125,7 +127,7 @@ func deal_damage(
         actor, target, amount, source_kind, resolved_type, result, false,
         action_token, source_metadata)
     _emit_damage_absorption_defense_reduced(
-        actor, target, result, source_kind, action_token)
+        actor, target, result, source_kind, action_token, source_metadata)
     result["reflection_result"] = _resolve_reflection(
         actor, target, source_kind, resolved_type, result, action_token,
         resolved_metadata)
@@ -270,16 +272,21 @@ func add_defense(
         side: BattleSide,
         amount: int,
         source_kind: String = "effect",
-        action_token: String = "") -> int:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> int:
     return int(add_defense_result(
-        side, amount, source_kind, action_token).get("gained", 0))
+        side, amount, source_kind, action_token,
+        source_metadata).get("gained", 0))
 
 
 func add_defense_result(
         side: BattleSide,
         amount: int,
         source_kind: String = "effect",
-        action_token: String = "") -> Dictionary:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var resolved_source_kind := str(source_metadata.get(
+        "source_kind", source_kind))
     var requested := maxi(0, amount)
     if requested <= 0:
         return {"success": true, "gained": 0, "requested": requested}
@@ -289,11 +296,11 @@ func add_defense_result(
             "hook": "defense_gain_query",
             "owner": side, "actor": side,
             "subject_kind": "defense_gain",
-            "subject_id": source_kind,
+            "subject_id": resolved_source_kind,
             "base_value": requested,
             "round_number": _round_number(),
             "action_token": action_token,
-            "source_kind": source_kind,
+            "source_kind": resolved_source_kind,
         })
         if not query.success:
             _battle_rule_query_service.report_failure(query, "defense_gain")
@@ -315,19 +322,23 @@ func add_defense_result(
     var gained := side.add_defense(effective)
     if gained > 0 and _committed_event_service != null:
         var serial: int = int(_committed_event_service.next_serial())
-        _committed_event_service.commit("defense_gained", {
+        var values := {
             "event_token": _committed_event_service.make_token(
                 "defense_gained", side, serial, action_token),
             "event_serial": serial,
             "actor": side, "owner": side,
             "round_number": _round_number(),
             "action_token": action_token,
-            "source_kind": source_kind,
+            "source_kind": resolved_source_kind,
             "requested_amount": requested,
             "effective_amount": gained,
             "defense_before": before,
             "defense_after": int(side.defense),
-        })
+        }
+        for field in ["source_id", "source_name", "source_instance_key", "trigger_mode"]:
+            if source_metadata.has(field):
+                values[field] = source_metadata[field]
+        _committed_event_service.commit("defense_gained", values)
     return {
         "success": true,
         "gained": gained,
@@ -343,7 +354,10 @@ func recover_life(
         amount: int,
         source_kind: String = "effect",
         action_token: String = "",
-        source_actor = null) -> Dictionary:
+        source_actor = null,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var resolved_source_kind := str(source_metadata.get(
+        "source_kind", source_kind))
     var requested := maxi(0, amount)
     var effective := requested
     if requested > 0 and _battle_rule_query_service != null:
@@ -351,9 +365,9 @@ func recover_life(
             "hook": "life_recovery_query", "owner": side,
             "actor": source_actor if source_actor != null else side,
             "target": side, "subject_kind": "life_recovery",
-            "subject_id": source_kind, "base_value": requested,
+            "subject_id": resolved_source_kind, "base_value": requested,
             "round_number": _round_number(), "action_token": action_token,
-            "source_kind": source_kind,
+            "source_kind": resolved_source_kind,
         })
         if not query.success:
             _battle_rule_query_service.report_failure(query, "life_recovery")
@@ -372,9 +386,12 @@ func recover_life(
             "requested_amount": requested, "effective_amount": effective,
             "recovered_amount": recovered, "life_before": before,
             "life_after": int(side.life), "max_life": int(side.max_life),
-            "source_kind": source_kind, "action_token": action_token,
+            "source_kind": resolved_source_kind, "action_token": action_token,
             "round_number": _round_number(),
         }
+        for field in ["source_id", "source_name", "source_instance_key", "trigger_mode"]:
+            if source_metadata.has(field):
+                values[field] = source_metadata[field]
         if _committed_event_service != null:
             var serial := int(_committed_event_service.next_serial())
             values["event_serial"] = serial
@@ -397,7 +414,10 @@ func remove_defense(
         source_kind: String = "effect",
         action_token: String = "",
         cause: String = "direct_effect",
-        require_full: bool = false) -> Dictionary:
+        require_full: bool = false,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var resolved_source_kind := str(source_metadata.get(
+        "source_kind", source_kind))
     var before := int(side.defense)
     var requested := before if remove_all else maxi(0, amount)
     if require_full and not remove_all and before < requested:
@@ -424,10 +444,13 @@ func remove_defense(
         "requested_amount": requested,
         "effective_amount": removed, "defense_before": before,
         "defense_after": int(side.defense), "all": remove_all,
-        "hostile": hostile, "source_kind": source_kind,
+        "hostile": hostile, "source_kind": resolved_source_kind,
         "cause": cause, "action_token": action_token,
         "round_number": _round_number(),
     }
+    for field in ["source_id", "source_name", "source_instance_key", "trigger_mode"]:
+        if source_metadata.has(field):
+            values[field] = source_metadata[field]
     if _committed_event_service != null:
         var serial := int(_committed_event_service.next_serial())
         values["event_serial"] = serial
@@ -735,6 +758,8 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
     if not resolved.get("success", false):
         return resolved
     var final_amount := maxi(0, int(resolved.get("amount", 0)))
+    metadata["requested_damage"] = requested_amount
+    metadata["final_damage"] = final_amount
     var segment_token := _next_damage_segment_token(
         actor, target, resolved_action_token)
     metadata["damage_segment_token"] = segment_token
@@ -776,7 +801,7 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
         actor, target, requested_amount, source_kind, damage_type,
         result, true, resolved_action_token, metadata)
     _emit_damage_absorption_defense_reduced(
-        actor, target, result, source_kind, resolved_action_token)
+        actor, target, result, source_kind, resolved_action_token, metadata)
     var reflection := _resolve_reflection(
         actor, target, source_kind, damage_type, result,
         resolved_action_token, metadata)
@@ -1040,6 +1065,12 @@ func _emit_damage_blocked(
         "actor": actor, "attacker": actor,
         "target": target, "defender": target, "holder": target,
         "amount": amount, "attack_amount": amount,
+        "requested_amount": int(source_metadata.get(
+            "requested_damage", amount)),
+        "requested_damage": int(source_metadata.get(
+            "requested_damage", amount)),
+        "final_amount": int(source_metadata.get("final_damage", amount)),
+        "final_damage": int(source_metadata.get("final_damage", amount)),
         "damage_type": damage_type, "true_damage": damage_type == "true",
         "source_kind": source_kind,
         "source_token": str(source.get("source_token", "")),
@@ -1048,6 +1079,8 @@ func _emit_damage_blocked(
         "damage_segment_token": damage_segment_token,
         "cause": str(source_metadata.get("cause", "damage")),
         "direct_attack": bool(source_metadata.get("direct_attack", false)),
+        "reflection_damage": bool(source_metadata.get(
+            "reflection_damage", false)),
         "source_metadata": source.get("metadata", {}).duplicate(true),
     }
     for field in [
@@ -1071,7 +1104,8 @@ func _emit_damage_blocked(
 
 func _emit_damage_absorption_defense_reduced(
         actor, target, result: Dictionary, source_kind: String,
-        action_token: String) -> void:
+        action_token: String,
+        source_metadata: Dictionary = {}) -> void:
     var removed := int(result.get("defense_lost", 0))
     if removed <= 0 or target == null:
         return
@@ -1082,9 +1116,13 @@ func _emit_damage_absorption_defense_reduced(
         "defense_before": int(result.get("defense_before", after + removed)),
         "defense_after": after,
         "all": false, "hostile": actor != null and actor != target,
-        "source_kind": source_kind, "cause": "damage_absorption",
+        "source_kind": str(source_metadata.get("source_kind", source_kind)),
+        "cause": "damage_absorption",
         "action_token": action_token, "round_number": _round_number(),
     }
+    for field in ["source_id", "source_name", "source_instance_key", "trigger_mode"]:
+        if source_metadata.has(field):
+            values[field] = source_metadata[field]
     if _committed_event_service != null:
         var serial := int(_committed_event_service.next_serial())
         values["event_serial"] = serial

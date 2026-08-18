@@ -117,7 +117,8 @@ func retrigger_current_hand_technique(
         sequence_book,
         power_snapshot: Dictionary,
         maximum_discard: int,
-        excluded_technique_ids: Array) -> Dictionary:
+        excluded_technique_ids: Array,
+        execution_context = null) -> Dictionary:
     if not _hand_retrigger_callback.is_valid():
         return {"success": false, "detail": "当前未连接功法重触端口"}
     return _hand_retrigger_callback.call(
@@ -126,7 +127,8 @@ func retrigger_current_hand_technique(
         sequence_book,
         power_snapshot,
         maximum_discard,
-        excluded_technique_ids)
+        excluded_technique_ids,
+        execution_context)
 
 
 func _effect_executor():

@@ -1511,3 +1511,21 @@ committed事件守卫与既有失败报告协议，没有增加生命Service、�
 `ComboDamageResolver.apply_to_target`与`BattleSide.receive_damage`仅作为无BattleRuntime装配的兼容/
 测试入口保留，正式战斗写入只经`BattleEffectPorts`Facade。本批未实现余垣护命、一甲断锋、万木代命、
 护焰周天、真气支付、护焰层数或卸力。
+
+## 2026-08-18 功法执行唯一汇总事实
+
+`TechniqueResolutionService`现持有窄的execution accumulator，并以唯一committed事件
+`technique_execution_resolved`收口manual、automatic、invoked、echo与retrigger。没有新增功法执行器、
+回响执行器或事件总线；`TechniqueInvocationService`仍负责调用token、移动、递归保护和receipt，
+`EffectExecutor`仍负责效果链与continuation，`BattlePassiveCommittedEventService`仍负责事件事务和幂等。
+
+累计器只观察精确execution token且来源身份完全相同的既有细粒度committed事实。防御吸收不重复读取
+`defense_reduced(cause=damage_absorption)`；直接削防排除cost/decay/reset；内功、物品、异状响应和子功法
+均因token或来源不匹配而隔离。汇总公开实际防御/生命变化、恢复、请求/最终伤害、类型段数、格挡段、
+生命取消段与稳定segment tokens，并固定`target_total_reduction=target_defense_lost+target_life_lost`。
+
+正式边界先完成本次自身收尾并提交汇总，再执行登记的回响子计划；每次回响拥有子token和独立汇总，
+随后才推进槽位并发送既有成功/调用完成事件。continuation保留累计器，恢复后只收口一次；Handler失败、
+效果失败、中止、重置和战斗结束会丢弃未完成记录。`BattleEventCatalog`、被动事件Context、动态/自动
+白名单、AI公开历史及ConditionSpec均已接入该事件。本批未实现《厚壁通脉》《护焰周天》或
+`technique_echo_plan_mutation`。

@@ -237,7 +237,8 @@ func execute(effect: Dictionary, context):
                 runtime.sequence_book,
                 runtime.power_snapshot(),
                 int(effect.get("maximum_discard", 6)),
-                effect.get("excluded_technique_ids", []))
+                effect.get("excluded_technique_ids", []),
+                runtime)
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("detail", "功法重触失败")))
             return EffectResultScript.succeeded(str(result.get("detail", "功法重触完成")))

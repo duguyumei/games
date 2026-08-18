@@ -795,3 +795,22 @@ request fingerprint。后续需要支付代价的保护必须以伤害段令牌�
 flush开始时复用BattleSide状态快照、`BattlePassiveCommittedEventService`事务状态与publication
 transaction、触发队列/结构化日志快照。任一后段或反震段失败时恢复整批生命、防御、被动状态、
 receipt、事件序号、待发布事件、行动统计与日志；`ActionResolver`必须把失败升级为当前行动失败。
+
+## 功法执行汇总事实协议（2026-08-18）
+
+每门功法的一次实际执行只由`TechniqueResolutionService`建立稳定
+`technique_execution_token`并在完成边界提交一次`technique_execution_resolved`。手动执行由根行动
+token、精确牌型和槽位实例组成token；调用/自动复用`invocation_token`；回响使用父token加稳定序号；
+retrigger使用根行动、重触序号和槽位实例。等待选择恢复复用原token，committed receipt重放不得建立
+第二份汇总。预览和AI候选枚举不建立累计器。
+
+汇总不使用整次行动的角色净变化，而是弱监听已经提交的`damage_resolved/damage_blocked`、
+`defense_gained/defense_reduced`与`life_recovered`，并同时校验execution token、
+`source_kind=technique`、source ID和稳定实例键。伤害吸收只读取`damage_resolved.defense_lost`，忽略随后
+`cause=damage_absorption`的防御事件；直接削防只接受`cause=direct_effect`，cost/decay/reset不算收益。
+内功、物品、异状响应及嵌套子功法因此不会污染父执行。
+
+固定顺序为：本次效果与自身连势/同气收尾 → `technique_execution_resolved` → 按稳定计划执行每次回响
+并各自汇总 → 当前槽位推进 → 既有`technique_succeeded/technique_invocation_resolved`。汇总Handler失败
+必须阻止槽位推进并向行动边界传播。行动中止、效果失败、战斗重置和战斗结束都清除未完成累计器。
+本协议没有新增执行器、回响Service或事件总线，也没有实现下一批`technique_echo_plan_mutation`。
