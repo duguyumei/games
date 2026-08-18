@@ -919,7 +919,7 @@ Run内容通过`GrowthInventory.grant_item/remove_item`执行物品原语，并�
 
 ## 九项核心C2完成后的内容接入门禁（2026-08-18）
 
-九项核心C2均已完成，剩余C2为0；首批回响/序列内功接入后，能力矩阵当前为B 13、C1 22、D 1。后续任务必须按
+九项核心C2均已完成，剩余C2为0；`run_combat_history_facts`与卫星接入后，能力矩阵当前为B 13、C1 21、D 1。后续任务必须按
 `merge_family`组织同类消费者，不再把一个`capability_key`机械等同于一个新Service或一个独立批次。
 
 内容接入前先选择下列唯一边界：
@@ -976,4 +976,35 @@ battle/public/clear marker，record必须含稳定目标槽位、次数、来源
 恢复双方状态、counter/marker、RNG、committed receipt/publication、触发队列、日志和execution state。
 
 本批已正式接入二转余音、初鸣复唱、六转成章、双位同鸣、应机复响、烬法重鸣、受阻愈烈、临诀燃灯和烬步催轮。
-它们的A/B/C标签只保留为历史复杂度，不再表示未实现。其他157门内功、20件物品和8门暂缓功法仍未接入。
+它们的A/B/C标签只保留为历史复杂度，不再表示未实现。卫星随后通过统一Run历史接入；其他156门内功、20件物品和8门暂缓功法仍未接入。
+
+## 本局战斗成功历史与卫星（2026-08-18）
+
+`RunCombatHistory`是`run_combat_history_facts`唯一结构所有者，固定保存按字典序去重的稳定功法ID和八种
+精确牌型的完整非负计数。它提供记录、查询、并列最高牌型、快照、恢复、绝对替换与合并；
+`BattleSide`、`GrowthInventory`、`RunProgressSnapshot`和`RunSaveData`只传递其完整snapshot，不复制默认值、
+排序或校验算法。ValueSpec使用`kind=run_combat_history`读取整数指标，列表候选直接读取值对象，不解析日志、
+不推进RNG，也不发布事件。
+
+玩家`BattleSide`通过`BattlePassiveCommittedEventService`弱监听已经成功提交的
+`technique_execution_resolved`：非echo执行按稳定`technique_id`去重；只有manual执行按自身`hand_id`增加
+牌型次数，automatic与invoked只记功法。预览、AI、失败、等待未完成、echo及receipt重放都不会形成新增
+历史。publication仍受`BattleRuntimeMutationTransaction`控制，因此后续Handler或回响失败时历史与双方状态、
+counter/marker、receipt、事件和RNG一起恢复，不另建历史token仓库。
+
+战斗建立从`GrowthInventory`经`RunProgressSnapshot`复制累计历史到玩家工作副本；胜利战果先把工作副本
+绝对写回，再冻结`battle_completed`计划。战败只同步既有终局字段并恢复战前历史，退出、重新挑战、技术
+终止不提交本场历史。Run存档schema维持v1，新增字段是可选向后兼容字段；旧存档缺失时恢复为空历史，
+不会根据牌组或配装伪造，恢复也不重演功法事件。
+
+卫星（`satellite`）以罕见formal内功接入单一`run_value_effect`来源中立Handler。胜利时Handler通过通用
+`run_combat_history` ValueSpec读取累计不同功法数，再经`RunPassiveEffectPorts`与`RunMutationService`提交
+`gain_experience`；不直接修改experience，也不在RunSession或战果Service按卫星ID分支。多个副本按
+ExecutionPlan独立执行，晚获得副本可读取此前历史。本批没有实现望远镜或`practice_strategy_query`；
+望远镜所需八牌型次数与稳定并列集合已可只读使用。
+
+本能力的提交门禁为：项目加载702项；历史专项115条、功法汇总79条、战斗事务117条、保存契约133条、
+Run地图／战果1,136条、Run Save v1 202条、内功内容124条、内容契约1,080条断言全部通过；`quick` 7/7。
+独立日志使用`/tmp/taiwu-run-combat-history-*.log`，quick使用
+`/tmp/taiwu-run-combat-history-quick-02-*`。stdout与日志扫描未发现加载、解析、脚本、ObjectDB/RID、
+orphan、资源泄漏或退出阶段错误。本批按约束不运行`full`。

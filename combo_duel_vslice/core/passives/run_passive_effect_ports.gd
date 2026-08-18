@@ -28,4 +28,5 @@ func growth_snapshot() -> Dictionary:
         "learned_inner_skill_ids": _growth.learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": _growth.equipped_inner_skill_ids.duplicate(),
         "forgotten_inner_skill_count": int(_growth.forgotten_inner_skill_count),
+        "run_combat_history_state": _growth.run_combat_history.snapshot(),
     }

@@ -15,6 +15,7 @@ const SourceContributedStatServiceScript = preload(
     "res://core/source_contributed_stat_service.gd")
 const SourceMarkerAddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")
+const RunCombatHistoryScript = preload("res://core/run_combat_history.gd")
 
 const CONSUMABLE_LIMIT := 3
 const EXPERIENCE_INTEREST_STEP := 5
@@ -44,6 +45,7 @@ var last_recallable_consumable_id: String = ""
 var base_hand_limit_modifier: int = 0
 var hand_technique_multiplier_modifiers: Dictionary = {}
 var used_unique_consumable_ids: Array[String] = []
+var run_combat_history = RunCombatHistoryScript.new()
 var passive_counter_store
 var technique_loadout_policy
 var _content_catalog
@@ -91,6 +93,7 @@ func reset(
     base_hand_limit_modifier = 0
     hand_technique_multiplier_modifiers.clear()
     used_unique_consumable_ids.clear()
+    run_combat_history.clear()
     passive_counter_store.clear()
     source_marker_store.restore_snapshot({
         "schema_version": SourceMarkerStoreScript.SCHEMA_VERSION,
@@ -149,6 +152,7 @@ func capture_mutation_state() -> Dictionary:
         "base_hand_limit_modifier": base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": hand_technique_multiplier_modifiers.duplicate(true),
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
+        "run_combat_history_state": run_combat_history.snapshot(),
         "passive_counter_state": passive_counter_store.capture_state(),
     }
 
@@ -190,6 +194,11 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         }))
     if not marker_errors.is_empty():
         return marker_errors
+    var replacement_history = RunCombatHistoryScript.new()
+    var history_errors: Array[String] = replacement_history.restore_snapshot(
+        state.get("run_combat_history_state", {}))
+    if not history_errors.is_empty():
+        return history_errors
     experience = int(state["experience"])
     life = int(state["life"])
     max_life = int(state["max_life"])
@@ -216,6 +225,7 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         "hand_technique_multiplier_modifiers", {}).duplicate(true)
     used_unique_consumable_ids.assign(
         state.get("used_unique_consumable_ids", []))
+    run_combat_history = replacement_history
     passive_counter_store = replacement_counter_store
     passive_counter_store.clear_unowned(
         learned_inner_skill_ids, item_ids)
@@ -481,6 +491,7 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "base_hand_limit_modifier": base_hand_limit_modifier,
         "hand_technique_multiplier_modifiers": hand_technique_multiplier_modifiers.duplicate(true),
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
+        "run_combat_history_state": run_combat_history.snapshot(),
         "passive_counter_state": passive_counter_store.capture_state(),
     })
 
@@ -507,6 +518,11 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
     if progress_snapshot.has_used_unique_consumable_ids:
         used_unique_consumable_ids.assign(
             progress_snapshot.used_unique_consumable_ids)
+    if progress_snapshot.has_run_combat_history_state:
+        var history_errors: Array[String] = run_combat_history.restore_snapshot(
+            progress_snapshot.run_combat_history_state)
+        if not history_errors.is_empty():
+            push_error("无法导入本局战斗历史：%s" % "；".join(history_errors))
     if progress_snapshot.has_passive_counter_state:
         var counter_errors: Array[String] = passive_counter_store.replace_state(
             progress_snapshot.passive_counter_state)

@@ -5,10 +5,10 @@
 
 ## 1. 结论与计数
 
-- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。本批已有9门内功正式接入统一回响/序列协议，剩余157门、20件物品和8门暂缓功法仍未接入生产内容池。
-- Readiness：A=35，B=68，C=82，D=1，E=8，合计194。
+- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功及卫星共10门正式接入，剩余156门、20件物品和8门暂缓功法仍未接入生产内容池。
+- Readiness：A=36，B=68，C=81，D=1，E=8，合计194。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并12项，余下实现形态为B 13、C1 22、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示仍未接入这9门内功，也不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并13项，余下实现形态为B 13、C1 21、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -46,7 +46,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 十值留手 | `multiple_of_ten_cards_in_hand` | [36 §2《十值留手》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#十值留手) | action_resolved | 权威正文的资格与边界 | 每次成功行动完整结算后，手牌中每有 1 张当前有效真气值为 10 的正整数倍的真气，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | `BattleEventCatalog.COMMITTED_EVENTS`已有`action_resolved`，`BattleEffectsPassiveHandler`可执行效果；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 交易卡 | `trading_card` | [36 §3《交易卡》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#交易卡) | card_explicitly_discarded | trigger_mode/source_kind；source counter/marker | 每场战斗第一次由我方功法明确弃置我方真气时，将该次功法实际弃置的我方真气改为永久移出本局牌组，并获得 3 点历练。 | BattleSide working run state → Run committed state | 支付/移动/后效原子提交 | CardZoneService.move_card 与 BattleActionTransaction | C | card_disposition_replacement | 按能力键合并实现 |
 | inner_skill | 冲向月球 | `to_the_moon` | [36 §3《冲向月球》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#冲向月球) | node_completed | 权威正文的资格与边界 | 每次完成节点并结算功行生息后，额外获得 `floor(当前持有历练 / 5)` 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 现有 node_completed + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 卫星 | `satellite` | [36 §3《卫星》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#卫星) | battle_completed | trigger_mode/source_kind | 战斗胜利时，本局每成功触发过 1 门不同功法，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | technique_succeeded/action_resolved 与 RunProgressSnapshot 已有 | C | run_combat_history_facts | 按能力键合并实现 |
+| inner_skill | 卫星 | `satellite` | [36 §3《卫星》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#卫星) | battle_completed | trigger_mode/source_kind | 战斗胜利时，本局每成功触发过 1 门不同功法，获得 1 点历练。 | BattleSide working run state → Run committed state | RunAggregateTransaction + RunMutationService | `RunCombatHistory`、canonical `technique_execution_resolved`投影、战果合入顺序与`run_value_effect`均已接入 | A |  | 已正式接入；晚获得与多副本语义已验证 |
 | inner_skill | 璞玉 | `rough_jade` | [36 §3《璞玉》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#璞玉) | 命令提交点（见权威正文） | CardIdentityPolicy.attribute；EffectTargetQuery.anomaly/reshape | 我方当前可视为山属性且拥有任意重塑的真气，每次参与数值计算时，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 现有 命令提交点（见权威正文） + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 9霄云外 | `beyond_the_ninth_heaven` | [36 §3《9霄云外》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#9霄云外) | battle_completed | current_rank_order | 战斗胜利时，我方本局牌组中每有 1 张牌阶为 9 的真气，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 现有 battle_completed + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 斗牛 | `bull` | [36 §3《斗牛》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#斗牛) | technique_succeeded / action_resolved | trigger_mode/source_kind | 我方每次功法值的固定修正，增加等于当前持有历练的数值。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | PassiveIntPolicyResolver；power_fixed_query/power_multiplier_bonus_query；缺薄查询Handler | B | adapter:source_neutral_handler/context | 不得新增平行Service |
@@ -254,7 +254,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `effective_qi_staged_query` | query | **已有**：`BattleRuleQueryService.resolve_effective_qi`以`effective_qi_query`统一卡牌自身值、来源中立战斗修正、用途/评估模式、完整行动牌事实、来源快照、breakdown和稳定指纹；`HandGroupSnapshot`保存确认回执 | 已完成；十四个消费者仍需各自内容Handler或其他独立能力，不得据此标记已接入 | inner_skill:mirrored_qi_sea<br>inner_skill:wind_qi_value_bonus<br>inner_skill:forest_qi_value_bonus<br>inner_skill:fire_qi_value_bonus<br>inner_skill:mountain_qi_value_bonus<br>inner_skill:anomalous_qi_value_bonus<br>inner_skill:reshaped_qi_value_bonus<br>inner_skill:plain_qi_value_bonus<br>inner_skill:matching_rank_qi_value_bonus<br>inner_skill:unique_rank_qi_value_bonus<br>inner_skill:single_played_qi_value_bonus<br>inner_skill:high_rank_qi_value_bonus<br>inner_skill:five_card_action_qi_value_bonus<br>inner_skill:burnout_qi_retains_half_rank_value | BattleRuleQueryService + HandGroupSnapshot | 否 | 纯查询，无状态 / action-local confirmed snapshot | 不得复制 QiCard/CardReshapeRuleService 算法；不得与card_contribution混同 | 已完成 | preview/confirm/ai同源同值；查询不写状态、RNG、事件、历史或回执；最终值不低于0 |
 | `card_disposition_replacement` | transaction | CardZoneService.move_card 与 BattleActionTransaction | 入堆前可原子改写为放底/永久移出，并保留原因 | inner_skill:trading_card<br>inner_skill:single_qi_cycle_and_resonance<br>inner_skill:discard_to_deck_bottom | CardZoneService 的移动准备/提交阶段 | 永久移出时是 | BattleSide working run state | 消费真气不是弃牌改写 | 4 | 失败时牌区、RunDeck、事件和 RNG 全回滚 |
 | `draw_depletion_replacement_transaction` | transaction | CardZoneService.draw 与洗牌/移动端口 | 牌库耗尽时一次性洗回后继续原抽牌的门禁与回执 | inner_skill:once_per_battle_discard_recycle | CardZoneService.draw 缺牌分支 | 否 | BattleRuntime temporary state | 复用 committed_card_transition_event | 5 | 无弃牌不消费次数；有牌时继续满足原请求 |
-| `run_combat_history_facts` | state | technique_succeeded/action_resolved 与 RunProgressSnapshot 已有 | 与来源无关的本局功法ID/精确牌型成功历史 | inner_skill:satellite<br>item:telescope_insight_focus | BattleSide 记录并经战果快照提交 | 是 | BattleSide working run state → Run committed state | 区别来源级 counter | 6 | 晚获得来源可读取此前历史；退出战斗不提交 |
+| `run_combat_history_facts` | state | **已有**：`RunCombatHistory`唯一归一化功法ID与八牌型次数；玩家`BattleSide`弱监听canonical `technique_execution_resolved`，经`RunProgressSnapshot`绝对快照写回`GrowthInventory`并由`RunSaveData`持久化 | 已完成；卫星已接入，望远镜只剩下一批心得候选计划且不得重做历史统计 | inner_skill:satellite<br>item:telescope_insight_focus | RunCombatHistory + BattleSide + BattleSetupService | 是 | BattleSide working run state → GrowthInventory committed Run state | 区别来源级 counter；幂等复用事件receipt | 已完成 | manual记录牌型，automatic/invoked只记功法，echo/失败/预览不记；胜利提交、战败/退出不提交 |
 | `run_experience_changed_event` | event | gain_experience 与 BattleSide.experience 已能实时写入 | 实际获得/花费/阻止的统一提交事实与递归门禁 | inner_skill:experience_gain_life_recovery<br>inner_skill:progressive_node_savings<br>inner_skill:experience_fueled_technique_power | RunMutationService + BattleActionResourceEffectService | 本身否 | BattleSide working run state / Run committed state | 节点事件不等于余额变化事件 | 7 | 实际变化一次一事件；失败与重复令牌无副作用 |
 | `temporary_qi_generated_event` | event | `card_moved`已覆盖`from_zone=generated`，临时/非临时分别使用`temporary_generate`/`permanent_generate` | 具体内容只缺来源中立筛选/Handler；不再新增平行生成事件 | inner_skill:temporary_qi_generation_experience | CardZoneService + BattleCardEffectService | 否 | BattleRuntime temporary state | 复用committed_card_transition_event；克隆协议另列 | 已合并 | 抽牌/移动不误报生成；失败不发事件 |
 | `battle_resource_changed_event` | event | write_momentum/write_same_qi 已有统一写端口和回执 | 把请求、实际变化、原因与来源提交为幂等事件 | inner_skill:momentum_enlightenment<br>inner_skill:cleared_momentum_becomes_defense | BattleSourceResourceEffectService | 否 | BattleRuntime temporary state | 上限查询另列 | 9 | 无实际变化不触发；跨阈值按实际值 |
@@ -339,7 +339,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 1. `committed_card_transition_event`：**已完成底层事实**；依赖内容仍须按各自缺口接入，不能据此标记已实现。
 2. `committed_anomaly_change_event`：**已由`card_state_changed`完成底层事实**；依赖内容仍须逐项接入，不能据此标记已实现。
 3. `effective_qi_staged_query`：**底层协议已完成**；基础真气值内功和其他消费者仍须逐项接入。
-4. `run_combat_history_facts`：战斗工作状态实时记录并通过现有RunProgressSnapshot协议提交；同时服务卫星与望远镜。
+4. `run_combat_history_facts`：**已完成并接入卫星**；`RunCombatHistory`通过canonical汇总记录并经现有RunProgressSnapshot协议提交，望远镜只读依赖已满足但内容与心得候选计划仍未接入。
 5. `technique_execution_summary_event`：**底层协议已完成**；按稳定执行令牌汇总原执行/回响的实际结果，两个内容消费者仍未接入。
 6. `technique_echo_plan_mutation`：**已完成并接入9门内功**；当前计划、待用record和序列推进分别归既有正式所有者。
 7. `pre_life_loss_intervention`：**底层协议已完成**；统一最终生命写入前减量/取消，具体保护来源仍未接入。
@@ -377,7 +377,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `effective_qi_staged_query` | 已有 | qi_value_query | 14 | BattleRuleQueryService + HandGroupSnapshot |
 | `card_disposition_replacement` | C1 | card_zone_transaction | 3 | CardZoneService移动准备/提交 |
 | `draw_depletion_replacement_transaction` | C1 | card_zone_transaction | 1 | CardZoneService.draw缺牌分支 |
-| `run_combat_history_facts` | C1 | run_history_state | 2 | BattleSide + RunProgressSnapshot既有映射 |
+| `run_combat_history_facts` | 已有 | run_history_state | 2 | RunCombatHistory + BattleSide + RunProgressSnapshot + RunSaveData |
 | `run_experience_changed_event` | C1 | run_resource_fact | 3 | RunMutationService |
 | `temporary_qi_generated_event` | 已合并 | card_lifecycle_fact | 1 | 复用`card_moved`；`from_zone=generated`且reason保留`temporary_generate/permanent_generate` |
 | `battle_resource_changed_event` | B | battle_resource_fact | 2 | BattleSourceResourceEffectService现有写端口回执 |
@@ -420,7 +420,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | C1 | run_card_mutation_fact | 1 | RunMutationService；不新增平行事件系统 |
 
-当前数量为：已有/合并12、B 13、C1 22、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并13、B 13、C1 21、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
@@ -439,7 +439,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 8. `charging_primary_value_protocol`（已完成）：以实际`slot_instance_id`和battle marker存在性表达蓄力，提供声明校验、枚举、begin/write/end、原子批量写、ConditionSpec、延迟身份恢复及UI/AI投影；没有角色级蓄力资源，也不接管倒计时。
 9. `item_source_marker_state`（已完成）：物品使用唯一地址`item:<stable_owner_id>:<content_id>`，复用SourceMarkerStore、RunMutationService、source_marker_changed与SourceContributedStatService；库存顺序不影响地址，clear/retain和事务回滚遵循统一语义。
 
-其余 38 项是 B 或 C1，分别落在现有 CardZone/CardState、TechniqueResolution/Invocation、BattleSurvival、RunMutation、Practice、NodeInteraction 和策略查询体系中。`run_qi_added_and_reshape_events`明确收口到`RunMutationService`；`chase_resolved_event`明确是`damage_resolved`上下文扩展；修习商品槽位、权重、容量和类别均是同一策略查询族的 key，不建立多个商品 Service。
+其余 37 项是 B 或 C1，分别落在现有 CardZone/CardState、TechniqueResolution/Invocation、BattleSurvival、RunMutation、Practice、NodeInteraction 和策略查询体系中。`run_qi_added_and_reshape_events`明确收口到`RunMutationService`；`chase_resolved_event`明确是`damage_resolved`上下文扩展；修习商品槽位、权重、容量和类别均是同一策略查询族的 key，不建立多个商品 Service。
 
 ### 11.4 收缩后的推荐实现顺序
 
@@ -469,11 +469,12 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `qi_consumption_transaction` | `BattleEffectPorts.prepare_qi_consumption/commit_qi_consumption` | `CardZoneService`牌区；BattleSide保存幂等回执 | `card_moved`、`qi_consumed` | `BattleRuntimeMutationTransaction`整批提交／恢复 |
 | `charging_primary_value_protocol` | `BattleEffectPorts.begin/write/end/write_all_charging_primary_value(s)` | 实际slot地址下的`SourceMarkerStore`条目 | `source_marker_changed` | 批量写复用`BattleRuntimeMutationTransaction`；延迟／响应沿用既有状态 |
 | `item_source_marker_state` | `SourceMarkerAddressResolver`、`GrowthInventory.grant_item/remove_item`、`SourceContributedStatService` | `RunProgressSnapshot.source_marker_state`，经`GrowthInventory/BattleSide`正式同步 | `source_marker_changed` | `RunMutationService`工作副本原子提交／回滚 |
+| `run_combat_history_facts`（领域窄能力） | `RunCombatHistory` + 玩家`BattleSide` committed弱监听 | `BattleSide`工作副本／`GrowthInventory`已提交状态／`RunProgressSnapshot`传输 | 复用`technique_execution_resolved`，不新增历史事件 | `BattleRuntimeMutationTransaction`回滚战斗投影；`RunAggregateTransaction`原子提交战果 |
 
 本次审计没有发现第二套生产实现、按内容ID分叉的公共算法或重复canonical事实发布。明确修复了一个活动
 Handler直接重排`draw_pile`的旁路，删除了无调用且直接交换`hand`数组的`swap_hands`操作，并让
 UI/AI/preview只走不覆盖正式查询回执的只读投影。跨`GrowthInventory/BattleSide/PassiveRuleRuntime`
-读取目录也改为正式只读接口，不再访问其他类私有字段。C2剩余为0；B为13、C1为22、D仍为1，
+读取目录也改为正式只读接口，不再访问其他类私有字段。C2剩余为0；在后续历史能力接入后B为13、C1为21、D仍为1，
 下一阶段必须按`merge_family`合并接入内容，不能按单个能力键机械新增Service。
 
 ### 11.6 首批内功回响与序列能力接入（2026-08-18）
@@ -484,7 +485,7 @@ UI/AI/preview只走不覆盖正式查询回执的只读投影。跨`GrowthInvent
 `random_other_technique_gains_echo`、`first_burnout_technique_echo`、
 `blocked_technique_echoes`、`first_temporary_technique_echo`、
 `burnout_technique_advances_extra`。它们已通过ContentValidator和独立专项；未加入商店、修习随机池或
-production内功池，因此剩余157门内功、20件物品和8门暂缓功法仍未接入。
+production内功池。卫星另以`run_value_effect`正式接入但同样未进入production池，因此当前剩余156门内功、20件物品和8门暂缓功法仍未接入。
 
 回响计划的唯一写入口是`TechniqueResolutionService`：它负责当前execution计划、稳定`echo_index`、
 冻结原功法效果与上下文、待用record消费、额外推进请求和失败恢复。`CollectionEffectHandler.repeat_effects`

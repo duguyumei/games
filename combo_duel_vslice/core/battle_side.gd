@@ -22,6 +22,7 @@ const InsightGrowthServiceScript = preload(
     "res://core/insight_growth_service.gd")
 const PassiveIntPolicyResolverScript = preload(
     "res://core/passives/passive_int_policy_resolver.gd")
+const RunCombatHistoryScript = preload("res://core/run_combat_history.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -93,6 +94,7 @@ var battle_passive_counter_store = null
 var source_marker_store = SourceMarkerStoreScript.new()
 var source_marker_address_resolver = SourceMarkerAddressResolverScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
+var run_combat_history = RunCombatHistoryScript.new()
 var technique_sequence_book = null
 var _battle_effect_ports_ref: WeakRef
 var condition_spec_registry = ConditionSpecRegistryScript.new()
@@ -214,6 +216,7 @@ func reset(
     consumable_use_sequence = 0
     last_recallable_consumable_id = ""
     used_unique_consumable_ids.clear()
+    run_combat_history.clear()
     hand_proficiency_fixed.clear()
     hand_technique_progression.clear()
     hand_technique_progression_active = false
@@ -653,6 +656,7 @@ func capture_passive_query_state() -> Dictionary:
         "battle_counters": battle_passive_counter_store.capture_state() \
             if battle_passive_counter_store != null else {},
         "source_marker_state": source_marker_store.snapshot(),
+        "run_combat_history_state": run_combat_history.snapshot(),
         "last_same_qi_capacity_query_result": (
             last_same_qi_capacity_query_result.duplicate(true)),
         "last_hand_limit_query_result": last_hand_limit_query_result.duplicate(true),
@@ -773,9 +777,32 @@ func replace_passive_query_state(state: Dictionary) -> void:
     var source_marker_state: Dictionary = state.get("source_marker_state", {})
     if not source_marker_state.is_empty():
         source_marker_store.restore_snapshot(source_marker_state)
+    var history_state: Dictionary = state.get("run_combat_history_state", {})
+    if not history_state.is_empty():
+        var history_errors: Array[String] = run_combat_history.restore_snapshot(
+            history_state)
+        if not history_errors.is_empty():
+            push_error("无法恢复战斗工作历史：%s" % "；".join(history_errors))
     var sequence_state: Dictionary = state.get("technique_sequence_state", {})
     if technique_sequence_book != null and not sequence_state.is_empty():
         technique_sequence_book.restore_snapshot(sequence_state)
+
+
+## 玩家侧对 canonical 功法执行事实的窄投影入口。幂等由 committed receipt
+## 保证；该方法只委托 RunCombatHistory，不复制归一化或去重算法。
+func on_committed_event_for_run_history(
+        event_kind: String,
+        values: Dictionary,
+        _receipt: Dictionary) -> void:
+    if event_kind != "technique_execution_resolved" \
+            or values.get("actor") != self \
+            or bool(values.get("is_echo", false)):
+        return
+    var technique_id := str(values.get("technique_id", ""))
+    if technique_id != "":
+        run_combat_history.record_technique_success(technique_id)
+    if str(values.get("trigger_mode", "")) == "manual":
+        run_combat_history.record_hand_success(str(values.get("hand_id", "")))
 
 func stage_cards(card_ids: Array) -> bool:
     return card_zone_service.stage_cards(self, card_ids)

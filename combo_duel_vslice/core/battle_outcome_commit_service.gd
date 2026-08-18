@@ -21,6 +21,19 @@ func commit(run_session, battle_result, progress_snapshot) -> Dictionary:
 
     if state in ["player_victory", "player_defeat"]:
         outcome = run_session._apply_battle_progress_snapshot(progress_snapshot)
+        # 战败虽然沿用既有规则同步生命、牌组等终局事实，但本场尚未成为
+        # 成功 Run 历史。恢复战斗前的绝对历史，避免失败 execution 之外再
+        # 产生一条“战败也提交历史”的旁路。
+        if outcome.get("success", false) and state != "player_victory":
+            var history_errors: Array[String] = run_session.growth \
+                .run_combat_history.restore_snapshot(growth_before.get(
+                    "run_combat_history_state", {}))
+            if not history_errors.is_empty():
+                outcome = {
+                    "success": false,
+                    "reason": "战败历史恢复失败：%s" % \
+                        "；".join(history_errors),
+                }
         if outcome.get("success", false):
             outcome = _checkpoint("progress_applied", run_session)
         if outcome.get("success", false):

@@ -262,6 +262,15 @@ func _apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> D
         side.life = progress_snapshot.life
     if progress_snapshot.has_experience:
         side.experience = progress_snapshot.experience
+    if progress_snapshot.has_run_combat_history_state:
+        var history_errors: Array[String] = side.run_combat_history \
+            .restore_snapshot(progress_snapshot.run_combat_history_state)
+        if not history_errors.is_empty():
+            return {
+                "success": false,
+                "reason": "本局战斗历史装配失败：%s" % \
+                    "；".join(history_errors),
+            }
     if progress_snapshot.has_passive_counter_state \
             and side.passive_counter_store == null:
         return {"success": false, "reason": "玩家本局被动计数器尚未装配"}
@@ -308,6 +317,7 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "hand_technique_multiplier_modifiers": side.hand_technique_multiplier_modifiers.duplicate(true),
         "used_unique_consumable_ids": side.used_unique_consumable_ids.duplicate(),
         "run_deck": run_deck.to_snapshot(),
+        "run_combat_history_state": side.run_combat_history.snapshot(),
     }
     if side.passive_counter_store != null:
         values["passive_counter_state"] = (

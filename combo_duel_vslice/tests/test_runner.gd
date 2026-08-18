@@ -66,6 +66,7 @@ const RunStateScript = preload("res://core/run_state.gd")
 const RunSessionScript = preload("res://core/run_session.gd")
 const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd")
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
+const RunCombatHistoryScript = preload("res://core/run_combat_history.gd")
 const RunProgressSnapshotScript = preload("res://core/run_progress_snapshot.gd")
 const RunSaveDataScript = preload("res://core/run_save_data.gd")
 const SaveRepositoryScript = preload("res://core/save_repository.gd")
@@ -1648,7 +1649,7 @@ func _test_value_spec_registry_contract() -> void:
         registry.registration_errors(), [],
         "内建 ValueSpec 处理器没有重复或非法 kind")
     _assert_equal(
-        registry.kind_ids().size(), 67,
+        registry.kind_ids().size(), 68,
         "第一批实际 ValueSpec kind 全部迁入处理器注册框架")
     for kind in registry.kind_ids():
         var handler = registry.handler_for_kind(kind)
@@ -11562,6 +11563,10 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
 
     var no_rarity: RunSession = RunSessionScript.new()
     _assert_true(no_rarity.execute({"type": "setup_run", "seed": 99111}).success, "稀有内功空候选本局建立")
+    for definition in catalog.all_of("inner_skill"):
+        if str(definition.get("rarity", "")) == "rare":
+            no_rarity.growth.learned_inner_skill_ids.append(
+                str(definition.get("id", "")))
     no_rarity.growth.consumable_ids.assign(["qingshen_qi"])
     _assert_true(not no_rarity.execute({"type": "query_consumable_use", "slot_index": 0}).payload_value("can_use"), "没有稀有内功候选时请神契不可用")
 
@@ -12084,6 +12089,7 @@ func _test_battle_run_progress_working_state_protocol() -> void:
             "high_card": {"multiplier_bonus": 3}},
         "used_unique_consumable_ids": ["zhenyuan_huasheng"],
         "passive_counter_state": {"version": 1, "entries": []},
+        "run_combat_history_state": RunCombatHistoryScript.new().snapshot(),
     }
     var progress = RunProgressSnapshotScript.from_dict(values)
     _assert_true(

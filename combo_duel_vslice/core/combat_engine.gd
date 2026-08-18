@@ -196,6 +196,8 @@ func _init(
         passive_rule_runtime, timing_system)
     battle_passive_event_service = BattlePassiveCommittedEventServiceScript.new(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
+    battle_passive_event_service.register_weak_listener(
+        player, "on_committed_event_for_run_history")
     battle_rule_query_service = BattleRuleQueryServiceScript.new(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
     battle_rule_query_service.use_rng(rng)

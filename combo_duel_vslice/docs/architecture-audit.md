@@ -1696,7 +1696,8 @@ marker事实归BattleSourceResourceEffectService；Run marker事实沿用Run事�
 
 ### 后续方向
 
-能力矩阵现为已有／合并12、B 13、C1 22、C2 0、D 1。下一阶段应按`merge_family`聚合接入消费者，优先
+该次九项C2收口时能力矩阵为已有／合并12、B 13、C1 22、C2 0、D 1；本文末尾的后续批次状态更新为
+已有／合并13、B 13、C1 21、C2 0、D 1。下一阶段应按`merge_family`聚合接入消费者，优先
 复用上述正式入口；不得按单项能力或单个未来内容机械新增Service。8门暂缓功法、具体内功与20件物品
 仍保持未接入，玩法数值和既有功法描述均未改变。
 
@@ -1743,7 +1744,7 @@ EchoPlan Service、Pending Store、内功运行时、事件总线或第二套序
 
 二转余音、初鸣复唱、六转成章、双位同鸣、应机复响、烬法重鸣、受阻愈烈、临诀燃灯与烬步催轮已在
 `inner_skills.json`以稳定ID正式声明并通过ContentValidator。过去的A/B/C标签只作历史复杂度记录，不再表示
-这9门未实现。本批没有把它们加入商店或production随机池，也没有实现其他157门内功、20件物品或8门暂缓功法。
+这9门未实现。该批没有把它们加入商店或production随机池，当时也没有实现其余157门内功、20件物品或8门暂缓功法；卫星在后续历史能力批次单独接入。
 
 ### 专项证据
 
@@ -1752,3 +1753,44 @@ EchoPlan Service、Pending Store、内功运行时、事件总线或第二套序
 来源marker 46条、调用/自动259条、火系276条、山系461条；content-contracts为1079条。
 项目加载通过698项，`quick` 7/7通过；按本批约束未运行`full`。所有采用日志的stdout/Godot日志均已扫描，
 未发现脚本/资源加载、解析、`SCRIPT ERROR`、ObjectDB/RID泄漏、orphan或退出阶段错误。
+
+## 24. 2026-08-18 `run_combat_history_facts`架构收口
+
+本批没有建立`RunCombatHistoryService`、历史事件或第二套receipt。新增的`RunCombatHistory`只是类型化值对象，
+唯一负责稳定功法ID去重/排序、八牌型完整计数、并列查询及snapshot合法性。玩家战斗工作副本归
+`BattleSide.run_combat_history`，已提交Run状态归`GrowthInventory.run_combat_history`，传输边界仍是
+`RunProgressSnapshot`，磁盘边界仍是schema v1 `RunSaveData`的可选字段。敌方保留空值对象，但没有通往玩家
+Run状态的提交路径。
+
+记录入口只复用`technique_execution_resolved`。`CombatEngine`把玩家BattleSide注册为弱监听器；
+BattleSide仅筛选actor、echo与trigger mode后委托值对象。事件receipt阻止重放，publication transaction阻止
+失败路径泄漏；`BattleRuntimeMutationTransaction`的既有BattleSide快照已经包含历史，所以无需历史专用回滚。
+manual execution记录自身精确牌型，automatic/invoked只记录稳定功法ID，echo完全忽略。同ID不同slot仍只是一门。
+
+战果顺序保持原状态机：胜负确认后应用BattleSide工作进度；胜利保留完整历史并冻结`battle_completed`计划，
+战败把历史恢复为聚合事务开始前的绝对值；卫星在胜利计划中通过通用`run_combat_history` ValueSpec读取合并值，
+再经`RunMutationService.gain_experience`提交。任一战果检查点失败由`RunAggregateTransaction`连同历史、历练、
+事件token、日志、地图和奖励整体恢复。未发现Handler直接修改历史或experience的旁路。
+
+卫星是`inner_skills.json`中的formal rare内容，只声明来源中立`run_value_effect`；核心Service没有`satellite`
+分支。望远镜未接入，`practice_strategy_query`未开始，但它未来可直接读取`most_successful_hand_ids()`，不能
+重新扫描GameLog或监听第二套事件。接入卫星后正式内功为10门，仍有156门内功、20件物品与8门暂缓功法
+未接入；能力矩阵剩余B 13、C1 21、C2 0、D 1。
+
+### 专项证据
+
+最终独立验证合计2,986条断言：本局历史115条、功法执行汇总79条、战斗行动事务117条、保存契约133条、
+Run地图／战果1,136条、Run Save v1 202条、内功内容冒烟124条、内容契约1,080条。项目加载覆盖702个
+脚本／场景／资源／JSON文件；`quick`为7/7。对应日志依次为
+`/tmp/taiwu-run-combat-history-facts-04.log`、
+`/tmp/taiwu-run-combat-history-technique-summary-01.log`、
+`/tmp/taiwu-run-combat-history-battle-action-01.log`、
+`/tmp/taiwu-run-combat-history-save-contracts-02.log`、
+`/tmp/taiwu-run-combat-history-run-map-03.log`、
+`/tmp/taiwu-run-combat-history-run-save-v1-01.log`、
+`/tmp/taiwu-run-combat-history-content-smoke-04.log`与
+`/tmp/taiwu-run-combat-history-content-contracts-02.log`；项目加载日志为
+`/tmp/taiwu-run-combat-history-project-load-01.log`，quick日志前缀为
+`/tmp/taiwu-run-combat-history-quick-02-*`。所有stdout与Godot日志均已扫描，未发现脚本／资源加载、解析、
+`SCRIPT ERROR`、ObjectDB/RID泄漏、orphan、资源泄漏或退出阶段错误；只有允许忽略的macOS CA警告。
+按本批约束未运行`full`。

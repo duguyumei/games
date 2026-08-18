@@ -30,6 +30,7 @@ var base_hand_limit_modifier: int = 0
 var hand_technique_multiplier_modifiers: Dictionary = {}
 var used_unique_consumable_ids: Array[String] = []
 var passive_counter_state: Dictionary = {}
+var run_combat_history_state: Dictionary = {}
 
 var has_consumable_ids: bool = false
 var has_item_ids: bool = false
@@ -52,6 +53,7 @@ var has_base_hand_limit_modifier: bool = false
 var has_hand_technique_multiplier_modifiers: bool = false
 var has_used_unique_consumable_ids: bool = false
 var has_passive_counter_state: bool = false
+var has_run_combat_history_state: bool = false
 
 static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     var result := RunProgressSnapshot.new()
@@ -81,6 +83,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_used_unique_consumable_ids = values.has(
         "used_unique_consumable_ids")
     result.has_passive_counter_state = values.has("passive_counter_state")
+    result.has_run_combat_history_state = values.has(
+        "run_combat_history_state")
 
     for consumable_id in values.get("consumable_ids", []):
         result.consumable_ids.append(str(consumable_id))
@@ -118,6 +122,8 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
         result.used_unique_consumable_ids.append(str(consumable_id))
     result.passive_counter_state = values.get(
         "passive_counter_state", {}).duplicate(true)
+    result.run_combat_history_state = values.get(
+        "run_combat_history_state", {}).duplicate(true)
     return result
 
 func to_dict() -> Dictionary:
@@ -166,6 +172,9 @@ func to_dict() -> Dictionary:
         result["used_unique_consumable_ids"] = used_unique_consumable_ids.duplicate()
     if has_passive_counter_state:
         result["passive_counter_state"] = passive_counter_state.duplicate(true)
+    if has_run_combat_history_state:
+        result["run_combat_history_state"] = (
+            run_combat_history_state.duplicate(true))
     return result
 
 static func _normalized_practice_shop_state(value: Dictionary) -> Dictionary:

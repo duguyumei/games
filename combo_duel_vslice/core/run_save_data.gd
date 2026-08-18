@@ -17,6 +17,7 @@ const PassiveCounterStoreScript = preload(
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
+const RunCombatHistoryScript = preload("res://core/run_combat_history.gd")
 
 const SCHEMA_VERSION := 1
 const CONTENT_VERSION := 2
@@ -104,6 +105,8 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "hand_technique_multiplier_modifiers": run_session.growth.hand_technique_multiplier_modifiers.duplicate(true),
             "used_unique_consumable_ids": run_session.growth.used_unique_consumable_ids.duplicate(),
             "passive_counter_state": run_session.growth.passive_counter_store.capture_state(),
+            "run_combat_history_state": (
+                run_session.growth.run_combat_history.snapshot()),
             "run_deck": run_session.growth.run_deck.to_snapshot(),
         },
     }
@@ -262,6 +265,19 @@ func validate(content_catalog = null) -> Array[String]:
             for marker_error in marker_store.restore_snapshot(
                     growth["source_marker_state"]):
                 errors.append("growth.source_marker_state：%s" % marker_error)
+    if growth.has("run_combat_history_state") \
+            and not growth["run_combat_history_state"] is Dictionary:
+        errors.append("growth.run_combat_history_state 必须是对象")
+    elif growth.has("run_combat_history_state"):
+        if not _is_serializable_save_value(growth["run_combat_history_state"]):
+            errors.append(
+                "growth.run_combat_history_state 不得包含 Callable 或 Object")
+        else:
+            var history = RunCombatHistoryScript.new()
+            for history_error in history.restore_snapshot(
+                    growth["run_combat_history_state"]):
+                errors.append(
+                    "growth.run_combat_history_state：%s" % history_error)
     _validate_life_fields(growth, phase, terminal_value, errors)
     if not growth.get("run_deck", {}) is Dictionary:
         errors.append("成长状态缺少完整 RunDeck")
@@ -377,6 +393,9 @@ func restore_session(
     if growth_state.has("passive_counter_state"):
         progress_values["passive_counter_state"] = (
             growth_state["passive_counter_state"])
+    if growth_state.has("run_combat_history_state"):
+        progress_values["run_combat_history_state"] = (
+            growth_state["run_combat_history_state"])
     growth.apply_progress_snapshot(RunProgressSnapshotScript.from_dict(progress_values))
     growth.practice_purchases.clear()
     for content_id in growth_state["practice_purchase_ids"]:
@@ -770,6 +789,13 @@ func _normalize_v1_types() -> void:
         for entry in passive_counter_state.get("entries", []):
             if entry is Dictionary:
                 _normalize_optional_integer(entry, "value")
+    var history_state = growth.get("run_combat_history_state", {})
+    if history_state is Dictionary and not history_state.is_empty():
+        _normalize_optional_integer(history_state, "schema_version")
+        var hand_counts = history_state.get("successful_hand_counts", {})
+        if hand_counts is Dictionary:
+            for hand_id in hand_counts:
+                hand_counts[hand_id] = int(hand_counts[hand_id])
     growth["technique_slot_index"] = int(growth.get("technique_slot_index", 0))
     var progression = growth.get("hand_technique_progression", {})
     if progression is Dictionary:

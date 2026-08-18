@@ -2,6 +2,31 @@
   "version": 2,
   "inner_skills": [
     {
+      "id": "satellite",
+      "name": "卫星",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "战斗胜利时，本局每成功触发过1门不同功法，获得1点历练。",
+      "behaviors": [
+        {
+          "id": "run_value_effect",
+          "configuration": {
+            "hook": "battle_completed",
+            "outcome": "player_victory",
+            "effect": {
+              "op": "gain_experience",
+              "kind": "experience",
+              "amount": {
+                "kind": "run_combat_history",
+                "metric": "distinct_successful_technique_count"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "extra_qi_to_defense",
       "name": "初始内功候选",
       "status": "candidate",

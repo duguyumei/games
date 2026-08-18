@@ -9,6 +9,8 @@ const StateHandlerScript = preload(
     "res://core/specs/value_handlers/state_value_spec_handler.gd")
 const MarkerHandlerScript = preload(
     "res://core/specs/value_handlers/marker_value_spec_handler.gd")
+const RunCombatHistoryHandlerScript = preload(
+    "res://core/specs/value_handlers/run_combat_history_value_spec_handler.gd")
 
 ## ValueSpec 的注册、结构校验与运行解析入口。
 ##
@@ -20,6 +22,7 @@ const BUILTIN_HANDLER_SCRIPTS := [
     CaptureHandlerScript,
     StateHandlerScript,
     MarkerHandlerScript,
+    RunCombatHistoryHandlerScript,
 ]
 
 var _handlers: Array = []
