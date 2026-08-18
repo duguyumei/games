@@ -55,16 +55,21 @@ func capture_transaction_state() -> Dictionary:
         "serial": _serial,
         "receipts": receipt_store.snapshot(),
         "execution_history": execution_history.duplicate(true),
+        "publication_transaction_depth": _publication_transaction_depth,
+        "pending_publications": _pending_publications.duplicate(true),
+        "pure_query_depth": _pure_query_depth,
+        "pure_query_violation": _pure_query_violation,
     }
 
 func restore_transaction_state(state: Dictionary) -> void:
     _serial = int(state.get("serial", _serial))
     receipt_store.restore_snapshot(state.get("receipts", {}))
     execution_history.assign(state.get("execution_history", []))
-    _publication_transaction_depth = 0
-    _pending_publications.clear()
-    _pure_query_depth = 0
-    _pure_query_violation = false
+    _publication_transaction_depth = int(state.get(
+        "publication_transaction_depth", 0))
+    _pending_publications.assign(state.get("pending_publications", []))
+    _pure_query_depth = int(state.get("pure_query_depth", 0))
+    _pure_query_violation = bool(state.get("pure_query_violation", false))
 
 func begin_pure_query() -> void:
     if _pure_query_depth == 0:

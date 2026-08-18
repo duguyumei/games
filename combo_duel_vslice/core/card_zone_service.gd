@@ -213,6 +213,11 @@ func temporarily_remove(
         instance_id: String,
         reason: String = "burn",
         source_metadata: Dictionary = {}) -> Dictionary:
+    if reason == "cost":
+        return {
+            "success": false,
+            "reason": "reason=cost 必须使用正式真气消耗事务",
+        }
     var location := find_active_location(side, instance_id)
     if location.is_empty():
         return {"success": false, "reason": "找不到要临时移出战斗的真气"}
@@ -581,13 +586,15 @@ func move_cards_synchronously(records: Array) -> Array:
         })
     _stamp_movement_batch(prepared, "synchronous_move")
     for entry in prepared:
-        _remove_from_source_zone(
-            entry["side"], entry["card"], entry["source_zone"], entry["reason"])
-    for entry in prepared:
         if bool(entry["void"]):
-            if not entry["side"].temporarily_removed_cards.has(entry["card"]):
-                entry["side"].temporarily_removed_cards.append(entry["card"])
+            _place_in_temporary_removed(
+                entry["side"], entry["card"], entry["source_zone"], "void")
         else:
+            _remove_from_source_zone(
+                entry["side"], entry["card"], entry["source_zone"],
+                entry["reason"])
+    for entry in prepared:
+        if not bool(entry["void"]):
             _insert_in_zone(
                 entry["side"], entry["destination_zone"], entry["card"],
                 entry["placement"])
@@ -601,8 +608,11 @@ func move_cards_synchronously(records: Array) -> Array:
                 if status_system != null:
                     status_system.on_card_explicit_discard(side, card, true)
                 metadata["explicit_discard"] = true
-            _finish_temporary_remove(
+            var lifecycle_event_result := _apply_temporary_remove_lifecycle(
                 side, card, entry["source_zone"], "void", metadata)
+            _finish_temporary_remove(
+                side, card, entry["source_zone"], "void", metadata,
+                lifecycle_event_result)
         else:
             _notify_arrival(
                 side, side, card, entry["source_zone"],
@@ -687,6 +697,12 @@ func _resolve_void_departure(
 func _temporarily_remove_transaction(
         side, card, source_zone: String, reason: String,
         event_metadata: Dictionary = {}, frozen_snapshot: Dictionary = {}) -> Dictionary:
+    if reason == "cost" and not bool(event_metadata.get(
+            "qi_consumption_transaction", false)):
+        return {
+            "success": false,
+            "reason": "reason=cost 不得绕过正式真气消耗事务",
+        }
     if side == null or card == null or source_zone not in ACTIVE_ZONES \
             or not zone(side, source_zone).has(card):
         return {"success": false, "reason": "临时移出来源已失效"}
@@ -696,8 +712,223 @@ func _temporarily_remove_transaction(
     metadata["pre_move_snapshot"] = snapshot
     metadata = _with_frozen_counts(
         side, side, source_zone, "temporarily_removed", metadata)
-    _remove_from_source_zone(side, card, source_zone, reason)
-    return _finish_temporary_remove(side, card, source_zone, reason, metadata)
+    _place_in_temporary_removed(side, card, source_zone, reason)
+    var lifecycle_event_result := _apply_temporary_remove_lifecycle(
+        side, card, source_zone, reason, metadata)
+    return _finish_temporary_remove(
+        side, card, source_zone, reason, metadata, lifecycle_event_result)
+
+
+func capture_pre_move_snapshot(
+        side, card, source_zone: String) -> Dictionary:
+    if side == null or card == null or source_zone not in ACTIVE_ZONES \
+            or not zone(side, source_zone).has(card):
+        return {}
+    return _pre_move_snapshot(side, card, source_zone)
+
+
+func commit_qi_consumption_entries(
+        side,
+        plan: Dictionary,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var operation_token := str(plan.get("operation_token", ""))
+    var batch_token := str(plan.get("consumption_batch_token", ""))
+    var entries: Array = plan.get("entries", [])
+    if side == null or operation_token == "" or batch_token == "" \
+            or entries.is_empty():
+        return {"success": false, "reason": "真气消耗计划缺少稳定事务身份或目标"}
+    if side.qi_consumption_receipts.has(operation_token):
+        var planned_ids: Array = entries.map(func(entry):
+            return str(entry.get("card_instance_id", "")))
+        var receipt_ids: Array = side.qi_consumption_receipts[
+            operation_token].get("card_instance_ids", [])
+        if planned_ids != receipt_ids:
+            return {
+                "success": false,
+                "reason": "真气消耗 operation token 已绑定另一批目标",
+            }
+        var reused: Dictionary = side.qi_consumption_receipts[
+            operation_token].duplicate(true)
+        reused["reused"] = true
+        return reused
+    var count := entries.size()
+    var exact_count := int(plan.get("exact_count", -1))
+    var minimum_count := maxi(0, int(plan.get("minimum_count", 0)))
+    if str(plan.get("holder_id", "")) != str(side.owner_id):
+        return {"success": false, "reason": "真气消耗计划持有者已变化"}
+    if exact_count >= 0 and count != exact_count:
+        return {"success": false, "reason": "真气消耗计划不再满足精确支付数量"}
+    if count < minimum_count:
+        return {"success": false, "reason": "真气消耗计划不再满足最低支付数量"}
+    var seen: Dictionary = {}
+    for index in range(entries.size()):
+        var entry: Dictionary = entries[index]
+        var card = entry.get("card")
+        var instance_id := str(entry.get("card_instance_id", ""))
+        var source_zone := str(entry.get("from_zone", ""))
+        var current_original_owner := str(card.original_owner_id) \
+            if card != null and str(card.original_owner_id) != "" \
+            else str(side.owner_id)
+        if card == null or instance_id == "" or str(card.id) != instance_id \
+                or seen.has(instance_id):
+            return {"success": false, "reason": "真气消耗计划包含无效或重复实例"}
+        if str(entry.get("holder_id", "")) != str(side.owner_id) \
+                or source_zone not in ACTIVE_ZONES \
+                or not zone(side, source_zone).has(card) \
+                or str(entry.get("original_owner_id", "")) \
+                    != current_original_owner \
+                or bool(entry.get("temporary", false)) \
+                    != bool(card.temporary_card):
+            return {
+                "success": false,
+                "reason": "真气消耗目标的冻结牌区、持有者或归属事实已变化",
+            }
+        seen[instance_id] = true
+    var count_ledger: Dictionary = {}
+    var prepared: Array = []
+    for index in range(count):
+        var entry: Dictionary = entries[index]
+        var metadata := source_metadata.duplicate(true)
+        metadata.merge({
+            "qi_consumption_transaction": true,
+            "operation_token": operation_token,
+            "consumption_batch_token": batch_token,
+            "consumption_batch_index": index,
+            "consumption_batch_size": count,
+            "movement_batch_token": batch_token,
+            "movement_batch_index": index,
+            "cause": "cost",
+            "reason": "cost",
+            "pre_move_snapshot": entry.get(
+                "pre_move_snapshot", {}).duplicate(true),
+            "original_owner_id": str(entry.get("original_owner_id", "")),
+            "temporary": bool(entry.get("temporary", false)),
+        }, true)
+        metadata = _with_ledger_counts(
+            side, side, str(entry["from_zone"]),
+            "temporarily_removed", metadata, count_ledger)
+        prepared.append({
+            "card": entry["card"],
+            "from_zone": str(entry["from_zone"]),
+            "metadata": metadata,
+        })
+    # 全批先离开活动牌区；任何 committed Hook 都看不到尚未移动的同批目标。
+    for entry in prepared:
+        _place_in_temporary_removed(
+            side, entry["card"], entry["from_zone"], "cost")
+    # 生命周期仍是唯一牌状态离场清理入口，并先于 card_moved。
+    for entry in prepared:
+        var lifecycle: Dictionary = _apply_temporary_remove_lifecycle(
+            side, entry["card"], entry["from_zone"], "cost", entry["metadata"])
+        if not lifecycle.get("success", true):
+            return {
+                "success": false,
+                "reason": str(lifecycle.get("reason", "真气消耗生命周期失败")),
+                "mutation_started": true,
+            }
+    var moved_events: Array = []
+    for entry in prepared:
+        var moved: Dictionary = _publish_card_moved(
+            side, side, entry["card"], entry["from_zone"],
+            "temporarily_removed", "cost", "top", entry["metadata"], true)
+        if not moved.get("success", true):
+            return {
+                "success": false,
+                "reason": str(moved.get("reason", "card_moved 提交失败")),
+                "mutation_started": true,
+            }
+        moved_events.append(moved)
+    var consumed_events: Array = []
+    for entry in prepared:
+        var consumed_event: Dictionary = _emit_qi_consumed_event(
+            side, entry["card"], entry["from_zone"], entry["metadata"])
+        if not consumed_event.get("success", true):
+            return {
+                "success": false,
+                "reason": str(consumed_event.get(
+                    "reason", "qi_consumed 提交失败")),
+                "mutation_started": true,
+            }
+        consumed_events.append(consumed_event)
+    for moved in moved_events:
+        _dispatch_deferred_card_moved_response(moved)
+    var cards: Array = prepared.map(func(entry): return entry["card"])
+    var receipt := {
+        "success": true,
+        "reused": false,
+        "operation_token": operation_token,
+        "consumption_batch_token": batch_token,
+        "consumption_batch_size": count,
+        "holder_id": str(side.owner_id),
+        "cards": cards,
+        "card_instance_ids": cards.map(func(card): return str(card.id)),
+        "moved_event_receipts": moved_events.map(func(event):
+            return event.get("receipt", {}).duplicate(true)),
+        "qi_consumed_event_receipts": consumed_events.map(func(event):
+            return event.get("receipt", {}).duplicate(true)),
+    }
+    side.qi_consumption_receipts[operation_token] = receipt.duplicate(true)
+    return receipt
+
+
+func _emit_qi_consumed_event(
+        side, card, source_zone: String, metadata: Dictionary) -> Dictionary:
+    if committed_event_service == null:
+        return {"success": true, "receipt": {}}
+    var source := EffectSourceProtocolScript.from_values(metadata)
+    var event_serial := int(committed_event_service.next_serial())
+    var action_token := str(metadata.get("action_token", ""))
+    var values := {
+        "event_token": committed_event_service.make_token(
+            "qi_consumed", side, event_serial, action_token, str(card.id)),
+        "event_serial": event_serial,
+        "operation_token": str(metadata.get("operation_token", "")),
+        "consumption_batch_token": str(metadata.get(
+            "consumption_batch_token", "")),
+        "consumption_batch_index": int(metadata.get(
+            "consumption_batch_index", -1)),
+        "consumption_batch_size": int(metadata.get(
+            "consumption_batch_size", 0)),
+        "card": card,
+        "card_instance_id": str(card.id),
+        "source_card_instance_id": str(metadata.get(
+            "source_card_instance_id", str(card.id))),
+        "pre_move_snapshot": metadata.get(
+            "pre_move_snapshot", {}).duplicate(true),
+        "from_zone": source_zone,
+        "to_zone": "temporarily_removed",
+        "reason": "cost",
+        "cause": "cost",
+        "actor": side,
+        "owner": side,
+        "holder": side,
+        "holder_id": str(side.owner_id),
+        "from_holder": side,
+        "to_holder": side,
+        "from_holder_id": str(side.owner_id),
+        "to_holder_id": str(side.owner_id),
+        "original_owner_id": str(metadata.get("original_owner_id", "")),
+        "temporary": bool(metadata.get("temporary", false)),
+        "source_kind": source["source_kind"],
+        "source_id": source["source_id"],
+        "source_name": source["source_name"],
+        "source_instance_key": source["source_instance_key"],
+        "trigger_mode": source["trigger_mode"],
+        "action_token": action_token,
+        "root_action_token": str(metadata.get(
+            "root_action_token", action_token)),
+        "execution_token": str(metadata.get("execution_token", "")),
+        "technique_execution_token": str(metadata.get(
+            "technique_execution_token", metadata.get("execution_token", ""))),
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "observe_all_sides": true,
+        "metadata": metadata.duplicate(true),
+    }
+    var committed: Dictionary = committed_event_service.commit(
+        "qi_consumed", values)
+    committed["values"] = values
+    return committed
 
 func _remove_from_source_zone(
         side, card, source_zone: String, reason: String) -> void:
@@ -705,12 +936,8 @@ func _remove_from_source_zone(
 
 func _finish_temporary_remove(
         side, card, source_zone: String, reason: String,
-        event_metadata: Dictionary) -> Dictionary:
-    if not side.temporarily_removed_cards.has(card):
-        side.temporarily_removed_cards.append(card)
-    var lifecycle_event_result := _apply_state_lifecycle(
-        side, card, source_zone, "temporarily_removed", reason,
-        event_metadata)
+        event_metadata: Dictionary,
+        lifecycle_event_result: Dictionary) -> Dictionary:
     var metadata := _complete_frozen_counts(
         side, side, source_zone, "temporarily_removed", event_metadata)
     var moved_event_result := lifecycle_event_result
@@ -732,6 +959,21 @@ func _finish_temporary_remove(
     }
     _merge_event_failure(result, event_result)
     return result
+
+
+func _place_in_temporary_removed(
+        side, card, source_zone: String, reason: String) -> void:
+    _remove_from_source_zone(side, card, source_zone, reason)
+    if not side.temporarily_removed_cards.has(card):
+        side.temporarily_removed_cards.append(card)
+
+
+func _apply_temporary_remove_lifecycle(
+        side, card, source_zone: String, reason: String,
+        event_metadata: Dictionary) -> Dictionary:
+    return _apply_state_lifecycle(
+        side, card, source_zone, "temporarily_removed", reason,
+        event_metadata)
 
 func _emit_void_explicit_discard_event(
         side,
@@ -924,6 +1166,15 @@ func _publish_card_moved(
             "movement_batch_token", "")),
         "movement_batch_index": int(metadata.get(
             "movement_batch_index", -1)),
+        "consumption_batch_token": str(metadata.get(
+            "consumption_batch_token", "")),
+        "consumption_batch_index": int(metadata.get(
+            "consumption_batch_index", -1)),
+        "consumption_batch_size": int(metadata.get(
+            "consumption_batch_size", 0)),
+        "operation_token": str(metadata.get("operation_token", "")),
+        "cause": str(metadata.get("cause", "")),
+        "temporary": bool(metadata.get("temporary", false)),
         "effective_qi": int(snapshot.get("effective_qi", 0)),
         "effective_qi_query": snapshot.get(
             "effective_qi_query", {}).duplicate(true),

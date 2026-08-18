@@ -12,6 +12,7 @@ const TIMING_EVENTS := [
 
 const COMMITTED_EVENTS := [
     "action_confirmed", "action_resolved", "card_moved", "card_state_changed",
+    "qi_consumed",
     "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
     "damage_resolved", "damage_blocked", "deflection_resolved",
@@ -65,7 +66,9 @@ const PUBLIC_FIELDS := [
     "hand_count_before", "hand_count_after",
     "from_hand_count_before", "from_hand_count_after",
     "to_hand_count_before", "to_hand_count_after",
-    "movement_batch_token", "movement_batch_index", "metadata",
+    "movement_batch_token", "movement_batch_index",
+    "consumption_batch_token", "consumption_batch_index",
+    "consumption_batch_size", "metadata",
     "operation_token", "holder_id", "change_domain", "operation",
     "before_state", "after_state", "changes",
     "added_changes", "removed_changes", "updated_changes",

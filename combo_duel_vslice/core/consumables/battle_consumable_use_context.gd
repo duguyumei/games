@@ -1,6 +1,9 @@
 class_name BattleConsumableUseContext
 extends "res://core/consumables/consumable_use_context.gd"
 
+const BattleRuntimeMutationTransactionScript = preload(
+	"res://core/battle_runtime_mutation_transaction.gd")
+
 ## 战斗内消耗品效果上下文。
 ##
 ## growth 是 BattleSide 玩家方；目标按当前手牌实例 ID 解析。功法候选沿用共享
@@ -155,52 +158,24 @@ func target_display_name(instance_id: String) -> String:
 ## 事务期间延迟对外发布；失败时恢复 serial、receipt 与 execution history，因而
 ## 监听器不会观察到已经回滚的半次消耗品使用。
 func begin_transaction() -> Dictionary:
-	var snapshot := capture_transaction_state()
-	if _event_service != null:
-		_event_service.begin_publication_transaction()
-	return {"success": true, "context": self, "snapshot": snapshot}
+	var transaction := BattleRuntimeMutationTransactionScript.begin(
+		_battle_sides, _event_service, _trigger_queue, rng)
+	transaction["context"] = self
+	return transaction
 
 func capture_transaction_state() -> Dictionary:
-	var side_states: Array = []
-	for side in _battle_sides:
-		if side != null:
-			side_states.append({
-				"side": side,
-				"state": side.capture_passive_query_state(),
-			})
-	return {
-		"side_states": side_states,
-		"rng_state": int(rng.state) if rng != null else -1,
-		"event_state": _event_service.capture_transaction_state() \
-			if _event_service != null else {},
-		"trigger_state": _trigger_queue.capture_runtime_state() \
-			if _trigger_queue != null and _trigger_queue.has_method(
-				"capture_runtime_state") else {},
-	}
+	return BattleRuntimeMutationTransactionScript.capture(
+		_battle_sides, _event_service, _trigger_queue, rng)
 
-func commit_transaction(_transaction: Dictionary) -> Dictionary:
-	if _event_service != null:
-		_event_service.commit_publication_transaction()
-	return {"success": true}
+func commit_transaction(transaction: Dictionary) -> Dictionary:
+	return BattleRuntimeMutationTransactionScript.commit(transaction)
 
 func rollback_transaction(transaction: Dictionary) -> bool:
-	if _event_service != null:
-		_event_service.rollback_publication_transaction()
-	return restore_transaction_state(transaction.get("snapshot", {}))
+	return BattleRuntimeMutationTransactionScript.rollback(transaction)
 
 func restore_transaction_state(snapshot: Dictionary) -> bool:
-	for entry in snapshot.get("side_states", []):
-		var side = entry.get("side")
-		if side != null:
-			side.replace_passive_query_state(entry.get("state", {}))
-	if _event_service != null:
-		_event_service.restore_transaction_state(snapshot.get("event_state", {}))
-	if _trigger_queue != null and _trigger_queue.has_method("restore_runtime_state"):
-		_trigger_queue.restore_runtime_state(snapshot.get("trigger_state", {}))
-	var rng_state := int(snapshot.get("rng_state", -1))
-	if rng != null and rng_state >= 0:
-		rng.state = rng_state
-	return true
+	return BattleRuntimeMutationTransactionScript.restore(
+		snapshot, _event_service, _trigger_queue, rng)
 
 func state_fingerprint() -> Dictionary:
 	if growth == null:

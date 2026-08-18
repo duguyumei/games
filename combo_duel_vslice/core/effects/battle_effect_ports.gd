@@ -60,11 +60,13 @@ func _init(
         _card_effect_service, _survival_effect_service)
     _action_resource_effect_service = BattleActionResourceEffectServiceScript.new(
         battle_flow, trigger_queue)
+    _card_effect_service.use_trigger_queue(trigger_queue)
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
     _survival_effect_service.use_trigger_queue(trigger_queue)
     _source_resource_effect_service.use_trigger_queue(trigger_queue)
     _action_resource_effect_service.use_trigger_queue(trigger_queue)
+    _card_effect_service.use_trigger_queue(trigger_queue)
 
 func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
@@ -94,6 +96,7 @@ func use_passive_battle_services(
         event_service, round_reader)
     _technique_sequence_effect_service.use_passive_battle_services(
         event_service, round_reader)
+    _card_effect_service.use_committed_event_service(event_service)
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
@@ -513,6 +516,30 @@ func temporarily_remove_card(
         source_value = "") -> Dictionary:
     return _card_effect_service.temporarily_remove_card(
         side, instance_id, reason, _effect_source_metadata(source_value))
+
+func prepare_qi_consumption(
+        side: BattleSide,
+        targets: Array,
+        options: Dictionary = {}) -> Dictionary:
+    var resolved := _effect_source_metadata(options)
+    resolved.merge(options, true)
+    return _card_effect_service.prepare_qi_consumption(
+        side, targets, resolved)
+
+func commit_qi_consumption(
+        plan: Dictionary,
+        source_value = "") -> Dictionary:
+    return _card_effect_service.commit_qi_consumption(
+        plan, _effect_source_metadata(source_value))
+
+func consume_qi_batch(
+        side: BattleSide,
+        targets: Array,
+        options: Dictionary = {}) -> Dictionary:
+    var prepared := prepare_qi_consumption(side, targets, options)
+    if not prepared.get("success", false):
+        return prepared
+    return commit_qi_consumption(prepared, options)
 
 func can_explicit_discard(side: BattleSide, card) -> Dictionary:
     return _card_effect_service.can_explicit_discard(side, card)

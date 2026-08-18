@@ -60,6 +60,8 @@ var hand: Array = []
 var staging: Array = []
 var discard_pile: Array = []
 var temporarily_removed_cards: Array = []
+## 真气代价支付的幂等回执随 BattleSide 运行时快照回滚，不进入局外成长状态。
+var qi_consumption_receipts: Dictionary = {}
 ## 可提交本局状态在战斗内使用工作副本；正式结算前不写回 GrowthInventory。
 var learned_inner_skill_ids: Array[String] = []
 var equipped_inner_skill_ids: Array[String] = []
@@ -179,6 +181,7 @@ func reset(
     defense_retention_sources.clear()
     poison_damage_modifier_sources.clear()
     poison_damage_modifier_receipts.clear()
+    qi_consumption_receipts.clear()
     _combat_source_serial = 0
     learned_inner_skill_ids.clear()
     equipped_inner_skill_ids.clear()
@@ -553,6 +556,7 @@ func capture_passive_query_state() -> Dictionary:
         "staging_cards": staging.duplicate(),
         "discard_cards": discard_pile.duplicate(),
         "temporarily_removed_cards": temporarily_removed_cards.duplicate(),
+        "qi_consumption_receipts": qi_consumption_receipts.duplicate(true),
         "learned_inner_skill_ids": learned_inner_skill_ids.duplicate(),
         "equipped_inner_skill_ids": equipped_inner_skill_ids.duplicate(),
         "item_ids": item_ids.duplicate(),
@@ -635,6 +639,8 @@ func replace_passive_query_state(state: Dictionary) -> void:
     discard_pile.assign(state.get("discard_cards", discard_pile))
     temporarily_removed_cards.assign(state.get(
         "temporarily_removed_cards", temporarily_removed_cards))
+    qi_consumption_receipts = state.get(
+        "qi_consumption_receipts", qi_consumption_receipts).duplicate(true)
     learned_inner_skill_ids.assign(state.get(
         "learned_inner_skill_ids", learned_inner_skill_ids))
     equipped_inner_skill_ids.assign(state.get(

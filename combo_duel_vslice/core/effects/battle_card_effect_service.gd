@@ -3,6 +3,8 @@ extends RefCounted
 
 const EffectTargetQueryScript = preload(
     "res://core/effects/effect_target_query.gd")
+const BattleRuntimeMutationTransactionScript = preload(
+    "res://core/battle_runtime_mutation_transaction.gd")
 
 ## BattleEffectPorts 内部的牌区、真气实例、异状与临时重塑服务。
 ##
@@ -15,6 +17,8 @@ var _sides: Array = []
 var _battle_rng: RandomNumberGenerator
 var _card_reshape_runtime_ref: WeakRef
 var _battle_permission_service
+var _trigger_queue
+var _committed_event_service
 
 
 func _init(status_system) -> void:
@@ -31,6 +35,14 @@ func use_sides(first, second) -> void:
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     assert(rng != null, "BattleCardEffectService requires the battle RNG")
     _battle_rng = rng
+
+
+func use_trigger_queue(trigger_queue) -> void:
+    _trigger_queue = trigger_queue
+
+
+func use_committed_event_service(service) -> void:
+    _committed_event_service = service
 
 
 func use_card_reshape_runtime(runtime) -> void:
@@ -218,8 +230,167 @@ func temporarily_remove_card(
         instance_id: String,
         reason: String,
         source_metadata: Dictionary = {}) -> Dictionary:
+    if reason == "cost":
+        var options := source_metadata.duplicate(true)
+        options["minimum_count"] = 1
+        options["exact_count"] = 1
+        var prepared := prepare_qi_consumption(
+            side, [instance_id], options)
+        if not prepared.get("success", false):
+            return prepared
+        return commit_qi_consumption(prepared, source_metadata)
     return side.card_zone_service.temporarily_remove(
         side, instance_id, reason, source_metadata)
+
+
+func prepare_qi_consumption(
+        side,
+        targets: Array,
+        options: Dictionary = {}) -> Dictionary:
+    if side == null or not _sides.has(side):
+        return {"success": false, "reason": "真气消耗持有者不属于当前战斗"}
+    var operation_token := str(options.get("operation_token", ""))
+    var exact_count := int(options.get("exact_count", -1))
+    var minimum_count := maxi(0, int(options.get("minimum_count", 0)))
+    if exact_count >= 0 and targets.size() != exact_count:
+        return {"success": false, "reason": "真气消耗目标数量不符合精确支付要求"}
+    if targets.size() < minimum_count:
+        return {"success": false, "reason": "真气消耗目标不足最低支付数量"}
+    if targets.is_empty():
+        return {"success": false, "reason": "真气消耗目标不能为空"}
+    var entries: Array = []
+    var seen: Dictionary = {}
+    for target_value in targets:
+        var requested_id := ""
+        var requested_card = null
+        if target_value is Dictionary:
+            requested_card = target_value.get("card")
+            requested_id = str(target_value.get(
+                "card_instance_id", target_value.get("instance_id", "")))
+        elif target_value is Object:
+            requested_card = target_value
+            requested_id = str(target_value.id)
+        else:
+            requested_id = str(target_value)
+        if requested_id == "" and requested_card != null:
+            requested_id = str(requested_card.id)
+        if requested_id == "" or seen.has(requested_id):
+            return {"success": false, "reason": "真气消耗目标包含重复或空实例 ID"}
+        seen[requested_id] = true
+        entries.append({
+            "card": requested_card,
+            "card_instance_id": requested_id,
+        })
+    if operation_token == "":
+        operation_token = _default_consumption_operation_token(
+            side, entries, options)
+    if side.qi_consumption_receipts.has(
+            operation_token):
+        var requested_ids: Array = entries.map(func(entry):
+            return str(entry["card_instance_id"]))
+        var receipt_ids: Array = side.qi_consumption_receipts[
+            operation_token].get("card_instance_ids", [])
+        if requested_ids != receipt_ids:
+            return {
+                "success": false,
+                "reason": "真气消耗 operation token 已绑定另一批目标",
+            }
+        return _reused_consumption_plan(side, operation_token)
+    for index in range(entries.size()):
+        var entry: Dictionary = entries[index]
+        var requested_card = entry.get("card")
+        var requested_id := str(entry["card_instance_id"])
+        var location: Dictionary = side.card_zone_service.find_active_location(
+            side, requested_id)
+        if location.is_empty() or requested_card != null \
+                and location.get("card") != requested_card:
+            return {"success": false, "reason": "找不到待消耗真气的冻结活动牌区"}
+        var card = location["card"]
+        var source_zone := str(location["zone"])
+        var snapshot: Dictionary = side.card_zone_service.capture_pre_move_snapshot(
+            side, card, source_zone)
+        if snapshot.is_empty():
+            return {"success": false, "reason": "无法冻结待消耗真气的离场快照"}
+        entry.merge({
+            "card": card,
+            "holder_id": str(side.owner_id),
+            "from_zone": source_zone,
+            "pre_move_snapshot": snapshot,
+            "original_owner_id": str(card.original_owner_id) \
+                if str(card.original_owner_id) != "" else str(side.owner_id),
+            "temporary": bool(card.temporary_card),
+            "input_index": index,
+        }, true)
+    if side.qi_consumption_receipts.has(operation_token):
+        return _reused_consumption_plan(side, operation_token)
+    var batch_token := str(options.get(
+        "consumption_batch_token", "%s:batch" % operation_token))
+    return {
+        "success": true,
+        "reused": false,
+        "holder": side,
+        "holder_id": str(side.owner_id),
+        "operation_token": operation_token,
+        "consumption_batch_token": batch_token,
+        "minimum_count": minimum_count,
+        "exact_count": exact_count,
+        "entries": entries,
+        "card_instance_ids": entries.map(func(entry):
+            return str(entry["card_instance_id"])),
+    }
+
+
+func _reused_consumption_plan(side, operation_token: String) -> Dictionary:
+    var reused_receipt: Dictionary = side.qi_consumption_receipts[
+        operation_token].duplicate(true)
+    return {
+        "success": true,
+        "reused": true,
+        "operation_token": operation_token,
+        "consumption_batch_token": str(reused_receipt.get(
+            "consumption_batch_token", "%s:batch" % operation_token)),
+        "receipt": reused_receipt,
+        "entries": [],
+        "holder": side,
+    }
+
+
+func commit_qi_consumption(
+        plan: Dictionary,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    if not plan.get("success", false):
+        return {"success": false, "reason": str(plan.get(
+            "reason", "真气消耗计划无效"))}
+    if plan.get("reused", false):
+        var reused: Dictionary = plan.get("receipt", {}).duplicate(true)
+        reused["success"] = true
+        reused["reused"] = true
+        return reused
+    var holder = plan.get("holder")
+    if holder == null or not _sides.has(holder):
+        return {"success": false, "reason": "真气消耗计划持有者已失效"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var committed: Dictionary = holder.card_zone_service.commit_qi_consumption_entries(
+        holder, plan, source_metadata)
+    if not committed.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        committed["rolled_back"] = true
+        return committed
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return committed
+
+
+func _default_consumption_operation_token(
+        side, entries: Array, options: Dictionary) -> String:
+    var ids: Array[String] = []
+    for entry in entries:
+        ids.append(str(entry["card_instance_id"]))
+    var action_token := str(options.get("action_token", ""))
+    var source_key := str(options.get("source_instance_key", options.get(
+        "source_id", "cost")))
+    return "qi-cost|%s|%s|%s|%s" % [
+        str(side.owner_id), action_token, source_key, ",".join(ids)]
 
 
 func can_explicit_discard(side, card) -> Dictionary:

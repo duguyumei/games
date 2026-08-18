@@ -14,6 +14,7 @@ const PUBLIC_EVENT_TYPES := [
     "cooperation_resolved", "same_qi_changed", "combo_granted", "damage_resolved",
     "defense_changed", "defense_decayed", "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
+    "qi_consumed",
     "card_temporarily_removed", "card_returned", "card_state_changed",
     "passive_triggered", "passive_counter_changed", "sequence_advanced",
     "consumable_used", "action_resolved", "round_completed",

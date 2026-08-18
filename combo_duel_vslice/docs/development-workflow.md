@@ -837,5 +837,29 @@ A≤N立即取消，A>N继续。全部卸力击穿后才使用既有ConditionSpe
 普通伤害段与同步flush必须复用同一解析函数。同步shadow只能调用纯预览投影；真实flush才消费和发布。
 来源消费、source changed、取消事件、最终伤害及反震位于既有BattleSide/committed/publication/日志事务；
 事件Handler或后段失败时必须恢复整段／整批状态并返回结构化失败。测试夹具可以建立假来源，但正式
-Handler不得识别具体内功、物品或功法ID。本批没有接入任何消费者，也不得顺带实现
-`qi_consumption_transaction`。
+Handler不得识别具体内功、物品或功法ID。本批没有接入任何具体卸力消费者。
+
+## 真气消耗事务协议（2026-08-18）
+
+“消耗真气”统一使用`BattleEffectPorts.prepare_qi_consumption`与
+`commit_qi_consumption`。prepare只读冻结调用方给定顺序中的精确实例、当前持有者、来源活动牌区、
+原持有者、临时牌标记和`pre_move_snapshot`，校验重复ID及最低／精确数量，并生成不依赖Object地址的
+`operation_token/consumption_batch_token`；它不移动牌、不发事件且不推进RNG。commit重新校验整批，
+任一实例离开冻结牌区或更换持有者即整批失败。
+
+真实提交继续复用`CardZoneService`唯一临时移出内部步骤：先把全批从手牌、牌库、待出区或弃牌堆移除，
+全部加入既有`temporarily_removed_cards`，再按冻结输入顺序执行`CardStateLifecycle`、逐牌`card_moved`、
+逐牌canonical `qi_consumed`及后效。两类事实共享批次token和索引；`qi_consumed`另公开批量大小、
+`reason/cause=cost`、离手前快照、当前／原持有者、临时牌标记、EffectSourceProtocol、行动根token和执行
+token。第一份事实触发时，同批其余真气也已经离开活动牌区。旧单卡Facade收到`reason=cost`会转入该
+事务，CardZone直绕则明确拒绝。
+
+`BattleRuntimeMutationTransaction`是生命结算、战斗消耗品和真气支付共用的窄事务工具，只管理双方
+BattleSide运行时快照、committed serial/receipt/execution history、publication transaction、
+TriggerQueue/GameLog及RNG。移动、生命周期、任一事件Handler或后效失败都会恢复全批；重复
+operation token只复用回执。虚无正常打出／明确弃置、主动或敌方消散、永久移出和战后清理只产生其
+各自移动事实，不发送`qi_consumed`。通用`consume_captured`只消费既有capture，并支持最低实际数量、
+整批要求和result capture；等待选择仍由既有continuation冻结候选，恢复不重选也不重复支付。
+
+本协议只提供未来致命保护在正式生命提交事务中绑定支付计划的接口；`pre_life_loss_query`仍是纯查询。
+《耗气补垣》《万木代命》《折枝生根》《炽种承继》《耗烬催芽》《灰烬化形》等具体消费者均未接入。

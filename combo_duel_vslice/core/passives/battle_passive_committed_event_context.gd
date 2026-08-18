@@ -42,6 +42,10 @@ var to_hand_count_before: int = 0
 var to_hand_count_after: int = 0
 var movement_batch_token: String = ""
 var movement_batch_index: int = -1
+var consumption_batch_token: String = ""
+var consumption_batch_index: int = -1
+var consumption_batch_size: int = 0
+var temporary: bool = false
 var explicit_discard: bool = false
 var normal_play: bool = false
 var defense_lost: int = 0
@@ -182,6 +186,10 @@ func configure(values: Dictionary):
     to_hand_count_after = int(values.get("to_hand_count_after", 0))
     movement_batch_token = str(values.get("movement_batch_token", ""))
     movement_batch_index = int(values.get("movement_batch_index", -1))
+    consumption_batch_token = str(values.get("consumption_batch_token", ""))
+    consumption_batch_index = int(values.get("consumption_batch_index", -1))
+    consumption_batch_size = int(values.get("consumption_batch_size", 0))
+    temporary = bool(values.get("temporary", false))
     explicit_discard = bool(values.get("explicit_discard", false))
     normal_play = bool(values.get("normal_play", false))
     defense_lost = int(values.get("defense_lost", 0))
@@ -340,6 +348,10 @@ func for_invocation(current_invocation):
         "to_hand_count_after": to_hand_count_after,
         "movement_batch_token": movement_batch_token,
         "movement_batch_index": movement_batch_index,
+        "consumption_batch_token": consumption_batch_token,
+        "consumption_batch_index": consumption_batch_index,
+        "consumption_batch_size": consumption_batch_size,
+        "temporary": temporary,
         "explicit_discard": explicit_discard,
         "normal_play": normal_play,
         "defense_lost": defense_lost,
@@ -519,6 +531,10 @@ func public_effect_values() -> Dictionary:
         "to_hand_count_after": to_hand_count_after,
         "movement_batch_token": movement_batch_token,
         "movement_batch_index": movement_batch_index,
+        "consumption_batch_token": consumption_batch_token,
+        "consumption_batch_index": consumption_batch_index,
+        "consumption_batch_size": consumption_batch_size,
+        "temporary": temporary,
         "explicit_discard": explicit_discard,
         "normal_play": normal_play,
         "technique_triggered": technique_triggered,

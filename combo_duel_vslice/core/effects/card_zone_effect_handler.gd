@@ -22,6 +22,7 @@ func operation_ids() -> Array[String]:
         "synchronous_discard_queries", "discard_duplicate_ranks",
         "discard_by_visible_attribute", "draw_common_attribute_or_fallback",
         "discard_captured_by_selected_base_attribute", "dissipate_captured",
+        "consume_captured",
         "atomic_transfer_captures", "draw_rank_different_replacements",
     ]
 
@@ -174,6 +175,8 @@ func execute(effect: Dictionary, context):
                     dissipated.append(card)
             runtime.captures[str(effect.get("result_capture", "dissipated"))] = dissipated
             return EffectResultScript.succeeded("消散真气 %d 张" % dissipated.size())
+        "consume_captured":
+            return _consume_captured(effect, runtime)
         "atomic_transfer_captures":
             return _atomic_transfer_captures(effect, runtime)
         "draw_rank_different_replacements":
@@ -200,6 +203,61 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("op", "")) == "draw_rank_different_replacements" \
             and str(effect.get("metadata_capture", "")) == "":
         validator.report_error(scope + ".metadata_capture", "必须提供冻结牌阶元数据capture")
+    if str(effect.get("op", "")) == "consume_captured":
+        if str(effect.get("capture", "")) == "":
+            validator.report_error(scope + ".capture", "必须提供待消耗真气capture")
+        for field in ["minimum_count", "exact_count"]:
+            if effect.has(field) and (not effect[field] is int or int(effect[field]) < 0):
+                validator.report_error(scope + "." + field, "必须为非负整数")
+        if effect.has("require_all") and not effect["require_all"] is bool:
+            validator.report_error(scope + ".require_all", "必须为布尔值")
+
+
+func _consume_captured(effect: Dictionary, runtime):
+    if runtime.ports == null:
+        return EffectResultScript.failed("真气消耗缺少战斗端口")
+    var side = _resolve_side(runtime, str(effect.get("side", "actor")))
+    if side == null:
+        return EffectResultScript.failed("真气消耗持有者不存在")
+    var capture_id := str(effect.get("capture", ""))
+    var cards: Array = runtime.captures.get(capture_id, []).duplicate()
+    var minimum_count := int(effect.get("minimum_count", 0))
+    var exact_count := int(effect.get("exact_count", -1))
+    if bool(effect.get("require_all", false)):
+        exact_count = cards.size()
+        minimum_count = cards.size()
+    var operation_token := str(effect.get("operation_token", ""))
+    if operation_token == "":
+        operation_token = "%s:consume:%s:%s" % [
+            runtime.action_token if runtime.action_token != "" else "effect",
+            runtime.source_instance_key,
+            capture_id]
+    var metadata: Dictionary = runtime.source_metadata()
+    metadata.merge({
+        "operation_token": operation_token,
+        "minimum_count": minimum_count,
+        "exact_count": exact_count,
+        "action_token": runtime.action_token,
+        "root_action_token": runtime.root_action_token,
+        "execution_token": runtime.technique_execution_token,
+        "technique_execution_token": runtime.technique_execution_token,
+        "invocation_token": runtime.invocation_token,
+    }, true)
+    var prepared: Dictionary = runtime.ports.prepare_qi_consumption(
+        side, cards, metadata)
+    if not prepared.get("success", false):
+        return EffectResultScript.failed(str(prepared.get(
+            "reason", "真气消耗准备失败")))
+    var committed: Dictionary = runtime.ports.commit_qi_consumption(
+        prepared, metadata)
+    if not committed.get("success", false):
+        return EffectResultScript.failed(str(committed.get(
+            "reason", "真气消耗提交失败")))
+    runtime.captures[str(effect.get(
+        "result_capture", "consumed_qi"))] = committed.get(
+            "cards", []).duplicate()
+    return EffectResultScript.succeeded(
+        "消耗真气 %d 张" % int(committed.get("consumption_batch_size", 0)))
 
 func _move_captured(effect: Dictionary, runtime):
     if runtime.ports == null:

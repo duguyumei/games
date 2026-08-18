@@ -1,6 +1,9 @@
 class_name BattleSurvivalEffectService
 extends RefCounted
 
+const BattleRuntimeMutationTransactionScript = preload(
+    "res://core/battle_runtime_mutation_transaction.gd")
+
 ## BattleEffectPorts 内部的伤害、防御与生命结算服务。
 ##
 ## 公开效果协议仍由 Facade 承担；本服务只接收已标准化的来源上下文，集中维护唯一的
@@ -549,34 +552,18 @@ func notify_poison_triggered(
 
 
 func _capture_synchronized_flush_state() -> Dictionary:
-    var side_states: Array = []
-    for side in _sides:
-        if side != null:
-            side_states.append({
-                "side": side,
-                "state": side.capture_passive_query_state(),
-            })
-    return {
-        "side_states": side_states,
-        "event_state": _committed_event_service.capture_transaction_state() \
-            if _committed_event_service != null else {},
-        "trigger_state": _trigger_queue.capture_runtime_state() \
-            if _trigger_queue != null else {},
+    var snapshot := BattleRuntimeMutationTransactionScript.capture(
+        _sides, _committed_event_service, _trigger_queue, null)
+    snapshot.merge({
         "action_resolution_scope": _action_resolution_scope.duplicate(true),
         "damage_segment_serial": _damage_segment_serial,
-    }
+    }, true)
+    return snapshot
 
 
 func _restore_synchronized_flush_state(snapshot: Dictionary) -> void:
-    for entry in snapshot.get("side_states", []):
-        var side = entry.get("side")
-        if side != null:
-            side.replace_passive_query_state(entry.get("state", {}))
-    if _committed_event_service != null:
-        _committed_event_service.restore_transaction_state(
-            snapshot.get("event_state", {}))
-    if _trigger_queue != null:
-        _trigger_queue.restore_runtime_state(snapshot.get("trigger_state", {}))
+    BattleRuntimeMutationTransactionScript.restore(
+        snapshot, _committed_event_service, _trigger_queue, null)
     _action_resolution_scope = snapshot.get(
         "action_resolution_scope", {}).duplicate(true)
     _damage_segment_serial = int(snapshot.get(

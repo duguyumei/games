@@ -1560,4 +1560,30 @@ ValueSpec公开事件字段、自动／动态响应、AI历史和日志均复用
 专项`test_deflection_attack_cancel_protocol.gd`覆盖阈值边界、稳定顺序、卸力后格挡、非资格伤害、
 `blockable=false`、正式事件、生命查询／反震跳过、同步shadow／flush／失败回滚、快照生命周期、AI投影、
 效果op和执行汇总。本批未接入《朽甲成关》《群山合壁》《卸劲破隙》《受阻愈烈》或任何物品／暂缓功法，
-也没有开始`qi_consumption_transaction`。
+`qi_consumption_transaction`由后续独立批次完成。
+
+## 2026-08-18 真气消耗事务协议
+
+`qi_consumption_transaction`底层协议已经完成。`BattleCardEffectService`提供唯一类型化
+`prepare_qi_consumption/commit_qi_consumption`，`BattleEffectPorts.consume_qi_batch`为组合Facade；
+prepare只读冻结同一持有方多个活动牌区的精确实例、来源区、当前／原持有者、输入顺序和
+`pre_move_snapshot`，拒绝重复ID并校验最低或精确支付数量。稳定operation/batch token只由明确来源、
+行动token和实例ID构成，不使用Object字符串。
+
+commit先整批重新验证，再通过`CardZoneService`共享的临时移出内部步骤把所有目标加入现有
+`temporarily_removed_cards`。全部目标落位后才按顺序执行生命周期，随后先提交全批`card_moved`、再
+提交全批`qi_consumed`。两类事实共享`consumption_batch_token/index`；消耗事实公开size、
+`reason/cause=cost`、冻结快照、holder/original owner、temporary、来源中立身份及行动／执行token。
+`BattleEventCatalog`、committed Context、ConditionSpec/ValueSpec公共事件投影、动态/自动响应和AI历史
+白名单已同步。普通虚无、主动／强制消散、永久移出及战后清理不会误发该事实。
+
+新增`BattleRuntimeMutationTransaction`从既有生命与战斗消耗品实现抽取双方状态、committed状态、
+publication、TriggerQueue/GameLog和RNG的公共窄事务；生命结算与战斗消耗品已改为复用。真气支付中
+任一移动、生命周期、`card_moved`、`qi_consumed` Handler或后效失败会恢复牌区、卡牌状态、原持有者、
+被动状态、RNG、serial、receipt、execution history和日志。operation receipt存于BattleSide运行时快照，
+恢复或continuation重放不会重复支付。`CardZoneEffectHandler.consume_captured`复用该事务，不建立专用
+Handler或新牌区。
+
+本节只表示公共底层完成，并为未来生命写入事务绑定支付计划保留接口；纯
+`pre_life_loss_query`没有支付副作用。《耗气补垣》《万木代命》《折枝生根》《炽种承继》《耗烬催芽》
+《灰烬化形》等消费者仍未接入，也没有实现任何具体内功、物品或暂缓功法。
