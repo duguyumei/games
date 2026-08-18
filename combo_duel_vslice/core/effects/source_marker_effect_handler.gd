@@ -5,6 +5,7 @@ const EffectContextScript = preload("res://core/effects/battle_effect_context.gd
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 const AddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")
+const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 
 var value_resolver
 var address_resolver = AddressResolverScript.new()
@@ -240,10 +241,20 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     elif not _is_snake_case(str(effect.get("marker_id", ""))):
         validator.report_error(scope + ".marker_id", "必须使用 snake_case")
     if effect.has("source_kind") \
-            and str(effect["source_kind"]) not in ["technique", "inner_skill"]:
-        validator.report_error(scope + ".source_kind", "必须为 technique 或 inner_skill")
+            and str(effect["source_kind"]) not in [
+                "technique", "inner_skill", "item"]:
+        validator.report_error(
+            scope + ".source_kind", "必须为 technique、inner_skill 或 item")
     if str(effect.get("scope", "battle")) not in ["battle", "run"]:
         validator.report_error(scope + ".scope", "必须为 battle 或 run")
+    if str(effect.get("forget_policy", "clear")) not in ["clear", "retain"]:
+        validator.report_error(
+            scope + ".forget_policy", "必须为 clear 或 retain")
+    if effect.has("public") and not effect["public"] is bool:
+        validator.report_error(scope + ".public", "必须是布尔值")
+    if not SourceMarkerStoreScript.is_registered_contribution(str(
+            effect.get("contributes_to", ""))):
+        validator.report_error(scope + ".contributes_to", "引用未注册的来源统计项")
 
 func _is_snake_case(value: String) -> bool:
     if value == "" or value.to_lower() != value \

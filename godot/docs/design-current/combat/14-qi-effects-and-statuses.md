@@ -31,15 +31,19 @@
 
 内功和功法不拥有真气的本源、强化、印记或异状。它们可以拥有自己的规则文本，并在结算时给真气施加上述内容。旧版箔面、镭射、多彩与负片品相不再属于当前重塑系统；需要保留的数值或栏位能力由具体内功、物品或其他规则承接。
 
-### 6.2.1 功法／内功来源标识
+### 6.2.1 功法／内功／物品来源标识
 
-功法或内功需要保存自身进度、倒计时、命元或其他可被多项效果读写的数值时，使用统一的来源标识，不把它伪装成角色状态或真气异状。一个标识键至少由 `source_kind`（`technique`／`inner_skill`）、稳定来源实例键、内容 ID、`marker_id` 与 `scope`（`battle`／`run`）组成，并保存整数值、是否公开及显示名称；同一来源可以同时拥有多个不同标识。
+功法、内功或物品需要保存自身进度、倒计时、命元或其他可被多项效果读写的数值时，使用统一的来源标识，不把它伪装成角色状态或真气异状。一个标识键至少由 `source_kind`（`technique`／`inner_skill`／`item`）、稳定来源实例键、内容 ID、`marker_id` 与 `scope`（`battle`／`run`）组成，并保存整数值、是否公开及显示名称；同一来源可以同时拥有多个不同标识。
 
 来源标识支持增加、设置、减少、消费、清除、捕获，以及同阵营来源间的显式转移。每次实际变化发送一次 `source_marker_changed`，事件必须携带来源键、变化前后值、实际变化量、公开属性与行动令牌。条目生命周期也是实际变化：创建值为0的新条目、删除值为0的已有条目分别公开`created/removed`及`existed_before/exists_after`并发送事件；已有条目重复set同值、清理不存在条目不发送。战斗标识在战斗结束时统一清理；本局标识进入本局快照与存档。临时功法实例默认拥有独立战斗标识；显式 `share_origin` 时读取原功法实例的来源标识，但临时副本不能复制或重复结算原功法的本局永久装备收益。
 
 来源地址只由唯一 `SourceMarkerAddressResolver` 解析。功法 battle 标识默认绑定稳定
 `slot_instance_id`；`share_origin` 临时功法实例绑定 `origin_slot_instance_id`；功法 run 标识绑定
 不随战斗位置改变的永久功法来源键。独立临时副本不能创建、复制或写入 run 范围永久收益。
+物品地址固定为`item:<stable_owner_id>:<content_id>`：玩家的`GrowthInventory`和战斗工作副本
+`BattleSide`统一解析为`player`，地址不含`item_ids`下标；库存顺序只影响Invocation顺序，不影响状态身份。
+同一持有者不能重复持有同一物品，非持有物品不能建立持久贡献；item、inner_skill和technique即使使用
+同名marker也因来源类别和实例键隔离。
 来源标识效果、自动触发、数值查询、UI 和 AI 投影必须使用同一解析结果。
 
 功法实例主要蓄力值是来源marker的类型化角色，不是第二份状态。定义声明charging后，只有实际
@@ -57,6 +61,12 @@ begin/write/end、只读枚举及冻结目标后的批量写都经现有`BattleE
 本局成长与战斗角色调用同一实现。run 标识变化后立即重算本场有效最大生命，不恢复当前生命；
 上限降低时把当前生命限制到新上限。战斗 UI 按解析后的 battle／run 来源关系显示标识，
 不能只用当前 `slot_instance_id` 匹配。
+
+物品获得先在现有Run事务工作副本写入`item_ids`，此后才初始化其run marker并统一重算最大生命；
+预览、取消、失败和存档恢复都不会重放获得效果。失去物品沿用`forget_policy`：`clear`删除条目，
+`retain`保留数据但失活来源不再贡献；重新获得不会恢复已clear的数据。物品压制只暂停贡献，不删除marker。
+marker、库存、生命、事件与Run快照继续由现有事务一起提交或回滚，只发布`source_marker_changed`。
+最大生命始终是`base_max_life + 活跃来源贡献`，来源变化不能反写`base_max_life`。
 
 来源标识可以成为细粒度响应的输入与输出。`defense_gained`、`damage_resolved`、`card_drawn`、`card_explicitly_discarded`、`action_confirmed`、`action_resolved`、`round_start`、`turn_end`、`source_marker_changed` 等公共已提交事件均可由通用响应记录监听，并修改来源功法标识。自动功法条件可直接监听这些事件，或按事件字段推进标识阈值；相同事件 token 只能推进一次。由此表达蓄力、倒计时与自动调用，不建立按具体功法 ID 判断的封闭蓄力管理器。主要蓄力值的修改本身不减少延迟occurrence、不推进观察次数或触发功法；StatusDelay/Response只保存并恢复发起实例的slot及root/invocation/execution token。自动功法的移动与结算顺序见[行动结算、触发队列与连击](./12-action-resolution.md#功法调用自动调用与序列推进)。
 

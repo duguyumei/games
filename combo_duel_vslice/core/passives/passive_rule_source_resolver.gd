@@ -2,8 +2,11 @@ class_name PassiveRuleSourceResolver
 extends RefCounted
 
 const SourceScript = preload("res://core/passives/passive_rule_source.gd")
+const SourceMarkerAddressResolverScript = preload(
+    "res://core/source_marker_address_resolver.gd")
 
 var _catalog
+var _marker_address_resolver = SourceMarkerAddressResolverScript.new()
 
 func _init(content_catalog = null) -> void:
     _catalog = content_catalog
@@ -36,9 +39,13 @@ func collect_sources(context) -> Array:
         item_ids = []
     for item_index in range(item_ids.size()):
         var content_id := str(item_ids[item_index])
+        var instance_key := _marker_address_resolver.item_source_instance_key(
+            owner, content_id)
+        if instance_key == "":
+            continue
         _append_behaviors(
             result, "item", content_id,
-            "item:%s:%d:%s" % [owner_id, item_index, content_id],
+            instance_key,
             _catalog.get_by_id("item", content_id),
             10000 + item_index)
     result.sort_custom(func(left, right):

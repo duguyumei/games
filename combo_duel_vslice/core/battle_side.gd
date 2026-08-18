@@ -10,6 +10,8 @@ const RunPassiveCounterStoreScript = preload(
 const BattlePassiveCounterStoreScript = preload(
     "res://core/passives/battle_passive_counter_store.gd")
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
+const SourceMarkerAddressResolverScript = preload(
+    "res://core/source_marker_address_resolver.gd")
 const SourceContributedStatServiceScript = preload(
     "res://core/source_contributed_stat_service.gd")
 const ConditionSpecRegistryScript = preload(
@@ -89,6 +91,7 @@ var passive_counter_store = null
 ## 只存在于当前战斗，不进入 RunProgressSnapshot 或存档。
 var battle_passive_counter_store = null
 var source_marker_store = SourceMarkerStoreScript.new()
+var source_marker_address_resolver = SourceMarkerAddressResolverScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
 var technique_sequence_book = null
 var _battle_effect_ports_ref: WeakRef
@@ -216,19 +219,47 @@ func reset(
     last_same_qi_capacity_query_result.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
 
-func equipped_source_content_ids() -> Dictionary:
-    var equipped: Dictionary = {}
+func active_source_content_ids() -> Dictionary:
+    var active := {
+        "technique": {},
+        "inner_skill": {},
+        "item": {},
+    }
     for progression_value in hand_technique_progression.values():
         var progression: Dictionary = progression_value
         for technique_id_value in progression.get("sequence", []):
-            equipped[str(technique_id_value)] = true
+            active["technique"][str(technique_id_value)] = true
     for inner_skill_id in equipped_inner_skill_ids:
-        equipped[str(inner_skill_id)] = true
-    return equipped
+        active["inner_skill"][str(inner_skill_id)] = true
+    for item_id in item_ids:
+        var content_id := str(item_id)
+        if _item_source_contribution_active(content_id):
+            active["item"][content_id] = true
+    return active
+
+## 兼容旧查询调用方；新代码应使用 active_source_content_ids()，其中
+## source_kind 分桶防止同名物品/内功/功法互相激活。
+func equipped_source_content_ids() -> Dictionary:
+    var flattened: Dictionary = {}
+    for bucket_value in active_source_content_ids().values():
+        if bucket_value is Dictionary:
+            for content_id in bucket_value:
+                flattened[str(content_id)] = true
+    return flattened
+
+func _item_source_contribution_active(content_id: String) -> bool:
+    if passive_rule_runtime == null:
+        return true
+    if not passive_rule_runtime.has_method("is_source_identity_active"):
+        return true
+    var key := source_marker_address_resolver.item_source_instance_key(
+        self, content_id)
+    return passive_rule_runtime.is_source_identity_active(
+        "item", content_id, key, "source_contribution", self)
 
 func recalculate_effective_max_life() -> int:
     return source_contributed_stat_service.apply_to_side(
-        self, equipped_source_content_ids())
+        self, active_source_content_ids())
 
 func grant_poison_damage_modifier(
         fixed: int,
@@ -296,24 +327,32 @@ func freeze_poison_damage_modifiers(
     return result
 
 func active_technique_marker_sum(filters: Dictionary = {}) -> int:
+    var technique_filters := filters.duplicate(true)
+    technique_filters["source_kind"] = "technique"
+    return active_source_marker_sum(technique_filters)
+
+func active_source_marker_sum(filters: Dictionary = {}) -> int:
     if source_marker_store == null:
         return 0
     var entries: Array = source_marker_store.entries(filters)
-    if technique_sequence_book == null:
-        var equipped := equipped_source_content_ids()
-        var equipped_total := 0
-        for entry_value in entries:
-            var entry: Dictionary = entry_value
-            if equipped.has(str(entry.get("content_id", ""))):
-                equipped_total += int(entry.get("value", 0))
-        return equipped_total
+    var active := active_source_content_ids()
     var active_slot_ids: Dictionary = {}
-    for slot_value in technique_sequence_book.find_slots({}):
-        active_slot_ids[str(slot_value.get("slot_instance_id", ""))] = true
+    if technique_sequence_book != null:
+        for slot_value in technique_sequence_book.find_slots({}):
+            active_slot_ids[str(slot_value.get("slot_instance_id", ""))] = true
     var total := 0
     for entry_value in entries:
         var entry: Dictionary = entry_value
-        if active_slot_ids.has(str(entry.get("source_instance_key", ""))):
+        var source_kind := str(entry.get("source_kind", ""))
+        if source_kind == "technique" and technique_sequence_book != null:
+            if not active_slot_ids.has(str(entry.get("source_instance_key", ""))):
+                continue
+        else:
+            var bucket = active.get(source_kind)
+            if not bucket is Dictionary or not bucket.has(str(
+                    entry.get("content_id", ""))):
+                continue
+        if source_kind in ["technique", "inner_skill", "item"]:
             total += int(entry.get("value", 0))
     return total
 
@@ -1505,6 +1544,7 @@ func configure_items(ids: Array) -> Dictionary:
         seen[content_id] = true
         normalized.append(content_id)
     item_ids.assign(normalized)
+    recalculate_effective_max_life()
     return {"success": true, "item_ids": normalized.duplicate()}
 
 func configure_consumables(ids: Array) -> void:

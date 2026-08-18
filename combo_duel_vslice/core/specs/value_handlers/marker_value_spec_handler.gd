@@ -20,7 +20,8 @@ func validate(kind: String, spec: Dictionary, _registry, report_error: Callable,
             report_error.call(scope + "." + field, "必须是字符串")
             valid = false
     if spec.has("source_kind") \
-            and str(spec["source_kind"]) not in ["technique", "inner_skill"]:
+            and str(spec["source_kind"]) not in [
+                "technique", "inner_skill", "item"]:
         report_error.call(scope + ".source_kind", "引用未知来源类型")
         valid = false
     if spec.has("scope") and str(spec["scope"]) not in ["", "battle", "run"]:
@@ -62,15 +63,16 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
                 filters["marker_id"] = str(spec["marker_id"])
             if spec.has("scope"):
                 filters["scope"] = str(spec["scope"])
-            if side.has_method("active_technique_marker_sum") \
-                    and str(filters.get("scope", "")) == "battle":
-                return int(side.active_technique_marker_sum(filters))
-            var equipped: Dictionary = side.equipped_source_content_ids() \
-                if side.has_method("equipped_source_content_ids") else {}
+            if side.has_method("active_source_marker_sum"):
+                return int(side.active_source_marker_sum(filters))
+            var active: Dictionary = side.active_source_content_ids() \
+                if side.has_method("active_source_content_ids") else {}
             var total := 0
             for entry_value in side.source_marker_store.entries(filters):
                 var entry: Dictionary = entry_value
-                if equipped.has(str(entry.get("content_id", ""))):
+                var bucket = active.get(str(entry.get("source_kind", "")))
+                if bucket is Dictionary and bucket.has(str(
+                        entry.get("content_id", ""))):
                     total += int(entry.get("value", 0))
             return total
         "consumed_marker_value":

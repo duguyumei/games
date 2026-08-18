@@ -13,6 +13,8 @@ const InsightGrowthServiceScript = preload(
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 const SourceContributedStatServiceScript = preload(
     "res://core/source_contributed_stat_service.gd")
+const SourceMarkerAddressResolverScript = preload(
+    "res://core/source_marker_address_resolver.gd")
 
 const CONSUMABLE_LIMIT := 3
 const EXPERIENCE_INTEREST_STEP := 5
@@ -34,6 +36,7 @@ var max_life: int = 100
 var base_max_life: int = 100
 var source_marker_store = SourceMarkerStoreScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
+var source_marker_address_resolver = SourceMarkerAddressResolverScript.new()
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
@@ -179,14 +182,19 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         }))
     if not counter_errors.is_empty():
         return counter_errors
+    var replacement_marker_store = SourceMarkerStoreScript.new()
+    var marker_errors: Array[String] = replacement_marker_store.restore_snapshot(
+        state.get("source_marker_state", {
+            "schema_version": SourceMarkerStoreScript.SCHEMA_VERSION,
+            "entries": [],
+        }))
+    if not marker_errors.is_empty():
+        return marker_errors
     experience = int(state["experience"])
     life = int(state["life"])
     max_life = int(state["max_life"])
     base_max_life = int(state.get("base_max_life", state["max_life"]))
-    source_marker_store.restore_snapshot(state.get("source_marker_state", {
-        "schema_version": SourceMarkerStoreScript.SCHEMA_VERSION,
-        "entries": [],
-    }))
+    source_marker_store = replacement_marker_store
     consumable_ids.assign(state["consumable_ids"])
     item_ids.assign(state.get("item_ids", []))
     learned_technique_ids.assign(state["learned_technique_ids"])
@@ -262,6 +270,124 @@ func set_hand_technique_loadout(hand_id: String, technique_ids: Array) -> Dictio
     hand_technique_progression = proposed
     recalculate_effective_max_life()
     return {"success": true, "hand_id": hand_id, "sequence": normalized.duplicate()}
+
+## 物品获得/遗失只修改当前事务工作副本；外层 RunMutationService 或购买
+## 事务负责原子提交。初始 run marker 在 item_id 正式写入后才建立，因而
+## 不会污染购买价格、资格或获得前的事件来源快照。
+func grant_item(item_id: String) -> Dictionary:
+    if item_id == "" or _content_catalog == null:
+        return {"success": false, "reason": "物品获得缺少内容目录或 ID"}
+    if item_ids.has(item_id):
+        return {"success": false, "reason": "物品已持有，不能重复发放：%s" % item_id}
+    var definition: Dictionary = _content_catalog.get_by_id(
+        "item", item_id) if _content_catalog.has_method("get_by_id") else {}
+    item_ids.append(item_id)
+    # 旧的 RunContentProbeCatalog 只提供 ID/资格查询而不暴露完整内容定义；
+    # 这类无 marker 物品仍可获得，正式内容则由 marker_definitions 继续走
+    # 下方统一地址与状态写入。
+    if definition.is_empty():
+        recalculate_effective_max_life()
+        return {
+            "success": true,
+            "item_id": item_id,
+            "marker_changes": [],
+            "max_life": max_life,
+        }
+    var marker_changes: Array = []
+    for marker_value in definition.get("marker_definitions", []):
+        if not marker_value is Dictionary or not marker_value.has("initial_value"):
+            continue
+        var marker: Dictionary = marker_value
+        if str(marker.get("scope", "battle")) != "run":
+            return {"success": false, "reason": "物品初始 marker 必须是 run scope"}
+        var address := source_marker_address_resolver.resolve_item(
+            self, item_id, marker)
+        if not address.get("success", false):
+            return address
+        var existing := source_marker_store.entries({
+            "source_kind": "item",
+            "source_instance_key": address["source_instance_key"],
+            "marker_id": address["marker_id"],
+            "scope": "run",
+        })
+        # retain 条目在重新获得时继续复用其持久数据，不重新执行一次获得
+        # 效果；clear 条目已经被 remove_entries 删除，会从声明初始值重建。
+        if not existing.is_empty() and str(existing[0].get(
+                "forget_policy", "clear")) == "retain":
+            continue
+        var written: Dictionary = source_marker_store.write(
+            "item", address["source_instance_key"], item_id,
+            address["marker_id"], "run", "set", int(marker["initial_value"]),
+            address)
+        if not written.get("success", false):
+            return written
+        if written.get("changed", false):
+            marker_changes.append(_source_marker_change(
+                address, "initial", written))
+    recalculate_effective_max_life()
+    return {
+        "success": true,
+        "item_id": item_id,
+        "marker_changes": marker_changes,
+        "max_life": max_life,
+    }
+
+func remove_item(item_id: String) -> Dictionary:
+    if not item_ids.has(item_id):
+        return {"success": false, "reason": "物品未持有：%s" % item_id}
+    var removed_markers: Array = []
+    for entry_value in source_marker_store.entries({
+            "source_kind": "item", "content_id": item_id, "scope": "run"}):
+        var entry: Dictionary = entry_value
+        if str(entry.get("forget_policy", "clear")) != "clear":
+            continue
+        removed_markers.append(_source_marker_change(
+            entry, "remove", {
+                "before": int(entry.get("value", 0)),
+                "after": 0,
+                "delta": -int(entry.get("value", 0)),
+                "consumed": int(entry.get("value", 0)),
+                "created": false,
+                "removed": true,
+                "existed_before": true,
+                "exists_after": false,
+                "changed": true,
+            }))
+    source_marker_store.remove_entries({
+        "source_kind": "item", "content_id": item_id, "scope": "run"}, true)
+    item_ids.erase(item_id)
+    recalculate_effective_max_life()
+    return {
+        "success": true,
+        "item_id": item_id,
+        "removed_markers": removed_markers,
+        "max_life": max_life,
+    }
+
+func _source_marker_change(
+        source: Dictionary, operation: String, result: Dictionary) -> Dictionary:
+    return {
+        "event_type": "source_marker_changed",
+        "operation": operation,
+        "source_kind": str(source.get("source_kind", "item")),
+        "source_instance_key": str(source.get("source_instance_key", "")),
+        "content_id": str(source.get("content_id", "")),
+        "marker_id": str(source.get("marker_id", "")),
+        "scope": str(source.get("scope", "run")),
+        "public": bool(source.get("public", true)),
+        "display_name": str(source.get("display_name", source.get(
+            "marker_id", ""))),
+        "contributes_to": str(source.get("contributes_to", "")),
+        "forget_policy": str(source.get("forget_policy", "clear")),
+        "before": int(result.get("before", 0)),
+        "after": int(result.get("after", 0)),
+        "delta": int(result.get("delta", 0)),
+        "consumed": int(result.get("consumed", 0)),
+        "created": bool(result.get("created", false)),
+        "removed": bool(result.get("removed", false)),
+        "existed_before": bool(result.get("existed_before", false)),
+        "exists_after": bool(result.get("exists_after", false)),
+    }
 
 func apply_insight_growth(
         hand_id: String,
@@ -433,17 +559,27 @@ func grow_life_to(new_max_life: int) -> void:
     life = mini(life + increase, max_life)
 
 func recalculate_effective_max_life() -> int:
-    var equipped: Dictionary = {}
+    var active_sources := active_source_content_ids()
+    max_life = source_contributed_stat_service.effective_max_life(
+        base_max_life, source_marker_store, active_sources)
+    life = mini(life, max_life)
+    return max_life
+
+func active_source_content_ids() -> Dictionary:
+    var active := {
+        "technique": {},
+        "inner_skill": {},
+        "item": {},
+    }
     for progression_value in hand_technique_progression.values():
         var progression: Dictionary = progression_value
         for technique_id_value in progression.get("sequence", []):
-            equipped[str(technique_id_value)] = true
+            active["technique"][str(technique_id_value)] = true
     for inner_skill_id in equipped_inner_skill_ids:
-        equipped[str(inner_skill_id)] = true
-    max_life = source_contributed_stat_service.effective_max_life(
-        base_max_life, source_marker_store, equipped)
-    life = mini(life, max_life)
-    return max_life
+        active["inner_skill"][str(inner_skill_id)] = true
+    for item_id in item_ids:
+        active["item"][str(item_id)] = true
+    return active
 
 func apply_to_battle_side(side) -> void:
     var setup_service = _battle_setup_service_for(side)
@@ -462,6 +598,7 @@ func apply_to_battle_side(side) -> void:
             push_error("无法应用玩家功法配装：%s" % str(
                 progression_result.get("reason", "配装校验失败")))
             return
+    side.recalculate_effective_max_life()
     var battle_run_deck = setup_service.run_deck_from_progress(progress_snapshot)
     var no_shuffle_rng := RandomNumberGenerator.new()
     side.replace_deck(battle_run_deck.create_battle_cards(), no_shuffle_rng, false)

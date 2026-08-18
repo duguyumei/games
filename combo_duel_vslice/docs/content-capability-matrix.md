@@ -8,7 +8,7 @@
 - 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。35号仍明确为17门已接入、其余8门候选，指定名单无差异。
 - Readiness：A=35，B=68，C=82，D=1，E=8，合计194。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并9项，余下实现形态为B 14、C1 23、C2 1；D 1（D不计入47项C能力）。这里的B/C1/C2描述实现形态，不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并10项，余下实现形态为B 14、C1 23、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2描述实现形态，不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -22,7 +22,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | 战斗事件 | `BattleEventCatalog.TIMING_EVENTS/COMMITTED_EVENTS/RESPONSE_ONLY_EVENTS`、`BattlePassiveCommittedEventService.commit` | 自动触发、damage/poison/defense/life、功法成功/调用、临时功法、同气与统一`card_moved`完成事实均已有；response-only事实不能冒充可配置committed hook。 |
 | 查询/条件 | `BattleRuleQueryService.QUERY_HOOKS`、`PassiveIntPolicyResolver.resolve`、`ConditionSpecRegistry.CONDITION_DEFINITIONS/EVENT_FILTER_DEFINITIONS` | 四阶段功法值、逐牌有效真气值、伤害、防御、手限、同气容量、配装、心得等已存在；连势上限等仍缺。 |
 | 效果执行 | `TechniqueEffectExecutor`→`EffectHandlerRegistry`→`BattleEffectPorts`；run侧`RunMutationService`→`RunEffectHandlerRegistry` | damage/defense/card zone/anomaly/marker/life/临时功法/调用/响应/延迟等复用既有端口，不建第二执行器。 |
-| 状态/生命周期 | `StatusSystem`、`StatusResponseService`、`StatusDelayService`、`CombatSourceLifecycleService`、`SourceMarkerStore` | 延迟、响应、来源标识与卸力攻击取消协议已有；临时炽气来源层和item marker地址仍缺。 |
+| 状态/生命周期 | `StatusSystem`、`StatusResponseService`、`StatusDelayService`、`CombatSourceLifecycleService`、`SourceMarkerStore` | 延迟、响应、来源标识、item marker地址与卸力攻击取消协议已有；临时炽气来源层仍缺。 |
 | 计数器 | `RunPassiveCounterStore`、`BattlePassiveCounterStore`及read/mutation ports | run计数进入RunProgressSnapshot，battle计数纯Runtime；无需按内容建缓存。 |
 | 功法运行 | `TechniqueSequenceBook`、`TechniqueInvocationService`、`TechniqueAutoTriggerService`、`generate_temporary_techniques`、`temporary_technique_generated` | 自动、调用、临时功法、稳定slot_instance_id、空余容量均已有；回响计划修改和通用蓄力声明仍缺。 |
 | 成长/消耗品/战果 | `InsightGrowthService`、`ConsumableUseService`、`RunProgressSnapshot`、`BattleOutcomeCommitService`、`RunAggregateTransaction` | 心得实时扩容、统一消耗品事务、战果原子提交均已完成，不得重复建设。 |
@@ -225,8 +225,8 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | item | 象形文字 | `regenerate_current_act_map` | [43 §5《象形文字》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#象形文字) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 获得时回到当前层的旅程起点，并重新生成这一层的地图。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | ComboMapGenerator/MapNavigationService/RunAggregateTransaction已有 | C | map_regeneration_transaction | 按能力键合并实现 |
 | item | 重构 | `rest_choose_all_options` | [43 §5《重构》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#重构) | node_completed | 权威正文的资格与边界 | 休息节点中可以依次选择所有当前可用选项。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | NodeInteractionService单次选择/continuation已有 | C | rest_multi_select_session | 按能力键合并实现 |
 | item | 调息玉 | `post_battle_heal_ten` | [43 §6《调息玉》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#调息玉) | battle_completed | 权威正文的资格与边界 | 每场战斗胜利后恢复 10 点生命。 | BattleRuntime temporary state | 事件或命令既有事务 | RunPassiveEventService.battle_completed；op=heal_life；RunAggregateTransaction；缺run效果适配Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
-| item | 延寿玉 | `max_life_plus_twenty` | [43 §6《延寿玉》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#延寿玉) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 最大生命 +20。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | SourceContributedStatService已有；SourceMarkerStore.SOURCE_KINDS仅technique/inner_skill | C | item_source_marker_state | 按能力键合并实现 |
-| item | 纳气养命 | `deck_growth_and_reshape_vitality` | [43 §6《纳气养命》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#纳气养命) | 命令提交点（见权威正文） | EffectTargetQuery.anomaly/reshape | 每向本局牌组中永久新增 1 张真气，最大生命 +1。每成功重塑 1 张我方真气，恢复 1 点生命。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | SourceContributedStatService已有；SourceMarkerStore.SOURCE_KINDS仅technique/inner_skill；RunMutationService | C | item_source_marker_state<br>run_qi_added_and_reshape_events | 按能力键合并实现 |
+| item | 延寿玉 | `max_life_plus_twenty` | [43 §6《延寿玉》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#延寿玉) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 最大生命 +20。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | `SourceContributedStatService`与统一 item marker 协议已完成 | C | item_source_marker_state | 协议完成；具体物品仍未接入 |
+| item | 纳气养命 | `deck_growth_and_reshape_vitality` | [43 §6《纳气养命》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#纳气养命) | 命令提交点（见权威正文） | EffectTargetQuery.anomaly/reshape | 每向本局牌组中永久新增 1 张真气，最大生命 +1。每成功重塑 1 张我方真气，恢复 1 点生命。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | `SourceContributedStatService`、统一 item marker 协议与 `RunMutationService` 已完成；永久新增/重塑事实仍缺 | C | item_source_marker_state<br>run_qi_added_and_reshape_events | 来源协议完成；具体物品仍未接入 |
 
 ### 3.3 明确暂缓功法（8）
 
@@ -294,7 +294,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `practice_offer_category_unlock` | query | 修习候选冻结/购买RunDeck事务已有 | 通用商品类别解锁与候选提供协议 | item:awakened_qi_in_normal_shop | practice candidate planner | 批次快照是 | Run committed state | 权重查询只调权重 | 43 | 冻结实例可恢复；新物品不影响自己的购买 |
 | `map_regeneration_transaction` | transaction | ComboMapGenerator/MapNavigationService/RunAggregateTransaction已有 | 新生成序号、旧路线废弃、起点状态与物品获得原子提交 | item:regenerate_current_act_map | RunSession map command | 是 | Run committed state | 不改变restart_node_from_start | 44 | 失败恢复旧图；成功存档只含新图；幂等 |
 | `rest_multi_select_session` | UI | NodeInteractionService单次选择/continuation已有 | 多选会话、已选集合、顺序和结束命令 | item:rest_choose_all_options | node interaction session | 是 | Run committed state | 每个选项仍独立事务 | 45 | 每项至多一次；恢复顺序一致；取消不消费 |
-| `item_source_marker_state` | state | SourceContributedStatService已有；SourceMarkerStore.SOURCE_KINDS仅technique/inner_skill | item来源标识地址、遗失策略与max_life贡献 | item:max_life_plus_twenty<br>item:deck_growth_and_reshape_vitality | SourceMarkerStore/AddressResolver | 是 | Run committed state / BattleSide working run state | 复用同一marker store | 46 | 物品来源可写/移除/往返；生命上限实时重算 |
+| `item_source_marker_state` | state | **已有**：item正式加入`SourceMarkerStore`、`SourceMarkerAddressResolver`、`PassiveRuleRuntime`、`RunMutationService`与统一`source_marker_changed` | item来源标识地址、遗失策略与max_life贡献 | item:max_life_plus_twenty<br>item:deck_growth_and_reshape_vitality | SourceMarkerStore/AddressResolver/SourceContributedStatService | 是 | Run committed state / BattleSide working run state | 复用同一marker store；事务失败整批回滚 | 46 | 地址为`item:<stable_owner_id>:<content_id>`，不依赖库存顺序；具体物品仍未接入 |
 | `run_qi_added_and_reshape_events` | event | RunMutationService、RunDeck、战斗reshape端口已有 | 永久新增逐实例与重塑逐牌的幂等提交事实 | item:deck_growth_and_reshape_vitality | RunMutationService + BattleCardEffectService | 事件否 | Run committed state / BattleSide working run state | 不把临时异状写入RunDeck | 47 | 复制/生成/购买同事件；移动/恢复不误发；逐牌去重 |
 
 E类未来追加消费者：`charging_primary_value_protocol`还服务风·长风蓄海、火·三劫悬炉、山·悬岳待敌；这三门仍统一E，不改变C类计数。
@@ -346,15 +346,16 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 8. `deflection_attack_cancel_protocol`：**底层协议已完成**；先卸力后格挡、击穿消费、canonical取消事件、同步回滚和公开投影均已接入。
 9. `qi_consumption_transaction`：**底层协议已完成**；已提供cause=cost、逐牌事实、原子支付与战后归还，六个消费者仍未接入。
 10. `charging_primary_value_protocol`：**底层协议已完成**；已统一slot级主要累计值声明、零值存在语义、类型化读写、批量回滚、条件与公开投影，伏火延烧和三门蓄力功法仍未接入。
-11. `temporary_blazing_source_layers`：来源级层数及入堆生命周期。
+11. `item_source_marker_state`：**底层协议已完成**；物品正式复用来源标识地址、Run往返、遗失策略与最大生命贡献，20件具体物品仍未接入。
+12. `temporary_blazing_source_layers`：来源级层数及入堆生命周期。
 
-本节是原始能力键排序，不等于47个独立实现批次。收缩后的实际批次见第11节；8门E类不作为阻塞。`committed_card_transition_event`、`committed_anomaly_change_event`、`effective_qi_staged_query`、`pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`、`qi_consumption_transaction`和`charging_primary_value_protocol`底层均已完成，依赖它们的具体内容仍须独立接入。
+本节是原始能力键排序，不等于47个独立实现批次。收缩后的实际批次见第11节；8门E类不作为阻塞。`committed_card_transition_event`、`committed_anomaly_change_event`、`effective_qi_staged_query`、`pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`、`qi_consumption_transaction`、`charging_primary_value_protocol`和`item_source_marker_state`底层均已完成，依赖它们的具体内容仍须独立接入。
 
 ## 10. 旧待实现清单校正摘要
 
 - 已有：空余功法槽与非满配装、心得+1/上限9/实时SequenceBook同步、临时功法生成与事件、稳定功法实例身份、自动触发、调用、响应/延迟、来源marker、run/battle计数器、消耗品统一事务、战果原子提交、事件级ExecutionPlan。
 - 已有：统一`card_moved` committed事实（仍兼容动态响应），包括虚拟牌区、逻辑手牌计数、placement、双方持有方与同步批次字段。
-- 部分已有：回响执行与逐次执行汇总已完成，但仍不能通用修改计划次数；卸力与格挡取消协议已完成；追击只有伤害兼容标签而无结构化完成事件；最大生命来源贡献的marker统计已有但item地址不支持。
+- 部分已有：回响执行与逐次执行汇总已完成，但仍不能通用修改计划次数；卸力与格挡取消协议已完成；追击只有伤害兼容标签而无结构化完成事件。物品来源地址、marker状态和最大生命统计协议已完成，具体物品内容仍未接入。
 - 仍缺：`effective_qi_staged_query`底层已完成；依赖它的具体内容仍未接入，其他能力继续按矩阵精确缺口推进。
 - 规则待确认：化虚为实的固化提交表示。
 
@@ -416,17 +417,17 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `practice_offer_category_unlock` | C1 | practice_strategy_query | 1 | 修习候选规划器 |
 | `map_regeneration_transaction` | C1 | run_command_transaction | 1 | RunSession + MapNavigationService + RunAggregateTransaction |
 | `rest_multi_select_session` | C1 | choice_continuation | 1 | NodeInteractionService既有continuation |
-| `item_source_marker_state` | C2 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
+| `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | C1 | run_card_mutation_fact | 1 | RunMutationService；不新增平行事件系统 |
 
-当前数量为：已有/合并9、B 14、C1 23、C2 1、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并10、B 14、C1 23、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
 原先需要公共协议设计的核心C2为9项；其中`committed_card_transition_event`、
 `committed_anomaly_change_event`、`effective_qi_staged_query`、
 `pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`与
-`qi_consumption_transaction`与`charging_primary_value_protocol`已完成，尚余1项公共协议：
+`qi_consumption_transaction`、`charging_primary_value_protocol`与`item_source_marker_state`均已完成，尚余0项公共协议：
 
 1. `committed_card_transition_event`（已完成）：`card_moved`已提升为可配置committed事实；临时真气生成使用`from_zone=generated`、`reason=temporary_generate`，非临时生成使用`reason=permanent_generate`，不另建平行事件。
 2. `committed_anomaly_change_event`（已完成）：`card_state_changed`统一异状、净化、临时重塑、转移和生命周期的before/after与实际变化字段，并保留legacy动态响应投影。
@@ -436,7 +437,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 6. `deflection_attack_cancel_protocol`（已完成）：类型化复用`block_sources`，统一先卸力后格挡；每次卸力消费提交`deflection_resolved`，实际取消提交`attack_canceled`，同步flush与普通伤害共用解析和回滚边界。
 7. `qi_consumption_transaction`（已完成）：prepare/commit冻结并重验多牌区精确实例；复用既有临时移出区，提交共享batch token的`card_moved/qi_consumed`，并通过公共BattleRuntime事务恢复状态、事件、日志和RNG。
 8. `charging_primary_value_protocol`（已完成）：以实际`slot_instance_id`和battle marker存在性表达蓄力，提供声明校验、枚举、begin/write/end、原子批量写、ConditionSpec、延迟身份恢复及UI/AI投影；没有角色级蓄力资源，也不接管倒计时。
-9. `item_source_marker_state`：扩展现有来源标识地址和最大生命贡献，使物品与内功/功法共用同一 marker 协议。
+9. `item_source_marker_state`（已完成）：物品使用唯一地址`item:<stable_owner_id>:<content_id>`，复用SourceMarkerStore、RunMutationService、source_marker_changed与SourceContributedStatService；库存顺序不影响地址，clear/retain和事务回滚遵循统一语义。
 
 其余 38 项是 B 或 C1，分别落在现有 CardZone/CardState、TechniqueResolution/Invocation、BattleSurvival、RunMutation、Practice、NodeInteraction 和策略查询体系中。`run_qi_added_and_reshape_events`明确收口到`RunMutationService`；`chase_resolved_event`明确是`damage_resolved`上下文扩展；修习商品槽位、权重、容量和类别均是同一策略查询族的 key，不建立多个商品 Service。
 

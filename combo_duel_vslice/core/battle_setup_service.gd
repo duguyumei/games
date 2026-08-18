@@ -64,6 +64,7 @@ func apply_player_technique_progression(side, book, progress_snapshot) -> Dictio
     book.configure_hand_progression(values)
     side.hand_technique_progression = values.duplicate(true)
     side.hand_technique_progression_active = true
+    side.recalculate_effective_max_life()
     return {
         "success": true,
         "instance_count": book.find_slots({}).size(),
@@ -108,7 +109,8 @@ func apply_scripted_scenario(scenario, player, enemy, rng, enemy_deck: Array) ->
         return enemy_inner
     enemy.learned_inner_skill_ids.assign(
         enemy_definition.get("inner_skills", []))
-    enemy.max_life = int(enemy_definition.get("life", 100))
+    enemy.base_max_life = int(enemy_definition.get("life", 100))
+    enemy.max_life = enemy.base_max_life
     enemy.life = enemy.max_life
     enemy.replace_deck(scenario.arrange_enemy_deck(enemy_deck), rng, false)
     return {
@@ -138,7 +140,8 @@ func apply_formal_enemy(
     if not selected.get("success", false):
         return selected
     var entry: Dictionary = selected["entry"]
-    enemy.max_life = int(life_definition["max_life"])
+    enemy.base_max_life = int(life_definition["max_life"])
+    enemy.max_life = enemy.base_max_life
     enemy.life = enemy.max_life
     var item_result: Dictionary = enemy.configure_items(
         entry.get("item_ids", []))
@@ -269,8 +272,9 @@ func _apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> D
             return {
                 "success": false,
                 "reason": "玩家本局被动计数器装配失败：%s" % \
-                    "；".join(counter_errors),
+                "；".join(counter_errors),
             }
+    side.recalculate_effective_max_life()
     return {"success": true}
 
 func _counts(values: Array) -> Dictionary:

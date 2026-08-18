@@ -43,6 +43,9 @@ var source_kind: String = ""
 var source_id: String = ""
 var source_name: String = ""
 var source_instance_key: String = ""
+## 当前被动来源声明的 marker 元数据。只用于统一地址解析与权限校验，
+## 不进入公开投影；延迟/响应恢复时可从持有者内容目录重新解析。
+var source_marker_definitions: Array = []
 var captures: Dictionary = {}
 var ports = null
 var choice_responses: Dictionary = {}
@@ -109,6 +112,8 @@ func configure(values: Dictionary):
     source_id = str(source["source_id"])
     source_name = str(source["source_name"])
     source_instance_key = str(source["source_instance_key"])
+    source_marker_definitions = values.get(
+        "source_marker_definitions", []).duplicate(true)
     if source_kind == "technique":
         if technique_id == "":
             technique_id = source_id

@@ -111,6 +111,7 @@ func purchase(
     if working == null:
         return {"success": false, "reason": "无法建立购买事务工作副本"}
     working.experience -= price
+    var item_grant: Dictionary = {}
     if kind == "technique":
         working.learned_technique_ids.append(content_id)
     elif kind == "inner_skill":
@@ -118,7 +119,9 @@ func purchase(
     elif kind == "consumable":
         working.consumable_ids.append(content_id)
     elif kind == "item":
-        working.item_ids.append(content_id)
+        item_grant = working.grant_item(content_id)
+        if not item_grant.get("success", false):
+            return item_grant
     working.practice_purchases[content_id] = true
     _clear_slot(working.practice_shop_state, group, slot_index)
     var event_result := _dispatch_event(
@@ -134,6 +137,8 @@ func purchase(
                 "slot_index": slot_index,
                 "base_price": base_price,
                 "effective_price": price,
+                "source_marker_changes": item_grant.get(
+                    "marker_changes", []) if kind == "item" else [],
             },
         })
     if not event_result.get("success", false):
@@ -155,6 +160,8 @@ func purchase(
         "slot_index": slot_index,
         "remaining_experience": growth.experience,
         "passive_event": event_result,
+        "source_marker_changes": item_grant.get(
+            "marker_changes", []) if kind == "item" else [],
     }
 
 func open_pack(

@@ -855,9 +855,9 @@ Invocation 顺序执行一次有序效果链。查询 Hook 不在 `battle_effect
 新增内功或物品的标准战斗效果应声明 `behavior.id = "battle_effects"`，配置只含正式 `hook`、
 生命周期所需整数 `order` 与普通 `effects`。来源字段、`source_instance_key`、`trigger_mode`、
 `event_token` 和 `action_token` 均由运行时注入；事件公开字段通过统一 `event` capture 供
-ValueSpec／ConditionSpec 读取。来源标识效果当前只允许 `technique` 与 `inner_skill`：物品若
-声明 `write_source_marker`、`capture_source_marker` 或 `transfer_source_marker`，内容加载会
-明确失败，运行时不得静默按功法或内功存储。
+ValueSpec／ConditionSpec 读取。来源标识效果允许 `technique`、`inner_skill` 与正式 `item` 来源；物品
+只能访问自己已声明的marker，来源类别与实例键由运行时和`SourceMarkerAddressResolver`注入。非持有
+来源、伪造kind/实例键或未声明marker会明确失败，运行时不得静默按功法或内功存储。
 
 受控兼容债务只剩 `BattleEffectContext.technique_id`／`technique_name`。它们当前仍由
 `TechniqueResolutionService` 的嵌套调用、`TechniqueSequenceEffectHandler` 的“当前功法”语义、
@@ -1615,4 +1615,29 @@ committed serial/receipt/history、publication、TriggerQueue和GameLog。通用
 `StatusDelayService/StatusResponseService`只补齐slot、root/invocation/execution token的保存与恢复；主要值
 修改不减少occurrence、不建立观察或触发功法。BattleSession/AI增加按槽位组织的只读公开投影，战斗结束
 仍由既有battle-marker生命周期清理，不进入RunProgressSnapshot。三门蓄力功法和《伏火延烧》均未接入，
-最后一项核心C2仍是`item_source_marker_state`。
+当时最后一项核心C2为`item_source_marker_state`，现已由下一节完成。
+
+## 2026-08-18 物品来源标识与最大生命协议
+
+`item_source_marker_state`已经在现有来源标识与Run事务体系内收口，没有新增ItemMarkerStore、
+ItemPassiveRuntime、物品事务、存档字段或事件。`SourceMarkerStore.SOURCE_KINDS`正式包含item，
+`PassiveRuleSourceResolver`继续生成同一ExecutionPlan；marker变化只发布`source_marker_changed`。
+`ContentValidator`允许物品声明battle/run marker，同时校验snake_case、scope、forget_policy、可序列化值、
+注册贡献项以及“仅访问自身已声明来源”，伪造kind、实例键和非持有来源均会失败。
+
+`SourceMarkerAddressResolver`成为物品实例键唯一权威入口，格式为
+`item:<stable_owner_id>:<content_id>`。玩家GrowthInventory与玩家BattleSide统一为`player`，地址不含
+`item_index`；库存下标只留在Invocation的`source_order`。因此物品重排或删除前项不会迁移状态，三种
+source kind使用同名marker也互不冲突。BattleSide新增`active_source_content_ids()`按kind公开活跃来源，
+旧`equipped_source_content_ids()`只保留兼容委托；物品压制复用PassiveRuleRuntime并只暂停贡献。
+
+GrowthInventory的`grant_item/remove_item`是现有Run工作副本内的统一原语。获得在资格/价格确认后才写
+item_ids、初始化run marker、重算最大生命并整体提交，新物品不会影响自己的购买；失去按现有
+`remove_entries/forget_policy`处理，retain数据在不持有时不贡献。`RunMutationService`只在成功后返回
+canonical marker事实，失败不泄漏事件或token；存档恢复只恢复marker状态，不重放获得效果。
+
+最大生命仍由`SourceContributedStatService`唯一计算：`base_max_life + active max_life markers`。
+来源增加不恢复生命，来源减少立即截断，`base_max_life`不被反写；战斗建立、战后同步、Run工作副本和
+存档恢复都调用同一重算入口。专项覆盖地址稳定、三类来源对照、持有校验、clear/retain、压制、公开投影、
+最大生命、Run往返与失败回滚。九项核心C2公共协议至此全部完成，但延寿玉、纳气养命、其余物品、内功
+和暂缓功法仍未接入。

@@ -2,7 +2,7 @@ class_name GrantItemsRunEffectHandler
 extends "res://core/run_effects/run_effect_handler.gd"
 
 func operation_ids() -> Array[String]:
-    return ["grant_items"]
+    return ["grant_items", "remove_items"]
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     var ids := _validate_ids(
@@ -14,7 +14,8 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             validator.report_error(
                 "%s.item_ids[%d]" % [scope, index],
                 "引用未知物品：%s" % content_id)
-        elif validator.has_method("is_formally_obtainable") \
+        elif str(effect.get("op", "")) == "grant_items" \
+                and validator.has_method("is_formally_obtainable") \
                 and not validator.is_formally_obtainable("item", content_id):
             validator.report_error(
                 "%s.item_ids[%d]" % [scope, index],
@@ -22,6 +23,9 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
 
 func apply(effect: Dictionary, context) -> Dictionary:
     var ids: Array = effect["item_ids"]
+    var operation := str(effect.get("op", ""))
+    if operation == "remove_items":
+        return _remove(ids, context)
     for content_id_value in ids:
         var content_id := str(content_id_value)
         if context.content_catalog == null:
@@ -32,14 +36,47 @@ func apply(effect: Dictionary, context) -> Dictionary:
             return {"success": false, "reason": "物品未达到正式可获得状态：%s" % content_id}
         if context.growth.item_ids.has(content_id):
             return {"success": false, "reason": "物品已持有，不能重复发放：%s" % content_id}
+    var marker_changes: Array = []
     for content_id_value in ids:
-        context.growth.item_ids.append(str(content_id_value))
+        var granted: Dictionary = context.growth.grant_item(str(content_id_value))
+        if not granted.get("success", false):
+            return granted
+        marker_changes.append_array(granted.get("marker_changes", []))
+    context.record_committed_events(marker_changes)
     return {
         "success": true,
         "applied": {
             "op": "grant_items",
             "item_ids": ids.duplicate(),
             "item_count": context.growth.item_ids.size(),
+            "source_marker_changes": marker_changes,
+            "max_life": int(context.growth.max_life),
+        },
+    }
+
+func _remove(ids: Array, context) -> Dictionary:
+    for content_id_value in ids:
+        var content_id := str(content_id_value)
+        if context.content_catalog == null \
+                or not context.content_catalog.has_id("item", content_id):
+            return {"success": false, "reason": "引用未知物品：%s" % content_id}
+        if not context.growth.item_ids.has(content_id):
+            return {"success": false, "reason": "物品未持有：%s" % content_id}
+    var marker_changes: Array = []
+    for content_id_value in ids:
+        var removed: Dictionary = context.growth.remove_item(str(content_id_value))
+        if not removed.get("success", false):
+            return removed
+        marker_changes.append_array(removed.get("removed_markers", []))
+    context.record_committed_events(marker_changes)
+    return {
+        "success": true,
+        "applied": {
+            "op": "remove_items",
+            "item_ids": ids.duplicate(),
+            "item_count": context.growth.item_ids.size(),
+            "source_marker_changes": marker_changes,
+            "max_life": int(context.growth.max_life),
         },
     }
 

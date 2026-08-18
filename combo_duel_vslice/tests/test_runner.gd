@@ -3933,8 +3933,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        28,
-        "Registry 明确登记二十八个细粒度已提交事件")
+        31,
+        "Registry 明确登记三十一个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
         14,
@@ -4637,10 +4637,11 @@ func _test_effect_source_neutrality_runtime_paths() -> void:
     _assert_true(
         not invalid_catalog.load_from_definitions(
             invalid_values, catalog_result["paths"]),
-        "物品来源标识在内容校验阶段明确拒绝")
+        "物品未声明来源标识在内容校验阶段明确拒绝")
     _assert_true(
-        "\n".join(invalid_catalog.errors).contains("物品暂不允许读写来源标识"),
-        "物品来源标识拒绝诊断不允许静默降级")
+        "\n".join(invalid_catalog.errors).contains(
+            "物品只能读写自身已声明的 marker"),
+        "物品未声明来源标识拒绝诊断不允许静默降级")
 
 func _dispose_source_neutrality_engine(engine) -> void:
     engine.battle_passive_timing_bridge.close_battle()
@@ -4968,8 +4969,15 @@ func _assert_unified_passive_effect_entry() -> void:
         if keys.size() == 2:
             _assert_true(keys[0] != keys[1],
                 "多副本%s使用不同稳定实例键" % duplicate_case[2])
-            _assert_true(keys[0].contains(":0:") and keys[1].contains(":1:"),
-                "多副本%s 按稳定槽位顺序建立 Invocation" % duplicate_case[2])
+            if duplicate_case[2] == "item":
+                _assert_equal(keys, [
+                    "item:player:anonymous_duplicate_item",
+                    "item:player:anonymous_duplicate_item_second",
+                ], "多物品地址不依赖库存槽位且保持来源顺序")
+            else:
+                _assert_true(
+                    keys[0].contains(":0:") and keys[1].contains(":1:"),
+                    "多副本%s 按稳定槽位顺序建立 Invocation" % duplicate_case[2])
         _dispose_source_neutrality_engine(duplicate_engine)
 
     var receipt_engine = _battle_passive_test_engine(

@@ -28,6 +28,7 @@ const PassiveRuleHandlerRegistryScript = preload(
     "res://core/passives/passive_rule_handler_registry.gd")
 const EnemyDeckEncodingScript = preload("res://core/enemy_deck_encoding.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
+const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 
 const CONTENT_KEYS := [
     "base_deck",
@@ -1034,7 +1035,8 @@ func _validate_techniques(definition: Dictionary) -> void:
         integration_statuses,
         definition.get("resource_paths", []))
 
-func _validate_marker_definitions(value, scope: String) -> void:
+func _validate_marker_definitions(
+        value, scope: String, allow_initial_value: bool = false) -> void:
     if not value is Array:
         _error(scope, "必须是数组")
         return
@@ -1057,6 +1059,16 @@ func _validate_marker_definitions(value, scope: String) -> void:
             _error(marker_scope + ".public", "必须是布尔值")
         if str(marker.get("forget_policy", "clear")) not in ["clear", "retain"]:
             _error(marker_scope + ".forget_policy", "必须为 clear 或 retain")
+        if not SourceMarkerStoreScript.is_registered_contribution(str(
+                marker.get("contributes_to", ""))):
+            _error(marker_scope + ".contributes_to", "引用未注册的来源统计项")
+        if marker.has("initial_value"):
+            if not allow_initial_value:
+                _error(marker_scope + ".initial_value", "仅物品来源允许声明获得时初始值")
+            elif not _is_integer(marker["initial_value"]):
+                _error(marker_scope + ".initial_value", "必须是整数")
+            elif str(marker.get("scope", "battle")) != "run":
+                _error(marker_scope + ".initial_value", "获得时初始 marker 必须为 run scope")
         if str(marker.get("scope", "battle")) == "run" \
                 and not _is_serializable_content_value(marker):
             _error(marker_scope, "run 标识不得保存 Callable、Object 或运行时定义")
@@ -1518,6 +1530,9 @@ func _validate_items(definition: Dictionary) -> void:
                 and (not _is_integer(value.get("price")) \
                 or int(value.get("price", -1)) < 0):
             _error(scope + ".price", "正式物品必须有非负整数价格")
+        _validate_marker_definitions(
+            value.get("marker_definitions", []),
+            scope + ".marker_definitions", true)
         _validate_passive_behaviors(value, status, scope, "物品")
 
 func _validate_passive_behaviors(
@@ -1563,10 +1578,11 @@ func _validate_passive_behaviors(
         if not configuration is Dictionary:
             _error(behavior_scope + ".configuration", "必须是对象")
             continue
-        if kind_name == "物品" and _contains_source_marker_effect(configuration):
-            _error(
-                behavior_scope + ".configuration",
-                "物品暂不允许读写来源标识；不得在运行时降级为 technique 或 inner_skill")
+        if kind_name == "物品":
+            _validate_item_source_marker_effects(
+                configuration,
+                definition.get("marker_definitions", []),
+                behavior_scope + ".configuration")
         for message in _passive_rule_registry.validate_configuration(
                 normalized_id, configuration):
             _error(behavior_scope + ".configuration", str(message))
@@ -1633,6 +1649,56 @@ func _contains_source_marker_effect(value) -> bool:
             if _contains_source_marker_effect(child):
                 return true
     return false
+
+func _validate_item_source_marker_effects(
+        value, marker_definitions, scope: String) -> void:
+    var declared: Dictionary = {}
+    if marker_definitions is Array:
+        for marker_value in marker_definitions:
+            if marker_value is Dictionary:
+                declared[str(marker_value.get("id", ""))] = marker_value
+    _validate_item_source_marker_value(value, declared, scope)
+
+func _validate_item_source_marker_value(
+        value, declared: Dictionary, scope: String) -> void:
+    if value is Dictionary:
+        var op := str(value.get("op", ""))
+        if op in [
+                "write_source_marker", "capture_source_marker",
+                "transfer_source_marker"]:
+            if value.has("source_kind") and str(value["source_kind"]) != "item":
+                _error(scope + ".source_kind", "物品来源不能伪装为其他 source_kind")
+            for forbidden in ["source_instance_key", "content_id"]:
+                if value.has(forbidden):
+                    _error(scope + "." + forbidden, "物品来源地址必须由解析器生成")
+            var marker_id := str(value.get("marker_id", ""))
+            if marker_id != "" and not declared.has(marker_id):
+                _error(scope + ".marker_id", "物品只能读写自身已声明的 marker")
+            if op == "transfer_source_marker":
+                for address_field in ["from", "to"]:
+                    var address = value.get(address_field, {})
+                    if not address is Dictionary:
+                        continue
+                    if address.has("source_instance_key"):
+                        _error(
+                            "%s.%s.source_instance_key" % [scope, address_field],
+                            "物品来源地址必须由合法目标解析协议生成")
+                    if address.has("content_id"):
+                        _error(
+                            "%s.%s.content_id" % [scope, address_field],
+                            "物品显式操作其他来源必须使用合法目标解析协议")
+                    if address.has("source_kind") \
+                            and str(address["source_kind"]) != "item":
+                        _error(
+                            "%s.%s.source_kind" % [scope, address_field],
+                            "物品不能把来源伪装为功法或内功")
+        for key in value:
+            _validate_item_source_marker_value(
+                value[key], declared, "%s.%s" % [scope, str(key)])
+    elif value is Array:
+        for index in range(value.size()):
+            _validate_item_source_marker_value(
+                value[index], declared, "%s[%d]" % [scope, index])
 
 func _validate_practice_shop(definition: Dictionary) -> void:
     if int(definition.get("version", 0)) != 2:

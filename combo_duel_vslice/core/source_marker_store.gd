@@ -2,8 +2,9 @@ class_name SourceMarkerStore
 extends RefCounted
 
 const SCHEMA_VERSION := 1
-const SOURCE_KINDS := ["technique", "inner_skill"]
+const SOURCE_KINDS := ["technique", "inner_skill", "item"]
 const SCOPES := ["battle", "run"]
+const CONTRIBUTION_TARGETS := ["max_life", "poison_damage_fixed_global"]
 
 var _entries: Dictionary = {}
 
@@ -16,8 +17,8 @@ func write(
         operation: String,
         amount: int,
         metadata: Dictionary = {}) -> Dictionary:
-    if source_kind not in SOURCE_KINDS or source_instance_key == "" \
-            or marker_id == "" or scope not in SCOPES:
+    if not _valid_address(
+            source_kind, source_instance_key, marker_id, scope, metadata):
         return {"success": false, "reason": "来源标识键无效"}
     var key := _key(source_kind, source_instance_key, marker_id, scope)
     var existing: Dictionary = _entries.get(key, {})
@@ -84,8 +85,8 @@ func append_records(
         scope: String,
         records: Array,
         metadata: Dictionary = {}) -> Dictionary:
-    if source_kind not in SOURCE_KINDS or source_instance_key == "" \
-            or marker_id == "" or scope not in SCOPES:
+    if not _valid_address(
+            source_kind, source_instance_key, marker_id, scope, metadata):
         return {"success": false, "reason": "来源标识键无效"}
     if records.any(func(record):
             return not record is Dictionary \
@@ -138,7 +139,7 @@ func consume_records(
         count: int,
         remove_zero: bool = false) -> Dictionary:
     if source_kind not in SOURCE_KINDS or source_instance_key == "" \
-            or marker_id == "" or scope not in SCOPES:
+            or not _is_snake_case(marker_id) or scope not in SCOPES:
         return {"success": false, "reason": "来源标识键无效"}
     var key := _key(source_kind, source_instance_key, marker_id, scope)
     var existing: Dictionary = _entries.get(key, {})
@@ -313,14 +314,21 @@ func restore_snapshot(value: Dictionary, replace: bool = true) -> Array[String]:
         if key in seen or str(entry.get("source_kind", "")) not in SOURCE_KINDS \
                 or str(entry.get("scope", "")) not in SCOPES \
                 or str(entry.get("source_instance_key", "")) == "" \
-                or str(entry.get("marker_id", "")) == "" \
+                or not _is_snake_case(str(entry.get("marker_id", ""))) \
+                or str(entry.get("forget_policy", "clear")) not in [
+                    "clear", "retain"] \
+                or not is_registered_contribution(str(entry.get(
+                    "contributes_to", ""))) \
+                or not entry.get("public", true) is bool \
                 or not entry.get("value", 0) is int \
                 or not entry.get("records", []) is Array \
                 or entry.get("records", []).any(func(record):
                     return not record is Dictionary \
                         or not _is_serializable_value(record)) \
                 or (entry.has("records") and int(entry.get("value", 0)) \
-                    != entry.get("records", []).size()):
+                    != entry.get("records", []).size()) \
+                or (str(entry.get("scope", "")) == "run" \
+                    and not _is_serializable_value(entry)):
             errors.append("来源标识条目键、值或范围无效：%d" % index)
             continue
         seen[key] = true
@@ -353,3 +361,30 @@ func _is_serializable_value(value) -> bool:
             if not _is_serializable_value(child):
                 return false
     return true
+
+static func is_registered_contribution(contributes_to: String) -> bool:
+    return contributes_to == "" or contributes_to in CONTRIBUTION_TARGETS
+
+func _valid_address(
+        source_kind: String,
+        source_instance_key: String,
+        marker_id: String,
+        scope: String,
+        metadata: Dictionary) -> bool:
+    if source_kind not in SOURCE_KINDS or source_instance_key == "" \
+            or not _is_snake_case(marker_id) or scope not in SCOPES:
+        return false
+    if str(metadata.get("forget_policy", "clear")) not in ["clear", "retain"]:
+        return false
+    if not is_registered_contribution(str(metadata.get("contributes_to", ""))):
+        return false
+    return scope != "run" or _is_serializable_value(metadata)
+
+func _is_snake_case(value: String) -> bool:
+    if value == "" or value.to_lower() != value \
+            or value.begins_with("_") or value.ends_with("_") \
+            or "__" in value:
+        return false
+    var pattern := RegEx.new()
+    pattern.compile("^[a-z][a-z0-9_]*$")
+    return pattern.search(value) != null

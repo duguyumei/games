@@ -896,3 +896,23 @@ execution token。`BattleSession`和AI状态仅公开声明为public的`charging
 `charging_active`分支决定差异，协议不默认引爆、重置值或改变倒计时。automatic、invoked、echo、
 retrigger不会满足manual分支；蓄力完成仍由现有自动调用移动并结算同一slot。本协议未接入风·长风蓄海、
 火·三劫悬炉、山·悬岳待敌或《伏火延烧》，也不存在角色级charging字段。
+
+## 物品来源标识与最大生命协议（2026-08-18）
+
+物品来源不得自行拼接实例键。所有Runtime、效果、Run事务和投影统一调用
+`SourceMarkerAddressResolver`，格式为`item:<stable_owner_id>:<content_id>`；玩家
+`GrowthInventory`与玩家`BattleSide`都解析为`player`。`item_index`只用于`source_order`，移动或删除
+库存前项不会迁移marker。item、inner_skill和technique共用`SourceMarkerStore`，但不同source kind与
+实例地址天然隔离；只允许持有中的物品读写自身声明的marker。
+
+Run内容通过`GrowthInventory.grant_item/remove_item`执行物品原语，并由既有Run Handler和
+`RunMutationService`包裹。获得必须先完成价格/资格并把ID写入工作副本，再初始化run marker、调用
+`SourceContributedStatService`重算最大生命并原子提交；失去按`clear/retain`处理后重算。存档恢复只
+恢复状态，不执行获得效果。失败必须同时恢复item_ids、marker、life/max_life/base_max_life、committed
+事件、receipt/token与持久快照；preview/query/AI路径不得调用写原语。
+
+有效最大生命只通过`recalculate_effective_max_life`进入`SourceContributedStatService`，公式为
+`base_max_life + active source max_life markers`。活跃来源包含配装功法、配装内功和当前持有物品；
+物品压制复用`PassiveRuleRuntime`并只暂停贡献。增加上限不治疗，降低上限立即截断当前生命，绝不能
+把来源贡献反写进`base_max_life`。marker变化仍只发布`source_marker_changed`，UI/AI只读取public投影。
+延寿玉、纳气养命及其他具体内容不属于该公共协议批次。

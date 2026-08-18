@@ -633,10 +633,19 @@ func unregister_defense_retention_provider(provider_id: String) -> bool:
     return defense_retention_policy.unregister_provider(provider_id)
 
 func apply_passive_suppression(values: Dictionary) -> Dictionary:
-    return passive_rule_runtime.suppression_service.apply(values)
+    var result: Dictionary = passive_rule_runtime.suppression_service.apply(values)
+    if result.get("success", false):
+        player.recalculate_effective_max_life()
+        enemy.recalculate_effective_max_life()
+    return result
 
 func remove_passive_suppression(suppression_id: String) -> bool:
-    return passive_rule_runtime.suppression_service.remove(suppression_id)
+    var removed: bool = passive_rule_runtime.suppression_service.remove(
+        suppression_id)
+    if removed:
+        player.recalculate_effective_max_life()
+        enemy.recalculate_effective_max_life()
+    return removed
 
 func _finish_round_end() -> void:
     round_service.finish_round_end()

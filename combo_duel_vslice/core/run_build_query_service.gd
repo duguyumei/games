@@ -129,6 +129,12 @@ func _build_items() -> Array:
             "description": str(definition.get("description", "")),
             "status": str(definition.get("status", "")),
             "count": int(counts[item_id]),
+            "public_source_markers": _growth.source_marker_store.entries({
+                "source_kind": "item",
+                "content_id": item_id,
+                "scope": "run",
+                "public": true,
+            }),
         })
     return result
 

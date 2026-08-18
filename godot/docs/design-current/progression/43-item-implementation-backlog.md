@@ -150,6 +150,10 @@
 
 ### A. 物品来源与统一被动运行时
 
+- **底层状态校正（2026-08-18）**：`item_source_marker_state`协议已完成。物品正式复用
+  `SourceMarkerStore`、`SourceMarkerAddressResolver`、`PassiveRuleRuntime`、`RunMutationService`和
+  `source_marker_changed`；地址为`item:<stable_owner_id>:<content_id>`且不依赖库存顺序。以下条目作为
+  内容接入边界保留，不表示20件具体物品已经实现。
 - 为物品建立稳定且唯一的本局来源身份，接入与内功相同的`PassiveRuleRuntime`激活、压制、来源排序、Invocation、查询计划和已提交事件计划；库存与装备语义仍保持分离。
 - 物品获得事务只能在库存写入成功后激活规则；查询、预览、取消和失败事务不得提前激活，新物品不得影响自己的购买。
 - 物品继续唯一持有，不建立升级链或同 ID 叠加。内容校验必须拒绝重复获得，但特殊替换或移除仍通过通用库存事务处理。
@@ -217,16 +221,16 @@
 
 | 第7节旧清单 | 当前状态 | 代码证据与仍缺部分 |
 |---|---|---|
-| A. 物品来源与统一被动运行时 | 部分已有 | `PassiveRuleSourceResolver`已经从`item_ids`建立稳定物品来源并与内功共用`PassiveRuleRuntime`、ExecutionPlan和排序；但`SourceMarkerStore.SOURCE_KINDS`尚不支持item来源marker。 |
+| A. 物品来源与统一被动运行时 | 底层协议已有／内容未接入 | item已正式加入统一marker、Runtime、ExecutionPlan、Run事务、事件和压制语义；地址不含库存下标，20件正式内容仍未接入。 |
 | B. 修习陈列、权重、价格与冥想 | 部分已有 | `practice_price_query`、`meditation_cost_query`、补充包展示/选择数量查询已存在；普通商品槽位、类别权重和类别解锁查询仍缺。 |
 | C. 消耗品容量、心得包与功法槽 | 部分已有 | `ConsumableUseService`统一事务、`InsightGrowthService`、`insight_slot_gain_query`、槽位上限9和战斗实时扩容已有；共享容量查询、本局牌型历史及心得包保证候选计划仍缺。 |
 | D. 功法与内功配装容量 | 已有 | `technique_loadout_copy_limit_query`、`inner_skill_capacity_query`、稳定功法实例和空余槽位校验均已存在；三才并位、反物质只缺物品查询Handler。 |
 | E. 战斗Hook、牌区与功法值查询 | 部分已有 | `after_normal_draw`、`turn_end`、额外行动、抽至上限、`card_moved` committed事实和功法倍率查询已有；抓手/回收魔法/调色板仍缺薄适配，不能标记物品已实现。 |
 | F. 节点功行、地图与休息会话 | 部分已有 | `node_completed`、`RunAggregateTransaction`和单选continuation已有；功行上限查询、地图重建原子命令和休息多选会话仍缺。 |
-| G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、`SourceContributedStatService`、`RunProgressSnapshot`往返和恢复端口已有；`card_state_changed`已覆盖战斗临时重塑事实，item marker地址、永久新增真气及永久重塑提交事件仍缺。 |
+| G. 生命、牌组成长与重塑事件 | 部分已有 | `base_max_life`、item marker最大生命贡献、`RunProgressSnapshot`往返和恢复端口已有；`card_state_changed`已覆盖战斗临时重塑事实，永久新增真气及永久重塑提交事件仍缺。 |
 | H. 数据、存档与验证 | 已有结构／内容未接入 | `ContentValidator._validate_items`、`ItemRepository`和被动schema验证已存在；20件物品仍须在对应能力完成后逐批接入数据与专项测试。 |
 
-特别校正：物品稳定来源解析、事件级ExecutionPlan、心得槽位实时扩容、统一消耗品事务和战果聚合回滚已经完成。后续只能在现有Runtime、查询解析器、TechniqueEffectExecutor和RunAggregateTransaction上补窄能力，不得建立物品专用平行系统。
+特别校正：物品稳定来源解析、item marker/最大生命协议、事件级ExecutionPlan、心得槽位实时扩容、统一消耗品事务和战果聚合回滚已经完成。后续只能在现有Runtime、查询解析器、TechniqueEffectExecutor和RunAggregateTransaction上补窄能力，不得建立物品专用平行系统。
 
 ## 9. 2026-08-17 真气状态committed事实状态
 
@@ -238,3 +242,19 @@ holder、来源与operation token，无实际变化和战斗结束清理不发�
 这只满足《纳气养命》中“战斗临时重塑实际改变”的事实来源，不代表该物品已经实现。该物品仍缺
 永久新增真气事实、永久RunDeck重塑提交事实、生命恢复内容接入及相关存档/测试；本批没有修改20件
 物品的效果或数值，也没有把战斗状态写入RunDeck。
+
+## 10. 2026-08-18 物品来源标识底层协议状态
+
+`item_source_marker_state`已完成，item成为与`technique`、`inner_skill`并列的正式`source_kind`。
+`SourceMarkerAddressResolver`是唯一地址入口；玩家Run库存与战斗工作副本都使用
+`item:player:<content_id>`，敌方等其他持有者使用各自稳定owner身份。`item_index`只参与
+`source_order`，物品重排或移除前项都不会改变后项marker地址；不同source kind即使marker同名也不冲突。
+
+物品获得与失去复用现有Run工作副本和`RunMutationService`。获得顺序为资格/价格确认、写入`item_ids`、
+初始化已声明run marker、通过`SourceContributedStatService`重算最大生命、整体提交；因此新物品不会
+影响自己的购买。失去时`clear`删除其marker，`retain`只保留数据而失活来源不贡献，随后立即重算。
+预览、取消、失败和存档恢复不会执行获得效果；任一步失败会一起恢复库存、marker、生命、事件、token和快照。
+
+有效最大生命固定为`base_max_life + 所有活跃来源的max_life marker`。物品贡献增加不恢复当前生命，
+贡献下降立即截断生命，任何来源贡献都不反写`base_max_life`。压制复用`PassiveRuleRuntime`，只暂停贡献
+而不删除marker；UI/AI只公开`public=true`条目。延寿玉、纳气养命及其他20件具体物品仍未接入。

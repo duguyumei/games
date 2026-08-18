@@ -4,6 +4,7 @@ extends RefCounted
 const ContextScript = preload("res://core/passives/passive_rule_context.gd")
 const SourceResolverScript = preload(
     "res://core/passives/passive_rule_source_resolver.gd")
+const SourceScript = preload("res://core/passives/passive_rule_source.gd")
 const SuppressionServiceScript = preload(
     "res://core/passives/passive_suppression_service.gd")
 const ActivationPolicyScript = preload(
@@ -110,6 +111,25 @@ func has_content(source_kind: String, content_id: String) -> bool:
 func is_source_active(source, hook: String, context):
     return activation_policy.is_source_active(
         source, hook, coerce_context(context))
+
+func is_source_identity_active(
+        source_kind: String,
+        content_id: String,
+        source_instance_key: String,
+        hook: String,
+        _owner = null,
+        round_number: int = 0) -> bool:
+    if suppression_service == null:
+        return true
+    var source = SourceScript.new().configure({
+        "source_kind": source_kind,
+        "content_id": content_id,
+        "source_instance_key": source_instance_key,
+        "behavior_id": "source_contribution",
+        "definition": {},
+        "configuration": {},
+    })
+    return suppression_service.blockers_for(source, hook, round_number).is_empty()
 
 func resolve_inner_skill_capacity(
         growth_or_context,

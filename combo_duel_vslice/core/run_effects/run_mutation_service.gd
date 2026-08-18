@@ -52,6 +52,7 @@ func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictiona
                 str(effect.get("op", "")))
         applied.append(result.get("applied", {}).duplicate(true))
 
+    working_growth.recalculate_effective_max_life()
     var state_after: Dictionary = working_growth.capture_mutation_state()
     var commit_errors: Array[String] = growth.replace_mutation_state(state_after)
     if not commit_errors.is_empty():
@@ -62,6 +63,9 @@ func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictiona
         "changed": state_before != state_after,
         "state_before": _summarize(state_before),
         "state_after": _summarize(state_after),
+        # Run 命令只在整个工作副本提交成功后公开 canonical marker 事实；
+        # 失败路径不会泄漏已经回滚的 source_marker_changed。
+        "committed_events": runtime_context.committed_events.duplicate(true),
     }
 
 func _failure(reason: String, effect_index: int, operation_id: String) -> Dictionary:
