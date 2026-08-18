@@ -13,16 +13,28 @@ const IntQueryRequestScript = preload(
     "res://core/passives/passive_int_query_request.gd")
 const EventContextScript = preload(
     "res://core/passives/run_passive_event_context.gd")
+const RunMutationServiceScript = preload(
+    "res://core/run_effects/run_mutation_service.gd")
+const DeckFactoryScript = preload("res://core/deck_factory.gd")
+const QiCardInstanceDataScript = preload("res://core/qi_card_instance_data.gd")
+const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
 
 var _definition: Dictionary = {}
 var _content_catalog
 var _int_policy_resolver
 var _event_service
 var _event_state
+var _run_mutation_service
 var _pack_preparations: Dictionary = {}
 
-func _init(content_catalog = null) -> void:
+func _init(content_catalog = null, run_mutation_service = null) -> void:
     _content_catalog = content_catalog
+    _run_mutation_service = (
+        run_mutation_service
+        if run_mutation_service != null
+        else RunMutationServiceScript.new(
+            content_catalog.run_effect_registry if content_catalog != null else null,
+            content_catalog))
     if content_catalog != null and content_catalog.loaded:
         _definition = content_catalog.definition("practice_shop")
 
@@ -40,6 +52,8 @@ func use_passive_services(
 func start_new_shop(growth, run_seed: int, act: int, shop_index: int) -> Dictionary:
     _pack_preparations.clear()
     var state := _generate_state(growth, run_seed, act, shop_index)
+    if state.has("success") and not state.get("success", false):
+        return state
     growth.practice_shop_state = state
     return state.duplicate(true)
 
@@ -71,6 +85,7 @@ func purchase(
     if base_price < 0:
         return {"success": false, "reason": "商品缺少正式价格"}
     var content_id := str(slot.get("id", ""))
+    var purchase_key := _offer_purchase_key(slot)
     var kind := str(slot.get("kind", ""))
     var source_snapshot := _capture_sources(growth)
     var price_query := resolve_price(
@@ -83,11 +98,13 @@ func purchase(
     var price := int(price_query["effective_price"])
     if growth.experience < price:
         return {"success": false, "reason": "历练不足"}
-    if content_id == "" or growth.practice_purchases.has(content_id):
+    if content_id == "" or purchase_key == "" \
+            or growth.practice_purchases.has(purchase_key):
         return {"success": false, "reason": "该商品已经购买"}
     if group == ITEM_GROUP and kind != "item":
         return {"success": false, "reason": "物品栏包含非物品内容"}
-    if group == NORMAL_GROUP and kind not in ["technique", "inner_skill", "consumable"]:
+    if group == NORMAL_GROUP \
+            and kind not in ["technique", "inner_skill", "consumable", "qi_card"]:
         return {"success": false, "reason": "普通商品类型无效"}
 
     if kind == "technique":
@@ -104,6 +121,15 @@ func purchase(
     elif kind == "item":
         if growth.item_ids.has(content_id):
             return {"success": false, "reason": "该物品已经获得"}
+    elif kind == "qi_card":
+        var frozen_card = slot.get("card_instance")
+        if not frozen_card is Dictionary or frozen_card.is_empty():
+            return {"success": false, "reason": "动态真气商品缺少冻结实例"}
+        if str(frozen_card.get("instance_id", "")) \
+                != str(slot.get("instance_id", "")):
+            return {"success": false, "reason": "动态真气商品实例身份不一致"}
+        if growth.run_deck.has_card(str(frozen_card.get("instance_id", ""))):
+            return {"success": false, "reason": "动态真气实例已经存在"}
     else:
         return {"success": false, "reason": "不支持的修习商品类型：%s" % kind}
 
@@ -112,6 +138,7 @@ func purchase(
         return {"success": false, "reason": "无法建立购买事务工作副本"}
     working.experience -= price
     var item_grant: Dictionary = {}
+    var card_grant: Dictionary = {}
     if kind == "technique":
         working.learned_technique_ids.append(content_id)
     elif kind == "inner_skill":
@@ -122,7 +149,18 @@ func purchase(
         item_grant = working.grant_item(content_id)
         if not item_grant.get("success", false):
             return item_grant
-    working.practice_purchases[content_id] = true
+    elif kind == "qi_card":
+        card_grant = _run_mutation_service.apply_effects([{
+            "op": "add_run_card_instances",
+            "instances": [slot["card_instance"].duplicate(true)],
+        }], working, {
+            "transaction_token": "practice_qi_purchase:%s" % purchase_key,
+            "source_kind": "practice",
+            "source_id": "generated_awakened_qi",
+        })
+        if not card_grant.get("success", false):
+            return card_grant
+    working.practice_purchases[purchase_key] = true
     _clear_slot(working.practice_shop_state, group, slot_index)
     var event_result := _dispatch_event(
         "practice_purchase_committed", working, event_values, source_snapshot, {
@@ -131,7 +169,7 @@ func purchase(
             "shop_index": int(working.practice_shop_state.get("shop_index", 0)),
             "transaction_token": "practice_purchase:%d:%s:%d:%s" % [
                 int(working.practice_shop_state.get("shop_index", 0)),
-                group, slot_index, content_id],
+                group, slot_index, purchase_key],
             "payload": {
                 "group": group,
                 "slot_index": slot_index,
@@ -139,6 +177,11 @@ func purchase(
                 "effective_price": price,
                 "source_marker_changes": item_grant.get(
                     "marker_changes", []) if kind == "item" else [],
+                "purchase_key": purchase_key,
+                "added_card_instance_id": str(slot.get("instance_id", "")) \
+                    if kind == "qi_card" else "",
+                "frozen_offer": _frozen_offer_summary(slot) \
+                    if kind == "qi_card" else {},
             },
         })
     if not event_result.get("success", false):
@@ -151,6 +194,7 @@ func purchase(
     return {
         "success": true,
         "content_id": content_id,
+        "purchase_key": purchase_key,
         "kind": kind,
         "price": price,
         "base_price": base_price,
@@ -162,6 +206,11 @@ func purchase(
         "passive_event": event_result,
         "source_marker_changes": item_grant.get(
             "marker_changes", []) if kind == "item" else [],
+        "added_card_instance_id": str(slot.get("instance_id", "")) \
+            if kind == "qi_card" else "",
+        "frozen_offer": _frozen_offer_summary(slot) \
+            if kind == "qi_card" else {},
+        "run_mutation": card_grant if kind == "qi_card" else {},
     }
 
 func open_pack(
@@ -222,7 +271,19 @@ func open_pack(
     var rng := _pack_rng_for(
         run_seed, act, int(growth.practice_shop_state.get("shop_index", 1)),
         slot_index, sequence)
-    var offered: Array[String] = _sample_ids(candidate_ids, offer_count, rng)
+    var offer_plan := _plan_pack_offers(
+        growth, slot, candidate_ids, offer_count, rng, source_snapshot, {
+            "group": group,
+            "slot_index": slot_index,
+            "shop_index": int(growth.practice_shop_state.get("shop_index", 1)),
+            "act": act,
+            "operation": "prepare_pack",
+            "pack_open_sequence": sequence,
+        })
+    if not offer_plan.get("success", false):
+        return offer_plan
+    var offered: Array[String] = []
+    offered.assign(offer_plan.get("offered", []))
     if offered.is_empty():
         return {"success": false, "reason": "补充包当前没有合格候选"}
     var free_slots := maxi(
@@ -232,7 +293,10 @@ func open_pack(
         price_query.get("source_fingerprint", ""),
         offer_query.get("source_fingerprint", ""),
         choose_query.get("source_fingerprint", ""),
+        offer_plan.get("source_fingerprint", "not_applicable"),
     ])
+    var history_fingerprint := _run_combat_history_fingerprint(growth) \
+        if str(slot.get("content_kind", "")) == "insight" else "not_applicable"
     var expected_token := _pack_preparation_token(
         growth, group, slot_index, slot, offered, run_seed, act, {
             "base_price": base_price,
@@ -242,6 +306,9 @@ func open_pack(
             "base_choose_count": base_choose_count,
             "effective_choose_count": choose_count,
             "passive_source_fingerprint": source_fingerprint,
+            "history_fingerprint": history_fingerprint,
+            "guaranteed_candidate_id": str(offer_plan.get(
+                "guaranteed_candidate_id", "")),
         })
     if selected_ids.is_empty() and preparation_token == "":
         _pack_preparations[expected_token] = {
@@ -260,6 +327,21 @@ func open_pack(
             "effective_choose_count": choose_count,
             "choose_count_modifiers": choose_query["modifier_breakdown"].duplicate(true),
             "passive_source_fingerprint": source_fingerprint,
+            "priority_modifiers": offer_plan.get(
+                "modifier_breakdown", []).duplicate(true),
+            "guaranteed_candidate_id": str(offer_plan.get(
+                "guaranteed_candidate_id", "")),
+            "history_fingerprint": history_fingerprint,
+            "history_snapshot": growth.run_combat_history.snapshot() \
+                if str(slot.get("content_kind", "")) == "insight" else {},
+            "rng_inputs": {
+                "run_seed": run_seed,
+                "act": act,
+                "shop_index": int(growth.practice_shop_state.get(
+                    "shop_index", 1)),
+                "slot_index": slot_index,
+                "pack_open_sequence": sequence,
+            },
             "source_snapshot": source_snapshot.duplicate(true),
             "sequence": sequence,
             "free_slots": free_slots,
@@ -287,6 +369,11 @@ func open_pack(
             "offer_count_modifiers": offer_query["modifier_breakdown"],
             "choose_count_modifiers": choose_query["modifier_breakdown"],
             "passive_source_fingerprint": source_fingerprint,
+            "guaranteed_candidate_id": str(offer_plan.get(
+                "guaranteed_candidate_id", "")),
+            "priority_modifiers": offer_plan.get(
+                "modifier_breakdown", []).duplicate(true),
+            "history_fingerprint": history_fingerprint,
             "group": group,
             "slot_index": slot_index,
         }
@@ -311,11 +398,17 @@ func _confirm_prepared_pack(
             or str(prepared.get("pack_id", "")) != str(slot.get("id", "")):
         return {"success": false, "reason": "补充包预览与当前槽位不匹配"}
     var frozen_source_snapshot: Array = prepared.get("source_snapshot", [])
-    var current_fingerprint: Dictionary = _current_pack_source_fingerprint(growth)
+    var current_fingerprint: Dictionary = _current_pack_source_fingerprint(
+        growth, prepared.get("slot", {}))
     if not current_fingerprint.get("success", false) \
             or str(current_fingerprint.get("fingerprint", "")) \
             != str(prepared.get("passive_source_fingerprint", "")):
         return {"success": false, "reason": "补充包被动来源已变化，请重新预览"}
+    if str(prepared.get("history_fingerprint", "not_applicable")) \
+            != ( _run_combat_history_fingerprint(growth) \
+                if str(prepared.get("slot", {}).get(
+                    "content_kind", "")) == "insight" else "not_applicable"):
+        return {"success": false, "reason": "补充包历史快照已变化，请重新预览"}
     var frozen_token := _pack_preparation_token(
         growth, group, slot_index, prepared["slot"], prepared["offered"],
         run_seed, act, {
@@ -326,6 +419,10 @@ func _confirm_prepared_pack(
             "base_choose_count": prepared["base_choose_count"],
             "effective_choose_count": prepared["effective_choose_count"],
             "passive_source_fingerprint": prepared["passive_source_fingerprint"],
+            "history_fingerprint": prepared.get(
+                "history_fingerprint", "not_applicable"),
+            "guaranteed_candidate_id": prepared.get(
+                "guaranteed_candidate_id", ""),
         })
     if preparation_token != frozen_token:
         return {"success": false, "reason": "补充包预览已失效，请重新预览"}
@@ -385,6 +482,10 @@ func _confirm_prepared_pack(
                 "effective_offer_count": prepared["effective_offer_count"],
                 "base_choose_count": prepared["base_choose_count"],
                 "effective_choose_count": prepared["effective_choose_count"],
+                "guaranteed_candidate_id": prepared.get(
+                    "guaranteed_candidate_id", ""),
+                "history_fingerprint": prepared.get(
+                    "history_fingerprint", "not_applicable"),
             },
         })
     if not event_result.get("success", false):
@@ -406,6 +507,12 @@ func _confirm_prepared_pack(
         "effective_offer_count": prepared["effective_offer_count"],
         "base_choose_count": prepared["base_choose_count"],
         "effective_choose_count": prepared["effective_choose_count"],
+        "guaranteed_candidate_id": prepared.get(
+            "guaranteed_candidate_id", ""),
+        "priority_modifiers": prepared.get(
+            "priority_modifiers", []).duplicate(true),
+        "history_fingerprint": prepared.get(
+            "history_fingerprint", "not_applicable"),
         "group": group,
         "slot_index": slot_index,
         "remaining_experience": growth.experience,
@@ -438,24 +545,45 @@ func meditate(
     var count := int(state.get("meditation_count", 0)) + 1
     var rng := _rng_for(run_seed, act, int(state.get("shop_index", 1)), count)
     var normal: Array = state.get(NORMAL_GROUP, []).duplicate(true)
+    var strategy_fingerprints: Array = []
     for index in range(normal.size()):
         if not normal[index] is Dictionary or normal[index].is_empty():
             continue
-        var current_id := str(normal[index].get("id", ""))
-        var excluded: Dictionary = {current_id: true}
+        var current_key := _offer_purchase_key(normal[index])
+        var excluded: Dictionary = {current_key: true}
         for occupied_value in normal:
             if occupied_value is Dictionary and not occupied_value.is_empty():
-                var occupied_id := str(occupied_value.get("id", ""))
-                if occupied_id != "":
-                    excluded[occupied_id] = true
-        var pools := _normal_category_pools(working, excluded)
-        var chosen := _take_weighted_normal_candidate(pools, rng)
+                var occupied_key := _offer_purchase_key(occupied_value)
+                if occupied_key != "":
+                    excluded[occupied_key] = true
+        var pool_plan := _normal_category_pools(
+            working, excluded, source_snapshot, rng, {
+                "group": NORMAL_GROUP,
+                "shop_index": int(state.get("shop_index", 1)),
+                "act": act,
+                "run_seed": run_seed,
+                "operation": "meditation",
+                "slot_index": index,
+                "operation_index": count,
+            })
+        if not pool_plan.get("success", false):
+            return pool_plan
+        strategy_fingerprints.append_array(
+            pool_plan.get("source_fingerprints", []))
+        var chosen := _take_weighted_normal_candidate(
+            pool_plan.get("pools", []), rng)
         if not chosen.is_empty():
             normal[index] = chosen
     working.experience -= cost
     state["meditation_count"] = count
     state["next_meditation_cost"] = base_cost + 1
     state[NORMAL_GROUP] = normal
+    state["normal_slot_count"] = normal.size()
+    state["strategy_source_fingerprint"] = _combined_fingerprint(
+        strategy_fingerprints)
+    state["strategy_source_snapshot_fingerprint"] = JSON.stringify(
+        source_snapshot).sha256_text()
+    state["strategy_operation"] = "meditation:%d" % count
     working.practice_shop_state = state
     var refreshed_slot_indices: Array[int] = []
     for index in range(normal.size()):
@@ -612,6 +740,72 @@ func resolve_pack_count(
         return {"success": false, "reason": "补充包有效数量必须是非负整数"}
     return resolved
 
+func resolve_normal_slot_count(
+        growth,
+        base_value: int,
+        metadata: Dictionary = {},
+        source_snapshot: Array = []) -> Dictionary:
+    var resolved := _resolve_int_query(
+        "practice_normal_slot_count_query", growth,
+        "practice_offer_group", NORMAL_GROUP,
+        base_value, metadata, source_snapshot)
+    if not resolved.get("success", false):
+        return resolved
+    if int(resolved.get("effective_value", -1)) < 0:
+        return {"success": false, "reason": "普通商品有效槽位数必须是非负整数"}
+    return resolved
+
+func resolve_offer_weight(
+        growth,
+        category: Dictionary,
+        metadata: Dictionary = {},
+        source_snapshot: Array = []) -> Dictionary:
+    var values := _category_query_metadata(category, metadata)
+    var resolved := _resolve_int_query(
+        "practice_offer_weight_query", growth,
+        "practice_offer_category", str(category.get("id", "")),
+        int(category.get("weight", 0)), values, source_snapshot)
+    if not resolved.get("success", false):
+        return resolved
+    if int(resolved.get("effective_value", -1)) < 0:
+        return {"success": false, "reason": "普通商品类别有效权重必须是非负整数"}
+    return resolved
+
+func resolve_offer_category_enabled(
+        growth,
+        category: Dictionary,
+        metadata: Dictionary = {},
+        source_snapshot: Array = []) -> Dictionary:
+    var values := _category_query_metadata(category, metadata)
+    var resolved := _resolve_int_query(
+        "practice_offer_category_enabled_query", growth,
+        "practice_offer_category", str(category.get("id", "")),
+        int(category.get("enabled", 1)), values, source_snapshot)
+    if not resolved.get("success", false):
+        return resolved
+    if int(resolved.get("effective_value", -1)) < 0:
+        return {"success": false, "reason": "普通商品类别启用值必须是非负整数"}
+    return resolved
+
+func resolve_pack_candidate_priority(
+        growth,
+        pack_id: String,
+        candidate_id: String,
+        metadata: Dictionary = {},
+        source_snapshot: Array = []) -> Dictionary:
+    var resolved := _resolve_int_query(
+        "practice_pack_candidate_priority_query", growth,
+        "practice_pack_candidate", candidate_id,
+        0, metadata.merged({
+            "pack_id": pack_id,
+            "candidate_id": candidate_id,
+        }, true), source_snapshot)
+    if not resolved.get("success", false):
+        return resolved
+    if int(resolved.get("effective_value", -1)) < 0:
+        return {"success": false, "reason": "补充包候选优先级必须是非负整数"}
+    return resolved
+
 func _resolve_int_query(
         hook: String,
         growth,
@@ -695,33 +889,70 @@ func _combined_fingerprint(values: Array) -> String:
 
 func _current_pack_source_fingerprint(
         growth,
-        _frozen_snapshot: Array = []) -> Dictionary:
+        slot: Dictionary = {}) -> Dictionary:
+    var hooks := [
+        "practice_price_query",
+        "pack_offer_count_query",
+        "pack_choose_count_query",
+    ]
+    if str(slot.get("content_kind", "")) == "insight":
+        hooks.append("practice_pack_candidate_priority_query")
     if _event_service == null:
-        return {"success": true, "fingerprint": _combined_fingerprint([
-            "no_runtime", "no_runtime", "no_runtime"])}
+        var empty_values: Array = []
+        for _hook in hooks:
+            empty_values.append("no_runtime")
+        return {"success": true, "fingerprint": _combined_fingerprint(
+            empty_values + (["not_applicable"] if hooks.size() == 3 else []))}
     var current_values: Array = []
-    for hook in [
-            "practice_price_query",
-            "pack_offer_count_query",
-            "pack_choose_count_query"]:
+    for hook in hooks:
         var fingerprint: Dictionary = _event_service.source_fingerprint(
             growth, [hook])
         if not fingerprint.get("success", false):
             return fingerprint
         current_values.append(str(fingerprint["fingerprint"]))
+    if hooks.size() == 3:
+        current_values.append("not_applicable")
     return {"success": true, "fingerprint": _combined_fingerprint(current_values)}
 
 func _generate_state(growth, run_seed: int, act: int, shop_index: int) -> Dictionary:
     var rng := _rng_for(run_seed, act, shop_index, 0)
     var normal_definition: Dictionary = _definition.get("normal", {})
+    var source_snapshot := _capture_sources(growth)
+    var slot_query := resolve_normal_slot_count(
+        growth, int(normal_definition.get("slot_count", 2)), {
+            "group": NORMAL_GROUP,
+            "shop_index": shop_index,
+            "act": act,
+            "run_seed": run_seed,
+            "operation": "generate_shop",
+        }, source_snapshot)
+    if not slot_query.get("success", false):
+        return slot_query
+    var normal_slot_count := int(slot_query.get("effective_value", 0))
     var normal: Array = []
     var normal_excluded: Dictionary = {}
-    for _index in range(int(normal_definition.get("slot_count", 2))):
-        var pools := _normal_category_pools(growth, normal_excluded)
-        var chosen := _take_weighted_normal_candidate(pools, rng)
+    var strategy_fingerprints: Array = [slot_query.get(
+        "source_fingerprint", "")]
+    for index in range(normal_slot_count):
+        var pool_plan := _normal_category_pools(
+            growth, normal_excluded, source_snapshot, rng, {
+                "group": NORMAL_GROUP,
+                "shop_index": shop_index,
+                "act": act,
+                "run_seed": run_seed,
+                "operation": "generate_shop",
+                "slot_index": index,
+                "operation_index": 0,
+            })
+        if not pool_plan.get("success", false):
+            return pool_plan
+        strategy_fingerprints.append_array(
+            pool_plan.get("source_fingerprints", []))
+        var chosen := _take_weighted_normal_candidate(
+            pool_plan.get("pools", []), rng)
         normal.append(chosen)
         if not chosen.is_empty():
-            normal_excluded[str(chosen.get("id", ""))] = true
+            normal_excluded[_offer_purchase_key(chosen)] = true
 
     var pack_definition: Dictionary = _definition.get("packs", {})
     var packs: Array = []
@@ -737,35 +968,101 @@ func _generate_state(growth, run_seed: int, act: int, shop_index: int) -> Dictio
     return {
         "shop_index": shop_index,
         "act": act,
+        "normal_slot_count": normal_slot_count,
         "normal": normal,
         "packs": packs,
         "items": items,
         "meditation_count": 0,
         "next_meditation_cost": 5,
         "pack_open_sequence": 0,
+        "strategy_source_fingerprint": _combined_fingerprint(
+            strategy_fingerprints),
+        "strategy_source_snapshot_fingerprint": JSON.stringify(
+            source_snapshot).sha256_text(),
+        "strategy_operation": "generate_shop",
     }
 
-func _normal_category_pools(growth, excluded: Dictionary = {}) -> Array:
+func _normal_category_pools(
+        growth,
+        excluded: Dictionary = {},
+        source_snapshot: Array = [],
+        rng: RandomNumberGenerator = null,
+        metadata: Dictionary = {}) -> Dictionary:
     var result: Array = []
+    var fingerprints: Array = []
     for category_value in _definition.get("normal", {}).get("categories", []):
         if not category_value is Dictionary:
             continue
         var category: Dictionary = category_value
-        var offers: Array = []
-        for candidate_value in category.get("candidate_ids", []):
-            var content_id := str(candidate_value)
-            if content_id == "" or excluded.has(content_id):
-                continue
-            var offer := _resolve_normal_offer(category, content_id)
-            if offer.is_empty() or not _normal_offer_available(growth, offer):
-                continue
-            offers.append(offer)
-        if not offers.is_empty():
+        var enabled_query := resolve_offer_category_enabled(
+            growth, category, metadata, source_snapshot)
+        if not enabled_query.get("success", false):
+            return enabled_query
+        fingerprints.append(enabled_query.get("source_fingerprint", ""))
+        if int(enabled_query.get("effective_value", 0)) <= 0:
+            continue
+        var offers_result := _normal_category_offers(
+            growth, category, excluded, rng, metadata)
+        if not offers_result.get("success", false):
+            return offers_result
+        var offers: Array = offers_result.get("offers", [])
+        if offers.is_empty():
+            continue
+        var weight_query := resolve_offer_weight(
+            growth, category, metadata, source_snapshot)
+        if not weight_query.get("success", false):
+            return weight_query
+        fingerprints.append(weight_query.get("source_fingerprint", ""))
+        var effective_weight := int(weight_query.get("effective_value", 0))
+        if effective_weight > 0:
             result.append({
-                "weight": int(category.get("weight", 0)),
+                "category_id": str(category.get("id", "")),
+                "weight": effective_weight,
+                "base_weight": int(category.get("weight", 0)),
                 "offers": offers,
+                "weight_query": weight_query.duplicate(true),
+                "enabled_query": enabled_query.duplicate(true),
             })
-    return result
+    return {
+        "success": true,
+        "pools": result,
+        "source_fingerprints": fingerprints,
+    }
+
+func _normal_category_offers(
+        growth,
+        category: Dictionary,
+        excluded: Dictionary,
+        rng: RandomNumberGenerator,
+        metadata: Dictionary) -> Dictionary:
+    var provider := str(category.get("candidate_provider", "static_ids"))
+    var candidates: Array = []
+    if provider == "static_ids":
+        for candidate_value in category.get("candidate_ids", []):
+            var offer := _resolve_normal_offer(category, str(candidate_value))
+            if not offer.is_empty():
+                candidates.append(offer)
+    elif provider == "generated_awakened_qi":
+        if rng == null:
+            return {"success": false, "reason": "动态觉醒真气候选缺少修习 RNG"}
+        var generated := _generated_awakened_qi_offer(category, rng, metadata)
+        if not generated.get("success", false):
+            return generated
+        candidates.append(generated["offer"])
+    else:
+        return {
+            "success": false,
+            "reason": "未知普通商品候选提供器：%s" % provider,
+        }
+    var offers: Array = []
+    for offer_value in candidates:
+        var offer: Dictionary = offer_value
+        var purchase_key := _offer_purchase_key(offer)
+        if purchase_key == "" or excluded.has(purchase_key) \
+                or not _normal_offer_available(growth, offer):
+            continue
+        offers.append(offer)
+    return {"success": true, "offers": offers}
 
 func _resolve_normal_offer(category: Dictionary, content_id: String) -> Dictionary:
     if _content_catalog == null:
@@ -786,9 +1083,125 @@ func _resolve_normal_offer(category: Dictionary, content_id: String) -> Dictiona
         offer["price"] = int(definition.get("price", -1))
     return offer
 
+func _generated_awakened_qi_offer(
+        category: Dictionary,
+        rng: RandomNumberGenerator,
+        metadata: Dictionary) -> Dictionary:
+    if _content_catalog == null:
+        return {"success": false, "reason": "动态觉醒真气候选缺少内容目录"}
+    var definition_ids: Array[String] = []
+    var base_deck: Dictionary = _content_catalog.definition("base_deck")
+    for attribute in base_deck.get("attributes", []):
+        for rank in base_deck.get("ranks", []):
+            definition_ids.append("%s_%s" % [
+                str(attribute.get("id", "")), str(rank.get("id", ""))])
+    if definition_ids.is_empty():
+        return {"success": false, "reason": "普通真气定义池为空"}
+    var definition_id := definition_ids[
+        rng.randi_range(0, definition_ids.size() - 1)]
+    var definition: Dictionary = _content_catalog.get_by_id(
+        "card", definition_id)
+    if definition.is_empty():
+        return {"success": false, "reason": "动态候选引用未知真气：%s" % definition_id}
+    var identity_values := {
+        "run_seed": int(metadata.get("run_seed", 0)),
+        "act": int(metadata.get("act", 0)),
+        "shop_index": int(metadata.get("shop_index", 0)),
+        "operation": str(metadata.get("operation", "")),
+        "operation_index": int(metadata.get("operation_index", 0)),
+        "slot_index": int(metadata.get("slot_index", -1)),
+        "category_id": str(category.get("id", "")),
+        "definition_id": definition_id,
+    }
+    var stable_hash := JSON.stringify(identity_values).sha256_text().substr(0, 20)
+    var instance_id := "practice:%s:%s" % [stable_hash, definition_id]
+    var offer_instance_id := "practice-offer:%s" % stable_hash
+    var card = DeckFactoryScript.create_card_instance(
+        definition, instance_id, _content_catalog.card_reshape_rules)
+    var base_values: Dictionary = QiCardInstanceDataScript.capture(card)
+    var origin_payload := {"attribute": str(definition.get("attribute", ""))}
+    var planned := CardOriginServiceScript.new(_content_catalog).plan(
+        base_values, "awakening", origin_payload)
+    if not planned.get("success", false):
+        return planned
+    var card_instance: Dictionary = planned["after"].duplicate(true)
+    var validation_errors := QiCardInstanceDataScript.validate(
+        card_instance, _content_catalog)
+    if not validation_errors.is_empty():
+        return {"success": false, "reason": "；".join(validation_errors)}
+    var rank_name := str(card_instance.get("rank_name", ""))
+    var attribute_name := str(card_instance.get("attribute_name", ""))
+    var preview := {
+        "definition_id": definition_id,
+        "instance_id": instance_id,
+        "rank": rank_name,
+        "attribute": str(card_instance.get("attribute", "")),
+        "attribute_name": attribute_name,
+        "base_qi": int(card_instance.get("qi_value", 0)),
+        "origin": "awakening",
+        "origin_payload": origin_payload.duplicate(true),
+    }
+    return {"success": true, "offer": {
+        "id": definition_id,
+        "name": "觉醒·%s%s" % [attribute_name, rank_name],
+        "description": "完整冻结的永久觉醒真气；购买后加入本局牌组。",
+        "kind": "qi_card",
+        "content_kind": "awakened_qi",
+        "candidate_provider": "generated_awakened_qi",
+        "price": int(category.get("fixed_price", 4)),
+        "definition_id": definition_id,
+        "instance_id": instance_id,
+        "offer_instance_id": offer_instance_id,
+        "purchase_key": offer_instance_id,
+        "rank": rank_name,
+        "attribute": str(card_instance.get("attribute", "")),
+        "base_qi": int(card_instance.get("qi_value", 0)),
+        "origin": "awakening",
+        "origin_payload": origin_payload.duplicate(true),
+        "temporary": false,
+        "original_owner_id": "",
+        "public_preview": preview,
+        "card_instance": card_instance,
+    }}
+
+func _category_query_metadata(
+        category: Dictionary,
+        metadata: Dictionary) -> Dictionary:
+    var result := metadata.duplicate(true)
+    result.merge({
+        "group": NORMAL_GROUP,
+        "category_id": str(category.get("id", "")),
+        "offer_kind": str(category.get("offer_kind", "")),
+        "content_kind": str(category.get("content_kind", "")),
+        "candidate_provider": str(category.get(
+            "candidate_provider", "static_ids")),
+    }, true)
+    return result
+
+func _offer_purchase_key(offer: Dictionary) -> String:
+    return str(offer.get(
+        "purchase_key",
+        offer.get("offer_instance_id", offer.get("id", ""))))
+
+func _frozen_offer_summary(offer: Dictionary) -> Dictionary:
+    var result: Dictionary = {}
+    for field in [
+            "id", "kind", "content_kind", "candidate_provider", "price",
+            "definition_id", "instance_id", "offer_instance_id", "purchase_key",
+            "rank", "attribute", "base_qi", "origin", "origin_payload",
+            "temporary", "original_owner_id", "public_preview"]:
+        if not offer.has(field):
+            continue
+        var value = offer[field]
+        result[field] = value.duplicate(true) \
+            if value is Dictionary or value is Array else value
+    return result
+
 func _normal_offer_available(growth, offer: Dictionary) -> bool:
     var content_id := str(offer.get("id", ""))
-    if content_id == "" or growth.practice_purchases.has(content_id):
+    var purchase_key := _offer_purchase_key(offer)
+    if content_id == "" or purchase_key == "" \
+            or growth.practice_purchases.has(purchase_key):
         return false
     match str(offer.get("kind", "")):
         "technique":
@@ -797,6 +1210,12 @@ func _normal_offer_available(growth, offer: Dictionary) -> bool:
             return not growth.learned_inner_skill_ids.has(content_id)
         "consumable":
             return not _is_unique_consumable_unavailable(growth, content_id)
+        "qi_card":
+            var values = offer.get("card_instance")
+            return values is Dictionary \
+                and not values.is_empty() \
+                and not growth.run_deck.has_card(str(values.get(
+                    "instance_id", "")))
     return false
 
 func _item_candidates(growth) -> Array:
@@ -832,6 +1251,96 @@ func _eligible_pack_candidate_ids(growth, slot: Dictionary) -> Array:
         result.append(content_id)
     result.sort()
     return result
+
+func _plan_pack_offers(
+        growth,
+        slot: Dictionary,
+        candidate_ids: Array,
+        offer_count: int,
+        rng: RandomNumberGenerator,
+        source_snapshot: Array,
+        metadata: Dictionary) -> Dictionary:
+    if str(slot.get("content_kind", "")) != "insight":
+        return {
+            "success": true,
+            "offered": _sample_ids(candidate_ids, offer_count, rng),
+            "guaranteed_candidate_id": "",
+            "modifier_breakdown": [],
+            "source_fingerprint": "not_applicable",
+        }
+    var highest_priority := 0
+    var priority_candidates: Array[String] = []
+    var breakdown: Array = []
+    var query_fingerprint := "no_runtime"
+    for candidate_value in candidate_ids:
+        var candidate_id := str(candidate_value)
+        var candidate_metadata := metadata.duplicate(true)
+        candidate_metadata.merge({
+            "offer_kind": "consumable_pack",
+            "content_kind": "insight",
+            "candidate_provider": "static_ids",
+            "candidate_hand_id": _insight_hand_id(candidate_id),
+        }, true)
+        var query := resolve_pack_candidate_priority(
+            growth, str(slot.get("id", "")), candidate_id,
+            candidate_metadata, source_snapshot)
+        if not query.get("success", false):
+            return query
+        query_fingerprint = str(query.get("source_fingerprint", ""))
+        var priority := int(query.get("effective_value", 0))
+        breakdown.append({
+            "candidate_id": candidate_id,
+            "candidate_hand_id": str(candidate_metadata.get(
+                "candidate_hand_id", "")),
+            "effective_priority": priority,
+            "modifier_breakdown": query.get(
+                "modifier_breakdown", []).duplicate(true),
+        })
+        if priority <= 0:
+            continue
+        if priority > highest_priority:
+            highest_priority = priority
+            priority_candidates.clear()
+        if priority == highest_priority:
+            priority_candidates.append(candidate_id)
+    var guaranteed_id := ""
+    var offered: Array[String] = []
+    if offer_count > 0 and not priority_candidates.is_empty():
+        guaranteed_id = priority_candidates[
+            rng.randi_range(0, priority_candidates.size() - 1)]
+        offered.append(guaranteed_id)
+        var remaining: Array = candidate_ids.duplicate()
+        remaining.erase(guaranteed_id)
+        offered.append_array(_sample_ids(
+            remaining, maxi(offer_count - 1, 0), rng))
+    else:
+        offered = _sample_ids(candidate_ids, offer_count, rng)
+    return {
+        "success": true,
+        "offered": offered,
+        "guaranteed_candidate_id": guaranteed_id,
+        "modifier_breakdown": breakdown,
+        "source_fingerprint": query_fingerprint,
+    }
+
+func _insight_hand_id(candidate_id: String) -> String:
+    if _content_catalog == null:
+        return ""
+    var definition: Dictionary = _content_catalog.get_by_id(
+        "consumable", candidate_id)
+    for effect_value in definition.get("effects", []):
+        if effect_value is Dictionary \
+                and str(effect_value.get("op", "")) == "gain_insight":
+            return str(effect_value.get("hand", ""))
+    return ""
+
+func _run_combat_history_fingerprint(growth) -> String:
+    if growth == null:
+        return JSON.stringify({}).sha256_text()
+    var history = growth.get("run_combat_history")
+    if history == null or not history.has_method("snapshot"):
+        return JSON.stringify({}).sha256_text()
+    return JSON.stringify(history.snapshot()).sha256_text()
 
 func _is_unique_consumable_unavailable(growth, content_id: String) -> bool:
     if _content_catalog == null:

@@ -151,7 +151,8 @@ func _init(
             if _content_catalog.loaded else {},
             RunMutationServiceScript.new(
                 _content_catalog.run_effect_registry, _content_catalog)))
-    _practice_service = PracticeServiceScript.new(_content_catalog)
+    _practice_service = PracticeServiceScript.new(
+        _content_catalog, _node_reward_service.mutation_service)
     _inner_skill_repository = InnerSkillRepositoryScript.new()
     if _content_catalog.loaded:
         _inner_skill_repository.configure(

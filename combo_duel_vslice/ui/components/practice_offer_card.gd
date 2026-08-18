@@ -26,7 +26,7 @@ func present(definition: Dictionary) -> void:
     _slot_index = int(definition.get("_slot_index", -1))
     disabled = definition.is_empty() or bool(definition.get("purchased", false))
     text = "%s\n\n%s\n\n%d 历练\n\n%s" % [
-        {"insight": "心 得", "pill": "丹 药", "treasure": "奇 珍", "technique": "功 法", "insight_pack": "补 充 包"}.get(
+        {"insight": "心 得", "pill": "丹 药", "treasure": "奇 珍", "technique": "功 法", "insight_pack": "补 充 包", "qi_card": "真 气"}.get(
             definition.get("kind", ""), "修习物"),
         definition.get("name", "未命名"), price,
         "空槽" if definition.is_empty() \

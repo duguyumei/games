@@ -6,7 +6,10 @@ const CardWorkshopServiceScript = preload("res://core/card_workshop_service.gd")
 var _workshop := CardWorkshopServiceScript.new()
 
 func operation_ids() -> Array[String]:
-    return ["add_run_cards", "remove_run_cards", "copy_run_card"]
+    return [
+        "add_run_cards", "add_run_card_instances",
+        "remove_run_cards", "copy_run_card",
+    ]
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     match str(effect.get("op", "")):
@@ -20,6 +23,24 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                         validator.report_error(
                             "%s.definition_ids[%d]" % [scope, index],
                             "引用未知基础真气定义：%s" % definition_id)
+        "add_run_card_instances":
+            var instances = effect.get("instances")
+            if not instances is Array or instances.is_empty():
+                validator.report_error(scope + ".instances", "必须是非空数组")
+            else:
+                var seen: Dictionary = {}
+                for index in range(instances.size()):
+                    var value = instances[index]
+                    if not value is Dictionary:
+                        validator.report_error(
+                            "%s.instances[%d]" % [scope, index], "必须是对象")
+                        continue
+                    var instance_id := str(value.get("instance_id", ""))
+                    if instance_id == "" or seen.has(instance_id):
+                        validator.report_error(
+                            "%s.instances[%d].instance_id" % [scope, index],
+                            "必须非空且不得重复")
+                    seen[instance_id] = true
         "remove_run_cards":
             _validate_id_array(
                 effect.get("instance_ids"), validator, scope + ".instance_ids")
@@ -39,6 +60,9 @@ func apply(effect: Dictionary, context) -> Dictionary:
         "add_run_cards":
             result = _workshop.add_run_cards(
                 context.growth.run_deck, effect["definition_ids"])
+        "add_run_card_instances":
+            result = _workshop.add_run_card_instances(
+                context.growth.run_deck, effect["instances"])
         "remove_run_cards":
             result = _workshop.remove_run_cards(
                 context.growth.run_deck, effect["instance_ids"])

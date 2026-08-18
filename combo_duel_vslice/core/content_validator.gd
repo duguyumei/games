@@ -159,7 +159,8 @@ const REWARD_KINDS := [
 const CONSUMABLE_KINDS := ["insight", "pill", "curio", "draft"]
 const FORMAL_CONTENT_STATUS := "formal"
 const ITEM_STATUSES := ["candidate", "design_only", "formal"]
-const PRACTICE_OFFER_KINDS := ["technique", "inner_skill", "consumable"]
+const PRACTICE_OFFER_KINDS := [
+    "technique", "inner_skill", "consumable", "qi_card"]
 const PRACTICE_CONTENT_KINDS := ["pill", "insight", "curio"]
 const ENEMY_AI_NUMBER_FIELDS := [
     "damage_weight",
@@ -1751,22 +1752,46 @@ func _validate_practice_normal(definition: Dictionary) -> void:
         if not _is_integer(category.get("weight")) \
                 or int(category.get("weight", 0)) <= 0:
             _error(scope + ".weight", "必须是正整数")
+        if category.has("enabled") and (
+                not _is_integer(category.get("enabled")) \
+                or int(category.get("enabled", -1)) not in [0, 1]):
+            _error(scope + ".enabled", "必须为整数 0 或 1")
         var offer_kind := str(category.get("offer_kind", ""))
         if offer_kind not in PRACTICE_OFFER_KINDS:
             _error(scope + ".offer_kind", "未知普通商品类型 %s" % offer_kind)
         var content_kind := str(category.get("content_kind", ""))
         if offer_kind == "consumable" and content_kind not in PRACTICE_CONTENT_KINDS:
             _error(scope + ".content_kind", "消耗品分类必须声明 pill、insight 或 curio")
-        elif offer_kind != "consumable" and category.has("content_kind"):
+        elif offer_kind == "qi_card" and content_kind != "awakened_qi":
+            _error(scope + ".content_kind", "动态真气分类必须为 awakened_qi")
+        elif offer_kind not in ["consumable", "qi_card"] \
+                and category.has("content_kind"):
             _error(scope + ".content_kind", "非消耗品分类不得声明 content_kind")
         if offer_kind == "technique":
             if int(category.get("fixed_price", -1)) != 3:
                 _error(scope + ".fixed_price", "正式功法统一价格必须为 3")
+        elif offer_kind == "qi_card":
+            if int(category.get("fixed_price", -1)) != 4:
+                _error(scope + ".fixed_price", "永久觉醒真气基础价格必须为 4")
         elif category.has("fixed_price"):
             _error(scope + ".fixed_price", "非功法价格必须从内容定义读取")
+        var provider := str(category.get("candidate_provider", "static_ids"))
+        if provider not in ["static_ids", "generated_awakened_qi"]:
+            _error(scope + ".candidate_provider", "未知候选提供器 %s" % provider)
+        if offer_kind == "qi_card":
+            if provider != "generated_awakened_qi":
+                _error(scope + ".candidate_provider", "动态真气必须使用 generated_awakened_qi")
+            if int(category.get("enabled", 1)) != 0:
+                _error(scope + ".enabled", "动态觉醒真气类别必须默认锁定")
+        elif provider != "static_ids":
+            _error(scope + ".candidate_provider", "固定内容分类必须使用 static_ids")
         var candidate_ids = category.get("candidate_ids")
         if not candidate_ids is Array:
             _error(scope + ".candidate_ids", "必须是数组")
+            continue
+        if offer_kind == "qi_card":
+            if not candidate_ids.is_empty():
+                _error(scope + ".candidate_ids", "动态真气候选不得静态声明 definition_id")
             continue
         var category_seen: Dictionary = {}
         for candidate_index in range(candidate_ids.size()):

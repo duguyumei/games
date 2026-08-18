@@ -16,6 +16,177 @@
       "status": "design_only",
       "unique": true,
       "description": "候选物品：依赖修习价格减免平台，当前不进入正式商店。"
+    },
+    {
+      "id": "overstock_plus_two",
+      "name": "库存过剩",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "新修习商店生成时普通商品栏槽位 +2；不追溯扩充当前商店。",
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "practice_normal_slot_count_query",
+                "operation": "add",
+                "operand": 2,
+                "filters": {"group": "normal", "operation": "generate_shop"}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "awakened_qi_weight_x4",
+      "name": "焕彩",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "已启用的永久觉醒真气普通商品类别出现权重 ×4。",
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "practice_offer_weight_query",
+                "operation": "multiply",
+                "operand": 4,
+                "filters": {
+                  "group": "normal",
+                  "category_id": "awakened_qi",
+                  "content_kind": "awakened_qi",
+                  "candidate_provider": "generated_awakened_qi"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "telescope_insight_focus",
+      "name": "望远镜",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "心得包保证一个本局最高成功牌型心得；心得槽位增量由 +1 改为 +2。",
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "practice_pack_candidate_priority_query",
+                "operation": "maximum",
+                "operand": 1,
+                "filters": {
+                  "content_kind": "insight",
+                  "candidate_provider": "static_ids"
+                },
+                "history_hand_match": true
+              },
+              {
+                "hook": "insight_slot_gain_query",
+                "operation": "add",
+                "operand": 1,
+                "filters": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "pill_shop_weight_x4",
+      "name": "塔罗大亨",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "普通商品栏中单份丹药类别出现权重 ×4；不影响丹药包。",
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "practice_offer_weight_query",
+                "operation": "multiply",
+                "operand": 4,
+                "filters": {
+                  "group": "normal",
+                  "offer_kind": "consumable",
+                  "content_kind": "pill"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "insight_shop_weight_x4",
+      "name": "星球牌商人",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "普通商品栏中单份心得类别出现权重 ×4；不影响心得包。",
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "practice_offer_weight_query",
+                "operation": "multiply",
+                "operand": 4,
+                "filters": {
+                  "group": "normal",
+                  "offer_kind": "consumable",
+                  "content_kind": "insight"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "awakened_qi_in_normal_shop",
+      "name": "幻象",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "启用普通商品栏中的单张永久觉醒真气类别；每张候选完整冻结。",
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "practice_offer_category_enabled_query",
+                "operation": "maximum",
+                "operand": 1,
+                "filters": {
+                  "group": "normal",
+                  "category_id": "awakened_qi",
+                  "candidate_provider": "generated_awakened_qi"
+                }
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

@@ -14,6 +14,8 @@ const TechniqueExecutionPlanHandlerScript = preload(
     "res://core/passives/technique_execution_plan_passive_handler.gd")
 const RunValueEffectHandlerScript = preload(
     "res://core/passives/run_value_effect_passive_handler.gd")
+const RunIntQueryModifierHandlerScript = preload(
+    "res://core/passives/run_int_query_modifier_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 const BATTLE_TIMING_HOOKS := BattleEventCatalogScript.TIMING_EVENTS
@@ -58,6 +60,10 @@ const NON_EVENT_HOOKS := [
     "meditation_cost_query",
     "pack_offer_count_query",
     "pack_choose_count_query",
+    "practice_normal_slot_count_query",
+    "practice_offer_weight_query",
+    "practice_offer_category_enabled_query",
+    "practice_pack_candidate_priority_query",
     "technique_loadout_copy_limit_query",
     "insight_slot_gain_query",
     "practice_opened",
@@ -108,6 +114,7 @@ func _init(register_defaults: bool = true, effect_registry = null) -> void:
         register_handler(OnPlayEffectsHandlerScript.new(effect_registry))
         register_handler(TechniqueExecutionPlanHandlerScript.new())
         register_handler(RunValueEffectHandlerScript.new())
+        register_handler(RunIntQueryModifierHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():

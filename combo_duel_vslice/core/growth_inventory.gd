@@ -113,6 +113,8 @@ func practice_shop_snapshot() -> Dictionary:
     return normalized_practice_shop_state(practice_shop_state)
 
 static func normalized_practice_shop_state(value: Dictionary) -> Dictionary:
+    if value.is_empty():
+        return {}
     var result := value.duplicate(true)
     if not result.has("items") and result.has("coupons"):
         result["items"] = result["coupons"]
@@ -123,6 +125,18 @@ static func normalized_practice_shop_state(value: Dictionary) -> Dictionary:
     result.erase("coupons")
     result.erase("coupon_candidates")
     result.erase("coupon_slots")
+    var normal = result.get("normal", [])
+    if not normal is Array:
+        normal = []
+        result["normal"] = normal
+    result["normal_slot_count"] = normal.size()
+    if not result.has("strategy_source_fingerprint"):
+        result["strategy_source_fingerprint"] = "legacy"
+    if not result.has("strategy_source_snapshot_fingerprint"):
+        result["strategy_source_snapshot_fingerprint"] = "legacy"
+    if not result.has("strategy_operation"):
+        result["strategy_operation"] = "legacy_restore"
+    result["normal"] = normal
     return result
 
 ## 捕获本局效果事务所需的完整可变状态。

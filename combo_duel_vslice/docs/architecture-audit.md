@@ -1794,3 +1794,46 @@ Run地图／战果1,136条、Run Save v1 202条、内功内容冒烟124条、内
 `/tmp/taiwu-run-combat-history-quick-02-*`。所有stdout与Godot日志均已扫描，未发现脚本／资源加载、解析、
 `SCRIPT ERROR`、ObjectDB/RID泄漏、orphan、资源泄漏或退出阶段错误；只有允许忽略的macOS CA警告。
 按本批约束未运行`full`。
+
+## 25. 2026-08-18 `practice_strategy_query`架构收口
+
+本批把修习策略家族收口在既有`PracticeService`，没有建立`PracticeStrategyService`、权重Service、望远镜
+包规划器、觉醒真气商店Service或第二套随机选择器。`GrowthInventory.practice_shop_state`仍是商店状态
+所有者；`RunCombatHistory`仍是牌型历史唯一所有者；来源解析、稳定排序和整数查询仍由
+`PassiveRuleRuntime/PassiveIntPolicyResolver`负责。
+
+四个正式查询入口是`PracticeService.resolve_normal_slot_count`、`resolve_offer_weight`、
+`resolve_offer_category_enabled`与`resolve_pack_candidate_priority`，对应
+`practice_normal_slot_count_query`、`practice_offer_weight_query`、
+`practice_offer_category_enabled_query`、`practice_pack_candidate_priority_query`。六件物品共用一个数据驱动
+`run_int_query_modifier` Handler，通过hook、operation、元数据filters和可选历史牌型匹配表达差异；核心
+Service没有任何六件物品ID分支。查询固定同一来源快照，纯读且不推进修习RNG。
+
+普通候选的唯一顺序为：固定来源快照、解析normal槽位数、查询类别启用、provider产生合法候选、去除已
+持有／已购买／已占用候选、查询非负权重、用修习确定性RNG选择、冻结offer。商店快照新增
+`normal_slot_count`、策略来源/快照指纹和operation；旧固定offer不被迁移器强行补写可选`purchase_key`，
+购买边界按`purchase_key → offer_instance_id → content_id`兼容回退。冥想只刷新原本非空的normal槽，读取
+刷新时已激活来源但不改变冻结数组长度。
+
+动态觉醒真气由通用`generated_awakened_qi` provider从标准52张定义池确定性生成，再交给
+`CardOriginService`施加与基础属性一致的awakening。offer冻结definition/instance、基础牌阶/属性/真气值、
+本源payload、稳定`offer_instance_id/purchase_key`、永久性、公开预览及完整`QiCardInstanceData`。正式购买
+只读取该冻结实例，调用`RunMutationService.add_run_card_instances`并最终进入`RunDeck.add_card_instance`；
+扣费、牌组、槽位、购买键和`practice_purchase_committed`仍在既有Run工作副本事务内原子提交。
+
+心得包只在正式preparation阶段查询候选优先级。望远镜从
+`RunCombatHistory.most_successful_hand_ids()`读取最高成功牌型；并列或无历史时由该包既有RNG稳定选择一项，
+先占一个展示位并从普通池去重。preparation冻结完整展示、保证ID、priority breakdown、来源与历史指纹及
+RNG输入；确认检测来源/历史变化，不重新枚举或重掷。其他心得效果继续由`InsightGrowthService`处理，槽位
+增量通过同一通用Handler从1变2，上限仍为9。
+
+库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人和幻象已作为formal/unique内容接入，基础价格统一为8；
+幻象动态真气价格4、类别基础权重5。完成后能力矩阵为已有/合并17、B 12、C1 18、C2 0、D 1；仍未接入
+156门内功、14件物品和8门暂缓功法。本批没有开始下一个merge family。
+
+专项`test_practice_strategy_query.gd`以99条断言覆盖四查询纯度与顺序、冻结商店、六件内容、动态实例购买、
+望远镜历史计划、失败回滚和旧状态迁移。直接回归结果为：主runner 136,527条、Run历史115条、功法/心得
+运行442条、Run Save v1 202条、保存合同133条、内容合同1,080条、Run地图1,142条、UI加载185条；项目
+加载704项，设计一致性228/228、待接入0、错误0，最终`quick` 7/7。日志使用
+`/tmp/taiwu-practice-strategy-*.log`与`/tmp/taiwu-practice-strategy-quick-final2-*.log`，stdout和日志扫描均未
+发现加载、解析、脚本、ObjectDB/RID、orphan、资源泄漏或退出阶段错误；只有允许忽略的macOS CA警告。

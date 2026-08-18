@@ -314,6 +314,16 @@
         "offer_kind": "inner_skill",
         "weight": 5,
         "candidate_ids": []
+      },
+      {
+        "id": "awakened_qi",
+        "offer_kind": "qi_card",
+        "content_kind": "awakened_qi",
+        "candidate_provider": "generated_awakened_qi",
+        "enabled": 0,
+        "weight": 5,
+        "fixed_price": 4,
+        "candidate_ids": []
       }
     ]
   },
@@ -567,6 +577,13 @@
   },
   "items": {
     "slot_count": 1,
-    "candidate_ids": []
+    "candidate_ids": [
+      "overstock_plus_two",
+      "awakened_qi_weight_x4",
+      "telescope_insight_focus",
+      "pill_shop_weight_x4",
+      "insight_shop_weight_x4",
+      "awakened_qi_in_normal_shop"
+    ]
   }
 }

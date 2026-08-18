@@ -135,11 +135,17 @@ func _ensure_built() -> void:
     subtitle.add_theme_color_override("font_color", UiDesignScript.COLORS["muted"])
     box.add_child(subtitle)
     box.add_child(UiDesignScript.divider())
+    var offers_scroll := ScrollContainer.new()
+    offers_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+    offers_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    offers_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    offers_scroll.custom_minimum_size.y = 340
+    box.add_child(offers_scroll)
     _offers = HBoxContainer.new()
     _offers.alignment = BoxContainer.ALIGNMENT_CENTER
     _offers.size_flags_vertical = Control.SIZE_EXPAND_FILL
     _offers.add_theme_constant_override("separation", 16)
-    box.add_child(_offers)
+    offers_scroll.add_child(_offers)
     var packs_title := Label.new()
     packs_title.text = "补充包"
     box.add_child(packs_title)

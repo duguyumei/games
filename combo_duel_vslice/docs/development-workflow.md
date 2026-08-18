@@ -1008,3 +1008,30 @@ Run地图／战果1,136条、Run Save v1 202条、内功内容124条、内容契
 独立日志使用`/tmp/taiwu-run-combat-history-*.log`，quick使用
 `/tmp/taiwu-run-combat-history-quick-02-*`。stdout与日志扫描未发现加载、解析、脚本、ObjectDB/RID、
 orphan、资源泄漏或退出阶段错误。本批按约束不运行`full`。
+
+## 修习策略查询与动态商品工作流（2026-08-18）
+
+修习内容只能扩展`PracticeService`现有生成、preparation和购买流程。普通商品策略必须依次执行：固定
+`PassiveRuleSource`快照、查询normal有效槽位、查询类别启用、调用数据声明的candidate provider、过滤合法
+候选、查询类别权重、使用修习确定性RNG选择并冻结offer。查询键只能通过
+`PassiveIntPolicyResolver`执行，禁止在Handler里消费RNG、修改`GrowthInventory/practice_shop_state`或发布事件。
+
+当前正式键是`practice_normal_slot_count_query`、`practice_offer_weight_query`、
+`practice_offer_category_enabled_query`和`practice_pack_candidate_priority_query`。同类新消费者优先复用
+`run_int_query_modifier`的operation与精确metadata filters；不得按物品ID新增hook或在`PracticeService`写ID分支。
+当前商店的`normal_slot_count`和动态offer一经生成即冻结；物品晚获得只影响之后的新商店、冥想或补充包
+准备，不能反过来改变自己的候选、价格或购买事件。
+
+动态卡牌offer必须保存完整`QiCardInstanceData`、稳定`offer_instance_id/purchase_key`和公开预览。购买端不得
+按definition重新生成，只能走`PracticeService → RunMutationService(add_run_card_instances) →
+RunDeck.add_card_instance`。扣费、精确实例新增、槽位清空、购买键和既有`practice_purchase_committed`要在
+同一Run工作副本提交；失败不得遗留牌、历练、事件token或商店变化。
+
+心得包保证计划只在pack preparation建立。来源快照、`RunCombatHistory`快照指纹、保证候选、breakdown与
+pack RNG输入都必须冻结；确认发现来源或历史改变时明确失效并重新准备。历史只能调用
+`most_successful_hand_ids()`，不能扫描GameLog或增加监听器。并列和无历史都使用该包自己的确定性RNG，
+保证候选占一个展示位且从普通候选去重。
+
+首批正式内容为库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人和幻象；物品基础价格8点，动态觉醒真气
+价格4点、类别基础权重5。当前计数为已有/合并17、B 12、C1 18、C2 0、D 1，剩余156门内功、14件物品和
+8门暂缓功法。后续仍按merge family扩展，不机械新增底层Service。

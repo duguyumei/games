@@ -5922,6 +5922,7 @@ func _test_run_effect_platform_contract() -> void:
     _assert_equal(
         registry.operation_ids(),
         [
+            "add_run_card_instances",
             "add_run_cards",
             "apply_run_card_reshape",
             "copy_run_card",
@@ -5936,7 +5937,7 @@ func _test_run_effect_platform_contract() -> void:
             "remove_run_cards",
             "transform_run_card",
         ],
-        "本局效果默认注册表按稳定顺序公开十三个正式操作")
+        "本局效果默认注册表按稳定顺序公开十四个正式操作")
     _assert_true(registry.has_handler("gain_experience"), "历练增加操作已注册")
     _assert_true(registry.has_handler("heal_life"), "生命回复操作已注册")
 
@@ -10482,7 +10483,7 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
             "curio": curio_ids = category.get("candidate_ids", []).duplicate()
     _assert_equal(weights, {
         "techniques": 35, "pills": 25, "insights": 15,
-        "curios": 20, "inner_skills": 5,
+        "curios": 20, "inner_skills": 5, "awakened_qi": 5,
     }, "普通商品分类权重全部来自商店数据")
     _assert_equal(pill_ids.size(), 23, "普通池白名单包含 23 种正式丹药")
     _assert_equal(insight_ids.size(), 8, "普通池白名单包含 8 种正式心得")
@@ -10505,13 +10506,15 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
     _assert_equal(pack_shapes.get("curio_pack_basic"), [4, 2, 1], "普通奇珍包规格")
     _assert_equal(pack_shapes.get("large_curio_pack"), [6, 4, 1], "大型奇珍包规格")
     _assert_equal(pack_shapes.get("deluxe_curio_pack"), [8, 4, 2], "豪华奇珍包规格")
-    _assert_equal(practice.get("items", {}).get("candidate_ids", []), [], "当前正式物品候选池为空")
+    _assert_equal(practice.get("items", {}).get("candidate_ids", []).size(), 6,
+        "物品候选池登记六件正式修习策略物品")
     var items_definition: Dictionary = catalog.definition("items")
-    _assert_equal(items_definition.get("items", []).size(), 2, "items.json 只登记两个候选物品")
+    _assert_equal(items_definition.get("items", []).size(), 8,
+        "items.json 登记两个设计候选与六件正式物品")
     for item in items_definition.get("items", []):
         _assert_true(
-            str(item.get("status", "")) in ["candidate", "design_only"],
-            "物品候选不伪装成正式商品")
+            str(item.get("status", "")) in ["candidate", "design_only", "formal"],
+            "物品状态使用正式枚举")
 
     var service := PracticeServiceScript.new(catalog)
     var growth := GrowthInventoryScript.new(catalog, false)
@@ -10702,12 +10705,17 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
         "experience": 100,
         "growth": {"consumables": [], "items": []},
         "practice": {
-            "normal": [{"id": "a", "kind": "technique", "name": "甲", "price": 3, "can_purchase": true}, {}],
+            "normal": [
+                {"id": "a", "kind": "technique", "name": "甲", "price": 3, "can_purchase": true},
+                {},
+                {"id": "b", "kind": "technique", "name": "乙", "price": 3, "can_purchase": true},
+                {},
+            ],
             "packs": [pack_candidates[0], pack_candidates[1]],
             "items": [{}], "next_meditation_cost": 5,
         },
     })
-    _assert_equal(overlay._offers.get_child_count(), 2, "UI 渲染两个普通商品槽")
+    _assert_equal(overlay._offers.get_child_count(), 4, "UI 按冻结长度渲染四个普通商品槽")
     _assert_equal(overlay._packs.get_child_count(), 2, "UI 渲染两个补充包槽")
     _assert_equal(overlay._items.get_child_count(), 1, "UI 渲染一个物品槽")
     _assert_true(

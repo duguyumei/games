@@ -5,10 +5,10 @@
 
 ## 1. 结论与计数
 
-- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功及卫星共10门正式接入，剩余156门、20件物品和8门暂缓功法仍未接入生产内容池。
-- Readiness：A=36，B=68，C=81，D=1，E=8，合计194。
+- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功及卫星共10门、修习策略家族6件物品正式接入，剩余156门内功、14件物品和8门暂缓功法仍未接入生产内容池。
+- Readiness：A=42，B=68，C=75，D=1，E=8，合计194。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并13项，余下实现形态为B 13、C1 21、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并17项，余下实现形态为B 12、C1 18、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -207,18 +207,18 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 
 | content_kind | name | stable_id | authority | trigger | conditions | effects | state | transaction | current_support | readiness | missing_capability_keys | notes |
 |---|---|---|---|---|---|---|---|---|---|:---:|---|---|
-| item | 库存过剩 | `overstock_plus_two` | [43 §2《库存过剩》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#库存过剩) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 普通商品栏槽位 +2。 | 纯查询，无状态 | 事件或命令既有事务 | pack_offer_count_query/pack_choose_count_query 已有 | C | practice_normal_slot_count_query | 按能力键合并实现 |
+| item | 库存过剩 | `overstock_plus_two` | [43 §2《库存过剩》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#库存过剩) | 新修习商店生成 | 当前激活来源快照 | 普通商品栏槽位 +2。 | 纯查询；结果冻结在商店状态 | 既有Run工作副本 | `PracticeService.resolve_normal_slot_count`与`practice_normal_slot_count_query` | A |  | 已正式接入；只影响新商店normal槽 |
 | item | 清仓特卖 | `half_price_sale` | [43 §2《清仓特卖》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#清仓特卖) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 普通商品和补充包的有效价格变为 50%。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | PassiveIntPolicyResolver；meditation_cost_query/practice_price_query；缺来源中立查询Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
-| item | 焕彩 | `awakened_qi_weight_x4` | [43 §2《焕彩》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#焕彩) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 永久觉醒真气在普通商品栏中的出现权重 ×4。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 修习候选与稳定随机已有 | C | practice_offer_weight_query | 按能力键合并实现 |
+| item | 焕彩 | `awakened_qi_weight_x4` | [43 §2《焕彩》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#焕彩) | 普通候选权重规划 | 已启用`awakened_qi`类别 | 永久觉醒真气在普通商品栏中的出现权重 ×4。 | 纯查询，无状态 | 既有商店生成冻结 | `PracticeService.resolve_offer_weight`与通用`run_int_query_modifier` | A |  | 已正式接入；不自行解锁类别 |
 | item | 多次重掷 | `meditation_cost_minus_four` | [43 §2《多次重掷》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#多次重掷) | node_completed / meditation_committed | 权威正文的资格与边界 | 每次冥想的有效费用总计 -4。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | PassiveIntPolicyResolver；meditation_cost_query/practice_price_query；缺来源中立查询Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 预兆球 | `consumable_capacity_plus_two` | [43 §2《预兆球》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#预兆球) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 消耗品栏位 +2。 | 纯查询，无状态 | 支付/移动/后效原子提交 | ConsumableUseService和库存预留事务已有 | C | consumable_capacity_query | 按能力键合并实现 |
-| item | 望远镜 | `telescope_insight_focus` | [43 §2《望远镜》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#望远镜) | action_resolved记录历史；心得包计划；insight_slot_gain_query | trigger_mode/source_kind | 生成心得包时，候选中必定包含本局成功打出次数最多的精确牌型对应心得。使用心得时，对应牌型的功法槽位改为 +2。 | BattleSide working run state → Run committed state | 候选/RNG冻结与成长事务 | `action_resolved`、`RunProgressSnapshot`、`InsightGrowthService`与`insight_slot_gain_query`已有 | C | run_combat_history_facts<br>insight_pack_history_plan | 按能力键合并实现 |
-| item | 塔罗大亨 | `pill_shop_weight_x4` | [43 §2《塔罗大亨》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#塔罗大亨) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 单份丹药在普通商品栏中的出现权重 ×4。 | 纯查询，无状态 | 事件或命令既有事务 | 修习候选与稳定随机已有 | C | practice_offer_weight_query | 按能力键合并实现 |
-| item | 星球牌商人 | `insight_shop_weight_x4` | [43 §2《星球牌商人》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#星球牌商人) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 单份心得在普通商品栏中的出现权重 ×4。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 修习候选与稳定随机已有 | C | practice_offer_weight_query | 按能力键合并实现 |
+| item | 望远镜 | `telescope_insight_focus` | [43 §2《望远镜》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#望远镜) | 心得包正式准备；insight_slot_gain_query | `RunCombatHistory.most_successful_hand_ids()`只读结果 | 生成心得包时保证最高成功牌型心得；使用心得时槽位增量改为 +2。 | preparation冻结来源/历史/RNG；历史仍归RunCombatHistory | 候选冻结确认与既有心得成长事务 | `practice_pack_candidate_priority_query`、`InsightGrowthService`与既有历史事实 | A |  | 已正式接入；不重复监听或统计战斗日志 |
+| item | 塔罗大亨 | `pill_shop_weight_x4` | [43 §2《塔罗大亨》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#塔罗大亨) | 普通候选权重规划 | normal、单份pill类别 | 单份丹药在普通商品栏中的出现权重 ×4。 | 纯查询，无状态 | 既有商店生成冻结 | `practice_offer_weight_query`与通用`run_int_query_modifier` | A |  | 已正式接入；不影响丹药包 |
+| item | 星球牌商人 | `insight_shop_weight_x4` | [43 §2《星球牌商人》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#星球牌商人) | 普通候选权重规划 | normal、单份insight类别 | 单份心得在普通商品栏中的出现权重 ×4。 | 纯查询，无状态 | 既有商店生成冻结 | `practice_offer_weight_query`与通用`run_int_query_modifier` | A |  | 已正式接入；不影响心得包 |
 | item | 摇钱树 | `experience_interest_cap_twenty` | [43 §2《摇钱树》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#摇钱树) | node_completed | source counter/marker | 每次节点结算的功行生息上限提高至 20 点。 | 纯查询，无状态 | 事件或命令既有事务 | node_completed与功行生息流程已有 | C | experience_interest_cap_query | 按能力键合并实现 |
 | item | 三才并位 | `triple_technique_loadout` | [43 §3《三才并位》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#三才并位) | technique_succeeded / action_resolved | trigger_mode/source_kind | 每门已习得普通功法可以同时装入至多 3 个功法槽位。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | TechniqueLoadoutPolicy.resolve_copy_limit；technique_loadout_copy_limit_query；缺物品查询Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 反物质 | `inner_skill_capacity_plus_one` | [43 §3《反物质》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#反物质) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 内功装备栏位 +1。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | InnerSkillCapacityPolicy；inner_skill_capacity_query；缺物品查询Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
-| item | 幻象 | `awakened_qi_in_normal_shop` | [43 §3《幻象》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#幻象) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 单张永久觉醒真气可以出现在普通商品栏中。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 修习候选冻结/购买RunDeck事务已有 | C | practice_offer_category_unlock | 按能力键合并实现 |
+| item | 幻象 | `awakened_qi_in_normal_shop` | [43 §3《幻象》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#幻象) | 普通候选资格规划 | category默认锁定；当前来源启用 | 单张永久觉醒真气可以出现在普通商品栏中。 | 完整永久卡实例冻结在practice_shop_state | `PracticeService`→`RunMutationService`→`RunDeck`原子购买 | `practice_offer_category_enabled_query`与`generated_awakened_qi` provider | A |  | 已正式接入；候选4点历练，不按物品ID分支 |
 | item | 调色板 | `all_technique_multiplier_plus_one` | [43 §3《调色板》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#调色板) | technique_succeeded / action_resolved | trigger_mode/source_kind | 我方所有功法的功法倍率 +1。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | PassiveIntPolicyResolver；power_fixed_query/power_multiplier_bonus_query；缺薄查询Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 抓手 | `first_round_extra_action_and_refill` | [43 §4《抓手》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#抓手) | after_normal_draw | source counter/marker | 第一完整回合开始完成正常补牌后，获得 1 次额外行动，并将手牌抽至有效手牌上限。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 after_normal_draw + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 回收魔法 | `third_round_shuffle_all_discard` | [43 §4《回收魔法》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#回收魔法) | round_start / turn_end | 权威正文的资格与边界 | 第三完整回合结束时，将我方弃牌堆中的所有牌洗入牌库。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 round_start / turn_end + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
@@ -285,13 +285,13 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `chase_resolved_event` | event | damage_resolved 已有，旧source_kind=chase仍为兼容标签 | 结构化chase攻击段、唯一追击令牌与完成事件 | inner_skill:every_three_chases_spreads_burnout | BattleSurvivalEffectService | 否 | event/action local snapshot | 复用正式伤害事务 | 34 | 同令牌一次；无递归；公开防御/生命损失和取消 |
 | `passive_behavior_copy_projection` | state | ExecutionPlan 已支持 additional_executions 和稳定来源 | 复制资格、邻接/随机目标投影、独立来源身份与计数器 | inner_skill:copy_left_adjacent_inner_skill<br>inner_skill:random_inner_skill_effect_each_battle<br>inner_skill:empty_slots_amplify_leftmost | PassiveRuleRuntime.build_execution_plan | 战斗型否；变形型另列 | BattleRuntime temporary state | 不复制内容对象 | 35 | 复制无链/循环；目标变化按正文；计数器独立 |
 | `charging_primary_value_protocol` | state | **已有**：`TechniqueDefinition.charging`声明主要marker；`SourceMarkerAddressResolver.resolve_charging_for_slot`强制实际slot身份；`BattleEffectPorts`提供begin/write/end/枚举/原子批量写；ConditionSpec、延迟恢复与UI/AI投影已接入 | 已完成；伏火延烧与三门暂缓功法仍未接入，倒计时和观察继续由既有延迟/响应体系负责 | inner_skill:round_end_charging_plus_ten | TechniqueDefinition + SourceMarkerStore + StatusDelay/Response | 否 | BattleRuntime temporary state | 不是角色级资源；不新建倒计时或自动执行器 | 已完成 | marker存在即蓄力，值可为0；临时/share_origin副本仍按实际slot隔离；查询不推进倒计时 |
-| `practice_normal_slot_count_query` | query | pack_offer_count_query/pack_choose_count_query 已有 | 普通商品栏槽位数查询及批次冻结 | item:overstock_plus_two | practice offer planner | 批次快照是 | Run committed state | 不修改补充包栏 | 37 | 当前批次不追溯扩容；新批次读取新值 |
-| `practice_offer_weight_query` | query | 修习候选与稳定随机已有 | 来源中立商品类别权重查询 | item:awakened_qi_weight_x4<br>item:pill_shop_weight_x4<br>item:insight_shop_weight_x4 | practice candidate planner | 否 | 纯查询，无状态 | 不改变资格 | 38 | 同seed同权重同结果；查询不耗RNG |
+| `practice_normal_slot_count_query` | query | **已完成**：`PracticeService.resolve_normal_slot_count`经`PassiveIntPolicyResolver`查询并冻结`normal_slot_count` | 库存过剩已正式接入 | item:overstock_plus_two | PracticeService | 批次快照是 | Run committed state | 不修改补充包栏／物品栏 | 已完成 | 当前商店不追溯扩容；冥想不补空位 |
+| `practice_offer_weight_query` | query | **已完成**：类别启用和合法候选产生后，通过来源中立整数查询取得非负权重 | 焕彩、塔罗大亨、星球牌商人已正式接入 | item:awakened_qi_weight_x4<br>item:pill_shop_weight_x4<br>item:insight_shop_weight_x4 | PracticeService | 否 | 纯查询，无状态 | 不改变资格，不推进RNG | 已完成 | 同seed、同来源快照与同权重同结果 |
 | `consumable_capacity_query` | query | ConsumableUseService和库存预留事务已有 | 共享容量查询及超容量失效策略 | item:consumable_capacity_plus_two | GrowthInventory/ConsumableUseContext | 是（库存） | Run committed state / BattleSide working run state | 不修改使用事务 | 39 | 所有获得/奖励/UI一致；压制不随机丢弃 |
 | `source_behavior_transformation` | state | PassiveRuleSource/Registry/RunPassiveCounterStore 已有 | 来源自身可复制正文的合法性、替换投影与持久化 | inner_skill:invisible_inner_skill | PassiveRuleSourceResolver + content schema | 是 | Run committed state / BattleSide working run state | 与临时 copy projection 不同 | 40 | 无合法目标不改写；替换后存档恢复一致 |
-| `insight_pack_history_plan` | transaction | InsightGrowthService与insight_slot_gain_query已完成 | 按本局牌型历史冻结保证候选并与普通候选去重 | item:telescope_insight_focus | practice pack planner | 批次快照是 | Run committed state | 历史事实复用run_combat_history_facts | 41 | 预览/恢复/开启不重掷；槽位实时增长不变 |
+| `insight_pack_history_plan` | transaction | **已完成**：正式pack preparation逐候选执行`practice_pack_candidate_priority_query`，冻结保证候选、来源/历史指纹与RNG输入 | 望远镜已正式接入 | item:telescope_insight_focus | PracticeService | preparation是 | Run committed state | 只读`RunCombatHistory`，不重复统计 | 已完成 | 并列/无历史由pack RNG稳定选一；确认不重掷 |
 | `experience_interest_cap_query` | query | node_completed与功行生息流程已有 | 单次功行上限查询 | item:experience_interest_cap_twenty | node completion calculation | 否 | 纯查询，无状态 | 不改变公式或令牌 | 42 | 基础5/物品20；余额只读一次；失败回滚 |
-| `practice_offer_category_unlock` | query | 修习候选冻结/购买RunDeck事务已有 | 通用商品类别解锁与候选提供协议 | item:awakened_qi_in_normal_shop | practice candidate planner | 批次快照是 | Run committed state | 权重查询只调权重 | 43 | 冻结实例可恢复；新物品不影响自己的购买 |
+| `practice_offer_category_unlock` | query | **已完成**：正式键为`practice_offer_category_enabled_query`；资格查询与`generated_awakened_qi` provider分离 | 幻象已正式接入 | item:awakened_qi_in_normal_shop | PracticeService | 批次快照是 | Run committed state | 权重查询只调权重 | 已完成 | 完整卡实例冻结恢复；精确实例经RunMutationService购买 |
 | `map_regeneration_transaction` | transaction | ComboMapGenerator/MapNavigationService/RunAggregateTransaction已有 | 新生成序号、旧路线废弃、起点状态与物品获得原子提交 | item:regenerate_current_act_map | RunSession map command | 是 | Run committed state | 不改变restart_node_from_start | 44 | 失败恢复旧图；成功存档只含新图；幂等 |
 | `rest_multi_select_session` | UI | NodeInteractionService单次选择/continuation已有 | 多选会话、已选集合、顺序和结束命令 | item:rest_choose_all_options | node interaction session | 是 | Run committed state | 每个选项仍独立事务 | 45 | 每项至多一次；恢复顺序一致；取消不消费 |
 | `item_source_marker_state` | state | **已有**：item正式加入`SourceMarkerStore`、`SourceMarkerAddressResolver`、`PassiveRuleRuntime`、`RunMutationService`与统一`source_marker_changed` | item来源标识地址、遗失策略与max_life贡献 | item:max_life_plus_twenty<br>item:deck_growth_and_reshape_vitality | SourceMarkerStore/AddressResolver/SourceContributedStatService | 是 | Run committed state / BattleSide working run state | 复用同一marker store；事务失败整批回滚 | 46 | 地址为`item:<stable_owner_id>:<content_id>`，不依赖库存顺序；具体物品仍未接入 |
@@ -408,19 +408,19 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `chase_resolved_event` | B | damage_resolved_context | 1 | BattleSurvivalEffectService扩展现有damage_resolved字段 |
 | `passive_behavior_copy_projection` | C1 | passive_execution_plan | 3 | PassiveRuleRuntime.build_execution_plan |
 | `charging_primary_value_protocol` | 已有 | technique_delay_state | 1（另服务3门E功法） | TechniqueDefinition + SourceMarkerStore + StatusDelay/Response |
-| `practice_normal_slot_count_query` | C1 | practice_strategy_query | 1 | 修习候选规划器既有query族 |
-| `practice_offer_weight_query` | B | practice_strategy_query | 3 | 现有候选权重query增加可配置key |
+| `practice_normal_slot_count_query` | 已有 | practice_strategy_query | 1 | PracticeService + PassiveIntPolicyResolver |
+| `practice_offer_weight_query` | 已有 | practice_strategy_query | 3 | PracticeService + PassiveIntPolicyResolver |
 | `consumable_capacity_query` | C1 | inventory_capacity_query | 1 | GrowthInventory + ConsumableUseContext |
 | `source_behavior_transformation` | C1 | passive_source_projection | 1 | PassiveRuleSourceResolver + schema |
-| `insight_pack_history_plan` | C1 | practice_strategy_query | 1 | InsightGrowthService候选计划 |
+| `insight_pack_history_plan` | 已有 | practice_strategy_query | 1 | PracticeService pack preparation + RunCombatHistory |
 | `experience_interest_cap_query` | B | run_calculation_query | 1 | node completion calculation现有公式 |
-| `practice_offer_category_unlock` | C1 | practice_strategy_query | 1 | 修习候选规划器 |
+| `practice_offer_category_unlock` | 已有 | practice_strategy_query | 1 | `practice_offer_category_enabled_query` + candidate provider |
 | `map_regeneration_transaction` | C1 | run_command_transaction | 1 | RunSession + MapNavigationService + RunAggregateTransaction |
 | `rest_multi_select_session` | C1 | choice_continuation | 1 | NodeInteractionService既有continuation |
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | C1 | run_card_mutation_fact | 1 | RunMutationService；不新增平行事件系统 |
 
-当前数量为：已有/合并13、B 13、C1 21、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并17、B 12、C1 18、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
@@ -498,3 +498,25 @@ production内功池。卫星另以`run_value_effect`正式接入但同样未进�
 `BattleTechniqueSequenceEffectService.complete_and_advance`统一提交一次`technique_sequence_changed`；手动、
 自动、调用路径共用该入口。`technique_execution_resolved`是原功法完成后、序列推进前唯一的计划修改窗口。
 Handler只表达mode、ConditionSpec/counter和通用effect op，不判断上述9个ID，也不直接写牌区、生命、序列或marker。
+
+### 11.7 修习策略查询与六件物品接入（2026-08-18）
+
+`practice_strategy_query`已经在既有`PracticeService`内完成，没有新增平行策略、权重、望远镜或觉醒真气
+Service。四个正式键为`practice_normal_slot_count_query`、`practice_offer_weight_query`、
+`practice_offer_category_enabled_query`和`practice_pack_candidate_priority_query`；它们统一经
+`PassiveIntPolicyResolver`与一个来源中立`run_int_query_modifier` Handler执行。查询只读固定来源快照，
+不推进修习RNG、不改`GrowthInventory/practice_shop_state`、不发布事件或建立receipt。
+
+普通商品严格按“固定来源→槽位数→类别启用→候选提供/合法性→类别权重→确定性选择→冻结offer”生成。
+商店状态保存有效槽位数、空位、动态实例与策略来源指纹；冥想只刷新现存非空normal槽，并用刷新时已激活
+来源重新规划，不扩充冻结槽位。心得包preparation另外冻结保证候选、来源指纹、
+`RunCombatHistory`快照指纹与pack RNG输入；望远镜只调用`most_successful_hand_ids()`，没有第二套历史统计。
+
+库存过剩、焕彩、望远镜、塔罗大亨、星球牌商人和幻象已经作为formal/unique物品进入`items.json`及修习
+物品候选池，基础价格统一为8点历练。幻象只通过类别启用查询开放基础权重5的`awakened_qi`类别；动态
+永久觉醒真气单价4点，offer冻结definition/instance、基础身份、awakening本源、稳定购买键和公开预览，
+购买调用链固定为`PracticeService → RunMutationService(add_run_card_instances) → RunDeck.add_card_instance`。
+
+本批完成4项能力键与6件内容后，当前计数为已有/合并17、B 12、C1 18、C2 0、D 1；剩余未正式接入
+内容为156门内功、14件物品和8门暂缓功法。后续继续按`merge_family`接入，不为剩余内容复制商店、
+候选、历史或卡牌新增事务。

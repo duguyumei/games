@@ -33,6 +33,39 @@ func add_run_cards(run_deck, definition_ids: Array) -> Dictionary:
         "count_after": run_deck.card_count(),
     }
 
+func add_run_card_instances(run_deck, instances: Array) -> Dictionary:
+    if instances.is_empty():
+        return {"success": false, "reason": "instances 必须是非空数组"}
+    var seen: Dictionary = {}
+    for value in instances:
+        if not value is Dictionary:
+            return {"success": false, "reason": "冻结真气实例必须是对象"}
+        var instance_id := str(value.get("instance_id", ""))
+        if instance_id == "" or seen.has(instance_id):
+            return {
+                "success": false,
+                "reason": "冻结真气实例 ID 不能为空且不得重复：%s" % instance_id,
+            }
+        if run_deck.has_card(instance_id):
+            return {"success": false, "reason": "真气实例 ID 已存在：%s" % instance_id}
+        seen[instance_id] = true
+    var count_before: int = run_deck.card_count()
+    var added: Array[Dictionary] = []
+    for value in instances:
+        var result: Dictionary = run_deck.add_card_instance(value)
+        if not result.get("success", false):
+            return result
+        added.append({
+            "instance_id": str(result.get("instance_id", "")),
+            "definition_id": str(result.get("definition_id", "")),
+        })
+    return {
+        "success": true,
+        "added": added,
+        "count_before": count_before,
+        "count_after": run_deck.card_count(),
+    }
+
 func remove_run_cards(run_deck, instance_ids: Array) -> Dictionary:
     var id_error := _validate_unique_instance_ids(instance_ids)
     if id_error != "":

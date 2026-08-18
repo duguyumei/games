@@ -131,6 +131,33 @@ func add_card_by_definition(definition_id: String) -> Dictionary:
         "definition_id": definition_id,
     }
 
+## 把已经由正式候选规划器冻结的完整永久真气实例加入本局牌组。
+##
+## 本入口不重新生成 ID、不重掷属性，也不重新施加本源；调用方必须交付完整
+## QiCardInstanceData 快照。RunMutationService 在更外层提供原子工作副本。
+func add_card_instance(values: Dictionary) -> Dictionary:
+    var candidate := values.duplicate(true)
+    var instance_id := str(candidate.get("instance_id", ""))
+    if instance_id == "":
+        return {"success": false, "reason": "冻结真气实例缺少 instance_id"}
+    if bool(candidate.get("temporary_card", false)):
+        return {"success": false, "reason": "战斗临时真气不能加入本局牌组"}
+    if str(candidate.get("original_owner_id", "")) != "":
+        return {"success": false, "reason": "临时夺取的真气不能加入本局牌组"}
+    if has_card(instance_id):
+        return {"success": false, "reason": "真气实例 ID 已存在"}
+    var errors := _validate(candidate)
+    if not errors.is_empty():
+        return {"success": false, "reason": "；".join(errors)}
+    _cards.append(QiCardInstanceDataScript.capture(
+        QiCardInstanceDataScript.restore(candidate, _reshape_rules())))
+    return {
+        "success": true,
+        "instance_id": instance_id,
+        "definition_id": str(candidate.get("definition_id", "")),
+        "card": candidate.duplicate(true),
+    }
+
 func copy_card(instance_id: String, count: int = 1) -> Dictionary:
     if count <= 0:
         return {"success": false, "reason": "复制数量必须是正整数"}
