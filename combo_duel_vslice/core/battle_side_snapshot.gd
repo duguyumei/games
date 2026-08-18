@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 10
+const SCHEMA_VERSION := 11
 
 var name: String = ""
 var experience: int = 0
@@ -64,6 +64,7 @@ var hand_technique_progression: Dictionary = {}
 var owned_technique_ids: Array = []
 var technique_sequences: Dictionary = {}
 var technique_slot_usage: Dictionary = {}
+var charging_techniques: Array = []
 var public_source_markers: Array = []
 var poison_damage_modifier_sources: Array = []
 
@@ -91,7 +92,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "poison_total_count", "poison_total_amount",
             "technique_slot_index", "forgotten_inner_skill_count",
             "consumable_limit",
-            "technique_slot_usage"]:
+            "technique_slot_usage", "charging_techniques"]:
         if not values.has(required):
             missing.append(str(required))
     if not missing.is_empty():
@@ -159,6 +160,8 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.technique_sequences = values.get("technique_sequences", {}).duplicate(true)
     result.technique_slot_usage = values.get(
         "technique_slot_usage", {}).duplicate(true)
+    result.charging_techniques = values.get(
+        "charging_techniques", []).duplicate(true)
     result.public_source_markers = values.get(
         "public_source_markers", []).duplicate(true)
     result.poison_damage_modifier_sources = values.get(
@@ -222,6 +225,7 @@ func to_dict() -> Dictionary:
         "owned_technique_ids": owned_technique_ids.duplicate(true),
         "technique_sequences": technique_sequences.duplicate(true),
         "technique_slot_usage": technique_slot_usage.duplicate(true),
+        "charging_techniques": charging_techniques.duplicate(true),
         "public_source_markers": public_source_markers.duplicate(true),
         "poison_damage_modifier_sources": poison_damage_modifier_sources.duplicate(true),
     }

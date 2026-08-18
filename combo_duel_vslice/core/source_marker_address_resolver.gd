@@ -75,6 +75,44 @@ func resolve_for_slot(spec: Dictionary, slot: Dictionary) -> Dictionary:
     }
     return resolve(spec, proxy, slot)
 
+## 主要蓄力值始终按实际槽位实例隔离。普通 marker 仍继续使用 resolve_for_slot，
+## 因而临时功法的 share_origin 语义不会被本协议改变。
+func resolve_charging_for_slot(
+        charging: Dictionary, slot: Dictionary) -> Dictionary:
+    var slot_instance_id := str(slot.get("slot_instance_id", ""))
+    var technique_id := str(slot.get("technique_id", ""))
+    if charging.is_empty() or slot_instance_id == "" or technique_id == "":
+        return {"success": false, "reason": "主要蓄力值缺少真实功法槽位"}
+    var marker_id := str(charging.get("primary_marker_id", ""))
+    if marker_id == "":
+        return {"success": false, "reason": "功法没有声明主要蓄力 marker"}
+    return resolve({
+        "source_kind": "technique",
+        "source_instance_key": slot_instance_id,
+        "content_id": technique_id,
+        "marker_id": marker_id,
+        "scope": "battle",
+        "public": bool(charging.get("public", true)),
+        "display_name": str(charging.get("display_name", marker_id)),
+        "forget_policy": "clear",
+        "marker_role": "charging_primary",
+        "slot_instance_id": slot_instance_id,
+        "technique_id": technique_id,
+        "hand_id": str(slot.get("hand_id", "")),
+    }, {
+        "source_kind": "technique",
+        "source_id": technique_id,
+        "source_instance_key": slot_instance_id,
+        "technique_id": technique_id,
+        "slot_instance_id": slot_instance_id,
+        "sequence_book": null,
+    }, slot).merged({
+        "marker_role": "charging_primary",
+        "slot_instance_id": slot_instance_id,
+        "technique_id": technique_id,
+        "hand_id": str(slot.get("hand_id", "")),
+    }, true)
+
 func entry_matches_slot(entry: Dictionary, slot: Dictionary) -> bool:
     var resolved := resolve_for_slot(entry, slot)
     return resolved.get("success", false) \

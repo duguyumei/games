@@ -56,6 +56,12 @@ func register_effect_chain(
         "technique_pool": runtime.technique_pool,
         "sequence_book": runtime.sequence_book,
         "source_action_token": runtime.action_token,
+        "root_action_token": runtime.root_action_token,
+        "invocation_token": runtime.invocation_token,
+        "caller_technique_id": runtime.caller_technique_id,
+        "slot_instance_id": runtime.slot_instance_id,
+        "technique_execution_token": runtime.technique_execution_token,
+        "technique_execution_state": runtime.technique_execution_state.duplicate(true),
         "source_kind": runtime.source_kind,
         "source_id": runtime.source_id,
         "source_name": runtime.source_name,
@@ -289,6 +295,15 @@ func _resolve_effect_chain(record: Dictionary) -> Dictionary:
             str(record.get("source_action_token", "")),
             str(record.get("id", "delay")),
         ],
+        "root_action_token": str(record.get(
+            "root_action_token", record.get("source_action_token", ""))),
+        "invocation_token": str(record.get("invocation_token", "")),
+        "caller_technique_id": str(record.get("caller_technique_id", "")),
+        "slot_instance_id": str(record.get("slot_instance_id", "")),
+        "technique_execution_token": str(record.get(
+            "technique_execution_token", "")),
+        "technique_execution_state": record.get(
+            "technique_execution_state", {}).duplicate(true),
         "source_kind": record.get("source_kind", "rule"),
         "source_id": record.get("source_id", ""),
         "source_name": record.get("source_name", ""),

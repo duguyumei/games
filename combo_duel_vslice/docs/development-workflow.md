@@ -863,3 +863,36 @@ operation token只复用回执。虚无正常打出／明确弃置、主动或�
 
 本协议只提供未来致命保护在正式生命提交事务中绑定支付计划的接口；`pre_life_loss_query`仍是纯查询。
 《耗气补垣》《万木代命》《折枝生根》《炽种承继》《耗烬催芽》《灰烬化形》等具体消费者均未接入。
+
+## 功法实例主要蓄力值协议（2026-08-18）
+
+蓄力不是角色资源，也不是序列外槽位。功法通过`TechniqueDefinition.charging`声明唯一主要值：
+`primary_marker_id/display_name/scope/public/allowed_operations/minimum/maximum`；primary marker必须是
+本功法公开的battle marker。实际活跃条件固定为“定义声明charging，且该实际`slot_instance_id`地址下
+存在primary marker条目”。条目值可以为0；`set 0`不结束，`clear`才结束。倒计时、观察次数与完成条件
+继续由`StatusDelayService/StatusResponseService`和既有自动功法流程维护，charging声明不得包含公式或
+倒计时。
+
+效果和业务代码统一经`BattleEffectPorts.begin_technique_charging/write_charging_primary_value/
+end_technique_charging/write_all_charging_primary_values`与`charging_technique_instances`。这些入口只是
+`SourceMarkerStore`的类型化适配。主要marker通过
+`SourceMarkerAddressResolver.resolve_charging_for_slot`强制使用实际slot身份，即使临时副本声明
+`share_origin`也互不合并；普通marker仍保持原share-origin规则。批量写先按八种精确牌型及当前槽位
+顺序冻结目标，再在`BattleRuntimeMutationTransaction`内逐个提交，中途失败恢复marker、延迟/响应、
+被动状态、RNG、event serial/receipt/execution history、TriggerQueue与GameLog。
+
+`SourceMarkerStore`现在把零值条目的建立和移除视为真实生命周期变化，回执及
+`source_marker_changed`公开`created/removed/existed_before/exists_after`；charging事件另公开
+`marker_role=charging_primary`、slot、technique与hand身份。已有条目重复set同值和不存在条目clear不发送
+事件。`write_source_marker`本身也检查committed提交失败并回滚，不再由charging包装层掩盖失败。
+
+`ConditionSpec.charging_active`可与`trigger_mode`组合，并可读取当前、指定或已捕获slot；只能调用统一
+只读查询。`SourceMarkerEffectHandler`承载begin/write/write-all/capture/end通用op，capture冻结slot和读取
+快照，等待选择恢复不重新枚举。延迟与响应记录保存并恢复slot、root action、invocation与technique
+execution token。`BattleSession`和AI状态仅公开声明为public的`charging_techniques`槽位投影，不推进
+倒计时、不写marker、不移动序列或推进RNG。
+
+首次manual触发和蓄力期间再次manual触发都继续走正常P₀/P、连势、同气、效果与序列推进；正文通过
+`charging_active`分支决定差异，协议不默认引爆、重置值或改变倒计时。automatic、invoked、echo、
+retrigger不会满足manual分支；蓄力完成仍由现有自动调用移动并结算同一slot。本协议未接入风·长风蓄海、
+火·三劫悬炉、山·悬岳待敌或《伏火延烧》，也不存在角色级charging字段。

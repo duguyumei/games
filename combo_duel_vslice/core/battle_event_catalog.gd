@@ -70,6 +70,8 @@ const PUBLIC_FIELDS := [
     "consumption_batch_token", "consumption_batch_index",
     "consumption_batch_size", "metadata",
     "operation_token", "holder_id", "change_domain", "operation",
+    "created", "removed", "existed_before", "exists_after", "changed",
+    "marker_role",
     "before_state", "after_state", "changes",
     "added_changes", "removed_changes", "updated_changes",
     "added_count", "removed_count", "updated_count", "actual_change_count",

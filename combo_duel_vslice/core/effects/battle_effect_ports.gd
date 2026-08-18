@@ -72,6 +72,7 @@ func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
     _survival_effect_service.use_sides(first, second)
     _card_effect_service.use_sides(first, second)
+    _source_resource_effect_service.use_sides(_sides)
 
 func use_hand_retrigger_callback(callback: Callable) -> void:
     _invocation_effect_service.use_hand_retrigger_callback(callback)
@@ -102,9 +103,11 @@ func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
     _card_effect_service.use_battle_rng(rng)
     _technique_sequence_effect_service.use_battle_rng(rng)
+    _source_resource_effect_service.use_battle_rng(rng)
 
 func use_technique_repository(repository) -> void:
     _technique_sequence_effect_service.use_technique_repository(repository)
+    _source_resource_effect_service.use_technique_repository(repository)
 
 func battle_rng() -> RandomNumberGenerator:
     return _battle_rng
@@ -319,6 +322,54 @@ func consume_source_marker_records(
         action_token: String = "") -> Dictionary:
     return _source_resource_effect_service.consume_source_marker_records(
         side, source, count, action_token)
+
+func charging_technique_instances(
+        side: BattleSide, public_only: bool = false) -> Array:
+    return _source_resource_effect_service.charging_technique_instances(
+        side, public_only)
+
+func technique_charging_state(
+        side: BattleSide, slot_instance_id: String) -> Dictionary:
+    return _source_resource_effect_service.technique_charging_state(
+        side, slot_instance_id)
+
+func is_technique_charging(
+        side: BattleSide, slot_instance_id: String) -> bool:
+    return _source_resource_effect_service.is_technique_charging(
+        side, slot_instance_id)
+
+func begin_technique_charging(
+        side: BattleSide,
+        slot_instance_id: String,
+        initial_value: int = 0,
+        action_token: String = "") -> Dictionary:
+    return _source_resource_effect_service.begin_technique_charging(
+        side, slot_instance_id, initial_value, action_token)
+
+func write_charging_primary_value(
+        side: BattleSide,
+        slot_instance_id: String,
+        operation: String,
+        amount: int,
+        action_token: String = "") -> Dictionary:
+    return _source_resource_effect_service.write_charging_primary_value(
+        side, slot_instance_id, operation, amount, action_token)
+
+func end_technique_charging(
+        side: BattleSide,
+        slot_instance_id: String,
+        action_token: String = "") -> Dictionary:
+    return _source_resource_effect_service.end_technique_charging(
+        side, slot_instance_id, action_token)
+
+func write_all_charging_primary_values(
+        side: BattleSide,
+        operation: String,
+        amount: int,
+        action_token: String = "",
+        frozen_slot_instance_ids: Array = []) -> Dictionary:
+    return _source_resource_effect_service.write_all_charging_primary_values(
+        side, operation, amount, action_token, frozen_slot_instance_ids)
 
 func invoke_sequence_technique(effect: Dictionary, context) -> Dictionary:
     return _invocation_effect_service.invoke_sequence_technique(effect, context)

@@ -16,6 +16,9 @@ func operation_ids() -> Array[String]:
     return [
         "write_source_marker", "capture_source_marker",
         "transfer_source_marker",
+        "begin_technique_charging", "write_charging_primary",
+        "write_all_charging_primary", "capture_charging_techniques",
+        "end_technique_charging",
     ]
 
 func group_name() -> String:
@@ -32,6 +35,16 @@ func execute(effect: Dictionary, context):
             return _capture(effect, runtime)
         "transfer_source_marker":
             return _transfer(effect, runtime)
+        "begin_technique_charging":
+            return _begin_charging(effect, runtime)
+        "write_charging_primary":
+            return _write_charging(effect, runtime, false)
+        "write_all_charging_primary":
+            return _write_charging(effect, runtime, true)
+        "capture_charging_techniques":
+            return _capture_charging(effect, runtime)
+        "end_technique_charging":
+            return _end_charging(effect, runtime)
     return EffectResultScript.failed("来源标识处理器不支持此操作")
 
 func _write(effect: Dictionary, runtime):
@@ -85,11 +98,140 @@ func _transfer(effect: Dictionary, runtime):
         "amount": int(result.get("transferred", 0))}]
     return EffectResultScript.succeeded("转移标识 %d" % int(result.get("transferred", 0)))
 
+func _begin_charging(effect: Dictionary, runtime):
+    var slot_ids := _charging_target_slot_ids(effect, runtime, true)
+    if slot_ids.is_empty():
+        return EffectResultScript.failed("开始蓄力缺少真实功法槽位")
+    var initial_value := int(value_resolver.resolve(
+        effect.get("initial_value", effect.get("amount", 0)), runtime))
+    var results: Array = []
+    for slot_id_value in slot_ids:
+        var result: Dictionary = runtime.ports.begin_technique_charging(
+            runtime.actor, str(slot_id_value), initial_value,
+            runtime.action_token)
+        if not result.get("success", false):
+            return EffectResultScript.failed(str(result.get(
+                "reason", "开始功法蓄力失败")))
+        results.append(result.duplicate(true))
+    _capture_charging_results(effect, runtime, results)
+    return EffectResultScript.succeeded("开始%d个功法实例蓄力" % results.size())
+
+func _write_charging(effect: Dictionary, runtime, force_all: bool):
+    var operation := str(effect.get("operation", "add"))
+    var amount := int(value_resolver.resolve(effect.get("amount", 0), runtime))
+    var frozen_ids: Array = []
+    var target_capture := str(effect.get("target_capture", ""))
+    if target_capture != "":
+        frozen_ids = _slot_ids_from_capture(runtime, target_capture)
+        if frozen_ids.is_empty():
+            return EffectResultScript.failed("已捕获蓄力槽位为空")
+    var result: Dictionary
+    if force_all or target_capture != "" \
+            or str(effect.get("target", "")) == "all_charging":
+        result = runtime.ports.write_all_charging_primary_values(
+            runtime.actor, operation, amount, runtime.action_token, frozen_ids)
+    else:
+        var slot_ids := _charging_target_slot_ids(effect, runtime, false)
+        if slot_ids.size() != 1:
+            return EffectResultScript.failed("主要蓄力值写入必须解析到一个实际槽位")
+        result = runtime.ports.write_charging_primary_value(
+            runtime.actor, str(slot_ids[0]), operation, amount,
+            runtime.action_token)
+    if not result.get("success", false):
+        return EffectResultScript.failed(str(result.get(
+            "reason", "主要蓄力值写入失败")))
+    var results: Array = result.get("results", [result]).duplicate(true)
+    _capture_charging_results(effect, runtime, results)
+    return EffectResultScript.succeeded("写入%d个功法实例主要蓄力值" % results.size())
+
+func _capture_charging(effect: Dictionary, runtime):
+    var instances: Array = runtime.ports.charging_technique_instances(
+        runtime.actor, false)
+    runtime.captures[str(effect.get(
+        "capture", "charging_techniques"))] = instances.duplicate(true)
+    return EffectResultScript.succeeded("捕获%d个蓄力功法实例" % instances.size())
+
+func _end_charging(effect: Dictionary, runtime):
+    var target_capture := str(effect.get("target_capture", ""))
+    if target_capture != "" or str(effect.get("target", "")) == "all_charging":
+        var frozen_ids := _slot_ids_from_capture(runtime, target_capture) \
+            if target_capture != "" else []
+        if target_capture != "" and frozen_ids.is_empty():
+            return EffectResultScript.failed("已捕获蓄力槽位为空")
+        var batch: Dictionary = runtime.ports.write_all_charging_primary_values(
+            runtime.actor, "clear", 0, runtime.action_token, frozen_ids)
+        if not batch.get("success", false):
+            return EffectResultScript.failed(str(batch.get(
+                "reason", "结束功法蓄力失败")))
+        _capture_charging_results(
+            effect, runtime, batch.get("results", []).duplicate(true))
+        return EffectResultScript.succeeded(
+            "结束%d个功法实例蓄力" % int(batch.get("target_count", 0)))
+    var slot_ids := _charging_target_slot_ids(effect, runtime, false)
+    if slot_ids.size() != 1:
+        return EffectResultScript.failed("结束蓄力必须解析到一个实际槽位")
+    var result: Dictionary = runtime.ports.end_technique_charging(
+        runtime.actor, str(slot_ids[0]), runtime.action_token)
+    if not result.get("success", false):
+        return EffectResultScript.failed(str(result.get(
+            "reason", "结束功法蓄力失败")))
+    _capture_charging_results(effect, runtime, [result])
+    return EffectResultScript.succeeded("结束功法实例蓄力")
+
+func _charging_target_slot_ids(
+        effect: Dictionary, runtime, allow_all: bool) -> Array:
+    var target_capture := str(effect.get("target_capture", ""))
+    if target_capture != "":
+        return _slot_ids_from_capture(runtime, target_capture)
+    if allow_all and str(effect.get("target", "")) == "all_charging":
+        return runtime.ports.charging_technique_instances(
+            runtime.actor, false).map(
+                func(entry): return str(entry.get("slot_instance_id", "")))
+    var explicit := str(effect.get("slot_instance_id", ""))
+    if explicit != "":
+        return [explicit]
+    return [runtime.slot_instance_id] if runtime.slot_instance_id != "" else []
+
+func _slot_ids_from_capture(runtime, capture_id: String) -> Array:
+    var result: Array = []
+    for entry in runtime.captures.get(capture_id, []):
+        var slot_id := str(entry.get("slot_instance_id", "")) \
+            if entry is Dictionary else ""
+        if slot_id != "" and not result.has(slot_id):
+            result.append(slot_id)
+    return result
+
+func _capture_charging_results(
+        effect: Dictionary, runtime, results: Array) -> void:
+    var capture_id := str(effect.get("capture", effect.get(
+        "result_capture", "")))
+    if capture_id != "":
+        runtime.captures[capture_id] = results.duplicate(true)
+
 func _source(effect: Dictionary, runtime) -> Dictionary:
     return address_resolver.resolve(effect, runtime)
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
-    if str(effect.get("op", "")) == "write_source_marker" \
+    var op := str(effect.get("op", ""))
+    if op in [
+            "begin_technique_charging", "write_charging_primary",
+            "write_all_charging_primary", "capture_charging_techniques",
+            "end_technique_charging"]:
+        if op in ["write_charging_primary", "write_all_charging_primary"] \
+                and str(effect.get("operation", "add")) not in [
+                    "add", "subtract", "set", "clear"]:
+            validator.report_error(scope + ".operation",
+                "引用未知主要蓄力值操作")
+        if effect.has("amount"):
+            validator.validate_amount_spec(effect["amount"], scope + ".amount")
+        if effect.has("initial_value"):
+            validator.validate_amount_spec(
+                effect["initial_value"], scope + ".initial_value")
+        if str(effect.get("target", "current_source")) not in [
+                "current_source", "all_charging"]:
+            validator.report_error(scope + ".target", "引用未知蓄力功法目标")
+        return
+    if op == "write_source_marker" \
             and str(effect.get("operation", "")) not in [
                 "add", "set", "subtract", "consume", "clear"]:
         validator.report_error(scope + ".operation", "引用未知来源标识操作")

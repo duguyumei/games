@@ -21,6 +21,7 @@ func write(
         return {"success": false, "reason": "来源标识键无效"}
     var key := _key(source_kind, source_instance_key, marker_id, scope)
     var existing: Dictionary = _entries.get(key, {})
+    var existed_before := not existing.is_empty()
     var before := int(existing.get("value", 0))
     var after := before
     match operation:
@@ -47,15 +48,27 @@ func write(
         "contributes_to": str(metadata.get("contributes_to", "")),
         "forget_policy": str(metadata.get("forget_policy", "clear")),
     }
+    for field in ["marker_role", "slot_instance_id", "technique_id", "hand_id"]:
+        if metadata.has(field):
+            entry[field] = metadata[field]
     if existing.has("records"):
         entry["records"] = existing.get("records", []).duplicate(true)
     if after == 0 and bool(metadata.get("remove_zero", operation == "clear")):
         _entries.erase(key)
     else:
         _entries[key] = entry
+    var exists_after := _entries.has(key)
+    var created := not existed_before and exists_after
+    var removed := existed_before and not exists_after
     return {
         "success": true,
-        "changed": before != after,
+        ## 条目生命周期与数值变化同属正式状态变化。零值条目的建立和移除
+        ## 不能被 before == after 吞掉，否则调用方无法表达“正在蓄力但值为0”。
+        "changed": before != after or created or removed,
+        "created": created,
+        "removed": removed,
+        "existed_before": existed_before,
+        "exists_after": exists_after,
         "before": before,
         "after": after,
         "delta": after - before,
@@ -80,6 +93,7 @@ func append_records(
         return {"success": false, "reason": "来源标识有序记录必须是可序列化对象数组"}
     var key := _key(source_kind, source_instance_key, marker_id, scope)
     var existing: Dictionary = _entries.get(key, {})
+    var existed_before := not existing.is_empty()
     var before_records: Array = existing.get("records", []).duplicate(true)
     var after_records: Array = before_records.duplicate(true)
     after_records.append_array(records.duplicate(true))
@@ -96,10 +110,18 @@ func append_records(
         "forget_policy": str(metadata.get("forget_policy", "clear")),
         "records": after_records,
     }
+    for field in ["marker_role", "slot_instance_id", "technique_id", "hand_id"]:
+        if metadata.has(field):
+            entry[field] = metadata[field]
     _entries[key] = entry
+    var created := not existed_before
     return {
         "success": true,
-        "changed": not records.is_empty(),
+        "changed": not records.is_empty() or created,
+        "created": created,
+        "removed": false,
+        "existed_before": existed_before,
+        "exists_after": true,
         "before": before_records.size(),
         "after": after_records.size(),
         "delta": records.size(),
@@ -120,6 +142,7 @@ func consume_records(
         return {"success": false, "reason": "来源标识键无效"}
     var key := _key(source_kind, source_instance_key, marker_id, scope)
     var existing: Dictionary = _entries.get(key, {})
+    var existed_before := not existing.is_empty()
     var before_records: Array = existing.get("records", []).duplicate(true)
     var consumed_count := mini(before_records.size(), maxi(0, count))
     var consumed_records: Array = before_records.slice(0, consumed_count)
@@ -132,9 +155,15 @@ func consume_records(
         _entries.erase(key)
     elif not existing.is_empty():
         _entries[key] = entry
+    var exists_after := _entries.has(key)
+    var removed := existed_before and not exists_after
     return {
         "success": true,
-        "changed": consumed_count > 0,
+        "changed": consumed_count > 0 or removed,
+        "created": false,
+        "removed": removed,
+        "existed_before": existed_before,
+        "exists_after": exists_after,
         "before": before_records.size(),
         "after": after_records.size(),
         "delta": -consumed_count,

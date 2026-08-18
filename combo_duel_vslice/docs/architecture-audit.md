@@ -1587,3 +1587,32 @@ Handler或新牌区。
 本节只表示公共底层完成，并为未来生命写入事务绑定支付计划保留接口；纯
 `pre_life_loss_query`没有支付副作用。《耗气补垣》《万木代命》《折枝生根》《炽种承继》《耗烬催芽》
 《灰烬化形》等消费者仍未接入，也没有实现任何具体内功、物品或暂缓功法。
+
+## 2026-08-18 功法实例主要蓄力值协议
+
+`charging_primary_value_protocol`已在既有功法定义、序列、来源marker、延迟/响应与效果端口中收口，
+没有新增ChargingManager、状态Service、延迟调度器或自动执行器。`TechniqueDefinition.charging`声明
+primary marker、显示名、公开性、允许操作和上下限；`ContentCatalog/ContentValidator`及资源快照往返
+使用同一字段，并拒绝不存在、非battle或非公开marker、非法/重复操作和反向上下限。
+
+权威状态仍在`SourceMarkerStore`。正在蓄力等价于声明存在且实际slot地址的primary marker条目存在，
+数值0与条目不存在严格区分。store的通用write回执新增created/removed/existed-before/exists-after；
+零值创建和删除会提交`source_marker_changed`，重复同值不提交。`BattleSourceResourceEffectService`修复了
+旧`write_source_marker`忽略committed失败的问题，变化及其被动后效现在与marker写入处于同一现有
+BattleRuntime/publication事务。
+
+主要marker地址由`SourceMarkerAddressResolver.resolve_charging_for_slot`强制绑定实际
+`slot_instance_id`。因此同ID永久槽、多个临时副本及`share_origin`临时副本的charging值完全独立；
+resolver的普通入口未改，其他marker仍可share origin。统一查询只枚举`TechniqueSequenceBook`中的实际
+槽位，按权威牌型及当前槽位顺序返回声明、当前值、精确地址和marker副本，移出序列或虚拟ID不会泄漏。
+
+`BattleEffectPorts`新增窄Facade：begin保留已活跃值，write只修改活跃实例并应用声明操作/上下限，end以
+clear结束并返回最终值，write-all先冻结目标再原子提交。批次失败复用
+`BattleRuntimeMutationTransaction`恢复双方状态、marker、StatusDelay/Response、被动计数、RNG、
+committed serial/receipt/history、publication、TriggerQueue和GameLog。通用效果继续归
+`SourceMarkerEffectHandler`，ConditionSpec通过端口只读判断charging-active，不直接读store。
+
+`StatusDelayService/StatusResponseService`只补齐slot、root/invocation/execution token的保存与恢复；主要值
+修改不减少occurrence、不建立观察或触发功法。BattleSession/AI增加按槽位组织的只读公开投影，战斗结束
+仍由既有battle-marker生命周期清理，不进入RunProgressSnapshot。三门蓄力功法和《伏火延烧》均未接入，
+最后一项核心C2仍是`item_source_marker_state`。

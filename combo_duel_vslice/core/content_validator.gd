@@ -1002,6 +1002,9 @@ func _validate_techniques(definition: Dictionary) -> void:
             _error(scope + ".manual_effect_mode", "必须为 normal 或 advance_only")
         _validate_marker_definitions(
             value.get("marker_definitions", []), scope + ".marker_definitions")
+        _validate_technique_charging(
+            value.get("charging", {}), value.get("marker_definitions", []),
+            scope + ".charging")
         _validate_automatic_triggers(
             value.get("automatic_triggers", []),
             value.get("marker_definitions", []),
@@ -1057,6 +1060,69 @@ func _validate_marker_definitions(value, scope: String) -> void:
         if str(marker.get("scope", "battle")) == "run" \
                 and not _is_serializable_content_value(marker):
             _error(marker_scope, "run 标识不得保存 Callable、Object 或运行时定义")
+
+func _validate_technique_charging(
+        value, marker_definitions, scope: String) -> void:
+    if not value is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    if value.is_empty():
+        return
+    var allowed_fields := [
+        "primary_marker_id", "display_name", "scope", "public",
+        "allowed_operations", "minimum", "maximum",
+    ]
+    for field_value in value:
+        if str(field_value) not in allowed_fields:
+            _error(scope + "." + str(field_value), "未知主要蓄力值字段")
+    var primary_marker_id := str(value.get("primary_marker_id", ""))
+    if not _is_snake_case(primary_marker_id):
+        _error(scope + ".primary_marker_id", "必须使用非空 snake_case")
+    var primary_marker: Dictionary = {}
+    if marker_definitions is Array:
+        for marker_value in marker_definitions:
+            if marker_value is Dictionary and str(marker_value.get(
+                    "id", "")) == primary_marker_id:
+                primary_marker = marker_value
+                break
+    if primary_marker.is_empty():
+        _error(scope + ".primary_marker_id", "必须引用本功法已声明的 marker")
+    else:
+        if str(primary_marker.get("scope", "battle")) != "battle":
+            _error(scope + ".primary_marker_id", "主要蓄力 marker 必须为 battle scope")
+        if not bool(primary_marker.get("public", true)):
+            _error(scope + ".primary_marker_id", "主要蓄力 marker 必须公开")
+    if str(value.get("scope", "battle")) != "battle":
+        _error(scope + ".scope", "主要蓄力值 scope 必须为 battle")
+    if not value.get("public", true) is bool or not bool(value.get(
+            "public", true)):
+        _error(scope + ".public", "主要蓄力值必须公开")
+    if not value.get("display_name", primary_marker_id) is String \
+            or str(value.get("display_name", primary_marker_id)) == "":
+        _error(scope + ".display_name", "必须是非空字符串")
+    var operations = value.get(
+        "allowed_operations", ["add", "subtract", "set", "clear"])
+    if not operations is Array:
+        _error(scope + ".allowed_operations", "必须是数组")
+    else:
+        var seen_operations: Dictionary = {}
+        for index in range(operations.size()):
+            var operation := str(operations[index])
+            if operation not in ["add", "subtract", "set", "clear"]:
+                _error("%s.allowed_operations[%d]" % [scope, index],
+                    "引用未知主要蓄力值操作")
+            elif seen_operations.has(operation):
+                _error("%s.allowed_operations[%d]" % [scope, index],
+                    "主要蓄力值操作不得重复")
+            seen_operations[operation] = true
+    if not _is_integer(value.get("minimum", 0)):
+        _error(scope + ".minimum", "必须是整数")
+    if value.has("maximum"):
+        if not _is_integer(value["maximum"]):
+            _error(scope + ".maximum", "必须是整数")
+        elif _is_integer(value.get("minimum", 0)) \
+                and int(value["maximum"]) < int(value.get("minimum", 0)):
+            _error(scope + ".maximum", "不得小于 minimum")
 
 func _validate_automatic_triggers(value, marker_definitions, scope: String) -> void:
     if not value is Array:

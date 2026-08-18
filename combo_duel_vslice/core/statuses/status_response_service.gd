@@ -58,6 +58,8 @@ func register_response(
         "invocation_token": runtime.invocation_token,
         "caller_technique_id": runtime.caller_technique_id,
         "slot_instance_id": runtime.slot_instance_id,
+        "technique_execution_token": runtime.technique_execution_token,
+        "technique_execution_state": runtime.technique_execution_state.duplicate(true),
         "trigger_mode": runtime.trigger_mode,
         "source_kind": runtime.source_kind,
         "source_id": runtime.source_id,
@@ -169,6 +171,10 @@ func _execute_response_effects(
         "invocation_token": record.get("invocation_token", ""),
         "caller_technique_id": record.get("caller_technique_id", ""),
         "slot_instance_id": record.get("slot_instance_id", ""),
+        "technique_execution_token": record.get(
+            "technique_execution_token", ""),
+        "technique_execution_state": record.get(
+            "technique_execution_state", {}).duplicate(true),
         "trigger_mode": trigger_mode,
         "sequence_book": record.get("sequence_book"),
         "source_kind": record.get("source_kind", "rule"),

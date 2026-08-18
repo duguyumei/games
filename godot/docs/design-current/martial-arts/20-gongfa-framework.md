@@ -156,9 +156,26 @@ ID/实例完全匹配的既有committed伤害、防御与恢复事实，不能�
 `grant_reflection_source`；防御移除统一由 `DefenseEffectHandler` 的
 `remove_defense(amount/all/cause)` 表达。
 
-蓄力功法不建立角色级统一“蓄力”资源。每门蓄力功法仍以自己的稳定来源标识保存倒计时、观察记录和累计数值，但必须声明当前是否处于蓄力状态，以及哪一个公开整数是本次蓄力完成后用于主要结算的“蓄力累计值”。通用只读查询可以枚举我方当前正在蓄力且拥有累计值的功法实例，通用写端口可以增加、减少或设置该累计值；没有声明累计值的倒计时或自动功法不伪装成蓄力目标。临时功法副本分别保存和修改自己的累计值，查询、预览与 AI 评估不得推进倒计时或写入累计值。
+蓄力功法不建立角色级统一“蓄力”资源。底层协议已完成：`TechniqueDefinition.charging`只声明
+`primary_marker_id`、显示名、battle/public属性、允许的`add/subtract/set/clear`操作及最小／可选最大值；
+倒计时、观察次数、完成条件和具体公式不能写进该声明。主要marker必须引用本功法已声明的公开battle
+marker。
 
-当前正式蓄力功法的主要累计值为：风·长风蓄海的蓄风值、火·三劫悬炉的生命损失累计值`L`、山·悬岳待敌两次观察记录的当前总和`Z`。这里只统一读写接口，不修改三门功法各自的完成条件、倒计时或最终公式。
+“正在蓄力”的唯一判定是：实际功法定义声明了charging，且该`slot_instance_id`对应的主要marker条目
+真实存在。marker存在且值为0仍在蓄力；`set 0`不结束，`clear`移除条目才结束。通用只读查询按精确牌型
+及当前槽位顺序枚举实际实例，通用端口负责begin/write/end和冻结目标后的原子批量写。主要marker始终以
+实际slot为`source_instance_key`；同ID永久槽、临时副本以及`share_origin`临时副本各自独立，普通marker
+的share-origin语义不变。查询、预览、UI和AI不能推进倒计时、写值、发送事件、移动序列或推进RNG。
+
+蓄力功法首次`trigger_mode=manual`触发和蓄力期间再次manual触发都仍是正常成功功法：照常识别牌型、
+计算P₀/P、读取连势、结算同气并推进序列；效果用`charging_active`与`trigger_mode=manual`组合选择正文
+分支。再次触发不默认引爆、清空累计值、建立第二份延迟/观察或改变倒计时。automatic、invoked、echo、
+retrigger不能误入manual分支。完成后仍由既有自动功法流程移动该slot、以正文特殊P₀结算和推进，正文再
+明确clear marker。
+
+当前未来接入目标的主要累计值为：风·长风蓄海的蓄风值、火·三劫悬炉的生命损失累计值`L`、山·悬岳
+待敌两次观察记录的当前总和`Z`。底层协议已完成，但三门功法与《伏火延烧》仍未接入；倒计时和观察
+继续由`StatusDelayService/StatusResponseService`及自动功法体系负责。
 
 `dissipate_captured`、`atomic_exchange_captured`、`synchronous_discard_queries`、
 `generate_temporary_techniques` 与 `invoke_sequence_technique` 因表达槽位容量检查、同步冻结或特殊结算时序

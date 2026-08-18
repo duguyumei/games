@@ -10,6 +10,8 @@ extends Resource
 @export_enum("normal", "advance_only") var manual_effect_mode: String = "normal"
 @export var automatic_triggers: Array = []
 @export var marker_definitions: Array = []
+## 空字典表示没有主要蓄力值；倒计时和完成条件不属于此声明。
+@export var charging: Dictionary = {}
 @export var built_in: bool = false
 @export var base_loadout_limit: int = 1
 @export var eligible_hand_ids: Array[String] = []
@@ -31,6 +33,7 @@ func configure_from_dictionary(value: Dictionary):
 	manual_effect_mode = str(value.get("manual_effect_mode", "normal"))
 	automatic_triggers = value.get("automatic_triggers", []).duplicate(true)
 	marker_definitions = value.get("marker_definitions", []).duplicate(true)
+	charging = value.get("charging", {}).duplicate(true)
 	built_in = bool(value.get("built_in", false))
 	base_loadout_limit = int(value.get("base_loadout_limit", 1))
 	eligible_hand_ids.assign(value.get("eligible_hand_ids", []))
@@ -54,6 +57,7 @@ func to_definition() -> Dictionary:
 		"manual_effect_mode": manual_effect_mode,
 		"automatic_triggers": automatic_triggers.duplicate(true),
 		"marker_definitions": marker_definitions.duplicate(true),
+		"charging": charging.duplicate(true),
 		"built_in": built_in,
 		"base_loadout_limit": base_loadout_limit,
 		"eligible_hand_ids": eligible_hand_ids.duplicate(),

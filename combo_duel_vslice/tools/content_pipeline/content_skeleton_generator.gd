@@ -92,6 +92,7 @@ func render(content_type: String, content_id: String, display_name: String) -> D
         "special = false",
         "description = %s" % JSON.stringify(content["description"]),
         "condition = {}",
+        "charging = {}",
         "effects = [{\"op\":\"defense\",\"amount\":{\"kind\":\"constant\",\"value\":1}}]",
         "",
     ])

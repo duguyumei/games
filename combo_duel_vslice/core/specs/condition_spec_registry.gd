@@ -21,6 +21,9 @@ const CONDITION_DEFINITIONS := {
     "hand_id": {"validation": "hand_id", "runtime": "hand_id"},
     "exact_hand_id": {"validation": "hand_id", "runtime": "exact_hand_id"},
     "trigger_mode": {"validation": "trigger_mode", "runtime": "trigger_mode"},
+    "charging_active": {"validation": "bool", "runtime": "charging_active"},
+    "charging_slot_instance_id": {"validation": "nonempty_string", "runtime": "modifier"},
+    "charging_capture": {"validation": "capture_id", "runtime": "modifier"},
     "capture_count_equals": {"validation": "capture_count", "runtime": "capture_count_equals"},
     "capture_count_at_least": {"validation": "capture_count", "runtime": "capture_count_at_least"},
     "capture_all_attribute": {"validation": "capture_attribute", "runtime": "capture_all_attribute"},
@@ -102,6 +105,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "technique_id_not_in": {"validation": "string_array", "value": "direct", "key": "technique_id", "match": "excludes"},
     "technique_power": {"validation": "integer", "value": "direct", "key": "technique_power"},
     "technique_execution_token": {"validation": "nonempty_string", "value": "direct", "key": "technique_execution_token"},
+    "slot_instance_id": {"validation": "nonempty_string", "value": "direct", "key": "slot_instance_id"},
     "trigger_mode": {"validation": "trigger_mode", "value": "direct", "key": "trigger_mode"},
     "is_echo": {"validation": "bool", "value": "direct", "key": "is_echo"},
     "manual_effect_suppressed": {"validation": "bool", "value": "direct", "key": "manual_effect_suppressed"},
@@ -590,6 +594,30 @@ func _evaluate_condition_field(
             return runtime.actual_hand_id == str(expected)
         "trigger_mode":
             return runtime.trigger_mode == str(expected)
+        "charging_active":
+            if runtime.actor == null or runtime.ports == null:
+                return false
+            var slot_ids: Array[String] = []
+            var explicit_slot := str(whole_condition.get(
+                "charging_slot_instance_id", ""))
+            if explicit_slot != "":
+                slot_ids.append(explicit_slot)
+            else:
+                var capture_id := str(whole_condition.get("charging_capture", ""))
+                if capture_id != "":
+                    for captured in runtime.captures.get(capture_id, []):
+                        var captured_slot := str(captured.get(
+                            "slot_instance_id", "")) if captured is Dictionary else ""
+                        if captured_slot != "" and not slot_ids.has(captured_slot):
+                            slot_ids.append(captured_slot)
+                elif runtime.slot_instance_id != "":
+                    slot_ids.append(runtime.slot_instance_id)
+            if slot_ids.is_empty():
+                return false
+            var active := slot_ids.any(func(slot_id):
+                return runtime.ports.is_technique_charging(
+                    runtime.actor, str(slot_id)))
+            return active == bool(expected)
         "capture_count_equals", "capture_count_at_least":
             var count_spec: Dictionary = expected
             var count: int = runtime.captures.get(

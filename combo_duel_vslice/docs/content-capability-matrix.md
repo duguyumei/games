@@ -8,7 +8,7 @@
 - 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。35号仍明确为17门已接入、其余8门候选，指定名单无差异。
 - Readiness：A=35，B=68，C=82，D=1，E=8，合计194。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并8项，余下实现形态为B 14、C1 23、C2 2；D 1（D不计入47项C能力）。这里的B/C1/C2描述实现形态，不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并9项，余下实现形态为B 14、C1 23、C2 1；D 1（D不计入47项C能力）。这里的B/C1/C2描述实现形态，不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -201,7 +201,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 隔空点炉 | `automatic_or_invoked_spreads_burnout` | [36 §13《隔空点炉》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#隔空点炉) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 每当我方自动功法或调用功法成功触发时，敌方牌库中随机 1 张没有燃尽的真气获得燃尽。 | event/action local snapshot | 稳定 RNG + receipt | 现有 technique_succeeded / action_resolved + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 临诀燃灯 | `first_temporary_technique_echo` | [36 §13《临诀燃灯》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#临诀燃灯) | technique_succeeded / action_resolved | trigger_mode/source_kind；source counter/marker | 每场战斗第一次有临时功法成功触发时，该功法的功法回响次数 +1。 | BattleRuntime temporary state | 计数器/marker 与事件同事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
 | inner_skill | 追焰留痕 | `every_three_chases_spreads_burnout` | [36 §13《追焰留痕》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#追焰留痕) | chase_resolved（待补） | EffectTargetQuery.anomaly/reshape；source counter/marker | 我方每累计完成 3 次追击，敌方牌库中随机 1 张没有燃尽的真气获得燃尽，然后重新计数。 | event/action local snapshot | 稳定 RNG + receipt | `damage_resolved`已有，旧`source_kind=chase`仍为兼容标签 | C | chase_resolved_event | 按能力键合并实现 |
-| inner_skill | 伏火延烧 | `round_end_charging_plus_ten` | [36 §13《伏火延烧》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#伏火延烧) | round_start / turn_end | trigger_mode/source_kind；source counter/marker | 每个完整回合结束时，我方所有正在蓄力的功法，其本次蓄力累计值 +10。 | BattleRuntime temporary state | 计数器/marker 与事件同事务 | StatusDelayService、SourceMarkerStore、自动触发已有 | C | charging_primary_value_protocol | 按能力键合并实现 |
+| inner_skill | 伏火延烧 | `round_end_charging_plus_ten` | [36 §13《伏火延烧》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#伏火延烧) | round_start / turn_end | trigger_mode/source_kind；source counter/marker | 每个完整回合结束时，我方所有正在蓄力的功法，其本次蓄力累计值 +10。 | BattleRuntime temporary state | marker 与 committed/publication 事务 | `charging_primary_value_protocol`已提供稳定枚举和批量写端口 | C | charging_primary_value_protocol | 底层协议已完成；具体内功仍未接入 |
 
 ### 3.2 物品（20）
 
@@ -232,14 +232,14 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 
 | content_kind | name | stable_id | authority | trigger | conditions | effects | state | transaction | current_support | readiness | missing_capability_keys | notes |
 |---|---|---|---|---|---|---|---|---|---|:---:|---|---|
-| technique | 风·长风蓄海 | —（尚无正式ID） | [35 §3](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | battle_start/round_start/自动倒计时归零 | 蓄力实例、牌库是否可抽 | 抽牌；蓄风值；真伤 | BattleRuntime：倒计时+来源marker | 延迟记录+自动触发 | StatusDelayService/StatusResponseService/SourceMarkerStore/TechniqueInvocationService可复用；见缺口键 | E | charging_primary_value_protocol | 未来依赖照录；不阻塞当前内容批次 |
+| technique | 风·长风蓄海 | —（尚无正式ID） | [35 §3](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | battle_start/round_start/自动倒计时归零 | 蓄力实例、牌库是否可抽 | 抽牌；蓄风值；真伤 | BattleRuntime：倒计时+来源marker | 延迟记录+自动触发 | `charging_primary_value_protocol`、StatusDelay/Response与自动调用底层已有 | E | charging_primary_value_protocol | 底层协议已完成；功法仍暂缓且未接入 |
 | technique | 林·夺元栽命 | —（尚无正式ID） | [35 §10](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | technique_succeeded（每场首次） | 敌方max_life；命元≤80 | run marker + max_life贡献 | BattleSide working run state → Run committed | 战果提交 | SourceMarkerStore(run)+SourceContributedStatService；BattleSetupService往返 | E |  | 未来依赖照录；不阻塞当前内容批次 |
 | technique | 火·万法传薪 | —（尚无正式ID） | [35 §12](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 功法伤害完成后 | 七牌型remaining_slot_count | 连势；generate_temporary_techniques | BattleRuntime临时槽位 | 生成批次回执 | TechniqueSequenceBook.remaining_slot_count；op=generate_temporary_techniques；temporary_technique_generated | E |  | 未来依赖照录；不阻塞当前内容批次 |
 | technique | 火·借式还招 | —（尚无正式ID） | [35 §14](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 本门即时伤害后 | 同序列其他非栈槽位 | invoke_sequence_technique(P0=C) | event/action local snapshot | 冻结随机目标+调用回执 | TechniqueInvocationService；op=invoke_sequence_technique；等待选择/调用快照 | E |  | 未来依赖照录；不阻塞当前内容批次 |
-| technique | 火·三劫悬炉 | —（尚无正式ID） | [35 §15](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 之后3次action_resolved | 同一行动生命损失汇总 | 累计L；到期真伤 | BattleRuntime来源marker/延迟记录 | 重触发重置次数但保留L | StatusDelayService/StatusResponseService/SourceMarkerStore/TechniqueInvocationService可复用；见缺口键 | E | charging_primary_value_protocol | 未来依赖照录；不阻塞当前内容批次 |
+| technique | 火·三劫悬炉 | —（尚无正式ID） | [35 §15](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 之后3次action_resolved | 同一行动生命损失汇总 | 累计L；到期真伤 | BattleRuntime来源marker/延迟记录 | 重触发重置次数但保留L | `charging_primary_value_protocol`、StatusDelay/Response与自动调用底层已有 | E | charging_primary_value_protocol | 底层协议已完成；功法仍暂缓且未接入 |
 | technique | 火·残阳绝式 | —（尚无正式ID） | [35 §18](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | action_pre_commit/功法冻结 | 已损生命；life/max_life≤25% | add_direct_power_fixed；normal/true damage | event/action local snapshot | 调用重新冻结；回响复用 | StatusDelayService/StatusResponseService/SourceMarkerStore/TechniqueInvocationService可复用；见缺口键 | E |  | 未来依赖照录；不阻塞当前内容批次 |
 | technique | 火·照影追式 | —（尚无正式ID） | [35 §20](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 敌方technique_succeeded至turn_end | 敌方P≤冻结P；下一非栈槽位 | invoke_sequence_technique(P0=敌P0/2) | BattleRuntime response+冻结牌组 | 等待恢复保持目标/P0 | TechniqueInvocationService；op=invoke_sequence_technique；等待选择/调用快照 | E |  | 未来依赖照录；不阻塞当前内容批次 |
-| technique | 山·悬岳待敌 | —（尚无正式ID） | [35 §24](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 之后2个敌方行动结束 | 每轮防御+生命实际减少；X=0回退C | 累计Z；防御；真伤 | BattleRuntime来源marker/延迟记录 | 已有观察不重复建立 | StatusDelayService/StatusResponseService/SourceMarkerStore/TechniqueInvocationService可复用；见缺口键 | E | charging_primary_value_protocol | 未来依赖照录；不阻塞当前内容批次 |
+| technique | 山·悬岳待敌 | —（尚无正式ID） | [35 §24](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md) | 之后2个敌方行动结束 | 每轮防御+生命实际减少；X=0回退C | 累计Z；防御；真伤 | BattleRuntime来源marker/延迟记录 | 已有观察不重复建立 | `charging_primary_value_protocol`、StatusDelay/Response与自动调用底层已有 | E | charging_primary_value_protocol | 底层协议已完成；功法仍暂缓且未接入 |
 
 35号当前待实现名单与任务指定名单完全一致；没有自行增删。
 
@@ -284,7 +284,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `technique_sequence_extra_advance` | effect | TechniqueSequenceBook.advance 与 sequence_changed 已有 | 正常推进后追加指定序列稳定推进的窄端口 | inner_skill:burnout_technique_advances_extra | BattleTechniqueSequenceEffectService | 否 | BattleRuntime temporary state | 不重建序列 | 33 | 回响不重复；多副本逐次推进；事件准确 |
 | `chase_resolved_event` | event | damage_resolved 已有，旧source_kind=chase仍为兼容标签 | 结构化chase攻击段、唯一追击令牌与完成事件 | inner_skill:every_three_chases_spreads_burnout | BattleSurvivalEffectService | 否 | event/action local snapshot | 复用正式伤害事务 | 34 | 同令牌一次；无递归；公开防御/生命损失和取消 |
 | `passive_behavior_copy_projection` | state | ExecutionPlan 已支持 additional_executions 和稳定来源 | 复制资格、邻接/随机目标投影、独立来源身份与计数器 | inner_skill:copy_left_adjacent_inner_skill<br>inner_skill:random_inner_skill_effect_each_battle<br>inner_skill:empty_slots_amplify_leftmost | PassiveRuleRuntime.build_execution_plan | 战斗型否；变形型另列 | BattleRuntime temporary state | 不复制内容对象 | 35 | 复制无链/循环；目标变化按正文；计数器独立 |
-| `charging_primary_value_protocol` | state | StatusDelayService、SourceMarkerStore、自动触发已有 | 功法实例声明主要蓄力值、枚举正在蓄力实例并通用写入 | inner_skill:round_end_charging_plus_ten | TechniqueDefinition/SourceMarkerAddressResolver | 否 | BattleRuntime temporary state | 倒计时仍由现有延迟服务负责 | 36 | 三门功法/临时副本独立；查询不推进倒计时 |
+| `charging_primary_value_protocol` | state | **已有**：`TechniqueDefinition.charging`声明主要marker；`SourceMarkerAddressResolver.resolve_charging_for_slot`强制实际slot身份；`BattleEffectPorts`提供begin/write/end/枚举/原子批量写；ConditionSpec、延迟恢复与UI/AI投影已接入 | 已完成；伏火延烧与三门暂缓功法仍未接入，倒计时和观察继续由既有延迟/响应体系负责 | inner_skill:round_end_charging_plus_ten | TechniqueDefinition + SourceMarkerStore + StatusDelay/Response | 否 | BattleRuntime temporary state | 不是角色级资源；不新建倒计时或自动执行器 | 已完成 | marker存在即蓄力，值可为0；临时/share_origin副本仍按实际slot隔离；查询不推进倒计时 |
 | `practice_normal_slot_count_query` | query | pack_offer_count_query/pack_choose_count_query 已有 | 普通商品栏槽位数查询及批次冻结 | item:overstock_plus_two | practice offer planner | 批次快照是 | Run committed state | 不修改补充包栏 | 37 | 当前批次不追溯扩容；新批次读取新值 |
 | `practice_offer_weight_query` | query | 修习候选与稳定随机已有 | 来源中立商品类别权重查询 | item:awakened_qi_weight_x4<br>item:pill_shop_weight_x4<br>item:insight_shop_weight_x4 | practice candidate planner | 否 | 纯查询，无状态 | 不改变资格 | 38 | 同seed同权重同结果；查询不耗RNG |
 | `consumable_capacity_query` | query | ConsumableUseService和库存预留事务已有 | 共享容量查询及超容量失效策略 | item:consumable_capacity_plus_two | GrowthInventory/ConsumableUseContext | 是（库存） | Run committed state / BattleSide working run state | 不修改使用事务 | 39 | 所有获得/奖励/UI一致；压制不随机丢弃 |
@@ -334,7 +334,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 
 1. `solidify_hand_at_battle_end`（化虚为实）：正文要求把手牌临时真气、异状和临时重塑固化进本局牌组；当前唯一提交协议明确不把异状/临时重塑写入RunProgressSnapshot/RunDeck。必须先决定“固化后转成何种可提交永久表示”或修改正文，不能绕过DTO把BattleRuntime状态塞进存档。
 
-## 9. 推荐后续前10批
+## 9. 推荐后续前11批
 
 1. `committed_card_transition_event`：**已完成底层事实**；依赖内容仍须按各自缺口接入，不能据此标记已实现。
 2. `committed_anomaly_change_event`：**已由`card_state_changed`完成底层事实**；依赖内容仍须逐项接入，不能据此标记已实现。
@@ -345,9 +345,10 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 7. `pre_life_loss_intervention`：**底层协议已完成**；统一最终生命写入前减量/取消，具体保护来源仍未接入。
 8. `deflection_attack_cancel_protocol`：**底层协议已完成**；先卸力后格挡、击穿消费、canonical取消事件、同步回滚和公开投影均已接入。
 9. `qi_consumption_transaction`：**底层协议已完成**；已提供cause=cost、逐牌事实、原子支付与战后归还，六个消费者仍未接入。
-10. `temporary_blazing_source_layers`：来源级层数及入堆生命周期。
+10. `charging_primary_value_protocol`：**底层协议已完成**；已统一slot级主要累计值声明、零值存在语义、类型化读写、批量回滚、条件与公开投影，伏火延烧和三门蓄力功法仍未接入。
+11. `temporary_blazing_source_layers`：来源级层数及入堆生命周期。
 
-本节是原始能力键排序，不等于47个独立实现批次。收缩后的实际批次见第11节；8门E类不作为阻塞。`committed_card_transition_event`、`committed_anomaly_change_event`、`effective_qi_staged_query`、`pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`和`qi_consumption_transaction`底层均已完成，依赖它们的具体内容仍须独立接入。
+本节是原始能力键排序，不等于47个独立实现批次。收缩后的实际批次见第11节；8门E类不作为阻塞。`committed_card_transition_event`、`committed_anomaly_change_event`、`effective_qi_staged_query`、`pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`、`qi_consumption_transaction`和`charging_primary_value_protocol`底层均已完成，依赖它们的具体内容仍须独立接入。
 
 ## 10. 旧待实现清单校正摘要
 
@@ -405,7 +406,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `technique_sequence_extra_advance` | B | technique_sequence_mutation | 1 | TechniqueSequenceBook.advance窄端口 |
 | `chase_resolved_event` | B | damage_resolved_context | 1 | BattleSurvivalEffectService扩展现有damage_resolved字段 |
 | `passive_behavior_copy_projection` | C1 | passive_execution_plan | 3 | PassiveRuleRuntime.build_execution_plan |
-| `charging_primary_value_protocol` | C2 | technique_delay_state | 1（另服务3门E功法） | TechniqueDefinition + StatusDelayService |
+| `charging_primary_value_protocol` | 已有 | technique_delay_state | 1（另服务3门E功法） | TechniqueDefinition + SourceMarkerStore + StatusDelay/Response |
 | `practice_normal_slot_count_query` | C1 | practice_strategy_query | 1 | 修习候选规划器既有query族 |
 | `practice_offer_weight_query` | B | practice_strategy_query | 3 | 现有候选权重query增加可配置key |
 | `consumable_capacity_query` | C1 | inventory_capacity_query | 1 | GrowthInventory + ConsumableUseContext |
@@ -418,14 +419,14 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `item_source_marker_state` | C2 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | C1 | run_card_mutation_fact | 1 | RunMutationService；不新增平行事件系统 |
 
-当前数量为：已有/合并8、B 14、C1 23、C2 2、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并9、B 14、C1 23、C2 1、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
 原先需要公共协议设计的核心C2为9项；其中`committed_card_transition_event`、
 `committed_anomaly_change_event`、`effective_qi_staged_query`、
 `pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`与
-`qi_consumption_transaction`已完成，尚余2项公共协议：
+`qi_consumption_transaction`与`charging_primary_value_protocol`已完成，尚余1项公共协议：
 
 1. `committed_card_transition_event`（已完成）：`card_moved`已提升为可配置committed事实；临时真气生成使用`from_zone=generated`、`reason=temporary_generate`，非临时生成使用`reason=permanent_generate`，不另建平行事件。
 2. `committed_anomaly_change_event`（已完成）：`card_state_changed`统一异状、净化、临时重塑、转移和生命周期的before/after与实际变化字段，并保留legacy动态响应投影。
@@ -434,7 +435,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 5. `pre_life_loss_intervention`（已完成）：统一所有非代价生命写入前的减量/取消边界；防御与生命先计划后一次提交，同步flush失败恢复BattleSide、被动、receipt、publication与日志。
 6. `deflection_attack_cancel_protocol`（已完成）：类型化复用`block_sources`，统一先卸力后格挡；每次卸力消费提交`deflection_resolved`，实际取消提交`attack_canceled`，同步flush与普通伤害共用解析和回滚边界。
 7. `qi_consumption_transaction`（已完成）：prepare/commit冻结并重验多牌区精确实例；复用既有临时移出区，提交共享batch token的`card_moved/qi_consumed`，并通过公共BattleRuntime事务恢复状态、事件、日志和RNG。
-8. `charging_primary_value_protocol`：把功法实例主要蓄力值声明接入既有延迟服务；不是新建蓄力执行器。
+8. `charging_primary_value_protocol`（已完成）：以实际`slot_instance_id`和battle marker存在性表达蓄力，提供声明校验、枚举、begin/write/end、原子批量写、ConditionSpec、延迟身份恢复及UI/AI投影；没有角色级蓄力资源，也不接管倒计时。
 9. `item_source_marker_state`：扩展现有来源标识地址和最大生命贡献，使物品与内功/功法共用同一 marker 协议。
 
 其余 38 项是 B 或 C1，分别落在现有 CardZone/CardState、TechniqueResolution/Invocation、BattleSurvival、RunMutation、Practice、NodeInteraction 和策略查询体系中。`run_qi_added_and_reshape_events`明确收口到`RunMutationService`；`chase_resolved_event`明确是`damage_resolved`上下文扩展；修习商品槽位、权重、容量和类别均是同一策略查询族的 key，不建立多个商品 Service。

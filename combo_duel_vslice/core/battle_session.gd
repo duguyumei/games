@@ -785,6 +785,7 @@ func _side_snapshot(side) -> Dictionary:
         "owned_technique_ids": side.owned_technique_ids.duplicate(),
         "technique_sequences": sequence_book.public_snapshot(),
         "technique_slot_usage": sequence_book.public_slot_usage_snapshot(),
+        "charging_techniques": side.charging_technique_instances(true),
         "public_source_markers": side.source_marker_store.public_projection(),
         "poison_damage_modifier_sources": side.public_poison_damage_modifier_sources(),
     }

@@ -153,6 +153,13 @@ func use_technique_sequence_book(book) -> void:
 func use_battle_effect_ports(ports) -> void:
     _battle_effect_ports_ref = weakref(ports) if ports != null else null
 
+func charging_technique_instances(public_only: bool = false) -> Array:
+    var ports = _battle_effect_ports_ref.get_ref() \
+        if _battle_effect_ports_ref != null else null
+    if ports == null:
+        return []
+    return ports.charging_technique_instances(self, public_only)
+
 func reset(
         cards: Array,
         rng: RandomNumberGenerator,

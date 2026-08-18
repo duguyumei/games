@@ -1,6 +1,16 @@
 class_name BattleSourceResourceEffectService
 extends RefCounted
 
+const SourceMarkerAddressResolverScript = preload(
+    "res://core/source_marker_address_resolver.gd")
+const BattleRuntimeMutationTransactionScript = preload(
+    "res://core/battle_runtime_mutation_transaction.gd")
+
+const HAND_IDS := [
+    "high_card", "pair", "two_pair", "three_kind", "straight",
+    "full_house", "four_kind", "five_kind",
+]
+
 ## BattleEffectPorts 内部的来源标识与来源化战斗资源写入服务。
 ##
 ## 本服务集中维护来源 marker、连势、同气槽、直接功法值修正，以及反震／格挡／
@@ -16,6 +26,10 @@ var _current_action_window_id_reader: Callable
 var _can_bind_current_source_reader: Callable
 var _close_source_binding_window: Callable
 var _battle_instance_id: String = "battle-0"
+var _technique_repository_ref: WeakRef
+var _sides: Array = []
+var _rng: RandomNumberGenerator
+var _marker_address_resolver = SourceMarkerAddressResolverScript.new()
 
 
 func _init(
@@ -45,6 +59,18 @@ func use_trigger_queue(trigger_queue) -> void:
     assert(trigger_queue != null,
         "BattleSourceResourceEffectService requires VisibleTriggerQueue")
     _trigger_queue = trigger_queue
+
+
+func use_sides(sides: Array) -> void:
+    _sides = sides.duplicate()
+
+
+func use_battle_rng(rng: RandomNumberGenerator) -> void:
+    _rng = rng
+
+
+func use_technique_repository(repository) -> void:
+    _technique_repository_ref = weakref(repository) if repository != null else null
 
 
 func use_passive_battle_services(
@@ -160,17 +186,35 @@ func write_source_marker(
         operation: String,
         amount: int,
         action_token: String = "") -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "来源标识写入缺少持有者"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
     var result: Dictionary = side.source_marker_store.write(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
         str(source.get("content_id", "")),
         str(source.get("marker_id", "")),
         str(source.get("scope", "battle")), operation, amount, source)
-    if result.get("success", false) and result.get("changed", false):
-        _emit_source_marker_changed(side, source, operation, result, action_token)
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if result.get("changed", false):
+        var emitted := _emit_source_marker_changed(
+            side, source, str(source.get("reported_operation", operation)),
+            result, action_token)
+        if not emitted.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(emitted.get(
+                    "reason", "来源标识变化事件提交失败")),
+                "rolled_back": true,
+            }
         if str(source.get("scope", "battle")) == "run" \
                 and str(source.get("contributes_to", "")) != "":
             side.recalculate_effective_max_life()
+    BattleRuntimeMutationTransactionScript.commit(transaction)
     return result
 
 
@@ -180,15 +224,32 @@ func transfer_source_marker(
         target: Dictionary,
         amount: int,
         action_token: String = "") -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "来源标识转移缺少持有者"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
     var result: Dictionary = side.source_marker_store.transfer(source, target, amount)
-    if result.get("success", false) and int(result.get("transferred", 0)) > 0:
-        _emit_source_marker_changed(
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if int(result.get("transferred", 0)) > 0:
+        var removed_event := _emit_source_marker_changed(
             side, source, "transfer_out", result.get("source", {}), action_token)
-        _emit_source_marker_changed(
+        var added_event := _emit_source_marker_changed(
             side, target, "transfer_in", result.get("target", {}), action_token)
+        if not removed_event.get("success", false) \
+                or not added_event.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(removed_event.get("reason", added_event.get(
+                    "reason", "来源标识转移事件提交失败"))),
+                "rolled_back": true,
+            }
         if str(source.get("scope", "battle")) == "run" \
                 or str(target.get("scope", "battle")) == "run":
             side.recalculate_effective_max_life()
+    BattleRuntimeMutationTransactionScript.commit(transaction)
     return result
 
 
@@ -197,6 +258,10 @@ func append_source_marker_records(
         source: Dictionary,
         records: Array,
         action_token: String = "") -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "来源标识记录写入缺少持有者"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
     var result: Dictionary = side.source_marker_store.append_records(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
@@ -205,9 +270,17 @@ func append_source_marker_records(
         str(source.get("scope", "battle")),
         records,
         source)
-    if result.get("success", false):
-        _emit_source_marker_changed(
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if result.get("changed", false):
+        var emitted := _emit_source_marker_changed(
             side, source, "append_records", result, action_token)
+        if not emitted.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {"success": false, "reason": emitted.get(
+                "reason", "来源标识记录事件提交失败"), "rolled_back": true}
+    BattleRuntimeMutationTransactionScript.commit(transaction)
     return result
 
 
@@ -216,16 +289,260 @@ func consume_source_marker_records(
         source: Dictionary,
         count: int,
         action_token: String = "") -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "来源标识记录消费缺少持有者"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
     var result: Dictionary = side.source_marker_store.consume_records(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
         str(source.get("marker_id", "")),
         str(source.get("scope", "battle")),
         count)
-    if result.get("success", false):
-        _emit_source_marker_changed(
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if result.get("changed", false):
+        var emitted := _emit_source_marker_changed(
             side, source, "consume_records", result, action_token)
+        if not emitted.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {"success": false, "reason": emitted.get(
+                "reason", "来源标识记录事件提交失败"), "rolled_back": true}
+    BattleRuntimeMutationTransactionScript.commit(transaction)
     return result
+
+
+## 只读枚举以功法序列簿为槽位事实源，以主要 marker 的真实存在作为活跃事实。
+## 返回顺序固定为精确牌型权威顺序，再按各牌型当前槽位顺序。
+func charging_technique_instances(
+        side: BattleSide, public_only: bool = false) -> Array:
+    if side == null or side.technique_sequence_book == null:
+        return []
+    var repository = _technique_repository()
+    if repository == null:
+        return []
+    var result: Array = []
+    for hand_id in HAND_IDS:
+        for slot_value in side.technique_sequence_book.ordered_slots(hand_id):
+            var slot: Dictionary = slot_value
+            var contract := _charging_contract_for_slot(repository, slot)
+            if not contract.get("success", false):
+                continue
+            var charging: Dictionary = contract["charging"]
+            if public_only and not bool(charging.get("public", true)):
+                continue
+            var address: Dictionary = contract["address"]
+            var entry := _marker_entry(side, address)
+            if entry.is_empty():
+                continue
+            result.append({
+                "hand_id": hand_id,
+                "slot_instance_id": str(slot.get("slot_instance_id", "")),
+                "technique_id": str(slot.get("technique_id", "")),
+                "technique_name": str(contract.get("technique_name", "")),
+                "temporary": bool(slot.get("temporary", false)),
+                "origin_technique_id": str(slot.get(
+                    "origin_technique_id", "")),
+                "origin_slot_instance_id": str(slot.get(
+                    "origin_slot_instance_id", "")),
+                "primary_marker_id": str(charging["primary_marker_id"]),
+                "display_name": str(charging["display_name"]),
+                "current_value": int(entry.get("value", 0)),
+                "minimum": int(charging["minimum"]),
+                "maximum": charging.get("maximum"),
+                "allowed_operations": charging[
+                    "allowed_operations"].duplicate(),
+                "source_instance_key": str(address["source_instance_key"]),
+                "marker_entry": entry.duplicate(true),
+            })
+    return result.duplicate(true)
+
+
+func technique_charging_state(
+        side: BattleSide, slot_instance_id: String) -> Dictionary:
+    var resolved := _resolve_charging_slot(side, slot_instance_id)
+    if not resolved.get("success", false):
+        return resolved
+    var entry := _marker_entry(side, resolved["address"])
+    return {
+        "success": true,
+        "active": not entry.is_empty(),
+        "slot": resolved["slot"].duplicate(true),
+        "charging": resolved["charging"].duplicate(true),
+        "address": resolved["address"].duplicate(true),
+        "current_value": int(entry.get("value", 0)),
+        "marker_entry": entry.duplicate(true),
+    }
+
+
+func is_technique_charging(
+        side: BattleSide, slot_instance_id: String) -> bool:
+    var state := technique_charging_state(side, slot_instance_id)
+    return state.get("success", false) and state.get("active", false)
+
+
+func begin_technique_charging(
+        side: BattleSide,
+        slot_instance_id: String,
+        initial_value: int = 0,
+        action_token: String = "") -> Dictionary:
+    var state := technique_charging_state(side, slot_instance_id)
+    if not state.get("success", false):
+        return state
+    if state.get("active", false):
+        return {
+            "success": true,
+            "already_active": true,
+            "changed": false,
+            "created": false,
+            "removed": false,
+            "before": int(state.get("current_value", 0)),
+            "after": int(state.get("current_value", 0)),
+            "requested_amount": initial_value,
+            "actual_delta": 0,
+            "slot_instance_id": slot_instance_id,
+        }
+    var charging: Dictionary = state["charging"]
+    var bounded := _bounded_charging_value(initial_value, charging)
+    var source: Dictionary = state["address"].duplicate(true)
+    source.merge({
+        "requested_amount": initial_value,
+        "actual_delta": bounded,
+        "reported_operation": "begin",
+    }, true)
+    var result := write_source_marker(
+        side, source, "set", bounded, action_token)
+    if not result.get("success", false):
+        return result
+    result["already_active"] = false
+    result["requested_amount"] = initial_value
+    result["actual_delta"] = int(result.get("delta", 0))
+    result["slot_instance_id"] = slot_instance_id
+    return result
+
+
+func write_charging_primary_value(
+        side: BattleSide,
+        slot_instance_id: String,
+        operation: String,
+        amount: int,
+        action_token: String = "") -> Dictionary:
+    var state := technique_charging_state(side, slot_instance_id)
+    if not state.get("success", false):
+        return state
+    if not state.get("active", false):
+        return {"success": false, "reason": "功法实例尚未开始蓄力"}
+    var charging: Dictionary = state["charging"]
+    if operation not in charging["allowed_operations"]:
+        return {
+            "success": false,
+            "reason": "主要蓄力值不允许操作：%s" % operation,
+        }
+    if operation in ["add", "subtract"] and amount < 0:
+        return {"success": false, "reason": "主要蓄力值增减量不得为负数"}
+    var before := int(state.get("current_value", 0))
+    var desired := before
+    match operation:
+        "add":
+            desired = before + amount
+        "subtract":
+            desired = before - maxi(0, amount)
+        "set":
+            desired = amount
+        "clear":
+            desired = 0
+        _:
+            return {"success": false, "reason": "未知主要蓄力值操作"}
+    if operation != "clear":
+        desired = _bounded_charging_value(desired, charging)
+    var source: Dictionary = state["address"].duplicate(true)
+    source.merge({
+        "requested_amount": amount,
+        "actual_delta": desired - before,
+        "reported_operation": operation,
+    }, true)
+    var storage_operation := "clear" if operation == "clear" else "set"
+    var result := write_source_marker(
+        side, source, storage_operation, desired, action_token)
+    if not result.get("success", false):
+        return result
+    result["requested_amount"] = amount
+    result["actual_delta"] = int(result.get("delta", 0))
+    result["slot_instance_id"] = slot_instance_id
+    return result
+
+
+func end_technique_charging(
+        side: BattleSide,
+        slot_instance_id: String,
+        action_token: String = "") -> Dictionary:
+    var state := technique_charging_state(side, slot_instance_id)
+    if not state.get("success", false):
+        return state
+    if not state.get("active", false):
+        return {
+            "success": true,
+            "changed": false,
+            "removed": false,
+            "final_value": 0,
+            "slot_instance_id": slot_instance_id,
+        }
+    if "clear" not in state["charging"]["allowed_operations"]:
+        return {"success": false, "reason": "主要蓄力值不允许 clear"}
+    var final_value := int(state.get("current_value", 0))
+    var result := write_charging_primary_value(
+        side, slot_instance_id, "clear", 0, action_token)
+    if result.get("success", false):
+        result["final_value"] = final_value
+    return result
+
+
+func write_all_charging_primary_values(
+        side: BattleSide,
+        operation: String,
+        amount: int,
+        action_token: String = "",
+        frozen_slot_instance_ids: Array = []) -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "批量主要蓄力值写入缺少持有者"}
+    var frozen_instances := charging_technique_instances(side, false)
+    if not frozen_slot_instance_ids.is_empty():
+        var requested: Dictionary = {}
+        for slot_id_value in frozen_slot_instance_ids:
+            var slot_id := str(slot_id_value)
+            if slot_id == "" or requested.has(slot_id):
+                return {"success": false, "reason": "冻结蓄力槽位身份无效或重复"}
+            requested[slot_id] = true
+        frozen_instances = frozen_instances.filter(func(entry):
+            return requested.has(str(entry.get("slot_instance_id", ""))))
+        if frozen_instances.size() != requested.size():
+            return {"success": false, "reason": "冻结的蓄力功法实例已经失效"}
+    var frozen_ids: Array = frozen_instances.map(
+        func(entry): return str(entry.get("slot_instance_id", "")))
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var results: Array = []
+    for slot_id_value in frozen_ids:
+        var written := write_charging_primary_value(
+            side, str(slot_id_value), operation, amount, action_token)
+        if not written.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(written.get("reason", "批量主要蓄力值写入失败")),
+                "rolled_back": true,
+                "frozen_slot_instance_ids": frozen_ids.duplicate(),
+                "results": results.duplicate(true),
+            }
+        results.append(written.duplicate(true))
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {
+        "success": true,
+        "frozen_slot_instance_ids": frozen_ids.duplicate(),
+        "target_count": frozen_ids.size(),
+        "results": results.duplicate(true),
+    }
 
 
 func add_momentum(side: BattleSide, amount: int) -> int:
@@ -423,7 +740,7 @@ func _emit_source_marker_changed(
         source: Dictionary,
         operation: String,
         result: Dictionary,
-        action_token: String) -> void:
+        action_token: String) -> Dictionary:
     var values := source.duplicate(true)
     values.merge({
         "actor": side, "owner": side, "holder": side,
@@ -431,6 +748,11 @@ func _emit_source_marker_changed(
         "after": int(result.get("after", 0)),
         "delta": int(result.get("delta", 0)),
         "consumed": int(result.get("consumed", 0)),
+        "created": bool(result.get("created", false)),
+        "removed": bool(result.get("removed", false)),
+        "existed_before": bool(result.get("existed_before", false)),
+        "exists_after": bool(result.get("exists_after", false)),
+        "changed": bool(result.get("changed", false)),
         "action_token": action_token, "round_number": _round_number(),
     }, true)
     if _committed_event_service != null:
@@ -438,9 +760,10 @@ func _emit_source_marker_changed(
         values["event_serial"] = serial
         values["event_token"] = _committed_event_service.make_token(
             "source_marker_changed", side, serial, action_token)
-        _committed_event_service.commit("source_marker_changed", values)
+        return _committed_event_service.commit("source_marker_changed", values)
     else:
         _status_system.handle_response_event("source_marker_changed", values)
+        return {"success": true, "receipt": {}}
 
 
 func _emit_source_state_changed(
@@ -488,6 +811,119 @@ func _can_bind_current_source(target_owner_id: String) -> bool:
 
 func _round_number() -> int:
     return int(_round_number_reader.call()) if _round_number_reader.is_valid() else 0
+
+
+func _transaction_sides(primary) -> Array:
+    var result: Array = []
+    for side in _sides:
+        if side != null and not result.has(side):
+            result.append(side)
+    if primary != null and not result.has(primary):
+        result.append(primary)
+    return result
+
+
+func _technique_repository():
+    return _technique_repository_ref.get_ref() \
+        if _technique_repository_ref != null else null
+
+
+func _resolve_charging_slot(
+        side: BattleSide, slot_instance_id: String) -> Dictionary:
+    if side == null or side.technique_sequence_book == null:
+        return {"success": false, "reason": "参战者缺少功法序列簿"}
+    if slot_instance_id == "":
+        return {"success": false, "reason": "主要蓄力值缺少 slot_instance_id"}
+    var slot: Dictionary = {}
+    for slot_value in side.technique_sequence_book.find_slots({}):
+        if str(slot_value.get("slot_instance_id", "")) == slot_instance_id:
+            slot = slot_value.duplicate(true)
+            break
+    if slot.is_empty():
+        return {"success": false, "reason": "实际功法槽位不存在"}
+    var repository = _technique_repository()
+    if repository == null:
+        return {"success": false, "reason": "主要蓄力值缺少功法仓库"}
+    var contract := _charging_contract_for_slot(repository, slot)
+    if not contract.get("success", false):
+        return contract
+    contract["slot"] = slot
+    return contract
+
+
+func _charging_contract_for_slot(repository, slot: Dictionary) -> Dictionary:
+    var technique_id := str(slot.get("technique_id", ""))
+    var definition = repository.get_definition(technique_id)
+    if definition == null:
+        return {"success": false, "reason": "未知功法：%s" % technique_id}
+    var raw: Dictionary = definition.charging.duplicate(true)
+    if raw.is_empty():
+        return {"success": false, "reason": "功法没有声明主要蓄力值"}
+    var charging := {
+        "primary_marker_id": str(raw.get("primary_marker_id", "")),
+        "display_name": str(raw.get(
+            "display_name", raw.get("primary_marker_id", ""))),
+        "scope": str(raw.get("scope", "battle")),
+        "public": bool(raw.get("public", true)),
+        "allowed_operations": raw.get("allowed_operations", [
+            "add", "subtract", "set", "clear"]).duplicate(),
+        "minimum": int(raw.get("minimum", 0)),
+    }
+    if raw.has("maximum"):
+        charging["maximum"] = int(raw["maximum"])
+    if charging["primary_marker_id"] == "" \
+            or charging["scope"] != "battle" \
+            or not charging["public"]:
+        return {"success": false, "reason": "主要蓄力值声明无效"}
+    var operations: Array = charging["allowed_operations"]
+    var seen_operations: Dictionary = {}
+    for operation_value in operations:
+        var operation := str(operation_value)
+        if operation not in ["add", "subtract", "set", "clear"] \
+                or seen_operations.has(operation):
+            return {"success": false, "reason": "主要蓄力值操作声明无效"}
+        seen_operations[operation] = true
+    if charging.has("maximum") and int(charging["maximum"]) \
+            < int(charging["minimum"]):
+        return {"success": false, "reason": "主要蓄力值上下限无效"}
+    var marker_definition: Dictionary = {}
+    for marker_value in definition.marker_definitions:
+        if marker_value is Dictionary and str(marker_value.get(
+                "id", "")) == str(charging["primary_marker_id"]):
+            marker_definition = marker_value
+            break
+    if marker_definition.is_empty() \
+            or str(marker_definition.get("scope", "battle")) != "battle" \
+            or not bool(marker_definition.get("public", true)):
+        return {"success": false, "reason": "主要蓄力 marker 声明无效"}
+    var address := _marker_address_resolver.resolve_charging_for_slot(
+        charging, slot)
+    if not address.get("success", false):
+        return address
+    return {
+        "success": true,
+        "charging": charging,
+        "address": address,
+        "technique_name": str(definition.display_name),
+    }
+
+
+func _marker_entry(side: BattleSide, address: Dictionary) -> Dictionary:
+    var entries := side.source_marker_store.entries({
+        "source_kind": str(address.get("source_kind", "")),
+        "source_instance_key": str(address.get("source_instance_key", "")),
+        "content_id": str(address.get("content_id", "")),
+        "marker_id": str(address.get("marker_id", "")),
+        "scope": str(address.get("scope", "battle")),
+    })
+    return entries[0].duplicate(true) if not entries.is_empty() else {}
+
+
+func _bounded_charging_value(value: int, charging: Dictionary) -> int:
+    var bounded := maxi(int(charging.get("minimum", 0)), value)
+    if charging.has("maximum"):
+        bounded = mini(bounded, int(charging["maximum"]))
+    return bounded
 
 
 func _add_history(

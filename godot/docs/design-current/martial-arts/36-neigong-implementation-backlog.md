@@ -1293,11 +1293,11 @@
 - 所有连势写入统一限制在`0～有效上限`。达到上限后的无效增加不算实际改变，不能借此跳过功法结束后的连势清空。
 - 继续沿用当前连势保留规则：成功功法读取连势快照；该功法及其回响实际增加或消耗过连势时保留剩余值，否则在功法及其回响结束后清空。连势不改为全额消费资源，也不改为完整回合结束统一清空。
 
-#### 待实现公共能力：蓄力累计值
+#### 已完成公共底层：功法实例主要蓄力值
 
-- 蓄力仍是具体功法的来源标识，不新增角色级蓄力资源。蓄力功法必须声明当前是否正在蓄力，以及一个用于最终主要结算的公开整数累计值。
-- 通用查询可以枚举正在蓄力且拥有累计值的功法实例，通用写端口可以修改该值；查询、预览和 AI 评估不能推进倒计时或写入数值。
-- 当前三门正式目标分别为风·长风蓄海的蓄风值、火·三劫悬炉的`L`、山·悬岳待敌的当前累计`Z`。临时功法副本分别保存自己的蓄力状态与累计值。
+- `charging_primary_value_protocol`已完成：蓄力仍是具体功法实际槽位的battle来源marker，不新增角色级蓄力资源。定义声明primary marker；条目存在即正在蓄力，值为0仍活跃，clear才结束。
+- 通用查询按稳定序列枚举真实slot，通用端口提供begin/write/end和原子批量写；临时副本以及`share_origin`副本的主要值仍按实际slot隔离。查询、预览、UI和AI不能推进倒计时或写入数值。
+- 当前三门未来接入目标分别为风·长风蓄海的蓄风值、火·三劫悬炉的`L`、山·悬岳待敌的当前累计`Z`。三门功法及《伏火延烧》仍未接入；倒计时/观察继续使用现有StatusDelay/Response和自动调用。
 
 #### 待实现公共能力：追击完成事件
 
@@ -1515,10 +1515,10 @@
 
 #### E. 蓄力累计值
 
-- `TechniqueDefinition`或统一来源标识元数据新增通用蓄力声明：是否正在蓄力、主要累计值 marker、公开显示名和允许的写操作。不得建立按三门现有功法 ID 判断的蓄力管理器。
-- 新增枚举“当前正在蓄力且拥有主要累计值的功法实例”的只读查询，以及通过通用来源标识端口增加、减少、设置累计值的效果能力。
-- 风·长风蓄海声明蓄风值，火·三劫悬炉声明`L`，山·悬岳待敌声明当前累计`Z`；不修改各自倒计时、观察窗口和最终公式。
-- 伏火延烧在完整回合结束时枚举合格实例并逐个`+10`；不缩短倒计时、不立即自动触发。临时功法副本分别保存累计值。
+- 公共底层已完成。`TechniqueDefinition.charging`声明主要累计值 marker、公开显示名、允许操作及上下限；正在蓄力由声明与实际slot marker条目共同判定，不按功法ID分支。
+- `BattleEffectPorts`已提供稳定枚举、begin/write/end和冻结目标后的批量原子写；ConditionSpec与通用SourceMarker Effect op已接入。
+- 主要marker强制实际`slot_instance_id`，临时和`share_origin`副本分别保存；普通marker的share-origin行为不变。
+- 风·长风蓄海、火·三劫悬炉、山·悬岳待敌和《伏火延烧》仍未接入；各自倒计时、观察窗口、再次manual触发与最终公式仍由正文和现有延迟/响应/自动流程实现。
 - 查询、预览、AI 候选和 UI 展示只读，不得推进倒计时、消费记录或增加累计值。
 
 #### F. 追击统一
@@ -1586,7 +1586,7 @@
 
 当前逐门统计为：A 35、B 60、C 70、D 1（内功合计166）。其中B只缺来源中立Handler、Registry注册或Context适配；C才表示仍缺至少一项通用底层能力。
 
-后续C类收缩审计进一步确认：C只表示该内容尚缺至少一个语义接口，不表示需要新建Service。47个原始能力键当前已有/合并8项，余下按实现形态收缩为B 14、C1（现有Service窄能力）23、C2（跨系统公共协议）2；70门C类内功不能等同于70项架构建设。实施必须按矩阵中的`merge_family`合并，单内容窄机制随所属领域Service实现。
+后续C类收缩审计进一步确认：C只表示该内容尚缺至少一个语义接口，不表示需要新建Service。47个原始能力键当前已有/合并9项，余下按实现形态收缩为B 14、C1（现有Service窄能力）23、C2（跨系统公共协议）1；70门C类内功不能等同于70项架构建设。实施必须按矩阵中的`merge_family`合并，单内容窄机制随所属领域Service实现。
 
 | 第15节旧清单 | 当前状态 | 代码证据与仍缺部分 |
 |---|---|---|
@@ -1594,16 +1594,16 @@
 | B. 战斗临时功法 | 已有 | `generate_temporary_techniques`、`TechniqueSequenceBook.remaining_slot_count`、稳定`slot_instance_id`、`temporary_technique_generated`和战后清理均已存在。 |
 | C. 功法实例、槽位容量与标记身份 | 已有 | 永久/临时实例、空余槽位、来源身份与`SourceMarkerAddressResolver`均已存在；具体内功仍可能只缺薄Handler。 |
 | D. 连势上限与既有清空规则 | 仍缺 | 统一`write_momentum`及清空回执已有；`momentum_cap_query`、冻结基础上限和统一截断尚无。 |
-| E. 蓄力累计值 | 仍缺 | `StatusDelayService`、来源marker、自动触发已有；缺功法实例的主要蓄力值声明、枚举和通用写端口。 |
+| E. 蓄力累计值 | 底层已完成 | charging声明、零值存在语义、实际slot地址、枚举、begin/write/end、批量回滚、ConditionSpec、延迟身份恢复和UI/AI投影均已完成；三门功法与伏火延烧未接入。 |
 | F. 追击统一 | 部分已有 | 追击复用正式伤害，旧`source_kind="chase"`仍有兼容处理；缺结构化追击令牌和`chase_resolved`提交事件。 |
 | G. 格挡、卸力与攻击取消 | 底层已完成 | `block_sources`已扩展为`cancel_kind`类型化来源；`grant_deflection`、先卸力后格挡、击穿消费、`deflection_resolved`、`attack_canceled`、同步flush回滚和AI/UI投影均已完成；具体内容仍未接入。 |
 | H. 消耗真气 | 底层已完成 | `prepare/commit_qi_consumption`复用唯一临时移出链，已提供`cause=cost`、逐牌`qi_consumed`、批量幂等与支付—后效全回滚；六个消费者仍未接入。 |
 | I. 燃尽、焕发与异状迁移 | 仍缺 | `StatusSystem`、净化、分类和生命周期可复用；燃尽尚未完成debuff迁移，焕发尚无统一状态与有效真气值阶段。 |
 | J. 新事件、查询、计数器与效果端口 | 部分已有 | run/battle计数器、临时功法事件、来源marker、调用/响应/延迟均已有；只保留矩阵中精确缺口，禁止照旧表重复建设。 |
-| K. 现有内容迁移 | 部分已有 | 8门候选仍统一暂缓；万法传薪所需临时功法底层和稳定实例已经存在，三门蓄力仍等待通用声明。 |
+| K. 现有内容迁移 | 部分已有 | 8门候选仍统一暂缓；万法传薪所需临时功法底层和稳定实例已经存在；三门蓄力的通用声明已可用但内容仍未创建。 |
 | L. 回归测试 | 仍缺 | 本次只做文档审计，未接入166门内容，也未补内容行为测试。 |
 
-特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、真气消耗事务、心得实时扩容、事件级来源ExecutionPlan、战斗结果原子提交和卸力攻击取消协议均为“已有”，后续不得再建立平行Service。回响“计划次数修改”、追击完成事件和蓄力主要累计值仍是独立缺口。
+特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、真气消耗事务、功法实例主要蓄力值、心得实时扩容、事件级来源ExecutionPlan、战斗结果原子提交和卸力攻击取消协议均为“已有”，后续不得再建立平行Service。回响“计划次数修改”和追击完成事件仍是独立缺口。
 
 规则待确认仅一项：`化虚为实`要求把异状和临时重塑固化进本局牌组，而当前`RunProgressSnapshot`明确排除这两类BattleRuntime状态；在确定固化后的可提交永久表示前不得实现。
 
@@ -1711,4 +1711,33 @@ CardZoneService直接绕过则明确拒绝。
 
 本节只表示公共底层完成。《耗气补垣》《万木代命》《折枝生根》《炽种承继》《耗烬催芽》
 《灰烬化形》仍未接入；纯`pre_life_loss_query`仍不得支付真气，也没有实现任何具体内功、物品、
-暂缓功法或`charging_primary_value_protocol`。
+暂缓功法；`charging_primary_value_protocol`已由下一独立批次完成。
+
+## 22. 2026-08-18 功法实例主要蓄力值协议状态
+
+`charging_primary_value_protocol`底层协议已经完成。`TechniqueDefinition.charging`声明
+`primary_marker_id/display_name/scope/public/allowed_operations/minimum/maximum`，ContentCatalog、
+资源快照和ContentValidator共用该结构；primary marker必须存在、属于battle且公开，非法/重复操作或
+`maximum < minimum`会拒绝内容。
+
+正在蓄力的唯一事实是“定义声明charging且该实际`slot_instance_id`的primary marker条目存在”。值为0
+仍活跃，`set 0`不结束，`clear`移除才结束。`SourceMarkerStore`通用生命周期回执和
+`source_marker_changed`已补充`created/removed/existed_before/exists_after`，零值创建/删除也发送事件；
+charging事实另公开marker-role、slot、technique和hand。
+
+`SourceMarkerAddressResolver.resolve_charging_for_slot`只对主要marker强制实际slot身份，因此同ID永久槽、
+多个临时副本及`share_origin`临时副本分别保存；普通marker仍沿用share-origin。`BattleEffectPorts`提供
+`begin_technique_charging/write_charging_primary_value/end_technique_charging/
+write_all_charging_primary_values`和稳定只读枚举。批量先冻结目标，并复用
+`BattleRuntimeMutationTransaction`恢复marker、延迟/响应、被动状态、RNG、committed状态、publication、
+TriggerQueue与GameLog；旧`write_source_marker`也已统一检查committed失败。
+
+`ConditionSpec.charging_active`支持当前、指定和已捕获slot并可与manual/automatic/invoked/echo/retrigger
+组合；通用Effect op继续由`SourceMarkerEffectHandler`承担。延迟/响应记录保存并恢复slot与root、
+invocation、execution token。BattleSession和AI只读公开按槽位组织的`charging_techniques`；查询不写值、
+不推进倒计时/RNG、不移动序列。首次和再次manual触发仍正常计算P、结算连势/同气并推进序列；是否重置
+观察、减少倒计时或清值由具体正文决定。
+
+本节只表示公共底层完成。风·长风蓄海、火·三劫悬炉、山·悬岳待敌与《伏火延烧》仍未接入；没有实现
+角色级蓄力资源、统一倒计时record kind或新的自动功法执行器。核心C2下一项只剩
+`item_source_marker_state`。
