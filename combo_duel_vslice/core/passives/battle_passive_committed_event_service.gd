@@ -105,6 +105,9 @@ func rollback_publication_transaction() -> void:
     _publication_transaction_depth = 0
     _pending_publications.clear()
 
+func pending_publications_snapshot() -> Array:
+    return _pending_publications.duplicate(true)
+
 func register_weak_listener(target, method: String) -> bool:
     if target == null or method == "" or not target.has_method(method):
         return false
@@ -271,6 +274,10 @@ func _context(
         owner,
         event_token: String):
     var payload: Dictionary = values.get("payload", {}).duplicate(false)
+    var event_metadata: Dictionary = values.get("metadata", {})
+    if event_metadata.has("effect_context_values"):
+        payload["effect_context_values"] = event_metadata[
+            "effect_context_values"].duplicate(false)
     for field in BattleEventCatalogScript.PUBLIC_FIELDS + [
             "true_damage", "synchronized"]:
         if values.has(field):

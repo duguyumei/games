@@ -313,6 +313,38 @@ func consume_source_marker_records(
     return result
 
 
+func consume_matching_source_marker_records(
+        side: BattleSide,
+        source: Dictionary,
+        record_filters: Dictionary,
+        count: int = -1,
+        action_token: String = "") -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "来源标识过滤消费缺少持有者"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var result: Dictionary = side.source_marker_store.consume_matching_records(
+        str(source.get("source_kind", "")),
+        str(source.get("source_instance_key", "")),
+        str(source.get("marker_id", "")),
+        str(source.get("scope", "battle")),
+        record_filters,
+        count,
+        bool(source.get("remove_zero", false)))
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if result.get("changed", false):
+        var emitted := _emit_source_marker_changed(
+            side, source, "consume_matching_records", result, action_token)
+        if not emitted.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {"success": false, "reason": emitted.get(
+                "reason", "来源标识过滤消费事件提交失败"), "rolled_back": true}
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return result
+
+
 ## 只读枚举以功法序列簿为槽位事实源，以主要 marker 的真实存在作为活跃事实。
 ## 返回顺序固定为精确牌型权威顺序，再按各牌型当前槽位顺序。
 func charging_technique_instances(

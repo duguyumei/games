@@ -1,14 +1,14 @@
 # 已设计内容—现有底层能力矩阵
 
-> 审计基线：main `249a73f7bf6b26a6f89e7451b901aafd432fcf56`（2026-08-17）。本文件只记录审计结论，不代表内容已进入 JSON、资源、白名单或生产池。
+> 审计基线：main `249a73f7bf6b26a6f89e7451b901aafd432fcf56`（2026-08-17）。本文件记录设计审计与当前接入状态；具体内容仍不会自动进入商店或生产随机池。
 > 权威优先级：内功同名正文以36号为准；31号仅作迁移记录，32号是历史归档。
 
 ## 1. 结论与计数
 
-- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。35号仍明确为17门已接入、其余8门候选，指定名单无差异。
+- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。本批已有9门内功正式接入统一回响/序列协议，剩余157门、20件物品和8门暂缓功法仍未接入生产内容池。
 - Readiness：A=35，B=68，C=82，D=1，E=8，合计194。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并10项，余下实现形态为B 14、C1 23、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2描述实现形态，不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并12项，余下实现形态为B 13、C1 22、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示仍未接入这9门内功，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -24,7 +24,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | 效果执行 | `TechniqueEffectExecutor`→`EffectHandlerRegistry`→`BattleEffectPorts`；run侧`RunMutationService`→`RunEffectHandlerRegistry` | damage/defense/card zone/anomaly/marker/life/临时功法/调用/响应/延迟等复用既有端口，不建第二执行器。 |
 | 状态/生命周期 | `StatusSystem`、`StatusResponseService`、`StatusDelayService`、`CombatSourceLifecycleService`、`SourceMarkerStore` | 延迟、响应、来源标识、item marker地址与卸力攻击取消协议已有；临时炽气来源层仍缺。 |
 | 计数器 | `RunPassiveCounterStore`、`BattlePassiveCounterStore`及read/mutation ports | run计数进入RunProgressSnapshot，battle计数纯Runtime；无需按内容建缓存。 |
-| 功法运行 | `TechniqueSequenceBook`、`TechniqueInvocationService`、`TechniqueAutoTriggerService`、`generate_temporary_techniques`、`temporary_technique_generated` | 自动、调用、临时功法、稳定slot_instance_id、空余容量均已有；回响计划修改和通用蓄力声明仍缺。 |
+| 功法运行 | `TechniqueSequenceBook`、`TechniqueInvocationService`、`TechniqueAutoTriggerService`、`generate_temporary_techniques`、`temporary_technique_generated`、`TechniqueResolutionService` | 自动、调用、临时功法、稳定slot_instance_id、空余容量、回响计划修改与通用蓄力声明均复用既有运行时；无第二套回响或序列系统。 |
 | 成长/消耗品/战果 | `InsightGrowthService`、`ConsumableUseService`、`RunProgressSnapshot`、`BattleOutcomeCommitService`、`RunAggregateTransaction` | 心得实时扩容、统一消耗品事务、战果原子提交均已完成，不得重复建设。 |
 | 内容校验 | `ContentValidator._validate_inner_skills/_validate_items/_validate_consumables`、各Repository、Registry验证 | 结构入口已有；只有新增通用schema时才扩校验器。 |
 
@@ -89,15 +89,15 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 故脉化形 | `transmuted_qi_creates_original_temp_qi` | [36 §6《故脉化形》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#故脉化形) | card_drawn | current_rank_order；source counter/marker | 每场战斗中，每张转属真气第一次成功打出后，生成 1 张同牌阶、转属前属性的临时真气并加入手牌。 | BattleRuntime temporary state | 计数器/marker 与事件同事务 | 现有 card_drawn + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 旧脉传承 | `transmuted_qi_spreads_current_attribute` | [36 §6《旧脉传承》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#旧脉传承) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 转属真气实际进入弃牌堆后，随机使牌库中 1 张与其转属前属性相同的真气，获得来源真气当前基础属性的临时属性。 | BattleRuntime temporary state | 稳定 RNG + receipt | 现有 命令提交点（见权威正文） + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 首章立意 | `initial_first_slot_multiplier` | [36 §7《首章立意》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#首章立意) | 永久功法序列实例化完成后、任何战斗临时功法生成前标记一次。 | trigger_mode/source_kind | 战斗开始时，标记每种精确牌型初始序列第一门实际装备的功法。被标记功法触发时，功法倍率 +1。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | 现有 battle_start + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 二转余音 | `every_second_hand_technique_echo` | [36 §7《二转余音》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#二转余音) | 原功法成功完成后、该槽位正常推进前。 | trigger_mode/source_kind；source counter/marker | 每种精确牌型每第 2 门成功功法，使该功法的功法回响次数 +1，然后重新计数。 | 无新增状态；事件局部输入 | 计数器/marker 与事件同事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
+| inner_skill | 二转余音 | `every_second_hand_technique_echo` | [36 §7《二转余音》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#二转余音) | 原功法成功完成后、该槽位正常推进前。 | trigger_mode/source_kind；source counter/marker | 每种精确牌型每第 2 门成功功法，使该功法的功法回响次数 +1，然后重新计数。 | 无新增状态；事件局部输入 | 计数器/marker 与事件同事务 | `TechniqueResolutionService`唯一追加入口；来源中立Handler已接入 | 已接入 | — | 9门正式资源之一；不按内功ID分支 |
 | inner_skill | 演法成章 | `first_hand_technique_inserts_copy` | [36 §7《演法成章》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#演法成章) | 原功法完整结算后、原功法正常推进前尝试生成；成功后序列推进至新增临时功法。 | trigger_mode/source_kind；source counter/marker | 每种精确牌型序列本场第一次成功触发功法后，若该牌型存在空余功法槽，在该功法之后生成一门临时同名功法。 | BattleRuntime temporary state | 计数器/marker 与事件同事务 | temporary_technique_generated 与序列推进已有 | C | technique_post_success_pre_advance_stage | 按能力键合并实现 |
 | inner_skill | 群法归型 | `largest_sequence_marks_techniques` | [36 §7《群法归型》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#群法归型) | 永久功法序列实例化完成后、任何战斗临时功法生成前完成统计、随机与标记。 | trigger_mode/source_kind | 战斗开始时，找出我方初始实际装备功法数量最多的精确牌型；并列时随机选择一种。标记该牌型初始序列中的所有功法。被标记功法触发时，功法倍率 +1。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | 现有 battle_start + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 一脉相承 | `repeat_exact_hand_multiplier` | [36 §7《一脉相承》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#一脉相承) | 本次功法计算初始功法值 `P₀` 前读取上一门成功功法。 | trigger_mode/source_kind | 若本次功法与上一门成功功法属于同一种精确牌型，本次功法倍率 +1。 | event/action local snapshot | 事件或命令既有事务 | 现有 technique_succeeded / action_resolved + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 万象归功 | `different_hands_grow_fixed_power` | [36 §7《万象归功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#万象归功) | 每门功法冻结功法值时读取当前固定修正；新精确牌型功法成功后增加成长，供下一门功法开始使用。 | trigger_mode/source_kind | 我方功法值 +10。本场每首次成功运行一种精确牌型，之后本内功提供的功法值额外 +5。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 technique_succeeded / action_resolved + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 初鸣复唱 | `first_technique_echo_if_none` | [36 §7《初鸣复唱》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#初鸣复唱) | 原功法完整结算后、序列推进前检查并追加回响。 | trigger_mode/source_kind | 每场战斗第一门成功功法若没有功法回响，使其功法回响 1 次。 | BattleRuntime temporary state | 事件或命令既有事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
-| inner_skill | 六转成章 | `every_six_technique_executions_echo` | [36 §7《六转成章》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#六转成章) | 每次原功法或功法回响执行完成后推进计数；回响奖励仍在合格原功法推进前加入。 | trigger_mode/source_kind；source counter/marker | 我方每累计执行 6 次功法，使达到第 6 次的非回响功法回响 1 次，然后重新计数。功法回响也计入次数。 | 无新增状态；事件局部输入 | 计数器/marker 与事件同事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
-| inner_skill | 双位同鸣 | `same_technique_different_slot_echo` | [36 §7《双位同鸣》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#双位同鸣) | 原功法成功完成后、序列推进前读取该功法 ID 本场此前的成功槽位来源。 | trigger_mode/source_kind | 同一门功法本场由第 2 个不同功法槽位成功触发时，使该功法的功法回响次数 +1。 | BattleRuntime temporary state | 事件或命令既有事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
-| inner_skill | 应机复响 | `random_other_technique_gains_echo` | [36 §7《应机复响》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#应机复响) | 当前非回响功法成功后，为随机目标槽位增加待用回响；目标下次原功法成功时消费全部待用次数。 | trigger_mode/source_kind | 每当一门非回响功法成功触发时，随机选择另一门实际存在的功法，使其下一次成功触发时的功法回响次数 +1。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
+| inner_skill | 初鸣复唱 | `first_technique_echo_if_none` | [36 §7《初鸣复唱》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#初鸣复唱) | 原功法完整结算后、序列推进前检查并追加回响。 | trigger_mode/source_kind | 每场战斗第一门成功功法若没有功法回响，使其功法回响 1 次。 | BattleRuntime temporary state | 事件或命令既有事务 | `TechniqueResolutionService`唯一追加入口；来源中立Handler已接入 | 已接入 | — | 9门正式资源之一；不按内功ID分支 |
+| inner_skill | 六转成章 | `every_six_technique_executions_echo` | [36 §7《六转成章》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#六转成章) | 每次原功法或功法回响执行完成后推进计数；回响奖励仍在合格原功法推进前加入。 | trigger_mode/source_kind；source counter/marker | 我方每累计执行 6 次功法，使达到第 6 次的非回响功法回响 1 次，然后重新计数。功法回响也计入次数。 | 无新增状态；事件局部输入 | 计数器/marker 与事件同事务 | `TechniqueResolutionService`唯一追加入口；来源中立Handler已接入 | 已接入 | — | 9门正式资源之一；延后奖励使用统一待用record |
+| inner_skill | 双位同鸣 | `same_technique_different_slot_echo` | [36 §7《双位同鸣》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#双位同鸣) | 原功法成功完成后、序列推进前读取该功法 ID 本场此前的成功槽位来源。 | trigger_mode/source_kind | 同一门功法本场由第 2 个不同功法槽位成功触发时，使该功法的功法回响次数 +1。 | BattleRuntime temporary state | 事件或命令既有事务 | `TechniqueResolutionService`唯一追加入口；来源中立Handler已接入 | 已接入 | — | 9门正式资源之一；按稳定slot_instance_id区分同名槽位 |
+| inner_skill | 应机复响 | `random_other_technique_gains_echo` | [36 §7《应机复响》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#应机复响) | 当前非回响功法成功后，为随机目标槽位增加待用回响；目标下次原功法成功时消费全部待用次数。 | trigger_mode/source_kind | 每当一门非回响功法成功触发时，随机选择另一门实际存在的功法，使其下一次成功触发时的功法回响次数 +1。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | `TechniqueResolutionService`与`SourceMarkerStore`待用record已接入；来源中立Handler已接入 | 已接入 | — | 9门正式资源之一；目标绑定稳定slot_instance_id |
 | inner_skill | 左右互搏 | `copy_left_adjacent_inner_skill` | [36 §8《左右互搏》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#左右互搏) | 复制目标拥有的全部触发、生命周期和只读查询时点；复制效果在左右互搏自身的装备顺序位置结算。 | 权威正文的资格与边界 | 实时复制左侧相邻已装备内功的可复制效果。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | ExecutionPlan 已支持 additional_executions 和稳定来源 | C | passive_behavior_copy_projection | 按能力键合并实现 |
 | inner_skill | 镜花水月 | `random_inner_skill_effect_each_battle` | [36 §8《镜花水月》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#镜花水月) | 战斗内功来源冻结后随机一次并锁定目标，随后在目标的全部合格时点以镜花水月自身来源执行。 | 权威正文的资格与边界 | 战斗开始时，随机选择另一门已装备内功。本场复制其可复制效果。 | BattleRuntime temporary state | 选择候选冻结 + RNG/状态回滚 | ExecutionPlan 已支持 additional_executions 和稳定来源 | C | passive_behavior_copy_projection | 按能力键合并实现 |
 | inner_skill | 虚位养神 | `empty_slots_amplify_leftmost` | [36 §8《虚位养神》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#虚位养神) | 战斗来源冻结后读取有效内功容量与实际装备数量，标记当时最左侧的另一门内功并冻结额外执行次数。 | 权威正文的资格与边界 | 战斗开始时，每有 1 个空置的有效内功栏位，使最左侧的另一门内功的可复制效果额外执行 1 次。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | ExecutionPlan 已支持 additional_executions 和稳定来源 | C | passive_behavior_copy_projection | 按能力键合并实现 |
@@ -192,14 +192,14 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 五运生势 | `five_turn_declining_momentum` | [36 §13《五运生势》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#五运生势) | battle_start | 权威正文的资格与边界 | 战斗开始时获得 5 层运数。每个完整回合开始时，获得等于运数的连势；回合结束时运数 -1，最低为 0。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 battle_start + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 炽火炼功 | `consume_blazing_for_power` | [36 §13《炽火炼功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#炽火炼功) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 行动确认时，可以选择 1 张参与功法值计算的真气，移除其全部炽气；每实际移除 1 层，本组功法值 +2。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | action_pre_commit、ChoiceEffectHandler、BattleActionTransaction 已有 | C | action_confirmation_resource_payment | 按能力键合并实现 |
 | inner_skill | 蛊火蔓延 | `poisoned_discard_gains_burnout` | [36 §13《蛊火蔓延》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#蛊火蔓延) | 进入弃牌堆前的card transition准备阶段（待补） | EffectTargetQuery.anomaly/reshape | 任意一方带毒真气即将实际进入弃牌堆时，该真气先获得燃尽。 | event/action local snapshot | 移动与状态修改原子提交 | `CardZoneService`已有移动事务及`card_moved`响应；`StatusSystem`/净化/异状分类已有 | C | committed_card_transition_event<br>burnout_debuff_and_flourish_status | 按能力键合并实现 |
-| inner_skill | 烬法重鸣 | `first_burnout_technique_echo` | [36 §13《烬法重鸣》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烬法重鸣) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 每次行动中，第一门使用至少 1 张燃尽真气参与功法值计算的功法，其功法回响次数 +1。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
-| inner_skill | 烬步催轮 | `burnout_technique_advances_extra` | [36 §13《烬步催轮》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烬步催轮) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 使用至少 1 张燃尽真气参与功法值计算的功法成功结算后，该精确牌型的功法序列额外推进 1 格。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | TechniqueSequenceBook.advance 与 sequence_changed 已有 | C | technique_sequence_extra_advance | 按能力键合并实现 |
+| inner_skill | 烬法重鸣 | `first_burnout_technique_echo` | [36 §13《烬法重鸣》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烬法重鸣) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 每次行动中，第一门使用至少 1 张燃尽真气参与功法值计算的功法，其功法回响次数 +1。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | 冻结`HandGroupSnapshot.burned_out_at_freeze`与根行动门禁已接入 | 已接入 | — | 9门正式资源之一；不重扫当前牌区 |
+| inner_skill | 烬步催轮 | `burnout_technique_advances_extra` | [36 §13《烬步催轮》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烬步催轮) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 使用至少 1 张燃尽真气参与功法值计算的功法成功结算后，该精确牌型的功法序列额外推进 1 格。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | `BattleTechniqueSequenceEffectService.complete_and_advance`统一正常/额外推进 | 已接入 | — | 9门正式资源之一；回响不推进 |
 | inner_skill | 灰烬化形 | `consume_burnout_creates_fire_qi` | [36 §13《灰烬化形》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#灰烬化形) | `qi_consumed`（已有；pre_move_snapshot含燃尽） | CardIdentityPolicy.attribute；current_rank_order；EffectTargetQuery.anomaly/reshape | 每消耗 1 张燃尽真气，生成 1 张与其牌阶相同的临时火属性真气加入手牌。 | BattleRuntime temporary state | 支付/移动/后效原子提交 | 消耗事务与临时真气生成入口均已有；燃尽迁移仍缺 | C | burnout_debuff_and_flourish_status | 消耗底层已完成；具体内功未接入 |
-| inner_skill | 受阻愈烈 | `blocked_technique_echoes` | [36 §13《受阻愈烈》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#受阻愈烈) | `attack_canceled` / `technique_execution_resolved` | trigger_mode/source_kind；source counter/marker | 每门非回响功法第一次有攻击段被格挡或卸力成功取消时，该功法的功法回响次数 +1。 | 无新增状态；事件局部输入 | 计数器/marker 与事件同事务 | 攻击取消与执行汇总已完成；仍缺回响计划修改协议 | C | technique_echo_plan_mutation | 卸力依赖已满足；内容仍未接入 |
+| inner_skill | 受阻愈烈 | `blocked_technique_echoes` | [36 §13《受阻愈烈》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#受阻愈烈) | `attack_canceled` / `technique_execution_resolved` | trigger_mode/source_kind；source counter/marker | 每门非回响功法第一次有攻击段被格挡或卸力成功取消时，该功法的功法回响次数 +1。 | 无新增状态；事件局部输入 | 计数器/marker 与事件同事务 | 读取`technique_execution_resolved`正式取消汇总，回响计划已接入 | 已接入 | — | 9门正式资源之一；卸力击穿不触发 |
 | inner_skill | 破垒真火 | `break_defense_deals_true_damage` | [36 §13《破垒真火》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#破垒真火) | damage_resolved | trigger_mode/source_kind；actual defense/life delta | 每当我方功法攻击段将敌方防御清空时，对敌方造成等于该段实际减少防御值一半的真伤。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.damage_resolved; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 回响播火 | `technique_echo_spreads_burnout` | [36 §13《回响播火》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#回响播火) | technique_invocation_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 每当我方完成 1 次功法回响时，敌方牌库中随机 1 张没有燃尽的真气获得燃尽。 | event/action local snapshot | 稳定 RNG + receipt | BattleEventCatalog事件technique_invocation_resolved + BattleEffectsPassiveHandler + TechniqueEffectExecutor + EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 隔空点炉 | `automatic_or_invoked_spreads_burnout` | [36 §13《隔空点炉》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#隔空点炉) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 每当我方自动功法或调用功法成功触发时，敌方牌库中随机 1 张没有燃尽的真气获得燃尽。 | event/action local snapshot | 稳定 RNG + receipt | 现有 technique_succeeded / action_resolved + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 临诀燃灯 | `first_temporary_technique_echo` | [36 §13《临诀燃灯》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#临诀燃灯) | technique_succeeded / action_resolved | trigger_mode/source_kind；source counter/marker | 每场战斗第一次有临时功法成功触发时，该功法的功法回响次数 +1。 | BattleRuntime temporary state | 计数器/marker 与事件同事务 | retrigger_current_hand_technique、InvocationService 与递归栈已有 | C | technique_echo_plan_mutation | 按能力键合并实现 |
+| inner_skill | 临诀燃灯 | `first_temporary_technique_echo` | [36 §13《临诀燃灯》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#临诀燃灯) | technique_succeeded / action_resolved | trigger_mode/source_kind；source counter/marker | 每场战斗第一次有临时功法成功触发时，该功法的功法回响次数 +1。 | BattleRuntime temporary state | 计数器/marker 与事件同事务 | 读取实际slot的temporary事实，来源门禁与回响计划已接入 | 已接入 | — | 9门正式资源之一；生成未执行不触发 |
 | inner_skill | 追焰留痕 | `every_three_chases_spreads_burnout` | [36 §13《追焰留痕》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#追焰留痕) | chase_resolved（待补） | EffectTargetQuery.anomaly/reshape；source counter/marker | 我方每累计完成 3 次追击，敌方牌库中随机 1 张没有燃尽的真气获得燃尽，然后重新计数。 | event/action local snapshot | 稳定 RNG + receipt | `damage_resolved`已有，旧`source_kind=chase`仍为兼容标签 | C | chase_resolved_event | 按能力键合并实现 |
 | inner_skill | 伏火延烧 | `round_end_charging_plus_ten` | [36 §13《伏火延烧》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#伏火延烧) | round_start / turn_end | trigger_mode/source_kind；source counter/marker | 每个完整回合结束时，我方所有正在蓄力的功法，其本次蓄力累计值 +10。 | BattleRuntime temporary state | marker 与 committed/publication 事务 | `charging_primary_value_protocol`已提供稳定枚举和批量写端口 | C | charging_primary_value_protocol | 底层协议已完成；具体内功仍未接入 |
 
@@ -261,7 +261,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `effect_card_batch_committed_summary` | event | 逐牌明确弃置事件已有 | 同一效果令牌下的实际牌集合、数量与快照汇总 | inner_skill:faceless_joker | TechniqueEffectExecutor 收口 | 否 | event/action local snapshot | 不替代逐牌事件 | 10 | 一批多牌只提交一份汇总且逐牌事实仍在 |
 | `technique_execution_summary_event` | event | **已有**：`technique_execution_resolved`按稳定execution token累计已提交的伤害、防御与恢复事实，覆盖manual/automatic/invoked/echo/retrigger，并在回响和序列推进前提交 | 已完成；两个消费者仍需各自Handler、来源计数器或层数状态，不得据此标记内容已接入 | inner_skill:large_technique_defense_adds_same_qi<br>inner_skill:damage_builds_ember_shield | TechniqueResolutionService + BattlePassiveCommittedEventService | 否 | event/action local snapshot | 不替代damage_resolved/defense_gained等细粒度事实 | 已完成 | 原执行与每次回响各一份；精确token/source归因；continuation只收口一次；预览/失败不发送 |
 | `technique_post_success_pre_advance_stage` | event | temporary_technique_generated 与序列推进已有 | 成功后、正常推进前的来源中立执行阶段 | inner_skill:first_hand_technique_inserts_copy | TechniqueResolutionService | 否 | event/action local snapshot | 只新增阶段不新增执行器 | 12 | 生成后推进到新实例；满槽失败仍消费门禁 |
-| `technique_echo_plan_mutation` | effect | retrigger_current_hand_technique、InvocationService 与递归栈已有 | 在原功法推进前增减冻结回响次数、挂载待用次数 | inner_skill:every_second_hand_technique_echo<br>inner_skill:first_technique_echo_if_none<br>inner_skill:every_six_technique_executions_echo<br>inner_skill:same_technique_different_slot_echo<br>inner_skill:random_other_technique_gains_echo<br>inner_skill:first_burnout_technique_echo<br>inner_skill:blocked_technique_echoes<br>inner_skill:first_temporary_technique_echo | TechniqueResolutionService / InvocationService | 否 | BattleRuntime temporary state | 复用现有调用和回响执行 | 13 | 不可递归；多来源稳定叠加；失败回滚 |
+| `technique_echo_plan_mutation` | effect | **已完成**：`TechniqueResolutionService`唯一管理当前计划，`SourceMarkerStore`保存待用record，`repeat_effects`已委托公共入口 | 9门内功已使用同一`technique_execution_plan`行为接入 | inner_skill:every_second_hand_technique_echo<br>inner_skill:first_technique_echo_if_none<br>inner_skill:every_six_technique_executions_echo<br>inner_skill:same_technique_different_slot_echo<br>inner_skill:random_other_technique_gains_echo<br>inner_skill:first_burnout_technique_echo<br>inner_skill:blocked_technique_echoes<br>inner_skill:first_temporary_technique_echo | TechniqueResolutionService + SourceMarkerStore | 否 | BattleRuntime temporary state | 复用现有调用和回响执行 | 已完成 | 不可递归；多来源稳定叠加；失败回滚 |
 | `pre_life_loss_intervention` | query | **已有**：`BattleRuleQueryService.resolve_pre_life_loss`与`pre_life_loss_query`统一普通/真伤/毒/反震在防御吸收后的生命减量；`ComboDamageResolver`先计划后提交；同步flush使用既有状态/事件/发布事务整批回滚 | 已完成；四个消费者仍未接入具体Handler、代价支付或来源计数 | inner_skill:defense_negates_smaller_life_loss<br>inner_skill:defense_break_negates_overflow<br>inner_skill:consume_eight_qi_to_negate_lethal_damage<br>inner_skill:damage_builds_ember_shield | BattleSurvivalEffectService + BattleRuleQueryService | 否 | 纯查询，无状态 / event-action local transaction | 卸力/格挡另列；`cause=cost`跳过 | 已完成 | 0≤结果≤预计生命损失；取消仍保留防御吸收并提交damage_resolved；同步失败全回滚 |
 | `pre_technique_cost_transaction` | transaction | TechniqueResolutionService 有 prepare/resolve 与 BattleActionTransaction | 启动后、P冻结前的统一支付/阻止收益/失败返还阶段 | inner_skill:experience_fueled_technique_power | TechniqueResolutionService prepare | 否 | event/action local snapshot | 不另建功法执行器 | 15 | 正常/自动/调用各支付；回响不重付；失败返还 |
 | `temporary_blazing_source_layers` | state | AnomalyLayerEffectHandler 与 CardStateLifecycle 已有 | 带来源层数、入弃牌堆清除且不误删其他来源 | inner_skill:retained_qi_gains_temporary_blazing_qi<br>inner_skill:effect_drawn_qi_gains_temporary_blazing_qi<br>inner_skill:every_third_round_duplicates_blazing_qi<br>inner_skill:temporary_reshape_grants_temporary_blazing<br>inner_skill:consumed_blazing_qi_transfers_temporarily<br>inner_skill:same_qi_gain_cultivates_hand | card anomaly schema + lifecycle | 否 | BattleRuntime temporary state | 普通炽气保持原语义 | 16 | 多来源独立；仅真实入堆清；战后清 |
@@ -281,7 +281,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `card_trigger_target_policy_query` | query | EffectTargetQuery 支持 lowest_rank/left 顺序 | 状态行为选择目标前接受来源中立策略改写 | inner_skill:turbulence_discards_lowest_rank | CardStatusBehaviorService target selection | 否 | 纯查询，无状态 | 不按内功ID分支 | 30 | 同优先级稳定；查询无随机副作用 |
 | `pre_effect_operation_event` | event | TechniqueEffectExecutor 有顺序与作用域 | 某一来源即将执行特定 op 前的冻结事实 | inner_skill:discard_before_enemy_technique_draw | TechniqueEffectExecutor command boundary | 否 | event/action local snapshot | 只给确需拦截的op，不泛化脚本钩子 | 31 | 前置响应完成后原op照常；失败整链回滚 |
 | `growth_trigger_execution_plan` | event | 事件级ExecutionPlan已存在 | 成长自身触发的稳定实例、次数计划与非递归门禁 | inner_skill:leftmost_growth_triggers_twice | CardStateLifecycle + PassiveRuleRuntime | 否 | event/action local snapshot | 复用一般ExecutionPlan | 32 | 额外触发不递归；多副本按Invocation累加 |
-| `technique_sequence_extra_advance` | effect | TechniqueSequenceBook.advance 与 sequence_changed 已有 | 正常推进后追加指定序列稳定推进的窄端口 | inner_skill:burnout_technique_advances_extra | BattleTechniqueSequenceEffectService | 否 | BattleRuntime temporary state | 不重建序列 | 33 | 回响不重复；多副本逐次推进；事件准确 |
+| `technique_sequence_extra_advance` | effect | **已完成**：`BattleTechniqueSequenceEffectService.complete_and_advance`统一正常/额外推进，`TechniqueSequenceBook`仍是事实源 | 烬步催轮已接入；manual/automatic/invoked共用入口 | inner_skill:burnout_technique_advances_extra | BattleTechniqueSequenceEffectService + TechniqueSequenceBook | 否 | BattleRuntime temporary state | 不重建序列 | 已完成 | 回响不推进；多副本稳定累加；一次事实 |
 | `chase_resolved_event` | event | damage_resolved 已有，旧source_kind=chase仍为兼容标签 | 结构化chase攻击段、唯一追击令牌与完成事件 | inner_skill:every_three_chases_spreads_burnout | BattleSurvivalEffectService | 否 | event/action local snapshot | 复用正式伤害事务 | 34 | 同令牌一次；无递归；公开防御/生命损失和取消 |
 | `passive_behavior_copy_projection` | state | ExecutionPlan 已支持 additional_executions 和稳定来源 | 复制资格、邻接/随机目标投影、独立来源身份与计数器 | inner_skill:copy_left_adjacent_inner_skill<br>inner_skill:random_inner_skill_effect_each_battle<br>inner_skill:empty_slots_amplify_leftmost | PassiveRuleRuntime.build_execution_plan | 战斗型否；变形型另列 | BattleRuntime temporary state | 不复制内容对象 | 35 | 复制无链/循环；目标变化按正文；计数器独立 |
 | `charging_primary_value_protocol` | state | **已有**：`TechniqueDefinition.charging`声明主要marker；`SourceMarkerAddressResolver.resolve_charging_for_slot`强制实际slot身份；`BattleEffectPorts`提供begin/write/end/枚举/原子批量写；ConditionSpec、延迟恢复与UI/AI投影已接入 | 已完成；伏火延烧与三门暂缓功法仍未接入，倒计时和观察继续由既有延迟/响应体系负责 | inner_skill:round_end_charging_plus_ten | TechniqueDefinition + SourceMarkerStore + StatusDelay/Response | 否 | BattleRuntime temporary state | 不是角色级资源；不新建倒计时或自动执行器 | 已完成 | marker存在即蓄力，值可为0；临时/share_origin副本仍按实际slot隔离；查询不推进倒计时 |
@@ -341,7 +341,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 3. `effective_qi_staged_query`：**底层协议已完成**；基础真气值内功和其他消费者仍须逐项接入。
 4. `run_combat_history_facts`：战斗工作状态实时记录并通过现有RunProgressSnapshot协议提交；同时服务卫星与望远镜。
 5. `technique_execution_summary_event`：**底层协议已完成**；按稳定执行令牌汇总原执行/回响的实际结果，两个内容消费者仍未接入。
-6. `technique_echo_plan_mutation`：复用InvocationService，支持推进前追加与待用回响。
+6. `technique_echo_plan_mutation`：**已完成并接入9门内功**；当前计划、待用record和序列推进分别归既有正式所有者。
 7. `pre_life_loss_intervention`：**底层协议已完成**；统一最终生命写入前减量/取消，具体保护来源仍未接入。
 8. `deflection_attack_cancel_protocol`：**底层协议已完成**；先卸力后格挡、击穿消费、canonical取消事件、同步回滚和公开投影均已接入。
 9. `qi_consumption_transaction`：**底层协议已完成**；已提供cause=cost、逐牌事实、原子支付与战后归还，六个消费者仍未接入。
@@ -384,7 +384,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `effect_card_batch_committed_summary` | B | card_lifecycle_fact | 1 | TechniqueEffectExecutor批次汇总 |
 | `technique_execution_summary_event` | 已有 | technique_resolution_fact | 2 | TechniqueResolutionService统一汇总 |
 | `technique_post_success_pre_advance_stage` | B | technique_resolution_stage | 1 | TechniqueResolutionService既有推进边界 |
-| `technique_echo_plan_mutation` | C1 | technique_invocation_plan | 8 | TechniqueInvocationService / TechniqueResolutionService |
+| `technique_echo_plan_mutation` | 已有 | technique_invocation_plan | 8 | TechniqueResolutionService + SourceMarkerStore battle records |
 | `pre_life_loss_intervention` | 已有 | survival_write_boundary | 4 | BattleSurvivalEffectService最终生命写入前 |
 | `pre_technique_cost_transaction` | B | technique_payment_stage | 1 | TechniqueResolutionService.prepare |
 | `temporary_blazing_source_layers` | C1 | qi_state_lifecycle_fact | 6 | AnomalyLayerEffectHandler + CardStateLifecycle |
@@ -404,7 +404,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `card_trigger_target_policy_query` | B | target_policy_query | 1 | CardStatusBehaviorService / EffectTargetQuery |
 | `pre_effect_operation_event` | B | effect_executor_boundary | 1 | TechniqueEffectExecutor命令边界 |
 | `growth_trigger_execution_plan` | B | qi_state_lifecycle_fact | 1 | PassiveRuleRuntime既有ExecutionPlan |
-| `technique_sequence_extra_advance` | B | technique_sequence_mutation | 1 | TechniqueSequenceBook.advance窄端口 |
+| `technique_sequence_extra_advance` | 已有 | technique_sequence_mutation | 1 | BattleTechniqueSequenceEffectService + TechniqueSequenceBook |
 | `chase_resolved_event` | B | damage_resolved_context | 1 | BattleSurvivalEffectService扩展现有damage_resolved字段 |
 | `passive_behavior_copy_projection` | C1 | passive_execution_plan | 3 | PassiveRuleRuntime.build_execution_plan |
 | `charging_primary_value_protocol` | 已有 | technique_delay_state | 1（另服务3门E功法） | TechniqueDefinition + SourceMarkerStore + StatusDelay/Response |
@@ -420,7 +420,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | C1 | run_card_mutation_fact | 1 | RunMutationService；不新增平行事件系统 |
 
-当前数量为：已有/合并10、B 14、C1 23、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并12、B 13、C1 22、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
@@ -447,7 +447,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 2. `qi_value_query` + `survival_write_boundary`：分别完成有效真气值阶段与生命写入前干预；两者是最广的跨内容公共协议。
 3. `qi_payment_transaction` + `technique_resolution_fact`：收口真气消耗和功法执行汇总，不新增执行器。
 4. `source_marker_protocol` + `technique_delay_state`：扩展物品来源地址及功法蓄力声明，复用现有marker/delay。
-5. `technique_invocation_plan` + `technique_sequence_mutation`：在InvocationService/SequenceBook中支持回响计划修改和额外推进。
+5. `technique_invocation_plan` + `technique_sequence_mutation`（已完成）：当前execution计划归`TechniqueResolutionService`，待用回响归`SourceMarkerStore`，正常/额外推进统一经`BattleTechniqueSequenceEffectService`提交。
 6. `practice_strategy_query`：一次性补齐商品槽位、权重、类别解锁和心得包历史计划的查询族。
 7. `run_card_mutation_fact` + `run_history_state`：扩展RunMutationService和既有RunProgressSnapshot映射。
 8. `choice_continuation`：在现有BattleChoiceRequest/NodeInteraction continuation上补生命周期多选。
@@ -473,5 +473,27 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 本次审计没有发现第二套生产实现、按内容ID分叉的公共算法或重复canonical事实发布。明确修复了一个活动
 Handler直接重排`draw_pile`的旁路，删除了无调用且直接交换`hand`数组的`swap_hands`操作，并让
 UI/AI/preview只走不覆盖正式查询回执的只读投影。跨`GrowthInventory/BattleSide/PassiveRuleRuntime`
-读取目录也改为正式只读接口，不再访问其他类私有字段。C2剩余为0；B仍为14、C1仍为23、D仍为1，
+读取目录也改为正式只读接口，不再访问其他类私有字段。C2剩余为0；B为13、C1为22、D仍为1，
 下一阶段必须按`merge_family`合并接入内容，不能按单个能力键机械新增Service。
+
+### 11.6 首批内功回响与序列能力接入（2026-08-18）
+
+以下9门内功已经使用统一`technique_execution_plan`被动行为正式接入`data/inner_skills.json`：
+`every_second_hand_technique_echo`、`first_technique_echo_if_none`、
+`every_six_technique_executions_echo`、`same_technique_different_slot_echo`、
+`random_other_technique_gains_echo`、`first_burnout_technique_echo`、
+`blocked_technique_echoes`、`first_temporary_technique_echo`、
+`burnout_technique_advances_extra`。它们已通过ContentValidator和独立专项；未加入商店、修习随机池或
+production内功池，因此剩余157门内功、20件物品和8门暂缓功法仍未接入。
+
+回响计划的唯一写入口是`TechniqueResolutionService`：它负责当前execution计划、稳定`echo_index`、
+冻结原功法效果与上下文、待用record消费、额外推进请求和失败恢复。`CollectionEffectHandler.repeat_effects`
+只通过该入口委托；回响execution拒绝递归追加。跨execution待用回响存为
+`SourceMarkerStore`的battle/public/clear marker records，记录
+`target_slot_instance_id`、`granted_count`、`source_instance_key`、`grant_event_token`和
+`insertion_serial`，目标槽位删除时按正式生命周期清理且不转移。
+
+`TechniqueSequenceBook`仍是序列事实源，正常推进与额外推进只由
+`BattleTechniqueSequenceEffectService.complete_and_advance`统一提交一次`technique_sequence_changed`；手动、
+自动、调用路径共用该入口。`technique_execution_resolved`是原功法完成后、序列推进前唯一的计划修改窗口。
+Handler只表达mode、ConditionSpec/counter和通用effect op，不判断上述9个ID，也不直接写牌区、生命、序列或marker。

@@ -10,6 +10,8 @@ const CounterDefinitionScript = preload(
     "res://core/passives/passive_counter_definition.gd")
 const BattleCounterDefinitionScript = preload(
     "res://core/passives/battle_passive_counter_definition.gd")
+const TechniqueExecutionPlanHandlerScript = preload(
+    "res://core/passives/technique_execution_plan_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 const BATTLE_TIMING_HOOKS := BattleEventCatalogScript.TIMING_EVENTS
@@ -102,6 +104,7 @@ func _init(register_defaults: bool = true, effect_registry = null) -> void:
     if register_defaults:
         register_handler(BattleEffectsHandlerScript.new(effect_registry))
         register_handler(OnPlayEffectsHandlerScript.new(effect_registry))
+        register_handler(TechniqueExecutionPlanHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():

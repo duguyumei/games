@@ -11,6 +11,8 @@ const EffectContextScript = preload(
     "res://core/effects/battle_effect_context.gd")
 const EffectSourceProtocolScript = preload(
     "res://core/effects/effect_source_protocol.gd")
+const BattleRuntimeMutationTransactionScript = preload(
+    "res://core/battle_runtime_mutation_transaction.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -22,6 +24,7 @@ var _committed_event_service
 var _round_number_reader: Callable
 var _rng: RandomNumberGenerator
 var _generation_batch_serial: int = 0
+var _trigger_queue = null
 
 
 func use_technique_repository(repository) -> void:
@@ -37,6 +40,80 @@ func use_passive_battle_services(
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _rng = rng
+
+func use_trigger_queue(queue) -> void:
+    _trigger_queue = queue
+
+func complete_and_advance(
+        side,
+        hand_id: String,
+        completed_slot_instance_id: String,
+        extra_advance_count: int = 0,
+        source_records: Array = [],
+        action_token: String = "",
+        root_action_token: String = "",
+        technique_execution_token: String = "") -> Dictionary:
+    var book = _book_for(side)
+    if book == null:
+        return {"success": false, "reason": "参战者缺少功法序列簿"}
+    if extra_advance_count < 0:
+        return {"success": false, "reason": "额外序列推进不能为负数"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        [side], _committed_event_service, _trigger_queue, _rng)
+    var sequence_before: Array = book.ordered_slots(hand_id)
+    var normal: Dictionary = book.complete_slot(
+        hand_id, completed_slot_instance_id)
+    if not normal.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return normal
+    var current_after_normal: Array = book.ordered_slots(hand_id)
+    for _index in range(extra_advance_count):
+        var current: Dictionary = book.current_slot(hand_id)
+        var current_id := str(current.get("slot_instance_id", ""))
+        if current_id == "":
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {"success": false, "reason": "额外推进缺少当前功法槽位"}
+        var advanced: Dictionary = book.complete_slot(hand_id, current_id)
+        if not advanced.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return advanced
+    var sequence_after: Array = book.ordered_slots(hand_id)
+    if _committed_event_service != null:
+        var serial := int(_committed_event_service.next_serial())
+        var event: Dictionary = _committed_event_service.commit(
+            "technique_sequence_changed", {
+                "event_token": _committed_event_service.make_token(
+                    "technique_sequence_changed", side, serial, action_token),
+                "event_serial": serial,
+                "actor": side,
+                "owner": side,
+                "action_token": action_token,
+                "root_action_token": root_action_token,
+                "technique_execution_token": technique_execution_token,
+                "hand_id": hand_id,
+                "completed_slot_instance_id": completed_slot_instance_id,
+                "normal_advance_count": 1,
+                "extra_advance_count": extra_advance_count,
+                "sequence_before": sequence_before.duplicate(true),
+                "sequence_after": sequence_after.duplicate(true),
+                "source_records": source_records.duplicate(true),
+                "reason": "technique_complete_and_advance",
+                "round_number": _round_number(),
+            })
+        if not event.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {"success": false, "reason": str(event.get(
+                "reason", "功法序列变化事件提交失败")), "rolled_back": true}
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {
+        "success": true,
+        "sequence_before": sequence_before,
+        "sequence_after": sequence_after,
+        "normal_advance_count": 1,
+        "extra_advance_count": extra_advance_count,
+        "source_records": source_records.duplicate(true),
+        "current_after_normal": current_after_normal,
+    }
 
 
 func slot_usage(side, hand_id: String) -> Dictionary:
@@ -184,11 +261,22 @@ func clear_temporary_techniques(
     var book = _book_for(side)
     if book == null:
         return {"success": false, "reason": "参战者缺少功法序列簿"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        [side], _committed_event_service, _trigger_queue, _rng)
     var result: Dictionary = book.release_all_temporary_slots()
     if int(result.get("removed_count", 0)) > 0:
-        emit_technique_sequence_changed(
+        var emitted: Dictionary = emit_technique_sequence_changed(
             side, action_token, "battle_end_temporary_release",
             result.get("removed_slots", []))
+        if not emitted.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(emitted.get(
+                    "reason", "临时功法清理事件提交失败")),
+                "rolled_back": true,
+            }
+    BattleRuntimeMutationTransactionScript.commit(transaction)
     return result
 
 

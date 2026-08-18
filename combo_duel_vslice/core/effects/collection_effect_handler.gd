@@ -270,18 +270,11 @@ func execute(effect: Dictionary, context):
             if runtime.technique_execution_token == "":
                 return _execute_legacy_echoes(
                     runtime, maxi(0, count), effect.get("effects", []))
-            var state: Dictionary = runtime.technique_execution_state
-            if not state.has("pending_echo_plans"):
-                state["pending_echo_plans"] = []
-            if not state.has("next_echo_index"):
-                state["next_echo_index"] = 0
-            for _index in range(maxi(0, count)):
-                var echo_index := int(state["next_echo_index"])
-                state["next_echo_index"] = echo_index + 1
-                state["pending_echo_plans"].append({
-                    "echo_index": echo_index,
-                    "effects": effect.get("effects", []).duplicate(true),
-                })
+            var planned: Dictionary = runtime.ports.append_current_technique_echo(
+                runtime, maxi(0, count), effect.get("effects", []))
+            if not planned.get("success", false):
+                return EffectResultScript.failed(str(planned.get(
+                    "reason", "功法回响计划写入失败")))
             return EffectResultScript.succeeded("登记功法回响%d次" % maxi(0, count))
     return EffectResultScript.failed("集合处理器不支持此操作")
 

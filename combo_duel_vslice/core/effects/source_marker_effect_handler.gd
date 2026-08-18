@@ -17,6 +17,7 @@ func operation_ids() -> Array[String]:
     return [
         "write_source_marker", "capture_source_marker",
         "transfer_source_marker",
+        "append_source_marker_records", "consume_matching_source_marker_records",
         "begin_technique_charging", "write_charging_primary",
         "write_all_charging_primary", "capture_charging_techniques",
         "end_technique_charging",
@@ -36,6 +37,10 @@ func execute(effect: Dictionary, context):
             return _capture(effect, runtime)
         "transfer_source_marker":
             return _transfer(effect, runtime)
+        "append_source_marker_records":
+            return _append_records(effect, runtime)
+        "consume_matching_source_marker_records":
+            return _consume_matching_records(effect, runtime)
         "begin_technique_charging":
             return _begin_charging(effect, runtime)
         "write_charging_primary":
@@ -98,6 +103,41 @@ func _transfer(effect: Dictionary, runtime):
     runtime.captures[str(effect.get("capture", "transferred_marker"))] = [{
         "amount": int(result.get("transferred", 0))}]
     return EffectResultScript.succeeded("转移标识 %d" % int(result.get("transferred", 0)))
+
+func _append_records(effect: Dictionary, runtime):
+    var source := _source(effect, runtime)
+    if not source.get("success", false):
+        return EffectResultScript.failed(str(source.get("reason", "来源标识地址无效")))
+    var records: Array = effect.get("records", [])
+    if records.is_empty():
+        return EffectResultScript.succeeded("没有追加来源标识记录")
+    var result: Dictionary = runtime.ports.append_source_marker_records(
+        runtime.actor, source, records.duplicate(true), runtime.action_token)
+    if not result.get("success", false):
+        return EffectResultScript.failed(str(result.get(
+            "reason", "来源标识记录写入失败")))
+    var capture_id := str(effect.get("capture", ""))
+    if capture_id != "":
+        runtime.captures[capture_id] = result.get(
+            "appended_records", []).duplicate(true)
+    return EffectResultScript.succeeded("追加来源标识记录%d条" % records.size())
+
+func _consume_matching_records(effect: Dictionary, runtime):
+    var source := _source(effect, runtime)
+    if not source.get("success", false):
+        return EffectResultScript.failed(str(source.get("reason", "来源标识地址无效")))
+    var result: Dictionary = runtime.ports.consume_matching_source_marker_records(
+        runtime.actor, source,
+        effect.get("record_filters", {}).duplicate(true),
+        int(effect.get("count", -1)), runtime.action_token)
+    if not result.get("success", false):
+        return EffectResultScript.failed(str(result.get(
+            "reason", "来源标识记录过滤消费失败")))
+    var capture_id := str(effect.get("capture", ""))
+    if capture_id != "":
+        runtime.captures[capture_id] = result.get(
+            "consumed_records", []).duplicate(true)
+    return EffectResultScript.succeeded("过滤消费来源标识记录%d条" % int(result.get("consumed", 0)))
 
 func _begin_charging(effect: Dictionary, runtime):
     var slot_ids := _charging_target_slot_ids(effect, runtime, true)
@@ -210,10 +250,25 @@ func _capture_charging_results(
         runtime.captures[capture_id] = results.duplicate(true)
 
 func _source(effect: Dictionary, runtime) -> Dictionary:
-    return address_resolver.resolve(effect, runtime)
+    var result := address_resolver.resolve(effect, runtime)
+    if result.get("success", false):
+        for field in ["marker_role", "slot_instance_id", "technique_id", "hand_id"]:
+            if effect.has(field):
+                result[field] = effect[field]
+    return result
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     var op := str(effect.get("op", ""))
+    if op in ["append_source_marker_records", "consume_matching_source_marker_records"]:
+        if op == "append_source_marker_records" and not effect.get(
+                "records", []) is Array:
+            validator.report_error(scope + ".records", "必须是数组")
+        if op == "consume_matching_source_marker_records" \
+                and not effect.get("record_filters", {}) is Dictionary:
+            validator.report_error(scope + ".record_filters", "必须是对象")
+        if effect.has("count") and not effect["count"] is int:
+            validator.report_error(scope + ".count", "必须是整数")
+        return
     if op in [
             "begin_technique_charging", "write_charging_primary",
             "write_all_charging_primary", "capture_charging_techniques",

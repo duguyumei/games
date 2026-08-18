@@ -19,6 +19,8 @@ const BattlePoisonCardTriggerServiceScript = preload(
     "res://core/effects/battle_poison_card_trigger_service.gd")
 const BattleActionResourceEffectServiceScript = preload(
     "res://core/effects/battle_action_resource_effect_service.gd")
+const BattleRuntimeMutationTransactionScript = preload(
+    "res://core/battle_runtime_mutation_transaction.gd")
 
 ## 效果处理器修改战斗状态的唯一窄端口。
 ##
@@ -36,12 +38,16 @@ var _technique_sequence_effect_service
 var _response_effect_service
 var _poison_card_trigger_service
 var _action_resource_effect_service
+var _technique_resolution_service_ref: WeakRef
+var _trigger_queue
+var _committed_event_service
 
 func _init(
         damage_resolver: ComboDamageResolver,
         status_system: StatusSystem,
         battle_flow: BattleFlowCoordinator,
         trigger_queue: VisibleTriggerQueue) -> void:
+    _trigger_queue = trigger_queue
     _survival_effect_service = BattleSurvivalEffectServiceScript.new(
         damage_resolver, status_system, trigger_queue)
     _card_effect_service = BattleCardEffectServiceScript.new(status_system)
@@ -54,6 +60,7 @@ func _init(
     _invocation_effect_service = BattleInvocationEffectServiceScript.new()
     _technique_sequence_effect_service = \
         BattleTechniqueSequenceEffectServiceScript.new()
+    _technique_sequence_effect_service.use_trigger_queue(trigger_queue)
     _response_effect_service = BattleResponseEffectServiceScript.new(
         status_system, _card_effect_service)
     _poison_card_trigger_service = BattlePoisonCardTriggerServiceScript.new(
@@ -63,10 +70,12 @@ func _init(
     _card_effect_service.use_trigger_queue(trigger_queue)
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
+    _trigger_queue = trigger_queue
     _survival_effect_service.use_trigger_queue(trigger_queue)
     _source_resource_effect_service.use_trigger_queue(trigger_queue)
     _action_resource_effect_service.use_trigger_queue(trigger_queue)
     _card_effect_service.use_trigger_queue(trigger_queue)
+    _technique_sequence_effect_service.use_trigger_queue(trigger_queue)
 
 func use_sides(first: BattleSide, second: BattleSide) -> void:
     _sides = [first, second]
@@ -91,6 +100,7 @@ func use_passive_battle_services(
         query_service,
         event_service,
         round_reader: Callable = Callable()) -> void:
+    _committed_event_service = event_service
     _survival_effect_service.use_passive_battle_services(
         query_service, event_service, round_reader)
     _source_resource_effect_service.use_passive_battle_services(
@@ -112,6 +122,12 @@ func use_technique_repository(repository) -> void:
 func battle_rng() -> RandomNumberGenerator:
     return _battle_rng
 
+func transaction_sides() -> Array:
+    return _sides.duplicate()
+
+func transaction_trigger_queue():
+    return _trigger_queue
+
 func use_battle_instance_id(value: String) -> void:
     _source_resource_effect_service.use_battle_instance_id(value)
 
@@ -123,6 +139,40 @@ func use_same_qi_gauge_service(service) -> void:
 
 func use_technique_invocation_service(service) -> void:
     _invocation_effect_service.use_technique_invocation_service(service)
+
+func use_technique_resolution_service(service) -> void:
+    _technique_resolution_service_ref = weakref(service) if service != null else null
+
+func append_current_technique_echo(
+        context, count: int, effects: Array = []) -> Dictionary:
+    var service = _technique_resolution_service_ref.get_ref() \
+        if _technique_resolution_service_ref != null else null
+    if service == null:
+        return {"success": false, "reason": "功法回响计划入口尚未装配"}
+    return service.append_current_technique_echo(context, count, effects)
+
+func current_technique_echo_count(context) -> int:
+    var service = _technique_resolution_service_ref.get_ref() \
+        if _technique_resolution_service_ref != null else null
+    return service.pending_echo_count(context) if service != null else 0
+
+func grant_pending_slot_echo(
+        context, target_slot_instance_id: String, granted_count: int,
+        grant_event_token: String = "") -> Dictionary:
+    var service = _technique_resolution_service_ref.get_ref() \
+        if _technique_resolution_service_ref != null else null
+    if service == null:
+        return {"success": false, "reason": "待用回响入口尚未装配"}
+    return service.grant_pending_slot_echo(
+        context, target_slot_instance_id, granted_count, grant_event_token)
+
+func request_extra_sequence_advance(
+        context, count: int, source_record: Dictionary = {}) -> Dictionary:
+    var service = _technique_resolution_service_ref.get_ref() \
+        if _technique_resolution_service_ref != null else null
+    if service == null:
+        return {"success": false, "reason": "额外序列推进入口尚未装配"}
+    return service.request_extra_sequence_advance(context, count, source_record)
 
 func push_effect_context(context) -> void:
     _invocation_effect_service.push_effect_context(context)
@@ -323,6 +373,15 @@ func consume_source_marker_records(
     return _source_resource_effect_service.consume_source_marker_records(
         side, source, count, action_token)
 
+func consume_matching_source_marker_records(
+        side: BattleSide,
+        source: Dictionary,
+        record_filters: Dictionary,
+        count: int = -1,
+        action_token: String = "") -> Dictionary:
+    return _source_resource_effect_service.consume_matching_source_marker_records(
+        side, source, record_filters, count, action_token)
+
 func charging_technique_instances(
         side: BattleSide, public_only: bool = false) -> Array:
     return _source_resource_effect_service.charging_technique_instances(
@@ -394,8 +453,46 @@ func generate_temporary_techniques(
 func clear_temporary_techniques(
         side: BattleSide,
         action_token: String = "") -> Dictionary:
-    return _technique_sequence_effect_service.clear_temporary_techniques(
-        side, action_token)
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var result: Dictionary = \
+        _technique_sequence_effect_service.clear_temporary_techniques(
+            side, action_token)
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    var service = _technique_resolution_service_ref.get_ref() \
+        if _technique_resolution_service_ref != null else null
+    if service != null and int(result.get("removed_count", 0)) > 0:
+        var removed_ids: Array = result.get("removed_slots", []).map(
+            func(slot): return str(slot.get("slot_instance_id", "")))
+        var cleanup: Dictionary = service.cleanup_pending_slot_echoes(
+            side, removed_ids, action_token)
+        if not cleanup.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(cleanup.get(
+                    "reason", "临时功法待用回响清理失败")),
+                "rolled_back": true,
+            }
+        result["pending_echo_cleanup"] = cleanup
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return result
+
+func complete_and_advance_technique(
+        side: BattleSide,
+        hand_id: String,
+        completed_slot_instance_id: String,
+        extra_advance_count: int = 0,
+        source_records: Array = [],
+        action_token: String = "",
+        root_action_token: String = "",
+        technique_execution_token: String = "") -> Dictionary:
+    return _technique_sequence_effect_service.complete_and_advance(
+        side, hand_id, completed_slot_instance_id, extra_advance_count,
+        source_records, action_token, root_action_token,
+        technique_execution_token)
 
 func resolve_after_caller_advance(root_action_token: String) -> Dictionary:
     return _invocation_effect_service.resolve_after_caller_advance(root_action_token)

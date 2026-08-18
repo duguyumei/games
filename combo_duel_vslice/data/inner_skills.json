@@ -16,6 +16,205 @@
           }
         }
       ]
+    },
+    {
+      "id": "every_second_hand_technique_echo",
+      "name": "二转余音",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "每种精确牌型每第2门成功功法，使该功法的功法回响次数+1，然后重新计数。",
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "state_key": "echo_plan",
+          "configuration": {
+            "mode": "every_second_hand",
+            "interval": 2,
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "first_technique_echo_if_none",
+      "name": "初鸣复唱",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "每场战斗第一门成功功法若没有功法回响，使其功法回响1次。",
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "state_key": "echo_plan",
+          "configuration": {
+            "mode": "first_if_none",
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "every_six_technique_executions_echo",
+      "name": "六转成章",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "我方每累计执行6次功法，使达到第6次的非回响功法回响1次，然后重新计数；功法回响也计入次数。",
+      "marker_definitions": [
+        {
+          "id": "pending_slot_echoes",
+          "scope": "battle",
+          "public": true,
+          "display_name": "待用功法回响",
+          "forget_policy": "clear",
+          "marker_role": "pending_technique_echo"
+        }
+      ],
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "state_key": "echo_plan",
+          "configuration": {
+            "mode": "every_six_executions",
+            "interval": 6,
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "same_technique_different_slot_echo",
+      "name": "双位同鸣",
+      "status": "formal",
+      "rarity": "legendary",
+      "forget_value": 0,
+      "description": "同一门功法本场由第2个不同功法槽位成功触发时，使该功法的功法回响次数+1。",
+      "marker_definitions": [
+        {
+          "id": "technique_slot_history",
+          "scope": "battle",
+          "public": false,
+          "display_name": "成功功法槽位历史",
+          "forget_policy": "clear",
+          "marker_role": "technique_slot_history"
+        }
+      ],
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "configuration": {
+            "mode": "same_technique_different_slot",
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "random_other_technique_gains_echo",
+      "name": "应机复响",
+      "status": "formal",
+      "rarity": "legendary",
+      "forget_value": 0,
+      "description": "每当一门非回响功法成功触发时，随机选择另一门实际存在的功法，使其下一次成功触发时的功法回响次数+1。",
+      "marker_definitions": [
+        {
+          "id": "pending_slot_echoes",
+          "scope": "battle",
+          "public": true,
+          "display_name": "待用功法回响",
+          "forget_policy": "clear",
+          "marker_role": "pending_technique_echo"
+        }
+      ],
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "configuration": {
+            "mode": "random_other_slot",
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "first_burnout_technique_echo",
+      "name": "烬法重鸣",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "每次行动中，第一门使用至少1张燃尽真气参与功法值计算的功法，其功法回响次数+1。",
+      "marker_definitions": [
+        {
+          "id": "burnout_action_gates",
+          "scope": "battle",
+          "public": false,
+          "display_name": "燃尽功法行动门禁",
+          "forget_policy": "clear",
+          "marker_role": "burnout_action_gate"
+        }
+      ],
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "configuration": {
+            "mode": "first_burnout_per_action",
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "blocked_technique_echoes",
+      "name": "受阻愈烈",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "每门非回响功法第一次有攻击段被格挡或卸力成功取消时，该功法的功法回响次数+1。",
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "configuration": {
+            "mode": "blocked_or_deflected",
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "first_temporary_technique_echo",
+      "name": "临诀燃灯",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "每场战斗第一次有临时功法成功触发时，该功法的功法回响次数+1。",
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "state_key": "echo_plan",
+          "configuration": {
+            "mode": "first_temporary",
+            "count": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "burnout_technique_advances_extra",
+      "name": "烬步催轮",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "使用至少1张燃尽真气参与功法值计算的功法成功结算后，该精确牌型的功法序列额外推进1格。",
+      "behaviors": [
+        {
+          "id": "technique_execution_plan",
+          "configuration": {
+            "mode": "burnout_extra_advance",
+            "count": 1
+          }
+        }
+      ]
     }
   ]
 }

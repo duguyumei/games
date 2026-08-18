@@ -173,6 +173,58 @@ func consume_records(
         "entry": entry.duplicate(true),
     }
 
+func consume_matching_records(
+        source_kind: String,
+        source_instance_key: String,
+        marker_id: String,
+        scope: String,
+        record_filters: Dictionary,
+        count: int = -1,
+        remove_zero: bool = false) -> Dictionary:
+    if source_kind not in SOURCE_KINDS or source_instance_key == "" \
+            or not _is_snake_case(marker_id) or scope not in SCOPES:
+        return {"success": false, "reason": "来源标识键无效"}
+    if not _is_serializable_value(record_filters):
+        return {"success": false, "reason": "来源标识记录过滤条件必须可序列化"}
+    var key := _key(source_kind, source_instance_key, marker_id, scope)
+    var existing: Dictionary = _entries.get(key, {})
+    var existed_before := not existing.is_empty()
+    var before_records: Array = existing.get("records", []).duplicate(true)
+    var limit := count if count >= 0 else 2147483647
+    var consumed_records: Array = []
+    var after_records: Array = []
+    for record_value in before_records:
+        var record: Dictionary = record_value
+        if consumed_records.size() < limit \
+                and _record_matches(record, record_filters):
+            consumed_records.append(record.duplicate(true))
+        else:
+            after_records.append(record.duplicate(true))
+    var entry: Dictionary = existing.duplicate(true)
+    entry["value"] = after_records.size()
+    entry["records"] = after_records
+    if after_records.is_empty() and remove_zero:
+        _entries.erase(key)
+    elif not existing.is_empty():
+        _entries[key] = entry
+    var exists_after := _entries.has(key)
+    var removed := existed_before and not exists_after
+    return {
+        "success": true,
+        "changed": not consumed_records.is_empty() or removed,
+        "created": false,
+        "removed": removed,
+        "existed_before": existed_before,
+        "exists_after": exists_after,
+        "before": before_records.size(),
+        "after": after_records.size(),
+        "delta": -consumed_records.size(),
+        "consumed": consumed_records.size(),
+        "consumed_records": consumed_records,
+        "record_filters": record_filters.duplicate(true),
+        "entry": entry.duplicate(true),
+    }
+
 func records(
         source_kind: String,
         source_instance_key: String,
@@ -219,7 +271,7 @@ func entries(filters: Dictionary = {}) -> Array:
         var matched := true
         for field in [
                 "source_kind", "source_instance_key", "content_id",
-                "marker_id", "scope", "contributes_to"]:
+                "marker_id", "scope", "contributes_to", "marker_role"]:
             if filters.has(field) and str(filters[field]) != str(entry.get(field, "")):
                 matched = false
                 break
@@ -360,6 +412,18 @@ func _is_serializable_value(value) -> bool:
         for child in value:
             if not _is_serializable_value(child):
                 return false
+    return true
+
+func _record_matches(record: Dictionary, filters: Dictionary) -> bool:
+    for field_value in filters:
+        var field := str(field_value)
+        var expected = filters[field_value]
+        var actual = record.get(field)
+        if expected is Array:
+            if not expected.has(actual) and not expected.has(str(actual)):
+                return false
+        elif actual != expected:
+            return false
     return true
 
 static func is_registered_contribution(contributes_to: String) -> bool:

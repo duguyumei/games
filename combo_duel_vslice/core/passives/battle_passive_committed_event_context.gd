@@ -14,6 +14,12 @@ var source_id: String = ""
 var source_name: String = ""
 var source_instance_key: String = ""
 var trigger_mode: String = ""
+var hand_id: String = ""
+var technique_id: String = ""
+var technique_pool: String = ""
+var slot_instance_id: String = ""
+var initial_power: int = 0
+var technique_power: int = 0
 var requested_amount: int = 0
 var final_amount: int = 0
 var metadata: Dictionary = {}
@@ -158,6 +164,12 @@ func configure(values: Dictionary):
     source_name = str(values.get("source_name", ""))
     source_instance_key = str(values.get("source_instance_key", ""))
     trigger_mode = str(values.get("trigger_mode", ""))
+    hand_id = str(values.get("hand_id", ""))
+    technique_id = str(values.get("technique_id", ""))
+    technique_pool = str(values.get("technique_pool", ""))
+    slot_instance_id = str(values.get("slot_instance_id", ""))
+    initial_power = int(values.get("initial_power", 0))
+    technique_power = int(values.get("technique_power", 0))
     requested_amount = int(values.get("requested_amount", 0))
     final_amount = int(values.get("final_amount", 0))
     metadata = values.get("metadata", {}).duplicate(false)
@@ -320,6 +332,12 @@ func for_invocation(current_invocation):
         "source_name": source_name,
         "source_instance_key": source_instance_key,
         "trigger_mode": trigger_mode,
+        "hand_id": hand_id,
+        "technique_id": technique_id,
+        "technique_pool": technique_pool,
+        "slot_instance_id": slot_instance_id,
+        "initial_power": initial_power,
+        "technique_power": technique_power,
         "requested_amount": requested_amount,
         "final_amount": final_amount,
         "metadata": metadata,

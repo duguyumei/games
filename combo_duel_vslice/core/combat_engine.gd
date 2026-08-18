@@ -286,6 +286,7 @@ func _init(
     technique_resolution_service = TechniqueResolutionServiceScript.new(
         repository, effect_executor, effect_ports,
         battle_passive_event_service)
+    effect_ports.use_technique_resolution_service(technique_resolution_service)
     technique_invocation_service = TechniqueInvocationServiceScript.new(
         technique_resolution_service, effect_executor, effect_ports, rng)
     effect_ports.use_technique_invocation_service(technique_invocation_service)

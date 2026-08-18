@@ -813,7 +813,7 @@ retrigger使用根行动、重触序号和槽位实例。等待选择恢复复�
 固定顺序为：本次效果与自身连势/同气收尾 → `technique_execution_resolved` → 按稳定计划执行每次回响
 并各自汇总 → 当前槽位推进 → 既有`technique_succeeded/technique_invocation_resolved`。汇总Handler失败
 必须阻止槽位推进并向行动边界传播。行动中止、效果失败、战斗重置和战斗结束都清除未完成累计器。
-本协议没有新增执行器、回响Service或事件总线，也没有实现下一批`technique_echo_plan_mutation`。
+本协议没有新增执行器、回响Service或事件总线；其后`technique_echo_plan_mutation`已按本时序接入，见文末“功法回响计划与序列推进”。
 
 ## 卸力与统一攻击取消协议（2026-08-18）
 
@@ -919,7 +919,7 @@ Run内容通过`GrowthInventory.grant_item/remove_item`执行物品原语，并�
 
 ## 九项核心C2完成后的内容接入门禁（2026-08-18）
 
-九项核心C2均已完成，剩余C2为0；能力矩阵当前为B 14、C1 23、D 1。后续任务必须按
+九项核心C2均已完成，剩余C2为0；首批回响/序列内功接入后，能力矩阵当前为B 13、C1 22、D 1。后续任务必须按
 `merge_family`组织同类消费者，不再把一个`capability_key`机械等同于一个新Service或一个独立批次。
 
 内容接入前先选择下列唯一边界：
@@ -949,3 +949,31 @@ Handler只解释通用op和条件，不得直接改牌区、生命／防御、�
 `/tmp/taiwu-c2-final-quick-final3-*`、`/tmp/taiwu-c2-final-full-final3-*`，设计检查为
 `/tmp/taiwu-c2-final-design-consistency-02.log`。运行器和额外扫描均未发现脚本／资源加载、解析、泄漏、
 orphan或退出阶段错误。
+
+## 功法回响计划与序列推进（2026-08-18）
+
+`technique_execution_resolved`是唯一计划修改窗口。该committed事实的Invocation同步获得当前窄
+execution state引用；`TechniqueResolutionService`之后依次消费该槽位待用回响、原子取出当前计划、
+执行不可递归的回响，最后把正常/额外推进请求交给序列Service。禁止Handler直接读写
+`pending_echo_plans`、`next_echo_index`或`extra_sequence_advance_requests`。
+
+通用effect op只有`append_current_technique_echo`、`grant_pending_slot_echo`和
+`request_extra_sequence_advance`。`repeat_effects`必须委托第一个op，不得在集合Handler里自行构造计划。
+内功使用单一`technique_execution_plan`被动Handler，由mode、counter、marker和Context事实表达差异；
+新内容不得在核心Service按content ID分支。preview只运行Handler的summarize空操作，不建计划、marker、
+counter或RNG事实。
+
+跨execution待用回响使用产生奖励的来源地址，例如
+`inner:<stable_owner_id>:<source_index>:<content_id>`，不伪装成目标功法来源。其`pending_slot_echoes`是
+battle/public/clear marker，record必须含稳定目标槽位、次数、来源实例、授予事件token与插入序号。
+只能通过`BattleEffectPorts`转到`BattleSourceResourceEffectService/SourceMarkerStore.consume_matching_records`
+过滤消费；槽位删除时在同一运行时事务中清理失效record。
+
+序列事实仍只在`TechniqueSequenceBook`。`BattleTechniqueSequenceEffectService.complete_and_advance`
+先按冻结`slot_instance_id`完成正常推进，再对同一精确牌型完成汇总后的额外推进，最后只发布
+一次`technique_sequence_changed`。manual、automatic与invoked路径共用该入口，echo不请求任何推进。
+任一Invocation、待用record消费、回响执行或推进失败都必须复用`BattleRuntimeMutationTransaction`
+恢复双方状态、counter/marker、RNG、committed receipt/publication、触发队列、日志和execution state。
+
+本批已正式接入二转余音、初鸣复唱、六转成章、双位同鸣、应机复响、烬法重鸣、受阻愈烈、临诀燃灯和烬步催轮。
+它们的A/B/C标签只保留为历史复杂度，不再表示未实现。其他157门内功、20件物品和8门暂缓功法仍未接入。

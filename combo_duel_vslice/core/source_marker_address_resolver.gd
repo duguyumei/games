@@ -85,6 +85,7 @@ func resolve(spec: Dictionary, runtime, slot_override: Dictionary = {}) -> Dicti
         "display_name": str(spec.get("display_name", spec.get("marker_id", ""))),
         "contributes_to": str(spec.get("contributes_to", "")),
         "forget_policy": str(spec.get("forget_policy", "clear")),
+        "marker_role": str(spec.get("marker_role", "")),
     }
 
 ## item 来源实例的唯一权威地址入口。库存顺序只参与 PassiveRuleSourceResolver
@@ -159,6 +160,8 @@ func resolve_item(
             "contributes_to", spec.get("contributes_to", ""))),
         "forget_policy": str(marker_definition.get(
             "forget_policy", spec.get("forget_policy", "clear"))),
+        "marker_role": str(marker_definition.get(
+            "marker_role", spec.get("marker_role", ""))),
     }
 
 func _item_marker_definition(

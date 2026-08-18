@@ -1527,8 +1527,8 @@ committed事件守卫与既有失败报告协议，没有增加生命Service、�
 正式边界先完成本次自身收尾并提交汇总，再执行登记的回响子计划；每次回响拥有子token和独立汇总，
 随后才推进槽位并发送既有成功/调用完成事件。continuation保留累计器，恢复后只收口一次；Handler失败、
 效果失败、中止、重置和战斗结束会丢弃未完成记录。`BattleEventCatalog`、被动事件Context、动态/自动
-白名单、AI公开历史及ConditionSpec均已接入该事件。本批未实现《厚壁通脉》《护焰周天》或
-`technique_echo_plan_mutation`。
+白名单、AI公开历史及ConditionSpec均已接入该事件。该批当时未实现《厚壁通脉》《护焰周天》或
+`technique_echo_plan_mutation`；回响计划已在后续“首批内功回响与序列接入”中完成。
 
 ## 2026-08-18 卸力与统一攻击取消协议
 
@@ -1696,7 +1696,7 @@ marker事实归BattleSourceResourceEffectService；Run marker事实沿用Run事�
 
 ### 后续方向
 
-能力矩阵现为已有／合并10、B 14、C1 23、C2 0、D 1。下一阶段应按`merge_family`聚合接入消费者，优先
+能力矩阵现为已有／合并12、B 13、C1 22、C2 0、D 1。下一阶段应按`merge_family`聚合接入消费者，优先
 复用上述正式入口；不得按单项能力或单个未来内容机械新增Service。8门暂缓功法、具体内功与20件物品
 仍保持未接入，玩法数值和既有功法描述均未改变。
 
@@ -1713,3 +1713,42 @@ run-map 1136条、Run Save v1 202条、technique-runtime 259条、山系461条�
 `/tmp/taiwu-c2-final-quick-final3-*`、`/tmp/taiwu-c2-final-full-final3-*`及
 `/tmp/taiwu-c2-final-design-consistency-02.log`；stdout与Godot日志未发现加载、解析、脚本、ObjectDB、
 RID、资源泄漏、orphan或退出阶段错误，只有允许忽略的macOS CA证书警告。
+
+## 2026-08-18 首批内功回响与序列接入
+
+### 架构结论
+
+`technique_invocation_plan`和`technique_sequence_mutation`已作为既有功法运行时的窄扩展完成，没有新建
+EchoPlan Service、Pending Store、内功运行时、事件总线或第二套序列推进器。九门内功差异只由
+`technique_execution_plan`的mode、来源counter/marker、committed Context和三个通用effect op表达。
+回扫`core/`没有发现上述9个稳定ID的分支；它们只出现在内容数据与专项测试。
+
+### 唯一所有者与提交顺序
+
+- `TechniqueResolutionService`唯一持有当前execution的`pending_echo_plans`、`next_echo_index`和
+  `extra_sequence_advance_requests`，并提供查询、追加、待用消费、原子取出与失败恢复。
+- `SourceMarkerStore`唯一保存跨execution待用回响。`pending_slot_echoes`挂在产生奖励的内功来源地址，
+  battle/public/clear record按稳定插入顺序保存目标slot、次数、来源、grant token和序号。
+- `TechniqueSequenceBook`仍是功法序列唯一事实源；
+  `BattleTechniqueSequenceEffectService.complete_and_advance`是正常推进与额外推进唯一编排入口。
+- `technique_execution_resolved`是唯一修改窗口。原功法效果完成后先同步执行该事件Invocation，再消费
+  待用record、执行回响、正常推进、额外推进，最后发布一份序列变化与成功事实。
+
+`BattlePassiveCommittedEventService`向被动Invocation传递浅层effect context副本，但保留同一窄execution state引用；
+因此同步Handler的计划修改会被当前`TechniqueResolutionService.finish_execution`看到，不会改到脱节副本。
+`finish_execution`和序列提交都复用`BattleRuntimeMutationTransaction`；任一Invocation、marker消费、回响或额外推进
+失败都恢复双方、counter/marker、RNG、committed receipt/publication、日志与execution state，不留已推进序列。
+
+### 内容边界
+
+二转余音、初鸣复唱、六转成章、双位同鸣、应机复响、烬法重鸣、受阻愈烈、临诀燃灯与烬步催轮已在
+`inner_skills.json`以稳定ID正式声明并通过ContentValidator。过去的A/B/C标签只作历史复杂度记录，不再表示
+这9门未实现。本批没有把它们加入商店或production随机池，也没有实现其他157门内功、20件物品或8门暂缓功法。
+
+### 专项证据
+
+`test_inner_echo_plan_family.gd`以124条断言覆盖九门数据/行为、多副本、不可递归、待用record、额外推进、
+压制、preview纯度、receipt重放与失败回滚。直接相关回归为：功法汇总79条、临时功法/序列79条、
+来源marker 46条、调用/自动259条、火系276条、山系461条；content-contracts为1079条。
+项目加载通过698项，`quick` 7/7通过；按本批约束未运行`full`。所有采用日志的stdout/Godot日志均已扫描，
+未发现脚本/资源加载、解析、`SCRIPT ERROR`、ObjectDB/RID泄漏、orphan或退出阶段错误。

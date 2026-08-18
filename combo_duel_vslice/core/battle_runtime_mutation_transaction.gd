@@ -14,7 +14,8 @@ static func begin(
         rng: RandomNumberGenerator = null) -> Dictionary:
     var snapshot := capture(
         sides, committed_event_service, trigger_queue, rng)
-    if committed_event_service != null:
+    if committed_event_service != null and committed_event_service.has_method(
+            "begin_publication_transaction"):
         committed_event_service.begin_publication_transaction()
     return {
         "success": true,
@@ -40,7 +41,8 @@ static func capture(
     return {
         "side_states": side_states,
         "event_state": committed_event_service.capture_transaction_state() \
-            if committed_event_service != null else {},
+            if committed_event_service != null and committed_event_service.has_method(
+                "capture_transaction_state") else {},
         "trigger_state": trigger_queue.capture_runtime_state() \
             if trigger_queue != null and trigger_queue.has_method(
                 "capture_runtime_state") else {},
@@ -50,14 +52,16 @@ static func capture(
 
 static func commit(transaction: Dictionary) -> Dictionary:
     var event_service = transaction.get("committed_event_service")
-    if event_service != null:
+    if event_service != null and event_service.has_method(
+            "commit_publication_transaction"):
         event_service.commit_publication_transaction()
     return {"success": true}
 
 
 static func rollback(transaction: Dictionary) -> bool:
     var event_service = transaction.get("committed_event_service")
-    if event_service != null:
+    if event_service != null and event_service.has_method(
+            "rollback_publication_transaction"):
         event_service.rollback_publication_transaction()
     return restore(
         transaction.get("snapshot", {}),
@@ -75,7 +79,9 @@ static func restore(
         var side = entry.get("side")
         if side != null:
             side.replace_passive_query_state(entry.get("state", {}))
-    if committed_event_service != null:
+    if committed_event_service != null and committed_event_service.has_method(
+            "restore_transaction_state") and not snapshot.get(
+                "event_state", {}).is_empty():
         committed_event_service.restore_transaction_state(
             snapshot.get("event_state", {}))
     if trigger_queue != null and trigger_queue.has_method("restore_runtime_state"):

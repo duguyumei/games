@@ -14,6 +14,8 @@ const AnomalyLayerHandlerScript = preload("res://core/effects/anomaly_layer_effe
 const SourceMarkerHandlerScript = preload("res://core/effects/source_marker_effect_handler.gd")
 const LifeHandlerScript = preload("res://core/effects/life_effect_handler.gd")
 const TechniqueSequenceHandlerScript = preload("res://core/effects/technique_sequence_effect_handler.gd")
+const TechniqueExecutionHandlerScript = preload(
+    "res://core/effects/technique_execution_effect_handler.gd")
 const TechniquePhaseCatalogScript = preload(
     "res://core/effects/technique_phase_catalog.gd")
 
@@ -37,6 +39,8 @@ func _init(random_source: RandomNumberGenerator, resolver_override = null, conte
     register_handler(SourceMarkerHandlerScript.new(value_resolver))
     register_handler(LifeHandlerScript.new(value_resolver))
     register_handler(TechniqueSequenceHandlerScript.new(value_resolver, random_source))
+    register_handler(TechniqueExecutionHandlerScript.new(
+        value_resolver, random_source))
 
 func register_handler(handler, replace_existing: bool = false) -> bool:
     if not (handler is EffectHandler):

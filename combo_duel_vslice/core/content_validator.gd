@@ -1374,6 +1374,9 @@ func _validate_inner_skills(definition: Dictionary) -> void:
             _error(scope + ".forget_value", "必须是非负整数")
         if status == FORMAL_CONTENT_STATUS and not value.has("forget_value"):
             _error(scope + ".forget_value", "正式内功必须配置非负整数遗忘所得")
+        _validate_marker_definitions(
+            value.get("marker_definitions", []),
+            scope + ".marker_definitions")
         _validate_passive_behaviors(value, status, scope, "内功")
 
 func _validate_consumables(definition: Dictionary) -> void:

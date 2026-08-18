@@ -44,6 +44,7 @@ static func freeze(
             "growth_at_freeze": card.anomaly_layers("buff", "growth"),
             "heat_at_freeze": card.anomaly_layers("buff", "qi_heat"),
             "poison_at_freeze": card.has_anomaly("state", "poison"),
+            "burned_out_at_freeze": card.has_anomaly("mark", "burned_out"),
             "attributes_at_freeze": attributes,
         }
     var common: Array = ATTRIBUTES.duplicate()

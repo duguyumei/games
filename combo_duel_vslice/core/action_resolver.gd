@@ -593,10 +593,6 @@ func retrigger_current_hand_technique(
             "technique_activation": activation,
         }
     _retrigger_serial_by_root[root_token] = retrigger_serial + 1
-    var execution_state := {
-        "pending_echo_plans": [],
-        "next_echo_index": 0,
-    }
     var context = EffectContextScript.new().configure({
         "ports": effect_ports,
         "actor": actor,
@@ -610,7 +606,6 @@ func retrigger_current_hand_technique(
         "technique_pool": definition.pool,
         "action_token": execution_token,
         "technique_execution_token": execution_token,
-        "technique_execution_state": execution_state,
         "root_action_token": root_token,
         "caller_technique_id": parent.technique_id if parent != null else "",
         "source_kind": "technique",
@@ -747,8 +742,17 @@ func _finish_action_record(record) -> Dictionary:
                 "success": false,
                 "reason": str(summarized.get("reason", "功法执行汇总失败")),
             }
-        var completed: Dictionary = record["book"].complete_slot(
-            hand_id, str(action_preview.get("slot_instance_id", "")))
+        var execution_token := str(record.technique_execution_token)
+        if execution_token == "":
+            execution_token = str(record["token"])
+        var completed: Dictionary = effect_ports.complete_and_advance_technique(
+            record["actor"], hand_id,
+            str(action_preview.get("slot_instance_id", "")),
+            int(summarized.get("extra_sequence_advance_count", 0)),
+            summarized.get("extra_sequence_advance_sources", []),
+            execution_token,
+            str(record["token"]),
+            str(record.technique_execution_token))
         if not completed.get("success", false):
             record["failed"] = true
             trigger_queue.add_history(

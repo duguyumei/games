@@ -95,6 +95,9 @@ const PUBLIC_FIELDS := [
     "total_canceled_segment_count",
     "life_loss_canceled_segment_count", "damage_segment_tokens",
     "sequence_before",
+    "sequence_after", "normal_advance_count", "extra_advance_count",
+    "extra_sequence_advance_count", "extra_sequence_advance_sources",
+    "source_records", "completed_slot_instance_id",
 ]
 
 static func event_ids() -> Array[String]:

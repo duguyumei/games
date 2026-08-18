@@ -1,6 +1,6 @@
 # 待实现内功目录
 
-> 状态：当前共 166 门已经确认效果、但尚未进入生产内功池、修习随机池、运行时 JSON 或代码实现的内功清单。
+> 状态：本文保留166门权威正文。2026-08-18已有9门接入运行时JSON与通用回响/序列协议；其余157门仍待实现。9门已接入内功暂未进入商店、修习随机池或production内功池。
 >
 > 本文是下列同名候选的当前唯一正文。`31-neigong-general-catalog.md` 中的同名旧文本仅作来源迁移记录；发生差异时以本文为准。本文不因当前底层尚未支持而缩窄设计，后续实现必须补充通用事件、查询、选择和效果端口。
 
@@ -1569,7 +1569,7 @@
 - 功法：火·万法传薪适配空余槽位；风·长风蓄海、火·三劫悬炉、山·悬岳待敌声明主要蓄力累计值；所有现有追击功法迁移到统一`chase`攻击段和事件。
 - 内功：首章立意、演法成章、群法归型、双位同鸣、应机复响适配容量与功法实例分离；广炉容火接入连势上限；伏火延烧接入蓄力查询；追焰留痕接入追击事件。普通功法重复配装上限的改写由物品“三才并位”承接。
 - 奇珍：归墟的槽位下限为 1，超容量时由玩家选择移出，但每个牌型必须至少保留一门功法。
-- 数据：`inner_skills.json`仍只保留现有候选，`production_inner_skills.json`仍为空；166门内容只有在用户明确要求实现后才分批进入 JSON、资源、正式白名单、商店和生产池。
+- 数据：`inner_skills.json`已加入本批9门formal内功；`config/production_inner_skills.json`仍为空。其他157门仍只有在用户明确要求实现后才能分批进入 JSON、资源、正式白名单、商店和生产池。
 
 #### L. 必须补充的回归测试
 
@@ -1578,7 +1578,7 @@
 - 连势：基础上限冻结、被动提高上限、多副本叠加、无效增加不算变化、功法清空规则保持、快照恢复不重算。
 - 蓄力：三门现有功法正确声明累计值、伏火延烧逐实例`+10`、不缩短倒计时、临时副本独立、预览不写状态。
 - 追击：现有追击内容全部提交统一事件、不会递归、一次令牌只计一次、追焰留痕每三次触发且无目标仍重置。
-- 格挡／卸力、消耗、燃尽／焕发及166门内功分别建立专项行为、重复装备、压制、顺序、存档和AI／预览无副作用测试。
+- 格挡／卸力、消耗、燃尽／焕发及内功内容分批建立专项行为、重复装备、压制、顺序、存档和AI／预览无副作用测试；首批9门的回响/序列专项已完成。
 
 ## 16. 2026-08-17 底层能力矩阵审计状态
 
@@ -1603,7 +1603,7 @@
 | K. 现有内容迁移 | 部分已有 | 8门候选仍统一暂缓；万法传薪所需临时功法底层和稳定实例已经存在；三门蓄力的通用声明已可用但内容仍未创建。 |
 | L. 回归测试 | 仍缺 | 本次只做文档审计，未接入166门内容，也未补内容行为测试。 |
 
-特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、真气消耗事务、功法实例主要蓄力值、心得实时扩容、事件级来源ExecutionPlan、战斗结果原子提交和卸力攻击取消协议均为“已有”，后续不得再建立平行Service。回响“计划次数修改”和追击完成事件仍是独立缺口。
+特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、真气消耗事务、功法实例主要蓄力值、心得实时扩容、事件级来源ExecutionPlan、战斗结果原子提交和卸力攻击取消协议均为“已有”，后续不得再建立平行Service。回响“计划次数修改”已在首批内功中完成；追击完成事件仍是独立缺口。
 
 规则待确认仅一项：`化虚为实`要求把异状和临时重塑固化进本局牌组，而当前`RunProgressSnapshot`明确排除这两类BattleRuntime状态；在确定固化后的可提交永久表示前不得实现。
 
@@ -1636,7 +1636,7 @@
 
 本节只表示公共底层可用，不表示《风/林/火/山息增元》《异气增元》《百炼增元》《清气无瑕》、
 《同阶共鸣》《孤阶自守》《孤气凝神》《高阶凝气》《五气并举》《余烬存真》《镜海藏脉》或
-《毒木生甲》已经接入。166门内功和暂缓8门功法仍保持原内容状态，后续必须以来源中立Handler逐项
+《毒木生甲》已经接入。本批9门回响/序列内功也已接入；其他157门内功和暂缓8门功法仍保持原内容状态，后续必须以来源中立Handler逐项
 实现，不得绕过查询协议或复制有效真气值算法。
 
 ## 19. 2026-08-18 生命写入前干预状态
@@ -1681,8 +1681,8 @@ publication、历史与日志。
 `block_canceled_segment_count`、`deflection_canceled_segment_count`和`total_canceled_segment_count`，
 卸力击穿不计取消段。
 
-本节只表示公共协议完成。《朽甲成关》《群山合壁》《卸劲破隙》《受阻愈烈》仍未接入；没有创建或
-修改任何具体内功、物品或暂缓功法。`qi_consumption_transaction`已由下一独立批次完成。
+本节只表示公共协议完成。《朽甲成关》《群山合壁》《卸劲破隙》仍未接入；《受阻愈烈》已在后续回响内功批次接入。
+`qi_consumption_transaction`已由下一独立批次完成。
 
 ## 21. 2026-08-18 真气消耗事务状态
 
@@ -1741,3 +1741,42 @@ invocation、execution token。BattleSession和AI只读公开按槽位组织的`
 本节只表示公共底层完成。风·长风蓄海、火·三劫悬炉、山·悬岳待敌与《伏火延烧》仍未接入；没有实现
 角色级蓄力资源、统一倒计时record kind或新的自动功法执行器。核心C2下一项只剩
 `item_source_marker_state`。
+
+## 23. 2026-08-18 首批内功回响与序列接入状态
+
+`technique_invocation_plan`与`technique_sequence_mutation`已完成，不建立平行回响或序列系统。
+当前execution的回响计划、稳定`echo_index`、已计划次数、待用回响消费与额外推进请求统一归
+`TechniqueResolutionService`。`technique_execution_resolved`是原功法执行完成、回响开始前唯一修改窗口；
+被动Invocation失败会恢复execution state、来源counter/marker、RNG、committed receipt/publication和日志，
+不执行回响、不推进序列。
+
+跨execution待用回响归`SourceMarkerStore`的battle records。`pending_slot_echoes`挂在产生奖励的
+内功来源地址下，为public/clear；每条保存`target_slot_instance_id`、`granted_count`、
+`source_instance_key`、`grant_event_token`与`insertion_serial`。消费使用通用
+`consume_matching_records`，保持未消费record原顺序。序列旋转、调用或同ID其他槽位不转移目标；
+目标槽位删除时清理失效record。
+
+`TechniqueSequenceBook`仍是功法序列状态的唯一事实源。手动、自动和调用功法都把冻结槽位、
+正常推进一次与多来源额外推进交给
+`BattleTechniqueSequenceEffectService.complete_and_advance`。该Service在同一运行时事务中先完成正常推进、
+再完成额外推进，只发布一份`technique_sequence_changed`；回响执行不推进。
+
+通用effect op为`append_current_technique_echo`、`grant_pending_slot_echo`与
+`request_extra_sequence_advance`。条件/Context正式公开echo、trigger mode、hand/technique/slot、temporary、
+已计划次数、冻结燃尽事实、root action门禁、格挡/卸力取消汇总及其他实际槽位。
+内功只通过一个来源中立`technique_execution_plan`被动Handler的mode选择这些能力，核心代码不判断内功ID。
+
+正式接入资源为：
+
+- 二转余音 `every_second_hand_technique_echo`（稀有）；
+- 初鸣复唱 `first_technique_echo_if_none`（稀有）；
+- 六转成章 `every_six_technique_executions_echo`（稀有）；
+- 双位同鸣 `same_technique_different_slot_echo`（传奇）；
+- 应机复响 `random_other_technique_gains_echo`（传奇）；
+- 烬法重鸣 `first_burnout_technique_echo`（稀有）；
+- 受阻愈烈 `blocked_technique_echoes`（稀有）；
+- 临诀燃灯 `first_temporary_technique_echo`（稀有）；
+- 烬步催轮 `burnout_technique_advances_extra`（稀有）。
+
+上述9门已通过ContentValidator和独立专项。原A/B/C分类只保留为历史复杂度，不再表示这些内功未实现。
+其他157门内功、20件物品与8门暂缓功法未接入；本批也未把9门新内功加入商店、修习随机池或production内功池。
