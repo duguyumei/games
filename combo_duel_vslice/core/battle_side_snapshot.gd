@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 9
+const SCHEMA_VERSION := 10
 
 var name: String = ""
 var experience: int = 0
@@ -27,6 +27,7 @@ var current_reflection_percent: int = 0
 var reflection_sources: Array = []
 var reflection_true_damage_sources: Array = []
 var block_sources: Array = []
+var deflection_sources: Array = []
 var challenge_records: Array = []
 var hand_limit: int = 0
 var base_hand_limit: int = 0
@@ -81,7 +82,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "same_qi_value", "same_qi_capacity",
             "last_successful_technique_hand_id", "current_reflection_percent",
             "reflection_sources", "reflection_true_damage_sources",
-            "block_sources", "challenge_records",
+            "block_sources", "deflection_sources", "challenge_records",
             "inner_skill_limit",
             "draw_count", "hand_count", "occupied_meridian_count", "staging_count", "discard_count",
             "deck_count", "temporarily_removed_count",
@@ -116,6 +117,8 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.reflection_true_damage_sources = values.get(
         "reflection_true_damage_sources", []).duplicate(true)
     result.block_sources = values.get("block_sources", []).duplicate(true)
+    result.deflection_sources = values.get(
+        "deflection_sources", []).duplicate(true)
     result.challenge_records = values.get(
         "challenge_records", []).duplicate(true)
     result.hand_limit = int(values.get("hand_limit", 0))
@@ -182,6 +185,7 @@ func to_dict() -> Dictionary:
         "reflection_sources": reflection_sources.duplicate(true),
         "reflection_true_damage_sources": reflection_true_damage_sources.duplicate(true),
         "block_sources": block_sources.duplicate(true),
+        "deflection_sources": deflection_sources.duplicate(true),
         "challenge_records": challenge_records.duplicate(true),
         "hand_limit": hand_limit,
         "base_hand_limit": base_hand_limit,

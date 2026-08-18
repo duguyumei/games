@@ -778,7 +778,7 @@ Godot 进程串行运行并使用独立 `/tmp` 日志。运行器自检的缺失
 
 ## 生命写入前干预协议（2026-08-18）
 
-正式伤害段统一执行：伤害值修正 → 格挡 → `ComboDamageResolver.plan_to_target`计算防御吸收与
+正式伤害段统一执行：伤害值修正 → 卸力来源 → 格挡来源 → `ComboDamageResolver.plan_to_target`计算防御吸收与
 `proposed_life_loss` → `BattleRuleQueryService.resolve_pre_life_loss` →
 `ComboDamageResolver.commit_plan`一次提交防御与生命 → `damage_resolved` → 反震及后续响应。
 普通伤害、真伤、毒伤和反震共用这一写入边界；`cause=cost`明确跳过查询。初始化、存档恢复、
@@ -790,7 +790,7 @@ Godot 进程串行运行并使用独立 `/tmp` 日志。运行器自检的缺失
 不得写状态、推进RNG、发送事件、消费来源或写历史，并保留source breakdown、source fingerprint和
 request fingerprint。后续需要支付代价的保护必须以伤害段令牌绑定独立支付事务，不能在纯查询内支付。
 
-同步伤害的shadow只预览，不执行生命干预、不消费毒/格挡等来源、不发送事件。真实flush按缓冲顺序
+同步伤害的shadow只预览攻击取消投影，不执行生命干预、不消费毒/卸力/格挡等来源、不发送事件。真实flush按缓冲顺序
 逐段重新查询，并只返回`{success, resolutions, reason, rolled_back}`结构；不存在旧数组协议。
 flush开始时复用BattleSide状态快照、`BattlePassiveCommittedEventService`事务状态与publication
 transaction、触发队列/结构化日志快照。任一后段或反震段失败时恢复整批生命、防御、被动状态、
@@ -804,7 +804,7 @@ token、精确牌型和槽位实例组成token；调用/自动复用`invocation_
 retrigger使用根行动、重触序号和槽位实例。等待选择恢复复用原token，committed receipt重放不得建立
 第二份汇总。预览和AI候选枚举不建立累计器。
 
-汇总不使用整次行动的角色净变化，而是弱监听已经提交的`damage_resolved/damage_blocked`、
+汇总不使用整次行动的角色净变化，而是弱监听已经提交的`damage_resolved/attack_canceled`、
 `defense_gained/defense_reduced`与`life_recovered`，并同时校验execution token、
 `source_kind=technique`、source ID和稳定实例键。伤害吸收只读取`damage_resolved.defense_lost`，忽略随后
 `cause=damage_absorption`的防御事件；直接削防只接受`cause=direct_effect`，cost/decay/reset不算收益。
@@ -814,3 +814,28 @@ retrigger使用根行动、重触序号和槽位实例。等待选择恢复复�
 并各自汇总 → 当前槽位推进 → 既有`technique_succeeded/technique_invocation_resolved`。汇总Handler失败
 必须阻止槽位推进并向行动边界传播。行动中止、效果失败、战斗重置和战斗结束都清除未完成累计器。
 本协议没有新增执行器、回响Service或事件总线，也没有实现下一批`technique_echo_plan_mutation`。
+
+## 卸力与统一攻击取消协议（2026-08-18）
+
+`BattleSide.block_sources`是格挡与卸力的兼容统一集合。所有新记录必须声明
+`cancel_kind=block|deflection`，共用`source_token`、`established_order`、`target_owner_id`、`window_id`、
+`waiting_for_action`、公开label和EffectSourceProtocol身份；卸力另在建立时冻结非负`threshold`。
+新增类型时不得重命名整个存档字段或建立第二套行动窗口生命周期。对外必须分别调用
+`public_block_sources()`和`public_deflection_sources()`，后者保留阈值与顺序。
+
+正式攻击取消只能调用`BattleSurvivalEffectService.resolve_attack_cancellation`。资格固定为
+`blockable=true`的敌方直接普通／真伤：先按建立顺序检查卸力，每个被检查来源无论成功或击穿均消费；
+A≤N立即取消，A>N继续。全部卸力击穿后才使用既有ConditionSpec检查格挡。取消后不得执行承伤计划、
+`pre_life_loss_query`、`damage_resolved`或反震。毒、自毒、反震、cost及其他非直接伤害不得查询来源；
+`blockable=false`同时跳过卸力和格挡但继续正常承伤。
+
+每次卸力消费提交`deflection_resolved`；真正取消另提交`attack_canceled(cancel_kind=...)`。格挡继续发送
+`damage_blocked`兼容事实后再发送canonical取消事实，卸力不得发送`damage_blocked`。后续同时关心两类
+取消的内容只能监听`attack_canceled`，只关心旧格挡语义的内容继续监听`damage_blocked`，不得由投影层
+重复执行业务效果。`technique_execution_resolved`按canonical事实统计block/deflection/total三种取消段。
+
+普通伤害段与同步flush必须复用同一解析函数。同步shadow只能调用纯预览投影；真实flush才消费和发布。
+来源消费、source changed、取消事件、最终伤害及反震位于既有BattleSide/committed/publication/日志事务；
+事件Handler或后段失败时必须恢复整段／整批状态并返回结构化失败。测试夹具可以建立假来源，但正式
+Handler不得识别具体内功、物品或功法ID。本批没有接入任何消费者，也不得顺带实现
+`qi_consumption_transaction`。

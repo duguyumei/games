@@ -838,7 +838,7 @@
 
 本节围绕山属性、出牌结构、防御、格挡、卸力、反震、邀战与防御自然衰减建立持续运转规则。下列“格挡／卸力”与“消耗真气”是本批内容确认需要的通用底层能力；在本批进入生产前，应同步写入对应战斗权威文档并迁移受影响的现有功法正文，不能仅作为单门内功的私有定义实现。
 
-#### 待实现公共规则：格挡与卸力
+#### 已完成公共规则：格挡与卸力
 
 - **格挡**：取消一次敌方直接攻击，不比较该攻击的伤害数值。格挡来源仍可以拥有手牌数量等非伤害数值条件；条件不满足时不参与本次攻击，也不消耗。
 - **卸力 N**：敌方直接攻击到来时，按稳定来源顺序检查并消耗该次卸力。若攻击伤害不高于 `N`，取消该攻击；若攻击伤害高于 `N`，卸力仍被消耗，但不取消攻击，继续检查后续卸力或格挡。
@@ -846,6 +846,9 @@
 - 格挡与卸力均只处理敌方直接攻击，包括普通伤害与允许格挡的真伤；不能处理毒伤、反震、燃命、自毒或其他非直接攻击生命变化。
 - 玩家正文中的“格挡成功”只指格挡取消攻击，“卸力成功”只指卸力取消攻击；需要同时监听两者时必须明确写作“格挡或卸力成功”。底层应提供统一的攻击取消事实及 `block`／`deflection` 子类型，并另外提交卸力被击穿和消费的结果。
 - 正文未另写持续时间的格挡与卸力，均沿用公共格挡来源的默认到期时点。多个卸力按稳定来源与 Invocation 顺序检查，不能按数值大小自动重排。
+- **底层状态（2026-08-18）**：`deflection_attack_cancel_protocol`已经完成。正式事件为每次消费均
+  提交的`deflection_resolved`和仅在攻击实际取消时提交的`attack_canceled`；格挡继续兼容
+  `damage_blocked`。本状态不表示任何下列内功、物品或暂缓功法已经接入。
 
 #### 待实现公共规则：消耗真气
 
@@ -1593,14 +1596,14 @@
 | D. 连势上限与既有清空规则 | 仍缺 | 统一`write_momentum`及清空回执已有；`momentum_cap_query`、冻结基础上限和统一截断尚无。 |
 | E. 蓄力累计值 | 仍缺 | `StatusDelayService`、来源marker、自动触发已有；缺功法实例的主要蓄力值声明、枚举和通用写端口。 |
 | F. 追击统一 | 部分已有 | 追击复用正式伤害，旧`source_kind="chase"`仍有兼容处理；缺结构化追击令牌和`chase_resolved`提交事件。 |
-| G. 格挡、卸力与攻击取消 | 部分已有 | `block_sources`、`damage_blocked`、防御/生命实际减少量和反震已存在；缺卸力阈值、击穿/消费和取消子类型。 |
+| G. 格挡、卸力与攻击取消 | 底层已完成 | `block_sources`已扩展为`cancel_kind`类型化来源；`grant_deflection`、先卸力后格挡、击穿消费、`deflection_resolved`、`attack_canceled`、同步flush回滚和AI/UI投影均已完成；具体内容仍未接入。 |
 | H. 消耗真气 | 部分已有 | `temporarily_remove_card`与战斗事务快照可复用；缺`cause=cost`、逐牌`qi_consumed`事实及支付—后效原子协议。 |
 | I. 燃尽、焕发与异状迁移 | 仍缺 | `StatusSystem`、净化、分类和生命周期可复用；燃尽尚未完成debuff迁移，焕发尚无统一状态与有效真气值阶段。 |
 | J. 新事件、查询、计数器与效果端口 | 部分已有 | run/battle计数器、临时功法事件、来源marker、调用/响应/延迟均已有；只保留矩阵中精确缺口，禁止照旧表重复建设。 |
 | K. 现有内容迁移 | 部分已有 | 8门候选仍统一暂缓；万法传薪所需临时功法底层和稳定实例已经存在，三门蓄力仍等待通用声明。 |
 | L. 回归测试 | 仍缺 | 本次只做文档审计，未接入166门内容，也未补内容行为测试。 |
 
-特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、心得实时扩容、事件级来源ExecutionPlan和战斗结果原子提交均为“已有”，后续不得再建立平行Service。回响“计划次数修改”、卸力、追击完成事件和蓄力主要累计值仍是独立缺口。
+特别校正：自动功法、功法调用、功法回响的基础执行、临时功法、功法来源实例、来源多标识、响应/延迟、战斗与本局计数器、消耗品事务、心得实时扩容、事件级来源ExecutionPlan、战斗结果原子提交和卸力攻击取消协议均为“已有”，后续不得再建立平行Service。回响“计划次数修改”、追击完成事件和蓄力主要累计值仍是独立缺口。
 
 规则待确认仅一项：`化虚为实`要求把异状和临时重塑固化进本局牌组，而当前`RunProgressSnapshot`明确排除这两类BattleRuntime状态；在确定固化后的可提交永久表示前不得实现。
 
@@ -1641,8 +1644,8 @@
 `pre_life_loss_intervention`底层协议已经完成。正式入口是
 `BattleRuleQueryService.resolve_pre_life_loss`及`pre_life_loss_query` Hook；`ComboDamageResolver`
 先纯计算防御前值、实际吸收、后值和`proposed_life_loss`，查询成功后才一次提交防御与最终生命损失。
-普通伤害、真伤、毒伤和反震共用该路径，`cause=cost`明确跳过；格挡仍在此前取消整个合格直接攻击段，
-卸力仍是下一独立能力。
+普通伤害、真伤、毒伤和反震共用该路径，`cause=cost`明确跳过；合格直接攻击先经已经完成的统一
+卸力／格挡攻击取消协议，未取消才进入本查询。
 
 查询公开稳定`damage_segment_token`、行动令牌/窗口、来源身份、cause、伤害类型、直接攻击/反震/同步
 标志、请求/最终伤害、防御与生命计划、预计损失和致命标志。多个来源按Invocation顺序修改当前整数，
@@ -1656,5 +1659,28 @@ committed-event事务状态、publication transaction及日志快照，任一后
 `ActionResolver`会让当前行动失败。
 
 本节只表示公共底层可用。《余垣护命》《一甲断锋》《万木代命》《护焰周天》仍未接入；本批也没有
-实现真气消耗、护焰层数、卸力或任何具体内功、物品、暂缓功法。万木代命后续仍依赖
+实现真气消耗、护焰层数或任何具体内功、物品、暂缓功法。卸力公共协议虽已完成，但四个消费者仍未
+接入。万木代命后续仍依赖
 `qi_consumption_transaction`，不得把支付逻辑塞入纯查询Handler。
+
+## 20. 2026-08-18 卸力与统一攻击取消状态
+
+`deflection_attack_cancel_protocol`底层协议已经完成。`BattleSide.block_sources`保留兼容字段名，内部
+记录以`cancel_kind=block|deflection`类型化，并共用来源令牌、建立顺序、敌方行动窗口绑定、等待状态、
+到期和快照恢复；卸力在建立时冻结非负`threshold`。`BattleEffectPorts.grant_deflection_source`和通用
+`grant_deflection`效果op均为来源中立入口，另有只读存在性和公开列表查询。
+
+`BattleSurvivalEffectService.resolve_attack_cancellation`是唯一正式解析入口：只接受可取消敌方直接普通／
+真伤，按建立顺序消费卸力；A≤N即成功并停止，A>N仍消费且继续；全部击穿后才保留既有ConditionSpec
+格挡语义。`blockable=false`同时跳过两者。取消后不写防御/生命、不执行生命干预、不反震且不提交
+`damage_resolved`。同步shadow只读投影，真实flush复用现有整批事务，失败恢复来源、角色、被动、receipt、
+publication、历史与日志。
+
+每次卸力消费提交`deflection_resolved`，攻击真正取消另提交`attack_canceled(cancel_kind=...)`；格挡仍
+提交`damage_blocked`兼容事实，卸力不提交。事件目录、committed Context、ConditionSpec/ValueSpec、
+动态/自动监听、AI历史、公开BattleSide DTO和UI已接入。`technique_execution_resolved`新增
+`block_canceled_segment_count`、`deflection_canceled_segment_count`和`total_canceled_segment_count`，
+卸力击穿不计取消段。
+
+本节只表示公共协议完成。《朽甲成关》《群山合壁》《卸劲破隙》《受阻愈烈》仍未接入；没有创建或
+修改任何具体内功、物品或暂缓功法，也没有开始`qi_consumption_transaction`。

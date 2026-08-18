@@ -715,6 +715,9 @@ func _begin_execution(info: Dictionary) -> Dictionary:
         "true_segment_count": 0,
         "poison_segment_count": 0,
         "blocked_segment_count": 0,
+        "block_canceled_segment_count": 0,
+        "deflection_canceled_segment_count": 0,
+        "total_canceled_segment_count": 0,
         "life_loss_canceled_segment_count": 0,
         "damage_segment_tokens": [],
     }, true)
@@ -815,6 +818,12 @@ func _commit_execution_summary(token: String) -> Dictionary:
         "true_segment_count": int(summary.get("true_segment_count", 0)),
         "poison_segment_count": int(summary.get("poison_segment_count", 0)),
         "blocked_segment_count": int(summary.get("blocked_segment_count", 0)),
+        "block_canceled_segment_count": int(summary.get(
+            "block_canceled_segment_count", 0)),
+        "deflection_canceled_segment_count": int(summary.get(
+            "deflection_canceled_segment_count", 0)),
+        "total_canceled_segment_count": int(summary.get(
+            "total_canceled_segment_count", 0)),
         "life_loss_canceled_segment_count": int(summary.get(
             "life_loss_canceled_segment_count", 0)),
         "damage_segment_tokens": summary.get(
@@ -968,7 +977,7 @@ func _on_committed_fact_for_execution(
             accumulator["life_recovered"] = int(accumulator.get(
                 "life_recovered", 0)) + int(values.get(
                     "recovered_amount", values.get("effective_amount", 0)))
-        "damage_resolved", "damage_blocked":
+        "damage_resolved", "attack_canceled":
             _accumulate_damage_fact(
                 accumulator, event_kind, values, actor, target)
 
@@ -991,9 +1000,18 @@ func _accumulate_damage_fact(
     var count_field := "%s_segment_count" % damage_type
     if accumulator.has(count_field):
         accumulator[count_field] = int(accumulator[count_field]) + 1
-    if event_kind == "damage_blocked":
-        accumulator["blocked_segment_count"] = int(accumulator.get(
-            "blocked_segment_count", 0)) + 1
+    if event_kind == "attack_canceled":
+        var cancel_kind := str(values.get("cancel_kind", "none"))
+        accumulator["total_canceled_segment_count"] = int(accumulator.get(
+            "total_canceled_segment_count", 0)) + 1
+        if cancel_kind == "block":
+            accumulator["blocked_segment_count"] = int(accumulator.get(
+                "blocked_segment_count", 0)) + 1
+            accumulator["block_canceled_segment_count"] = int(
+                accumulator.get("block_canceled_segment_count", 0)) + 1
+        elif cancel_kind == "deflection":
+            accumulator["deflection_canceled_segment_count"] = int(
+                accumulator.get("deflection_canceled_segment_count", 0)) + 1
     else:
         var defense_lost := int(values.get("defense_lost", 0))
         var life_lost := int(values.get("life_lost", 0))

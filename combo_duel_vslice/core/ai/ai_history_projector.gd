@@ -21,6 +21,7 @@ const PUBLIC_EVENT_TYPES := [
     "source_marker_changed", "technique_invocation_started",
     "technique_invocation_resolved", "technique_sequence_changed",
     "technique_execution_resolved",
+    "deflection_resolved", "attack_canceled",
     "technique_slot_capacity_changed", "temporary_technique_generated",
     "life_recovered", "defense_reduced",
 ]

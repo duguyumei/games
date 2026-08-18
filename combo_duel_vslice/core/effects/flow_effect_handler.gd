@@ -23,7 +23,7 @@ func operation_ids() -> Array[String]:
         "burn_deck_then_heat_hand",
         "retrigger_current_hand_technique",
         "grant_reflection_source", "grant_reflection_true_damage",
-        "grant_block", "register_challenge",
+        "grant_block", "grant_deflection", "register_challenge",
         "grant_defense_retention", "add_pending_power_fixed",
         "write_same_qi", "grant_momentum_preservation",
     ]
@@ -35,7 +35,8 @@ func default_phase(operation_id: String) -> String:
     if operation_id in [
             "write_momentum",
             "grant_reflection_source", "grant_reflection_true_damage",
-            "grant_block", "register_challenge", "grant_defense_retention",
+            "grant_block", "grant_deflection", "register_challenge",
+            "grant_defense_retention",
             "add_pending_power_fixed", "add_direct_power_fixed",
             "add_direct_power_percent",
             "steal_random_card_if_power_target_and_same_qi"]:
@@ -106,11 +107,25 @@ func execute(effect: Dictionary, context):
             var result: Dictionary = runtime.ports.grant_block_source(
                 runtime.actor, runtime.target,
                 effect.get("condition_spec", {}),
-                runtime.source_name if runtime.source_name != "" else "格挡")
+                runtime.source_name if runtime.source_name != "" else "格挡",
+                "", runtime.source_metadata())
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [result.get("record", {})]
             return EffectResultScript.succeeded("获得1次格挡") \
                 if result.get("success", false) else EffectResultScript.failed("格挡来源建立失败")
+        "grant_deflection":
+            var threshold: int = value_resolver.resolve(
+                effect.get("threshold", effect.get("amount", 0)), runtime)
+            var result: Dictionary = runtime.ports.grant_deflection_source(
+                runtime.actor, runtime.target, threshold,
+                runtime.source_name if runtime.source_name != "" else "卸力",
+                "", runtime.source_metadata())
+            if effect.has("capture") and result.get("success", false):
+                runtime.captures[str(effect["capture"])] = [result.get(
+                    "record", {})]
+            return EffectResultScript.succeeded("获得1次卸力%d" % threshold) \
+                if result.get("success", false) else EffectResultScript.failed(
+                    str(result.get("reason", "卸力来源建立失败")))
         "register_challenge":
             var threshold: int = value_resolver.resolve(effect.get("threshold", 0), runtime)
             var result: Dictionary = runtime.ports.register_challenge(
@@ -295,3 +310,12 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             if effect.has("condition"):
                 validator.report_error(
                     scope + ".condition", "旧字符串格挡条件已废弃，请使用 condition_spec")
+        "grant_deflection":
+            if effect.get("threshold", effect.get("amount", 0)) is Dictionary:
+                validator.validate_amount_spec(
+                    effect.get("threshold", effect.get("amount", 0)),
+                    scope + ".threshold")
+            else:
+                validator.validate_non_negative_integer(
+                    effect.get("threshold", effect.get("amount", 0)),
+                    scope + ".threshold", "threshold")

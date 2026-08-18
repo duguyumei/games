@@ -60,6 +60,21 @@ var damage_segment_token: String = ""
 var cause: String = ""
 var direct_attack: bool = false
 var reflection_damage: bool = false
+var attack_amount: int = 0
+var action_window_id: String = ""
+var execution_token: String = ""
+var source_token: String = ""
+var cancel_kind: String = "none"
+var threshold: int = 0
+var consumed: bool = false
+var succeeded: bool = false
+var pierced: bool = false
+var checked_source_tokens: Array = []
+var cancel_source_kind: String = ""
+var cancel_source_id: String = ""
+var cancel_source_name: String = ""
+var cancel_source_instance_key: String = ""
+var cancel_trigger_mode: String = ""
 var life_before: int = 0
 var life_after: int = 0
 var life_loss_before_intervention: int = 0
@@ -116,6 +131,9 @@ var normal_segment_count: int = 0
 var true_segment_count: int = 0
 var poison_segment_count: int = 0
 var blocked_segment_count: int = 0
+var block_canceled_segment_count: int = 0
+var deflection_canceled_segment_count: int = 0
+var total_canceled_segment_count: int = 0
 var life_loss_canceled_segment_count: int = 0
 var damage_segment_tokens: Array = []
 var sequence_before: Array = []
@@ -182,6 +200,22 @@ func configure(values: Dictionary):
     cause = str(values.get("cause", ""))
     direct_attack = bool(values.get("direct_attack", false))
     reflection_damage = bool(values.get("reflection_damage", false))
+    attack_amount = int(values.get("attack_amount", values.get("amount", 0)))
+    action_window_id = str(values.get("action_window_id", ""))
+    execution_token = str(values.get("execution_token", ""))
+    source_token = str(values.get("source_token", ""))
+    cancel_kind = str(values.get("cancel_kind", "none"))
+    threshold = int(values.get("threshold", 0))
+    consumed = bool(values.get("consumed", false))
+    succeeded = bool(values.get("succeeded", false))
+    pierced = bool(values.get("pierced", false))
+    checked_source_tokens = values.get("checked_source_tokens", []).duplicate()
+    cancel_source_kind = str(values.get("cancel_source_kind", ""))
+    cancel_source_id = str(values.get("cancel_source_id", ""))
+    cancel_source_name = str(values.get("cancel_source_name", ""))
+    cancel_source_instance_key = str(values.get(
+        "cancel_source_instance_key", ""))
+    cancel_trigger_mode = str(values.get("cancel_trigger_mode", ""))
     life_before = int(values.get("life_before", 0))
     life_after = int(values.get("life_after", 0))
     life_loss_before_intervention = int(values.get(
@@ -245,6 +279,12 @@ func configure(values: Dictionary):
     true_segment_count = int(values.get("true_segment_count", 0))
     poison_segment_count = int(values.get("poison_segment_count", 0))
     blocked_segment_count = int(values.get("blocked_segment_count", 0))
+    block_canceled_segment_count = int(values.get(
+        "block_canceled_segment_count", 0))
+    deflection_canceled_segment_count = int(values.get(
+        "deflection_canceled_segment_count", 0))
+    total_canceled_segment_count = int(values.get(
+        "total_canceled_segment_count", 0))
     life_loss_canceled_segment_count = int(values.get(
         "life_loss_canceled_segment_count", 0))
     damage_segment_tokens = values.get(
@@ -318,6 +358,21 @@ func for_invocation(current_invocation):
         "cause": cause,
         "direct_attack": direct_attack,
         "reflection_damage": reflection_damage,
+        "attack_amount": attack_amount,
+        "action_window_id": action_window_id,
+        "execution_token": execution_token,
+        "source_token": source_token,
+        "cancel_kind": cancel_kind,
+        "threshold": threshold,
+        "consumed": consumed,
+        "succeeded": succeeded,
+        "pierced": pierced,
+        "checked_source_tokens": checked_source_tokens,
+        "cancel_source_kind": cancel_source_kind,
+        "cancel_source_id": cancel_source_id,
+        "cancel_source_name": cancel_source_name,
+        "cancel_source_instance_key": cancel_source_instance_key,
+        "cancel_trigger_mode": cancel_trigger_mode,
         "life_before": life_before,
         "life_after": life_after,
         "life_loss_before_intervention": life_loss_before_intervention,
@@ -374,6 +429,9 @@ func for_invocation(current_invocation):
         "true_segment_count": true_segment_count,
         "poison_segment_count": poison_segment_count,
         "blocked_segment_count": blocked_segment_count,
+        "block_canceled_segment_count": block_canceled_segment_count,
+        "deflection_canceled_segment_count": deflection_canceled_segment_count,
+        "total_canceled_segment_count": total_canceled_segment_count,
         "life_loss_canceled_segment_count": life_loss_canceled_segment_count,
         "damage_segment_tokens": damage_segment_tokens,
         "sequence_before": sequence_before,
@@ -412,6 +470,21 @@ func public_effect_values() -> Dictionary:
         "cause": cause,
         "direct_attack": direct_attack,
         "reflection_damage": reflection_damage,
+        "attack_amount": attack_amount,
+        "action_window_id": action_window_id,
+        "execution_token": execution_token,
+        "source_token": source_token,
+        "cancel_kind": cancel_kind,
+        "threshold": threshold,
+        "consumed": consumed,
+        "succeeded": succeeded,
+        "pierced": pierced,
+        "checked_source_tokens": checked_source_tokens.duplicate(),
+        "cancel_source_kind": cancel_source_kind,
+        "cancel_source_id": cancel_source_id,
+        "cancel_source_name": cancel_source_name,
+        "cancel_source_instance_key": cancel_source_instance_key,
+        "cancel_trigger_mode": cancel_trigger_mode,
         "life_before": life_before,
         "life_after": life_after,
         "life_loss_before_intervention": life_loss_before_intervention,
@@ -498,6 +571,9 @@ func public_effect_values() -> Dictionary:
         "true_segment_count": true_segment_count,
         "poison_segment_count": poison_segment_count,
         "blocked_segment_count": blocked_segment_count,
+        "block_canceled_segment_count": block_canceled_segment_count,
+        "deflection_canceled_segment_count": deflection_canceled_segment_count,
+        "total_canceled_segment_count": total_canceled_segment_count,
         "life_loss_canceled_segment_count": life_loss_canceled_segment_count,
         "damage_segment_tokens": damage_segment_tokens.duplicate(),
         "sequence_before": sequence_before.duplicate(true),

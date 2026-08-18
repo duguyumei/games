@@ -301,8 +301,44 @@ func grant_block_source(
     var record := side.add_block_source(
         condition, source_token, target_owner_id, window_id,
         label, true, metadata)
-    _emit_source_state_changed("block_source_changed", side, record, "established")
+    var emitted := _emit_source_state_changed(
+        "block_source_changed", side, record, "established")
+    if not emitted.get("success", false):
+        side.block_sources.erase(record)
+        return {"success": false, "reason": emitted.get(
+            "reason", "格挡来源建立事件失败")}
     return {"success": true, "record": record, "source_token": record["source_token"]}
+
+
+func grant_deflection_source(
+        side: BattleSide,
+        target_side: BattleSide,
+        threshold: int,
+        label: String,
+        source_token: String = "",
+        metadata: Dictionary = {}) -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "卸力来源缺少持有者"}
+    if threshold < 0:
+        return {"success": false, "reason": "卸力阈值不得小于0"}
+    var target_owner_id := str(target_side.owner_id) \
+        if target_side != null else ""
+    var window_id := _current_action_window_id() \
+        if _can_bind_current_source(target_owner_id) else ""
+    var record := side.add_deflection_source(
+        threshold, source_token, target_owner_id, window_id,
+        label, true, metadata)
+    var emitted := _emit_source_state_changed(
+        "block_source_changed", side, record, "established")
+    if not emitted.get("success", false):
+        side.block_sources.erase(record)
+        return {"success": false, "reason": emitted.get(
+            "reason", "卸力来源建立事件失败")}
+    return {
+        "success": true,
+        "record": record,
+        "source_token": str(record.get("source_token", "")),
+    }
 
 
 func register_challenge(
@@ -412,11 +448,11 @@ func _emit_source_state_changed(
         side: BattleSide,
         record: Dictionary,
         change: String,
-        payload: Dictionary = {}) -> void:
+        payload: Dictionary = {}) -> Dictionary:
     if _committed_event_service == null:
-        return
+        return {"success": true, "receipt": {}}
     var serial: int = int(_committed_event_service.next_serial())
-    _committed_event_service.commit(event_kind, {
+    return _committed_event_service.commit(event_kind, {
         "event_token": _committed_event_service.make_token(
             event_kind, side, serial, str(record.get("source_token", ""))),
         "event_serial": serial,
@@ -425,7 +461,17 @@ func _emit_source_state_changed(
         "round_number": _round_number(),
         "action_token": str(record.get("action_token", "")),
         "source_kind": str(record.get("source_kind", event_kind)),
+        "source_id": str(record.get("source_id", "")),
+        "source_name": str(record.get("source_name", record.get(
+            "label", ""))),
+        "source_instance_key": str(record.get("source_instance_key", "")),
+        "trigger_mode": str(record.get("trigger_mode", "direct")),
         "source_token": str(record.get("source_token", "")),
+        "cancel_kind": str(record.get("cancel_kind", "block")),
+        "threshold": int(record.get("threshold", 0)),
+        "established_order": int(record.get("established_order", 0)),
+        "window_id": str(record.get("window_id", "")),
+        "waiting_for_action": bool(record.get("waiting_for_action", false)),
         "change": change,
         "payload": payload.duplicate(true),
         "public_state": record.duplicate(true),

@@ -226,8 +226,10 @@ func _buffer_damage(
     if not _shadows.has(target_id):
         _shadows[target_id] = {"life": target.life, "defense": target.defense}
     var shadow: Dictionary = _shadows[target_id]
+    var preview_amount := 0 if bool(resolution_metadata.get(
+        "preview_attack_canceled", false)) else amount
     var preview := preview_receive_damage(
-        shadow, amount, damage_type, poison_defense_intervention)
+        shadow, preview_amount, damage_type, poison_defense_intervention)
     _shadows[target_id] = shadow
     _buffer.append({
         "actor": actor,

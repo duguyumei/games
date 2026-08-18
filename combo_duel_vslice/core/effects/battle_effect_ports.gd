@@ -421,6 +421,25 @@ func grant_block_source(
     return _source_resource_effect_service.grant_block_source(
         side, target_side, condition, label, source_token, metadata)
 
+
+func grant_deflection_source(
+        side: BattleSide,
+        target_side: BattleSide,
+        threshold: int,
+        label: String,
+        source_token: String = "",
+        metadata: Dictionary = {}) -> Dictionary:
+    return _source_resource_effect_service.grant_deflection_source(
+        side, target_side, threshold, label, source_token, metadata)
+
+
+func has_deflection_source(side: BattleSide) -> bool:
+    return side != null and side.has_deflection_source()
+
+
+func public_deflection_sources(side: BattleSide) -> Array:
+    return side.public_deflection_sources() if side != null else []
+
 func register_challenge(
         context,
         threshold: int,

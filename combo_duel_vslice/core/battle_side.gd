@@ -1043,8 +1043,10 @@ func tick_round_limited_sources() -> Dictionary:
 func expire_action_window_sources(window_id: String) -> Dictionary:
     var expired_reflection: Array[String] = []
     var expired_blocks: Array[String] = []
+    var expired_deflections: Array[String] = []
     var expired_reflection_records: Array = []
     var expired_block_records: Array = []
+    var expired_deflection_records: Array = []
     for record in reflection_sources.duplicate():
         if str(record.get("expiry_kind", "")) == "action_window_end" \
                 and str(record.get("expiry_window_id", "")) == window_id:
@@ -1053,14 +1055,20 @@ func expire_action_window_sources(window_id: String) -> Dictionary:
             reflection_sources.erase(record)
     for record in block_sources.duplicate():
         if str(record.get("window_id", "")) == window_id:
-            expired_blocks.append(str(record.get("source_token", "")))
-            expired_block_records.append(record.duplicate(true))
+            if str(record.get("cancel_kind", "block")) == "deflection":
+                expired_deflections.append(str(record.get("source_token", "")))
+                expired_deflection_records.append(record.duplicate(true))
+            else:
+                expired_blocks.append(str(record.get("source_token", "")))
+                expired_block_records.append(record.duplicate(true))
             block_sources.erase(record)
     _refresh_reflection_aggregate()
     return {
         "reflection": expired_reflection, "blocks": expired_blocks,
+        "deflections": expired_deflections,
         "reflection_records": expired_reflection_records,
         "block_records": expired_block_records,
+        "deflection_records": expired_deflection_records,
     }
 
 func add_block_source(
@@ -1075,6 +1083,7 @@ func add_block_source(
         else next_combat_source_token("block")
     var record := {
         "source_token": token,
+        "cancel_kind": "block",
         "condition_spec": _normalized_block_condition(condition),
         "established_order": _combat_source_serial,
         "target_owner_id": target_owner_id,
@@ -1084,6 +1093,43 @@ func add_block_source(
         "public": is_public,
         "metadata": metadata.duplicate(true),
     }
+    for field in [
+            "source_kind", "source_id", "source_name",
+            "source_instance_key", "trigger_mode"]:
+        if metadata.has(field):
+            record[field] = str(metadata[field])
+    _combat_source_serial += 1
+    block_sources.append(record)
+    return record
+
+
+func add_deflection_source(
+        threshold: int,
+        source_token: String = "",
+        target_owner_id: String = "",
+        window_id: String = "",
+        label: String = "卸力",
+        is_public: bool = true,
+        metadata: Dictionary = {}) -> Dictionary:
+    var token := source_token if source_token != "" \
+        else next_combat_source_token("deflection")
+    var record := {
+        "source_token": token,
+        "cancel_kind": "deflection",
+        "threshold": maxi(0, threshold),
+        "established_order": _combat_source_serial,
+        "target_owner_id": target_owner_id,
+        "window_id": window_id,
+        "waiting_for_action": window_id == "",
+        "label": label,
+        "public": is_public,
+        "metadata": metadata.duplicate(true),
+    }
+    for field in [
+            "source_kind", "source_id", "source_name",
+            "source_instance_key", "trigger_mode"]:
+        if metadata.has(field):
+            record[field] = str(metadata[field])
     _combat_source_serial += 1
     block_sources.append(record)
     return record
@@ -1108,12 +1154,15 @@ func try_consume_block(
         defender_hand_count: int = -1,
         attacker_hand_count: int = -1) -> Dictionary:
     if amount <= 0 or damage_type not in ["normal", "true"]:
-        return {"blocked": false}
+        return {"blocked": false, "canceled": false,
+            "cancel_kind": "none", "checked_source_tokens": []}
     var ordered := block_sources.duplicate()
     ordered.sort_custom(func(left, right):
         return int(left.get("established_order", 0)) \
             < int(right.get("established_order", 0)))
     for record in ordered:
+        if str(record.get("cancel_kind", "block")) != "block":
+            continue
         if bool(record.get("waiting_for_action", false)) \
                 or str(record.get("window_id", "")) != window_id \
                 or str(record.get("target_owner_id", "")) != attacker_owner_id:
@@ -1127,8 +1176,111 @@ func try_consume_block(
             }, self):
             continue
         block_sources.erase(record)
-        return {"blocked": true, "source": record, "source_token": record["source_token"]}
-    return {"blocked": false}
+        return {"blocked": true, "canceled": true,
+            "cancel_kind": "block", "source": record,
+            "source_token": record["source_token"],
+            "checked_source_tokens": [str(record.get("source_token", ""))]}
+    return {"blocked": false, "canceled": false,
+        "cancel_kind": "none", "checked_source_tokens": []}
+
+
+func resolve_attack_cancellation(
+        amount: int,
+        damage_type: String,
+        attacker_owner_id: String,
+        window_id: String,
+        defender_hand_count: int = -1,
+        attacker_hand_count: int = -1) -> Dictionary:
+    var base := {
+        "canceled": false, "blocked": false, "cancel_kind": "none",
+        "source": {}, "source_token": "", "threshold": 0,
+        "consumed": false, "pierced": false,
+        "checked_source_tokens": [], "deflection_results": [],
+    }
+    if amount <= 0 or damage_type not in ["normal", "true"]:
+        return base
+    var ordered := block_sources.duplicate()
+    ordered.sort_custom(func(left, right):
+        return int(left.get("established_order", 0)) \
+            < int(right.get("established_order", 0)))
+    # 卸力严格按建立顺序消费。击穿也必须消费，并继续检查后续来源。
+    for record in ordered:
+        if str(record.get("cancel_kind", "block")) != "deflection":
+            continue
+        if bool(record.get("waiting_for_action", false)) \
+                or str(record.get("window_id", "")) != window_id \
+                or str(record.get("target_owner_id", "")) != attacker_owner_id:
+            continue
+        var token := str(record.get("source_token", ""))
+        base["checked_source_tokens"].append(token)
+        block_sources.erase(record)
+        var threshold := maxi(0, int(record.get("threshold", 0)))
+        var succeeded := amount <= threshold
+        var deflection_result := {
+            "source": record,
+            "source_token": token,
+            "threshold": threshold,
+            "attack_amount": amount,
+            "succeeded": succeeded,
+            "pierced": not succeeded,
+            "consumed": true,
+        }
+        base["deflection_results"].append(deflection_result)
+        base.merge({
+            "source": record, "source_token": token,
+            "threshold": threshold, "consumed": true,
+            "pierced": not succeeded,
+        }, true)
+        if succeeded:
+            base.merge({
+                "canceled": true, "cancel_kind": "deflection",
+                "source": record, "source_token": token,
+                "threshold": threshold, "consumed": true,
+                "pierced": false,
+            }, true)
+            return base
+    # 只有全部卸力被击穿后才检查格挡；格挡条件保持原有语义。
+    for record in ordered:
+        if str(record.get("cancel_kind", "block")) != "block":
+            continue
+        if bool(record.get("waiting_for_action", false)) \
+                or str(record.get("window_id", "")) != window_id \
+                or str(record.get("target_owner_id", "")) != attacker_owner_id:
+            continue
+        var token := str(record.get("source_token", ""))
+        base["checked_source_tokens"].append(token)
+        var condition_spec: Dictionary = record.get("condition_spec", {})
+        if not condition_spec_registry.event_matches(condition_spec, {
+                "amount": amount, "damage_type": damage_type,
+                "defense": defense,
+                "defender_hand_count": defender_hand_count,
+                "attacker_hand_count": attacker_hand_count,
+            }, self):
+            continue
+        block_sources.erase(record)
+        base.merge({
+            "canceled": true, "blocked": true, "cancel_kind": "block",
+            "source": record, "source_token": token, "threshold": 0,
+            "consumed": true, "pierced": false,
+        }, true)
+        return base
+    return base
+
+
+func preview_attack_cancellation(
+        amount: int,
+        damage_type: String,
+        attacker_owner_id: String,
+        window_id: String,
+        defender_hand_count: int = -1,
+        attacker_hand_count: int = -1) -> Dictionary:
+    var snapshot := block_sources.duplicate()
+    var result := resolve_attack_cancellation(
+        amount, damage_type, attacker_owner_id, window_id,
+        defender_hand_count, attacker_hand_count)
+    block_sources.assign(snapshot)
+    result["preview"] = true
+    return result
 
 func _normalized_block_condition(condition) -> Dictionary:
     if condition is Dictionary:
@@ -1213,10 +1365,28 @@ func public_reflection_true_damage_sources() -> Array:
 func public_block_sources() -> Array:
     var result: Array = []
     for record in block_sources:
-        if bool(record.get("public", true)):
+        if str(record.get("cancel_kind", "block")) == "block" \
+                and bool(record.get("public", true)):
             result.append(_public_source(record, [
-                "condition", "waiting_for_action", "window_id", "label"]))
+                "condition_spec", "waiting_for_action", "window_id", "label"]))
     return result
+
+
+func public_deflection_sources() -> Array:
+    var result: Array = []
+    for record in block_sources:
+        if str(record.get("cancel_kind", "block")) == "deflection" \
+                and bool(record.get("public", true)):
+            result.append(_public_source(record, [
+                "threshold", "waiting_for_action", "window_id", "label"]))
+    return result
+
+
+func has_deflection_source() -> bool:
+    for record in block_sources:
+        if str(record.get("cancel_kind", "block")) == "deflection":
+            return true
+    return false
 
 func public_challenge_records() -> Array:
     var result: Array = []
@@ -1247,7 +1417,16 @@ func _refresh_reflection_aggregate() -> void:
     current_reflection_source_token = str(latest.get("source_token", ""))
 
 func _public_source(record: Dictionary, fields: Array) -> Dictionary:
-    var result := {"source_token": str(record.get("source_token", ""))}
+    var result := {
+        "source_token": str(record.get("source_token", "")),
+        "cancel_kind": str(record.get("cancel_kind", "")),
+        "established_order": int(record.get("established_order", 0)),
+        "source_kind": str(record.get("source_kind", "")),
+        "source_id": str(record.get("source_id", "")),
+        "source_name": str(record.get("source_name", "")),
+        "source_instance_key": str(record.get("source_instance_key", "")),
+        "trigger_mode": str(record.get("trigger_mode", "")),
+    }
     for field_value in fields:
         var field := str(field_value)
         result[field] = record.get(field)

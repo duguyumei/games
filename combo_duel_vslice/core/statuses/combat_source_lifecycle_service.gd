@@ -28,6 +28,7 @@ func resolve_action_window(sides: Array, window_id: String) -> Dictionary:
     var resolved_challenges := 0
     var expired_reflection := 0
     var expired_blocks := 0
+    var expired_deflections := 0
     for side in sides:
         resolved_challenges += _resolve_challenges_for_side(side, window_id)
     for side in sides:
@@ -36,11 +37,14 @@ func resolve_action_window(sides: Array, window_id: String) -> Dictionary:
         expired_reflection += int(expired.get(
             "reflection_expired_count", 0))
         expired_blocks += int(expired.get("block_expired_count", 0))
+        expired_deflections += int(expired.get(
+            "deflection_expired_count", 0))
     return {
         "success": true,
         "resolved_challenge_count": resolved_challenges,
         "reflection_expired_count": expired_reflection,
         "block_expired_count": expired_blocks,
+        "deflection_expired_count": expired_deflections,
     }
 
 
@@ -151,6 +155,7 @@ func _expire_action_window_sources(side, window_id: String) -> Dictionary:
         return {
             "reflection_expired_count": 0,
             "block_expired_count": 0,
+            "deflection_expired_count": 0,
         }
     var expired: Dictionary = side.expire_action_window_sources(window_id)
     for record in expired.get("reflection_records", []):
@@ -159,16 +164,21 @@ func _expire_action_window_sources(side, window_id: String) -> Dictionary:
     for record in expired.get("block_records", []):
         _effect_ports().notify_source_changed(
             "block_source_changed", side, record, "expired")
+    for record in expired.get("deflection_records", []):
+        _effect_ports().notify_source_changed(
+            "block_source_changed", side, record, "expired")
     var reflection_count: int = expired.get("reflection", []).size()
     var block_count: int = expired.get("blocks", []).size()
-    if reflection_count > 0 or block_count > 0:
+    var deflection_count: int = expired.get("deflections", []).size()
+    if reflection_count > 0 or block_count > 0 or deflection_count > 0:
         _effect_ports().add_history(
             "source_expiry", "%s行动窗来源到期" % side.name,
-            "战斗来源", "成功", "反震%d／格挡%d" % [
-                reflection_count, block_count])
+            "战斗来源", "成功", "反震%d／格挡%d／卸力%d" % [
+                reflection_count, block_count, deflection_count])
     return {
         "reflection_expired_count": reflection_count,
         "block_expired_count": block_count,
+        "deflection_expired_count": deflection_count,
     }
 
 

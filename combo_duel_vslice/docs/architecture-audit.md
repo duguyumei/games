@@ -1499,7 +1499,7 @@ committed事件守卫与既有失败报告协议，没有增加生命Service、�
 查询的`base_value`是防御实际吸收后的预计生命损失，最终值必须位于`0..base_value`。
 
 `ComboDamageResolver`现只负责类型统一的承伤计划和stale-plan校验提交；正式编排仍归
-`BattleSurvivalEffectService`。真实顺序固定为伤害修正、格挡、承伤计划、生命查询、一次性防御/生命
+`BattleSurvivalEffectService`。真实顺序固定为伤害修正、卸力、格挡、承伤计划、生命查询、一次性防御/生命
 提交、`damage_resolved`、反震。普通、真伤、毒伤与反震没有各自的生命写入算法；生命取消不回退已
 吸收防御、不伪造`damage_blocked`，并仍以`life_lost=0`提交`damage_resolved`。行动统计、邀战、毒结果、
 反震结果、条件和ValueSpec继续只读取干预后的`life_lost`。
@@ -1510,7 +1510,7 @@ committed事件守卫与既有失败报告协议，没有增加生命Service、�
 序号、待发布通知、行动统计和日志；`ActionResolver`显式检查失败。低层
 `ComboDamageResolver.apply_to_target`与`BattleSide.receive_damage`仅作为无BattleRuntime装配的兼容/
 测试入口保留，正式战斗写入只经`BattleEffectPorts`Facade。本批未实现余垣护命、一甲断锋、万木代命、
-护焰周天、真气支付、护焰层数或卸力。
+护焰周天、真气支付或护焰层数；卸力公共协议由后续独立批次完成。
 
 ## 2026-08-18 功法执行唯一汇总事实
 
@@ -1529,3 +1529,35 @@ committed事件守卫与既有失败报告协议，没有增加生命Service、�
 效果失败、中止、重置和战斗结束会丢弃未完成记录。`BattleEventCatalog`、被动事件Context、动态/自动
 白名单、AI公开历史及ConditionSpec均已接入该事件。本批未实现《厚壁通脉》《护焰周天》或
 `technique_echo_plan_mutation`。
+
+## 2026-08-18 卸力与统一攻击取消协议
+
+本批没有增加伤害解析器、格挡系统、行动窗口Service或事件总线。`BattleSide.block_sources`保留存档
+兼容字段名，记录新增`cancel_kind`：旧格挡默认按`block`恢复，卸力为`deflection`并冻结非负
+`threshold`；二者共用来源令牌、建立顺序、目标行动窗口、等待状态、到期和快照恢复。
+`BattleSourceResourceEffectService`与`BattleEffectPorts`新增来源中立`grant_deflection_source`，
+`FlowEffectHandler`登记通用`grant_deflection` op。公开格挡与卸力列表分离，AI、BattleSideSnapshot和
+UI保留卸力阈值、顺序、window、waiting与label。
+
+`BattleSurvivalEffectService.resolve_attack_cancellation`是普通与同步真实flush共用的窄入口。资格固定为
+`blockable=true`的敌方直接普通／真伤。入口先按`established_order`消费卸力，成功即停止，击穿仍消费
+并继续；全部击穿后才复用原ConditionSpec格挡。毒、自毒、反震、cost和非直接伤害跳过；
+`blockable=false`同时跳过两类取消。取消后不执行承伤计划、生命查询、`damage_resolved`或反震。
+同步shadow使用无副作用投影，真实flush按稳定段顺序调用同一入口。
+
+`BattleEventCatalog`新增canonical committed事件`deflection_resolved`和`attack_canceled`。前者对每次卸力
+消费提交成功／击穿事实，后者只对实际取消提交`block|deflection`子类型。格挡继续发送既有
+`damage_blocked`后再提交canonical事实，卸力不发送兼容格挡事件。CommittedEventContext、ConditionSpec、
+ValueSpec公开事件字段、自动／动态响应、AI历史和日志均复用现有设施；没有兼容事件到canonical事件的
+二次业务转发。
+
+普通伤害段现在也以既有BattleSide、committed transaction和publication transaction包住来源消费、
+事件、生命／防御写入和反震；同步flush继续使用上一批整批快照。事件Handler或后段失败恢复来源、角色、
+被动状态、receipt、execution history、序号、待发布通知、行动统计、触发队列和日志。
+`TechniqueResolutionService`改为按`attack_canceled`累计取消段，公开block、deflection与total三种计数，
+因此`damage_blocked`兼容事实不会造成重复汇总，击穿也不会误计为取消。
+
+专项`test_deflection_attack_cancel_protocol.gd`覆盖阈值边界、稳定顺序、卸力后格挡、非资格伤害、
+`blockable=false`、正式事件、生命查询／反震跳过、同步shadow／flush／失败回滚、快照生命周期、AI投影、
+效果op和执行汇总。本批未接入《朽甲成关》《群山合壁》《卸劲破隙》《受阻愈烈》或任何物品／暂缓功法，
+也没有开始`qi_consumption_transaction`。

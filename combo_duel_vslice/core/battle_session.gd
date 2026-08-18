@@ -748,6 +748,7 @@ func _side_snapshot(side) -> Dictionary:
         "reflection_sources": side.public_reflection_sources(),
         "reflection_true_damage_sources": side.public_reflection_true_damage_sources(),
         "block_sources": side.public_block_sources(),
+        "deflection_sources": side.public_deflection_sources(),
         "challenge_records": side.public_challenge_records(),
         "base_hand_limit": side.base_hand_limit(),
         "hand_limit": side.current_hand_limit(),

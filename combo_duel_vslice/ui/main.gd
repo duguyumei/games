@@ -499,6 +499,13 @@ func _refresh() -> void:
             "text": "格挡 %d" % player_state.block_sources.size(),
             "color": COLORS["blue"],
         })
+    if not player_state.deflection_sources.is_empty():
+        player_statuses.append({
+            "text": "卸力 %s" % "/".join(
+                player_state.deflection_sources.map(func(source):
+                    return str(source.get("threshold", 0)))),
+            "color": COLORS["purple"],
+        })
     if not player_state.challenge_records.is_empty():
         player_statuses.append({
             "text": "邀战 %d" % player_state.challenge_records.size(),
@@ -524,6 +531,13 @@ func _refresh() -> void:
         enemy_statuses.append({
             "text": "格挡 %d" % enemy_state.block_sources.size(),
             "color": COLORS["blue"],
+        })
+    if not enemy_state.deflection_sources.is_empty():
+        enemy_statuses.append({
+            "text": "卸力 %s" % "/".join(
+                enemy_state.deflection_sources.map(func(source):
+                    return str(source.get("threshold", 0)))),
+            "color": COLORS["purple"],
         })
     if not enemy_state.challenge_records.is_empty():
         enemy_statuses.append({

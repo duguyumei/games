@@ -36,6 +36,7 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
         "reflection_sources": side.public_reflection_sources(),
         "reflection_true_damage_sources": side.public_reflection_true_damage_sources(),
         "block_sources": side.public_block_sources(),
+        "deflection_sources": side.public_deflection_sources(),
         "challenge_records": side.public_challenge_records(),
         "last_successful_hand_id": str(side.last_successful_technique_hand_id),
         "draw_pile_count": side.draw_pile.size(),

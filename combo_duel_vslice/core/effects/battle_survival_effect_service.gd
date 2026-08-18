@@ -81,30 +81,43 @@ func deal_damage(
         poison_defense_intervention = _poison_defense_intervention(
             actor, target, int(resolved_amount["amount"]), source_kind, action_token)
     if _damage_resolver.is_buffering():
+        var preview_cancellation := _preview_attack_cancellation(
+            actor, target, int(resolved_amount["amount"]), resolved_type,
+            resolved_metadata)
+        resolved_metadata["preview_attack_canceled"] = bool(
+            preview_cancellation.get("canceled", false))
+        resolved_metadata["preview_attack_cancellation"] = \
+            preview_cancellation.duplicate(true)
         var buffered: Dictionary = _damage_resolver.resolve(
             actor, target, amount, source_kind, resolved_type == "true",
             _status_system, null, resolved_type,
             poison_defense_intervention, resolved_metadata)
         buffered["success"] = true
+        buffered["attack_cancellation_preview"] = preview_cancellation
         return buffered
 
     final_override = int(resolved_amount["amount"])
     resolved_metadata["requested_damage"] = amount
     resolved_metadata["final_damage"] = int(final_override)
+    var damage_transaction := _capture_synchronized_flush_state()
+    if _committed_event_service != null:
+        _committed_event_service.begin_publication_transaction()
     var damage_segment_token := _next_damage_segment_token(
         actor, target, action_token)
     resolved_metadata["damage_segment_token"] = damage_segment_token
-    var block_result := _try_block_damage(
+    var cancellation := resolve_attack_cancellation(
         actor, target, int(final_override), resolved_type, source_kind,
-        action_token, resolved_metadata)
-    if block_result.get("blocked", false):
-        _emit_damage_blocked(
-            actor, target, int(final_override), resolved_type, source_kind,
-            action_token, block_result, resolved_metadata,
-            damage_segment_token)
-        return _blocked_damage_result(
-            int(final_override), resolved_type, block_result,
+        action_token, resolved_metadata, damage_segment_token)
+    if not cancellation.get("success", false):
+        return _rollback_damage_transaction(
+            damage_transaction, str(cancellation.get(
+                "reason", "攻击取消解析失败")), damage_segment_token)
+    if cancellation.get("canceled", false):
+        var canceled_result := _canceled_attack_result(
+            int(final_override), resolved_type, cancellation,
             damage_segment_token, resolved_metadata, target)
+        _commit_damage_transaction()
+        return canceled_result
 
     var plan := ComboDamageResolver.plan_to_target(
         target, int(final_override), resolved_type,
@@ -113,7 +126,9 @@ func deal_damage(
         actor, target, amount, int(final_override), source_kind,
         resolved_type, plan, false, action_token, resolved_metadata)
     if not committed.get("success", false):
-        return committed
+        return _rollback_damage_transaction(
+            damage_transaction, str(committed.get("reason", "伤害提交失败")),
+            damage_segment_token, committed)
     var result: Dictionary = committed
     if resolved_type == "poison" \
             and resolved_metadata.has("poison_modifier"):
@@ -123,14 +138,27 @@ func deal_damage(
     result["defense_reduction_cause"] = "damage_absorption"
     _record_action_damage(actor, target, result)
     _log_damage(actor, target, int(result["final_amount"]), source_kind, result)
-    _emit_damage_resolved(
+    var damage_event := _emit_damage_resolved(
         actor, target, amount, source_kind, resolved_type, result, false,
         action_token, source_metadata)
-    _emit_damage_absorption_defense_reduced(
+    if not damage_event.get("success", false):
+        return _rollback_damage_transaction(
+            damage_transaction, str(damage_event.get(
+                "reason", "damage_resolved提交失败")), damage_segment_token)
+    var defense_event := _emit_damage_absorption_defense_reduced(
         actor, target, result, source_kind, action_token, source_metadata)
+    if not defense_event.get("success", false):
+        return _rollback_damage_transaction(
+            damage_transaction, str(defense_event.get(
+                "reason", "defense_reduced提交失败")), damage_segment_token)
     result["reflection_result"] = _resolve_reflection(
         actor, target, source_kind, resolved_type, result, action_token,
         resolved_metadata)
+    if not result["reflection_result"].get("success", false):
+        return _rollback_damage_transaction(
+            damage_transaction, str(result["reflection_result"].get(
+                "reason", "反震结算失败")), damage_segment_token)
+    _commit_damage_transaction()
     return result
 
 
@@ -555,6 +583,30 @@ func _restore_synchronized_flush_state(snapshot: Dictionary) -> void:
         "damage_segment_serial", _damage_segment_serial))
 
 
+func _rollback_damage_transaction(
+        snapshot: Dictionary,
+        reason: String,
+        damage_segment_token: String,
+        extra: Dictionary = {}) -> Dictionary:
+    if _committed_event_service != null:
+        _committed_event_service.rollback_publication_transaction()
+    _restore_synchronized_flush_state(snapshot)
+    var result := extra.duplicate(true)
+    result.merge({
+        "success": false,
+        "buffered": false,
+        "reason": reason,
+        "damage_segment_token": damage_segment_token,
+        "rolled_back": true,
+    }, true)
+    return result
+
+
+func _commit_damage_transaction() -> void:
+    if _committed_event_service != null:
+        _committed_event_service.commit_publication_transaction()
+
+
 func _commit_damage_plan(
         actor,
         target,
@@ -763,21 +815,20 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
     var segment_token := _next_damage_segment_token(
         actor, target, resolved_action_token)
     metadata["damage_segment_token"] = segment_token
-    var block_result := _try_block_damage(
+    var cancellation := resolve_attack_cancellation(
         actor, target, final_amount, damage_type, source_kind,
-        resolved_action_token, metadata)
-    if block_result.get("blocked", false):
-        _emit_damage_blocked(
-            actor, target, final_amount, damage_type, source_kind,
-            resolved_action_token, block_result, metadata, segment_token)
-        var blocked_result := _blocked_damage_result(
-            final_amount, damage_type, block_result, segment_token, metadata,
+        resolved_action_token, metadata, segment_token)
+    if not cancellation.get("success", false):
+        return cancellation
+    if cancellation.get("canceled", false):
+        var canceled_result := _canceled_attack_result(
+            final_amount, damage_type, cancellation, segment_token, metadata,
             target)
-        var blocked_resolution := _synchronized_resolution(
-            intent, final_amount, blocked_result, metadata, true, block_result)
+        var canceled_resolution := _synchronized_resolution(
+            intent, final_amount, canceled_result, metadata, cancellation)
         return {
             "success": true,
-            "resolution": blocked_resolution,
+            "resolution": canceled_resolution,
             "stop_actor": false,
         }
     var poison_defense_intervention := 0
@@ -797,11 +848,17 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
     result["defense_reduction_cause"] = "damage_absorption"
     _record_action_damage(actor, target, result)
     _log_damage(actor, target, final_amount, source_kind, result)
-    _emit_damage_resolved(
+    var damage_event := _emit_damage_resolved(
         actor, target, requested_amount, source_kind, damage_type,
         result, true, resolved_action_token, metadata)
-    _emit_damage_absorption_defense_reduced(
+    if not damage_event.get("success", false):
+        return {"success": false, "reason": damage_event.get(
+            "reason", "同步damage_resolved提交失败")}
+    var defense_event := _emit_damage_absorption_defense_reduced(
         actor, target, result, source_kind, resolved_action_token, metadata)
+    if not defense_event.get("success", false):
+        return {"success": false, "reason": defense_event.get(
+            "reason", "同步defense_reduced提交失败")}
     var reflection := _resolve_reflection(
         actor, target, source_kind, damage_type, result,
         resolved_action_token, metadata)
@@ -814,7 +871,7 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
     return {
         "success": true,
         "resolution": _synchronized_resolution(
-            intent, final_amount, result, metadata, false, {}),
+            intent, final_amount, result, metadata),
         "stop_actor": int(actor.life) <= 0,
     }
 
@@ -824,8 +881,9 @@ func _synchronized_resolution(
         final_amount: int,
         result: Dictionary,
         metadata: Dictionary,
-        blocked: bool,
-        block_result: Dictionary) -> Dictionary:
+        cancellation: Dictionary = {}) -> Dictionary:
+    var canceled := bool(cancellation.get("canceled", false))
+    var cancel_kind := str(cancellation.get("cancel_kind", "none"))
     return {
         "actor": intent["actor"],
         "target": intent["target"],
@@ -837,16 +895,20 @@ func _synchronized_resolution(
         "preview": intent["preview"],
         "resolution_metadata": metadata.duplicate(true),
         "action_token": str(metadata.get("action_token", "")),
-        "blocked": blocked,
-        "block_result": block_result.duplicate(true),
+        "canceled": canceled,
+        "cancel_kind": cancel_kind,
+        "blocked": cancel_kind == "block",
+        "block_result": cancellation.duplicate(true) \
+            if cancel_kind == "block" else {},
+        "attack_cancellation": cancellation.duplicate(true),
         "result": result,
     }
 
 
-func _blocked_damage_result(
+func _canceled_attack_result(
         final_amount: int,
         damage_type: String,
-        block_result: Dictionary,
+        cancellation: Dictionary,
         segment_token: String,
         metadata: Dictionary,
         target = null) -> Dictionary:
@@ -855,7 +917,9 @@ func _blocked_damage_result(
     return {
         "success": true,
         "buffered": false,
-        "blocked": true,
+        "canceled": true,
+        "cancel_kind": str(cancellation.get("cancel_kind", "none")),
+        "blocked": str(cancellation.get("cancel_kind", "none")) == "block",
         "final_amount": 0,
         "requested": final_amount,
         "defense_before": defense,
@@ -876,7 +940,9 @@ func _blocked_damage_result(
         "reflection_damage": bool(metadata.get("reflection_damage", false)),
         "life_loss_intervention_breakdown": [],
         "life_loss_query_fingerprint": "",
-        "block_result": block_result,
+        "block_result": cancellation if str(cancellation.get(
+            "cancel_kind", "none")) == "block" else {},
+        "attack_cancellation": cancellation,
     }
 
 
@@ -957,7 +1023,15 @@ func _resolve_reflection(
         event_values["event_serial"] = serial
         event_values["event_token"] = _committed_event_service.make_token(
             "reflection_resolved", defender, serial, action_token)
-        _committed_event_service.commit("reflection_resolved", event_values)
+        var committed: Dictionary = _committed_event_service.commit(
+            "reflection_resolved", event_values)
+        if not committed.get("success", false):
+            return {
+                "success": false,
+                "applied": false,
+                "reason": committed.get(
+                    "reason", "reflection_resolved提交失败"),
+            }
     if _committed_event_service == null:
         _status_system.handle_response_event("reflection_resolved", event_values)
     return {
@@ -967,23 +1041,110 @@ func _resolve_reflection(
     }
 
 
-func _try_block_damage(
+func resolve_attack_cancellation(
         actor: BattleSide,
         target: BattleSide,
         amount: int,
         damage_type: String,
-        _source_kind: String,
-        _action_token: String,
-        metadata: Dictionary) -> Dictionary:
+        source_kind: String,
+        action_token: String,
+        metadata: Dictionary,
+        damage_segment_token: String) -> Dictionary:
+    var result := {
+        "success": true,
+        "canceled": false,
+        "cancel_kind": "none",
+        "attack_amount": amount,
+        "damage_type": damage_type,
+        "damage_segment_token": damage_segment_token,
+        "source_token": "",
+        "source_instance_key": "",
+        "threshold": 0,
+        "consumed": false,
+        "pierced": false,
+        "checked_source_tokens": [],
+        "deflection_results": [],
+        "action_token": action_token,
+        "action_window_id": current_action_window_id(),
+        "execution_token": str(metadata.get(
+            "technique_execution_token", action_token)),
+    }
     if actor == null or target == null or actor == target \
             or damage_type not in ["normal", "true"] \
             or str(metadata.get("cause", "damage")) == "cost" \
             or bool(metadata.get("reflection_damage", false)) \
             or not bool(metadata.get("direct_attack", false)):
-        return {"blocked": false}
-    if not bool(metadata.get("blockable", true)):
-        return {"blocked": false}
-    return target.try_consume_block(
+        return result
+    if amount <= 0 or not bool(metadata.get("blockable", true)):
+        return result
+    var resolved: Dictionary = target.resolve_attack_cancellation(
+        amount, damage_type, str(actor.owner_id), current_action_window_id(),
+        target.actual_hand_count(), actor.actual_hand_count())
+    result.merge(resolved, true)
+    result["success"] = true
+    result["attack_amount"] = amount
+    result["damage_type"] = damage_type
+    result["damage_segment_token"] = damage_segment_token
+    result["action_token"] = action_token
+    result["action_window_id"] = current_action_window_id()
+    result["execution_token"] = str(metadata.get(
+        "technique_execution_token", action_token))
+    var source: Dictionary = result.get("source", {})
+    result["source_instance_key"] = str(source.get(
+        "source_instance_key", source.get("metadata", {}).get(
+            "source_instance_key", "")))
+    for deflection_value in result.get("deflection_results", []):
+        var deflection: Dictionary = deflection_value
+        var deflection_source: Dictionary = deflection.get("source", {})
+        var changed := _emit_source_state_changed(
+            "block_source_changed", target, deflection_source, "consumed")
+        if not changed.get("success", false):
+            return {"success": false, "reason": changed.get(
+                "reason", "卸力来源消费事件失败")}
+        var deflection_event := _emit_deflection_resolved(
+            actor, target, amount, damage_type, source_kind, action_token,
+            deflection, metadata, damage_segment_token)
+        if not deflection_event.get("success", false):
+            return {"success": false, "reason": deflection_event.get(
+                "reason", "deflection_resolved提交失败")}
+    if not bool(result.get("canceled", false)):
+        return result
+    if str(result.get("cancel_kind", "none")) == "block":
+        var changed := _emit_source_state_changed(
+            "block_source_changed", target, source, "consumed")
+        if not changed.get("success", false):
+            return {"success": false, "reason": changed.get(
+                "reason", "格挡来源消费事件失败")}
+        var blocked_event := _emit_damage_blocked(
+            actor, target, amount, damage_type, source_kind, action_token,
+            result, metadata, damage_segment_token)
+        if not blocked_event.get("success", false):
+            return {"success": false, "reason": blocked_event.get(
+                "reason", "damage_blocked提交失败")}
+    var canceled_event := _emit_attack_canceled(
+        actor, target, amount, damage_type, source_kind, action_token,
+        result, metadata, damage_segment_token)
+    if not canceled_event.get("success", false):
+        return {"success": false, "reason": canceled_event.get(
+            "reason", "attack_canceled提交失败")}
+    return result
+
+
+func _preview_attack_cancellation(
+        actor: BattleSide,
+        target: BattleSide,
+        amount: int,
+        damage_type: String,
+        metadata: Dictionary) -> Dictionary:
+    if actor == null or target == null or actor == target \
+            or amount <= 0 \
+            or damage_type not in ["normal", "true"] \
+            or str(metadata.get("cause", "damage")) == "cost" \
+            or bool(metadata.get("reflection_damage", false)) \
+            or not bool(metadata.get("direct_attack", false)) \
+            or not bool(metadata.get("blockable", true)):
+        return {"canceled": false, "cancel_kind": "none", "preview": true}
+    return target.preview_attack_cancellation(
         amount, damage_type, str(actor.owner_id), current_action_window_id(),
         target.actual_hand_count(), actor.actual_hand_count())
 
@@ -997,7 +1158,7 @@ func _emit_damage_resolved(
         result: Dictionary,
         synchronized: bool,
         action_token: String = "",
-        source_metadata: Dictionary = {}) -> void:
+        source_metadata: Dictionary = {}) -> Dictionary:
     var values := {
         "actor": actor, "target": target, "owner": actor,
         "attacker": actor, "defender": target, "holder": target,
@@ -1045,9 +1206,10 @@ func _emit_damage_resolved(
         values["event_token"] = _committed_event_service.make_token(
             "damage_resolved", actor, serial, action_token)
         values["event_serial"] = serial
-        _committed_event_service.commit("damage_resolved", values)
+        return _committed_event_service.commit("damage_resolved", values)
     if _committed_event_service == null:
         _status_system.handle_response_event("damage_resolved", values)
+    return {"success": true, "receipt": {}}
 
 
 func _emit_damage_blocked(
@@ -1059,7 +1221,7 @@ func _emit_damage_blocked(
         action_token: String,
         block_result: Dictionary,
         source_metadata: Dictionary = {},
-        damage_segment_token: String = "") -> void:
+        damage_segment_token: String = "") -> Dictionary:
     var source: Dictionary = block_result.get("source", {})
     var values := {
         "actor": actor, "attacker": actor,
@@ -1074,6 +1236,8 @@ func _emit_damage_blocked(
         "damage_type": damage_type, "true_damage": damage_type == "true",
         "source_kind": source_kind,
         "source_token": str(source.get("source_token", "")),
+        "source_instance_key": str(source_metadata.get(
+            "source_instance_key", "")),
         "action_token": action_token,
         "action_window_id": current_action_window_id(),
         "damage_segment_token": damage_segment_token,
@@ -1082,6 +1246,9 @@ func _emit_damage_blocked(
         "reflection_damage": bool(source_metadata.get(
             "reflection_damage", false)),
         "source_metadata": source.get("metadata", {}).duplicate(true),
+        "cancel_kind": "block",
+        "execution_token": str(source_metadata.get(
+            "technique_execution_token", action_token)),
     }
     for field in [
             "source_id", "source_name", "source_instance_key", "trigger_mode"]:
@@ -1090,25 +1257,156 @@ func _emit_damage_blocked(
     _trigger_queue.add_history(
         "damage_blocked", "%s格挡%s攻击" % [target.name, actor.name],
         str(source.get("label", "格挡")), "成功", "%d点%s" % [amount, damage_type])
-    _emit_source_state_changed(
-        "block_source_changed", target, source, "consumed")
     if _committed_event_service != null:
         var serial: int = int(_committed_event_service.next_serial())
         values["event_serial"] = serial
         values["event_token"] = _committed_event_service.make_token(
             "damage_blocked", target, serial, action_token)
-        _committed_event_service.commit("damage_blocked", values)
+        return _committed_event_service.commit("damage_blocked", values)
     if _committed_event_service == null:
         _status_system.handle_response_event("damage_blocked", values)
+    return {"success": true, "receipt": {}}
+
+
+func _emit_deflection_resolved(
+        actor: BattleSide,
+        target: BattleSide,
+        amount: int,
+        damage_type: String,
+        source_kind: String,
+        action_token: String,
+        deflection: Dictionary,
+        source_metadata: Dictionary,
+        damage_segment_token: String) -> Dictionary:
+    var source: Dictionary = deflection.get("source", {})
+    var values := _attack_cancellation_event_values(
+        actor, target, amount, damage_type, source_kind, action_token,
+        source, source_metadata, damage_segment_token)
+    values.merge({
+        "cancel_kind": "deflection",
+        "threshold": int(deflection.get("threshold", 0)),
+        "consumed": true,
+        "succeeded": bool(deflection.get("succeeded", false)),
+        "pierced": bool(deflection.get("pierced", false)),
+    }, true)
+    _trigger_queue.add_history(
+        "deflection_resolved",
+        "%s卸力%s攻击" % [target.name, actor.name],
+        str(source.get("label", "卸力")),
+        "成功" if bool(values["succeeded"]) else "击穿",
+        "阈值%d／攻击%d" % [int(values["threshold"]), amount])
+    if _committed_event_service != null:
+        var serial := int(_committed_event_service.next_serial())
+        values["event_serial"] = serial
+        values["event_token"] = _committed_event_service.make_token(
+            "deflection_resolved", target, serial, action_token)
+        return _committed_event_service.commit(
+            "deflection_resolved", values)
+    _status_system.handle_response_event("deflection_resolved", values)
+    return {"success": true, "receipt": {}}
+
+
+func _emit_attack_canceled(
+        actor: BattleSide,
+        target: BattleSide,
+        amount: int,
+        damage_type: String,
+        source_kind: String,
+        action_token: String,
+        cancellation: Dictionary,
+        source_metadata: Dictionary,
+        damage_segment_token: String) -> Dictionary:
+    var source: Dictionary = cancellation.get("source", {})
+    var values := _attack_cancellation_event_values(
+        actor, target, amount, damage_type, source_kind, action_token,
+        source, source_metadata, damage_segment_token)
+    values.merge({
+        "cancel_kind": str(cancellation.get("cancel_kind", "none")),
+        "threshold": int(cancellation.get("threshold", 0)),
+        "consumed": bool(cancellation.get("consumed", false)),
+        "succeeded": true,
+        "pierced": false,
+        "checked_source_tokens": cancellation.get(
+            "checked_source_tokens", []).duplicate(),
+    }, true)
+    _trigger_queue.add_history(
+        "attack_canceled",
+        "%s取消%s攻击" % [target.name, actor.name],
+        str(source.get("label", values["cancel_kind"])), "成功",
+        "%s／%d点%s" % [
+            str(values["cancel_kind"]), amount, damage_type])
+    if _committed_event_service != null:
+        var serial := int(_committed_event_service.next_serial())
+        values["event_serial"] = serial
+        values["event_token"] = _committed_event_service.make_token(
+            "attack_canceled", target, serial, action_token)
+        return _committed_event_service.commit("attack_canceled", values)
+    _status_system.handle_response_event("attack_canceled", values)
+    return {"success": true, "receipt": {}}
+
+
+func _attack_cancellation_event_values(
+        actor: BattleSide,
+        target: BattleSide,
+        amount: int,
+        damage_type: String,
+        source_kind: String,
+        action_token: String,
+        cancel_source: Dictionary,
+        source_metadata: Dictionary,
+        damage_segment_token: String) -> Dictionary:
+    var cancel_metadata: Dictionary = cancel_source.get("metadata", {})
+    return {
+        "actor": actor, "attacker": actor,
+        "target": target, "defender": target, "holder": target,
+        "include_target_owner": true,
+        "amount": amount, "attack_amount": amount,
+        "requested_amount": int(source_metadata.get(
+            "requested_damage", amount)),
+        "requested_damage": int(source_metadata.get(
+            "requested_damage", amount)),
+        "final_amount": int(source_metadata.get("final_damage", amount)),
+        "final_damage": int(source_metadata.get("final_damage", amount)),
+        "damage_type": damage_type, "true_damage": damage_type == "true",
+        "source_kind": source_kind,
+        "source_id": str(source_metadata.get("source_id", "")),
+        "source_name": str(source_metadata.get("source_name", "")),
+        "source_instance_key": str(source_metadata.get(
+            "source_instance_key", "")),
+        "trigger_mode": str(source_metadata.get("trigger_mode", "direct")),
+        "source_token": str(cancel_source.get("source_token", "")),
+        "cancel_source_kind": str(cancel_source.get(
+            "source_kind", cancel_metadata.get("source_kind", ""))),
+        "cancel_source_id": str(cancel_source.get(
+            "source_id", cancel_metadata.get("source_id", ""))),
+        "cancel_source_name": str(cancel_source.get(
+            "source_name", cancel_metadata.get("source_name", cancel_source.get(
+                "label", "")))),
+        "cancel_source_instance_key": str(cancel_source.get(
+            "source_instance_key", cancel_metadata.get(
+                "source_instance_key", ""))),
+        "cancel_trigger_mode": str(cancel_source.get(
+            "trigger_mode", cancel_metadata.get("trigger_mode", "direct"))),
+        "action_token": action_token,
+        "action_window_id": current_action_window_id(),
+        "damage_segment_token": damage_segment_token,
+        "execution_token": str(source_metadata.get(
+            "technique_execution_token", action_token)),
+        "cause": str(source_metadata.get("cause", "damage")),
+        "direct_attack": bool(source_metadata.get("direct_attack", false)),
+        "reflection_damage": bool(source_metadata.get(
+            "reflection_damage", false)),
+        "round_number": _round_number(),
+    }
 
 
 func _emit_damage_absorption_defense_reduced(
         actor, target, result: Dictionary, source_kind: String,
         action_token: String,
-        source_metadata: Dictionary = {}) -> void:
+        source_metadata: Dictionary = {}) -> Dictionary:
     var removed := int(result.get("defense_lost", 0))
     if removed <= 0 or target == null:
-        return
+        return {"success": true, "skipped": true}
     var after := int(result.get("defense_after", target.defense))
     var values := {
         "actor": actor, "target": target, "owner": target, "holder": target,
@@ -1128,20 +1426,21 @@ func _emit_damage_absorption_defense_reduced(
         values["event_serial"] = serial
         values["event_token"] = _committed_event_service.make_token(
             "defense_reduced", target, serial, action_token)
-        _committed_event_service.commit("defense_reduced", values)
+        return _committed_event_service.commit("defense_reduced", values)
     else:
         _status_system.handle_response_event("defense_reduced", values)
+    return {"success": true, "receipt": {}}
 
 
 func _emit_source_state_changed(
         event_kind: String,
         side: BattleSide,
         record: Dictionary,
-        change: String) -> void:
+        change: String) -> Dictionary:
     if _committed_event_service == null:
-        return
+        return {"success": true, "receipt": {}}
     var serial: int = int(_committed_event_service.next_serial())
-    _committed_event_service.commit(event_kind, {
+    return _committed_event_service.commit(event_kind, {
         "event_token": _committed_event_service.make_token(
             event_kind, side, serial, str(record.get("source_token", ""))),
         "event_serial": serial,
@@ -1150,7 +1449,17 @@ func _emit_source_state_changed(
         "round_number": _round_number(),
         "action_token": str(record.get("action_token", "")),
         "source_kind": str(record.get("source_kind", event_kind)),
+        "source_id": str(record.get("source_id", "")),
+        "source_name": str(record.get("source_name", record.get(
+            "label", ""))),
+        "source_instance_key": str(record.get("source_instance_key", "")),
+        "trigger_mode": str(record.get("trigger_mode", "direct")),
         "source_token": str(record.get("source_token", "")),
+        "cancel_kind": str(record.get("cancel_kind", "block")),
+        "threshold": int(record.get("threshold", 0)),
+        "established_order": int(record.get("established_order", 0)),
+        "window_id": str(record.get("window_id", "")),
+        "waiting_for_action": bool(record.get("waiting_for_action", false)),
         "change": change,
         "payload": {},
         "public_state": record.duplicate(true),

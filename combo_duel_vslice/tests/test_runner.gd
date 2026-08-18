@@ -11798,8 +11798,8 @@ func _test_snapshot_boundaries_are_typed() -> void:
         "无被动修正时快照公开基础六格容量")
     _assert_equal(battle.player.same_qi_value, 0, "双方快照公开当前同气")
     _assert_equal(battle.player.same_qi_capacity, 5, "双方快照公开有效同气容量")
-    _assert_equal(battle.SCHEMA_VERSION, 4, "战斗快照升级为行动来源与同气公开字段版本")
-    _assert_equal(battle.to_dict()["schema_version"], 4, "战斗快照序列化包含行动来源与同气字段版本号")
+    _assert_equal(battle.SCHEMA_VERSION, 5, "战斗快照升级为卸力公开字段版本")
+    _assert_equal(battle.to_dict()["schema_version"], 5, "战斗快照序列化包含卸力字段版本号")
     _assert_equal(
         battle.log_channel("battle"),
         battle.battle_log,
