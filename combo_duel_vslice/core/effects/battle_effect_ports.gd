@@ -689,6 +689,13 @@ func shuffle_zone(
         rng: RandomNumberGenerator) -> void:
     _card_effect_service.shuffle_zone(side, zone, rng)
 
+func reorder_draw_pile(
+        side: BattleSide,
+        expected_order: Array,
+        replacement_order: Array) -> Dictionary:
+    return _card_effect_service.reorder_draw_pile(
+        side, expected_order, replacement_order)
+
 func current_effective_qi(
         side: BattleSide, card, query_context: Dictionary = {}) -> int:
     return _card_effect_service.current_effective_qi(

@@ -254,9 +254,12 @@ func can_explicit_discard() -> Dictionary:
     return _reshape_rules().can_explicit_discard(self)
 
 func _reshape_rules():
-    if reshape_rule_service == null:
-        reshape_rule_service = CardReshapeRuleServiceScript.fallback()
-    return reshape_rule_service
+    # Effective-value and identity reads are pure. Unbound fixture/legacy cards
+    # may use the fallback rules, but a read must not silently bind a service
+    # into the card's rollback state.
+    return reshape_rule_service \
+        if reshape_rule_service != null \
+        else CardReshapeRuleServiceScript.fallback()
 
 func has_anomaly(category: String, anomaly_id: String = "") -> bool:
     match category:

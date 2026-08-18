@@ -27,6 +27,7 @@ func _test_single_and_batch_payment() -> void:
         "token": "",
         "first_consumed_saw_full_batch_removed": false,
     }
+    var engine_ref: WeakRef = weakref(engine)
     engine.battle_passive_event_service.event_committed.connect(
         func(kind: String, values: Dictionary, receipt: Dictionary):
             published.append({
@@ -39,13 +40,18 @@ func _test_single_and_batch_payment() -> void:
                         == str(batch_visibility_probe["token"]) \
                     and not bool(batch_visibility_probe[
                         "first_consumed_saw_full_batch_removed"]):
+                var observed_engine = engine_ref.get_ref()
                 batch_visibility_probe[
                     "first_consumed_saw_full_batch_removed"] = \
-                    batch_visibility_probe["cards"].all(
+                    observed_engine != null \
+                    and batch_visibility_probe["cards"].all(
                     func(card):
-                        return engine.player.card_zone_service.find_active_location(
-                            engine.player, str(card.id)).is_empty() \
-                            and engine.player.temporarily_removed_cards.has(card)))
+                        return observed_engine.player.card_zone_service \
+                            .find_active_location(
+                                observed_engine.player,
+                                str(card.id)).is_empty() \
+                            and observed_engine.player \
+                                .temporarily_removed_cards.has(card)))
     var source := {
         "source_kind": "item",
         "source_id": "fake_qi_cost",

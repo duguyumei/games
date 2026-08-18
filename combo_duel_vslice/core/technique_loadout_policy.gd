@@ -25,6 +25,14 @@ func use_int_policy_resolver(value) -> void:
 func has_catalog() -> bool:
     return _catalog != null
 
+## Formal read-only dependency access for setup/snapshot adapters. Callers must
+## not reach into the policy's private fields to reconstruct its dependencies.
+func content_catalog():
+    return _catalog
+
+func int_policy_resolver():
+    return _resolver
+
 func definition(technique_id: String) -> Dictionary:
     return _catalog.get_by_id("technique", technique_id) \
         if _catalog != null else {}

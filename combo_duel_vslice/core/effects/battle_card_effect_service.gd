@@ -422,6 +422,14 @@ func shuffle_zone(side, zone: String, rng: RandomNumberGenerator) -> void:
         side.card_zone_service.zone(side, zone), rng)
 
 
+func reorder_draw_pile(
+        side, expected_order: Array, replacement_order: Array) -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "重排牌库缺少持有者"}
+    return side.card_zone_service.reorder_draw_pile(
+        side, expected_order, replacement_order)
+
+
 func current_effective_qi(side, card, query_context: Dictionary = {}) -> int:
     if side != null and side.battle_rule_query_service != null:
         var values := query_context.duplicate(false)

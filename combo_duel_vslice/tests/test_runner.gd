@@ -1020,8 +1020,10 @@ class TargetQueryPortsProbe:
             "discard_pile": return side.discard_pile.duplicate()
         return []
 
-    func current_effective_qi(_side, card) -> int:
-        return int(effective_values.get(str(card.id), card.current_base_qi_value()))
+    func current_effective_qi(
+            _side, card, _context: Dictionary = {}) -> int:
+        return int(effective_values.get(
+            str(card.id), card.current_base_qi_value()))
 
     func can_explicit_discard(_side, card) -> Dictionary:
         return {"allowed": not card.has_anomaly("mark", "void")}
@@ -5929,10 +5931,11 @@ func _test_run_effect_platform_contract() -> void:
             "grant_items",
             "grant_techniques",
             "heal_life",
+            "remove_items",
             "remove_run_cards",
             "transform_run_card",
         ],
-        "本局效果默认注册表按稳定顺序公开十二个正式操作")
+        "本局效果默认注册表按稳定顺序公开十三个正式操作")
     _assert_true(registry.has_handler("gain_experience"), "历练增加操作已注册")
     _assert_true(registry.has_handler("heal_life"), "生命回复操作已注册")
 
@@ -9778,7 +9781,7 @@ func _test_same_qi_rule_and_action_wiring() -> void:
         "preview": linked_result["cooperation_preview"],
     }]
     var audit_snapshot: Dictionary = audit_record.snapshot()
-    _assert_equal(audit_snapshot["schema_version"], 7, "行动记录升级为稳定功法槽位版本")
+    _assert_equal(audit_snapshot["schema_version"], 8, "行动记录保存功法执行汇总状态版本")
     _assert_equal(audit_snapshot["same_qi"]["gain"], 4, "行动记录保存行动级最优分组与 G")
     _assert_equal(audit_snapshot["same_qi_gain"], 4, "行动记录保存预计同气收益")
     _assert_equal(audit_snapshot["cooperation_groups"][0]["same_qi_group"]["gain"], 1, "行动记录保存协同组独立身份事实")

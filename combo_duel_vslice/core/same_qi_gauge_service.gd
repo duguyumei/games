@@ -30,10 +30,16 @@ func receipts_for_action(side, action_token: String) -> Array:
         return str(left.get("write_token", "")) < str(right.get("write_token", "")))
     return result
 
-func capacity_result(side, context: Dictionary = {}) -> Dictionary:
+func capacity_result(
+        side,
+        context: Dictionary = {},
+        record_query_result: bool = true) -> Dictionary:
     if side == null:
         return _failure("同气容量查询缺少战斗方")
-    var resolved: Dictionary = side.effective_same_qi_capacity_result(context)
+    var resolved: Dictionary = (
+        side.effective_same_qi_capacity_result(context)
+        if record_query_result
+        else side.peek_effective_same_qi_capacity_result(context))
     if not resolved.get("success", false):
         return resolved
     resolved["effective_value"] = maxi(1, int(resolved["effective_value"]))
@@ -47,7 +53,16 @@ func project_write(
         operation: String,
         amount: int = 0,
         context: Dictionary = {}) -> Dictionary:
-    var capacity_query := capacity_result(side, context)
+    return _project_write(side, operation, amount, context, false)
+
+func _project_write(
+        side,
+        operation: String,
+        amount: int,
+        context: Dictionary,
+        record_query_result: bool) -> Dictionary:
+    var capacity_query := capacity_result(
+        side, context, record_query_result)
     if not capacity_query.get("success", false):
         return capacity_query
     var capacity := int(capacity_query["effective_value"])
@@ -110,7 +125,8 @@ func apply_write(
         var reused: Dictionary = _receipts[receipt_key].duplicate(true)
         reused["reused"] = true
         return reused
-    var projection := project_write(side, operation, amount, metadata)
+    var projection := _project_write(
+        side, operation, amount, metadata, true)
     if not projection.get("success", false):
         return projection
     side.same_qi_value = int(projection["same_qi_after"])

@@ -17,7 +17,7 @@ func operation_ids() -> Array[String]:
         "draw", "draw_if_captured_attribute", "discard_random", "discard_all_hand",
         "move_captured", "move_query", "draw_filtered", "draw_to_limit",
         "capture_metadata",
-        "capture_query", "swap_hands", "reorder_captured_draw_pile",
+        "capture_query", "reorder_captured_draw_pile",
         "move_captured_to_hand", "atomic_exchange_captured",
         "synchronous_discard_queries", "discard_duplicate_ranks",
         "discard_by_visible_attribute", "draw_common_attribute_or_fallback",
@@ -140,13 +140,6 @@ func execute(effect: Dictionary, context):
                 return EffectResultScript.failed(str(query_result.get("reason", "牌区查询失败")))
             runtime.captures[str(effect.get("capture", "queried_cards"))] = query_result["cards"]
             return EffectResultScript.succeeded("捕获牌区真气 %d 张" % query_result["cards"].size())
-        "swap_hands":
-            if runtime.actor == null or runtime.target == null:
-                return EffectResultScript.failed("交换手牌缺少敌我双方")
-            var actor_hand: Array = runtime.actor.hand
-            runtime.actor.hand = runtime.target.hand
-            runtime.target.hand = actor_hand
-            return EffectResultScript.succeeded("交换双方当前手牌")
         "reorder_captured_draw_pile":
             return _reorder_captured_draw_pile(effect, runtime)
         "atomic_exchange_captured":
@@ -360,19 +353,30 @@ func _draw_rank_different_replacements(effect: Dictionary, runtime):
     return EffectResultScript.succeeded("逐张替换抽牌 %d 张" % drawn.size())
 
 func _reorder_captured_draw_pile(effect: Dictionary, runtime):
+    if runtime.ports == null:
+        return EffectResultScript.failed("重排牌库缺少战斗端口")
     var inspected: Array = runtime.captures.get(str(effect.get("capture", "")), [])
     var ordered: Array = runtime.captures.get(str(effect.get("ordered_capture", "")), [])
     var side = _resolve_side(runtime, str(effect.get("side", "actor")))
+    if side == null:
+        return EffectResultScript.failed("重排牌库缺少持有者")
+    var before: Array = runtime.ports.zone_cards(side, "draw_pile").duplicate()
+    var replacement: Array = before.duplicate()
     if not ordered.is_empty():
         var valid := ordered.size() == inspected.size()
         for card in inspected:
-            valid = valid and ordered.has(card)
+            valid = valid and ordered.has(card) and replacement.has(card)
         if not valid:
             return EffectResultScript.failed("重排选择与展示集合不一致")
         for card in inspected:
-            side.draw_pile.erase(card)
+            replacement.erase(card)
         for index in range(ordered.size() - 1, -1, -1):
-            side.draw_pile.append(ordered[index])
+            replacement.append(ordered[index])
+        var reordered: Dictionary = runtime.ports.reorder_draw_pile(
+            side, before, replacement)
+        if not reordered.get("success", false):
+            return EffectResultScript.failed(str(reordered.get(
+                "reason", "牌库重排失败")))
         return EffectResultScript.succeeded("重排牌库顶 %d 张" % inspected.size())
     var top_cards: Array = runtime.captures.get(str(effect.get("top_capture", "")), [])
     var bottom_first: Array = runtime.captures.get(
@@ -380,15 +384,24 @@ func _reorder_captured_draw_pile(effect: Dictionary, runtime):
     if inspected.is_empty() or top_cards.is_empty():
         return EffectResultScript.succeeded()
     for card in inspected:
-        side.draw_pile.erase(card)
+        if not replacement.has(card):
+            return EffectResultScript.failed("展示牌已离开牌库")
+        replacement.erase(card)
     var top_card = top_cards[0]
+    if not inspected.has(top_card):
+        return EffectResultScript.failed("置顶选择不属于展示集合")
     var remaining := inspected.filter(func(card): return card != top_card)
     if not bottom_first.is_empty() and remaining.has(bottom_first[0]):
         remaining.erase(bottom_first[0])
         remaining.push_front(bottom_first[0])
     for card in remaining:
-        side.draw_pile.push_front(card)
-    side.draw_pile.append(top_card)
+        replacement.push_front(card)
+    replacement.append(top_card)
+    var reordered: Dictionary = runtime.ports.reorder_draw_pile(
+        side, before, replacement)
+    if not reordered.get("success", false):
+        return EffectResultScript.failed(str(reordered.get(
+            "reason", "牌库重排失败")))
     return EffectResultScript.succeeded("检视并重排 %d 张" % inspected.size())
 
 func _query(effect: Dictionary, runtime) -> Dictionary:

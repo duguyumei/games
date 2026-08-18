@@ -124,14 +124,25 @@ func use_committed_event_service(service, round_reader: Callable = Callable()) -
 func use_passive_rule_runtime(runtime) -> void:
     passive_rule_runtime = runtime
     var catalog = (
-        runtime.source_resolver._catalog
-        if runtime != null and runtime.source_resolver != null
+        runtime.content_catalog()
+        if runtime != null and runtime.has_method("content_catalog")
         else null)
     passive_counter_store = RunPassiveCounterStoreScript.new(catalog)
     battle_passive_counter_store = BattlePassiveCounterStoreScript.new()
     technique_loadout_policy = TechniqueLoadoutPolicyScript.new(
         catalog,
         PassiveIntPolicyResolverScript.new(runtime) if runtime != null else null)
+
+func content_catalog():
+    if passive_rule_runtime != null and passive_rule_runtime.has_method(
+            "content_catalog"):
+        var catalog = passive_rule_runtime.content_catalog()
+        if catalog != null:
+            return catalog
+    if technique_loadout_policy != null and technique_loadout_policy.has_method(
+            "content_catalog"):
+        return technique_loadout_policy.content_catalog()
+    return null
 
 func use_battle_rule_query_service(service) -> void:
     battle_rule_query_service = service
@@ -483,6 +494,14 @@ func current_hand_limit() -> int:
         return 0
     return int(result["effective_value"])
 
+## Observation/UI/AI projections may query current limits, but must not replace
+## the last formal gameplay query receipt stored in the runtime snapshot.
+func peek_current_hand_limit() -> int:
+    var before: Dictionary = last_hand_limit_query_result.duplicate(true)
+    var result := current_hand_limit()
+    last_hand_limit_query_result = before
+    return result
+
 func base_hand_limit() -> int:
     return maxi(1, hand_limit + base_hand_limit_modifier)
 
@@ -540,6 +559,13 @@ func effective_same_qi_capacity_result(context: Dictionary = {}) -> Dictionary:
     last_same_qi_capacity_query_result["effective_value"] = maxi(
         1, int(last_same_qi_capacity_query_result["effective_value"]))
     return last_same_qi_capacity_query_result.duplicate(true)
+
+func peek_effective_same_qi_capacity_result(
+        context: Dictionary = {}) -> Dictionary:
+    var before: Dictionary = last_same_qi_capacity_query_result.duplicate(true)
+    var result := effective_same_qi_capacity_result(context)
+    last_same_qi_capacity_query_result = before
+    return result
 
 func capture_passive_query_state() -> Dictionary:
     var card_states: Dictionary = {}

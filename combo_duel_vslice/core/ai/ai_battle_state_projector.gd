@@ -14,7 +14,7 @@ func project_opponent(side, sequence_book, battle_flow) -> Dictionary:
 func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
     var effective_hand_limit := _hand_limit(side)
     var poison: Dictionary = side.poison_totals()
-    var same_qi_capacity: Dictionary = side.effective_same_qi_capacity_result({
+    var same_qi_capacity: Dictionary = side.peek_effective_same_qi_capacity_result({
         "source_kind": "ai_observation",
     })
     var value := {
@@ -61,10 +61,7 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
     return value
 
 func _hand_limit(side) -> int:
-    var before: Dictionary = side.last_hand_limit_query_result.duplicate(true)
-    var result := int(side.current_hand_limit())
-    side.last_hand_limit_query_result = before
-    return result
+    return int(side.peek_current_hand_limit())
 
 func _public_statuses(side) -> Array:
     var result: Array = []

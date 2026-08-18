@@ -768,8 +768,13 @@ func _event_value(
             return int(values.get(
                 "difference", values.get("payload", {}).get("difference", 0)))
         "record_action_token":
-            return str(values.get("action_token", "")) \
-                == str(record.get("action_token", ""))
+            var event_action_token := str(values.get("action_token", ""))
+            var record_action_token := str(record.get("action_token", ""))
+            var record_root_action_token := str(record.get(
+                "root_action_token", ""))
+            return event_action_token == record_action_token \
+                or (record_root_action_token != "" \
+                    and event_action_token == record_root_action_token)
         "role":
             return str(expected) if _event_role_matches(
                 str(expected), str(definition["event_key"]), values,

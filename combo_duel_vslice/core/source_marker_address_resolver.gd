@@ -169,7 +169,9 @@ func _item_marker_definition(
     if not definitions is Array or definitions.is_empty():
         var passive_runtime = _object_value(holder, "passive_rule_runtime")
         var source_resolver = _object_value(passive_runtime, "source_resolver")
-        var catalog = _object_value(source_resolver, "_catalog")
+        var catalog = source_resolver.content_catalog() \
+            if source_resolver != null and source_resolver.has_method(
+                "content_catalog") else null
         if catalog != null and catalog.has_method("get_by_id"):
             definitions = catalog.get_by_id(
                 "item", content_id).get("marker_definitions", [])

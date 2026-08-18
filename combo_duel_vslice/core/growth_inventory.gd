@@ -155,7 +155,7 @@ func capture_mutation_state() -> Dictionary:
 func create_mutation_copy():
     var working := GrowthInventory.new(_content_catalog, false)
     working.use_technique_loadout_policy_resolver(
-        technique_loadout_policy._resolver)
+        technique_loadout_policy.int_policy_resolver())
     var errors: Array[String] = working.replace_mutation_state(
         capture_mutation_state())
     if not errors.is_empty():
@@ -610,9 +610,8 @@ func sync_from_battle_side(side) -> void:
 
 func _battle_setup_service_for(side):
     var catalog = _content_catalog
-    if catalog == null and side != null \
-            and side.technique_loadout_policy != null:
-        catalog = side.technique_loadout_policy._catalog
+    if catalog == null and side != null and side.has_method("content_catalog"):
+        catalog = side.content_catalog()
     return BattleSetupServiceScript.new(catalog)
 
 func current_base_hand_limit() -> int:

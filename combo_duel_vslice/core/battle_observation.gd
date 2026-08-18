@@ -41,7 +41,7 @@ func capture(actor, opponent, sequence_book, battle_flow):
     actor_max_life = int(actor.max_life)
     actor_defense = int(actor.defense)
     actor_same_qi_value = int(actor.same_qi_value)
-    actor_same_qi_capacity = int(actor.effective_same_qi_capacity_result({
+    actor_same_qi_capacity = int(actor.peek_effective_same_qi_capacity_result({
         "source_kind": "ai_observation",
     }).get("effective_value", 5))
     actor_draw_count = actor.draw_pile.size()
@@ -52,7 +52,7 @@ func capture(actor, opponent, sequence_book, battle_flow):
     opponent_max_life = int(opponent.max_life)
     opponent_defense = int(opponent.defense)
     opponent_same_qi_value = int(opponent.same_qi_value)
-    opponent_same_qi_capacity = int(opponent.effective_same_qi_capacity_result({
+    opponent_same_qi_capacity = int(opponent.peek_effective_same_qi_capacity_result({
         "source_kind": "ai_observation",
     }).get("effective_value", 5))
     opponent_hand_count = opponent.hand.size()

@@ -916,3 +916,36 @@ Run内容通过`GrowthInventory.grant_item/remove_item`执行物品原语，并�
 物品压制复用`PassiveRuleRuntime`并只暂停贡献。增加上限不治疗，降低上限立即截断当前生命，绝不能
 把来源贡献反写进`base_max_life`。marker变化仍只发布`source_marker_changed`，UI/AI只读取public投影。
 延寿玉、纳气养命及其他具体内容不属于该公共协议批次。
+
+## 九项核心C2完成后的内容接入门禁（2026-08-18）
+
+九项核心C2均已完成，剩余C2为0；能力矩阵当前为B 14、C1 23、D 1。后续任务必须按
+`merge_family`组织同类消费者，不再把一个`capability_key`机械等同于一个新Service或一个独立批次。
+
+内容接入前先选择下列唯一边界：
+
+- 牌区真实变化只走`BattleEffectPorts/BattleCardEffectService/CardZoneService`，事实只认`card_moved`；
+- 异状、重塑、成长和离场清理只走`CardAnomalyService/CardStateLifecycle`，事实只认
+  `card_state_changed`；
+- 战斗有效真气只走`BattleRuleQueryService.resolve_effective_qi`，确认值写现有`HandGroupSnapshot`；
+- 伤害取消、生命干预和防御／生命提交只走`BattleSurvivalEffectService`与`ComboDamageResolver`；
+- 每次功法汇总只由`TechniqueResolutionService`提交`technique_execution_resolved`；
+- 真气支付只用`prepare_qi_consumption/commit_qi_consumption`和公共运行时事务；
+- 蓄力和物品marker都复用`SourceMarkerStore/SourceMarkerAddressResolver/source_marker_changed`；
+- 最大生命贡献只由`SourceContributedStatService`重算；Run变化只在`RunMutationService`工作副本提交。
+
+Handler只解释通用op和条件，不得直接改牌区、生命／防御、功法序列、marker或最大生命，也不得自行拼
+`source_instance_key`。preview/query/freeze、AI与UI观察必须使用peek／projection入口，不能覆盖正式查询
+回执、推进RNG或建立committed事实。任何新兼容入口都必须先证明存在仍无法迁移的调用方；无调用的旧
+旁路直接删除，不能为旧测试保留第二套生产实现。
+
+跨协议内容至少补一条组合回归，验证事件顺序、恰好一次发布和事务失败后的完整恢复。通用顺序按领域
+事实决定，例如真气支付中的状态生命周期先于`card_moved/qi_consumed`，伤害段先取消判定、再承伤计划、
+再生命干预和一次提交，功法汇总最后读取已提交的实际结果。Run来源内容还必须覆盖战斗建立、战果提交、
+退出回滚与存档恢复，并确认来源贡献不修改基础值。
+
+本次统一门禁的验收基线为：`quick` 7/7，`full` 42/42（140,873条断言），项目加载695项；设计一致性
+为228门权威活跃、228门数据接入、0门待接入、0错误。最终日志前缀分别是
+`/tmp/taiwu-c2-final-quick-final3-*`、`/tmp/taiwu-c2-final-full-final3-*`，设计检查为
+`/tmp/taiwu-c2-final-design-consistency-02.log`。运行器和额外扫描均未发现脚本／资源加载、解析、泄漏、
+orphan或退出阶段错误。

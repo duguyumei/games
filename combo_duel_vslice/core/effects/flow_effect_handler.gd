@@ -79,8 +79,13 @@ func execute(effect: Dictionary, context):
                     [receipt] if bool(receipt.get("success", false)) else []
             return EffectResultScript.succeeded("连势写入完成")
         "grant_momentum_preservation":
+            var settlement_token: String = runtime.invocation_token \
+                if runtime.invocation_token != "" \
+                else runtime.root_action_token
+            if settlement_token == "":
+                settlement_token = runtime.action_token
             var record: Dictionary = runtime.actor.grant_momentum_preservation(
-                runtime.action_token, runtime.source_id)
+                settlement_token, runtime.source_id)
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [record]
             return EffectResultScript.succeeded("建立一次连势保留保护")

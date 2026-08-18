@@ -11,6 +11,9 @@ var _marker_address_resolver = SourceMarkerAddressResolverScript.new()
 func _init(content_catalog = null) -> void:
     _catalog = content_catalog
 
+func content_catalog():
+    return _catalog
+
 func collect_sources(context) -> Array:
     if context != null and context.has_source_snapshot:
         return sources_from_snapshot(context.source_snapshot)

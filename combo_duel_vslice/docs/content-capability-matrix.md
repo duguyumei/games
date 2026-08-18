@@ -453,3 +453,25 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 8. `choice_continuation`：在现有BattleChoiceRequest/NodeInteraction continuation上补生命周期多选。
 9. `battle_resource_policy` + `survival_policy_query`：补连势上限和防御衰减策略。
 10. B类适配与A类内容接入：最后补Handler/Context/Registry和内容数据；8门E类保持暂缓。
+
+### 11.5 九项核心C2统一收口（2026-08-18）
+
+统一回归确认九项C2不是九套平行运行时，而是对既有领域所有者的窄扩展：
+
+| 协议 | 唯一正式入口 | 状态所有者 | canonical事实 | 原子／冻结边界 |
+|---|---|---|---|---|
+| `committed_card_transition_event` | `BattleEffectPorts` → `BattleCardEffectService` → `CardZoneService` | `BattleSide`牌区；离场清理由`CardStateLifecycle`负责 | `card_moved` | 既有行动事务；批量支付复用`BattleRuntimeMutationTransaction` |
+| `committed_anomaly_change_event` | `CardAnomalyService`及其既有Facade | 卡实例异状／重塑状态 | `card_state_changed` | 调用方既有行动／运行时事务；转移先完成两端写入再发布 |
+| `effective_qi_staged_query` | `BattleRuleQueryService.resolve_effective_qi` | 卡牌自身值归`QiCard/CardReshapeRuleService`；确认值归`HandGroupSnapshot` | 无；纯查询只返回breakdown与fingerprint | 来源快照+行动确认快照；preview/AI不提交回执 |
+| `pre_life_loss_intervention` | `BattleSurvivalEffectService` → `BattleRuleQueryService.resolve_pre_life_loss` → `ComboDamageResolver` | `BattleSide.life/defense` | `damage_resolved` | 单段先plan后commit；同步flush复用公共运行时与publication事务 |
+| `technique_execution_summary_event` | `TechniqueResolutionService` | 单次execution-token累计器 | `technique_execution_resolved` | 既有功法执行／行动事务；完成后、序列推进前恰好提交一次 |
+| `deflection_attack_cancel_protocol` | `BattleSurvivalEffectService.resolve_attack_cancellation` | `BattleSide.block_sources`类型化记录 | `deflection_resolved`、`attack_canceled`；格挡保留`damage_blocked`兼容事实 | 与普通／同步伤害共用承伤事务和flush回滚 |
+| `qi_consumption_transaction` | `BattleEffectPorts.prepare_qi_consumption/commit_qi_consumption` | `CardZoneService`牌区；BattleSide保存幂等回执 | `card_moved`、`qi_consumed` | `BattleRuntimeMutationTransaction`整批提交／恢复 |
+| `charging_primary_value_protocol` | `BattleEffectPorts.begin/write/end/write_all_charging_primary_value(s)` | 实际slot地址下的`SourceMarkerStore`条目 | `source_marker_changed` | 批量写复用`BattleRuntimeMutationTransaction`；延迟／响应沿用既有状态 |
+| `item_source_marker_state` | `SourceMarkerAddressResolver`、`GrowthInventory.grant_item/remove_item`、`SourceContributedStatService` | `RunProgressSnapshot.source_marker_state`，经`GrowthInventory/BattleSide`正式同步 | `source_marker_changed` | `RunMutationService`工作副本原子提交／回滚 |
+
+本次审计没有发现第二套生产实现、按内容ID分叉的公共算法或重复canonical事实发布。明确修复了一个活动
+Handler直接重排`draw_pile`的旁路，删除了无调用且直接交换`hand`数组的`swap_hands`操作，并让
+UI/AI/preview只走不覆盖正式查询回执的只读投影。跨`GrowthInventory/BattleSide/PassiveRuleRuntime`
+读取目录也改为正式只读接口，不再访问其他类私有字段。C2剩余为0；B仍为14、C1仍为23、D仍为1，
+下一阶段必须按`merge_family`合并接入内容，不能按单个能力键机械新增Service。

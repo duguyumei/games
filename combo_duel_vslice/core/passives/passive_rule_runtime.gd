@@ -93,6 +93,11 @@ func coerce_context(value):
 func collect_sources(context) -> Array:
     return source_resolver.collect_sources(coerce_context(context))
 
+func content_catalog():
+    return source_resolver.content_catalog() \
+        if source_resolver != null and source_resolver.has_method(
+            "content_catalog") else null
+
 func capture_source_snapshot(context) -> Array:
     return source_resolver.capture_source_snapshot(coerce_context(context))
 
@@ -101,7 +106,7 @@ func equipped_inner_skill_entries(context) -> Array:
         coerce_context(context))
 
 func has_content(source_kind: String, content_id: String) -> bool:
-    var catalog = source_resolver._catalog
+    var catalog = content_catalog()
     if catalog == null:
         return false
     return catalog.has_id(

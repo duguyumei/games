@@ -327,7 +327,7 @@ func _player_public_state() -> Dictionary:
         "max_life": engine.player.max_life,
         "defense": engine.player.defense,
         "same_qi_value": engine.player.same_qi_value,
-        "same_qi_capacity": int(engine.player.effective_same_qi_capacity_result({
+        "same_qi_capacity": int(engine.player.peek_effective_same_qi_capacity_result({
             "source_kind": "ai_observation",
         }).get("effective_value", 5)),
         "hand_count": engine.player.hand.size(),

@@ -621,6 +621,38 @@ func move_cards_synchronously(records: Array) -> Array:
         moved.append(card)
     return moved
 
+## Atomically replaces the draw-pile order after a caller has frozen the
+## complete before/after arrays. Reordering does not move a card between zones,
+## so it deliberately emits no card_moved fact; all writes still stay owned by
+## CardZoneService instead of an effect Handler.
+func reorder_draw_pile(
+        side,
+        expected_order: Array,
+        replacement_order: Array) -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "重排牌库缺少持有者"}
+    if side.draw_pile != expected_order:
+        return {"success": false, "reason": "牌库顺序已离开冻结快照"}
+    if expected_order.size() != replacement_order.size():
+        return {"success": false, "reason": "重排前后牌库数量不一致"}
+    var expected_ids: Dictionary = {}
+    var replacement_ids: Dictionary = {}
+    for card in expected_order:
+        if card == null or expected_ids.has(str(card.id)):
+            return {"success": false, "reason": "重排前牌库包含无效或重复实例"}
+        expected_ids[str(card.id)] = true
+    for card in replacement_order:
+        if card == null or replacement_ids.has(str(card.id)):
+            return {"success": false, "reason": "重排后牌库包含无效或重复实例"}
+        replacement_ids[str(card.id)] = true
+    if expected_ids != replacement_ids:
+        return {"success": false, "reason": "重排前后牌库实例集合不一致"}
+    side.draw_pile.assign(replacement_order)
+    return {
+        "success": true,
+        "card_count": replacement_order.size(),
+    }
+
 func atomic_exchange(
         actor_side, actor_zone: String, actor_card,
         target_side, target_zone: String, target_card,

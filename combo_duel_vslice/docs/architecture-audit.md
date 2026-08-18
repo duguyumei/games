@@ -1641,3 +1641,75 @@ canonical marker事实，失败不泄漏事件或token；存档恢复只恢复ma
 存档恢复都调用同一重算入口。专项覆盖地址稳定、三类来源对照、持有校验、clear/retain、压制、公开投影、
 最大生命、Run往返与失败回滚。九项核心C2公共协议至此全部完成，但延寿玉、纳气养命、其余物品、内功
 和暂缓功法仍未接入。
+
+## 2026-08-18 九项核心C2统一架构收口
+
+### 结论与正式落点
+
+九项协议已经组成同一套来源中立、可冻结、可回滚的底层框架，C2剩余为0。对外组合仍以
+`BattleEffectPorts`、既有战斗／Run命令Facade和`PassiveRuleRuntime.ExecutionPlan`为边界；内部没有新增
+第二套伤害器、牌区系统、功法运行时、物品运行时、marker store、数值总线或事务框架。
+
+| 协议 | 唯一执行／查询落点 | 权威状态 | committed事实 | 事务或冻结边界 |
+|---|---|---|---|---|
+| 牌区移动 | `CardZoneService`（经既有卡牌效果Facade） | `BattleSide`各牌区 | `card_moved` | 行动事务；批量支付使用公共运行时事务 |
+| 真气状态变化 | `CardAnomalyService` | 卡实例异状、重塑与生命周期状态 | `card_state_changed` | 调用方行动／运行时事务 |
+| 有效真气 | `BattleRuleQueryService.resolve_effective_qi` | `QiCard/CardReshapeRuleService`基础阶段，`HandGroupSnapshot`确认结果 | 无，纯查询回执 | 来源快照与行动确认冻结 |
+| 生命写入前干预 | `BattleSurvivalEffectService`编排`ComboDamageResolver.plan_to_target/commit_plan` | `BattleSide.life/defense` | `damage_resolved` | 单段先计划后提交；同步flush整批回滚 |
+| 功法执行汇总 | `TechniqueResolutionService` | execution token累计器 | `technique_execution_resolved` | 功法执行事务内、序列推进前提交一次 |
+| 卸力／攻击取消 | `BattleSurvivalEffectService.resolve_attack_cancellation` | `BattleSide.block_sources` | `deflection_resolved`、`attack_canceled` | 与普通／同步伤害相同事务 |
+| 真气消耗 | `BattleCardEffectService`准备／提交并由`CardZoneService`落位 | 牌区与BattleSide幂等回执 | `card_moved`、`qi_consumed` | `BattleRuntimeMutationTransaction` |
+| 主要蓄力值 | `BattleEffectPorts`蓄力窄端口 → `SourceMarkerStore` | 实际slot来源marker | `source_marker_changed` | 公共运行时事务；既有delay/response状态 |
+| 物品来源marker | `SourceMarkerAddressResolver`、`GrowthInventory`获得／失去原语、`SourceContributedStatService` | Run marker快照及正式BattleSide工作副本 | `source_marker_changed` | `RunMutationService`工作副本事务 |
+
+来源身份继续统一为`source_kind/source_id/source_instance_key`，`technique/inner_skill/item`共用
+`PassiveRuleRuntime`、Handler Registry和ExecutionPlan。BattleSide、GrowthInventory与
+RunProgressSnapshot之间只通过正式capture/apply/sync接口往返；最大生命仍只由
+`SourceContributedStatService`重算，绝不反写`base_max_life`。
+
+### 本次发现并修复的旁路
+
+1. `CardZoneEffectHandler.reorder_captured_draw_pile`原先直接增删`draw_pile`。现在Handler只计算冻结后的
+   replacement，正式写入由新增的窄方法`CardZoneService.reorder_draw_pile`原子校验并提交；同牌区重排
+   不伪造`card_moved`。
+2. 无内容、测试或生产调用的`swap_hands`操作直接交换双方`hand`数组，绕过牌区事实和事务。该废弃op已
+   从Registry删除，没有保留第二套兼容实现。
+3. `GrowthInventory`、`BattleSide`、`PassiveRuleRuntime`和物品地址解析曾读取其他对象的`_catalog`或
+   `_resolver`。现在统一使用`content_catalog/int_policy_resolver`只读接口。
+4. UI、AI、BattleSession快照及Same-Qi写入预览曾覆盖最后一次正式手牌上限／同气容量查询回执；未绑定
+   卡牌的有效真气读取还会惰性写入fallback重塑Service。现在`peek_*`入口和纯fallback读取保证观察路径
+   不改运行状态、RNG或正式回执。
+5. 功法执行汇总引入execution token后，`grant_momentum_preservation`与动态响应的
+   `action_token_is_record`仍把“本次行动”错误绑定到单门功法execution。前者现以`root_action_token`建立
+   保护，后者同时接受记录的execution/root action身份；火·护势和火·点轮因此重新满足既有描述，没有
+   修改玩法数值。
+6. `EffectTargetQuery`在完整BattleSide查询服务未装配、但已有正式战斗端口时曾直接退回卡牌算法，绕过
+   端口。现在该边界优先调用`current_effective_qi`，只在端口和查询服务都不存在的孤立夹具中保留合法
+   卡牌fallback。Run操作注册表与BattleActionRecord v8的旧测试断言也已迁移到正式契约。
+
+回扫Handler后，战斗效果／被动／卡牌状态Handler不再直接赋值牌区、生命、防御、最大生命或marker。
+Run的`heal_life`仍在`RunMutationService`工作副本Handler内写入，这是正式Run事务内部原语，不是战斗
+旁路。canonical生产者保持单一：`card_moved`归CardZoneService、`card_state_changed`归
+CardAnomalyService、伤害／取消归BattleSurvivalEffectService、汇总归TechniqueResolutionService、战斗
+marker事实归BattleSourceResourceEffectService；Run marker事实沿用Run事务记录。没有为了本次审计拆分
+大型门面，也没有接入暂缓功法、具体内功或物品。
+
+### 后续方向
+
+能力矩阵现为已有／合并10、B 14、C1 23、C2 0、D 1。下一阶段应按`merge_family`聚合接入消费者，优先
+复用上述正式入口；不得按单项能力或单个未来内容机械新增Service。8门暂缓功法、具体内功与20件物品
+仍保持未接入，玩法数值和既有功法描述均未改变。
+
+### 统一回归结果
+
+九项协议专项合计688条断言；新增`test_c2_protocol_integration.gd`以39条断言验证移动／异状顺序、冻结
+有效真气、真气支付、生命干预、marker与功法汇总的确定事件投影，以及UI/AI/RNG纯度和牌库重排端口。
+`BattleActionTransaction`117条、battle-contracts 860条（含来源中立化对照）、save-contracts 132条、
+run-map 1136条、Run Save v1 202条、technique-runtime 259条、山系461条、战斗生存60条、火系276条均
+通过。真气消耗专项还把唯一捕获engine的测试信号闭包改为`WeakRef`，消除退出时ObjectDB/Resource泄漏。
+
+最终`quick`为7/7，`full`为42/42、合计140,873条断言；项目加载695个脚本／场景／资源／JSON文件。
+设计一致性为权威活跃228门、数据接入228门、待接入0门、错误0条。最终日志统一位于
+`/tmp/taiwu-c2-final-quick-final3-*`、`/tmp/taiwu-c2-final-full-final3-*`及
+`/tmp/taiwu-c2-final-design-consistency-02.log`；stdout与Godot日志未发现加载、解析、脚本、ObjectDB、
+RID、资源泄漏、orphan或退出阶段错误，只有允许忽略的macOS CA证书警告。

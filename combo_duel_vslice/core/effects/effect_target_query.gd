@@ -184,7 +184,28 @@ func _shuffle(cards: Array, rng: RandomNumberGenerator) -> void:
         cards[other] = temporary
 
 func _effective_qi_values(context, side, cards: Array) -> Dictionary:
-    if side == null or side.battle_rule_query_service == null:
+    if side == null:
+        return {"success": false, "reason": "有效真气值查询缺少持有者", "values": {}}
+    if side.battle_rule_query_service == null \
+            and context != null and context.ports != null \
+            and context.ports.has_method("current_effective_qi"):
+        var port_values: Dictionary = {}
+        for card in cards:
+            port_values[str(card.id)] = int(context.ports.current_effective_qi(
+                side, card, {
+                    "actor": context.actor,
+                    "target": context.target,
+                    "purpose": "target_query",
+                    "evaluation_mode": "runtime",
+                    "cards": cards,
+                    "participating_card_ids": [],
+                    "hand_result": context.hand_result,
+                    "action_token": context.action_token,
+                    "source_kind": context.source_kind,
+                    "boundary": "effect_target_query",
+                }))
+        return {"success": true, "values": port_values}
+    if side.battle_rule_query_service == null:
         var fallback: Dictionary = {}
         for card in cards:
             fallback[str(card.id)] = int(card.effective_qi_value()) \

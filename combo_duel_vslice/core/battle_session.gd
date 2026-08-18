@@ -727,7 +727,7 @@ func _side_snapshot(side) -> Dictionary:
         var consumable: Dictionary = engine.consumable_repository.get_consumable(consumable_id).duplicate(true)
         consumable["targeting_limits"] = engine.consumable_repository.target_limits(consumable_id)
         consumables.append(consumable)
-    var same_qi_capacity: Dictionary = side.effective_same_qi_capacity_result({
+    var same_qi_capacity: Dictionary = side.peek_effective_same_qi_capacity_result({
         "round_number": int(engine.turn_number),
         "source_kind": "battle_snapshot",
     })
@@ -751,7 +751,7 @@ func _side_snapshot(side) -> Dictionary:
         "deflection_sources": side.public_deflection_sources(),
         "challenge_records": side.public_challenge_records(),
         "base_hand_limit": side.base_hand_limit(),
-        "hand_limit": side.current_hand_limit(),
+        "hand_limit": side.peek_current_hand_limit(),
         "inner_skill_limit": int(capacity["effective_capacity"]),
         "draw_count": side.draw_pile.size(),
         "hand_count": side.hand.size(),
