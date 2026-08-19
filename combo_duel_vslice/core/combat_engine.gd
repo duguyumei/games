@@ -250,6 +250,10 @@ func _init(
     effect_ports.use_same_qi_gauge_service(same_qi_gauge_service)
     passive_rule_runtime.use_battle_effect_ports(
         effect_ports, Callable(self, "_set_scenario_error"))
+    timing_system.use_mutation_transaction_callbacks(
+        Callable(self, "_begin_lifecycle_mutation_transaction"),
+        Callable(self, "_commit_lifecycle_mutation_transaction"),
+        Callable(self, "_rollback_lifecycle_mutation_transaction"))
     status_system.use_effect_ports(effect_ports)
     status_system.use_rng(rng)
     card_reshape_runtime = CardReshapeBattleRuntimeScript.new(
@@ -346,7 +350,7 @@ func _init(
     loadout_service = BattleLoadoutServiceScript.new(
         player,
         trigger_queue,
-        Callable(action_resolver, "has_pending_choice"))
+        Callable(self, "has_pending_choice"))
     round_service = BattleRoundServiceScript.new(
         player,
         enemy,
@@ -662,6 +666,8 @@ func start_player_turn() -> Array:
     return round_service.start_player_turn()
 
 func end_player_turn() -> void:
+    if has_pending_choice():
+        return
     round_service.end_player_turn()
 
 func register_defense_retention_provider(provider_id: String, provider) -> bool:
@@ -717,24 +723,91 @@ func grant_consumable(side, consumable_id: String, source: String = "效果") ->
     return consumable_service.grant(side, consumable_id, source)
 
 func use_player_consumable(slot_index: int, card_ids: Array = []) -> Dictionary:
+    if has_pending_choice():
+        return {"success": false, "reason": "正在等待选择"}
     return consumable_service.use_player(slot_index, card_ids)
 
 func confirm_play(card_ids: Array, cooperation_card_ids: Array = []) -> Dictionary:
     _sync_action_service_modes()
+    if has_pending_choice():
+        return {"success": false, "reason": "正在等待选择"}
     return action_service.confirm_play(card_ids, cooperation_card_ids)
 
+func has_pending_choice() -> bool:
+    return timing_system.has_pending_choice() \
+        or action_service.has_pending_choice()
+
 func has_pending_effect_choice() -> bool:
-    return action_service.has_pending_choice()
+    return has_pending_choice()
+
+func pending_choice_snapshot() -> Dictionary:
+    if timing_system.has_pending_choice():
+        var result: Dictionary = timing_system.pending_choice_snapshot()
+        result["choice_route"] = "lifecycle"
+        return result
+    var result: Dictionary = action_service.pending_choice_snapshot()
+    if not result.is_empty():
+        result["choice_route"] = "action"
+    return result
 
 func pending_effect_choice_snapshot() -> Dictionary:
-    return action_service.pending_choice_snapshot()
+    return pending_choice_snapshot()
 
 func pending_action_transaction_snapshot() -> Dictionary:
     return action_service.pending_action_transaction_snapshot()
 
-func resolve_effect_choice(request_id: String, selected_card_ids: Array) -> Dictionary:
+func resolve_choice(request_id: String, selected_card_ids: Array) -> Dictionary:
     _sync_action_service_modes()
-    return action_service.resolve_effect_choice(request_id, selected_card_ids)
+    if timing_system.has_pending_choice():
+        var timing_result := timing_system.resolve_choice(
+            request_id, selected_card_ids)
+        if timing_result.get("pending_choice", false) \
+                or not timing_result.get("success", false):
+            return timing_result
+        if not round_service.is_round_start_in_progress():
+            return timing_result
+        var continued: Dictionary = round_service.continue_round_start_after_choice()
+        if continued.get("pending_choice", false):
+            return {
+                "success": true,
+                "pending_choice": true,
+                "choice_request": pending_choice_snapshot(),
+                "drawn_card_ids": continued.get("drawn_cards", []).map(
+                    func(card): return str(card.id)),
+            }
+        return {
+            "success": continued.get("success", false),
+            "pending_choice": false,
+            "drawn_card_ids": continued.get("drawn_cards", []).map(
+                func(card): return str(card.id)),
+            "action_window_ready": continued.get(
+                "action_window_ready", false),
+            "reason": str(continued.get("reason", "")),
+        }
+    return action_service.resolve_choice(request_id, selected_card_ids)
+
+func resolve_effect_choice(request_id: String, selected_card_ids: Array) -> Dictionary:
+    return resolve_choice(request_id, selected_card_ids)
+
+func _begin_lifecycle_mutation_transaction() -> Dictionary:
+    var transaction: Dictionary = effect_ports.begin_effect_mutation_transaction()
+    transaction["passive_effect_state"] = \
+        passive_rule_runtime.capture_battle_effect_command_state()
+    transaction["passive_timing_bridge_state"] = \
+        battle_passive_timing_bridge.capture_transaction_state()
+    return transaction
+
+func _commit_lifecycle_mutation_transaction(transaction: Dictionary) -> Dictionary:
+    return effect_ports.commit_effect_mutation_transaction(transaction)
+
+func _rollback_lifecycle_mutation_transaction(transaction: Dictionary) -> bool:
+    var rolled_back: bool = effect_ports.rollback_effect_mutation_transaction(
+        transaction)
+    passive_rule_runtime.restore_battle_effect_command_state(
+        transaction.get("passive_effect_state", {}))
+    battle_passive_timing_bridge.restore_transaction_state(
+        transaction.get("passive_timing_bridge_state", {}))
+    return rolled_back
 
 func combat_order_labels(side, technique_name: String = "当前功法") -> Array[String]:
     return action_resolver.combat_order_labels(side, technique_name)

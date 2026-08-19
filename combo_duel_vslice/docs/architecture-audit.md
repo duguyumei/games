@@ -1996,3 +1996,39 @@ BattleSide工作牌组并继续复用战果提交／退出回滚。随机／全�
 加载、解析、SCRIPT ERROR、ObjectDB、RID、orphan、资源泄漏及退出错误，只有允许忽略的macOS CA警告。
 本批没有新增正式内容；矩阵为已有／合并30、B 8、C1 9、C2 0、D 1，正式内功13门、物品7件，剩余
 153门内功、13件物品和8门暂缓功法不变。
+
+## 30. 2026-08-19 选择与续跑事务平台收口
+
+三项能力扩展了既有所有者，没有建立跨Battle/Run的全局ChoiceManager：
+
+| 能力 | 状态唯一所有者 | 继续游标／查询 | 原子边界 |
+|---|---|---|---|
+| 生命周期选择 | `BattleTimingSystem` | `BattlePassiveTimingBridge`保存Invocation与现有Effect continuation；`BattleRoundService`保存回合启动阶段 | `BattleRuntimeMutationTransaction`及被动命令／Bridge状态快照 |
+| 行动确认支付 | `BattleActionPreparationService` | 稳定ExecutionPlan、牌型组与支付计划游标；候选为目标查询和本组计值牌交集 | 同一确认事务覆盖staging、异状支付、P/P0形成与最终确认 |
+| 节点多选 | `NodeInteractionService` | `rest_multi_select_count_query`、初始候选、已选顺序与finish资格 | 每项及最终节点完成均复用`RunMutationService + RunAggregateTransaction` |
+
+`CombatEngine/BattleSession`只做统一战斗选择路由，`RunSession`只编排节点提交、主动结束与奖励转换。
+`BattleChoiceRequest`仍只负责战斗候选与数量校验；`TechniqueEffectExecutor`仍独占效果continuation；
+`RunSaveData`只持久化节点pending，不持久化战斗pending。没有类越过这些边界读取其他所有者的私有字典来
+决定业务结果。
+
+生命周期外层事务现在同时冻结BattleSide、committed publication、TriggerQueue/GameLog、RNG、被动效果
+receipt以及`BattlePassiveTimingBridge`的pending/历史/reset token。成功时先构造完成结果再释放等待槽位，
+避免Dictionary别名清空正在返回的TimingEvent；失败时恢复全部快照并清除无效continuation。回合启动使用
+显式battle_start→round_start→各actor turn/draw→action_window_start→ready游标，before_normal_draw恢复后
+只补牌一次，action_window_start完成前不会开放行动。
+
+行动确认支付复用正式牌型结果。专项审计发现此阶段早于最终`HandGroupSnapshot`重建，因此候选读取按
+“已有snapshot contributing，否则使用已确认hand.contributing”统一解析；目标查询仍从staging读取当前
+实例，再与计值集合求交，额外牌不会进入候选。普通和来源临时炽气由同一状态服务一次移除，实际层数写入
+既有功法值固定修正与组快照。单方、同步和协同组没有平行支付实现，后一个来源读取前一个来源提交后的
+实时层数。
+
+节点pending schema升级为2，保存token、初始候选、已选顺序、min/max、finish资格、策略指纹和会话序号；
+旧schema 1迁为单选。每次提交后重新准备合法性并仅保留初始集合交集。审计修复了刷新冻结DTO后多个失败
+出口未恢复本地pending的问题；现在Handler缺失、非法返回、效果失败、Run mutation失败及后续refresh失败
+均恢复本次命令前GrowthInventory与DTO，而已成功的更早选项保持提交。
+
+没有发现Handler直接改牌区、异状、功法值或Run状态的旁路。正式内容没有新增：《易手换气》《观脉知机》
+《炽火炼功》《重构》仍未录入，内功13门、物品7件和8门暂缓功法数量不变。矩阵更新为已有／合并33、
+B 8、C1 6、C2 0、D 1。

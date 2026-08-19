@@ -8,6 +8,8 @@ extends RefCounted
 
 const SequenceBookScript = preload("res://core/sequence_book.gd")
 const SameQiRuleScript = preload("res://core/same_qi_rule.gd")
+const ChoiceRequestScript = preload(
+    "res://core/effects/battle_choice_request.gd")
 
 var player
 var enemy
@@ -15,6 +17,8 @@ var action_resolver
 var sequence_book
 var preview_for_side: Callable
 var turn_number_reader: Callable
+var _confirmation_serial: int = 0
+var _confirmation_state: Dictionary = {}
 
 
 func _init(
@@ -30,6 +34,467 @@ func _init(
     sequence_book = player_sequence_book
     preview_for_side = preview_callback
     turn_number_reader = read_turn_number
+
+
+func reset() -> void:
+    if not _confirmation_state.is_empty():
+        rollback_confirmation("行动准备服务重置")
+    _confirmation_serial = 0
+
+
+func begin_confirmation(side, proposal, mode: String) -> Dictionary:
+    if not _confirmation_state.is_empty():
+        return {"success": false, "reason": "已有未完成的行动确认支付事务"}
+    _confirmation_serial += 1
+    var action_token := "%s:action-confirm:%06d" % [
+        str(side.owner_id), _confirmation_serial]
+    var transaction: Dictionary = \
+        action_resolver.effect_ports.begin_effect_mutation_transaction()
+    transaction["passive_effect_state"] = \
+        action_resolver.passive_rule_runtime.capture_battle_effect_command_state()
+    _confirmation_state = {
+        "side": side,
+        "proposal": proposal,
+        "mode": mode,
+        "action_token": action_token,
+        "transaction": transaction,
+        "preview_before": proposal.preview.duplicate(true),
+        "groups_before": proposal.groups.duplicate(true),
+        "entries": [],
+        "entry_index": 0,
+        "choice_request": null,
+        "choice_snapshot": {},
+        "resolved_request_ids": [],
+        "payment_receipts": [],
+        "plans_built": false,
+    }
+    _assign_group_action_tokens(proposal, action_token)
+    return {"success": true, "action_token": action_token}
+
+
+func prepare_confirmation_payments(side, proposal) -> Dictionary:
+    if _confirmation_state.is_empty() \
+            or _confirmation_state.get("side") != side \
+            or _confirmation_state.get("proposal") != proposal:
+        return {"success": false, "reason": "行动确认支付事务与当前提案不匹配"}
+    if not bool(_confirmation_state.get("plans_built", false)):
+        var built := _build_payment_entries(side, proposal)
+        if not built.get("success", false):
+            return _fail_confirmation(str(built.get(
+                "reason", "行动确认支付计划建立失败")))
+        _confirmation_state["plans_built"] = true
+    return _continue_confirmation_payments()
+
+
+func has_pending_choice() -> bool:
+    return not _confirmation_state.is_empty() \
+        and _confirmation_state.get("choice_request") != null
+
+
+func pending_choice_snapshot() -> Dictionary:
+    return _confirmation_state.get("choice_snapshot", {}).duplicate(true) \
+        if has_pending_choice() else {}
+
+
+func resolve_confirmation_choice(
+        request_id: String, selected_card_ids: Array) -> Dictionary:
+    if not has_pending_choice():
+        return {"success": false, "reason": "当前没有等待中的行动确认支付选择"}
+    var request = _confirmation_state.get("choice_request")
+    if request_id == "" or request_id != str(request.request_id):
+        return _pending_failure("选择 request_id 与行动确认支付请求不匹配")
+    if _confirmation_state.get(
+            "resolved_request_ids", []).has(request_id):
+        return _pending_failure("行动确认支付请求已经成功提交")
+    var check: Dictionary = request.validate_selection(selected_card_ids)
+    if not check.get("ok", false):
+        return _pending_failure(str(check.get("reason", "支付目标选择不合法")))
+    var entry: Dictionary = _current_payment_entry()
+    var applied := _apply_payment_entry(
+        entry, request.selected_cards(selected_card_ids), request_id)
+    if not applied.get("success", false):
+        return _fail_confirmation(str(applied.get(
+            "reason", "行动确认资源支付失败")))
+    _confirmation_state["resolved_request_ids"].append(request_id)
+    _confirmation_state["choice_request"] = null
+    _confirmation_state["choice_snapshot"] = {}
+    _confirmation_state["entry_index"] = int(
+        _confirmation_state.get("entry_index", 0)) + 1
+    return _continue_confirmation_payments()
+
+
+func commit_confirmation() -> Dictionary:
+    if _confirmation_state.is_empty():
+        return {"success": false, "reason": "当前没有可提交的行动确认支付事务"}
+    if has_pending_choice():
+        return {"success": false, "reason": "行动确认支付仍在等待选择"}
+    var transaction: Dictionary = _confirmation_state.get("transaction", {})
+    var committed: Dictionary = \
+        action_resolver.effect_ports.commit_effect_mutation_transaction(
+            transaction)
+    if not committed.get("success", false):
+        return _fail_confirmation(str(committed.get(
+            "reason", "行动确认支付事务提交失败")))
+    var receipts: Array = _confirmation_state.get(
+        "payment_receipts", []).duplicate(true)
+    _confirmation_state.clear()
+    return {"success": true, "payment_receipts": receipts}
+
+
+func rollback_confirmation(reason: String = "行动确认失败") -> Dictionary:
+    if _confirmation_state.is_empty():
+        return {"success": true, "rolled_back": false, "reason": reason}
+    var side = _confirmation_state.get("side")
+    var proposal = _confirmation_state.get("proposal")
+    var transaction: Dictionary = _confirmation_state.get("transaction", {})
+    var rolled_back: bool = \
+        action_resolver.effect_ports.rollback_effect_mutation_transaction(
+            transaction)
+    action_resolver.passive_rule_runtime.restore_battle_effect_command_state(
+        transaction.get("passive_effect_state", {}))
+    if proposal != null:
+        proposal.preview.clear()
+        proposal.preview.merge(
+            _confirmation_state.get("preview_before", {}).duplicate(true), true)
+        proposal.groups.assign(
+            _confirmation_state.get("groups_before", []).duplicate(true))
+    _confirmation_state.clear()
+    return {
+        "success": rolled_back,
+        "rolled_back": true,
+        "reason": reason,
+        "owner_id": str(side.owner_id) if side != null else "",
+    }
+
+
+func confirmation_snapshot() -> Dictionary:
+    if _confirmation_state.is_empty():
+        return {}
+    return {
+        "action_token": str(_confirmation_state.get("action_token", "")),
+        "mode": str(_confirmation_state.get("mode", "")),
+        "entry_index": int(_confirmation_state.get("entry_index", 0)),
+        "entry_count": _confirmation_state.get("entries", []).size(),
+        "pending_choice": has_pending_choice(),
+        "choice_request": pending_choice_snapshot(),
+        "payment_receipts": _confirmation_state.get(
+            "payment_receipts", []).duplicate(true),
+    }
+
+
+func _assign_group_action_tokens(proposal, action_token: String) -> void:
+    proposal.preview["reshape_action_token"] = action_token
+    for group_index in range(1, proposal.groups.size()):
+        var group: Dictionary = proposal.groups[group_index]
+        var preview: Dictionary = group.get("preview", {})
+        preview["reshape_action_token"] = "%s:group:%d" % [
+            action_token, group_index]
+
+
+func _build_payment_entries(side, proposal) -> Dictionary:
+    var entries: Array = []
+    var groups := _proposal_group_previews(proposal)
+    for group_entry in groups:
+        var preview: Dictionary = group_entry["preview"]
+        var context_values := {
+            "owner": side,
+            "actor": side,
+            "target": _target_for(side),
+            "round_number": int(turn_number_reader.call()),
+            "payload": {
+                "action_token": str(preview.get(
+                    "reshape_action_token", "")),
+                "group_index": int(group_entry["group_index"]),
+                "group_kind": str(group_entry["group_kind"]),
+                "hand_id": str(preview.get("hand", {}).get("id", "")),
+                "effect_context_values": {
+                    "actor": side,
+                    "target": _target_for(side),
+                    "owner": side,
+                    "hand_result": preview.get("hand", {}),
+                    "played_cards": preview.get("cards", []),
+                    "values": preview.get("values", {}),
+                    "group_snapshot": preview.get("group_snapshot", {}),
+                    "action_token": str(preview.get(
+                        "reshape_action_token", "")),
+                    "source_kind": "action_confirmation",
+                    "ports": action_resolver.effect_ports,
+                    "card_identity_policy": side.card_identity_policy,
+                },
+            },
+        }
+        var plan = action_resolver.passive_rule_runtime.build_execution_plan(
+            "action_confirmation_payment", context_values)
+        if not plan.is_valid():
+            return {"success": false, "reason": "；".join(plan.errors)}
+        for invocation_index in range(plan.invocations.size()):
+            var invocation = plan.invocations[invocation_index]
+            var invocation_context = invocation.context.for_invocation(invocation)
+            var executed: Dictionary = \
+                action_resolver.passive_rule_runtime.execute_invocation(
+                    invocation, invocation_context, "read")
+            if not executed.get("success", false):
+                return executed
+            var plans = executed.get("result", {}).get("payment_plans", [])
+            if not plans is Array:
+                return {"success": false, "reason": "支付 Handler 必须返回 payment_plans 数组"}
+            for plan_index in range(plans.size()):
+                entries.append({
+                    "group_index": int(group_entry["group_index"]),
+                    "group_kind": str(group_entry["group_kind"]),
+                    "preview": preview,
+                    "invocation": invocation,
+                    "invocation_context": invocation_context,
+                    "invocation_index": invocation_index,
+                    "plan_index": plan_index,
+                    "plan": plans[plan_index].duplicate(true),
+                })
+    _confirmation_state["entries"] = entries
+    return {"success": true, "entry_count": entries.size()}
+
+
+func _continue_confirmation_payments() -> Dictionary:
+    var entries: Array = _confirmation_state.get("entries", [])
+    while int(_confirmation_state.get("entry_index", 0)) < entries.size():
+        var entry: Dictionary = _current_payment_entry()
+        var request_result := _build_payment_request(entry)
+        if not request_result.get("success", false):
+            return _fail_confirmation(str(request_result.get(
+                "reason", "行动确认支付候选查询失败")))
+        if bool(request_result.get("skip", false)):
+            _record_skipped_payment(entry, str(request_result.get("reason", "")))
+            _confirmation_state["entry_index"] = int(
+                _confirmation_state.get("entry_index", 0)) + 1
+            continue
+        var request = request_result["request"]
+        if request.should_auto_resolve():
+            var applied := _apply_payment_entry(
+                entry, request.selected_cards(request.candidate_ids()),
+                str(request.request_id))
+            if not applied.get("success", false):
+                return _fail_confirmation(str(applied.get(
+                    "reason", "行动确认资源自动支付失败")))
+            _confirmation_state["resolved_request_ids"].append(
+                str(request.request_id))
+            _confirmation_state["entry_index"] = int(
+                _confirmation_state.get("entry_index", 0)) + 1
+            continue
+        _confirmation_state["choice_request"] = request
+        _confirmation_state["choice_snapshot"] = request.snapshot()
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": request.snapshot(),
+            "payment_receipts": _confirmation_state.get(
+                "payment_receipts", []).duplicate(true),
+        }
+    return {
+        "success": true,
+        "pending_choice": false,
+        "payment_receipts": _confirmation_state.get(
+            "payment_receipts", []).duplicate(true),
+    }
+
+
+func _build_payment_request(entry: Dictionary) -> Dictionary:
+    var payment_plan: Dictionary = entry.get("plan", {})
+    var invocation = entry.get("invocation")
+    var context = entry.get("invocation_context").effect_context_for(
+        invocation.source)
+    context.ports = action_resolver.effect_ports
+    var query_spec: Dictionary = payment_plan.get("query", {}).duplicate(true)
+    query_spec["side"] = str(query_spec.get("side", "actor"))
+    query_spec["zone"] = str(query_spec.get("zone", "staging"))
+    query_spec["card_identity_policy"] = \
+        _confirmation_state.get("side").card_identity_policy
+    var query_result: Dictionary = action_resolver.effect_ports.query_effect_targets(
+        context, query_spec, action_resolver.rng)
+    if not query_result.get("success", false):
+        return query_result
+    var preview: Dictionary = entry.get("preview", {})
+    var contributing: Array = preview.get(
+        "group_snapshot", {}).get("contributing_cards", [])
+    if contributing.is_empty():
+        contributing = preview.get("hand", {}).get("contributing", [])
+    var contributing_ids: Array[String] = []
+    for card in contributing:
+        contributing_ids.append(str(card.id))
+    var candidates: Array = []
+    for card in query_result.get("cards", []):
+        if not contributing_ids.has(str(card.id)):
+            continue
+        if str(payment_plan.get("payment_kind", "")) == "blazing_layers" \
+                and int(card.total_blazing_layers()) <= 0:
+            continue
+        candidates.append(card)
+    var optional := bool(payment_plan.get("optional", false))
+    if candidates.is_empty():
+        if optional or str(payment_plan.get(
+                "insufficient_policy", "skip")) == "skip":
+            return {"success": true, "skip": true, "reason": "没有合法支付目标"}
+        return {"success": false, "reason": "行动确认支付缺少合法目标"}
+    var request_id := "%s:payment:%d:%d:%d:%s" % [
+        str(entry.get("preview", {}).get("reshape_action_token", "")),
+        int(entry.get("group_index", 0)),
+        int(entry.get("invocation_index", 0)),
+        int(entry.get("plan_index", 0)),
+        str(invocation.source.source_instance_key).sha256_text().left(12),
+    ]
+    var request = ChoiceRequestScript.new().configure({
+        "request_id": request_id,
+        "prompt": str(payment_plan.get("prompt", "请选择支付资源的真气")),
+        "chooser": "actor",
+        "minimum": 0 if optional else 1,
+        "maximum": 1,
+        "insufficient_policy": str(payment_plan.get(
+            "insufficient_policy", "skip")),
+        "ordered": false,
+        "candidates": candidates,
+        "metadata": {
+            "choice_kind": "action_confirmation_resource_payment",
+            "group_index": int(entry.get("group_index", 0)),
+            "group_kind": str(entry.get("group_kind", "")),
+            "hand_id": str(entry.get("preview", {}).get(
+                "hand", {}).get("id", "")),
+            "source_kind": str(invocation.source.source_kind),
+            "source_id": str(invocation.source.content_id),
+            "source_instance_key": str(invocation.source.source_instance_key),
+            "payment_kind": str(payment_plan.get("payment_kind", "")),
+            "payment_method": str(payment_plan.get("payment_method", "")),
+        },
+    })
+    var validation: Dictionary = request.validate_definition()
+    if not validation.get("ok", false):
+        return {"success": false, "reason": validation.get(
+            "reason", "行动确认支付请求无效")}
+    if request.requires_failure():
+        return {"success": false, "reason": "行动确认支付候选不足"}
+    return {"success": true, "request": request}
+
+
+func _apply_payment_entry(
+        entry: Dictionary, selected_cards: Array, request_id: String) -> Dictionary:
+    var payment_plan: Dictionary = entry.get("plan", {})
+    var invocation = entry.get("invocation")
+    var receipt := _payment_receipt_base(entry, request_id)
+    if selected_cards.is_empty():
+        if not bool(payment_plan.get("optional", false)):
+            return {"success": false, "reason": "必选支付不能跳过"}
+        receipt["skipped"] = true
+        receipt["success"] = true
+        _append_payment_receipt(entry, receipt)
+        return {"success": true, "receipt": receipt}
+    var card = selected_cards[0]
+    var paid := 0
+    var mutation: Dictionary = {}
+    match [str(payment_plan.get("payment_kind", "")),
+            str(payment_plan.get("payment_method", ""))]:
+        ["blazing_layers", "remove_all_layers"]:
+            mutation = action_resolver.effect_ports.remove_all_blazing_layers(
+                card,
+                str(invocation.source.definition.get(
+                    "name", invocation.source.content_id)), {
+                    "action_token": str(entry.get("preview", {}).get(
+                        "reshape_action_token", "")),
+                    "source_kind": str(invocation.source.source_kind),
+                    "source_id": str(invocation.source.content_id),
+                    "source_instance_key": str(
+                        invocation.source.source_instance_key),
+                    "trigger_mode": "action_confirmation",
+                    "payment_request_id": request_id,
+                })
+            paid = int(mutation.get("removed_layers", 0))
+        _:
+            return {"success": false, "reason": "未知行动确认支付方式"}
+    if not mutation.get("success", false):
+        return mutation
+    var fixed_delta := paid * int(payment_plan.get(
+        "power_fixed_per_unit", 0))
+    var preview: Dictionary = entry["preview"]
+    preview["action_confirmation_power_fixed"] = int(preview.get(
+        "action_confirmation_power_fixed", 0)) + fixed_delta
+    receipt.merge({
+        "success": true,
+        "skipped": false,
+        "card_instance_id": str(card.id),
+        "paid": paid,
+        "power_fixed_per_unit": int(payment_plan.get(
+            "power_fixed_per_unit", 0)),
+        "power_fixed_delta": fixed_delta,
+        "mutation": mutation.duplicate(true),
+    }, true)
+    _append_payment_receipt(entry, receipt)
+    return {"success": true, "receipt": receipt}
+
+
+func _record_skipped_payment(entry: Dictionary, reason: String) -> void:
+    var receipt := _payment_receipt_base(entry, "")
+    receipt.merge({
+        "success": true, "skipped": true, "paid": 0,
+        "power_fixed_delta": 0, "reason": reason,
+    }, true)
+    _append_payment_receipt(entry, receipt)
+
+
+func _payment_receipt_base(entry: Dictionary, request_id: String) -> Dictionary:
+    var invocation = entry.get("invocation")
+    return {
+        "request_id": request_id,
+        "action_token": str(entry.get("preview", {}).get(
+            "reshape_action_token", "")),
+        "group_index": int(entry.get("group_index", 0)),
+        "group_kind": str(entry.get("group_kind", "")),
+        "source_kind": str(invocation.source.source_kind),
+        "source_id": str(invocation.source.content_id),
+        "source_instance_key": str(invocation.source.source_instance_key),
+        "behavior_id": str(invocation.source.behavior_id),
+        "behavior_index": int(invocation.source.behavior_index),
+        "execution_index": int(invocation.execution_index),
+        "plan_index": int(entry.get("plan_index", 0)),
+        "payment_kind": str(entry.get("plan", {}).get("payment_kind", "")),
+        "payment_method": str(entry.get("plan", {}).get("payment_method", "")),
+    }
+
+
+func _append_payment_receipt(entry: Dictionary, receipt: Dictionary) -> void:
+    _confirmation_state["payment_receipts"].append(receipt.duplicate(true))
+    var preview: Dictionary = entry["preview"]
+    if not preview.has("action_confirmation_payment_receipts"):
+        preview["action_confirmation_payment_receipts"] = []
+    preview["action_confirmation_payment_receipts"].append(
+        receipt.duplicate(true))
+
+
+func _proposal_group_previews(proposal) -> Array:
+    var result: Array = [{
+        "group_index": 0, "group_kind": "main", "preview": proposal.preview}]
+    for group_index in range(1, proposal.groups.size()):
+        var group: Dictionary = proposal.groups[group_index]
+        result.append({
+            "group_index": group_index,
+            "group_kind": str(group.get("kind", "cooperation")),
+            "preview": group.get("preview", {}),
+        })
+    return result
+
+
+func _current_payment_entry() -> Dictionary:
+    return _confirmation_state.get("entries", [])[int(
+        _confirmation_state.get("entry_index", 0))]
+
+
+func _pending_failure(reason: String) -> Dictionary:
+    return {
+        "success": false,
+        "pending_choice": true,
+        "choice_request": pending_choice_snapshot(),
+        "reason": reason,
+    }
+
+
+func _fail_confirmation(reason: String) -> Dictionary:
+    rollback_confirmation(reason)
+    return {"success": false, "pending_choice": false, "reason": reason}
 
 
 func prepare_cooperation(
@@ -180,6 +645,7 @@ func finalize_staged_proposal(side, proposal) -> Dictionary:
     var same_qi_freeze := _refresh_same_qi_gain(proposal, true)
     if not same_qi_freeze.get("success", false):
         return same_qi_freeze
+    _write_payment_results_to_group_snapshots(proposal)
     var formation_commit := _commit_power_formation_transactions(side, proposal)
     if not formation_commit.get("success", false):
         rollback_power_formation(side, proposal)
@@ -413,6 +879,17 @@ func _restore_individual_cooperation_power(proposal) -> void:
         cooperation_group.get(
             "cooperation_individual_power",
             cooperation_preview.get("values", {}).get("technique_value", 0)))
+
+
+func _write_payment_results_to_group_snapshots(proposal) -> void:
+    for group_entry in _proposal_group_previews(proposal):
+        var preview: Dictionary = group_entry["preview"]
+        var snapshot: Dictionary = preview.get("group_snapshot", {})
+        snapshot["action_confirmation_power_fixed"] = int(preview.get(
+            "action_confirmation_power_fixed", 0))
+        snapshot["action_confirmation_payment_receipts"] = preview.get(
+            "action_confirmation_payment_receipts", []).duplicate(true)
+        preview["group_snapshot"] = snapshot
 
 
 func _target_for(side):

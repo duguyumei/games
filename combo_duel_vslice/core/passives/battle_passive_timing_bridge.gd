@@ -1,6 +1,11 @@
 class_name BattlePassiveTimingBridge
 extends RefCounted
 
+const MANAGED_CHOICE_HOOKS := [
+    "battle_start", "round_start", "turn_start", "before_normal_draw",
+    "after_normal_draw", "action_window_start",
+]
+
 const EventContextScript = preload(
     "res://core/passives/battle_passive_event_context.gd")
 const RegistryScript = preload(
@@ -119,6 +124,18 @@ func registered_binding_snapshot() -> Array[Dictionary]:
             })
     return result
 
+func capture_transaction_state() -> Dictionary:
+    return {
+        "pending_events": _pending_events.duplicate(true),
+        "reset_tokens": _reset_tokens.duplicate(true),
+        "execution_history": execution_history.duplicate(true),
+    }
+
+func restore_transaction_state(state: Dictionary) -> void:
+    _pending_events = state.get("pending_events", {}).duplicate(true)
+    _reset_tokens = state.get("reset_tokens", {}).duplicate(true)
+    execution_history.assign(state.get("execution_history", []))
+
 func _collect_bindings() -> Dictionary:
     var runtime = _runtime_ref.get_ref()
     if runtime == null:
@@ -190,6 +207,8 @@ func _on_timing_begin(event, expected_hook: String) -> Dictionary:
         "owners": owners,
         "snapshots": snapshots,
         "plans": plans,
+        "execution_history_size": execution_history.size(),
+        "active_binding": {},
     }
     _reset_for_timing(event, expected_hook)
     return {"success": true, "detail": "被动时点事务已建立"}
@@ -205,8 +224,7 @@ func _on_timing_binding(
             "detail": "%s order=%d 缺少被动时点事务" % [
                 expected_hook, expected_order],
         }
-    var runtime = _runtime_ref.get_ref()
-    var executed := 0
+    var invocation_entries: Array = []
     for owner in pending["owners"]:
         var allowed: Dictionary = _bindings.get(
             expected_hook, {}).get(expected_order, {}).get(
@@ -217,37 +235,149 @@ func _on_timing_binding(
         for invocation in plan.invocations:
             if not allowed.has(_source_identity(invocation.source)):
                 continue
-            var result: Dictionary = runtime.execute_invocation(
-                invocation, null, "mutation")
-            execution_history.append({
-                "hook": expected_hook,
-                "order": expected_order,
-                "owner_id": owner.owner_id,
-                "source_instance_key": invocation.source.source_instance_key,
-                "behavior_id": invocation.source.behavior_id,
-                "execution_index": invocation.execution_index,
-                "success": bool(result.get("success", false)),
-                "result": result.get("result", {}).duplicate(true),
-            })
-            if not result.get("success", false):
-                var rollback_errors := _rollback_pending(pending)
-                var reason := str(result.get("reason", "被动行为执行失败"))
-                if not rollback_errors.is_empty():
-                    reason += "；计数器回滚失败：%s" % "；".join(rollback_errors)
-                return {
-                    "success": false,
-                    "detail": "hook=%s order=%d source_instance_key=%s behavior_id=%s reason=%s" % [
-                        expected_hook,
-                        expected_order,
-                        invocation.source.source_instance_key,
-                        invocation.source.behavior_id,
-                        reason],
-                }
-            executed += 1
+            invocation_entries.append({"owner": owner, "invocation": invocation})
+    pending["active_binding"] = {
+        "hook": expected_hook,
+        "order": expected_order,
+        "entries": invocation_entries,
+        "index": 0,
+        "executed": 0,
+        "continuation": null,
+        "invocation_context": null,
+        "receipt_token": "",
+        "handler_result": {},
+    }
+    return _continue_timing_binding(event.serial)
+
+func _continue_timing_binding(event_serial: int) -> Dictionary:
+    var pending: Dictionary = _pending_events.get(event_serial, {})
+    var binding: Dictionary = pending.get("active_binding", {})
+    if pending.is_empty() or binding.is_empty():
+        return {"success": false, "detail": "生命周期选择恢复位置已经失效"}
+    var runtime = _runtime_ref.get_ref()
+    var entries: Array = binding.get("entries", [])
+    while int(binding.get("index", 0)) < entries.size():
+        var entry: Dictionary = entries[int(binding["index"])]
+        var owner = entry["owner"]
+        var invocation = entry["invocation"]
+        var invocation_context = invocation.context.for_invocation(invocation)
+        invocation_context.payload = invocation_context.payload.duplicate(false)
+        invocation_context.payload["lifecycle_choice_managed"] = \
+            str(binding.get("hook", "")) in MANAGED_CHOICE_HOOKS
+        var result: Dictionary = runtime.execute_invocation(
+            invocation, invocation_context, "mutation")
+        if result.get("success", false) \
+                and result.get("result", {}).get("pending_choice", false):
+            var managed: Dictionary = result["result"]
+            binding["continuation"] = managed.get("effect_continuation")
+            binding["invocation_context"] = invocation_context
+            binding["receipt_token"] = str(managed.get("receipt_token", ""))
+            binding["handler_result"] = managed.get(
+                "handler_result", {}).duplicate(true)
+            pending["active_binding"] = binding
+            return _pending_choice_result(event_serial, managed)
+        _record_invocation_result(
+            str(binding["hook"]), int(binding["order"]), owner, invocation, result)
+        if not result.get("success", false):
+            return _binding_failure(pending, binding, invocation, result)
+        binding["executed"] = int(binding.get("executed", 0)) + 1
+        binding["index"] = int(binding["index"]) + 1
+    pending["active_binding"] = {}
     return {
         "success": true,
         "detail": "%s order=%d 执行 %d 个 Invocation" % [
-            expected_hook, expected_order, executed],
+            str(binding["hook"]), int(binding["order"]),
+            int(binding.get("executed", 0))],
+    }
+
+func resume_timing_choice(
+        request_id: String,
+        selected_ids: Array,
+        event_serial: int) -> Dictionary:
+    var pending: Dictionary = _pending_events.get(event_serial, {})
+    var binding: Dictionary = pending.get("active_binding", {})
+    if pending.is_empty() or binding.is_empty() \
+            or binding.get("continuation") == null:
+        return {"success": false, "detail": "当前没有可恢复的生命周期选择"}
+    var entries: Array = binding.get("entries", [])
+    var index := int(binding.get("index", -1))
+    if index < 0 or index >= entries.size():
+        return {"success": false, "detail": "生命周期 Invocation 游标无效"}
+    var entry: Dictionary = entries[index]
+    var invocation = entry["invocation"]
+    var runtime = _runtime_ref.get_ref()
+    var resumed: Dictionary = runtime.resume_managed_invocation_effects(
+        invocation,
+        binding.get("invocation_context"),
+        binding.get("continuation"),
+        request_id,
+        selected_ids,
+        str(binding.get("receipt_token", "")),
+        binding.get("handler_result", {}))
+    if resumed.get("success", false) and resumed.get("pending_choice", false):
+        binding["continuation"] = resumed.get("effect_continuation")
+        binding["receipt_token"] = str(resumed.get("receipt_token", ""))
+        binding["handler_result"] = resumed.get(
+            "handler_result", {}).duplicate(true)
+        pending["active_binding"] = binding
+        return _pending_choice_result(event_serial, resumed)
+    _record_invocation_result(
+        str(binding["hook"]), int(binding["order"]), entry["owner"],
+        invocation, {"success": resumed.get("success", false), "result": resumed})
+    if not resumed.get("success", false):
+        return _binding_failure(
+            pending, binding, invocation,
+            {"success": false, "reason": resumed.get(
+                "reason", "被动选择恢复失败")})
+    binding["executed"] = int(binding.get("executed", 0)) + 1
+    binding["index"] = index + 1
+    binding["continuation"] = null
+    binding["invocation_context"] = null
+    pending["active_binding"] = binding
+    return _continue_timing_binding(event_serial)
+
+func _pending_choice_result(event_serial: int, managed: Dictionary) -> Dictionary:
+    return {
+        "success": true,
+        "pending_choice": true,
+        "choice_request": managed.get("choice_request", {}).duplicate(true),
+        "detail": str(managed.get(
+            "effect_result", {}).get("detail", "等待生命周期选择")),
+        "_resume_callable": Callable(self, "resume_timing_choice").bind(
+            event_serial),
+    }
+
+func _record_invocation_result(
+        hook: String, order: int, owner, invocation, result: Dictionary) -> void:
+    execution_history.append({
+        "hook": hook,
+        "order": order,
+        "owner_id": owner.owner_id,
+        "source_instance_key": invocation.source.source_instance_key,
+        "behavior_id": invocation.source.behavior_id,
+        "execution_index": invocation.execution_index,
+        "success": bool(result.get("success", false)),
+        "result": result.get("result", {}).duplicate(true),
+    })
+
+func _binding_failure(
+        pending: Dictionary,
+        binding: Dictionary,
+        invocation,
+        result: Dictionary) -> Dictionary:
+    var rollback_errors := _rollback_pending(pending)
+    execution_history.resize(int(pending.get(
+        "execution_history_size", execution_history.size())))
+    var reason := str(result.get("reason", "被动行为执行失败"))
+    if not rollback_errors.is_empty():
+        reason += "；计数器回滚失败：%s" % "；".join(rollback_errors)
+    return {
+        "success": false,
+        "detail": "hook=%s order=%d source_instance_key=%s behavior_id=%s reason=%s" % [
+            str(binding.get("hook", "")), int(binding.get("order", 0)),
+            invocation.source.source_instance_key,
+            invocation.source.behavior_id,
+            reason],
     }
 
 func _on_timing_end(event, expected_hook: String) -> Dictionary:

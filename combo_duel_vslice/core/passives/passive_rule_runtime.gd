@@ -83,6 +83,19 @@ func close_battle_effect_commands() -> void:
     _active_effect_chain.clear()
     _effect_execution_depth = 0
 
+func capture_battle_effect_command_state() -> Dictionary:
+    return {
+        "invocation_receipts": _battle_effect_invocation_receipts.duplicate(true),
+        "active_effect_chain": _active_effect_chain.duplicate(true),
+        "effect_execution_depth": _effect_execution_depth,
+    }
+
+func restore_battle_effect_command_state(state: Dictionary) -> void:
+    _battle_effect_invocation_receipts = state.get(
+        "invocation_receipts", {}).duplicate(true)
+    _active_effect_chain = state.get("active_effect_chain", {}).duplicate(true)
+    _effect_execution_depth = int(state.get("effect_execution_depth", 0))
+
 func coerce_context(value):
     if value is ContextScript:
         return value
@@ -291,6 +304,17 @@ func _execute_standard_effects(
     var executed: Dictionary = executor.execute_all(
         handler_result.get("effects", []), effect_context)
     if executed.get("pending_choice", false):
+        if bool(context.payload.get("lifecycle_choice_managed", false)):
+            return {
+                "success": true,
+                "pending_choice": true,
+                "effect_result": executed,
+                "effect_continuation": executed.get("_continuation"),
+                "choice_request": executed.get(
+                    "choice_request", {}).duplicate(true),
+                "receipt_token": receipt_token,
+                "handler_result": handler_result.duplicate(true),
+            }
         return {
             "success": false,
             "reason": "%s 不允许悬挂未接管的被动选择；请在 action_resolve 建立选择链" \
@@ -304,6 +328,47 @@ func _execute_standard_effects(
         return {"success": false, "reason": reason, "effect_result": executed}
     var result := handler_result.duplicate(true)
     result["effect_result"] = executed
+    result["receipt_token"] = receipt_token
+    result["reused"] = false
+    _battle_effect_invocation_receipts[receipt_token] = result.duplicate(true)
+    return result
+
+func resume_managed_invocation_effects(
+        invocation,
+        context,
+        continuation,
+        request_id: String,
+        selected_ids: Array,
+        receipt_token: String,
+        handler_result: Dictionary) -> Dictionary:
+    if not bool(context.payload.get("lifecycle_choice_managed", false)):
+        return {"success": false, "reason": "当前被动选择没有生命周期接管者"}
+    var executor = _effect_executor_ref.get_ref() \
+        if _effect_executor_ref != null else null
+    if executor == null:
+        return {"success": false, "reason": "被动标准效果执行入口尚未装配"}
+    _begin_effect_chain()
+    var resumed: Dictionary = executor.resume(
+        continuation, request_id, selected_ids)
+    _end_effect_chain()
+    if resumed.get("pending_choice", false):
+        return {
+            "success": true,
+            "pending_choice": true,
+            "effect_result": resumed,
+            "effect_continuation": resumed.get("_continuation"),
+            "choice_request": resumed.get("choice_request", {}).duplicate(true),
+            "receipt_token": receipt_token,
+            "handler_result": handler_result.duplicate(true),
+        }
+    if not resumed.get("success", false):
+        var reason := str(resumed.get("detail", "被动选择恢复失败"))
+        if _battle_effect_scenario_error.is_valid():
+            _battle_effect_scenario_error.call(
+                "战斗被动标准效果失败：%s" % reason)
+        return {"success": false, "reason": reason, "effect_result": resumed}
+    var result := handler_result.duplicate(true)
+    result["effect_result"] = resumed
     result["receipt_token"] = receipt_token
     result["reused"] = false
     _battle_effect_invocation_receipts[receipt_token] = result.duplicate(true)

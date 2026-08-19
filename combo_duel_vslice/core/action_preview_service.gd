@@ -318,6 +318,8 @@ func recalculate_confirmed_power(
         pending_total += int(source.get("amount", 0))
         pending_tokens.append(str(source.get("source_token", "")))
     modifiers["power_fixed"] = int(modifiers.get("power_fixed", 0)) + pending_total
+    modifiers["power_fixed"] = int(modifiers.get("power_fixed", 0)) + int(
+        preview.get("action_confirmation_power_fixed", 0))
     preview["pending_power_fixed_tokens"] = pending_tokens
     preview["pending_power_fixed_amount"] = pending_total
     var result := _resolve_power_values(

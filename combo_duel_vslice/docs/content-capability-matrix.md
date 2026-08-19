@@ -8,7 +8,7 @@
 - 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功、卫星、机缘不空、重岳不崩及孤垒不灭共13门内功，修习策略家族6件物品及纳气养命共7件物品正式接入；剩余153门内功、13件物品和8门暂缓功法仍未接入生产内容池。
 - Readiness：A=46，B=69，C=70，D=1，E=8，合计194；其中已正式接入但保留历史复杂度标签的9门内功仍计入C口径。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并30项，余下实现形态为B 8、C1 9、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并33项，余下实现形态为B 8、C1 6、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -64,11 +64,11 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 化烬得财 | `burned_qi_play_experience` | [36 §4《化烬得财》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#化烬得财) | card_entered_discard | EffectTargetQuery.anomaly/reshape | 每当我方成功打出 1 张拥有燃尽的真气时，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | BattleEventCatalog.card_entered_discard; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 净秽得财 | `cleansed_content_experience` | [36 §4《净秽得财》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#净秽得财) | `card_state_changed`（purify） | EffectTargetQuery.anomaly/reshape | 每当我方真气受到净化时，净化每实际移除 1 项其他异状或临时重塑，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | `card_state_changed.removed_count/removed_changes`已满足底层事实 | C | adapter:source_neutral_handler/context | 底层已满足；内容仍未接入 |
 | inner_skill | 旁脉藏气 | `rightmost_qi_gains_extra_vein` | [36 §5《旁脉藏气》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#旁脉藏气) | after_normal_draw | EffectTargetQuery.anomaly/reshape | 每个完整回合开始完成正常补牌后，使我方最右侧手牌获得寄脉。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.after_normal_draw; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
-| inner_skill | 易手换气 | `hand_mulligan_cycle` | [36 §5《易手换气》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#易手换气) | action_window_start | 权威正文的资格与边界 | 每个行动窗口开始时，可以将 1 张手牌放到牌库底，然后抽 1 张牌。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | `BattleEventCatalog.TIMING_EVENTS`已有`action_window_start`，`ChoiceEffectHandler`已有等待恢复，但非action hook禁止pending | C | battle_lifecycle_choice_transaction | 按能力键合并实现 |
+| inner_skill | 易手换气 | `hand_mulligan_cycle` | [36 §5《易手换气》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#易手换气) | action_window_start | 权威正文的资格与边界 | 每个行动窗口开始时，可以将 1 张手牌放到牌库底，然后抽 1 张牌。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | 生命周期选择事务已完成；具体内容与来源规则仍未录入 | C | battle_lifecycle_choice_transaction | 底层完成不等于内容接入 |
 | inner_skill | 空脉回潮 | `empty_hand_draw` | [36 §5《空脉回潮》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#空脉回潮) | `card_moved` committed（已有；hand非0→0） | 权威正文的资格与边界 | 我方手牌实际从非 0 变为 0 张时，抽 3 张牌。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | `card_moved`已公开`hand_count_before/after`；具体内功未接入 | C | adapter:source_neutral_handler/context | 本批未实现该内功 |
 | inner_skill | 留气生华 | `leftmost_qi_gains_growth` | [36 §5《留气生华》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#留气生华) | turn_end | EffectTargetQuery.anomaly/reshape | 每个完整回合结束时，使我方最左侧手牌获得 1 层成长。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.turn_end; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 同阶相引 | `matching_rank_draw` | [36 §5《同阶相引》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#同阶相引) | card_drawn | current_rank_order | 每当 1 张真气抽入手牌时，如果手牌中已经有另一张相同当前牌阶的真气，再抽 1 张牌。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | 现有 card_drawn + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 观脉知机 | `scry_top_deck` | [36 §5《观脉知机》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#观脉知机) | before_normal_draw | 权威正文的资格与边界 | 每次正常补牌前，查看牌库顶 3 张；可以将其中任意张放到牌库底，剩余牌保持原顺序，然后进行正常补牌。 | 无新增状态；事件局部输入 | 选择候选冻结 + RNG/状态回滚 | ChoiceEffectHandler 与等待恢复已有，但非 action hook 禁止 pending | C | battle_lifecycle_choice_transaction | 按能力键合并实现 |
+| inner_skill | 观脉知机 | `scry_top_deck` | [36 §5《观脉知机》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#观脉知机) | before_normal_draw | 权威正文的资格与边界 | 每次正常补牌前，查看牌库顶 3 张；可以将其中任意张放到牌库底，剩余牌保持原顺序，然后进行正常补牌。 | 无新增状态；事件局部输入 | 选择候选冻结 + RNG/状态回滚 | 生命周期选择事务已完成；具体内容与来源规则仍未录入 | C | battle_lifecycle_choice_transaction | 底层完成不等于内容接入 |
 | inner_skill | 孤气回环 | `single_qi_cycle_and_resonance` | [36 §5《孤气回环》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#孤气回环) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 一次行动实际只打出 1 张真气时，同气槽 +1；该真气结算完成后若将要进入弃牌堆，改为放到我方牌库底。 | BattleRuntime temporary state | 事件或命令既有事务 | CardZoneService.move_card 与 BattleActionTransaction | C | card_disposition_replacement | 按能力键合并实现 |
 | inner_skill | 退气归经 | `discard_to_deck_bottom` | [36 §5《退气归经》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#退气归经) | card_explicitly_discarded | 权威正文的资格与边界 | 我方真气因明确弃牌而离开手牌时，不进入弃牌堆，改为放到牌库底。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | CardZoneService.move_card 与 BattleActionTransaction | C | card_disposition_replacement | 按能力键合并实现 |
 | inner_skill | 万流归宗 | `once_per_battle_discard_recycle` | [36 §5《万流归宗》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#万流归宗) | draw请求发现牌库为空 | 权威正文的资格与边界 | 每场战斗一次；我方需要抽牌但牌库为空时，将我方全部弃牌堆洗回牌库，然后继续完成本次抽牌。 | BattleRuntime temporary state | 支付/移动/后效原子提交 | `CardZoneService.draw`与洗牌/移动端口已有 | C | draw_depletion_replacement_transaction | 按能力键合并实现 |
@@ -190,7 +190,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 广炉容火 | `momentum_cap_plus_twenty` | [36 §13《广炉容火》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#广炉容火) | `momentum_cap_query` | source counter/marker | 连势上限提高 20。 | BattleRuntime temporary state | 事件或命令既有事务 | 基础上限冻结、有效上限查询、统一截断、快照/AI/UI/预览与失败回滚均已完成 | B | — | 底层已完成；《广炉容火》仍未录入正式内容数据 |
 | inner_skill | 炉脉自转 | `round_start_same_qi_to_four` | [36 §13《炉脉自转》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#炉脉自转) | round_start / turn_end | 权威正文的资格与边界 | 每个完整回合开始时，若同气槽低于 4，同气槽 +1。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 round_start / turn_end + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 五运生势 | `five_turn_declining_momentum` | [36 §13《五运生势》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#五运生势) | battle_start | 权威正文的资格与边界 | 战斗开始时获得 5 层运数。每个完整回合开始时，获得等于运数的连势；回合结束时运数 -1，最低为 0。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 battle_start + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 炽火炼功 | `consume_blazing_for_power` | [36 §13《炽火炼功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#炽火炼功) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 行动确认时，可以选择 1 张参与功法值计算的真气，移除其全部炽气；每实际移除 1 层，本组功法值 +2。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | action_pre_commit、ChoiceEffectHandler、BattleActionTransaction 已有 | C | action_confirmation_resource_payment | 按能力键合并实现 |
+| inner_skill | 炽火炼功 | `consume_blazing_for_power` | [36 §13《炽火炼功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#炽火炼功) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 行动确认时，可以选择 1 张参与功法值计算的真气，移除其全部炽气；每实际移除 1 层，本组功法值 +2。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | 行动确认资源支付协议已完成；具体内容仍未录入 | C | action_confirmation_resource_payment | 底层完成不等于内容接入 |
 | inner_skill | 蛊火蔓延 | `poisoned_discard_gains_burnout` | [36 §13《蛊火蔓延》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#蛊火蔓延) | 进入弃牌堆前的card transition准备阶段（待补） | EffectTargetQuery.anomaly/reshape | 任意一方带毒真气即将实际进入弃牌堆时，该真气先获得燃尽。 | event/action local snapshot | 移动与状态修改原子提交 | `CardZoneService`已有移动事务及`card_moved`响应；`StatusSystem`/净化/异状分类已有 | C | committed_card_transition_event<br>burnout_debuff_and_flourish_status | 按能力键合并实现 |
 | inner_skill | 烬法重鸣 | `first_burnout_technique_echo` | [36 §13《烬法重鸣》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烬法重鸣) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 每次行动中，第一门使用至少 1 张燃尽真气参与功法值计算的功法，其功法回响次数 +1。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | 冻结`HandGroupSnapshot.burned_out_at_freeze`与根行动门禁已接入 | 已接入 | — | 9门正式资源之一；不重扫当前牌区 |
 | inner_skill | 烬步催轮 | `burnout_technique_advances_extra` | [36 §13《烬步催轮》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烬步催轮) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 使用至少 1 张燃尽真气参与功法值计算的功法成功结算后，该精确牌型的功法序列额外推进 1 格。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | `BattleTechniqueSequenceEffectService.complete_and_advance`统一正常/额外推进 | 已接入 | — | 9门正式资源之一；回响不推进 |
@@ -223,7 +223,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | item | 抓手 | `first_round_extra_action_and_refill` | [43 §4《抓手》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#抓手) | after_normal_draw | source counter/marker | 第一完整回合开始完成正常补牌后，获得 1 次额外行动，并将手牌抽至有效手牌上限。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 after_normal_draw + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 回收魔法 | `third_round_shuffle_all_discard` | [43 §4《回收魔法》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#回收魔法) | round_start / turn_end | 权威正文的资格与边界 | 第三完整回合结束时，将我方弃牌堆中的所有牌洗入牌库。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 round_start / turn_end + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 象形文字 | `regenerate_current_act_map` | [43 §5《象形文字》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#象形文字) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 获得时回到当前层的旅程起点，并重新生成这一层的地图。 | 无新增状态；事件局部输入 | 事件或命令既有事务 | ComboMapGenerator/MapNavigationService/RunAggregateTransaction已有 | C | map_regeneration_transaction | 按能力键合并实现 |
-| item | 重构 | `rest_choose_all_options` | [43 §5《重构》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#重构) | node_completed | 权威正文的资格与边界 | 休息节点中可以依次选择所有当前可用选项。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | NodeInteractionService单次选择/continuation已有 | C | rest_multi_select_session | 按能力键合并实现 |
+| item | 重构 | `rest_choose_all_options` | [43 §5《重构》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#重构) | node_completed | 权威正文的资格与边界 | 休息节点中可以依次选择所有当前可用选项。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | 节点多选续跑协议已完成；具体物品仍未录入 | C | rest_multi_select_session | 底层完成不等于内容接入 |
 | item | 调息玉 | `post_battle_heal_ten` | [43 §6《调息玉》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#调息玉) | battle_completed | 权威正文的资格与边界 | 每场战斗胜利后恢复 10 点生命。 | BattleRuntime temporary state | 事件或命令既有事务 | RunPassiveEventService.battle_completed；op=heal_life；RunAggregateTransaction；缺run效果适配Handler | B | adapter:source_neutral_int_or_run_handler | 现有hook/事务上补薄适配 |
 | item | 延寿玉 | `max_life_plus_twenty` | [43 §6《延寿玉》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#延寿玉) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 最大生命 +20。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | `SourceContributedStatService`与统一 item marker 协议已完成 | C | item_source_marker_state | 协议完成；具体物品仍未接入 |
 | item | 纳气养命 | `deck_growth_and_reshape_vitality` | [43 §6《纳气养命》](../../godot/docs/design-current/progression/43-item-implementation-backlog.md#纳气养命) | `run_qi_permanently_added`、永久`qi_reshape_committed`、临时重塑`card_state_changed` | holder=owner；scope/persistence；实际变化数为正 | 每向本局牌组中永久新增 1 张真气，最大生命 +1。每成功重塑 1 张我方真气，恢复 1 点生命。 | item run marker → `SourceContributedStatService`；生命归Run/Battle工作副本 | `RunMutationService`工作副本与`BattleRuntimeMutationTransaction` | 通用`run_fact_effects/battle_effects`、item marker、统一治疗端口与三类canonical事实均已接入 | A |  | 已正式接入；新增逐实例累计，同牌同操作的多字段重塑只恢复一次 |
@@ -266,7 +266,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `pre_technique_cost_transaction` | transaction | TechniqueResolutionService 有 prepare/resolve 与 BattleActionTransaction | 启动后、P冻结前的统一支付/阻止收益/失败返还阶段 | inner_skill:experience_fueled_technique_power | TechniqueResolutionService prepare | 否 | event/action local snapshot | 不另建功法执行器 | 15 | 正常/自动/调用各支付；回响不重付；失败返还 |
 | `temporary_blazing_source_layers` | state | **已有**：`QiCard`按稳定`source_instance_key`保存临时炽气；`CardAnomalyService/CardStateLifecycle`统一读写、净化、快照与生命周期 | 已完成；六个消费者仍未接入具体来源规则 | inner_skill:retained_qi_gains_temporary_blazing_qi<br>inner_skill:effect_drawn_qi_gains_temporary_blazing_qi<br>inner_skill:every_third_round_duplicates_blazing_qi<br>inner_skill:temporary_reshape_grants_temporary_blazing<br>inner_skill:consumed_blazing_qi_transfers_temporarily<br>inner_skill:same_qi_gain_cultivates_hand | QiCard + CardAnomalyService + CardStateLifecycle | 否 | BattleRuntime temporary state | 普通炽气保持原语义；有效值仍走统一管线 | 已完成 | 多来源独立；仅真正进入弃牌堆清除；战斗快照往返但不进入Run持久数据 |
 | `deflection_attack_cancel_protocol` | state | **已有**：`block_sources`类型化记录、`grant_deflection`、`resolve_attack_cancellation`、`deflection_resolved`、`attack_canceled`、同步事务回滚及AI/UI分离投影 | 已完成；四个消费者仍需各自Handler或回响计划能力，不表示内容已接入 | inner_skill:defense_decay_creates_deflection<br>inner_skill:all_mountain_action_grants_deflection<br>inner_skill:successful_deflection_applies_flaw<br>inner_skill:blocked_technique_echoes | BattleSurvivalEffectService + CombatSourceLifecycleService | 否 | BattleRuntime temporary state / existing damage transaction | 扩展现有block，不建平行伤害器 | 已完成 | 阈值顺序稳定；击穿仍消费；canonical子类型准确；同步失败全回滚 |
-| `battle_lifecycle_choice_transaction` | UI | ChoiceEffectHandler 与等待恢复已有，但非 action hook 禁止 pending | 生命周期事件可冻结候选、暂停、恢复并原子提交 | inner_skill:hand_mulligan_cycle<br>inner_skill:scry_top_deck | BattlePassiveTimingBridge + battle continuation | 否 | event/action local snapshot | 复用 BattleChoiceRequest | 18 | 恢复不重掷；取消/失败不移动牌 |
+| `battle_lifecycle_choice_transaction` | UI | **已有**：`BattleTimingSystem`保存时点处理器游标与外层事务，`BattlePassiveTimingBridge`保存Invocation游标和`TechniqueEffectContinuation`，`BattleRoundService`保存回合启动游标；统一战斗选择Facade恢复原位置 | 已完成；易手换气、观脉知机仍未录入 | inner_skill:hand_mulligan_cycle<br>inner_skill:scry_top_deck | BattleTimingSystem + BattlePassiveTimingBridge + BattleRoundService | 否 | event/action local snapshot | 复用 BattleChoiceRequest 与现有战斗运行事务 | 已完成 | 冻结候选/request_id；恢复不重放处理器、Invocation或补牌；失败恢复状态、receipt、事件、日志与RNG |
 | `qi_consumption_transaction` | transaction | **已有**：prepare/commit批量协议复用唯一临时移出链；逐牌`card_moved/qi_consumed`共享token；`BattleRuntimeMutationTransaction`统一状态、事件、日志与RNG回滚 | 已完成；六个具体消费者仍未接入Handler或其余独立依赖 | inner_skill:consumed_qi_grants_defense<br>inner_skill:consume_eight_qi_to_negate_lethal_damage<br>inner_skill:consumed_qi_recycles_random_discard<br>inner_skill:consumed_blazing_qi_transfers_temporarily<br>inner_skill:consumed_burned_qi_spreads_growth<br>inner_skill:consume_burnout_creates_fire_qi | BattleCardEffectService + CardZoneService + BattleRuntimeMutationTransaction | 否 | BattleRuntime temporary state | 不等于弃牌/虚无/永久移出 | 已完成 | 不足/失效不支付；全批先落位；失败全回滚；恢复/重复token不重付 |
 | `run_free_meditation_charge` | state | meditation_committed/node_completed 与 RunAggregateTransaction 已有 | 一次不可叠加免费机会的类型化状态、优先消费与存档 | inner_skill:free_meditation_charge | GrowthInventory + meditation command | 是 | Run committed state / BattleSide working run state | 不是通用折扣 | 20 | 节点设1、提交消费、失败恢复、存档往返 |
 | `growth_trigger_committed_event` | event | **已有**：成长实际提交炽气后由`CardAnomalyService.trigger_growth`逐牌发布canonical `growth_trigger_resolved` | 已完成；三个消费者仍未接入具体Handler或批次条件 | inner_skill:growth_production_grants_defense<br>inner_skill:every_third_round_duplicates_blazing_qi<br>inner_skill:multiple_growth_procs_add_momentum | CardStatusBehaviorService + CardAnomalyService + BattleEventCatalog | 否 | event/action local snapshot | 层状态仍在卡牌Runtime | 已完成 | 无实际产出不发；一牌多层只发一份并记录成长层数、实际炽气、来源与额外触发身份 |
@@ -275,7 +275,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `momentum_cap_query` | query | **已有**：`BattleSide.initialize_base_momentum_cap/effective_momentum_cap_result/write_momentum`，查询复用`BattleIntQueryCatalog`与`battle_int_query_modifier` | 已完成；《广炉容火》仍未录入 | inner_skill:momentum_cap_plus_twenty | BattleSide + BattleRuleQueryService | 否 | BattleRuntime temporary state | Facade/来源资源Service只转发；不改现有清空规则 | 已完成 | 最终牌库冻结；牌区变化不追溯；所有写入回执含上限、截断与查询结果；失败不写状态 |
 | `burnout_debuff_and_flourish_status` | state | **已有**：燃尽已机械迁移为`debuff`，焕发已作为非叠层`buff`进入`QiCard/CardReshapeRuleService`唯一有效值管线及统一净化／战斗结束清理 | 已完成；两个消费者仍未接入具体Handler | inner_skill:cleansed_debuff_grants_flourish<br>inner_skill:poisoned_discard_gains_burnout | QiCard + CardReshapeRuleService + CardAnomalyService | 否 | BattleRuntime temporary state | 共用异状框架，不保留mark兼容双轨 | 已完成 | 加减与其他倍乘后焕发×2，燃尽最后置0；两者跨牌区保留、可净化、战后清 |
 | `battle_permanent_card_mutation_port` | effect | **已有**：`BattleCardEffectService.advance_permanent_qi_rank`通过共享`PermanentQiMutationService`转换持久快照，Effect Handler只调用`BattleEffectPorts` | 已完成；机缘不空已正式接入 | inner_skill:fortune_rank_cycle | BattleCardEffectService + BattleSetupService既有映射 | 胜利后是 | BattleSide working run state | 永久事实只发`qi_reshape_committed`，不伪造临时`card_state_changed` | 已完成 | 当前战斗实时可见；同根行动+卡实例幂等；失败恢复卡牌/事件/回执/日志，退出或战败丢弃，胜利绝对提交 |
-| `action_confirmation_resource_payment` | transaction | action_pre_commit、ChoiceEffectHandler、BattleActionTransaction 已有 | 确认阶段选择计值牌、移除资源并反馈实际量到P | inner_skill:consume_blazing_for_power | BattleActionPreparationService | 否 | event/action local snapshot | 复用选择协议 | 27 | 已确认P/P0快照稳定；失败恢复资源/RNG/选择 |
+| `action_confirmation_resource_payment` | transaction | **已有**：`BattleActionPreparationService`在staging后、最终P/P0确认前按ExecutionPlan建立逐来源／逐牌型组支付计划，复用`BattleChoiceRequest`、`CardAnomalyService`与现有功法值形成回执 | 已完成；《炽火炼功》仍未录入 | inner_skill:consume_blazing_for_power | BattleActionPreparationService | 否 | event/action local snapshot | 复用选择协议、HandGroupSnapshot和战斗运行事务 | 已完成 | 只选本组计值牌；按实际支付量修正P；单方／同步／协同共用；后续确认失败全回滚 |
 | `extra_action_preflight_projection` | query | extra_action_started 与 gain_extra_action 已有 | 判断额外行动可执行时投影其起始抽牌 | inner_skill:extra_action_start_draw_five | BattleFlowCoordinator | 否 | 纯查询，无状态 | 开始事件仍在正式建立后发送 | 28 | 有即将抽牌时可建立；预览不抽牌 |
 | `card_lifecycle_removed_state_claim` | event | **已有**：`CardAnomalyService`在真正入弃牌堆、生命周期清理前冻结实际移除状态，并通过`PassiveRuleRuntime`按Invocation顺序提供事务局部一次性claim | 已完成；宿根传生仍未接入 | inner_skill:forest_growth_transfers_on_discard | CardAnomalyService + CardStateLifecycle + PassiveRuleRuntime | 否 | transaction-local claim | 不建立角色级claim表；不允许多个来源重复认领 | 已完成 | 第一个成功来源独占；失败与回滚不消费claim；无人认领仍正常清理 |
 | `card_trigger_target_policy_query` | query | EffectTargetQuery 支持 lowest_rank/left 顺序 | 状态行为选择目标前接受来源中立策略改写 | inner_skill:turbulence_discards_lowest_rank | CardStatusBehaviorService target selection | 否 | 纯查询，无状态 | 不按内功ID分支 | 30 | 同优先级稳定；查询无随机副作用 |
@@ -293,7 +293,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `experience_interest_cap_query` | query | node_completed与功行生息流程已有 | 单次功行上限查询 | item:experience_interest_cap_twenty | node completion calculation | 否 | 纯查询，无状态 | 不改变公式或令牌 | 42 | 基础5/物品20；余额只读一次；失败回滚 |
 | `practice_offer_category_unlock` | query | **已完成**：正式键为`practice_offer_category_enabled_query`；资格查询与`generated_awakened_qi` provider分离 | 幻象已正式接入 | item:awakened_qi_in_normal_shop | PracticeService | 批次快照是 | Run committed state | 权重查询只调权重 | 已完成 | 完整卡实例冻结恢复；精确实例经RunMutationService购买 |
 | `map_regeneration_transaction` | transaction | ComboMapGenerator/MapNavigationService/RunAggregateTransaction已有 | 新生成序号、旧路线废弃、起点状态与物品获得原子提交 | item:regenerate_current_act_map | RunSession map command | 是 | Run committed state | 不改变restart_node_from_start | 44 | 失败恢复旧图；成功存档只含新图；幂等 |
-| `rest_multi_select_session` | UI | NodeInteractionService单次选择/continuation已有 | 多选会话、已选集合、顺序和结束命令 | item:rest_choose_all_options | node interaction session | 是 | Run committed state | 每个选项仍独立事务 | 45 | 每项至多一次；恢复顺序一致；取消不消费 |
+| `rest_multi_select_session` | UI | **已有**：`NodeInteractionService`保存初始候选、已选顺序、min/max、结束资格、策略指纹和会话序号；`rest_multi_select_count_query`复用Run整数策略；`RunSession`提供逐项提交与主动结束命令 | 已完成；《重构》仍未录入 | item:rest_choose_all_options | NodeInteractionService + RunSession + RunSaveData | 是 | Run committed state | 每个选项仍经RunMutationService与RunAggregateTransaction独立事务 | 已完成 | 每项至多一次；后项读取前项状态；保存恢复不重放；旧schema迁为单选；取消不完成节点 |
 | `item_source_marker_state` | state | **已有**：item正式加入`SourceMarkerStore`、`SourceMarkerAddressResolver`、`PassiveRuleRuntime`、`RunMutationService`与统一`source_marker_changed` | item来源标识地址、遗失策略与max_life贡献 | item:max_life_plus_twenty<br>item:deck_growth_and_reshape_vitality | SourceMarkerStore/AddressResolver/SourceContributedStatService | 是 | Run committed state / BattleSide working run state | 复用同一marker store；事务失败整批回滚 | 46 | 地址为`item:<stable_owner_id>:<content_id>`，不依赖库存顺序；纳气养命已接入，延寿玉仍未接入 |
 | `run_qi_added_and_reshape_events` | event | **已有**：`RunMutationService`从工作副本before/after派生`run_qi_permanently_added/qi_reshape_committed`；战斗永久改牌由`BattleCardEffectService`提交同一重塑事实族 | 已完成；纳气养命已正式接入 | item:deck_growth_and_reshape_vitality | RunMutationService + BattleCardEffectService | 事件否 | Run committed state / BattleSide working run state | 临时重塑继续使用带`persistence=temporary`的`card_state_changed` | 已完成 | 新增逐实例、重塑逐牌；复制/生成/购买共用；无变化、恢复、移动和失败不发送；派生效果与原事务一同回滚 |
 
@@ -325,7 +325,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 - 延迟/响应：`StatusDelayService`、`StatusResponseService`、`CombatSourceLifecycleService`。
 - 格挡/卸力/反震/毒伤基础：类型化`block_sources`、`deflection_resolved`、`attack_canceled`、兼容`damage_blocked`、`reflection_resolved`、`poison_trigger_completed`及伤害实际减少量均已有；具体内容仍按矩阵接入。
 - 牌区/生命/防御/同气/连势写入：`CardZoneService`、`BattleSurvivalEffectService`、`BattleSourceResourceEffectService`及现有回执。
-- 选择与恢复：`ChoiceEffectHandler`、`BattleChoiceRequest`、冻结候选/RNG；只缺生命周期选择接管。
+- 选择与恢复：`ChoiceEffectHandler`、`BattleChoiceRequest`、生命周期时点／Invocation／回合游标、行动确认支付及Run节点多选续跑均已有；具体内容仍须单独录入。
 - 消耗品、心得、战果：`ConsumableUseService`、`InsightGrowthService`、`BattleOutcomeCommitService`、`RunAggregateTransaction`。
 - 事件级来源一致性：`PassiveRuleExecutionPlan`；不存在节点级来源冻结。
 - run事件：`battle_completed`、`node_completed`、修习购买/开包、冥想、遗忘均已登记。
@@ -351,6 +351,9 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 13. `temporary_blazing_source_layers`、`burnout_debuff_and_flourish_status`与`temporary_qi_clone_protocol`：**底层已完成**；共享`QiCard/CardAnomalyService/CardStateLifecycle`状态模型和唯一有效值／生成入口，具体消费者仍未接入。
 14. `growth_trigger_committed_event`、`card_lifecycle_removed_state_claim`与`growth_trigger_execution_plan`：**底层已完成**；canonical事件为`growth_trigger_resolved`，claim与额外计划均只存在于现有生命周期事务。
 15. `effect_card_batch_committed_summary`：**底层已完成**；canonical事件为`effect_card_batch_committed`，不替代逐牌事实。
+16. `battle_lifecycle_choice_transaction`：**底层已完成**；生命周期时点、Invocation和回合启动游标可暂停／恢复，易手换气与观脉知机仍未录入。
+17. `action_confirmation_resource_payment`：**底层已完成**；单方／同步／协同组统一确认支付，《炽火炼功》仍未录入。
+18. `rest_multi_select_session`：**底层已完成**；Run节点逐项提交、主动结束和存档恢复已统一，《重构》仍未录入。
 
 本节是原始能力键排序，不等于47个独立实现批次。收缩后的实际批次见第11节；8门E类不作为阻塞。`committed_card_transition_event`、`committed_anomaly_change_event`、`effective_qi_staged_query`、`pre_life_loss_intervention`、`technique_execution_summary_event`、`deflection_attack_cancel_protocol`、`qi_consumption_transaction`、`charging_primary_value_protocol`和`item_source_marker_state`底层均已完成，依赖它们的具体内容仍须独立接入。
 
@@ -360,7 +363,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 - 已有：统一`card_moved` committed事实（仍兼容动态响应），包括虚拟牌区、逻辑手牌计数、placement、双方持有方与同步批次字段。
 - 已有：牌区处置替换、牌库耗尽替换、来源级临时炽气、成长事实／额外计划、燃尽／焕发、临时真气复制、生命周期移除claim与单效果牌批次汇总均已合并进现有事务和状态模型。
 - 部分已有：回响执行与逐次执行汇总已完成，但仍不能通用修改计划次数；卸力与格挡取消协议已完成；追击只有伤害兼容标签而无结构化完成事件。物品来源地址、marker状态和最大生命统计协议已完成，具体物品内容仍未接入。
-- 仍缺：本表保留的B 8、C1 9继续按`merge_family`接入；已完成底层能力的具体内容不能据此标记为已实现。
+- 仍缺：本表保留的B 8、C1 6继续按`merge_family`接入；已完成底层能力的具体内容不能据此标记为已实现。
 - 规则待确认：化虚为实的固化提交表示。
 
 ## 11. C类收缩审计：B / C1 / C2 / D
@@ -393,7 +396,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `pre_technique_cost_transaction` | B | technique_payment_stage | 1 | TechniqueResolutionService.prepare |
 | `temporary_blazing_source_layers` | 已有 | qi_state_lifecycle_fact | 6 | QiCard + CardAnomalyService + CardStateLifecycle |
 | `deflection_attack_cancel_protocol` | 已有 | survival_write_boundary | 4 | BattleSurvivalEffectService既有block事务已完成类型化扩展 |
-| `battle_lifecycle_choice_transaction` | C1 | choice_continuation | 2 | BattlePassiveTimingBridge + BattleChoiceRequest |
+| `battle_lifecycle_choice_transaction` | 已有 | choice_continuation | 2 | BattleTimingSystem + BattlePassiveTimingBridge + BattleRoundService + BattleChoiceRequest |
 | `qi_consumption_transaction` | 已有 | qi_payment_transaction | 6 | BattleCardEffectService + CardZoneService + BattleRuntimeMutationTransaction |
 | `run_free_meditation_charge` | C1 | run_command_state | 1 | GrowthInventory + meditation command |
 | `growth_trigger_committed_event` | 已有 | qi_state_lifecycle_fact | 3 | CardStatusBehaviorService + CardAnomalyService的`growth_trigger_resolved` |
@@ -402,7 +405,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `momentum_cap_query` | 已有 | battle_resource_policy | 1 | BattleSide + BattleRuleQueryService；Facade只转发 |
 | `burnout_debuff_and_flourish_status` | 已有 | qi_state_lifecycle_fact | 2 | QiCard + CardReshapeRuleService + CardAnomalyService |
 | `battle_permanent_card_mutation_port` | 已有 | battle_to_run_card_mutation | 1 | BattleCardEffectService → BattleSetupService映射 |
-| `action_confirmation_resource_payment` | C1 | action_payment | 1 | BattleActionPreparationService |
+| `action_confirmation_resource_payment` | 已有 | action_payment | 1 | BattleActionPreparationService + BattleChoiceRequest + HandGroupSnapshot |
 | `extra_action_preflight_projection` | B | action_window_projection | 1 | BattleFlowCoordinator已有额外行动入口 |
 | `card_lifecycle_removed_state_claim` | 已有 | qi_state_lifecycle_fact | 1 | CardAnomalyService + CardStateLifecycle事务局部claim |
 | `card_trigger_target_policy_query` | B | target_policy_query | 1 | CardStatusBehaviorService / EffectTargetQuery |
@@ -420,11 +423,11 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `experience_interest_cap_query` | B | run_calculation_query | 1 | node completion calculation现有公式 |
 | `practice_offer_category_unlock` | 已有 | practice_strategy_query | 1 | `practice_offer_category_enabled_query` + candidate provider |
 | `map_regeneration_transaction` | C1 | run_command_transaction | 1 | RunSession + MapNavigationService + RunAggregateTransaction |
-| `rest_multi_select_session` | C1 | choice_continuation | 1 | NodeInteractionService既有continuation |
+| `rest_multi_select_session` | 已有 | choice_continuation | 1 | NodeInteractionService + RunSession + RunSaveData |
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | 已有 | run_card_mutation_fact | 1 | RunMutationService + BattleCardEffectService；不新增平行事件系统 |
 
-当前数量为：已有/合并30、B 8、C1 9、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并33、B 8、C1 6、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
@@ -572,3 +575,28 @@ persistence=permanent)`。事实公开transaction/operation token、来源、hol
 
 本批完成后能力矩阵为已有／合并20、B 12、C1 15、C2 0、D 1；正式内功13门，剩余153门；物品仍剩
 13件，暂缓功法仍为8门。
+
+### 11.10 选择与续跑事务平台（2026-08-19）
+
+`battle_lifecycle_choice_transaction`、`action_confirmation_resource_payment`与
+`rest_multi_select_session`已合并进三个既有状态所有者，没有建立全局`ChoiceManager`或第二套效果执行器。
+战斗生命周期由`BattleTimingSystem`保存时点和处理器游标并持有外层回滚事务，
+`BattlePassiveTimingBridge`保存当前ExecutionPlan的Invocation游标与现有`TechniqueEffectContinuation`，
+`BattleRoundService`保存从battle_start到action_window_ready的回合启动游标。`CombatEngine/BattleSession`
+只通过`has_pending_choice/pending_choice_snapshot/resolve_choice`统一路由；战斗选择只存在当前内存，退出后
+仍按既有规则重开本场。
+
+行动确认支付由`BattleActionPreparationService`唯一所有。在卡牌进入staging、牌型及计值牌确定后，它按
+稳定Invocation和牌型组建立计划，只允许冻结牌型的`contributing`实例成为候选；普通炽气与全部来源临时
+炽气仍由`CardAnomalyService`统一移除，实际支付量转换成现有功法值固定修正并写入
+`HandGroupSnapshot`。单方、同步与协同组共用该入口，等待期间不重建敌方提案或随机结果，最终确认失败
+通过现有战斗运行事务恢复牌区、异状、功法值回执、被动receipt、事件、日志和RNG。
+
+节点多选仍由`NodeInteractionService`唯一持有。`rest_multi_select_count_query`只通过既有
+`PassiveIntPolicyResolver/run_int_query_modifier`调整默认最大值1；每项提交都重新准备当前合法性但只保留
+初始候选交集，并经`RunMutationService + RunAggregateTransaction`独立原子提交。完整pending会话进入
+`RunSaveData`，旧schema迁移为最大1次；`finish_node_interaction`满足minimum后才完成节点，取消不等价于
+完成。任一单项失败恢复该命令前的GrowthInventory与冻结DTO，不抹掉此前已提交选项。
+
+本批没有录入《易手换气》《观脉知机》《炽火炼功》《重构》或其他正式内容。计数更新为已有／合并33、
+B 8、C1 6、C2 0、D 1；正式内功仍为13门、物品7件，剩余153门内功、13件物品和8门暂缓功法不变。

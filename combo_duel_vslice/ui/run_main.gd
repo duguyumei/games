@@ -263,6 +263,7 @@ func _build_interface() -> void:
     add_child(node_overlay)
     interaction_overlay = NodeInteractionOverlayScript.new()
     interaction_overlay.commit_requested.connect(_commit_node_interaction)
+    interaction_overlay.finish_requested.connect(_finish_node_interaction)
     add_child(interaction_overlay)
     reward_overlay = RewardOverlayScene.instantiate()
     reward_overlay.claim_requested.connect(_claim_reward)
@@ -510,6 +511,20 @@ func _commit_node_interaction(
     })
     if not result.success:
         _show_toast(result.reason_or("无法提交节点选择"))
+        return
+    if result.phase == "node_in_progress":
+        interaction_overlay.present(result.payload_value("interaction", {}))
+        return
+    interaction_overlay.visible = false
+    _show_reward_overlay()
+
+func _finish_node_interaction(interaction_token: String) -> void:
+    var result := run_session.execute({
+        "type": "finish_node_interaction",
+        "interaction_token": interaction_token,
+    })
+    if not result.success:
+        _show_toast(result.reason_or("无法结束节点选择"))
         return
     interaction_overlay.visible = false
     _show_reward_overlay()

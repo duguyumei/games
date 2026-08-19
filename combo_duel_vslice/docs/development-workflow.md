@@ -1131,3 +1131,37 @@ legacy `card_burned_out_changed`只投影同一canonical `card_state_changed`中
 焕发为非叠层buff，跨牌区保留、可净化并在战斗结束清理。本批没有新增正式内容：正式内功仍为13门、
 物品仍为7件，剩余153门内功、13件物品和8门暂缓功法不变。矩阵更新为已有／合并30、B 8、C1 9、
 C2 0、D 1；下一平台批次按剩余`merge_family`选择，不按单项内容复制生命周期或事务。
+
+## 选择与续跑事务工作流（2026-08-19）
+
+战斗选择继续只使用`BattleChoiceRequest`。生命周期Hook产生pending时，
+`BattleTimingSystem`冻结当前`TimingEvent`、处理器游标、请求和外层
+`BattleRuntimeMutationTransaction`；`BattlePassiveTimingBridge`冻结稳定ExecutionPlan中的Invocation游标、
+当前`TechniqueEffectContinuation`和receipt token；`BattleRoundService`冻结回合启动阶段。恢复必须先验证
+原request_id和冻结候选，再从原游标继续，禁止重新调用`start_player_turn`、重放已完成Invocation或提前
+执行正常补牌。只有被该时点事务接管的生命周期选择可以pending；其他非action调用仍应明确失败。
+
+战斗UI和命令层只调用`CombatEngine/BattleSession`的统一
+`has_pending_choice/pending_choice_snapshot/resolve_choice`。路由顺序为生命周期选择、行动确认支付、已有
+功法效果选择；等待期间confirm_play、消耗品、结束回合及敌方驱动均受现有门禁阻止。生命周期失败必须
+恢复BattleSide、被动计数、效果receipt、committed publication、TriggerQueue/GameLog、Bridge游标／历史
+和RNG；成功后每个时点和Invocation只记一次。战斗pending不写存档，退出后仍重开本场。
+
+行动确认资源支付只在`BattleActionPreparationService`实现：staging完成后读取正式牌型的计值牌集合，按
+来源Invocation、主组／协同组和计划序号建立稳定请求；支付目标查询可以复用`EffectTargetQuery`，但最终
+必须与该组`contributing`实例求交。状态移除只能走`BattleEffectPorts → CardAnomalyService`，实际支付量
+以现有直接功法值固定修正参与最终P/P0重算并写入`HandGroupSnapshot`。没有候选时只按计划的
+insufficient_policy跳过或失败；多来源读取前一来源支付后的最新状态。支付、最终确认及其失败补偿共用
+现有战斗运行事务，不新增资源Store或power字段。
+
+Run节点选择的唯一会话所有者仍是`NodeInteractionService`。默认单选最大值为1，多选上限只从
+`rest_multi_select_count_query`获得；初始候选ID、已选顺序、min/max、finish资格、策略指纹与session serial
+必须进入pending schema 2。每个`commit_node_interaction`通过`RunMutationService`和
+`RunAggregateTransaction`独立提交，后项重新准备并读取前项后的GrowthInventory，但不得引入初始集合外
+的新选项。`finish_node_interaction`达到minimum后完成一次节点；cancel只取消当前草稿。RunSaveData恢复
+pending时只验证并恢复冻结DTO，不重放已提交选项，schema 1明确迁移为最大1次。
+
+该平台批次只使用合成来源验证，不录入《易手换气》《观脉知机》《炽火炼功》《重构》。限定回归运行项目
+加载、统一选择续跑专项、BattleActionTransaction、battle-contracts、run-map与RunSaveData；不运行
+quick/full。完成后矩阵为已有／合并33、B 8、C1 6、C2 0、D 1，正式内容数量保持内功13门、物品7件、
+暂缓功法8门。

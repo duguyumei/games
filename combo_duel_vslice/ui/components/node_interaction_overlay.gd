@@ -5,6 +5,7 @@ signal commit_requested(
     interaction_token: String,
     choice_id: String,
     choice_payload: Dictionary)
+signal finish_requested(interaction_token: String)
 
 const UiDesignScript = preload("res://ui/ui_design.gd")
 
@@ -12,6 +13,7 @@ var title_label: Label
 var description_label: Label
 var choices_box: VBoxContainer
 var submit_button: Button
+var finish_button: Button
 var interaction: Dictionary = {}
 var selected_choice_id: String = ""
 var _built := false
@@ -46,6 +48,8 @@ func present(frozen_interaction: Dictionary) -> void:
         UiDesignScript.style_button(button)
         choices_box.add_child(button)
     submit_button.disabled = true
+    finish_button.visible = bool(interaction.get("allow_finish", false))
+    finish_button.disabled = not bool(interaction.get("allow_finish", false))
     visible = true
 
 func _select_choice(choice_id: String) -> void:
@@ -59,6 +63,9 @@ func _submit() -> void:
         str(interaction.get("interaction_token", "")),
         selected_choice_id,
         {})
+
+func _finish() -> void:
+    finish_requested.emit(str(interaction.get("interaction_token", "")))
 
 func _ensure_built() -> void:
     if _built:
@@ -98,3 +105,9 @@ func _ensure_built() -> void:
     submit_button.pressed.connect(_submit)
     UiDesignScript.style_button(submit_button)
     box.add_child(submit_button)
+    finish_button = Button.new()
+    finish_button.text = "结束本次选择"
+    finish_button.custom_minimum_size = Vector2(260, 48)
+    finish_button.pressed.connect(_finish)
+    UiDesignScript.style_button(finish_button, UiDesignScript.COLORS["panel_2"])
+    box.add_child(finish_button)

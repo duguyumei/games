@@ -13,11 +13,12 @@ const SUPPORTED_HOOKS := [
     "practice_offer_category_enabled_query",
     "practice_pack_candidate_priority_query",
     "insight_slot_gain_query",
+    "rest_multi_select_count_query",
 ]
 const OPERATIONS := ["add", "multiply", "maximum"]
 const FILTER_FIELDS := [
     "group", "category_id", "offer_kind", "content_kind",
-    "candidate_provider", "operation",
+    "candidate_provider", "operation", "interaction_kind", "node_type",
 ]
 
 

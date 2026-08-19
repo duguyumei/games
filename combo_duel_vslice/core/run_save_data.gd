@@ -556,6 +556,10 @@ func _validate_pending_interaction(
     if int(pending.get("schema_version", 0)) \
             != NodeInteractionServiceScript.SCHEMA_VERSION:
         errors.append("pending_node_interaction schema_version 不受支持")
+    var session_error := \
+        NodeInteractionServiceScript.validate_pending_session_state(pending)
+    if session_error != "":
+        errors.append(session_error)
     if str(pending.get("node_id", "")) != current_node_id:
         errors.append("pending_node_interaction.node_id 与当前节点不一致")
     if str(pending.get("source_kind", "")) not in ["map_node", "boss_chest"]:
@@ -768,6 +772,12 @@ func _normalize_v1_types() -> void:
     if node_state is Dictionary:
         _normalize_optional_integer(node_state, "practice_open_sequence")
         _normalize_reward(node_state.get("pending_reward", {}))
+        var pending_interaction = node_state.get("pending_node_interaction", {})
+        if pending_interaction is Dictionary \
+                and not pending_interaction.is_empty():
+            node_state["pending_node_interaction"] = \
+                NodeInteractionServiceScript.normalize_pending_snapshot(
+                    pending_interaction)
         var terminal = node_state.get("terminal_result", {})
         if terminal is Dictionary and not terminal.is_empty():
             for field in ["schema_version", "act", "turn_number"]:

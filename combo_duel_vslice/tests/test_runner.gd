@@ -3836,8 +3836,8 @@ func _test_battle_passive_lifecycle_bridge_and_temporary_counters() -> void:
     battle_start_failure.start_player_turn()
     _assert_equal(battle_start_failure.battle_state, "scenario_error", "battle_start 失败进入 scenario_error")
     _assert_equal(
-        battle_start_failure.timing_system.history.size(), 1,
-        "battle_start 失败后不继续 round_start 或抽牌")
+        battle_start_failure.timing_system.history.size(), 0,
+        "battle_start 失败回滚自身 history 且不继续 round_start 或抽牌")
     var turn_failure = _battle_passive_test_engine(
         catalog, registry, ["failure_turn_start"])
     turn_failure.start_player_turn()
@@ -3936,12 +3936,12 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        32,
-        "Registry 明确登记三十二个细粒度已提交事件")
+        34,
+        "Registry 明确登记三十四个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        16,
-        "Registry 从唯一目录登记十六个战斗整数查询")
+        17,
+        "Registry 从唯一目录登记十七个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -4334,8 +4334,11 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "行动进入等待选择：%s" % str(wait_start))
     var wait_confirmed_before := handler.calls.filter(
         func(call): return call["kind"] == "event" and call["hook"] == "action_confirmed").size()
-    var wait_query_before := handler.calls.filter(
+    var wait_power_query_before := handler.calls.filter(
         func(call): return call["kind"] == "query" \
+            and str(call["hook"]) in [
+                "power_base_fixed_query", "power_multiplier_bonus_query",
+                "power_fixed_query", "power_amp_percent_query"] \
             and str(call["action_token"]) != "").size()
     var wait_permission_before: int = wait_permission_calls.size()
     var wait_request: Dictionary = wait_start["choice_request"]
@@ -4349,8 +4352,11 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "等待恢复不重复 action_confirmed")
     _assert_equal(
         handler.calls.filter(func(call): return call["kind"] == "query" \
+            and str(call["hook"]) in [
+                "power_base_fixed_query", "power_multiplier_bonus_query",
+                "power_fixed_query", "power_amp_percent_query"] \
             and str(call["action_token"]) != "").size(),
-        wait_query_before,
+        wait_power_query_before,
         "等待恢复复用已冻结四阶段功法值")
     _assert_equal(
         wait_permission_calls.size(), wait_permission_before,
@@ -9124,6 +9130,7 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     _assert_true(
         overflow_engine.player.draw_pile.back().reshape_imprint == "innate",
         "未抽到的先天继续留在牌库顶")
+    overflow_engine.end_player_turn()
     var second_turn_innate = _card("7", "wind")
     second_turn_innate.set_imprint("innate")
     var second_turn_normal = _card("8", "forest")
@@ -10520,11 +10527,11 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
     _assert_equal(pack_shapes.get("curio_pack_basic"), [4, 2, 1], "普通奇珍包规格")
     _assert_equal(pack_shapes.get("large_curio_pack"), [6, 4, 1], "大型奇珍包规格")
     _assert_equal(pack_shapes.get("deluxe_curio_pack"), [8, 4, 2], "豪华奇珍包规格")
-    _assert_equal(practice.get("items", {}).get("candidate_ids", []).size(), 6,
-        "物品候选池登记六件正式修习策略物品")
+    _assert_equal(practice.get("items", {}).get("candidate_ids", []).size(), 7,
+        "物品候选池登记七件正式修习策略物品")
     var items_definition: Dictionary = catalog.definition("items")
-    _assert_equal(items_definition.get("items", []).size(), 8,
-        "items.json 登记两个设计候选与六件正式物品")
+    _assert_equal(items_definition.get("items", []).size(), 9,
+        "items.json 登记两个设计候选与七件正式物品")
     for item in items_definition.get("items", []):
         _assert_true(
             str(item.get("status", "")) in ["candidate", "design_only", "formal"],
@@ -11386,8 +11393,10 @@ func _test_s2f2f1_formal_pills_and_transactions() -> void:
     _assert_equal(nagong_growth.equipped_inner_skill_ids, equipped_before, "纳功丹不卸下内功")
 
     var chuangong_growth = GrowthInventoryScript.new(fixture_catalog)
-    chuangong_growth.learned_inner_skill_ids.assign([
-        "extra_qi_to_defense", "forget_fixture_a"])
+    chuangong_growth.learned_inner_skill_ids.assign(
+        fixture_catalog.all_of("inner_skill").map(
+            func(definition): return str(definition.get("id", ""))).filter(
+                func(inner_skill_id): return inner_skill_id != "forget_fixture_b"))
     chuangong_growth.consumable_ids.assign(["chuangong_pill"])
     var equipped_count_before: int = chuangong_growth.equipped_inner_skill_ids.size()
     var chuangong_use: Dictionary = service.use(
@@ -11607,11 +11616,22 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
         var rarity_growth = GrowthInventoryScript.new(fixture_catalog)
         rarity_growth.experience = 9
         rarity_growth.consumable_ids.assign([rarity_case[0]])
+        var learned_before: Array[String] = \
+            rarity_growth.learned_inner_skill_ids.duplicate()
         var rarity_use: Dictionary = fixture_service.use(
             rarity_growth, 0, [], 99112,
             fixture_catalog.get_by_id("consumable", rarity_case[0]))
         _assert_true(rarity_use.get("success", false), "%s 从指定 rarity 获得内功" % rarity_case[0])
-        _assert_true(rarity_growth.learned_inner_skill_ids.has(rarity_case[1]), "%s 不跨 rarity 抽取" % rarity_case[0])
+        var newly_learned: Array = rarity_growth.learned_inner_skill_ids.filter(
+            func(inner_skill_id): return not learned_before.has(inner_skill_id))
+        var expected_rarity := "rare" if rarity_case[0] == "qingshen_qi" \
+            else "legendary"
+        _assert_true(
+            newly_learned.size() == 1 \
+                and str(fixture_catalog.get_by_id(
+                    "inner_skill", str(newly_learned[0])).get(
+                        "rarity", "")) == expected_rarity,
+            "%s 不跨 rarity 抽取" % rarity_case[0])
         _assert_equal(rarity_growth.experience, rarity_case[2], "%s 历练代价正确" % rarity_case[0])
 
     var lineage_growth = GrowthInventoryScript.new(fixture_catalog)

@@ -22,6 +22,8 @@ const BattleIntQueryModifierHandlerScript = preload(
     "res://core/passives/battle_int_query_modifier_passive_handler.gd")
 const CardLifecyclePolicyHandlerScript = preload(
     "res://core/passives/card_lifecycle_policy_passive_handler.gd")
+const ActionConfirmationPaymentHandlerScript = preload(
+    "res://core/passives/action_confirmation_payment_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 const BattleIntQueryCatalogScript = preload(
     "res://core/passives/battle_int_query_catalog.gd")
@@ -59,6 +61,7 @@ const NON_EVENT_HOOKS := [
     "practice_pack_candidate_priority_query",
     "technique_loadout_copy_limit_query",
     "insight_slot_gain_query",
+    "rest_multi_select_count_query",
     "practice_opened",
     "practice_purchase_committed",
     "practice_pack_opened",
@@ -72,6 +75,7 @@ const NON_EVENT_HOOKS := [
     "draw_depletion_replacement_query",
     "card_lifecycle_removed_state_claim",
     "growth_trigger_execution_plan",
+    "action_confirmation_payment",
 ] + BATTLE_INT_QUERY_HOOKS + [
     "hand_evaluation_options_query",
     "card_identity_query",
@@ -107,6 +111,7 @@ func _init(
         register_handler(RunFactEffectsHandlerScript.new(run_effect_registry))
         register_handler(BattleIntQueryModifierHandlerScript.new())
         register_handler(CardLifecyclePolicyHandlerScript.new())
+        register_handler(ActionConfirmationPaymentHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():

@@ -54,6 +54,7 @@ var last_enemy_preview: Dictionary = {}
 var last_played_hand: String = ""
 var last_player_action_cards: Array = []
 var last_enemy_action_cards: Array = []
+var _pending_confirmation_context: Dictionary = {}
 
 func _init(
         player_side,
@@ -105,6 +106,8 @@ func _init(
         preview_for_side, turn_number_reader)
 
 func reset() -> void:
+    action_preparation_service.reset()
+    _pending_confirmation_context.clear()
     active_action_transaction.clear_transaction(true)
     _transaction_serial = 0
     last_preview.clear()
@@ -123,8 +126,8 @@ func confirm_play(card_ids: Array, cooperation_card_ids: Array = []) -> Dictiona
         return {"success": false, "reason": "战斗已经结束"}
     if active_action_transaction.is_active():
         return {"success": false, "reason": "当前已有未完成的行动事务"}
-    if action_resolver.has_pending_choice():
-        return {"success": false, "reason": "正在等待功法选择，请先完成选择"}
+    if has_pending_choice():
+        return {"success": false, "reason": "正在等待行动选择，请先完成选择"}
     if not battle_flow.can_act(player):
         return {"success": false, "reason": action_unavailable_reason.call(player)}
     var proposal = player_action_controller.propose(
@@ -142,13 +145,30 @@ func confirm_play(card_ids: Array, cooperation_card_ids: Array = []) -> Dictiona
     return _prepare_solo_player_action(proposal)
 
 func has_pending_choice() -> bool:
-    return action_resolver.has_pending_choice()
+    return action_preparation_service.has_pending_choice() \
+        or action_resolver.has_pending_choice()
 
 func pending_choice_snapshot() -> Dictionary:
+    if action_preparation_service.has_pending_choice():
+        var payment_request: Dictionary = \
+            action_preparation_service.pending_choice_snapshot()
+        payment_request["choice_route"] = "action_confirmation_payment"
+        return payment_request
     return action_resolver.pending_choice_snapshot()
 
 func pending_action_transaction_snapshot() -> Dictionary:
     return active_action_transaction.snapshot()
+
+func resolve_choice(request_id: String, selected_card_ids: Array) -> Dictionary:
+    if action_preparation_service.has_pending_choice():
+        var payment: Dictionary = \
+            action_preparation_service.resolve_confirmation_choice(
+                request_id, selected_card_ids)
+        if payment.get("pending_choice", false) \
+                or not payment.get("success", false):
+            return payment
+        return _continue_pending_confirmation()
+    return resolve_effect_choice(request_id, selected_card_ids)
 
 func resolve_effect_choice(request_id: String, selected_card_ids: Array) -> Dictionary:
     if active_action_transaction.is_empty() or not action_resolver.has_pending_choice():
@@ -232,21 +252,77 @@ func _prepare_solo_player_action(proposal) -> Dictionary:
     if not battle_flow.can_act(player):
         return {"success": false, "reason": action_unavailable_reason.call(player)}
     var action_preview: Dictionary = proposal.preview
+    var begun: Dictionary = action_preparation_service.begin_confirmation(
+        player, proposal, "solo")
+    if not begun.get("success", false):
+        return begun
     var staged_ids: Array = proposal.card_ids.duplicate()
     for group in proposal.groups.slice(1):
         staged_ids.append_array(group.get("card_ids", []))
     if not player.stage_cards(staged_ids):
+        action_preparation_service.rollback_confirmation("真气无法进入待出区")
         return {"success": false, "reason": "真气无法进入待出区"}
+    _pending_confirmation_context = {
+        "mode": "solo", "proposal": proposal,
+    }
+    return _continue_pending_confirmation()
+
+func _continue_pending_confirmation() -> Dictionary:
+    if _pending_confirmation_context.is_empty():
+        return {"success": false, "reason": "行动确认支付缺少冻结的准备上下文"}
+    var proposal = _pending_confirmation_context.get("proposal")
+    var payment: Dictionary = \
+        action_preparation_service.prepare_confirmation_payments(
+            player, proposal)
+    if payment.get("pending_choice", false):
+        return {
+            "success": true,
+            "pending_choice": true,
+            "choice_request": action_preparation_service.pending_choice_snapshot(),
+            "preparation": action_preparation_service.confirmation_snapshot(),
+        }
+    if not payment.get("success", false):
+        _pending_confirmation_context.clear()
+        return payment
+    match str(_pending_confirmation_context.get("mode", "")):
+        "solo":
+            return _finish_solo_player_preparation(proposal)
+        "synchronized":
+            return _finish_synchronized_preparation(
+                proposal,
+                _pending_confirmation_context.get("enemy_preview", {}),
+                bool(_pending_confirmation_context.get(
+                    "enemy_will_act", false)))
+    return _fail_confirmation_preparation({
+        "success": false, "reason": "未知行动确认准备模式"})
+
+func _fail_confirmation_preparation(failure: Dictionary) -> Dictionary:
+    var reason := str(failure.get("reason", "行动确认失败"))
+    action_preparation_service.rollback_confirmation(reason)
+    _pending_confirmation_context.clear()
+    return {
+        "success": false,
+        "pending_choice": false,
+        "reason": reason,
+        "code": str(failure.get("code", "action_confirmation_failed")),
+    }
+
+func _finish_solo_player_preparation(proposal) -> Dictionary:
+    var action_preview: Dictionary = proposal.preview
     var finalize_result: Dictionary = \
         action_preparation_service.finalize_staged_proposal(player, proposal)
     if not finalize_result.get("success", false):
-        player.rollback_staging()
-        return finalize_result
+        return _fail_confirmation_preparation(finalize_result)
     var confirmed_result: Dictionary = \
         action_preparation_service.confirm_finalized_proposal(player, proposal)
     if not confirmed_result.get("success", false):
-        player.rollback_staging()
-        return confirmed_result
+        return _fail_confirmation_preparation(confirmed_result)
+    var payment_commit: Dictionary = action_preparation_service.commit_confirmation()
+    if not payment_commit.get("success", false):
+        return _fail_confirmation_preparation(payment_commit)
+    action_preview["action_confirmation_payment_receipts"] = \
+        payment_commit.get("payment_receipts", []).duplicate(true)
+    _pending_confirmation_context.clear()
     battle_flow.lock_intent(player, action_preview)
     battle_flow.consume_action(player)
     _freeze_consumed_action_source(player, action_preview)
@@ -416,56 +492,63 @@ func _confirm_synchronized_play(player_proposal) -> Dictionary:
             var preview_error := "对手锁定出牌失效：%s" % enemy_preview.get("reason", "未知错误")
             set_scenario_error.call(preview_error)
             return {"success": false, "reason": preview_error}
+    var begun: Dictionary = action_preparation_service.begin_confirmation(
+        player, player_proposal, "synchronized")
+    if not begun.get("success", false):
+        return begun
     var player_staged_ids: Array = player_proposal.card_ids.duplicate()
     for group in player_proposal.groups.slice(1):
         player_staged_ids.append_array(group.get("card_ids", []))
     if not player.stage_cards(player_staged_ids):
+        action_preparation_service.rollback_confirmation(
+            "我方真气无法进入待出区")
         return {"success": false, "reason": "我方真气无法进入待出区"}
     if enemy_will_act and not enemy.stage_cards(enemy_card_ids):
-        player.rollback_staging()
-        battle_flow.clear_intents()
+        action_preparation_service.rollback_confirmation(
+            "对手锁定真气无法进入待出区")
         var staging_error := "对手锁定真气无法进入待出区"
         set_scenario_error.call(staging_error)
         return {"success": false, "reason": staging_error}
 
+    _pending_confirmation_context = {
+        "mode": "synchronized",
+        "proposal": player_proposal,
+        "enemy_preview": enemy_preview,
+        "enemy_will_act": enemy_will_act,
+    }
+    return _continue_pending_confirmation()
+
+func _finish_synchronized_preparation(
+        player_proposal, enemy_preview: Dictionary,
+        enemy_will_act: bool) -> Dictionary:
+    var player_preview: Dictionary = player_proposal.preview
     var player_finalize: Dictionary = \
         action_preparation_service.finalize_staged_proposal(
             player, player_proposal)
     if not player_finalize.get("success", false):
-        action_preparation_service.rollback_power_formation(
-            player, player_proposal)
-        player.rollback_staging()
-        if enemy_will_act:
-            enemy.rollback_staging()
-        return player_finalize
+        return _fail_confirmation_preparation(player_finalize)
     if enemy_will_act:
         var enemy_finalize: Dictionary = action_resolver.finalize_action_preview(
             enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_finalize.get("success", false):
-            action_preparation_service.rollback_power_formation(
-                player, player_proposal)
-            player.rollback_staging()
-            enemy.rollback_staging()
-            return enemy_finalize
+            return _fail_confirmation_preparation(enemy_finalize)
     var player_confirmed: Dictionary = \
         action_preparation_service.confirm_finalized_proposal(
             player, player_proposal)
     if not player_confirmed.get("success", false):
-        action_preparation_service.rollback_power_formation(
-            player, player_proposal)
-        player.rollback_staging()
-        if enemy_will_act:
-            enemy.rollback_staging()
-        return player_confirmed
+        return _fail_confirmation_preparation(player_confirmed)
     if enemy_will_act:
         var enemy_confirmed: Dictionary = action_resolver.confirm_finalized_action(
             enemy, enemy_preview, player, turn_number_reader.call())
         if not enemy_confirmed.get("success", false):
-            action_preparation_service.rollback_power_formation(
-                player, player_proposal)
-            player.rollback_staging()
-            enemy.rollback_staging()
-            return enemy_confirmed
+            return _fail_confirmation_preparation(enemy_confirmed)
+
+    var payment_commit: Dictionary = action_preparation_service.commit_confirmation()
+    if not payment_commit.get("success", false):
+        return _fail_confirmation_preparation(payment_commit)
+    player_preview["action_confirmation_payment_receipts"] = \
+        payment_commit.get("payment_receipts", []).duplicate(true)
+    _pending_confirmation_context.clear()
 
     battle_flow.lock_intent(player, player_preview)
     if enemy_will_act:

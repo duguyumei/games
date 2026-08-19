@@ -971,6 +971,12 @@ func add_temporary_blazing_layers(
     return _status_system.add_temporary_blazing_layers(
         card, source_instance_key, layers, source, event_metadata)
 
+func remove_all_blazing_layers(
+        card, source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.remove_all_blazing_layers(
+        card, source, event_metadata)
+
 
 func apply_temporary_enhancement(
         card, enhancement_id: String, source: String = "效果",

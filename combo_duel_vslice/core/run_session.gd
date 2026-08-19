@@ -48,6 +48,8 @@ const BattleOutcomeCommitServiceScript = preload(
     "res://core/battle_outcome_commit_service.gd")
 const EventContextScript = preload(
     "res://core/passives/run_passive_event_context.gd")
+const RunAggregateTransactionScript = preload(
+    "res://core/run_aggregate_transaction.gd")
 
 var game_log
 var _run_state
@@ -213,6 +215,8 @@ func configure_passive_services(
     _run_passive_event_service = event_service
     _practice_service.use_passive_services(
         int_policy_resolver, event_service, _run_state)
+    _node_interaction_service.use_passive_int_policy_resolver(
+        int_policy_resolver)
     growth.use_technique_loadout_policy_resolver(int_policy_resolver)
     _inner_skill_loadout_service.use_passive_services(
         passive_runtime, int_policy_resolver, event_service, _run_state)
@@ -259,6 +263,9 @@ func execute(command: Dictionary) -> CommandResult:
                 command.get("choice_payload", {}))
         "cancel_node_interaction":
             result = _cancel_node_interaction(
+                str(command.get("interaction_token", command.get("token", ""))))
+        "finish_node_interaction":
+            result = _finish_node_interaction(
                 str(command.get("interaction_token", command.get("token", ""))))
         "claim_reward":
             result = _claim_reward(str(command.get("bundle_id", "")))
@@ -817,20 +824,79 @@ func _commit_node_interaction(
         return {"success": false, "reason": "待提交交互与当前节点不一致"}
     if token != str(pending.get("token", "")):
         return {"success": false, "reason": "interaction_token 不匹配"}
+    var aggregate = RunAggregateTransactionScript.new()
+    var begun: Dictionary = aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
     var interaction_result: Dictionary = _node_interaction_service.commit(
         token, choice_id, choice_payload, growth)
     if not interaction_result.get("success", false):
+        aggregate.rollback()
         return interaction_result
-    var completion: Dictionary = _complete_node_to_reward()
+    if not bool(interaction_result.get("completed", false)):
+        var partial_commit: Dictionary = aggregate.commit()
+        if not partial_commit.get("success", false):
+            aggregate.rollback()
+            return partial_commit
+        _run_state.changed.emit()
+        interaction_result["phase"] = "node_in_progress"
+        return interaction_result
+    var completion: Dictionary = _complete_interaction_node_to_reward()
     if not completion.get("success", false):
+        aggregate.rollback()
         return completion
     _node_interaction_service.clear()
+    var final_commit: Dictionary = aggregate.commit()
+    if not final_commit.get("success", false):
+        aggregate.rollback()
+        return final_commit
     completion["interaction_result"] = interaction_result.get(
         "interaction_result", {}).duplicate(true)
     completion["applied"] = interaction_result.get("applied", []).duplicate(true)
     completion["changed"] = bool(interaction_result.get("changed", false))
     completion["interaction_token"] = token
+    completion["selected_choice_ids"] = interaction_result.get(
+        "selected_choice_ids", []).duplicate()
+    _run_state.changed.emit()
     return completion
+
+func _finish_node_interaction(token: String) -> Dictionary:
+    var gate := _node_interaction_gate()
+    if not gate.get("success", false):
+        return gate
+    var pending: Dictionary = _node_interaction_service.capture_pending()
+    if str(pending.get("node_id", "")) != navigation.current_node_id:
+        return {"success": false, "reason": "待结束交互与当前节点不一致"}
+    var aggregate = RunAggregateTransactionScript.new()
+    var begun: Dictionary = aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
+    var finished: Dictionary = _node_interaction_service.finish(token)
+    if not finished.get("success", false):
+        aggregate.rollback()
+        return finished
+    var completion: Dictionary = _complete_interaction_node_to_reward()
+    if not completion.get("success", false):
+        aggregate.rollback()
+        return completion
+    _node_interaction_service.clear()
+    var committed: Dictionary = aggregate.commit()
+    if not committed.get("success", false):
+        aggregate.rollback()
+        return committed
+    completion["interaction_token"] = token
+    completion["selected_choice_ids"] = finished.get(
+        "selected_choice_ids", []).duplicate()
+    completion["finished_early"] = true
+    _run_state.changed.emit()
+    return completion
+
+func _complete_interaction_node_to_reward() -> Dictionary:
+    var act_before: int = navigation.act
+    var completion: Dictionary = _apply_node_completion_transition()
+    if not completion.get("success", false):
+        return completion
+    return _create_pending_reward_for_completion(completion, act_before)
 
 func _cancel_node_interaction(token: String) -> Dictionary:
     var gate := _node_interaction_gate()

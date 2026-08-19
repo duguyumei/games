@@ -19,6 +19,10 @@ var description: String = ""
 var choices: Array = []
 var minimum_choices: int = 1
 var maximum_choices: int = 1
+var selected_choice_ids: Array[String] = []
+var allow_finish: bool = false
+var policy_fingerprint: String = ""
+var session_serial: int = 0
 var metadata: Dictionary = {}
 
 func _init(values: Dictionary = {}) -> void:
@@ -38,6 +42,11 @@ func _init(values: Dictionary = {}) -> void:
             choices.append(ChoiceDTOScript.new(choice_value))
     minimum_choices = int(values.get("minimum_choices", 1))
     maximum_choices = int(values.get("maximum_choices", 1))
+    for choice_id in values.get("selected_choice_ids", []):
+        selected_choice_ids.append(str(choice_id))
+    allow_finish = bool(values.get("allow_finish", false))
+    policy_fingerprint = str(values.get("policy_fingerprint", ""))
+    session_serial = int(values.get("session_serial", 0))
     metadata = values.get("metadata", {}).duplicate(true)
 
 func snapshot() -> Dictionary:
@@ -60,6 +69,10 @@ func snapshot() -> Dictionary:
         "choices": frozen_choices,
         "minimum_choices": minimum_choices,
         "maximum_choices": maximum_choices,
+        "selected_choice_ids": selected_choice_ids.duplicate(),
+        "allow_finish": allow_finish,
+        "policy_fingerprint": policy_fingerprint,
+        "session_serial": session_serial,
         "metadata": metadata.duplicate(true),
     }
 

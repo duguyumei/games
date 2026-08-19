@@ -178,6 +178,39 @@ func add_temporary_blazing_layers(
     written["total_blazing_layers"] = card.total_blazing_layers()
     return written
 
+func remove_all_blazing_layers(
+        card,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    if card == null:
+        return {"success": false, "reason": "炽气支付目标为空"}
+    var before_state := battle_state_snapshot(card)
+    var normal_layers: int = int(card.normal_blazing_layers())
+    var temporary_by_source: Dictionary = card.temporary_blazing_layers.duplicate(true)
+    var temporary_layers: int = int(card.temporary_blazing_layers_total())
+    if normal_layers > 0:
+        card.remove_anomaly("buff", "qi_heat")
+    if temporary_layers > 0:
+        card.clear_temporary_blazing_layers()
+    var after_state := battle_state_snapshot(card)
+    var changed := before_state != after_state
+    var metadata := event_metadata.duplicate(true)
+    metadata["primary_category"] = "buff"
+    metadata["primary_content_id"] = "qi_heat"
+    metadata["operation"] = "resource_payment"
+    var state_event := _publish_state_change(
+        card, before_state, after_state, "resource_payment", source, metadata)
+    var result := {
+        "success": bool(state_event.get("success", true)),
+        "changed": changed,
+        "normal_layers_removed": normal_layers,
+        "temporary_layers_removed": temporary_layers,
+        "temporary_layers_by_source": temporary_by_source,
+        "removed_layers": normal_layers + temporary_layers,
+    }
+    _merge_state_event_result(result, state_event)
+    return result
+
 func trigger_growth(
         card,
         holder,

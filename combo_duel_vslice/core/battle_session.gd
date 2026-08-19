@@ -252,14 +252,20 @@ func _execute_command(command: BattleCommandDto) -> CommandResult:
                 result = {"success": false, "reason": "战斗已经结束"}
             else:
                 var drawn: Array = engine.start_player_turn()
-                result = {"success": true, "drawn_card_ids": _card_ids(drawn)}
-                if _remote_ai_enabled:
+                result = {
+                    "success": true,
+                    "drawn_card_ids": _card_ids(drawn),
+                    "pending_choice": engine.has_pending_choice(),
+                    "choice_request": engine.pending_choice_snapshot(),
+                    "action_window_ready": engine.round_service.is_action_window_ready(),
+                }
+                if _remote_ai_enabled and not engine.has_pending_choice():
                     _open_current_action_window()
         "end_turn":
             if engine.battle_state != "active":
                 result = {"success": false, "reason": "战斗已经结束"}
-            elif engine.has_pending_effect_choice():
-                result = {"success": false, "reason": "正在等待功法选择，请先完成选择"}
+            elif engine.has_pending_choice():
+                result = {"success": false, "reason": "正在等待选择，请先完成选择"}
             elif _remote_ai_enabled and _enemy_ai_gate_reason() != "":
                 result = {"success": false, "reason": _enemy_ai_gate_reason()}
             else:
@@ -281,7 +287,7 @@ func _execute_command(command: BattleCommandDto) -> CommandResult:
                     _ai_adapter.record_action_result(ai_coordinator, result)
                     _open_current_action_window()
         "resolve_choice":
-            result = engine.resolve_effect_choice(
+            result = engine.resolve_choice(
                 command.request_id,
                 command.card_ids)
             if _remote_ai_enabled and result.get("success", false) \
@@ -474,7 +480,7 @@ func snapshot() -> BattleSnapshot:
         "possible_enemy_intents": ai_snapshot.get(
             "possible_enemy_intents", []).duplicate(true),
         "ai_decision": ai_snapshot,
-        "pending_choice": engine.pending_effect_choice_snapshot(),
+        "pending_choice": engine.pending_choice_snapshot(),
         "pending_action_transaction": engine.pending_action_transaction_snapshot(),
         "delayed_count": engine.delayed_effects.size(),
         "timing_history": engine.timing_system.history_snapshot(200),
