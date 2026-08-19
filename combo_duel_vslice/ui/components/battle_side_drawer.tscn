@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://ui/components/battle_side_drawer.gd" type="Script" id="1_drawer"]
+
+[node name="BattleSideDrawer" type="PanelContainer"]
+layout_mode = 1
+anchors_preset = 14
+anchor_left = 1.0
+anchor_right = 1.0
+grow_horizontal = 0
+script = ExtResource("1_drawer")

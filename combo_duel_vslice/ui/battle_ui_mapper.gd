@@ -23,6 +23,7 @@ static func map(snapshot: BattleSnapshot, context: Dictionary = {}) -> Dictionar
     var selected_ids: Array = context.get("selected_ids", [])
     var preview: Dictionary = context.get("action_preview", {}).duplicate(true)
     var active_consumable_slot := int(context.get("active_consumable_slot", -1))
+    var include_debug := bool(context.get("include_debug", true))
     var player := _side(snapshot.player, "player")
     var enemy := _side(snapshot.enemy, "enemy")
     var selected_cards: Array = []
@@ -46,7 +47,7 @@ static func map(snapshot: BattleSnapshot, context: Dictionary = {}) -> Dictionar
         "select_cards": battle_active and snapshot.actions_available > 0,
     }
     var action_index := int(context.get("action_index", 0))
-    return {
+    var result := {
         "player": player,
         "enemy": enemy,
         "hand": player["hand"].duplicate(true),
@@ -92,15 +93,17 @@ static func map(snapshot: BattleSnapshot, context: Dictionary = {}) -> Dictionar
             "enemy_preview": snapshot.last_enemy_preview.duplicate(true),
         },
         "notification": str(context.get("notification", "")),
-        "debug_info": {
+    }
+    if include_debug:
+        result["debug_info"] = {
             "seed": int(context.get("seed", 2308)),
             "active_channel": str(context.get("active_log_channel", "battle")),
             "battle_log": snapshot.battle_log.duplicate(true),
             "system_log": snapshot.system_log.duplicate(true),
             "delayed_count": snapshot.delayed_count,
             "raw_state": snapshot.to_dict(),
-        },
-    }
+        }
+    return result
 
 static func _side(side: BattleSideSnapshot, side_key: String) -> Dictionary:
     return {
@@ -111,6 +114,7 @@ static func _side(side: BattleSideSnapshot, side_key: String) -> Dictionary:
         "defense": side.defense,
         "resources": {
             "momentum": side.momentum_value,
+            "momentum_cap": side.momentum_cap,
             "same_qi": side.same_qi_value,
             "same_qi_capacity": side.same_qi_capacity,
             "poison": side.poison_total_amount,
@@ -140,7 +144,8 @@ static func _side(side: BattleSideSnapshot, side_key: String) -> Dictionary:
 
 static func _statuses(side: BattleSideSnapshot) -> Array:
     var result: Array = [{
-        "id": "momentum", "text": "连势 %d" % side.momentum_value,
+        "id": "momentum", "text": "连势 %d/%d" % [
+            side.momentum_value, side.momentum_cap],
         "color": UiDesignScript.COLORS["orange"],
     }, {
         "id": "same_qi", "text": "同气 %d/%d" % [side.same_qi_value, side.same_qi_capacity],

@@ -71,13 +71,20 @@ func expire_round_sources(side) -> Dictionary:
 func clear_battle_sources(side) -> Dictionary:
     if side == null:
         return {"success": false, "detail": "战斗结束来源清理缺少参与方"}
+    var momentum_receipt: Dictionary = side.write_momentum(
+        "clear", 0, "battle_cleanup", "battle-end", "battle_end")
+    if not momentum_receipt.get("success", false):
+        return {
+            "success": false,
+            "detail": "战斗结束连势清理失败",
+            "momentum_receipt": momentum_receipt,
+        }
     side.direct_power_fixed = 0
     side.direct_power_percent = 0
-    side.momentum_value = 0
     side.last_successful_technique_hand_id = ""
     side.clear_combat_sources()
     side.source_marker_store.clear_scope("battle")
-    return {"success": true}
+    return {"success": true, "momentum_receipt": momentum_receipt}
 
 
 func use_effect_ports(effect_ports) -> void:

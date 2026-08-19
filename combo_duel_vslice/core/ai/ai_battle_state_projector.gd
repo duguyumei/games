@@ -17,11 +17,15 @@ func _base(side, sequence_book, battle_flow, is_self: bool) -> Dictionary:
     var same_qi_capacity: Dictionary = side.peek_effective_same_qi_capacity_result({
         "source_kind": "ai_observation",
     })
+    var momentum_cap: Dictionary = side.peek_effective_momentum_cap_result({
+        "source_kind": "ai_observation",
+    })
     var value := {
         "life": int(side.life),
         "max_life": int(side.max_life),
         "defense": int(side.defense),
         "momentum": int(side.momentum_value),
+        "momentum_cap": int(momentum_cap.get("effective_value", 0)),
         "same_qi_value": int(side.same_qi_value),
         "same_qi_capacity": int(same_qi_capacity.get("effective_value", 5)),
         "hand_limit": effective_hand_limit,

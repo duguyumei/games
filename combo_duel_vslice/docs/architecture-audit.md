@@ -1930,3 +1930,28 @@ C2 0、D 1；正式内功13门、剩余153门，物品仍剩13件，暂缓功法
 1081条通过。项目加载覆盖723项，设计一致性为权威228／数据228／待接入0／错误0，最终`quick`为7/7。
 全部最终Godot日志使用独立`/tmp/taiwu-defense-decay-policy-query-*.log`，stdout与日志扫描未发现脚本加载、
 文件、解析、SCRIPT ERROR、ObjectDB／RID、orphan、资源泄漏或退出阶段错误；只有允许忽略的macOS CA警告。
+
+## 28. 2026-08-19 连势资源策略底层收口
+
+连势资源没有新增Service或Store。`BattleSide`继续唯一持有`momentum_value`和写入回执，并新增只属于当前
+战斗的`base_momentum_cap`、`momentum_cap_initialized`与`last_momentum_cap_query_result`。基础上限由
+`ComboCombatEngine`在最终牌库装配完成后、首个`battle_start`及正常抽牌前编排初始化；牌库替换会使尚未
+开始的旧初始化失效，战斗生命周期开始后的牌区变化不会追溯重算。该状态进入
+`capture_passive_query_state/replace_passive_query_state`，但不进入`RunProgressSnapshot`。
+
+`momentum_cap_query`只加入唯一`BattleIntQueryCatalog.HOOKS`，查询仍走
+`BattleRuleQueryService → PassiveIntPolicyResolver → PassiveRuleRuntime ExecutionPlan/Invocation`。通用
+`battle_int_query_modifier`直接支持该Hook；没有上限专用Handler或任何内功/物品ID分支。正式查询保存稳定
+source breakdown、source/request fingerprint和错误；UI、AI与预览调用peek并恢复原正式查询回执。
+
+所有add/set/consume/clear继续只经`BattleSide.write_momentum`。add/set在查询成功后截断至
+`0..effective_momentum_cap`，到顶后的add仍成功但`changed=false/delta=0`，回执记录`capped_amount`；
+consume不足、未知操作或上限查询失败均不改值且明确失败。回执同时冻结基础/有效上限、查询结果、来源和
+索引，`rollback_momentum_receipt`直接恢复before与写前查询回执，不重新执行查询。
+`BattleSourceResourceEffectService/BattleEffectPorts`保持薄转发；`FlowEffectHandler`、手动功法结算和调用
+功法结算均传播写入失败，因而不会在连势失败后继续报告成功。
+
+`BattleSideSnapshot`schema升级并与`BattleSession`、`AiBattleStateProjector`、`ActionPreviewDto`和
+`BattleUiMapper`统一公开`momentum_cap`，UI使用“连势 当前值/有效上限”。专项fixture用同一通用Handler
+验证单来源`+20`、双来源`+40`、敌我隔离、压制恢复及稳定指纹，不修改正式内容JSON；《广炉容火》仍未
+录入，正式内功、物品和8门暂缓功法数量不变。

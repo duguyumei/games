@@ -41,6 +41,10 @@ var base_hand_limit_modifier: int = 0
 var direct_power_fixed: int = 0
 var direct_power_percent: int = 0
 var momentum_value: int = 0
+## 连势基础上限只在战斗牌库最终装配后冻结；战斗内牌区变化不追溯修改它。
+var base_momentum_cap: int = 0
+var momentum_cap_initialized: bool = false
+var last_momentum_cap_query_result: Dictionary = {}
 var same_qi_value: int = 0
 var last_successful_technique_hand_id: String = ""
 var momentum_write_receipts: Array = []
@@ -193,6 +197,9 @@ func reset(
     direct_power_fixed = 0
     direct_power_percent = 0
     momentum_value = 0
+    base_momentum_cap = 0
+    momentum_cap_initialized = false
+    last_momentum_cap_query_result.clear()
     same_qi_value = 0
     last_successful_technique_hand_id = ""
     momentum_write_receipts.clear()
@@ -254,6 +261,88 @@ func active_source_content_ids() -> Dictionary:
         if _item_source_contribution_active(content_id):
             active["item"][content_id] = true
     return active
+
+## 冻结战斗开始时的牌库真气数量，且只允许第一次调用建立基础上限。
+## 调用方必须在最终牌库装配完成后显式初始化；查询和写入不会按当前牌区补算。
+func initialize_base_momentum_cap(initial_card_count: int) -> int:
+    if momentum_cap_initialized:
+        return base_momentum_cap
+    base_momentum_cap = maxi(0, int(initial_card_count))
+    momentum_cap_initialized = true
+    last_momentum_cap_query_result.clear()
+    return base_momentum_cap
+
+func effective_momentum_cap_result(context: Dictionary = {}) -> Dictionary:
+    if not momentum_cap_initialized:
+        last_momentum_cap_query_result = {
+            "success": false,
+            "hook": "momentum_cap_query",
+            "subject_kind": "battle_side",
+            "subject_id": owner_id,
+            "base_value": 0,
+            "effective_value": 0,
+            "source_breakdown": [],
+            "modifier_breakdown": [],
+            "source_fingerprint": "",
+            "fingerprint": "",
+            "request_fingerprint": "",
+            "errors": ["基础连势上限尚未初始化"],
+        }
+        return last_momentum_cap_query_result.duplicate(true)
+    var base_value := maxi(0, base_momentum_cap)
+    var request_values := {
+        "hook": "momentum_cap_query",
+        "owner": self,
+        "actor": context.get("actor", self),
+        "target": context.get("target"),
+        "subject_kind": "battle_side",
+        "subject_id": owner_id,
+        "base_value": base_value,
+        "round_number": int(context.get("round_number", 0)),
+        "action_token": str(context.get("action_token", "")),
+        "source_kind": str(context.get("source_kind", "momentum_cap")),
+        "source_id": str(context.get("source_id", "")),
+        "metadata": {
+            "base_momentum_cap": base_value,
+        },
+    }
+    request_values["metadata"].merge(
+        context.get("metadata", {}).duplicate(true), true)
+    request_values["metadata"]["base_momentum_cap"] = base_value
+    if context.has("source_snapshot"):
+        request_values["source_snapshot"] = context.get(
+            "source_snapshot", []).duplicate(true)
+    if battle_rule_query_service == null:
+        last_momentum_cap_query_result = {
+            "success": true,
+            "hook": "momentum_cap_query",
+            "subject_kind": "battle_side",
+            "subject_id": owner_id,
+            "base_value": base_value,
+            "effective_value": base_value,
+            "source_breakdown": [],
+            "modifier_breakdown": [],
+            "source_fingerprint": "",
+            "fingerprint": "",
+            "request_fingerprint": "",
+            "errors": [],
+        }
+        return last_momentum_cap_query_result.duplicate(true)
+    var resolved = battle_rule_query_service.resolve_values(request_values)
+    last_momentum_cap_query_result = resolved.to_dict()
+    if not resolved.success:
+        battle_rule_query_service.report_failure(resolved, "momentum_cap")
+        return last_momentum_cap_query_result.duplicate(true)
+    last_momentum_cap_query_result["effective_value"] = maxi(
+        0, int(last_momentum_cap_query_result.get("effective_value", base_value)))
+    return last_momentum_cap_query_result.duplicate(true)
+
+## UI、AI 与行动预览只能使用 peek，不能覆盖正式查询回执。
+func peek_effective_momentum_cap_result(context: Dictionary = {}) -> Dictionary:
+    var before := last_momentum_cap_query_result.duplicate(true)
+    var result := effective_momentum_cap_result(context)
+    last_momentum_cap_query_result = before
+    return result
 
 ## 兼容旧查询调用方；新代码应使用 active_source_content_ids()，其中
 ## source_kind 分桶防止同名物品/内功/功法互相激活。
@@ -609,6 +698,10 @@ func capture_passive_query_state() -> Dictionary:
         "direct_power_fixed": direct_power_fixed,
         "direct_power_percent": direct_power_percent,
         "momentum_value": momentum_value,
+        "base_momentum_cap": base_momentum_cap,
+        "momentum_cap_initialized": momentum_cap_initialized,
+        "last_momentum_cap_query_result": (
+            last_momentum_cap_query_result.duplicate(true)),
         "same_qi_value": same_qi_value,
         "last_successful_technique_hand_id": last_successful_technique_hand_id,
         "momentum_write_receipts": momentum_write_receipts.duplicate(true),
@@ -681,6 +774,12 @@ func replace_passive_query_state(state: Dictionary) -> void:
     direct_power_fixed = int(state.get("direct_power_fixed", direct_power_fixed))
     direct_power_percent = int(state.get("direct_power_percent", direct_power_percent))
     momentum_value = int(state.get("momentum_value", momentum_value))
+    base_momentum_cap = int(state.get("base_momentum_cap", base_momentum_cap))
+    momentum_cap_initialized = bool(state.get(
+        "momentum_cap_initialized", momentum_cap_initialized))
+    last_momentum_cap_query_result = state.get(
+        "last_momentum_cap_query_result",
+        last_momentum_cap_query_result).duplicate(true)
     same_qi_value = int(state.get("same_qi_value", same_qi_value))
     momentum_write_receipts.assign(state.get(
         "momentum_write_receipts", momentum_write_receipts))
@@ -921,20 +1020,45 @@ func write_momentum(
     var after := before
     var paid := 0
     var success := true
+    var capped_amount := 0
+    var cap_query: Dictionary = {}
+    var cap_query_before := last_momentum_cap_query_result.duplicate(true)
+    var known_operation := operation in ["add", "set", "consume", "clear"]
+    if known_operation:
+        cap_query = effective_momentum_cap_result({
+            "actor": self,
+            "action_token": action_token,
+            "source_kind": source_category,
+            "source_id": source_id,
+        })
+        if not bool(cap_query.get("success", false)):
+            success = false
     match operation:
         "add":
-            after = maxi(0, before + requested)
+            if success:
+                var requested_after := maxi(0, before + requested)
+                var cap := maxi(0, int(cap_query.get(
+                    "effective_value", base_momentum_cap)))
+                after = mini(requested_after, cap)
+                capped_amount = maxi(0, requested_after - after)
         "set":
-            after = maxi(0, requested)
+            if success:
+                var requested_after := maxi(0, requested)
+                var cap := maxi(0, int(cap_query.get(
+                    "effective_value", base_momentum_cap)))
+                after = mini(requested_after, cap)
+                capped_amount = maxi(0, requested_after - after)
         "clear":
-            after = 0
+            if success:
+                after = 0
         "consume":
-            var cost := maxi(0, requested)
-            if cost <= 0 or before < cost:
-                success = false
-            else:
-                after = before - cost
-                paid = cost
+            if success:
+                var cost := maxi(0, requested)
+                if cost <= 0 or before < cost:
+                    success = false
+                else:
+                    after = before - cost
+                    paid = cost
         _:
             success = false
     if success:
@@ -945,9 +1069,15 @@ func write_momentum(
         "requested": requested,
         "paid": paid,
         "before": before,
-        "after": momentum_value,
-        "delta": momentum_value - before,
+        "after": momentum_value if success else before,
+        "delta": (momentum_value if success else before) - before,
         "changed": success and momentum_value != before,
+        "base_momentum_cap": base_momentum_cap,
+        "effective_momentum_cap": int(cap_query.get(
+            "effective_value", base_momentum_cap)),
+        "capped_amount": capped_amount,
+        "cap_query": cap_query.duplicate(true),
+        "cap_query_before": cap_query_before,
         "source_category": source_category,
         "action_token": action_token,
         "source_id": source_id,
@@ -969,6 +1099,8 @@ func rollback_momentum_receipt(receipt: Dictionary) -> bool:
             or int(momentum_value) != int(stored.get("after", momentum_value)):
         return false
     momentum_value = maxi(0, int(stored.get("before", momentum_value)))
+    last_momentum_cap_query_result = stored.get(
+        "cap_query_before", last_momentum_cap_query_result).duplicate(true)
     stored["rolled_back"] = true
     momentum_write_receipts[index] = stored
     return true

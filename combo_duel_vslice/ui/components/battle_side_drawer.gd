@@ -10,6 +10,7 @@ var _tabs: TabContainer
 var _toggle: Button
 var _detail_label: RichTextLabel
 var _sections := {}
+var _tween: Tween
 
 func _ready() -> void:
     name = "BattleSideDrawer"
@@ -80,6 +81,7 @@ func show_detail(section: String, payload: Dictionary) -> void:
     set_open(true)
 
 func set_open(value: bool, animate: bool = true) -> void:
+    _stop_tween()
     _open = value
     mouse_filter = Control.MOUSE_FILTER_STOP if _open else Control.MOUSE_FILTER_IGNORE
     if not animate or not is_inside_tree():
@@ -88,14 +90,14 @@ func set_open(value: bool, animate: bool = true) -> void:
     elif _open:
         visible = true
         modulate.a = 0.0
-        var tween := create_tween()
-        tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-        tween.tween_property(self, "modulate:a", 1.0, UiDesignScript.ANIMATION_NORMAL)
+        _tween = create_tween()
+        _tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+        _tween.tween_property(self, "modulate:a", 1.0, UiDesignScript.ANIMATION_NORMAL)
     else:
-        var tween := create_tween()
-        tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-        tween.tween_property(self, "modulate:a", 0.0, UiDesignScript.ANIMATION_FAST)
-        tween.tween_callback(func(): visible = false)
+        _tween = create_tween()
+        _tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+        _tween.tween_property(self, "modulate:a", 0.0, UiDesignScript.ANIMATION_FAST)
+        _tween.tween_callback(func(): visible = false)
     open_changed.emit(_open)
 
 func toggle() -> void:
@@ -103,6 +105,14 @@ func toggle() -> void:
 
 func is_open() -> bool:
     return _open
+
+func _stop_tween() -> void:
+    if _tween != null and _tween.is_valid():
+        _tween.kill()
+    _tween = null
+
+func _exit_tree() -> void:
+    _stop_tween()
 
 func _tab_index(tab_name: String) -> int:
     for index in range(_tabs.get_tab_count()):

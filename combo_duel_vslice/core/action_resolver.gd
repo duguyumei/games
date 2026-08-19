@@ -725,7 +725,15 @@ func _finish_action_record(record) -> Dictionary:
     var technique: Dictionary = action_preview["technique"]
     var hand_id: String = action_preview["hand"]["id"]
     if record["triggered"]:
-        _settle_successful_technique_momentum(record)
+        var momentum_settlement: Dictionary = \
+            _settle_successful_technique_momentum(record)
+        if not momentum_settlement.get("success", false):
+            record["failed"] = true
+            return {
+                "success": false,
+                "reason": str(momentum_settlement.get(
+                    "reason", "功法连势结算失败")),
+            }
         record["actor"].consume_pending_power_fixed_sources(
             action_preview.get("pending_power_fixed_tokens", []))
         record["actor"].last_successful_technique_hand_id = hand_id
@@ -1049,5 +1057,5 @@ func _technique_name(technique_id: String) -> String:
 func _prepare_successful_technique_momentum(record) -> void:
     technique_resolution_service.prepare_manual_record(record)
 
-func _settle_successful_technique_momentum(record) -> void:
-    technique_resolution_service.settle_manual_record(record)
+func _settle_successful_technique_momentum(record) -> Dictionary:
+    return technique_resolution_service.settle_manual_record(record)

@@ -680,7 +680,7 @@ func prepare_manual_record(record) -> void:
     record["preview"]["values"] = PowerCalculatorScript.apply_momentum(
         record["preview"]["values"], int(record["momentum_snapshot"]))
 
-func settle_manual_record(record) -> void:
+func settle_manual_record(record) -> Dictionary:
     var actor = record["actor"]
     var action_token := str(record["token"])
     var settlement: Dictionary = _settle_momentum(
@@ -707,6 +707,7 @@ func settle_manual_record(record) -> void:
         record["momentum_change_receipts"].duplicate(true)
     record["preview"]["momentum_settlement"] = \
         record["momentum_settlement"].duplicate(true)
+    return settlement
 
 func _continue_invocation(state: Dictionary) -> Dictionary:
     var runtime = state["runtime"]
@@ -788,8 +789,11 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
     var effect: Dictionary = state["effect"]
     var token := str(request.get("invocation_token", ""))
     if bool(effect.get("use_momentum", true)):
-        _settle_momentum(
+        var momentum_settlement: Dictionary = _settle_momentum(
             runtime.actor, token, state["definition"].id, true)
+        if not momentum_settlement.get("success", false):
+            discard_execution(token)
+            return momentum_settlement
     runtime.actor.consume_pending_power_fixed_sources(
         state.get("pending_power_fixed_tokens", []))
     var same_qi_result := settle_same_qi(
@@ -836,7 +840,7 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
 func _settle_momentum(actor, action_token: String,
         technique_id: String, use_momentum: bool) -> Dictionary:
     if not use_momentum:
-        return {}
+        return {"success": true}
     var changed: bool = actor.momentum_changed_for_action(action_token)
     var preservation := {"preserved": false, "consumed": false}
     var clear_receipt: Dictionary = {}
@@ -845,7 +849,17 @@ func _settle_momentum(actor, action_token: String,
         if not bool(preservation.get("preserved", false)):
             clear_receipt = actor.write_momentum(
                 "clear", 0, "rule_clear", action_token, technique_id)
+            if not clear_receipt.get("success", false):
+                return {
+                    "success": false,
+                    "reason": "功法结算清空连势失败",
+                    "changed": changed,
+                    "preservation": preservation,
+                    "clear_receipt": clear_receipt,
+                    "remaining": int(actor.momentum_value),
+                }
     return {
+        "success": true,
         "changed": changed, "preservation": preservation,
         "clear_receipt": clear_receipt,
         "remaining": int(actor.momentum_value),

@@ -20,6 +20,7 @@ const HOOKS := [
     "defense_decay_max_loss_query",
     "defense_decay_minimum_remaining_query",
     "same_qi_capacity_query",
+    "momentum_cap_query",
     "life_recovery_query",
     "effective_qi_query",
     "pre_life_loss_query",

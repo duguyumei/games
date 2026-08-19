@@ -6,9 +6,9 @@
 ## 1. 结论与计数
 
 - 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功、卫星、机缘不空、重岳不崩及孤垒不灭共13门内功，修习策略家族6件物品及纳气养命共7件物品正式接入；剩余153门内功、13件物品和8门暂缓功法仍未接入生产内容池。
-- Readiness：A=46，B=68，C=71，D=1，E=8，合计194；其中已正式接入但保留历史复杂度标签的9门内功仍计入C口径。
+- Readiness：A=46，B=69，C=70，D=1，E=8，合计194；其中已正式接入但保留历史复杂度标签的9门内功仍计入C口径。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并20项，余下实现形态为B 12、C1 15、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并21项，余下实现形态为B 12、C1 14、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -20,7 +20,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 |---|---|---|
 | 被动来源与事件计划 | `PassiveRuleRuntime.build_execution_plan`、`PassiveRuleSourceResolver.collect_sources/capture_source_snapshot`、`BattlePassiveTimingBridge`、`RunPassiveEventService.dispatch` | 事件开始固定ExecutionPlan，事件间实时读取BattleSide/GrowthInventory；不得新增平行Runtime。 |
 | 战斗事件 | `BattleEventCatalog.TIMING_EVENTS/COMMITTED_EVENTS/RESPONSE_ONLY_EVENTS`、`BattlePassiveCommittedEventService.commit` | 自动触发、damage/poison/defense/life、功法成功/调用、临时功法、同气与统一`card_moved`完成事实均已有；response-only事实不能冒充可配置committed hook。 |
-| 查询/条件 | `BattleIntQueryCatalog.HOOKS`、`BattleRuleQueryService.QUERY_HOOKS`兼容别名、`PassiveIntPolicyResolver.resolve`、`ConditionSpecRegistry.CONDITION_DEFINITIONS/EVENT_FILTER_DEFINITIONS` | 战斗整数Hook只有一个目录；四阶段功法值、逐牌有效真气值、伤害、防御、自然衰减、手限、同气容量、配装、心得等已存在；连势上限等仍缺。 |
+| 查询/条件 | `BattleIntQueryCatalog.HOOKS`、`BattleRuleQueryService.QUERY_HOOKS`兼容别名、`PassiveIntPolicyResolver.resolve`、`ConditionSpecRegistry.CONDITION_DEFINITIONS/EVENT_FILTER_DEFINITIONS` | 战斗整数Hook只有一个目录；四阶段功法值、逐牌有效真气值、伤害、防御、自然衰减、手限、同气容量与`momentum_cap_query`等均复用该目录。 |
 | 效果执行 | `TechniqueEffectExecutor`→`EffectHandlerRegistry`→`BattleEffectPorts`；run侧`RunMutationService`→`RunEffectHandlerRegistry` | damage/defense/card zone/anomaly/marker/life/临时功法/调用/响应/延迟等复用既有端口，不建第二执行器。 |
 | 状态/生命周期 | `StatusSystem`、`StatusResponseService`、`StatusDelayService`、`CombatSourceLifecycleService`、`SourceMarkerStore` | 延迟、响应、来源标识、item marker地址与卸力攻击取消协议已有；临时炽气来源层仍缺。 |
 | 计数器 | `RunPassiveCounterStore`、`BattlePassiveCounterStore`及read/mutation ports | run计数进入RunProgressSnapshot，battle计数纯Runtime；无需按内容建缓存。 |
@@ -187,7 +187,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 护焰周天 | `damage_builds_ember_shield` | [36 §13《护焰周天》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#护焰周天) | battle_start；`pre_life_loss_query`；`technique_execution_resolved` | trigger_mode/source_kind；target_total_reduction；source counter/marker | 战斗开始获得 20 层护焰（上限 40）；每层抵消 1 点敌方直接攻击生命损失；我方功法每累计减少敌方防御与生命合计 5 点获得 1 层。 | BattleRuntime temporary state | 支付/移动/后效原子提交 | 生命减量与功法执行汇总底层均已完成 | C | source-bounded ember counter/handler | 两项公共协议已满足；内容、护焰层数和消费仍未接入 |
 | inner_skill | 余烬存真 | `burnout_qi_retains_half_rank_value` | [36 §13《余烬存真》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#余烬存真) | technique_succeeded / action_resolved | current_rank_order；EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 燃尽真气参与功法值计算时，其真气值改为对应牌阶标准真气值的一半，向下取整。 | 纯查询，无状态 | 事件或命令既有事务 | BattleCardEffectService.current_effective_qi 与四阶段功法值查询已存在 | B | — | 底层协议已完成；具体内容仍未接入 |
 | inner_skill | 开炉蓄势 | `battle_start_adds_ten_momentum` | [36 §13《开炉蓄势》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#开炉蓄势) | battle_start | 权威正文的资格与边界 | 战斗开始时，获得 10 点连势。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.battle_start; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
-| inner_skill | 广炉容火 | `momentum_cap_plus_twenty` | [36 §13《广炉容火》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#广炉容火) | 命令提交点（见权威正文） | source counter/marker | 连势上限提高 20。 | BattleRuntime temporary state | 事件或命令既有事务 | write_momentum统一入口已有 | C | momentum_cap_query | 按能力键合并实现 |
+| inner_skill | 广炉容火 | `momentum_cap_plus_twenty` | [36 §13《广炉容火》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#广炉容火) | `momentum_cap_query` | source counter/marker | 连势上限提高 20。 | BattleRuntime temporary state | 事件或命令既有事务 | 基础上限冻结、有效上限查询、统一截断、快照/AI/UI/预览与失败回滚均已完成 | B | — | 底层已完成；《广炉容火》仍未录入正式内容数据 |
 | inner_skill | 炉脉自转 | `round_start_same_qi_to_four` | [36 §13《炉脉自转》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#炉脉自转) | round_start / turn_end | 权威正文的资格与边界 | 每个完整回合开始时，若同气槽低于 4，同气槽 +1。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 round_start / turn_end + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 五运生势 | `five_turn_declining_momentum` | [36 §13《五运生势》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#五运生势) | battle_start | 权威正文的资格与边界 | 战斗开始时获得 5 层运数。每个完整回合开始时，获得等于运数的连势；回合结束时运数 -1，最低为 0。 | BattleRuntime temporary state | 事件或命令既有事务 | 现有 battle_start + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 炽火炼功 | `consume_blazing_for_power` | [36 §13《炽火炼功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#炽火炼功) | technique_succeeded / action_resolved | EffectTargetQuery.anomaly/reshape；trigger_mode/source_kind | 行动确认时，可以选择 1 张参与功法值计算的真气，移除其全部炽气；每实际移除 1 层，本组功法值 +2。 | event/action local snapshot | 选择候选冻结 + RNG/状态回滚 | action_pre_commit、ChoiceEffectHandler、BattleActionTransaction 已有 | C | action_confirmation_resource_payment | 按能力键合并实现 |
@@ -272,7 +272,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `growth_trigger_committed_event` | event | CardStateLifecycle 已处理成长/炽气 | 逐牌实际成长触发、产出层数与来源执行令牌 | inner_skill:growth_production_grants_defense<br>inner_skill:every_third_round_duplicates_blazing_qi<br>inner_skill:multiple_growth_procs_add_momentum | CardStateLifecycle | 否 | event/action local snapshot | 层状态仍在卡牌Runtime | 21 | 无实际产出不发；一牌多层仍有明确计数 |
 | `temporary_qi_clone_protocol` | effect | generate_temporary_normal_card 已支持基础临时牌 | 完整复制永久重塑/基础字段、稳定实例和批量洗入 | inner_skill:mirrored_qi_sea | BattleCardEffectService | 否 | BattleRuntime temporary state | 不复制战斗异状 | 22 | 复制字段精确；战后删除且不写RunDeck |
 | `defense_decay_policy_query` | query | **已有**：`DefenseRetentionPolicy.plan_decay`依次执行保留率、最大损失和最低剩余查询，成功后经`BattleEffectPorts.remove_defense`提交 | 已完成；重岳不崩与孤垒不灭均通过来源中立整数Handler接入 | inner_skill:defense_decay_loss_cap<br>inner_skill:decay_cannot_remove_last_defense | DefenseRetentionPolicy + BattleRuleQueryService + BattleEffectPorts | 否 | 纯查询，无状态 | 保留比例仍是既有阶段；只有自然衰减读取后两项查询 | 已完成 | 多来源按Invocation稳定合并；失败不写防御或事件；非自然减少仍可归零 |
-| `momentum_cap_query` | query | write_momentum统一入口已有 | 冻结基础上限、来源修正查询、所有写入截断与回执 | inner_skill:momentum_cap_plus_twenty | BattleSide/BattleSourceResourceEffectService | 否 | BattleRuntime temporary state | 不改现有清空规则 | 24 | 上限冻结；临时牌不追溯；无效增加不算变化 |
+| `momentum_cap_query` | query | **已有**：`BattleSide.initialize_base_momentum_cap/effective_momentum_cap_result/write_momentum`，查询复用`BattleIntQueryCatalog`与`battle_int_query_modifier` | 已完成；《广炉容火》仍未录入 | inner_skill:momentum_cap_plus_twenty | BattleSide + BattleRuleQueryService | 否 | BattleRuntime temporary state | Facade/来源资源Service只转发；不改现有清空规则 | 已完成 | 最终牌库冻结；牌区变化不追溯；所有写入回执含上限、截断与查询结果；失败不写状态 |
 | `burnout_debuff_and_flourish_status` | state | StatusSystem/净化/异状分类已有；燃尽当前仍按旧分类 | 燃尽迁移为debuff并新增焕发的计算阶段/净化/AI/UI | inner_skill:cleansed_debuff_grants_flourish<br>inner_skill:poisoned_discard_gains_burnout | card_states + StatusSystem | 否 | BattleRuntime temporary state | 共用异状框架 | 25 | 燃尽最后置0；焕发×2；两者可净化且战后清 |
 | `battle_permanent_card_mutation_port` | effect | **已有**：`BattleCardEffectService.advance_permanent_qi_rank`通过共享`PermanentQiMutationService`转换持久快照，Effect Handler只调用`BattleEffectPorts` | 已完成；机缘不空已正式接入 | inner_skill:fortune_rank_cycle | BattleCardEffectService + BattleSetupService既有映射 | 胜利后是 | BattleSide working run state | 永久事实只发`qi_reshape_committed`，不伪造临时`card_state_changed` | 已完成 | 当前战斗实时可见；同根行动+卡实例幂等；失败恢复卡牌/事件/回执/日志，退出或战败丢弃，胜利绝对提交 |
 | `action_confirmation_resource_payment` | transaction | action_pre_commit、ChoiceEffectHandler、BattleActionTransaction 已有 | 确认阶段选择计值牌、移除资源并反馈实际量到P | inner_skill:consume_blazing_for_power | BattleActionPreparationService | 否 | event/action local snapshot | 复用选择协议 | 27 | 已确认P/P0快照稳定；失败恢复资源/RNG/选择 |
@@ -395,7 +395,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `growth_trigger_committed_event` | C1 | qi_state_lifecycle_fact | 3 | CardStateLifecycle成长完成事实 |
 | `temporary_qi_clone_protocol` | B | card_lifecycle_fact | 1 | BattleCardEffectService生成入口扩展复制字段 |
 | `defense_decay_policy_query` | 已有 | survival_policy_query | 2 | DefenseRetentionPolicy + BattleRuleQueryService + BattleEffectPorts |
-| `momentum_cap_query` | C1 | battle_resource_policy | 1 | BattleSourceResourceEffectService统一截断 |
+| `momentum_cap_query` | 已有 | battle_resource_policy | 1 | BattleSide + BattleRuleQueryService；Facade只转发 |
 | `burnout_debuff_and_flourish_status` | C1 | qi_state_lifecycle_fact | 2 | StatusSystem异状生命周期 |
 | `battle_permanent_card_mutation_port` | 已有 | battle_to_run_card_mutation | 1 | BattleCardEffectService → BattleSetupService映射 |
 | `action_confirmation_resource_payment` | C1 | action_payment | 1 | BattleActionPreparationService |
@@ -420,7 +420,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | 已有 | run_card_mutation_fact | 1 | RunMutationService + BattleCardEffectService；不新增平行事件系统 |
 
-当前数量为：已有/合并20、B 12、C1 15、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并21、B 12、C1 14、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
@@ -451,7 +451,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 6. `practice_strategy_query`：一次性补齐商品槽位、权重、类别解锁和心得包历史计划的查询族。
 7. `run_card_mutation_fact` + `run_history_state`（已完成）：Run永久新增／重塑事实归`RunMutationService`，战斗永久改牌归`BattleCardEffectService`，两者复用既有RunProgressSnapshot映射。
 8. `choice_continuation`：在现有BattleChoiceRequest/NodeInteraction continuation上补生命周期多选。
-9. `battle_resource_policy` + `survival_policy_query`：补连势上限和防御衰减策略。
+9. `battle_resource_policy` + `survival_policy_query`（已完成）：连势上限与自然防御衰减均复用唯一战斗整数查询目录及现有领域写入边界。
 10. B类适配与A类内容接入：最后补Handler/Context/Registry和内容数据；8门E类保持暂缓。
 
 ### 11.5 九项核心C2统一收口（2026-08-18）

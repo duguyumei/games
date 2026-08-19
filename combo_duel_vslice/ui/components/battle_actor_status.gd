@@ -1,6 +1,10 @@
 class_name BattleActorStatus
 extends PanelContainer
 
+signal tooltip_requested(detail: Dictionary, target_rect: Rect2)
+signal tooltip_hidden
+signal detail_requested(section: String, payload: Dictionary)
+
 const UiDesignScript = preload("res://ui/ui_design.gd")
 
 var _title_label: Label
@@ -122,6 +126,14 @@ func _populate_chips(row: HBoxContainer, definitions: Array) -> void:
             definition.get("color", UiDesignScript.COLORS["panel_3"]),
             float(definition.get("minimum_width", 68.0)))
         chip.tooltip_text = str(definition.get("tooltip", ""))
+        chip.mouse_entered.connect(func(): tooltip_requested.emit({"kind": "status",
+            "title": str(definition.get("text", "状态")), "subtitle": "状态",
+            "description": str(definition.get("description", definition.get("tooltip", ""))),
+            "values": [], "tags": definition.get("tags", []), "placeholder": "?"}, chip.get_global_rect()))
+        chip.mouse_exited.connect(func(): tooltip_hidden.emit())
+        chip.gui_input.connect(func(event: InputEvent):
+            if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                detail_requested.emit("statuses", definition.duplicate(true)))
         row.add_child(chip)
     if definitions.size() > 3:
         var overflow := UiDesignScript.chip("+%d" % (definitions.size() - 3), UiDesignScript.COLORS["panel_3"], 42)
@@ -146,3 +158,10 @@ func _populate_items(items: Array) -> void:
             UiDesignScript.COLORS["panel_2"], UiDesignScript.RADIUS_MD,
             UiDesignScript.COLORS["copper_dark"], UiDesignScript.BORDER_REGULAR, 1, Vector2(2, 2)))
         _items_row.add_child(icon)
+        icon.mouse_entered.connect(func(): tooltip_requested.emit({"kind": "item", "title": item_text if item_text != "" else "未知物品",
+            "subtitle": "物品", "description": "缺少展示资料" if item_text == "" else "",
+            "values": [], "tags": [], "placeholder": "?"}, icon.get_global_rect()))
+        icon.mouse_exited.connect(func(): tooltip_hidden.emit())
+        icon.gui_input.connect(func(event: InputEvent):
+            if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                detail_requested.emit("items", {"name": item_text if item_text != "" else "未知物品"}))

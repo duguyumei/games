@@ -118,6 +118,16 @@ func preview_dto(
         return _invalid_preview(str(power_result.get(
             "reason", "功法值查询失败")))
     var values: Dictionary = power_result["values"]
+    var momentum_cap_query: Dictionary = side.peek_effective_momentum_cap_result({
+        "actor": side,
+        "target": target,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "source_kind": "action_preview",
+    })
+    if not momentum_cap_query.get("success", false):
+        return _invalid_preview("momentum_cap_query：%s" % "；".join(
+            momentum_cap_query.get("errors", [])))
     var technique_slot: Dictionary = sequence_book.current_slot(hand_result["id"])
     var technique_id: String = str(technique_slot.get("technique_id", ""))
     var technique_definition = technique_repository.get_definition(technique_id)
@@ -243,6 +253,7 @@ func preview_dto(
         "cards": cards,
         "hand": hand_result,
         "values": values,
+        "momentum_cap": int(momentum_cap_query.get("effective_value", 0)),
         "passive_power_query_inputs": {
             "modifiers": modifiers,
             "queries": power_result["queries"],

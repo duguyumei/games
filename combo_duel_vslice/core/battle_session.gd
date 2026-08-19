@@ -203,6 +203,7 @@ func setup_battle(
                     str(formal_setup.get("reason", "未知错误")))
                 return false
             engine.enemy.name = str(formal_setup["entry"].get("name", engine.enemy.name))
+            engine.initialize_base_momentum_caps(true)
             engine.enemy_sequence_book.configure(formal_setup["sequences"])
             _battle_setup_service.seed_owned_techniques(
                 engine.enemy, engine.enemy_sequence_book)
@@ -223,6 +224,8 @@ func setup_battle(
                 "error", "player_progress", "玩家功法配装失败",
                 str(progression_setup.get("reason", "未知错误")))
             return false
+        # 非牌组进度会装配最终被动来源，但基础上限仍只读取已经装配好的牌库。
+        engine.initialize_base_momentum_caps(true)
         engine.use_external_enemy_actions(_remote_ai_enabled)
         if _remote_ai_enabled:
             _configure_ai_coordinator()
@@ -334,6 +337,8 @@ func apply_player_progress_from(progress_snapshot: RunProgressSnapshot) -> void:
     if not progression_result.get("success", false):
         push_error("玩家功法配装失败：%s" % str(
             progression_result.get("reason", "未知错误")))
+        return
+    engine.initialize_base_momentum_caps(true)
 
 func player_progress_snapshot() -> RunProgressSnapshot:
     return _battle_setup_service.capture_progress(engine.player, _player_run_deck)
@@ -731,6 +736,10 @@ func _side_snapshot(side) -> Dictionary:
         "round_number": int(engine.turn_number),
         "source_kind": "battle_snapshot",
     })
+    var momentum_cap: Dictionary = side.peek_effective_momentum_cap_result({
+        "round_number": int(engine.turn_number),
+        "source_kind": "battle_snapshot",
+    })
     return {
         "name": side.name,
         "experience": side.experience,
@@ -741,6 +750,7 @@ func _side_snapshot(side) -> Dictionary:
         "direct_power_fixed": side.direct_power_fixed,
         "direct_power_percent": side.direct_power_percent,
         "momentum_value": side.momentum_value,
+        "momentum_cap": int(momentum_cap.get("effective_value", 0)),
         "same_qi_value": side.same_qi_value,
         "same_qi_capacity": int(same_qi_capacity.get("effective_value", 5)),
         "last_successful_technique_hand_id": side.last_successful_technique_hand_id,
@@ -798,6 +808,7 @@ func _safe_preview_snapshot(preview: Dictionary) -> Dictionary:
         "hand": _hand_result_snapshot(preview.get("hand", {})),
         "cards": _card_snapshots(preview.get("cards", [])),
         "values": preview.get("values", {}).duplicate(true),
+        "momentum_cap": int(preview.get("momentum_cap", 0)),
         "same_qi": preview.get("same_qi", {}).duplicate(true),
         "same_qi_group": preview.get("same_qi_group", {}).duplicate(true),
         "same_qi_gain": int(preview.get("same_qi_gain", 0)),

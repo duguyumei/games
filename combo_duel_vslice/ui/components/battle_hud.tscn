@@ -1,0 +1,236 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource path="res://ui/components/battle_hud.gd" type="Script" id="1_hud"]
+[ext_resource path="res://ui/components/battle_loadout_view.tscn" type="PackedScene" id="2_loadout"]
+[ext_resource path="res://ui/components/battle_actor_status.tscn" type="PackedScene" id="3_actor"]
+[ext_resource path="res://ui/components/battle_technique_grid.gd" type="Script" id="4_grid"]
+[ext_resource path="res://ui/components/battle_value_panel.gd" type="Script" id="5_values"]
+[ext_resource path="res://ui/components/battle_intent_panel.gd" type="Script" id="6_intent"]
+[ext_resource path="res://ui/components/battle_stage.tscn" type="PackedScene" id="7_stage"]
+[ext_resource path="res://ui/components/battle_hand_zone.tscn" type="PackedScene" id="8_hand"]
+[ext_resource path="res://ui/components/battle_action_bar.tscn" type="PackedScene" id="9_actions"]
+[ext_resource path="res://ui/components/battle_side_drawer.tscn" type="PackedScene" id="10_drawer"]
+[ext_resource path="res://ui/components/battle_tooltip.tscn" type="PackedScene" id="11_tip"]
+[ext_resource path="res://ui/components/battle_notification_layer.gd" type="Script" id="12_notify"]
+
+[node name="BattleHud" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_hud")
+
+[node name="BattlefieldBackground" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.0627, 0.0863, 0.0784, 1)
+
+[node name="BottomZoneBackground" type="ColorRect" parent="BattlefieldBackground"]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -300.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+color = Color(0.035, 0.055, 0.051, 0.72)
+
+[node name="FormalBattleLayout" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="TopInnerSkillLayer" type="HBoxContainer" parent="FormalBattleLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 190)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayerInnerSkills" parent="FormalBattleLayout/TopInnerSkillLayer" instance=ExtResource("2_loadout")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RoundAndActionCounter" type="VBoxContainer" parent="FormalBattleLayout/TopInnerSkillLayer"]
+custom_minimum_size = Vector2(190, 0)
+layout_mode = 2
+alignment = 1
+
+[node name="RoundLabel" type="Label" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 19
+text = "第 00 回合"
+horizontal_alignment = 1
+
+[node name="ActionLabel" type="Label" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "第 00 次行动"
+horizontal_alignment = 1
+
+[node name="ResolutionTimeline" type="HBoxContainer" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="Cycle" type="Label" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter/ResolutionTimeline"]
+layout_mode = 2
+text = "运转"
+[node name="Line1" type="HSeparator" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter/ResolutionTimeline"]
+custom_minimum_size = Vector2(20, 0)
+layout_mode = 2
+[node name="Qi" type="Label" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter/ResolutionTimeline"]
+layout_mode = 2
+text = "真气"
+[node name="Line2" type="HSeparator" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter/ResolutionTimeline"]
+custom_minimum_size = Vector2(20, 0)
+layout_mode = 2
+[node name="Technique" type="Label" parent="FormalBattleLayout/TopInnerSkillLayer/RoundAndActionCounter/ResolutionTimeline"]
+layout_mode = 2
+text = "功法"
+
+[node name="EnemyInnerSkills" parent="FormalBattleLayout/TopInnerSkillLayer" instance=ExtResource("2_loadout")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Battlefield" type="HBoxContainer" parent="FormalBattleLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="PlayerSideColumn" type="VBoxContainer" parent="FormalBattleLayout/Battlefield"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="PlayerActorStatus" parent="FormalBattleLayout/Battlefield/PlayerSideColumn" instance=ExtResource("3_actor")]
+layout_mode = 2
+
+[node name="PlayerTechniqueGrid" type="VBoxContainer" parent="FormalBattleLayout/Battlefield/PlayerSideColumn"]
+layout_mode = 2
+script = ExtResource("4_grid")
+
+[node name="CentralBattleStage" type="VBoxContainer" parent="FormalBattleLayout/Battlefield"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="CombatReadouts" type="HBoxContainer" parent="FormalBattleLayout/Battlefield/CentralBattleStage"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayerValuePanel" type="HBoxContainer" parent="FormalBattleLayout/Battlefield/CentralBattleStage/CombatReadouts"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("5_values")
+
+[node name="EnemyIntentPanel" type="PanelContainer" parent="FormalBattleLayout/Battlefield/CentralBattleStage/CombatReadouts"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_intent")
+
+[node name="EnemyValuePanel" type="HBoxContainer" parent="FormalBattleLayout/Battlefield/CentralBattleStage/CombatReadouts"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("5_values")
+
+[node name="BattleStage" parent="FormalBattleLayout/Battlefield/CentralBattleStage" instance=ExtResource("7_stage")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EnemySideColumn" type="VBoxContainer" parent="FormalBattleLayout/Battlefield"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="EnemyActorStatus" parent="FormalBattleLayout/Battlefield/EnemySideColumn" instance=ExtResource("3_actor")]
+layout_mode = 2
+
+[node name="EnemyHandSummary" type="Label" parent="FormalBattleLayout/Battlefield/EnemySideColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 68)
+layout_mode = 2
+text = "敌方牌区\n手牌 0 / 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+text_overrun_behavior = 3
+
+[node name="EnemyTechniqueGrid" type="VBoxContainer" parent="FormalBattleLayout/Battlefield/EnemySideColumn"]
+layout_mode = 2
+script = ExtResource("4_grid")
+
+[node name="BottomPlayerRegion" type="HBoxContainer" parent="FormalBattleLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 300)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayerHandZone" parent="FormalBattleLayout/BottomPlayerRegion" instance=ExtResource("8_hand")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BattleActionBar" parent="FormalBattleLayout/BottomPlayerRegion" instance=ExtResource("9_actions")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="BuildDetailsToggle" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -116.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 44.0
+grow_horizontal = 0
+text = "构筑详情"
+
+[node name="DebugDrawerToggle" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 80.0
+offset_bottom = 44.0
+text = "调试"
+
+[node name="BattleSideDrawer" parent="." instance=ExtResource("10_drawer")]
+unique_name_in_owner = true
+layout_mode = 1
+
+[node name="BattleTooltip" parent="." instance=ExtResource("11_tip")]
+unique_name_in_owner = true
+layout_mode = 0
+
+[node name="BattleNotificationLayer" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("12_notify")

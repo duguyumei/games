@@ -565,6 +565,7 @@ func setup(
     battle_passive_event_service.open_battle(
         [player, enemy], battle_instance_id)
     passive_rule_runtime.suppression_service.clear()
+    initialize_base_momentum_caps()
     state_changed.emit()
 
 func setup_scripted_battle(
@@ -605,6 +606,7 @@ func setup_scripted_battle(
             battle_state_detail)
         state_changed.emit()
         return false
+    initialize_base_momentum_caps(true)
     enemy.name = scripted_setup["name"]
     enemy_ai_policy = scripted_setup["enemy_ai_policy"]
     _sync_action_service_modes()
@@ -620,6 +622,10 @@ func setup_scripted_battle(
 
 func replace_player_deck(cards: Array, shuffle_cards: bool = true) -> void:
     player.replace_deck(cards, rng, shuffle_cards)
+    if not battle_start_card_effects_applied and turn_number == 0:
+        player.base_momentum_cap = 0
+        player.momentum_cap_initialized = false
+        player.last_momentum_cap_query_result.clear()
     battle_start_card_effects_applied = false
     current_round_actors.clear()
     state_changed.emit()
@@ -638,6 +644,7 @@ func use_external_enemy_actions(enabled: bool) -> void:
 
 func start_player_turn() -> Array:
     _sync_action_service_modes()
+    initialize_base_momentum_caps()
     last_preview.clear()
     last_enemy_preview.clear()
     last_player_action_cards.clear()
@@ -680,7 +687,21 @@ func _finish_round_end() -> void:
     round_service.finish_round_end()
 
 func preview(card_ids: Array) -> Dictionary:
+    initialize_base_momentum_caps()
     return _preview_for_side(player, card_ids, sequence_book, power_modifiers)
+
+## 在最终牌库装配完成、首个战斗时点发生前冻结双方基础连势上限。
+## BattleSide 自身仍是状态所有者；本方法只负责战斗生命周期编排。
+func initialize_base_momentum_caps(force: bool = false) -> void:
+    if force:
+        if battle_start_card_effects_applied or turn_number > 0:
+            return
+        player.momentum_cap_initialized = false
+        enemy.momentum_cap_initialized = false
+        player.last_momentum_cap_query_result.clear()
+        enemy.last_momentum_cap_query_result.clear()
+    player.initialize_base_momentum_cap(player.all_zone_cards().size())
+    enemy.initialize_base_momentum_cap(enemy.all_zone_cards().size())
 
 func _preview_for_side(side, card_ids: Array, book, modifiers_by_hand: Dictionary = {}) -> Dictionary:
     return action_preview_service.preview(

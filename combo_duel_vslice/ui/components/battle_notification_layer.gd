@@ -38,3 +38,8 @@ func notify(text_value: String, error: bool = false) -> void:
     _tween.tween_interval(1.4)
     _tween.tween_property(_message, "modulate:a", 0.0, UiDesignScript.ANIMATION_NORMAL)
     _tween.tween_callback(func(): _message.visible = false)
+
+func _exit_tree() -> void:
+    if _tween != null and _tween.is_valid():
+        _tween.kill()
+    _tween = null

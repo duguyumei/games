@@ -63,6 +63,8 @@ func _test_source_markers_and_public_change_events() -> void:
 
 func _test_momentum_and_direct_power_writes() -> void:
     var engine = _engine_with_cards([])
+    # 此专项用空牌库隔离来源资源；显式给旧兼容入口一个测试基础上限。
+    engine.player.initialize_base_momentum_cap(9)
     _assert_equal(engine.effect_ports.add_momentum(engine.player, 6), 6,
         "兼容 add_momentum 入口委托统一连势写入")
     _assert_equal(engine.effect_ports.set_momentum(engine.player, 9), 9,

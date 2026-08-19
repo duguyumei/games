@@ -513,7 +513,10 @@ func _on_after_normal_draw_delays(event) -> Dictionary:
 func _on_card_battle_end(event) -> Dictionary:
     var cleaned_count := 0
     for side in event.actors:
-        combat_source_lifecycle_service.clear_battle_sources(side)
+        var source_cleanup: Dictionary = \
+            combat_source_lifecycle_service.clear_battle_sources(side)
+        if not source_cleanup.get("success", false):
+            return source_cleanup
         var cards: Array = []
         for zone in [
                 side.draw_pile,

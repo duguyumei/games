@@ -77,6 +77,14 @@ func execute(effect: Dictionary, context):
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = \
                     [receipt] if bool(receipt.get("success", false)) else []
+            if not receipt.get("success", false):
+                var cap_query: Dictionary = receipt.get("cap_query", {})
+                var reason := "连势上限查询失败" \
+                    if not cap_query.get("success", true) \
+                    else "连势写入失败"
+                if not cap_query.get("errors", []).is_empty():
+                    reason += "：%s" % "；".join(cap_query.get("errors", []))
+                return EffectResultScript.failed(reason)
             return EffectResultScript.succeeded("连势写入完成")
         "grant_momentum_preservation":
             var settlement_token: String = runtime.invocation_token \

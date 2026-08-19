@@ -9,7 +9,7 @@ extends RefCounted
 ## 牌面、消耗品、内功等列表保持 Array 形态，因为它们的元素契约由各自的内容
 ## 校验负责；这里只保证顶层字段存在且类型正确。
 
-const SCHEMA_VERSION := 11
+const SCHEMA_VERSION := 12
 
 var name: String = ""
 var experience: int = 0
@@ -20,6 +20,7 @@ var defense: int = 0
 var direct_power_fixed: int = 0
 var direct_power_percent: int = 0
 var momentum_value: int = 0
+var momentum_cap: int = 0
 var same_qi_value: int = 0
 var same_qi_capacity: int = 5
 var last_successful_technique_hand_id: String = ""
@@ -80,6 +81,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
             "defense", "hand_limit",
             "base_hand_limit",
             "direct_power_fixed", "direct_power_percent", "momentum_value",
+            "momentum_cap",
             "same_qi_value", "same_qi_capacity",
             "last_successful_technique_hand_id", "current_reflection_percent",
             "reflection_sources", "reflection_true_damage_sources",
@@ -107,6 +109,7 @@ static func from_dict(values: Dictionary) -> BattleSideSnapshot:
     result.direct_power_fixed = int(values.get("direct_power_fixed", 0))
     result.direct_power_percent = int(values.get("direct_power_percent", 0))
     result.momentum_value = int(values.get("momentum_value", 0))
+    result.momentum_cap = int(values.get("momentum_cap", 0))
     result.same_qi_value = int(values.get("same_qi_value", 0))
     result.same_qi_capacity = int(values.get("same_qi_capacity", 5))
     result.last_successful_technique_hand_id = str(
@@ -181,6 +184,7 @@ func to_dict() -> Dictionary:
         "direct_power_fixed": direct_power_fixed,
         "direct_power_percent": direct_power_percent,
         "momentum_value": momentum_value,
+        "momentum_cap": momentum_cap,
         "same_qi_value": same_qi_value,
         "same_qi_capacity": same_qi_capacity,
         "last_successful_technique_hand_id": last_successful_technique_hand_id,

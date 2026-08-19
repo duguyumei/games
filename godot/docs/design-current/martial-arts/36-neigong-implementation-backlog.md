@@ -1290,12 +1290,13 @@
 
 本节围绕功法序列、回响、调用、自动触发、临时功法、追击、蓄力、燃尽、炽气、同气槽、连势和破防建立持续规则。功法明面没有属性分类，因此下列效果不读取“火属性功法”；火只是这些内功的自然设计倾向。
 
-#### 待实现公共规则：连势上限
+#### 已完成公共底层：连势上限
 
 - 基础连势上限等于战斗开始时我方初始牌库中的真气数量，并在起手抽牌及任何战斗效果发生前冻结。
 - 起手抽牌、战斗临时真气、消耗、消散或战斗中永久移出真气均不追溯改变基础上限。内功和物品可以通过纯查询修改有效上限，多个固定修正相加。
 - 所有连势写入统一限制在`0～有效上限`。达到上限后的无效增加不算实际改变，不能借此跳过功法结束后的连势清空。
 - 继续沿用当前连势保留规则：成功功法读取连势快照；该功法及其回响实际增加或消耗过连势时保留剩余值，否则在功法及其回响结束后清空。连势不改为全额消费资源，也不改为完整回合结束统一清空。
+- `momentum_cap_query`已进入唯一`BattleIntQueryCatalog.HOOKS`，并复用来源中立`battle_int_query_modifier`；`BattleSide`持有冻结基础上限、正式查询回执和统一写入回执，Facade与来源资源Service只转发。快照、AI、UI和预览均公开有效上限，查询失败关闭写入，行动恢复不重新按当前牌区计算。
 
 #### 已完成公共底层：功法实例主要蓄力值
 
@@ -1343,6 +1344,7 @@
 - **效果**：连势上限提高 20。
 - **边界**：只提高容量，不直接获得连势。多个副本的上限修正相加。
 - **需要的通用底层能力**：连势有效上限纯查询及来源明细。
+- **底层状态（2026-08-19）**：`momentum_cap_query`、基础上限冻结、统一写入截断与来源明细均已完成；本批未把《广炉容火》写入`data/inner_skills.json`或任何正式内容池，仍待后续内容批次接入。
 
 ### 炉脉自转
 
@@ -1597,7 +1599,7 @@
 | A. 功法槽容量、配装与心得 | 已有 | `TechniqueLoadoutPolicy`已允许空余容量并保持至少一门；`InsightGrowthService`是唯一规则源；战斗中通过`BattleEffectPorts.change_technique_slot_capacity`实时同步`TechniqueSequenceBook`。 |
 | B. 战斗临时功法 | 已有 | `generate_temporary_techniques`、`TechniqueSequenceBook.remaining_slot_count`、稳定`slot_instance_id`、`temporary_technique_generated`和战后清理均已存在。 |
 | C. 功法实例、槽位容量与标记身份 | 已有 | 永久/临时实例、空余槽位、来源身份与`SourceMarkerAddressResolver`均已存在；具体内功仍可能只缺薄Handler。 |
-| D. 连势上限与既有清空规则 | 仍缺 | 统一`write_momentum`及清空回执已有；`momentum_cap_query`、冻结基础上限和统一截断尚无。 |
+| D. 连势上限与既有清空规则 | 底层已完成 | `BattleSide`在最终牌库装配后、正常起手与`battle_start`前冻结基础上限；`momentum_cap_query`、统一`write_momentum`截断/回执、快照恢复及AI/UI/预览投影均已接入。广炉容火仍未录入正式内容。 |
 | E. 蓄力累计值 | 底层已完成 | charging声明、零值存在语义、实际slot地址、枚举、begin/write/end、批量回滚、ConditionSpec、延迟身份恢复和UI/AI投影均已完成；三门功法与伏火延烧未接入。 |
 | F. 追击统一 | 部分已有 | 追击复用正式伤害，旧`source_kind="chase"`仍有兼容处理；缺结构化追击令牌和`chase_resolved`提交事件。 |
 | G. 格挡、卸力与攻击取消 | 底层已完成 | `block_sources`已扩展为`cancel_kind`类型化来源；`grant_deflection`、先卸力后格挡、击穿消费、`deflection_resolved`、`attack_canceled`、同步flush回滚和AI/UI投影均已完成；具体内容仍未接入。 |
@@ -1842,3 +1844,23 @@ starter build或`config/production_inner_skills.json`。
 
 接入后正式内功为13门，剩余153门；能力矩阵为已有／合并20、B 12、C1 15、C2 0、D 1。物品仍剩13件，
 8门暂缓功法仍未实现。
+
+## 27. 2026-08-19 连势资源策略底层收口
+
+`momentum_cap_query`已经完成，并继续使用唯一`BattleIntQueryCatalog.HOOKS`、
+`BattleRuleQueryService`、`PassiveRuleRuntime/ExecutionPlan`和通用
+`battle_int_query_modifier`。`BattleSide`是连势值、基础上限、正式查询回执和写入回执的唯一状态所有者；
+`BattleSourceResourceEffectService`与`BattleEffectPorts`仅转发统一`write_momentum`，没有第二套资源Store、
+写入器或专用内容分支。
+
+基础上限在最终牌库装配完成后、正常起手抽牌和`battle_start`效果之前按真气数量冻结。之后的抽牌、弃牌、
+洗回、消耗、消散、临时生成及战斗内永久增删都不追溯修改。有效上限查询以冻结值为`base_value`，按稳定
+Invocation顺序归并当前来源并最终限制为不小于0；UI、AI和预览使用peek，不覆盖正式查询回执。
+`write_momentum`对add/set统一截断，consume/clear仍保持既有语义；回执公开基础/有效上限、截断量、查询
+结果和来源，回滚恢复原值及原查询回执而不重新查询。查询失败时写入失败，Flow、手动及调用功法结算不再
+伪造成功。
+
+`BattleSideSnapshot`、`BattleSession`、AI投影、行动预览和`BattleUiMapper`均公开`momentum_cap`，UI显示
+“连势 当前值/有效上限”。专项只使用合成来源验证每个来源`+20`、多来源叠加、敌我隔离、压制与稳定
+breakdown/fingerprint；没有录入《广炉容火》或任何其他正式内容。正式内功仍为13门、物品仍为7件，
+剩余153门内功、13件物品和8门暂缓功法均不变；能力矩阵更新为已有／合并21、B 12、C1 14、C2 0、D 1。

@@ -12,6 +12,7 @@ var combat_vfx_layer: Control
 var floating_text_layer: Control
 var technique_banner_layer: Control
 var modal_layer: Control
+var _card_registry: Dictionary = {}
 
 func _ready() -> void:
     name = "BattleStage"
@@ -78,14 +79,34 @@ func _anchor(node_name: String) -> HBoxContainer:
     return result
 
 func _populate(container: HBoxContainer, cards: Array, contributing_ids: Array) -> void:
-    for child in container.get_children():
-        child.queue_free()
-    for card_value in cards.slice(0, 5):
+    var anchor_key := "player" if container == _player_anchor else "enemy"
+    var live_keys: Dictionary = {}
+    var ordered: Array[Control] = []
+    for index in range(mini(cards.size(), 5)):
+        var card_value = cards[index]
         var card: Dictionary = card_value
-        var view = QiCardViewScript.new()
-        view.setup(card, contributing_ids.has(str(card.get("id", ""))), true, false)
-        view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        container.add_child(view)
+        var card_id := str(card.get("id", ""))
+        var key := "%s:%s" % [anchor_key, card_id if card_id != "" else str(index)]
+        live_keys[key] = true
+        var view = _card_registry.get(key)
+        if view == null or not is_instance_valid(view):
+            view = QiCardViewScript.new()
+            view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+            container.add_child(view)
+            _card_registry[key] = view
+        view.update_card(card, contributing_ids.has(card_id), true, false)
+        ordered.append(view)
+    for key in _card_registry.keys():
+        if str(key).begins_with("%s:" % anchor_key) and not live_keys.has(key):
+            var stale = _card_registry[key]
+            _card_registry.erase(key)
+            if is_instance_valid(stale):
+                stale.queue_free()
+    for child in ordered:
+        container.move_child(child, ordered.find(child))
+
+func presentation_card_node(anchor: String, card_id: String):
+    return _card_registry.get("%s:%s" % [anchor, card_id])
 
 func _build_presentation_layers() -> void:
     card_motion_layer = _presentation_layer("card_motion_layer", true)
@@ -97,10 +118,13 @@ func _build_presentation_layers() -> void:
     modal_layer.visible = false
 
 func _presentation_layer(layer_name: String, pass_mouse: bool) -> Control:
+    var canvas := CanvasLayer.new()
+    canvas.name = "%s_canvas" % layer_name
+    canvas.layer = 30 + get_child_count()
+    add_child(canvas)
     var layer := Control.new()
     layer.name = layer_name
     layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     layer.mouse_filter = Control.MOUSE_FILTER_IGNORE if pass_mouse else Control.MOUSE_FILTER_STOP
-    layer.z_index = 300 + get_child_count()
-    add_child(layer)
+    canvas.add_child(layer)
     return layer

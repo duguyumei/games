@@ -22,6 +22,8 @@ var selected: bool = false
 var compact: bool = false
 var interactive: bool = true
 var _accent := Color.WHITE
+var _hover_tween: Tween
+var _signals_bound := false
 
 func setup(card, is_selected: bool = false, is_compact: bool = false, is_interactive: bool = true) -> void:
     card_data = card
@@ -38,10 +40,24 @@ func setup(card, is_selected: bool = false, is_compact: bool = false, is_interac
     flat = false
     clip_contents = false
     _rebuild_visuals()
-    if interactive:
+    if interactive and not _signals_bound:
         mouse_entered.connect(_on_mouse_entered)
         mouse_exited.connect(_on_mouse_exited)
         pressed.connect(func(): qi_card_pressed.emit(card_id()))
+        _signals_bound = true
+
+func update_card(card, is_selected: bool = false, is_compact: bool = false, is_interactive: bool = true) -> void:
+    setup(card, is_selected, is_compact, is_interactive)
+
+func set_selected(value: bool) -> void:
+    if selected == value:
+        return
+    selected = value
+    _apply_styles()
+    _add_selected_badge(size.x)
+
+func _exit_tree() -> void:
+    _stop_hover_tween()
 
 func _rebuild_visuals() -> void:
     for child in get_children():
@@ -227,16 +243,23 @@ func _pill_style() -> StyleBoxFlat:
     return style
 
 func _on_mouse_entered() -> void:
+    _stop_hover_tween()
     z_index = 100
-    var tween := create_tween()
-    tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-    tween.tween_property(self, "scale", Vector2(1.075, 1.075), 0.12)
+    _hover_tween = create_tween()
+    _hover_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+    _hover_tween.tween_property(self, "scale", Vector2(1.075, 1.075), 0.12)
 
 func _on_mouse_exited() -> void:
+    _stop_hover_tween()
     z_index = 50 if selected else 0
-    var tween := create_tween()
-    tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-    tween.tween_property(self, "scale", Vector2.ONE, 0.1)
+    _hover_tween = create_tween()
+    _hover_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+    _hover_tween.tween_property(self, "scale", Vector2.ONE, 0.1)
+
+func _stop_hover_tween() -> void:
+    if _hover_tween != null and _hover_tween.is_valid():
+        _hover_tween.kill()
+    _hover_tween = null
 
 func card_id() -> String:
     return str(_card_value("id", ""))

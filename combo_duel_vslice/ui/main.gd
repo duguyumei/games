@@ -6,7 +6,7 @@ const CombatEngineScript = preload("res://core/combat_engine.gd")
 const BattleSessionScript = preload("res://core/battle_session.gd")
 const RuntimeProfileScript = preload("res://core/runtime_profile.gd")
 const BattleUiMapperScript = preload("res://ui/battle_ui_mapper.gd")
-const BattleHudScript = preload("res://ui/components/battle_hud.gd")
+const BattleHudScene = preload("res://ui/components/battle_hud.tscn")
 
 var battle_session: BattleSession = null
 var run_progress: RunProgressSnapshot
@@ -64,7 +64,10 @@ func close_battle() -> bool:
     return battle_session.close_battle()
 
 func _assemble_hud() -> void:
-    battle_hud = BattleHudScript.new()
+    battle_hud = get_node_or_null("BattleHudSlot")
+    if battle_hud == null:
+        battle_hud = BattleHudScene.instantiate()
+        add_child(battle_hud)
     battle_hud.configure_mode(RuntimeProfileScript.current().allows_debug_menu())
     battle_hud.card_pressed.connect(_on_card_pressed)
     battle_hud.confirm_requested.connect(_confirm_play)
@@ -74,7 +77,6 @@ func _assemble_hud() -> void:
     battle_hud.consumable_use_requested.connect(_use_active_consumable)
     battle_hud.reset_requested.connect(_reset_battle)
     battle_hud.debug_channel_toggle_requested.connect(_toggle_log_channel)
-    add_child(battle_hud)
 
 func _reset_battle(seed: int = 2308) -> void:
     selected_ids.clear()
@@ -213,6 +215,7 @@ func _refresh() -> void:
         "seed": int(battle_configuration.get("content_seed", 2308)),
         "notification": _notification,
         "action_index": _display_action_index,
+        "include_debug": RuntimeProfileScript.current().allows_debug_menu(),
     })
     battle_hud.present(ui_snapshot)
     if current.battle_state != "active" and not _battle_finish_emitted:
