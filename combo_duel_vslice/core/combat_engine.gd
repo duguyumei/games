@@ -359,6 +359,8 @@ func _init(
         Callable(self, "_emit_state_changed"))
     round_service.defense_retention_policy.use_battle_rule_query_service(
         battle_rule_query_service)
+    round_service.defense_retention_policy.use_remove_defense_port(
+        Callable(self, "_commit_round_end_defense_decay"))
     round_service.set_modes(scripted_mode, external_enemy_action_mode)
     enemy_planning_service = EnemyActionPlanningServiceScript.new(
         enemy,
@@ -426,6 +428,30 @@ func _init(
         enemy,
         battle_passive_event_service,
         content_catalog)
+
+func _commit_round_end_defense_decay(
+        side,
+        amount: int,
+        context: Dictionary) -> Dictionary:
+    var source_metadata := {
+        "source_kind": str(context.get("source_kind", "rule")),
+        "source_id": str(context.get(
+            "source_id", "round_end_defense_decay")),
+        "source_name": str(context.get("source_name", "自然防御衰减")),
+        "source_instance_key": str(context.get(
+            "source_instance_key", "rule:round_end_defense_decay")),
+        "trigger_mode": str(context.get("trigger_mode", "rule")),
+    }
+    return effect_ports.remove_defense(
+        side,
+        amount,
+        false,
+        side,
+        "rule",
+        str(context.get("action_token", "")),
+        "decay",
+        false,
+        source_metadata)
 
 func use_game_log(shared_game_log) -> void:
     if shared_game_log == null:

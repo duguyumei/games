@@ -272,6 +272,50 @@
           }
         }
       ]
+    },
+    {
+      "id": "defense_decay_loss_cap",
+      "name": "重岳不崩",
+      "status": "formal",
+      "rarity": "rare",
+      "forget_value": 0,
+      "description": "我方每次防御自然衰减时，实际减少的防御不会超过25点。",
+      "behaviors": [
+        {
+          "id": "battle_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "defense_decay_max_loss_query",
+                "operation": "minimum",
+                "operand": 25
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "decay_cannot_remove_last_defense",
+      "name": "孤垒不灭",
+      "status": "formal",
+      "rarity": "common",
+      "forget_value": 0,
+      "description": "若自然衰减前我方拥有防御，本次自然衰减不能令防御低于1点。",
+      "behaviors": [
+        {
+          "id": "battle_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "defense_decay_minimum_remaining_query",
+                "operation": "maximum",
+                "operand": 1
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

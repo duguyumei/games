@@ -1071,3 +1071,28 @@ marker声明和transaction token由当前Invocation注入，Handler不得拼`sou
 本批完成后能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1；剩余155门内功、13件物品和8门暂缓
 功法。后续继续按`merge_family`接入，不新增Run卡牌事件总线、内容专用监听器、永久改牌Service或物品
 marker运行时。
+
+## 自然防御衰减策略查询工作流（2026-08-19）
+
+新增战斗整数Hook时只修改`BattleIntQueryCatalog.HOOKS`。`BattleRuleQueryService.QUERY_HOOKS`与
+`PassiveRuleHandlerRegistry.BATTLE_INT_QUERY_HOOKS`是同一目录的兼容别名；Handler校验、Registry已知
+Hook和测试必须从该目录读取，禁止维护另一份字符串数组。普通来源中立整数修正优先使用
+`battle_int_query_modifier`的`rules`数据配置；它支持`add/multiply/minimum/maximum/set`，operand必须是
+整数，精确过滤只能读取稳定请求字段或metadata，不得按内容ID分支，也不得在查询中写状态。
+
+自然防御衰减固定调用`DefenseRetentionPolicy.plan_decay`：先查询最终保留率并计算比例结果，再以预计损失
+查询`defense_decay_max_loss_query`，最后以0查询`defense_decay_minimum_remaining_query`。每个结果按本层
+边界限制，任一查询失败时返回结构化失败且不写防御、不发布事件。计划成功后，Policy只调用组合根注入的
+窄防御减少Callable；该Callable继续转发现有`BattleEffectPorts.remove_defense`，携带
+`cause=decay/source_kind=rule/source_id=round_end_defense_decay`。实际损失为0不发布事件；大于0只发布一次
+canonical `defense_reduced`。`defense_decay_resolved`仍由回合编排在提交后发送，双方完成后才进入
+`turn_end`。
+
+攻击吸收、直接削防、防御代价、清空与战斗重置不得调用两个自然衰减查询，仍可把防御降到0。自然衰减
+本身不走伤害、生命写入、反震或攻击取消。内容只能声明通用Handler规则：《重岳不崩》使用最大损失
+`minimum(25)`，《孤垒不灭》使用最低剩余`maximum(1)`；两门formal内容未进入商店、修习随机池、
+starter build或production内功池。
+
+本批门禁为独立自然衰减专项、battle-contracts、防御／回合与山系相关专项、项目加载、内容和设计一致性、
+quick；不运行full。完成后口径为已有／合并20、B 12、C1 15、C2 0、D 1，正式内功13门、剩余153门，
+物品仍剩13件，暂缓功法仍为8门。

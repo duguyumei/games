@@ -588,11 +588,11 @@ order；`battle_end` Handler 完成后才清临时 Store。
 序号、owner 与卡牌实例 ID 组成的稳定 token；重复提交直接复用 receipt。事件获得两类 mutation
 port，失败只回滚计数器并转场景错误，不反向搬牌或恢复生命。
 
-持续整数读取使用 `BattleRuleQueryService`，底层仍是既有 `PassiveIntPolicyResolver`，不得复制整数引擎或增加 add／multiply／set DSL。允许的 Hook 为 `hand_limit_query`、四个 `power_*_query`、`outgoing_damage_query`、`incoming_damage_query`、`defense_gain_query` 与 `defense_retention_percent_query`。每个 Invocation 读取上一个有效整数并返回新的确定 `value`；上下文只注入两类 read port。被压制来源不进入计划，额外 Invocation 在来源位置连续执行且不重新规划。
+持续整数读取使用 `BattleRuleQueryService`，底层仍是既有 `PassiveIntPolicyResolver`，不得复制整数引擎。正式 Hook 只由 `BattleIntQueryCatalog.HOOKS`维护，查询服务和 Registry 的旧常量是同一目录的兼容别名。普通来源中立内容优先使用 `battle_int_query_modifier`，以数据规则声明 `add`／`multiply`／`minimum`／`maximum`／`set`、整数 operand 和可选精确过滤；Handler不得识别内容ID或修改状态。每个 Invocation 读取上一个有效整数并返回新的确定 `value`；上下文只注入 read port。被压制来源不进入计划，额外 Invocation 在来源位置连续执行且不重新规划。
 
 `BattleSide.base_hand_limit()` 只计算 `max(1, hand_limit + base_hand_limit_modifier)`；`current_hand_limit()`／`effective_hand_limit_result()` 再执行 `hand_limit_query`，供正常补牌、抽至上限、效果值、战斗快照、UI 与 AI 共用。明确写“基础手牌上限”的内容必须调用前者。查询失败不能按基础值继续补牌。
 
-功法值 Handler 只能修改四阶段输入，`PowerCalculator` 继续独占 `baseline_value`、`initial_power`、`pre_momentum_power` 与 `technique_value` 公式。预览可重复查询；正式行动在重塑冻结后重跑四项查询，将 `base_value/effective_value/source_breakdown/fingerprint` 写入 `passive_power_queries`，并随每个主组／协同组自己的 action token 冻结。等待选择恢复只读冻结结果。普通伤害、防御获得和防御保留率在实际写入前按最新状态查询一次；真实伤害不进入普通伤害查询。
+功法值 Handler 只能修改四阶段输入，`PowerCalculator` 继续独占 `baseline_value`、`initial_power`、`pre_momentum_power` 与 `technique_value` 公式。预览可重复查询；正式行动在重塑冻结后重跑四项查询，将 `base_value/effective_value/source_breakdown/fingerprint` 写入 `passive_power_queries`，并随每个主组／协同组自己的 action token 冻结。等待选择恢复只读冻结结果。普通伤害、防御获得和防御保留率在实际写入前按最新状态查询一次；自然防御衰减另在同一纯计划中依次查询最大损失与最低剩余，成功后才经统一防御减少端口提交。真实伤害不进入普通伤害查询。
 
 本接口不提供内功复制或任意战斗状态写端口。S2-F5D2 没有修改正式白名单，也没有使任何候选内功或物品正式化。
 

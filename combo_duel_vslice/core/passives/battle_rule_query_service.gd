@@ -7,23 +7,10 @@ const ResultScript = preload(
     "res://core/passives/battle_passive_int_query_result.gd")
 const ResolverScript = preload(
     "res://core/passives/passive_int_policy_resolver.gd")
+const BattleIntQueryCatalogScript = preload(
+    "res://core/passives/battle_int_query_catalog.gd")
 
-const QUERY_HOOKS := [
-    "hand_limit_query",
-    "power_base_fixed_query",
-    "power_multiplier_bonus_query",
-    "power_fixed_query",
-    "power_amp_percent_query",
-    "outgoing_damage_query",
-    "incoming_damage_query",
-    "poison_defense_intervention_query",
-    "defense_gain_query",
-    "defense_retention_percent_query",
-    "same_qi_capacity_query",
-    "life_recovery_query",
-    "effective_qi_query",
-    "pre_life_loss_query",
-]
+const QUERY_HOOKS := BattleIntQueryCatalogScript.HOOKS
 
 const EFFECTIVE_QI_PURPOSES := [
     "power_calculation", "effect_value", "target_query", "event_snapshot",

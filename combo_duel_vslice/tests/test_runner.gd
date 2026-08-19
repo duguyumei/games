@@ -3940,8 +3940,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "Registry 明确登记三十二个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        14,
-        "Registry 明确登记十四个战斗整数查询")
+        16,
+        "Registry 从唯一目录登记十六个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -7731,6 +7731,17 @@ func _test_battle_timing_system_contract_and_integration() -> void:
 func _test_defense_retention_policy_and_round_decay() -> void:
     var side = BattleSideScript.new("保留规则测试", "retention_probe")
     var policy = DefenseRetentionPolicyScript.new()
+    policy.use_remove_defense_port(func(
+            target, amount: int, _context: Dictionary) -> Dictionary:
+        var before := int(target.defense)
+        var removed := mini(before, maxi(0, amount))
+        target.defense = before - removed
+        return {
+            "success": true,
+            "removed": removed,
+            "before": before,
+            "after": int(target.defense),
+        })
     for test_case in [
         {"before": 1, "after": 0},
         {"before": 3, "after": 1},

@@ -1902,3 +1902,31 @@ committed结果一起替换正式状态；任何Handler或提交失败都会丢�
 幂等、纳气养命marker／治疗、存档及胜败同步；item marker 87条、battle-contracts 861条、Run存档202条、
 content-contracts 1081条均通过。最终`quick`为7/7；`/tmp/taiwu-run-card-mutation-final-*.log`及对应stdout
 未发现脚本加载、解析、ObjectDB／RID、orphan、资源泄漏或退出阶段错误，只有允许忽略的macOS CA警告。
+
+## 27. 2026-08-19 自然防御衰减策略查询收口
+
+战斗整数查询原有两份Hook数组已经收口到唯一`BattleIntQueryCatalog.HOOKS`；
+`BattleRuleQueryService.QUERY_HOOKS`与`PassiveRuleHandlerRegistry.BATTLE_INT_QUERY_HOOKS`只保留兼容别名，
+Registry的已知Hook和通用Handler校验也读取同一目录。新增`battle_int_query_modifier`是来源中立、无状态的
+整数归并Handler，复用`PassiveRuleRuntime → ExecutionPlan → Invocation → PassiveIntPolicyResolver`，支持
+`add/multiply/minimum/maximum/set`与稳定精确过滤，没有内容ID分支、专用监听器或平行查询Service。
+
+`DefenseRetentionPolicy`仍拥有默认50%保留、既有provider和保留率查询，但不再直接写
+`side.defense`。`plan_decay`按“最终保留率→比例结果→最大损失查询→最低剩余查询”纯计算完整计划，公开
+每阶段结果、source breakdown和fingerprint；任一查询失败时不进入提交。组合根向Policy注入窄Callable，
+实际写入继续转发唯一公开Facade `BattleEffectPorts.remove_defense`及
+`BattleSurvivalEffectService.remove_defense`，携带稳定`cause=decay`来源。因此事件发布仍只有一份
+canonical `defense_reduced`，实际损失为0不发布；回合服务只在成功提交后发送`defense_decay_resolved`，
+双方完成后才进入`turn_end`。自然衰减没有复制攻击、伤害吸收、生命或反震算法，非自然防御减少也不会
+读取新查询。
+
+《重岳不崩》与《孤垒不灭》仅在`inner_skills.json`声明同一通用Handler，分别使用幂等`minimum(25)`和
+`maximum(1)`；重复副本、压制、敌我隔离与稳定来源顺序均由现有PassiveRuleRuntime负责。生产核心代码未
+出现两门ID，`config/production_inner_skills.json`保持为空。当前能力矩阵为已有／合并20、B 12、C1 15、
+C2 0、D 1；正式内功13门、剩余153门，物品仍剩13件，暂缓功法仍为8门。
+
+专项`test_defense_decay_policy_query.gd`以80条断言覆盖默认比例、两门内容、重复副本、压制、敌我隔离、
+纯查询、失败原子边界、统一事件及回合时序；battle-contracts 863条、山系461条、content-contracts
+1081条通过。项目加载覆盖723项，设计一致性为权威228／数据228／待接入0／错误0，最终`quick`为7/7。
+全部最终Godot日志使用独立`/tmp/taiwu-defense-decay-policy-query-*.log`，stdout与日志扫描未发现脚本加载、
+文件、解析、SCRIPT ERROR、ObjectDB／RID、orphan、资源泄漏或退出阶段错误；只有允许忽略的macOS CA警告。

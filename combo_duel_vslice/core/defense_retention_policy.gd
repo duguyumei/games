@@ -14,9 +14,13 @@ const PROVIDER_METHOD := "defense_retention_modifier"
 
 var _providers: Array[Dictionary] = []
 var _battle_rule_query_service = null
+var _remove_defense_port: Callable
 
 func use_battle_rule_query_service(service) -> void:
     _battle_rule_query_service = service
+
+func use_remove_defense_port(port: Callable) -> void:
+    _remove_defense_port = port
 
 func register_provider(provider_id: String, provider) -> bool:
     if provider_id == "" or not _is_valid_provider(provider):
@@ -113,35 +117,215 @@ func resolve_retention(side, context: Dictionary = {}) -> Dictionary:
         "query": query_result,
     }
 
-func apply_decay(side, context: Dictionary = {}) -> Dictionary:
+## 纯计算一次自然防御衰减。三个整数查询全部成功前不写防御、不发送事件。
+func plan_decay(side, context: Dictionary = {}) -> Dictionary:
     var retention := resolve_retention(side, context)
     var before := maxi(0, int(side.defense))
     if not retention.get("success", false):
-        return {
-            "success": false, "side": side,
-            "side_id": retention.get("side_id", _side_id(side)),
-            "before": before, "after": before, "lost": 0,
-            "retention_percent": int(retention.get("retention_percent", 50)),
-            "prevented": false,
-            "modifiers": retention.get("modifiers", []).duplicate(true),
-            "query": retention.get("query", {}).duplicate(true),
-            "errors": retention.get("errors", []).duplicate(),
-        }
+        return _failed_plan(side, before, retention)
     var retention_percent := int(retention["retention_percent"])
-    var after := maxi(0, int(floor(
-        float(before) * float(retention_percent) / 100.0)))
-    side.defense = after
+    var proportional_after := clampi(
+        int(floor(float(before) * float(retention_percent) / 100.0)),
+        0,
+        before)
+    var proposed_loss := before - proportional_after
+    var loss_cap_query := _resolve_decay_query(
+        "defense_decay_max_loss_query", side, proposed_loss, context, {
+            "before": before,
+            "retention_percent": retention_percent,
+            "proportional_after": proportional_after,
+            "proposed_loss": proposed_loss,
+        })
+    if not loss_cap_query.get("success", false):
+        var failed_loss_cap := _failed_plan(
+            side, before, retention, loss_cap_query)
+        failed_loss_cap.merge({
+            "proportional_after": proportional_after,
+            "proposed_loss": proposed_loss,
+            "after_cap": before,
+            "final_after": before,
+        }, true)
+        return failed_loss_cap
+    var queried_max_loss := clampi(
+        int(loss_cap_query.get("effective_value", proposed_loss)),
+        0,
+        proposed_loss)
+    var capped_loss := mini(proposed_loss, queried_max_loss)
+    var after_cap := before - capped_loss
+    var minimum_remaining_query := _resolve_decay_query(
+        "defense_decay_minimum_remaining_query", side, 0, context, {
+            "before": before,
+            "retention_percent": retention_percent,
+            "proportional_after": proportional_after,
+            "proposed_loss": proposed_loss,
+            "queried_max_loss": queried_max_loss,
+            "capped_loss": capped_loss,
+            "after_cap": after_cap,
+        })
+    if not minimum_remaining_query.get("success", false):
+        var failed_minimum := _failed_plan(
+            side, before, retention, loss_cap_query,
+            minimum_remaining_query)
+        failed_minimum.merge({
+            "proportional_after": proportional_after,
+            "proposed_loss": proposed_loss,
+            "queried_max_loss": queried_max_loss,
+            "capped_loss": capped_loss,
+            "after_cap": after_cap,
+            "final_after": before,
+        }, true)
+        return failed_minimum
+    var queried_minimum_remaining := clampi(
+        int(minimum_remaining_query.get("effective_value", 0)), 0, before)
+    var final_after := clampi(
+        maxi(after_cap, queried_minimum_remaining), 0, before)
+    var lost := before - final_after
     return {
         "success": true,
         "side": side,
         "side_id": retention["side_id"],
         "before": before,
-        "after": after,
-        "lost": before - after,
+        "after": final_after,
+        "lost": lost,
         "retention_percent": retention_percent,
         "prevented": bool(retention["prevented"]),
         "modifiers": retention["modifiers"].duplicate(true),
         "query": retention.get("query", {}).duplicate(true),
+        "retention_query": retention.get("query", {}).duplicate(true),
+        "proportional_after": proportional_after,
+        "proposed_loss": proposed_loss,
+        "queried_max_loss": queried_max_loss,
+        "capped_loss": capped_loss,
+        "after_cap": after_cap,
+        "queried_minimum_remaining": queried_minimum_remaining,
+        "final_after": final_after,
+        "loss_cap_query": loss_cap_query.duplicate(true),
+        "minimum_remaining_query": minimum_remaining_query.duplicate(true),
+        "errors": [],
+    }
+
+## 保留公开兼容入口；提交阶段只调用注入的统一防御减少端口。
+func apply_decay(side, context: Dictionary = {}) -> Dictionary:
+    var plan: Dictionary = plan_decay(side, context)
+    if not plan.get("success", false) or int(plan.get("lost", 0)) <= 0:
+        return plan
+    if not _remove_defense_port.is_valid():
+        var missing := plan.duplicate(true)
+        missing["success"] = false
+        missing["after"] = int(plan["before"])
+        missing["lost"] = 0
+        missing["errors"] = ["自然防御衰减未装配统一防御减少端口"]
+        return missing
+    var round_number := int(context.get("round_number", 0))
+    var action_token := str(context.get(
+        "action_token", "defense-decay:%d:%s" % [
+            round_number, _side_id(side)]))
+    var committed = _remove_defense_port.call(side, int(plan["lost"]), {
+        "cause": "decay",
+        "source_kind": "rule",
+        "source_id": "round_end_defense_decay",
+        "source_name": "自然防御衰减",
+        "source_instance_key": "rule:round_end_defense_decay",
+        "trigger_mode": "rule",
+        "round_number": round_number,
+        "action_token": action_token,
+    })
+    if not committed is Dictionary or not committed.get("success", false):
+        var failed := plan.duplicate(true)
+        failed["success"] = false
+        failed["after"] = int(side.defense)
+        failed["lost"] = int(plan["before"]) - int(side.defense)
+        failed["errors"] = [str(
+            committed.get("reason", "自然防御衰减提交失败")
+            if committed is Dictionary else "自然防御衰减提交未返回结构化结果")]
+        return failed
+    var result := plan.duplicate(true)
+    result["after"] = int(committed.get("after", side.defense))
+    result["final_after"] = result["after"]
+    result["lost"] = int(committed.get("removed", plan["lost"]))
+    result["defense_commit"] = committed.duplicate(true)
+    return result
+
+func _resolve_decay_query(
+        hook: String,
+        side,
+        base_value: int,
+        context: Dictionary,
+        facts: Dictionary) -> Dictionary:
+    if _battle_rule_query_service == null:
+        return {
+            "success": true,
+            "hook": hook,
+            "base_value": base_value,
+            "effective_value": base_value,
+            "modifier_breakdown": [],
+            "source_breakdown": [],
+            "source_fingerprint": "",
+            "fingerprint": "",
+            "request_fingerprint": "",
+            "errors": [],
+        }
+    var metadata := context.duplicate(true)
+    metadata.merge(facts, true)
+    metadata["cause"] = "decay"
+    var query = _battle_rule_query_service.resolve_values({
+        "hook": hook,
+        "owner": side,
+        "actor": side,
+        "target": side,
+        "subject_kind": "defense_decay",
+        "subject_id": _side_id(side),
+        "base_value": base_value,
+        "round_number": int(context.get("round_number", 0)),
+        "action_token": str(context.get("action_token", "")),
+        "source_kind": "rule",
+        "source_id": "round_end_defense_decay",
+        "source_instance_key": "rule:round_end_defense_decay",
+        "trigger_mode": "rule",
+        "cause": "decay",
+        "defense_before": int(facts.get("before", side.defense)),
+        "metadata": metadata,
+    })
+    var query_result: Dictionary = query.to_dict()
+    if not query.success:
+        _battle_rule_query_service.report_failure(
+            query, "defense_decay_policy")
+    return query_result
+
+func _failed_plan(
+        side,
+        before: int,
+        retention: Dictionary,
+        loss_cap_query: Dictionary = {},
+        minimum_remaining_query: Dictionary = {}) -> Dictionary:
+    var errors: Array = retention.get("errors", []).duplicate()
+    if not loss_cap_query.get("success", true):
+        errors.append_array(loss_cap_query.get("errors", []))
+    if not minimum_remaining_query.get("success", true):
+        errors.append_array(minimum_remaining_query.get("errors", []))
+    return {
+        "success": false,
+        "side": side,
+        "side_id": retention.get("side_id", _side_id(side)),
+        "before": before,
+        "after": before,
+        "lost": 0,
+        "retention_percent": int(retention.get(
+            "retention_percent", DEFAULT_RETENTION_PERCENT)),
+        "prevented": false,
+        "modifiers": retention.get("modifiers", []).duplicate(true),
+        "query": retention.get("query", {}).duplicate(true),
+        "retention_query": retention.get("query", {}).duplicate(true),
+        "proportional_after": before,
+        "proposed_loss": 0,
+        "queried_max_loss": 0,
+        "capped_loss": 0,
+        "after_cap": before,
+        "queried_minimum_remaining": 0,
+        "final_after": before,
+        "loss_cap_query": loss_cap_query.duplicate(true),
+        "minimum_remaining_query": minimum_remaining_query.duplicate(true),
+        "errors": errors,
     }
 
 func _is_valid_provider(provider) -> bool:

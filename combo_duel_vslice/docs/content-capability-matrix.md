@@ -5,10 +5,10 @@
 
 ## 1. 结论与计数
 
-- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功、卫星及机缘不空共11门内功，修习策略家族6件物品及纳气养命共7件物品正式接入；剩余155门内功、13件物品和8门暂缓功法仍未接入生产内容池。
-- Readiness：A=44，B=68，C=73，D=1，E=8，合计194；其中已正式接入但保留历史复杂度标签的9门内功仍计入C口径。
+- 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功、卫星、机缘不空、重岳不崩及孤垒不灭共13门内功，修习策略家族6件物品及纳气养命共7件物品正式接入；剩余153门内功、13件物品和8门暂缓功法仍未接入生产内容池。
+- Readiness：A=46，B=68，C=71，D=1，E=8，合计194；其中已正式接入但保留历史复杂度标签的9门内功仍计入C口径。
 - C类缺口引用（去重前）87次；合并后通用能力47项。
-- 原47项能力键中已有/合并19项，余下实现形态为B 12、C1 16、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
+- 原47项能力键中已有/合并20项，余下实现形态为B 12、C1 15、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -20,7 +20,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 |---|---|---|
 | 被动来源与事件计划 | `PassiveRuleRuntime.build_execution_plan`、`PassiveRuleSourceResolver.collect_sources/capture_source_snapshot`、`BattlePassiveTimingBridge`、`RunPassiveEventService.dispatch` | 事件开始固定ExecutionPlan，事件间实时读取BattleSide/GrowthInventory；不得新增平行Runtime。 |
 | 战斗事件 | `BattleEventCatalog.TIMING_EVENTS/COMMITTED_EVENTS/RESPONSE_ONLY_EVENTS`、`BattlePassiveCommittedEventService.commit` | 自动触发、damage/poison/defense/life、功法成功/调用、临时功法、同气与统一`card_moved`完成事实均已有；response-only事实不能冒充可配置committed hook。 |
-| 查询/条件 | `BattleRuleQueryService.QUERY_HOOKS`、`PassiveIntPolicyResolver.resolve`、`ConditionSpecRegistry.CONDITION_DEFINITIONS/EVENT_FILTER_DEFINITIONS` | 四阶段功法值、逐牌有效真气值、伤害、防御、手限、同气容量、配装、心得等已存在；连势上限等仍缺。 |
+| 查询/条件 | `BattleIntQueryCatalog.HOOKS`、`BattleRuleQueryService.QUERY_HOOKS`兼容别名、`PassiveIntPolicyResolver.resolve`、`ConditionSpecRegistry.CONDITION_DEFINITIONS/EVENT_FILTER_DEFINITIONS` | 战斗整数Hook只有一个目录；四阶段功法值、逐牌有效真气值、伤害、防御、自然衰减、手限、同气容量、配装、心得等已存在；连势上限等仍缺。 |
 | 效果执行 | `TechniqueEffectExecutor`→`EffectHandlerRegistry`→`BattleEffectPorts`；run侧`RunMutationService`→`RunEffectHandlerRegistry` | damage/defense/card zone/anomaly/marker/life/临时功法/调用/响应/延迟等复用既有端口，不建第二执行器。 |
 | 状态/生命周期 | `StatusSystem`、`StatusResponseService`、`StatusDelayService`、`CombatSourceLifecycleService`、`SourceMarkerStore` | 延迟、响应、来源标识、item marker地址与卸力攻击取消协议已有；临时炽气来源层仍缺。 |
 | 计数器 | `RunPassiveCounterStore`、`BattlePassiveCounterStore`及read/mutation ports | run计数进入RunProgressSnapshot，battle计数纯Runtime；无需按内容建缓存。 |
@@ -156,8 +156,8 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 势尽归山 | `cleared_momentum_becomes_defense` | [36 §11《势尽归山》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#势尽归山) | technique_succeeded / action_resolved | trigger_mode/source_kind；actual defense/life delta | 功法结算后因该功法没有改变连势而清空连势时，每实际清空 1 点连势，获得 2 点防御。 | BattleRuntime temporary state | 事件或命令既有事务 | write_momentum/write_same_qi 已有统一写端口和回执 | C | battle_resource_changed_event | 按能力键合并实现 |
 | inner_skill | 格挡蓄势 | `successful_block_adds_momentum` | [36 §11《格挡蓄势》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#格挡蓄势) | damage_blocked | 权威正文的资格与边界 | 每次格挡成功后，连势 +5。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.damage_blocked; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 四脉镇关 | `four_attributes_action_grants_block` | [36 §11《四脉镇关》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#四脉镇关) | damage_resolved | CardIdentityPolicy.attribute | 若本次行动实际打出的真气包含风、林、火、山四种可视属性，在伤害结算前获得 1 次格挡。 | event/action local snapshot | 事件或命令既有事务 | 现有 damage_resolved + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
-| inner_skill | 重岳不崩 | `defense_decay_loss_cap` | [36 §11《重岳不崩》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#重岳不崩) | damage_resolved | actual defense/life delta | 我方每次防御自然衰减时，实际减少的防御不会超过 25 点。 | BattleRuntime temporary state | 事件或命令既有事务 | defense_retention_percent_query 与 defense_decay_resolved 已有 | C | defense_decay_policy_query | 按能力键合并实现 |
-| inner_skill | 孤垒不灭 | `decay_cannot_remove_last_defense` | [36 §11《孤垒不灭》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#孤垒不灭) | damage_resolved | 权威正文的资格与边界 | 若自然衰减前我方拥有防御，本次自然衰减不能令防御低于 1 点。 | BattleRuntime temporary state | 事件或命令既有事务 | defense_retention_percent_query 与 defense_decay_resolved 已有 | C | defense_decay_policy_query | 按能力键合并实现 |
+| inner_skill | 重岳不崩 | `defense_decay_loss_cap` | [36 §11《重岳不崩》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#重岳不崩) | `defense_decay_max_loss_query` | `cause=decay`、预计自然衰减损失 | 我方每次防御自然衰减时，实际减少的防御不会超过 25 点。 | 纯查询，无新增状态 | 自然衰减计划成功后经统一防御减少事务提交 | `battle_int_query_modifier`执行`minimum(25)`；Policy统一合并比例、上限与最低剩余 | A |  | 已正式接入运行时JSON；未进入production池 |
+| inner_skill | 孤垒不灭 | `decay_cannot_remove_last_defense` | [36 §11《孤垒不灭》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#孤垒不灭) | `defense_decay_minimum_remaining_query` | `cause=decay`、衰减前防御 | 若自然衰减前我方拥有防御，本次自然衰减不能令防御低于 1 点。 | 纯查询，无新增状态 | 自然衰减计划成功后经统一防御减少事务提交 | `battle_int_query_modifier`执行`maximum(1)`；非自然减少不读取该查询 | A |  | 已正式接入运行时JSON；未进入production池 |
 | inner_skill | 退甲藏锋 | `decayed_defense_empowers_next_technique` | [36 §11《退甲藏锋》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#退甲藏锋) | defense_decay_resolved (via op=register_response) | trigger_mode/source_kind；actual defense/life delta | 防御自然衰减后，下一门成功功法值增加等于本次实际衰减的防御。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.RESPONSE_ONLY_EVENTS(defense_decay_resolved); op=register_response; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 朽壁生势 | `defense_decay_adds_momentum` | [36 §11《朽壁生势》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#朽壁生势) | defense_decay_resolved (via op=register_response) | actual defense/life delta | 防御自然衰减后，每实际衰减 10 点防御，连势 +1。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.RESPONSE_ONLY_EVENTS(defense_decay_resolved); op=register_response; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 开山立壁 | `battle_start_grants_defense` | [36 §11《开山立壁》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#开山立壁) | battle_start | 权威正文的资格与边界 | 战斗开始时，获得 20 点防御。 | BattleRuntime temporary state | 事件或命令既有事务 | BattleEventCatalog.battle_start; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
@@ -271,7 +271,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `run_free_meditation_charge` | state | meditation_committed/node_completed 与 RunAggregateTransaction 已有 | 一次不可叠加免费机会的类型化状态、优先消费与存档 | inner_skill:free_meditation_charge | GrowthInventory + meditation command | 是 | Run committed state / BattleSide working run state | 不是通用折扣 | 20 | 节点设1、提交消费、失败恢复、存档往返 |
 | `growth_trigger_committed_event` | event | CardStateLifecycle 已处理成长/炽气 | 逐牌实际成长触发、产出层数与来源执行令牌 | inner_skill:growth_production_grants_defense<br>inner_skill:every_third_round_duplicates_blazing_qi<br>inner_skill:multiple_growth_procs_add_momentum | CardStateLifecycle | 否 | event/action local snapshot | 层状态仍在卡牌Runtime | 21 | 无实际产出不发；一牌多层仍有明确计数 |
 | `temporary_qi_clone_protocol` | effect | generate_temporary_normal_card 已支持基础临时牌 | 完整复制永久重塑/基础字段、稳定实例和批量洗入 | inner_skill:mirrored_qi_sea | BattleCardEffectService | 否 | BattleRuntime temporary state | 不复制战斗异状 | 22 | 复制字段精确；战后删除且不写RunDeck |
-| `defense_decay_policy_query` | query | defense_retention_percent_query 与 defense_decay_resolved 已有 | 同一次衰减纯计算合并最大损失与最低剩余 | inner_skill:defense_decay_loss_cap<br>inner_skill:decay_cannot_remove_last_defense | DefenseRetentionPolicy | 否 | 纯查询，无状态 | 保留比例仍是既有阶段 | 23 | 预览=正式；多个来源稳定合并；非自然减少不受影响 |
+| `defense_decay_policy_query` | query | **已有**：`DefenseRetentionPolicy.plan_decay`依次执行保留率、最大损失和最低剩余查询，成功后经`BattleEffectPorts.remove_defense`提交 | 已完成；重岳不崩与孤垒不灭均通过来源中立整数Handler接入 | inner_skill:defense_decay_loss_cap<br>inner_skill:decay_cannot_remove_last_defense | DefenseRetentionPolicy + BattleRuleQueryService + BattleEffectPorts | 否 | 纯查询，无状态 | 保留比例仍是既有阶段；只有自然衰减读取后两项查询 | 已完成 | 多来源按Invocation稳定合并；失败不写防御或事件；非自然减少仍可归零 |
 | `momentum_cap_query` | query | write_momentum统一入口已有 | 冻结基础上限、来源修正查询、所有写入截断与回执 | inner_skill:momentum_cap_plus_twenty | BattleSide/BattleSourceResourceEffectService | 否 | BattleRuntime temporary state | 不改现有清空规则 | 24 | 上限冻结；临时牌不追溯；无效增加不算变化 |
 | `burnout_debuff_and_flourish_status` | state | StatusSystem/净化/异状分类已有；燃尽当前仍按旧分类 | 燃尽迁移为debuff并新增焕发的计算阶段/净化/AI/UI | inner_skill:cleansed_debuff_grants_flourish<br>inner_skill:poisoned_discard_gains_burnout | card_states + StatusSystem | 否 | BattleRuntime temporary state | 共用异状框架 | 25 | 燃尽最后置0；焕发×2；两者可净化且战后清 |
 | `battle_permanent_card_mutation_port` | effect | **已有**：`BattleCardEffectService.advance_permanent_qi_rank`通过共享`PermanentQiMutationService`转换持久快照，Effect Handler只调用`BattleEffectPorts` | 已完成；机缘不空已正式接入 | inner_skill:fortune_rank_cycle | BattleCardEffectService + BattleSetupService既有映射 | 胜利后是 | BattleSide working run state | 永久事实只发`qi_reshape_committed`，不伪造临时`card_state_changed` | 已完成 | 当前战斗实时可见；同根行动+卡实例幂等；失败恢复卡牌/事件/回执/日志，退出或战败丢弃，胜利绝对提交 |
@@ -394,7 +394,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `run_free_meditation_charge` | C1 | run_command_state | 1 | GrowthInventory + meditation command |
 | `growth_trigger_committed_event` | C1 | qi_state_lifecycle_fact | 3 | CardStateLifecycle成长完成事实 |
 | `temporary_qi_clone_protocol` | B | card_lifecycle_fact | 1 | BattleCardEffectService生成入口扩展复制字段 |
-| `defense_decay_policy_query` | C1 | survival_policy_query | 2 | DefenseRetentionPolicy |
+| `defense_decay_policy_query` | 已有 | survival_policy_query | 2 | DefenseRetentionPolicy + BattleRuleQueryService + BattleEffectPorts |
 | `momentum_cap_query` | C1 | battle_resource_policy | 1 | BattleSourceResourceEffectService统一截断 |
 | `burnout_debuff_and_flourish_status` | C1 | qi_state_lifecycle_fact | 2 | StatusSystem异状生命周期 |
 | `battle_permanent_card_mutation_port` | 已有 | battle_to_run_card_mutation | 1 | BattleCardEffectService → BattleSetupService映射 |
@@ -420,7 +420,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | 已有 | run_card_mutation_fact | 1 | RunMutationService + BattleCardEffectService；不新增平行事件系统 |
 
-当前数量为：已有/合并19、B 12、C1 16、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并20、B 12、C1 15、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
 
 ### 11.3 合并后的核心协议与领域窄能力
 
@@ -552,3 +552,19 @@ persistence=permanent)`。事实公开transaction/operation token、来源、hol
 
 本批完成后计数为已有／合并19、B 12、C1 16、C2 0、D 1；剩余未接入155门内功、13件物品和8门
 暂缓功法。后续继续按`merge_family`接入，不为单内容新增永久牌组、事件或事务体系。
+
+### 11.9 自然防御衰减策略查询与两门内功（2026-08-19）
+
+`BattleIntQueryCatalog.HOOKS`成为全部正式战斗整数查询的唯一目录；查询服务和Registry的旧常量仅作为
+同一数组的兼容别名。来源中立`battle_int_query_modifier`按ExecutionPlan/Invocation稳定顺序支持
+`add/multiply/minimum/maximum/set`和可选精确过滤，不识别内容ID，也不获得写端口。
+
+`DefenseRetentionPolicy.plan_decay`只读执行保留率、比例衰减、最大损失及最低剩余三阶段查询；任一失败
+保持防御与事件不变。成功计划由注入的窄Callable转发到既有`BattleEffectPorts.remove_defense`，因此只在
+实际损失大于0时发送一次`defense_reduced(cause=decay)`，不进入伤害、反震或攻击取消路径。重岳不崩
+以`minimum(25)`接入最大损失查询，孤垒不灭以`maximum(1)`接入最低剩余查询；重复副本因运算幂等而
+不继续强化。两门均为formal运行时内容，但没有加入商店、修习随机池、starter build或
+`production_inner_skills.json`。
+
+本批完成后能力矩阵为已有／合并20、B 12、C1 15、C2 0、D 1；正式内功13门，剩余153门；物品仍剩
+13件，暂缓功法仍为8门。

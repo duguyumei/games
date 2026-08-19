@@ -1,6 +1,6 @@
 # 待实现内功目录
 
-> 状态：本文保留166门权威正文。首批9门回响／序列内功、卫星及机缘不空共11门已接入运行时JSON；其余155门仍待实现。已接入内功暂未进入商店、修习随机池或production内功池。
+> 状态：本文保留166门权威正文。首批9门回响／序列内功、卫星、机缘不空、重岳不崩及孤垒不灭共13门已接入运行时JSON；其余153门仍待实现。已接入内功暂未进入商店、修习随机池或production内功池。
 >
 > 本文是下列同名候选的当前唯一正文。`31-neigong-general-catalog.md` 中的同名旧文本仅作来源迁移记录；发生差异时以本文为准。本文不因当前底层尚未支持而缩窄设计，后续实现必须补充通用事件、查询、选择和效果端口。
 
@@ -1036,6 +1036,7 @@
 - **效果**：我方每次防御自然衰减时，实际减少的防御不会超过 25 点。
 - **边界**：先按公共防御保留比例计算自然衰减结果，再把实际减少量限制为至多 25；低于 25 的原减少量不改变。多个副本没有额外效果。
 - **需要的通用底层能力**：自然衰减实际减少量上限查询，与既有防御保留比例查询在同一次纯计算中合并。
+- **接入状态（2026-08-19）**：已作为稀有formal内功接入`battle_int_query_modifier`，通过`defense_decay_max_loss_query`执行`minimum(25)`；未进入production内功池。
 
 ### 孤垒不灭
 
@@ -1044,6 +1045,7 @@
 - **自然倾向**：最低防御、防御延续
 - **效果**：若自然衰减前我方拥有防御，本次自然衰减不能令防御低于 1 点。
 - **边界**：敌方攻击、主动消耗、直接移除、清空和战斗重置仍然可以令防御归零。多个副本没有额外效果。
+- **接入状态（2026-08-19）**：已作为普通formal内功接入`battle_int_query_modifier`，通过`defense_decay_minimum_remaining_query`执行`maximum(1)`；未进入production内功池。
 
 ### 退甲藏锋
 
@@ -1571,7 +1573,7 @@
 - 功法：火·万法传薪适配空余槽位；风·长风蓄海、火·三劫悬炉、山·悬岳待敌声明主要蓄力累计值；所有现有追击功法迁移到统一`chase`攻击段和事件。
 - 内功：首章立意、演法成章、群法归型、双位同鸣、应机复响适配容量与功法实例分离；广炉容火接入连势上限；伏火延烧接入蓄力查询；追焰留痕接入追击事件。普通功法重复配装上限的改写由物品“三才并位”承接。
 - 奇珍：归墟的槽位下限为 1，超容量时由玩家选择移出，但每个牌型必须至少保留一门功法。
-- 数据：`inner_skills.json`已加入首批9门回响／序列formal内功、卫星及机缘不空；`config/production_inner_skills.json`仍为空。其他155门仍只有在用户明确要求实现后才能分批进入JSON、资源、正式白名单、商店和生产池。
+- 数据：`inner_skills.json`已加入首批9门回响／序列formal内功、卫星、机缘不空、重岳不崩及孤垒不灭；`config/production_inner_skills.json`仍为空。其他153门仍只有在用户明确要求实现后才能分批进入JSON、资源、正式白名单、商店和生产池。
 
 #### L. 必须补充的回归测试
 
@@ -1638,7 +1640,7 @@
 
 本节只表示公共底层可用，不表示《风/林/火/山息增元》《异气增元》《百炼增元》《清气无瑕》、
 《同阶共鸣》《孤阶自守》《孤气凝神》《高阶凝气》《五气并举》《余烬存真》《镜海藏脉》或
-《毒木生甲》已经接入。本批9门回响／序列内功、卫星及机缘不空也已接入；其他155门内功和暂缓8门功法仍保持原内容状态，后续必须以来源中立Handler逐项
+《毒木生甲》已经接入。本批9门回响／序列内功、卫星、机缘不空、重岳不崩及孤垒不灭也已接入；其他153门内功和暂缓8门功法仍保持原内容状态，后续必须以来源中立Handler逐项
 实现，不得绕过查询协议或复制有效真气值算法。
 
 ## 19. 2026-08-18 生命写入前干预状态
@@ -1817,3 +1819,26 @@ canonical `technique_execution_resolved`，在原功法执行完成、回响开�
 
 接入后正式内功为11门，剩余155门；能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1。8门暂缓
 功法仍未实现，D类《化虚为实》仍等待持久表示确认。
+
+## 26. 2026-08-19 自然防御衰减策略查询与内容状态
+
+`defense_decay_policy_query`已经完成。正式战斗整数Hook只由`BattleIntQueryCatalog.HOOKS`维护，
+`BattleRuleQueryService`和`PassiveRuleHandlerRegistry`的旧常量均引用同一目录。通用
+`battle_int_query_modifier`按既有ExecutionPlan与Invocation顺序执行整数`add/multiply/minimum/maximum/set`
+规则；Handler不识别内功、物品或功法ID，也不获得写端口。
+
+`DefenseRetentionPolicy.plan_decay`先完成既有`defense_retention_percent_query`，计算向下取整的比例结果，
+再依次执行`defense_decay_max_loss_query`和`defense_decay_minimum_remaining_query`。三个查询中任一失败都
+保持原防御且不发送事件。成功计划通过注入Callable转发既有`BattleEffectPorts.remove_defense`，携带
+`cause=decay/source_kind=rule/source_id=round_end_defense_decay`；实际损失大于0只发送一次canonical
+`defense_reduced`，为0不发送。自然衰减不进入攻击、防御吸收、生命、反震或攻击取消算法；直接削防、
+支付、清空和重置仍可令防御归零。回合编排继续在双方提交后依次发送`defense_decay_resolved`，最后才进入
+`turn_end`。
+
+《重岳不崩》（`defense_decay_loss_cap`）已作为稀有formal内容，用`minimum(25)`修正最大损失；
+《孤垒不灭》（`decay_cannot_remove_last_defense`）已作为普通formal内容，用`maximum(1)`修正最低剩余。
+两个运算对重复副本幂等，压制与敌我隔离复用现有PassiveRuleRuntime。两门没有加入商店、修习随机池、
+starter build或`config/production_inner_skills.json`。
+
+接入后正式内功为13门，剩余153门；能力矩阵为已有／合并20、B 12、C1 15、C2 0、D 1。物品仍剩13件，
+8门暂缓功法仍未实现。

@@ -18,27 +18,16 @@ const RunIntQueryModifierHandlerScript = preload(
     "res://core/passives/run_int_query_modifier_passive_handler.gd")
 const RunFactEffectsHandlerScript = preload(
     "res://core/passives/run_fact_effects_passive_handler.gd")
+const BattleIntQueryModifierHandlerScript = preload(
+    "res://core/passives/battle_int_query_modifier_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
+const BattleIntQueryCatalogScript = preload(
+    "res://core/passives/battle_int_query_catalog.gd")
 
 const BATTLE_TIMING_HOOKS := BattleEventCatalogScript.TIMING_EVENTS
 const BATTLE_COMMITTED_EVENT_HOOKS := BattleEventCatalogScript.COMMITTED_EVENTS
 
-const BATTLE_INT_QUERY_HOOKS := [
-    "hand_limit_query",
-    "power_base_fixed_query",
-    "power_multiplier_bonus_query",
-    "power_fixed_query",
-    "power_amp_percent_query",
-    "outgoing_damage_query",
-    "incoming_damage_query",
-    "poison_defense_intervention_query",
-    "defense_gain_query",
-    "defense_retention_percent_query",
-    "same_qi_capacity_query",
-    "life_recovery_query",
-    "effective_qi_query",
-    "pre_life_loss_query",
-]
+const BATTLE_INT_QUERY_HOOKS := BattleIntQueryCatalogScript.HOOKS
 
 const BATTLE_POLICY_QUERY_HOOKS := [
     "hand_evaluation_options_query",
@@ -77,20 +66,7 @@ const NON_EVENT_HOOKS := [
     "node_completed",
     "run_qi_permanently_added",
     "qi_reshape_committed",
-    "hand_limit_query",
-    "power_base_fixed_query",
-    "power_multiplier_bonus_query",
-    "power_fixed_query",
-    "power_amp_percent_query",
-    "outgoing_damage_query",
-    "incoming_damage_query",
-    "poison_defense_intervention_query",
-    "defense_gain_query",
-    "defense_retention_percent_query",
-    "same_qi_capacity_query",
-    "life_recovery_query",
-    "effective_qi_query",
-    "pre_life_loss_query",
+] + BATTLE_INT_QUERY_HOOKS + [
     "hand_evaluation_options_query",
     "card_identity_query",
     "card_play_permission_query",
@@ -123,6 +99,7 @@ func _init(
         register_handler(RunValueEffectHandlerScript.new())
         register_handler(RunIntQueryModifierHandlerScript.new())
         register_handler(RunFactEffectsHandlerScript.new(run_effect_registry))
+        register_handler(BattleIntQueryModifierHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():

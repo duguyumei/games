@@ -11,6 +11,8 @@ var _life_label: Label
 var _defense_label: Label
 var _status_row: HBoxContainer
 var _plan_row: HBoxContainer
+var _items_row: HBoxContainer
+var _show_items := false
 var _built := false
 
 func _ready() -> void:
@@ -23,6 +25,8 @@ func configure(options: Dictionary = {}) -> void:
     _portrait_label.text = str(options.get("portrait", ""))
     _title_label.visible = not bool(options.get("hide_name", false))
     _meter_root.custom_minimum_size.x = float(options.get("meter_width", 220.0))
+    _show_items = bool(options.get("show_items", false))
+    _items_row.visible = _show_items
     if options.has("panel_style"):
         add_theme_stylebox_override("panel", options["panel_style"])
 
@@ -39,13 +43,16 @@ func present(data: Dictionary) -> void:
     var plans: Array = data.get("plans", [])
     _plan_row.visible = not plans.is_empty()
     _populate_chips(_plan_row, plans)
+    _populate_items(data.get("items", []))
 
 func _ensure_built() -> void:
     if _built:
         return
     _built = true
-    add_theme_stylebox_override(
-        "panel", UiDesignScript.box(Color.TRANSPARENT, 10, Color.TRANSPARENT, 0, 0, Vector2(0, 0)))
+    name = "BattleActorPanel"
+    add_theme_stylebox_override("panel", UiDesignScript.box(
+        UiDesignScript.COLORS["panel"], UiDesignScript.RADIUS_MD,
+        UiDesignScript.COLORS["green"], UiDesignScript.BORDER_REGULAR, 7))
     var box := VBoxContainer.new()
     box.add_theme_constant_override("separation", 4)
     add_child(box)
@@ -54,6 +61,7 @@ func _ensure_built() -> void:
     row.add_theme_constant_override("separation", 8)
     box.add_child(row)
     _portrait_label = Label.new()
+    _portrait_label.visible = false
     _portrait_label.custom_minimum_size = Vector2(34, 34)
     _portrait_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _portrait_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -96,11 +104,18 @@ func _ensure_built() -> void:
     _plan_row.alignment = BoxContainer.ALIGNMENT_CENTER
     _plan_row.add_theme_constant_override("separation", 6)
     box.add_child(_plan_row)
+    _items_row = HBoxContainer.new()
+    _items_row.name = "PassiveItems"
+    _items_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    _items_row.add_theme_constant_override("separation", UiDesignScript.SPACE_SM)
+    _items_row.visible = false
+    box.add_child(_items_row)
 
 func _populate_chips(row: HBoxContainer, definitions: Array) -> void:
     for child in row.get_children():
         child.queue_free()
-    for value in definitions:
+    var visible_definitions := definitions.slice(0, 3)
+    for value in visible_definitions:
         var definition: Dictionary = value
         var chip := UiDesignScript.chip(
             str(definition.get("text", "")),
@@ -108,3 +123,26 @@ func _populate_chips(row: HBoxContainer, definitions: Array) -> void:
             float(definition.get("minimum_width", 68.0)))
         chip.tooltip_text = str(definition.get("tooltip", ""))
         row.add_child(chip)
+    if definitions.size() > 3:
+        var overflow := UiDesignScript.chip("+%d" % (definitions.size() - 3), UiDesignScript.COLORS["panel_3"], 42)
+        overflow.tooltip_text = "另有 %d 个状态，点击构筑与详情查看" % (definitions.size() - 3)
+        row.add_child(overflow)
+
+func _populate_items(items: Array) -> void:
+    for child in _items_row.get_children():
+        child.queue_free()
+    _items_row.visible = _show_items and not items.is_empty()
+    for value in items.slice(0, 5):
+        var item_text := str(value)
+        var icon := Label.new()
+        icon.custom_minimum_size = Vector2(40, 40)
+        icon.text = item_text.left(1) if item_text != "" else "?"
+        icon.tooltip_text = item_text if item_text != "" else "缺少物品图标或名称"
+        icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        icon.add_theme_font_size_override("font_size", 18)
+        icon.add_theme_color_override("font_color", UiDesignScript.COLORS["gold"])
+        icon.add_theme_stylebox_override("normal", UiDesignScript.box(
+            UiDesignScript.COLORS["panel_2"], UiDesignScript.RADIUS_MD,
+            UiDesignScript.COLORS["copper_dark"], UiDesignScript.BORDER_REGULAR, 1, Vector2(2, 2)))
+        _items_row.add_child(icon)

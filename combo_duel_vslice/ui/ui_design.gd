@@ -2,28 +2,55 @@ class_name UiDesign
 extends RefCounted
 
 const COLORS := {
-    "background": Color("081516"),
-    "ink": Color("15191f"),
-    "panel": Color("202730"),
-    "panel_2": Color("252c36"),
-    "panel_3": Color("303844"),
-    "cream": Color("f3e8ce"),
-    "muted": Color("9eafaa"),
-    "gold": Color("e9bd51"),
+    "background": Color("101614"),
+    "ink": Color("090e0d"),
+    "panel": Color("18201e"),
+    "panel_2": Color("29322f"),
+    "panel_3": Color("303a36"),
+    "cream": Color("f3eedf"),
+    "paper": Color("d8c9a8"),
+    "muted": Color("a99b7f"),
+    "gold": Color("e2ba68"),
+    "copper": Color("b88b42"),
+    "copper_dark": Color("815a35"),
     "orange": Color("d97832"),
-    "red": Color("d64d48"),
-    "blue": Color("3c82bb"),
-    "green": Color("3f9c67"),
+    "red": Color("b44f49"),
+    "danger": Color("b44f49"),
+    "heal": Color("6ea67f"),
+    "defense": Color("6f8f9a"),
+    "poison": Color("78985a"),
+    "true_damage": Color("d9d3c5"),
+    "blue": Color("6f8f9a"),
+    "green": Color("5b9b80"),
     "purple": Color("835bb4"),
+    "line": Color("4a514a"),
 }
 
 const SPACE_XS := 4
 const SPACE_SM := 8
 const SPACE_MD := 12
 const SPACE_LG := 18
+const SPACE_XL := 24
+const SPACE_XXL := 32
+const BORDER_THIN := 1
+const BORDER_REGULAR := 2
+const BORDER_STRONG := 3
+const RADIUS_SM := 6
+const RADIUS_MD := 10
+const RADIUS_LG := 14
+const CARD_SIZE := Vector2(132, 188)
+const COMPACT_CARD_SIZE := Vector2(82, 118)
+const INNER_SKILL_CARD_SIZE := Vector2(132, 188)
+const BOTTOM_ZONE_HEIGHT := 300
+const SIDE_COLUMN_WIDTH := 300
+const ANIMATION_FAST := 0.12
+const ANIMATION_NORMAL := 0.22
+const ANIMATION_SLOW := 0.36
 const FONT_CAPTION := 11
 const FONT_BODY := 14
+const FONT_SUBTITLE := 16
 const FONT_TITLE := 22
+const FONT_DISPLAY := 42
 
 static func create_theme() -> Theme:
     var result := Theme.new()
