@@ -166,11 +166,11 @@ func _test_action_experience_consumable_and_history_resources() -> void:
         "额外行动历史记录实际获得数量")
 
     engine.player.experience = 7
-    _assert_equal(engine.effect_ports.gain_battle_experience(
-        engine.player, -4), 0,
+    _assert_equal(int(engine.effect_ports.gain_battle_experience(
+        engine.player, -4).get("actual_delta", 0)), 0,
         "战斗历练继续拒绝负数收益")
-    _assert_equal(engine.effect_ports.gain_battle_experience(
-        engine.player, 5), 5,
+    _assert_equal(int(engine.effect_ports.gain_battle_experience(
+        engine.player, 5).get("actual_delta", 0)), 5,
         "战斗历练返回实际增加量")
     _assert_equal(engine.player.experience, 12,
         "战斗历练只写入当前 BattleSide 临时收益")

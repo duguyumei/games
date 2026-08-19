@@ -21,6 +21,8 @@ const ConsumableTargetingProtocolScript = preload(
 	"res://core/consumables/consumable_targeting_protocol.gd")
 const RunEffectValidationScript = preload(
 	"res://core/run_effects/run_effect_validation.gd")
+const RunMutationServiceScript = preload(
+	"res://core/run_effects/run_mutation_service.gd")
 
 var handler_registry
 var _content_catalog
@@ -41,7 +43,13 @@ func _init(
 	_content_catalog = content_catalog
 	_hand_ids = hand_ids.duplicate()
 	_pool_ids = pool_ids.duplicate()
-	_run_mutation_service = run_mutation_service
+	_run_mutation_service = (
+		run_mutation_service
+		if run_mutation_service != null
+		else RunMutationServiceScript.new(
+			content_catalog.run_effect_registry
+				if content_catalog != null else null,
+			content_catalog))
 
 func use_run_mutation_service(service) -> void:
 	_run_mutation_service = service
@@ -177,6 +185,8 @@ func use(
 		return {"success": false, "reason": "choice_payload 必须是对象"}
 	if context == null:
 		return {"success": false, "reason": "消耗品使用上下文不存在"}
+	if context.has_method("use_run_mutation_service"):
+		context.use_run_mutation_service(_run_mutation_service)
 	var sequence: int = context.consumable_use_sequence()
 	if slot_index < 0 or slot_index >= context.inventory_size():
 		return {"success": false, "reason": "消耗品槽位无效"}
@@ -241,6 +251,9 @@ func use(
 	if not transaction.get("success", false):
 		return transaction
 	var working_context = transaction.get("context")
+	if working_context != null and working_context.has_method(
+			"use_run_mutation_service"):
+		working_context.use_run_mutation_service(_run_mutation_service)
 	var state_before: Dictionary = transaction.get("snapshot", {}).duplicate(true)
 	var preparation: Dictionary = {}
 	var resolved: Dictionary
@@ -266,6 +279,7 @@ func use(
 	var instance_ids: Array = resolved.get("instance_ids", []).duplicate()
 	var applied: Array = []
 	var committed_events: Array = []
+	var command_requests: Array = []
 	for effect_index in range(effects.size()):
 		var effect: Dictionary = effects[effect_index]
 		var cards_before = working_context.run_card_mutation_snapshot()
@@ -312,6 +326,10 @@ func use(
 		applied.append(applied_entry)
 		committed_events.append_array(fact_result.get(
 			"committed_events", []).duplicate(true))
+		committed_events.append_array(result.get(
+			"committed_events", []).duplicate(true))
+		command_requests.append_array(result.get(
+			"command_requests", []).duplicate(true))
 
 	var consumed_id: String = working_context.consume_inventory_slot(slot_index)
 	if consumed_id != consumable_id:
@@ -341,6 +359,7 @@ func use(
 		"prepared_preview": preparation.get("prepared_preview", {}).duplicate(true),
 		"changed": state_before != state_after,
 		"committed_events": committed_events,
+		"command_requests": command_requests,
 	}
 
 func _stage_run_card_mutation_facts(

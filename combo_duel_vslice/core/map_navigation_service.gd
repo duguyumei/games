@@ -15,6 +15,7 @@ var phase: String = "awaiting_node"
 var graph: Dictionary = {}
 var current_node_id: String = ""
 var completed_node_ids: Dictionary = {}
+var generation_serial: int = 0
 
 func _init(map_generator_override = null) -> void:
     map_generator = (
@@ -28,7 +29,8 @@ func setup(seed_value: int = 2308) -> void:
     phase = "awaiting_node"
     current_node_id = ""
     completed_node_ids.clear()
-    graph = map_generator.generate(seed, act)
+    generation_serial = 0
+    graph = map_generator.generate(seed, act, generation_serial)
 
 func available_node_ids() -> Array[String]:
     var result: Array[String] = []
@@ -119,6 +121,7 @@ func capture_transaction_state() -> Dictionary:
         "phase": phase,
         "current_node_id": current_node_id,
         "completed_node_ids": completed_node_ids.duplicate(true),
+        "generation_serial": generation_serial,
     }
 
 ## 只恢复字段，不重新生成地图、不发送通知，也不推进随机状态。
@@ -132,6 +135,8 @@ func restore_transaction_state(state: Dictionary) -> void:
     completed_node_ids.clear()
     completed_node_ids.merge(
         state.get("completed_node_ids", {}).duplicate(true), true)
+    generation_serial = maxi(0, int(state.get(
+        "generation_serial", graph.get("generation_serial", 0))))
 
 func terminate_run() -> Dictionary:
     if is_terminal():
@@ -142,11 +147,36 @@ func terminate_run() -> Dictionary:
 func is_terminal() -> bool:
     return phase in ["run_complete", "run_terminated"]
 
-func _advance_act() -> void:
-    act += 1
+func regenerate_current_act_map() -> Dictionary:
+    if is_terminal():
+        return {"success": false, "reason": "终局 Run 不能重建当前层地图"}
+    if phase != "awaiting_node":
+        return {"success": false, "reason": "当前地图阶段不能重建"}
+    var next_serial := generation_serial + 1
+    var generated = map_generator.generate(seed, act, next_serial)
+    if not generated is Dictionary \
+            or generated.get("nodes", []).is_empty() \
+            or generated.get("edges", []).is_empty():
+        return {"success": false, "reason": "当前层地图重建结果无效"}
+    graph = generated.duplicate(true)
+    generation_serial = next_serial
     current_node_id = ""
     completed_node_ids.clear()
-    graph = map_generator.generate(seed, act)
+    phase = "awaiting_node"
+    return {
+        "success": true,
+        "act": act,
+        "phase": phase,
+        "generation_serial": generation_serial,
+        "graph": graph.duplicate(true),
+    }
+
+func _advance_act() -> void:
+    act += 1
+    generation_serial = 0
+    current_node_id = ""
+    completed_node_ids.clear()
+    graph = map_generator.generate(seed, act, generation_serial)
     phase = "awaiting_node"
 
 func _act_has_boss_chest() -> bool:

@@ -7,7 +7,7 @@ extends RefCounted
 ## `has_*` 为真的字段。这里故意不把缺失字段解释为空值，避免局部同步清空
 ## 仅由本局系统持有的内功与功法位状态。
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 
 var consumable_ids: Array[String] = []
 var item_ids: Array[String] = []
@@ -22,6 +22,10 @@ var max_life: int = 0
 var base_max_life: int = 0
 var source_marker_state: Dictionary = {}
 var experience: int = 0
+var free_meditation_charge: int = 0
+var experience_operation_receipts: Dictionary = {}
+var consumable_capacity: int = 2
+var consumable_overflow_count: int = 0
 var hand_technique_progression: Dictionary = {}
 var practice_shop_state: Dictionary = {}
 var consumable_use_sequence: int = 0
@@ -45,6 +49,10 @@ var has_max_life: bool = false
 var has_base_max_life: bool = false
 var has_source_marker_state: bool = false
 var has_experience: bool = false
+var has_free_meditation_charge: bool = false
+var has_experience_operation_receipts: bool = false
+var has_consumable_capacity: bool = false
+var has_consumable_overflow_count: bool = false
 var has_hand_technique_progression: bool = false
 var has_practice_shop_state: bool = false
 var has_consumable_use_sequence: bool = false
@@ -71,6 +79,12 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.has_base_max_life = values.has("base_max_life")
     result.has_source_marker_state = values.has("source_marker_state")
     result.has_experience = values.has("experience")
+    result.has_free_meditation_charge = values.has("free_meditation_charge")
+    result.has_experience_operation_receipts = values.has(
+        "experience_operation_receipts")
+    result.has_consumable_capacity = values.has("consumable_capacity")
+    result.has_consumable_overflow_count = values.has(
+        "consumable_overflow_count")
     result.has_hand_technique_progression = values.has("hand_technique_progression")
     result.has_practice_shop_state = values.has("practice_shop_state")
     result.has_consumable_use_sequence = values.has("consumable_use_sequence")
@@ -107,6 +121,14 @@ static func from_dict(values: Dictionary) -> RunProgressSnapshot:
     result.source_marker_state = values.get(
         "source_marker_state", {}).duplicate(true)
     result.experience = int(values.get("experience", 0))
+    result.free_meditation_charge = clampi(int(values.get(
+        "free_meditation_charge", 0)), 0, 1)
+    result.experience_operation_receipts = values.get(
+        "experience_operation_receipts", {}).duplicate(true)
+    result.consumable_capacity = maxi(0, int(values.get(
+        "consumable_capacity", 2)))
+    result.consumable_overflow_count = maxi(0, int(values.get(
+        "consumable_overflow_count", 0)))
     result.hand_technique_progression = values.get(
         "hand_technique_progression", {}).duplicate(true)
     result.practice_shop_state = _normalized_practice_shop_state(
@@ -154,6 +176,15 @@ func to_dict() -> Dictionary:
         result["source_marker_state"] = source_marker_state.duplicate(true)
     if has_experience:
         result["experience"] = experience
+    if has_free_meditation_charge:
+        result["free_meditation_charge"] = free_meditation_charge
+    if has_experience_operation_receipts:
+        result["experience_operation_receipts"] = (
+            experience_operation_receipts.duplicate(true))
+    if has_consumable_capacity:
+        result["consumable_capacity"] = consumable_capacity
+    if has_consumable_overflow_count:
+        result["consumable_overflow_count"] = consumable_overflow_count
     if has_hand_technique_progression:
         result["hand_technique_progression"] = hand_technique_progression.duplicate(true)
     if has_practice_shop_state:

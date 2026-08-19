@@ -1540,7 +1540,31 @@ func _validate_items(definition: Dictionary) -> void:
         _validate_marker_definitions(
             value.get("marker_definitions", []),
             scope + ".marker_definitions", true)
+        _validate_on_acquire_run_commands(
+            value.get("on_acquire_run_commands", []),
+            scope + ".on_acquire_run_commands")
         _validate_passive_behaviors(value, status, scope, "物品")
+
+func _validate_on_acquire_run_commands(value, scope: String) -> void:
+    if not value is Array:
+        _error(scope, "必须是数组")
+        return
+    var seen: Dictionary = {}
+    for index in range(value.size()):
+        var entry = value[index]
+        var entry_scope := "%s[%d]" % [scope, index]
+        if not entry is Dictionary:
+            _error(entry_scope, "必须是对象")
+            continue
+        for field in entry:
+            if str(field) != "command":
+                _error(entry_scope + "." + str(field), "不支持该字段")
+        var command := str(entry.get("command", ""))
+        if command != "regenerate_current_act_map":
+            _error(entry_scope + ".command", "不是已登记的获得后 Run command")
+        elif seen.has(command):
+            _error(scope, "不能重复声明 Run command：%s" % command)
+        seen[command] = true
 
 func _validate_passive_behaviors(
         definition: Dictionary,
@@ -1556,7 +1580,8 @@ func _validate_passive_behaviors(
     if not behaviors is Array:
         _error(scope + ".behaviors", "必须是数组")
         return
-    if status == FORMAL_CONTENT_STATUS and behaviors.is_empty():
+    if status == FORMAL_CONTENT_STATUS and behaviors.is_empty() \
+            and definition.get("on_acquire_run_commands", []).is_empty():
         _error(scope + ".behaviors", "正式%s必须至少声明一个被动行为" % kind_name)
     var seen: Dictionary = {}
     var state_counters: Dictionary = {}

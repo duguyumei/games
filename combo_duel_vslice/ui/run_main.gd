@@ -399,9 +399,10 @@ func _refresh() -> void:
     practice_button.tooltip_text = (
         "打开修习页面" if bool(current_run.get("can_open_practice", false))
         else "当前节点尚未完成，不能修习")
-    build_button.text = "构 筑\n真气 %d · 消耗品 %d/3" % [
+    var consumable_capacity := int(growth.get("consumable_limit", 2))
+    build_button.text = "构 筑\n真气 %d · 消耗品 %d/%d" % [
         int(growth.get("run_deck_count", 0)),
-        growth.get("consumable_ids", []).size()]
+        growth.get("consumable_ids", []).size(), consumable_capacity]
     build_button.visible = (
         not practice_overlay.visible and not run_build_overlay.visible)
     build_button.disabled = false
@@ -418,10 +419,10 @@ func _refresh() -> void:
         "run_complete": "第三层 Boss 已击败 · 本局完成",
         "run_terminated": "本局已经终止",
     }.get(phase, phase)
-    route_label.text = "可选 %d　已完成 %d　消耗品 %d/3" % [
+    route_label.text = "可选 %d　已完成 %d　消耗品 %d/%d" % [
         int(current_run.get("available_node_count", 0)),
         int(current_run.get("completed_node_count", 0)),
-        growth.get("consumable_ids", []).size()]
+        growth.get("consumable_ids", []).size(), consumable_capacity]
     _refresh_practice()
     if phase in ["run_complete", "run_terminated"] \
             and not run_build_overlay.visible:

@@ -9,6 +9,7 @@ const InnerSkillRepositoryScript = preload("res://core/inner_skill_repository.gd
 var _content_catalog
 var _workshop := CardWorkshopServiceScript.new()
 var _inner_skill_repository := InnerSkillRepositoryScript.new()
+var _run_mutation_service = null
 
 func _init(
 		growth_override,
@@ -31,8 +32,8 @@ func begin_transaction() -> Dictionary:
 	return {
 		"success": true,
 		"snapshot": growth.capture_mutation_state(),
-		"context": RunConsumableUseContext.new(
-			working, instance_ids, rng, _content_catalog, metadata),
+		"context": _configured_child_context(
+			working, instance_ids, rng, metadata),
 	}
 
 func capture_transaction_state() -> Dictionary:
@@ -57,9 +58,41 @@ func create_effect_context(
 		resolved_instance_ids: Array,
 		random_source: RandomNumberGenerator,
 		metadata_override: Dictionary):
-	return RunConsumableUseContext.new(
-		growth, resolved_instance_ids, random_source,
-		_content_catalog, metadata_override)
+	return _configured_child_context(
+		growth, resolved_instance_ids, random_source, metadata_override)
+
+func use_run_mutation_service(service) -> void:
+	_run_mutation_service = service
+
+func change_run_experience(
+		requested_delta: int,
+		operation: String,
+		reason: String = "") -> Dictionary:
+	if _run_mutation_service == null:
+		return {"success": false, "reason": "消耗品历练修改缺少 RunMutationService"}
+	var values := metadata.duplicate(true)
+	values.merge({
+		"transaction_token": str(metadata.get(
+			"action_token", "run_consumable_use")),
+		"operation_token": "%s:effect:%d:experience:%s" % [
+			str(metadata.get("action_token", "run_consumable_use")),
+			int(metadata.get("effect_index", 0)), operation],
+		"operation": operation,
+		"reason": reason if reason != "" else operation,
+	}, true)
+	return _run_mutation_service.change_experience_in_place(
+		growth, requested_delta, values)
+
+func _configured_child_context(
+		child_growth,
+		child_instance_ids: Array,
+		child_rng: RandomNumberGenerator,
+		child_metadata: Dictionary):
+	var result = RunConsumableUseContext.new(
+		child_growth, child_instance_ids, child_rng,
+		_content_catalog, child_metadata)
+	result.use_run_mutation_service(_run_mutation_service)
+	return result
 
 func random_source_for(
 		run_seed: int,
@@ -284,7 +317,13 @@ func add_consumable(consumable_id: String) -> Dictionary:
 	return {"success": true, "consumable_id": id}
 
 func consumable_capacity() -> int:
-	var limit := 3
+	var capacity: Dictionary = growth.effective_consumable_capacity_result() \
+		if growth != null and growth.has_method(
+			"effective_consumable_capacity_result") else {
+				"success": true, "effective_capacity": 2}
+	if not capacity.get("success", false):
+		return 0
+	var limit := int(capacity.get("effective_capacity", 2))
 	var reserved := int(metadata.get("reserved_consumable_slots", 0))
 	return limit + reserved
 

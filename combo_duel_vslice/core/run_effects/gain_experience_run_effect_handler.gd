@@ -11,17 +11,23 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
 
 func apply(effect: Dictionary, context) -> Dictionary:
     var amount := int(effect["amount"])
-    var before := int(context.growth.experience)
-    context.growth.experience += amount
+    var changed: Dictionary = context.change_experience(amount, {
+        "operation": "gain",
+        "reason": str(effect.get("source", effect.get("kind", "experience"))),
+    })
+    if not changed.get("success", false):
+        return changed
     return {
         "success": true,
         "applied": {
             "op": "gain_experience",
             "kind": str(effect.get("kind", "experience")),
             "source": str(effect.get("source", "")),
-            "amount": amount,
-            "experience_before": before,
-            "experience_after": int(context.growth.experience),
+            "amount": int(changed.get("actual_delta", 0)),
+            "requested_amount": amount,
+            "experience_before": int(changed.get("experience_before", 0)),
+            "experience_after": int(changed.get("experience_after", 0)),
+            "experience_change": changed.duplicate(true),
         },
     }
 

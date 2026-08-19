@@ -239,6 +239,8 @@ func commit(token: String, choice_id: String, choice_payload, growth) -> Diction
         "interaction": {} if completed else query_active(),
         "selected_choice_ids": _pending.get(
             "selected_choice_ids", []).duplicate(),
+        "command_requests": mutation_result.get(
+            "command_requests", []).duplicate(true),
     }
 
 func _restore_commit_failure(

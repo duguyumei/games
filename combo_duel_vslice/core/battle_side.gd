@@ -36,6 +36,8 @@ var base_max_life: int = 100
 var life: int = 100
 var defense: int = 0
 var experience: int = 0
+var free_meditation_charge: int = 0
+var experience_operation_receipts: Dictionary = {}
 var hand_limit: int = 8
 var base_hand_limit_modifier: int = 0
 var direct_power_fixed: int = 0
@@ -79,7 +81,8 @@ var item_ids: Array[String] = []
 var technique_slot_index: int = 0
 var forgotten_inner_skill_count: int = 0
 var consumable_ids: Array[String] = []
-var consumable_limit: int = 3
+var consumable_limit: int = 2
+var last_consumable_capacity_query_result: Dictionary = {}
 var consumable_use_sequence: int = 0
 var last_recallable_consumable_id: String = ""
 var used_unique_consumable_ids: Array[String] = []
@@ -230,7 +233,10 @@ func reset(
     technique_slot_index = 0
     forgotten_inner_skill_count = 0
     consumable_ids.clear()
-    consumable_limit = 3
+    consumable_limit = 2
+    free_meditation_charge = 0
+    experience_operation_receipts.clear()
+    last_consumable_capacity_query_result.clear()
     consumable_use_sequence = 0
     last_recallable_consumable_id = ""
     used_unique_consumable_ids.clear()
@@ -665,6 +671,63 @@ func effective_same_qi_capacity_result(context: Dictionary = {}) -> Dictionary:
         1, int(last_same_qi_capacity_query_result["effective_value"]))
     return last_same_qi_capacity_query_result.duplicate(true)
 
+func effective_consumable_capacity_result(
+        context: Dictionary = {}) -> Dictionary:
+    const BASE_CAPACITY := 2
+    var metadata: Dictionary = context.get("metadata", {}).duplicate(true)
+    metadata.merge({
+        "base_capacity": BASE_CAPACITY,
+        "current_count": consumable_ids.size(),
+    }, true)
+    if battle_rule_query_service == null:
+        last_consumable_capacity_query_result = {
+            "success": true, "base_value": BASE_CAPACITY,
+            "effective_value": BASE_CAPACITY, "source_breakdown": [],
+            "fingerprint": "", "errors": [],
+        }
+    else:
+        var query_values := {
+            "hook": "consumable_capacity_query",
+            "owner": self, "actor": self,
+            "subject_kind": "battle_side",
+            "subject_id": owner_id,
+            "base_value": BASE_CAPACITY,
+            "round_number": int(context.get("round_number", 0)),
+            "action_token": str(context.get("action_token", "")),
+            "source_kind": str(context.get(
+                "source_kind", "consumable_capacity")),
+            "metadata": metadata,
+        }
+        if context.has("source_snapshot"):
+            query_values["source_snapshot"] = context.get(
+                "source_snapshot", []).duplicate(true)
+        var resolved = battle_rule_query_service.resolve_values(query_values)
+        last_consumable_capacity_query_result = resolved.to_dict()
+        if not resolved.success:
+            battle_rule_query_service.report_failure(
+                resolved, "consumable_capacity")
+            return last_consumable_capacity_query_result.duplicate(true)
+    var capacity := maxi(0, int(last_consumable_capacity_query_result.get(
+        "effective_value", BASE_CAPACITY)))
+    consumable_limit = capacity
+    last_consumable_capacity_query_result.merge({
+        "base_capacity": BASE_CAPACITY,
+        "effective_capacity": capacity,
+        "current_count": consumable_ids.size(),
+        "available_slots": maxi(capacity - consumable_ids.size(), 0),
+        "overflow_count": maxi(consumable_ids.size() - capacity, 0),
+    }, true)
+    return last_consumable_capacity_query_result.duplicate(true)
+
+func peek_effective_consumable_capacity_result(
+        context: Dictionary = {}) -> Dictionary:
+    var before := last_consumable_capacity_query_result.duplicate(true)
+    var limit_before := consumable_limit
+    var result := effective_consumable_capacity_result(context)
+    last_consumable_capacity_query_result = before
+    consumable_limit = limit_before
+    return result
+
 func peek_effective_same_qi_capacity_result(
         context: Dictionary = {}) -> Dictionary:
     var before: Dictionary = last_same_qi_capacity_query_result.duplicate(true)
@@ -704,6 +767,8 @@ func capture_passive_query_state() -> Dictionary:
         "max_life": max_life,
         "base_max_life": base_max_life,
         "life": life, "defense": defense, "experience": experience,
+        "free_meditation_charge": free_meditation_charge,
+        "experience_operation_receipts": experience_operation_receipts.duplicate(true),
         "hand_limit": hand_limit,
         "base_hand_limit_modifier": base_hand_limit_modifier,
         "direct_power_fixed": direct_power_fixed,
@@ -749,6 +814,8 @@ func capture_passive_query_state() -> Dictionary:
         "forgotten_inner_skill_count": forgotten_inner_skill_count,
         "consumable_ids": consumable_ids.duplicate(),
         "consumable_limit": consumable_limit,
+        "last_consumable_capacity_query_result": (
+            last_consumable_capacity_query_result.duplicate(true)),
         "consumable_use_sequence": consumable_use_sequence,
         "last_recallable_consumable_id": last_recallable_consumable_id,
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
@@ -782,6 +849,11 @@ func replace_passive_query_state(state: Dictionary) -> void:
     life = int(state.get("life", life))
     defense = int(state.get("defense", defense))
     experience = int(state.get("experience", experience))
+    free_meditation_charge = int(state.get(
+        "free_meditation_charge", free_meditation_charge))
+    experience_operation_receipts = state.get(
+        "experience_operation_receipts",
+        experience_operation_receipts).duplicate(true)
     hand_limit = int(state.get("hand_limit", hand_limit))
     base_hand_limit_modifier = int(state.get("base_hand_limit_modifier", base_hand_limit_modifier))
     direct_power_fixed = int(state.get("direct_power_fixed", direct_power_fixed))
@@ -848,6 +920,9 @@ func replace_passive_query_state(state: Dictionary) -> void:
         "forgotten_inner_skill_count", forgotten_inner_skill_count))
     consumable_ids.assign(state.get("consumable_ids", consumable_ids))
     consumable_limit = int(state.get("consumable_limit", consumable_limit))
+    last_consumable_capacity_query_result = state.get(
+        "last_consumable_capacity_query_result",
+        last_consumable_capacity_query_result).duplicate(true)
     consumable_use_sequence = int(state.get(
         "consumable_use_sequence", consumable_use_sequence))
     last_recallable_consumable_id = str(state.get(
@@ -1761,11 +1836,13 @@ func configure_items(ids: Array) -> Dictionary:
 
 func configure_consumables(ids: Array) -> void:
     consumable_ids.clear()
-    for consumable_id in ids.slice(0, consumable_limit):
+    for consumable_id in ids:
         consumable_ids.append(str(consumable_id))
 
 func grant_consumable(consumable_id: String) -> bool:
-    if consumable_ids.size() >= consumable_limit:
+    var capacity := effective_consumable_capacity_result()
+    if not capacity.get("success", false) \
+            or int(capacity.get("available_slots", 0)) <= 0:
         return false
     consumable_ids.append(consumable_id)
     return true

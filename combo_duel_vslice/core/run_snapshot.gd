@@ -12,6 +12,7 @@ const SCHEMA_VERSION := 1
 var seed: int = 0
 var starter_build_id: String = ""
 var act: int = 0
+var generation_serial: int = 0
 var act_count: int = 0
 var phase: String = ""
 var experience: int = 0
@@ -42,6 +43,7 @@ static func from_dict(values: Dictionary) -> RunSnapshot:
     result.seed = int(values.get("seed", 0))
     result.starter_build_id = str(values.get("starter_build_id", ""))
     result.act = int(values.get("act", 0))
+    result.generation_serial = int(values.get("generation_serial", 0))
     result.act_count = int(values.get("act_count", 0))
     result.phase = str(values.get("phase", ""))
     result.experience = int(values.get("experience", 0))
@@ -74,6 +76,7 @@ func to_dict() -> Dictionary:
         "seed": seed,
         "starter_build_id": starter_build_id,
         "act": act,
+        "generation_serial": generation_serial,
         "act_count": act_count,
         "phase": phase,
         "experience": experience,

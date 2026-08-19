@@ -746,6 +746,11 @@ func _side_snapshot(side) -> Dictionary:
         "round_number": int(engine.turn_number),
         "source_kind": "battle_snapshot",
     })
+    var consumable_capacity: Dictionary = (
+        side.peek_effective_consumable_capacity_result({
+            "round_number": int(engine.turn_number),
+            "source_kind": "battle_snapshot",
+        }))
     return {
         "name": side.name,
         "experience": side.experience,
@@ -795,7 +800,9 @@ func _side_snapshot(side) -> Dictionary:
         "item_ids": side.item_ids.duplicate(),
         "consumable_ids": side.consumable_ids.duplicate(),
         "consumables": consumables,
-        "consumable_limit": side.consumable_limit,
+        "consumable_limit": int(consumable_capacity.get(
+            "effective_capacity", side.consumable_limit)),
+        "consumable_capacity": consumable_capacity.duplicate(true),
         "hand_proficiency_fixed": side.hand_proficiency_fixed.duplicate(true),
         "hand_technique_progression": side.hand_technique_progression.duplicate(true),
         "owned_technique_ids": side.owned_technique_ids.duplicate(),

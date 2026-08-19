@@ -390,10 +390,11 @@ func _test_formal_content_contract() -> void:
     formal.sort()
     var expected := [
         "awakened_qi_in_normal_shop", "awakened_qi_weight_x4",
+        "deck_growth_and_reshape_vitality",
         "insight_shop_weight_x4", "overstock_plus_two",
         "pill_shop_weight_x4", "telescope_insight_focus",
     ]
-    _assert_equal(formal, expected, "六件物品正式接入且其他物品仍design_only")
+    _assert_equal(formal, expected, "七件物品正式接入且其他物品仍design_only")
     var candidates: Array = catalog.definition("practice_shop").get(
         "items", {}).get("candidate_ids", []).duplicate()
     candidates.sort()

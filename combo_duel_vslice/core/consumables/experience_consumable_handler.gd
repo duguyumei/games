@@ -28,8 +28,7 @@ func apply(effect: Dictionary, context) -> Dictionary:
 func _gain_current(effect: Dictionary, context) -> Dictionary:
 	var before := int(context.growth.experience)
 	var amount := mini(before, int(effect.get("cap", 0)))
-	context.growth.experience = before + amount
-	return _result(str(effect.get("op", "")), before, amount, context.growth.experience)
+	return _change(effect, context, before, amount)
 
 func _gain_equipped(effect: Dictionary, context) -> Dictionary:
 	var total := 0
@@ -43,11 +42,31 @@ func _gain_equipped(effect: Dictionary, context) -> Dictionary:
 		})
 	var before := int(context.growth.experience)
 	var amount := mini(total, int(effect.get("cap", 0)))
-	context.growth.experience = before + amount
-	var result := _result(
-		str(effect.get("op", "")), before, amount, context.growth.experience)
+	var result := _change(effect, context, before, amount)
+	if not result.get("success", false):
+		return result
 	result["applied"]["uncapped_amount"] = total
 	result["applied"]["sources"] = sources
+	return result
+
+func _change(
+		effect: Dictionary,
+		context,
+		before: int,
+		amount: int) -> Dictionary:
+	var changed: Dictionary = context.change_run_experience(
+		amount, str(effect.get("op", "")), "consumable_experience")
+	if not changed.get("success", false):
+		return changed
+	var result := _result(
+		str(effect.get("op", "")), before,
+		int(changed.get("actual_delta", 0)),
+		int(changed.get("experience_after", before)))
+	result["committed_events"] = changed.get(
+		"committed_events", []).duplicate(true)
+	result["command_requests"] = changed.get(
+		"command_requests", []).duplicate(true)
+	result["experience_change"] = changed.duplicate(true)
 	return result
 
 func _forget_value(definition: Dictionary) -> int:

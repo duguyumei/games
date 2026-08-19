@@ -166,6 +166,13 @@ func build_execution_plan(hook: String, context):
         return plan
     var sources := collect_sources(resolved_context)
     for source in sources:
+        if hook == "experience_change_resolved":
+            var ancestry = resolved_context.payload.get(
+                "experience_response_ancestry", [])
+            var behavior_key := "%s|%s" % [
+                str(source.source_instance_key), str(source.behavior_id)]
+            if ancestry is Array and ancestry.has(behavior_key):
+                continue
         var handler = registry.handler(source.behavior_id)
         if handler == null:
             plan.errors.append("未注册的被动行为：%s" % source.behavior_id)
@@ -301,6 +308,15 @@ func _execute_standard_effects(
     var effect_context = context.effect_context_for(invocation.source)
     effect_context.ports = effect_ports
     effect_context.effect_chain_state = _active_effect_chain
+    if invocation.hook == "experience_change_resolved":
+        var ancestry: Array = _active_effect_chain.get(
+            "experience_response_ancestry", []).duplicate()
+        var behavior_key := "%s|%s" % [
+            str(invocation.source.source_instance_key),
+            str(invocation.source.behavior_id)]
+        if not ancestry.has(behavior_key):
+            ancestry.append(behavior_key)
+        _active_effect_chain["experience_response_ancestry"] = ancestry
     var executed: Dictionary = executor.execute_all(
         handler_result.get("effects", []), effect_context)
     if executed.get("pending_choice", false):
@@ -527,6 +543,9 @@ func _attach_counter_ports(source, context, access: String) -> Array:
     context.persistent_counter_mutation_port = null
     context.battle_counter_read_port = null
     context.battle_counter_mutation_port = null
+    # Handler 即使不声明任何计数器，也仍需通过 Invocation context 读取自己的
+    # 来源身份；不能把 source 注入与计数器端口是否存在绑定在一起。
+    context.source = source
     var result: Array = []
     if access == "none" or context.owner == null:
         return result
@@ -563,7 +582,6 @@ func _attach_counter_ports(source, context, access: String) -> Array:
         if access == "mutation":
             context.battle_counter_mutation_port = battle_port
         result.append(battle_port)
-    context.source = source
     return result
 
 func _property_value(owner, property_name: String):

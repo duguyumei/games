@@ -50,6 +50,8 @@ const EventContextScript = preload(
     "res://core/passives/run_passive_event_context.gd")
 const RunAggregateTransactionScript = preload(
     "res://core/run_aggregate_transaction.gd")
+const RunCommandRequestScript = preload(
+    "res://core/run_command_request.gd")
 
 var game_log
 var _run_state
@@ -161,6 +163,8 @@ func _init(
             _content_catalog.definition("inner_skills"))
     _inner_skill_loadout_service = InnerSkillLoadoutServiceScript.new(
         growth, _inner_skill_repository)
+    _inner_skill_loadout_service.use_run_mutation_service(
+        _node_reward_service.mutation_service)
     _run_build_query_service = RunBuildQueryServiceScript.new(
         growth, _content_catalog, _inner_skill_loadout_service)
     _consumable_use_service = (
@@ -218,6 +222,7 @@ func configure_passive_services(
     _node_interaction_service.use_passive_int_policy_resolver(
         int_policy_resolver)
     growth.use_technique_loadout_policy_resolver(int_policy_resolver)
+    growth.use_int_policy_resolver(int_policy_resolver)
     _inner_skill_loadout_service.use_passive_services(
         passive_runtime, int_policy_resolver, event_service, _run_state)
 
@@ -335,6 +340,7 @@ func snapshot() -> RunSnapshot:
         "seed": navigation.seed,
         "starter_build_id": selected_starter_build_id,
         "act": navigation.act,
+        "generation_serial": navigation.generation_serial,
         "act_count": int(navigation.map_generator.rules.get("acts", 3)),
         "phase": navigation.phase,
         "experience": growth.experience,
@@ -380,9 +386,11 @@ func sync_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
     var entry: Dictionary = game_log.record_run(
         "growth_sync",
         "战斗成长同步到本局",
-        "牌组 %d 张，消耗品 %d/3，已获功法 %d 门" % [
+        "牌组 %d 张，消耗品 %d/%d，已获功法 %d 门" % [
             growth.run_deck.card_count(),
             growth.consumable_ids.size(),
+            int(growth.effective_consumable_capacity_result().get(
+                "effective_capacity", 2)),
             growth.learned_technique_ids.size()],
         {"act": navigation.act, "phase": navigation.phase})
     _queue_event("growth_synced", entry, {
@@ -552,8 +560,10 @@ func _record_battle_growth_sync_if_changed(state_before: Dictionary) -> void:
         var entry: Dictionary = game_log.record_run(
             "growth_sync",
             "战斗成长同步到本局",
-            "牌组 %d 张，消耗品 %d/3，已获功法 %d 门" % [
+            "牌组 %d 张，消耗品 %d/%d，已获功法 %d 门" % [
                 growth.run_deck.card_count(), growth.consumable_ids.size(),
+                int(growth.effective_consumable_capacity_result().get(
+                    "effective_capacity", 2)),
                 growth.learned_technique_ids.size()],
             {"act": navigation.act, "phase": navigation.phase})
         _queue_event("growth_synced", entry, {
@@ -833,6 +843,13 @@ func _commit_node_interaction(
     if not interaction_result.get("success", false):
         aggregate.rollback()
         return interaction_result
+    var command_result := _execute_run_command_requests(
+        _collect_command_requests(interaction_result))
+    if not command_result.get("success", false):
+        aggregate.rollback()
+        return command_result
+    interaction_result["command_results"] = command_result.get(
+        "results", []).duplicate(true)
     if not bool(interaction_result.get("completed", false)):
         var partial_commit: Dictionary = aggregate.commit()
         if not partial_commit.get("success", false):
@@ -944,18 +961,31 @@ func _claim_reward(bundle_id: String) -> Dictionary:
         return {"success": false, "reason": "当前没有待领取的节点奖励"}
     if bundle_id != "" and bundle_id != _pending_reward.bundle_id():
         return {"success": false, "reason": "奖励包已过期或不匹配"}
+    var aggregate := RunAggregateTransactionScript.new()
+    var begun := aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
     var bundle_snapshot: Dictionary = _pending_reward.to_dict()
-    var growth_state_before: Dictionary = growth.capture_mutation_state()
     # node_completed 固定奖励应用前的有效来源，防止新奖励追溯触发自身事件。
     var node_event_sources := _capture_run_passive_sources(growth)
     var working = growth.create_mutation_copy()
     if working == null:
+        aggregate.rollback()
         return {"success": false, "reason": "无法建立节点结算事务工作副本"}
     var apply_result: Dictionary = _node_reward_service.apply_bundle(
         _pending_reward, working)
     if not apply_result.get("success", false):
+        aggregate.rollback()
         return apply_result
-    var interest: Dictionary = working.apply_experience_interest()
+    var interest: Dictionary = _settle_node_experience_interest(
+        working,
+        "node_interest:%d:%s" % [
+            int(bundle_snapshot.get("act", navigation.act)),
+            str(bundle_snapshot.get("node_id", navigation.current_node_id))],
+        node_event_sources)
+    if not interest.get("success", false):
+        aggregate.rollback()
+        return interest
     working.clear_practice_purchases()
     var node_id := str(bundle_snapshot.get("node_id", navigation.current_node_id))
     var node_event := _dispatch_run_passive_event(
@@ -972,19 +1002,23 @@ func _claim_reward(bundle_id: String) -> Dictionary:
             },
         }, node_event_sources)
     if not node_event.get("success", false):
+        aggregate.rollback()
         return node_event
     var commit_errors: Array[String] = growth.replace_mutation_state(
         working.capture_mutation_state())
     if not commit_errors.is_empty():
-        _rollback_passive_event_token(node_event)
+        aggregate.rollback()
         return {"success": false, "reason": "；".join(commit_errors)}
     var navigation_result: Dictionary = navigation.claim_current_node_reward()
     if not navigation_result.get("success", false):
-        growth.replace_mutation_state(growth_state_before)
-        _rollback_passive_event_token(node_event)
+        aggregate.rollback()
         return navigation_result
     _pending_reward = null
-    _run_state.changed.emit()
+    var command_result := _execute_run_command_requests(
+        _collect_command_requests([apply_result, interest, node_event]))
+    if not command_result.get("success", false):
+        aggregate.rollback()
+        return command_result
     var entry: Dictionary = game_log.record_run(
         "reward_lifecycle",
         "领取节点奖励",
@@ -1023,9 +1057,17 @@ func _claim_reward(bundle_id: String) -> Dictionary:
     elif navigation_result.get("phase", "") == "run_complete":
         var terminal_result := _complete_victory_terminal()
         if not terminal_result.get("success", false):
+            aggregate.rollback()
             return terminal_result
         navigation_result["terminal_result"] = terminal_result.get(
             "terminal_result", {}).duplicate(true)
+    navigation_result["command_results"] = command_result.get(
+        "results", []).duplicate(true)
+    var aggregate_commit := aggregate.commit()
+    if not aggregate_commit.get("success", false):
+        aggregate.rollback()
+        return aggregate_commit
+    _run_state.changed.emit()
     return navigation_result
 
 func _reward_snapshot() -> Dictionary:
@@ -1044,14 +1086,23 @@ func _reward_snapshot() -> Dictionary:
 func _complete_boss_chest() -> Dictionary:
     if navigation.phase != "boss_chest":
         return {"success": false, "reason": "当前没有待完成的 Boss 宝箱"}
+    var aggregate := RunAggregateTransactionScript.new()
+    var begun := aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
     var act_before: int = navigation.act
-    var growth_state_before: Dictionary = growth.capture_mutation_state()
     # Boss 宝箱的 node_completed 固定宝箱结算修改前的当前有效来源。
     var node_event_sources := _capture_run_passive_sources(growth)
     var working = growth.create_mutation_copy()
     if working == null:
+        aggregate.rollback()
         return {"success": false, "reason": "无法建立 Boss 宝箱事务工作副本"}
-    var interest: Dictionary = working.apply_experience_interest()
+    var interest: Dictionary = _settle_node_experience_interest(
+        working, "node_interest:%d:boss_chest" % act_before,
+        node_event_sources)
+    if not interest.get("success", false):
+        aggregate.rollback()
+        return interest
     var chest_node_id := "boss_chest:%d" % act_before
     var node_event := _dispatch_run_passive_event(
         "node_completed", working, {
@@ -1063,16 +1114,16 @@ func _complete_boss_chest() -> Dictionary:
             "payload": {"experience_interest": interest.duplicate(true)},
         }, node_event_sources)
     if not node_event.get("success", false):
+        aggregate.rollback()
         return node_event
     var commit_errors: Array[String] = growth.replace_mutation_state(
         working.capture_mutation_state())
     if not commit_errors.is_empty():
-        _rollback_passive_event_token(node_event)
+        aggregate.rollback()
         return {"success": false, "reason": "；".join(commit_errors)}
     var result: Dictionary = navigation.complete_boss_chest()
     if not result.get("success", false):
-        growth.replace_mutation_state(growth_state_before)
-        _rollback_passive_event_token(node_event)
+        aggregate.rollback()
         return result
     result["experience_interest"] = interest.duplicate(true)
     result["experience"] = growth.experience
@@ -1083,7 +1134,6 @@ func _complete_boss_chest() -> Dictionary:
         int(growth.practice_shop_state.get("shop_index", 0)) + 1)
     result["life"] = growth.life
     result["max_life"] = growth.max_life
-    _run_state.changed.emit()
     var entry: Dictionary = game_log.record_run(
         "run_lifecycle",
         "完成 Boss 宝箱流程",
@@ -1105,6 +1155,18 @@ func _complete_boss_chest() -> Dictionary:
         "life": growth.life,
         "max_life": growth.max_life,
     })
+    var command_result := _execute_run_command_requests(
+        _collect_command_requests([interest, node_event]))
+    if not command_result.get("success", false):
+        aggregate.rollback()
+        return command_result
+    result["command_results"] = command_result.get(
+        "results", []).duplicate(true)
+    var committed := aggregate.commit()
+    if not committed.get("success", false):
+        aggregate.rollback()
+        return committed
+    _run_state.changed.emit()
     return result
 
 func _open_practice() -> Dictionary:
@@ -1157,12 +1219,23 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
     var definition: Dictionary = _consumable_repository.get_consumable(consumable_id)
     if definition.is_empty() or not _consumable_repository.practice_offers().has(consumable_id):
         return {"success": false, "reason": "当前修习没有该选项"}
+    var aggregate := RunAggregateTransactionScript.new()
+    var begun := aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
     var result: Dictionary = _practice_service.purchase_standalone_consumable(
         growth, definition, navigation.can_open_practice(),
         _practice_event_values())
     if not result.get("success", false):
+        aggregate.rollback()
         return result
-    _run_state.changed.emit()
+    var command_result := _execute_run_command_requests(
+        _collect_command_requests(result))
+    if not command_result.get("success", false):
+        aggregate.rollback()
+        return command_result
+    result["command_results"] = command_result.get(
+        "results", []).duplicate(true)
     var price := int(result.get("effective_price", result.get("price", 0)))
     result["definition"] = definition.duplicate(true)
     var entry: Dictionary = game_log.record_run(
@@ -1181,6 +1254,11 @@ func _purchase_consumable(consumable_id: String) -> Dictionary:
         "price": price,
         "remaining_experience": growth.experience,
     })
+    var committed := aggregate.commit()
+    if not committed.get("success", false):
+        aggregate.rollback()
+        return committed
+    _run_state.changed.emit()
     return result
 
 func _query_consumable_use(slot_index: int, run_seed: int = 0) -> Dictionary:
@@ -1260,12 +1338,23 @@ func _use_consumable(
             "action_token": "run-consumable-use:%d:%d:%s" % [
                 growth.consumable_use_sequence, slot_index, consumable_id],
         })
+    var aggregate := RunAggregateTransactionScript.new()
+    var begun := aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
     var result: Dictionary = _consumable_use_service.use(
         context, slot_index, selected_instance_ids, navigation.seed, definition,
         choice_payload)
     if not result.get("success", false):
+        aggregate.rollback()
         return result
-    _run_state.changed.emit()
+    var command_result := _execute_run_command_requests(
+        _collect_command_requests(result))
+    if not command_result.get("success", false):
+        aggregate.rollback()
+        return command_result
+    result["command_results"] = command_result.get(
+        "results", []).duplicate(true)
     var details: Array[String] = []
     for applied in result.get("applied", []):
         if applied is Dictionary:
@@ -1288,6 +1377,11 @@ func _use_consumable(
         "consumable_use_sequence": growth.consumable_use_sequence,
         "detail": "；".join(details),
     })
+    var committed := aggregate.commit()
+    if not committed.get("success", false):
+        aggregate.rollback()
+        return committed
+    _run_state.changed.emit()
     return result
 
 func _consumable_use_gate() -> Dictionary:
@@ -1366,12 +1460,108 @@ func _set_hand_technique_loadout(
 func _purchase_practice_offer(group: String, slot_index: int) -> Dictionary:
     if not navigation.can_open_practice():
         return {"success": false, "reason": "当前节点尚未完成，不能修习"}
+    var aggregate := RunAggregateTransactionScript.new()
+    var begun := aggregate.begin(self)
+    if not begun.get("success", false):
+        return begun
     var result: Dictionary = _practice_service.purchase(
         growth, group, slot_index, navigation.can_open_practice(),
         _practice_event_values())
     if result.get("success", false):
+        var commands := _collect_command_requests(result)
+        var command_result := _execute_run_command_requests(commands)
+        if not command_result.get("success", false):
+            aggregate.rollback()
+            return command_result
+        result["command_results"] = command_result.get(
+            "results", []).duplicate(true)
+    if result.get("success", false):
+        var committed := aggregate.commit()
+        if not committed.get("success", false):
+            aggregate.rollback()
+            return committed
         _run_state.changed.emit()
+    else:
+        aggregate.rollback()
     return result
+
+func _execute_run_command_requests(requests: Array) -> Dictionary:
+    var results: Array = []
+    var seen: Dictionary = {}
+    for request_value in requests:
+        if not request_value is Dictionary:
+            return {"success": false, "reason": "Run command request 必须是对象"}
+        var request := RunCommandRequestScript.from_dict(request_value)
+        var errors := request.validate()
+        if not errors.is_empty():
+            return {"success": false, "reason": "；".join(errors)}
+        if seen.has(request.request_token):
+            continue
+        seen[request.request_token] = true
+        if _run_state.run_command_receipts.has(request.request_token):
+            results.append(_run_state.run_command_receipts[request.request_token].duplicate(true))
+            continue
+        match request.command:
+            "regenerate_current_act_map":
+                if _active_battle_session != null:
+                    return {"success": false, "reason": "活跃战斗中不能重建当前层地图"}
+                if _pending_reward != null or navigation.phase != "awaiting_node":
+                    return {"success": false, "reason": "当前阶段不能重建当前层地图"}
+                var regeneration: Dictionary = navigation.regenerate_current_act_map()
+                if not regeneration.get("success", false):
+                    return regeneration
+                _node_interaction_service.clear()
+                _pending_reward = null
+                _pending_victory_battle_result.clear()
+                _run_state.practice_is_open = false
+                var receipt := {
+                    "success": true,
+                    "command": request.command,
+                    "request_token": request.request_token,
+                    "source_kind": request.source_kind,
+                    "source_id": request.source_id,
+                    "source_instance_key": request.source_instance_key,
+                    "generation_serial": navigation.generation_serial,
+                    "act": navigation.act,
+                }
+                _run_state.run_command_receipts[request.request_token] = receipt.duplicate(true)
+                var entry: Dictionary = game_log.record_run(
+                    "run_command",
+                    "重建当前层地图",
+                    "%s 获得后执行当前层地图重建" % request.source_id,
+                    receipt)
+                _queue_event("run_command_committed", entry, receipt)
+                results.append(receipt)
+            _:
+                return {"success": false, "reason": "未处理的 Run command：%s" % request.command}
+    return {"success": true, "results": results}
+
+func _collect_command_requests(value) -> Array:
+    var result: Array = []
+    var seen: Dictionary = {}
+    _append_command_requests(value, result, seen)
+    return result
+
+func _append_command_requests(value, result: Array, seen: Dictionary) -> void:
+    if value is Array:
+        for entry in value:
+            _append_command_requests(entry, result, seen)
+        return
+    if not value is Dictionary:
+        return
+    var requests = value.get("command_requests")
+    if requests is Array:
+        for request_value in requests:
+            if not request_value is Dictionary:
+                continue
+            var token := str(request_value.get("request_token", ""))
+            if token == "" or seen.has(token):
+                continue
+            seen[token] = true
+            result.append(request_value.duplicate(true))
+    for key in value:
+        if str(key) != "command_requests":
+            _append_command_requests(value[key], result, seen)
 
 func _open_practice_pack(
         group: String,
@@ -1400,6 +1590,9 @@ func _practice_snapshot() -> Dictionary:
         growth, navigation.seed, navigation.act)
     var offer_ids: Array[String] = _consumable_repository.practice_offers()
     var offers: Array = []
+    var capacity_query: Dictionary = growth.effective_consumable_capacity_result()
+    var available_slots := int(capacity_query.get("available_slots", 0)) \
+        if capacity_query.get("success", false) else 0
     for consumable_id in offer_ids:
         var definition: Dictionary = _consumable_repository.get_consumable(consumable_id).duplicate(true)
         if definition.is_empty():
@@ -1422,7 +1615,7 @@ func _practice_snapshot() -> Dictionary:
             and navigation.can_open_practice()
             and not purchased
             and growth.experience >= price
-            and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT)
+            and available_slots > 0)
         offers.append(definition)
     var normal := _decorate_practice_slots(
         shop_state.get("normal", []), "normal")
@@ -1450,6 +1643,11 @@ func _practice_snapshot() -> Dictionary:
         "meditation_cost_modifiers": meditation_query.get(
             "modifier_breakdown", []).duplicate(true),
         "meditation_query_error": str(meditation_query.get("reason", "")),
+        "meditation_operation_sequence": int(shop_state.get(
+            "meditation_operation_sequence",
+            shop_state.get("meditation_count", 0))),
+        "free_meditation_charge": growth.free_meditation_charge,
+        "consumable_capacity": capacity_query.duplicate(true),
     }
 
 func _decorate_practice_slots(values: Array, group: String) -> Array:
@@ -1476,10 +1674,12 @@ func _decorate_practice_slots(values: Array, group: String) -> Array:
             and growth.experience >= effective_price
         if str(definition.get("kind", "")) == "consumable":
             can_purchase = can_purchase \
-                and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT
+                and int(growth.effective_consumable_capacity_result().get(
+                    "available_slots", 0)) > 0
         elif str(definition.get("kind", "")) == "consumable_pack":
             can_purchase = can_purchase \
-                and growth.consumable_ids.size() < GrowthInventoryScript.CONSUMABLE_LIMIT
+                and int(growth.effective_consumable_capacity_result().get(
+                    "available_slots", 0)) > 0
             var pack_id := str(definition.get("id", ""))
             var offer_query: Dictionary = _practice_service.resolve_pack_count(
                 "pack_offer_count_query", growth, pack_id,
@@ -1523,7 +1723,10 @@ func _growth_snapshot() -> Dictionary:
     return {
         "life": growth.life,
         "max_life": growth.max_life,
-        "consumable_limit": 3,
+        "consumable_limit": int(growth.effective_consumable_capacity_result().get(
+            "effective_capacity", GrowthInventoryScript.BASE_CONSUMABLE_CAPACITY)),
+        "consumable_capacity": growth.effective_consumable_capacity_result(),
+        "free_meditation_charge": growth.free_meditation_charge,
         "consumable_ids": growth.consumable_ids.duplicate(),
         "consumables": consumables,
         "item_ids": growth.item_ids.duplicate(),
@@ -1546,8 +1749,22 @@ func _player_max_life_for_act(act: int) -> int:
             return int(entry.get("player", {}).get("max_life", 0))
     return 0
 
-func _settle_node_experience_interest() -> Dictionary:
-    return growth.apply_experience_interest()
+func _settle_node_experience_interest(
+        working_growth = null,
+        settlement_token: String = "",
+        source_snapshot: Array = []) -> Dictionary:
+    var owner = working_growth if working_growth != null else growth
+    if settlement_token == "":
+        settlement_token = "node_interest:%d:%s" % [
+            navigation.act, navigation.current_node_id]
+    return _node_reward_service.mutation_service \
+        .settle_experience_interest_in_place(owner, {
+            "settlement_token": settlement_token,
+            "transaction_token": settlement_token,
+            "source_snapshot": source_snapshot,
+            "source_kind": "run_rule",
+            "source_id": "experience_interest",
+        })
 
 func _practice_event_values() -> Dictionary:
     return {
@@ -1609,6 +1826,7 @@ func _capture_persistence_state() -> Dictionary:
         "phase": navigation.phase,
         "current_node_id": navigation.current_node_id,
         "completed_node_ids": navigation.completed_node_ids.duplicate(true),
+        "generation_serial": navigation.generation_serial,
         "starter_build_id": selected_starter_build_id,
         "growth": growth.capture_mutation_state(),
         "pending_reward": (
@@ -1622,6 +1840,7 @@ func _capture_persistence_state() -> Dictionary:
         "practice_is_open": _run_state.practice_is_open,
         "practice_open_sequence": _run_state.practice_open_sequence,
         "committed_passive_event_tokens": _run_state.committed_passive_event_tokens.duplicate(),
+        "run_command_receipts": _run_state.run_command_receipts.duplicate(true),
     }
 
 func _record_command_rejected(command_type: String, reason: String) -> void:

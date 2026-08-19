@@ -16,6 +16,7 @@ const COMMITTED_EVENT_HOOKS := [
     "inner_skill_forgotten",
     "battle_completed",
     "node_completed",
+    "experience_change_resolved",
 ]
 
 var _runtime_ref: WeakRef
@@ -74,8 +75,11 @@ func dispatch(context, growth, event_state) -> Dictionary:
     if not context.has_source_snapshot:
         context.has_source_snapshot = true
         context.source_snapshot = capture_source_snapshot(growth)
+    var port_metadata: Dictionary = context.to_dict()
+    port_metadata["experience_response_ancestry"] = context.payload.get(
+        "experience_response_ancestry", []).duplicate()
     var ports = EffectPortsScript.new(
-        growth, _mutation_service, context.to_dict())
+        growth, _mutation_service, port_metadata)
     context.payload["effect_ports"] = ports
     var dispatched: Dictionary = runtime.dispatch_event(
         context.hook, context, "mutation")

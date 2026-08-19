@@ -11,6 +11,8 @@ const IntQueryRequestScript = preload(
     "res://core/passives/passive_int_query_request.gd")
 const EventContextScript = preload(
     "res://core/passives/run_passive_event_context.gd")
+const RunMutationServiceScript = preload(
+    "res://core/run_effects/run_mutation_service.gd")
 
 var _growth
 var _repository
@@ -18,6 +20,7 @@ var _passive_runtime
 var _int_policy_resolver
 var _event_service
 var _event_state
+var _run_mutation_service
 
 func _init(growth, repository, _legacy_forget_policy = null, passive_runtime = null) -> void:
     _growth = growth
@@ -28,9 +31,17 @@ func _init(growth, repository, _legacy_forget_policy = null, passive_runtime = n
         if catalog != null and catalog.get("passive_rule_registry") != null:
             _passive_runtime = PassiveRuleRuntimeScript.new(
                 catalog.passive_rule_registry, catalog)
+    var content_catalog = _growth.get("_content_catalog")
+    _run_mutation_service = RunMutationServiceScript.new(
+        content_catalog.run_effect_registry
+            if content_catalog != null else null,
+        content_catalog)
 
 func use_passive_runtime(runtime) -> void:
     _passive_runtime = runtime
+
+func use_run_mutation_service(service) -> void:
+    _run_mutation_service = service
 
 func use_passive_services(
         runtime,
@@ -271,7 +282,20 @@ func forget_inner_skill(
             "content_id": inner_skill_id,
             "scope": "run",
         }, true)
-    working.experience = experience_before + forget_value
+    if _run_mutation_service == null:
+        return {"success": false, "reason": "遗忘历练修改缺少 RunMutationService"}
+    var experience_change: Dictionary = _run_mutation_service.change_experience_in_place(
+        working, forget_value, {
+            "transaction_token": "inner_skill_forgotten:%d:%s" % [
+                int(working.forgotten_inner_skill_count) + 1, inner_skill_id],
+            "operation": "inner_skill_forget",
+            "reason": "inner_skill_forget",
+            "source_kind": "inner_skill",
+            "source_id": inner_skill_id,
+            "source_snapshot": source_snapshot,
+        })
+    if not experience_change.get("success", false):
+        return experience_change
     working.forgotten_inner_skill_count += 1
     var event_result := _dispatch_forgotten_event(
         working, inner_skill_id, forget_resolution,
@@ -296,6 +320,7 @@ func forget_inner_skill(
         "forgotten_inner_skill_count": _growth.forgotten_inner_skill_count,
         "remaining_count": learned_count - 1,
         "passive_event": event_result,
+        "experience_change": experience_change.duplicate(true),
     }
 
 func _dispatch_forgotten_event(

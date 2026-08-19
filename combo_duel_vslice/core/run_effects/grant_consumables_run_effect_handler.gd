@@ -1,8 +1,6 @@
 class_name GrantConsumablesRunEffectHandler
 extends "res://core/run_effects/run_effect_handler.gd"
 
-const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
-
 func operation_ids() -> Array[String]:
     return ["grant_consumables"]
 
@@ -24,8 +22,11 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
 
 func apply(effect: Dictionary, context) -> Dictionary:
     var ids: Array = effect["consumable_ids"]
+    var capacity: Dictionary = context.growth.effective_consumable_capacity_result()
+    if not capacity.get("success", false):
+        return capacity
     if context.growth.consumable_ids.size() + ids.size() \
-            > GrowthInventoryScript.CONSUMABLE_LIMIT:
+            > int(capacity.get("effective_capacity", 0)):
         return {"success": false, "reason": "整组发放后将超过共享消耗品栏容量"}
     for content_id_value in ids:
         var content_id := str(content_id_value)
@@ -37,13 +38,15 @@ func apply(effect: Dictionary, context) -> Dictionary:
             return {"success": false, "reason": "消耗品未达到正式可获得状态：%s" % content_id}
     for content_id_value in ids:
         context.growth.consumable_ids.append(str(content_id_value))
+    context.growth.refresh_consumable_capacity_state()
     return {
         "success": true,
         "applied": {
             "op": "grant_consumables",
             "consumable_ids": ids.duplicate(),
             "consumable_count": context.growth.consumable_ids.size(),
-            "consumable_limit": GrowthInventoryScript.CONSUMABLE_LIMIT,
+            "consumable_limit": int(capacity.get("effective_capacity", 0)),
+            "capacity_query": capacity.duplicate(true),
         },
     }
 

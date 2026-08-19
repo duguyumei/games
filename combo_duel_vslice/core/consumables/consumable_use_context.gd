@@ -216,3 +216,12 @@ func add_inner_skill(_inner_skill_id: String) -> Dictionary:
 
 func record_last_recallable_consumable(_consumable_id: String) -> void:
 	pass
+
+func use_run_mutation_service(_service) -> void:
+	pass
+
+func change_run_experience(
+		_requested_delta: int,
+		_operation: String,
+		_reason: String = "") -> Dictionary:
+	return {"success": false, "reason": "该场景不支持修改本局历练"}

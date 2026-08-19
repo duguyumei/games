@@ -234,8 +234,26 @@ func execute(effect: Dictionary, context):
             runtime.captures[str(effect.get("result_capture", "removed"))] = removed
             return EffectResultScript.succeeded("移除异状 %d 张" % removed.size())
         "gain_battle_experience":
-            var gained: int = int(runtime.ports.gain_battle_experience(
-                runtime.actor, value_resolver.resolve(effect.get("amount", 0), runtime)))
+            var change: Dictionary = runtime.ports.gain_battle_experience(
+                runtime.actor,
+                value_resolver.resolve(effect.get("amount", 0), runtime), {
+                    "action_token": runtime.action_token,
+                    "root_execution_token": runtime.action_token,
+                    "source_kind": runtime.source_kind,
+                    "source_id": runtime.source_id,
+                    "source_name": runtime.source_name,
+                    "source_instance_key": runtime.source_instance_key,
+                    "trigger_mode": runtime.trigger_mode,
+                    "effect_execution_token": str(runtime.get(
+                        "effect_execution_token")) if runtime.has_method(
+                            "get") else "",
+                    "experience_response_ancestry": runtime.effect_chain_state.get(
+                        "experience_response_ancestry", []).duplicate(),
+                })
+            if not change.get("success", false):
+                return EffectResultScript.failed(str(change.get(
+                    "reason", "战斗历练修改失败")))
+            var gained := int(change.get("actual_delta", 0))
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [{"gained": gained}]
             return EffectResultScript.succeeded("获得 %d 历练" % gained)

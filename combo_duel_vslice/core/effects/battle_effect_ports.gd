@@ -109,6 +109,8 @@ func use_passive_battle_services(
         event_service, round_reader)
     _card_effect_service.use_committed_event_service(
         event_service, round_reader)
+    _action_resource_effect_service.use_passive_battle_services(
+        query_service, event_service, round_reader)
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
@@ -626,8 +628,12 @@ func add_direct_power_fixed(side: BattleSide, amount: int) -> int:
 func add_direct_power_percent(side: BattleSide, amount: int) -> int:
     return _source_resource_effect_service.add_direct_power_percent(side, amount)
 
-func gain_battle_experience(side: BattleSide, amount: int) -> int:
-    return _action_resource_effect_service.gain_battle_experience(side, amount)
+func gain_battle_experience(
+        side: BattleSide,
+        amount: int,
+        source: Dictionary = {}) -> Dictionary:
+    return _action_resource_effect_service.gain_battle_experience(
+        side, amount, source)
 
 func generate_temporary_normal_card(
         side: BattleSide,

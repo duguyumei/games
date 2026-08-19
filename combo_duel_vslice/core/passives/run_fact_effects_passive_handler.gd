@@ -11,6 +11,7 @@ const ConditionSpecRegistryScript = preload(
 const SUPPORTED_HOOKS := [
     "run_qi_permanently_added",
     "qi_reshape_committed",
+    "experience_change_resolved",
 ]
 
 ## ContentCatalog / ContentValidator 的正式装配会注入组合根唯一的 Run
@@ -60,7 +61,7 @@ func validate_configuration(configuration: Dictionary) -> Array[String]:
                 errors.append("%s 不支持字段 %s" % [scope, str(field_value)])
         var hook := str(rule.get("hook", ""))
         if hook not in SUPPORTED_HOOKS:
-            errors.append("%s.hook 不是正式 Run 卡牌提交事实：%s" % [scope, hook])
+            errors.append("%s.hook 不是正式 Run 提交事实：%s" % [scope, hook])
         var filters = rule.get("filters", {})
         if not filters is Dictionary:
             errors.append("%s.filters 必须是对象" % scope)

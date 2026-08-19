@@ -16,14 +16,23 @@ const SourceContributedStatServiceScript = preload(
 const SourceMarkerAddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")
 const RunCombatHistoryScript = preload("res://core/run_combat_history.gd")
+const IntQueryRequestScript = preload(
+    "res://core/passives/passive_int_query_request.gd")
 
-const CONSUMABLE_LIMIT := 3
+const BASE_CONSUMABLE_CAPACITY := 2
+## 旧调用方只可把它当作基础值别名；正式规则必须调用
+## effective_consumable_capacity_result()。
+const CONSUMABLE_LIMIT := BASE_CONSUMABLE_CAPACITY
 const EXPERIENCE_INTEREST_STEP := 5
 const EXPERIENCE_INTEREST_CAP := 5
 const PLAYER_INITIAL_SEQUENCES_PATH := "res://data/production_sequences.json"
 
 var experience: int = 0
+var free_meditation_charge: int = 0
+var experience_operation_receipts: Dictionary = {}
 var consumable_ids: Array[String] = []
+var consumable_capacity_at_last_commit: int = BASE_CONSUMABLE_CAPACITY
+var consumable_overflow_count: int = 0
 var item_ids: Array[String] = []
 var learned_technique_ids: Array[String] = []
 var learned_inner_skill_ids: Array[String] = []
@@ -49,6 +58,7 @@ var run_combat_history = RunCombatHistoryScript.new()
 var passive_counter_store
 var technique_loadout_policy
 var _content_catalog
+var _int_policy_resolver = null
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -70,6 +80,10 @@ func reset(
         run_deck_override = null,
         initial_max_life: int = 100) -> void:
     experience = 0
+    free_meditation_charge = 0
+    experience_operation_receipts.clear()
+    consumable_capacity_at_last_commit = BASE_CONSUMABLE_CAPACITY
+    consumable_overflow_count = 0
     max_life = initial_max_life
     base_max_life = initial_max_life
     life = max_life
@@ -102,6 +116,10 @@ func reset(
 
 func use_technique_loadout_policy_resolver(resolver) -> void:
     technique_loadout_policy.use_int_policy_resolver(resolver)
+
+func use_int_policy_resolver(resolver) -> void:
+    _int_policy_resolver = resolver
+    refresh_consumable_capacity_state()
 
 func clear_practice_purchases() -> void:
     practice_purchases.clear()
@@ -136,6 +154,9 @@ static func normalized_practice_shop_state(value: Dictionary) -> Dictionary:
         result["strategy_source_snapshot_fingerprint"] = "legacy"
     if not result.has("strategy_operation"):
         result["strategy_operation"] = "legacy_restore"
+    if not result.has("meditation_operation_sequence"):
+        result["meditation_operation_sequence"] = int(result.get(
+            "meditation_count", 0))
     result["normal"] = normal
     return result
 
@@ -146,6 +167,10 @@ static func normalized_practice_shop_state(value: Dictionary) -> Dictionary:
 func capture_mutation_state() -> Dictionary:
     return {
         "experience": experience,
+        "free_meditation_charge": free_meditation_charge,
+        "experience_operation_receipts": experience_operation_receipts.duplicate(true),
+        "consumable_capacity_at_last_commit": consumable_capacity_at_last_commit,
+        "consumable_overflow_count": consumable_overflow_count,
         "life": life,
         "max_life": max_life,
         "base_max_life": base_max_life,
@@ -174,6 +199,7 @@ func create_mutation_copy():
     var working := GrowthInventory.new(_content_catalog, false)
     working.use_technique_loadout_policy_resolver(
         technique_loadout_policy.int_policy_resolver())
+    working.use_int_policy_resolver(_int_policy_resolver)
     var errors: Array[String] = working.replace_mutation_state(
         capture_mutation_state())
     if not errors.is_empty():
@@ -214,11 +240,20 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
     if not history_errors.is_empty():
         return history_errors
     experience = int(state["experience"])
+    free_meditation_charge = clampi(int(state.get(
+        "free_meditation_charge", 0)), 0, 1)
+    experience_operation_receipts = state.get(
+        "experience_operation_receipts", {}).duplicate(true)
+    consumable_capacity_at_last_commit = maxi(0, int(state.get(
+        "consumable_capacity_at_last_commit", BASE_CONSUMABLE_CAPACITY)))
     life = int(state["life"])
     max_life = int(state["max_life"])
     base_max_life = int(state.get("base_max_life", state["max_life"]))
     source_marker_store = replacement_marker_store
     consumable_ids.assign(state["consumable_ids"])
+    consumable_overflow_count = maxi(0, int(state.get(
+        "consumable_overflow_count",
+        maxi(consumable_ids.size() - consumable_capacity_at_last_commit, 0))))
     item_ids.assign(state.get("item_ids", []))
     learned_technique_ids.assign(state["learned_technique_ids"])
     learned_inner_skill_ids.assign(state["learned_inner_skill_ids"])
@@ -311,6 +346,9 @@ func grant_item(item_id: String) -> Dictionary:
     # 下方统一地址与状态写入。
     if definition.is_empty():
         recalculate_effective_max_life()
+        var capacity_result := refresh_consumable_capacity_state()
+        if not capacity_result.get("success", false):
+            return capacity_result
         return {
             "success": true,
             "item_id": item_id,
@@ -349,6 +387,9 @@ func grant_item(item_id: String) -> Dictionary:
             marker_changes.append(_source_marker_change(
                 address, "initial", written))
     recalculate_effective_max_life()
+    var capacity_result := refresh_consumable_capacity_state()
+    if not capacity_result.get("success", false):
+        return capacity_result
     return {
         "success": true,
         "item_id": item_id,
@@ -359,6 +400,8 @@ func grant_item(item_id: String) -> Dictionary:
 func remove_item(item_id: String) -> Dictionary:
     if not item_ids.has(item_id):
         return {"success": false, "reason": "物品未持有：%s" % item_id}
+    var state_before := capture_mutation_state()
+    var overflow_before := consumable_overflow_count
     var removed_markers: Array = []
     for entry_value in source_marker_store.entries({
             "source_kind": "item", "content_id": item_id, "scope": "run"}):
@@ -381,11 +424,26 @@ func remove_item(item_id: String) -> Dictionary:
         "source_kind": "item", "content_id": item_id, "scope": "run"}, true)
     item_ids.erase(item_id)
     recalculate_effective_max_life()
+    var capacity_result := refresh_consumable_capacity_state()
+    if not capacity_result.get("success", false) \
+            or int(capacity_result.get("overflow_count", 0)) > overflow_before:
+        var restore_errors := replace_mutation_state(state_before)
+        if not restore_errors.is_empty():
+            return {"success": false, "reason": "物品移除回滚失败：%s" % (
+                "；".join(restore_errors))}
+        return {
+            "success": false,
+            "reason": (
+                str(capacity_result.get("reason", "消耗品容量查询失败"))
+                if not capacity_result.get("success", false)
+                else "移除该来源会使共享消耗品栏立即超容量"),
+        }
     return {
         "success": true,
         "item_id": item_id,
         "removed_markers": removed_markers,
         "max_life": max_life,
+        "consumable_capacity": capacity_result,
     }
 
 func _source_marker_change(
@@ -452,7 +510,119 @@ func experience_interest_parameters() -> Dictionary:
         "cap": EXPERIENCE_INTEREST_CAP,
     }
 
+## Run 资源整数查询的唯一 Growth 入口。该方法只读状态；正式获得路径由
+## RunMutationService 负责把失败传播到事务边界。
+func effective_experience_gain_result(
+        requested_gain: int,
+        context: Dictionary = {}) -> Dictionary:
+    var requested := maxi(0, requested_gain)
+    var resolved := _resolve_run_int_query(
+        "experience_gain_query", "run_resource", "experience",
+        requested, context.get("metadata", {}),
+        context.get("source_snapshot", []))
+    if not resolved.get("success", false):
+        return resolved
+    var effective := int(resolved.get("effective_value", requested))
+    if effective < 0 or effective > requested:
+        return {
+            "success": false,
+            "reason": "历练获得查询结果必须位于 0～%d" % requested,
+            "query": resolved,
+        }
+    resolved["requested_gain"] = requested
+    resolved["effective_gain"] = effective
+    return resolved
+
+func effective_consumable_capacity_result(
+        context: Dictionary = {}) -> Dictionary:
+    var metadata: Dictionary = context.get("metadata", {}).duplicate(true)
+    metadata.merge({
+        "base_capacity": BASE_CONSUMABLE_CAPACITY,
+        "current_count": consumable_ids.size(),
+    }, true)
+    var resolved := _resolve_run_int_query(
+        "consumable_capacity_query", "growth_inventory", "consumables",
+        BASE_CONSUMABLE_CAPACITY, metadata,
+        context.get("source_snapshot", []))
+    if not resolved.get("success", false):
+        return resolved
+    var capacity := maxi(0, int(resolved.get(
+        "effective_value", BASE_CONSUMABLE_CAPACITY)))
+    var current_count := consumable_ids.size()
+    resolved.merge({
+        "base_capacity": BASE_CONSUMABLE_CAPACITY,
+        "effective_capacity": capacity,
+        "current_count": current_count,
+        "available_slots": maxi(capacity - current_count, 0),
+        "overflow_count": maxi(current_count - capacity, 0),
+    }, true)
+    return resolved
+
+func refresh_consumable_capacity_state() -> Dictionary:
+    var result := effective_consumable_capacity_result()
+    if not result.get("success", false):
+        return result
+    consumable_capacity_at_last_commit = int(result["effective_capacity"])
+    consumable_overflow_count = int(result["overflow_count"])
+    return result
+
+func effective_experience_interest_cap_result(
+        context: Dictionary = {}) -> Dictionary:
+    var resolved := _resolve_run_int_query(
+        "experience_interest_cap_query", "run_resource",
+        "experience_interest", EXPERIENCE_INTEREST_CAP, {
+            "base_cap": EXPERIENCE_INTEREST_CAP,
+            "experience": experience,
+            "settlement_token": str(context.get("settlement_token", "")),
+        }, context.get("source_snapshot", []))
+    if not resolved.get("success", false):
+        return resolved
+    resolved["base_cap"] = EXPERIENCE_INTEREST_CAP
+    resolved["effective_cap"] = maxi(0, int(resolved.get(
+        "effective_value", EXPERIENCE_INTEREST_CAP)))
+    return resolved
+
+func _resolve_run_int_query(
+        hook: String,
+        subject_kind: String,
+        subject_id: String,
+        base_value: int,
+        metadata: Dictionary,
+        source_snapshot: Array = []) -> Dictionary:
+    if _int_policy_resolver == null:
+        return {
+            "success": true,
+            "hook": hook,
+            "subject_kind": subject_kind,
+            "subject_id": subject_id,
+            "base_value": base_value,
+            "effective_value": base_value,
+            "modifier_breakdown": [],
+            "source_fingerprint": "unconfigured",
+            "errors": [],
+        }
+    var values := {
+        "hook": hook,
+        "owner": self,
+        "actor": self,
+        "subject_kind": subject_kind,
+        "subject_id": subject_id,
+        "base_value": base_value,
+        "metadata": metadata.duplicate(true),
+    }
+    if not source_snapshot.is_empty():
+        values["source_snapshot"] = source_snapshot.duplicate(true)
+    var query = _int_policy_resolver.resolve(
+        IntQueryRequestScript.new().configure(values))
+    var result: Dictionary = query.to_dict()
+    if not result.get("success", false):
+        result["reason"] = "；".join(result.get("errors", []))
+    return result
+
 func apply_experience_interest() -> Dictionary:
+    # 仅保留给旧工具/测试的数值兼容入口。生产节点结算必须调用
+    # RunMutationService.settle_experience_interest_in_place()，以产生 canonical
+    # 事实、执行上限查询并进入 RunAggregateTransaction。
     var experience_before := experience
     var parameters := experience_interest_parameters()
     var step := int(parameters["step"])
@@ -470,11 +640,15 @@ func apply_experience_interest() -> Dictionary:
     }
 
 func purchase_consumable(consumable_id: String, price: int, practice_available: bool) -> Dictionary:
+    # 旧领域探针的兼容入口；RunSession/PracticeService 生产购买不调用本方法。
     if not practice_available:
         return {"success": false, "reason": "节点进行中不能修习"}
     if practice_purchases.has(consumable_id):
         return {"success": false, "reason": "本次修习已购买"}
-    if consumable_ids.size() >= CONSUMABLE_LIMIT:
+    var capacity := effective_consumable_capacity_result()
+    if not capacity.get("success", false):
+        return capacity
+    if int(capacity.get("available_slots", 0)) <= 0:
         return {"success": false, "reason": "共享消耗品栏已满"}
     if experience < price:
         return {"success": false, "reason": "历练不足"}
@@ -484,6 +658,7 @@ func purchase_consumable(consumable_id: String, price: int, practice_available: 
     return {"success": true, "remaining_experience": experience}
 
 func to_progress_snapshot() -> RunProgressSnapshot:
+    refresh_consumable_capacity_state()
     return RunProgressSnapshotScript.from_dict({
         "consumable_ids": consumable_ids.duplicate(),
         "item_ids": item_ids.duplicate(),
@@ -498,6 +673,10 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "base_max_life": base_max_life,
         "source_marker_state": source_marker_store.snapshot("run"),
         "experience": experience,
+        "free_meditation_charge": free_meditation_charge,
+        "experience_operation_receipts": experience_operation_receipts.duplicate(true),
+        "consumable_capacity": consumable_capacity_at_last_commit,
+        "consumable_overflow_count": consumable_overflow_count,
         "hand_technique_progression": hand_technique_progression.duplicate(true),
         "practice_shop_state": practice_shop_snapshot(),
         "consumable_use_sequence": consumable_use_sequence,
@@ -575,12 +754,27 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
         life = progress_snapshot.life
     if progress_snapshot.has_experience:
         experience = progress_snapshot.experience
+    if progress_snapshot.has_free_meditation_charge:
+        free_meditation_charge = progress_snapshot.free_meditation_charge
+    if progress_snapshot.has_experience_operation_receipts:
+        experience_operation_receipts = (
+            progress_snapshot.experience_operation_receipts.duplicate(true))
+    if progress_snapshot.has_consumable_capacity:
+        consumable_capacity_at_last_commit = (
+            progress_snapshot.consumable_capacity)
+    if progress_snapshot.has_consumable_overflow_count:
+        consumable_overflow_count = progress_snapshot.consumable_overflow_count
     if progress_snapshot.has_passive_counter_state \
             or progress_snapshot.has_learned_inner_skill_ids \
             or progress_snapshot.has_item_ids:
         passive_counter_store.clear_unowned(
             learned_inner_skill_ids, item_ids)
     recalculate_effective_max_life()
+    # 恢复/战果同步可能发生在 Run 被动查询运行时装配之前。此时保留快照中
+    # 明确迁移出的 capacity/overflow；装配 resolver 后 use_int_policy_resolver()
+    # 会从当前活跃来源统一重算，避免把旧三格存档先静默改写为非 overflow。
+    if _int_policy_resolver != null:
+        refresh_consumable_capacity_state()
 
 func grow_life_to(new_max_life: int) -> void:
     var increase := new_max_life - base_max_life

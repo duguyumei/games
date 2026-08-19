@@ -47,6 +47,16 @@ func for_source(
         }
         metadata["source_execution_index"] = execution_index
         metadata["source_execution_count"] = execution_count
+        if str(metadata.get("hook", "")) == "experience_change_resolved":
+            var ancestry: Array = metadata.get(
+                "experience_response_ancestry",
+                metadata.get("payload", {}).get(
+                    "experience_response_ancestry", [])).duplicate()
+            var behavior_key := "%s|%s" % [
+                str(source.source_instance_key), str(source.behavior_id)]
+            if not ancestry.has(behavior_key):
+                ancestry.append(behavior_key)
+            metadata["experience_response_ancestry"] = ancestry
         var parent_event_token := str(metadata.get("event_token", ""))
         if parent_event_token != "":
             metadata["transaction_token"] = "%s:source:%s:%d" % [
@@ -54,6 +64,12 @@ func for_source(
                 str(source.source_instance_key),
                 execution_index,
             ]
+        # 只有历练响应需要为每个子 Invocation 重新生成 operation token；其他
+        # Run 事实沿用既有来源端口 token 语义，避免改变 marker/card fact 的
+        # 兼容回执。历练子效果让 RunMutationService 用来源身份、分支
+        # transaction token 和效果序号生成稳定 token，避免来源被误判重放。
+        if str(metadata.get("hook", "")) == "experience_change_resolved":
+            metadata.erase("operation_token")
     return get_script().new(_growth, _mutation_service, metadata)
 
 func apply_effects(

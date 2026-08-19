@@ -51,6 +51,194 @@ func _init(registry_override = null, content_catalog_override = null) -> void:
 func use_passive_event_service(service) -> void:
     _run_passive_event_service_ref = weakref(service) if service != null else null
 
+## Run 历练的唯一正式写入口。调用方可以把 working Growth 交给本方法，从而
+## 复用其外层事务；本方法只在该 working copy 内提交余额、幂等回执和 canonical
+## fact，派发失败会在返回前恢复该次操作的局部状态。
+func change_experience_in_place(
+        growth,
+        requested_delta: int,
+        context: Dictionary = {},
+        staged_passive_event_tokens: Array = []) -> Dictionary:
+    if growth == null:
+        return {"success": false, "reason": "历练修改缺少 GrowthInventory"}
+    if requested_delta == 0:
+        return {
+            "success": true,
+            "skipped": true,
+            "requested_delta": 0,
+            "actual_delta": 0,
+            "committed_events": [],
+            "command_requests": [],
+        }
+    var transaction_token := _transaction_token(context)
+    var operation_token := str(context.get("operation_token", ""))
+    if operation_token == "":
+        operation_token = "%s:experience:%s:%s:%s:%s:%s" % [
+            transaction_token,
+            str(context.get("source_instance_key", "direct")),
+            str(context.get("source_behavior_id", "direct")),
+            str(context.get("source_execution_index", 0)),
+            str(context.get("effect_index", context.get("operation_index", 0))),
+            str(context.get("operation", "gain" if requested_delta > 0 else "spend")),
+        ]
+    if growth.experience_operation_receipts.has(operation_token):
+        var duplicate: Dictionary = growth.experience_operation_receipts[
+            operation_token].duplicate(true)
+        duplicate["success"] = true
+        duplicate["duplicate"] = true
+        duplicate["committed_events"] = []
+        duplicate["command_requests"] = []
+        return duplicate
+    var before := int(growth.experience)
+    var actual_delta := requested_delta
+    var query: Dictionary = {}
+    if requested_delta > 0:
+        query = growth.effective_experience_gain_result(requested_delta, {
+            "source_snapshot": context.get("source_snapshot", []),
+            "metadata": {
+                "operation": str(context.get("operation", "gain")),
+                "reason": str(context.get("reason", "")),
+                "transaction_token": transaction_token,
+                "operation_token": operation_token,
+            },
+        })
+        if not query.get("success", false):
+            return {
+                "success": false,
+                "reason": str(query.get("reason", "历练获得查询失败")),
+                "query": query,
+            }
+        actual_delta = int(query.get("effective_gain", requested_delta))
+    elif before + requested_delta < 0:
+        return {
+            "success": false,
+            "reason": "历练不足，需要 %d，当前 %d" % [-requested_delta, before],
+        }
+    var after := before + actual_delta
+    var source := _fact_source(context)
+    var holder_id := _marker_address_resolver.stable_owner_id(growth)
+    if holder_id == "":
+        holder_id = "run"
+    var fact := {
+        "event_type": "experience_change_resolved",
+        "hook": "experience_change_resolved",
+        "scope": "run",
+        "holder": holder_id,
+        "holder_id": holder_id,
+        "requested_delta": requested_delta,
+        "actual_delta": actual_delta,
+        "experience_before": before,
+        "experience_after": after,
+        "direction": "gain" if requested_delta > 0 else "spend",
+        "prevented_amount": requested_delta - actual_delta \
+            if requested_delta > 0 else 0,
+        "changed": actual_delta != 0,
+        "reason": str(context.get("reason", context.get("operation", "experience"))),
+        "operation": str(context.get(
+            "operation", "gain" if requested_delta > 0 else "spend")),
+        "source": source.duplicate(true),
+        "source_description": source.duplicate(true),
+        "source_kind": str(source.get("source_kind", "")),
+        "source_id": str(source.get("source_id", "")),
+        "source_instance_key": str(source.get("source_instance_key", "")),
+        "trigger_mode": str(source.get("trigger_mode", "direct")),
+        "transaction_token": transaction_token,
+        "operation_token": operation_token,
+        "event_token": "experience_change_resolved:%s" % operation_token,
+        "root_execution_token": str(context.get(
+            "root_execution_token", transaction_token)),
+    }
+    var receipt := fact.duplicate(true)
+    receipt.erase("holder")
+    receipt["query"] = query.duplicate(true)
+    growth.experience = after
+    growth.experience_operation_receipts[operation_token] = receipt.duplicate(true)
+    var dispatched := _dispatch_experience_fact(
+        fact, growth, staged_passive_event_tokens, context)
+    if not dispatched.get("success", false):
+        growth.experience = before
+        growth.experience_operation_receipts.erase(operation_token)
+        return dispatched
+    var committed_events: Array = [fact.duplicate(true)]
+    committed_events.append_array(_committed_events_from_dispatch(dispatched))
+    var command_requests := _command_requests_from_value(dispatched)
+    receipt["committed_events"] = committed_events.duplicate(true)
+    receipt["command_requests"] = command_requests.duplicate(true)
+    receipt["success"] = true
+    receipt["duplicate"] = false
+    return receipt
+
+func settle_experience_interest_in_place(
+        growth,
+        context: Dictionary = {},
+        staged_passive_event_tokens: Array = []) -> Dictionary:
+    var settlement_token := str(context.get("settlement_token", ""))
+    if settlement_token == "":
+        return {"success": false, "reason": "功行生息缺少 settlement_token"}
+    var operation_token := "%s:experience_interest" % settlement_token
+    if growth.experience_operation_receipts.has(operation_token):
+        var stored: Dictionary = growth.experience_operation_receipts[
+            operation_token]
+        if stored.get("interest_settlement") is Dictionary:
+            var reused: Dictionary = stored["interest_settlement"].duplicate(true)
+            reused["success"] = true
+            reused["duplicate"] = true
+            reused["committed_events"] = []
+            reused["command_requests"] = []
+            return reused
+    var experience_before := int(growth.experience)
+    var cap_query: Dictionary = growth.effective_experience_interest_cap_result({
+        "settlement_token": settlement_token,
+        "source_snapshot": context.get("source_snapshot", []),
+    })
+    if not cap_query.get("success", false):
+        return {
+            "success": false,
+            "reason": str(cap_query.get("reason", "功行生息上限查询失败")),
+            "cap_query": cap_query,
+        }
+    var step := int(growth.EXPERIENCE_INTEREST_STEP)
+    var base_cap := int(growth.EXPERIENCE_INTEREST_CAP)
+    var effective_cap := int(cap_query.get("effective_cap", base_cap))
+    var uncapped := floori(experience_before / step)
+    var requested := mini(uncapped, effective_cap)
+    var change_context := context.duplicate(true)
+    change_context.merge({
+        "transaction_token": str(context.get(
+            "transaction_token", settlement_token)),
+        "operation_token": operation_token,
+        "operation": "experience_interest",
+        "reason": "experience_interest",
+    }, true)
+    var changed := change_experience_in_place(
+        growth, requested, change_context, staged_passive_event_tokens)
+    if not changed.get("success", false):
+        return changed
+    var result := {
+        "success": true,
+        "experience_before": experience_before,
+        "step": step,
+        "base_cap": base_cap,
+        "effective_cap": effective_cap,
+        "uncapped_amount": uncapped,
+        "requested_amount": requested,
+        "actual_amount": int(changed.get("actual_delta", 0)),
+        "amount": int(changed.get("actual_delta", 0)),
+        "experience_after": int(growth.experience),
+        "query_breakdown": cap_query.get("modifier_breakdown", []).duplicate(true),
+        "source_fingerprint": str(cap_query.get("source_fingerprint", "")),
+        "cap_query": cap_query.duplicate(true),
+        "settlement_token": settlement_token,
+        "experience_change": changed.duplicate(true),
+        "committed_events": changed.get("committed_events", []).duplicate(true),
+        "command_requests": changed.get("command_requests", []).duplicate(true),
+    }
+    var receipt: Dictionary = growth.experience_operation_receipts.get(
+        operation_token, {}).duplicate(true)
+    receipt["interest_settlement"] = result.duplicate(true)
+    growth.experience_operation_receipts[operation_token] = receipt
+    return result
+
 func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictionary:
     for registration_error in handler_registry.registration_errors():
         return _failure(str(registration_error), -1, "")
@@ -72,12 +260,14 @@ func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictiona
     var working_growth = growth.create_mutation_copy()
     if working_growth == null:
         return _failure("无法建立本局事务工作副本", -1, "")
-    var runtime_context = RunEffectContextScript.new(
-        working_growth, context, content_catalog)
     var applied: Array = []
     var staged_passive_event_tokens: Array = []
+    var runtime_context = RunEffectContextScript.new(
+        working_growth, context, content_catalog, self,
+        staged_passive_event_tokens)
     for index in range(effects.size()):
         var effect: Dictionary = effects[index]
+        runtime_context.metadata["effect_index"] = index
         var cards_before: Array = working_growth.run_deck.cards_snapshot()
         var result: Dictionary = handler_registry.apply(effect, runtime_context)
         if not result.get("success", false):
@@ -99,6 +289,8 @@ func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictiona
                 str(fact_result.get("reason", "本局真气提交事实派发失败")),
                 index,
                 str(effect.get("op", "")))
+        runtime_context.record_command_requests(
+            _command_requests_from_value(fact_result))
         var applied_entry: Dictionary = result.get(
             "applied", {}).duplicate(true)
         if not fact_result.get("facts", []).is_empty():
@@ -120,6 +312,7 @@ func apply_effects(effects: Array, growth, context: Dictionary = {}) -> Dictiona
         # Run 命令只在整个工作副本提交成功后公开 canonical marker 事实；
         # 失败路径不会泄漏已经回滚的 source_marker_changed。
         "committed_events": runtime_context.committed_events.duplicate(true),
+        "command_requests": runtime_context.command_requests.duplicate(true),
     }
 
 ## 供仍由其他正式事务持有者（目前主要是 ConsumableUseService）复用的窄
@@ -342,6 +535,78 @@ func _dispatch_card_fact(
         RunPassiveEventContextScript.new().configure(context_values),
         working_growth,
         staged_passive_event_tokens)
+
+func _dispatch_experience_fact(
+        fact: Dictionary,
+        working_growth,
+        staged_passive_event_tokens: Array,
+        context: Dictionary) -> Dictionary:
+    var service = (
+        _run_passive_event_service_ref.get_ref()
+        if _run_passive_event_service_ref != null else null)
+    if service == null:
+        return {
+            "success": true,
+            "skipped": true,
+            "event_token": str(fact.get("event_token", "")),
+            "results": [],
+        }
+    var payload := fact.duplicate(true)
+    payload["holder"] = working_growth
+    payload["experience_response_ancestry"] = context.get(
+        "experience_response_ancestry", []).duplicate()
+    var source_snapshot = context.get("source_snapshot", [])
+    var values := {
+        "hook": "experience_change_resolved",
+        "owner": working_growth,
+        "actor": working_growth,
+        "transaction_token": fact["transaction_token"],
+        "operation_token": fact["operation_token"],
+        "operation_id": "experience_change_resolved",
+        "event_token": fact["event_token"],
+        "scope": "run",
+        "holder_id": fact["holder_id"],
+        "reason": fact["reason"],
+        "fact_source": fact["source"],
+        "payload": payload,
+    }
+    if source_snapshot is Array and not source_snapshot.is_empty():
+        values["source_snapshot"] = source_snapshot.duplicate(true)
+    return service.dispatch_staged(
+        RunPassiveEventContextScript.new().configure(values),
+        working_growth,
+        staged_passive_event_tokens)
+
+func _command_requests_from_value(value) -> Array:
+    var result: Array = []
+    var seen: Dictionary = {}
+    _collect_command_requests(value, result, seen)
+    return result
+
+func _collect_command_requests(
+        value,
+        result: Array,
+        seen: Dictionary) -> void:
+    if value is Array:
+        for entry in value:
+            _collect_command_requests(entry, result, seen)
+        return
+    if not value is Dictionary:
+        return
+    var requests = value.get("command_requests")
+    if requests is Array:
+        for request_value in requests:
+            if not request_value is Dictionary:
+                continue
+            var token := str(request_value.get("request_token", ""))
+            if token == "" or seen.has(token):
+                continue
+            seen[token] = true
+            result.append(request_value.duplicate(true))
+    for key in value:
+        if str(key) == "command_requests":
+            continue
+        _collect_command_requests(value[key], result, seen)
 
 func _cards_by_instance_id(cards: Array) -> Dictionary:
     var result: Dictionary = {}

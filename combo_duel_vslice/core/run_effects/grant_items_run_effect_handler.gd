@@ -37,12 +37,40 @@ func apply(effect: Dictionary, context) -> Dictionary:
         if context.growth.item_ids.has(content_id):
             return {"success": false, "reason": "物品已持有，不能重复发放：%s" % content_id}
     var marker_changes: Array = []
+    var command_requests: Array = []
     for content_id_value in ids:
-        var granted: Dictionary = context.growth.grant_item(str(content_id_value))
+        var content_id := str(content_id_value)
+        var granted: Dictionary = context.growth.grant_item(content_id)
         if not granted.get("success", false):
             return granted
         marker_changes.append_array(granted.get("marker_changes", []))
+        # Lightweight protocol-test catalogs historically expose only the
+        # ownership/obtainability surface.  Acquisition commands are optional,
+        # so the common grant path must not require the richer lookup method
+        # when no command metadata can be present.
+        var definition: Dictionary = (
+            context.content_catalog.get_by_id("item", content_id)
+            if context.content_catalog.has_method("get_by_id") else {})
+        var source_instance_key: String = context.growth.source_marker_address_resolver \
+            .item_source_instance_key(context.growth, content_id)
+        for command_value in definition.get("on_acquire_run_commands", []):
+            if not command_value is Dictionary:
+                continue
+            var command_id := str(command_value.get("command", ""))
+            var transaction_token := str(context.metadata.get(
+                "transaction_token", "run_mutation"))
+            command_requests.append({
+                "schema_version": 1,
+                "command": command_id,
+                "request_token": "%s:item:%s:%s" % [
+                    transaction_token, source_instance_key, command_id],
+                "source_kind": "item",
+                "source_id": content_id,
+                "source_instance_key": source_instance_key,
+                "transaction_token": transaction_token,
+            })
     context.record_committed_events(marker_changes)
+    context.record_command_requests(command_requests)
     return {
         "success": true,
         "applied": {
@@ -51,7 +79,9 @@ func apply(effect: Dictionary, context) -> Dictionary:
             "item_count": context.growth.item_ids.size(),
             "source_marker_changes": marker_changes,
             "max_life": int(context.growth.max_life),
+            "command_requests": command_requests.duplicate(true),
         },
+        "command_requests": command_requests.duplicate(true),
     }
 
 func _remove(ids: Array, context) -> Dictionary:

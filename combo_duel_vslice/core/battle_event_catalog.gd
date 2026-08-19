@@ -26,6 +26,7 @@ const COMMITTED_EVENTS := [
     "technique_invocation_started", "technique_invocation_resolved",
     "technique_sequence_changed", "technique_slot_capacity_changed",
     "temporary_technique_generated", "same_qi_gain_resolved",
+    "experience_change_resolved",
 ]
 
 const AUTOMATIC_EVENTS := COMMITTED_EVENTS + ["round_start", "turn_end"]
@@ -107,6 +108,9 @@ const PUBLIC_FIELDS := [
     "logical_explicit_discard", "disposition_replaced",
     "original_destination", "final_destination", "claim_token",
     "claim_consumed", "claimed_entries", "claim_source_instance_key",
+    "requested_delta", "actual_delta", "experience_before",
+    "experience_after", "direction", "prevented_amount", "operation",
+    "operation_token", "root_execution_token",
 ]
 
 static func event_ids() -> Array[String]:

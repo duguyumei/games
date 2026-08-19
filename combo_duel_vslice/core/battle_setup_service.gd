@@ -230,6 +230,8 @@ func _apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> D
         side.forgotten_inner_skill_count = (
             progress_snapshot.forgotten_inner_skill_count)
     if progress_snapshot.has_consumable_ids:
+        if progress_snapshot.has_consumable_capacity:
+            side.consumable_limit = progress_snapshot.consumable_capacity
         side.configure_consumables(progress_snapshot.consumable_ids)
     if progress_snapshot.has_consumable_use_sequence:
         side.consumable_use_sequence = progress_snapshot.consumable_use_sequence
@@ -262,6 +264,11 @@ func _apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> D
         side.life = progress_snapshot.life
     if progress_snapshot.has_experience:
         side.experience = progress_snapshot.experience
+    if progress_snapshot.has_free_meditation_charge:
+        side.free_meditation_charge = progress_snapshot.free_meditation_charge
+    if progress_snapshot.has_experience_operation_receipts:
+        side.experience_operation_receipts = (
+            progress_snapshot.experience_operation_receipts.duplicate(true))
     if progress_snapshot.has_run_combat_history_state:
         var history_errors: Array[String] = side.run_combat_history \
             .restore_snapshot(progress_snapshot.run_combat_history_state)
@@ -311,6 +318,13 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
         "base_max_life": side.base_max_life,
         "source_marker_state": side.source_marker_store.snapshot("run"),
         "experience": side.experience,
+        "free_meditation_charge": side.free_meditation_charge,
+        "experience_operation_receipts": (
+            side.experience_operation_receipts.duplicate(true)),
+        "consumable_capacity": int(side.effective_consumable_capacity_result().get(
+            "effective_capacity", side.consumable_limit)),
+        "consumable_overflow_count": maxi(
+            side.consumable_ids.size() - side.consumable_limit, 0),
         "consumable_use_sequence": side.consumable_use_sequence,
         "last_recallable_consumable_id": side.last_recallable_consumable_id,
         "base_hand_limit_modifier": side.base_hand_limit_modifier,

@@ -2032,3 +2032,39 @@ receipt以及`BattlePassiveTimingBridge`的pending/历史/reset token。成功�
 没有发现Handler直接改牌区、异状、功法值或Run状态的旁路。正式内容没有新增：《易手换气》《观脉知机》
 《炽火炼功》《重构》仍未录入，内功13门、物品7件和8门暂缓功法数量不变。矩阵更新为已有／合并33、
 B 8、C1 6、C2 0、D 1。
+
+## 31. 2026-08-19 Run资源与命令事务平台收口
+
+五项能力没有形成五套Service。Run成长资源的唯一正式修改入口仍是`RunMutationService`；
+`GrowthInventory`只保存历练、免费冥想机会、消耗品容量兼容状态和资源回执。战斗工作历练继续由
+`BattleActionResourceEffectService`拥有；Run与Battle共用`experience_change_resolved`事实结构，胜利同步
+不会重复发布。Run事实只进入现有`RunPassiveEventService → PassiveRuleRuntime/ExecutionPlan`，Battle事实
+只进入现有committed通道，没有新增事件总线。
+
+递归审计修复了一个明确幂等碰撞：Run被动响应端口曾继承父事实`operation_token`，使两个不同来源的
+`gain_experience`响应都被误判为父操作重放。现在端口只继承父事件构造的分支transaction token，显式清除
+父operation token；`RunMutationService`使用source instance、behavior、execution index、effect index和
+operation生成子token。ancestry仍按`source_instance_key|behavior_id`累积，所以来源不响应自身后代，其他
+来源在各独立分支继续执行。统一专项通过真实canonical写入口验证根事实加四条有界后代事实，未保留仅
+直接派发伪造事件的测试旁路。
+
+查询所有权保持集中：Run侧`PassiveIntPolicyResolver`处理`experience_gain_query`、
+`consumable_capacity_query`、`experience_interest_cap_query`；Battle侧继续使用既有
+`BattleRuleQueryService`。基础消耗品容量变为2，所有生产调用方读取同一容量结果；容量下降与旧存档只
+产生可持久化overflow，不删除库存。功行生息保持`floor(experience/5)`公式和基础上限5，由
+`settle_experience_interest_in_place`每个token只查询一次并保存完整回执。
+
+免费冥想没有专用Service。`GrowthInventory.free_meditation_charge`是0/1状态，进入mutation snapshot、
+`RunProgressSnapshot`和`RunSaveData`；`PracticeService`区分全部成功操作序号与付费次数，免费提交只推进
+前者，价格修正到0的普通冥想仍推进后者。失败路径恢复机会、商店、RNG和两类序号。
+
+地图命令采用无状态`RunCommandRequest`。`RunMutationService`在新物品进入工作副本后只产生白名单请求，
+`RunSession`负责阶段验证、receipt和跨域编排，`MapNavigationService`唯一修改graph、act、路线状态及
+`generation_serial`。确定性地图输入为seed/act/serial，旧存档默认serial 0。物品、价格、修习商店、地图、
+节点pending、日志、事件和command receipt全部由既有`RunAggregateTransaction`包住；任何失败恢复旧图和
+完整Growth，不存在“获得成功但地图失败”的半提交。
+
+旁路审计迁移了修习购买、节点奖励、消耗品历练与物品发放等直接资源写入；Handler只表达请求，未发现
+新的`ExperienceService`、`MapItemService`、`FreeMeditationService`、物品运行时或第二套Run事务。正式JSON
+和生产内容池未修改，《免费冥想》《血财相济》《存钱罐》《断财炼气》《预兆球》《摇钱树》《象形文字》
+仍未接入。矩阵收口为已有／合并38、B 7、C1 2、C2 0、D 1，正式内功13门、物品7件、暂缓功法8门。

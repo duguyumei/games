@@ -14,6 +14,9 @@ const SUPPORTED_HOOKS := [
     "practice_pack_candidate_priority_query",
     "insight_slot_gain_query",
     "rest_multi_select_count_query",
+    "experience_gain_query",
+    "consumable_capacity_query",
+    "experience_interest_cap_query",
 ]
 const OPERATIONS := ["add", "multiply", "maximum"]
 const FILTER_FIELDS := [

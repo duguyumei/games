@@ -11,7 +11,7 @@ const SCHEMA_VERSION := 1
 var editable: bool = false
 var blocked_reason: String = ""
 var cards: Array = []
-var consumable_limit: int = 3
+var consumable_limit: int = 2
 var consumables: Array = []
 var items: Array = []
 var hand_loadouts: Array = []
@@ -22,7 +22,7 @@ func configure(values: Dictionary):
     editable = bool(values.get("editable", false))
     blocked_reason = str(values.get("blocked_reason", ""))
     cards = values.get("cards", []).duplicate(true)
-    consumable_limit = int(values.get("consumable_limit", 3))
+    consumable_limit = int(values.get("consumable_limit", 2))
     consumables = values.get("consumables", []).duplicate(true)
     items = values.get("items", []).duplicate(true)
     hand_loadouts.clear()
@@ -65,4 +65,3 @@ func to_dict() -> Dictionary:
 
 func duplicate(_deep: bool = false) -> Dictionary:
     return to_dict()
-

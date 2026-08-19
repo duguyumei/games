@@ -1,6 +1,9 @@
 class_name ComboRunState
 extends RefCounted
 
+const RunMutationServiceScript = preload(
+    "res://core/run_effects/run_mutation_service.gd")
+
 signal changed
 
 const MapNavigationServiceScript = preload("res://core/map_navigation_service.gd")
@@ -12,12 +15,18 @@ var terminal_result = null
 var practice_is_open: bool = false
 var practice_open_sequence: int = 0
 var committed_passive_event_tokens: Array[String] = []
+var run_command_receipts: Dictionary = {}
+var _run_mutation_service
 
 func _init(navigation_override = null, growth_override = null) -> void:
     if navigation_override != null:
         navigation = navigation_override
     if growth_override != null:
         growth = growth_override
+    var catalog = growth.get("_content_catalog") if growth != null else null
+    _run_mutation_service = RunMutationServiceScript.new(
+        catalog.run_effect_registry if catalog != null else null,
+        catalog)
 
 # Compatibility facade for existing domain tests and callers. New code should
 # use RunSession commands and snapshots instead of mutating these properties.
@@ -96,6 +105,7 @@ func reset_passive_run_state() -> void:
     practice_is_open = false
     practice_open_sequence = 0
     committed_passive_event_tokens.clear()
+    run_command_receipts.clear()
 
 func capture_transaction_state() -> Dictionary:
     return {
@@ -103,6 +113,7 @@ func capture_transaction_state() -> Dictionary:
         "practice_is_open": practice_is_open,
         "practice_open_sequence": practice_open_sequence,
         "committed_passive_event_tokens": committed_passive_event_tokens.duplicate(),
+        "run_command_receipts": run_command_receipts.duplicate(true),
     }
 
 ## 聚合事务恢复只写内存状态；调用方负责决定何时统一通知观察者。
@@ -112,6 +123,8 @@ func restore_transaction_state(state: Dictionary) -> void:
     practice_open_sequence = int(state.get("practice_open_sequence", 0))
     committed_passive_event_tokens.assign(
         state.get("committed_passive_event_tokens", []))
+    run_command_receipts = state.get(
+        "run_command_receipts", {}).duplicate(true)
 
 func available_node_ids() -> Array[String]:
     return navigation.available_node_ids()
@@ -123,11 +136,38 @@ func begin_node(node_id: String) -> Dictionary:
     return result
 
 func complete_current_node() -> Dictionary:
+    var navigation_before: Dictionary = navigation.capture_transaction_state()
+    var growth_before: Dictionary = growth.capture_mutation_state()
     var result: Dictionary = navigation.complete_current_node()
     if not result.get("success", false):
         return result
-    growth.experience += int(result.get("reward", 0))
-    result["experience_interest"] = growth.apply_experience_interest()
+    var reward := int(result.get("reward", 0))
+    if reward > 0:
+        var rewarded: Dictionary = _run_mutation_service.change_experience_in_place(
+            growth, reward, {
+                "transaction_token": "compat_node_reward:%d:%s" % [
+                    navigation.act, navigation.current_node_id],
+                "operation": "node_reward",
+                "reason": "node_reward",
+                "source_kind": "map_node",
+                "source_id": navigation.current_node_id,
+            })
+        if not rewarded.get("success", false):
+            navigation.restore_transaction_state(navigation_before)
+            growth.replace_mutation_state(growth_before)
+            return rewarded
+    var interest: Dictionary = _run_mutation_service.settle_experience_interest_in_place(
+        growth, {
+            "settlement_token": "compat_node_interest:%d:%s" % [
+                navigation.act, navigation.current_node_id],
+            "source_kind": "run_rule",
+            "source_id": "experience_interest",
+        })
+    if not interest.get("success", false):
+        navigation.restore_transaction_state(navigation_before)
+        growth.replace_mutation_state(growth_before)
+        return interest
+    result["experience_interest"] = interest
     result["experience"] = growth.experience
     growth.clear_practice_purchases()
     changed.emit()
@@ -136,12 +176,24 @@ func complete_current_node() -> Dictionary:
 func complete_boss_chest() -> Dictionary:
     if navigation.phase != "boss_chest":
         return {"success": false, "reason": "当前没有待完成的 Boss 宝箱"}
-    var interest: Dictionary = growth.apply_experience_interest()
+    var navigation_before: Dictionary = navigation.capture_transaction_state()
+    var growth_before: Dictionary = growth.capture_mutation_state()
+    var interest: Dictionary = _run_mutation_service \
+        .settle_experience_interest_in_place(growth, {
+            "settlement_token": "compat_boss_interest:%d" % navigation.act,
+            "source_kind": "run_rule",
+            "source_id": "experience_interest",
+        })
+    if not interest.get("success", false):
+        return interest
     var result: Dictionary = navigation.complete_boss_chest()
     if result.get("success", false):
         result["experience_interest"] = interest
         result["experience"] = growth.experience
         changed.emit()
+    else:
+        navigation.restore_transaction_state(navigation_before)
+        growth.replace_mutation_state(growth_before)
     return result
 
 func node_definition(node_id: String) -> Dictionary:
@@ -154,10 +206,40 @@ func can_open_practice() -> bool:
     return navigation.can_open_practice()
 
 func purchase_consumable(consumable_id: String, price: int) -> Dictionary:
-    var result: Dictionary = growth.purchase_consumable(
-        consumable_id,
-        price,
-        navigation.can_open_practice())
+    if not navigation.can_open_practice():
+        return {"success": false, "reason": "节点进行中不能修习"}
+    if growth.practice_purchases.has(consumable_id):
+        return {"success": false, "reason": "本次修习已购买"}
+    var capacity: Dictionary = growth.effective_consumable_capacity_result()
+    if not capacity.get("success", false):
+        return capacity
+    if int(capacity.get("available_slots", 0)) <= 0:
+        return {"success": false, "reason": "共享消耗品栏已满"}
+    var working = growth.create_mutation_copy()
+    if working == null:
+        return {"success": false, "reason": "无法建立兼容购买工作副本"}
+    var token := "compat_consumable_purchase:%s" % consumable_id
+    var paid: Dictionary = _run_mutation_service.change_experience_in_place(
+        working, -price, {
+            "transaction_token": token,
+            "operation_token": "%s:price" % token,
+            "operation": "practice_purchase",
+            "reason": "practice_purchase",
+            "source_kind": "practice",
+            "source_id": consumable_id,
+        })
+    if not paid.get("success", false):
+        return paid
+    working.consumable_ids.append(consumable_id)
+    working.practice_purchases[consumable_id] = true
+    working.refresh_consumable_capacity_state()
+    var errors: Array = growth.replace_mutation_state(working.capture_mutation_state())
+    var result: Dictionary = {
+        "success": errors.is_empty(),
+        "reason": "；".join(errors),
+        "remaining_experience": growth.experience,
+        "experience_change": paid,
+    }
     if result.get("success", false):
         changed.emit()
     return result

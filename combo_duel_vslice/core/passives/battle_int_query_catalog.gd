@@ -24,4 +24,6 @@ const HOOKS := [
     "life_recovery_query",
     "effective_qi_query",
     "pre_life_loss_query",
+    "experience_gain_query",
+    "consumable_capacity_query",
 ]

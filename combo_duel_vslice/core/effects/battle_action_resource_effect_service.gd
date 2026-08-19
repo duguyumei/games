@@ -10,6 +10,9 @@ extends RefCounted
 var _battle_flow
 var _trigger_queue
 var _consumable_repository
+var _query_service
+var _committed_event_service
+var _round_reader: Callable
 
 
 func _init(battle_flow, trigger_queue) -> void:
@@ -31,6 +34,14 @@ func use_consumable_repository(repository) -> void:
     assert(repository != null,
         "BattleActionResourceEffectService requires ConsumableRepository")
     _consumable_repository = repository
+
+func use_passive_battle_services(
+        query_service,
+        committed_event_service,
+        round_reader: Callable = Callable()) -> void:
+    _query_service = query_service
+    _committed_event_service = committed_event_service
+    _round_reader = round_reader
 
 
 func gain_extra_actions(
@@ -54,14 +65,124 @@ func gain_extra_actions(
     return gained
 
 
-func gain_battle_experience(side, amount: int) -> int:
-    var gained := maxi(0, amount)
-    side.experience += gained
-    return gained
+func gain_battle_experience(
+        side,
+        amount: int,
+        source: Dictionary = {}) -> Dictionary:
+    var requested := maxi(0, amount)
+    if requested == 0:
+        return {"success": true, "skipped": true, "actual_delta": 0}
+    var action_token := str(source.get("action_token", ""))
+    var operation_token := str(source.get("operation_token", ""))
+    if operation_token == "":
+        operation_token = "%s:%s:%s:%d" % [
+            action_token,
+            str(source.get("source_instance_key", source.get("source_id", "rule"))),
+            str(source.get("effect_execution_token", "experience")),
+            requested,
+        ]
+    if side.experience_operation_receipts.has(operation_token):
+        var duplicate: Dictionary = side.experience_operation_receipts[
+            operation_token].duplicate(true)
+        duplicate["success"] = true
+        duplicate["duplicate"] = true
+        return duplicate
+    var query_values := {
+        "success": true,
+        "base_value": requested,
+        "effective_value": requested,
+        "modifier_breakdown": [],
+        "source_fingerprint": "unconfigured",
+    }
+    if _query_service != null:
+        var query = _query_service.resolve_values({
+            "hook": "experience_gain_query",
+            "owner": side,
+            "actor": side,
+            "subject_kind": "battle_resource",
+            "subject_id": "experience",
+            "base_value": requested,
+            "round_number": _round_number(),
+            "action_token": action_token,
+            "source_kind": str(source.get("source_kind", "battle_effect")),
+            "metadata": {
+                "requested_gain": requested,
+                "operation_token": operation_token,
+            },
+        })
+        query_values = query.to_dict()
+        if not query.success:
+            _query_service.report_failure(query, "battle_experience_gain")
+            return {"success": false, "reason": "战斗历练获得查询失败",
+                "query": query_values}
+    var gained := int(query_values.get("effective_value", requested))
+    if gained < 0 or gained > requested:
+        return {"success": false, "reason": "战斗历练获得结果超出请求范围"}
+    var before := int(side.experience)
+    side.experience = before + gained
+    var event_token := ""
+    var committed: Dictionary = {"success": true, "skipped": true}
+    if _committed_event_service != null:
+        event_token = _committed_event_service.make_token(
+            "experience_change_resolved", side,
+            _committed_event_service.next_serial(), action_token)
+        committed = _committed_event_service.commit(
+            "experience_change_resolved", {
+                "event_token": event_token,
+                "actor": side,
+                "target": side,
+                "holder": side,
+                "holder_id": str(side.owner_id),
+                "scope": "battle",
+                "requested_delta": requested,
+                "actual_delta": gained,
+                "experience_before": before,
+                "experience_after": int(side.experience),
+                "direction": "gain",
+                "prevented_amount": requested - gained,
+                "changed": gained != 0,
+                "operation": "gain_battle_experience",
+                "operation_token": operation_token,
+                "root_execution_token": str(source.get(
+                    "root_execution_token", action_token)),
+                "action_token": action_token,
+                "round_number": _round_number(),
+                "source_kind": str(source.get("source_kind", "battle_effect")),
+                "source_id": str(source.get("source_id", "")),
+                "source_name": str(source.get("source_name", "")),
+                "source_instance_key": str(source.get("source_instance_key", "")),
+                "trigger_mode": str(source.get("trigger_mode", "direct")),
+                "payload": {
+                    "experience_response_ancestry": source.get(
+                        "experience_response_ancestry", []).duplicate(),
+                },
+            })
+        if not committed.get("success", false):
+            side.experience = before
+            return {"success": false, "reason": str(committed.get(
+                "reason", "战斗历练事实提交失败")), "committed": committed}
+    var receipt := {
+        "success": true,
+        "duplicate": false,
+        "scope": "battle",
+        "requested_delta": requested,
+        "actual_delta": gained,
+        "experience_before": before,
+        "experience_after": int(side.experience),
+        "prevented_amount": requested - gained,
+        "operation_token": operation_token,
+        "event_token": event_token,
+        "query": query_values,
+        "committed": committed,
+    }
+    side.experience_operation_receipts[operation_token] = receipt.duplicate(true)
+    return receipt
 
 
 func can_grant_battle_consumable(side) -> bool:
-    return side.consumable_ids.size() < side.consumable_limit
+    var result: Dictionary = side.effective_consumable_capacity_result()
+    return result.get("success", false) \
+        and int(result.get("available_slots", 0)) > 0
 
 
 func grant_battle_consumable(side, consumable_id: String) -> bool:
@@ -81,3 +202,6 @@ func add_history(
         result: String,
         detail: String = "") -> void:
     _trigger_queue.add_history(timing, label, source, result, detail)
+
+func _round_number() -> int:
+    return int(_round_reader.call()) if _round_reader.is_valid() else 0

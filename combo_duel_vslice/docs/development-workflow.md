@@ -1165,3 +1165,43 @@ pending时只验证并恢复冻结DTO，不重放已提交选项，schema 1明�
 加载、统一选择续跑专项、BattleActionTransaction、battle-contracts、run-map与RunSaveData；不运行
 quick/full。完成后矩阵为已有／合并33、B 8、C1 6、C2 0、D 1，正式内容数量保持内功13门、物品7件、
 暂缓功法8门。
+
+## Run资源与命令事务工作流（2026-08-19）
+
+Run资源修改只允许沿既有所有者流动：Handler把请求交给`RunMutationService`，后者在调用方提供的
+`GrowthInventory`工作副本上修改历练、库存、marker或免费冥想机会并派生canonical事实／类型化command
+request；跨Growth、地图、节点、日志和事件的正式命令由`RunSession`编排，并继续使用
+`RunAggregateTransaction`一次提交或恢复。`GrowthInventory`只保存资源，`MapNavigationService`只保存地图，
+两者不得互相调用。
+
+历练统一写入口为Run侧`RunMutationService.change_experience_in_place`和Battle侧
+`BattleActionResourceEffectService`。获得量先经来源中立`experience_gain_query`限制到请求区间，花费不走
+获得阻止；非零请求即使完全阻止也提交`experience_change_resolved(changed=false)`。Battle胜利同步只提交
+工作历练，不再发布第二份获得事实。operation token既包含来源实例、behavior、执行序号和效果序号，又由
+receipt保证幂等；`RunPassiveEffectPorts`在响应分支中清除父operation token并累积
+`experience_response_ancestry`，因此当前来源不能响应自身后代，其他来源仍按ExecutionPlan稳定执行。
+
+免费冥想机会是`GrowthInventory`内0/1类型化Run状态。`grant_free_meditation_charge`只能设为1；
+`PracticeService.meditate`成功提交时优先消费。`meditation_operation_sequence`表示全部成功冥想并负责稳定
+RNG/token，`meditation_count`只表示付费次数并决定下一次基础费用；来源修正到0的普通冥想仍属于付费。
+失败、取消和预览均不消费机会或推进任一序号。
+
+共享消耗品基础容量固定为2，唯一结果来自`GrowthInventory.effective_consumable_capacity_result`及
+`consumable_capacity_query`。购买、奖励、补充包、Run effect、使用预留、战斗映射、DTO、UI和AI只消费
+该结果；容量下降保留原库存并记录overflow，直到库存回落前禁止新获得。旧容量3存档迁移同样保留内容，
+不能把overflow当作额外空位。
+
+节点功行生息统一调用`RunMutationService.settle_experience_interest_in_place`：先结算节点奖励，再从当前
+历练计算`floor(experience/5)`，本次只查询一次基础5的`experience_interest_cap_query`，随后将完整查询和
+结果冻结到settlement receipt。普通节点与Boss路径使用同一入口；重复token直接复用回执，不重新查询或
+增加历练。
+
+内容获得后命令只通过`RunCommandRequest`白名单DTO传递。`grant_items`先在Growth工作副本完成获得，随后
+产生`regenerate_current_act_map`请求；`RunSession`验证阶段和幂等receipt后调用
+`MapNavigationService.regenerate_current_act_map`。地图生成确定性输入为seed、act、generation_serial；
+初次为0，每次成功重建+1，新层从0开始。成功保留已提交成长并废弃旧graph、路线和节点pending；失败由
+外层聚合事务同时恢复物品、价格、商店、旧图、事件、日志与receipt。
+
+本批只使用测试目录注入的合成来源和物品，不修改正式JSON或生产池。限定回归为项目加载、统一专项、
+RunMutation／修习／消耗品／节点／地图／存档／战果同步相关专项，不运行quick/full。能力矩阵为
+已有／合并38、B 7、C1 2、C2 0、D 1；正式内容仍为内功13门、物品7件和8门暂缓功法。

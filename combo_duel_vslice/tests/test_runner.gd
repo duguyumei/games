@@ -10581,7 +10581,7 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
 
     var one_slot_growth := GrowthInventoryScript.new(catalog, false)
     one_slot_growth.experience = 100
-    one_slot_growth.consumable_ids.assign(["zengyuan_pill", "pair_insight"])
+    one_slot_growth.consumable_ids.assign(["zengyuan_pill"])
     one_slot_growth.practice_shop_state = {
         "shop_index": 1, "act": 1, "normal": [],
         "packs": [deluxe_pill], "items": [{}], "pack_open_sequence": 0,
@@ -10599,7 +10599,7 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
 
     var full_growth := GrowthInventoryScript.new(catalog, false)
     full_growth.experience = 100
-    full_growth.consumable_ids.assign(["zengyuan_pill", "pair_insight", "five_kind_insight"])
+    full_growth.consumable_ids.assign(["zengyuan_pill", "pair_insight"])
     full_growth.practice_shop_state = {
         "shop_index": 1, "act": 1, "normal": [],
         "packs": [deluxe_pill], "items": [{}], "pack_open_sequence": 0,
@@ -10665,12 +10665,12 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
     direct_item_growth.experience = 10
     direct_item_growth.practice_shop_state = {
         "normal": [], "packs": [],
-        "items": [{"id": "item_protocol_probe", "kind": "item", "price": 4}],
+        "items": [{"id": "overstock_plus_two", "kind": "item", "price": 4}],
     }
     _assert_true(
         service.purchase(direct_item_growth, "items", 0, true).get("success", false),
         "独立物品栏购买协议支持 item")
-    _assert_equal(direct_item_growth.item_ids, ["item_protocol_probe"], "物品只进入 item_ids")
+    _assert_equal(direct_item_growth.item_ids, ["overstock_plus_two"], "物品只进入 item_ids")
     _assert_true(
         direct_item_growth.consumable_ids.is_empty() \
             and direct_item_growth.learned_inner_skill_ids.is_empty(),
@@ -11290,13 +11290,13 @@ func _test_s2f2f1_formal_pills_and_transactions() -> void:
         var grant_session: RunSession = RunSessionScript.new()
         _assert_true(grant_session.execute({"type": "setup_run", "seed": 880106}).success, "%s 满栏本局建立" % grant_case[0])
         grant_session.growth.consumable_ids.assign([
-            "pair_insight", "zengyuan_pill", grant_case[0]])
+            "pair_insight", grant_case[0]])
         var grant_use := grant_session.execute({
-            "type": "use_consumable", "slot_index": 2,
+            "type": "use_consumable", "slot_index": 1,
             "selected_instance_ids": [],
         })
         _assert_true(grant_use.success, "%s 满栏时利用自身释放栏位" % grant_case[0])
-        _assert_equal(grant_session.growth.consumable_ids.size(), 3, "%s 提交后仍不超过三格" % grant_case[0])
+        _assert_equal(grant_session.growth.consumable_ids.size(), 2, "%s 提交后仍不超过有效容量" % grant_case[0])
         var granted_id := str(grant_use.payload_value("applied")[0]["consumable_ids"][0])
         _assert_equal(catalog.get_by_id("consumable", granted_id)["kind"], grant_case[1], "%s 只从对应正式池抽取" % grant_case[0])
         if grant_case[0] == "wanhua_pill":

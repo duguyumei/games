@@ -38,12 +38,15 @@ func query(editable: bool, blocked_reason: String = ""):
     for hand_id_value in _growth.HAND_IDS:
         hand_loadouts.append(_build_hand_loadout(
             str(hand_id_value), editable, reason))
+    var capacity: Dictionary = _growth.effective_consumable_capacity_result()
+    var effective_capacity := int(capacity.get("effective_capacity", 0)) \
+        if capacity.get("success", false) else 0
     return RunBuildDTOScript.new().configure({
         "editable": editable,
         "blocked_reason": reason,
         "cards": _build_cards(),
-        "consumable_limit": _growth.CONSUMABLE_LIMIT,
-        "consumables": _build_consumables(),
+        "consumable_limit": effective_capacity,
+        "consumables": _build_consumables(effective_capacity),
         "items": _build_items(),
         "hand_loadouts": hand_loadouts.map(
             func(value): return value.to_dict()),
@@ -85,9 +88,10 @@ func _build_cards() -> Array:
         })
     return result
 
-func _build_consumables() -> Array:
+func _build_consumables(effective_capacity: int) -> Array:
     var result: Array = []
-    for slot_index in range(_growth.CONSUMABLE_LIMIT):
+    for slot_index in range(maxi(
+            effective_capacity, _growth.consumable_ids.size())):
         if slot_index >= _growth.consumable_ids.size():
             result.append({
                 "slot_index": slot_index,

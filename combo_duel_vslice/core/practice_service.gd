@@ -114,7 +114,11 @@ func purchase(
         if growth.learned_inner_skill_ids.has(content_id):
             return {"success": false, "reason": "该内功已经获得"}
     elif kind == "consumable":
-        if growth.consumable_ids.size() >= GrowthInventoryScript.CONSUMABLE_LIMIT:
+        var capacity: Dictionary = growth.effective_consumable_capacity_result({
+            "source_snapshot": source_snapshot})
+        if not capacity.get("success", false):
+            return capacity
+        if int(capacity.get("available_slots", 0)) <= 0:
             return {"success": false, "reason": "共享消耗品栏已满"}
         if _is_unique_consumable_unavailable(growth, content_id):
             return {"success": false, "reason": "该唯一奇珍已经获得或使用"}
@@ -136,7 +140,21 @@ func purchase(
     var working = growth.create_mutation_copy()
     if working == null:
         return {"success": false, "reason": "无法建立购买事务工作副本"}
-    working.experience -= price
+    var purchase_token := "practice_purchase:%d:%s:%d:%s" % [
+        int(working.practice_shop_state.get("shop_index", 0)),
+        group, slot_index, purchase_key]
+    var experience_change: Dictionary = _run_mutation_service.change_experience_in_place(
+        working, -price, {
+            "transaction_token": purchase_token,
+            "operation_token": "%s:price" % purchase_token,
+            "operation": "practice_purchase",
+            "reason": "practice_purchase",
+            "source_kind": "practice",
+            "source_id": content_id,
+            "source_snapshot": source_snapshot,
+        })
+    if not experience_change.get("success", false):
+        return experience_change
     var item_grant: Dictionary = {}
     var card_grant: Dictionary = {}
     if kind == "technique":
@@ -146,7 +164,13 @@ func purchase(
     elif kind == "consumable":
         working.consumable_ids.append(content_id)
     elif kind == "item":
-        item_grant = working.grant_item(content_id)
+        item_grant = _run_mutation_service.apply_effects([{
+            "op": "grant_items", "item_ids": [content_id],
+        }], working, {
+            "transaction_token": purchase_token,
+            "source_kind": "practice",
+            "source_id": content_id,
+        })
         if not item_grant.get("success", false):
             return item_grant
     elif kind == "qi_card":
@@ -167,16 +191,14 @@ func purchase(
             "content_id": content_id,
             "content_kind": kind,
             "shop_index": int(working.practice_shop_state.get("shop_index", 0)),
-            "transaction_token": "practice_purchase:%d:%s:%d:%s" % [
-                int(working.practice_shop_state.get("shop_index", 0)),
-                group, slot_index, purchase_key],
+            "transaction_token": purchase_token,
             "payload": {
                 "group": group,
                 "slot_index": slot_index,
                 "base_price": base_price,
                 "effective_price": price,
                 "source_marker_changes": item_grant.get(
-                    "marker_changes", []) if kind == "item" else [],
+                    "committed_events", []) if kind == "item" else [],
                 "purchase_key": purchase_key,
                 "added_card_instance_id": str(slot.get("instance_id", "")) \
                     if kind == "qi_card" else "",
@@ -205,12 +227,15 @@ func purchase(
         "remaining_experience": growth.experience,
         "passive_event": event_result,
         "source_marker_changes": item_grant.get(
-            "marker_changes", []) if kind == "item" else [],
+            "committed_events", []) if kind == "item" else [],
         "added_card_instance_id": str(slot.get("instance_id", "")) \
             if kind == "qi_card" else "",
         "frozen_offer": _frozen_offer_summary(slot) \
             if kind == "qi_card" else {},
         "run_mutation": card_grant if kind == "qi_card" else {},
+        "experience_change": experience_change.duplicate(true),
+        "command_requests": _collect_command_requests([
+            experience_change, item_grant, card_grant, event_result]),
     }
 
 func open_pack(
@@ -286,8 +311,11 @@ func open_pack(
     offered.assign(offer_plan.get("offered", []))
     if offered.is_empty():
         return {"success": false, "reason": "补充包当前没有合格候选"}
-    var free_slots := maxi(
-        GrowthInventoryScript.CONSUMABLE_LIMIT - growth.consumable_ids.size(), 0)
+    var capacity_query: Dictionary = growth.effective_consumable_capacity_result({
+        "source_snapshot": source_snapshot})
+    if not capacity_query.get("success", false):
+        return capacity_query
+    var free_slots := int(capacity_query.get("available_slots", 0))
     var max_choose_count := mini(mini(choose_count, free_slots), offered.size())
     var source_fingerprint := _combined_fingerprint([
         price_query.get("source_fingerprint", ""),
@@ -307,6 +335,7 @@ func open_pack(
             "effective_choose_count": choose_count,
             "passive_source_fingerprint": source_fingerprint,
             "history_fingerprint": history_fingerprint,
+            "capacity_query": capacity_query.duplicate(true),
             "guaranteed_candidate_id": str(offer_plan.get(
                 "guaranteed_candidate_id", "")),
         })
@@ -343,6 +372,7 @@ func open_pack(
                 "pack_open_sequence": sequence,
             },
             "source_snapshot": source_snapshot.duplicate(true),
+            "capacity_query": capacity_query.duplicate(true),
             "sequence": sequence,
             "free_slots": free_slots,
             "max_choose_count": max_choose_count,
@@ -421,6 +451,8 @@ func _confirm_prepared_pack(
             "passive_source_fingerprint": prepared["passive_source_fingerprint"],
             "history_fingerprint": prepared.get(
                 "history_fingerprint", "not_applicable"),
+            "capacity_query": prepared.get(
+                "capacity_query", {}).duplicate(true),
             "guaranteed_candidate_id": prepared.get(
                 "guaranteed_candidate_id", ""),
         })
@@ -442,8 +474,14 @@ func _confirm_prepared_pack(
     var offered: Array[String] = []
     offered.assign(prepared["offered"])
     var choose_count := int(prepared["effective_choose_count"])
-    var free_slots := maxi(
-        GrowthInventoryScript.CONSUMABLE_LIMIT - growth.consumable_ids.size(), 0)
+    var capacity_query: Dictionary = growth.effective_consumable_capacity_result({
+        "source_snapshot": frozen_source_snapshot})
+    if not capacity_query.get("success", false):
+        return capacity_query
+    if int(capacity_query.get("effective_capacity", -1)) != int(
+            prepared.get("capacity_query", {}).get("effective_capacity", -2)):
+        return {"success": false, "reason": "补充包消耗品容量已变化，请重新预览"}
+    var free_slots := int(capacity_query.get("available_slots", 0))
     if selected_ids.size() < 1 or selected_ids.size() > choose_count:
         return {"success": false, "reason": "补充包选择数量必须在 1～%d 之间" % choose_count}
     if selected_ids.size() > free_slots:
@@ -459,7 +497,21 @@ func _confirm_prepared_pack(
     var working = growth.create_mutation_copy()
     if working == null:
         return {"success": false, "reason": "无法建立补充包事务工作副本"}
-    working.experience -= price
+    var transaction_token := "practice_pack:%d:%s:%d:%d" % [
+        int(working.practice_shop_state.get("shop_index", 0)),
+        str(prepared["pack_id"]), slot_index, int(prepared["sequence"])]
+    var experience_change: Dictionary = _run_mutation_service.change_experience_in_place(
+        working, -price, {
+            "transaction_token": transaction_token,
+            "operation_token": "%s:price" % transaction_token,
+            "operation": "practice_pack",
+            "reason": "practice_pack",
+            "source_kind": "practice",
+            "source_id": str(prepared["pack_id"]),
+            "source_snapshot": frozen_source_snapshot,
+        })
+    if not experience_change.get("success", false):
+        return experience_change
     for content_id in normalized:
         working.consumable_ids.append(content_id)
     _clear_slot(working.practice_shop_state, group, slot_index)
@@ -470,9 +522,7 @@ func _confirm_prepared_pack(
             "content_id": str(prepared["pack_id"]),
             "content_kind": "consumable_pack",
             "shop_index": int(working.practice_shop_state.get("shop_index", 0)),
-            "transaction_token": "practice_pack:%d:%s:%d:%d" % [
-                int(working.practice_shop_state.get("shop_index", 0)),
-                str(prepared["pack_id"]), slot_index, int(prepared["sequence"])],
+            "transaction_token": transaction_token,
             "payload": {
                 "selected_ids": normalized.duplicate(),
                 "offered": offered.duplicate(),
@@ -517,6 +567,7 @@ func _confirm_prepared_pack(
         "slot_index": slot_index,
         "remaining_experience": growth.experience,
         "passive_event": event_result,
+        "experience_change": experience_change.duplicate(true),
     }
 
 func meditate(
@@ -530,7 +581,14 @@ func meditate(
     var state: Dictionary = growth.practice_shop_state
     var base_cost := int(state.get("next_meditation_cost", 5))
     var source_snapshot := _capture_sources(growth)
-    var cost_query := resolve_meditation_cost(
+    var uses_free_charge := int(growth.free_meditation_charge) > 0
+    var cost_query := {
+        "success": true,
+        "base_cost": base_cost,
+        "effective_cost": 0,
+        "modifier_breakdown": [],
+        "source_fingerprint": "free_meditation_charge",
+    } if uses_free_charge else resolve_meditation_cost(
         growth, base_cost, source_snapshot)
     if not cost_query.get("success", false):
         return cost_query
@@ -542,8 +600,12 @@ func meditate(
     if working == null:
         return {"success": false, "reason": "无法建立冥想事务工作副本"}
     state = working.practice_shop_state
-    var count := int(state.get("meditation_count", 0)) + 1
-    var rng := _rng_for(run_seed, act, int(state.get("shop_index", 1)), count)
+    var paid_count_before := int(state.get("meditation_count", 0))
+    var paid_count := paid_count_before + (0 if uses_free_charge else 1)
+    var operation_sequence := int(state.get(
+        "meditation_operation_sequence", paid_count_before)) + 1
+    var rng := _rng_for(
+        run_seed, act, int(state.get("shop_index", 1)), operation_sequence)
     var normal: Array = state.get(NORMAL_GROUP, []).duplicate(true)
     var strategy_fingerprints: Array = []
     for index in range(normal.size()):
@@ -564,7 +626,7 @@ func meditate(
                 "run_seed": run_seed,
                 "operation": "meditation",
                 "slot_index": index,
-                "operation_index": count,
+                "operation_index": operation_sequence,
             })
         if not pool_plan.get("success", false):
             return pool_plan
@@ -574,16 +636,33 @@ func meditate(
             pool_plan.get("pools", []), rng)
         if not chosen.is_empty():
             normal[index] = chosen
-    working.experience -= cost
-    state["meditation_count"] = count
-    state["next_meditation_cost"] = base_cost + 1
+    var transaction_token := "meditation:%d:%d" % [
+        int(state.get("shop_index", 0)), operation_sequence]
+    var experience_change: Dictionary = _run_mutation_service.change_experience_in_place(
+        working, -cost, {
+            "transaction_token": transaction_token,
+            "operation_token": "%s:price" % transaction_token,
+            "operation": "meditation",
+            "reason": "meditation",
+            "source_kind": "practice",
+            "source_id": "meditation",
+            "source_snapshot": source_snapshot,
+        }) if cost > 0 else {"success": true, "skipped": true,
+            "actual_delta": 0, "committed_events": []}
+    if not experience_change.get("success", false):
+        return experience_change
+    if uses_free_charge:
+        working.free_meditation_charge = 0
+    state["meditation_operation_sequence"] = operation_sequence
+    state["meditation_count"] = paid_count
+    state["next_meditation_cost"] = base_cost + (0 if uses_free_charge else 1)
     state[NORMAL_GROUP] = normal
     state["normal_slot_count"] = normal.size()
     state["strategy_source_fingerprint"] = _combined_fingerprint(
         strategy_fingerprints)
     state["strategy_source_snapshot_fingerprint"] = JSON.stringify(
         source_snapshot).sha256_text()
-    state["strategy_operation"] = "meditation:%d" % count
+    state["strategy_operation"] = "meditation:%d" % operation_sequence
     working.practice_shop_state = state
     var refreshed_slot_indices: Array[int] = []
     for index in range(normal.size()):
@@ -593,12 +672,13 @@ func meditate(
     var event_result := _dispatch_event(
         "meditation_committed", working, event_values, source_snapshot, {
             "shop_index": int(state.get("shop_index", 0)),
-            "transaction_token": "meditation:%d:%d" % [
-                int(state.get("shop_index", 0)), count],
+            "transaction_token": transaction_token,
             "payload": {
                 "base_cost": base_cost,
                 "effective_cost": cost,
-                "meditation_count": count,
+                "meditation_count": paid_count,
+                "meditation_operation_sequence": operation_sequence,
+                "used_free_meditation_charge": uses_free_charge,
                 "refreshed_slot_indices": refreshed_slot_indices.duplicate(),
             },
         })
@@ -615,11 +695,15 @@ func meditate(
         "base_cost": base_cost,
         "effective_cost": cost,
         "modifier_breakdown": cost_query["modifier_breakdown"],
-        "meditation_count": count,
+        "meditation_count": paid_count,
+        "meditation_operation_sequence": operation_sequence,
+        "used_free_meditation_charge": uses_free_charge,
+        "free_meditation_charge": growth.free_meditation_charge,
         "experience": growth.experience,
         "previous_state": old_state,
         "refreshed_slot_indices": refreshed_slot_indices,
         "passive_event": event_result,
+        "experience_change": experience_change.duplicate(true),
     }
 
 func purchase_standalone_consumable(
@@ -643,17 +727,37 @@ func purchase_standalone_consumable(
     var working = growth.create_mutation_copy()
     if working == null:
         return {"success": false, "reason": "无法建立购买事务工作副本"}
-    var purchase_result: Dictionary = working.purchase_consumable(
-        content_id, price, can_open)
-    if not purchase_result.get("success", false):
-        return purchase_result
+    var capacity: Dictionary = working.effective_consumable_capacity_result({
+        "source_snapshot": source_snapshot})
+    if not capacity.get("success", false):
+        return capacity
+    if int(capacity.get("available_slots", 0)) <= 0:
+        return {"success": false, "reason": "共享消耗品栏已满"}
+    if working.practice_purchases.has(content_id):
+        return {"success": false, "reason": "本次修习已购买"}
+    var transaction_token := "practice_purchase:%d:standalone:%s" % [
+        int(working.practice_shop_state.get("shop_index", 0)), content_id]
+    var experience_change: Dictionary = _run_mutation_service.change_experience_in_place(
+        working, -price, {
+            "transaction_token": transaction_token,
+            "operation_token": "%s:price" % transaction_token,
+            "operation": "practice_purchase",
+            "reason": "practice_purchase",
+            "source_kind": "practice",
+            "source_id": content_id,
+            "source_snapshot": source_snapshot,
+        })
+    if not experience_change.get("success", false):
+        return experience_change
+    working.consumable_ids.append(content_id)
+    working.practice_purchases[content_id] = true
+    working.refresh_consumable_capacity_state()
     var event_result := _dispatch_event(
         "practice_purchase_committed", working, event_values, source_snapshot, {
             "content_id": content_id,
             "content_kind": "consumable",
             "shop_index": int(working.practice_shop_state.get("shop_index", 0)),
-            "transaction_token": "practice_purchase:%d:standalone:%s" % [
-                int(working.practice_shop_state.get("shop_index", 0)), content_id],
+            "transaction_token": transaction_token,
             "payload": {
                 "group": "standalone",
                 "base_price": base_price,
@@ -677,6 +781,8 @@ func purchase_standalone_consumable(
         "price_modifiers": price_query["price_modifiers"],
         "remaining_experience": growth.experience,
         "passive_event": event_result,
+        "experience_change": experience_change.duplicate(true),
+        "capacity_query": capacity.duplicate(true),
     }
 
 func resolve_price(
@@ -973,6 +1079,7 @@ func _generate_state(growth, run_seed: int, act: int, shop_index: int) -> Dictio
         "packs": packs,
         "items": items,
         "meditation_count": 0,
+        "meditation_operation_sequence": 0,
         "next_meditation_cost": 5,
         "pack_open_sequence": 0,
         "strategy_source_fingerprint": _combined_fingerprint(
@@ -1389,6 +1496,36 @@ func _take_candidate(candidates: Array, rng: RandomNumberGenerator) -> Dictionar
     var value: Dictionary = candidates[index].duplicate(true)
     candidates.remove_at(index)
     return value
+
+func _collect_command_requests(value) -> Array:
+    var result: Array = []
+    var seen: Dictionary = {}
+    _append_command_requests(value, result, seen)
+    return result
+
+func _append_command_requests(
+        value,
+        result: Array,
+        seen: Dictionary) -> void:
+    if value is Array:
+        for entry in value:
+            _append_command_requests(entry, result, seen)
+        return
+    if not value is Dictionary:
+        return
+    var requests = value.get("command_requests")
+    if requests is Array:
+        for request_value in requests:
+            if not request_value is Dictionary:
+                continue
+            var token := str(request_value.get("request_token", ""))
+            if token == "" or seen.has(token):
+                continue
+            seen[token] = true
+            result.append(request_value.duplicate(true))
+    for key in value:
+        if str(key) != "command_requests":
+            _append_command_requests(value[key], result, seen)
 
 func _sample_ids(
         values: Array,

@@ -60,8 +60,21 @@ func apply(effect: Dictionary, context) -> Dictionary:
 	match str(effect.get("op", "")):
 		"set_experience":
 			var before := int(context.growth.experience)
-			context.growth.experience = int(effect.get("amount", 0))
-			return _applied("set_experience", {"experience_before": before, "experience_after": context.growth.experience})
+			var changed: Dictionary = context.change_run_experience(
+				int(effect.get("amount", 0)) - before,
+				"set_experience", "consumable_set_experience")
+			if not changed.get("success", false):
+				return changed
+			var result := _applied("set_experience", {
+				"experience_before": before,
+				"experience_after": int(changed.get("experience_after", before)),
+				"experience_change": changed.duplicate(true),
+			})
+			result["committed_events"] = changed.get(
+				"committed_events", []).duplicate(true)
+			result["command_requests"] = changed.get(
+				"command_requests", []).duplicate(true)
+			return result
 		"remove_run_cards_for_experience":
 			return _remove_for_experience(effect, context)
 		"rewrite_technique_progression":
@@ -84,13 +97,22 @@ func _remove_for_experience(effect: Dictionary, context) -> Dictionary:
 		return result
 	var amount: int = result.get("removed", []).size() * int(effect.get("experience_per_card", 0))
 	var before := int(context.growth.experience)
-	context.growth.experience = before + amount
-	return _applied("remove_run_cards_for_experience", {
+	var changed: Dictionary = context.change_run_experience(
+		amount, "remove_run_cards_for_experience", "consumable_card_removal")
+	if not changed.get("success", false):
+		return changed
+	var applied := _applied("remove_run_cards_for_experience", {
 		"removed": result.get("removed", []).duplicate(true),
 		"experience_gained": amount,
 		"experience_before": before,
-		"experience_after": context.growth.experience,
+		"experience_after": int(changed.get("experience_after", before)),
+		"experience_change": changed.duplicate(true),
 	})
+	applied["committed_events"] = changed.get(
+		"committed_events", []).duplicate(true)
+	applied["command_requests"] = changed.get(
+		"command_requests", []).duplicate(true)
+	return applied
 
 func _rewrite(effect: Dictionary, context) -> Dictionary:
 	var result: Dictionary = context.rewrite_technique_progression(

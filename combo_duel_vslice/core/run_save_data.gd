@@ -18,6 +18,7 @@ const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 const RunCombatHistoryScript = preload("res://core/run_combat_history.gd")
+const RunCommandRequestScript = preload("res://core/run_command_request.gd")
 
 const SCHEMA_VERSION := 1
 const CONTENT_VERSION := 2
@@ -58,6 +59,7 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
         },
         "map_state": {
             "act": int(run_session.navigation.act),
+            "generation_serial": int(run_session.navigation.generation_serial),
             "graph": run_session.navigation.graph.duplicate(true),
         },
         "node_state": {
@@ -70,6 +72,7 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
             "practice_is_open": run_session._run_state.practice_is_open,
             "practice_open_sequence": run_session._run_state.practice_open_sequence,
             "committed_passive_event_tokens": run_session._run_state.committed_passive_event_tokens.duplicate(),
+            "run_command_receipts": run_session._run_state.run_command_receipts.duplicate(true),
             "resume_policy": (
                 "show_terminal"
                 if phase in ["run_complete", "run_terminated"]
@@ -82,6 +85,10 @@ func capture(run_session: RunSession, content_version_value: int = CONTENT_VERSI
         },
         "growth": {
             "experience": int(run_session.growth.experience),
+            "free_meditation_charge": int(run_session.growth.free_meditation_charge),
+            "experience_operation_receipts": run_session.growth.experience_operation_receipts.duplicate(true),
+            "consumable_capacity": int(run_session.growth.consumable_capacity_at_last_commit),
+            "consumable_overflow_count": int(run_session.growth.consumable_overflow_count),
             "life": int(run_session.growth.life),
             "max_life": int(run_session.growth.max_life),
             "base_max_life": int(run_session.growth.base_max_life),
@@ -141,6 +148,8 @@ func validate(content_catalog = null) -> Array[String]:
             or not graph.get("edges", []) is Array:
         errors.append("地图状态 graph 结构无效")
         return errors
+    if int(map_state.get("generation_serial", 0)) < 0:
+        errors.append("generation_serial 必须是非负整数")
     var node_ids: Dictionary = {}
     for node in graph.get("nodes", []):
         if not node is Dictionary or str(node.get("id", "")) == "":
@@ -181,6 +190,32 @@ func validate(content_catalog = null) -> Array[String]:
                         or token == "" or seen_tokens.has(token):
                     errors.append("committed_passive_event_tokens 包含空值或重复值")
                 seen_tokens[token] = true
+    if node_state.has("run_command_receipts"):
+        var command_receipts = node_state["run_command_receipts"]
+        if not command_receipts is Dictionary:
+            errors.append("run_command_receipts 必须是对象")
+        else:
+            for receipt_token_value in command_receipts:
+                var receipt_token := str(receipt_token_value)
+                var receipt = command_receipts[receipt_token_value]
+                if receipt_token == "" or not receipt is Dictionary:
+                    errors.append("run_command_receipts 包含无效回执")
+                    continue
+                if str(receipt.get("request_token", "")) != receipt_token:
+                    errors.append("Run command 回执 token 与索引键不一致")
+                if not bool(receipt.get("success", false)):
+                    errors.append("Run command 回执只能保存成功提交")
+                if str(receipt.get("command", "")) \
+                        not in RunCommandRequestScript.ALLOWED_COMMANDS:
+                    errors.append("Run command 回执包含未登记命令")
+                if str(receipt.get("source_kind", "")) \
+                        not in ["item", "inner_skill", "rule"] \
+                        or str(receipt.get("source_id", "")) == "" \
+                        or str(receipt.get("source_instance_key", "")) == "":
+                    errors.append("Run command 回执缺少合法来源身份")
+                if int(receipt.get("generation_serial", -1)) < 0 \
+                        or int(receipt.get("act", 0)) < 1:
+                    errors.append("Run command 回执地图序号无效")
     if not ALLOWED_PHASES.has(phase):
         errors.append("本局阶段不是合法节点边界：%s" % phase)
     if current_node_id != "" and not node_ids.has(current_node_id):
@@ -218,10 +253,15 @@ func validate(content_catalog = null) -> Array[String]:
         errors.append("非奖励边界不能保存 pending_reward")
     if int(growth.get("experience", -1)) < 0:
         errors.append("历练不能为负数")
-    if growth.get("consumable_ids", []) is Array \
-            and growth.get("consumable_ids", []).size() \
-            > GrowthInventoryScript.CONSUMABLE_LIMIT:
-        errors.append("共享消耗品栏不能超过 %d 格" % GrowthInventoryScript.CONSUMABLE_LIMIT)
+    if int(growth.get("free_meditation_charge", 0)) not in [0, 1]:
+        errors.append("免费冥想机会必须为 0 或 1")
+    if growth.get("consumable_ids", []) is Array:
+        var saved_count: int = growth.get("consumable_ids", []).size()
+        var saved_capacity := int(growth.get(
+            "consumable_capacity", GrowthInventoryScript.BASE_CONSUMABLE_CAPACITY))
+        var saved_overflow := int(growth.get("consumable_overflow_count", 0))
+        if saved_overflow != maxi(saved_count - saved_capacity, 0):
+            errors.append("共享消耗品栏 overflow 状态与保存容量不一致")
     if not growth.get("item_ids", []) is Array:
         errors.append("物品 ID 列表必须是数组")
     if growth.has("consumable_use_sequence") \
@@ -344,6 +384,7 @@ func restore_session(
     var navigation = MapNavigationServiceScript.new()
     navigation.seed = int(run["seed"])
     navigation.act = int(map_state["act"])
+    navigation.generation_serial = int(map_state.get("generation_serial", 0))
     navigation.graph = map_state["graph"].duplicate(true)
     navigation.phase = str(node_state["phase"])
     navigation.current_node_id = str(node_state["current_node_id"])
@@ -371,6 +412,13 @@ func restore_session(
         "source_marker_state": growth_state.get("source_marker_state", {
             "schema_version": 1, "entries": [],
         }),
+        "free_meditation_charge": int(growth_state.get("free_meditation_charge", 0)),
+        "experience_operation_receipts": growth_state.get(
+            "experience_operation_receipts", {}).duplicate(true),
+        "consumable_capacity": int(growth_state.get(
+            "consumable_capacity", GrowthInventoryScript.BASE_CONSUMABLE_CAPACITY)),
+        "consumable_overflow_count": int(growth_state.get(
+            "consumable_overflow_count", 0)),
     }
     if growth_state.has("hand_technique_progression"):
         progress_values["hand_technique_progression"] = growth_state["hand_technique_progression"]
@@ -378,6 +426,16 @@ func restore_session(
         progress_values["practice_shop_state"] = growth_state["practice_shop_state"]
     if growth_state.has("consumable_use_sequence"):
         progress_values["consumable_use_sequence"] = growth_state["consumable_use_sequence"]
+    if growth_state.has("free_meditation_charge"):
+        progress_values["free_meditation_charge"] = growth_state["free_meditation_charge"]
+    if growth_state.has("experience_operation_receipts"):
+        progress_values["experience_operation_receipts"] = growth_state[
+            "experience_operation_receipts"]
+    if growth_state.has("consumable_capacity"):
+        progress_values["consumable_capacity"] = growth_state["consumable_capacity"]
+    if growth_state.has("consumable_overflow_count"):
+        progress_values["consumable_overflow_count"] = growth_state[
+            "consumable_overflow_count"]
     if growth_state.has("last_recallable_consumable_id"):
         progress_values["last_recallable_consumable_id"] = (
             growth_state["last_recallable_consumable_id"])
@@ -407,6 +465,8 @@ func restore_session(
     # 但来源是可派生状态，恢复时明确忽略，后续事件从当前 growth 重新捕获。
     state.committed_passive_event_tokens.assign(node_state.get(
         "committed_passive_event_tokens", []))
+    state.run_command_receipts = node_state.get(
+        "run_command_receipts", {}).duplicate(true)
     var terminal_value: Dictionary = node_state.get("terminal_result", {})
     if terminal_value.is_empty() and navigation.phase == "run_complete":
         var legacy_node: Dictionary = navigation.node_definition(
@@ -767,6 +827,8 @@ func _normalize_v1_types() -> void:
     var map_state = _data.get("map_state", {})
     if map_state is Dictionary:
         map_state["act"] = int(map_state.get("act", 1))
+        map_state["generation_serial"] = int(map_state.get(
+            "generation_serial", 0))
         _normalize_graph(map_state.get("graph", {}))
     var node_state = _data.get("node_state", {})
     if node_state is Dictionary:
@@ -793,6 +855,15 @@ func _normalize_v1_types() -> void:
     _normalize_optional_integer(growth, "consumable_use_sequence")
     _normalize_optional_integer(growth, "forgotten_inner_skill_count")
     _normalize_optional_integer(growth, "base_hand_limit_modifier")
+    _normalize_optional_integer(growth, "free_meditation_charge")
+    _normalize_optional_integer(growth, "consumable_capacity")
+    _normalize_optional_integer(growth, "consumable_overflow_count")
+    if not growth.has("consumable_capacity"):
+        growth["consumable_capacity"] = GrowthInventoryScript.BASE_CONSUMABLE_CAPACITY
+    if not growth.has("consumable_overflow_count"):
+        growth["consumable_overflow_count"] = maxi(
+            growth.get("consumable_ids", []).size() \
+                - int(growth["consumable_capacity"]), 0)
     var passive_counter_state = growth.get("passive_counter_state", {})
     if passive_counter_state is Dictionary:
         _normalize_optional_integer(passive_counter_state, "version")
@@ -825,7 +896,8 @@ func _normalize_v1_types() -> void:
         shop.erase("coupon_slots")
         for field in [
                 "shop_index", "act", "meditation_count",
-                "next_meditation_cost", "pack_open_sequence"]:
+                "next_meditation_cost", "meditation_operation_sequence",
+                "pack_open_sequence"]:
             if shop.has(field):
                 shop[field] = int(shop[field])
         for group in ["normal", "packs", "items"]:
@@ -860,7 +932,9 @@ func _normalize_optional_integer(values: Dictionary, field: String) -> void:
 func _normalize_graph(graph) -> void:
     if not graph is Dictionary:
         return
-    for field in ["seed", "act", "width", "route_rows", "boss_variant"]:
+    for field in [
+            "seed", "act", "generation_serial", "width", "route_rows",
+            "boss_variant"]:
         graph[field] = int(graph.get(field, 0))
     for node in graph.get("nodes", []):
         if not node is Dictionary:

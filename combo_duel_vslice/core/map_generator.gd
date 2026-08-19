@@ -23,9 +23,13 @@ func configure(definition: Dictionary) -> bool:
     rules = definition.duplicate(true)
     return not rules.is_empty()
 
-func generate(seed_value: int, act: int = 1) -> Dictionary:
+func generate(
+        seed_value: int,
+        act: int = 1,
+        generation_serial: int = 0) -> Dictionary:
     var rng := RandomNumberGenerator.new()
-    rng.seed = seed_value + _act_seed_offset(act)
+    rng.seed = seed_value + _act_seed_offset(act) \
+        + int(generation_serial) * 104729
     var width: int = int(rules.get("width", 7))
     var route_rows: int = int(rules.get("route_rows", 15))
     var path_count: int = int(rules.get("path_count", 6))
@@ -88,13 +92,15 @@ func generate(seed_value: int, act: int = 1) -> Dictionary:
     return {
         "seed": seed_value,
         "act": act,
+        "generation_serial": generation_serial,
         "width": width,
         "route_rows": route_rows,
         "visual_jitter_x": float(rules.get("visual_jitter_x", 22)),
         "visual_jitter_y": float(rules.get("visual_jitter_y", 10)),
         "start_id": START_ID,
         "boss_id": boss_id,
-        "boss_variant": _boss_variant(seed_value, act),
+        "boss_variant": _boss_variant(
+            seed_value + int(generation_serial) * 104729, act),
         "nodes": nodes,
         "edges": edges,
     }
