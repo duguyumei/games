@@ -1604,7 +1604,7 @@
 | F. 追击统一 | 部分已有 | 追击复用正式伤害，旧`source_kind="chase"`仍有兼容处理；缺结构化追击令牌和`chase_resolved`提交事件。 |
 | G. 格挡、卸力与攻击取消 | 底层已完成 | `block_sources`已扩展为`cancel_kind`类型化来源；`grant_deflection`、先卸力后格挡、击穿消费、`deflection_resolved`、`attack_canceled`、同步flush回滚和AI/UI投影均已完成；具体内容仍未接入。 |
 | H. 消耗真气 | 底层已完成 | `prepare/commit_qi_consumption`复用唯一临时移出链，已提供`cause=cost`、逐牌`qi_consumed`、批量幂等与支付—后效全回滚；六个消费者仍未接入。 |
-| I. 燃尽、焕发与异状迁移 | 仍缺 | `StatusSystem`、净化、分类和生命周期可复用；燃尽尚未完成debuff迁移，焕发尚无统一状态与有效真气值阶段。 |
+| I. 燃尽、焕发与异状迁移 | 底层已完成 | 燃尽已机械迁移为debuff；焕发作为非叠层buff进入统一有效真气值、净化、快照与战斗结束生命周期。具体内功仍未接入。 |
 | J. 新事件、查询、计数器与效果端口 | 部分已有 | run/battle计数器、临时功法事件、来源marker、调用/响应/延迟均已有；只保留矩阵中精确缺口，禁止照旧表重复建设。 |
 | K. 现有内容迁移 | 部分已有 | 8门候选仍统一暂缓；万法传薪所需临时功法底层和稳定实例已经存在；三门蓄力的通用声明已可用但内容仍未创建。 |
 | L. 回归测试 | 仍缺 | 本次只做文档审计，未接入166门内容，也未补内容行为测试。 |
@@ -1623,9 +1623,9 @@
 
 因此《净秽得财》《寄脉纳气》《净后新芽》《施蛊养势》所依赖的状态变化底层事实已经满足，
 《毒木生甲》的“毒实际新增”事实和准确有效真气值查询底层均已满足；《异形成株》的
-临时重塑实际新增/替换事实已满足，但临时炽气来源层仍未实现。以上内功均仍处于“底层已满足或部分
+临时重塑实际新增/替换事实已满足，临时炽气来源层也已由后续生命周期平台完成。以上内功均仍处于“底层已满足或部分
 满足、等待内容接入”状态，本批没有实现任何一门内功、没有修改效果或数值；
-`effective_qi_staged_query`已在下一底层批次完成，成长额外触发、燃尽/焕发迁移和临时炽气规则仍未开始。
+`effective_qi_staged_query`、成长额外触发、燃尽/焕发迁移和临时炽气规则均已在后续底层批次完成；具体内容仍未接入。
 
 ## 18. 2026-08-17 有效真气值阶段查询状态
 
@@ -1864,3 +1864,29 @@ Invocation顺序归并当前来源并最终限制为不小于0；UI、AI和预�
 “连势 当前值/有效上限”。专项只使用合成来源验证每个来源`+20`、多来源叠加、敌我隔离、压制与稳定
 breakdown/fingerprint；没有录入《广炉容火》或任何其他正式内容。正式内功仍为13门、物品仍为7件，
 剩余153门内功、13件物品和8门暂缓功法均不变；能力矩阵更新为已有／合并21、B 12、C1 14、C2 0、D 1。
+
+## 28. 2026-08-19 牌区与真气状态生命周期底层状态
+
+`card_disposition_replacement`与`draw_depletion_replacement_transaction`已在唯一`CardZoneService`事务中
+完成。来源中立规则只通过既有`PassiveRuleRuntime/ExecutionPlan/Invocation`返回计划；虚无消散优先，
+牌库底替换仍保留逻辑明确弃置，永久移出只修改本场Run牌组工作副本。耗尽洗回、随机排序和继续原抽牌请求
+属于同一`BattleRuntimeMutationTransaction`，空弃牌堆不消费来源，任一失败恢复牌区、来源状态、事件和RNG。
+
+`temporary_blazing_source_layers`、`burnout_debuff_and_flourish_status`与
+`card_lifecycle_removed_state_claim`共享`QiCard/CardAnomalyService/CardStateLifecycle`状态模型。临时炽气
+按稳定来源实例分层，只在真正进入弃牌堆与战斗结束清除，进入battle快照但不进入Run持久数据。燃尽已从
+mark机械迁移为debuff，焕发为非叠层buff；有效真气顺序为既有加减／来源层、焕发倍乘、燃尽最终置0。
+状态移除claim只存在于单次入堆生命周期，第一个成功Invocation独占，失败或回滚不消费。
+
+成长继续由`CardStatusBehaviorService`编排，并接入既有`PassiveRuleRuntime/ExecutionPlan`形成额外触发计划；
+多来源按稳定Invocation累加，额外触发不递归。每次实际产出由`CardAnomalyService`逐牌提交一份
+`growth_trigger_resolved`，无产出或回滚不发送。临时真气复制继续只走
+`BattleCardEffectService.generate_temporary_normal_card`，复制基础字段与永久重塑，不复制战斗异状、临时
+重塑或临时炽气，默认携带虚无并通过现有`card_moved(from=generated)`提交。
+
+同一EffectSpec的多牌移动由`TechniqueEffectExecutor`分配稳定`effect_execution_token`，成功后
+`BattleCardEffectService`只根据已提交逐牌条目发布一份`effect_card_batch_committed`；逐牌`card_moved`与
+`card_explicitly_discarded`继续保留，失败或回滚不产生批次汇总。本批没有录入任何内功、物品或功法，
+正式内功仍为13门、物品7件；剩余153门内功、13件物品与8门暂缓功法不变。能力矩阵更新为已有／合并30、
+B 8、C1 9、C2 0、D 1。依赖这些能力的正文仍须用来源中立Handler按`merge_family`接入，不能据此标记为
+正式实现。

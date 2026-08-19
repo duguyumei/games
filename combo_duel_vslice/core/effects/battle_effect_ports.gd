@@ -129,6 +129,16 @@ func transaction_sides() -> Array:
 func transaction_trigger_queue():
     return _trigger_queue
 
+func begin_effect_mutation_transaction() -> Dictionary:
+    return BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+
+func commit_effect_mutation_transaction(transaction: Dictionary) -> Dictionary:
+    return BattleRuntimeMutationTransactionScript.commit(transaction)
+
+func rollback_effect_mutation_transaction(transaction: Dictionary) -> bool:
+    return BattleRuntimeMutationTransactionScript.rollback(transaction)
+
 func use_battle_instance_id(value: String) -> void:
     _source_resource_effect_service.use_battle_instance_id(value)
 
@@ -815,11 +825,11 @@ func discard_random(
         side: BattleSide,
         count: int,
         rng: RandomNumberGenerator,
-        source_value = "") -> Array:
+        source_value = "") -> Dictionary:
     return _card_effect_service.discard_random(
         side, count, rng, _effect_source_metadata(source_value))
 
-func discard_all(side: BattleSide, source_value = "") -> Array:
+func discard_all(side: BattleSide, source_value = "") -> Dictionary:
     return _card_effect_service.discard_all(
         side, _effect_source_metadata(source_value))
 
@@ -836,9 +846,12 @@ func move_card(
         source_side, source_zone, target_side, destination_zone, card,
         reason, placement, _effect_source_metadata(source_kind))
 
-func move_cards_synchronously(records: Array, source_value = "") -> Array:
+func move_cards_synchronously(records: Array, source_value = "") -> Dictionary:
     return _card_effect_service.move_cards_synchronously(
         records, _effect_source_metadata(source_value))
+
+func commit_effect_card_batch(context) -> Dictionary:
+    return _card_effect_service.commit_effect_card_batch(context)
 
 func transfer_cards_atomically(records: Array, source_value = "") -> Array:
     return _card_effect_service.transfer_cards_atomically(
@@ -897,6 +910,13 @@ func set_card_anomaly_layers(
         event_metadata: Dictionary = {}) -> Dictionary:
     return _card_effect_service.set_card_anomaly_layers(
         card, category, anomaly_id, layers, source, event_metadata)
+
+func add_temporary_blazing_layers(
+        card, source_instance_key: String, layers: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.add_temporary_blazing_layers(
+        card, source_instance_key, layers, source, event_metadata)
 
 func apply_temporary_enhancement(
         card, enhancement_id: String, source: String = "效果",

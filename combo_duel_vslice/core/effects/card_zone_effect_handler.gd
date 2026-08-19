@@ -73,19 +73,33 @@ func execute(effect: Dictionary, context):
         "discard_random":
             var count: int = value_resolver.resolve(effect.get("count", {}), runtime)
             var discard_side = _resolve_side(runtime, str(effect.get("side", "actor")))
-            var discarded: Array = (
+            var discard_result: Dictionary = (
                 runtime.ports.discard_random(
                     discard_side, count, rng, runtime.source_metadata())
-                if runtime.ports != null else discard_side.random_discard(count, rng))
+                if runtime.ports != null else {
+                    "success": true,
+                    "cards": discard_side.random_discard(count, rng),
+                })
+            if not discard_result.get("success", false):
+                return EffectResultScript.failed(str(discard_result.get(
+                    "reason", "随机弃牌提交失败")))
+            var discarded: Array = discard_result.get("cards", [])
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = discarded
             return EffectResultScript.succeeded("随机弃 %d 张" % discarded.size())
         "discard_all_hand":
             var discard_side = _resolve_side(runtime, str(effect.get("side", "actor")))
-            var discarded: Array = (
+            var discard_result: Dictionary = (
                 runtime.ports.discard_all(
                     discard_side, runtime.source_metadata())
-                if runtime.ports != null else discard_side.discard_all())
+                if runtime.ports != null else {
+                    "success": true,
+                    "cards": discard_side.discard_all(),
+                })
+            if not discard_result.get("success", false):
+                return EffectResultScript.failed(str(discard_result.get(
+                    "reason", "全部弃牌提交失败")))
+            var discarded: Array = discard_result.get("cards", [])
             runtime.captures[effect.get("capture", "discarded")] = discarded
             return EffectResultScript.succeeded(
                 "弃掉全部剩余手牌 %d 张" % discarded.size())
@@ -492,8 +506,12 @@ func _synchronous_discard_queries(effect: Dictionary, runtime):
                 "destination_zone": "discard_pile", "card": card,
                 "reason": "explicit_discard",
             })
-    var moved: Array = runtime.ports.move_cards_synchronously(
+    var batch: Dictionary = runtime.ports.move_cards_synchronously(
         records, runtime.source_metadata())
+    if not batch.get("success", false):
+        return EffectResultScript.failed(str(batch.get(
+            "reason", "同步弃置提交失败")))
+    var moved: Array = batch.get("cards", [])
     runtime.captures[str(effect.get("capture", "synchronously_discarded"))] = moved
     return EffectResultScript.succeeded("同步弃置%d张真气" % moved.size())
 
@@ -516,8 +534,12 @@ func _discard_duplicate_ranks(effect: Dictionary, runtime):
                 records.append({"side": side, "source_zone": "hand",
                     "destination_zone": "discard_pile", "card": card,
                     "reason": "explicit_discard"})
-    var moved: Array = runtime.ports.move_cards_synchronously(
+    var batch: Dictionary = runtime.ports.move_cards_synchronously(
         records, runtime.source_metadata())
+    if not batch.get("success", false):
+        return EffectResultScript.failed(str(batch.get(
+            "reason", "重复牌阶弃置提交失败")))
+    var moved: Array = batch.get("cards", [])
     runtime.captures[str(effect.get("capture", "discarded"))] = moved
     return EffectResultScript.succeeded("重复牌阶弃置%d张" % moved.size())
 
@@ -547,8 +569,12 @@ func _discard_by_visible_attribute(effect: Dictionary, runtime):
             records.append({"side": side, "source_zone": "hand",
                 "destination_zone": "discard_pile", "card": card,
                 "reason": "explicit_discard"})
-    var moved: Array = runtime.ports.move_cards_synchronously(
+    var batch: Dictionary = runtime.ports.move_cards_synchronously(
         records, runtime.source_metadata())
+    if not batch.get("success", false):
+        return EffectResultScript.failed(str(batch.get(
+            "reason", "属性弃置提交失败")))
+    var moved: Array = batch.get("cards", [])
     runtime.captures[str(effect.get("capture", "discarded"))] = moved
     runtime.captures[str(effect.get("attribute_capture", "selected_attribute"))] = \
         [{"attribute": selected}]
@@ -605,8 +631,12 @@ func _discard_captured_by_selected_base_attribute(effect: Dictionary, runtime):
             "card": card,
             "reason": "explicit_discard",
         })
-    var moved: Array = runtime.ports.move_cards_synchronously(
+    var batch: Dictionary = runtime.ports.move_cards_synchronously(
         records, runtime.source_metadata())
+    if not batch.get("success", false):
+        return EffectResultScript.failed(str(batch.get(
+            "reason", "展示牌弃置提交失败")))
+    var moved: Array = batch.get("cards", [])
     runtime.captures[str(effect.get("result_capture", "discarded"))] = moved
     runtime.captures[str(effect.get("attribute_capture", "selected_attribute"))] = [{
         "attribute": selected_attribute,

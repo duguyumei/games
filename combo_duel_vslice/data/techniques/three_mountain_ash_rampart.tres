@@ -16,5 +16,5 @@ power_formation={}
 semantic_tags=Array[String](["defense","discard","extra_card_commitment"])
 public_behavior_summary=Array[String](["defense","discard","extra_card_commitment"])
 implementation_category="C"
-effects=[{"op":"capture_query","phase":"prepare","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"mark","id":"burned_out","present":true}}},"capture":"burned_hand"},{"op":"defense","amount":{"kind":"power"}},{"op":"move_captured","capture":"burned_hand","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"ash_discarded"},{"op":"defense","amount":{"kind":"capture_base_qi_sum","capture":"ash_discarded"}}]
+effects=[{"op":"capture_query","phase":"prepare","query":{"side":"actor","zone":"hand","order":"zone","limit":-1,"filters":{"card_kind":"normal","anomaly":{"category":"debuff","id":"burned_out","present":true}}},"capture":"burned_hand"},{"op":"defense","amount":{"kind":"power"}},{"op":"move_captured","capture":"burned_hand","from_side":"actor","from_zone":"hand","to_side":"actor","to_zone":"discard_pile","reason":"explicit_discard","result_capture":"ash_discarded"},{"op":"defense","amount":{"kind":"capture_base_qi_sum","capture":"ash_discarded"}}]
 

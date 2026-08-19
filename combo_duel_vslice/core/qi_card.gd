@@ -35,6 +35,9 @@ var temporary_reshapes: Dictionary = {
     "attribute": "",
     "rank": {},
 }
+## 战斗内按来源实例保存的临时炽气。它与普通 qi_heat 共用有效真气值
+## 管线，但不进入持久牌面快照；生命周期清理和事务恢复都读取此字段。
+var temporary_blazing_layers: Dictionary = {}
 ## 本源改造提交前的基础身份。只有存在本源时才非空；归元读取此快照，
 ## 不反向猜测已经物化到 definition_id/rank/attribute/qi_value 的旧身份。
 var origin_base_identity: Dictionary = {}
@@ -190,6 +193,38 @@ func anomaly_layers(category: String, anomaly_id: String) -> int:
         "mark": return 1 if anomalies["marks"].has(anomaly_id) else 0
     return 0
 
+func normal_blazing_layers() -> int:
+    return anomaly_layers("buff", "qi_heat")
+
+func temporary_blazing_layers_total() -> int:
+    var total := 0
+    for value in temporary_blazing_layers.values():
+        total += maxi(0, int(value))
+    return total
+
+func total_blazing_layers() -> int:
+    return normal_blazing_layers() + temporary_blazing_layers_total()
+
+func add_temporary_blazing_layers(
+        source_instance_key: String, layers: int) -> Dictionary:
+    if source_instance_key == "" or layers <= 0:
+        return {"success": false, "reason": "临时炽气需要稳定来源和正层数"}
+    var before := int(temporary_blazing_layers.get(source_instance_key, 0))
+    temporary_blazing_layers[source_instance_key] = before + layers
+    return {
+        "success": true,
+        "changed": true,
+        "source_instance_key": source_instance_key,
+        "before": before,
+        "after": before + layers,
+        "added": layers,
+    }
+
+func clear_temporary_blazing_layers() -> Dictionary:
+    var removed := temporary_blazing_layers.duplicate(true)
+    temporary_blazing_layers.clear()
+    return removed
+
 func current_state() -> Dictionary:
     return anomalies["state"].duplicate(true)
 
@@ -321,6 +356,7 @@ func clear_anomalies() -> Dictionary:
     anomalies["debuffs"].clear()
     anomalies["state"].clear()
     anomalies["marks"].clear()
+    removed["temporary_blazing_layers"] = clear_temporary_blazing_layers()
     return removed
 
 func clear_combat_state() -> void:
@@ -403,6 +439,7 @@ func to_dict() -> Dictionary:
         "reshapes": active_reshape_state(),
         "anomalies": anomaly_snapshot(),
         "temporary_reshapes": temporary_reshapes.duplicate(true),
+        "temporary_blazing_layers": temporary_blazing_layers.duplicate(true),
         "original_owner_id": original_owner_id,
         "temporary_card": temporary_card,
     }

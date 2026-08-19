@@ -49,11 +49,11 @@ func _test_burn_poison_and_heat_momentum() -> void:
     engine.status_system.apply_card_anomaly(poison, "state", "poison", {}, "测试")
     var result: Dictionary = engine.effect_executor.execute_all([
         {"op":"capture_metadata","capture":"card","result_capture":"before"},
-        {"op":"apply_card_anomaly_to_captured","capture":"card","category":"mark","anomaly":"burned_out","result_capture":"burned"},
+        {"op":"apply_card_anomaly_to_captured","capture":"card","category":"debuff","anomaly":"burned_out","result_capture":"burned"},
         {"op":"write_momentum","operation":"add","amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"before","field":"effective_qi"},"divisor":2},"when":{"capture_nonempty":"burned"}},
     ], _context(engine, {"card":[poison]}))
     _assert_true(result.get("success", false), "焚蛊催势依赖链成功")
-    _assert_true(poison.has_anomaly("state", "poison") and poison.has_anomaly("mark", "burned_out"), "燃尽不触发或清除毒")
+    _assert_true(poison.has_anomaly("state", "poison") and poison.has_anomaly("debuff", "burned_out"), "燃尽不触发或清除毒")
     _assert_equal(engine.player.momentum_value, 4, "焚蛊按燃尽前V/2获得连势")
     var heat = _card("5")
     engine.status_system.apply_card_anomaly(heat, "buff", "qi_heat", {}, "测试", 6)

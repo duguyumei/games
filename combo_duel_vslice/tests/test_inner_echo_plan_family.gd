@@ -453,7 +453,7 @@ func _plan_engine(inner_ids: Array, sequence: Array):
 
 func _manual_burnout_advance_engine(inner_ids: Array):
     var engine = _plan_engine(inner_ids, ["probe", "other", "third"])
-    engine.player.hand[0].set_anomaly("mark", "burned_out")
+    engine.player.hand[0].set_anomaly("debuff", "burned_out")
     return engine
 
 

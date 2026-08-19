@@ -127,7 +127,7 @@ func _test_intrinsic_pipeline_unchanged() -> void:
     _assert_query_matches_intrinsic(service, owner, card, "炽气")
     card.set_anomaly("debuff", "qi_wither", {}, 1)
     _assert_query_matches_intrinsic(service, owner, card, "枯气")
-    card.set_anomaly("mark", "burned_out")
+    card.set_anomaly("debuff", "burned_out")
     _assert_equal(_query(service, owner, card).effective_value, 0,
         "燃尽仍在卡牌自身阶段最终覆盖为零")
 

@@ -239,7 +239,7 @@ func _test_synchronous_and_cross_holder_facts() -> void:
                 all_arrived_probe["visible"] = all_arrived_probe["visible"] \
                     and engine.player.discard_pile.has(first) \
                     and engine.player.discard_pile.has(second))
-    var synchronized: Array = engine.effect_ports.move_cards_synchronously([
+    var synchronized: Dictionary = engine.effect_ports.move_cards_synchronously([
         {"side": engine.player, "source_zone": "hand",
             "destination_zone": "discard_pile", "card": first,
             "reason": "effect"},
@@ -247,7 +247,8 @@ func _test_synchronous_and_cross_holder_facts() -> void:
             "destination_zone": "discard_pile", "card": second,
             "reason": "effect"},
     ], "rule")
-    _assert_equal(synchronized.size(), 2, "同步移动提交两张牌")
+    _assert_true(synchronized.get("success", false), "同步移动批次提交成功")
+    _assert_equal(synchronized.get("cards", []).size(), 2, "同步移动提交两张牌")
     _assert_equal(moved_entries.size(), 2, "同步移动每张一个通用事实")
     _assert_true(all_arrived_probe["visible"], "观察者不会看到半完成批次")
     var first_fact: Dictionary = moved_entries[0]["values"]

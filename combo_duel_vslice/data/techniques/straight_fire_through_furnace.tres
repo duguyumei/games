@@ -14,4 +14,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","true_damage"])
 public_behavior_summary=Array[String](["damage","true_damage"])
 implementation_category="B"
-effects=[{"op":"capture_group_cards","phase":"prepare","kind":"contributing","anomaly":{"category":"mark","id":"burned_out","present":true},"capture":"burned"},{"op":"damage","amount":{"kind":"power"}},{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_card_base_qi_sum","capture":"burned"},"divisor":2}}]
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"contributing","anomaly":{"category":"debuff","id":"burned_out","present":true},"capture":"burned"},{"op":"damage","amount":{"kind":"power"}},{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_card_base_qi_sum","capture":"burned"},"divisor":2}}]

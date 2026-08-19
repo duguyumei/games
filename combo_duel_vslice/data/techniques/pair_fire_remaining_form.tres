@@ -14,4 +14,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","true_damage","retrigger_sensitive"])
 public_behavior_summary=Array[String](["damage","true_damage"])
 implementation_category="B"
-effects=[{"op":"capture_group_cards","phase":"prepare","kind":"pair_component","anomaly":{"category":"mark","id":"burned_out","present":true},"capture":"burned_pairs"},{"op":"damage","amount":{"kind":"power"}},{"op":"for_each_captured","capture":"burned_pairs","effects":[{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_card_base_qi_sum","capture":"each"},"divisor":2}}]}]
+effects=[{"op":"capture_group_cards","phase":"prepare","kind":"pair_component","anomaly":{"category":"debuff","id":"burned_out","present":true},"capture":"burned_pairs"},{"op":"damage","amount":{"kind":"power"}},{"op":"for_each_captured","capture":"burned_pairs","effects":[{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_card_base_qi_sum","capture":"each"},"divisor":2}}]}]

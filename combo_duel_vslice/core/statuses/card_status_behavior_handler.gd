@@ -70,13 +70,15 @@ func _grow_anomaly_layers(context) -> Dictionary:
     var layers: int = context.card.anomaly_layers(context.category, context.status_id)
     if layers <= 0:
         return {"success": true, "applied": false}
-    return context.card_anomaly_service.apply_card_anomaly(
+    return context.card_anomaly_service.trigger_growth(
         context.card,
+        context.holder,
+        layers,
         str(context.behavior.get("category", "")),
         str(context.behavior.get("anomaly", "")),
-        {},
-        str(context.definition.get("name", context.status_id)),
-        layers)
+        context.extra_trigger,
+        context.trigger_sequence,
+        context.growth_source_metadata)
 
 func _decrement_state_layer(context) -> Dictionary:
     var layers: int = context.card.anomaly_layers("state", context.status_id)

@@ -70,7 +70,7 @@ func _test_poison_totals_and_burnout() -> void:
     var deck_poison = _card("4")
     for card in [hand_poison, burned, deck_poison]:
         engine.status_system.apply_card_anomaly(card, "state", "poison", {}, "测试")
-    engine.status_system.apply_card_anomaly(burned, "mark", "burned_out", {}, "测试")
+    engine.status_system.apply_card_anomaly(burned, "debuff", "burned_out", {}, "测试")
     engine.player.hand = [hand_poison, burned]
     engine.player.draw_pile = [deck_poison]
     var totals: Dictionary = engine.player.poison_totals()

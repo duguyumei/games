@@ -227,11 +227,12 @@ func _test_atomic_exchange_and_synchronous_discard() -> void:
     var target_discard = _card("8", "forest")
     engine.player.hand = [actor_discard]
     engine.enemy.hand = [target_discard]
-    var moved: Array = engine.effect_ports.move_cards_synchronously([
+    var moved: Dictionary = engine.effect_ports.move_cards_synchronously([
         {"side":engine.player,"source_zone":"hand","destination_zone":"discard_pile","card":actor_discard,"reason":"explicit_discard"},
         {"side":engine.enemy,"source_zone":"hand","destination_zone":"discard_pile","card":target_discard,"reason":"explicit_discard"},
     ])
-    _assert_equal(moved.size(), 2, "双方目标冻结后同步弃置")
+    _assert_true(moved.get("success", false), "双方同步弃置批次成功")
+    _assert_equal(moved.get("cards", []).size(), 2, "双方目标冻结后同步弃置")
     _assert_true(engine.player.hand.is_empty() and engine.enemy.hand.is_empty(), "同步弃置完成全部离手")
 
     var return_engine = _engine(4119)
@@ -423,7 +424,7 @@ func _test_break_page_burned_out_bridge() -> void:
     var burned_engine = _engine(4130)
     var burned = _card("10", "fire")
     burned_engine.status_system.apply_card_anomaly(
-        burned, "mark", "burned_out", {}, "测试")
+        burned, "debuff", "burned_out", {}, "测试")
     burned_engine.enemy.draw_pile = [burned]
     var hidden_definition = burned_engine.repository.get_definition(
         "straight_fire_hidden_kindling")

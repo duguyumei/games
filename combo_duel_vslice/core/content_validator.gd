@@ -115,7 +115,7 @@ const REQUIRED_ANOMALY_IDS := [
     "qi_heat", "growth", "qi_wither", "decay",
     "poison", "vulnerability", "acupoint_block", "forbidden",
     "wind_lure", "turbulence", "regroup", "burned_out",
-    "purification", "return_to_origin", "void", "meridian",
+    "flourish", "purification", "return_to_origin", "void", "meridian",
 ]
 const RETIRED_ANOMALY_IDS := [
     "lethal_poison", "stagnant_poison", "qi_dissipation",
@@ -140,7 +140,8 @@ const CARD_STATUS_TRIGGERS := [
     "enter_discard_late", "turn_end", "turn_end_final",
 ]
 const CARD_STATUS_MODIFIER_IDS := [
-    "effective_qi_add_per_layer", "effective_qi_final_value",
+    "effective_qi_add_per_layer", "effective_qi_multiplier",
+    "effective_qi_final_value",
     "outgoing_damage_percent",
     "incoming_damage_percent",
 ]
@@ -743,8 +744,8 @@ func _validate_card_states(definition: Dictionary) -> void:
             _validate_status_behaviors(value, CARD_STATUS_TRIGGERS, scope)
             _validate_card_status_modifiers(value, scope)
             if category in ["buff", "debuff"] \
-                    and not bool(value.get("stackable", false)):
-                _error(scope + ".stackable", "buff/debuff 必须声明可叠层")
+                    and not value.get("stackable") is bool:
+                _error(scope + ".stackable", "buff/debuff 必须声明叠层策略")
             if category == "state" \
                     and str(value.get("same_id", "")) not in ["keep", "stack"]:
                 _error(scope + ".same_id", "state 必须声明同名 keep 或 stack 策略")

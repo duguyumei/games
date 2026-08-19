@@ -81,6 +81,8 @@ static func capture(card, include_combat_state: bool = false) -> Dictionary:
     if include_combat_state:
         values["anomalies"] = card.anomaly_snapshot()
         values["temporary_reshapes"] = card.temporary_reshapes.duplicate(true)
+        values["temporary_blazing_layers"] = \
+            card.temporary_blazing_layers.duplicate(true)
     return values
 
 static func restore(values: Dictionary, reshape_rules = null):
@@ -112,6 +114,8 @@ static func restore(values: Dictionary, reshape_rules = null):
     }).duplicate(true)
     if not card.temporary_reshapes.has("rank"):
         card.temporary_reshapes["rank"] = {}
+    card.temporary_blazing_layers = values.get(
+        "temporary_blazing_layers", {}).duplicate(true)
     card.original_owner_id = str(values.get("original_owner_id", ""))
     card.temporary_card = bool(values.get("temporary_card", false))
     return card
@@ -140,6 +144,8 @@ static func validate(values: Dictionary, content_catalog, include_combat_state: 
         _validate_anomalies(values.get("anomalies", {}), content_catalog, errors)
         _validate_temporary_reshapes(
             values.get("temporary_reshapes", {}), content_catalog, errors)
+        _validate_temporary_blazing_layers(
+            values.get("temporary_blazing_layers", {}), errors)
         if values.has("suppressed_reshapes"):
             errors.append("战斗真气实例不得包含旧 suppressed_reshapes")
     return errors
@@ -313,6 +319,18 @@ static func _validate_temporary_reshapes(
                     break
             if not matched:
                 errors.append("临时牌阶不是标准牌阶")
+
+static func _validate_temporary_blazing_layers(
+        values, errors: Array[String]) -> void:
+    if not values is Dictionary:
+        errors.append("temporary_blazing_layers 必须是对象")
+        return
+    for source_instance_key in values:
+        if str(source_instance_key) == "":
+            errors.append("临时炽气来源实例不能为空")
+        if not values[source_instance_key] is int \
+                or int(values[source_instance_key]) <= 0:
+            errors.append("临时炽气来源层数必须是正整数")
 
 static func _validate_origin_base_identity(
         values: Dictionary,

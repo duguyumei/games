@@ -439,7 +439,7 @@ func _apply_technique_power_formation(side, target, preview: Dictionary) -> void
         var total := 0
         for card in preview.get("group_snapshot", {}).get(
                 "contributing_cards", []):
-            if not card.has_anomaly("mark", "burned_out"):
+            if not card.has_anomaly("debuff", "burned_out"):
                 total += HandGroupSnapshotScript.frozen_effective_qi(
                     preview.get("group_snapshot", {}), card)
         var fixed_bonus := total * int(formation.get("multiplier", 1))

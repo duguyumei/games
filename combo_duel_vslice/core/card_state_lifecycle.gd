@@ -20,6 +20,10 @@ func can_apply_anomaly(
         return reshape_permission
     if category == "mark" and card.has_anomaly("mark", anomaly_id):
         return {"allowed": false, "reason": "此真气已有标记 %s" % anomaly_id}
+    if category in ["buff", "debuff"] \
+            and card.has_anomaly(category, anomaly_id) \
+            and not bool(definition.get("stackable", false)):
+        return {"allowed": false, "reason": "此真气已有异状 %s" % anomaly_id}
     if category == "state" and card.has_anomaly("state"):
         var existing_id := str(card.current_state().get("id", ""))
         if existing_id == anomaly_id:
@@ -105,7 +109,10 @@ func on_battle_start(card) -> Array[Dictionary]:
     return results
 
 func on_enter_discard(card) -> Dictionary:
-    var removed := {"buff": {}, "debuff": {}, "state": {}}
+    var removed := {
+        "buff": {}, "debuff": {}, "state": {},
+        "temporary_blazing_layers": card.clear_temporary_blazing_layers(),
+    }
     for category in ["buff", "debuff"]:
         var snapshot: Dictionary = card.anomaly_snapshot().get(
             "buffs" if category == "buff" else "debuffs", {})
@@ -125,5 +132,6 @@ func on_battle_end(card) -> Dictionary:
     var removed := {
         "anomalies": card.clear_anomalies(),
         "temporary_reshapes": card.clear_all_temporary_reshapes(),
+        "temporary_blazing_layers": card.clear_temporary_blazing_layers(),
     }
     return removed

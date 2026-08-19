@@ -87,7 +87,10 @@ func effective_qi_value(card) -> int:
 
 func battle_state_snapshot(card) -> Dictionary:
     if card == null:
-        return {"anomalies": {}, "temporary_reshapes": {}}
+        return {
+            "anomalies": {}, "temporary_reshapes": {},
+            "temporary_blazing_layers": {},
+        }
     var anomalies: Dictionary = card.anomaly_snapshot()
     var temporary: Dictionary = card.temporary_reshapes.duplicate(true)
     var rank: Dictionary = temporary.get("rank", {})
@@ -101,6 +104,8 @@ func battle_state_snapshot(card) -> Dictionary:
     return {
         "anomalies": anomalies,
         "temporary_reshapes": temporary,
+        "temporary_blazing_layers": (
+            card.temporary_blazing_layers.duplicate(true)),
     }
 
 func state_changes(before_state: Dictionary, after_state: Dictionary) -> Array:
@@ -119,6 +124,10 @@ func state_changes(before_state: Dictionary, after_state: Dictionary) -> Array:
     _append_map_changes(
         changes, "anomaly", "mark",
         before_anomalies.get("marks", {}), after_anomalies.get("marks", {}))
+    _append_map_changes(
+        changes, "temporary_blazing", "source", before_state.get(
+            "temporary_blazing_layers", {}), after_state.get(
+                "temporary_blazing_layers", {}))
 
     var before_temporary: Dictionary = before_state.get("temporary_reshapes", {})
     var after_temporary: Dictionary = after_state.get("temporary_reshapes", {})
@@ -144,6 +153,104 @@ func state_changes(before_state: Dictionary, after_state: Dictionary) -> Array:
             0 if after_id == "" else 1,
             before_id, after_id))
     return changes
+
+func add_temporary_blazing_layers(
+        card,
+        source_instance_key: String,
+        layers: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    if card == null:
+        return {"success": false, "reason": "临时炽气目标为空"}
+    var before_state := battle_state_snapshot(card)
+    var written: Dictionary = card.add_temporary_blazing_layers(
+        source_instance_key, layers)
+    if not written.get("success", false):
+        return written
+    var metadata := event_metadata.duplicate(true)
+    metadata["primary_content_id"] = source_instance_key
+    var state_event := _publish_state_change(
+        card, before_state, battle_state_snapshot(card),
+        "apply", source, metadata)
+    _merge_state_event_result(written, state_event)
+    written["normal_blazing_layers"] = card.normal_blazing_layers()
+    written["temporary_blazing_layers"] = card.temporary_blazing_layers_total()
+    written["total_blazing_layers"] = card.total_blazing_layers()
+    return written
+
+func trigger_growth(
+        card,
+        holder,
+        growth_layers: int,
+        target_category: String,
+        target_anomaly_id: String,
+        extra_trigger: bool = false,
+        trigger_sequence: int = 0,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    if card == null or holder == null or growth_layers <= 0:
+        return {"success": true, "changed": false, "applied": false}
+    var before_layers: int = card.anomaly_layers(
+        target_category, target_anomaly_id)
+    var metadata := source_metadata.duplicate(true)
+    metadata.merge({
+        "holder": holder,
+        "holder_frozen": true,
+        "source_actor": holder,
+        "source_card_instance_id": str(card.id),
+        "source_kind": str(metadata.get("source_kind", "card_status")),
+        "source_id": str(metadata.get("source_id", "growth")),
+        "source_name": str(metadata.get("source_name", "成长")),
+        "source_instance_key": str(metadata.get(
+            "source_instance_key", "card_status:%s:growth" % str(card.id))),
+        "trigger_mode": str(metadata.get("trigger_mode", "automatic")),
+    }, false)
+    var applied := apply_card_anomaly(
+        card, target_category, target_anomaly_id, {}, "成长",
+        growth_layers, false, metadata)
+    if not applied.get("success", false):
+        return applied
+    var actual_added: int = maxi(0, card.anomaly_layers(
+        target_category, target_anomaly_id) - before_layers)
+    applied["applied"] = actual_added > 0
+    applied["growth_layers"] = growth_layers
+    applied["blazing_layers_added"] = actual_added
+    if actual_added <= 0 or _committed_event_service == null:
+        return applied
+    var event_serial := int(_committed_event_service.next_serial())
+    var source := EffectSourceProtocolScript.from_values(metadata)
+    var values := {
+        "event_serial": event_serial,
+        "event_token": _committed_event_service.make_token(
+            "growth_trigger_resolved", holder, event_serial,
+            str(metadata.get("action_token", "")), str(card.id)),
+        "action_token": str(metadata.get("action_token", "")),
+        "round_number": int(_round_number_reader.call()) \
+            if _round_number_reader.is_valid() else 0,
+        "actor": holder,
+        "owner": holder,
+        "holder": holder,
+        "card": card,
+        "card_instance_id": str(card.id),
+        "source_card_instance_id": str(card.id),
+        "growth_layers": growth_layers,
+        "blazing_layers_added": actual_added,
+        "extra_trigger": extra_trigger,
+        "trigger_sequence": trigger_sequence,
+        "source_kind": source["source_kind"],
+        "source_id": source["source_id"],
+        "source_name": source["source_name"],
+        "source_instance_key": source["source_instance_key"],
+        "trigger_mode": source["trigger_mode"],
+        "metadata": metadata,
+    }
+    var committed: Dictionary = _committed_event_service.commit(
+        "growth_trigger_resolved", values)
+    if not committed.get("success", false):
+        applied["success"] = false
+        applied["reason"] = str(committed.get(
+            "reason", "growth_trigger_resolved 提交失败"))
+    applied["growth_event"] = committed
+    return applied
 
 func apply_card_anomaly(
         card,
@@ -447,6 +554,13 @@ func on_card_zone_transition(
     if real_departure and card.has_anomaly("mark", "meridian"):
         removed["meridian"] = card.remove_anomaly("mark", "meridian")
     if destination_zone == "discard_pile":
+        var claim_entries := _discard_lifecycle_claim_entries(card)
+        var claim := _resolve_removed_state_claim(
+            card, event_metadata.get("holder"), claim_entries,
+            source_zone, destination_zone, reason, event_metadata)
+        if not claim.get("success", false):
+            return claim
+        removed["claim"] = claim
         removed["discard"] = _lifecycle.on_enter_discard(card)
     var after_state := battle_state_snapshot(card)
     if before_state != after_state:
@@ -457,12 +571,109 @@ func on_card_zone_transition(
     var metadata := event_metadata.duplicate(true)
     metadata["source_zone"] = source_zone
     metadata["destination_zone"] = destination_zone
+    if removed.has("claim"):
+        metadata["claim_token"] = str(removed["claim"].get(
+            "claim_token", ""))
+        metadata["claim_consumed"] = bool(removed["claim"].get(
+            "claim_consumed", false))
+        metadata["claimed_entries"] = removed["claim"].get(
+            "claimed_entries", []).duplicate(true)
+        metadata["claim_source_instance_key"] = str(removed["claim"].get(
+            "claim_source_instance_key", ""))
     var state_event := _publish_state_change(
         card, before_state, after_state, "lifecycle_remove", reason, metadata)
     var result := {"success": true, "changed": before_state != after_state,
         "removed": removed}
     _merge_state_event_result(result, state_event)
     return result
+
+func _discard_lifecycle_claim_entries(card) -> Array:
+    var result: Array = []
+    var snapshot: Dictionary = card.anomaly_snapshot()
+    for pair in [["buff", "buffs"], ["debuff", "debuffs"]]:
+        for anomaly_id_value in snapshot.get(pair[1], {}).keys():
+            var anomaly_id := str(anomaly_id_value)
+            var definition: Dictionary = content_catalog.get_by_id(
+                "anomaly", anomaly_id)
+            if bool(definition.get("remove_on_enter_discard", false)):
+                result.append({
+                    "domain": "anomaly",
+                    "category": pair[0],
+                    "content_id": anomaly_id,
+                    "layers": card.anomaly_layers(pair[0], anomaly_id),
+                })
+    var state: Dictionary = snapshot.get("state", {})
+    var state_id := str(state.get("id", ""))
+    if state_id != "":
+        var definition: Dictionary = content_catalog.get_by_id(
+            "anomaly", state_id)
+        if bool(definition.get("remove_on_enter_discard", true)):
+            result.append({
+                "domain": "anomaly",
+                "category": "state",
+                "content_id": state_id,
+                "layers": int(state.get("layers", 1)),
+            })
+    return result
+
+func _resolve_removed_state_claim(
+        card, holder, claim_entries: Array,
+        source_zone: String, destination_zone: String, reason: String,
+        event_metadata: Dictionary) -> Dictionary:
+    var token := "%s:%s" % [
+        _next_operation_token("lifecycle_claim"), str(card.id)]
+    if claim_entries.is_empty() or holder == null \
+            or holder.passive_rule_runtime == null:
+        return {
+            "success": true,
+            "claim_token": token,
+            "claim_consumed": false,
+            "claimed_entries": [],
+            "claim_source_instance_key": "",
+        }
+    var context_values := {
+        "hook": "card_lifecycle_removed_state_claim",
+        "owner": holder,
+        "actor": holder,
+        "round_number": int(_round_number_reader.call()) \
+            if _round_number_reader.is_valid() else 0,
+        "payload": {
+            "claim_token": token,
+            "claim_entries": claim_entries.duplicate(true),
+            "card_instance_id": str(card.id),
+            "source_zone": source_zone,
+            "destination_zone": destination_zone,
+            "reason": reason,
+            "action_token": str(event_metadata.get("action_token", "")),
+        },
+    }
+    var plan = holder.passive_rule_runtime.build_execution_plan(
+        "card_lifecycle_removed_state_claim", context_values)
+    if not plan.is_valid():
+        return {"success": false, "reason": "；".join(plan.errors)}
+    for invocation in plan.invocations:
+        var executed: Dictionary = holder.passive_rule_runtime.execute_invocation(
+            invocation, null, "read")
+        if not executed.get("success", false):
+            return executed
+        var handler_result: Dictionary = executed.get("result", {})
+        if handler_result.get("matched", false):
+            return {
+                "success": true,
+                "claim_token": token,
+                "claim_consumed": true,
+                "claimed_entries": handler_result.get(
+                    "claimed_entries", []).duplicate(true),
+                "claim_source_instance_key": (
+                    invocation.source.source_instance_key),
+            }
+    return {
+        "success": true,
+        "claim_token": token,
+        "claim_consumed": false,
+        "claimed_entries": [],
+        "claim_source_instance_key": "",
+    }
 
 func on_card_enter_discard(
         card, source: String = "进入弃牌堆",
@@ -631,6 +842,11 @@ func _freeze_state_change(
         "transfer_batch_token": str(metadata.get("transfer_batch_token", "")),
         "transfer_peer_card_id": str(metadata.get("transfer_peer_card_id", "")),
         "transfer_direction": str(metadata.get("transfer_direction", "")),
+        "claim_token": str(metadata.get("claim_token", "")),
+        "claim_consumed": bool(metadata.get("claim_consumed", false)),
+        "claimed_entries": metadata.get("claimed_entries", []).duplicate(true),
+        "claim_source_instance_key": str(metadata.get(
+            "claim_source_instance_key", "")),
         "card_base_qi": int(card.qi_value),
         "current_base_qi": int(card.current_base_qi_value()),
         "metadata": metadata,
@@ -638,6 +854,8 @@ func _freeze_state_change(
     # 临时重塑沿用 card_state_changed，但明确标注持久性；异状事件不借用
     # reshape persistence 语义。永久改牌只发布 qi_reshape_committed。
     if change_domain == "temporary_reshape":
+        values["persistence"] = "temporary"
+    elif change_domain == "temporary_blazing":
         values["persistence"] = "temporary"
     var effective_query := _event_effective_qi(
         holder, card, "card_state_changed")
@@ -719,13 +937,13 @@ func _project_legacy_responses(values: Dictionary) -> void:
     ports.notify_response_event("card_anomaly_changed", legacy)
 
     var burned_changes: Array = anomaly_changes.filter(func(change):
-        return str(change.get("category", "")) == "mark" \
+        return str(change.get("category", "")) == "debuff" \
             and str(change.get("content_id", "")) == "burned_out")
     if burned_changes.is_empty():
         return
     var burned: Dictionary = burned_changes[0]
     var burned_values := values.duplicate(false)
-    burned_values["category"] = "mark"
+    burned_values["category"] = "debuff"
     burned_values["anomaly_id"] = "burned_out"
     burned_values["before"] = _duplicate_value(burned.get("before"))
     burned_values["after"] = _duplicate_value(burned.get("after"))
@@ -828,7 +1046,7 @@ func _primary_change(changes: Array, metadata: Dictionary) -> Dictionary:
 func _anomaly_layers_for_value(category: String, value) -> int:
     if value == null:
         return 0
-    if category in ["buff", "debuff"]:
+    if category in ["buff", "debuff", "source"]:
         return int(value)
     if category == "state" and value is Dictionary:
         return int(value.get("layers", 1))

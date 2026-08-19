@@ -123,7 +123,7 @@ func _test_purification_and_temporary_reshape_diff() -> void:
     engine.status_system.apply_card_anomaly(
         card, "state", "poison", {}, "准备", 1, false, metadata)
     engine.status_system.apply_card_anomaly(
-        card, "mark", "burned_out", {}, "准备", 1, false, metadata)
+        card, "debuff", "burned_out", {}, "准备", 1, false, metadata)
     engine.status_system.apply_temporary_attribute(
         card, "fire", "准备", metadata)
     facts.clear()
@@ -323,7 +323,7 @@ func _test_all_side_observation_keeps_effect_owner() -> void:
             if kind == "card_state_changed":
                 receipts.append(receipt.duplicate(true)))
     engine.status_system.apply_card_anomaly(
-        card, "mark", "burned_out", {}, "跨侧状态", 1, false,
+        card, "debuff", "burned_out", {}, "跨侧状态", 1, false,
         _metadata(engine, "state-owner-1"))
     _assert_equal(receipts[0]["owner_ids"], [
         str(engine.player.owner_id), str(engine.enemy.owner_id)],
@@ -354,7 +354,7 @@ func _test_legacy_projection_and_chain_recursion() -> void:
         "card_burned_out_changed", "turn_end",
         [{"op": "defense", "amount": 10}], context)
     engine.status_system.apply_card_anomaly(
-        card, "mark", "burned_out", {}, "兼容响应", 1, false,
+        card, "debuff", "burned_out", {}, "兼容响应", 1, false,
         _metadata(engine, "legacy-state-1"))
     _assert_equal(engine.player.defense, 11,
         "异状与燃尽 legacy response 各准确执行一次")

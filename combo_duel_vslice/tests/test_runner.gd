@@ -6295,7 +6295,7 @@ func _test_qi_instance_state_contract() -> void:
     purified.set_imprint("echo")
     lifecycle.apply_anomaly(purified, "buff", "qi_heat", {}, 2)
     lifecycle.apply_anomaly(purified, "state", "poison")
-    lifecycle.apply_anomaly(purified, "mark", "burned_out")
+    lifecycle.apply_anomaly(purified, "debuff", "burned_out")
     purified.set_temporary_enhancement("momentum")
     purified.set_temporary_attribute("wind")
     _assert_true(lifecycle.apply_anomaly(purified, "mark", "purification")["success"], "首次净化合法")
@@ -8774,12 +8774,12 @@ func _test_awakening_battle_runtime() -> void:
     var fire_preview: Dictionary = fire_engine.preview(_ids([fire_main, fire_extra]))
     _assert_equal(fire_preview["values"]["card_total"], 30, "增元火觉醒按(7+8)×2参与数值计算")
     _assert_true(
-        not fire_main.has_anomaly("mark", "burned_out"),
+        not fire_main.has_anomaly("debuff", "burned_out"),
         "预览保持纯计算且不施加燃尽")
     var fire_result: Dictionary = fire_engine.confirm_play(_ids([fire_main, fire_extra]))
     _assert_true(fire_result.get("success", false), "火觉醒真实功法组完成结算")
-    _assert_true(fire_main.has_anomaly("mark", "burned_out"), "参与最高牌型的火觉醒在组结束后燃尽")
-    _assert_true(not fire_extra.has_anomaly("mark", "burned_out"), "额外打出但未贡献的火觉醒不翻倍且不燃尽")
+    _assert_true(fire_main.has_anomaly("debuff", "burned_out"), "参与最高牌型的火觉醒在组结束后燃尽")
+    _assert_true(not fire_extra.has_anomaly("debuff", "burned_out"), "额外打出但未贡献的火觉醒不翻倍且不燃尽")
     _assert_equal(
         PowerCalculatorScript.calculate(
             HandEvaluatorScript.evaluate([fire_main]),
@@ -8804,13 +8804,13 @@ func _test_awakening_battle_runtime() -> void:
         "火觉醒在功法与内功完成、序列推进之后响应组结束")
     fire_engine.status_system.apply_card_anomaly(
         fire_main, "mark", "purification", {}, "觉醒测试净化")
-    _assert_true(not fire_main.has_anomaly("mark", "burned_out"), "净化可清除燃尽")
+    _assert_true(not fire_main.has_anomaly("debuff", "burned_out"), "净化可清除燃尽")
     fire_engine.status_system.apply_card_anomaly(
-        fire_extra, "mark", "burned_out", {}, "觉醒测试战斗结束")
+        fire_extra, "debuff", "burned_out", {}, "觉醒测试战斗结束")
     fire_engine.timing_system.emit_timing(BattleTimingSystemScript.BATTLE_END, {
         "actors": [fire_engine.player, fire_engine.enemy],
     })
-    _assert_true(not fire_extra.has_anomaly("mark", "burned_out"), "战斗结束自动移除燃尽")
+    _assert_true(not fire_extra.has_anomaly("debuff", "burned_out"), "战斗结束自动移除燃尽")
 
     var mountain_hand = _card("7", "mountain")
     var mountain_discard = _card("6", "mountain")
@@ -8838,7 +8838,7 @@ func _test_awakening_battle_runtime() -> void:
             < turn_end_handler_ids.find("status_system.card_turn_end_final"),
         "山觉醒排在现有回合结束状态与延迟效果之后、最终状态清理之前")
     mountain_engine.status_system.apply_card_anomaly(
-        mountain_hand, "mark", "burned_out", {}, "觉醒测试燃尽")
+        mountain_hand, "debuff", "burned_out", {}, "觉醒测试燃尽")
     mountain_engine.timing_system.emit_timing(BattleTimingSystemScript.TURN_END, {
         "actor": mountain_engine.player,
         "actors": [mountain_engine.player],
@@ -8876,13 +8876,13 @@ func _test_f2d2_formal_enhancement_runtime() -> void:
     burned.set_enhancement("void_burst")
     burned.set_temporary_enhancement("qi_boost")
     lifecycle.apply_anomaly(burned, "buff", "qi_heat", {}, 20)
-    lifecycle.apply_anomaly(burned, "mark", "burned_out")
+    lifecycle.apply_anomaly(burned, "debuff", "burned_out")
     _assert_equal(burned.effective_qi_value(false, {"participating": true}), 0, "燃尽最终覆盖增元、虚暴、觉醒与炽气")
     _assert_true(burned.is_card_kind("normal"), "燃尽牌仍属于普通真气")
     var burned_pair = DeckFactoryScript.create_card_instance(
         catalog.get_by_id("card", "wind_7"), "f3c:burned-pair",
         catalog.card_reshape_rules)
-    lifecycle.apply_anomaly(burned_pair, "mark", "burned_out")
+    lifecycle.apply_anomaly(burned_pair, "debuff", "burned_out")
     _assert_equal(HandEvaluatorScript.evaluate([burned, burned_pair])["id"], "pair", "燃尽不改变牌阶或牌型识别")
 
     var changed = DeckFactoryScript.create_card_instance(

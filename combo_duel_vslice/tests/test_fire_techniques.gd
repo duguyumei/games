@@ -91,6 +91,8 @@ func _test_catalog_and_each_effect_chain() -> void:
     _assert_equal(count, 53, "火系稳定ID共53门")
     for technique_id in NEW_FIRE_IDS:
         var engine = _engine(6100 + assertions)
+        if technique_id == "high_fire_tread_momentum":
+            engine.player.momentum_value = 10
         var result := _execute_with(engine, technique_id, 20, _snapshot([], [], 8), _hand_for(technique_id))
         _assert_true(
             result.get("success", false) or result.get("pending_choice", false),
@@ -202,24 +204,24 @@ func _test_burned_out_lifecycle_and_intrinsic_base_freeze() -> void:
     source.set_temporary_rank("9", 9, 9)
     engine.player.hand = [source, target]
     var applied: Dictionary = engine.status_system.apply_card_anomaly(
-        source, "mark", "burned_out", {}, "测试")
+        source, "debuff", "burned_out", {}, "测试")
     _assert_true(applied.get("success", false), "燃尽通过通用端口施加")
     _assert_equal(engine.effect_ports.current_effective_qi(engine.player, source), 0, "燃尽只覆盖最终有效真气值为0")
     _assert_equal(source.current_rank_name(), "9", "燃尽不删除临时牌阶")
     engine.player.card_zone_service.move_card(
         engine.player, "hand", "discard_pile", source, "explicit_discard")
-    _assert_true(source.has_anomaly("mark", "burned_out"), "明确弃置不移除燃尽")
+    _assert_true(source.has_anomaly("debuff", "burned_out"), "明确弃置不移除燃尽")
     engine.player.card_zone_service.move_card(
         engine.player, "discard_pile", "draw_pile", source, "recover")
     engine.player.card_zone_service.move_card(
         engine.player, "draw_pile", "hand", source, "draw")
-    _assert_true(source.has_anomaly("mark", "burned_out"), "回收与抽取不移除燃尽")
+    _assert_true(source.has_anomaly("debuff", "burned_out"), "回收与抽取不移除燃尽")
     var transferred: Dictionary = engine.status_system.transfer_card_anomaly(
-        source, target, "mark", "burned_out", "测试转移")
+        source, target, "debuff", "burned_out", "测试转移")
     _assert_true(transferred.get("success", false), "燃尽可以来源安全地转移")
-    _assert_true(not source.has_anomaly("mark", "burned_out") and target.has_anomaly("mark", "burned_out"), "燃尽转移同时移除来源并施加目标")
+    _assert_true(not source.has_anomaly("debuff", "burned_out") and target.has_anomaly("debuff", "burned_out"), "燃尽转移同时移除来源并施加目标")
 
-    source.set_anomaly("mark", "burned_out")
+    source.set_anomaly("debuff", "burned_out")
     var snapshot := HandGroupSnapshotScript.freeze(
         [source], {"id":"high_card", "contributing":[source]}, engine.player, engine.enemy)
     var context = _context(engine, "straight_fire_through_furnace", 0, snapshot, "straight", "base-freeze")
@@ -234,6 +236,8 @@ func _test_burned_out_lifecycle_and_intrinsic_base_freeze() -> void:
 func _test_pair_and_full_house_boundaries() -> void:
     for hand_id in ["pair", "two_pair", "full_house"]:
         var engine = _engine(6500 + assertions)
+        engine.player.momentum_cap_initialized = false
+        engine.player.initialize_base_momentum_cap(20)
         var result := _execute_with(
             engine, "pair_fire_double_knock", 20,
             _snapshot([], [], 8), hand_id)
@@ -249,7 +253,7 @@ func _test_pair_and_full_house_boundaries() -> void:
     var triple := [_card("5", "fire"), _card("5", "wind"), _card("5", "forest")]
     var pair := [_card("9", "fire"), _card("9", "mountain")]
     for card in pair:
-        card.set_anomaly("mark", "burned_out")
+        card.set_anomaly("debuff", "burned_out")
     var all_cards: Array = triple + pair
     var full_snapshot := _snapshot(all_cards, all_cards, 33)
     var full_result := _execute_with(
@@ -267,8 +271,8 @@ func _test_pair_and_full_house_boundaries() -> void:
         target_engine, "pair_fire_scorch_channel", 10,
         _snapshot([], [], 4), "pair")
     _assert_true(scorch.get("success", false), "焦脉最高有效值查询执行")
-    _assert_true(boosted.has_anomaly("mark", "burned_out"), "焦脉按最高有效真气值而非最高牌阶选择")
-    _assert_true(not ace.has_anomaly("mark", "burned_out"), "焦脉不误选高牌阶低有效值目标")
+    _assert_true(boosted.has_anomaly("debuff", "burned_out"), "焦脉按最高有效真气值而非最高牌阶选择")
+    _assert_true(not ace.has_anomaly("debuff", "burned_out"), "焦脉不误选高牌阶低有效值目标")
 
 func _test_response_and_zone_techniques() -> void:
     var afterglow = _engine(6601)
@@ -279,7 +283,7 @@ func _test_response_and_zone_techniques() -> void:
         afterglow.repository.get_definition("high_fire_afterglow").effects,
         context).get("success", false), "余明建立燃尽变化响应")
     afterglow.status_system.apply_card_anomaly(
-        counted, "mark", "burned_out", {}, "测试", 1, false, {
+        counted, "debuff", "burned_out", {}, "测试", 1, false, {
             "holder":afterglow.player, "actor":afterglow.player,
             "action_token":"afterglow-token"})
     _assert_equal(100 - afterglow.enemy.life, 14, "余明按牌本体基础值追加真伤且只响应未燃尽到燃尽")
@@ -287,8 +291,8 @@ func _test_response_and_zone_techniques() -> void:
     var send = _engine(6602)
     var hand_card = _card("6", "fire")
     var deck_card = _card("7", "fire")
-    hand_card.set_anomaly("mark", "burned_out")
-    deck_card.set_anomaly("mark", "burned_out")
+    hand_card.set_anomaly("debuff", "burned_out")
+    deck_card.set_anomaly("debuff", "burned_out")
     send.player.hand = [hand_card]
     send.player.draw_pile = [deck_card]
     var send_context = _context(send, "pair_fire_send_kindling", 0, _snapshot([], [], 0), "two_pair", "send-token")
@@ -305,7 +309,7 @@ func _test_response_and_zone_techniques() -> void:
 
     var hidden = _engine(6603)
     var burned = _card("9", "fire")
-    burned.set_anomaly("mark", "burned_out")
+    burned.set_anomaly("debuff", "burned_out")
     hidden.enemy.draw_pile = [burned]
     var hidden_context = _context(hidden, "straight_fire_hidden_kindling", 10, _snapshot([], [], 5), "straight", "hidden-token")
     hidden.effect_executor.execute_all(
@@ -347,7 +351,7 @@ func _test_bomb_k_and_echoes() -> void:
     var ember = _engine(6741)
     var card = _card("4", "fire")
     card.set_temporary_rank("9", 9, 9)
-    card.set_anomaly("mark", "burned_out")
+    card.set_anomaly("debuff", "burned_out")
     ember.player.staging = [card]
     var ember_snapshot := _snapshot([card], [card], 0)
     ember_snapshot["pre_momentum_consume_selected"] = true

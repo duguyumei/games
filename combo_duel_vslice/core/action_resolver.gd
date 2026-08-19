@@ -547,7 +547,14 @@ func retrigger_current_hand_technique(
             "detail": "整手存在多个并列最高牌型组，参与牌规则尚未确认",
         }
     var hand_result: Dictionary = best_candidates[0] if not best_candidates.is_empty() else {}
-    var discarded: Array = effect_ports.discard_all(actor)
+    var discard_result: Dictionary = effect_ports.discard_all(actor)
+    if not discard_result.get("success", false):
+        return {
+            "success": false,
+            "triggered": false,
+            "detail": str(discard_result.get("reason", "整手弃牌提交失败")),
+        }
+    var discarded: Array = discard_result.get("cards", [])
     if hand_result.is_empty() or hand_result.get("id", "") == "high_card" \
             or discarded.size() > maximum_discard:
         return {"success": true, "triggered": false, "detail": "整手弃牌后不满足重触条件"}

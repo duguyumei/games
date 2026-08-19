@@ -36,6 +36,8 @@ var slot_instance_id: String = ""
 ## 一次实际功法执行的稳定身份。root action 与 execution identity 分离，
 ## 细粒度事实仍统一使用这个 token 作为 action_token。
 var technique_execution_token: String = ""
+## 单个 EffectSpec 执行的稳定身份；同一效果产生的多张牌事实以此汇总。
+var effect_execution_token: String = ""
 ## 同一次执行跨 phase/continuation 共用的窄状态，只保存待运行回响计划及稳定序号。
 var technique_execution_state: Dictionary = {}
 var trigger_mode: String = "manual"
@@ -104,6 +106,7 @@ func configure(values: Dictionary):
     slot_instance_id = str(values.get("slot_instance_id", ""))
     technique_execution_token = str(values.get(
         "technique_execution_token", ""))
+    effect_execution_token = str(values.get("effect_execution_token", ""))
     technique_execution_state = values.get(
         "technique_execution_state", {})
     var source: Dictionary = EffectSourceProtocolScript.from_values(values)
@@ -188,6 +191,7 @@ func public_metadata() -> Dictionary:
         "caller_technique_id": caller_technique_id,
         "slot_instance_id": slot_instance_id,
         "technique_execution_token": technique_execution_token,
+        "effect_execution_token": effect_execution_token,
         "trigger_mode": trigger_mode,
         "source_kind": source_kind,
         "source_id": source_id,
@@ -210,6 +214,11 @@ func source_metadata() -> Dictionary:
         "source_name": source_name,
         "source_instance_key": source_instance_key,
         "trigger_mode": trigger_mode,
+        "action_token": action_token,
+        "root_action_token": root_action_token,
+        "execution_token": technique_execution_token,
+        "technique_execution_token": technique_execution_token,
+        "effect_execution_token": effect_execution_token,
     }
 
 func power_snapshot() -> Dictionary:

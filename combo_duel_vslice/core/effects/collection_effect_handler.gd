@@ -250,12 +250,16 @@ func execute(effect: Dictionary, context):
                 if effect.has("capture"):
                     runtime.captures[str(effect["capture"])] = []
                 return EffectResultScript.succeeded()
-            var generated = runtime.ports.generate_temporary_normal_card(
-                runtime.actor, base_card, {
+            var generation_options: Dictionary = runtime.source_metadata()
+            generation_options.merge({
                     "rank_mode": str(effect.get("rank_mode", "same_current")),
                     "attribute_mode": str(effect.get("attribute_mode", "same_base")),
                     "add_void": bool(effect.get("add_void", true)),
-                })
+                    "clone_source": bool(effect.get("clone_source", false)),
+                    "action_token": runtime.action_token,
+                }, true)
+            var generated = runtime.ports.generate_temporary_normal_card(
+                runtime.actor, base_card, generation_options)
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [generated] if generated != null else []
             return EffectResultScript.succeeded("生成临时真气" if generated != null else "")

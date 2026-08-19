@@ -167,10 +167,10 @@ func _test_fire_ignite_dependency() -> void:
     engine.player.discard_pile = [invalid_self]
     engine.enemy.draw_pile = [enemy_card]
     engine.status_system.apply_card_anomaly(
-        invalid_self, "mark", "burned_out", {}, "test")
+        invalid_self, "debuff", "burned_out", {}, "test")
     var result: Dictionary = engine.confirm_play([played.id])
     _assert_true(result.get("success", false), "火附火自方无合法目标时基础伤害仍结算")
-    _assert_true(not enemy_card.has_anomaly("mark", "burned_out"), "自方燃尽失败时敌方不燃尽")
+    _assert_true(not enemy_card.has_anomaly("debuff", "burned_out"), "自方燃尽失败时敌方不燃尽")
 
 func _test_fire_burn_void_retrigger() -> void:
     var first = _card("void-first", "A", 14, 12, "fire")
@@ -195,8 +195,8 @@ func _test_fire_burn_void_retrigger() -> void:
         definition.effects, context)
     _assert_true(first_result.get("success", false), "火焚虚多张逐张依赖链成功")
     _assert_equal(engine.player.experience, 2, "火焚虚每张合格牌各获得1点历练")
-    _assert_true(first.has_anomaly("mark", "burned_out") and second.has_anomaly(
-        "mark", "burned_out"), "火焚虚成功移除虚无后逐张施加燃尽")
+    _assert_true(first.has_anomaly("debuff", "burned_out") and second.has_anomaly(
+        "debuff", "burned_out"), "火焚虚成功移除虚无后逐张施加燃尽")
     var second_context = EffectContextScript.new().configure({
         "ports": engine.effect_ports, "actor": engine.player,
         "target": engine.enemy, "hand_result": preview["hand"],

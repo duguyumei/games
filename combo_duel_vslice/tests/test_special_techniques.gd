@@ -128,7 +128,7 @@ func _test_dissipate_decay_choice_and_recovery() -> void:
     var anomaly_cases := [
         {"category":"state", "id":"poison", "label":"毒"},
         {"category":"debuff", "id":"decay", "label":"衰败"},
-        {"category":"mark", "id":"burned_out", "label":"燃尽"},
+        {"category":"debuff", "id":"burned_out", "label":"燃尽"},
     ]
     for index in range(anomaly_cases.size()):
         var anomaly: Dictionary = anomaly_cases[index]

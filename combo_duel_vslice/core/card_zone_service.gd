@@ -3,6 +3,8 @@ extends RefCounted
 
 const EffectSourceProtocolScript = preload(
     "res://core/effects/effect_source_protocol.gd")
+const BattleRuntimeMutationTransactionScript = preload(
+    "res://core/battle_runtime_mutation_transaction.gd")
 
 ## 单个参战者的牌区移动与索引维护服务。
 ##
@@ -17,6 +19,11 @@ var card_reshape_runtime
 var committed_event_service
 var round_number_reader: Callable
 var battle_permission_service
+var passive_rule_runtime
+var battle_rng: RandomNumberGenerator
+var trigger_queue
+var card_batch_recorder
+var _effect_batch_entries: Dictionary = {}
 
 func _init(lifecycle = null) -> void:
     card_state_lifecycle = lifecycle
@@ -36,6 +43,31 @@ func use_committed_event_service(service, round_reader: Callable = Callable()) -
 
 func use_battle_permission_service(service) -> void:
     battle_permission_service = service
+
+func use_passive_rule_runtime(runtime) -> void:
+    passive_rule_runtime = runtime
+
+func use_runtime_transaction_dependencies(
+        rng: RandomNumberGenerator, queue) -> void:
+    battle_rng = rng
+    if queue != null:
+        trigger_queue = queue
+
+func use_card_batch_recorder(recorder) -> void:
+    card_batch_recorder = recorder
+
+func capture_runtime_state() -> Dictionary:
+    return {"effect_batch_entries": _effect_batch_entries.duplicate(true)}
+
+func restore_runtime_state(state: Dictionary) -> void:
+    _effect_batch_entries = state.get(
+        "effect_batch_entries", {}).duplicate(true)
+
+func take_effect_batch_entries(effect_execution_token: String) -> Array:
+    var entries: Array = _effect_batch_entries.get(
+        effect_execution_token, []).duplicate(true)
+    _effect_batch_entries.erase(effect_execution_token)
+    return entries
 
 func reset_zones(side, cards: Array, rng: RandomNumberGenerator, shuffle_cards: bool = true) -> void:
     side.hand.clear()
@@ -64,15 +96,108 @@ func draw(
             "trigger_mode": "direct",
         }
     source = EffectSourceProtocolScript.from_values(source)
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        [side], committed_event_service, trigger_queue, battle_rng)
+    var depletion_receipts: Array = []
+    var failure := ""
     for _index in range(maxi(0, count)):
         if side.draw_pile.is_empty():
-            break
+            if side.discard_pile.is_empty():
+                break
+            var replenished := _replace_draw_depletion(side, source)
+            if not replenished.get("success", false):
+                failure = str(replenished.get(
+                    "reason", "牌库耗尽替换事务失败"))
+                break
+            if not replenished.get("replaced", false):
+                break
+            depletion_receipts.append(replenished)
+            if side.draw_pile.is_empty():
+                break
         var card = side.draw_pile.back()
         var metadata := source.duplicate(true)
         metadata["draw_reason"] = draw_reason
-        move_card(side, "draw_pile", "hand", card, "draw", metadata)
+        var moved := move_card(
+            side, "draw_pile", "hand", card, "draw", metadata)
+        if not moved.get("success", false) \
+                or not moved.get("passive_event_success", true):
+            failure = str(moved.get("passive_event_reason", moved.get(
+                "reason", "抽牌移动失败")))
+            break
         drawn.append(card)
+    if failure == "":
+        BattleRuntimeMutationTransactionScript.commit(transaction)
+    else:
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        drawn.clear()
+        depletion_receipts.clear()
+    side.last_draw_result = {
+        "success": failure == "",
+        "requested_count": maxi(0, count),
+        "drawn_count": drawn.size(),
+        "cards": drawn.duplicate(),
+        "depletion_receipts": depletion_receipts.duplicate(true),
+        "reason": failure,
+    }
     return drawn
+
+func _replace_draw_depletion(side, source_metadata: Dictionary) -> Dictionary:
+    if side == null or side.discard_pile.is_empty() \
+            or passive_rule_runtime == null:
+        return {"success": true, "replaced": false}
+    var context_values := {
+        "hook": "draw_depletion_replacement_query",
+        "owner": side,
+        "actor": side,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "payload": {
+            "commit": true,
+            "discard_count": side.discard_pile.size(),
+            "draw_count": side.draw_pile.size(),
+            "action_token": str(source_metadata.get("action_token", "")),
+        },
+    }
+    var plan = passive_rule_runtime.build_execution_plan(
+        "draw_depletion_replacement_query", context_values)
+    if not plan.is_valid():
+        return {"success": false, "reason": "；".join(plan.errors)}
+    for invocation in plan.invocations:
+        var executed: Dictionary = passive_rule_runtime.execute_invocation(
+            invocation, null, "mutation")
+        if not executed.get("success", false):
+            return executed
+        var handler_result: Dictionary = executed.get("result", {})
+        if not handler_result.get("matched", false):
+            continue
+        var metadata := _invocation_source_metadata(invocation)
+        metadata.merge(source_metadata, false)
+        var cards: Array = side.discard_pile.duplicate()
+        var moved_entries: Array = []
+        for card in cards:
+            var moved := move_card(
+                side, "discard_pile", "draw_pile", card,
+                "draw_depletion_shuffle", metadata)
+            if not moved.get("success", false) \
+                    or moved.get("passive_event_success", true) == false:
+                return {
+                    "success": false,
+                    "reason": str(moved.get(
+                        "passive_event_reason", moved.get(
+                            "reason", "耗尽洗回提交失败"))),
+                }
+            moved_entries.append(moved)
+        if moved_entries.is_empty():
+            return {"success": true, "replaced": false}
+        shuffle(side.draw_pile, battle_rng)
+        return {
+            "success": true,
+            "replaced": true,
+            "source_instance_key": invocation.source.source_instance_key,
+            "moved_count": moved_entries.size(),
+            "counter": handler_result,
+        }
+    return {"success": true, "replaced": false}
 
 func place_on_draw_pile_top(
         side, card, source_metadata: Dictionary = {}) -> Dictionary:
@@ -170,7 +295,17 @@ func commit_selected_staging(
             metadata)
     return committed
 
-func random_discard(side, count: int, rng: RandomNumberGenerator) -> Array:
+func random_discard(
+        side, count: int, rng: RandomNumberGenerator,
+        source_metadata: Dictionary = {}) -> Array:
+    return random_discard_result(
+        side, count, rng, source_metadata).get("cards", [])
+
+func random_discard_result(
+        side, count: int, rng: RandomNumberGenerator,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        [side], committed_event_service, trigger_queue, rng)
     var discarded: Array = []
     for _index in range(maxi(0, count)):
         var candidates: Array = side.hand.filter(
@@ -179,19 +314,47 @@ func random_discard(side, count: int, rng: RandomNumberGenerator) -> Array:
             break
         var card = candidates[rng.randi_range(0, candidates.size() - 1)]
         var result := move_card(
-            side, "hand", "discard_pile", card, "explicit_discard")
-        if result.get("success", false):
-            discarded.append(card)
-    return discarded
+            side, "hand", "discard_pile", card, "explicit_discard",
+            source_metadata)
+        if not result.get("success", false) \
+                or not result.get("passive_event_success", true):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(result.get("passive_event_reason", result.get(
+                    "reason", "随机弃牌提交失败"))),
+                "cards": [],
+            }
+        discarded.append(card)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {"success": true, "cards": discarded}
 
-func discard_all(side) -> Array:
+func discard_all(side, source_metadata: Dictionary = {}) -> Array:
+    return discard_all_result(side, source_metadata).get("cards", [])
+
+func discard_all_result(
+        side, source_metadata: Dictionary = {}) -> Dictionary:
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        [side], committed_event_service, trigger_queue, battle_rng)
     var discarded: Array = []
     for card in side.hand.duplicate():
+        if not _can_explicit_discard(side, card):
+            continue
         var result := move_card(
-            side, "hand", "discard_pile", card, "explicit_discard")
-        if result.get("success", false):
-            discarded.append(card)
-    return discarded
+            side, "hand", "discard_pile", card, "explicit_discard",
+            source_metadata)
+        if not result.get("success", false) \
+                or not result.get("passive_event_success", true):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(result.get("passive_event_reason", result.get(
+                    "reason", "全部弃牌提交失败"))),
+                "cards": [],
+            }
+        discarded.append(card)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {"success": true, "cards": discarded}
 
 func recover_from_discard(
         side,
@@ -515,6 +678,15 @@ func move_card(
     if card.has_anomaly("mark", "void") and reason in ["normal_play", "explicit_discard"]:
         return _resolve_void_departure(
             side, source_zone, card, reason, event_metadata, pre_move_snapshot)
+    if destination_zone == "discard_pile":
+        var disposition := _resolve_disposition_replacement(
+            side, card, source_zone, reason, event_metadata)
+        if not disposition.get("success", false):
+            return disposition
+        if disposition.get("replaced", false):
+            return _commit_disposition_replacement(
+                side, card, source_zone, reason, event_metadata,
+                pre_move_snapshot, disposition)
     var publish_fact := reason not in ["stage", "stage_rollback"]
     if publish_fact:
         event_metadata = _with_frozen_counts(
@@ -541,12 +713,194 @@ func move_card(
         result["passive_event_reason"] = event_result.get("reason", "")
     return result
 
-func move_cards_synchronously(records: Array) -> Array:
+func _resolve_disposition_replacement(
+        side, card, source_zone: String, reason: String,
+        event_metadata: Dictionary) -> Dictionary:
+    if passive_rule_runtime == null:
+        return {"success": true, "replaced": false}
+    var context_values := {
+        "hook": "card_disposition_replacement_query",
+        "owner": side,
+        "actor": side,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "payload": {
+            "card": card,
+            "card_instance_id": str(card.id),
+            "source_zone": source_zone,
+            "original_destination": "discard_pile",
+            "reason": reason,
+            "explicit_discard": reason == "explicit_discard",
+            "normal_play": reason == "normal_play",
+            "action_token": str(event_metadata.get("action_token", "")),
+        },
+    }
+    var plan = passive_rule_runtime.build_execution_plan(
+        "card_disposition_replacement_query", context_values)
+    if not plan.is_valid():
+        return {"success": false, "reason": "；".join(plan.errors)}
+    for invocation in plan.invocations:
+        var executed: Dictionary = passive_rule_runtime.execute_invocation(
+            invocation, null, "read")
+        if not executed.get("success", false):
+            return executed
+        var handler_result: Dictionary = executed.get("result", {})
+        if not handler_result.get("matched", false):
+            continue
+        return {
+            "success": true,
+            "replaced": true,
+            "destination": str(handler_result.get("destination", "")),
+            "invocation": invocation,
+            "source_instance_key": invocation.source.source_instance_key,
+        }
+    return {"success": true, "replaced": false}
+
+func _commit_disposition_replacement(
+        side, card, source_zone: String, reason: String,
+        event_metadata: Dictionary, pre_move_snapshot: Dictionary,
+        disposition: Dictionary) -> Dictionary:
+    var destination := str(disposition.get("destination", ""))
+    if destination not in ["draw_pile_bottom", "permanently_removed"]:
+        return {"success": false, "reason": "牌区处置替换返回了无效去向"}
+    var final_zone := "draw_pile" \
+        if destination == "draw_pile_bottom" else "permanently_removed"
+    var invocation = disposition.get("invocation")
+    var metadata := _with_disposition_metadata(
+        event_metadata, invocation, reason, final_zone,
+        str(disposition.get("source_instance_key", "")))
+    metadata.merge({
+        "pre_move_snapshot": pre_move_snapshot,
+    }, true)
+    metadata = _with_frozen_counts(
+        side, side, source_zone, final_zone, metadata)
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        [side], committed_event_service, trigger_queue, battle_rng)
+    _remove_from_source_zone(side, card, source_zone, reason)
+    if final_zone == "draw_pile":
+        _insert_in_zone(side, final_zone, card, "bottom")
+    elif not bool(card.temporary_card) and str(card.original_owner_id) == "":
+        side.mark_permanently_removed(str(card.id))
+    var lifecycle := _apply_state_lifecycle(
+        side, card, source_zone, final_zone, reason, metadata)
+    if not lifecycle.get("success", true):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return {
+            "success": false,
+            "reason": str(lifecycle.get("reason", "处置替换生命周期失败")),
+        }
+    metadata = _complete_frozen_counts(
+        side, side, source_zone, final_zone, metadata)
+    var moved := _publish_card_moved(
+        side, side, card, source_zone, final_zone, reason,
+        "bottom" if final_zone == "draw_pile" else "top", metadata, true)
+    if not moved.get("success", true):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return {
+            "success": false,
+            "reason": str(moved.get("reason", "处置替换 card_moved 提交失败")),
+        }
+    if reason == "explicit_discard":
+        var explicit := _emit_logical_explicit_discard_event(
+            side, card, source_zone, final_zone, metadata)
+        if not explicit.get("success", true):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(explicit.get(
+                    "reason", "处置替换明确弃置事实提交失败")),
+            }
+    _dispatch_deferred_card_moved_response(moved)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {
+        "success": true,
+        "card": card,
+        "from": source_zone,
+        "to": final_zone,
+        "reason": reason,
+        "placement": "bottom" if final_zone == "draw_pile" else "top",
+        "pre_move_snapshot": pre_move_snapshot,
+        "logical_explicit_discard": reason == "explicit_discard",
+        "disposition_replaced": true,
+        "disposition_source_instance_key": str(
+            disposition.get("source_instance_key", "")),
+    }
+
+func _emit_logical_explicit_discard_event(
+        side, card, source_zone: String, final_zone: String,
+        metadata: Dictionary) -> Dictionary:
+    if committed_event_service == null:
+        return {"success": true}
+    var event_serial := int(committed_event_service.next_serial())
+    var source := EffectSourceProtocolScript.from_values(metadata)
+    return committed_event_service.commit("card_explicitly_discarded", {
+        "actor": side,
+        "owner": side,
+        "holder": side,
+        "round_number": int(round_number_reader.call()) \
+            if round_number_reader.is_valid() else 0,
+        "event_serial": event_serial,
+        "event_token": committed_event_service.make_token(
+            "card_explicitly_discarded", side, event_serial,
+            str(metadata.get("action_token", "")), str(card.id)),
+        "action_token": str(metadata.get("action_token", "")),
+        "card": card,
+        "card_instance_id": str(card.id),
+        "from_zone": source_zone,
+        "to_zone": final_zone,
+        "reason": "explicit_discard",
+        "explicit_discard": true,
+        "logical_explicit_discard": true,
+        "disposition_replaced": true,
+        "original_destination": "discard_pile",
+        "final_destination": final_zone,
+        "source_kind": source["source_kind"],
+        "source_id": source["source_id"],
+        "source_name": source["source_name"],
+        "source_instance_key": source["source_instance_key"],
+        "trigger_mode": source["trigger_mode"],
+        "metadata": metadata,
+    })
+
+func _invocation_source_metadata(invocation) -> Dictionary:
+    if invocation == null or invocation.source == null:
+        return {}
+    return {
+        "source_kind": invocation.source.source_kind,
+        "source_id": invocation.source.content_id,
+        "source_name": str(invocation.source.definition.get(
+            "name", invocation.source.content_id)),
+        "source_instance_key": invocation.source.source_instance_key,
+        "trigger_mode": "automatic",
+    }
+
+func _with_disposition_metadata(
+        base: Dictionary, invocation, reason: String, final_zone: String,
+        source_instance_key: String) -> Dictionary:
+    var metadata := base.duplicate(true)
+    var disposition_source := _invocation_source_metadata(invocation)
+    metadata.merge({
+        "logical_explicit_discard": reason == "explicit_discard",
+        "explicit_discard": reason == "explicit_discard",
+        "disposition_replaced": true,
+        "original_destination": "discard_pile",
+        "final_destination": final_zone,
+        "disposition_source_kind": str(disposition_source.get(
+            "source_kind", "")),
+        "disposition_source_id": str(disposition_source.get("source_id", "")),
+        "disposition_source_name": str(disposition_source.get(
+            "source_name", "")),
+        "disposition_source_instance_key": source_instance_key,
+    }, true)
+    return metadata
+
+func move_cards_synchronously(records: Array) -> Dictionary:
     ## Freeze and remove every source first, then publish arrivals in stable order.
     ## This prevents bilateral discard and exchange responses from observing a half-moved state.
     var prepared: Array = []
     var seen: Dictionary = {}
     var count_ledger: Dictionary = {}
+    var transaction_sides: Array = []
     for record_value in records:
         var record: Dictionary = record_value
         var side = record.get("side")
@@ -566,25 +920,61 @@ func move_cards_synchronously(records: Array) -> Array:
                 and not _explicit_discard_permission(side, card).get("allowed", true):
             continue
         seen[str(card.id)] = true
+        if not transaction_sides.has(side):
+            transaction_sides.append(side)
         var metadata: Dictionary = record.get(
             "source_metadata", {}).duplicate(true)
-        metadata["pre_move_snapshot"] = _pre_move_snapshot(
-            side, card, source_zone)
+        var snapshot := _pre_move_snapshot(side, card, source_zone)
+        metadata["pre_move_snapshot"] = snapshot
+        var void_departure: bool = card.has_anomaly("mark", "void") \
+            and reason in ["normal_play", "explicit_discard"]
+        var disposition := {"success": true, "replaced": false}
+        if not void_departure and destination_zone == "discard_pile":
+            disposition = _resolve_disposition_replacement(
+                side, card, source_zone, reason, metadata)
+            if not disposition.get("success", false):
+                return {
+                    "success": false,
+                    "reason": str(disposition.get(
+                        "reason", "同步牌区处置替换查询失败")),
+                    "cards": [],
+                    "entries": [],
+                }
+        var final_zone := destination_zone
+        var final_placement := placement
+        if disposition.get("replaced", false):
+            final_zone = "draw_pile" \
+                if str(disposition.get("destination", "")) \
+                    == "draw_pile_bottom" else "permanently_removed"
+            if final_zone not in ["draw_pile", "permanently_removed"]:
+                return {
+                    "success": false,
+                    "reason": "同步牌区处置替换返回了无效去向",
+                    "cards": [],
+                    "entries": [],
+                }
+            final_placement = "bottom" if final_zone == "draw_pile" else "top"
+            metadata = _with_disposition_metadata(
+                metadata, disposition.get("invocation"), reason, final_zone,
+                str(disposition.get("source_instance_key", "")))
+        var ledger_destination := "temporarily_removed" \
+            if void_departure else final_zone
         metadata = _with_ledger_counts(
-            side, side, source_zone,
-            "temporarily_removed" if card.has_anomaly("mark", "void") \
-                and reason in ["normal_play", "explicit_discard"] \
-                else destination_zone,
+            side, side, source_zone, ledger_destination,
             metadata, count_ledger)
         prepared.append({
             "side": side, "card": card, "source_zone": source_zone,
-            "destination_zone": destination_zone, "reason": reason,
-            "placement": placement,
+            "destination_zone": final_zone, "reason": reason,
+            "placement": final_placement,
             "source_metadata": metadata,
-            "void": card.has_anomaly("mark", "void") \
-                and reason in ["normal_play", "explicit_discard"],
+            "void": void_departure,
+            "disposition_replaced": disposition.get("replaced", false),
         })
+    if prepared.is_empty():
+        return {"success": true, "cards": [], "entries": []}
     _stamp_movement_batch(prepared, "synchronous_move")
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        transaction_sides, committed_event_service, trigger_queue, battle_rng)
     for entry in prepared:
         if bool(entry["void"]):
             _place_in_temporary_removed(
@@ -594,32 +984,81 @@ func move_cards_synchronously(records: Array) -> Array:
                 entry["side"], entry["card"], entry["source_zone"],
                 entry["reason"])
     for entry in prepared:
-        if not bool(entry["void"]):
+        if not bool(entry["void"]) \
+                and entry["destination_zone"] != "permanently_removed":
             _insert_in_zone(
                 entry["side"], entry["destination_zone"], entry["card"],
                 entry["placement"])
-    var moved: Array = []
+        elif not bool(entry["void"]) \
+                and not bool(entry["card"].temporary_card) \
+                and str(entry["card"].original_owner_id) == "":
+            entry["side"].mark_permanently_removed(str(entry["card"].id))
+    var committed_entries: Array = []
     for entry in prepared:
         var side = entry["side"]
         var card = entry["card"]
         var metadata: Dictionary = entry["source_metadata"].duplicate(true)
+        var result: Dictionary
         if bool(entry["void"]):
             if entry["reason"] == "explicit_discard":
                 if status_system != null:
                     status_system.on_card_explicit_discard(side, card, true)
                 metadata["explicit_discard"] = true
+                metadata["logical_explicit_discard"] = true
+                metadata["original_destination"] = "discard_pile"
+                metadata["final_destination"] = "temporarily_removed"
             var lifecycle_event_result := _apply_temporary_remove_lifecycle(
                 side, card, entry["source_zone"], "void", metadata)
-            _finish_temporary_remove(
+            result = _finish_temporary_remove(
                 side, card, entry["source_zone"], "void", metadata,
                 lifecycle_event_result)
+        elif bool(entry["disposition_replaced"]):
+            var lifecycle := _apply_state_lifecycle(
+                side, card, entry["source_zone"], entry["destination_zone"],
+                entry["reason"], metadata)
+            result = lifecycle
+            var moved_result := {"success": true}
+            if result.get("success", true):
+                moved_result = _publish_card_moved(
+                    side, side, card, entry["source_zone"],
+                    entry["destination_zone"], entry["reason"],
+                    entry["placement"], metadata, true)
+                result = moved_result
+            if result.get("success", true) \
+                    and entry["reason"] == "explicit_discard":
+                result = _emit_logical_explicit_discard_event(
+                    side, card, entry["source_zone"],
+                    entry["destination_zone"], metadata)
+            if result.get("success", true):
+                _dispatch_deferred_card_moved_response(moved_result)
         else:
-            _notify_arrival(
+            result = _notify_arrival(
                 side, side, card, entry["source_zone"],
                 entry["destination_zone"], entry["reason"],
                 entry["placement"], metadata)
-        moved.append(card)
-    return moved
+        if not result.get("success", true):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(result.get("reason", "同步牌区移动提交失败")),
+                "cards": [],
+                "entries": [],
+            }
+        committed_entries.append({
+            "card": card,
+            "from": entry["source_zone"],
+            "to": "temporarily_removed" if bool(entry["void"]) \
+                else entry["destination_zone"],
+            "reason": entry["reason"],
+            "logical_explicit_discard": entry["reason"] == "explicit_discard",
+            "disposition_replaced": bool(entry["disposition_replaced"]),
+        })
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {
+        "success": true,
+        "cards": committed_entries.map(func(value): return value["card"]),
+        "entries": committed_entries,
+    }
 
 ## Atomically replaces the draw-pile order after a caller has frozen the
 ## complete before/after arrays. Reordering does not move a card between zones,
@@ -720,6 +1159,9 @@ func _resolve_void_departure(
         if status_system != null:
             status_system.on_card_explicit_discard(side, card, true)
         event_metadata["explicit_discard"] = true
+        event_metadata["logical_explicit_discard"] = true
+        event_metadata["original_destination"] = "discard_pile"
+        event_metadata["final_destination"] = "temporarily_removed"
     var result := _temporarily_remove_transaction(
         side, card, source_zone, "void", event_metadata, pre_move_snapshot)
     result["reason"] = reason
@@ -1069,9 +1511,17 @@ func _pre_move_snapshot(side, card, source_zone: String) -> Dictionary:
         "attributes": attributes,
         "anomalies": card.anomaly_snapshot(),
         "growth_layers": card.anomaly_layers("buff", "growth"),
-        "heat_layers": card.anomaly_layers("buff", "qi_heat"),
+        "heat_layers": card.total_blazing_layers() \
+            if card.has_method("total_blazing_layers") \
+            else card.anomaly_layers("buff", "qi_heat"),
+        "normal_heat_layers": card.normal_blazing_layers() \
+            if card.has_method("normal_blazing_layers") \
+            else card.anomaly_layers("buff", "qi_heat"),
+        "temporary_heat_layers": card.temporary_blazing_layers_total() \
+            if card.has_method("temporary_blazing_layers_total") else 0,
+        "temporary_blazing_sources": card.temporary_blazing_layers.duplicate(true),
         "had_poison": card.has_anomaly("state", "poison"),
-        "had_burned_out": card.has_anomaly("mark", "burned_out"),
+        "had_burned_out": card.has_anomaly("debuff", "burned_out"),
     }
 
 func _notify_arrival(
@@ -1175,6 +1625,14 @@ func _publish_card_moved(
         "to_zone": to_zone,
         "reason": reason,
         "placement": placement,
+        "logical_explicit_discard": bool(metadata.get(
+            "logical_explicit_discard", reason == "explicit_discard")),
+        "disposition_replaced": bool(metadata.get(
+            "disposition_replaced", false)),
+        "original_destination": str(metadata.get(
+            "original_destination", to_zone)),
+        "final_destination": str(metadata.get(
+            "final_destination", to_zone)),
         "transition_kind": _transition_kind(from_zone, to_zone),
         "from_zone_count_before": int(metadata.get(
             "from_zone_count_before", 0)),
@@ -1222,10 +1680,42 @@ func _publish_card_moved(
         var committed: Dictionary = committed_event_service.commit(
             "card_moved", values)
         committed["values"] = values
+        if committed.get("success", false):
+            _record_effect_batch_entry(values)
         return committed
     if status_system != null:
         status_system.handle_response_event("card_moved", values)
     return {"success": true, "values": values}
+
+func _record_effect_batch_entry(values: Dictionary) -> void:
+    var metadata: Dictionary = values.get("metadata", {})
+    var effect_token := str(metadata.get("effect_execution_token", ""))
+    if effect_token == "":
+        return
+    if not _effect_batch_entries.has(effect_token):
+        _effect_batch_entries[effect_token] = []
+    _effect_batch_entries[effect_token].append({
+        "event_serial": int(values.get("event_serial", -1)),
+        "card_instance_id": str(values.get("card_instance_id", "")),
+        "from_zone": str(values.get("from_zone", "")),
+        "to_zone": str(values.get("to_zone", "")),
+        "reason": str(values.get("reason", "")),
+        "placement": str(values.get("placement", "")),
+        "logical_explicit_discard": bool(values.get(
+            "logical_explicit_discard", metadata.get(
+                "logical_explicit_discard", false))),
+        "disposition_replaced": bool(values.get(
+            "disposition_replaced", metadata.get(
+                "disposition_replaced", false))),
+        "original_destination": str(values.get(
+            "original_destination", metadata.get(
+                "original_destination", values.get("to_zone", "")))),
+        "final_destination": str(values.get(
+            "final_destination", metadata.get(
+                "final_destination", values.get("to_zone", "")))),
+        "movement_batch_token": str(values.get("movement_batch_token", "")),
+        "movement_batch_index": int(values.get("movement_batch_index", -1)),
+    })
 
 func _dispatch_deferred_card_moved_response(event_result: Dictionary) -> void:
     if status_system == null:

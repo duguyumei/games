@@ -261,34 +261,59 @@ func _effective_qi_anomaly_entries(card, starting_serial: int) -> Array:
             var definition_value: Dictionary = definition("anomaly", str(anomaly_id))
             for modifier_value in definition_value.get("modifiers", []):
                 var modifier: Dictionary = modifier_value
-                if str(modifier.get("id", "")) != "effective_qi_add_per_layer":
+                var modifier_id := str(modifier.get("id", ""))
+                var behavior := {}
+                match modifier_id:
+                    "effective_qi_add_per_layer":
+                        behavior = {
+                            "trigger": "effective_qi",
+                            "handler": "add_effective_qi",
+                            "amount": layers * int(modifier.get("value", 0)),
+                        }
+                    "effective_qi_multiplier":
+                        behavior = {
+                            "trigger": "effective_qi",
+                            "handler": "multiply_effective_qi",
+                            "factor": int(modifier.get("value", 1)),
+                        }
+                if behavior.is_empty():
                     continue
                 result.append({
                     "priority": int(modifier.get("priority", 400)),
                     "serial": serial,
+                    "behavior": behavior,
+                })
+                serial += 1
+    var temporary_heat: int = card.temporary_blazing_layers_total() \
+        if card.has_method("temporary_blazing_layers_total") else 0
+    if temporary_heat > 0:
+        result.append({
+            "priority": 400,
+            "serial": serial,
+            "behavior": {
+                "trigger": "effective_qi",
+                "handler": "add_effective_qi",
+                "amount": temporary_heat,
+            },
+        })
+        serial += 1
+    for pair in [["buff", "buffs"], ["debuff", "debuffs"], ["mark", "marks"]]:
+        for anomaly_id in snapshot.get(pair[1], {}):
+            var definition_value: Dictionary = definition("anomaly", str(anomaly_id))
+            for modifier_value in definition_value.get("modifiers", []):
+                var modifier: Dictionary = modifier_value
+                if str(modifier.get("id", "")) != "effective_qi_final_value":
+                    continue
+                result.append({
+                    "priority": int(modifier.get("priority", 10000)),
+                    "serial": serial,
                     "behavior": {
                         "trigger": "effective_qi",
-                        "handler": "add_effective_qi",
-                        "amount": layers * int(modifier.get("value", 0)),
+                        "handler": "set_effective_qi",
+                        "value": maxi(0, int(modifier.get("value", 0))),
                     },
                 })
                 serial += 1
-    for anomaly_id in snapshot.get("marks", {}):
-        var definition_value: Dictionary = definition("anomaly", str(anomaly_id))
-        for modifier_value in definition_value.get("modifiers", []):
-            var modifier: Dictionary = modifier_value
-            if str(modifier.get("id", "")) != "effective_qi_final_value":
-                continue
-            result.append({
-                "priority": int(modifier.get("priority", 10000)),
-                "serial": serial,
-                "behavior": {
-                    "trigger": "effective_qi",
-                    "handler": "set_effective_qi",
-                    "value": maxi(0, int(modifier.get("value", 0))),
-                },
-            })
-            serial += 1
     return result
 
 func _base_qi_value(card) -> int:

@@ -192,6 +192,8 @@ func _init(
         passive_rule_registry, content_catalog)
     player.use_passive_rule_runtime(passive_rule_runtime)
     enemy.use_passive_rule_runtime(passive_rule_runtime)
+    player.use_card_zone_transaction_dependencies(rng, trigger_queue)
+    enemy.use_card_zone_transaction_dependencies(rng, trigger_queue)
     battle_passive_timing_bridge = BattlePassiveTimingBridgeScript.new(
         passive_rule_runtime, timing_system)
     battle_passive_event_service = BattlePassiveCommittedEventServiceScript.new(

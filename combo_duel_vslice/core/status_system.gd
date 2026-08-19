@@ -317,6 +317,13 @@ func set_card_anomaly_layers(
     return card_anomaly_service.set_card_anomaly_layers(
         card, category, anomaly_id, layers, source, event_metadata)
 
+func add_temporary_blazing_layers(
+        card, source_instance_key: String, layers: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return card_anomaly_service.add_temporary_blazing_layers(
+        card, source_instance_key, layers, source, event_metadata)
+
 func apply_temporary_enhancement(
         card, enhancement_id: String, source: String = "效果",
         event_metadata: Dictionary = {}) -> Dictionary:
@@ -485,7 +492,14 @@ func _on_turn_end(event) -> Dictionary:
         event.get("round_number", -1) if event is Dictionary else event.round_number)
     var delay_result: Dictionary = status_delay_service.resolve_turn_end_effects(
         event.actor, event_round)
-    card_status_behavior_service.on_turn_end(event.actor)
+    var card_result: Dictionary = \
+        card_status_behavior_service.on_turn_end(event.actor)
+    if not card_result.get("success", false):
+        return {
+            "success": false,
+            "detail": str(card_result.get(
+                "reason", "回合结束真气状态结算失败")),
+        }
     status_delay_service.expire_turn_end_modifiers(event.actor, event_round)
     status_response_service.expire_turn_end(event.actor, event_round)
     return {

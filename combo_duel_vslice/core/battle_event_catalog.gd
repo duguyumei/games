@@ -12,6 +12,7 @@ const TIMING_EVENTS := [
 
 const COMMITTED_EVENTS := [
     "action_confirmed", "action_resolved", "card_moved", "card_state_changed",
+    "growth_trigger_resolved", "effect_card_batch_committed",
     "qi_consumed", "qi_reshape_committed",
     "card_drawn",
     "card_entered_discard", "card_explicitly_discarded",
@@ -100,6 +101,12 @@ const PUBLIC_FIELDS := [
     "sequence_after", "normal_advance_count", "extra_advance_count",
     "extra_sequence_advance_count", "extra_sequence_advance_sources",
     "source_records", "completed_slot_instance_id",
+    "growth_layers", "blazing_layers_added", "extra_trigger",
+    "trigger_sequence", "effect_execution_token", "card_entries",
+    "actual_moved_count", "actual_explicit_discard_count",
+    "logical_explicit_discard", "disposition_replaced",
+    "original_destination", "final_destination", "claim_token",
+    "claim_consumed", "claimed_entries", "claim_source_instance_key",
 ]
 
 static func event_ids() -> Array[String]:

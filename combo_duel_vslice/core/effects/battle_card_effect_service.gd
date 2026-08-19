@@ -139,25 +139,56 @@ func generate_temporary_normal_card(side, source, options: Dictionary = {}):
                 rank = value
                 break
     var card = QiCard.new(
-        "%s-temp-%d" % [attribute, _battle_rng.randi()],
+        _next_temporary_qi_instance_id(side, attribute),
         str(rank.get("id", "")), int(rank.get("order", 0)),
         int(rank.get("qi", 0)), attribute, attribute,
         "%s_%s" % [attribute, str(rank.get("id", "")).to_lower()])
+    if bool(options.get("clone_source", false)) and source is Object:
+        _copy_persistent_qi_identity(source, card)
     card.temporary_card = true
     if bool(options.get("add_void", true)):
         var applied: Dictionary = apply_card_anomaly(
             card, "mark", "void", {}, "临时真气", 1, false, {
                 "holder": side, "actor": side,
-                "source_kind": "rule", "source_id": "temporary_card",
-                "source_name": "临时真气",
-                "source_instance_key": "rule:temporary_card",
-                "trigger_mode": "direct",
+                "source_kind": str(options.get("source_kind", "rule")),
+                "source_id": str(options.get("source_id", "temporary_card")),
+                "source_name": str(options.get("source_name", "临时真气")),
+                "source_instance_key": str(options.get(
+                    "source_instance_key", "rule:temporary_card")),
+                "trigger_mode": str(options.get("trigger_mode", "direct")),
+                "action_token": str(options.get("action_token", "")),
             })
         if not applied.get("success", false):
             return null
+    var destination := str(options.get("destination", "hand"))
     var added: Dictionary = side.card_zone_service.add_generated(
-        side, card, "hand", true)
+        side, card, destination, true, options)
+    if added.get("success", false) \
+            and destination == "draw_pile" \
+            and bool(options.get("shuffle_destination", false)):
+        side.card_zone_service.shuffle(side.draw_pile, _battle_rng)
     return card if added.get("success", false) else null
+
+func _next_temporary_qi_instance_id(side, attribute: String) -> String:
+    for _attempt in range(1024):
+        var candidate := "%s-temp-%d" % [attribute, _battle_rng.randi()]
+        if not side.card_zone_service.has_instance(side, candidate):
+            return candidate
+    return "%s-temp-%s" % [attribute, str(_battle_rng.state)]
+
+func _copy_persistent_qi_identity(source, target) -> void:
+    target.definition_id = str(source.definition_id)
+    target.rank_name = str(source.rank_name)
+    target.rank_order = int(source.rank_order)
+    target.qi_value = int(source.qi_value)
+    target.attribute = str(source.attribute)
+    target.attribute_name = str(source.attribute_name)
+    target.is_true_qi = bool(source.is_true_qi)
+    target.reshape_origin = source.reshape_origin.duplicate(true)
+    target.reshape_enhancement = str(source.reshape_enhancement)
+    target.reshape_imprint = str(source.reshape_imprint)
+    target.reshape_others = source.reshape_others.duplicate(true)
+    target.origin_base_identity = source.origin_base_identity.duplicate(true)
 
 
 func steal_random_normal_card(
@@ -211,7 +242,7 @@ func burn_deck_then_heat_hand(
         actor, "draw_pile").filter(func(card):
             return card.is_card_kind("normal") and not card.is_attribute("fire") \
                 and can_apply_card_anomaly(
-                    card, "mark", "burned_out").get("allowed", false))
+                    card, "debuff", "burned_out").get("allowed", false))
     if candidates.is_empty():
         return {"success": true, "detail": ""}
     var card = null
@@ -219,7 +250,7 @@ func burn_deck_then_heat_hand(
         card = candidates[0]
     else:
         card = candidates[_battle_rng.randi_range(0, candidates.size() - 1)]
-    var applied := apply_card_anomaly(card, "mark", "burned_out", {}, "引火式")
+    var applied := apply_card_anomaly(card, "debuff", "burned_out", {}, "引火式")
     if not applied.get("success", false):
         return {"success": true, "detail": ""}
     var heat_targets: Array = context.captures.get(choice_capture, [])
@@ -714,21 +745,24 @@ func discard_random(
         side,
         count: int,
         rng: RandomNumberGenerator,
-        source_metadata: Dictionary = {}) -> Array:
-    var discarded: Array = side.card_zone_service.random_discard(
-        side, count, rng)
-    if str(source_metadata["source_kind"]) == "technique":
+        source_metadata: Dictionary = {}) -> Dictionary:
+    var result: Dictionary = side.card_zone_service.random_discard_result(
+        side, count, rng, source_metadata)
+    var discarded: Array = result.get("cards", [])
+    if str(source_metadata.get("source_kind", "rule")) == "technique":
         _status_system.record_technique_card_flow(
             side, "discard", discarded.size())
-    return discarded
+    return result
 
 
-func discard_all(side, source_metadata: Dictionary = {}) -> Array:
-    var discarded: Array = side.card_zone_service.discard_all(side)
-    if str(source_metadata["source_kind"]) == "technique":
+func discard_all(side, source_metadata: Dictionary = {}) -> Dictionary:
+    var result: Dictionary = side.card_zone_service.discard_all_result(
+        side, source_metadata)
+    var discarded: Array = result.get("cards", [])
+    if str(source_metadata.get("source_kind", "rule")) == "technique":
         _status_system.record_technique_card_flow(
             side, "discard", discarded.size())
-    return discarded
+    return result
 
 
 func move_card(
@@ -750,7 +784,7 @@ func move_card(
             source_side, target_side, str(card.id), destination_zone, reason,
             source_metadata, placement)
     if result.get("success", false) \
-            and str(source_metadata["source_kind"]) == "technique":
+            and str(source_metadata.get("source_kind", "rule")) == "technique":
         if destination_zone == "hand" and reason == "draw":
             _status_system.record_technique_card_flow(target_side, "draw", 1)
         elif destination_zone == "discard_pile" and reason == "explicit_discard":
@@ -759,26 +793,83 @@ func move_card(
 
 
 func move_cards_synchronously(
-        records: Array, source_metadata: Dictionary = {}) -> Array:
+        records: Array, source_metadata: Dictionary = {}) -> Dictionary:
     if records.is_empty():
-        return []
+        return {"success": true, "cards": [], "entries": []}
     var first_side = records[0].get("side")
     if first_side == null:
-        return []
+        return {"success": false, "reason": "同步牌区移动缺少持有者", "cards": []}
     var sourced_records: Array = []
     for record_value in records:
         var sourced_record: Dictionary = record_value.duplicate(true)
         sourced_record["source_metadata"] = source_metadata.duplicate(true)
         sourced_records.append(sourced_record)
-    var moved: Array = first_side.card_zone_service.move_cards_synchronously(
+    var result: Dictionary = first_side.card_zone_service.move_cards_synchronously(
         sourced_records)
+    var moved: Array = result.get("cards", [])
     for record in records:
-        if str(source_metadata["source_kind"]) == "technique" \
+        if str(source_metadata.get("source_kind", "rule")) == "technique" \
                 and moved.has(record.get("card")) \
                 and str(record.get("reason", "")) == "explicit_discard":
             _status_system.record_technique_card_flow(
                 record.get("side"), "discard", 1)
-    return moved
+    return result
+
+func commit_effect_card_batch(context) -> Dictionary:
+    var effect_token := str(context.effect_execution_token) \
+        if context != null and not context is Dictionary \
+        else str(context.get("effect_execution_token", "")) \
+            if context is Dictionary else ""
+    if effect_token == "":
+        return {"success": true, "published": false}
+    var entries: Array = []
+    for side in _sides:
+        entries.append_array(
+            side.card_zone_service.take_effect_batch_entries(effect_token))
+    entries.sort_custom(func(first: Dictionary, second: Dictionary):
+        return int(first.get("event_serial", -1)) \
+            < int(second.get("event_serial", -1)))
+    if entries.is_empty() or _committed_event_service == null:
+        return {"success": true, "published": false, "entries": entries}
+    var actor = context.actor if not context is Dictionary \
+        else context.get("actor")
+    var source_values: Dictionary = context.source_metadata() \
+        if not context is Dictionary and context.has_method("source_metadata") \
+        else EffectSourceProtocolScript.from_values(context)
+    var event_serial := int(_committed_event_service.next_serial())
+    var explicit_count := 0
+    for entry in entries:
+        if bool(entry.get("logical_explicit_discard", false)):
+            explicit_count += 1
+    var values := {
+        "event_serial": event_serial,
+        "event_token": _committed_event_service.make_token(
+            "effect_card_batch_committed", actor, event_serial,
+            effect_token, ""),
+        "action_token": str(source_values.get("action_token", "")),
+        "round_number": int(_round_number_reader.call()) \
+            if _round_number_reader.is_valid() else 0,
+        "actor": actor,
+        "owner": actor,
+        "effect_execution_token": effect_token,
+        "execution_token": str(source_values.get(
+            "execution_token", source_values.get(
+                "technique_execution_token", ""))),
+        "card_entries": entries.duplicate(true),
+        "actual_moved_count": entries.size(),
+        "actual_explicit_discard_count": explicit_count,
+        "source_kind": str(source_values.get("source_kind", "rule")),
+        "source_id": str(source_values.get("source_id", "effect")),
+        "source_name": str(source_values.get("source_name", "effect")),
+        "source_instance_key": str(source_values.get(
+            "source_instance_key", "rule:effect")),
+        "trigger_mode": str(source_values.get("trigger_mode", "direct")),
+    }
+    var committed: Dictionary = _committed_event_service.commit(
+        "effect_card_batch_committed", values)
+    committed["published"] = committed.get("success", false)
+    committed["entries"] = entries
+    return committed
 
 
 func transfer_cards_atomically(
@@ -872,6 +963,13 @@ func set_card_anomaly_layers(
         event_metadata: Dictionary = {}) -> Dictionary:
     return _status_system.set_card_anomaly_layers(
         card, category, anomaly_id, layers, source, event_metadata)
+
+func add_temporary_blazing_layers(
+        card, source_instance_key: String, layers: int,
+        source: String = "效果",
+        event_metadata: Dictionary = {}) -> Dictionary:
+    return _status_system.add_temporary_blazing_layers(
+        card, source_instance_key, layers, source, event_metadata)
 
 
 func apply_temporary_enhancement(

@@ -14,4 +14,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","anomaly_apply","enemy_disruption"])
 public_behavior_summary=Array[String](["damage","anomaly_apply","enemy_disruption"])
 implementation_category="B"
-effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"hand","order":"highest_effective_qi_random_ties","limit":{"kind":"hand_map","values":{"pair":1,"two_pair":2,"full_house":1}},"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"mark","id":"burned_out"}}},"category":"mark","anomaly":"burned_out","capture":"scorched"}]
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"apply_anomaly_from_query","query":{"side":"target","zone":"hand","order":"highest_effective_qi_random_ties","limit":{"kind":"hand_map","values":{"pair":1,"two_pair":2,"full_house":1}},"filters":{"card_kind":"normal","can_apply_anomaly":{"category":"debuff","id":"burned_out"}}},"category":"debuff","anomaly":"burned_out","capture":"scorched"}]

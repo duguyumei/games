@@ -314,7 +314,13 @@ func card_fact(card, owner = null, target = null, participating: bool = false) -
         "has_temporary_reshape": str(temporary.get("enhancement", "")) != "" \
             or str(temporary.get("attribute", "")) != "" \
             or not temporary.get("rank", {}).is_empty(),
-        "burned_out": card.has_anomaly("mark", "burned_out"),
+        "burned_out": card.has_anomaly("debuff", "burned_out"),
+        "normal_blazing_layers": card.normal_blazing_layers() \
+            if card.has_method("normal_blazing_layers") else 0,
+        "temporary_blazing_layers": card.temporary_blazing_layers_total() \
+            if card.has_method("temporary_blazing_layers_total") else 0,
+        "total_blazing_layers": card.total_blazing_layers() \
+            if card.has_method("total_blazing_layers") else 0,
         "participating": participating,
     }
 

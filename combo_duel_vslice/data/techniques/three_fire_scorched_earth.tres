@@ -14,4 +14,4 @@ power_formation={}
 semantic_tags=Array[String](["damage","anomaly_apply","enemy_disruption"])
 public_behavior_summary=Array[String](["damage","anomaly_apply","enemy_disruption"])
 implementation_category="B"
-effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":3,"filters":{"card_kind":"normal"}},"capture":"top_three"},{"op":"apply_card_anomaly_to_captured","capture":"top_three","category":"mark","anomaly":"burned_out","result_capture":"scorched"}]
+effects=[{"op":"damage","amount":{"kind":"power"}},{"op":"capture_query","query":{"side":"target","zone":"draw_pile","order":"top","limit":3,"filters":{"card_kind":"normal"}},"capture":"top_three"},{"op":"apply_card_anomaly_to_captured","capture":"top_three","category":"debuff","anomaly":"burned_out","result_capture":"scorched"}]

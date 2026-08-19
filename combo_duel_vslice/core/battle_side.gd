@@ -89,6 +89,8 @@ var hand_technique_progression_active: bool = false
 var hand_technique_multiplier_modifiers: Dictionary = {}
 var owned_technique_ids: Array[String] = []
 var permanently_removed_card_ids: Array[String] = []
+## 最近一次抽牌事务的结构化结果；公开 draw 仍返回实际抽到的真气数组。
+var last_draw_result: Dictionary = {}
 var card_state_lifecycle
 var status_system
 var card_zone_service := CardZoneServiceScript.new()
@@ -132,6 +134,7 @@ func use_committed_event_service(service, round_reader: Callable = Callable()) -
 
 func use_passive_rule_runtime(runtime) -> void:
     passive_rule_runtime = runtime
+    card_zone_service.use_passive_rule_runtime(runtime)
     var catalog = (
         runtime.content_catalog()
         if runtime != null and runtime.has_method("content_catalog")
@@ -169,6 +172,10 @@ func use_battle_permission_service(service) -> void:
     for card in all_zone_cards():
         if card.has_method("configure_battle_permission_service"):
             card.configure_battle_permission_service(service)
+
+func use_card_zone_transaction_dependencies(
+        rng: RandomNumberGenerator, queue) -> void:
+    card_zone_service.use_runtime_transaction_dependencies(rng, queue)
 
 func use_technique_sequence_book(book) -> void:
     technique_sequence_book = book
@@ -234,6 +241,7 @@ func reset(
     hand_technique_multiplier_modifiers.clear()
     owned_technique_ids.clear()
     permanently_removed_card_ids.clear()
+    last_draw_result.clear()
     if passive_counter_store != null:
         passive_counter_store.clear()
     if battle_passive_counter_store != null:
@@ -243,6 +251,7 @@ func reset(
     last_hand_limit_query_result.clear()
     last_same_qi_capacity_query_result.clear()
     card_zone_service.reset_zones(self, cards, rng, shuffle_cards)
+    card_zone_service.use_runtime_transaction_dependencies(rng, null)
 
 func active_source_content_ids() -> Dictionary:
     var active := {
@@ -681,6 +690,8 @@ func capture_passive_query_state() -> Dictionary:
             "reshape_others": card.reshape_others.duplicate(true),
             "anomalies": card.anomalies.duplicate(true),
             "temporary_reshapes": card.temporary_reshapes.duplicate(true),
+            "temporary_blazing_layers": (
+                card.temporary_blazing_layers.duplicate(true)),
             "origin_base_identity": card.origin_base_identity.duplicate(true),
             "original_owner_id": str(card.original_owner_id),
             "temporary_card": bool(card.temporary_card),
@@ -748,6 +759,7 @@ func capture_passive_query_state() -> Dictionary:
             hand_technique_multiplier_modifiers.duplicate(true)),
         "owned_technique_ids": owned_technique_ids.duplicate(),
         "permanently_removed_card_ids": permanently_removed_card_ids.duplicate(),
+        "last_draw_result": last_draw_result.duplicate(true),
         "card_states": card_states,
         "status_state": status_state,
         "persistent_counters": passive_counter_store.capture_state() \
@@ -761,6 +773,7 @@ func capture_passive_query_state() -> Dictionary:
         "last_hand_limit_query_result": last_hand_limit_query_result.duplicate(true),
         "technique_sequence_state": technique_sequence_book.snapshot() \
             if technique_sequence_book != null else {},
+        "card_zone_runtime_state": card_zone_service.capture_runtime_state(),
     }
 
 func replace_passive_query_state(state: Dictionary) -> void:
@@ -853,6 +866,7 @@ func replace_passive_query_state(state: Dictionary) -> void:
     owned_technique_ids.assign(state.get("owned_technique_ids", owned_technique_ids))
     permanently_removed_card_ids.assign(state.get(
         "permanently_removed_card_ids", permanently_removed_card_ids))
+    last_draw_result = state.get("last_draw_result", {}).duplicate(true)
     var card_states: Dictionary = state.get("card_states", {})
     for card in all_cards_for_run_sync():
         var card_state: Dictionary = card_states.get(str(card.id), {})
@@ -871,6 +885,8 @@ func replace_passive_query_state(state: Dictionary) -> void:
         card.reshape_others = card_state["reshape_others"].duplicate(true)
         card.anomalies = card_state["anomalies"].duplicate(true)
         card.temporary_reshapes = card_state["temporary_reshapes"].duplicate(true)
+        card.temporary_blazing_layers = card_state.get(
+            "temporary_blazing_layers", {}).duplicate(true)
         card.origin_base_identity = card_state["origin_base_identity"].duplicate(true)
         card.original_owner_id = str(card_state["original_owner_id"])
         card.temporary_card = bool(card_state["temporary_card"])
@@ -894,6 +910,8 @@ func replace_passive_query_state(state: Dictionary) -> void:
     var sequence_state: Dictionary = state.get("technique_sequence_state", {})
     if technique_sequence_book != null and not sequence_state.is_empty():
         technique_sequence_book.restore_snapshot(sequence_state)
+    card_zone_service.restore_runtime_state(state.get(
+        "card_zone_runtime_state", {}))
 
 
 ## 玩家侧对 canonical 功法执行事实的窄投影入口。幂等由 committed receipt

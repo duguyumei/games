@@ -78,7 +78,7 @@ func _test_zone_moves_queries_and_atomic_operations() -> void:
     engine.player.hand = [normal_discard, void_discard]
     engine.effect_ports.apply_card_anomaly(
         void_discard, "mark", "void", {}, "专项测试")
-    var synchronized: Array = engine.effect_ports.move_cards_synchronously([
+    var synchronized: Dictionary = engine.effect_ports.move_cards_synchronously([
         {
             "side": engine.player,
             "source_zone": "hand",
@@ -94,7 +94,9 @@ func _test_zone_moves_queries_and_atomic_operations() -> void:
             "reason": "explicit_discard",
         },
     ], "rule")
-    _assert_equal(synchronized.size(), 2, "同步移动冻结并提交完整合法目标集")
+    _assert_true(synchronized.get("success", false), "同步移动批次提交成功")
+    _assert_equal(synchronized.get("cards", []).size(), 2,
+        "同步移动冻结并提交完整合法目标集")
     _assert_true(engine.player.discard_pile.has(normal_discard),
         "普通明确弃牌进入弃牌堆")
     _assert_true(engine.player.temporarily_removed_cards.has(void_discard),

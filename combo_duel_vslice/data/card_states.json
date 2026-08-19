@@ -50,7 +50,7 @@
           "priority": 500,
           "handler": "apply_anomaly",
           "origin_attribute": "fire",
-          "category": "mark",
+          "category": "debuff",
           "anomaly": "burned_out"
         },
         {
@@ -332,11 +332,22 @@
     {
       "id": "burned_out",
       "name": "燃尽",
-      "category": "mark",
+      "category": "debuff",
+      "stackable": false,
       "remove_on_enter_discard": false,
       "remove_on_battle_end": true,
       "lifecycle": ["battle_end", "remove"],
       "modifiers": [{"id": "effective_qi_final_value", "value": 0, "priority": 10000}]
+    },
+    {
+      "id": "flourish",
+      "name": "焕发",
+      "category": "buff",
+      "stackable": false,
+      "remove_on_enter_discard": false,
+      "remove_on_battle_end": true,
+      "lifecycle": ["battle_end", "remove"],
+      "modifiers": [{"id": "effective_qi_multiplier", "value": 2, "priority": 9000}]
     },
     {
       "id": "purification",

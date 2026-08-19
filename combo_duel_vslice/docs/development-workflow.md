@@ -426,7 +426,8 @@ macOS CA 证书警告。不运行 `quick`／`full`，不能把该最小门禁描
 战斗开始与结束的外层时点仍由 `StatusSystem` 注册并遍历双方及全部相关牌区，每张牌分别委托
 `on_card_battle_start`／`on_card_battle_end`。施加、转移和移除仍保持原有“写牌后写历史、最后发布响应”
 顺序；转移仍先成功写入目标、再移除来源、写两条历史并依次发布两次变化事件。层数设置只写历史，
-进入弃牌堆只记录实际清除的 state，燃尽专用事件仍只对应 `mark/burned_out`，有效真气值继续下限为 0。
+进入弃牌堆只记录实际清除的 state；燃尽已在2026-08-19生命周期平台机械迁移为
+`debuff/burned_out`，燃尽专用响应只投影该canonical变化，有效真气值继续下限为 0。
 迁移后 `status_system.gd` 为 1048 行，`card_anomaly_service.gd` 为 357 行。下一批只拆真气行为分发服务，
 不把动态响应、延迟记录或战斗来源生命周期一并迁移。
 
@@ -1096,3 +1097,37 @@ starter build或production内功池。
 本批门禁为独立自然衰减专项、battle-contracts、防御／回合与山系相关专项、项目加载、内容和设计一致性、
 quick；不运行full。完成后口径为已有／合并20、B 12、C1 15、C2 0、D 1，正式内功13门、剩余153门，
 物品仍剩13件，暂缓功法仍为8门。
+
+## 牌区与真气状态生命周期平台工作流（2026-08-19）
+
+本批九项能力必须作为三个既有领域族维护，不能按内容或能力键继续建立平行Service：
+
+- **牌区事务族**：`CardZoneService`仍是牌区规则和写入的唯一公开Facade。入弃牌堆前处置替换、牌库耗尽
+  洗回继续抽牌均先由来源中立`card_lifecycle_policy` Handler解释冻结上下文，再由
+  `CardZoneService + BattleRuntimeMutationTransaction`提交。Handler不得直接移动卡牌、写RunDeck、消费
+  RNG或发布事实；虚无消散永远先于弃牌处置替换。
+- **真气状态族**：`QiCard`只持有普通异状、重塑和按`source_instance_key`分层的临时炽气；
+  `CardAnomalyService/CardStateLifecycle`统一状态提交、净化、入弃牌堆清理、移除状态claim、快照恢复与
+  战斗结束清理；`CardStatusBehaviorService`把成长额外触发接入既有`PassiveRuleRuntime/ExecutionPlan`。
+  有效值仍只由`QiCard/CardReshapeRuleService`计算，顺序为加减与来源层、焕发倍乘、燃尽最终置0。
+- **效果执行事实族**：`TechniqueEffectExecutor`只为单个EffectSpec分配稳定`effect_execution_token`并建立
+  公共运行时事务；逐牌移动仍由`CardZoneService`提交，`BattleCardEffectService`仅从已提交条目发布一次
+  `effect_card_batch_committed`。它不重新扫描牌区，也不替代`card_moved/card_explicitly_discarded`。
+
+新增的`CardLifecyclePolicyPassiveHandler`只是181行的来源中立计划适配器，不具有牌区或状态写入权。
+截至本批，重点文件实际行数为：`CardZoneService`2028、`CardAnomalyService`1114、
+`CardStatusBehaviorService`380、`CardStateLifecycle`137、`TechniqueEffectExecutor`204、
+`BattleCardEffectService`1023。`CardZoneService`虽已较大，但写入权、移动准备、同步批量事务及事件组装高度
+耦合；本次没有发现两个独立移动实现，因此不为追求行数机械拆分。后续若继续增长，只能把无写入权的
+纯计划／payload组装下沉为内部协作者，公开移动入口仍保持唯一。
+
+canonical事实新增`growth_trigger_resolved`和`effect_card_batch_committed`。前者只能从实际成长产出的
+状态提交结果生成；后者只能从同一效果令牌下已提交的逐牌结果生成。失败、回滚、预览和恢复均不得留下
+这两类事实、来源counter、claim、批次条目或RNG推进。临时炽气进入BattleSide及battle DTO快照，但不得
+写入Run DTO；临时克隆保留永久重塑，不复制战斗异状、临时重塑或临时炽气，默认带虚无。
+
+燃尽已从`mark`机械迁移为`debuff`，覆盖状态定义、正式功法资源、条件／目标查询、有效值、快照与测试；
+legacy `card_burned_out_changed`只投影同一canonical `card_state_changed`中的debuff变化，不保留旧分类双轨。
+焕发为非叠层buff，跨牌区保留、可净化并在战斗结束清理。本批没有新增正式内容：正式内功仍为13门、
+物品仍为7件，剩余153门内功、13件物品和8门暂缓功法不变。矩阵更新为已有／合并30、B 8、C1 9、
+C2 0、D 1；下一平台批次按剩余`merge_family`选择，不按单项内容复制生命周期或事务。

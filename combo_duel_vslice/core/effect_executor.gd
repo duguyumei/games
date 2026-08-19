@@ -53,14 +53,40 @@ func _continue(continuation) -> Dictionary:
                     "effect_results": continuation.effect_results.duplicate(true),
                 }
             continuation.command_consumed_index = continuation.effect_index
+        _set_effect_execution_token(
+            continuation.context, continuation.effect_index)
         var context_ports = (
             continuation.context.get("ports")
             if continuation.context is Dictionary
             else continuation.context.ports)
         if context_ports != null:
             context_ports.push_effect_context(continuation.context)
+        var effect_transaction := {}
+        if context_ports != null \
+                and context_ports.has_method(
+                    "begin_effect_mutation_transaction"):
+            effect_transaction = \
+                context_ports.begin_effect_mutation_transaction()
         var result: Dictionary = EffectResultScript.normalize(
             registry.execute(effect, continuation.context))
+        if result.get("success", false) \
+                and not result.get("pending_choice", false) \
+                and context_ports != null \
+                and context_ports.has_method("commit_effect_card_batch"):
+            var batch: Dictionary = context_ports.commit_effect_card_batch(
+                continuation.context)
+            if not batch.get("success", false):
+                result = EffectResultScript.normalize(
+                    EffectResultScript.failed(str(batch.get(
+                        "reason", "真气批次汇总提交失败"))))
+        if not effect_transaction.is_empty():
+            if result.get("success", false) \
+                    or result.get("pending_choice", false):
+                context_ports.commit_effect_mutation_transaction(
+                    effect_transaction)
+            else:
+                context_ports.rollback_effect_mutation_transaction(
+                    effect_transaction)
         if context_ports != null:
             context_ports.pop_effect_context(continuation.context)
         continuation.effect_results.append(_public_effect_result(result))
@@ -107,6 +133,23 @@ func _continue(continuation) -> Dictionary:
         "detail": "；".join(continuation.details),
         "effect_results": continuation.effect_results.duplicate(true),
     }
+
+func _set_effect_execution_token(context, effect_index: int) -> void:
+    var base := ""
+    if context is Dictionary:
+        base = str(context.get(
+            "technique_execution_token", context.get(
+                "action_token", context.get("source_instance_key", "effect"))))
+        context["effect_execution_token"] = "%s:effect:%d" % [base, effect_index]
+        return
+    base = str(context.technique_execution_token)
+    if base == "":
+        base = str(context.action_token)
+    if base == "":
+        base = str(context.source_instance_key)
+    if base == "":
+        base = "effect"
+    context.effect_execution_token = "%s:effect:%d" % [base, effect_index]
 
 func _failed_resume(detail: String, continuation = null) -> Dictionary:
     var result := {

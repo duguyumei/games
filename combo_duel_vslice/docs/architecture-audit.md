@@ -173,7 +173,8 @@ serial。地图的 graph 与 completed node 容器、终局附属数组、节点
 取出生命周期实例注入双方。施加顺序仍为合法性检查／写牌、写历史、发布 `card_anomaly_changed`；
 转移仍为验证双方、目标施加成功、来源移除、依次写出／入两条历史、依次发布来源／目标事件；移除
 仍先冻结 before，再删除、写历史和发布事件。`set_card_anomaly_layers` 继续只写历史，不额外发布变化
-响应；燃尽专用事件只对应 `mark/burned_out`，有效真气值继续向下钳制为 0。
+响应；燃尽已在2026-08-19生命周期平台机械迁移为`debuff/burned_out`，专用响应只投影该canonical
+变化，有效真气值继续向下钳制为 0。
 
 战斗时点的外层所有权没有变化。`StatusSystem` 继续在 `BattleTimingSystem` 注册战斗开始和结束处理器，
 遍历双方及相关牌区并逐张调用 `on_card_battle_start`／`on_card_battle_end`；新服务不知道双方集合或时点
@@ -1955,3 +1956,43 @@ consume不足、未知操作或上限查询失败均不改值且明确失败。�
 `BattleUiMapper`统一公开`momentum_cap`，UI使用“连势 当前值/有效上限”。专项fixture用同一通用Handler
 验证单来源`+20`、双来源`+40`、敌我隔离、压制恢复及稳定指纹，不修改正式内容JSON；《广炉容火》仍未
 录入，正式内功、物品和8门暂缓功法数量不变。
+
+## 29. 2026-08-19 牌区与真气状态生命周期平台收口
+
+九项缺口已经合并进既有牌区事务、真气状态模型、被动ExecutionPlan与效果执行汇总，没有形成九个Service、
+第二套移动器、第二套状态系统、平行事件总线或内容ID分支。唯一新增生产类
+`CardLifecyclePolicyPassiveHandler`（181行）只是读取冻结上下文并返回来源中立计划，不拥有任何写权限。
+
+| 机制 | 唯一正式落点 | 状态／写入所有者 | 事务与canonical事实 |
+|---|---|---|---|
+| 牌区处置替换 | `CardZoneService`移动准备／提交 | `BattleSide`牌区及现有本局永久牌组工作副本 | `BattleRuntimeMutationTransaction`；最终仍只发逐牌`card_moved` |
+| 牌库耗尽替换 | `CardZoneService.draw`缺牌分支 | `BattleSide`牌库／弃牌堆、既有来源counter、战斗RNG | 洗回、随机顺序、继续抽牌同事务；失败不消费来源、不留事实 |
+| 来源级临时炽气 | `QiCard` + `CardAnomalyService/CardStateLifecycle` | 卡实例的`temporary_blazing_layers[source_instance_key]` | 状态写入继续发`card_state_changed`；只在真正入弃牌堆或战斗结束清理 |
+| 成长完成事实 | `CardStatusBehaviorService` → `CardAnomalyService.trigger_growth` | 卡实例成长／炽气状态 | 实际产出后逐牌一次`growth_trigger_resolved`；回滚不留事件 |
+| 燃尽／焕发 | `QiCard/CardReshapeRuleService`唯一有效值管线 | 统一异状模型 | 燃尽为debuff、焕发为buff；统一净化、快照和战斗结束清理 |
+| 临时真气复制 | `BattleCardEffectService.generate_temporary_normal_card` | 新卡实例，移动仍由`CardZoneService` | 复制永久身份、不复制BattleRuntime状态；继续使用`card_moved(from=generated)` |
+| 移除状态claim | `CardAnomalyService`入堆生命周期清理 | 仅本次清理事务内冻结claim | 首个成功Invocation独占；失败／回滚不消费，不建角色级表 |
+| 成长额外计划 | `CardStatusBehaviorService` + `PassiveRuleRuntime/ExecutionPlan` | 事件局部计划 | 稳定Invocation累加；额外触发不递归建立新计划 |
+| 单效果牌批次汇总 | `TechniqueEffectExecutor` + `BattleCardEffectService` | `effect_execution_token`下已提交逐牌条目 | 每EffectSpec公共事务；成功后一次`effect_card_batch_committed`，失败全回滚 |
+
+架构旁路审计没有发现Handler直接修改牌区、异状或RNG：新Handler只返回`destination/matched/claim/
+additional_triggers`；所有真实修改均回到上述所有者。虚无消散在处置替换前拥有最高优先级；永久移出只改
+BattleSide工作牌组并继续复用战果提交／退出回滚。随机／全部弃牌与同步批量移动的生产入口已迁到单一
+结构化成功／失败结果，`BattleSide`旧数组方法只委托同一实现，不保留第二套生产算法。
+
+燃尽机械迁移覆盖`card_states.json`、24份引用燃尽类别的正式功法资源、Condition／TargetQuery／AI／UI
+读取、快照和测试。legacy `card_burned_out_changed`只由同一`card_state_changed`中`category=debuff`的
+变化投影；修复了遗留`mark`筛选造成的响应漏发，没有保留双轨。有效真气阶段顺序为既有加减与来源层，
+再应用焕发倍乘，最后由燃尽覆盖为0。
+
+重点类实际行数为：`CardZoneService`2028、`CardAnomalyService`1114、`CardStatusBehaviorService`380、
+`CardStateLifecycle`137、`TechniqueEffectExecutor`204、`BattleCardEffectService`1023。虽然
+`CardZoneService`较大，但它仍集中唯一移动权限、移动准备、同步事务和事实payload；没有发现职责重复时
+不为降低行数机械拆分。后续若继续增长，应优先抽取无状态的计划或payload内部协作者，不能产生第二公开
+移动入口。
+
+专项验证为统一平台83、牌效果57、牌移动70、状态事实83、成长213、火系276、有效真气37条断言，项目
+加载732项；按本批约束未运行quick/full。所有最终日志均使用独立`/tmp/taiwu-card-lifecycle-*.log`并扫描
+加载、解析、SCRIPT ERROR、ObjectDB、RID、orphan、资源泄漏及退出错误，只有允许忽略的macOS CA警告。
+本批没有新增正式内容；矩阵为已有／合并30、B 8、C1 9、C2 0、D 1，正式内功13门、物品7件，剩余
+153门内功、13件物品和8门暂缓功法不变。
