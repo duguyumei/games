@@ -27,6 +27,7 @@ const COMMITTED_EVENTS := [
     "technique_sequence_changed", "technique_slot_capacity_changed",
     "temporary_technique_generated", "same_qi_gain_resolved",
     "experience_change_resolved",
+    "battle_resource_changed", "follow_up_attack_completed",
 ]
 
 const AUTOMATIC_EVENTS := COMMITTED_EVENTS + ["round_start", "turn_end"]
@@ -35,6 +36,9 @@ const RESPONSE_ONLY_EVENTS := [
     "card_anomaly_changed", "card_burned_out_changed",
     "cooperation_pre_commit", "cooperation_resolved",
     "defense_decay_resolved", "extra_action_started",
+    "technique_post_success_pre_advance", "pre_technique_cost",
+    "extra_action_preflight", "qi_state_target_policy_query",
+    "pre_effect_operation",
 ]
 const DYNAMIC_RESPONSE_EVENTS := \
     COMMITTED_EVENTS + TIMING_EVENTS + RESPONSE_ONLY_EVENTS
