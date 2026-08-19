@@ -165,21 +165,6 @@ func write_same_qi(
         response["holder"] = side
         response["action_token"] = resolved_action_token
         _commit_same_qi_gain(side, response, resolved_action_token)
-        if result.get("changed", false) and _committed_event_service != null:
-            var CapabilityScript = preload(
-                "res://core/passives/battle_passive_capability_implementations.gd")
-            CapabilityScript.emit_battle_resource_changed(
-                _committed_event_service,
-                side,
-                "same_qi",
-                operation,
-                int(result.get("same_qi_before", 0)),
-                int(result.get("same_qi_after", 0)),
-                int(result.get("same_qi_after", 0)) - int(result.get("same_qi_before", 0)),
-                resolved_action_token,
-                source_category,
-                "",
-                {"round_number": _round_number()})
     return result
 
 
@@ -607,25 +592,8 @@ func write_momentum(
         source_category: String,
         action_token: String,
         source_id: String = "") -> Dictionary:
-    var result := side.write_momentum(
+    return side.write_momentum(
         operation, amount, source_category, action_token, source_id)
-    if result.get("success", false) and result.get("changed", false) \
-            and _committed_event_service != null:
-        var CapabilityScript = preload(
-            "res://core/passives/battle_passive_capability_implementations.gd")
-        CapabilityScript.emit_battle_resource_changed(
-            _committed_event_service,
-            side,
-            "momentum",
-            operation,
-            int(result.get("before", 0)),
-            int(result.get("after", 0)),
-            int(result.get("delta", 0)),
-            action_token,
-            source_category,
-            source_id,
-            {"round_number": _round_number()})
-    return result
 
 
 func set_reflection_percent(
