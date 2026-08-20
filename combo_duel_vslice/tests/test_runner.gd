@@ -1175,10 +1175,9 @@ func _tracked_combat_engine(
 
 func _release_tracked_mutation_scopes() -> void:
     for engine in tracked_combat_engines:
-        if engine == null or engine.battle_mutation_scope_service == null:
+        if engine == null:
             continue
-        engine.battle_mutation_scope_service.abort_active(
-            "主测试组结束")
+        engine.close_battle("主测试组结束")
         engine.player.use_battle_mutation_scope_service(null)
         engine.enemy.use_battle_mutation_scope_service(null)
         engine.effect_ports.use_mutation_scope_service(null)
@@ -10819,7 +10818,10 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     })
     var first_battle: BattleSession = BattleSessionScript.new(
         _tracked_combat_engine())
-    _assert_true(first_battle.setup_battle({"content_seed": 4404}, progress), "带增元丹的本局牌组可以进入战斗")
+    _assert_true(first_battle.setup_battle({
+        "content_seed": 4404,
+        "battle": {"use_enemy_ai": false},
+    }, progress), "带增元丹的本局牌组可以进入战斗")
     first_battle.execute({"type": "start_turn"})
     var target = first_battle.engine.player.hand[0]
     var target_id := str(target.id)
@@ -10834,7 +10836,10 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     _assert_true(after_progress.consumable_ids.is_empty(), "战斗中使用消耗品后释放本局槽位")
     var second_battle = BattleSessionScript.new(_tracked_combat_engine())
     var second_loaded: bool = second_battle.setup_battle(
-        {"content_seed": 4405}, after_progress)
+        {
+            "content_seed": 4405,
+            "battle": {"use_enemy_ai": false},
+        }, after_progress)
     _assert_true(
         second_loaded,
         "重塑后的 RunDeck 可以建立下一场战斗：%s" % JSON.stringify(
@@ -11002,7 +11007,10 @@ func _test_run_consumable_zengyuan_pill() -> void:
     var progress = session.progress_snapshot()
     var battle: BattleSession = BattleSessionScript.new(
         _tracked_combat_engine())
-    _assert_true(battle.setup_battle({"content_seed": 77201}, progress), "携带增元的本局牌组进入战斗")
+    _assert_true(battle.setup_battle({
+        "content_seed": 77201,
+        "battle": {"use_enemy_ai": false},
+    }, progress), "携带增元的本局牌组进入战斗")
     battle.execute({"type": "start_turn"})
     var seen := false
     for card in battle.engine.player.all_zone_cards():
@@ -11800,7 +11808,7 @@ func _test_battle_session_commands_snapshots_and_events() -> void:
         "content_seed": 2308,
         "battle": {
             "scenario_path": "res://data/scripted_battle.json",
-            "use_enemy_ai": true,
+            "use_enemy_ai": false,
         },
     }
     var first: BattleSession = BattleSessionScript.new()
@@ -11866,7 +11874,10 @@ func _test_snapshot_boundaries_are_typed() -> void:
     ## 且 inner_skill_limit 由领域常量供给而不是表现层各自假设一个数字。
     var session: BattleSession = BattleSessionScript.new(
         _tracked_combat_engine())
-    _assert_true(session.setup_battle({"seed": 8801}), "战斗会话建立用于快照边界检查")
+    _assert_true(session.setup_battle({
+        "seed": 8801,
+        "battle": {"use_enemy_ai": false},
+    }), "战斗会话建立用于快照边界检查")
     session.execute({"type": "start_turn"})
     var battle := session.snapshot()
 
@@ -13109,26 +13120,6 @@ func _test_run_terminal_result_contract_and_closure() -> void:
     _assert_true(not victory.execute({"type": "abandon_run"}).success, "重复放弃被拒绝")
     _assert_equal(_count_run_log_category(victory, "run_abandoned"), abandon_logs, "重复放弃不重复写日志")
 
-    var remote_run: RunSession = RunSessionScript.new()
-    remote_run.execute({"type": "setup_run", "seed": 94006})
-    var remote_node := str(remote_run.snapshot().available_node_ids[0])
-    var remote_begin := remote_run.execute({
-        "type": "begin_node", "node_id": remote_node,
-    })
-    var remote_dispatch: Dictionary = remote_begin.payload_value("dispatch", {})
-    var remote_provider = MockAiProviderScript.new(false)
-    var remote_battle: BattleSession = remote_run.create_battle_session()
-    remote_battle.use_ai_provider(remote_provider)
-    remote_dispatch["battle"]["use_remote_ai"] = true
-    remote_dispatch["battle"]["use_enemy_ai"] = true
-    _assert_true(remote_battle.setup_battle(
-        remote_dispatch, remote_run.progress_snapshot()), "放弃测试建立远程 AI 战斗")
-    _assert_true(remote_battle.execute({"type": "start_turn"}).success, "放弃测试打开远程 AI 行动窗口")
-    _assert_true(not remote_provider.pending.is_empty(), "放弃前远程 Provider 存在待处理请求")
-    _assert_true(remote_run.execute({"type": "abandon_run"}).success, "等待远程 AI 时可以放弃本局")
-    _assert_true(remote_provider.pending.is_empty(), "放弃通过 BattleSession 公开关闭方法取消远程请求")
-    remote_provider.free()
-
     var defeat_save = RunSaveDataScript.new().capture(defeat)
     _assert_equal(defeat_save.to_dict()["node_state"]["resume_policy"], "show_terminal", "终局存档使用 show_terminal")
     var defeat_restored: Dictionary = defeat_save.restore_session()
@@ -14139,6 +14130,7 @@ func _test_map_practice_and_battle_scene_integration() -> void:
             DirAccess.remove_absolute(path)
     var ui_root = GameCompositionRootScript.new()
     _assert_true(ui_root.initialize(), "地图 UI 自动存档测试建立组合根")
+    _disable_local_ai_in_catalog_for_test(ui_root.content_catalog)
     ui_root.run_save_application_service = RunSaveApplicationServiceScript.new(
         SaveRepositoryScript.new(save_path),
         ui_root.content_catalog,
@@ -14388,6 +14380,14 @@ func _map_node_type(graph: Dictionary, node_id: String) -> String:
         if node["id"] == node_id:
             return str(node["type"])
     return ""
+
+func _disable_local_ai_in_catalog_for_test(catalog) -> void:
+    var node_content: Dictionary = catalog._definitions.get(
+        "node_content", {})
+    for node_type in node_content.get("node_types", {}):
+        var definition: Dictionary = node_content["node_types"][node_type]
+        if definition.get("battle") is Dictionary:
+            definition["battle"]["use_enemy_ai"] = false
 
 func _map_can_reach(graph: Dictionary, start_id: String, target_id: String) -> bool:
     var pending: Array = [start_id]

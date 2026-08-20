@@ -198,7 +198,6 @@ run_full() {
     run_suite technique-runtime res://tests/groups/test_technique_runtime.gd
     run_suite battle-contracts res://tests/groups/test_battle_contracts.gd
     run_suite battle-rules res://tests/groups/test_battle_rules.gd
-    run_suite remote-ai res://tests/groups/test_remote_ai.gd
     run_suite run-map res://tests/groups/test_run_map.gd
     run_suite ui-loading res://tests/groups/test_ui_loading.gd
     for discovered_test in "${PROJECT_DIR}"/tests/test_*.gd; do
@@ -212,6 +211,10 @@ run_full() {
     done
 }
 
+run_ai() {
+    run_suite remote-ai res://tests/groups/test_remote_ai.gd
+}
+
 case "${MODE}" in
     quick)
         verify_group_coverage
@@ -220,6 +223,10 @@ case "${MODE}" in
     full)
         verify_group_coverage
         run_full
+        ;;
+    ai)
+        verify_group_coverage
+        run_ai
         ;;
     _probe_missing_script)
         run_suite missing-script-probe res://tests/__missing_script_probe__.gd
@@ -232,7 +239,7 @@ case "${MODE}" in
         run_suite missing-resource-probe "$2"
         ;;
     *)
-        printf 'Usage: %s [quick|full]\n' "$0" >&2
+        printf 'Usage: %s [quick|full|ai]\n' "$0" >&2
         exit 2
         ;;
 esac

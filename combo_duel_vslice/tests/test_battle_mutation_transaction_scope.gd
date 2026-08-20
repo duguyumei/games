@@ -66,10 +66,27 @@ class EventProbe:
         rollback_calls += 1
 
 
+class EventListenerProbe:
+    extends RefCounted
+
+    var captured_context
+
+    func _init(context) -> void:
+        captured_context = context
+
+    func on_event(
+            _kind: String,
+            _values: Dictionary,
+            _receipt: Dictionary) -> void:
+        pass
+
+
 func _initialize() -> void:
     if not _require_test_mode():
         return
     _test_nested_scopes_capture_and_publish_once()
+    _test_scope_does_not_own_trigger_queue()
+    _test_engine_close_releases_battle_contexts()
     _test_nested_rollback_marks_root_and_restores_again_at_close()
     _test_effect_executor_joins_existing_root()
     _test_damage_segment_joins_existing_root()
@@ -77,6 +94,46 @@ func _initialize() -> void:
     _test_same_qi_participant_restores_with_root()
     _test_public_mutation_ports_propagate_rollback_only_commit()
     _finish("BATTLE MUTATION TRANSACTION SCOPE TEST")
+
+
+func _test_scope_does_not_own_trigger_queue() -> void:
+    var trigger: Object = TriggerProbe.new()
+    var trigger_ref: WeakRef = weakref(trigger)
+    var scope_service: Object = ScopeServiceScript.new().configure(
+        [], null, trigger)
+    trigger = null
+    _assert_true(trigger_ref.get_ref() == null,
+        "事务作用域不强持有可能反向引用作用域的触发队列")
+    _assert_true(scope_service.begin().get("success", false),
+        "触发队列已经释放时事务仍可按无队列边界建立")
+    scope_service.abort_active("弱引用专项结束")
+
+
+func _test_engine_close_releases_battle_contexts() -> void:
+    var engine = _engine(41008)
+    var context = _effect_context(engine, "close-lifecycle")
+    var context_ref: WeakRef = weakref(context)
+    var listener: Object = EventListenerProbe.new(context)
+    var listener_ref: WeakRef = weakref(listener)
+    engine.trigger_queue.enqueue(
+        "close_probe", "关闭生命周期", "事务探针", 0,
+        [{"op": "defense", "amount": 1}], context)
+    engine.battle_passive_event_service.event_committed.connect(
+        Callable(listener, "on_event"))
+    listener = null
+    engine.close_battle("关闭生命周期专项")
+    context = null
+    _assert_true(context_ref.get_ref() == null,
+        "统一关闭释放队列中的待结算效果上下文")
+    _assert_true(listener_ref.get_ref() == null,
+        "统一关闭释放持有战斗上下文的单场事件订阅者")
+    _assert_true(engine.trigger_queue.pending.is_empty(),
+        "统一关闭清空待结算触发")
+    _assert_true(not engine.battle_mutation_scope_service.has_active_transaction(),
+        "统一关闭回滚活动 mutation 事务")
+    _assert_true(engine.battle_passive_event_service.event_committed \
+        .get_connections().is_empty(),
+        "统一关闭断开单场 committed 事件订阅")
 
 
 func _test_nested_scopes_capture_and_publish_once() -> void:

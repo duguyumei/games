@@ -560,10 +560,7 @@ func setup(
         battle_state_detail = "统一内容目录无效"
         state_changed.emit()
         return
-    battle_mutation_scope_service.abort_active("重新装配战斗")
-    battle_passive_timing_bridge.close_battle()
-    battle_passive_event_service.close_battle()
-    passive_rule_runtime.close_battle_effect_commands()
+    close_battle("重新装配战斗")
     rng.seed = seed_value
     battle_cleanup_completed = false
     round_service.reset()
@@ -611,6 +608,33 @@ func setup(
     passive_rule_runtime.suppression_service.clear()
     initialize_base_momentum_caps()
     state_changed.emit()
+
+func close_battle(reason: String = "战斗关闭") -> void:
+    if action_service != null:
+        action_service.reset()
+    if timing_system != null:
+        timing_system.reset()
+    if battle_mutation_scope_service != null:
+        battle_mutation_scope_service.abort_active(reason)
+    if action_resolver != null:
+        action_resolver.reset()
+    if trigger_queue != null:
+        trigger_queue.discard_pending()
+    if battle_passive_timing_bridge != null:
+        battle_passive_timing_bridge.close_battle()
+    if battle_passive_event_service != null:
+        battle_passive_event_service.close_battle()
+    if passive_rule_runtime != null:
+        passive_rule_runtime.close_battle_effect_commands()
+    if enemy_planning_service != null:
+        enemy_planning_service.clear_action_lock()
+        enemy_planning_service.set_modes(enemy_ai_enabled, false)
+    external_enemy_action_mode = false
+    if round_service != null:
+        round_service.set_modes(scripted_mode, false)
+        round_service.external_round_end_requested = false
+    if action_service != null:
+        action_service.set_modes(scripted_mode, enemy_ai_enabled, false)
 
 func setup_scripted_battle(
         seed_value: int = 2308,

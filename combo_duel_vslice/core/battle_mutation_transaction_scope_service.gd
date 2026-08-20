@@ -12,7 +12,7 @@ const RuntimeTransactionScript = preload(
 
 var _side_refs: Array[WeakRef] = []
 var _committed_event_service = null
-var _trigger_queue = null
+var _trigger_queue_ref: WeakRef = null
 var _rng: RandomNumberGenerator = null
 var _state_participant_refs: Array[WeakRef] = []
 
@@ -36,7 +36,7 @@ func configure(
     for side in _unique_objects(sides):
         _side_refs.append(weakref(side))
     _committed_event_service = committed_event_service
-    _trigger_queue = trigger_queue
+    _trigger_queue_ref = _weak_reference(trigger_queue)
     _rng = rng
     _state_participant_refs = _weak_refs(state_participants)
     return self
@@ -54,7 +54,7 @@ func use_committed_event_service(service) -> void:
 func use_trigger_queue(queue) -> void:
     assert(_active_root.is_empty(),
         "不能在战斗 mutation 事务进行中替换触发队列")
-    _trigger_queue = queue
+    _trigger_queue_ref = _weak_reference(queue)
 
 func use_rng(rng: RandomNumberGenerator) -> void:
     assert(_active_root.is_empty(),
@@ -68,7 +68,7 @@ func begin(extra_state_participants: Array = []) -> Dictionary:
     _scope_serial += 1
     if _active_root.is_empty():
         var transaction := RuntimeTransactionScript.begin(
-            _battle_sides(), _committed_event_service, _trigger_queue, _rng,
+            _battle_sides(), _committed_event_service, _trigger_queue(), _rng,
             requested_participants)
         transaction.merge({
             "scope_service": weakref(self),
@@ -311,3 +311,10 @@ func _battle_sides() -> Array:
         if side != null:
             result.append(side)
     return result
+
+func _trigger_queue():
+    return _trigger_queue_ref.get_ref() \
+        if _trigger_queue_ref != null else null
+
+func _weak_reference(value) -> WeakRef:
+    return weakref(value) if value is Object else null

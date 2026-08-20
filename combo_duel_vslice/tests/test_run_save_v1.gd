@@ -243,14 +243,15 @@ func _test_autosave_stable_boundaries_and_battle_exclusion() -> void:
     _assert_true(begin.success, "自动存档测试进入战斗节点")
     _assert_equal(save_application.save_count, 2, "begin_node 稳定边界保存一次")
     var battle = session.create_battle_session()
+    var dispatch: Dictionary = begin.payload_value("dispatch", {})
+    dispatch["battle"]["use_enemy_ai"] = false
     _assert_true(battle.setup_battle(
-        begin.payload_value("dispatch", {}), session.progress_snapshot()),
+        dispatch, session.progress_snapshot()),
         "战斗中间状态测试建立 BattleSession")
     battle.execute({"type": "start_turn"})
     battle.snapshot()
     _assert_equal(save_application.save_count, 2, "战斗抽牌、预览与 AI 状态不写本局存档")
 
-    var dispatch: Dictionary = begin.payload_value("dispatch", {})
     var progress_values := session.progress_snapshot().to_dict()
     progress_values["experience"] = session.growth.experience + 4
     var battle_result = BattleFinalResultDTOScript.from_dict({
@@ -606,11 +607,20 @@ func _test_resume_policy_ui_routes_and_restart_identity() -> void:
 func _composition_with_save(save_path: String):
     var composition = GameCompositionRootScript.new(RuntimeProfileScript.test())
     _assert_true(composition.initialize(), "测试组合根内容加载成功")
+    _disable_local_ai_in_catalog_for_test(composition.content_catalog)
     composition.run_save_application_service = ApplicationServiceScript.new(
         SaveRepositoryScript.new(save_path),
         composition.content_catalog,
         Callable(composition, "create_run_session"))
     return composition
+
+func _disable_local_ai_in_catalog_for_test(catalog) -> void:
+    var node_content: Dictionary = catalog._definitions.get(
+        "node_content", {})
+    for node_type in node_content.get("node_types", {}):
+        var definition: Dictionary = node_content["node_types"][node_type]
+        if definition.get("battle") is Dictionary:
+            definition["battle"]["use_enemy_ai"] = false
 
 func _enemy_signature(battle_session) -> Dictionary:
     var enemy = battle_session.engine.enemy

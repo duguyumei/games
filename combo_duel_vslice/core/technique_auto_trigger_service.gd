@@ -28,8 +28,7 @@ func _init(repository, invocation_service, ports, event_service, sides: Array, b
         _side_refs.append(weakref(side))
     _books = books
     _value_resolver = invocation_service._value_resolver
-    if not event_service.event_committed.is_connected(_on_event_committed):
-        event_service.event_committed.connect(_on_event_committed)
+    event_service.register_weak_listener(self, "_on_event_committed")
 
 func reset() -> void:
     _processed.clear()

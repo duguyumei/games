@@ -373,9 +373,7 @@ func close_battle() -> bool:
             ai_coordinator.complete_battle_trace(_ai_battle_summary())
         ai_coordinator.close_window()
     if engine != null:
-        engine.use_external_enemy_actions(false)
-        if engine.enemy_planning_service != null:
-            engine.enemy_planning_service.clear_action_lock()
+        engine.close_battle("战斗会话关闭")
     _remote_ai_enabled = false
     return had_pending_remote_request
 

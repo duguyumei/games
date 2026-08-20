@@ -49,6 +49,8 @@ func close_battle() -> void:
     _pending_publications.clear()
     _pure_query_depth = 0
     _pure_query_violation = false
+    for connection in event_committed.get_connections():
+        event_committed.disconnect(connection["callable"])
 
 func capture_transaction_state() -> Dictionary:
     return {

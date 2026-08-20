@@ -18,6 +18,10 @@ func clear() -> void:
     if _game_log != null:
         _game_log.clear("battle")
 
+func discard_pending() -> void:
+    pending.clear()
+    _choice_state.clear()
+
 func capture_runtime_state() -> Dictionary:
     return {
         "pending": pending.duplicate(true),

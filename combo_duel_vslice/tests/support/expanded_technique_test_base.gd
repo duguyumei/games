@@ -58,12 +58,7 @@ func _engine(seed_value: int = 1):
 
 func _dispose_engines() -> void:
     for engine in tracked_engines:
-        if engine.battle_mutation_scope_service != null:
-            engine.battle_mutation_scope_service.abort_active(
-                "专项测试结束")
-        engine.battle_passive_timing_bridge.close_battle()
-        engine.battle_passive_event_service.close_battle()
-        engine.passive_rule_runtime.close_battle_effect_commands()
+        engine.close_battle("专项测试结束")
         engine.effect_ports.use_hand_retrigger_callback(Callable())
         engine.battle_passive_event_service._scenario_error = Callable()
         engine.battle_rule_query_service._scenario_error = Callable()
