@@ -71,8 +71,16 @@ func expire_round_sources(side) -> Dictionary:
 func clear_battle_sources(side) -> Dictionary:
     if side == null:
         return {"success": false, "detail": "战斗结束来源清理缺少参与方"}
-    var momentum_receipt: Dictionary = side.write_momentum(
-        "clear", 0, "battle_cleanup", "battle-end", "battle_end")
+    var momentum_receipt: Dictionary = _effect_ports().write_momentum(
+        side, "clear", 0, "battle_cleanup", "battle-end", "battle_end", {
+            "source_kind": "rule",
+            "source_id": "battle_end",
+            "source_name": "战斗结束清理",
+            "source_instance_key": "rule:battle_end",
+            "trigger_mode": "direct",
+            "transaction_token": "battle-end",
+            "operation_token": "battle-end:momentum:%s" % str(side.owner_id),
+        })
     if not momentum_receipt.get("success", false):
         return {
             "success": false,

@@ -103,6 +103,22 @@ var mutation_kind: String = ""
 var request_fingerprint: String = ""
 var change_domain: String = ""
 var operation: String = ""
+var transaction_token: String = ""
+var change_token: String = ""
+var resource_type: String = ""
+var requested_value: int = 0
+var requested_delta: int = 0
+var actual_delta: int = 0
+var cap: int = 0
+var conversion_info: Dictionary = {}
+var chase_token: String = ""
+var attacker = null
+var defender = null
+var defense_loss: int = 0
+var life_loss: int = 0
+var blocked: bool = false
+var deflected: bool = false
+var cancelled: bool = false
 ## marker 事实的 before/after 可以是标量；永久真气重塑使用完整 Dictionary。
 var before: Variant = {}
 var after: Variant = {}
@@ -267,6 +283,22 @@ func configure(values: Dictionary):
     request_fingerprint = str(values.get("request_fingerprint", ""))
     change_domain = str(values.get("change_domain", ""))
     operation = str(values.get("operation", ""))
+    transaction_token = str(values.get("transaction_token", ""))
+    change_token = str(values.get("change_token", ""))
+    resource_type = str(values.get("resource_type", ""))
+    requested_value = int(values.get("requested_value", 0))
+    requested_delta = int(values.get("requested_delta", 0))
+    actual_delta = int(values.get("actual_delta", 0))
+    cap = int(values.get("cap", 0))
+    conversion_info = values.get("conversion_info", {}).duplicate(true)
+    chase_token = str(values.get("chase_token", ""))
+    attacker = values.get("attacker")
+    defender = values.get("defender")
+    defense_loss = int(values.get("defense_loss", defense_lost))
+    life_loss = int(values.get("life_loss", life_lost))
+    blocked = bool(values.get("blocked", false))
+    deflected = bool(values.get("deflected", false))
+    cancelled = bool(values.get("cancelled", false))
     before = _duplicate_event_value(values.get("before", {}))
     after = _duplicate_event_value(values.get("after", {}))
     before_state = values.get("before_state", {}).duplicate(true)
@@ -436,6 +468,22 @@ func for_invocation(current_invocation):
         "request_fingerprint": request_fingerprint,
         "change_domain": change_domain,
         "operation": operation,
+        "transaction_token": transaction_token,
+        "change_token": change_token,
+        "resource_type": resource_type,
+        "requested_value": requested_value,
+        "requested_delta": requested_delta,
+        "actual_delta": actual_delta,
+        "cap": cap,
+        "conversion_info": conversion_info,
+        "chase_token": chase_token,
+        "attacker": attacker,
+        "defender": defender,
+        "defense_loss": defense_loss,
+        "life_loss": life_loss,
+        "blocked": blocked,
+        "deflected": deflected,
+        "cancelled": cancelled,
         "before": before,
         "after": after,
         "before_state": before_state,
@@ -588,6 +636,22 @@ func public_effect_values() -> Dictionary:
         "request_fingerprint": request_fingerprint,
         "change_domain": change_domain,
         "operation": operation,
+        "transaction_token": transaction_token,
+        "change_token": change_token,
+        "resource_type": resource_type,
+        "requested_value": requested_value,
+        "requested_delta": requested_delta,
+        "actual_delta": actual_delta,
+        "cap": cap,
+        "conversion_info": conversion_info.duplicate(true),
+        "chase_token": chase_token,
+        "attacker": attacker,
+        "defender": defender,
+        "defense_loss": defense_loss,
+        "life_loss": life_loss,
+        "blocked": blocked,
+        "deflected": deflected,
+        "cancelled": cancelled,
         "before": _duplicate_event_value(before),
         "after": _duplicate_event_value(after),
         "before_state": before_state.duplicate(true),

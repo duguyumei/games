@@ -14,6 +14,20 @@ func _init(flow = null) -> void:
 func reset() -> void:
     _receipts.clear()
 
+func capture_transaction_state() -> Dictionary:
+    return {
+        "receipts": _receipts.duplicate(true),
+        "battle_flow": _battle_flow.capture_transaction_state() \
+            if _battle_flow != null and _battle_flow.has_method(
+                "capture_transaction_state") else {},
+    }
+
+func restore_transaction_state(state: Dictionary) -> void:
+    _receipts = state.get("receipts", {}).duplicate(true)
+    if _battle_flow != null and _battle_flow.has_method(
+            "restore_transaction_state"):
+        _battle_flow.restore_transaction_state(state.get("battle_flow", {}))
+
 func receipts_for_action(side, action_token: String) -> Array:
     var result: Array = []
     if side == null or action_token == "":

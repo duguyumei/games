@@ -73,7 +73,8 @@ func execute(effect: Dictionary, context):
                 return EffectResultScript.failed("连势目标作用域不存在")
             var receipt: Dictionary = runtime.ports.write_momentum(
                 side, operation, amount, runtime.source_kind,
-                momentum_action_token, runtime.source_id)
+                momentum_action_token, runtime.source_id,
+                runtime.source_metadata())
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = \
                     [receipt] if bool(receipt.get("success", false)) else []
@@ -186,7 +187,8 @@ func execute(effect: Dictionary, context):
                 "%s:%s:write_same_qi:%s" % [
                     runtime.action_token, runtime.source_id,
                     receipt_key],
-                runtime.source_kind, runtime.action_token)
+                runtime.source_kind, runtime.action_token,
+                runtime.source_metadata())
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [result] \
                     if result.get("success", false) else []

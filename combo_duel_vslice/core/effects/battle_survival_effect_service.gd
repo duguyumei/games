@@ -16,6 +16,7 @@ var _sides: Array[BattleSide] = []
 var _battle_rule_query_service
 var _committed_event_service
 var _round_number_reader: Callable
+var _transaction_state_participants: Array = []
 var _action_resolution_scope: Dictionary = {}
 var _action_window_serial: int = 0
 var _damage_segment_serial: int = 0
@@ -45,6 +46,10 @@ func use_passive_battle_services(
     _battle_rule_query_service = query_service
     _committed_event_service = event_service
     _round_number_reader = round_reader
+
+
+func use_transaction_state_participants(participants: Array) -> void:
+    _transaction_state_participants = participants.duplicate()
 
 
 func deal_damage(
@@ -105,8 +110,8 @@ func deal_damage(
     var damage_transaction := _capture_synchronized_flush_state()
     if _committed_event_service != null:
         _committed_event_service.begin_publication_transaction()
-    var damage_segment_token := _next_damage_segment_token(
-        actor, target, action_token)
+    var damage_segment_token := _resolve_damage_segment_token(
+        resolved_metadata, actor, target, action_token)
     resolved_metadata["damage_segment_token"] = damage_segment_token
     var cancellation := resolve_attack_cancellation(
         actor, target, int(final_override), resolved_type, source_kind,
@@ -115,10 +120,19 @@ func deal_damage(
         return _rollback_damage_transaction(
             damage_transaction, str(cancellation.get(
                 "reason", "攻击取消解析失败")), damage_segment_token)
+    resolved_metadata["attack_cancellation"] = cancellation.duplicate(true)
     if cancellation.get("canceled", false):
         var canceled_result := _canceled_attack_result(
             int(final_override), resolved_type, cancellation,
             damage_segment_token, resolved_metadata, target)
+        var chase_event := _emit_chase_resolved(
+            actor, target, amount, source_kind, resolved_type,
+            canceled_result, action_token, resolved_metadata)
+        if not chase_event.get("success", false):
+            return _rollback_damage_transaction(
+                damage_transaction, str(chase_event.get(
+                    "reason", "chase_resolved提交失败")),
+                damage_segment_token)
         _commit_damage_transaction()
         return canceled_result
 
@@ -161,6 +175,13 @@ func deal_damage(
         return _rollback_damage_transaction(
             damage_transaction, str(result["reflection_result"].get(
                 "reason", "反震结算失败")), damage_segment_token)
+    var chase_event := _emit_chase_resolved(
+        actor, target, amount, source_kind, resolved_type, result,
+        action_token, resolved_metadata)
+    if not chase_event.get("success", false):
+        return _rollback_damage_transaction(
+            damage_transaction, str(chase_event.get(
+                "reason", "chase_resolved提交失败")), damage_segment_token)
     _commit_damage_transaction()
     return result
 
@@ -553,7 +574,8 @@ func notify_poison_triggered(
 
 func _capture_synchronized_flush_state() -> Dictionary:
     var snapshot := BattleRuntimeMutationTransactionScript.capture(
-        _sides, _committed_event_service, _trigger_queue, null)
+        _sides, _committed_event_service, _trigger_queue, null,
+        _transaction_state_participants)
     snapshot.merge({
         "action_resolution_scope": _action_resolution_scope.duplicate(true),
         "damage_segment_serial": _damage_segment_serial,
@@ -799,18 +821,25 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
     var final_amount := maxi(0, int(resolved.get("amount", 0)))
     metadata["requested_damage"] = requested_amount
     metadata["final_damage"] = final_amount
-    var segment_token := _next_damage_segment_token(
-        actor, target, resolved_action_token)
+    var segment_token := _resolve_damage_segment_token(
+        metadata, actor, target, resolved_action_token)
     metadata["damage_segment_token"] = segment_token
     var cancellation := resolve_attack_cancellation(
         actor, target, final_amount, damage_type, source_kind,
         resolved_action_token, metadata, segment_token)
     if not cancellation.get("success", false):
         return cancellation
+    metadata["attack_cancellation"] = cancellation.duplicate(true)
     if cancellation.get("canceled", false):
         var canceled_result := _canceled_attack_result(
             final_amount, damage_type, cancellation, segment_token, metadata,
             target)
+        var chase_event := _emit_chase_resolved(
+            actor, target, requested_amount, source_kind, damage_type,
+            canceled_result, resolved_action_token, metadata)
+        if not chase_event.get("success", false):
+            return {"success": false, "reason": chase_event.get(
+                "reason", "同步chase_resolved提交失败")}
         var canceled_resolution := _synchronized_resolution(
             intent, final_amount, canceled_result, metadata, cancellation)
         return {
@@ -855,6 +884,12 @@ func _resolve_synchronized_damage_segment(intent: Dictionary) -> Dictionary:
             "reason": str(reflection.get("reason", "同步反震伤害结算失败")),
         }
     result["reflection_result"] = reflection
+    var chase_event := _emit_chase_resolved(
+        actor, target, requested_amount, source_kind, damage_type, result,
+        resolved_action_token, metadata)
+    if not chase_event.get("success", false):
+        return {"success": false, "reason": chase_event.get(
+            "reason", "同步chase_resolved提交失败")}
     return {
         "success": true,
         "resolution": _synchronized_resolution(
@@ -942,6 +977,17 @@ func _next_damage_segment_token(actor, target, action_token: String) -> String:
     ]
     _damage_segment_serial += 1
     return token
+
+
+func _resolve_damage_segment_token(
+        metadata: Dictionary,
+        actor,
+        target,
+        action_token: String) -> String:
+    var existing := str(metadata.get("damage_segment_token", ""))
+    if existing != "":
+        return existing
+    return _next_damage_segment_token(actor, target, action_token)
 
 
 func _resolve_reflection(
@@ -1134,6 +1180,89 @@ func _preview_attack_cancellation(
     return target.preview_attack_cancellation(
         amount, damage_type, str(actor.owner_id), current_action_window_id(),
         target.actual_hand_count(), actor.actual_hand_count())
+
+
+func _is_chase_damage(source_kind: String, metadata: Dictionary) -> bool:
+    return bool(metadata.get("is_chase", false)) \
+        or str(metadata.get("damage_segment_kind", "")) == "chase" \
+        or str(metadata.get("legacy_damage_source_label", "")) == "chase" \
+        or source_kind == "chase"
+
+
+func _emit_chase_resolved(
+        actor: BattleSide,
+        target: BattleSide,
+        requested_amount: int,
+        source_kind: String,
+        damage_type: String,
+        result: Dictionary,
+        action_token: String,
+        metadata: Dictionary) -> Dictionary:
+    if not _is_chase_damage(source_kind, metadata):
+        return {"success": true, "skipped": true}
+    var chase_token := str(result.get(
+        "damage_segment_token", metadata.get("damage_segment_token", "")))
+    if chase_token == "":
+        return {"success": false, "reason": "追击完成事实缺少稳定 chase_token"}
+    var cancellation: Dictionary = result.get(
+        "attack_cancellation", metadata.get("attack_cancellation", {}))
+    var cancel_kind := str(result.get(
+        "cancel_kind", cancellation.get("cancel_kind", "none")))
+    var cancelled := bool(result.get(
+        "canceled", cancellation.get("canceled", false)))
+    var deflection_results: Array = cancellation.get(
+        "deflection_results", [])
+    var values := {
+        "event_token": "",
+        "event_serial": -1,
+        "chase_token": chase_token,
+        "action_token": action_token,
+        "damage_segment_token": chase_token,
+        "actor": actor,
+        "attacker": actor,
+        "target": target,
+        "defender": target,
+        "owner": actor,
+        "holder": target,
+        "include_target_owner": true,
+        "source_kind": str(metadata.get("source_kind", source_kind)),
+        "source_id": str(metadata.get("source_id", "")),
+        "source_name": str(metadata.get("source_name", "")),
+        "source_instance_key": str(metadata.get("source_instance_key", "")),
+        "trigger_mode": str(metadata.get("trigger_mode", "direct")),
+        "damage_type": damage_type,
+        "requested_damage": int(metadata.get(
+            "requested_damage", requested_amount)),
+        "final_damage": int(metadata.get(
+            "final_damage", result.get("final_amount", 0))),
+        "defense_before": int(result.get(
+            "defense_before", target.defense if target != null else 0)),
+        "defense_loss": int(result.get("defense_lost", 0)),
+        "defense_lost": int(result.get("defense_lost", 0)),
+        "defense_after": int(result.get(
+            "defense_after", target.defense if target != null else 0)),
+        "life_before": int(result.get(
+            "life_before", target.life if target != null else 0)),
+        "life_loss": int(result.get("life_lost", 0)),
+        "life_lost": int(result.get("life_lost", 0)),
+        "actual_life_loss": int(result.get("life_lost", 0)),
+        "life_after": int(result.get(
+            "life_after", target.life if target != null else 0)),
+        "blocked": bool(result.get("blocked", cancel_kind == "block")),
+        "deflected": cancel_kind == "deflection" \
+            or not deflection_results.is_empty(),
+        "cancelled": cancelled,
+        "cancel_kind": cancel_kind,
+        "round_number": _round_number(),
+    }
+    if _committed_event_service != null:
+        var serial := int(_committed_event_service.next_serial())
+        values["event_serial"] = serial
+        values["event_token"] = _committed_event_service.make_token(
+            "chase_resolved", actor, chase_token, action_token)
+        return _committed_event_service.commit("chase_resolved", values)
+    _status_system.handle_response_event("chase_resolved", values)
+    return {"success": true, "receipt": {}}
 
 
 func _emit_damage_resolved(

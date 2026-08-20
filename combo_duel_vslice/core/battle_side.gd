@@ -1108,7 +1108,17 @@ func write_momentum(
         requested: int,
         source_category: String,
         action_token: String,
-        source_id: String = "") -> Dictionary:
+        source_id: String = "",
+        write_token: String = "") -> Dictionary:
+    if write_token != "":
+        for receipt_value in momentum_write_receipts:
+            var existing: Dictionary = receipt_value
+            if str(existing.get("write_token", "")) == write_token \
+                    and bool(existing.get("success", false)) \
+                    and not bool(existing.get("rolled_back", false)):
+                var reused := existing.duplicate(true)
+                reused["reused"] = true
+                return reused
     var before := maxi(0, momentum_value)
     var after := before
     var paid := 0
@@ -1174,6 +1184,8 @@ func write_momentum(
         "source_category": source_category,
         "action_token": action_token,
         "source_id": source_id,
+        "write_token": write_token,
+        "reused": false,
         "receipt_index": momentum_write_receipts.size(),
         "rolled_back": false,
     }

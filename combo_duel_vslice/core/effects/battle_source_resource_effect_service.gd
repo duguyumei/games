@@ -5,6 +5,8 @@ const SourceMarkerAddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")
 const BattleRuntimeMutationTransactionScript = preload(
     "res://core/battle_runtime_mutation_transaction.gd")
+const EffectSourceProtocolScript = preload(
+    "res://core/effects/effect_source_protocol.gd")
 
 const HAND_IDS := [
     "high_card", "pair", "two_pair", "three_kind", "straight",
@@ -107,30 +109,14 @@ func gain_same_qi(
         side: BattleSide,
         amount: int,
         source: String,
-        token: String) -> Dictionary:
-    if _same_qi_gauge_service == null:
-        return {"success": false, "reason": "同气槽服务尚未装配"}
-    var result: Dictionary = _same_qi_gauge_service.apply_gain(
-        side, amount, source, token)
-    if result.get("success", false) and not result.get("reused", false):
-        _add_history(
-            "same_qi_changed",
-            "%s同气变化" % side.name,
-            source,
-            "成功",
-            "%d +%d -%d = %d / %d；额外行动 +%d" % [
-                int(result["same_qi_before"]), int(result["gained"]),
-                int(result["spent"]), int(result["same_qi_after"]),
-                int(result["same_qi_capacity"]),
-                int(result["granted_actions"]),
-            ])
-        var response := result.duplicate(true)
-        response["actor"] = side
-        response["owner"] = side
-        response["holder"] = side
-        response["action_token"] = token.trim_suffix(":same_qi")
-        _commit_same_qi_gain(side, response, str(response["action_token"]))
-    return result
+        token: String,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    return write_same_qi(
+        side, "add", amount, source, token,
+        str(source_metadata.get("source_kind",
+            "same_qi" if source == "同气槽" else "rule")),
+        str(source_metadata.get("action_token", token.trim_suffix(":same_qi"))),
+        source_metadata)
 
 
 func write_same_qi(
@@ -140,31 +126,52 @@ func write_same_qi(
         source: String,
         token: String,
         source_category: String = "effect",
-        action_token: String = "") -> Dictionary:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> Dictionary:
     if _same_qi_gauge_service == null:
         return {"success": false, "reason": "同气槽服务尚未装配"}
     var resolved_action_token := action_token if action_token != "" \
         else token.split(":same_qi")[0]
+    var metadata := source_metadata.duplicate(true)
+    metadata["source_category"] = source_category
+    metadata["action_token"] = resolved_action_token
+    var transaction := _begin_resource_transaction(side)
     var result: Dictionary = _same_qi_gauge_service.apply_write(
-        side, operation, amount, source, token, {
-            "source_category": source_category,
-            "action_token": resolved_action_token,
-        })
-    if result.get("success", false) and not result.get("reused", false):
-        _add_history(
-            "same_qi_changed", "%s同气变化" % side.name, source, "成功",
-            "%d → %d / %d；转换%d次" % [
-                int(result.get("same_qi_before", 0)),
-                int(result.get("same_qi_after", 0)),
-                int(result.get("same_qi_capacity", 5)),
-                int(result.get("conversion_count", 0)),
-            ])
-        var response := result.duplicate(true)
-        response["actor"] = side
-        response["owner"] = side
-        response["holder"] = side
-        response["action_token"] = resolved_action_token
-        _commit_same_qi_gain(side, response, resolved_action_token)
+        side, operation, amount, source, token, metadata)
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if result.get("reused", false):
+        BattleRuntimeMutationTransactionScript.commit(transaction)
+        return result
+    _add_history(
+        "same_qi_changed", "%s同气变化" % side.name, source, "成功",
+        "%d → %d / %d；转换%d次" % [
+            int(result.get("same_qi_before", 0)),
+            int(result.get("same_qi_after", 0)),
+            int(result.get("same_qi_capacity", 5)),
+            int(result.get("conversion_count", 0)),
+        ])
+    var response := result.duplicate(true)
+    response["actor"] = side
+    response["owner"] = side
+    response["holder"] = side
+    response["action_token"] = resolved_action_token
+    var gain_event := _commit_same_qi_gain(
+        side, response, resolved_action_token)
+    if not gain_event.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return _resource_failure(gain_event, "同气结算事实提交失败")
+    var change_token := _resource_change_token(side, "same_qi", token)
+    result["change_token"] = change_token
+    var resource_event := _commit_resource_changed(
+        side, "same_qi", operation, amount, result, metadata,
+        change_token)
+    if not resource_event.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return _resource_failure(resource_event, "同气变化事实提交失败")
+    result["battle_resource_event"] = resource_event.duplicate(true)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
     return result
 
 
@@ -578,11 +585,27 @@ func write_all_charging_primary_values(
 
 
 func add_momentum(side: BattleSide, amount: int) -> int:
-    return side.add_momentum(amount)
+    var receipt := write_momentum(
+        side, "add", amount, "legacy", "legacy-momentum-add", "legacy", {
+            "source_kind": "rule", "source_id": "legacy",
+            "source_name": "legacy", "source_instance_key": "rule:legacy",
+            "trigger_mode": "direct",
+            "operation_token": "legacy-momentum-add:%s:%06d" % [
+                str(side.owner_id), side.momentum_write_receipts.size()],
+        })
+    return int(receipt.get("delta", 0))
 
 
 func set_momentum(side: BattleSide, value: int) -> int:
-    return side.set_momentum(value)
+    write_momentum(
+        side, "set", value, "legacy", "legacy-momentum-set", "legacy", {
+            "source_kind": "rule", "source_id": "legacy",
+            "source_name": "legacy", "source_instance_key": "rule:legacy",
+            "trigger_mode": "direct",
+            "operation_token": "legacy-momentum-set:%s:%06d" % [
+                str(side.owner_id), side.momentum_write_receipts.size()],
+        })
+    return int(side.momentum_value)
 
 
 func write_momentum(
@@ -591,9 +614,36 @@ func write_momentum(
         amount: int,
         source_category: String,
         action_token: String,
-        source_id: String = "") -> Dictionary:
-    return side.write_momentum(
-        operation, amount, source_category, action_token, source_id)
+        source_id: String = "",
+        source_metadata: Dictionary = {}) -> Dictionary:
+    if side == null:
+        return {"success": false, "reason": "连势写入缺少战斗方"}
+    var metadata := source_metadata.duplicate(true)
+    var stable_write_token := _momentum_write_token(
+        side, operation, amount, source_category, action_token, source_id,
+        metadata)
+    var change_token := _resource_change_token(
+        side, "momentum", stable_write_token)
+    var transaction := _begin_resource_transaction(side)
+    var result := side.write_momentum(
+        operation, amount, source_category, action_token, source_id,
+        change_token)
+    if not result.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return result
+    if result.get("reused", false):
+        BattleRuntimeMutationTransactionScript.commit(transaction)
+        return result
+    result["change_token"] = change_token
+    var resource_event := _commit_resource_changed(
+        side, "momentum", operation, amount, result, metadata,
+        change_token)
+    if not resource_event.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return _resource_failure(resource_event, "连势变化事实提交失败")
+    result["battle_resource_event"] = resource_event.duplicate(true)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return result
 
 
 func set_reflection_percent(
@@ -756,15 +806,172 @@ func add_direct_power_percent(side: BattleSide, amount: int) -> int:
 func _commit_same_qi_gain(
         side: BattleSide,
         response: Dictionary,
-        action_token: String) -> void:
+        action_token: String) -> Dictionary:
     if _committed_event_service != null:
         var serial := int(_committed_event_service.next_serial())
         response["event_serial"] = serial
         response["event_token"] = _committed_event_service.make_token(
-            "same_qi_gain_resolved", side, serial, action_token)
-        _committed_event_service.commit("same_qi_gain_resolved", response)
+            "same_qi_gain_resolved", side,
+            str(response.get("write_token", serial)), action_token)
+        return _committed_event_service.commit(
+            "same_qi_gain_resolved", response)
     else:
         _status_system.handle_response_event("same_qi_gain_resolved", response)
+        return {"success": true, "receipt": {}}
+
+
+func transaction_participants() -> Array:
+    return [_same_qi_gauge_service] if _same_qi_gauge_service != null else []
+
+
+func _begin_resource_transaction(side: BattleSide) -> Dictionary:
+    return BattleRuntimeMutationTransactionScript.begin(
+        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng,
+        transaction_participants())
+
+
+func _resource_change_token(
+        side: BattleSide,
+        resource_type: String,
+        stable_write_token: String) -> String:
+    return "%s|battle-resource|%s|%s|%s" % [
+        _battle_instance_id,
+        str(side.owner_id) if side != null else "none",
+        resource_type,
+        stable_write_token,
+    ]
+
+
+func _momentum_write_token(
+        side: BattleSide,
+        operation: String,
+        amount: int,
+        source_category: String,
+        action_token: String,
+        source_id: String,
+        source_metadata: Dictionary) -> String:
+    for field in [
+            "operation_token", "write_token", "effect_execution_token",
+            "execution_token"]:
+        var explicit := str(source_metadata.get(field, ""))
+        if explicit != "":
+            return "%s|%s|%s" % [explicit, operation, _resource_identity(side)]
+    return "%s|%s|%s|%s|%d|%s" % [
+        action_token, source_category, source_id, operation, amount,
+        _resource_identity(side),
+    ]
+
+
+func _resource_identity(side: BattleSide) -> String:
+    return str(side.owner_id) if side != null else "none"
+
+
+func _commit_resource_changed(
+        side: BattleSide,
+        resource_type: String,
+        operation: String,
+        requested_value: int,
+        result: Dictionary,
+        source_metadata: Dictionary,
+        change_token: String) -> Dictionary:
+    var before := int(result.get(
+        "before", result.get("same_qi_before", 0)))
+    var after := int(result.get(
+        "after", result.get("same_qi_after", before)))
+    if before == after:
+        return {"success": true, "skipped": true, "changed": false}
+    var source_values := source_metadata.duplicate(true)
+    var fallback_kind := str(source_values.get(
+        "source_category", result.get("source_category", "rule")))
+    if fallback_kind not in EffectSourceProtocolScript.SOURCE_KINDS:
+        fallback_kind = "rule"
+    source_values["source_kind"] = str(source_values.get(
+        "source_kind", fallback_kind))
+    source_values["source_id"] = str(source_values.get(
+        "source_id", result.get("source_id", result.get("source", ""))))
+    source_values["source_name"] = str(source_values.get(
+        "source_name", result.get("source", source_values["source_id"])))
+    source_values["source_instance_key"] = str(source_values.get(
+        "source_instance_key", "%s:%s" % [
+            source_values["source_kind"],
+            source_values["source_id"] if source_values["source_id"] != "" \
+                else change_token,
+        ]))
+    source_values["trigger_mode"] = str(source_values.get(
+        "trigger_mode", "direct"))
+    var source := EffectSourceProtocolScript.from_values(source_values)
+    var requested_delta := _requested_resource_delta(
+        operation, requested_value, before)
+    var conversion_info := {
+        "conversion_count": int(result.get("conversion_count", 0)),
+        "spent": int(result.get("spent", result.get("paid", 0))),
+        "granted_actions": int(result.get("granted_actions", 0)),
+        "extra_action_source": str(result.get("extra_action_source", "")),
+        "extra_action_sources": result.get(
+            "extra_action_sources", []).duplicate(true),
+        "capped_amount": int(result.get("capped_amount", 0)),
+    }
+    var cap := int(result.get(
+        "effective_momentum_cap", result.get("same_qi_capacity", 0)))
+    var action_token := str(result.get(
+        "action_token", source_metadata.get("action_token", "")))
+    var values := {
+        "event_token": "",
+        "event_serial": -1,
+        "action_token": action_token,
+        "transaction_token": str(source_metadata.get(
+            "transaction_token", source_metadata.get(
+                "root_action_token", action_token))),
+        "change_token": change_token,
+        "actor": side,
+        "owner": side,
+        "holder": side,
+        "resource_type": resource_type,
+        "operation": operation,
+        "requested_value": requested_value,
+        "requested_delta": requested_delta,
+        "before": before,
+        "after": after,
+        "actual_delta": after - before,
+        "cap": cap,
+        "conversion_info": conversion_info,
+        "source_kind": source["source_kind"],
+        "source_id": source["source_id"],
+        "source_name": source["source_name"],
+        "source_instance_key": source["source_instance_key"],
+        "trigger_mode": source["trigger_mode"],
+        "round_number": _round_number(),
+    }
+    if _committed_event_service != null:
+        var serial := int(_committed_event_service.next_serial())
+        values["event_serial"] = serial
+        values["event_token"] = _committed_event_service.make_token(
+            "battle_resource_changed", side, change_token, action_token)
+        return _committed_event_service.commit(
+            "battle_resource_changed", values)
+    _status_system.handle_response_event("battle_resource_changed", values)
+    return {"success": true, "receipt": {}}
+
+
+func _requested_resource_delta(
+        operation: String,
+        requested_value: int,
+        before: int) -> int:
+    match operation:
+        "add": return requested_value
+        "set": return requested_value - before
+        "consume": return -maxi(0, requested_value)
+        "clear": return -before
+    return 0
+
+
+func _resource_failure(failure: Dictionary, fallback: String) -> Dictionary:
+    return {
+        "success": false,
+        "reason": str(failure.get("reason", fallback)),
+        "rolled_back": true,
+        "committed": failure.duplicate(true),
+    }
 
 
 func _emit_source_marker_changed(

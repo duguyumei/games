@@ -94,5 +94,25 @@ func resolution_mode() -> String:
 func snapshot_for(actor) -> Dictionary:
     return state_for(actor).snapshot()
 
+func capture_transaction_state() -> Dictionary:
+    var entries: Array = []
+    for actor_key in _states:
+        var state = _states[actor_key]
+        entries.append({
+            "actor_key": actor_key,
+            "state": state,
+            "values": state.capture_transaction_state(),
+        })
+    return {"entries": entries}
+
+func restore_transaction_state(snapshot: Dictionary) -> void:
+    _states.clear()
+    for entry in snapshot.get("entries", []):
+        var state = entry.get("state")
+        if state == null:
+            continue
+        state.restore_transaction_state(entry.get("values", {}))
+        _states[entry.get("actor_key")] = state
+
 func _actor_key(actor) -> int:
     return actor.get_instance_id()

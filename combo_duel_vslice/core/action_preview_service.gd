@@ -20,6 +20,7 @@ var battle_rule_query_service
 var battle_permission_service
 var same_qi_gauge_service
 var technique_resolution_service
+var battle_effect_ports
 var round_number_reader: Callable
 
 func _init(
@@ -30,7 +31,8 @@ func _init(
         round_reader: Callable = Callable(),
         permission_service = null,
         gauge_service = null,
-        resolution_service = null) -> void:
+        resolution_service = null,
+        effect_ports = null) -> void:
     technique_repository = techniques
     passive_rule_runtime = passive_runtime
     effect_executor = executor
@@ -39,6 +41,7 @@ func _init(
     battle_permission_service = permission_service
     same_qi_gauge_service = gauge_service
     technique_resolution_service = resolution_service
+    battle_effect_ports = effect_ports
 
 func preview(
         side,
@@ -486,10 +489,25 @@ func commit_power_formation(side, preview: Dictionary) -> Dictionary:
             "success": true, "changed": true,
             "receipt": frozen["consume_receipt"].duplicate(true), "reused": true,
         }
-    var receipt: Dictionary = side.write_momentum(
+    if battle_effect_ports == null:
+        return {"success": false, "reason": "确认期连势写入端口尚未装配"}
+    var receipt: Dictionary = battle_effect_ports.write_momentum(
+        side,
         "consume", int(frozen.get("momentum_cost", 0)),
         "power_formation", str(preview.get("reshape_action_token", "")),
-        str(preview.get("technique_id", "")))
+        str(preview.get("technique_id", "")), {
+            "source_kind": "technique",
+            "source_id": str(preview.get("technique_id", "")),
+            "source_name": str(preview.get("technique", {}).get("name", "")),
+            "source_instance_key": str(preview.get("slot_instance_id", "")),
+            "trigger_mode": "manual",
+            "root_action_token": str(preview.get("reshape_action_token", "")),
+            "operation_token": "%s:power-formation:%s" % [
+                str(preview.get("reshape_action_token", "")),
+                str(preview.get("slot_instance_id", preview.get(
+                    "technique_id", ""))),
+            ],
+        })
     if not receipt.get("success", false):
         return {"success": false, "reason": "确认期连势不足，前置消费失败"}
     frozen["consume_receipt"] = receipt.duplicate(true)

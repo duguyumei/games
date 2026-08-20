@@ -133,7 +133,8 @@ func transaction_trigger_queue():
 
 func begin_effect_mutation_transaction() -> Dictionary:
     return BattleRuntimeMutationTransactionScript.begin(
-        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+        _sides, _committed_event_service, _trigger_queue, _battle_rng,
+        _source_resource_effect_service.transaction_participants())
 
 func commit_effect_mutation_transaction(transaction: Dictionary) -> Dictionary:
     return BattleRuntimeMutationTransactionScript.commit(transaction)
@@ -149,6 +150,8 @@ func use_effect_executor(executor) -> void:
 
 func use_same_qi_gauge_service(service) -> void:
     _source_resource_effect_service.use_same_qi_gauge_service(service)
+    _survival_effect_service.use_transaction_state_participants(
+        _source_resource_effect_service.transaction_participants())
 
 func use_technique_invocation_service(service) -> void:
     _invocation_effect_service.use_technique_invocation_service(service)
@@ -209,9 +212,10 @@ func gain_same_qi(
         side: BattleSide,
         amount: int,
         source: String,
-        token: String) -> Dictionary:
+        token: String,
+        source_metadata: Dictionary = {}) -> Dictionary:
     return _source_resource_effect_service.gain_same_qi(
-        side, amount, source, token)
+        side, amount, source, token, source_metadata)
 
 func write_same_qi(
         side: BattleSide,
@@ -220,9 +224,11 @@ func write_same_qi(
         source: String,
         token: String,
         source_category: String = "effect",
-        action_token: String = "") -> Dictionary:
+        action_token: String = "",
+        source_metadata: Dictionary = {}) -> Dictionary:
     return _source_resource_effect_service.write_same_qi(
-        side, operation, amount, source, token, source_category, action_token)
+        side, operation, amount, source, token, source_category, action_token,
+        source_metadata)
 
 func same_qi_receipts_for_action(side: BattleSide, action_token: String) -> Array:
     return _source_resource_effect_service.same_qi_receipts_for_action(
@@ -260,6 +266,10 @@ func deal_damage(
         resolution_metadata: Dictionary = {}) -> Dictionary:
     var effect_source := _effect_source_metadata(source_kind)
     var resolved_metadata := resolution_metadata.duplicate(true)
+    if source_kind is String and str(source_kind) == "chase":
+        resolved_metadata["legacy_damage_source_label"] = "chase"
+        resolved_metadata["damage_segment_kind"] = "chase"
+        resolved_metadata["is_chase"] = true
     for field in [
             "source_kind", "source_id", "source_name",
             "source_instance_key", "trigger_mode"]:
@@ -536,9 +546,11 @@ func write_momentum(
         amount: int,
         source_category: String,
         action_token: String,
-        source_id: String = "") -> Dictionary:
+        source_id: String = "",
+        source_metadata: Dictionary = {}) -> Dictionary:
     return _source_resource_effect_service.write_momentum(
-        side, operation, amount, source_category, action_token, source_id)
+        side, operation, amount, source_category, action_token, source_id,
+        source_metadata)
 
 func transfer_card_anomaly(
         source_card,

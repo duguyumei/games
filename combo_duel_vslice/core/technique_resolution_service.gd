@@ -641,10 +641,17 @@ func settle_same_qi(
         amount: int,
         source: String,
         token: String,
-        enabled: bool = true) -> Dictionary:
+        enabled: bool = true,
+        source_metadata: Dictionary = {}) -> Dictionary:
     if not enabled:
         return {"success": true, "skipped": true, "amount": 0}
-    return _ports.gain_same_qi(actor, amount, source, token)
+    var source_category := str(source_metadata.get(
+        "source_kind", "same_qi" if source == "同气槽" else "rule"))
+    var action_token := str(source_metadata.get(
+        "action_token", token.trim_suffix(":same_qi")))
+    return _ports.write_same_qi(
+        actor, "add", amount, source, token, source_category, action_token,
+        source_metadata)
 
 func activation_permission(actor, target, technique_id: String,
         hand_id: String, cards: Array, action_token: String,
@@ -801,7 +808,8 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
         int(runtime.group_snapshot.get("action_same_qi_gain", 0)),
         "technique_invocation",
         token + ":same_qi",
-        bool(effect.get("gain_same_qi", true)))
+        bool(effect.get("gain_same_qi", true)),
+        state["invoked_context"].source_metadata())
     if not same_qi_result.get("success", false):
         discard_execution(token)
         return same_qi_result
@@ -847,8 +855,19 @@ func _settle_momentum(actor, action_token: String,
     if not changed:
         preservation = actor.consume_momentum_preservation_for(action_token)
         if not bool(preservation.get("preserved", false)):
-            clear_receipt = actor.write_momentum(
-                "clear", 0, "rule_clear", action_token, technique_id)
+            var definition = _repository.get_definition(technique_id)
+            clear_receipt = _ports.write_momentum(
+                actor, "clear", 0, "rule_clear", action_token, technique_id, {
+                    "source_kind": "technique",
+                    "source_id": technique_id,
+                    "source_name": str(definition.display_name) \
+                        if definition != null else technique_id,
+                    "source_instance_key": "technique:%s" % technique_id,
+                    "trigger_mode": "direct",
+                    "root_action_token": action_token,
+                    "operation_token": "%s:momentum-settlement:%s" % [
+                        action_token, technique_id],
+                })
             if not clear_receipt.get("success", false):
                 return {
                     "success": false,

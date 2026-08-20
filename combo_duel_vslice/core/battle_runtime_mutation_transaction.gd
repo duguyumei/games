@@ -11,9 +11,10 @@ static func begin(
         sides: Array,
         committed_event_service,
         trigger_queue,
-        rng: RandomNumberGenerator = null) -> Dictionary:
+        rng: RandomNumberGenerator = null,
+        state_participants: Array = []) -> Dictionary:
     var snapshot := capture(
-        sides, committed_event_service, trigger_queue, rng)
+        sides, committed_event_service, trigger_queue, rng, state_participants)
     if committed_event_service != null and committed_event_service.has_method(
             "begin_publication_transaction"):
         committed_event_service.begin_publication_transaction()
@@ -23,6 +24,7 @@ static func begin(
         "committed_event_service": committed_event_service,
         "trigger_queue": trigger_queue,
         "rng": rng,
+        "state_participants": state_participants.duplicate(),
     }
 
 
@@ -30,13 +32,22 @@ static func capture(
         sides: Array,
         committed_event_service,
         trigger_queue,
-        rng: RandomNumberGenerator = null) -> Dictionary:
+        rng: RandomNumberGenerator = null,
+        state_participants: Array = []) -> Dictionary:
     var side_states: Array = []
     for side in sides:
         if side != null:
             side_states.append({
                 "side": side,
                 "state": side.capture_passive_query_state(),
+            })
+    var participant_states: Array = []
+    for participant in state_participants:
+        if participant != null and participant.has_method(
+                "capture_transaction_state"):
+            participant_states.append({
+                "participant": participant,
+                "state": participant.capture_transaction_state(),
             })
     return {
         "side_states": side_states,
@@ -47,6 +58,7 @@ static func capture(
             if trigger_queue != null and trigger_queue.has_method(
                 "capture_runtime_state") else {},
         "rng_state": int(rng.state) if rng != null else -1,
+        "participant_states": participant_states,
     }
 
 
@@ -67,14 +79,16 @@ static func rollback(transaction: Dictionary) -> bool:
         transaction.get("snapshot", {}),
         event_service,
         transaction.get("trigger_queue"),
-        transaction.get("rng"))
+        transaction.get("rng"),
+        transaction.get("state_participants", []))
 
 
 static func restore(
         snapshot: Dictionary,
         committed_event_service,
         trigger_queue,
-        rng: RandomNumberGenerator = null) -> bool:
+        rng: RandomNumberGenerator = null,
+        _state_participants: Array = []) -> bool:
     for entry in snapshot.get("side_states", []):
         var side = entry.get("side")
         if side != null:
@@ -86,6 +100,11 @@ static func restore(
             snapshot.get("event_state", {}))
     if trigger_queue != null and trigger_queue.has_method("restore_runtime_state"):
         trigger_queue.restore_runtime_state(snapshot.get("trigger_state", {}))
+    for entry in snapshot.get("participant_states", []):
+        var participant = entry.get("participant")
+        if participant != null and participant.has_method(
+                "restore_transaction_state"):
+            participant.restore_transaction_state(entry.get("state", {}))
     var rng_state := int(snapshot.get("rng_state", -1))
     if rng != null and rng_state >= 0:
         rng.state = rng_state

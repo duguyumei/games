@@ -148,3 +148,29 @@ func snapshot() -> Dictionary:
         "has_pending_intent": not pending_intent.is_empty(),
         "last_forfeit_reason": last_forfeit_reason,
     }
+
+func capture_transaction_state() -> Dictionary:
+    return {
+        "action_count": action_count,
+        "action_sources": action_sources.duplicate(true),
+        "last_consumed_action_source": last_consumed_action_source.duplicate(true),
+        "current_disabled_reasons": current_disabled_reasons.duplicate(true),
+        "scheduled_disabled_reasons": scheduled_disabled_reasons.duplicate(true),
+        "combo_claims": combo_claims.duplicate(true),
+        "pending_intent": pending_intent.duplicate(true),
+        "last_forfeit_reason": last_forfeit_reason,
+    }
+
+func restore_transaction_state(state: Dictionary) -> void:
+    action_count = int(state.get("action_count", action_count))
+    action_sources.assign(state.get("action_sources", action_sources))
+    last_consumed_action_source = state.get(
+        "last_consumed_action_source", last_consumed_action_source).duplicate(true)
+    current_disabled_reasons = state.get(
+        "current_disabled_reasons", current_disabled_reasons).duplicate(true)
+    scheduled_disabled_reasons = state.get(
+        "scheduled_disabled_reasons", scheduled_disabled_reasons).duplicate(true)
+    combo_claims = state.get("combo_claims", combo_claims).duplicate(true)
+    pending_intent = state.get("pending_intent", pending_intent).duplicate(true)
+    last_forfeit_reason = str(state.get(
+        "last_forfeit_reason", last_forfeit_reason))

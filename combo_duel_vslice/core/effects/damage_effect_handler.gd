@@ -55,6 +55,14 @@ func execute(effect: Dictionary, context):
             if effect.has("source_kind"):
                 resolution_metadata["legacy_damage_source_label"] = str(
                     effect["source_kind"])
+            if effect.has("damage_segment_kind"):
+                resolution_metadata["damage_segment_kind"] = str(
+                    effect["damage_segment_kind"])
+            if bool(effect.get("is_chase", false)) \
+                    or str(effect.get("damage_segment_kind", "")) == "chase" \
+                    or str(effect.get("source_kind", "")) == "chase":
+                resolution_metadata["damage_segment_kind"] = "chase"
+                resolution_metadata["is_chase"] = true
             var result: Dictionary = runtime.ports.deal_damage(
                 damage_actor, damage_target, amount,
                 damage_source, is_true,
@@ -198,7 +206,11 @@ func _execute_multi_damage(effect: Dictionary, runtime):
                 amount * int(effect["chase_on_consecutive_life_hits_percent"]) / 100.0))
             ports.deal_damage(
                 actor, target, chase_amount, runtime.source_metadata(), false,
-                runtime.action_token, "normal", {"direct_attack": true})
+                runtime.action_token, "normal", {
+                    "direct_attack": true,
+                    "damage_segment_kind": "chase",
+                    "is_chase": true,
+                })
             chase_count += 1
         previous_life_hit = current_life_hit
     if effect.has("capture"):

@@ -26,6 +26,7 @@ const COMMITTED_EVENTS := [
     "technique_invocation_started", "technique_invocation_resolved",
     "technique_sequence_changed", "technique_slot_capacity_changed",
     "temporary_technique_generated", "same_qi_gain_resolved",
+    "battle_resource_changed", "chase_resolved",
     "experience_change_resolved",
 ]
 
@@ -111,6 +112,10 @@ const PUBLIC_FIELDS := [
     "requested_delta", "actual_delta", "experience_before",
     "experience_after", "direction", "prevented_amount", "operation",
     "operation_token", "root_execution_token",
+    "transaction_token", "change_token", "resource_type",
+    "requested_value", "cap", "conversion_info",
+    "chase_token", "attacker", "defender", "defense_loss",
+    "life_loss", "blocked", "deflected", "cancelled",
 ]
 
 static func event_ids() -> Array[String]:

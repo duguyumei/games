@@ -332,7 +332,8 @@ func _init(
         Callable(self, "_read_turn_number"),
         battle_permission_service,
         same_qi_gauge_service,
-        technique_resolution_service)
+        technique_resolution_service,
+        effect_ports)
     action_resolver = ActionResolverScript.new(
         effect_ports,
         repository,
