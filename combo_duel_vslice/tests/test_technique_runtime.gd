@@ -8,6 +8,9 @@ const TechniqueRepositoryScript = preload("res://core/technique_repository.gd")
 const CombatEngineScript = preload("res://core/combat_engine.gd")
 const EffectContextScript = preload("res://core/effects/technique_effect_context.gd")
 const EffectValueResolverScript = preload("res://core/effects/effect_value_resolver.gd")
+const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
+const EffectHandlerRegistryScript = preload(
+    "res://core/effects/effect_handler_registry.gd")
 const ContentCatalogScript = preload("res://core/content_catalog.gd")
 const GrowthInventoryScript = preload("res://core/growth_inventory.gd")
 const BattleSideScript = preload("res://core/battle_side.gd")
@@ -217,6 +220,7 @@ func _initialize() -> void:
         push_error("自动化测试必须显式指定 --launch-mode=test")
         quit(2)
         return
+    _test_effect_spec_validator_value_contract()
     _test_empty_repository_and_production_data()
     _test_power_snapshot_formula_and_initial_power_reader()
     _test_empty_and_failed_techniques_leave_momentum_untouched()
@@ -258,12 +262,29 @@ func _initialize() -> void:
         push_error("TECHNIQUE TEST FAIL: %s" % failure)
     quit(1)
 
+func _test_effect_spec_validator_value_contract() -> void:
+    var validation_errors: Array[String] = []
+    var validator = EffectSpecValidatorScript.new(
+        func(scope: String, message: String) -> void:
+            validation_errors.append("%s：%s" % [scope, message]),
+        {},
+        EffectHandlerRegistryScript.new(RandomNumberGenerator.new()))
+    validator.validate_amount_spec(3, "scalar.int")
+    validator.validate_amount_spec(1.5, "scalar.float")
+    validator.validate_amount_spec(
+        {"kind": "constant", "value": 2}, "spec.constant")
+    _assert_equal(validation_errors.size(), 0,
+        "数值规格公共入口接受整数、小数与对象")
+    validator.validate_amount_spec("invalid", "invalid.string")
+    _assert_equal(validation_errors.size(), 1,
+        "非法标量由注册表报告校验错误而非触发参数类型错误")
+
 func _test_empty_repository_and_production_data() -> void:
     var repository = TechniqueRepositoryScript.new()
     _assert_true(repository.load_from_file(), "合法空功法仓库加载成功")
     _assert_true(repository.loaded_successfully, "空仓库与加载失败状态可区分")
-    _assert_equal(repository.techniques.size(), 228, "正式功法仓库包含228门功法")
-    _assert_equal(repository.resource_paths.size(), 228, "正式功法资源路径包含228项")
+    _assert_equal(repository.techniques.size(), 236, "正式功法仓库包含236门功法")
+    _assert_equal(repository.resource_paths.size(), 236, "正式功法资源路径包含236项")
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.production())
     _assert_true(catalog.load_all(), "production 空功法内容完整通过校验")
     _assert_equal(
@@ -279,12 +300,12 @@ func _test_empty_repository_and_production_data() -> void:
             _assert_equal(enemy["sequences"][hand_id], [], "敌人功法序列为空")
     var technique_category: Dictionary = catalog.definition(
         "practice_shop")["normal"]["categories"][0]
-    _assert_equal(technique_category["candidate_ids"].size(), 226, "商店包含226门非内建正式候选")
+    _assert_equal(technique_category["candidate_ids"].size(), 234, "商店包含234门非内建正式候选")
     var resource_count := 0
     for path in DirAccess.get_files_at("res://data/techniques"):
         if str(path).ends_with(".tres"):
             resource_count += 1
-    _assert_equal(resource_count, 228, "正式目录存在228门正式功法资源")
+    _assert_equal(resource_count, 236, "正式目录存在236门正式功法资源")
 
 func _test_power_snapshot_formula_and_initial_power_reader() -> void:
     var hand := HandEvaluatorScript.evaluate([

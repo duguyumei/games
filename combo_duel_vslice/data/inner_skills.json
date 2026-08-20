@@ -27,6 +27,65 @@
       ]
     },
     {
+      "id": "solidify_hand_at_battle_end",
+      "name": "化虚为实",
+      "status": "formal",
+      "rarity": "legendary",
+      "forget_value": 0,
+      "description": "战斗开始组成起始手牌前，随机生成3张同属性、同牌阶且拥有觉醒和虚无的临时真气并洗入我方牌库。战斗胜利时，将我方手牌中的全部临时真气转化为永久真气并加入本局牌组。",
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 50,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "generate_shared_template_temporary_normal_cards",
+                    "count": 3,
+                    "destination": "draw_pile",
+                    "shuffle_destination": true,
+                    "add_void": true,
+                    "origin_id": "awakening",
+                    "capture": "generated_temporary_qi"
+                  }
+                ]
+              },
+              {
+                "hook": "battle_end",
+                "order": 60,
+                "filters": {"winner_is_owner": true},
+                "effects": [
+                  {
+                    "op": "capture_query",
+                    "query": {
+                      "side": "owner",
+                      "zone": "hand",
+                      "order": "zone",
+                      "limit": -1,
+                      "filters": {
+                        "temporary": true,
+                        "temporarily_transferred": false
+                      }
+                    },
+                    "capture": "temporary_hand"
+                  },
+                  {
+                    "op": "solidify_captured_temporary_cards",
+                    "capture": "temporary_hand",
+                    "result_capture": "solidified_temporary_qi"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "extra_qi_to_defense",
       "name": "初始内功候选",
       "status": "candidate",

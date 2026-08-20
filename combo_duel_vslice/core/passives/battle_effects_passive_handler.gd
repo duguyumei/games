@@ -63,7 +63,7 @@ func validate_effect_configuration(
     if hook not in MUTATION_HOOKS:
         errors.append("hook 不是正式可写战斗 Hook：%s" % hook)
     if hook in BattleEventCatalogScript.TIMING_EVENTS:
-        if not configuration.get("order") is int:
+        if not _is_integer(configuration.get("order")):
             errors.append("生命周期 Hook 必须声明整数 order")
     elif forced_hook == "" and configuration.has("order"):
         errors.append("只有生命周期 Hook 可以声明 order")
@@ -170,7 +170,7 @@ func _validate_rules_configuration(configuration: Dictionary) -> Array[String]:
         if hook not in MUTATION_HOOKS:
             errors.append("%s.hook 不是正式可写战斗 Hook：%s" % [scope, hook])
         if hook in BattleEventCatalogScript.TIMING_EVENTS:
-            if not rule.get("order") is int:
+            if not _is_integer(rule.get("order")):
                 errors.append("%s 生命周期 Hook 必须声明整数 order" % scope)
         elif rule.has("order"):
             errors.append("%s 只有生命周期 Hook 可以声明 order" % scope)
@@ -193,6 +193,10 @@ func _validate_rules_configuration(configuration: Dictionary) -> Array[String]:
                 effects, scope + ".effects", errors)
         _validate_effects(effects, scope + ".effects", errors)
     return errors
+
+func _is_integer(value) -> bool:
+    return (value is int or value is float) \
+        and float(value) == floor(float(value))
 
 func _validate_effects(
         effects,

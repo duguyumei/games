@@ -255,7 +255,15 @@
     "high_forest_poison_meridian_echo": "formal_complete",
     "pair_mountain_three_knocks": "formal_complete",
     "straight_forest_seven_poison_seal": "formal_complete",
-    "high_fire_hundred_forms_furnace": "formal_complete"
+    "high_fire_hundred_forms_furnace": "formal_complete",
+    "straight_wind_long_wind_sea": "formal_complete",
+    "bomb_forest_seize_origin_life": "formal_complete",
+    "bomb_fire_pass_flame": "formal_complete",
+    "three_fire_return_style": "formal_complete",
+    "straight_fire_hanging_furnace": "formal_complete",
+    "bomb_fire_setting_sun": "formal_complete",
+    "three_fire_shadow_pursuit": "formal_complete",
+    "bomb_mountain_wait_enemy": "formal_complete"
   },
   "resource_paths": [
     "res://data/techniques/basic_scatter.tres",
@@ -485,6 +493,14 @@
     "res://data/techniques/high_forest_poison_meridian_echo.tres",
     "res://data/techniques/pair_mountain_three_knocks.tres",
     "res://data/techniques/straight_forest_seven_poison_seal.tres",
-    "res://data/techniques/high_fire_hundred_forms_furnace.tres"
+    "res://data/techniques/high_fire_hundred_forms_furnace.tres",
+    "res://data/techniques/straight_wind_long_wind_sea.tres",
+    "res://data/techniques/bomb_forest_seize_origin_life.tres",
+    "res://data/techniques/bomb_fire_pass_flame.tres",
+    "res://data/techniques/three_fire_return_style.tres",
+    "res://data/techniques/straight_fire_hanging_furnace.tres",
+    "res://data/techniques/bomb_fire_setting_sun.tres",
+    "res://data/techniques/three_fire_shadow_pursuit.tres",
+    "res://data/techniques/bomb_mountain_wait_enemy.tres"
   ]
 }

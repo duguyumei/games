@@ -788,13 +788,17 @@ func _poison_defense_intervention(
         requested_amount: int,
         source_kind: String,
         action_token: String) -> int:
-    if _battle_rule_query_service == null or target == null:
+    if target == null:
         return 0
+    if _battle_rule_query_service == null:
+        return maxi(0, requested_amount)
     var query = _battle_rule_query_service.resolve_values({
         "hook": "poison_defense_intervention_query",
         "owner": target, "actor": actor, "target": target,
         "subject_kind": "poison_damage", "subject_id": source_kind,
-        "base_value": 0, "round_number": _round_number(),
+        # 默认允许全部最终毒伤参与防御吸收；来源可以通过同一查询缩减
+        # 本段可被防御吸收的上限，但中央流程不识别具体内容 ID。
+        "base_value": requested_amount, "round_number": _round_number(),
         "source_kind": source_kind, "action_token": action_token,
         "metadata": {"requested_amount": requested_amount},
     })

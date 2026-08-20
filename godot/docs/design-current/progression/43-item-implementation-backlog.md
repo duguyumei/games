@@ -328,3 +328,14 @@ Handler：
 
 纳气养命已加入正式物品候选池；获得时不追溯现有牌组，存档恢复只恢复marker，不重演获得或历史新增。
 当前7件物品正式接入，剩余13件；能力矩阵为已有／合并19、B 12、C1 16、C2 0、D 1。延寿玉仍未实现。
+
+## 13. 2026-08-20 化虚为实永久新增桥接
+
+《化虚为实》胜利固化临时真气时，`BattleCardEffectService`现逐实例提交
+`run_qi_permanently_added(scope=battle,persistence=permanent)`。纳气养命的既有`battle_effects`行为以
+`holder_is_owner`及scope／persistence过滤消费该事实，并通过同一个`write_source_marker`入口令
+`permanent_qi_growth`逐张+1；因此每固化1张真气，最大生命贡献实时+1，战败、退出、重开、事件重放和
+同一operation回执复用均不会重复增加。
+
+该桥接没有新增物品专用监听Service，也不在两项内容之间判断稳定ID。纳气养命的其他永久／临时重塑回血
+规则不变。物品正式接入数仍为7件，剩余13件；化虚为实专项随完整回归full 54/54通过。

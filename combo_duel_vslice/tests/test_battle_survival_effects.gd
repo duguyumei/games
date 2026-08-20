@@ -89,12 +89,12 @@ func _test_damage_type_defense_life_and_block_facade() -> void:
     var poison: Dictionary = engine.effect_ports.deal_damage(
         engine.player, engine.enemy, 6, "survival-test", false,
         "survival-poison", "poison")
-    _assert_equal(poison.get("defense_lost", 0), 0,
-        "毒伤默认绕过普通防御")
-    _assert_equal(engine.enemy.defense, 4,
-        "毒伤默认不改写普通防御")
-    _assert_equal(poison.get("life_lost", 0), 6,
-        "毒伤默认直接写入生命")
+    _assert_equal(poison.get("defense_lost", 0), 4,
+        "毒伤默认先由普通防御吸收")
+    _assert_equal(engine.enemy.defense, 0,
+        "毒伤实际减少普通防御")
+    _assert_equal(poison.get("life_lost", 0), 2,
+        "毒伤只有击穿防御的部分写入生命")
     _assert_equal(engine.player.life, player_life_before,
         "毒伤不会触发反震")
 

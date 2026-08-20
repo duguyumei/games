@@ -206,8 +206,9 @@ func _test_cooperation_resolution() -> void:
         _assert_equal(
             poison_responses[0].get("filters", {}).get("source_card_instance_ids", []),
             [str(cooperation.id)], "连枝响应只冻结协同牌来源")
-    _assert_equal(engine.player.life, 96, "连枝协同毒牌按实际值令我方损失生命")
-    _assert_equal(engine.enemy.life, 96, "连枝追加4点毒伤绕过敌方高防御")
+    _assert_equal(engine.player.life, 100, "连枝自身防御先吸收协同毒牌伤害")
+    _assert_equal(engine.enemy.life, 100, "连枝追加毒伤被敌方高防御吸收")
+    _assert_equal(engine.enemy.defense, 99, "连枝只按我方实际生命损失追加1点毒伤")
     _assert_equal(cooperation.anomaly_layers("buff", "growth"), 0, "连枝协同牌入堆前移除全部成长")
     _assert_equal(growth_target.anomaly_layers("buff", "growth"), 3, "连枝把协同牌全部成长原子转给所选手牌")
 

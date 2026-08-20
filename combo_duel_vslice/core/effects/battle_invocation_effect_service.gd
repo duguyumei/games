@@ -33,9 +33,17 @@ func push_effect_context(context) -> void:
     if invocation_service != null:
         var slot_id := str(context.get("slot_instance_id") \
             if context is Dictionary else context.slot_instance_id)
+        var source_kind := str(context.get("source_kind") \
+            if context is Dictionary else context.source_kind)
+        var trigger_mode := str(context.get("trigger_mode") \
+            if context is Dictionary else context.trigger_mode)
+        var represents_technique_execution := source_kind == "technique" \
+            and trigger_mode in [
+                "manual", "automatic", "invoked", "echo", "retrigger"]
         _effect_context_slot_entries[context] = {
             "slot_instance_id": slot_id,
-            "entered": invocation_service.enter_resolution_slot(slot_id),
+            "entered": invocation_service.enter_resolution_slot(slot_id) \
+                if represents_technique_execution else false,
         }
 
 

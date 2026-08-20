@@ -243,6 +243,22 @@
           "configuration": {
             "rules": [
               {
+                "hook": "run_qi_permanently_added",
+                "filters": {
+                  "holder_is_owner": true,
+                  "scope": "battle",
+                  "persistence": "permanent"
+                },
+                "effects": [
+                  {
+                    "op": "write_source_marker",
+                    "marker_id": "permanent_qi_growth",
+                    "operation": "add",
+                    "amount": 1
+                  }
+                ]
+              },
+              {
                 "hook": "qi_reshape_committed",
                 "filters": {
                   "holder_is_owner": true,

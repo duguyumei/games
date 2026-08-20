@@ -1010,6 +1010,8 @@ func _validate_techniques(definition: Dictionary) -> void:
         _validate_technique_charging(
             value.get("charging", {}), value.get("marker_definitions", []),
             scope + ".charging")
+        _validate_technique_power_formation(
+            value.get("power_formation", {}), scope + ".power_formation")
         _validate_automatic_triggers(
             value.get("automatic_triggers", []),
             value.get("marker_definitions", []),
@@ -1038,6 +1040,25 @@ func _validate_techniques(definition: Dictionary) -> void:
     _validate_technique_integration_statuses(
         integration_statuses,
         definition.get("resource_paths", []))
+
+func _validate_technique_power_formation(value, scope: String) -> void:
+    if not value is Dictionary:
+        _error(scope, "必须是对象")
+        return
+    if value.is_empty():
+        return
+    var kind := str(value.get("kind", ""))
+    if kind not in [
+            "pre_momentum_consume", "unburned_contributing_effective_qi",
+            "random_extra_current_qi", "value_spec_fixed_bonus"]:
+        _error(scope + ".kind", "引用未知确认期功法值规则")
+        return
+    if kind == "value_spec_fixed_bonus":
+        if not value.get("value") is Dictionary:
+            _error(scope + ".value", "必须提供 ValueSpec")
+        else:
+            _effect_specs.validate_amount_spec(
+                value["value"], scope + ".value")
 
 func _validate_marker_definitions(
         value, scope: String, allow_initial_value: bool = false) -> void:

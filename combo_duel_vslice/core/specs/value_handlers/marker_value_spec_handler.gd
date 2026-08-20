@@ -1,6 +1,9 @@
 class_name MarkerValueSpecHandler
 extends RefCounted
 
+const SourceMarkerAddressResolverScript = preload(
+    "res://core/source_marker_address_resolver.gd")
+
 const REGISTERED_KINDS := [
     "source_marker_value", "source_marker_sum", "equipped_source_marker_sum",
     "consumed_marker_value",
@@ -39,10 +42,23 @@ func resolve(kind: String, spec: Dictionary, runtime, resolver, _registry) -> in
             var side = resolver.side(runtime, str(spec.get("side", "actor")))
             if side == null or side.source_marker_store == null:
                 return 0
+            var source_kind := str(spec.get(
+                "source_kind", runtime.source_kind))
+            var source_instance_key := str(spec.get(
+                "source_instance_key", ""))
+            # 未显式跨来源寻址时，读写必须共享同一个地址协议。尤其功法的
+            # run 标识以稳定内容 ID 为键，不能误读战斗槽位实例键。
+            if source_instance_key == "":
+                var address: Dictionary = SourceMarkerAddressResolverScript.new() \
+                    .resolve(spec, runtime)
+                if address.get("success", false):
+                    source_kind = str(address.get("source_kind", source_kind))
+                    source_instance_key = str(address.get(
+                        "source_instance_key", runtime.source_instance_key))
+                else:
+                    source_instance_key = str(runtime.source_instance_key)
             return side.source_marker_store.value(
-                str(spec.get("source_kind", runtime.source_kind)),
-                str(spec.get(
-                    "source_instance_key", runtime.source_instance_key)),
+                source_kind, source_instance_key,
                 str(spec.get("marker_id", "")), str(spec.get("scope", "")))
         "source_marker_sum":
             var side = resolver.side(runtime, str(spec.get("side", "actor")))

@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bomb_fire_setting_sun"
+display_name = "火·残阳绝式"
+pool = "bomb"
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["four_kind", "five_kind"] )
+description = "行动确认时，本组直接功法值增加我方当前已损失生命的一半。随后造成P点普通伤害；若我方当前生命不高于生命上限的25%，改为造成真伤。"
+condition = {}
+cooperation = {}
+power_formation = {"kind":"value_spec_fixed_bonus","value":{"kind":"divide_floor","value":{"kind":"missing_life"},"divisor":2}}
+semantic_tags = Array[String]( ["damage", "true_damage"] )
+public_behavior_summary = Array[String]( ["damage", "true_damage"] )
+implementation_category = "C"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power"},"damage_type_when":{"when":{"value_at_least":{"value":{"kind":"multiply","values":[4,{"kind":"missing_life"}]},"minimum":{"kind":"multiply","values":[3,{"kind":"max_life"}]}}},"then":"true","else":"normal"}}]

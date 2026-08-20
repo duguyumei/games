@@ -58,9 +58,10 @@ func _test_poison_damage_contract() -> void:
     var result: Dictionary = engine.effect_ports.deal_damage(
         engine.player, engine.enemy, 9, "专项毒伤", false, "poison-test", "poison")
     _assert_equal(result.get("damage_type"), "poison", "毒伤结果公开独立伤害类型")
-    _assert_equal(result.get("life_lost"), 9, "毒伤结果公开实际生命损失")
-    _assert_equal(engine.enemy.defense, 30, "毒伤默认不消耗防御")
-    _assert_equal(engine.enemy.life, 91, "毒伤直接损失生命")
+    _assert_equal(result.get("defense_lost"), 9, "毒伤结果公开实际防御吸收")
+    _assert_equal(result.get("life_lost"), 0, "防御完全吸收时没有生命损失")
+    _assert_equal(engine.enemy.defense, 21, "毒伤默认消耗防御")
+    _assert_equal(engine.enemy.life, 100, "被防御吸收的毒伤不减少生命")
     _assert_equal(engine.player.life, 100, "毒伤不触发反震")
 
 func _test_poison_totals_and_burnout() -> void:
@@ -96,7 +97,8 @@ func _test_immediate_and_simultaneous_trigger() -> void:
     engine.enemy.life = 5
     var sync: Dictionary = _execute(engine, "bomb_forest_all_poison", 20)
     _assert_true(sync.get("success", false), "万蛊同寂同步毒爆执行")
-    _assert_equal(engine.player.life, 0, "同步毒爆处理我方致死")
+    _assert_equal(engine.player.life, 5, "同步毒爆先由本功法获得的防御吸收我方毒伤")
+    _assert_equal(engine.player.defense, 4, "我方毒伤吸收后保留剩余防御")
     _assert_equal(engine.enemy.life, 0, "同步毒爆不因我方先死漏掉敌方")
     _assert_true(engine.player.hand.has(player_card) and engine.enemy.hand.has(enemy_card), "同步毒爆不移动目标牌")
 

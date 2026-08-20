@@ -10,7 +10,10 @@ const TARGET_SOURCES := ["capture", "frozen_reshape_results"]
 
 
 func operation_ids() -> Array[String]:
-    return ["advance_permanent_qi_rank"]
+    return [
+        "advance_permanent_qi_rank",
+        "solidify_captured_temporary_cards",
+    ]
 
 
 func group_name() -> String:
@@ -24,6 +27,8 @@ func execute(effect: Dictionary, context):
     var owner = runtime.owner if runtime.owner != null else runtime.actor
     if owner == null:
         return EffectResultScript.failed("永久真气变更缺少持有者")
+    if str(effect.get("op", "")) == "solidify_captured_temporary_cards":
+        return _solidify_captured(effect, runtime, owner)
     var target_ids := _target_ids(effect, runtime)
     var reshape_id := str(effect.get("reshape_id", ""))
     var metadata: Dictionary = runtime.source_metadata()
@@ -65,6 +70,31 @@ func execute(effect: Dictionary, context):
         })
 
 
+func _solidify_captured(effect: Dictionary, runtime, owner):
+    var target_ids := _target_ids(effect, runtime)
+    var metadata: Dictionary = runtime.source_metadata()
+    metadata.merge({
+        "source_actor": runtime.actor,
+        "target": runtime.target,
+        "action_token": runtime.action_token,
+        "event_token": runtime.event_token,
+        "root_action_token": runtime.root_action_token,
+        "invocation_token": runtime.invocation_token,
+        "effect_execution_token": runtime.effect_execution_token,
+        "reason": runtime.source_name,
+    }, true)
+    var result: Dictionary = runtime.ports.solidify_temporary_cards(
+        owner, target_ids, metadata)
+    if not result.get("success", false):
+        return EffectResultScript.failed(str(result.get(
+            "reason", "临时真气固化失败")))
+    if effect.has("result_capture"):
+        runtime.captures[str(effect["result_capture"])] = result.get(
+            "receipts", []).duplicate(true)
+    return EffectResultScript.succeeded(
+        "固化临时真气 %d 张" % int(result.get("changed_count", 0)), result)
+
+
 func summarize(
         _effect: Dictionary,
         _context,
@@ -74,6 +104,14 @@ func summarize(
 
 
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
+    if str(effect.get("op", "")) == "solidify_captured_temporary_cards":
+        if str(effect.get("capture", "")) == "":
+            validator.report_error(scope + ".capture", "必须提供目标 capture")
+        if effect.has("result_capture") \
+                and str(effect.get("result_capture", "")) == "":
+            validator.report_error(
+                scope + ".result_capture", "必须是非空字符串")
+        return
     var targets_from := str(effect.get("targets_from", "capture"))
     if targets_from not in TARGET_SOURCES:
         validator.report_error(

@@ -53,5 +53,6 @@ func public_effect_values() -> Dictionary:
         "owner_id": owner_id,
         "drawn_cards": drawn_cards.duplicate(),
         "metadata": metadata.duplicate(true),
+        "winner": winner,
     }, true)
     return result

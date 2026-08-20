@@ -175,9 +175,11 @@ func register_response(
         effects: Array,
         context,
         filters: Dictionary = {},
-        expiry_effects: Array = []) -> Dictionary:
+        expiry_effects: Array = [],
+        lifecycle: Dictionary = {}) -> Dictionary:
     return status_response_service.register_response(
-        event_kind, expiry, effects, context, filters, expiry_effects)
+        event_kind, expiry, effects, context, filters, expiry_effects,
+        lifecycle)
 
 func register_next_round_hand_limit(context, amount: int, affected_side = null) -> Dictionary:
     return status_delay_service.register_next_round_hand_limit(
@@ -420,9 +422,15 @@ func register_delayed_effects(
         timing: String,
         occurrences: int,
         effects: Array,
-        context) -> Dictionary:
+        context,
+        lifecycle: Dictionary = {}) -> Dictionary:
     return status_delay_service.register_effect_chain(
-        label, timing, occurrences, effects, context)
+        label, timing, occurrences, effects, context, lifecycle)
+
+func advance_delayed_effects(
+        context, record_key: String, amount: int = 1) -> Dictionary:
+    return status_delay_service.advance_effect_chain(
+        context, record_key, amount)
 
 func register_defense_decay_return(runtime) -> Dictionary:
     return status_delay_service.register_defense_decay_return(runtime)
@@ -459,6 +467,8 @@ func _on_action_resolution_end_records(event) -> Dictionary:
         "actors": event.actors,
         "action_tokens": event.context.get("metadata", {}).get(
             "action_tokens", []).duplicate(),
+        "acting_owner_ids": event.context.get("metadata", {}).get(
+            "acting_owner_ids", []).duplicate(),
         "action_window_id": event.context.get("metadata", {}).get(
             "action_window_id", ""),
         "action_results": event.context.get("action_results", []).duplicate(true),

@@ -23,6 +23,10 @@ func _init(resolution_service, executor, ports,
 
 func invoke(effect: Dictionary, context) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
+    var normalized := _normalize_public_invocation(effect, runtime)
+    if not normalized.get("success", false):
+        return normalized
+    var invocation_effect: Dictionary = normalized["effect"]
     if _resolution_service.has_pending_invocation(runtime):
         var pending_slot: String = \
             _resolution_service.pending_slot_instance_id(runtime)
@@ -33,11 +37,16 @@ func invoke(effect: Dictionary, context) -> Dictionary:
                 _receipts[str(resumed.get("invocation_token", ""))] = \
                     resumed.duplicate(true)
         return resumed
-    var frozen := _freeze_request(effect, runtime)
+    var frozen := _freeze_request(invocation_effect, runtime)
     if not frozen.get("success", false) \
             or not frozen.get("triggered", true):
         return frozen
-    var timing := str(effect.get("timing", "immediate"))
+    var timing := str(invocation_effect.get("timing", "immediate"))
+    if str(invocation_effect.get("invocation_mode", "normal")) \
+            == "automatic_source" \
+            and _stack.has(str(frozen.get("slot", {}).get(
+                "slot_instance_id", ""))):
+        timing = "after_caller_advance"
     if timing == "after_caller_advance":
         var root := _root_token(runtime)
         if not _deferred_by_root.has(root):
@@ -126,7 +135,9 @@ func _freeze_request(effect: Dictionary, runtime) -> Dictionary:
     var hand_id := str(selection.get("hand_id", runtime.actual_hand_id))
     if hand_id == "current":
         hand_id = runtime.actual_hand_id
-    var candidates := _candidates(selection, runtime, hand_id)
+    var candidates := _candidates(
+        selection, runtime, hand_id,
+        str(effect.get("invocation_mode", "normal")) == "automatic_source")
     if candidates.is_empty():
         return {
             "success": true, "triggered": false,
@@ -158,7 +169,11 @@ func _freeze_request(effect: Dictionary, runtime) -> Dictionary:
             "_p0_override", _resolve_p0(effect.get("p0", {}), runtime))),
     }
 
-func _candidates(selection: Dictionary, runtime, hand_id: String) -> Array:
+func _candidates(
+        selection: Dictionary,
+        runtime,
+        hand_id: String,
+        allow_source_in_stack: bool = false) -> Array:
     var mode := str(selection.get("mode", "next"))
     var candidates: Array = []
     match mode:
@@ -181,6 +196,28 @@ func _candidates(selection: Dictionary, runtime, hand_id: String) -> Array:
         "next":
             var ordered: Array = runtime.sequence_book.ordered_slots(hand_id)
             candidates = [ordered[1]] if ordered.size() > 1 else []
+        "relative_to_source":
+            var ordered: Array = runtime.sequence_book.ordered_slots(hand_id)
+            if ordered.size() <= 1:
+                candidates = []
+            else:
+                var source_index := -1
+                for index in range(ordered.size()):
+                    if str(ordered[index].get("slot_instance_id", "")) \
+                            == runtime.slot_instance_id:
+                        source_index = index
+                        break
+                var offset := maxi(1, int(selection.get("offset", 1)))
+                var target_index := source_index + offset
+                if source_index < 0:
+                    candidates = []
+                elif bool(selection.get("wrap", true)):
+                    target_index %= ordered.size()
+                    candidates = [] if target_index == source_index \
+                        else [ordered[target_index]]
+                else:
+                    candidates = [ordered[target_index]] \
+                        if target_index < ordered.size() else []
         "random":
             candidates = runtime.sequence_book.ordered_slots(hand_id)
         _:
@@ -188,7 +225,9 @@ func _candidates(selection: Dictionary, runtime, hand_id: String) -> Array:
     var filters: Dictionary = selection.get("filters", {})
     return candidates.filter(func(slot):
         var slot_id := str(slot.get("slot_instance_id", ""))
-        if slot_id == "" or _stack.has(slot_id):
+        if slot_id == "" or (_stack.has(slot_id) \
+                and not (allow_source_in_stack \
+                    and slot_id == runtime.slot_instance_id)):
             return false
         if filters.has("temporary") \
                 and bool(filters["temporary"]) != bool(
@@ -252,3 +291,35 @@ func _resolve_p0(p0_spec: Dictionary, runtime) -> int:
 func _root_token(runtime) -> String:
     return runtime.root_action_token \
         if runtime.root_action_token != "" else runtime.action_token
+
+
+func _normalize_public_invocation(
+        effect: Dictionary,
+        runtime) -> Dictionary:
+    var result := effect.duplicate(true)
+    var invocation_mode := str(result.get("invocation_mode", "normal"))
+    if invocation_mode == "normal":
+        return {"success": true, "effect": result}
+    if invocation_mode != "automatic_source":
+        return {"success": false, "reason": "未知功法调用公开模式"}
+    if runtime.source_kind != "technique" \
+            or runtime.slot_instance_id == "" \
+            or runtime.trigger_mode not in [
+                "delayed", "response", "response_expiry"]:
+        return {
+            "success": false,
+            "reason": "只有功法来源的延迟或响应完成效果可以自动调用自身",
+        }
+    var selection: Dictionary = result.get("selection", {"mode": "self"})
+    if str(selection.get("mode", "self")) != "self":
+        return {
+            "success": false,
+            "reason": "automatic_source 只能调用来源功法自身",
+        }
+    result["selection"] = {
+        "mode": "self",
+        "hand_id": str(selection.get("hand_id", "current")),
+        "filters": selection.get("filters", {}).duplicate(true),
+    }
+    result["_trigger_mode"] = "automatic"
+    return {"success": true, "effect": result}

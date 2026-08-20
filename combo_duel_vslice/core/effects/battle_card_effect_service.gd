@@ -7,6 +7,7 @@ const BattleRuntimeMutationTransactionScript = preload(
     "res://core/battle_runtime_mutation_transaction.gd")
 const DeckFactoryScript = preload("res://core/deck_factory.gd")
 const QiCardInstanceDataScript = preload("res://core/qi_card_instance_data.gd")
+const CardOriginServiceScript = preload("res://core/card_origin_service.gd")
 const PermanentQiMutationServiceScript = preload(
     "res://core/permanent_qi_mutation_service.gd")
 const EffectSourceProtocolScript = preload(
@@ -27,6 +28,8 @@ var _trigger_queue
 var _committed_event_service
 var _round_number_reader: Callable
 var _permanent_qi_mutation_service := PermanentQiMutationServiceScript.new()
+
+const SOLIDIFY_TEMPORARY_QI := "solidify_temporary_qi"
 
 
 func _init(status_system) -> void:
@@ -103,26 +106,94 @@ func side_holding_card(card, zone: String):
 
 func generate_temporary_normal_card(side, source, options: Dictionary = {}):
     assert(_battle_rng != null, "BattleCardEffectService battle RNG is not assembled")
-    var base_deck = JSON.parse_string(FileAccess.get_file_as_string(
-        "res://data/base_deck.json"))
-    if not base_deck is Dictionary or not base_deck.get("ranks") is Array:
+    var template := _resolve_temporary_normal_card_template(
+        side, source, options)
+    if not template.get("success", false):
         return null
-    var ranks: Array = base_deck["ranks"]
-    var attributes: Array = base_deck.get("attributes", [])
-    var base_attribute: String = str(source.get("attribute")) \
-        if source is Object else str(source)
-    if base_attribute not in ["wind", "forest", "fire", "mountain"]:
-        return null
-    var attribute := base_attribute
-    if str(options.get("attribute_mode", "same_base")) == "random_other_base":
-        var attribute_ids: Array[String] = []
-        for value in attributes:
-            var attribute_id := str(value.get("id", ""))
-            if attribute_id != base_attribute:
-                attribute_ids.append(attribute_id)
-        if attribute_ids.is_empty():
-            return null
-        attribute = attribute_ids[_battle_rng.randi_range(0, attribute_ids.size() - 1)]
+    var generated := _generate_temporary_normal_card_from_template(
+        side, template, source, options, true)
+    return generated.get("card") \
+        if generated.get("added", false) else null
+
+
+func generate_shared_template_temporary_normal_cards(
+        side, count: int, options: Dictionary = {}) -> Dictionary:
+    assert(_battle_rng != null, "BattleCardEffectService battle RNG is not assembled")
+    if side == null or not _sides.has(side):
+        return {"success": false, "reason": "批量生成临时真气缺少战斗持有者"}
+    if count <= 0:
+        return {"success": false, "reason": "批量生成临时真气数量必须为正数"}
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var template_options := options.duplicate(true)
+    template_options["attribute_mode"] = "random_base"
+    template_options["rank_mode"] = "random"
+    var template := _resolve_temporary_normal_card_template(
+        side, null, template_options)
+    if not template.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        return {
+            "success": false,
+            "reason": str(template.get("reason", "无法建立临时真气共享模板")),
+            "rolled_back": true,
+        }
+    var generated_cards: Array = []
+    var generation_options := options.duplicate(true)
+    generation_options["shuffle_destination"] = false
+    for index in range(count):
+        generation_options["generation_batch_index"] = index
+        generation_options["generation_batch_size"] = count
+        var generated := _generate_temporary_normal_card_from_template(
+            side, template, null, generation_options, false)
+        if not generated.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return {
+                "success": false,
+                "reason": str(generated.get(
+                    "reason", "共享模板临时真气生成失败")),
+                "rolled_back": true,
+                "cards": [],
+            }
+        generated_cards.append(generated["card"])
+    var destination := str(options.get("destination", "hand"))
+    if destination == "draw_pile" \
+            and bool(options.get("shuffle_destination", false)):
+        side.card_zone_service.shuffle(side.draw_pile, _battle_rng)
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {
+        "success": true,
+        "cards": generated_cards,
+        "count": generated_cards.size(),
+        "template": template.duplicate(true),
+    }
+
+
+func _resolve_temporary_normal_card_template(
+        side, source, options: Dictionary) -> Dictionary:
+    var base_deck := _base_deck_definition(side)
+    var ranks = base_deck.get("ranks", [])
+    var attributes = base_deck.get("attributes", [])
+    if not ranks is Array or ranks.is_empty() \
+            or not attributes is Array or attributes.is_empty():
+        return {"success": false, "reason": "基础牌库缺少属性或牌阶定义"}
+    var base_attribute := str(source.get("attribute")) \
+        if source is Object else str(source) if source != null else ""
+    var attribute_mode := str(options.get("attribute_mode", "same_base"))
+    var attribute_candidates: Array = []
+    for value in attributes:
+        var attribute_id := str(value.get("id", ""))
+        if attribute_id == "":
+            continue
+        if attribute_mode == "random_base" \
+                or (attribute_mode == "random_other_base" \
+                    and attribute_id != base_attribute) \
+                or (attribute_mode == "same_base" \
+                    and attribute_id == base_attribute):
+            attribute_candidates.append(value)
+    if attribute_candidates.is_empty():
+        return {"success": false, "reason": "临时真气没有合法基础属性"}
+    var attribute: Dictionary = attribute_candidates[
+        _battle_rng.randi_range(0, attribute_candidates.size() - 1)]
     var rank: Dictionary = ranks[_battle_rng.randi_range(0, ranks.size() - 1)]
     if source is Object and source.has_method("current_rank_order"):
         var source_order := int(source.current_rank_order())
@@ -138,13 +209,48 @@ func generate_temporary_normal_card(side, source, options: Dictionary = {}):
             if int(value.get("order", 0)) == wanted_order:
                 rank = value
                 break
+    return {
+        "success": true,
+        "attribute": str(attribute.get("id", "")),
+        "attribute_name": str(attribute.get("name", attribute.get("id", ""))),
+        "rank_name": str(rank.get("id", "")),
+        "rank_order": int(rank.get("order", 0)),
+        "qi_value": int(rank.get("qi", 0)),
+        "definition_id": "%s_%s" % [
+            str(attribute.get("id", "")), str(rank.get("id", ""))],
+    }
+
+
+func _generate_temporary_normal_card_from_template(
+        side,
+        template: Dictionary,
+        source,
+        options: Dictionary,
+        allow_shuffle: bool) -> Dictionary:
+    var attribute := str(template.get("attribute", ""))
     var card = QiCard.new(
         _next_temporary_qi_instance_id(side, attribute),
-        str(rank.get("id", "")), int(rank.get("order", 0)),
-        int(rank.get("qi", 0)), attribute, attribute,
-        "%s_%s" % [attribute, str(rank.get("id", "")).to_lower()])
+        str(template.get("rank_name", "")),
+        int(template.get("rank_order", 0)),
+        int(template.get("qi_value", 0)),
+        attribute,
+        str(template.get("attribute_name", attribute)),
+        str(template.get("definition_id", "")))
     if bool(options.get("clone_source", false)) and source is Object:
         _copy_persistent_qi_identity(source, card)
+    var origin_id := str(options.get("origin_id", ""))
+    if origin_id != "":
+        var origin_service = CardOriginServiceScript.new(
+            side.content_catalog() if side.has_method("content_catalog") else null,
+            _base_deck_definition(side))
+        var origin_result: Dictionary = origin_service.apply_to_card(
+            card, origin_id, options.get("origin_payload", {}))
+        if not origin_result.get("success", false):
+            return {
+                "success": false,
+                "added": false,
+                "reason": str(origin_result.get("reason", "临时真气本源施加失败")),
+            }
     card.temporary_card = true
     if bool(options.get("add_void", true)):
         var applied: Dictionary = apply_card_anomaly(
@@ -159,15 +265,27 @@ func generate_temporary_normal_card(side, source, options: Dictionary = {}):
                 "action_token": str(options.get("action_token", "")),
             })
         if not applied.get("success", false):
-            return null
+            return {
+                "success": false,
+                "added": false,
+                "reason": str(applied.get("reason", "临时真气虚无施加失败")),
+            }
     var destination := str(options.get("destination", "hand"))
     var added: Dictionary = side.card_zone_service.add_generated(
         side, card, destination, true, options)
+    var event_success := bool(added.get("passive_event_success", true))
     if added.get("success", false) \
+            and allow_shuffle \
             and destination == "draw_pile" \
             and bool(options.get("shuffle_destination", false)):
         side.card_zone_service.shuffle(side.draw_pile, _battle_rng)
-    return card if added.get("success", false) else null
+    return {
+        "success": bool(added.get("success", false)) and event_success,
+        "added": bool(added.get("success", false)),
+        "card": card,
+        "reason": str(added.get(
+            "passive_event_reason", added.get("reason", "生成临时真气失败"))),
+    }
 
 func _next_temporary_qi_instance_id(side, attribute: String) -> String:
     for _attempt in range(1024):
@@ -420,6 +538,192 @@ func commit_qi_consumption(
         return committed
     BattleRuntimeMutationTransactionScript.commit(transaction)
     return committed
+
+
+func solidify_temporary_cards(
+        owner,
+        card_instance_ids: Array,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    if owner == null or not _sides.has(owner):
+        return _permanent_mutation_failure(
+            "临时真气固化持有者不属于当前战斗")
+    if _committed_event_service == null:
+        return _permanent_mutation_failure(
+            "临时真气固化缺少 committed 事件服务")
+    var root_execution_token := ""
+    for field in [
+            "effect_execution_token", "root_action_token", "action_token",
+            "event_token", "source_instance_key"]:
+        root_execution_token = str(source_metadata.get(field, ""))
+        if root_execution_token != "":
+            break
+    if root_execution_token == "":
+        return _permanent_mutation_failure(
+            "临时真气固化缺少稳定执行 token")
+    var ordered_ids: Array[String] = []
+    var seen: Dictionary = {}
+    for value in card_instance_ids:
+        var card_instance_id := str(value)
+        if card_instance_id == "" or seen.has(card_instance_id):
+            continue
+        seen[card_instance_id] = true
+        ordered_ids.append(card_instance_id)
+    var candidates: Array[Dictionary] = []
+    var receipts_by_id: Dictionary = {}
+    for card_instance_id in ordered_ids:
+        var operation_token := "%s|permanent_qi_mutation|%s|%s" % [
+            root_execution_token, card_instance_id, SOLIDIFY_TEMPORARY_QI]
+        var request_fingerprint := _permanent_qi_mutation_service.stable_fingerprint({
+            "version": 1,
+            "operation_token": operation_token,
+            "owner_id": str(owner.owner_id),
+            "card_instance_id": card_instance_id,
+            "mutation_kind": SOLIDIFY_TEMPORARY_QI,
+        })
+        if owner.permanent_qi_mutation_receipts.has(operation_token):
+            var existing: Dictionary = owner.permanent_qi_mutation_receipts[
+                operation_token]
+            if str(existing.get("request_fingerprint", "")) \
+                    != request_fingerprint:
+                return _permanent_mutation_failure(
+                    "临时真气固化 operation token 已绑定另一请求")
+            var reused := existing.duplicate(true)
+            reused["success"] = true
+            reused["reused"] = true
+            receipts_by_id[card_instance_id] = reused
+            continue
+        var location := locate_active_card(card_instance_id)
+        if not location.get("success", false):
+            return _permanent_mutation_failure(str(location.get(
+                "reason", "找不到临时真气固化目标")))
+        if location.get("side") != owner \
+                or str(location.get("zone", "")) != "hand":
+            return _permanent_mutation_failure(
+                "临时真气固化目标必须仍在持有者手牌")
+        var card = location.get("card")
+        if card == null or not bool(card.temporary_card):
+            return _permanent_mutation_failure(
+                "临时真气固化目标必须是临时真气")
+        if str(card.original_owner_id) != "":
+            return _permanent_mutation_failure(
+                "临时夺取的真气不能固化为永久真气")
+        candidates.append({
+            "card": card,
+            "card_instance_id": card_instance_id,
+            "operation_token": operation_token,
+            "request_fingerprint": request_fingerprint,
+        })
+    if candidates.is_empty():
+        return {
+            "success": true,
+            "changed_count": 0,
+            "reused_count": receipts_by_id.size(),
+            "receipts": ordered_ids.map(func(card_instance_id):
+                return receipts_by_id[card_instance_id].duplicate(true)),
+        }
+
+    var transaction := BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var source := EffectSourceProtocolScript.from_values(source_metadata)
+    var actor = source_metadata.get(
+        "source_actor", source_metadata.get("actor", owner))
+    if actor == null or not _sides.has(actor):
+        actor = owner
+    for candidate in candidates:
+        var card = candidate["card"]
+        var card_instance_id := str(candidate["card_instance_id"])
+        var before := QiCardInstanceDataScript.capture(card)
+        card.temporary_card = false
+        var after := QiCardInstanceDataScript.capture(card)
+        if bool(after.get("temporary_card", true)) \
+                or str(after.get("original_owner_id", "")) != "":
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return _permanent_mutation_failure(
+                "临时真气固化后的持久快照无效", true)
+        var operation_token := str(candidate["operation_token"])
+        var request_fingerprint := str(candidate["request_fingerprint"])
+        var event_serial := int(_committed_event_service.next_serial())
+        var event_values := {
+            "event_token": _committed_event_service.make_token(
+                "run_qi_permanently_added", actor, event_serial,
+                operation_token, card_instance_id),
+            "event_serial": event_serial,
+            "scope": "battle",
+            "persistence": "permanent",
+            "mutation_kind": SOLIDIFY_TEMPORARY_QI,
+            "transaction_token": root_execution_token,
+            "operation_token": operation_token,
+            "operation_id": SOLIDIFY_TEMPORARY_QI,
+            "operation": SOLIDIFY_TEMPORARY_QI,
+            "request_fingerprint": request_fingerprint,
+            "action_token": str(source_metadata.get(
+                "action_token", root_execution_token)),
+            "root_action_token": str(source_metadata.get(
+                "root_action_token", root_execution_token)),
+            "round_number": int(_round_number_reader.call()) \
+                if _round_number_reader.is_valid() else 0,
+            "actor": actor,
+            "target": source_metadata.get("target"),
+            "owner": owner,
+            "holder": owner,
+            "holder_id": str(owner.owner_id),
+            "observe_all_sides": true,
+            "card": card,
+            "instance_id": card_instance_id,
+            "card_instance_id": card_instance_id,
+            "source_card_instance_id": card_instance_id,
+            "definition_id": str(after.get("definition_id", "")),
+            "card_snapshot": after.duplicate(true),
+            "persistent_card_snapshot": after.duplicate(true),
+            "actual_change_count": 1,
+            "source_kind": source["source_kind"],
+            "source_id": source["source_id"],
+            "source_name": source["source_name"],
+            "source_instance_key": source["source_instance_key"],
+            "trigger_mode": source["trigger_mode"],
+            "reason": str(source_metadata.get(
+                "reason", source["source_name"])),
+            "metadata": {
+                "root_action_token": str(source_metadata.get(
+                    "root_action_token", root_execution_token)),
+                "request_fingerprint": request_fingerprint,
+                "persistence": "permanent",
+                "mutation_kind": SOLIDIFY_TEMPORARY_QI,
+            },
+        }
+        var receipt := {
+            "success": true,
+            "reused": false,
+            "changed": true,
+            "operation_token": operation_token,
+            "request_fingerprint": request_fingerprint,
+            "mutation_kind": SOLIDIFY_TEMPORARY_QI,
+            "card_instance_id": card_instance_id,
+            "before": before,
+            "after": after,
+            "event_token": str(event_values["event_token"]),
+        }
+        owner.permanent_qi_mutation_receipts[operation_token] = \
+            receipt.duplicate(true)
+        var committed: Dictionary = _committed_event_service.commit(
+            "run_qi_permanently_added", event_values)
+        if not committed.get("success", false):
+            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            return _permanent_mutation_failure(str(committed.get(
+                "reason", "永久新增真气事实提交失败")), true)
+        receipt["event_receipt"] = committed.get(
+            "receipt", {}).duplicate(true)
+        owner.permanent_qi_mutation_receipts[operation_token] = \
+            receipt.duplicate(true)
+        receipts_by_id[card_instance_id] = receipt
+    BattleRuntimeMutationTransactionScript.commit(transaction)
+    return {
+        "success": true,
+        "changed_count": candidates.size(),
+        "reused_count": ordered_ids.size() - candidates.size(),
+        "receipts": ordered_ids.map(func(card_instance_id):
+            return receipts_by_id[card_instance_id].duplicate(true)),
+    }
 
 
 func advance_permanent_qi_rank(

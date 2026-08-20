@@ -133,10 +133,12 @@ func _test_normal_true_poison_and_cost_paths() -> void:
     var poison: Dictionary = engine.effect_ports.deal_damage(
         engine.player, engine.enemy, 6, "test", false,
         "pre-poison", "poison")
-    _assert_equal(poison.get("defense_lost", -1), 0,
-        "毒伤默认仍不受普通防御抵挡")
-    _assert_equal(poison.get("life_lost", 0), 4,
-        "毒伤进入通用生命写入前查询")
+    _assert_equal(poison.get("defense_lost", -1), 4,
+        "毒伤先由普通防御吸收")
+    _assert_equal(poison.get("life_loss_before_intervention", 0), 2,
+        "毒伤仅以击穿防御的部分进入生命写入前查询")
+    _assert_equal(poison.get("life_lost", -1), 0,
+        "毒伤溢出部分继续接受通用生命写入前干预")
 
     var calls_before: int = fixture["handler"].calls.size()
     engine.enemy.life = 100

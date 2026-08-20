@@ -5,6 +5,8 @@ const ContentValidatorScript = preload("res://core/content_validator.gd")
 const TechniqueDefinitionScript = preload("res://core/technique_definition.gd")
 const EffectHandlerRegistryScript = preload("res://core/effects/effect_handler_registry.gd")
 const EffectSpecValidatorScript = preload("res://core/effect_spec_validator.gd")
+const StatusDelayServiceScript = preload(
+    "res://core/statuses/status_delay_service.gd")
 const ConsumableEffectHandlerRegistryScript = preload(
     "res://core/consumables/consumable_effect_handler_registry.gd")
 
@@ -13,7 +15,6 @@ const TECHNIQUE_SCHEMA_VERSION := 1
 const STABLE_ID_PATTERN := "^[a-z][a-z0-9_]*$"
 const SIDE_IDS := ["actor", "target"]
 const ZONE_IDS := ["hand", "draw_pile", "staging", "discard_pile"]
-const DELAY_TIMINGS := ["turn_end", "after_normal_draw"]
 const INNER_SKILL_TIMINGS := ["on_play_resolve"]
 const AUTHORING_TYPES := ["technique", "inner_skill", "consumable", "enemy", "node"]
 
@@ -285,7 +286,8 @@ func _audit_effects(values, allowed_ops: Array, scope: String) -> void:
         if op in ["move_query", "draw_filtered", "capture_query"]:
             _audit_query(effect.get("query"), effect_scope + ".query")
         if op == "register_delayed_effects":
-            if str(effect.get("timing", "")) not in DELAY_TIMINGS:
+            if not StatusDelayServiceScript.is_supported_timing(str(
+                    effect.get("timing", ""))):
                 _add("error", "UNKNOWN_EVENT_TIMING", effect_scope + ".timing", "未知延迟事件时点 %s" % str(effect.get("timing", "")))
             if not _is_positive_integer(effect.get("occurrences")):
                 _add("error", "INVALID_OCCURRENCES", effect_scope + ".occurrences", "occurrences 必须是正整数")

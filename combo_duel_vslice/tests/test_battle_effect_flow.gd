@@ -150,6 +150,10 @@ func _test_invocation_facade_immediate_and_deferred_timing() -> void:
 
 func _test_delayed_and_dynamic_response_facade() -> void:
     var engine = _engine_with_cards([])
+    # 本专项验证延迟／响应仍走统一执行器，不验证初始牌库容量策略。
+    engine.player.base_momentum_cap = 100
+    engine.player.momentum_cap_initialized = true
+    engine.player.last_momentum_cap_query_result.clear()
     var context = EffectContextScript.new().configure({
         "ports": engine.effect_ports,
         "actor": engine.player,
@@ -204,6 +208,14 @@ func _test_delayed_and_dynamic_response_facade() -> void:
     })
     _assert_equal(engine.player.momentum_value, 6,
         "行动预提交响应由 StatusSystem 匹配后继续走统一 EffectExecutor")
+    engine.effect_ports.notify_response_event("action_pre_commit", {
+        "event_token": "flow-response-event",
+        "actor": engine.player,
+        "owner": engine.player,
+        "action_token": "flow-response-root",
+    })
+    _assert_equal(engine.player.momentum_value, 6,
+        "同一响应事件重放复用稳定 EffectSpec 身份且不重复写入")
 
     var committed_response: Dictionary = engine.effect_ports.register_response(
         "defense_gained", "battle_end", [{

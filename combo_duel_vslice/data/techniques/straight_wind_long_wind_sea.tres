@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "straight_wind_long_wind_sea"
+display_name = "风·长风蓄海"
+pool = "straight"
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["straight"] )
+marker_definitions = [{"id":"stored_wind","scope":"battle","public":true,"display_name":"蓄风","forget_policy":"clear"}]
+charging = {"primary_marker_id":"stored_wind","display_name":"蓄风","scope":"battle","public":true,"allowed_operations":["add","clear"],"minimum":0}
+description = "开始3回合倒计时，立即抽1张牌并将其有效真气值加入蓄风；每个完整回合开始时重复一次。倒计时归零时，本功法以蓄风作为P₀自动触发，造成P点真伤并清空蓄风。蓄力期间再次触发时，抽1张牌并令倒计时额外减1。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["draw", "true_damage", "delayed_effect"] )
+public_behavior_summary = Array[String]( ["draw", "true_damage", "delayed_effect"] )
+implementation_category = "C"
+effects = [{"op":"begin_technique_charging","phase":"prepare","initial_value":0,"when":{"all":[{"not":{"trigger_mode":"automatic"}},{"charging_active":false}]}},{"op":"draw","phase":"zones","count":1,"capture":"long_wind_draw","when":{"not":{"trigger_mode":"automatic"}}},{"op":"write_charging_primary","phase":"zones","operation":"add","amount":{"kind":"capture_effective_qi_sum","capture":"long_wind_draw"},"when":{"not":{"trigger_mode":"automatic"}}},{"op":"register_delayed_effects","phase":"zones","timing":"round_start","occurrences":3,"record_key":"long_wind_countdown","existing_policy":"keep_existing","capture":"countdown_registration","effects":[{"op":"draw","count":1,"capture":"long_wind_round_draw"},{"op":"write_charging_primary","operation":"add","amount":{"kind":"capture_effective_qi_sum","capture":"long_wind_round_draw"}}],"completion_effects":[{"op":"invoke_sequence_technique","selection":{"mode":"self","hand_id":"current"},"invocation_mode":"automatic_source","p0":{"mode":"value_spec","value":{"kind":"source_marker_value","marker_id":"stored_wind","scope":"battle"}}}],"when":{"not":{"trigger_mode":"automatic"}}},{"op":"advance_delayed_effects","phase":"zones","record_key":"long_wind_countdown","amount":1,"when":{"all":[{"not":{"trigger_mode":"automatic"}},{"value_at_least":{"value":{"kind":"capture_field_first","capture":"countdown_registration","field":"reused"},"minimum":1}}]}},{"op":"damage","phase":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"power"},"when":{"trigger_mode":"automatic"}},{"op":"end_technique_charging","phase":"zones","when":{"trigger_mode":"automatic"}}]

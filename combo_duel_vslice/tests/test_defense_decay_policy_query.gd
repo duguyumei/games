@@ -116,8 +116,8 @@ func _test_catalog_handler_and_content_contracts() -> void:
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS,
         BattleIntQueryCatalogScript.HOOKS,
         "PassiveRuleHandlerRegistry 从同一目录读取 Hook")
-    _assert_equal(BattleIntQueryCatalogScript.HOOKS.size(), 16,
-        "唯一目录登记十六个正式战斗整数查询")
+    _assert_equal(BattleIntQueryCatalogScript.HOOKS.size(), 19,
+        "唯一目录登记十九个正式战斗整数查询")
     _assert_true("defense_decay_max_loss_query" \
         in BattleIntQueryCatalogScript.HOOKS,
         "目录登记自然衰减最大损失查询")

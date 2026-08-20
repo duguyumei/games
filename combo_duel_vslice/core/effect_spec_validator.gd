@@ -213,8 +213,10 @@ func _validate_query_filters(filters: Dictionary, scope: String) -> void:
     _target_query_field_registry.validate_filters(
         filters, Callable(self, "_error"), scope)
 
-## 校验数值规格。递归结构，因此对外公开供嵌套场景复用。
-func validate_amount_spec(spec: Dictionary, scope: String) -> void:
+## 校验数值规格。公共契约与 ValueSpecRegistry 一致：既接受标量数值，
+## 也接受递归 ValueSpec 对象。不要在外层把参数收窄为 Dictionary，
+## 否则合法标量会在进入注册表前触发 GDScript 参数类型错误。
+func validate_amount_spec(spec, scope: String) -> void:
     _value_spec_registry.validate_amount_spec(
         spec, Callable(self, "_error"), scope)
 

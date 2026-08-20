@@ -1795,7 +1795,7 @@ func _test_target_query_field_registry_contract() -> void:
         "explicit_discard_allowed", "has_active_any_reshape",
         "has_active_permanent_reshape", "has_any_anomaly", "has_any_reshape",
         "has_non_attribute_identity", "has_permanent_reshape", "rank_names",
-        "rank_orders", "reshape", "temporary",
+        "rank_orders", "reshape", "temporarily_transferred", "temporary",
     ]
     expected_fields.sort()
     _assert_equal(
@@ -3936,8 +3936,8 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        37,
-        "Registry 明确登记三十七个细粒度已提交事件")
+        38,
+        "Registry 明确登记三十八个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
         19,
@@ -5276,14 +5276,14 @@ func _test_content_catalog_and_validator() -> void:
         catalog.get_by_id("anomaly", "purification")["on_apply"],
         "purify_combat_state",
         "净化通过内容策略声明获得时生命周期")
-    _assert_equal(catalog.all_of("technique").size(), 228, "统一功法目录包含228门正式功法")
-    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 228, "正式功法资源路径包含228项")
-    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 228, "正式接入状态包含228门功法")
+    _assert_equal(catalog.all_of("technique").size(), 236, "统一功法目录包含236门正式功法")
+    _assert_equal(catalog.definition("techniques")["resource_paths"].size(), 236, "正式功法资源路径包含236项")
+    _assert_equal(catalog.definition("techniques")["integration_statuses"].size(), 236, "正式接入状态包含236门功法")
     var formal_technique_resource_count := 0
     for filename in DirAccess.get_files_at("res://data/techniques"):
         if str(filename).ends_with(".tres"):
             formal_technique_resource_count += 1
-    _assert_equal(formal_technique_resource_count, 228, "正式功法资源目录包含228门功法")
+    _assert_equal(formal_technique_resource_count, 236, "正式功法资源目录包含236门功法")
 
     var candidate_path := ProjectSettings.globalize_path("res://").path_join(
         "../godot/docs/design-candidates/high-card-techniques-draft.md").simplify_path()

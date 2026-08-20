@@ -661,6 +661,20 @@ func generate_temporary_normal_card(
     return _card_effect_service.generate_temporary_normal_card(
         side, source, options)
 
+func generate_shared_template_temporary_normal_cards(
+        side: BattleSide,
+        count: int,
+        options: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.generate_shared_template_temporary_normal_cards(
+        side, count, options)
+
+func solidify_temporary_cards(
+        side: BattleSide,
+        card_instance_ids: Array,
+        source_metadata: Dictionary = {}) -> Dictionary:
+    return _card_effect_service.solidify_temporary_cards(
+        side, card_instance_ids, source_metadata)
+
 func steal_random_normal_card(
         actor: BattleSide, target: BattleSide, source_value = "") -> Dictionary:
     return _card_effect_service.steal_random_normal_card(
@@ -1010,9 +1024,15 @@ func register_delayed_effects(
         timing: String,
         occurrences: int,
         effects: Array,
-        context) -> Dictionary:
+        context,
+        lifecycle: Dictionary = {}) -> Dictionary:
     return _response_effect_service.register_delayed_effects(
-        label, timing, occurrences, effects, context)
+        label, timing, occurrences, effects, context, lifecycle)
+
+func advance_delayed_effects(
+        context, record_key: String, amount: int = 1) -> Dictionary:
+    return _response_effect_service.advance_delayed_effects(
+        context, record_key, amount)
 
 func register_response(
         event_kind: String,
@@ -1020,9 +1040,11 @@ func register_response(
         effects: Array,
         context,
         filters: Dictionary = {},
-        expiry_effects: Array = []) -> Dictionary:
+        expiry_effects: Array = [],
+        lifecycle: Dictionary = {}) -> Dictionary:
     return _response_effect_service.register_response(
-        event_kind, expiry, effects, context, filters, expiry_effects)
+        event_kind, expiry, effects, context, filters, expiry_effects,
+        lifecycle)
 
 func register_next_round_hand_limit(
         context, amount: int, affected_side = null) -> Dictionary:

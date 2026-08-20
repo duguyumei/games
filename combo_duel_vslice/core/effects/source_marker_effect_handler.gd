@@ -279,10 +279,19 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             validator.report_error(scope + ".operation",
                 "引用未知主要蓄力值操作")
         if effect.has("amount"):
-            validator.validate_amount_spec(effect["amount"], scope + ".amount")
+            if effect["amount"] is Dictionary:
+                validator.validate_amount_spec(
+                    effect["amount"], scope + ".amount")
+            elif not effect["amount"] is int:
+                validator.report_error(
+                    scope + ".amount", "必须是整数或 ValueSpec")
         if effect.has("initial_value"):
-            validator.validate_amount_spec(
-                effect["initial_value"], scope + ".initial_value")
+            if effect["initial_value"] is Dictionary:
+                validator.validate_amount_spec(
+                    effect["initial_value"], scope + ".initial_value")
+            elif not effect["initial_value"] is int:
+                validator.report_error(
+                    scope + ".initial_value", "必须是整数或 ValueSpec")
         if str(effect.get("target", "current_source")) not in [
                 "current_source", "all_charging"]:
             validator.report_error(scope + ".target", "引用未知蓄力功法目标")

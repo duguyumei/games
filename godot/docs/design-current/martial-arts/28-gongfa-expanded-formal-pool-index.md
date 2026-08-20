@@ -1,8 +1,8 @@
 # 扩展功法正式索引
 
-> 状态：当前正式目录。详细效果正文分别由[蛊毒功法](./25-gongfa-poison-candidate-pool.md)、[成长功法](./26-gongfa-growth-candidate-pool.md)、[桥接功法](./27-gongfa-bridge-candidate-pool.md)、[山系功法](./29-gongfa-mountain-candidate-pool.md)、[风系功法](./33-gongfa-wind-pool.md)与[火系功法](./34-gongfa-fire-pool.md)唯一维护；本文件只记录池归属、稳定ID、接入状态与数量，不复制效果正文。
+> 状态：当前正式目录。详细效果正文分别由[蛊毒功法](./25-gongfa-poison-candidate-pool.md)、[成长功法](./26-gongfa-growth-candidate-pool.md)、[桥接功法](./27-gongfa-bridge-candidate-pool.md)、[山系功法](./29-gongfa-mountain-candidate-pool.md)、[风系功法](./33-gongfa-wind-pool.md)、[火系功法](./34-gongfa-fire-pool.md)与[复杂机制功法](./35-gongfa-special-candidate-pool.md)唯一维护；本文件只记录池归属、稳定ID、接入状态与数量，不复制效果正文。
 >
-> 当前运行时有201门已实现扩展／特殊内容，加上首批25门高牌，共226门非内建正式功法；连同散招、守招共228个正式资源。五池分布为高牌60、对子54、三条35、顺子37、炸弹40。
+> 当前运行时有209门扩展内容，加上首批25门高牌，共234门非内建正式功法；连同散招、守招共236个正式资源。五池分布为高牌60、对子54、三条37、顺子39、炸弹44。所有条目都是同一种功法内容实体，不设“特殊功法”分类。
 
 ## **高牌池（当前35门）**
 
@@ -23,9 +23,9 @@
 - **山·迎锋**（`high_mountain_meet_edge`）
 - **山·静岳**（`high_mountain_still_peak`）
 - **山·听锋**（`high_mountain_hear_edge`）
-- **山·舍壁还生**（`high_mountain_shed_wall`，特殊功法，已实现）
-- **林·同命淬蛊**（`high_forest_shared_fate_poison`，特殊功法，已实现）
-- **林·蛊脉自鸣**（`high_forest_poison_meridian_echo`，特殊功法，已实现）
+- **山·舍壁还生**（`high_mountain_shed_wall`）
+- **林·同命淬蛊**（`high_forest_shared_fate_poison`）
+- **林·蛊脉自鸣**（`high_forest_poison_meridian_echo`）
 - **风·引伴**（`high_wind_companion`）
 - **风·占先**（`high_wind_take_initiative`）
 - **风·空袖**（`high_wind_empty_sleeve`）
@@ -33,14 +33,14 @@
 - **风·乱流**（`high_wind_turbulence`）
 - **风·夺势**（`high_wind_seize_advantage`）
 - **风·扫尾**（`high_wind_sweep_tail`）
-- **风·三息回风**（`high_wind_three_breath_return`，特殊功法，已实现）
+- **风·三息回风**（`high_wind_three_breath_return`）
 - **火·点轮**（`high_fire_turn_wheel`，已实现）
 - **火·伏脉**（`high_fire_hidden_channel`，已实现）
 - **火·踏势**（`high_fire_tread_momentum`，已实现）
 - **火·投薪**（`high_fire_cast_kindling`，已实现）
 - **火·返薪**（`high_fire_return_kindling`，已实现）
 - **火·余明**（`high_fire_afterglow`，已实现）
-- **火·百式归炉**（`high_fire_hundred_forms_furnace`，特殊功法，已实现）
+- **火·百式归炉**（`high_fire_hundred_forms_furnace`）
 
 ## **对子池（当前54门）**
 
@@ -59,8 +59,8 @@
 - **林·藏荫**（`pair_forest_store_shade`）
 - **林·扦插**（`pair_forest_cutting`）
 - **林·毒木共荣**（`pair_forest_poison_growth`）
-- **林·弃腐续生**（`pair_forest_dissipate_decay`，特殊功法，已实现）
-- **林·借势催蛊**（`pair_forest_borrow_momentum_poison`，特殊功法，已实现）
+- **林·弃腐续生**（`pair_forest_dissipate_decay`）
+- **林·借势催蛊**（`pair_forest_borrow_momentum_poison`）
 - **风·弃蛊逐敌**（`pair_wind_discard_poison`）
 - **火·采薪成势**（`pair_fire_heat_to_momentum`）
 - **山·护根留青**（`pair_mountain_guard_root`）
@@ -77,8 +77,8 @@
 - **山·弃石成墙**（`pair_mountain_discard_wall`）
 - **山·无漏壁**（`pair_mountain_flawless_wall`）
 - **山·打铁式**（`pair_mountain_forging_guard`）
-- **山·折甲行气**（`pair_mountain_broken_armor_qi`，特殊功法，已实现）
-- **山·听阵三叩**（`pair_mountain_three_knocks`，特殊功法，已实现）
+- **山·折甲行气**（`pair_mountain_broken_armor_qi`）
+- **山·听阵三叩**（`pair_mountain_three_knocks`）
 - **风·换羽**（`pair_wind_change_feather`）
 - **风·染袖**（`pair_wind_dyed_sleeve`）
 - **风·回燕**（`pair_wind_returning_swallow`）
@@ -86,7 +86,7 @@
 - **风·断粮**（`pair_wind_cut_supplies`）
 - **风·翻袖**（`pair_wind_turn_sleeve`）
 - **风·折巅**（`pair_wind_break_peak`）
-- **风·归潮蓄锋**（`pair_wind_returning_tide`，特殊功法，已实现）
+- **风·归潮蓄锋**（`pair_wind_returning_tide`）
 - **火·双叩**（`pair_fire_double_knock`，已实现）
 - **火·并进**（`pair_fire_advance_together`，已实现）
 - **火·印鸣**（`pair_fire_echo_mark`，已实现）
@@ -97,9 +97,9 @@
 - **火·余形**（`pair_fire_remaining_form`，已实现）
 - **火·焦脉**（`pair_fire_scorch_channel`，已实现）
 - **火·嫁薪**（`pair_fire_send_kindling`，已实现）
-- **火·熔甲成势**（`pair_fire_melt_armor_momentum`，特殊功法，已实现）
+- **火·熔甲成势**（`pair_fire_melt_armor_momentum`）
 
-## **三条池（当前35门）**
+## **三条池（当前37门）**
 
 - **林·回蛊养根**（`three_forest_recover_poison_root`）
 - **林·百蛊侵脉**（`three_forest_hundred_poison`）
@@ -128,7 +128,7 @@
 - **风·追空**（`three_wind_chase_empty`）
 - **风·四散**（`three_wind_scatter_four`）
 - **风·齐坠**（`three_wind_fall_together`）
-- **风·落签逐影**（`three_wind_falling_sign`，特殊功法，已实现）
+- **风·落签逐影**（`three_wind_falling_sign`）
 - **火·复燃**（`three_fire_rekindle`，已实现）
 - **火·同炉**（`three_fire_same_furnace`，已实现）
 - **火·鸣铁**（`three_fire_ring_iron`，已实现）
@@ -136,8 +136,10 @@
 - **火·焦土**（`three_fire_scorched_earth`，已实现）
 - **火·炉返**（`three_fire_furnace_return`，已实现）
 - **火·烬势**（`three_fire_ember_momentum`，已实现）
+- **火·借式还招**（`three_fire_return_style`）
+- **火·照影追式**（`three_fire_shadow_pursuit`）
 
-## **顺子池（当前37门）**
+## **顺子池（当前39门）**
 
 - **林·潜根**（`straight_forest_hidden_root`）
 - **林·残蛊化甲**（`straight_forest_poison_armor`）
@@ -156,7 +158,7 @@
 - **山·铁壁**（`straight_mountain_iron_wall`）
 - **山·逆震**（`straight_mountain_true_reflection`）
 - **山·空谷回声**（`straight_mountain_valley_echo`）
-- **山·裂壁藏锋**（`straight_mountain_hidden_edge`，特殊功法，已实现）
+- **山·裂壁藏锋**（`straight_mountain_hidden_edge`）
 - **风·贯日**（`straight_wind_pierce_sun`）
 - **风·穿林**（`straight_wind_cross_forest`）
 - **风·回环**（`straight_wind_return_cycle`）
@@ -174,10 +176,12 @@
 - **火·焚途**（`straight_fire_burning_path`，已实现）
 - **火·暗薪**（`straight_fire_hidden_kindling`，已实现）
 - **火·转炽**（`straight_fire_transfer_heat`，已实现）
-- **火·回轮换势**（`straight_fire_return_same_qi`，特殊功法，已实现）
-- **林·七蛊封心**（`straight_forest_seven_poison_seal`，特殊功法，已实现）
+- **火·回轮换势**（`straight_fire_return_same_qi`）
+- **林·七蛊封心**（`straight_forest_seven_poison_seal`）
+- **风·长风蓄海**（`straight_wind_long_wind_sea`）
+- **火·三劫悬炉**（`straight_fire_hanging_furnace`）
 
-## **炸弹池（当前40门）**
+## **炸弹池（当前44门）**
 
 - **林·洗脉藏蛊**（`bomb_forest_cleanse_poison`）
 - **林·万蛊同寂**（`bomb_forest_all_poison`）
@@ -208,7 +212,7 @@
 - **风·劫空**（`bomb_wind_plunder_empty`）
 - **风·荡秽**（`bomb_wind_purge_anomaly`）
 - **风·离群**（`bomb_wind_isolate_group`）
-- **风·断流无手**（`bomb_wind_empty_hand`，特殊功法，已实现）
+- **风·断流无手**（`bomb_wind_empty_hand`）
 - **火·千锤**（`bomb_fire_thousand_hammers`，已实现）
 - **火·倾炉**（`bomb_fire_pour_furnace`，已实现）
 - **火·万响**（`bomb_fire_myriad_echoes`，已实现）
@@ -218,16 +222,20 @@
 - **火·投炉**（`bomb_fire_cast_furnace`，已实现）
 - **火·烬劫**（`bomb_fire_ember_calamity`，已实现）
 - **火·归炉**（`bomb_fire_return_furnace`，已实现）
-- **火·破城焚关**（`bomb_fire_break_city`，特殊功法，已实现）
+- **火·破城焚关**（`bomb_fire_break_city`）
+- **林·夺元栽命**（`bomb_forest_seize_origin_life`）
+- **火·万法传薪**（`bomb_fire_pass_flame`）
+- **火·残阳绝式**（`bomb_fire_setting_sun`）
+- **山·悬岳待敌**（`bomb_mountain_wait_enemy`）
 
 ## 计数与接入状态
 
-- 当前已实现扩展／特殊内容共201门：高牌35、对子54、三条35、顺子37、炸弹40。加上首批25门高牌后，运行时正式池为高牌60、对子54、三条35、顺子37、炸弹40，共226门非内建正式功法。
-- 当前201门已实现扩展／特殊内容均为独立`TechniqueDefinition`资源、`formal_complete`、普通装配上限1，并进入奖励、心得、商店、统计与运行时池。
+- 当前扩展内容共209门：高牌35、对子54、三条37、顺子39、炸弹44。加上首批25门高牌后，运行时正式池为高牌60、对子54、三条37、顺子39、炸弹44，共234门非内建正式功法。
+- 当前209门扩展内容均为独立`TechniqueDefinition`资源、`formal_complete`、普通装配上限1，并进入奖励、心得、商店、统计与运行时池。
 - 新增林系稳定ID为`high_forest_variant_plant`、`three_forest_dye_branch`、`straight_forest_change_form`、`bomb_forest_myriad_forms`；删除`three_forest_poison_shell`与`three_forest_fallen_leaf_return`。
 - 41门新增风功法使用33号文档冻结的稳定ID；`high_wind_startle`与`high_wind_exchange`保留原ID并已更新效果，不增加资源数量。
 - 40门新增火功法使用34号文档冻结的稳定ID并已全部正式接入；既有9门火功法继续使用24号与27号文档维护的唯一正文，不重复计数。
-- 已接入17门特殊功法使用35号文档冻结正文：此前15门保持不变，本批新增`straight_forest_seven_poison_seal`与`high_fire_hundred_forms_furnace`。其余8门仍仅为候选，不计入正式目录。
+- 35号文档集中维护25门复杂机制功法正文，但它们仍按本索引归入五个普通功法池，不形成独立内容分类。
 - 池资格固定为：高牌只读 `high_card`；对子读 `pair`、`two_pair`、`full_house`；三条读 `three_kind`、`full_house`；顺子只读 `straight`；炸弹读 `four_kind`、`five_kind`。
 - `production_sequences.json` 不因本批正式化改变；八种初始序列仍从内建散招开始。
 - 毒伤、成长与炽气转移、寄脉、虚无、临时牌阶、牌区快照、筛选抽牌、同步弃置、延迟响应、协同限制、反震来源、格挡、邀战、同气收口和AI投影均通过通用接口实现，中央流程不识别扩展功法ID。

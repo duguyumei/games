@@ -196,7 +196,7 @@ func _test_manual_summary_and_order() -> void:
     var summary_index := _event_index(
         publications, "technique_execution_resolved")
     _assert_equal(publications[summary_index].get("current_technique_id"),
-        "summary_manual", "执行汇总发布时功法序列尚未推进")
+        "summary_next", "外层行动事务提交可观测事件时序列已推进")
     _assert_true(summary_index < _event_index(
         publications, "technique_succeeded"),
         "执行汇总发生在兼容 technique_succeeded 之前")

@@ -1,7 +1,26 @@
 # 功法内容接入状态
 
 本文件只记录工程接入证据，不新增或修改功法设计。规则唯一权威源是
-`godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)与[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)。
+`godot/docs/design-current/README.md` v0.30 及其功法框架、[高牌正式功法目录](../../godot/docs/design-current/martial-arts/24-gongfa-high-card-pool.md)、[扩展正式索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)、[山系正式功法目录](../../godot/docs/design-current/martial-arts/29-gongfa-mountain-candidate-pool.md)、[风系正式功法目录](../../godot/docs/design-current/martial-arts/33-gongfa-wind-pool.md)、[火系正式功法目录](../../godot/docs/design-current/martial-arts/34-gongfa-fire-pool.md)与[复杂机制功法正文](../../godot/docs/design-current/martial-arts/35-gongfa-special-candidate-pool.md)。
+
+## 复杂机制正文最后8门正式接入（2026-08-20，已完成）
+
+本批正式接入`straight_wind_long_wind_sea`、`bomb_forest_seize_origin_life`、
+`bomb_fire_pass_flame`、`three_fire_return_style`、`straight_fire_hanging_furnace`、
+`bomb_fire_setting_sun`、`three_fire_shadow_pursuit`与`bomb_mountain_wait_enemy`。
+八门均为独立`TechniqueDefinition`资源、稳定ID、`built_in=false`、普通装配上限1与
+`formal_complete`，进入对应正式池和修习候选；没有加入生产序列或敌人装配。
+
+正式目录现为236门：2门基础通用功法与234门非内建正式功法；五池为高牌60、对子54、
+三条37、顺子39、炸弹44。35号文档只是复杂机制正文分卷，不建立“特殊功法”分类；自动触发、
+调用、蓄力、临时功法与来源标识均继续使用统一功法实体和公共协议。
+
+通用底层补齐确认期`ValueSpec`固定功法值、自动来源调用的递归栈与延后根行动身份，并令
+`source_marker_value`与标识写入端共用稳定来源地址解析。八门行为由
+`tests/test_remaining_eight_techniques.gd`覆盖。最终验证中，项目加载覆盖757项，八门专项109条、
+复杂机制专项465条、功法运行444条、蓄力协议110条、临时功法容量79条、山系461条、风系370条
+均通过；设计一致性为236/236、待接入0、错误0，`quick`为7/7。远程AI不属于本批功法接入的
+后续验证范围，相关系统留待独立重做。
 
 ## 第五批2门累计自动功法正式接入（2026-08-16，已完成）
 
@@ -47,7 +66,7 @@
 专项`tests/test_special_techniques.gd`通过380条断言。三息回风覆盖全部排除来源、阈值前后、
 一次抽6张的稳定两次触发、两组冻结特殊`P₀`、主动无效且保留进度、真实槽位移动与推进，以及
 调用者等待选择期间恢复不重复触发；蛊脉自鸣覆盖逐毒段记录、零实际生命损失仍计数、七段
-触发两次留一段溢出、毒防御前最终值求和、主动无效与临时副本独立；听阵三叩覆盖敌我／池／
+触发两次留一段溢出、防御吸收前最终毒伤求和、主动无效与临时副本独立；听阵三叩覆盖敌我／池／
 成功过滤、一对／两对／葫芦、正常／自动／调用成功事件、三门`P₀`平均向下取整、主动仅防御且
 不清进度，以及自动分支同气、真实槽位移动和推进。所有自动结算专项均由`BattleSession`
 行动或选择恢复入口驱动，没有只调用效果执行器证明正式行为。
@@ -306,9 +325,9 @@ continuation恢复和receipt重放不会重复发送；失败、中止、重置�
 及下一批`technique_echo_plan_mutation`均未实现。新增独立专项入口为
 `tests/test_technique_execution_summary.gd`。
 
-## 当前正式目录（2026-08-16）
+## 当前正式目录（2026-08-20）
 
-正式目录共228门：基础通用功法`basic_scatter`、`basic_guard`与226门非内建正式功法。五个正式池分布为高牌60、对子54、三条35、顺子37、炸弹40；完整稳定ID与池归属见[扩展正式功法索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)。全部226门非内建内容均为独立`.tres`、`formal_complete`、`built_in=false`、普通装配上限1，并进入对应正式修习候选。
+正式目录共236门：基础通用功法`basic_scatter`、`basic_guard`与234门非内建正式功法。五个正式池分布为高牌60、对子54、三条37、顺子39、炸弹44；完整稳定ID与池归属见[扩展正式功法索引](../../godot/docs/design-current/martial-arts/28-gongfa-expanded-formal-pool-index.md)。全部234门非内建内容均为独立`.tres`、`formal_complete`、`built_in=false`、普通装配上限1，并进入对应正式修习候选。
 
 本批实现分类为A 2门、B 41门、C 9门。A直接组合既有即时能力；B使用通用毒伤、快照、聚合值、捕获集合、原子层数、牌区操作和可恢复选择；C使用通用入堆完成、毒触发完成、下一回合、正常补牌后、防御保留后、完整回合结束和协同时点。中央战斗流程、AI与UI均不按这52门功法ID分支。
 
@@ -320,7 +339,7 @@ continuation恢复和receipt重放不会重复发送；失败、中止、重置�
 
 整体功法审计后的优化不增加正式数量：`straight_forest_change_form`支持1至2张临时牌阶目标；`high_wind_break_page`令燃尽顶牌进入敌方手牌、非燃尽合法顶牌明确弃置，可自然触发`straight_fire_hidden_kindling`；`three_mountain_challenge_gate`使用邀战达标分支获得冻结C点连势；`pair_fire_guard_momentum`只简化公开说明。邀战底层现冻结达标／未达标分支并发布结构化`challenge_resolved`事件；内容校验拒绝未登记或重复的功法语义标签。
 
-蛊毒底层已区分`normal`、`true`与`poison`，毒伤默认绕过普通防御、普通增减伤和反震，并公开实际生命损失；双方手牌／牌库毒量与毒牌张数实时派生。成长与桥接底层已支持G/Q/R、集合sum/max、原子转移／转换／平均分配、玩家选择余数、临时牌、清理前移动快照、同步毒完成事件、来源安全响应和协同限制。风林批次进一步支持实际手牌数／占脉数量分离、虚无离场去重、临时牌阶身份与快照、对子／三条冻结组成集合、定向检索、展示重排、提交后效果、实时手牌格挡后续效果、非递归回响和临时转移牌战后归还。
+蛊毒底层已区分`normal`、`true`与`poison`，毒伤默认由普通防御吸收，但仍绕过普通增减伤、卸力与格挡，且防御吸收毒伤不触发反震；结果同时公开防御吸收与实际生命损失。双方手牌／牌库毒量与毒牌张数实时派生。成长与桥接底层已支持G/Q/R、集合sum/max、原子转移／转换／平均分配、玩家选择余数、临时牌、清理前移动快照、同步毒完成事件、来源安全响应和协同限制。风林批次进一步支持实际手牌数／占脉数量分离、虚无离场去重、临时牌阶身份与快照、对子／三条冻结组成集合、定向检索、展示重排、提交后效果、实时手牌格挡后续效果、非递归回响和临时转移牌战后归还。
 
 专项行为入口为`tests/test_poison_techniques.gd`、`tests/test_growth_techniques.gd`、`tests/test_bridge_techniques.gd`、`tests/test_mountain_techniques.gd`、`tests/test_wind_techniques.gd`与`tests/test_fire_techniques.gd`。前三者覆盖独立毒伤、同步毒爆、五叶／宿根入堆清理、落英余数选择、春风下一回合、护根防御保留、蛊焰追身、连枝协同、涸泽顶5与等待选择恢复；山系专项逐门识别49个ID，并覆盖冻结C、反震恢复、反震真伤、格挡、邀战、灰垒、返璞、同气收口、协同来源窗口、精确牌型与快照清理；风系专项逐门识别51个ID，并覆盖寄脉、虚无、临时牌阶、四门林系生成牌、定向检索、原子交换、同步弃置、实时格挡、四散回响、葫芦组成集合、提交后回手与战后归还；火系专项识别全部49个火系ID，并覆盖连势消费与回滚、护势、同气额外行动排序、燃尽生命周期、对子／葫芦边界、嫁薪原子转移、暗薪抽牌响应、K=4/5与回响禁止递归。
 
@@ -328,7 +347,7 @@ continuation恢复和receipt重放不会重复发送；失败、中止、重置�
 
 ## 统计口径
 
-基础通用实体 `basic_scatter`（散招）与 `basic_guard`（守招）均为 `formal_complete`、`built_in=true`、基础装配上限 99，并用八种 `eligible_hand_ids` 声明通用资格；其余226门非内建正式功法进入对应修习候选。
+基础通用实体 `basic_scatter`（散招）与 `basic_guard`（守招）均为 `formal_complete`、`built_in=true`、基础装配上限 99，并用八种 `eligible_hand_ids` 声明通用资格；其余234门非内建正式功法进入对应修习候选。
 
 `data/production_sequences.json` 的八种精确牌型均为 `["basic_scatter"]`。两门基础功法不进入修习商店、奖励、心得随机候选或 `learned_technique_ids`；构筑 DTO 仍始终把它们作为合格候选公开。旧 47 门流派／纵切资源统计均属历史记录，不再描述当前正式目录。
 `DesignConsistencyValidator` 的 0 错误也只证明名称、共用牌型池与废弃状态一致。
@@ -342,7 +361,7 @@ continuation恢复和receipt重放不会重复发送；失败、中止、重置�
 | 回归夹具 | 7 | 早期纵切用于回归协议；不是 S2 正式白名单候选，其中两门另有已确认语义偏差 |
 | 禁用或延期资源 | 0 | 当前 47 个资源内没有；五条心得等禁用内容不属于这 47 门功法实体 |
 
-当前正式口径以开头的228门实体为准；下列47门只解释更早的历史测试与迁移证据，不计入当前正式玩家内容。
+当前正式口径以开头的236门实体为准；下列47门只解释更早的历史测试与迁移证据，不计入当前正式玩家内容。
 
 ## 47 门覆盖矩阵
 
@@ -356,7 +375,7 @@ continuation恢复和receipt重放不会重复发送；失败、中止、重置�
 - 顺子：`five_steps_echo`（五步余音）
 - 四条：`seize_qi_return_nest`（夺气归巢）
 
-本段是旧接入证据。当前 `production_sequences.json` 的八种序列仍只装配 `basic_scatter`；正式目录以文件开头的228门为准。
+本段是旧接入证据。当前 `production_sequences.json` 的八种序列仍只装配 `basic_scatter`；正式目录以文件开头的236门为准。
 
 ### 风运转资源：部分接入（32）
 

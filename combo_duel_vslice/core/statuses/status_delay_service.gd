@@ -4,6 +4,8 @@ extends RefCounted
 const EffectContextScript = preload(
     "res://core/effects/battle_effect_context.gd")
 
+const SUPPORTED_TIMINGS := ["round_start", "turn_end", "after_normal_draw"]
+
 var _status_history
 var _record_id_allocator
 var _delayed_records: Array = []
@@ -25,17 +27,80 @@ func register_effect_chain(
         timing: String,
         occurrences: int,
         effects: Array,
-        context) -> Dictionary:
-    if timing not in ["turn_end", "after_normal_draw"]:
+        context,
+        lifecycle: Dictionary = {}) -> Dictionary:
+    if not is_supported_timing(timing):
         return {"success": false, "reason": "不支持的延迟时点：%s" % timing}
     var runtime = EffectContextScript.coerce(context)
-    var record := {
+    var record_key := str(lifecycle.get("record_key", ""))
+    var existing: Variant = _find_keyed_effect_chain(runtime, record_key)
+    var existing_policy := str(lifecycle.get(
+        "existing_policy", "keep_existing"))
+    if existing != null:
+        match existing_policy:
+            "keep_existing":
+                return {
+                    "success": true,
+                    "record": existing,
+                    "reused": true,
+                    "created": false,
+                }
+            "reset_remaining":
+                var replacement_record := _make_effect_chain_record(
+                    label, timing, occurrences, effects, runtime, lifecycle)
+                var existing_id := str(existing.get("id", ""))
+                existing.clear()
+                existing.merge(replacement_record, true)
+                existing["id"] = existing_id
+                return {
+                    "success": true,
+                    "record": existing,
+                    "reused": true,
+                    "reset": true,
+                    "created": false,
+                }
+            "replace":
+                _delayed_records.erase(existing)
+            _:
+                return {"success": false, "reason": "未知延迟既有记录策略"}
+    elif existing_policy not in [
+            "keep_existing", "reset_remaining", "replace"]:
+        return {"success": false, "reason": "未知延迟既有记录策略"}
+    var record := _make_effect_chain_record(
+        label, timing, occurrences, effects, runtime, lifecycle)
+    _delayed_records.append(record)
+    return {
+        "success": true,
+        "record": record,
+        "reused": false,
+        "created": true,
+    }
+
+
+static func is_supported_timing(timing: String) -> bool:
+    return timing in SUPPORTED_TIMINGS
+
+
+func _make_effect_chain_record(
+        label: String,
+        timing: String,
+        occurrences: int,
+        effects: Array,
+        runtime,
+        lifecycle: Dictionary) -> Dictionary:
+    return {
         "id": _record_id_allocator.next_id("delay"),
         "kind": "effect_chain",
         "label": label,
         "timing": timing,
         "remaining_occurrences": maxi(1, occurrences),
         "effects": effects.duplicate(true),
+        "completion_effects": lifecycle.get(
+            "completion_effects", []).duplicate(true),
+        "record_key": str(lifecycle.get("record_key", "")),
+        "existing_policy": str(lifecycle.get(
+            "existing_policy", "keep_existing")),
+        "trigger_count": 0,
         "power": runtime.power,
         "initial_power": runtime.initial_power,
         "direct_power_fixed": runtime.direct_power_fixed,
@@ -68,8 +133,25 @@ func register_effect_chain(
         "source_instance_key": runtime.source_instance_key,
         "trigger_mode": runtime.trigger_mode,
     }
-    _delayed_records.append(record)
-    return {"success": true, "record": record}
+
+
+func advance_effect_chain(context, record_key: String, amount: int = 1) -> Dictionary:
+    var runtime = EffectContextScript.coerce(context)
+    if record_key == "" or amount <= 0:
+        return {"success": false, "reason": "延迟推进需要稳定记录键和正数"}
+    var record = _find_keyed_effect_chain(runtime, record_key)
+    if record == null:
+        return {
+            "success": true,
+            "triggered": false,
+            "record_key": record_key,
+            "detail": "没有可推进的延迟记录",
+        }
+    # 主动推进可能在另一轮功法行动中令倒计时归零。完成效果若需要在
+    # 当前调用者推进后自动调用来源功法，必须绑定这次推进所属的 root。
+    record["root_action_token"] = runtime.root_action_token
+    record["source_action_token"] = runtime.action_token
+    return _consume_effect_chain_occurrences(record, amount, false)
 
 
 func register_next_round_hand_limit(
@@ -163,10 +245,22 @@ func on_round_start(actors: Array, round_number: int) -> Dictionary:
                 actor, int(record.get("captured_decay", 0)),
                 str(record.get("source_kind", "rule")))
         _delayed_records.erase(record)
+    var resolved_effect_chains := 0
+    for actor in actors:
+        var round_start_due: Array = _delayed_records.filter(func(record):
+            return record.get("actor") == actor \
+                and record.get("kind", "") == "effect_chain" \
+                and record.get("timing", "") == "round_start")
+        for record in round_start_due:
+            var resolved := _consume_effect_chain_occurrences(record, 1, true)
+            if resolved.get("success", false):
+                resolved_effect_chains += 1
     return {
         "success": true,
         "resolved_decay_count": due.size(),
-        "detail": "返还 %d 份防御衰减记录" % due.size(),
+        "resolved_effect_count": resolved_effect_chains,
+        "detail": "返还%d份防御衰减记录，结算%d份回合开始延迟" % [
+            due.size(), resolved_effect_chains],
     }
 
 
@@ -205,19 +299,7 @@ func resolve_turn_end_effects(actor, _round_number: int) -> Dictionary:
             and record.get("kind", "") == "effect_chain" \
             and record.get("timing", "") == "turn_end")
     for record in due:
-        _resolve_effect_chain(record)
-        record["remaining_occurrences"] = int(
-            record["remaining_occurrences"]) - 1
-        if int(record["remaining_occurrences"]) <= 0:
-            _delayed_records.erase(record)
-        _status_history.record_change(
-            "delay_resolve",
-            "actor",
-            str(actor.owner_id),
-            str(record["id"]),
-            0,
-            null,
-            str(record["label"]))
+        _consume_effect_chain_occurrences(record, 1, true)
     return {"success": true, "resolved_count": due.size()}
 
 
@@ -239,11 +321,7 @@ func resolve_after_normal_draw(actor) -> Dictionary:
             and record.get("timing", "") == "after_normal_draw" \
             and record.get("actor") == actor)
     for record in due:
-        _resolve_effect_chain(record)
-        record["remaining_occurrences"] = int(
-            record["remaining_occurrences"]) - 1
-        if int(record["remaining_occurrences"]) <= 0:
-            _delayed_records.erase(record)
+        _consume_effect_chain_occurrences(record, 1, true)
     return {
         "success": true,
         "resolved_count": due.size(),
@@ -269,7 +347,57 @@ func use_effect_executor(executor) -> void:
     _effect_executor = executor
 
 
-func _resolve_effect_chain(record: Dictionary) -> Dictionary:
+func _consume_effect_chain_occurrences(
+        record: Dictionary,
+        amount: int,
+        execute_tick: bool) -> Dictionary:
+    var remaining_before := int(record.get("remaining_occurrences", 0))
+    var remaining_after := maxi(0, remaining_before - maxi(1, amount))
+    var is_final_trigger := remaining_after == 0
+    var trigger_index := int(record.get("trigger_count", 0)) + 1
+    var effects: Array = []
+    if execute_tick:
+        effects.append_array(record.get("effects", []).duplicate(true))
+    if is_final_trigger:
+        effects.append_array(record.get(
+            "completion_effects", []).duplicate(true))
+    var resolved := {"success": true}
+    if not effects.is_empty():
+        resolved = _resolve_effect_chain(record, effects, {
+            "trigger_index": trigger_index,
+            "remaining_before": remaining_before,
+            "remaining_after": remaining_after,
+            "is_final_trigger": is_final_trigger,
+        })
+    if not resolved.get("success", false):
+        return resolved
+    record["remaining_occurrences"] = remaining_after
+    record["trigger_count"] = trigger_index
+    if is_final_trigger:
+        _delayed_records.erase(record)
+    _status_history.record_change(
+        "delay_resolve",
+        "actor",
+        str(record.get("actor").owner_id),
+        str(record.get("id", "")),
+        0,
+        null,
+        str(record.get("label", "")))
+    return {
+        "success": true,
+        "triggered": true,
+        "record_key": str(record.get("record_key", "")),
+        "remaining_before": remaining_before,
+        "remaining_after": remaining_after,
+        "is_final_trigger": is_final_trigger,
+        "completed": is_final_trigger,
+    }
+
+
+func _resolve_effect_chain(
+        record: Dictionary,
+        effects: Array,
+        lifecycle: Dictionary = {}) -> Dictionary:
     if _effect_executor == null:
         return {"success": false, "detail": "延迟效果缺少统一执行器"}
     var context = EffectContextScript.new().configure({
@@ -291,9 +419,10 @@ func _resolve_effect_chain(record: Dictionary) -> Dictionary:
         "branch_hand_id": str(record.get("branch_hand_id", "")),
         "technique_pool": str(record.get("technique_pool", "")),
         "sequence_book": record.get("sequence_book"),
-        "action_token": "%s:delay:%s" % [
+        "action_token": "%s:delay:%s:%d" % [
             str(record.get("source_action_token", "")),
             str(record.get("id", "delay")),
+            int(lifecycle.get("trigger_index", 0)),
         ],
         "root_action_token": str(record.get(
             "root_action_token", record.get("source_action_token", ""))),
@@ -309,10 +438,29 @@ func _resolve_effect_chain(record: Dictionary) -> Dictionary:
         "source_name": record.get("source_name", ""),
         "source_instance_key": record.get("source_instance_key", ""),
         "trigger_mode": "delayed",
-        "captures": record.get("captures", {}).duplicate(true),
+        "captures": _delay_captures(record, lifecycle),
         "group_snapshot": record.get("group_snapshot", {}).duplicate(true),
     })
-    return _effect_executor.execute_all(record["effects"], context)
+    return _effect_executor.execute_all(effects, context)
+
+
+func _delay_captures(record: Dictionary, lifecycle: Dictionary) -> Dictionary:
+    var captures: Dictionary = record.get("captures", {}).duplicate(true)
+    captures["delay_lifecycle"] = [lifecycle.duplicate(true)]
+    return captures
+
+
+func _find_keyed_effect_chain(runtime, record_key: String):
+    if record_key == "":
+        return null
+    for record in _delayed_records:
+        if record.get("kind", "") == "effect_chain" \
+                and str(record.get("record_key", "")) == record_key \
+                and record.get("actor") == runtime.actor \
+                and str(record.get("source_instance_key", "")) \
+                    == runtime.source_instance_key:
+            return record
+    return null
 
 
 func _action_token_matches(record: Dictionary, event_context: Dictionary) -> bool:

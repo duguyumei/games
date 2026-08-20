@@ -6,7 +6,7 @@ const BattleSessionScript = preload("res://core/battle_session.gd")
 const BattleActionProposalScript = preload(
     "res://core/battle_action_proposal.gd")
 
-const SPECIAL_TECHNIQUES := {
+const COMPLEX_MECHANIC_TECHNIQUES := {
     "bomb_wind_empty_hand": {"name":"风·断流无手", "pool":"bomb"},
     "pair_forest_dissipate_decay": {"name":"林·弃腐续生", "pool":"pair"},
     "bomb_fire_break_city": {"name":"火·破城焚关", "pool":"bomb"},
@@ -48,21 +48,22 @@ func _initialize() -> void:
     _test_seven_poison_seal_battle_session_flow()
     _test_hundred_forms_furnace_battle_session_flow()
     _test_hundred_forms_multiple_slots_frozen_order()
-    _finish("SPECIAL TECHNIQUE TEST")
+    _finish("COMPLEX MECHANIC TECHNIQUE TEST")
 
 func _test_formal_resource_contract() -> void:
     var repository = _repository()
     var manifest = JSON.parse_string(FileAccess.get_file_as_string(
         "res://data/techniques.json"))
-    for technique_id in SPECIAL_TECHNIQUES:
-        var expected: Dictionary = SPECIAL_TECHNIQUES[technique_id]
+    for technique_id in COMPLEX_MECHANIC_TECHNIQUES:
+        var expected: Dictionary = COMPLEX_MECHANIC_TECHNIQUES[technique_id]
         var definition = repository.get_definition(technique_id)
         _assert_true(definition != null, "%s独立资源存在" % technique_id)
         if definition == null:
             continue
         _assert_equal(definition.display_name, expected["name"], "%s冻结名称" % technique_id)
         _assert_equal(definition.pool, expected["pool"], "%s正式池资格" % technique_id)
-        _assert_true(definition.special, "%s标记为特殊功法" % technique_id)
+        _assert_true(not definition.special,
+            "%s不建立特殊功法内容分类" % technique_id)
         _assert_true(not definition.built_in, "%s不是内建功法" % technique_id)
         _assert_equal(definition.base_loadout_limit, 1, "%s普通装配上限为1" % technique_id)
         _assert_equal(
@@ -77,7 +78,7 @@ func _test_formal_resource_contract() -> void:
             "res://data/enemies.json",
             "res://data/production_enemy_entry.json"]:
         var text := FileAccess.get_file_as_string(path)
-        for technique_id in SPECIAL_TECHNIQUES:
+        for technique_id in COMPLEX_MECHANIC_TECHNIQUES:
             _assert_true(
                 not text.contains(str(technique_id)),
                 "%s未写入%s" % [technique_id, path])
@@ -937,7 +938,7 @@ func _test_poison_meridian_echo_battle_session_flow() -> void:
         "七段毒伤触发两次后保留1段溢出")
     _assert_equal(_slot_marker_value(
         engine, echo_slot, "poison_segment_damage"), 8,
-        "蛊脉自鸣溢出段保留进入毒防御前的最终伤害")
+        "蛊脉自鸣溢出段保留进入防御吸收前的最终伤害")
 
     var zero_loss = _engine(9402)
     zero_loss.repository.techniques["special_poison_all_probe"] = \
@@ -970,7 +971,7 @@ func _test_poison_meridian_echo_battle_session_flow() -> void:
         "-100%毒防御令三段实际生命损失均为0")
     _assert_equal(zero_events.map(func(values):
         return int(values.get("initial_power", -1))), [0],
-        "实际生命损失为0仍计三段且特殊P₀读取毒防御前最终值")
+        "实际生命损失为0仍计三段且特殊P₀读取防御吸收前最终值")
     _assert_equal(zero_loss.player.same_qi_value, 1,
         "零生命损失毒段仍触发蛊脉自鸣自动同气")
 

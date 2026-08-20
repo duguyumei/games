@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bomb_mountain_wait_enemy"
+display_name = "山·悬岳待敌"
+pool = "bomb"
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["four_kind", "five_kind"] )
+marker_definitions = [{"id":"waiting_mountain","scope":"battle","public":true,"display_name":"悬岳蓄势","forget_policy":"clear"}]
+charging = {"primary_marker_id":"waiting_mountain","display_name":"悬岳蓄势","scope":"battle","public":true,"allowed_operations":["add","clear"],"minimum":0}
+description = "获得floor(P/2)点防御，并观察敌方之后2个出牌轮次。每轮记录敌方实际令我方减少的防御与生命之和X；若X=0，改为记录本功法冻结的C。第二轮结束后，获得两次记录总和Z点防御并造成floor(Z/2)点真伤。已有观察时再次触发只获得即时防御。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "true_damage", "delayed_defense"] )
+public_behavior_summary = Array[String]( ["defense", "true_damage", "delayed_defense"] )
+implementation_category = "C"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"begin_technique_charging","phase":"prepare","initial_value":0,"when":{"charging_active":false}},{"op":"register_response","phase":"zones","event":"action_resolution_end","expiry":"battle_end","record_key":"enemy_action_observation","existing_policy":"keep_existing","filters":{"action_opponent_acted":true,"max_triggers":2},"effects":[{"op":"write_charging_primary","operation":"add","amount":{"kind":"conditional","when":{"value_greater_than":{"value":{"kind":"add","values":[{"kind":"capture_field_sum","capture":"event_actor_result","field":"actual_defense_loss"},{"kind":"capture_field_sum","capture":"event_actor_result","field":"actual_life_loss"}]},"threshold":0}},"then":{"kind":"add","values":[{"kind":"capture_field_sum","capture":"event_actor_result","field":"actual_defense_loss"},{"kind":"capture_field_sum","capture":"event_actor_result","field":"actual_life_loss"}]},"else":{"kind":"card_contribution"}}}],"completion_effects":[{"op":"capture_source_marker","marker_id":"waiting_mountain","scope":"battle","capture":"waiting_total"},{"op":"defense","amount":{"kind":"capture_field_first","capture":"waiting_total","field":"amount"}},{"op":"damage","damage_type":"true","direct_attack":false,"amount":{"kind":"divide_floor","value":{"kind":"capture_field_first","capture":"waiting_total","field":"amount"},"divisor":2}},{"op":"end_technique_charging"}]}]

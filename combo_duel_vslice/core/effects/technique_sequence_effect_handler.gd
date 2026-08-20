@@ -89,10 +89,20 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
         validator.report_error(scope + ".selection", "必须是对象")
         return
     var mode := str(selection.get("mode", "next"))
-    if mode not in ["self", "next", "by_id", "random"]:
+    if mode not in [
+            "self", "next", "relative_to_source", "by_id", "by_slot",
+            "random"]:
         validator.report_error(scope + ".selection.mode", "引用未知调用选择模式")
     if mode == "by_id" and str(selection.get("technique_id", "")) == "":
         validator.report_error(scope + ".selection.technique_id", "by_id 必须提供功法 ID")
+    if mode == "by_slot" and str(selection.get("slot_instance_id", "")) == "":
+        validator.report_error(scope + ".selection.slot_instance_id", "by_slot 必须提供槽位实例 ID")
+    if mode == "relative_to_source":
+        if not selection.get("offset", 1) is int \
+                or int(selection.get("offset", 1)) <= 0:
+            validator.report_error(scope + ".selection.offset", "必须是正整数")
+        if selection.has("wrap") and not selection["wrap"] is bool:
+            validator.report_error(scope + ".selection.wrap", "必须是布尔值")
     var hand_id := str(selection.get("hand_id", "current"))
     if hand_id != "current" and hand_id not in HAND_IDS:
         validator.report_error(scope + ".selection.hand_id", "引用未知精确牌型")
@@ -101,6 +111,17 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("timing", "immediate")) not in [
             "immediate", "after_caller_advance"]:
         validator.report_error(scope + ".timing", "调用效果只允许 immediate 或 after_caller_advance")
+    if str(effect.get("invocation_mode", "normal")) not in [
+            "normal", "automatic_source"]:
+        validator.report_error(
+            scope + ".invocation_mode", "引用未知功法调用公开模式")
+    if str(effect.get("invocation_mode", "normal")) == "automatic_source" \
+            and mode != "self":
+        validator.report_error(
+            scope + ".selection.mode", "automatic_source 只能选择 self")
+    if effect.has("_trigger_mode"):
+        validator.report_error(
+            scope + "._trigger_mode", "内容不能直接指定内部触发模式")
     var p0 = effect.get("p0", {})
     if not p0 is Dictionary:
         validator.report_error(scope + ".p0", "必须是对象")

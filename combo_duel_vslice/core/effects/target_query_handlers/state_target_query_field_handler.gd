@@ -3,6 +3,7 @@ extends RefCounted
 
 const FIELD_DEFINITIONS := {
     "temporary": {"validation": "bool"},
+    "temporarily_transferred": {"validation": "bool"},
     "has_any_reshape": {"validation": "bool"},
     "has_permanent_reshape": {"validation": "bool"},
     "has_active_permanent_reshape": {"validation": "bool"},
@@ -30,6 +31,8 @@ func matches(
     match field:
         "temporary":
             return bool(value) == bool(card.temporary_card)
+        "temporarily_transferred":
+            return bool(value) == (str(card.original_owner_id) != "")
         "has_any_anomaly":
             var snapshot: Dictionary = card.anomaly_snapshot()
             var actual := false

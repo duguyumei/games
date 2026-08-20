@@ -1,6 +1,9 @@
 class_name FlowEffectHandler
 extends EffectHandler
 
+const StatusDelayServiceScript = preload(
+    "res://core/statuses/status_delay_service.gd")
+
 const EffectContextScript = preload("res://core/effects/battle_effect_context.gd")
 const EffectResultScript = preload("res://core/effects/technique_effect_result.gd")
 
@@ -14,6 +17,7 @@ func operation_ids() -> Array[String]:
         "gain_extra_action", "write_momentum", "add_direct_power_fixed",
         "add_direct_power_percent",
         "register_delayed_effects",
+        "advance_delayed_effects",
         "register_response",
         "register_next_round_hand_limit",
         "register_defense_decay_return",
@@ -238,15 +242,44 @@ func execute(effect: Dictionary, context):
                 str(effect.get("timing", "turn_end")),
                 int(effect.get("occurrences", 1)),
                 effect.get("effects", []),
-                runtime)
+                runtime, {
+                    "record_key": str(effect.get("record_key", "")),
+                    "existing_policy": str(effect.get(
+                        "existing_policy", "keep_existing")),
+                    "completion_effects": effect.get(
+                        "completion_effects", []).duplicate(true),
+                })
             if not result.get("success", false):
                 return EffectResultScript.failed(str(result.get("reason", "延迟效果建立失败")))
+            _capture_lifecycle_result(effect, runtime, result,
+                "remaining_occurrences")
             return EffectResultScript.succeeded("建立%s延迟效果" % str(effect.get("timing", "turn_end")))
+        "advance_delayed_effects":
+            var result: Dictionary = runtime.ports.advance_delayed_effects(
+                runtime, str(effect.get("record_key", "")),
+                value_resolver.resolve(effect.get("amount", 1), runtime))
+            if not result.get("success", false):
+                return EffectResultScript.failed(str(result.get(
+                    "reason", "延迟效果推进失败")))
+            _capture_lifecycle_result(effect, runtime, result,
+                "remaining_after")
+            return EffectResultScript.succeeded(str(result.get(
+                "detail", "推进延迟效果")))
         "register_response":
             var result: Dictionary = runtime.ports.register_response(
                 str(effect.get("event", "")), str(effect.get("expiry", "turn_end")),
                 effect.get("effects", []), runtime, effect.get("filters", {}),
-                effect.get("expiry_effects", []))
+                effect.get("expiry_effects", []), {
+                    "record_key": str(effect.get("record_key", "")),
+                    "existing_policy": str(effect.get(
+                        "existing_policy", "keep_existing")),
+                    "completion_effects": effect.get(
+                        "completion_effects", []).duplicate(true),
+                    "skip_registration_action": bool(effect.get(
+                        "skip_registration_action", false)),
+                })
+            _capture_lifecycle_result(effect, runtime, result,
+                "remaining_triggers")
             return EffectResultScript.succeeded("建立战斗响应") \
                 if result.get("success", false) \
                 else EffectResultScript.failed(str(result.get("reason", "响应建立失败")))
@@ -294,12 +327,28 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                 validator.report_error(
                     scope + ".action_token_from_event", "必须是布尔值")
         "register_delayed_effects":
-            if str(effect.get("timing", "")) not in ["turn_end", "after_normal_draw"]:
+            if not StatusDelayServiceScript.is_supported_timing(str(
+                    effect.get("timing", ""))):
                 validator.report_error(scope + ".timing", "未知延迟事件时点 %s" % str(effect.get("timing", "")))
             validator.validate_positive_integer(
                 effect.get("occurrences"), scope + ".occurrences", "occurrences")
             validator.validate_nested_battle_effects(
                 effect.get("effects"), scope + ".effects")
+            _validate_lifecycle_fields(effect, validator, scope)
+            if effect.has("completion_effects"):
+                validator.validate_nested_battle_effects(
+                    effect.get("completion_effects", []),
+                    scope + ".completion_effects")
+        "advance_delayed_effects":
+            if str(effect.get("record_key", "")) == "":
+                validator.report_error(
+                    scope + ".record_key", "必须提供稳定延迟记录键")
+            if effect.get("amount", 1) is Dictionary:
+                validator.validate_amount_spec(
+                    effect["amount"], scope + ".amount")
+            else:
+                validator.validate_positive_integer(
+                    effect.get("amount", 1), scope + ".amount", "amount")
         "register_response":
             validator.validate_response_event(
                 str(effect.get("event", "")), scope + ".event")
@@ -310,6 +359,15 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
             if effect.has("expiry_effects"):
                 validator.validate_nested_battle_effects(
                     effect.get("expiry_effects", []), scope + ".expiry_effects")
+            if effect.has("completion_effects"):
+                validator.validate_nested_battle_effects(
+                    effect.get("completion_effects", []),
+                    scope + ".completion_effects")
+            _validate_lifecycle_fields(effect, validator, scope)
+            if effect.has("skip_registration_action") \
+                    and not effect["skip_registration_action"] is bool:
+                validator.report_error(
+                    scope + ".skip_registration_action", "必须是布尔值")
         "register_no_life_loss_disruption":
             validator.validate_nested_battle_effects(
                 [effect.get("effect", {})], scope + ".effect")
@@ -334,3 +392,39 @@ func validate_effect(effect: Dictionary, validator, scope: String) -> void:
                 validator.validate_non_negative_integer(
                     effect.get("threshold", effect.get("amount", 0)),
                     scope + ".threshold", "threshold")
+
+
+func _capture_lifecycle_result(
+        effect: Dictionary,
+        runtime,
+        result: Dictionary,
+        remaining_field: String) -> void:
+    var capture_id := str(effect.get("capture", ""))
+    if capture_id == "" or not result.get("success", false):
+        return
+    var record: Dictionary = result.get("record", {})
+    runtime.captures[capture_id] = [{
+        "created": int(bool(result.get("created", false))),
+        "reused": int(bool(result.get("reused", false))),
+        "reset": int(bool(result.get("reset", false))),
+        "triggered": int(bool(result.get("triggered", false))),
+        "completed": int(bool(result.get("completed", false))),
+        "remaining": int(result.get(
+            remaining_field, record.get(remaining_field, -1))),
+    }]
+
+
+func _validate_lifecycle_fields(
+        effect: Dictionary,
+        validator,
+        scope: String) -> void:
+    if effect.has("record_key") and str(effect.get("record_key", "")) == "":
+        validator.report_error(scope + ".record_key", "不能为空")
+    if str(effect.get("existing_policy", "keep_existing")) not in [
+            "keep_existing", "reset_remaining", "replace"]:
+        validator.report_error(
+            scope + ".existing_policy", "引用未知既有记录策略")
+    if effect.has("capture") and (
+            not effect["capture"] is String \
+            or str(effect["capture"]) == ""):
+        validator.report_error(scope + ".capture", "必须是非空字符串")

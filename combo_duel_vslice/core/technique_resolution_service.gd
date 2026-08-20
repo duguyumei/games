@@ -548,6 +548,35 @@ func prepare_invocation(request: Dictionary, context) -> Dictionary:
     if not power_result.get("success", false):
         rollback_pre_technique_cost(cost_result)
         return power_result
+    var formation_context = EffectContextScript.new().configure({
+        "ports": _ports,
+        "actor": runtime.actor,
+        "target": runtime.target,
+        "hand_result": invocation_hand_result,
+        "played_cards": runtime.played_cards,
+        "group_snapshot": runtime.group_snapshot,
+        "values": power_result.get("values", {}),
+        "action_token": str(request.get("invocation_token", "")),
+        "root_action_token": runtime.root_action_token,
+        "slot_instance_id": str(slot.get("slot_instance_id", "")),
+        "source_kind": "technique",
+        "source_id": definition.id,
+        "source_name": definition.display_name,
+        "source_instance_key": str(slot.get("slot_instance_id", "")),
+        "trigger_mode": str(effect.get("_trigger_mode", "invoked")),
+        "captures": request.get("captures", {}).duplicate(true),
+        "sequence_book": runtime.sequence_book,
+        "card_identity_policy": runtime.actor.card_identity_policy,
+    })
+    var formation_result := resolve_power_formation_fixed_bonus(
+        definition, formation_context)
+    if not formation_result.get("success", false):
+        rollback_pre_technique_cost(cost_result)
+        return formation_result
+    if formation_result.get("handled", false):
+        power_result["values"] = PowerCalculatorScript.apply_direct_power_fixed(
+            power_result["values"], int(formation_result.get("fixed_bonus", 0)))
+        power_result["frozen_power_formation"] = formation_result.duplicate(true)
     # Invocation costs stay open until the complete invocation (including
     # choices, echoes and sequence advancement) succeeds.  The caller owns
     # the returned transaction and commits/rolls it back at that boundary.
@@ -840,6 +869,35 @@ func resolve_power(actor, target, hand_result: Dictionary, cards: Array,
         "success": true, "values": values,
         "queries": queries,
         "pending_power_fixed_tokens": pending_tokens,
+    }
+
+func resolve_power_formation_fixed_bonus(
+        definition, context) -> Dictionary:
+    var formation: Dictionary = {}
+    if definition is Dictionary:
+        formation = definition.get("power_formation", {})
+    elif definition != null:
+        formation = definition.power_formation
+    var kind := str(formation.get("kind", ""))
+    if kind != "value_spec_fixed_bonus":
+        return {
+            "success": true,
+            "handled": false,
+            "kind": kind,
+            "fixed_bonus": 0,
+        }
+    if _executor == null or _executor.registry == null \
+            or _executor.registry.value_resolver == null:
+        return {"success": false, "reason": "确认期功法值缺少 ValueSpec 解析器"}
+    var runtime = EffectContextScript.coerce(context)
+    var fixed_bonus := int(_executor.registry.value_resolver.resolve(
+        formation.get("value", 0), runtime))
+    return {
+        "success": true,
+        "handled": true,
+        "kind": kind,
+        "fixed_bonus": fixed_bonus,
+        "frozen_value": fixed_bonus,
     }
 
 func settle_same_qi(

@@ -72,9 +72,16 @@ func register_delayed_effects(
         timing: String,
         occurrences: int,
         effects: Array,
-        context) -> Dictionary:
+        context,
+        lifecycle: Dictionary = {}) -> Dictionary:
     return _status_system.register_delayed_effects(
-        label, timing, occurrences, effects, context)
+        label, timing, occurrences, effects, context, lifecycle)
+
+
+func advance_delayed_effects(
+        context, record_key: String, amount: int = 1) -> Dictionary:
+    return _status_system.advance_delayed_effects(
+        context, record_key, amount)
 
 
 func register_response(
@@ -83,9 +90,11 @@ func register_response(
         effects: Array,
         context,
         filters: Dictionary = {},
-        expiry_effects: Array = []) -> Dictionary:
+        expiry_effects: Array = [],
+        lifecycle: Dictionary = {}) -> Dictionary:
     return _status_system.register_response(
-        event_kind, expiry, effects, context, filters, expiry_effects)
+        event_kind, expiry, effects, context, filters, expiry_effects,
+        lifecycle)
 
 
 func register_next_round_hand_limit(

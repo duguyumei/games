@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bomb_forest_seize_origin_life"
+display_name = "林·夺元栽命"
+pool = "bomb"
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["four_kind", "five_kind"] )
+marker_definitions = [{"id":"life_origin","scope":"run","public":true,"display_name":"命元","contributes_to":"max_life","forget_policy":"clear"},{"id":"life_origin_gained","scope":"battle","public":false,"display_name":"本战命元已取","forget_policy":"clear"}]
+description = "获得floor(P/2)点防御。每场战斗第一次成功触发时，本功法的本局标识“命元”增加min(15，floor(敌方最大生命/20))，累计最多80；装备本功法时，生命上限增加等量数值。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["defense", "economic_gain"] )
+public_behavior_summary = Array[String]( ["defense", "economic_gain"] )
+implementation_category = "C"
+effects = [{"op":"defense","phase":"prepare","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"write_source_marker","phase":"prepare","operation":"add","marker_id":"life_origin","scope":"run","display_name":"命元","contributes_to":"max_life","forget_policy":"clear","amount":{"kind":"conditional","when":{"value_at_most":{"value":{"kind":"conditional","when":{"value_at_most":{"value":{"kind":"divide_floor","value":{"kind":"target_max_life"},"divisor":20},"maximum":15}},"then":{"kind":"divide_floor","value":{"kind":"target_max_life"},"divisor":20},"else":15},"maximum":{"kind":"subtract","left":80,"right":{"kind":"source_marker_value","marker_id":"life_origin","scope":"run"}}}},"then":{"kind":"conditional","when":{"value_at_most":{"value":{"kind":"divide_floor","value":{"kind":"target_max_life"},"divisor":20},"maximum":15}},"then":{"kind":"divide_floor","value":{"kind":"target_max_life"},"divisor":20},"else":15},"else":{"kind":"subtract","left":80,"right":{"kind":"source_marker_value","marker_id":"life_origin","scope":"run"}}},"when":{"value_at_most":{"value":{"kind":"source_marker_value","marker_id":"life_origin_gained","scope":"battle"},"maximum":0}}},{"op":"write_source_marker","phase":"prepare","operation":"set","marker_id":"life_origin_gained","scope":"battle","public":false,"display_name":"本战命元已取","amount":1,"when":{"value_at_most":{"value":{"kind":"source_marker_value","marker_id":"life_origin_gained","scope":"battle"},"maximum":0}}}]

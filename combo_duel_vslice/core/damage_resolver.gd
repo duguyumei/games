@@ -21,7 +21,7 @@ func resolve(
         status_system = null,
         final_amount_override = null,
         damage_type: String = "",
-        poison_defense_intervention: int = 0,
+        poison_defense_intervention: int = -1,
         resolution_metadata: Dictionary = {}) -> Dictionary:
     var resolved_type := damage_type
     if resolved_type == "":
@@ -123,7 +123,7 @@ static func apply_to_target(
         target,
         amount: int,
         damage_type = "normal",
-        poison_defense_intervention: int = 0) -> Dictionary:
+        poison_defense_intervention: int = -1) -> Dictionary:
     var plan := plan_to_target(
         target, amount, damage_type, poison_defense_intervention)
     return commit_plan(target, plan, int(plan["proposed_life_loss"]))
@@ -133,7 +133,7 @@ static func plan_to_target(
         target,
         amount: int,
         damage_type = "normal",
-        poison_defense_intervention: int = 0) -> Dictionary:
+        poison_defense_intervention: int = -1) -> Dictionary:
     var state := {"life": int(target.life), "defense": int(target.defense)}
     return preview_receive_damage(
         state, amount, damage_type, poison_defense_intervention)
@@ -170,7 +170,7 @@ static func preview_receive_damage(
         state: Dictionary,
         amount: int,
         damage_type = "normal",
-        poison_defense_intervention: int = 0) -> Dictionary:
+        poison_defense_intervention: int = -1) -> Dictionary:
     var resolved_type := str(damage_type)
     if damage_type is bool:
         resolved_type = "true" if bool(damage_type) else "normal"
@@ -183,9 +183,12 @@ static func preview_receive_damage(
         life_lost = mini(int(state["life"]), incoming)
         state["life"] = int(state["life"]) - life_lost
     elif resolved_type == "poison":
+        # 毒伤使用独立的伤害值修正，但最终仍可由普通防御吸收。负值表示
+        # 没有额外介入限制，默认允许本段全部毒伤参与防御吸收。
+        var absorbable := incoming if poison_defense_intervention < 0 \
+            else mini(incoming, maxi(0, poison_defense_intervention))
         var intervened: int = mini(
-            incoming,
-            mini(int(state["defense"]), maxi(0, poison_defense_intervention)))
+            int(state["defense"]), absorbable)
         defense_lost = intervened
         state["defense"] = int(state["defense"]) - intervened
         life_lost = mini(int(state["life"]), incoming - intervened)
@@ -220,7 +223,7 @@ func _buffer_damage(
         requested_amount: int,
         source_kind: String,
         damage_type: String,
-        poison_defense_intervention: int = 0,
+        poison_defense_intervention: int = -1,
         resolution_metadata: Dictionary = {}) -> Dictionary:
     var target_id: int = target.get_instance_id()
     if not _shadows.has(target_id):

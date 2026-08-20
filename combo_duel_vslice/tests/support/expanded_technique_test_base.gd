@@ -49,6 +49,11 @@ func _engine(seed_value: int = 1):
     engine.enemy.defense = 0
     engine.player.life = 100
     engine.enemy.life = 100
+    # 本基类验证独立效果链，不验证“初始牌库张数决定连势上限”的战斗
+    # 装配协议。空牌库 setup 会合法地冻结 0 上限，因此为这些窄测试显式
+    # 提供一个不会干扰效果断言的容量；容量本身由专项测试覆盖。
+    engine.player.momentum_cap_initialized = false
+    engine.player.initialize_base_momentum_cap(100)
     return engine
 
 func _dispose_engines() -> void:

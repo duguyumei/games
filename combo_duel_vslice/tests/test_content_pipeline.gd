@@ -14,7 +14,7 @@ func _run() -> void:
         BatchValidatorScript.new().validate_project())
     _assert_true(project_report["valid"], "合法的全量 JSON/TRES 内容通过独立校验：%s" % JSON.stringify(project_report["diagnostics"]))
     _assert_true(int(project_report["summary"]["json_files"]) >= 12, "扫描全部 JSON")
-    _assert_equal(int(project_report["summary"]["tres_files"]), 228, "正式目录包含228门功法")
+    _assert_equal(int(project_report["summary"]["tres_files"]), 236, "正式目录包含236门功法")
     _assert_equal(int(project_report["schema_version"]), 1, "报告具有机器可读版本")
 
     var catalog = ContentCatalogScript.new()

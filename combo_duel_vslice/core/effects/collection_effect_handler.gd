@@ -16,6 +16,7 @@ func operation_ids() -> Array[String]:
     return [
         "capture_group_cards", "for_each_captured", "remove_card_anomaly_from_captured",
         "gain_battle_experience", "generate_temporary_normal_card",
+        "generate_shared_template_temporary_normal_cards",
         "select_random_captured",
         "select_highest_random_captured", "capture_event_cards",
         "capture_value",
@@ -186,7 +187,15 @@ func execute(effect: Dictionary, context):
             if runtime.ports == null:
                 return EffectResultScript.failed("逐张效果缺少战斗端口")
             var processed := 0
-            for card in runtime.captures.get(str(effect.get("capture", "")), []).duplicate():
+            var frozen_cards: Array = runtime.captures.get(
+                str(effect.get("capture", "")), []).duplicate()
+            for card_index in range(frozen_cards.size()):
+                var card = frozen_cards[card_index]
+                var parent_effect_token: String = runtime.effect_execution_token
+                if parent_effect_token == "":
+                    parent_effect_token = runtime.technique_execution_token \
+                        if runtime.technique_execution_token != "" \
+                        else runtime.action_token
                 var child_context = EffectContextScript.new().configure({
                     "ports": runtime.ports, "actor": runtime.actor, "target": runtime.target,
                     "hand_result": runtime.hand_result, "played_cards": runtime.played_cards,
@@ -198,14 +207,26 @@ func execute(effect: Dictionary, context):
                     "technique_id": runtime.technique_id, "technique_name": runtime.technique_name,
                     "actual_hand_id": runtime.actual_hand_id, "branch_hand_id": runtime.branch_hand_id,
                     "technique_pool": runtime.technique_pool, "action_token": runtime.action_token,
+                    "root_action_token": runtime.root_action_token,
+                    "invocation_token": runtime.invocation_token,
+                    "caller_technique_id": runtime.caller_technique_id,
+                    "slot_instance_id": runtime.slot_instance_id,
+                    "technique_execution_token": runtime.technique_execution_token,
+                    "effect_execution_scope_token": "%s:for-each:%d:%s" % [
+                        parent_effect_token, card_index, str(card.id)],
+                    "technique_execution_state": runtime.technique_execution_state,
                     "source_kind": runtime.source_kind,
                     "source_id": runtime.source_id, "source_name": runtime.source_name,
                     "source_instance_key": runtime.source_instance_key,
                     "trigger_mode": runtime.trigger_mode,
+                    "round_number": runtime.round_number,
                     "captures": {"each": [card]},
                     "sequence_book": runtime.sequence_book,
                     "card_identity_policy": runtime.card_identity_policy,
                     "group_snapshot": runtime.group_snapshot,
+                    "effect_command_limit": runtime.effect_command_limit,
+                    "effect_chain_state": runtime.effect_chain_state,
+                    "passive_rule_runtime": runtime.passive_rule_runtime,
                 })
                 var result: Dictionary = runtime.ports.execute_effect_chain(
                     effect.get("effects", []), child_context)
@@ -244,9 +265,7 @@ func execute(effect: Dictionary, context):
                     "source_name": runtime.source_name,
                     "source_instance_key": runtime.source_instance_key,
                     "trigger_mode": runtime.trigger_mode,
-                    "effect_execution_token": str(runtime.get(
-                        "effect_execution_token")) if runtime.has_method(
-                            "get") else "",
+                    "effect_execution_token": runtime.effect_execution_token,
                     "experience_response_ancestry": runtime.effect_chain_state.get(
                         "experience_response_ancestry", []).duplicate(),
                 })
@@ -281,6 +300,34 @@ func execute(effect: Dictionary, context):
             if effect.has("capture"):
                 runtime.captures[str(effect["capture"])] = [generated] if generated != null else []
             return EffectResultScript.succeeded("生成临时真气" if generated != null else "")
+        "generate_shared_template_temporary_normal_cards":
+            if runtime.ports == null:
+                return EffectResultScript.failed("批量生成临时真气缺少战斗端口")
+            var generation_options: Dictionary = runtime.source_metadata()
+            generation_options.merge({
+                "destination": str(effect.get("destination", "hand")),
+                "shuffle_destination": bool(effect.get(
+                    "shuffle_destination", false)),
+                "add_void": bool(effect.get("add_void", true)),
+                "origin_id": str(effect.get("origin_id", "")),
+                "origin_payload": effect.get(
+                    "origin_payload", {}).duplicate(true),
+                "action_token": runtime.action_token,
+            }, true)
+            var generated: Dictionary = (
+                runtime.ports
+                .generate_shared_template_temporary_normal_cards(
+                    runtime.actor,
+                    value_resolver.resolve(effect.get("count", 0), runtime),
+                    generation_options))
+            if not generated.get("success", false):
+                return EffectResultScript.failed(str(generated.get(
+                    "reason", "批量生成临时真气失败")))
+            if effect.has("capture"):
+                runtime.captures[str(effect["capture"])] = generated.get(
+                    "cards", []).duplicate()
+            return EffectResultScript.succeeded(
+                "生成同模板临时真气 %d 张" % int(generated.get("count", 0)))
         "repeat_effects":
             if runtime.trigger_mode == "echo":
                 return EffectResultScript.succeeded("回响不递归")
@@ -367,3 +414,25 @@ func _frozen_rank_component(snapshot: Dictionary, wanted_count: int) -> Array:
 func validate_effect(effect: Dictionary, validator, scope: String) -> void:
     if str(effect.get("op", "")) in ["for_each_captured", "repeat_effects"]:
         validator.validate_nested_battle_effects(effect.get("effects", []), scope + ".effects")
+    if str(effect.get("op", "")) == \
+            "generate_shared_template_temporary_normal_cards":
+        if effect.get("count") is Dictionary:
+            validator.validate_amount_spec(effect["count"], scope + ".count")
+        else:
+            validator.validate_positive_integer(
+                effect.get("count"), scope + ".count", "count")
+        if str(effect.get("destination", "hand")) not in [
+                "hand", "draw_pile", "staging", "discard_pile"]:
+            validator.report_error(scope + ".destination", "引用未知目标牌区")
+        for field in ["shuffle_destination", "add_void"]:
+            if effect.has(field) and not effect[field] is bool:
+                validator.report_error(scope + "." + field, "必须是布尔值")
+        if effect.has("origin_id") \
+                and (not effect["origin_id"] is String \
+                    or str(effect["origin_id"]) == ""):
+            validator.report_error(scope + ".origin_id", "必须是非空字符串")
+        if effect.has("origin_payload") \
+                and not effect["origin_payload"] is Dictionary:
+            validator.report_error(scope + ".origin_payload", "必须是对象")
+        if effect.has("capture") and str(effect.get("capture", "")) == "":
+            validator.report_error(scope + ".capture", "必须是非空字符串")

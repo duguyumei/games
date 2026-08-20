@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bomb_fire_pass_flame"
+display_name = "火·万法传薪"
+pool = "bomb"
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["four_kind", "five_kind"] )
+description = "造成P点普通伤害，获得等于本次攻击实际造成生命损失一半的连势；随后尝试在其余七种精确牌型序列中各生成1份本功法的独立战斗临时副本。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "momentum", "retrigger_sensitive"] )
+public_behavior_summary = Array[String]( ["damage", "momentum", "retrigger_sensitive"] )
+implementation_category = "C"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power"},"capture":"pass_flame_hit"},{"op":"write_momentum","phase":"damage","operation":"add","amount":{"kind":"divide_floor","value":{"kind":"capture_actual_life_loss","capture":"pass_flame_hit"},"divisor":2}},{"op":"generate_temporary_techniques","phase":"zones","technique_source":"current_source","target_hands":"all_other","copies":1,"position":"random","batch_mode":"partial","marker_mode":"independent","capture":"pass_flame_copies"}]

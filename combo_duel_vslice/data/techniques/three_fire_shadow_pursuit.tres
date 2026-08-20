@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="TechniqueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://core/technique_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "three_fire_shadow_pursuit"
+display_name = "火·照影追式"
+pool = "three"
+base_loadout_limit = 1
+eligible_hand_ids = Array[String]( ["three_kind", "full_house"] )
+description = "造成floor(P/2)点普通伤害。本门结算后至本完整回合结束，敌方每成功发动1门最终功法值不高于本门冻结P的功法，立即调用我方本序列中位于本功法后一位且不在结算栈中的功法；其P₀等于敌方该次P₀的一半。"
+condition = {}
+cooperation = {}
+power_formation = {}
+semantic_tags = Array[String]( ["damage", "retrigger_sensitive", "enemy_disruption"] )
+public_behavior_summary = Array[String]( ["damage", "retrigger_sensitive", "enemy_disruption"] )
+implementation_category = "C"
+effects = [{"op":"damage","phase":"damage","amount":{"kind":"power_fraction","numerator":1,"denominator":2,"minimum":0}},{"op":"register_response","phase":"zones","event":"technique_succeeded","expiry":"turn_end","filters":{"event_actor_is_opponent":true},"effects":[{"op":"invoke_sequence_technique","selection":{"mode":"relative_to_source","hand_id":"current","offset":1,"wrap":true},"p0":{"mode":"value_spec","value":{"kind":"divide_floor","value":{"kind":"event_field","capture":"event","field":"initial_power"},"divisor":2}},"when":{"value_at_most":{"value":{"kind":"event_field","capture":"event","field":"technique_power"},"maximum":{"kind":"power"}}}}]}]

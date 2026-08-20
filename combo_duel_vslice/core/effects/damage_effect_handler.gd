@@ -170,6 +170,11 @@ func _execute_multi_damage(effect: Dictionary, runtime):
                 var child_captures: Dictionary = runtime.captures.duplicate(true)
                 child_captures["segment_result"] = [hit]
                 child_captures["segment_index"] = [{"amount": segment_index}]
+                var parent_effect_token: String = runtime.effect_execution_token
+                if parent_effect_token == "":
+                    parent_effect_token = runtime.technique_execution_token \
+                        if runtime.technique_execution_token != "" \
+                        else runtime.action_token
                 var child = EffectContextScript.new().configure({
                     "ports": runtime.ports, "actor": runtime.actor,
                     "target": runtime.target, "hand_result": runtime.hand_result,
@@ -185,15 +190,27 @@ func _execute_multi_damage(effect: Dictionary, runtime):
                     "branch_hand_id": runtime.branch_hand_id,
                     "technique_pool": runtime.technique_pool,
                     "action_token": runtime.action_token,
+                    "root_action_token": runtime.root_action_token,
+                    "invocation_token": runtime.invocation_token,
+                    "caller_technique_id": runtime.caller_technique_id,
+                    "slot_instance_id": runtime.slot_instance_id,
+                    "technique_execution_token": runtime.technique_execution_token,
+                    "effect_execution_scope_token": "%s:life-loss:%d" % [
+                        parent_effect_token, segment_index],
+                    "technique_execution_state": runtime.technique_execution_state,
                     "source_kind": runtime.source_kind,
                     "source_id": runtime.source_id,
                     "source_name": runtime.source_name,
                     "source_instance_key": runtime.source_instance_key,
                     "trigger_mode": runtime.trigger_mode,
+                    "round_number": runtime.round_number,
                     "captures": child_captures,
                     "sequence_book": runtime.sequence_book,
                     "card_identity_policy": runtime.card_identity_policy,
                     "group_snapshot": runtime.group_snapshot,
+                    "effect_command_limit": runtime.effect_command_limit,
+                    "effect_chain_state": runtime.effect_chain_state,
+                    "passive_rule_runtime": runtime.passive_rule_runtime,
                 })
                 var followup: Dictionary = ports.execute_effect_chain(
                     effect.get("on_life_loss_effects", []), child)

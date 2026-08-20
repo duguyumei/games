@@ -63,6 +63,7 @@ const EVENT_FILTER_DEFINITIONS := {
     "event_actor_is_owner": {"validation": "bool", "value": "relation", "left": "actor", "right": "owner"},
     "event_actor_is_opponent": {"validation": "bool", "value": "relation", "left": "actor", "right": "opponent"},
     "event_target_is_owner": {"validation": "bool", "value": "relation", "left": "target", "right": "owner"},
+    "winner_is_owner": {"validation": "bool", "value": "relation", "left": "winner", "right": "owner"},
     "holder_is_owner": {"validation": "bool", "value": "relation", "left": "holder", "right": "owner"},
     "holder_is_actor": {"validation": "bool", "value": "record_relation", "left": "holder", "right": "actor"},
     "attacker_is_actor": {"validation": "bool", "value": "record_relation", "left": "attacker", "right": "actor"},
@@ -90,6 +91,8 @@ const EVENT_FILTER_DEFINITIONS := {
     "had_poison": {"validation": "bool", "value": "snapshot_bool", "key": "had_poison"},
     "challenge_met": {"validation": "bool", "value": "payload", "key": "met", "direct_key": "challenge_met"},
     "same_action_window": {"validation": "bool", "value": "same_action_window"},
+    "action_owner_acted": {"validation": "bool", "value": "action_side_acted", "side": "owner"},
+    "action_opponent_acted": {"validation": "bool", "value": "action_side_acted", "side": "opponent"},
     "block_damage_at_most_defense": {"validation": "bool", "value": "amount_at_most_defense"},
     "block_defender_hand_more_than_attacker": {"validation": "bool", "value": "defender_hand_more"},
     "next_round": {"validation": "bool", "value": "next_round"},
@@ -806,6 +809,13 @@ func _event_value(
         "same_action_window":
             return values.get("action_tokens", []).has(
                 str(record.get("action_token", "")))
+        "action_side_acted":
+            var side = owner if str(definition.get("side", "owner")) \
+                == "owner" else opponent
+            var owner_id := str(side.owner_id) if side != null else ""
+            return values.get(
+                "acting_owner_ids", values.get("metadata", {}).get(
+                    "acting_owner_ids", [])).has(owner_id)
         "amount_at_most_defense":
             return int(values.get("amount", 0)) <= int(values.get("defense", 0))
         "defender_hand_more":
