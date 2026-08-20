@@ -61,14 +61,30 @@ func _continue(continuation) -> Dictionary:
             else continuation.context.ports)
         if context_ports != null:
             context_ports.push_effect_context(continuation.context)
-        var effect_transaction := {}
-        if context_ports != null \
+        var effect_transaction: Dictionary = continuation.active_effect_transaction
+        continuation.active_effect_transaction = {}
+        var owns_effect_transaction := not effect_transaction.is_empty()
+        if effect_transaction.is_empty():
+            effect_transaction = _context_effect_transaction(
+                continuation.context)
+            owns_effect_transaction = false if not effect_transaction.is_empty() \
+                else true
+        if effect_transaction.is_empty() and context_ports != null \
                 and context_ports.has_method(
                     "begin_effect_mutation_transaction"):
             effect_transaction = \
                 context_ports.begin_effect_mutation_transaction()
-        var result: Dictionary = EffectResultScript.normalize(
-            registry.execute(effect, continuation.context))
+        _set_context_effect_transaction(
+            continuation.context, effect_transaction)
+        var pre_operation := _dispatch_pre_effect_operation(
+            effect, continuation.context)
+        var result: Dictionary
+        if not pre_operation.get("success", false):
+            result = EffectResultScript.failed(str(pre_operation.get(
+                "reason", "效果前置响应失败"))).snapshot()
+        else:
+            result = EffectResultScript.normalize(
+                registry.execute(effect, continuation.context))
         if result.get("success", false) \
                 and not result.get("pending_choice", false) \
                 and context_ports != null \
@@ -80,13 +96,19 @@ func _continue(continuation) -> Dictionary:
                     EffectResultScript.failed(str(batch.get(
                         "reason", "真气批次汇总提交失败"))))
         if not effect_transaction.is_empty():
-            if result.get("success", false) \
-                    or result.get("pending_choice", false):
+            if result.get("pending_choice", false):
+                # 不在等待选择时提交；continuation 恢复后继续使用同一
+                # EffectSpec 事务，避免功法调用成本与外层效果事务错层。
+                if owns_effect_transaction:
+                    continuation.active_effect_transaction = effect_transaction
+            elif owns_effect_transaction and result.get("success", false):
                 context_ports.commit_effect_mutation_transaction(
                     effect_transaction)
-            else:
+            elif owns_effect_transaction:
                 context_ports.rollback_effect_mutation_transaction(
                     effect_transaction)
+        if not result.get("pending_choice", false) or owns_effect_transaction:
+            _set_context_effect_transaction(continuation.context, {})
         if context_ports != null:
             context_ports.pop_effect_context(continuation.context)
         continuation.effect_results.append(_public_effect_result(result))
@@ -137,12 +159,16 @@ func _continue(continuation) -> Dictionary:
 func _set_effect_execution_token(context, effect_index: int) -> void:
     var base := ""
     if context is Dictionary:
-        base = str(context.get(
-            "technique_execution_token", context.get(
+        base = str(context.get("effect_execution_scope_token", ""))
+        if base == "":
+            base = str(context.get(
+                "technique_execution_token", context.get(
                 "action_token", context.get("source_instance_key", "effect"))))
         context["effect_execution_token"] = "%s:effect:%d" % [base, effect_index]
         return
-    base = str(context.technique_execution_token)
+    base = str(context.effect_execution_scope_token)
+    if base == "":
+        base = str(context.technique_execution_token)
     if base == "":
         base = str(context.action_token)
     if base == "":
@@ -171,6 +197,19 @@ func _public_effect_result(result: Dictionary) -> Dictionary:
     public_result.erase("_choice_request_object")
     return public_result
 
+func _context_effect_transaction(context) -> Dictionary:
+    if context is Dictionary:
+        var value = context.get("effect_transaction", {})
+        return value if value is Dictionary else {}
+    var value = context.effect_transaction
+    return value if value is Dictionary else {}
+
+func _set_context_effect_transaction(context, transaction: Dictionary) -> void:
+    if context is Dictionary:
+        context["effect_transaction"] = transaction
+    else:
+        context.effect_transaction = transaction
+
 func _consume_effect_command(context) -> Dictionary:
     if context is Dictionary:
         return {"success": true}
@@ -188,6 +227,99 @@ func _consume_effect_command(context) -> Dictionary:
         }
     state["command_count"] = count + 1
     return {"success": true}
+
+func _dispatch_pre_effect_operation(effect: Dictionary, context) -> Dictionary:
+    # 目前只有“功法抽牌前”拥有正式消费者。其他 op 不经过这个边界，
+    # 避免把每个效果都变成可任意拦截的脚本钩子。
+    if str(effect.get("op", "")) != "draw":
+        return {"success": true, "skipped": true}
+    var runtime = context.passive_rule_runtime \
+        if not context is Dictionary else context.get("passive_rule_runtime")
+    var source_kind := str(context.source_kind) \
+        if not context is Dictionary else str(context.get("source_kind", ""))
+    if runtime == null or source_kind != "technique":
+        return {"success": true, "skipped": true}
+    var ports = context.ports \
+        if not context is Dictionary else context.get("ports")
+    if ports == null or not ports.has_method("transaction_sides"):
+        return {"success": false, "reason": "效果前置响应缺少战斗参与方"}
+    var actor = context.actor if not context is Dictionary else context.get("actor")
+    var target = context.target if not context is Dictionary else context.get("target")
+    var action_token := str(context.action_token) \
+        if not context is Dictionary else str(context.get("action_token", ""))
+    var execution_token := str(context.technique_execution_token) \
+        if not context is Dictionary else str(context.get(
+            "technique_execution_token", action_token))
+    var payload := {
+        "operation": "draw",
+        "side": str(effect.get("side", "actor")),
+        "count": effect.get("count", 0),
+        "draw_reason": "technique_effect",
+        "source_kind": source_kind,
+        "source_id": str(context.source_id) \
+            if not context is Dictionary else str(context.get("source_id", "")),
+        "source_name": str(context.source_name) \
+            if not context is Dictionary else str(context.get("source_name", "")),
+        "source_instance_key": str(context.source_instance_key) \
+            if not context is Dictionary else str(context.get(
+                "source_instance_key", "")),
+        "trigger_mode": str(context.trigger_mode) \
+            if not context is Dictionary else str(context.get("trigger_mode", "")),
+        "technique_execution_token": execution_token,
+        "action_token": action_token,
+        "root_action_token": str(context.root_action_token) \
+            if not context is Dictionary else str(context.get(
+                "root_action_token", action_token)),
+        "effect_execution_token": str(context.effect_execution_token) \
+            if not context is Dictionary else str(context.get(
+                "effect_execution_token", "")),
+        "effect_context_values": {
+            "ports": ports,
+            "actor": actor,
+            "target": target,
+            "action_token": action_token,
+            "technique_execution_token": execution_token,
+            "root_action_token": str(context.root_action_token) \
+                if not context is Dictionary else str(context.get(
+                    "root_action_token", action_token)),
+            "trigger_mode": str(context.trigger_mode) \
+                if not context is Dictionary else str(context.get(
+                    "trigger_mode", "")),
+            "round_number": int(context.round_number) \
+                if not context is Dictionary else int(context.get(
+                    "round_number", 0)),
+            "effect_transaction": _context_effect_transaction(context),
+        },
+    }
+    var effect_token := str(context.effect_execution_token) \
+        if not context is Dictionary else str(context.get(
+            "effect_execution_token", "effect"))
+    var serial := str(execution_token) + ":pre:" + effect_token
+    var index := 0
+    for owner in ports.transaction_sides():
+        if owner == null:
+            continue
+        var owner_payload := payload.duplicate(true)
+        owner_payload["actor"] = actor
+        owner_payload["target"] = target
+        owner_payload["owner"] = owner
+        owner_payload["event_token"] = "%s:%s:%d" % [
+            serial, str(owner.owner_id), index]
+        var dispatched: Dictionary = runtime.dispatch_event(
+            "pre_effect_operation", {
+                "owner": owner,
+                "actor": actor,
+                "target": target,
+                "round_number": int(context.round_number) \
+                    if not context is Dictionary else int(context.get(
+                        "round_number", 0)),
+                "payload": owner_payload,
+            }, "mutation")
+        if not dispatched.get("success", false):
+            return {"success": false, "reason": "；".join(
+                dispatched.get("errors", []))}
+        index += 1
+    return {"success": true, "skipped": false}
 
 func summarize_intent(effects: Array, context, initial_damage_percent: int = 0) -> Dictionary:
     var intent := {

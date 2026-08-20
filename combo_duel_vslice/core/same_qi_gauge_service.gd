@@ -90,6 +90,17 @@ func _project_write(
             return _failure("未知同气写入操作：%s" % operation)
     var can_continue := bool(context.get(
         "legal_card_available", _has_legal_card(side)))
+    if not can_continue and _battle_flow != null \
+            and _battle_flow.has_method("can_establish_extra_action"):
+        can_continue = _battle_flow.can_establish_extra_action(side, {
+            "category": "same_qi",
+            "source": str(context.get("source", "同气槽")),
+            "source_category": str(context.get(
+                "source_category", "same_qi")),
+            "action_token": str(context.get("action_token", "")),
+            "from_same_qi": true,
+            "is_extra_action": true,
+        }, false)
     var trigger_count := int(floor(float(raw_after) / float(capacity))) \
         if raw_after > before and can_continue else 0
     var spent := trigger_count * capacity

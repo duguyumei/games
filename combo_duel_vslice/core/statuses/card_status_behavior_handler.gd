@@ -1,6 +1,9 @@
 class_name CardStatusBehaviorHandler
 extends RefCounted
 
+const EffectTargetQueryScript = preload(
+    "res://core/effects/effect_target_query.gd")
+
 var _handlers: Dictionary = {}
 
 func _init() -> void:
@@ -118,9 +121,22 @@ func _remove_self_and_discard_non_attribute(context) -> Dictionary:
                 context.holder, card).get("allowed", true)))
     if candidates.is_empty():
         return {"success": true, "applied": false}
-    var index: int = context.rng.randi_range(0, candidates.size() - 1) \
-        if context.rng != null else 0
-    var chosen = candidates[index]
+    var policy: Dictionary = context.card_status_behavior_service.query_card_trigger_target_policy(
+        context.holder, context.card, context.status_id, context.category,
+        "remove_self_and_discard_non_attribute", context.trigger,
+        candidates, context.action_token) \
+        if context.card_status_behavior_service != null else {
+            "success": true, "target_policy": "random",
+        }
+    if not policy.get("success", false):
+        return policy
+    # 纯查询只决定策略；实际状态行为在这里按统一 RNG 完成一次选择。
+    var ordered: Dictionary = EffectTargetQueryScript.order_candidates(
+        candidates, str(policy.get("target_policy", "random")), context.rng)
+    if not ordered.get("success", false):
+        return ordered
+    var ordered_cards: Array = ordered.get("cards", candidates)
+    var chosen = ordered_cards[0]
     var moved: Dictionary = context.effect_ports.move_card(
         context.holder, "hand", context.holder, "discard_pile",
         chosen, "explicit_discard", "top", _source_metadata(context))

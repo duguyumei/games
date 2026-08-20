@@ -10,7 +10,8 @@ const ConditionSpecRegistryScript = preload(
 
 const MUTATION_HOOKS := ["action_resolve"] \
     + BattleEventCatalogScript.TIMING_EVENTS \
-    + BattleEventCatalogScript.COMMITTED_EVENTS
+    + BattleEventCatalogScript.COMMITTED_EVENTS \
+    + BattleEventCatalogScript.LIFECYCLE_MUTATION_HOOKS
 const SUPPORTED_HOOKS := ["action_preview"] + MUTATION_HOOKS
 const RESERVED_EFFECT_FIELDS := [
     "source_kind", "source_id", "source_name", "source_instance_key",

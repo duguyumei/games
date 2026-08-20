@@ -294,6 +294,10 @@ func _init(
     technique_resolution_service = TechniqueResolutionServiceScript.new(
         repository, effect_executor, effect_ports,
         battle_passive_event_service)
+    technique_resolution_service.use_passive_runtime(passive_rule_runtime)
+    battle_flow.use_passive_battle_services(
+        passive_rule_runtime, effect_ports,
+        Callable(self, "_read_turn_number"))
     effect_ports.use_technique_resolution_service(technique_resolution_service)
     technique_invocation_service = TechniqueInvocationServiceScript.new(
         technique_resolution_service, effect_executor, effect_ports, rng)

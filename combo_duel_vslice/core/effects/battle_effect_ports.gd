@@ -647,6 +647,13 @@ func gain_battle_experience(
     return _action_resource_effect_service.gain_battle_experience(
         side, amount, source)
 
+func spend_battle_experience(
+        side,
+        amount: int,
+        source: Dictionary = {}) -> Dictionary:
+    return _action_resource_effect_service.spend_battle_experience(
+        side, amount, source)
+
 func generate_temporary_normal_card(
         side: BattleSide,
         source,

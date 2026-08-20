@@ -223,6 +223,8 @@ func _resolve_frozen(request: Dictionary) -> Dictionary:
     var moved: Dictionary = runtime.sequence_book.move_slot_to_current(
         str(request.get("hand_id", "")), slot_id)
     if not moved.get("success", false):
+        _resolution_service.rollback_pre_technique_cost(
+            preflight.get("pre_technique_cost_state", {}))
         return moved
     _stack.append(slot_id)
     _ports.emit_technique_sequence_changed(

@@ -38,9 +38,13 @@ var slot_instance_id: String = ""
 var technique_execution_token: String = ""
 ## 单个 EffectSpec 执行的稳定身份；同一效果产生的多张牌事实以此汇总。
 var effect_execution_token: String = ""
+## 被动标准效果使用其稳定 Invocation receipt 作为 EffectSpec token 前缀，
+## 避免与触发它的功法效果或同事件的其他来源碰撞。
+var effect_execution_scope_token: String = ""
 ## 同一次执行跨 phase/continuation 共用的窄状态，只保存待运行回响计划及稳定序号。
 var technique_execution_state: Dictionary = {}
 var trigger_mode: String = "manual"
+var round_number: int = 0
 var source_kind: String = ""
 var source_id: String = ""
 var source_name: String = ""
@@ -63,6 +67,12 @@ var consumed_marker_value: int = 0
 ## 仅被动标准效果设置；0 表示不限制普通功法链。
 var effect_command_limit: int = 0
 var effect_chain_state: Dictionary = {}
+## 当前 EffectSpec 若由外层效果事务包住，则嵌套生命周期响应复用该事务。
+## 仅由 EffectExecutor 在边界内设置，不作为内容数据字段。
+var effect_transaction: Dictionary = {}
+## 由 TechniqueResolutionService 注入；效果执行器仅用它派发窄的
+## pre_effect_operation 生命周期事件，不让各个 Handler 自行找全局运行时。
+var passive_rule_runtime = null
 
 func configure(values: Dictionary):
     actor = values.get("actor", values.get("owner"))
@@ -107,10 +117,13 @@ func configure(values: Dictionary):
     technique_execution_token = str(values.get(
         "technique_execution_token", ""))
     effect_execution_token = str(values.get("effect_execution_token", ""))
+    effect_execution_scope_token = str(values.get(
+        "effect_execution_scope_token", ""))
     technique_execution_state = values.get(
         "technique_execution_state", {})
     var source: Dictionary = EffectSourceProtocolScript.from_values(values)
     trigger_mode = str(source["trigger_mode"])
+    round_number = int(values.get("round_number", 0))
     source_kind = str(source["source_kind"])
     source_id = str(source["source_id"])
     source_name = str(source["source_name"])
@@ -136,6 +149,8 @@ func configure(values: Dictionary):
     consumed_marker_value = int(values.get("consumed_marker_value", 0))
     effect_command_limit = int(values.get("effect_command_limit", 0))
     effect_chain_state = values.get("effect_chain_state", {})
+    effect_transaction = values.get("effect_transaction", {})
+    passive_rule_runtime = values.get("passive_rule_runtime")
     # 旧测试字典仍可传 engine，但上下文只保存它已经装配好的窄效果端口。
     if ports == null and values.get("engine") != null:
         ports = values["engine"].action_resolver.effect_ports

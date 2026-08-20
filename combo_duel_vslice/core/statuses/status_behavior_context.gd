@@ -31,6 +31,8 @@ var trigger_sequence: int = 0
 var extra_trigger: bool = false
 var growth_source_metadata: Dictionary = {}
 var rng: RandomNumberGenerator = null
+var passive_rule_runtime = null
+var card_status_behavior_service = null
 
 func configure(values: Dictionary):
     trigger = str(values.get("trigger", ""))
@@ -60,4 +62,6 @@ func configure(values: Dictionary):
     growth_source_metadata = values.get(
         "growth_source_metadata", {}).duplicate(true)
     rng = values.get("rng")
+    passive_rule_runtime = values.get("passive_rule_runtime")
+    card_status_behavior_service = values.get("card_status_behavior_service")
     return self

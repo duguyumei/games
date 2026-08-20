@@ -132,19 +132,54 @@ func finalize_action_preview(
     if not reshape.get("success", false):
         return reshape
     var action_token := str(action_preview.get("reshape_action_token", ""))
+    var activation_freeze := _freeze_technique_activation(
+        actor, target, action_preview, turn_number, action_token)
+    if not activation_freeze.get("success", false):
+        return activation_freeze
+    var cost_result := {
+        "success": true, "skipped": true,
+        "power_fixed": 0, "power_percent": 0,
+        "receipts": [], "transaction": {},
+    }
+    if bool(activation_freeze.get(
+            "permission", {}).get("triggered", false)):
+        var definition = technique_repository.get_definition(
+            str(action_preview.get("technique_id", "")))
+        cost_result = technique_resolution_service.begin_pre_technique_cost(
+            actor, target, definition,
+            action_preview.get("hand", {}), action_preview.get("cards", []),
+            str(action_preview.get("hand", {}).get("id", "")),
+            action_token, "manual",
+            str(action_preview.get("slot_instance_id", "")),
+            int(action_preview.get("values", {}).get("initial_power", 0)))
+        if not cost_result.get("success", false):
+            return cost_result
+    action_preview["pre_technique_cost_power_fixed"] = int(
+        cost_result.get("power_fixed", 0))
+    action_preview["pre_technique_cost_power_percent"] = int(
+        cost_result.get("power_percent", 0))
     if action_preview_service != null:
         var recalculated: Dictionary = action_preview_service.recalculate_confirmed_power(
             actor, target, action_preview, action_token,
             int(reshape.get("card_multiplier_bonus", 0)))
         if not recalculated.get("success", false):
+            technique_resolution_service.rollback_pre_technique_cost(
+                cost_result)
             return {
                 "success": false,
                 "reason": recalculated.get("reason", "行动确认功法值查询失败"),
             }
-    var activation_freeze := _freeze_technique_activation(
-        actor, target, action_preview, turn_number, action_token)
-    if not activation_freeze.get("success", false):
-        return activation_freeze
+    var cost_commit: Dictionary = technique_resolution_service.commit_pre_technique_cost(
+        cost_result)
+    if not cost_commit.get("success", false):
+        technique_resolution_service.rollback_pre_technique_cost(cost_result)
+        return cost_commit
+    action_preview["pre_technique_cost"] = {
+        "skipped": bool(cost_result.get("skipped", false)),
+        "power_fixed": int(cost_result.get("power_fixed", 0)),
+        "power_percent": int(cost_result.get("power_percent", 0)),
+        "receipts": cost_result.get("receipts", []).duplicate(true),
+    }
     action_preview["action_finalized"] = true
     return {"success": true, "reused": false, "action_token": action_token}
 

@@ -152,6 +152,42 @@ func snapshot() -> Dictionary:
         "filters": filters.duplicate(true),
     }
 
+## 对已经冻结的候选集合应用统一的无副作用顺序策略。状态行为目标查询
+## 也复用此入口，避免各个状态处理器各自实现牌阶／手牌位置排序。
+static func order_candidates(cards: Array, order_id: String,
+        rng: RandomNumberGenerator = null) -> Dictionary:
+    var result := cards.duplicate()
+    match order_id:
+        "left":
+            result = result
+        "right":
+            result.reverse()
+        "random":
+            if rng == null:
+                return {"success": false, "reason": "随机目标查询缺少随机源", "cards": []}
+            for index in range(result.size() - 1, 0, -1):
+                var other := rng.randi_range(0, index)
+                var temporary = result[index]
+                result[index] = result[other]
+                result[other] = temporary
+        "lowest_rank", "highest_rank":
+            var positions: Dictionary = {}
+            for index in range(result.size()):
+                positions[str(result[index].id)] = index
+            result.sort_custom(func(left, right):
+                var left_rank := int(left.current_rank_order()) \
+                    if left.has_method("current_rank_order") else int(left.rank_order)
+                var right_rank := int(right.current_rank_order()) \
+                    if right.has_method("current_rank_order") else int(right.rank_order)
+                if left_rank != right_rank:
+                    return left_rank < right_rank \
+                        if order_id == "lowest_rank" else left_rank > right_rank
+                return int(positions.get(str(left.id), -1)) \
+                    < int(positions.get(str(right.id), -1)))
+        _:
+            return {"success": false, "reason": "未知目标顺序：%s" % order_id, "cards": []}
+    return {"success": true, "reason": "", "cards": result}
+
 func _zone_cards(context, side) -> Array:
     if context.ports != null:
         return context.ports.zone_cards(side, zone_id)

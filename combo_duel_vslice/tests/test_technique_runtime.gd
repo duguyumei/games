@@ -387,6 +387,8 @@ func _test_changed_momentum_is_used_then_preserved() -> void:
         [{"op": "write_momentum", "operation": "add", "amount": {
             "kind": "initial_power_fraction", "numerator": 1, "denominator": 2}}])
     engine.player.momentum_value = 9
+    engine.player.base_momentum_cap = 100
+    engine.player.momentum_cap_initialized = true
     engine.player.last_successful_technique_hand_id = "high_card"
     var ids := [engine.player.hand[0].id, engine.player.hand[1].id]
     var preview: Dictionary = engine.preview(ids)
@@ -404,6 +406,8 @@ func _test_retrigger_reuses_frozen_snapshot() -> void:
         "amount": {"kind": "initial_power"}},
         {"op": "draw", "count": 1}])
     engine.player.draw_pile = [_card("9", "mountain")]
+    engine.player.base_momentum_cap = 100
+    engine.player.momentum_cap_initialized = true
     var retrigger_draw_events: Array = []
     engine.battle_passive_event_service.event_committed.connect(
         func(kind: String, values: Dictionary, _receipt: Dictionary):
@@ -439,6 +443,8 @@ func _test_retrigger_reuses_frozen_snapshot() -> void:
 
 func _test_delayed_effect_reuses_frozen_snapshot() -> void:
     var engine = _engine_with_cards([])
+    engine.player.base_momentum_cap = 100
+    engine.player.momentum_cap_initialized = true
     var context = EffectContextScript.new().configure({
         "ports": engine.effect_ports,
         "actor": engine.player,

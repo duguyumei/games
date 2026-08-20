@@ -190,7 +190,8 @@ func state_fingerprint() -> Dictionary:
 			growth.hand_technique_progression.duplicate(true)),
 		"owned_technique_ids": growth.owned_technique_ids.duplicate(),
 		"targets": eligible_targets("run_deck"),
-		"rng_state": int(rng.state) if rng != null else -1,
+		"has_rng": rng != null,
+		"rng_state": int(rng.state) if rng != null else 0,
 	}
 
 func _target_summary(card) -> Dictionary:

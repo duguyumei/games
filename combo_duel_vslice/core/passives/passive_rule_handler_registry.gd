@@ -24,6 +24,12 @@ const CardLifecyclePolicyHandlerScript = preload(
     "res://core/passives/card_lifecycle_policy_passive_handler.gd")
 const ActionConfirmationPaymentHandlerScript = preload(
     "res://core/passives/action_confirmation_payment_passive_handler.gd")
+const PreTechniqueCostHandlerScript = preload(
+    "res://core/passives/pre_technique_cost_passive_handler.gd")
+const ExtraActionProjectionHandlerScript = preload(
+    "res://core/passives/extra_action_projection_passive_handler.gd")
+const CardTriggerTargetPolicyHandlerScript = preload(
+    "res://core/passives/card_trigger_target_policy_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 const BattleIntQueryCatalogScript = preload(
     "res://core/passives/battle_int_query_catalog.gd")
@@ -80,7 +86,8 @@ const NON_EVENT_HOOKS := [
     "card_lifecycle_removed_state_claim",
     "growth_trigger_execution_plan",
     "action_confirmation_payment",
-] + BATTLE_INT_QUERY_HOOKS + [
+    "card_trigger_target_policy_query",
+] + BattleEventCatalogScript.LIFECYCLE_HOOKS + BATTLE_INT_QUERY_HOOKS + [
     "hand_evaluation_options_query",
     "card_identity_query",
     "card_play_permission_query",
@@ -116,6 +123,9 @@ func _init(
         register_handler(BattleIntQueryModifierHandlerScript.new())
         register_handler(CardLifecyclePolicyHandlerScript.new())
         register_handler(ActionConfirmationPaymentHandlerScript.new())
+        register_handler(PreTechniqueCostHandlerScript.new())
+        register_handler(ExtraActionProjectionHandlerScript.new())
+        register_handler(CardTriggerTargetPolicyHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():

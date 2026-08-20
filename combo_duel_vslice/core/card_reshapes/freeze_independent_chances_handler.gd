@@ -23,8 +23,11 @@ func execute(behavior: Dictionary, context) -> Dictionary:
     var multiplier_bonus := int(multiplier["bonus"]) if multiplier_success else 0
     var experience_gained := 0
     if experience_success:
-        experience_gained = context.effect_ports.gain_battle_experience(
+        var change: Dictionary = context.effect_ports.gain_battle_experience(
             context.holder, int(experience["amount"]))
+        if not change.get("success", false):
+            return change
+        experience_gained = int(change.get("actual_delta", 0))
     return {
         "success": true,
         "applied": true,

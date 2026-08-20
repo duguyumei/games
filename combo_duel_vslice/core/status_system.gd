@@ -206,7 +206,8 @@ func capture_runtime_state() -> Dictionary:
         "history": history.duplicate(true),
         "delay_serial": runtime_record_serial(),
         "technique_draw_counts": _technique_draw_counts.duplicate(true),
-        "rng_state": int(_rng.state) if _rng != null else -1,
+        "has_rng": _rng != null,
+        "rng_state": int(_rng.state) if _rng != null else 0,
         "card_anomaly_runtime": card_anomaly_service.capture_runtime_state(),
     }
 
@@ -217,9 +218,9 @@ func restore_runtime_state(state: Dictionary) -> void:
     restore_runtime_record_serial(int(state.get("delay_serial", 0)))
     _technique_draw_counts = state.get(
         "technique_draw_counts", {}).duplicate(true)
-    var rng_state := int(state.get("rng_state", -1))
-    if _rng != null and rng_state >= 0:
-        _rng.state = rng_state
+    if _rng != null and bool(state.get(
+            "has_rng", state.has("rng_state"))):
+        _rng.state = int(state.get("rng_state", _rng.state))
     card_anomaly_service.restore_runtime_state(
         state.get("card_anomaly_runtime", {}))
 

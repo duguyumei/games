@@ -37,6 +37,21 @@ const RESPONSE_ONLY_EVENTS := [
     "cooperation_pre_commit", "cooperation_resolved",
     "defense_decay_resolved", "extra_action_started",
 ]
+
+## These are command/lifecycle hooks, not committed facts.  They share the
+## passive source resolver and handler registry with events, while their
+## owning domain service controls the exact transaction boundary.
+const LIFECYCLE_MUTATION_HOOKS := [
+    "technique_post_success_pre_advance",
+    "pre_effect_operation",
+    "extra_action_started",
+]
+const LIFECYCLE_QUERY_HOOKS := [
+    "pre_technique_cost",
+    "extra_action_preflight_projection",
+]
+const LIFECYCLE_HOOKS := \
+    LIFECYCLE_MUTATION_HOOKS + LIFECYCLE_QUERY_HOOKS
 const DYNAMIC_RESPONSE_EVENTS := \
     COMMITTED_EVENTS + TIMING_EVENTS + RESPONSE_ONLY_EVENTS
 
@@ -124,6 +139,9 @@ static func event_ids() -> Array[String]:
         if not result.has(str(event_id)):
             result.append(str(event_id))
     return result
+
+static func lifecycle_hook_ids() -> Array[String]:
+    return LIFECYCLE_HOOKS.duplicate()
 
 static func is_timing(event_id: String) -> bool:
     return event_id in TIMING_EVENTS

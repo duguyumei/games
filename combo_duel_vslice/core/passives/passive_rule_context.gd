@@ -121,6 +121,7 @@ func effect_context_for(current_source = null):
     values["sequence_book"] = values.get(
         "sequence_book", _property_value(owner, "technique_sequence_book"))
     values["effect_command_limit"] = 64
+    values["effect_transaction"] = payload.get("effect_transaction", {})
     if resolved_source != null:
         var source_name := str(resolved_source.definition.get("name", ""))
         values["source_kind"] = resolved_source.source_kind
@@ -142,7 +143,10 @@ func effect_context_for(current_source = null):
     return EffectContextScript.new().configure(values)
 
 func public_effect_values() -> Dictionary:
-    return {}
+    ## Plain lifecycle/query contexts keep their public fields in payload.
+    ## Timing and committed-event subclasses still provide stricter
+    ## projections by overriding this method.
+    return payload.duplicate(true)
 
 func _opponent_for(origin):
     if origin == null:

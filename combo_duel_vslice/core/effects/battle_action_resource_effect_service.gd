@@ -179,6 +179,105 @@ func gain_battle_experience(
     return receipt
 
 
+func spend_battle_experience(
+        side,
+        amount: int,
+        source: Dictionary = {}) -> Dictionary:
+    var requested := maxi(0, amount)
+    if requested == 0:
+        return {"success": true, "skipped": true, "actual_delta": 0,
+            "paid": 0}
+    var action_token := str(source.get("action_token", ""))
+    var operation_token := str(source.get("operation_token", ""))
+    if operation_token == "":
+        operation_token = "%s:%s:%s:spend:%d" % [
+            action_token,
+            str(source.get("source_instance_key", source.get(
+                "source_id", "rule"))),
+            str(source.get("effect_execution_token", "experience")),
+            requested,
+        ]
+    if side.experience_operation_receipts.has(operation_token):
+        var duplicate: Dictionary = side.experience_operation_receipts[
+            operation_token].duplicate(true)
+        duplicate["success"] = true
+        duplicate["duplicate"] = true
+        return duplicate
+    var before := maxi(0, int(side.experience))
+    if before < requested:
+        return {
+            "success": false,
+            "insufficient": true,
+            "requested": requested,
+            "paid": 0,
+            "actual_delta": 0,
+            "experience_before": before,
+            "experience_after": before,
+            "operation_token": operation_token,
+            "reason": "历练不足",
+        }
+    side.experience = before - requested
+    var event_token := ""
+    var committed: Dictionary = {"success": true, "skipped": true}
+    if _committed_event_service != null:
+        event_token = _committed_event_service.make_token(
+            "experience_change_resolved", side,
+            _committed_event_service.next_serial(), action_token)
+        committed = _committed_event_service.commit(
+            "experience_change_resolved", {
+                "event_token": event_token,
+                "actor": side,
+                "target": side,
+                "holder": side,
+                "holder_id": str(side.owner_id),
+                "scope": "battle",
+                "requested_delta": -requested,
+                "actual_delta": -requested,
+                "experience_before": before,
+                "experience_after": int(side.experience),
+                "direction": "spend",
+                "prevented_amount": 0,
+                "changed": true,
+                "operation": "spend_battle_experience",
+                "operation_token": operation_token,
+                "root_execution_token": str(source.get(
+                    "root_execution_token", action_token)),
+                "action_token": action_token,
+                "round_number": _round_number(),
+                "source_kind": str(source.get("source_kind", "battle_effect")),
+                "source_id": str(source.get("source_id", "")),
+                "source_name": str(source.get("source_name", "")),
+                "source_instance_key": str(source.get(
+                    "source_instance_key", "")),
+                "trigger_mode": str(source.get("trigger_mode", "direct")),
+                "payload": {
+                    "experience_response_ancestry": source.get(
+                        "experience_response_ancestry", []).duplicate(),
+                },
+            })
+        if not committed.get("success", false):
+            side.experience = before
+            return {"success": false, "reason": str(committed.get(
+                "reason", "战斗历练花费事实提交失败")), "committed": committed}
+    var receipt := {
+        "success": true,
+        "duplicate": false,
+        "scope": "battle",
+        "requested": requested,
+        "paid": requested,
+        "requested_delta": -requested,
+        "actual_delta": -requested,
+        "experience_before": before,
+        "experience_after": int(side.experience),
+        "prevented_amount": 0,
+        "operation_token": operation_token,
+        "event_token": event_token,
+        "committed": committed,
+    }
+    side.experience_operation_receipts[operation_token] = receipt.duplicate(true)
+    return receipt
+
+
 func can_grant_battle_consumable(side) -> bool:
     var result: Dictionary = side.effective_consumable_capacity_result()
     return result.get("success", false) \

@@ -568,7 +568,8 @@ Parse Error；修正后 `/tmp/taiwu-status-delay-project-load-02.log` 覆盖 678
 的状态协议。快照字段继续使用 `delayed_records`、`response_records`、`history`、`delay_serial`、
 `technique_draw_counts` 与 `rng_state`，前三项和统计字典均为深副本。恢复时延迟和响应数组原地 assign，
 历史通过 `replace_history` 原地恢复并重建历史 serial，共享记录序号通过
-`restore_runtime_record_serial` 恢复；只有已注入 RNG 且保存值非负时才恢复 RNG。整个恢复过程不执行
+`restore_runtime_record_serial` 恢复；通过显式`has_rng`区分未注入随机源，合法的有符号64位
+`rng_state`（包括负值）均会恢复。整个恢复过程不执行
 记录、不发布事件、不写日志，也不替换三个公开 Array 实例。
 
 `BattleSide.capture_passive_query_state()` 与 `replace_passive_query_state()` 现在只调用上述两个正式接口，
@@ -603,7 +604,8 @@ BattleEffectPorts 五项专项分别为 59／56／46／42／50 条，共 253 条
 `/tmp/taiwu-status-final-quick-summary.stdout` 与 `/tmp/taiwu-status-final-full-summary.stdout`。
 
 状态契约首次专项 `/tmp/taiwu-status-final-battle-contracts-08.log` 只暴露新增测试夹具使用了负 RNG state，
-而正式协议按既定要求仅恢复非负值；生产实现未调整，夹具固定为正 state 后重跑通过。所有最终验收日志
+后续真实随机回滚验证确认Godot的合法RNG state可能为负，因此协议已改用显式`has_rng`，不再以数值
+符号判断是否存在随机源；正负state均按原值恢复。所有最终验收日志
 与 stdout 排除已知 macOS CA 警告后，`Can't load script`、`File not found`、`Parse Error`、
 `SCRIPT ERROR`、ObjectDB／RID 泄漏、orphan `StringName`／`NodePath`、资源泄漏和退出阶段错误均无匹配。
 本批没有修改玩法数值、功法／内功／物品／异状内容、时点优先级、记录结构或 RNG 推进规则。
@@ -1205,3 +1207,19 @@ RNG/token，`meditation_count`只表示付费次数并决定下一次基础费�
 本批只使用测试目录注入的合成来源和物品，不修改正式JSON或生产池。限定回归为项目加载、统一专项、
 RunMutation／修习／消耗品／节点／地图／存档／战果同步相关专项，不运行quick/full。能力矩阵为
 已有／合并38、B 7、C1 2、C2 0、D 1；正式内容仍为内功13门、物品7件和8门暂缓功法。
+
+## 最后两个 B 类薄适配（2026-08-20）
+
+`card_trigger_target_policy_query` 只在状态行为冻结候选后改写顺序，继续由原状态行为调用
+`BattleEffectPorts` 完成牌区移动；`pre_effect_operation_event` 只在功法抽牌操作前开放，禁止把所有
+效果泛化为可任意拦截的脚本钩子。嵌套前置响应通过 `BattleEffectContext.effect_transaction` 复用外层
+`EffectSpec` 事务，因此前置效果部分成功、后续失败时不会提前提交牌区、committed publication、receipt
+或 RNG。被动标准效果以稳定Invocation receipt隔离EffectSpec令牌。失败回滚专项位于
+`tests/test_technique_lifecycle_adapters.gd`。
+
+本批不录入正式内容，也不建立新 Service；能力矩阵当前为已有／合并45、B 0、C1 2、C2 0、D 1。两个
+B 类薄适配已全部完成，下一阶段只剩 C1 内容接入和最终统一回归。
+
+本批专项验证为生命周期适配85条、功法运行442条、选择续跑76条断言；quick为7/7，项目加载统计741项。
+所有Godot调用使用独立`/tmp/taiwu-last-b-*.log`，日志扫描未发现脚本／资源加载、解析、SCRIPT ERROR、
+ObjectDB／RID、orphan或资源泄漏问题，仅有已知macOS CA警告。

@@ -67,6 +67,49 @@ func resolve_played_card_anomalies(
             resolutions.append(resolution)
     return resolutions
 
+func query_card_trigger_target_policy(
+        holder, card, status_id: String, category: String,
+        behavior_id: String, trigger: String, candidates: Array,
+        action_token: String = "") -> Dictionary:
+    var runtime = holder.passive_rule_runtime if holder != null else null
+    if runtime == null:
+        return {"success": true, "target_policy": "random"}
+    var target = _effect_ports().opponent_of(holder) \
+        if _effect_ports() != null else null
+    var payload := {
+        "trigger": trigger,
+        "status_id": status_id,
+        "category": category,
+        "behavior": behavior_id,
+        "candidate_card_ids": candidates.map(func(value): return str(value.id)),
+        "candidate_cards": candidates.duplicate(),
+        "action_token": action_token,
+        "effect_context_values": {
+            "ports": _effect_ports(),
+            "actor": holder,
+            "target": target,
+            "action_token": action_token,
+        },
+    }
+    var dispatched: Dictionary = runtime.dispatch_event(
+        "card_trigger_target_policy_query", {
+            "owner": holder,
+            "actor": holder,
+            "target": target,
+            "round_number": 0,
+            "payload": payload,
+        }, "read")
+    if not dispatched.get("success", false):
+        return {"success": false, "reason": "；".join(
+            dispatched.get("errors", [])), "cards": []}
+    var policy := "random"
+    for result_value in dispatched.get("results", []):
+        var result: Dictionary = result_value.get("result", {}) \
+            if result_value is Dictionary else {}
+        if result.has("target_policy"):
+            policy = str(result.get("target_policy", policy))
+    return {"success": true, "target_policy": policy}
+
 func on_turn_end(holder) -> Dictionary:
     var resolutions: Array = []
     for card in holder.hand.duplicate():
@@ -188,6 +231,9 @@ func _execute_card_behavior_entries(
             "action_token": str(source_values.get("action_token", "")),
             "replay_depth": replay_depth,
             "trigger_sequence": trigger_sequence,
+            "passive_rule_runtime": (
+                holder.passive_rule_runtime if holder != null else null),
+            "card_status_behavior_service": self,
             "rng": _rng,
         }, true)
         var context = StatusBehaviorContextScript.new().configure(

@@ -3936,12 +3936,12 @@ func _test_battle_fine_grained_events_and_int_queries() -> void:
         "F5D2 复用额外 Invocation 规划 Handler")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS.size(),
-        34,
-        "Registry 明确登记三十四个细粒度已提交事件")
+        37,
+        "Registry 明确登记三十七个细粒度已提交事件")
     _assert_equal(
         PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS.size(),
-        17,
-        "Registry 从唯一目录登记十七个战斗整数查询")
+        19,
+        "Registry 从唯一目录登记十九个战斗整数查询")
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_COMMITTED_EVENT_HOOKS:
         _assert_true(registry.has_hook(hook), "登记细粒度事件 Hook：%s" % hook)
     for hook in PassiveRuleHandlerRegistryScript.BATTLE_INT_QUERY_HOOKS:
@@ -5268,7 +5268,7 @@ func _test_content_catalog_and_validator() -> void:
     _assert_equal(catalog.all_of("origin").size(), 3, "内容目录建立三种正式本源索引")
     _assert_equal(catalog.all_of("enhancement").size(), 8, "内容目录建立八种正式强化索引")
     _assert_equal(catalog.all_of("imprint").size(), 4, "内容目录建立四种正式印记索引")
-    _assert_equal(catalog.all_of("anomaly").size(), 16, "内容目录建立完整正式战斗异状索引")
+    _assert_equal(catalog.all_of("anomaly").size(), 17, "内容目录建立完整正式战斗异状索引")
     _assert_equal(catalog.all_of("actor_status").size(), 0, "内容目录不公开旧命名角色层数类型")
     _assert_equal(catalog.get_by_id("actor_status", "probe"), {}, "内容目录不为角色层数建立索引")
     _assert_equal(catalog.get_by_id("anomaly", "poison")["category"], "state", "毒归入唯一状态槽")
@@ -5935,6 +5935,7 @@ func _test_run_effect_platform_contract() -> void:
             "copy_run_card_state",
             "gain_experience",
             "grant_consumables",
+            "grant_free_meditation_charge",
             "grant_inner_skills",
             "grant_items",
             "grant_techniques",
@@ -5944,7 +5945,7 @@ func _test_run_effect_platform_contract() -> void:
             "transform_run_card",
             "write_source_marker",
         ],
-        "本局效果默认注册表按稳定顺序公开十五个正式操作")
+        "本局效果默认注册表按稳定顺序公开十六个正式操作")
     _assert_true(registry.has_handler("gain_experience"), "历练增加操作已注册")
     _assert_true(registry.has_handler("heal_life"), "生命回复操作已注册")
     _assert_true(registry.has_handler("write_source_marker"),
@@ -9519,6 +9520,7 @@ func _test_pool_structure_and_turn_draw_rules() -> void:
     engine.player.discard_pile = engine.player.hand.slice(0, 3)
     engine.player.hand.clear()
     engine.player.draw_pile.clear()
+    engine.round_ended = true
     var empty_draw := engine.start_player_turn()
     _assert_equal(empty_draw.size(), 0, "牌库为空不从弃牌堆自动洗回")
     _assert_equal(engine.player.discard_pile.size(), 3, "弃牌堆保持不变")
@@ -9850,7 +9852,7 @@ func _test_same_qi_rule_and_action_wiring() -> void:
     var technique_result: Dictionary = technique_engine.confirm_play(
         [technique_card.id])
     _assert_true(technique_result.get("success", false), "功法额外行动正常结算")
-    _assert_equal(technique_result["actions_available"], 1, "功法额外行动不受同气连动上限限制")
+    _assert_equal(technique_result["actions_available"], 0, "空手且没有预期抽牌时不建立功法额外行动")
 
     var capacity_handler := BattleFineGrainedProbeHandler.new()
     var capacity_registry = PassiveRuleHandlerRegistryScript.new()
@@ -10239,9 +10241,9 @@ func _test_consumable_shared_slots_and_generation_limit() -> void:
     GrowthInventoryScript.new(
         engine.content_catalog, false).apply_to_battle_side(engine.player)
     engine.player.configure_consumables([
-        "high_card_insight", "zengyuan_pill", "pair_insight", "zengyuan_pill"])
-    _assert_equal(engine.player.consumable_ids.size(), 3, "三类消耗品共用三格容量")
-    _assert_equal(engine.player.consumable_ids, ["high_card_insight", "zengyuan_pill", "pair_insight"], "共享槽保留三种代表消耗品")
+        "high_card_insight", "zengyuan_pill"])
+    _assert_equal(engine.player.consumable_ids.size(), 2, "三类消耗品共用两格基础容量")
+    _assert_equal(engine.player.consumable_ids, ["high_card_insight", "zengyuan_pill"], "共享槽只保留前两种代表消耗品")
     _assert_equal(engine.grant_consumable(engine.player, "straight_insight", "测试"), false, "没有空位时不生成消耗品")
     var used := engine.use_player_consumable(0, [])
     _assert_true(used["success"], "无目标心得可以直接使用")
@@ -10250,9 +10252,9 @@ func _test_consumable_shared_slots_and_generation_limit() -> void:
         engine.player.last_recallable_consumable_id,
         "high_card_insight",
         "战斗心得成功记录最近可溯忆消耗品")
-    _assert_equal(engine.player.consumable_ids.size(), 2, "使用后立即释放共享槽位")
+    _assert_equal(engine.player.consumable_ids.size(), 1, "使用后立即释放共享槽位")
     _assert_true(engine.grant_consumable(engine.player, "straight_insight", "测试"), "释放槽位后可以生成消耗品")
-    _assert_equal(engine.player.consumable_ids.size(), 3, "重新生成后占满三格")
+    _assert_equal(engine.player.consumable_ids.size(), 2, "重新生成后占满两格")
 
 func _test_unified_run_and_battle_consumable_order_and_records() -> void:
     var definition := {
@@ -12122,6 +12124,10 @@ func _test_battle_run_progress_working_state_protocol() -> void:
         "base_max_life": 131,
         "source_marker_state": marker_state,
         "experience": 17,
+        "free_meditation_charge": 0,
+        "experience_operation_receipts": {},
+        "consumable_capacity": 2,
+        "consumable_overflow_count": 0,
         "hand_technique_progression": (
             initial_growth.hand_technique_progression.duplicate(true)),
         "consumable_use_sequence": 8,
@@ -13817,7 +13823,7 @@ func _test_run_build_query_dto_and_empty_formal_pools() -> void:
     var five: Dictionary = first["hand_loadouts"][7]
     four["sequence"].append({"id": "local_probe"})
     _assert_equal(five["sequence"].size(), 1, "四条与五条 DTO 序列不是同一数组")
-    _assert_equal(first.get("consumables", []).size(), 3, "共享消耗品 DTO 始终保留三个槽位")
+    _assert_equal(first.get("consumables", []).size(), 2, "共享消耗品 DTO 始终保留两个基础槽位")
     _assert_equal(first["consumables"][0].get("slot_index"), 0, "非空消耗品保留 slot_index 0")
     _assert_equal(first["consumables"][1].get("status"), "empty", "未占用槽位明确返回空槽")
     _assert_equal(first.get("items", [])[0].get("count"), 2, "相同物品按独立持有区汇总数量")

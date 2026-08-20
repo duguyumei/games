@@ -12,8 +12,11 @@ func validate_behavior(behavior: Dictionary, validator, scope: String) -> void:
         validator.report_error(scope + ".amount", "必须是非负整数")
 
 func execute(behavior: Dictionary, context) -> Dictionary:
-    var gained: int = context.effect_ports.gain_battle_experience(
+    var change: Dictionary = context.effect_ports.gain_battle_experience(
         context.holder, int(behavior["amount"]))
+    if not change.get("success", false):
+        return change
+    var gained := int(change.get("actual_delta", 0))
     return {
         "success": true,
         "experience_gained": gained,

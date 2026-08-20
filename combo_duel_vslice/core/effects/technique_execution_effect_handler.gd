@@ -104,7 +104,7 @@ func _grant_pending_echo(effect: Dictionary, runtime, count: int):
         return EffectResultScript.succeeded("待用回响次数为0")
     var target_slot_id := str(effect.get("target_slot_instance_id", ""))
     var target_mode := str(effect.get("target_mode", TARGET_CURRENT))
-    var rng_state := int(_rng.state) if _rng != null else -1
+    var rng_state := int(_rng.state) if _rng != null else 0
     if target_slot_id == "":
         match target_mode:
             TARGET_CURRENT:
@@ -121,14 +121,14 @@ func _grant_pending_echo(effect: Dictionary, runtime, count: int):
                     _rng.randi_range(0, candidates.size() - 1)]
                 target_slot_id = str(selected.get("slot_instance_id", ""))
     if target_slot_id == "":
-        if _rng != null and rng_state >= 0:
+        if _rng != null:
             _rng.state = rng_state
         return EffectResultScript.failed("待用回响缺少实际功法槽位")
     var result: Dictionary = runtime.ports.grant_pending_slot_echo(
         runtime, target_slot_id, count,
         str(effect.get("grant_event_token", runtime.event_token)))
     if not result.get("success", false):
-        if _rng != null and rng_state >= 0:
+        if _rng != null:
             _rng.state = rng_state
         return EffectResultScript.failed(str(result.get(
             "reason", "待用回响写入失败")))

@@ -57,7 +57,8 @@ static func capture(
         "trigger_state": trigger_queue.capture_runtime_state() \
             if trigger_queue != null and trigger_queue.has_method(
                 "capture_runtime_state") else {},
-        "rng_state": int(rng.state) if rng != null else -1,
+        "has_rng": rng != null,
+        "rng_state": int(rng.state) if rng != null else 0,
         "participant_states": participant_states,
     }
 
@@ -105,7 +106,7 @@ static func restore(
         if participant != null and participant.has_method(
                 "restore_transaction_state"):
             participant.restore_transaction_state(entry.get("state", {}))
-    var rng_state := int(snapshot.get("rng_state", -1))
-    if rng != null and rng_state >= 0:
-        rng.state = rng_state
+    if rng != null and bool(snapshot.get(
+            "has_rng", snapshot.has("rng_state"))):
+        rng.state = int(snapshot.get("rng_state", rng.state))
     return true

@@ -94,6 +94,26 @@ func next_action_source() -> Dictionary:
         return {}
     return action_sources[0].duplicate(true)
 
+func mark_next_action_started(values: Dictionary = {}) -> Dictionary:
+    if action_sources.is_empty():
+        return {"success": false, "reason": "没有待开始的行动机会"}
+    var source: Dictionary = action_sources[0].duplicate(true)
+    if not bool(source.get("is_extra_action", false)):
+        return {"success": false, "reason": "队首不是额外行动"}
+    if bool(source.get("preflight_started", false)):
+        return {"success": true, "reused": true, "source": source}
+    source["preflight_started"] = true
+    source["preflight_result"] = values.duplicate(true)
+    action_sources[0] = source
+    return {"success": true, "reused": false, "source": source.duplicate(true)}
+
+func discard_next_action(reason: String) -> Dictionary:
+    if action_sources.is_empty() or action_count <= 0:
+        return {"success": false, "reason": "没有可放弃的行动机会"}
+    var source: Dictionary = action_sources.pop_front()
+    action_count -= 1
+    return {"success": true, "source": source, "reason": reason}
+
 func forfeit_remaining(reason: String) -> void:
     action_count = 0
     action_sources.clear()

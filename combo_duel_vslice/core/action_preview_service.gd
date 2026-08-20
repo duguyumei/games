@@ -323,6 +323,11 @@ func recalculate_confirmed_power(
     modifiers["power_fixed"] = int(modifiers.get("power_fixed", 0)) + pending_total
     modifiers["power_fixed"] = int(modifiers.get("power_fixed", 0)) + int(
         preview.get("action_confirmation_power_fixed", 0))
+    modifiers["power_fixed"] = int(modifiers.get("power_fixed", 0)) + int(
+        preview.get("pre_technique_cost_power_fixed", 0))
+    modifiers["power_amp_percent"] = int(modifiers.get(
+        "power_amp_percent", 0)) + int(preview.get(
+            "pre_technique_cost_power_percent", 0))
     preview["pending_power_fixed_tokens"] = pending_tokens
     preview["pending_power_fixed_amount"] = pending_total
     var result := _resolve_power_values(

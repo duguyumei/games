@@ -15,6 +15,7 @@ var _repository
 var _executor
 var _ports
 var _event_service
+var _passive_runtime
 var _active_executions: Dictionary = {}
 var _completed_summaries: Dictionary = {}
 
@@ -30,6 +31,9 @@ func _init(repository, executor, ports, event_service) -> void:
 func reset() -> void:
     _active_executions.clear()
     _completed_summaries.clear()
+
+func use_passive_runtime(runtime) -> void:
+    _passive_runtime = runtime
 
 func discard_all_pending_executions() -> void:
     _active_executions.clear()
@@ -219,6 +223,7 @@ func begin_manual_execution(record) -> Dictionary:
         "initial_power": int(preview.get("values", {}).get("initial_power", 0)),
         "technique_power": int(preview.get("values", {}).get("technique_value", 0)),
         "trigger_mode": "manual",
+        "round_number": int(record["turn_number"]),
         "is_echo": false,
         "manual_effect_suppressed": str(technique.get(
             "manual_effect_mode", "normal")) == "advance_only",
@@ -226,7 +231,6 @@ func begin_manual_execution(record) -> Dictionary:
         "same_qi_gain_enabled": true,
         "momentum_enabled": true,
         "sequence_before": sequence_before.duplicate(true),
-        "round_number": int(record["turn_number"]),
         "technique_execution_state": record.technique_execution_state,
         "group_snapshot": preview.get("group_snapshot", {}),
         "played_cards": preview.get("cards", []).duplicate(),
@@ -262,6 +266,7 @@ func finish_manual_execution(record) -> Dictionary:
         "captures": record["captures_by_source"].get("technique", {}),
         "sequence_book": record["book"],
         "card_identity_policy": record["actor"].card_identity_policy,
+        "passive_rule_runtime": _passive_runtime,
     })
     return finish_execution(context)
 
@@ -271,6 +276,7 @@ func resolve_direct_execution(
         effects: Array,
         options: Dictionary = {}) -> Dictionary:
     var runtime = EffectContextScript.coerce(context)
+    runtime.passive_rule_runtime = _passive_runtime
     _ensure_execution_state(runtime, effects)
     var begun := _begin_execution(_execution_info_from_context(runtime, options))
     if not begun.get("success", false):
@@ -320,6 +326,9 @@ func finish_execution(context) -> Dictionary:
         "active_executions": _active_executions.duplicate(true),
         "completed_summaries": _completed_summaries.duplicate(true),
         "execution_state": runtime.technique_execution_state.duplicate(true),
+        "passive_effect_state": _passive_runtime \
+            .capture_battle_effect_command_state() \
+            if _passive_runtime != null else {},
     }
     var transaction := BattleRuntimeMutationTransactionScript.begin(
         _ports.transaction_sides() if _ports.has_method(
@@ -364,6 +373,20 @@ func finish_execution(context) -> Dictionary:
             "summary": summary_result.get("summary", {}),
             "echo_results": echoes.get("results", []),
         }
+    var post_success := _dispatch_post_success_pre_advance(
+        runtime, summary_result.get("summary", {}),
+        echoes.get("results", []))
+    if not post_success.get("success", false):
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _restore_finish_local_state(runtime, local_snapshot)
+        return {
+            "success": false,
+            "reason": str(post_success.get(
+                "reason", "功法成功后推进前阶段失败")),
+            "summary": summary_result.get("summary", {}),
+            "echo_results": echoes.get("results", []),
+            "post_success": post_success,
+        }
     _active_executions.erase(token)
     BattleRuntimeMutationTransactionScript.commit(transaction)
     return {
@@ -372,6 +395,7 @@ func finish_execution(context) -> Dictionary:
         "summary": summary_result.get("summary", {}),
         "receipt": summary_result.get("receipt", {}),
         "echo_results": echoes.get("results", []),
+        "post_success": post_success,
         "extra_sequence_advance_count": _extra_advance_count(state),
         "extra_sequence_advance_sources": state.get(
             "extra_sequence_advance_requests", []).duplicate(true),
@@ -428,6 +452,7 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
         "caller_technique_id": runtime.technique_id,
         "slot_instance_id": str(slot.get("slot_instance_id", "")),
         "trigger_mode": str(effect.get("_trigger_mode", "invoked")),
+        "round_number": int(runtime.round_number),
         "source_kind": "technique",
         "source_id": definition.id,
         "source_name": definition.display_name,
@@ -435,6 +460,7 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
         "captures": request.get("captures", {}).duplicate(true),
         "sequence_book": runtime.sequence_book,
         "card_identity_policy": runtime.actor.card_identity_policy,
+        "passive_rule_runtime": _passive_runtime,
         "consumed_marker_value": int(request.get(
             "consumed_marker_value", runtime.consumed_marker_value)),
     })
@@ -451,6 +477,8 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
         "request_id": "",
         "pending_power_fixed_tokens": power_result.get(
             "pending_power_fixed_tokens", []).duplicate(),
+        "pre_technique_cost": prepared.get(
+            "pre_technique_cost_state", {}).duplicate(true),
     }
     var begun := _begin_execution(_execution_info_from_context(
         invoked_context, {
@@ -461,6 +489,7 @@ func resolve_invocation(request: Dictionary, context) -> Dictionary:
             "sequence_before": request.get("sequence_before", []).duplicate(true),
         }))
     if not begun.get("success", false):
+        rollback_pre_technique_cost(state.get("pre_technique_cost", {}))
         return begun
     _commit_event("action_confirmed", state, {
         "sequence_before": request.get("sequence_before", []),
@@ -496,21 +525,198 @@ func prepare_invocation(request: Dictionary, context) -> Dictionary:
             "detail": activation.get("reason", "调用启动被拒绝"),
             "activation": activation,
         }
+    var cost_result := begin_pre_technique_cost(
+        runtime.actor, runtime.target, definition,
+        invocation_hand_result, runtime.played_cards,
+        str(request.get("hand_id", "")),
+        str(request.get("invocation_token", "")),
+        str(effect.get("_trigger_mode", "invoked")),
+        str(slot.get("slot_instance_id", "")),
+        int(request.get("p0", 0)))
+    if not cost_result.get("success", false):
+        return cost_result
     var power_result := resolve_power(
         runtime.actor, runtime.target, invocation_hand_result,
         runtime.played_cards, int(request.get("p0", 0)),
         str(request.get("invocation_token", "")),
         str(effect.get("_trigger_mode", "invoked")),
-        bool(effect.get("use_momentum", true)))
+        bool(effect.get("use_momentum", true)),
+        int(runtime.actor.direct_power_fixed) + int(cost_result.get(
+            "power_fixed", 0)),
+        int(runtime.actor.direct_power_percent) + int(cost_result.get(
+            "power_percent", 0)))
     if not power_result.get("success", false):
+        rollback_pre_technique_cost(cost_result)
         return power_result
+    # Invocation costs stay open until the complete invocation (including
+    # choices, echoes and sequence advancement) succeeds.  The caller owns
+    # the returned transaction and commits/rolls it back at that boundary.
     return {
         "success": true,
         "triggered": true,
         "definition": definition,
         "power_result": power_result,
         "activation": activation,
+        "pre_technique_cost_state": cost_result,
+        "pre_technique_cost": _public_cost_result(cost_result),
     }
+
+func begin_pre_technique_cost(
+        actor,
+        target,
+        definition,
+        hand_result: Dictionary,
+        cards: Array,
+        hand_id: String,
+        action_token: String,
+        trigger_mode: String,
+        slot_instance_id: String,
+        initial_power: int = 0) -> Dictionary:
+    if definition == null or trigger_mode == "echo" \
+            or _passive_runtime == null:
+        return {
+            "success": true, "skipped": true,
+            "power_fixed": 0, "power_percent": 0,
+            "receipts": [], "transaction": {},
+        }
+    var context_values := {
+        "owner": actor,
+        "actor": actor,
+        "target": target,
+        "payload": {
+            "action_token": action_token,
+            "root_action_token": action_token,
+            "trigger_mode": trigger_mode,
+            "hand_id": hand_id,
+            "technique_id": str(definition.id),
+            "technique_pool": str(definition.pool),
+            "slot_instance_id": slot_instance_id,
+            "initial_power": initial_power,
+            "effect_context_values": {
+                "ports": _ports,
+                "actor": actor,
+                "target": target,
+                "hand_result": hand_result,
+                "played_cards": cards,
+                "initial_power": initial_power,
+                "technique_id": str(definition.id),
+                "technique_name": str(definition.display_name),
+                "technique_pool": str(definition.pool),
+                "slot_instance_id": slot_instance_id,
+                "action_token": action_token,
+                "root_action_token": action_token,
+                "trigger_mode": trigger_mode,
+                "sequence_book": actor.technique_sequence_book,
+                "card_identity_policy": actor.card_identity_policy,
+            },
+        },
+    }
+    var plan = _passive_runtime.build_execution_plan(
+        "pre_technique_cost", context_values)
+    if not plan.is_valid():
+        return {"success": false, "reason": "；".join(plan.errors)}
+    if plan.invocations.is_empty():
+        return {
+            "success": true, "skipped": true,
+            "power_fixed": 0, "power_percent": 0,
+            "receipts": [], "transaction": {},
+        }
+    var transaction: Dictionary = _ports.begin_effect_mutation_transaction()
+    var passive_state: Dictionary = \
+        _passive_runtime.capture_battle_effect_command_state()
+    var result := {
+        "success": true,
+        "skipped": false,
+        "power_fixed": 0,
+        "power_percent": 0,
+        "receipts": [],
+        "transaction": transaction,
+        "passive_effect_state": passive_state,
+        "committed": false,
+    }
+    for invocation_index in range(plan.invocations.size()):
+        var invocation = plan.invocations[invocation_index]
+        var invocation_context = invocation.context.for_invocation(invocation)
+        var executed: Dictionary = _passive_runtime.execute_invocation(
+            invocation, invocation_context, "read")
+        if not executed.get("success", false):
+            rollback_pre_technique_cost(result)
+            return {"success": false, "reason": str(executed.get(
+                "reason", "功法启动成本声明失败")), "rolled_back": true}
+        var plans = executed.get("result", {}).get("cost_plans", [])
+        if not plans is Array:
+            rollback_pre_technique_cost(result)
+            return {"success": false, "reason": "功法启动成本必须返回 cost_plans 数组",
+                "rolled_back": true}
+        for plan_index in range(plans.size()):
+            var cost_plan: Dictionary = plans[plan_index]
+            var cost := maxi(0, int(cost_plan.get("amount", 0)))
+            var insufficient := int(actor.experience) < cost
+            if insufficient and str(cost_plan.get(
+                    "insufficient_policy", "skip")) == "skip":
+                result["receipts"].append({
+                    "success": true, "skipped": true,
+                    "reason": "历练不足", "requested": cost,
+                    "source_instance_key": str(
+                        invocation.source.source_instance_key),
+                })
+                continue
+            if insufficient:
+                rollback_pre_technique_cost(result)
+                return {"success": false, "reason": "功法启动成本不足",
+                    "rolled_back": true}
+            var operation_token := "%s:pre-technique-cost:%s:%d:%d" % [
+                action_token,
+                str(invocation.source.source_instance_key).sha256_text().left(12),
+                invocation_index,
+                plan_index,
+            ]
+            var payment: Dictionary = _ports.spend_battle_experience(
+                actor, cost, {
+                    "action_token": action_token,
+                    "root_execution_token": action_token,
+                    "operation_token": operation_token,
+                    "source_kind": str(invocation.source.source_kind),
+                    "source_id": str(invocation.source.content_id),
+                    "source_name": str(invocation.source.definition.get(
+                        "name", "")),
+                    "source_instance_key": str(
+                        invocation.source.source_instance_key),
+                    "trigger_mode": trigger_mode,
+                })
+            if not payment.get("success", false):
+                rollback_pre_technique_cost(result)
+                return {"success": false, "reason": str(payment.get(
+                    "reason", "功法启动成本支付失败")), "rolled_back": true}
+            result["receipts"].append(payment.duplicate(true))
+            result["power_fixed"] = int(result["power_fixed"]) + int(
+                cost_plan.get("power_fixed", 0))
+            result["power_percent"] = int(result["power_percent"]) + int(
+                cost_plan.get("power_percent", 0))
+    return result
+
+func commit_pre_technique_cost(cost_result: Dictionary) -> Dictionary:
+    if cost_result.get("transaction", {}).is_empty():
+        return {"success": true, "skipped": true}
+    if bool(cost_result.get("committed", false)):
+        return {"success": true, "reused": true}
+    var committed: Dictionary = _ports.commit_effect_mutation_transaction(
+        cost_result["transaction"])
+    if committed.get("success", false):
+        cost_result["committed"] = true
+    return committed
+
+func rollback_pre_technique_cost(cost_result: Dictionary) -> bool:
+    if cost_result.get("transaction", {}).is_empty() \
+            or bool(cost_result.get("committed", false)):
+        return false
+    var rolled_back: bool = _ports.rollback_effect_mutation_transaction(
+        cost_result["transaction"])
+    if _passive_runtime != null:
+        _passive_runtime.restore_battle_effect_command_state(
+            cost_result.get("passive_effect_state", {}))
+    cost_result["rolled_back"] = rolled_back
+    return rolled_back
 
 func prepare_activation(
         definition,
@@ -739,7 +945,7 @@ func _continue_invocation(state: Dictionary) -> Dictionary:
                 str(phases[int(state["phase_index"])]))
             if not phase_result.get("success", false):
                 runtime.captures.erase(PENDING_CAPTURE)
-                discard_execution(invoked_context.technique_execution_token)
+                _abort_invocation(state)
                 return {
                     "success": false,
                     "reason": phase_result.get("reason", "功法阶段解析失败"),
@@ -754,14 +960,14 @@ func _continue_invocation(state: Dictionary) -> Dictionary:
             var request_object = state["continuation"].choice_request \
                 if state["continuation"] != null else null
             if request_object == null:
-                discard_execution(invoked_context.technique_execution_token)
+                _abort_invocation(state)
                 return {"success": false, "reason": "功法结算等待选择缺少 continuation"}
             state["request_id"] = str(request_object.request_id)
             runtime.captures[PENDING_CAPTURE] = state
             return _pending_result(state)
         if not result.get("success", false):
             runtime.captures.erase(PENDING_CAPTURE)
-            discard_execution(invoked_context.technique_execution_token)
+            _abort_invocation(state)
             return {
                 "success": false,
                 "reason": result.get("detail", "功法阶段结算失败"),
@@ -799,7 +1005,7 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
         var momentum_settlement: Dictionary = _settle_momentum(
             runtime.actor, token, state["definition"].id, true)
         if not momentum_settlement.get("success", false):
-            discard_execution(token)
+            _abort_invocation(state)
             return momentum_settlement
     runtime.actor.consume_pending_power_fixed_sources(
         state.get("pending_power_fixed_tokens", []))
@@ -811,10 +1017,11 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
         bool(effect.get("gain_same_qi", true)),
         state["invoked_context"].source_metadata())
     if not same_qi_result.get("success", false):
-        discard_execution(token)
+        _abort_invocation(state)
         return same_qi_result
     var summarized := finish_execution(state["invoked_context"])
     if not summarized.get("success", false):
+        _abort_invocation(state)
         return summarized
     var completed := {"success": true}
     if bool(effect.get("advance_sequence", true)):
@@ -828,6 +1035,7 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
             str(request.get("root_action_token", token)),
             str(state["invoked_context"].technique_execution_token))
     if not completed.get("success", false):
+        _abort_invocation(state)
         return completed
     var result := {
         "success": true, "triggered": true,
@@ -843,7 +1051,35 @@ func _finish_invocation(state: Dictionary) -> Dictionary:
     _commit_event("technique_succeeded", state, result)
     _commit_event("technique_invocation_resolved", state, result)
     _commit_event("action_resolved", state, result)
+    var cost_commit := _commit_invocation_cost(state)
+    if not cost_commit.get("success", false):
+        _rollback_invocation_cost(state)
+        return {
+            "success": false,
+            "reason": str(cost_commit.get("reason", "功法启动成本提交失败")),
+        }
     return result
+
+func _commit_invocation_cost(state: Dictionary) -> Dictionary:
+    var cost_result: Dictionary = state.get("pre_technique_cost", {})
+    if cost_result.is_empty():
+        return {"success": true, "skipped": true}
+    return commit_pre_technique_cost(cost_result)
+
+func _rollback_invocation_cost(state: Dictionary) -> bool:
+    var cost_result: Dictionary = state.get("pre_technique_cost", {})
+    if cost_result.is_empty():
+        return false
+    return rollback_pre_technique_cost(cost_result)
+
+func _abort_invocation(state: Dictionary) -> bool:
+    var context = state.get("invoked_context")
+    var token := str(context.technique_execution_token) \
+        if context != null else str(state.get("request", {}).get(
+            "invocation_token", ""))
+    discard_execution(token)
+    _completed_summaries.erase(token)
+    return _rollback_invocation_cost(state)
 
 func _settle_momentum(actor, action_token: String,
         technique_id: String, use_momentum: bool) -> Dictionary:
@@ -1274,6 +1510,86 @@ func _ensure_execution_state(runtime, effects: Array) -> void:
 func _execution_is_echo(token: String) -> bool:
     return token.contains(":echo:")
 
+func _dispatch_post_success_pre_advance(
+        runtime,
+        summary: Dictionary,
+        echo_results: Array) -> Dictionary:
+    if _passive_runtime == null or runtime.trigger_mode == "echo" \
+            or _execution_is_echo(str(runtime.technique_execution_token)):
+        return {"success": true, "skipped": true, "results": []}
+    var sequence_before: Array = summary.get(
+        "sequence_before", []).duplicate(true)
+    var payload := summary.duplicate(false)
+    payload.merge({
+        "action_token": str(runtime.technique_execution_token),
+        "root_action_token": str(runtime.root_action_token),
+        "hand_id": str(runtime.actual_hand_id),
+        "technique_id": str(runtime.technique_id),
+        "technique_pool": str(runtime.technique_pool),
+        "slot_instance_id": str(runtime.slot_instance_id),
+        "trigger_mode": str(runtime.trigger_mode),
+        "initial_power": int(runtime.initial_power),
+        "technique_power": int(runtime.power),
+        "sequence_before": sequence_before,
+        "sequence_after": runtime.sequence_book.ordered_slots(
+            str(runtime.actual_hand_id)) if runtime.sequence_book != null else [],
+        "echo_results": echo_results.duplicate(true),
+        "echo_count": echo_results.size(),
+        "effect_context_values": {
+            "ports": _ports,
+            "actor": runtime.actor,
+            "target": runtime.target,
+            "hand_result": runtime.hand_result,
+            "played_cards": runtime.played_cards,
+            "group_snapshot": runtime.group_snapshot,
+            "values": {
+                "technique_value": int(runtime.power),
+                "initial_power": int(runtime.initial_power),
+                "direct_power_fixed": int(runtime.direct_power_fixed),
+                "direct_power_percent": int(runtime.direct_power_percent),
+                "pre_momentum_power": int(runtime.pre_momentum_power),
+                "momentum_used": int(runtime.momentum_used),
+            },
+            "power": int(runtime.power),
+            "initial_power": int(runtime.initial_power),
+            "technique_id": str(runtime.technique_id),
+            "technique_name": str(runtime.technique_name),
+            "technique_pool": str(runtime.technique_pool),
+            "slot_instance_id": str(runtime.slot_instance_id),
+            "action_token": str(runtime.technique_execution_token),
+            "technique_execution_token": str(
+                runtime.technique_execution_token),
+            "root_action_token": str(runtime.root_action_token),
+            "invocation_token": str(runtime.invocation_token),
+            "caller_technique_id": str(runtime.caller_technique_id),
+            "trigger_mode": str(runtime.trigger_mode),
+            "sequence_book": runtime.sequence_book,
+            "card_identity_policy": runtime.card_identity_policy,
+        },
+    }, true)
+    var dispatched: Dictionary = _passive_runtime.dispatch_event(
+        "technique_post_success_pre_advance", {
+            "owner": runtime.actor,
+            "actor": runtime.actor,
+            "target": runtime.target,
+            "round_number": int(summary.get("round_number", 0)),
+            "payload": payload,
+        }, "write")
+    if not dispatched.get("success", false):
+        return {"success": false, "reason": "；".join(
+            dispatched.get("errors", [])), "results": dispatched.get(
+                "results", [])}
+    return {"success": true, "skipped": false,
+        "results": dispatched.get("results", [])}
+
+func _public_cost_result(cost_result: Dictionary) -> Dictionary:
+    return {
+        "skipped": bool(cost_result.get("skipped", false)),
+        "power_fixed": int(cost_result.get("power_fixed", 0)),
+        "power_percent": int(cost_result.get("power_percent", 0)),
+        "receipts": cost_result.get("receipts", []).duplicate(true),
+    }
+
 func _extra_advance_count(state: Dictionary) -> int:
     var total := 0
     for request in state.get("extra_sequence_advance_requests", []):
@@ -1317,6 +1633,9 @@ func _restore_finish_local_state(runtime, snapshot: Dictionary) -> void:
     if _active_executions.has(token):
         _active_executions[token]["technique_execution_state"] = \
             runtime.technique_execution_state
+    if _passive_runtime != null:
+        _passive_runtime.restore_battle_effect_command_state(
+            snapshot.get("passive_effect_state", {}))
 
 func _on_committed_fact_for_execution(
         event_kind: String,

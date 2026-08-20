@@ -398,7 +398,8 @@ assign 延迟记录；原地 assign 响应记录；通过 `replace_history` 恢�
 `/tmp/taiwu-status-final-full-<组名>-<序号>.log`。所有最终日志及 stdout 排除已知 macOS CA 警告后，
 脚本／资源加载、解析、运行、ObjectDB／RID、orphan 名称、资源泄漏与退出阶段错误均为 0。
 
-状态契约首次运行只发现新增测试夹具把负 RNG state 当作可恢复值，与正式“仅恢复非负 state”协议冲突；
+状态契约最初曾把负 RNG state误判为不可恢复；后续真实随机事务证明Godot合法state可能为负，现已以
+显式`has_rng`区分未注入随机源并恢复全部有符号64位state；
 实现未修改，夹具固定为正值后专项和完整回归均通过。本批没有修改任何玩法值、内容数据、时点优先级、
 延迟／响应记录结构、`BattleSide` 来源结构或 RNG 推进规则。
 
@@ -2068,3 +2069,18 @@ operation生成子token。ancestry仍按`source_instance_key|behavior_id`累积�
 新的`ExperienceService`、`MapItemService`、`FreeMeditationService`、物品运行时或第二套Run事务。正式JSON
 和生产内容池未修改，《免费冥想》《血财相济》《存钱罐》《断财炼气》《预兆球》《摇钱树》《象形文字》
 仍未接入。矩阵收口为已有／合并38、B 7、C1 2、C2 0、D 1，正式内功13门、物品7件、暂缓功法8门。
+
+## 最后两个 B 类薄适配收口（2026-08-20）
+
+原收缩审计中的两个 B 类能力已经落到既有所有者：`card_trigger_target_policy_query` 由
+`CardStatusBehaviorService` 查询并复用 `EffectTargetQuery.order_candidates`，不拥有牌区写入；
+`pre_effect_operation_event` 由 `TechniqueEffectExecutor` 在具体效果操作前提供窄边界，当前只允许
+功法抽牌前响应。前置响应和原操作共享同一 `BattleRuntimeMutationTransaction`，失败时连同牌区、
+committed publication、receipt、日志和 RNG 一起恢复；嵌套被动效果使用稳定Invocation receipt作为
+EffectSpec令牌前缀，避免与外层功法或同事件其他来源碰撞。
+
+因此 B 类薄适配从2项收口为0项；当前能力矩阵为已有／合并45、B 0、C1 2、C2 0、D 1。没有新增
+平行 Service、内容数值或内容资源；剩余工作仅是C1窄能力随正式内容接入，以及最终统一回归。
+
+验证覆盖生命周期适配85条、功法运行442条、选择续跑76条断言及quick 7/7；项目加载统计741项。日志
+使用独立`/tmp`路径并排除了已知macOS CA警告，未发现加载、解析、SCRIPT ERROR或退出泄漏诊断。

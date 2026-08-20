@@ -440,6 +440,11 @@ func _finish_solo_action_outcome(
             if actor_role == SOLO_ROLE_ENEMY else "同气结算失败"
         return _fail_active_transaction(
             same_qi_change.get("reason", same_qi_detail), "same_qi_failed")
+    var next_action_started := _prepare_next_action_window(actor)
+    if not next_action_started.get("success", false):
+        return _fail_active_transaction(
+            next_action_started.get("reason", "额外行动开始失败"),
+            "extra_action_preflight_failed")
     battle_flow.clear_intents()
     if actor_role == SOLO_ROLE_ENEMY:
         update_battle_state.call()
@@ -1016,6 +1021,9 @@ func _freeze_consumed_action_source(side, preview: Dictionary) -> void:
 
 func _notify_action_started(side, preview: Dictionary) -> void:
     var source: Dictionary = preview.get("action_source", {}).duplicate(true)
+    if bool(source.get("is_extra_action", false)):
+        ## Extra actions publish at their pre-selection window boundary.
+        return
     action_resolver.effect_ports.notify_response_event("extra_action_started", {
         "actor": side, "holder": side,
         "action_token": str(preview.get("reshape_action_token", "")),
@@ -1025,6 +1033,11 @@ func _notify_action_started(side, preview: Dictionary) -> void:
         "from_same_qi": bool(source.get("from_same_qi", false)),
         "source_category": str(source.get("category", "")),
     })
+
+func _prepare_next_action_window(side) -> Dictionary:
+    if not battle_flow.can_act(side):
+        return {"success": true, "skipped": true}
+    return battle_flow.prepare_next_action(side)
 
 func _notify_cooperation_resolved(
         main_preview: Dictionary,
@@ -1081,6 +1094,13 @@ func _finish_synchronized_outcome(
             return _fail_active_transaction(
                 enemy_same_qi.get("reason", "敌方同气结算失败"), "same_qi_failed")
         same_qi_changes.append(enemy_same_qi)
+    var sides_to_prepare: Array = [player, enemy] if enemy_will_act else [player]
+    for acting_side in sides_to_prepare:
+        var next_action_started := _prepare_next_action_window(acting_side)
+        if not next_action_started.get("success", false):
+            return _fail_active_transaction(
+                next_action_started.get("reason", "额外行动开始失败"),
+                "extra_action_preflight_failed")
     battle_flow.clear_intents()
     update_battle_state.call()
     if battle_state_reader.call() == "active" and battle_flow.can_act(enemy):

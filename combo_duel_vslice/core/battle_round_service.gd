@@ -248,6 +248,13 @@ func _open_action_window() -> void:
         "双方正常补牌" if scripted_mode else "正常补牌", "规则", "成功",
         "我方抽 %d 张｜对手抽 %d 张" % [drawn.size(), enemy_drawn.size()]
             if scripted_mode else "补至上限：抽 %d 张" % drawn.size())
+    for side in current_round_actors:
+        var prepared: Dictionary = battle_flow.prepare_next_action(side)
+        if not prepared.get("success", false):
+            _set_scenario_error.call(str(prepared.get(
+                "reason", "额外行动开始失败")))
+            _state_changed.call()
+            return
     if player.hand.is_empty():
         battle_flow.forfeit_remaining(player, "没有可用于出招的手牌")
     if scripted_mode and battle_flow.can_act(enemy) and not external_enemy_action_mode:

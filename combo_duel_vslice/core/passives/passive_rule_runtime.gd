@@ -26,7 +26,9 @@ const BattleCounterMutationPortScript = preload(
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 const BATTLE_MUTATION_HOOKS := \
-    BattleEventCatalogScript.TIMING_EVENTS + BattleEventCatalogScript.COMMITTED_EVENTS
+    BattleEventCatalogScript.TIMING_EVENTS \
+    + BattleEventCatalogScript.COMMITTED_EVENTS \
+    + BattleEventCatalogScript.LIFECYCLE_MUTATION_HOOKS
 
 var registry
 var source_resolver
@@ -308,6 +310,7 @@ func _execute_standard_effects(
     var effect_context = context.effect_context_for(invocation.source)
     effect_context.ports = effect_ports
     effect_context.effect_chain_state = _active_effect_chain
+    effect_context.effect_execution_scope_token = receipt_token
     if invocation.hook == "experience_change_resolved":
         var ancestry: Array = _active_effect_chain.get(
             "experience_response_ancestry", []).duplicate()
