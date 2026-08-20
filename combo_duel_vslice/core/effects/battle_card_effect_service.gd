@@ -28,6 +28,7 @@ var _trigger_queue
 var _committed_event_service
 var _round_number_reader: Callable
 var _permanent_qi_mutation_service := PermanentQiMutationServiceScript.new()
+var _mutation_scope_service = null
 
 const SOLIDIFY_TEMPORARY_QI := "solidify_temporary_qi"
 
@@ -67,6 +68,25 @@ func use_battle_permission_service(service) -> void:
     assert(service != null,
         "BattleCardEffectService requires BattlePermissionService")
     _battle_permission_service = service
+
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service = service
+
+func _begin_mutation_transaction() -> Dictionary:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.begin()
+    return BattleRuntimeMutationTransactionScript.begin(
+        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+
+func _commit_mutation_transaction(transaction: Dictionary) -> Dictionary:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.commit(transaction)
+    return BattleRuntimeMutationTransactionScript.commit(transaction)
+
+func _rollback_mutation_transaction(transaction: Dictionary) -> bool:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.rollback(transaction)
+    return BattleRuntimeMutationTransactionScript.rollback(transaction)
 
 
 func card_reshape_runtime():
@@ -123,15 +143,14 @@ func generate_shared_template_temporary_normal_cards(
         return {"success": false, "reason": "批量生成临时真气缺少战斗持有者"}
     if count <= 0:
         return {"success": false, "reason": "批量生成临时真气数量必须为正数"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var transaction := _begin_mutation_transaction()
     var template_options := options.duplicate(true)
     template_options["attribute_mode"] = "random_base"
     template_options["rank_mode"] = "random"
     var template := _resolve_temporary_normal_card_template(
         side, null, template_options)
     if not template.get("success", false):
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         return {
             "success": false,
             "reason": str(template.get("reason", "无法建立临时真气共享模板")),
@@ -146,7 +165,7 @@ func generate_shared_template_temporary_normal_cards(
         var generated := _generate_temporary_normal_card_from_template(
             side, template, null, generation_options, false)
         if not generated.get("success", false):
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return {
                 "success": false,
                 "reason": str(generated.get(
@@ -159,7 +178,15 @@ func generate_shared_template_temporary_normal_cards(
     if destination == "draw_pile" \
             and bool(options.get("shuffle_destination", false)):
         side.card_zone_service.shuffle(side.draw_pile, _battle_rng)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "共享模板临时真气生成事务提交失败")),
+            "rolled_back": true,
+            "cards": [],
+        }
     return {
         "success": true,
         "cards": generated_cards,
@@ -528,15 +555,21 @@ func commit_qi_consumption(
     var holder = plan.get("holder")
     if holder == null or not _sides.has(holder):
         return {"success": false, "reason": "真气消耗计划持有者已失效"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var transaction := _begin_mutation_transaction()
     var committed: Dictionary = holder.card_zone_service.commit_qi_consumption_entries(
         holder, plan, source_metadata)
     if not committed.get("success", false):
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         committed["rolled_back"] = true
         return committed
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "真气消耗事务提交失败")),
+            "rolled_back": true,
+        }
     return committed
 
 
@@ -622,8 +655,7 @@ func solidify_temporary_cards(
                 return receipts_by_id[card_instance_id].duplicate(true)),
         }
 
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var transaction := _begin_mutation_transaction()
     var source := EffectSourceProtocolScript.from_values(source_metadata)
     var actor = source_metadata.get(
         "source_actor", source_metadata.get("actor", owner))
@@ -637,7 +669,7 @@ func solidify_temporary_cards(
         var after := QiCardInstanceDataScript.capture(card)
         if bool(after.get("temporary_card", true)) \
                 or str(after.get("original_owner_id", "")) != "":
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return _permanent_mutation_failure(
                 "临时真气固化后的持久快照无效", true)
         var operation_token := str(candidate["operation_token"])
@@ -708,7 +740,7 @@ func solidify_temporary_cards(
         var committed: Dictionary = _committed_event_service.commit(
             "run_qi_permanently_added", event_values)
         if not committed.get("success", false):
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return _permanent_mutation_failure(str(committed.get(
                 "reason", "永久新增真气事实提交失败")), true)
         receipt["event_receipt"] = committed.get(
@@ -716,7 +748,10 @@ func solidify_temporary_cards(
         owner.permanent_qi_mutation_receipts[operation_token] = \
             receipt.duplicate(true)
         receipts_by_id[card_instance_id] = receipt
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return _permanent_mutation_failure(str(transaction_commit.get(
+            "reason", "临时真气固化事务提交失败")), true)
     return {
         "success": true,
         "changed_count": candidates.size(),
@@ -812,12 +847,11 @@ func advance_permanent_qi_rank(
             "request_fingerprint": request_fingerprint,
         }
 
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var transaction := _begin_mutation_transaction()
     _apply_persistent_card_snapshot(card, transformed["after"])
     var actual_after := QiCardInstanceDataScript.capture(card)
     if actual_after != transformed["after"]:
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         return _permanent_mutation_failure(
             "战斗永久真气变更提交后的持久快照不一致", true)
     var event_serial := int(_committed_event_service.next_serial())
@@ -904,12 +938,15 @@ func advance_permanent_qi_rank(
     var committed: Dictionary = _committed_event_service.commit(
         "qi_reshape_committed", event_values)
     if not committed.get("success", false):
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         return _permanent_mutation_failure(str(committed.get(
             "reason", "永久真气重塑事实提交失败")), true)
     receipt["event_receipt"] = committed.get("receipt", {}).duplicate(true)
     owner.permanent_qi_mutation_receipts[operation_token] = receipt.duplicate(true)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return _permanent_mutation_failure(str(transaction_commit.get(
+            "reason", "永久真气重塑事务提交失败")), true)
     return receipt
 
 

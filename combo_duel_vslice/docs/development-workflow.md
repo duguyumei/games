@@ -1287,3 +1287,44 @@ ObjectDB／RID、orphan或资源泄漏问题，仅有已知macOS CA警告。
 本批专项为 `tests/test_battle_pure_query_guard.gd`。当前验证另覆盖有效真气、防御衰减、生命写入前、
 真气消耗事务、战斗来源资源和 battle-contracts；没有运行 quick/full 或远程 AI。Godot 必须串行并
 显式写独立 `/tmp` 日志。
+
+## 正式战斗 mutation 事务作用域（2026-08-20）
+
+一场战斗只由 `CombatEngine` 装配一个 `BattleMutationTransactionScopeService`。底层快照、恢复与
+committed publication 算法仍只属于 `BattleRuntimeMutationTransaction`；作用域服务只管理当前根事务、
+嵌套加入、后进先出校验和 rollback-only。禁止使用全局静态 active transaction，也禁止 Handler 自行判断
+当前是否已有事务。
+
+最外层 `begin` 捕获双方 `BattleSide`、共享 `StatusSystem`、committed event、`TriggerQueue/GameLog`、
+战斗 RNG 及已登记事务参与者；同一调用链的内层 `begin` 只返回 joined scope。`CardZoneService`、
+`BattleCardEffectService`、`BattleSourceResourceEffectService`、`BattleTechniqueSequenceEffectService`、
+`TechniqueEffectExecutor`、`TechniqueResolutionService` 收尾、战斗消耗品和伤害段均使用这一入口。
+伤害服务不再为每个伤害段手工完整捕获双方状态或另开 publication；它把行动伤害统计、行动窗口和伤害段
+序号作为事务参与状态，与 `SameQiGaugeService` 一起由根快照保存。同步伤害 flush 也只建立或加入同一
+作用域。
+
+任一 joined scope 回滚会立即恢复根快照并把根标记为 rollback-only；仍未退出的外层调用栈即使在观察到
+失败前又产生写入，根收口时也会再次按原快照恢复；第二次只恢复值状态，不重复回滚已经关闭的
+publication事务。joined commit 不发布事件；根 commit 遇到
+rollback-only 必须明确失败，`TechniqueEffectExecutor`和功法收尾不得把该失败改写成成功。等待选择时，
+同一 `EffectSpec` 的根／joined scope 保存于既有 continuation，恢复后沿原作用域提交一次，不重拍快照、
+不重选随机结果。
+
+牌区、临时真气生成、真气消耗与永久重塑、来源资源、功法序列、临时功法清理和成长状态行为等公开写入口
+都必须检查scope commit结果；rollback-only不能被包装成业务成功。服务可以保留自己的结果DTO，但事务
+失败时必须返回`success=false`和`rolled_back=true`，上层不得继续发布成功结果。
+
+快照中的战斗方和额外参与者使用 `WeakRef`，作用域服务常驻参与者也只存弱引用；快照保存值状态而不反向
+拥有组合根，避免 `BattleSide → CardZoneService → scope → snapshot → BattleSide` 环。测试销毁组合根前
+必须 `abort_active` 并解除注入。运行时替换 committed event、TriggerQueue 或战斗 RNG 只允许在没有活动
+根事务时同步到作用域服务。
+
+本能力不合并 `BattleActionTransaction`、节点／Run事务或战果聚合事务。行动阶段、选择路由和
+`RunAggregateTransaction`继续拥有各自的业务游标与提交边界；它们内部调用正式战斗 mutation 时只加入
+当时存在的根事务。预览与纯查询仍使用 `BattlePureQueryGuard`，不能借用 mutation scope。
+
+专项 `test_battle_mutation_transaction_scope.gd` 以60条断言覆盖单次根捕获、joined提交、内层回滚、
+rollback-only、残余写入二次恢复、publication单次回滚、公开写入口失败传播、EffectExecutor加入、伤害段
+加入、选择续接和同气参与者恢复；牌效果98条、伤害121条、行动事务117条、功法运行444条、来源资源121条
+及 battle-contracts 872条通过。最终battle-contracts详细退出类型与干净HEAD逐项一致。本批不修改内容、
+数值或远程AI，也未运行 quick/full。

@@ -32,6 +32,7 @@ var _technique_repository_ref: WeakRef
 var _sides: Array = []
 var _rng: RandomNumberGenerator
 var _marker_address_resolver = SourceMarkerAddressResolverScript.new()
+var _mutation_scope_service = null
 
 
 func _init(
@@ -86,6 +87,9 @@ func use_same_qi_gauge_service(service) -> void:
     assert(service != null,
         "BattleSourceResourceEffectService requires SameQiGaugeService")
     _same_qi_gauge_service = service
+
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service = service
 
 
 func use_battle_instance_id(value: String) -> void:
@@ -142,8 +146,8 @@ func write_same_qi(
         BattleRuntimeMutationTransactionScript.rollback(transaction)
         return result
     if result.get("reused", false):
-        BattleRuntimeMutationTransactionScript.commit(transaction)
-        return result
+        return _commit_mutation_result(
+            transaction, result, "复用同气写入事务提交失败")
     _add_history(
         "same_qi_changed", "%s同气变化" % side.name, source, "成功",
         "%d → %d / %d；转换%d次" % [
@@ -171,8 +175,8 @@ func write_same_qi(
         BattleRuntimeMutationTransactionScript.rollback(transaction)
         return _resource_failure(resource_event, "同气变化事实提交失败")
     result["battle_resource_event"] = resource_event.duplicate(true)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "同气写入事务提交失败")
 
 
 func same_qi_receipts_for_action(
@@ -195,8 +199,7 @@ func write_source_marker(
         action_token: String = "") -> Dictionary:
     if side == null:
         return {"success": false, "reason": "来源标识写入缺少持有者"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var result: Dictionary = side.source_marker_store.write(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
@@ -221,8 +224,8 @@ func write_source_marker(
         if str(source.get("scope", "battle")) == "run" \
                 and str(source.get("contributes_to", "")) != "":
             side.recalculate_effective_max_life()
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "来源标识写入事务提交失败")
 
 
 func transfer_source_marker(
@@ -233,8 +236,7 @@ func transfer_source_marker(
         action_token: String = "") -> Dictionary:
     if side == null:
         return {"success": false, "reason": "来源标识转移缺少持有者"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var result: Dictionary = side.source_marker_store.transfer(source, target, amount)
     if not result.get("success", false):
         BattleRuntimeMutationTransactionScript.rollback(transaction)
@@ -256,8 +258,8 @@ func transfer_source_marker(
         if str(source.get("scope", "battle")) == "run" \
                 or str(target.get("scope", "battle")) == "run":
             side.recalculate_effective_max_life()
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "来源标识转移事务提交失败")
 
 
 func append_source_marker_records(
@@ -267,8 +269,7 @@ func append_source_marker_records(
         action_token: String = "") -> Dictionary:
     if side == null:
         return {"success": false, "reason": "来源标识记录写入缺少持有者"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var result: Dictionary = side.source_marker_store.append_records(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
@@ -287,8 +288,8 @@ func append_source_marker_records(
             BattleRuntimeMutationTransactionScript.rollback(transaction)
             return {"success": false, "reason": emitted.get(
                 "reason", "来源标识记录事件提交失败"), "rolled_back": true}
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "来源标识记录写入事务提交失败")
 
 
 func consume_source_marker_records(
@@ -298,8 +299,7 @@ func consume_source_marker_records(
         action_token: String = "") -> Dictionary:
     if side == null:
         return {"success": false, "reason": "来源标识记录消费缺少持有者"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var result: Dictionary = side.source_marker_store.consume_records(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
@@ -316,8 +316,8 @@ func consume_source_marker_records(
             BattleRuntimeMutationTransactionScript.rollback(transaction)
             return {"success": false, "reason": emitted.get(
                 "reason", "来源标识记录事件提交失败"), "rolled_back": true}
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "来源标识记录消费事务提交失败")
 
 
 func consume_matching_source_marker_records(
@@ -328,8 +328,7 @@ func consume_matching_source_marker_records(
         action_token: String = "") -> Dictionary:
     if side == null:
         return {"success": false, "reason": "来源标识过滤消费缺少持有者"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var result: Dictionary = side.source_marker_store.consume_matching_records(
         str(source.get("source_kind", "")),
         str(source.get("source_instance_key", "")),
@@ -348,8 +347,8 @@ func consume_matching_source_marker_records(
             BattleRuntimeMutationTransactionScript.rollback(transaction)
             return {"success": false, "reason": emitted.get(
                 "reason", "来源标识过滤消费事件提交失败"), "rolled_back": true}
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "来源标识过滤消费事务提交失败")
 
 
 ## 只读枚举以功法序列簿为槽位事实源，以主要 marker 的真实存在作为活跃事实。
@@ -559,8 +558,7 @@ func write_all_charging_primary_values(
             return {"success": false, "reason": "冻结的蓄力功法实例已经失效"}
     var frozen_ids: Array = frozen_instances.map(
         func(entry): return str(entry.get("slot_instance_id", "")))
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _transaction_sides(side), _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var results: Array = []
     for slot_id_value in frozen_ids:
         var written := write_charging_primary_value(
@@ -575,13 +573,14 @@ func write_all_charging_primary_values(
                 "results": results.duplicate(true),
             }
         results.append(written.duplicate(true))
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return {
+    var response := {
         "success": true,
         "frozen_slot_instance_ids": frozen_ids.duplicate(),
         "target_count": frozen_ids.size(),
         "results": results.duplicate(true),
     }
+    return _commit_mutation_result(
+        transaction, response, "批量主要蓄力值事务提交失败")
 
 
 func add_momentum(side: BattleSide, amount: int) -> int:
@@ -632,8 +631,8 @@ func write_momentum(
         BattleRuntimeMutationTransactionScript.rollback(transaction)
         return result
     if result.get("reused", false):
-        BattleRuntimeMutationTransactionScript.commit(transaction)
-        return result
+        return _commit_mutation_result(
+            transaction, result, "复用连势写入事务提交失败")
     result["change_token"] = change_token
     var resource_event := _commit_resource_changed(
         side, "momentum", operation, amount, result, metadata,
@@ -642,8 +641,8 @@ func write_momentum(
         BattleRuntimeMutationTransactionScript.rollback(transaction)
         return _resource_failure(resource_event, "连势变化事实提交失败")
     result["battle_resource_event"] = resource_event.duplicate(true)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
-    return result
+    return _commit_mutation_result(
+        transaction, result, "连势写入事务提交失败")
 
 
 func set_reflection_percent(
@@ -824,10 +823,27 @@ func transaction_participants() -> Array:
     return [_same_qi_gauge_service] if _same_qi_gauge_service != null else []
 
 
-func _begin_resource_transaction(side: BattleSide) -> Dictionary:
+func _begin_mutation_transaction(side: BattleSide) -> Dictionary:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.begin(transaction_participants())
     return BattleRuntimeMutationTransactionScript.begin(
         _transaction_sides(side), _committed_event_service, _trigger_queue, _rng,
         transaction_participants())
+
+
+func _begin_resource_transaction(side: BattleSide) -> Dictionary:
+    return _begin_mutation_transaction(side)
+
+
+func _commit_mutation_result(
+        transaction: Dictionary,
+        result: Dictionary,
+        fallback: String) -> Dictionary:
+    var committed := BattleRuntimeMutationTransactionScript.commit(
+        transaction)
+    if not committed.get("success", false):
+        return _resource_failure(committed, fallback)
+    return result
 
 
 func _resource_change_token(

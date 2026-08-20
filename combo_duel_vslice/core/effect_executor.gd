@@ -102,8 +102,13 @@ func _continue(continuation) -> Dictionary:
                 if owns_effect_transaction:
                     continuation.active_effect_transaction = effect_transaction
             elif owns_effect_transaction and result.get("success", false):
-                context_ports.commit_effect_mutation_transaction(
-                    effect_transaction)
+                var transaction_commit: Dictionary = \
+                    context_ports.commit_effect_mutation_transaction(
+                        effect_transaction)
+                if not transaction_commit.get("success", false):
+                    result = EffectResultScript.failed(str(
+                        transaction_commit.get(
+                            "reason", "效果事务提交失败"))).snapshot()
             elif owns_effect_transaction:
                 context_ports.rollback_effect_mutation_transaction(
                     effect_transaction)

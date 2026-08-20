@@ -41,6 +41,7 @@ var _action_resource_effect_service
 var _technique_resolution_service_ref: WeakRef
 var _trigger_queue
 var _committed_event_service
+var _mutation_scope_service = null
 
 func _init(
         damage_resolver: ComboDamageResolver,
@@ -71,6 +72,8 @@ func _init(
 
 func use_trigger_queue(trigger_queue: VisibleTriggerQueue) -> void:
     _trigger_queue = trigger_queue
+    if _mutation_scope_service != null:
+        _mutation_scope_service.use_trigger_queue(trigger_queue)
     _survival_effect_service.use_trigger_queue(trigger_queue)
     _source_resource_effect_service.use_trigger_queue(trigger_queue)
     _action_resource_effect_service.use_trigger_queue(trigger_queue)
@@ -101,6 +104,8 @@ func use_passive_battle_services(
         event_service,
         round_reader: Callable = Callable()) -> void:
     _committed_event_service = event_service
+    if _mutation_scope_service != null:
+        _mutation_scope_service.use_committed_event_service(event_service)
     _survival_effect_service.use_passive_battle_services(
         query_service, event_service, round_reader)
     _source_resource_effect_service.use_passive_battle_services(
@@ -114,9 +119,18 @@ func use_passive_battle_services(
 
 func use_battle_rng(rng: RandomNumberGenerator) -> void:
     _battle_rng = rng
+    if _mutation_scope_service != null:
+        _mutation_scope_service.use_rng(rng)
     _card_effect_service.use_battle_rng(rng)
     _technique_sequence_effect_service.use_battle_rng(rng)
     _source_resource_effect_service.use_battle_rng(rng)
+
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service = service
+    _survival_effect_service.use_mutation_scope_service(service)
+    _card_effect_service.use_mutation_scope_service(service)
+    _source_resource_effect_service.use_mutation_scope_service(service)
+    _technique_sequence_effect_service.use_mutation_scope_service(service)
 
 func use_technique_repository(repository) -> void:
     _technique_sequence_effect_service.use_technique_repository(repository)
@@ -131,7 +145,16 @@ func transaction_sides() -> Array:
 func transaction_trigger_queue():
     return _trigger_queue
 
+func transaction_state_participants() -> Array:
+    var participants: Array = \
+        _source_resource_effect_service.transaction_participants()
+    participants.append(_survival_effect_service)
+    return participants
+
 func begin_effect_mutation_transaction() -> Dictionary:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.begin(
+            transaction_state_participants())
     return BattleRuntimeMutationTransactionScript.begin(
         _sides, _committed_event_service, _trigger_queue, _battle_rng,
         _source_resource_effect_service.transaction_participants())
@@ -476,8 +499,10 @@ func generate_temporary_techniques(
 func clear_temporary_techniques(
         side: BattleSide,
         action_token: String = "") -> Dictionary:
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _sides, _committed_event_service, _trigger_queue, _battle_rng)
+    var transaction: Dictionary = _mutation_scope_service.begin() \
+        if _mutation_scope_service != null \
+        else BattleRuntimeMutationTransactionScript.begin(
+            _sides, _committed_event_service, _trigger_queue, _battle_rng)
     var result: Dictionary = \
         _technique_sequence_effect_service.clear_temporary_techniques(
             side, action_token)
@@ -500,7 +525,15 @@ func clear_temporary_techniques(
                 "rolled_back": true,
             }
         result["pending_echo_cleanup"] = cleanup
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := BattleRuntimeMutationTransactionScript.commit(
+        transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "临时功法清理事务提交失败")),
+            "rolled_back": true,
+        }
     return result
 
 func complete_and_advance_technique(

@@ -2159,3 +2159,31 @@ save-contracts 137条、Run Save v1 202条、battle-contracts 871条、content-c
 写入恢复、共享 StatusSystem 去重、五个入口的共享装配、卡牌／战斗状态／RNG／committed 事件禁入；
 有效真气37条、防御衰减80条、生命写入前57条、真气消耗事务87条、战斗来源资源121条及
 battle-contracts 872条通过。未运行 quick/full。
+
+## 2026-08-20 正式效果事务作用域收口
+
+新增的 `BattleMutationTransactionScopeService` 是每场战斗一个实例的事务作用域协调器，不是第二套快照
+实现。`BattleRuntimeMutationTransaction`继续唯一拥有完整捕获、恢复和publication提交算法；作用域服务
+只保存当前根事务、开放scope栈、rollback-only与诊断计数。最外层捕获一次，嵌套效果、牌区移动、来源
+资源、功法序列、功法收尾、战斗消耗品、伤害／反震和同步伤害只加入根事务。没有全局静态事务，也没有
+按功法、内功、物品或操作码复制事务实现。
+
+旁路审计额外发现 `BattleSurvivalEffectService` 原先以 `capture + begin_publication_transaction` 手工实现
+每伤害段完整事务。该路径已删除；服务自身的行动统计、窗口与伤害段序号改为正式事务参与者，伤害段和
+同步flush统一使用scope。`SameQiGaugeService`仍是另一个明确参与者。事务参与者和双方在常驻scope及根
+快照中均以弱引用保存，既支持回滚，又不让组合根经快照形成新的强引用环。
+
+失败语义固定为：内层rollback立即恢复根初态并设置rollback-only；根关闭时再次恢复，覆盖外层栈在获知
+失败前可能产生的残余写入，但不会第二次回滚已经关闭的publication；根commit明确返回失败。joined
+commit不提交publication，只有根成功提交一次。EffectExecutor等待选择时沿用同一EffectSpec事务，resume
+不重新begin。LIFO违规会令整根失败，不尝试把嵌套scope独立提交。牌区、真气、来源资源、功法序列及成长
+状态等对外写入口统一传播commit失败，不得把rollback-only包装成成功DTO。
+
+行动事务、Run节点事务和战果聚合事务没有被强行合并。它们继续保存各自业务阶段和游标，只让内部战斗
+mutation复用当前scope；纯查询仍由 `BattlePureQueryGuard` 独立守卫。生产结构因此是
+“业务事务边界 + 一个可重入战斗mutation作用域 + 一个底层快照算法”，而不是每个Service各自深拷贝。
+
+新增专项60条断言；牌效果98、伤害121、行动事务117、功法运行444、真气消耗87、选择续跑76、来源资源
+121、生命写入前57、卸力80、生命周期适配85及battle-contracts 872条通过。最终battle-contracts详细
+退出类型与干净HEAD的GDScript、RefCounted、WeakRef、RNG及RegEx逐项相同，本批没有新增ObjectDB或资源
+滞留；未运行quick/full，未修改内容、数值或远程AI。

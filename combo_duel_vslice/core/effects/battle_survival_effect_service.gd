@@ -16,7 +16,8 @@ var _sides: Array[BattleSide] = []
 var _battle_rule_query_service
 var _committed_event_service
 var _round_number_reader: Callable
-var _transaction_state_participants: Array = []
+var _transaction_state_participant_refs: Array[WeakRef] = []
+var _mutation_scope_service_ref: WeakRef
 var _action_resolution_scope: Dictionary = {}
 var _action_window_serial: int = 0
 var _damage_segment_serial: int = 0
@@ -49,7 +50,37 @@ func use_passive_battle_services(
 
 
 func use_transaction_state_participants(participants: Array) -> void:
-    _transaction_state_participants = participants.duplicate()
+    _transaction_state_participant_refs.clear()
+    var seen: Dictionary = {}
+    for participant in participants:
+        if participant == null or not participant is Object:
+            continue
+        var participant_id := int(participant.get_instance_id())
+        if seen.has(participant_id):
+            continue
+        seen[participant_id] = true
+        _transaction_state_participant_refs.append(weakref(participant))
+
+
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service_ref = weakref(service) if service != null else null
+
+
+func capture_transaction_state() -> Dictionary:
+    return {
+        "action_resolution_scope": _capture_action_resolution_scope(),
+        "action_window_serial": _action_window_serial,
+        "damage_segment_serial": _damage_segment_serial,
+    }
+
+
+func restore_transaction_state(state: Dictionary) -> void:
+    _action_resolution_scope = _restore_action_resolution_scope(
+        state.get("action_resolution_scope", {}))
+    _action_window_serial = int(state.get(
+        "action_window_serial", _action_window_serial))
+    _damage_segment_serial = int(state.get(
+        "damage_segment_serial", _damage_segment_serial))
 
 
 func deal_damage(
@@ -107,9 +138,16 @@ func deal_damage(
     final_override = int(resolved_amount["amount"])
     resolved_metadata["requested_damage"] = amount
     resolved_metadata["final_damage"] = int(final_override)
-    var damage_transaction := _capture_synchronized_flush_state()
-    if _committed_event_service != null:
-        _committed_event_service.begin_publication_transaction()
+    var damage_transaction := _begin_damage_transaction()
+    if not damage_transaction.get("success", false):
+        return {
+            "success": false,
+            "reason": str(damage_transaction.get(
+                "reason", "伤害事务无法建立")),
+            "buffered": false,
+            "rolled_back": bool(damage_transaction.get(
+                "rolled_back", false)),
+        }
     var damage_segment_token := _resolve_damage_segment_token(
         resolved_metadata, actor, target, action_token)
     resolved_metadata["damage_segment_token"] = damage_segment_token
@@ -133,7 +171,11 @@ func deal_damage(
                 damage_transaction, str(chase_event.get(
                     "reason", "chase_resolved提交失败")),
                 damage_segment_token)
-        _commit_damage_transaction()
+        var canceled_commit := _commit_damage_transaction(
+            damage_transaction)
+        if not canceled_commit.get("success", false):
+            return _damage_transaction_commit_failure(
+                canceled_commit, damage_segment_token, canceled_result)
         return canceled_result
 
     var plan := ComboDamageResolver.plan_to_target(
@@ -182,7 +224,10 @@ func deal_damage(
         return _rollback_damage_transaction(
             damage_transaction, str(chase_event.get(
                 "reason", "chase_resolved提交失败")), damage_segment_token)
-    _commit_damage_transaction()
+    var damage_commit := _commit_damage_transaction(damage_transaction)
+    if not damage_commit.get("success", false):
+        return _damage_transaction_commit_failure(
+            damage_commit, damage_segment_token, result)
     return result
 
 
@@ -217,9 +262,15 @@ func begin_synchronized_damage(records: Array) -> void:
 
 func flush_synchronized_damage(
         before_commit: Callable = Callable()) -> Dictionary:
-    var transaction := _capture_synchronized_flush_state()
-    if _committed_event_service != null:
-        _committed_event_service.begin_publication_transaction()
+    var transaction := _begin_damage_transaction()
+    if not transaction.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction.get(
+                "reason", "同步伤害事务无法建立")),
+            "resolutions": [],
+            "rolled_back": bool(transaction.get("rolled_back", false)),
+        }
     var flushed: Dictionary = _damage_resolver.flush_synchronized(
         Callable(self, "_resolve_synchronized_damage_segment"))
     if flushed.get("success", false) and before_commit.is_valid():
@@ -233,13 +284,19 @@ func flush_synchronized_damage(
                 "resolutions": flushed.get("resolutions", []),
             }
     if not flushed.get("success", false):
-        if _committed_event_service != null:
-            _committed_event_service.rollback_publication_transaction()
-        _restore_synchronized_flush_state(transaction)
+        BattleRuntimeMutationTransactionScript.rollback(transaction)
         flushed["rolled_back"] = true
         return flushed
-    if _committed_event_service != null:
-        _committed_event_service.commit_publication_transaction()
+    var transaction_commit: Dictionary = \
+        BattleRuntimeMutationTransactionScript.commit(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "同步伤害事务提交失败")),
+            "resolutions": flushed.get("resolutions", []),
+            "rolled_back": true,
+        }
     flushed["rolled_back"] = false
     return flushed
 
@@ -572,34 +629,24 @@ func notify_poison_triggered(
         })
 
 
-func _capture_synchronized_flush_state() -> Dictionary:
-    var snapshot := BattleRuntimeMutationTransactionScript.capture(
+func _begin_damage_transaction() -> Dictionary:
+    var participants := _transaction_state_participants()
+    participants.append(self)
+    var scope_service = _mutation_scope_service_ref.get_ref() \
+        if _mutation_scope_service_ref != null else null
+    if scope_service != null:
+        return scope_service.begin(participants)
+    return BattleRuntimeMutationTransactionScript.begin(
         _sides, _committed_event_service, _trigger_queue, null,
-        _transaction_state_participants)
-    snapshot.merge({
-        "action_resolution_scope": _action_resolution_scope.duplicate(true),
-        "damage_segment_serial": _damage_segment_serial,
-    }, true)
-    return snapshot
-
-
-func _restore_synchronized_flush_state(snapshot: Dictionary) -> void:
-    BattleRuntimeMutationTransactionScript.restore(
-        snapshot, _committed_event_service, _trigger_queue, null)
-    _action_resolution_scope = snapshot.get(
-        "action_resolution_scope", {}).duplicate(true)
-    _damage_segment_serial = int(snapshot.get(
-        "damage_segment_serial", _damage_segment_serial))
+        participants)
 
 
 func _rollback_damage_transaction(
-        snapshot: Dictionary,
+        transaction: Dictionary,
         reason: String,
         damage_segment_token: String,
         extra: Dictionary = {}) -> Dictionary:
-    if _committed_event_service != null:
-        _committed_event_service.rollback_publication_transaction()
-    _restore_synchronized_flush_state(snapshot)
+    BattleRuntimeMutationTransactionScript.rollback(transaction)
     var result := extra.duplicate(true)
     result.merge({
         "success": false,
@@ -611,9 +658,65 @@ func _rollback_damage_transaction(
     return result
 
 
-func _commit_damage_transaction() -> void:
-    if _committed_event_service != null:
-        _committed_event_service.commit_publication_transaction()
+func _commit_damage_transaction(transaction: Dictionary) -> Dictionary:
+    return BattleRuntimeMutationTransactionScript.commit(transaction)
+
+
+func _damage_transaction_commit_failure(
+        committed: Dictionary,
+        damage_segment_token: String,
+        extra: Dictionary = {}) -> Dictionary:
+    var result := extra.duplicate(true)
+    result.merge({
+        "success": false,
+        "buffered": false,
+        "reason": str(committed.get(
+            "reason", "伤害事务提交失败")),
+        "damage_segment_token": damage_segment_token,
+        "rolled_back": true,
+    }, true)
+    return result
+
+
+func _transaction_state_participants() -> Array:
+    var participants: Array = []
+    for participant_ref in _transaction_state_participant_refs:
+        var participant = participant_ref.get_ref()
+        if participant != null:
+            participants.append(participant)
+    return participants
+
+
+func _capture_action_resolution_scope() -> Dictionary:
+    if _action_resolution_scope.is_empty():
+        return {}
+    var result := _action_resolution_scope.duplicate(true)
+    var captured_entries: Dictionary = {}
+    for owner_id in _action_resolution_scope.get("entries", {}):
+        var entry: Dictionary = _action_resolution_scope["entries"][owner_id] \
+            .duplicate(true)
+        var side = entry.get("side")
+        entry.erase("side")
+        entry["side_ref"] = weakref(side) if side != null else null
+        captured_entries[owner_id] = entry
+    result["entries"] = captured_entries
+    return result
+
+
+func _restore_action_resolution_scope(snapshot: Dictionary) -> Dictionary:
+    if snapshot.is_empty():
+        return {}
+    var result := snapshot.duplicate(true)
+    var restored_entries: Dictionary = {}
+    for owner_id in snapshot.get("entries", {}):
+        var entry: Dictionary = snapshot["entries"][owner_id].duplicate(true)
+        var side_value = entry.get("side_ref", entry.get("side"))
+        entry.erase("side_ref")
+        entry["side"] = side_value.get_ref() \
+            if side_value is WeakRef else side_value
+        restored_entries[owner_id] = entry
+    result["entries"] = restored_entries
+    return result
 
 
 func _commit_damage_plan(

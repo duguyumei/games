@@ -245,6 +245,7 @@ func _execute_card_behavior_entries(
         var ports = _effect_ports()
         if growth_entry and ports != null:
             growth_transaction = ports.begin_effect_mutation_transaction()
+        var resolution_count_before: int = aggregate["resolutions"].size()
         var result: Dictionary = behavior_registry.execute(
             entry["behavior"], context)
         if not bool(result.get("success", false)):
@@ -283,7 +284,16 @@ func _execute_card_behavior_entries(
             aggregate["resolutions"].append_array(
                 extras.get("resolutions", []))
         if not growth_transaction.is_empty():
-            ports.commit_effect_mutation_transaction(growth_transaction)
+            var transaction_commit: Dictionary = \
+                ports.commit_effect_mutation_transaction(growth_transaction)
+            if not transaction_commit.get("success", false):
+                aggregate["resolutions"].resize(resolution_count_before)
+                executed_entries.pop_back()
+                aggregate["success"] = false
+                aggregate["reason"] = str(transaction_commit.get(
+                    "reason", "成长状态事务提交失败"))
+                aggregate["stop_card_behaviors"] = true
+                break
         if bool(result.get("blocked", false)):
             aggregate["blocked"] = true
             aggregate["reason"] = str(result.get("reason", ""))

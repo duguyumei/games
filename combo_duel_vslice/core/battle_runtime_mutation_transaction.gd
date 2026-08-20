@@ -24,7 +24,8 @@ static func begin(
         "committed_event_service": committed_event_service,
         "trigger_queue": trigger_queue,
         "rng": rng,
-        "state_participants": state_participants.duplicate(),
+        # 事务快照保存状态副本即可；不能反向强持有战斗组合根中的参与者。
+        "state_participants": _weak_references(state_participants),
     }
 
 
@@ -49,7 +50,7 @@ static func capture(
                         captured_status_systems[status_key] = true
                 options["include_status_system"] = include_status
             side_states.append({
-                "side": side,
+                "side_ref": weakref(side),
                 "state": side.capture_transaction_state(options),
             })
     var participant_states: Array = []
@@ -57,7 +58,7 @@ static func capture(
         if participant != null and participant.has_method(
                 "capture_transaction_state"):
             participant_states.append({
-                "participant": participant,
+                "participant_ref": weakref(participant),
                 "state": participant.capture_transaction_state(),
             })
     return {
@@ -75,6 +76,21 @@ static func capture(
 
 
 static func commit(transaction: Dictionary) -> Dictionary:
+    if transaction.has("success") and not bool(transaction.get(
+            "success", false)):
+        return {
+            "success": false,
+            "reason": str(transaction.get(
+                "reason", "战斗 mutation 事务无效")),
+            "rolled_back": bool(transaction.get("rolled_back", false)),
+        }
+    var scope_service = _scope_service(transaction)
+    if scope_service != null:
+        return scope_service.commit(transaction)
+    return commit_underlying(transaction)
+
+
+static func commit_underlying(transaction: Dictionary) -> Dictionary:
     var event_service = transaction.get("committed_event_service")
     if event_service != null and event_service.has_method(
             "commit_publication_transaction"):
@@ -83,16 +99,35 @@ static func commit(transaction: Dictionary) -> Dictionary:
 
 
 static func rollback(transaction: Dictionary) -> bool:
+    var scope_service = _scope_service(transaction)
+    if scope_service != null:
+        return scope_service.rollback(transaction)
+    return rollback_underlying(transaction)
+
+
+static func rollback_underlying(transaction: Dictionary) -> bool:
     var event_service = transaction.get("committed_event_service")
     if event_service != null and event_service.has_method(
             "rollback_publication_transaction"):
         event_service.rollback_publication_transaction()
+    return restore_underlying_state(transaction)
+
+
+static func restore_underlying_state(transaction: Dictionary) -> bool:
+    var event_service = transaction.get("committed_event_service")
     return restore(
         transaction.get("snapshot", {}),
         event_service,
         transaction.get("trigger_queue"),
         transaction.get("rng"),
         transaction.get("state_participants", []))
+
+
+static func _scope_service(transaction: Dictionary):
+    var value = transaction.get("scope_service")
+    if value is WeakRef:
+        return value.get_ref()
+    return null
 
 
 static func restore(
@@ -102,7 +137,7 @@ static func restore(
         rng: RandomNumberGenerator = null,
         _state_participants: Array = []) -> bool:
     for entry in snapshot.get("side_states", []):
-        var side = entry.get("side")
+        var side = _referenced_object(entry, "side_ref", "side")
         if side != null:
             side.restore_transaction_state(entry.get("state", {}))
     if committed_event_service != null and committed_event_service.has_method(
@@ -113,7 +148,8 @@ static func restore(
     if trigger_queue != null and trigger_queue.has_method("restore_runtime_state"):
         trigger_queue.restore_runtime_state(snapshot.get("trigger_state", {}))
     for entry in snapshot.get("participant_states", []):
-        var participant = entry.get("participant")
+        var participant = _referenced_object(
+            entry, "participant_ref", "participant")
         if participant != null and participant.has_method(
                 "restore_transaction_state"):
             participant.restore_transaction_state(entry.get("state", {}))
@@ -121,3 +157,18 @@ static func restore(
             "has_rng", snapshot.has("rng_state"))):
         rng.state = int(snapshot.get("rng_state", rng.state))
     return true
+
+
+static func _referenced_object(
+        entry: Dictionary, weak_key: String, legacy_key: String):
+    var value = entry.get(weak_key, entry.get(legacy_key))
+    if value is WeakRef:
+        return value.get_ref()
+    return value
+
+
+static func _weak_references(values: Array) -> Array:
+    var result: Array = []
+    for value in values:
+        result.append(weakref(value) if value is Object else null)
+    return result

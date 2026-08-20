@@ -23,6 +23,7 @@ var passive_rule_runtime
 var battle_rng: RandomNumberGenerator
 var trigger_queue
 var card_batch_recorder
+var mutation_scope_service = null
 var _effect_batch_entries: Dictionary = {}
 
 func _init(lifecycle = null) -> void:
@@ -55,6 +56,28 @@ func use_runtime_transaction_dependencies(
 
 func use_card_batch_recorder(recorder) -> void:
     card_batch_recorder = recorder
+
+func use_mutation_scope_service(service) -> void:
+    mutation_scope_service = service
+
+func _begin_mutation_transaction(
+        sides: Array,
+        rng_override: RandomNumberGenerator = null) -> Dictionary:
+    if mutation_scope_service != null:
+        return mutation_scope_service.begin()
+    return BattleRuntimeMutationTransactionScript.begin(
+        sides, committed_event_service, trigger_queue,
+        rng_override if rng_override != null else battle_rng)
+
+func _commit_mutation_transaction(transaction: Dictionary) -> Dictionary:
+    if mutation_scope_service != null:
+        return mutation_scope_service.commit(transaction)
+    return BattleRuntimeMutationTransactionScript.commit(transaction)
+
+func _rollback_mutation_transaction(transaction: Dictionary) -> bool:
+    if mutation_scope_service != null:
+        return mutation_scope_service.rollback(transaction)
+    return BattleRuntimeMutationTransactionScript.rollback(transaction)
 
 func capture_runtime_state() -> Dictionary:
     return {"effect_batch_entries": _effect_batch_entries.duplicate(true)}
@@ -96,8 +119,7 @@ func draw(
             "trigger_mode": "direct",
         }
     source = EffectSourceProtocolScript.from_values(source)
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        [side], committed_event_service, trigger_queue, battle_rng)
+    var transaction := _begin_mutation_transaction([side])
     var depletion_receipts: Array = []
     var failure := ""
     for _index in range(maxi(0, count)):
@@ -126,9 +148,14 @@ func draw(
             break
         drawn.append(card)
     if failure == "":
-        BattleRuntimeMutationTransactionScript.commit(transaction)
+        var transaction_commit := _commit_mutation_transaction(transaction)
+        if not transaction_commit.get("success", false):
+            failure = str(transaction_commit.get(
+                "reason", "抽牌事务提交失败"))
+            drawn.clear()
+            depletion_receipts.clear()
     else:
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         drawn.clear()
         depletion_receipts.clear()
     side.last_draw_result = {
@@ -304,8 +331,7 @@ func random_discard(
 func random_discard_result(
         side, count: int, rng: RandomNumberGenerator,
         source_metadata: Dictionary = {}) -> Dictionary:
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        [side], committed_event_service, trigger_queue, rng)
+    var transaction := _begin_mutation_transaction([side], rng)
     var discarded: Array = []
     for _index in range(maxi(0, count)):
         var candidates: Array = side.hand.filter(
@@ -318,7 +344,7 @@ func random_discard_result(
             source_metadata)
         if not result.get("success", false) \
                 or not result.get("passive_event_success", true):
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return {
                 "success": false,
                 "reason": str(result.get("passive_event_reason", result.get(
@@ -326,7 +352,15 @@ func random_discard_result(
                 "cards": [],
             }
         discarded.append(card)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "随机弃牌事务提交失败")),
+            "cards": [],
+            "rolled_back": true,
+        }
     return {"success": true, "cards": discarded}
 
 func discard_all(side, source_metadata: Dictionary = {}) -> Array:
@@ -334,8 +368,7 @@ func discard_all(side, source_metadata: Dictionary = {}) -> Array:
 
 func discard_all_result(
         side, source_metadata: Dictionary = {}) -> Dictionary:
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        [side], committed_event_service, trigger_queue, battle_rng)
+    var transaction := _begin_mutation_transaction([side])
     var discarded: Array = []
     for card in side.hand.duplicate():
         if not _can_explicit_discard(side, card):
@@ -345,7 +378,7 @@ func discard_all_result(
             source_metadata)
         if not result.get("success", false) \
                 or not result.get("passive_event_success", true):
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return {
                 "success": false,
                 "reason": str(result.get("passive_event_reason", result.get(
@@ -353,7 +386,15 @@ func discard_all_result(
                 "cards": [],
             }
         discarded.append(card)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "全部弃牌事务提交失败")),
+            "cards": [],
+            "rolled_back": true,
+        }
     return {"success": true, "cards": discarded}
 
 func recover_from_discard(
@@ -774,8 +815,7 @@ func _commit_disposition_replacement(
     }, true)
     metadata = _with_frozen_counts(
         side, side, source_zone, final_zone, metadata)
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        [side], committed_event_service, trigger_queue, battle_rng)
+    var transaction := _begin_mutation_transaction([side])
     _remove_from_source_zone(side, card, source_zone, reason)
     if final_zone == "draw_pile":
         _insert_in_zone(side, final_zone, card, "bottom")
@@ -784,7 +824,7 @@ func _commit_disposition_replacement(
     var lifecycle := _apply_state_lifecycle(
         side, card, source_zone, final_zone, reason, metadata)
     if not lifecycle.get("success", true):
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         return {
             "success": false,
             "reason": str(lifecycle.get("reason", "处置替换生命周期失败")),
@@ -795,7 +835,7 @@ func _commit_disposition_replacement(
         side, side, card, source_zone, final_zone, reason,
         "bottom" if final_zone == "draw_pile" else "top", metadata, true)
     if not moved.get("success", true):
-        BattleRuntimeMutationTransactionScript.rollback(transaction)
+        _rollback_mutation_transaction(transaction)
         return {
             "success": false,
             "reason": str(moved.get("reason", "处置替换 card_moved 提交失败")),
@@ -804,14 +844,21 @@ func _commit_disposition_replacement(
         var explicit := _emit_logical_explicit_discard_event(
             side, card, source_zone, final_zone, metadata)
         if not explicit.get("success", true):
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return {
                 "success": false,
                 "reason": str(explicit.get(
                     "reason", "处置替换明确弃置事实提交失败")),
             }
     _dispatch_deferred_card_moved_response(moved)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "处置替换事务提交失败")),
+            "rolled_back": true,
+        }
     return {
         "success": true,
         "card": card,
@@ -973,8 +1020,7 @@ func move_cards_synchronously(records: Array) -> Dictionary:
     if prepared.is_empty():
         return {"success": true, "cards": [], "entries": []}
     _stamp_movement_batch(prepared, "synchronous_move")
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        transaction_sides, committed_event_service, trigger_queue, battle_rng)
+    var transaction := _begin_mutation_transaction(transaction_sides)
     for entry in prepared:
         if bool(entry["void"]):
             _place_in_temporary_removed(
@@ -1037,7 +1083,7 @@ func move_cards_synchronously(records: Array) -> Dictionary:
                 entry["destination_zone"], entry["reason"],
                 entry["placement"], metadata)
         if not result.get("success", true):
-            BattleRuntimeMutationTransactionScript.rollback(transaction)
+            _rollback_mutation_transaction(transaction)
             return {
                 "success": false,
                 "reason": str(result.get("reason", "同步牌区移动提交失败")),
@@ -1053,7 +1099,16 @@ func move_cards_synchronously(records: Array) -> Dictionary:
             "logical_explicit_discard": entry["reason"] == "explicit_discard",
             "disposition_replaced": bool(entry["disposition_replaced"]),
         })
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := _commit_mutation_transaction(transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "同步牌区移动事务提交失败")),
+            "cards": [],
+            "entries": [],
+            "rolled_back": true,
+        }
     return {
         "success": true,
         "cards": committed_entries.map(func(value): return value["card"]),

@@ -49,6 +49,8 @@ const BattlePermissionServiceScript = preload(
     "res://core/passives/battle_permission_service.gd")
 const BattlePureQueryGuardScript = preload(
     "res://core/passives/battle_pure_query_guard.gd")
+const BattleMutationTransactionScopeServiceScript = preload(
+    "res://core/battle_mutation_transaction_scope_service.gd")
 const SameQiGaugeServiceScript = preload("res://core/same_qi_gauge_service.gd")
 const TechniqueInvocationServiceScript = preload("res://core/technique_invocation_service.gd")
 const TechniqueAutoTriggerServiceScript = preload("res://core/technique_auto_trigger_service.gd")
@@ -94,6 +96,7 @@ var hand_recognition_policy
 var card_identity_policy
 var battle_permission_service
 var battle_pure_query_guard
+var battle_mutation_scope_service
 var same_qi_gauge_service
 var technique_invocation_service
 var technique_auto_trigger_service
@@ -204,6 +207,14 @@ func _init(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
     battle_passive_event_service.register_weak_listener(
         player, "on_committed_event_for_run_history")
+    battle_mutation_scope_service = \
+        BattleMutationTransactionScopeServiceScript.new().configure(
+            [player, enemy], battle_passive_event_service,
+            trigger_queue, rng)
+    player.use_battle_mutation_scope_service(
+        battle_mutation_scope_service)
+    enemy.use_battle_mutation_scope_service(
+        battle_mutation_scope_service)
     battle_pure_query_guard = BattlePureQueryGuardScript.new()
     battle_pure_query_guard.use_rng(rng)
     battle_pure_query_guard.use_committed_event_service(
@@ -256,12 +267,16 @@ func _init(
         status_system,
         battle_flow,
         trigger_queue)
+    effect_ports.use_mutation_scope_service(
+        battle_mutation_scope_service)
     effect_ports.use_battle_permission_service(battle_permission_service)
     effect_ports.use_sides(player, enemy)
     effect_ports.use_battle_rng(rng)
     effect_ports.use_technique_repository(repository)
     same_qi_gauge_service = SameQiGaugeServiceScript.new(battle_flow)
     effect_ports.use_same_qi_gauge_service(same_qi_gauge_service)
+    battle_mutation_scope_service.use_state_participants(
+        effect_ports.transaction_state_participants())
     passive_rule_runtime.use_battle_effect_ports(
         effect_ports, Callable(self, "_set_scenario_error"))
     timing_system.use_mutation_transaction_callbacks(
@@ -308,6 +323,8 @@ func _init(
     technique_resolution_service = TechniqueResolutionServiceScript.new(
         repository, effect_executor, effect_ports,
         battle_passive_event_service)
+    technique_resolution_service.use_mutation_scope_service(
+        battle_mutation_scope_service)
     technique_resolution_service.use_passive_runtime(passive_rule_runtime)
     battle_flow.use_passive_battle_services(
         passive_rule_runtime, effect_ports,
@@ -452,7 +469,8 @@ func _init(
         Callable(self, "_emit_state_changed"),
         enemy,
         battle_passive_event_service,
-        content_catalog)
+        content_catalog,
+        battle_mutation_scope_service)
 
 func _commit_round_end_defense_decay(
         side,
@@ -542,6 +560,7 @@ func setup(
         battle_state_detail = "统一内容目录无效"
         state_changed.emit()
         return
+    battle_mutation_scope_service.abort_active("重新装配战斗")
     battle_passive_timing_bridge.close_battle()
     battle_passive_event_service.close_battle()
     passive_rule_runtime.close_battle_effect_commands()
@@ -657,6 +676,7 @@ func replace_player_deck(cards: Array, shuffle_cards: bool = true) -> void:
 
 func use_external_enemy_actions(enabled: bool) -> void:
     if not enabled and battle_passive_timing_bridge.is_assembled():
+        battle_mutation_scope_service.abort_active("关闭外部敌方行动")
         battle_passive_timing_bridge.close_battle()
         battle_passive_event_service.close_battle()
         passive_rule_runtime.close_battle_effect_commands()

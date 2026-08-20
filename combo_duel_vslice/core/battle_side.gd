@@ -205,6 +205,9 @@ func use_card_zone_transaction_dependencies(
         rng: RandomNumberGenerator, queue) -> void:
     card_zone_service.use_runtime_transaction_dependencies(rng, queue)
 
+func use_battle_mutation_scope_service(service) -> void:
+    card_zone_service.use_mutation_scope_service(service)
+
 func use_technique_sequence_book(book) -> void:
     technique_sequence_book = book
 

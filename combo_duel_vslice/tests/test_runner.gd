@@ -1037,6 +1037,7 @@ class TargetQueryPortsProbe:
 var failures: Array[String] = []
 var assertions: int = 0
 var card_serial: int = 0
+var tracked_combat_engines: Array = []
 
 func _initialize() -> void:
     if not RuntimeProfileScript.current().is_test():
@@ -1151,6 +1152,7 @@ func _initialize() -> void:
     _test_front_menu_and_starter_build_flow()
     _test_synchronized_defense_before_damage()
     _test_synchronized_lethal_and_battle_results()
+    _release_tracked_mutation_scopes()
     if failures.is_empty():
         print("TEST PASS: %d assertions" % assertions)
         quit(0)
@@ -1159,6 +1161,32 @@ func _initialize() -> void:
             push_error("TEST FAIL: %s" % failure)
         print("TEST FAILURES: %d / %d assertions" % [failures.size(), assertions])
         quit(1)
+
+func _tracked_combat_engine(
+        game_log_override = null,
+        content_catalog_override = null,
+        passive_rule_registry_override = null):
+    var engine = CombatEngineScript.new(
+        game_log_override,
+        content_catalog_override,
+        passive_rule_registry_override)
+    tracked_combat_engines.append(engine)
+    return engine
+
+func _release_tracked_mutation_scopes() -> void:
+    for engine in tracked_combat_engines:
+        if engine == null or engine.battle_mutation_scope_service == null:
+            continue
+        engine.battle_mutation_scope_service.abort_active(
+            "主测试组结束")
+        engine.player.use_battle_mutation_scope_service(null)
+        engine.enemy.use_battle_mutation_scope_service(null)
+        engine.effect_ports.use_mutation_scope_service(null)
+        engine.technique_resolution_service.use_mutation_scope_service(null)
+        if engine.consumable_service != null:
+            engine.consumable_service.use_mutation_scope_service(null)
+        engine.battle_mutation_scope_service = null
+    tracked_combat_engines.clear()
 
 func _card(rank: String, attribute: String = "wind"):
     card_serial += 1
@@ -2345,7 +2373,7 @@ func _test_passive_runtime_capacity_suppression_invocations_and_items() -> void:
     _assert_equal(delayed_probe.size(), 1, "之后施加压制不撤销已进入其他系统的延迟效果")
     runtime.suppression_service.clear()
 
-    var engine = CombatEngineScript.new(null, catalog, registry)
+    var engine = _tracked_combat_engine(null, catalog, registry)
     engine.setup(2308, false)
     engine.player.configure_items(["repeat_item"])
     engine.player.configure_inner_skills(["state_inner", "state_inner"], 1)
@@ -5238,7 +5266,7 @@ func _battle_passive_test_engine(
         registry,
         item_ids: Array,
         inner_skill_ids: Array = []):
-    var engine = CombatEngineScript.new(null, catalog, registry)
+    var engine = _tracked_combat_engine(null, catalog, registry)
     engine.setup(5512, false)
     engine.player.configure_items(item_ids)
     engine.player.learned_inner_skill_ids.assign(inner_skill_ids)
@@ -5704,7 +5732,7 @@ func _test_content_catalog_and_validator() -> void:
         _array_contains_text(bad_enhancement_reference_catalog.errors, "引用未知强化 missing_enhancement"),
         "未知强化引用错误稳定定位")
 
-    var engine = CombatEngineScript.new(null, catalog)
+    var engine = _tracked_combat_engine(null, catalog)
     var run_session: RunSession = RunSessionScript.new(null, null, null, null, catalog)
     _assert_true(engine.content_catalog == catalog, "战斗核心使用注入的统一目录实例")
     _assert_true(run_session.execute({"type": "setup_run", "seed": 17}).success, "本局流程从同一目录装配地图与节点内容")
@@ -7473,7 +7501,7 @@ func _test_effect_extension_entry_contract() -> void:
 func _test_card_zone_service_contract() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "F3C 牌区生命周期载入内容")
-    var engine = CombatEngineScript.new(null, catalog)
+    var engine = _tracked_combat_engine(null, catalog)
     engine.setup(816, false)
 
     var discard_card = _card("6", "forest")
@@ -7588,7 +7616,7 @@ func _test_battle_flow_coordinator_contract() -> void:
     ])
     _assert_true(flow.can_act(right), "一次性下回合禁用不会污染后续行动轮")
 
-    var enemy_disabled = CombatEngineScript.new()
+    var enemy_disabled = _tracked_combat_engine()
     _assert_true(enemy_disabled.setup_scripted_battle(2308), "敌方禁用集成测试载入脚本战斗")
     enemy_disabled.disable_actor_next_rounds(enemy_disabled.enemy, "封招", 1)
     enemy_disabled.start_player_turn()
@@ -7599,14 +7627,14 @@ func _test_battle_flow_coordinator_contract() -> void:
     _assert_true(player_result["enemy_played_cards"].is_empty(), "单方出招不会强制敌方陪同出牌")
     _assert_equal(enemy_disabled.enemy.hand.size(), enemy_hand_before, "被禁用敌方的手牌没有被消耗")
 
-    var player_disabled = CombatEngineScript.new()
+    var player_disabled = _tracked_combat_engine()
     _assert_true(player_disabled.setup_scripted_battle(2308), "玩家禁用集成测试载入脚本战斗")
     player_disabled.disable_actor_next_rounds(player_disabled.player, "封招", 1)
     player_disabled.start_player_turn()
     _assert_equal(player_disabled.actions_available, 0, "玩家下回合无法操作时对外显示零次行动")
     _assert_true(not player_disabled.last_enemy_action_cards.is_empty(), "玩家被禁用时敌方能够完成单方行动")
 
-    var empty_enemy = CombatEngineScript.new()
+    var empty_enemy = _tracked_combat_engine()
     _assert_true(empty_enemy.setup_scripted_battle(
         2308, "res://data/scripted_battle.json", true), "零手牌集成测试载入调试 AI")
     empty_enemy.enemy.draw_pile.clear()
@@ -7666,7 +7694,7 @@ func _test_battle_timing_system_contract_and_integration() -> void:
     _assert_true(timing.unregister_handler(BattleTimingSystemScript.TURN_START, "left"), "战斗时点处理器可以按 ID 注销")
     _assert_true(not timing.emit_timing("bad")["success"], "分发未知战斗时点返回明确失败")
 
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(815, false)
     engine.start_player_turn()
     var opening_timings: Array = engine.timing_system.history.map(
@@ -7726,7 +7754,7 @@ func _test_battle_timing_system_contract_and_integration() -> void:
     _assert_equal(engine.delayed_effects.size(), 0, "战斗结束时点清除未到期延迟记录")
     _assert_equal(engine.player.defense + engine.enemy.defense, 0, "战斗结束时点清除双方防御")
 
-    var scripted = CombatEngineScript.new()
+    var scripted = _tracked_combat_engine()
     _assert_true(scripted.setup_scripted_battle(2308), "双方时点集成测试载入脚本战斗")
     scripted.start_player_turn()
     var turn_start_actor_ids: Array = []
@@ -7800,7 +7828,7 @@ func _test_defense_retention_policy_and_round_decay() -> void:
     _assert_true(policy.unregister_provider("test.retention_prevent"), "保留比例提供者可以注销")
     _assert_true(not policy.unregister_provider("test.retention_prevent"), "重复注销提供者返回失败")
 
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(82301, false)
     engine.start_player_turn()
     _assert_equal(engine.current_round_actors, [engine.player], "非脚本模式敌方没有本回合行动资格")
@@ -7902,7 +7930,7 @@ func _test_status_behavior_registry_contract() -> void:
 func _test_status_system_contract() -> void:
     var catalog = ContentCatalogScript.new()
     _assert_true(catalog.load_all(), "F3C 状态系统载入正式内容")
-    var engine = CombatEngineScript.new(GameLogScript.new(), catalog)
+    var engine = _tracked_combat_engine(GameLogScript.new(), catalog)
     engine.setup(815, false)
     var system = engine.status_system
     var card = _card("9", "fire")
@@ -8936,7 +8964,7 @@ func _test_f2d2_formal_enhancement_runtime() -> void:
         catalog.get_by_id("card", "mountain_6"), "f3c:start-void",
         catalog.card_reshape_rules)
     start_void.set_enhancement("void_burst")
-    var engine = CombatEngineScript.new(null, catalog)
+    var engine = _tracked_combat_engine(null, catalog)
     engine.setup(82201, false)
     engine.player.draw_pile = [start_void]
     engine.player.hand.clear()
@@ -9005,7 +9033,7 @@ func _test_f2d2_opportunity_freeze_and_progress_sync() -> void:
     var growth = GrowthInventoryScript.new(catalog)
     growth.experience = 7
     var battle_session: BattleSession = BattleSessionScript.new(
-        CombatEngineScript.new(null, catalog))
+        _tracked_combat_engine(null, catalog))
     _assert_true(
         battle_session.setup_battle(
             {"content_seed": 82304}, growth.to_progress_snapshot()),
@@ -9362,7 +9390,7 @@ func _test_f2e1_formal_imprint_runtime_and_persistence() -> void:
     workshop.apply_run_card_reshape(
         growth.run_deck, ["fire_4"], "imprint", "innate")
     var battle_session: BattleSession = BattleSessionScript.new(
-        CombatEngineScript.new(null, catalog))
+        _tracked_combat_engine(null, catalog))
     _assert_true(
         battle_session.setup_battle(
             {"content_seed": 82414}, growth.to_progress_snapshot()),
@@ -9488,7 +9516,7 @@ func _test_standard_deck() -> void:
             "标准牌组任一同牌阶组最多形成四条")
 
 func _test_pool_structure_and_turn_draw_rules() -> void:
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(7, false)
     var unique_pools: Dictionary = {}
     for hand_id in engine.repository.pool_membership:
@@ -10014,7 +10042,7 @@ func _test_damage_resolver_rules_and_facade() -> void:
     _assert_equal(first.life, 0, "同步双方致命时第一方正常倒下")
     _assert_equal(second.life, 0, "同步双方致命时第二方正常倒下")
 
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(144, false)
     engine.player.momentum_value = 25
     engine.enemy.life = 20
@@ -10082,7 +10110,7 @@ func _test_structured_game_log_channels() -> void:
     _assert_equal(game_log.entries("run").size(), 1, "清理战斗日志不会删除本局流程记录")
 
 func _test_action_preview_service_matches_engine_facade() -> void:
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(2308, false)
     engine.start_player_turn()
     var card_ids: Array = [engine.player.hand[0].id, engine.player.hand[1].id]
@@ -10103,7 +10131,7 @@ func _test_action_preview_service_matches_engine_facade() -> void:
         "行动预览服务不推进功法序列")
 
 func _engine_with_hand(cards: Array, draw_cards: Array = [], seed_value: int = 99):
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(seed_value, false)
     engine.player.hand = cards.duplicate()
     engine.player.draw_pile = draw_cards.duplicate()
@@ -10236,7 +10264,7 @@ func _test_inner_skill_preview_and_enemy_plan() -> void:
     _assert_true(not public_plan.has("inner_skills"), "敌方公开计划不泄露具体内功来源")
 
 func _test_consumable_shared_slots_and_generation_limit() -> void:
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(77, false)
     GrowthInventoryScript.new(
         engine.content_catalog, false).apply_to_battle_side(engine.player)
@@ -10292,7 +10320,7 @@ func _test_unified_run_and_battle_consumable_order_and_records() -> void:
         run_context, 0, [], 9981, definition)
     _assert_true(run_result.get("success", false), "Run 入口通过统一事务使用成功")
 
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(9981, false)
     _assert_true(engine.consumable_repository.configure({
         "practice_offer_ids": ["transaction_order_probe"],
@@ -10348,7 +10376,7 @@ func _test_battle_unique_consumable_and_query_purity() -> void:
         },
         "effects": [{"op": "remove_run_cards"}],
     }
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(9982, false)
     _assert_true(engine.consumable_repository.configure({
         "practice_offer_ids": ["battle_unique_probe"],
@@ -10789,7 +10817,8 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
             default_growth.hand_technique_progression),
         "run_deck": run_deck.to_snapshot(),
     })
-    var first_battle: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+    var first_battle: BattleSession = BattleSessionScript.new(
+        _tracked_combat_engine())
     _assert_true(first_battle.setup_battle({"content_seed": 4404}, progress), "带增元丹的本局牌组可以进入战斗")
     first_battle.execute({"type": "start_turn"})
     var target = first_battle.engine.player.hand[0]
@@ -10803,7 +10832,7 @@ func _test_battle_consumable_reshape_persists_via_run_deck() -> void:
     _assert_equal(target.reshape_enhancement, "qi_boost", "战斗消耗品施加增元强化")
     var after_progress = first_battle.player_progress_snapshot()
     _assert_true(after_progress.consumable_ids.is_empty(), "战斗中使用消耗品后释放本局槽位")
-    var second_battle = BattleSessionScript.new(CombatEngineScript.new())
+    var second_battle = BattleSessionScript.new(_tracked_combat_engine())
     var second_loaded: bool = second_battle.setup_battle(
         {"content_seed": 4405}, after_progress)
     _assert_true(
@@ -10971,7 +11000,8 @@ func _test_run_consumable_zengyuan_pill() -> void:
     _assert_equal(session.growth.consumable_ids, [], "增元丹使用后释放槽位")
 
     var progress = session.progress_snapshot()
-    var battle: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+    var battle: BattleSession = BattleSessionScript.new(
+        _tracked_combat_engine())
     _assert_true(battle.setup_battle({"content_seed": 77201}, progress), "携带增元的本局牌组进入战斗")
     battle.execute({"type": "start_turn"})
     var seen := false
@@ -11586,7 +11616,8 @@ func _test_s2f2f2_formal_curios_and_protocols() -> void:
             _assert_true(guixu.growth.learned_technique_ids.has(technique_id), "归墟移出序列但保留功法库")
 
     guixu.growth.base_hand_limit_modifier = -1
-    var battle = BattleSessionScript.new(CombatEngineScript.new(null, catalog))
+    var battle = BattleSessionScript.new(
+        _tracked_combat_engine(null, catalog))
     _assert_true(battle.setup_battle({"content_seed": 99109, "battle": {"use_enemy_ai": false}}, guixu.progress_snapshot()), "奇珍本局规则可装配下一场战斗")
     _assert_equal(battle.engine.player.current_hand_limit(), 7, "下一场战斗读取易阶盘基础手牌上限")
     battle.engine.player.hand = [_card("5", "wind")]
@@ -11833,7 +11864,8 @@ func _test_snapshot_boundaries_are_typed() -> void:
     ## 这些快照类曾经只包一个裸 Dictionary 并暴露 value(key, default)，
     ## 键名写错会静默返回默认值。这里断言字段访问可用、无类型旁路残留，
     ## 且 inner_skill_limit 由领域常量供给而不是表现层各自假设一个数字。
-    var session: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+    var session: BattleSession = BattleSessionScript.new(
+        _tracked_combat_engine())
     _assert_true(session.setup_battle({"seed": 8801}), "战斗会话建立用于快照边界检查")
     session.execute({"type": "start_turn"})
     var battle := session.snapshot()
@@ -12078,7 +12110,7 @@ func _test_run_service_boundaries_and_progress_snapshot() -> void:
 func _test_battle_run_progress_working_state_protocol() -> void:
     var catalog = ContentCatalogScript.new(RuntimeProfileScript.test())
     _assert_true(catalog.load_all(), "战斗工作状态协议测试载入内容目录")
-    var engine = CombatEngineScript.new(null, catalog)
+    var engine = _tracked_combat_engine(null, catalog)
     engine.setup(260817, false)
     var setup_service = BattleSetupServiceScript.new(catalog)
     var run_deck = RunDeckScript.new(catalog)
@@ -12736,7 +12768,8 @@ func _test_run_session_commands_snapshots_events_and_logs() -> void:
         "本局事件使用稳定信封字段且不保留无类型旁路")
     _assert_true(session.drain_events().is_empty(), "本局事件被消费后不会重复播放")
 
-    var battle_session: BattleSession = BattleSessionScript.new(CombatEngineScript.new())
+    var battle_session: BattleSession = BattleSessionScript.new(
+        _tracked_combat_engine())
     battle_session.use_game_log(session.game_log)
     _assert_true(battle_session.setup_battle({"content_seed": 2308}), "战斗会话可以复用本局日志实例")
     _assert_true(not session.game_log.entries("run").is_empty(), "建立战斗不会清除既有本局日志")
@@ -13722,7 +13755,7 @@ func _test_run_state_battle_growth_persistence() -> void:
         if card.id == "wind_8":
             card.set_enhancement("qi_boost")
     state.run_deck.sync_from_battle_cards(run_cards)
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup(420, false)
     state.apply_to_battle_side(engine.player)
     var modified = null
@@ -14378,8 +14411,8 @@ func _hand_ids(cards: Array) -> Array:
     return ids
 
 func _test_scripted_enemy_is_deterministic_and_locked() -> void:
-    var first = CombatEngineScript.new()
-    var second = CombatEngineScript.new()
+    var first = _tracked_combat_engine()
+    var second = _tracked_combat_engine()
     _assert_true(first.setup_scripted_battle(2308), "第一个脚本场景载入")
     _assert_true(second.setup_scripted_battle(2308), "第二个脚本场景载入")
     first.start_player_turn()
@@ -14389,8 +14422,8 @@ func _test_scripted_enemy_is_deterministic_and_locked() -> void:
     _assert_equal(first.locked_enemy_card_ids, second.locked_enemy_card_ids, "敌方锁定不依赖玩家选牌")
 
 func _test_enemy_ai_plan_is_deterministic_and_hidden() -> void:
-    var first = CombatEngineScript.new()
-    var second = CombatEngineScript.new()
+    var first = _tracked_combat_engine()
+    var second = _tracked_combat_engine()
     _assert_true(first.setup_scripted_battle(2308, "res://data/scripted_battle.json", true), "第一个调试 AI 场景载入")
     _assert_true(second.setup_scripted_battle(2308, "res://data/scripted_battle.json", true), "第二个调试 AI 场景载入")
     first.start_player_turn()
@@ -14407,7 +14440,7 @@ func _test_enemy_ai_plan_is_deterministic_and_hidden() -> void:
     _assert_true(not first.enemy_plan.has("technique"), "公开计划不包含具体功法")
 
 func _test_enemy_ai_uses_same_qi_gauge() -> void:
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
@@ -14418,7 +14451,7 @@ func _test_enemy_ai_uses_same_qi_gauge() -> void:
     _assert_true(engine.enemy.same_qi_value >= 0, "敌方实际结算同气槽")
 
 func _test_both_sides_use_synchronized_combo() -> void:
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     engine.player.hand = [_card("2", "wind"), _card("3", "forest"), _card("4", "mountain")]
@@ -14428,7 +14461,7 @@ func _test_both_sides_use_synchronized_combo() -> void:
     _assert_equal(engine.enemy_actions_available, 0, "敌方同样只按同气槽阈值获得连击")
 
 func _test_ai_battle_reaches_terminal_state() -> void:
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup_scripted_battle(2308, "res://data/scripted_battle.json", true)
     engine.start_player_turn()
     var steps := 0
@@ -14467,7 +14500,7 @@ func _content_entry_index(values: Array, content_id: String) -> int:
     return -1
 
 func _scripted_engine_with_player_high(rank: String = "5"):
-    var engine = CombatEngineScript.new()
+    var engine = _tracked_combat_engine()
     engine.setup_scripted_battle(2308)
     engine.start_player_turn()
     engine.player.hand = [_card(rank, "mountain"), _card("3", "forest")]

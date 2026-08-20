@@ -18,6 +18,7 @@ var _event_service
 var _passive_runtime
 var _active_executions: Dictionary = {}
 var _completed_summaries: Dictionary = {}
+var _mutation_scope_service = null
 
 func _init(repository, executor, ports, event_service) -> void:
     _repository = repository
@@ -34,6 +35,20 @@ func reset() -> void:
 
 func use_passive_runtime(runtime) -> void:
     _passive_runtime = runtime
+
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service = service
+
+func _begin_mutation_transaction(runtime) -> Dictionary:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.begin()
+    return BattleRuntimeMutationTransactionScript.begin(
+        _ports.transaction_sides() if _ports.has_method(
+            "transaction_sides") else [runtime.actor, runtime.target],
+        _event_service,
+        _ports.transaction_trigger_queue() if _ports.has_method(
+            "transaction_trigger_queue") else null,
+        _ports.battle_rng() if _ports.has_method("battle_rng") else null)
 
 func discard_all_pending_executions() -> void:
     _active_executions.clear()
@@ -330,13 +345,15 @@ func finish_execution(context) -> Dictionary:
             .capture_battle_effect_command_state() \
             if _passive_runtime != null else {},
     }
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        _ports.transaction_sides() if _ports.has_method(
-            "transaction_sides") else [runtime.actor, runtime.target],
-        _event_service,
-        _ports.transaction_trigger_queue() if _ports.has_method(
-            "transaction_trigger_queue") else null,
-        _ports.battle_rng() if _ports.has_method("battle_rng") else null)
+    var transaction := _begin_mutation_transaction(runtime)
+    if not transaction.get("success", false):
+        _restore_finish_local_state(runtime, local_snapshot)
+        return {
+            "success": false,
+            "reason": str(transaction.get(
+                "reason", "功法收尾事务无法建立")),
+            "rolled_back": bool(transaction.get("rolled_back", false)),
+        }
     var state: Dictionary = runtime.technique_execution_state
     _active_executions[token]["extra_sequence_advance_count"] = \
         _extra_advance_count(state)
@@ -388,7 +405,19 @@ func finish_execution(context) -> Dictionary:
             "post_success": post_success,
         }
     _active_executions.erase(token)
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit: Dictionary = \
+        BattleRuntimeMutationTransactionScript.commit(transaction)
+    if not transaction_commit.get("success", false):
+        _restore_finish_local_state(runtime, local_snapshot)
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "功法收尾事务提交失败")),
+            "rolled_back": bool(transaction_commit.get(
+                "rolled_back", true)),
+            "summary": summary_result.get("summary", {}),
+            "echo_results": echoes.get("results", []),
+        }
     return {
         "success": true,
         "reused": false,

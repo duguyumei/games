@@ -2274,6 +2274,9 @@ func _engine_with_cards(cards: Array):
 
 func _dispose_tracked_engines() -> void:
     for engine in tracked_engines:
+        if engine.battle_mutation_scope_service != null:
+            engine.battle_mutation_scope_service.abort_active(
+                "专项测试结束")
         engine.battle_passive_timing_bridge.close_battle()
         engine.battle_passive_event_service.close_battle()
         engine.passive_rule_runtime.close_battle_effect_commands()
@@ -2293,6 +2296,8 @@ func _dispose_tracked_engines() -> void:
         engine.enemy.use_card_reshape_runtime(null)
         engine.player.use_card_policies(null, null)
         engine.enemy.use_card_policies(null, null)
+        engine.player.use_battle_mutation_scope_service(null)
+        engine.enemy.use_battle_mutation_scope_service(null)
         engine.player.use_battle_permission_service(null)
         engine.enemy.use_battle_permission_service(null)
         engine.status_system.reset()
@@ -2301,6 +2306,7 @@ func _dispose_tracked_engines() -> void:
         engine.status_system.use_card_trigger_replay_service(null)
         engine.status_system.use_battle_permission_service(null)
         engine.effect_ports._sides.clear()
+        engine.effect_ports.use_mutation_scope_service(null)
         engine.effect_ports._survival_effect_service \
             .use_passive_battle_services(null, null, Callable())
         engine.effect_ports._source_resource_effect_service \
@@ -2324,6 +2330,9 @@ func _dispose_tracked_engines() -> void:
         engine.passive_rule_runtime = null
         engine.status_system = null
         engine.card_reshape_runtime = null
+        if engine.technique_resolution_service != null:
+            engine.technique_resolution_service.use_mutation_scope_service(null)
+        engine.battle_mutation_scope_service = null
         engine.effect_executor = null
         engine.effect_ports = null
     tracked_engines.clear()

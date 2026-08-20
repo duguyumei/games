@@ -27,6 +27,7 @@ var _handler_registry := ConsumableEffectHandlerRegistryScript.new()
 var _use_service
 var _event_service
 var _content_catalog
+var _mutation_scope_service = null
 
 func _init(
         player_side,
@@ -39,7 +40,8 @@ func _init(
         state_changed_callback: Callable,
         enemy_side = null,
         event_service = null,
-        content_catalog = null) -> void:
+        content_catalog = null,
+        mutation_scope_service = null) -> void:
     player = player_side
     enemy = enemy_side
     consumable_repository = consumables
@@ -51,11 +53,15 @@ func _init(
     state_changed = state_changed_callback
     _event_service = event_service
     _content_catalog = content_catalog
+    _mutation_scope_service = mutation_scope_service
     _use_service = ConsumableUseServiceScript.new(
         _handler_registry,
         _content_catalog,
         ContentValidatorScript.HAND_IDS,
         ContentValidatorScript.POOL_IDS)
+
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service = service
 
 func use_game_log_queue(history) -> void:
     trigger_queue = history
@@ -151,4 +157,4 @@ func _context_for(
             "source_instance_key": stable_instance_key,
             "action_token": "battle-consumable-use:%d:%d:%s" % [
                 sequence, slot_index, consumable_id],
-        })
+        }, _mutation_scope_service)

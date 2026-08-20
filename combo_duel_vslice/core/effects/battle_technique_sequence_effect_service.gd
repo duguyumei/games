@@ -25,6 +25,7 @@ var _round_number_reader: Callable
 var _rng: RandomNumberGenerator
 var _generation_batch_serial: int = 0
 var _trigger_queue = null
+var _mutation_scope_service = null
 
 
 func use_technique_repository(repository) -> void:
@@ -44,6 +45,15 @@ func use_battle_rng(rng: RandomNumberGenerator) -> void:
 func use_trigger_queue(queue) -> void:
     _trigger_queue = queue
 
+func use_mutation_scope_service(service) -> void:
+    _mutation_scope_service = service
+
+func _begin_mutation_transaction(side) -> Dictionary:
+    if _mutation_scope_service != null:
+        return _mutation_scope_service.begin()
+    return BattleRuntimeMutationTransactionScript.begin(
+        [side], _committed_event_service, _trigger_queue, _rng)
+
 func complete_and_advance(
         side,
         hand_id: String,
@@ -58,8 +68,7 @@ func complete_and_advance(
         return {"success": false, "reason": "参战者缺少功法序列簿"}
     if extra_advance_count < 0:
         return {"success": false, "reason": "额外序列推进不能为负数"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        [side], _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var sequence_before: Array = book.ordered_slots(hand_id)
     var normal: Dictionary = book.complete_slot(
         hand_id, completed_slot_instance_id)
@@ -104,7 +113,15 @@ func complete_and_advance(
             BattleRuntimeMutationTransactionScript.rollback(transaction)
             return {"success": false, "reason": str(event.get(
                 "reason", "功法序列变化事件提交失败")), "rolled_back": true}
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := BattleRuntimeMutationTransactionScript.commit(
+        transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "功法序列推进事务提交失败")),
+            "rolled_back": true,
+        }
     return {
         "success": true,
         "sequence_before": sequence_before,
@@ -261,8 +278,7 @@ func clear_temporary_techniques(
     var book = _book_for(side)
     if book == null:
         return {"success": false, "reason": "参战者缺少功法序列簿"}
-    var transaction := BattleRuntimeMutationTransactionScript.begin(
-        [side], _committed_event_service, _trigger_queue, _rng)
+    var transaction := _begin_mutation_transaction(side)
     var result: Dictionary = book.release_all_temporary_slots()
     if int(result.get("removed_count", 0)) > 0:
         var emitted: Dictionary = emit_technique_sequence_changed(
@@ -276,7 +292,15 @@ func clear_temporary_techniques(
                     "reason", "临时功法清理事件提交失败")),
                 "rolled_back": true,
             }
-    BattleRuntimeMutationTransactionScript.commit(transaction)
+    var transaction_commit := BattleRuntimeMutationTransactionScript.commit(
+        transaction)
+    if not transaction_commit.get("success", false):
+        return {
+            "success": false,
+            "reason": str(transaction_commit.get(
+                "reason", "临时功法清理事务提交失败")),
+            "rolled_back": true,
+        }
     return result
 
 

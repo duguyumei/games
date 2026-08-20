@@ -38,6 +38,7 @@ var _consumable_repository
 var _event_service
 var _trigger_queue
 var _battle_sides: Array = []
+var _mutation_scope_service = null
 
 func _init(
 		player_side,
@@ -48,13 +49,15 @@ func _init(
 		event_service = null,
 		trigger_queue = null,
 		battle_sides: Array = [],
-		metadata_override: Dictionary = {}) -> void:
+		metadata_override: Dictionary = {},
+		mutation_scope_service = null) -> void:
 	super(player_side, instance_ids_override, rng_override, metadata_override)
 	_technique_repository = technique_repository
 	_consumable_repository = consumable_repository
 	_event_service = event_service
 	_trigger_queue = trigger_queue
 	_battle_sides = battle_sides.duplicate()
+	_mutation_scope_service = mutation_scope_service
 	if _battle_sides.is_empty() and player_side != null:
 		_battle_sides.append(player_side)
 
@@ -65,7 +68,7 @@ func create_effect_context(
 	return BattleConsumableUseContext.new(
 		growth, resolved_instance_ids, random_source, _technique_repository,
 		_consumable_repository, _event_service, _trigger_queue,
-		_battle_sides, metadata_override)
+		_battle_sides, metadata_override, _mutation_scope_service)
 
 func supports_effect(effect: Dictionary) -> Dictionary:
 	var operation_id := str(effect.get("op", ""))
@@ -158,8 +161,10 @@ func target_display_name(instance_id: String) -> String:
 ## 事务期间延迟对外发布；失败时恢复 serial、receipt 与 execution history，因而
 ## 监听器不会观察到已经回滚的半次消耗品使用。
 func begin_transaction() -> Dictionary:
-	var transaction := BattleRuntimeMutationTransactionScript.begin(
-		_battle_sides, _event_service, _trigger_queue, rng)
+	var transaction: Dictionary = _mutation_scope_service.begin() \
+		if _mutation_scope_service != null \
+		else BattleRuntimeMutationTransactionScript.begin(
+			_battle_sides, _event_service, _trigger_queue, rng)
 	transaction["context"] = self
 	return transaction
 
