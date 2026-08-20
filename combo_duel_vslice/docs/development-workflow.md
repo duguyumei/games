@@ -1269,3 +1269,21 @@ ObjectDB／RID、orphan或资源泄漏问题，仅有已知macOS CA警告。
 1081条、项目加载748项及quick 7/7。该批当时执行full为46/54，并确认其余8组也能在未含该批改动的干净
 `HEAD e99c4e4`中复现，因此没有把它们误归因于本能力。后续统一收口已经修正嵌套EffectSpec与动态响应的
 执行作用域碰撞，并同步连势容量夹具、整数查询目录数量及事务化事件观察口径；最终quick为7/7、full为54/54。
+
+## 纯查询与事务快照工作流（2026-08-20）
+
+战斗整数、权限、牌型识别和卡牌身份查询必须由组合根注入同一个 `BattlePureQueryGuard`。新增只读入口
+不得自行复制“快照→执行→比较→恢复”，也不得新建私有 RNG 或 committed 事件守卫。嵌套查询调用
+`guard.evaluate(...)`，仅补充新出现的 BattleSide、Run mutation owner 或独立卡牌；最外层统一判定状态
+写入、战斗 RNG 推进和 committed 事件发送。Run 侧 `PassiveIntPolicyResolver` 没有战斗组合根时可使用
+独立 Guard，但仍通过 `capture_mutation_state/replace_mutation_state`遵守同一纯度协议。
+
+完整战斗回滚只使用 `BattleSide.capture_transaction_state/restore_transaction_state`；旧 passive-query 名称
+是兼容 Facade，禁止新生产代码继续依赖。`BattleRuntimeMutationTransaction`捕获双方时会识别共享
+`StatusSystem`，只让一个 side 携带该状态。不要用纯查询 Guard 承担正式效果原子性，也不要在所有写入口
+尚未统一前添加全局 mutation revision。将来若要继续降低查询成本，应先建立只读 Query DTO 或由真实状态
+所有者维护可靠 revision，再替换完整快照比较。
+
+本批专项为 `tests/test_battle_pure_query_guard.gd`。当前验证另覆盖有效真气、防御衰减、生命写入前、
+真气消耗事务、战斗来源资源和 battle-contracts；没有运行 quick/full 或远程 AI。Godot 必须串行并
+显式写独立 `/tmp` 日志。

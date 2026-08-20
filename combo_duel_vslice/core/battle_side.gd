@@ -126,6 +126,7 @@ var battle_rule_query_service = null
 var hand_recognition_policy = null
 var card_identity_policy = null
 var battle_permission_service = null
+var _pure_query_guard = null
 var last_hand_limit_query_result: Dictionary = {}
 var last_same_qi_capacity_query_result: Dictionary = {}
 
@@ -161,7 +162,16 @@ func use_passive_rule_runtime(runtime) -> void:
         SourceBehaviorTransformationStoreScript.new(catalog))
     technique_loadout_policy = TechniqueLoadoutPolicyScript.new(
         catalog,
-        PassiveIntPolicyResolverScript.new(runtime) if runtime != null else null)
+        PassiveIntPolicyResolverScript.new(runtime, _pure_query_guard) \
+            if runtime != null else null)
+
+func use_pure_query_guard(guard) -> void:
+    _pure_query_guard = guard
+    if technique_loadout_policy == null or passive_rule_runtime == null:
+        return
+    var resolver = technique_loadout_policy.int_policy_resolver()
+    if resolver != null and resolver.has_method("use_pure_query_guard"):
+        resolver.use_pure_query_guard(guard)
 
 func content_catalog():
     if passive_rule_runtime != null and passive_rule_runtime.has_method(
@@ -755,7 +765,9 @@ func peek_effective_same_qi_capacity_result(
     last_same_qi_capacity_query_result = before
     return result
 
-func capture_passive_query_state() -> Dictionary:
+## BattleSide 完整战斗运行态的正式事务快照。options 只用于避免由同一
+## 事务重复捕获双方共享的 StatusSystem；默认仍捕获全部状态。
+func capture_transaction_state(options: Dictionary = {}) -> Dictionary:
     var card_states: Dictionary = {}
     for card in all_cards_for_run_sync():
         card_states[str(card.id)] = {
@@ -781,7 +793,8 @@ func capture_passive_query_state() -> Dictionary:
             "reshape_rule_service": card.reshape_rule_service,
         }
     var status_state: Dictionary = {}
-    if status_system != null:
+    if status_system != null and bool(options.get(
+            "include_status_system", true)):
         status_state = status_system.capture_runtime_state()
     return {
         "max_life": max_life,
@@ -871,7 +884,7 @@ func capture_passive_query_state() -> Dictionary:
         "card_zone_runtime_state": card_zone_service.capture_runtime_state(),
     }
 
-func replace_passive_query_state(state: Dictionary) -> void:
+func restore_transaction_state(state: Dictionary) -> void:
     max_life = int(state.get("max_life", max_life))
     base_max_life = int(state.get("base_max_life", base_max_life))
     life = int(state.get("life", life))
@@ -1038,6 +1051,13 @@ func replace_passive_query_state(state: Dictionary) -> void:
         technique_sequence_book.restore_snapshot(sequence_state)
     card_zone_service.restore_runtime_state(state.get(
         "card_zone_runtime_state", {}))
+
+## 兼容旧调用方的 Facade。新事务和纯查询基础设施只使用上面的正式接口。
+func capture_passive_query_state() -> Dictionary:
+    return capture_transaction_state()
+
+func replace_passive_query_state(state: Dictionary) -> void:
+    restore_transaction_state(state)
 
 
 ## 玩家侧对 canonical 功法执行事实的窄投影入口。幂等由 committed receipt

@@ -3,15 +3,23 @@ extends RefCounted
 
 const FactsScript = preload("res://core/passives/card_identity_facts.gd")
 const ContextScript = preload("res://core/passives/passive_rule_context.gd")
+const PureQueryGuardScript = preload(
+    "res://core/passives/battle_pure_query_guard.gd")
 
 const KNOWN_ATTRIBUTES := ["wind", "forest", "fire", "mountain"]
 
 var _runtime_ref: WeakRef
 var _providers: Array = []
 var _serial: int = 0
+var _pure_query_guard
 
-func _init(passive_runtime = null) -> void:
+func _init(passive_runtime = null, pure_query_guard = null) -> void:
     _runtime_ref = weakref(passive_runtime) if passive_runtime != null else null
+    _pure_query_guard = pure_query_guard \
+        if pure_query_guard != null else PureQueryGuardScript.new()
+
+func use_pure_query_guard(guard) -> void:
+    _pure_query_guard = guard if guard != null else PureQueryGuardScript.new()
 
 func register_provider(provider, source_id: String = "", order: int = 0) -> String:
     var stable_id := source_id if source_id != "" else "provider:%06d" % _serial
@@ -38,17 +46,23 @@ func unregister_provider(source_id: String) -> bool:
 func resolve(card, context: Dictionary = {}) -> Dictionary:
     if card == null:
         return _failure(null, "卡牌身份查询缺少卡牌", [])
-    var facts = _base_facts(card)
     var owner = context.get("owner", context.get("actor"))
-    var owner_before: Dictionary = owner.capture_passive_query_state() \
-        if owner != null and owner.has_method("capture_passive_query_state") else {}
-    var card_before := _card_state(card)
+    var participants: Array = [owner] if owner != null \
+        and owner.has_method("capture_transaction_state") else []
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_resolve_unguarded").bind(card, context),
+        participants,
+        [card])
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _failure(_base_facts(card), purity_error, [])
+    return guarded["value"]
+
+func _resolve_unguarded(card, context: Dictionary = {}) -> Dictionary:
+    var facts = _base_facts(card)
     var breakdown: Array = []
     var claimed_scalars: Dictionary = {}
     var runtime_entries := _runtime_entries(card, context)
-    var purity_error := _restore_if_mutated(owner, owner_before, card, card_before)
-    if purity_error != "":
-        return _failure(facts, purity_error, breakdown)
     if not runtime_entries.get("success", false):
         return _failure(facts, str(runtime_entries.get("reason", "身份查询失败")), breakdown)
     var entries: Array = runtime_entries.get("entries", [])
@@ -56,9 +70,6 @@ func resolve(card, context: Dictionary = {}) -> Dictionary:
         if bool(provider.get("suppressed", false)):
             continue
         var response := _call_provider(provider["provider"], card, context)
-        purity_error = _restore_if_mutated(owner, owner_before, card, card_before)
-        if purity_error != "":
-            return _failure(facts, purity_error, breakdown)
         if not response.get("success", false):
             return _failure(facts, "%s：%s" % [provider["source_id"], response.get("reason", "查询失败")], breakdown)
         entries.append({"source_id": provider["source_id"], "value": response["value"]})
@@ -182,43 +193,16 @@ func _merge(facts, values: Dictionary, claimed: Dictionary, source_id: String) -
 func _failure(facts, reason: String, breakdown: Array) -> Dictionary:
     return {"success": false, "facts": facts, "source_breakdown": breakdown, "errors": [reason], "reason": reason}
 
-func _card_state(card) -> Dictionary:
-    return {
-        "definition_id": str(card.definition_id),
-        "rank_name": str(card.rank_name), "rank_order": int(card.rank_order),
-        "qi_value": int(card.qi_value), "attribute": str(card.attribute),
-        "attribute_name": str(card.attribute_name),
-        "is_true_qi": bool(card.is_true_qi),
-        "reshape_origin": card.reshape_origin.duplicate(true),
-        "reshape_enhancement": str(card.reshape_enhancement),
-        "reshape_imprint": str(card.reshape_imprint),
-        "reshape_others": card.reshape_others.duplicate(true),
-        "anomalies": card.anomalies.duplicate(true),
-        "temporary_reshapes": card.temporary_reshapes.duplicate(true),
-        "origin_base_identity": card.origin_base_identity.duplicate(true),
-    }
-
-func _restore_if_mutated(owner, owner_before: Dictionary, card, card_before: Dictionary) -> String:
-    var mutated := _card_state(card) != card_before
-    if owner != null and not owner_before.is_empty() \
-            and owner.has_method("capture_passive_query_state") \
-            and owner.capture_passive_query_state() != owner_before:
-        mutated = true
-        owner.replace_passive_query_state(owner_before)
-    if not mutated:
-        return ""
-    card.definition_id = card_before["definition_id"]
-    card.rank_name = card_before["rank_name"]
-    card.rank_order = card_before["rank_order"]
-    card.qi_value = card_before["qi_value"]
-    card.attribute = card_before["attribute"]
-    card.attribute_name = card_before["attribute_name"]
-    card.is_true_qi = card_before["is_true_qi"]
-    card.reshape_origin = card_before["reshape_origin"].duplicate(true)
-    card.reshape_enhancement = card_before["reshape_enhancement"]
-    card.reshape_imprint = card_before["reshape_imprint"]
-    card.reshape_others = card_before["reshape_others"].duplicate(true)
-    card.anomalies = card_before["anomalies"].duplicate(true)
-    card.temporary_reshapes = card_before["temporary_reshapes"].duplicate(true)
-    card.origin_base_identity = card_before["origin_base_identity"].duplicate(true)
-    return "纯查询 Handler 不得修改卡牌或战斗状态"
+func _purity_error(report: Dictionary) -> String:
+    var errors: Array[String] = []
+    if bool(report.get("state_mutated", false)):
+        errors.append("纯查询 Handler 不得修改卡牌或战斗状态")
+    if bool(report.get("rng_advanced", false)):
+        errors.append("纯查询 Handler 不得推进战斗 RNG")
+    if bool(report.get("committed_event_sent", false)):
+        errors.append("纯查询 Handler 不得发送 committed 事件")
+    var restore_errors: Array = report.get("restore_errors", [])
+    if not restore_errors.is_empty():
+        errors.append("卡牌身份查询状态回滚失败：%s" % "；".join(
+            restore_errors))
+    return "；".join(errors)

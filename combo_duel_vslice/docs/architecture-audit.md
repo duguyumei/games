@@ -2138,3 +2138,24 @@ save-contracts 137条、Run Save v1 202条、battle-contracts 871条、content-c
 行为替换造成的回归。后续收口为逐张、逐段及动态响应子效果建立“父EffectSpec × 子项／事件”的稳定执行
 作用域，消除了合法多次写入间的幂等键碰撞；同时同步连势容量夹具、19项整数查询目录及外层事务延迟发布的
 观察口径。最终项目加载748项、quick 7/7、full 54/54通过。
+
+## 2026-08-20 纯查询与事务快照第一批收口
+
+战斗只读策略新增唯一 `BattlePureQueryGuard`。`CombatEngine` 为一场战斗只装配一个实例，并把它共享给
+`BattleRuleQueryService`、`PassiveIntPolicyResolver`、`BattlePermissionService`、
+`HandRecognitionPolicy` 与 `CardIdentityPolicy`；战斗侧功法配装整数查询也复用同一实例。Guard 以
+嵌套深度划分查询链，最外层捕获参与方、独立卡牌和战斗 RNG，最外层结束时统一比较和恢复；内层只补充
+尚未观察的对象，不再为同一 BattleSide 重复建立完整前后快照。committed 事件纯查询深度仍由既有
+`BattlePassiveCommittedEventService`维护，Guard 只在最外层调用 begin/end，不建立第二套事件协议。
+
+`BattleSide.capture_transaction_state/restore_transaction_state`成为完整战斗运行态的正式接口；旧
+`capture_passive_query_state/replace_passive_query_state`仅保留为兼容 Facade。完整 mutation 仍由
+`BattleRuntimeMutationTransaction`负责，纯查询 Guard 不能代替事务。双方共享同一 `StatusSystem` 时，
+第一个 BattleSide 保存其正式运行快照，第二个只保存自身状态，从而避免每个 EffectSpec 事务重复深拷贝
+同一延迟、响应、历史和状态 RNG。没有引入 mutation revision：当前仍存在直接字段、Array 和 Dictionary
+写入，只有完整快照比较能可靠守住兼容语义。
+
+本批未迁移或测试远程 AI 查询。专项 `test_battle_pure_query_guard.gd` 以22条断言覆盖可重入捕获、嵌套
+写入恢复、共享 StatusSystem 去重、五个入口的共享装配、卡牌／战斗状态／RNG／committed 事件禁入；
+有效真气37条、防御衰减80条、生命写入前57条、真气消耗事务87条、战斗来源资源121条及
+battle-contracts 872条通过。未运行 quick/full。

@@ -3,13 +3,21 @@ extends RefCounted
 
 const OptionsScript = preload("res://core/passives/hand_recognition_options.gd")
 const ContextScript = preload("res://core/passives/passive_rule_context.gd")
+const PureQueryGuardScript = preload(
+    "res://core/passives/battle_pure_query_guard.gd")
 
 var _runtime_ref: WeakRef
 var _providers: Array = []
 var _serial: int = 0
+var _pure_query_guard
 
-func _init(passive_runtime = null) -> void:
+func _init(passive_runtime = null, pure_query_guard = null) -> void:
     _runtime_ref = weakref(passive_runtime) if passive_runtime != null else null
+    _pure_query_guard = pure_query_guard \
+        if pure_query_guard != null else PureQueryGuardScript.new()
+
+func use_pure_query_guard(guard) -> void:
+    _pure_query_guard = guard if guard != null else PureQueryGuardScript.new()
 
 func register_provider(provider, source_id: String = "", order: int = 0) -> String:
     var stable_id := source_id if source_id != "" else "provider:%06d" % _serial
@@ -31,13 +39,22 @@ func unregister_provider(source_id: String) -> bool:
     return false
 
 func resolve_options(owner = null, context: Dictionary = {}) -> Dictionary:
+    var participants: Array = [owner] if owner != null \
+        and owner.has_method("capture_transaction_state") else []
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_resolve_options_unguarded").bind(owner, context),
+        participants)
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _failure(OptionsScript.new().configure(), purity_error, [])
+    return guarded["value"]
+
+func _resolve_options_unguarded(
+        owner = null,
+        context: Dictionary = {}) -> Dictionary:
     var options = OptionsScript.new().configure()
     var breakdown: Array = []
-    var state_before := _capture_state(owner)
     var runtime_result := _runtime_modifiers(owner, context)
-    var purity_error := _restore_if_mutated(owner, state_before)
-    if purity_error != "":
-        return _failure(options, purity_error, breakdown)
     if not runtime_result.get("success", false):
         return _failure(options, str(runtime_result.get("reason", "牌型识别查询失败")), breakdown)
     for entry in runtime_result.get("entries", []):
@@ -47,9 +64,6 @@ func resolve_options(owner = null, context: Dictionary = {}) -> Dictionary:
         breakdown.append(entry)
     for entry in _providers:
         var response := _call_provider(entry["provider"], owner, context)
-        purity_error = _restore_if_mutated(owner, state_before)
-        if purity_error != "":
-            return _failure(options, purity_error, breakdown)
         if not response.get("success", false):
             return _failure(options, "%s：%s" % [entry["source_id"], response.get("reason", "查询失败")], breakdown)
         var merged := _merge(options, response.get("value", {}))
@@ -136,18 +150,19 @@ func _failure(options, reason: String, breakdown: Array) -> Dictionary:
         "reason": reason,
     }
 
-func _capture_state(owner) -> Dictionary:
-    return owner.capture_passive_query_state() \
-        if owner != null and owner.has_method("capture_passive_query_state") else {}
-
-func _restore_if_mutated(owner, before: Dictionary) -> String:
-    if owner == null or before.is_empty() \
-            or not owner.has_method("capture_passive_query_state"):
-        return ""
-    if owner.capture_passive_query_state() == before:
-        return ""
-    owner.replace_passive_query_state(before)
-    return "纯查询 Handler 不得修改战斗状态"
+func _purity_error(report: Dictionary) -> String:
+    var errors: Array[String] = []
+    if bool(report.get("state_mutated", false)):
+        errors.append("纯查询 Handler 不得修改战斗状态")
+    if bool(report.get("rng_advanced", false)):
+        errors.append("纯查询 Handler 不得推进战斗 RNG")
+    if bool(report.get("committed_event_sent", false)):
+        errors.append("纯查询 Handler 不得发送 committed 事件")
+    var restore_errors: Array = report.get("restore_errors", [])
+    if not restore_errors.is_empty():
+        errors.append("牌型识别查询状态回滚失败：%s" % "；".join(
+            restore_errors))
+    return "；".join(errors)
 
 func _sort_providers() -> void:
     _providers.sort_custom(func(left, right):

@@ -47,6 +47,8 @@ const CardIdentityPolicyScript = preload(
     "res://core/passives/card_identity_policy.gd")
 const BattlePermissionServiceScript = preload(
     "res://core/passives/battle_permission_service.gd")
+const BattlePureQueryGuardScript = preload(
+    "res://core/passives/battle_pure_query_guard.gd")
 const SameQiGaugeServiceScript = preload("res://core/same_qi_gauge_service.gd")
 const TechniqueInvocationServiceScript = preload("res://core/technique_invocation_service.gd")
 const TechniqueAutoTriggerServiceScript = preload("res://core/technique_auto_trigger_service.gd")
@@ -91,6 +93,7 @@ var battle_rule_query_service
 var hand_recognition_policy
 var card_identity_policy
 var battle_permission_service
+var battle_pure_query_guard
 var same_qi_gauge_service
 var technique_invocation_service
 var technique_auto_trigger_service
@@ -201,14 +204,24 @@ func _init(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
     battle_passive_event_service.register_weak_listener(
         player, "on_committed_event_for_run_history")
+    battle_pure_query_guard = BattlePureQueryGuardScript.new()
+    battle_pure_query_guard.use_rng(rng)
+    battle_pure_query_guard.use_committed_event_service(
+        battle_passive_event_service)
     battle_rule_query_service = BattleRuleQueryServiceScript.new(
-        passive_rule_runtime, Callable(self, "_set_scenario_error"))
+        passive_rule_runtime, Callable(self, "_set_scenario_error"),
+        battle_pure_query_guard)
     battle_rule_query_service.use_rng(rng)
     battle_rule_query_service.use_committed_event_service(
         battle_passive_event_service)
-    hand_recognition_policy = HandRecognitionPolicyScript.new(passive_rule_runtime)
-    card_identity_policy = CardIdentityPolicyScript.new(passive_rule_runtime)
-    battle_permission_service = BattlePermissionServiceScript.new(passive_rule_runtime)
+    hand_recognition_policy = HandRecognitionPolicyScript.new(
+        passive_rule_runtime, battle_pure_query_guard)
+    card_identity_policy = CardIdentityPolicyScript.new(
+        passive_rule_runtime, battle_pure_query_guard)
+    battle_permission_service = BattlePermissionServiceScript.new(
+        passive_rule_runtime, battle_pure_query_guard)
+    player.use_pure_query_guard(battle_pure_query_guard)
+    enemy.use_pure_query_guard(battle_pure_query_guard)
     player.use_battle_rule_query_service(battle_rule_query_service)
     enemy.use_battle_rule_query_service(battle_rule_query_service)
     player.use_committed_event_service(

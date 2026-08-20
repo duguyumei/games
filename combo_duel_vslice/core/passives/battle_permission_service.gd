@@ -3,6 +3,8 @@ extends RefCounted
 
 const ResultScript = preload("res://core/passives/battle_permission_result.gd")
 const ContextScript = preload("res://core/passives/passive_rule_context.gd")
+const PureQueryGuardScript = preload(
+    "res://core/passives/battle_pure_query_guard.gd")
 
 const QUERY_HOOKS := [
     "card_play_permission_query",
@@ -14,9 +16,15 @@ const QUERY_HOOKS := [
 var _runtime_ref: WeakRef
 var _providers: Array = []
 var _serial: int = 0
+var _pure_query_guard
 
-func _init(passive_runtime = null) -> void:
+func _init(passive_runtime = null, pure_query_guard = null) -> void:
     _runtime_ref = weakref(passive_runtime) if passive_runtime != null else null
+    _pure_query_guard = pure_query_guard \
+        if pure_query_guard != null else PureQueryGuardScript.new()
+
+func use_pure_query_guard(guard) -> void:
+    _pure_query_guard = guard if guard != null else PureQueryGuardScript.new()
 
 func register_provider(provider, source_id: String = "", order: int = 0, hooks: Array = []) -> String:
     var stable_id := source_id if source_id != "" else "provider:%06d" % _serial
@@ -42,15 +50,19 @@ func unregister_provider(source_id: String) -> bool:
     return false
 
 func query(hook: String, context: Dictionary = {}):
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_query_unguarded").bind(hook, context),
+        _tracked_sides(context))
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _denied(purity_error, [], ["query_mutation"])
+    return guarded["value"]
+
+func _query_unguarded(hook: String, context: Dictionary = {}):
     if hook not in QUERY_HOOKS:
         return _denied("未知权限 Hook：%s" % hook, [], ["unknown_hook"])
     var breakdown: Array = []
-    var tracked_sides := _tracked_sides(context)
-    var state_before := _capture_states(tracked_sides)
     var runtime_entries := _runtime_entries(hook, context)
-    var purity_error := _restore_if_mutated(tracked_sides, state_before)
-    if purity_error != "":
-        return _denied(purity_error, breakdown, ["query_mutation"])
     if not runtime_entries.get("success", false):
         return _denied(str(runtime_entries.get("reason", "权限查询失败")), breakdown, ["query_failure"])
     for entry in runtime_entries.get("entries", []):
@@ -62,9 +74,6 @@ func query(hook: String, context: Dictionary = {}):
         if not hooks.is_empty() and hook not in hooks:
             continue
         var response := _call_provider(source["provider"], hook, context)
-        purity_error = _restore_if_mutated(tracked_sides, state_before)
-        if purity_error != "":
-            return _denied(purity_error, breakdown, ["query_mutation"])
         if not response.get("success", false):
             breakdown.append({
                 "source_id": source["source_id"], "allowed": false,
@@ -200,27 +209,20 @@ func _tracked_sides(context: Dictionary) -> Array:
     for key in ["owner", "actor", "target"]:
         var side = context.get(key)
         if side != null \
-                and side.has_method("capture_passive_query_state") \
+                and side.has_method("capture_transaction_state") \
                 and not result.has(side):
             result.append(side)
     return result
 
-func _capture_states(sides: Array) -> Array:
-    var result: Array = []
-    for side in sides:
-        result.append({
-            "side": side,
-            "state": side.capture_passive_query_state(),
-        })
-    return result
-
-func _restore_if_mutated(sides: Array, before: Array) -> String:
-    var mutated := false
-    for index in range(sides.size()):
-        if sides[index].capture_passive_query_state() != before[index]["state"]:
-            mutated = true
-    if not mutated:
-        return ""
-    for entry in before:
-        entry["side"].replace_passive_query_state(entry["state"])
-    return "权限查询 Handler 不得修改战斗状态"
+func _purity_error(report: Dictionary) -> String:
+    var errors: Array[String] = []
+    if bool(report.get("state_mutated", false)):
+        errors.append("权限查询 Handler 不得修改战斗状态")
+    if bool(report.get("rng_advanced", false)):
+        errors.append("纯查询 Handler 不得推进战斗 RNG")
+    if bool(report.get("committed_event_sent", false)):
+        errors.append("纯查询 Handler 不得发送 committed 事件")
+    var restore_errors: Array = report.get("restore_errors", [])
+    if not restore_errors.is_empty():
+        errors.append("权限查询状态回滚失败：%s" % "；".join(restore_errors))
+    return "；".join(errors)

@@ -35,11 +35,22 @@ static func capture(
         rng: RandomNumberGenerator = null,
         state_participants: Array = []) -> Dictionary:
     var side_states: Array = []
+    var captured_status_systems: Dictionary = {}
     for side in sides:
         if side != null:
+            var options: Dictionary = {}
+            if side.has_method("all_cards_for_run_sync"):
+                var status = side.status_system
+                var include_status := false
+                if status != null:
+                    var status_key := str(status.get_instance_id())
+                    include_status = not captured_status_systems.has(status_key)
+                    if include_status:
+                        captured_status_systems[status_key] = true
+                options["include_status_system"] = include_status
             side_states.append({
                 "side": side,
-                "state": side.capture_passive_query_state(),
+                "state": side.capture_transaction_state(options),
             })
     var participant_states: Array = []
     for participant in state_participants:
@@ -93,7 +104,7 @@ static func restore(
     for entry in snapshot.get("side_states", []):
         var side = entry.get("side")
         if side != null:
-            side.replace_passive_query_state(entry.get("state", {}))
+            side.restore_transaction_state(entry.get("state", {}))
     if committed_event_service != null and committed_event_service.has_method(
             "restore_transaction_state") and not snapshot.get(
                 "event_state", {}).is_empty():

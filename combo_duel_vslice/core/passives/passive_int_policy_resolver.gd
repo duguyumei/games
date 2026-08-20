@@ -9,13 +9,32 @@ const ResultScript = preload(
     "res://core/passives/passive_int_query_result.gd")
 const ContextScript = preload(
     "res://core/passives/passive_rule_context.gd")
+const PureQueryGuardScript = preload(
+    "res://core/passives/battle_pure_query_guard.gd")
 
 var _runtime_ref: WeakRef
+var _pure_query_guard
 
-func _init(passive_runtime) -> void:
+func _init(passive_runtime, pure_query_guard = null) -> void:
     _runtime_ref = weakref(passive_runtime)
+    _pure_query_guard = pure_query_guard \
+        if pure_query_guard != null else PureQueryGuardScript.new()
+
+func use_pure_query_guard(guard) -> void:
+    _pure_query_guard = guard if guard != null else PureQueryGuardScript.new()
 
 func resolve(request):
+    var participants: Array = []
+    if request is RequestScript and request.owner != null:
+        participants.append(request.owner)
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_resolve_unguarded").bind(request), participants)
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _failure(request, purity_error)
+    return guarded["value"]
+
+func _resolve_unguarded(request):
     if not request is RequestScript:
         return _failure(null, "整数策略查询必须使用 PassiveIntQueryRequest")
     var runtime = _runtime_ref.get_ref()
@@ -23,7 +42,6 @@ func resolve(request):
         return _failure(request, "被动规则运行时已释放")
     if not runtime.registry.has_hook(request.hook):
         return _failure(request, "未知被动 hook：%s" % request.hook)
-    var owner_state: Dictionary = _capture_owner_state(request.owner)
     var context_values := {
         "owner": request.owner,
         "actor": request.actor,
@@ -36,9 +54,6 @@ func resolve(request):
         context_values["source_snapshot"] = request.source_snapshot
     var context = ContextScript.new().configure(context_values)
     var plan = runtime.build_execution_plan(request.hook, context)
-    var purity_error := _restore_if_query_mutated(request.owner, owner_state)
-    if purity_error != "":
-        return _failure(request, purity_error)
     if not plan.is_valid():
         return _failure(request, "；".join(plan.errors))
     var current: int = int(request.base_value)
@@ -81,9 +96,6 @@ func resolve(request):
             }, true)
         var executed: Dictionary = runtime.execute_invocation(
             invocation, invocation_context, "read")
-        purity_error = _restore_if_query_mutated(request.owner, owner_state)
-        if purity_error != "":
-            return _failure(request, purity_error)
         if not executed.get("success", false):
             return _failure(request, str(executed.get("reason", "整数策略执行失败")))
         var handler_result: Dictionary = executed["result"]
@@ -128,34 +140,16 @@ func _failure(request, reason: String):
         "errors": [reason],
     })
 
-func _restore_if_query_mutated(owner, state_before: Dictionary) -> String:
-    if owner == null or state_before.is_empty():
-        return ""
-    var state_kind := str(state_before.get("kind", ""))
-    var snapshot: Dictionary = state_before.get("state", {})
-    var current: Dictionary = {}
-    if state_kind == "run" and owner.has_method("capture_mutation_state"):
-        current = owner.capture_mutation_state()
-    elif state_kind == "battle" \
-            and owner.has_method("capture_passive_query_state"):
-        current = owner.capture_passive_query_state()
-    else:
-        return ""
-    if current == snapshot:
-        return ""
-    if state_kind == "run":
-        var restore_errors: Array[String] = owner.replace_mutation_state(snapshot)
-        if not restore_errors.is_empty():
-            return "纯查询修改了本局状态且回滚失败：%s" % "；".join(restore_errors)
-    else:
-        owner.replace_passive_query_state(snapshot)
-    return "纯查询 Handler 不得修改本局状态"
-
-func _capture_owner_state(owner) -> Dictionary:
-    if owner == null:
-        return {}
-    if owner.has_method("capture_mutation_state"):
-        return {"kind": "run", "state": owner.capture_mutation_state()}
-    if owner.has_method("capture_passive_query_state"):
-        return {"kind": "battle", "state": owner.capture_passive_query_state()}
-    return {}
+func _purity_error(report: Dictionary) -> String:
+    var errors: Array[String] = []
+    var restore_errors: Array = report.get("restore_errors", [])
+    if not restore_errors.is_empty():
+        errors.append("纯查询修改了本局状态且回滚失败：%s" % (
+            "；".join(restore_errors)))
+    elif bool(report.get("state_mutated", false)):
+        errors.append("纯查询 Handler 不得修改本局状态")
+    if bool(report.get("rng_advanced", false)):
+        errors.append("纯查询 Handler 不得推进战斗 RNG")
+    if bool(report.get("committed_event_sent", false)):
+        errors.append("纯查询 Handler 不得发送 committed 事件")
+    return "；".join(errors)

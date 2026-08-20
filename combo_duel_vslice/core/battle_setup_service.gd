@@ -187,10 +187,10 @@ func run_deck_from_progress(progress_snapshot: RunProgressSnapshot):
 func apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> Dictionary:
     if progress_snapshot == null:
         return {"success": true}
-    var state_before: Dictionary = side.capture_passive_query_state()
+    var state_before: Dictionary = side.capture_transaction_state()
     var result: Dictionary = _apply_non_deck_progress(side, progress_snapshot)
     if not result.get("success", false):
-        side.replace_passive_query_state(state_before)
+        side.restore_transaction_state(state_before)
         result["rolled_back"] = true
     return result
 

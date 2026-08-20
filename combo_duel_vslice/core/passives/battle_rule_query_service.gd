@@ -9,6 +9,8 @@ const ResolverScript = preload(
     "res://core/passives/passive_int_policy_resolver.gd")
 const BattleIntQueryCatalogScript = preload(
     "res://core/passives/battle_int_query_catalog.gd")
+const PureQueryGuardScript = preload(
+    "res://core/passives/battle_pure_query_guard.gd")
 
 const QUERY_HOOKS := BattleIntQueryCatalogScript.HOOKS
 
@@ -24,49 +26,50 @@ var _resolver
 var _scenario_error: Callable
 var _rng: RandomNumberGenerator
 var _committed_event_service = null
+var _pure_query_guard
 
-func _init(passive_runtime, scenario_error_callback: Callable = Callable()) -> void:
-    _resolver = ResolverScript.new(passive_runtime)
+func _init(
+        passive_runtime,
+        scenario_error_callback: Callable = Callable(),
+        pure_query_guard = null) -> void:
+    _pure_query_guard = pure_query_guard \
+        if pure_query_guard != null else PureQueryGuardScript.new()
+    _resolver = ResolverScript.new(passive_runtime, _pure_query_guard)
     _scenario_error = scenario_error_callback
 
 func use_rng(rng: RandomNumberGenerator) -> void:
     _rng = rng
+    _pure_query_guard.use_rng(rng)
 
 func use_committed_event_service(service) -> void:
     _committed_event_service = service
+    _pure_query_guard.use_committed_event_service(service)
+
+func use_pure_query_guard(guard) -> void:
+    _pure_query_guard = guard if guard != null else PureQueryGuardScript.new()
+    _resolver.use_pure_query_guard(_pure_query_guard)
+    if _rng != null:
+        _pure_query_guard.use_rng(_rng)
+    if _committed_event_service != null:
+        _pure_query_guard.use_committed_event_service(
+            _committed_event_service)
 
 func resolve(request):
+    var observed: Array = _observed_sides(request) \
+        if request is RequestScript else []
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_resolve_unguarded").bind(request), observed)
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _failure(request, purity_error)
+    return guarded["value"]
+
+func _resolve_unguarded(request):
     if not request is RequestScript:
         return _failure(null, "战斗整数查询必须使用 BattlePassiveIntQueryRequest")
     if request.hook not in QUERY_HOOKS:
         return _failure(request, "不是正式战斗整数查询 Hook：%s" % request.hook)
-    var observed: Array = _observed_sides(request)
-    var before: Dictionary = {}
-    for side in observed:
-        before[str(side.owner_id)] = side.capture_passive_query_state()
-    var rng_state := int(_rng.state) if _rng != null else -1
-    if _committed_event_service != null:
-        _committed_event_service.begin_pure_query()
     var resolved = _resolver.resolve(request)
-    var event_violation := false
-    if _committed_event_service != null:
-        event_violation = _committed_event_service.end_pure_query()
-    var purity_error := ""
-    if _rng != null and int(_rng.state) != rng_state:
-        _rng.state = rng_state
-        purity_error = "纯查询 Handler 不得推进战斗 RNG"
-    if event_violation:
-        purity_error = "纯查询 Handler 不得发送 committed 事件" \
-            if purity_error == "" else purity_error + "；不得发送 committed 事件"
-    for side in observed:
-        var owner_id := str(side.owner_id)
-        var after: Dictionary = side.capture_passive_query_state()
-        if after != before[owner_id]:
-            side.replace_passive_query_state(before[owner_id])
-            purity_error = "纯查询 Handler 不得修改战斗状态" \
-                if purity_error == "" else purity_error + "；不得修改战斗状态"
-    if purity_error != "":
-        return _failure(request, purity_error)
     if not resolved.success:
         return _failure(request, "；".join(resolved.errors))
     var values: Dictionary = resolved.to_dict()
@@ -134,6 +137,22 @@ func resolve_effective_qi(owner, card, context: Dictionary = {}):
         return _effective_failure(card, "有效真气值查询缺少 owner/holder")
     if card == null:
         return _effective_failure(card, "有效真气值查询缺少 subject card")
+    var participants := _context_sides(owner, context)
+    var cards: Array = context.get(
+        "cards", context.get("participating_cards", [card])).duplicate()
+    if not cards.has(card):
+        cards.append(card)
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_resolve_effective_qi_unguarded").bind(
+            owner, card, context),
+        participants,
+        cards)
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _effective_failure(card, purity_error)
+    return guarded["value"]
+
+func _resolve_effective_qi_unguarded(owner, card, context: Dictionary = {}):
     var purpose := str(context.get("purpose", "effect_value"))
     if purpose not in EFFECTIVE_QI_PURPOSES:
         return _effective_failure(card, "未知有效真气值查询用途：%s" % purpose)
@@ -215,6 +234,16 @@ func resolve_effective_qi(owner, card, context: Dictionary = {}):
 func resolve_pre_life_loss(owner, context: Dictionary):
     if owner == null:
         return _pre_life_loss_failure(context, "生命写入前查询缺少 owner/target")
+    var guarded: Dictionary = _pure_query_guard.evaluate(
+        Callable(self, "_resolve_pre_life_loss_unguarded").bind(
+            owner, context),
+        _context_sides(owner, context))
+    var purity_error := _purity_error(guarded)
+    if purity_error != "":
+        return _pre_life_loss_failure(context, purity_error)
+    return guarded["value"]
+
+func _resolve_pre_life_loss_unguarded(owner, context: Dictionary):
     var segment_token := str(context.get("damage_segment_token", ""))
     if segment_token == "":
         return _pre_life_loss_failure(context, "生命写入前查询缺少 damage_segment_token")
@@ -327,10 +356,31 @@ func card_fact(card, owner = null, target = null, participating: bool = false) -
 func _observed_sides(request) -> Array:
     var result: Array = []
     for side in [request.owner, request.actor, request.target]:
-        if side != null and side.has_method("capture_passive_query_state") \
+        if side != null and side.has_method("capture_transaction_state") \
                 and not result.has(side):
             result.append(side)
     return result
+
+func _context_sides(owner, context: Dictionary) -> Array:
+    var result: Array = []
+    for side in [owner, context.get("actor", owner), context.get("target")]:
+        if side != null and side.has_method("capture_transaction_state") \
+                and not result.has(side):
+            result.append(side)
+    return result
+
+func _purity_error(report: Dictionary) -> String:
+    var errors: Array[String] = []
+    if bool(report.get("rng_advanced", false)):
+        errors.append("纯查询 Handler 不得推进战斗 RNG")
+    if bool(report.get("committed_event_sent", false)):
+        errors.append("纯查询 Handler 不得发送 committed 事件")
+    if bool(report.get("state_mutated", false)):
+        errors.append("纯查询 Handler 不得修改战斗状态")
+    var restore_errors: Array = report.get("restore_errors", [])
+    if not restore_errors.is_empty():
+        errors.append("纯查询状态回滚失败：%s" % "；".join(restore_errors))
+    return "；".join(errors)
 
 func _failure(request, reason: String):
     return ResultScript.new().configure({
