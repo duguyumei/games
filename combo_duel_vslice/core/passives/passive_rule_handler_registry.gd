@@ -32,6 +32,8 @@ const CardTriggerTargetPolicyHandlerScript = preload(
     "res://core/passives/card_trigger_target_policy_passive_handler.gd")
 const PassiveBehaviorProjectionHandlerScript = preload(
     "res://core/passives/passive_behavior_projection_passive_handler.gd")
+const SourceBehaviorTransformationHandlerScript = preload(
+    "res://core/passives/source_behavior_transformation_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 const BattleIntQueryCatalogScript = preload(
     "res://core/passives/battle_int_query_catalog.gd")
@@ -130,6 +132,7 @@ func _init(
         register_handler(ExtraActionProjectionHandlerScript.new())
         register_handler(CardTriggerTargetPolicyHandlerScript.new())
         register_handler(PassiveBehaviorProjectionHandlerScript.new())
+        register_handler(SourceBehaviorTransformationHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():

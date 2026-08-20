@@ -290,6 +290,20 @@ func _apply_non_deck_progress(side, progress_snapshot: RunProgressSnapshot) -> D
                 "reason": "玩家本局被动计数器装配失败：%s" % \
                 "；".join(counter_errors),
             }
+    if progress_snapshot.has_source_behavior_transformation_state \
+            and side.source_behavior_transformation_store == null:
+        return {"success": false, "reason": "玩家来源行为替换 Store 尚未装配"}
+    if progress_snapshot.has_source_behavior_transformation_state:
+        var transformation_errors: Array[String] = (
+            side.source_behavior_transformation_store.replace_state(
+                progress_snapshot.source_behavior_transformation_state))
+        if not transformation_errors.is_empty():
+            return {
+                "success": false,
+                "reason": "玩家来源行为替换装配失败：%s" % \
+                    "；".join(transformation_errors),
+            }
+        side.source_behavior_transformation_state_active = true
     side.recalculate_effective_max_life()
     return {"success": true}
 
@@ -336,6 +350,10 @@ func capture_progress(side, run_deck) -> RunProgressSnapshot:
     if side.passive_counter_store != null:
         values["passive_counter_state"] = (
             side.passive_counter_store.capture_state())
+    if side.source_behavior_transformation_store != null \
+            and side.source_behavior_transformation_state_active:
+        values["source_behavior_transformation_state"] = (
+            side.source_behavior_transformation_store.capture_state())
     return RunProgressSnapshotScript.from_dict(values)
 
 func _obtainable_owned_technique_ids(side) -> Array[String]:

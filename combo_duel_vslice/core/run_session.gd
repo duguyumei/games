@@ -606,7 +606,8 @@ func _validate_battle_progress_snapshot(progress_snapshot) -> Dictionary:
             "experience", "hand_technique_progression",
             "consumable_use_sequence", "last_recallable_consumable_id",
             "base_hand_limit_modifier", "hand_technique_multiplier_modifiers",
-            "used_unique_consumable_ids", "passive_counter_state"]:
+            "used_unique_consumable_ids", "passive_counter_state",
+            "source_behavior_transformation_state"]:
         if not bool(progress_snapshot.get("has_%s" % field)):
             missing.append(field)
     if not missing.is_empty():

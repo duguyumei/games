@@ -2108,3 +2108,31 @@ Key只增加可选`counter_instance_key`和目标定义身份；普通来源不�
 最终投影专项71条、battle-contracts 871条、Run Save v1 202条断言、项目加载744项及quick 7/7通过；
 独立`/tmp`日志诊断扫描无加载、解析、脚本运行或退出泄漏错误。full继续留到
 `source_behavior_transformation`完成后的统一收口。
+
+## 2026-08-20 Run永久来源行为替换架构收口
+
+最后一个C1 `source_behavior_transformation`已落入既有被动框架。进度继续由
+`RunPassiveCounterStore`负责；非整数的目标正文描述由`SourceBehaviorTransformationStore`保存为稳定ID、同内容
+副本序号和行为索引。它是`GrowthInventory`持有的事务值对象，不是新的执行Service、事件总线或计数器系统。
+状态进入mutation snapshot、RunProgressSnapshot、BattleSide工作副本和RunSaveData；恢复先按当前目录和
+Registry验证目标仍存在且可复制，再绝对替换，不保存运行时对象或配置副本。
+
+`PassiveRuleRuntime`只负责在`battle_completed` mutation Invocation中解析合法候选和提交稳定选择；Handler
+通过窄Port请求，不扫描配装或直接写Store。`PassiveRuleSourceResolver`把记录投影成普通
+`PassiveRuleSource`：公开身份、顺序和归属来自无影藏功，行为、marker与计数定义来自目标。后续仍使用唯一
+ExecutionPlan、Registry、Handler、EffectExecutor、生命周期桥及Run/Battle计数器Store。永久投影明确不可再次
+复制，已投影来源也不进入候选，因此与战斗临时copy projection之间不存在复制链。
+
+目标选择由run seed、事件token、来源内容及副本序号派生，查询不写状态，事务重试不重掷。无目标保留封顶
+进度；目标失去不撤销已经冻结的正文；来源副本失去时清除对应记录。任何Invocation失败都会由既有Run事件
+局部恢复或RunAggregateTransaction恢复计数、替换记录、去重token及其他成长状态。实现中还清理了窄Port与
+Invocation Context的完成后引用，专项退出没有ObjectDB、RID或资源泄漏。
+
+部分快照兼容不由Store猜测。`BattleSide.source_behavior_transformation_state_active`只记录入口是否实际装入
+该字段，并进入战斗事务快照；`BattleSetupService.capture_progress`据此决定是否输出。正式Run入口字段始终
+存在，旧版或局部快照则保持缺失语义，避免装入再捕获时无条件增加空状态。
+
+本批没有录入正式内功或修改生产内容。能力矩阵为已有／合并47、B 0、C1 0、C2 0、D 1。化影专项48条、
+save-contracts 137条、Run Save v1 202条、battle-contracts 871条、content-contracts 1081条、项目加载
+748项及quick 7/7通过。full为46/54；8个失败组已在干净`HEAD e99c4e4`逐项复现相同结果，属于进入本批前
+既有基线，不是永久来源行为替换造成的回归。

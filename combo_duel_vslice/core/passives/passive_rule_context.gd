@@ -23,6 +23,9 @@ var persistent_counter_read_port = null
 var persistent_counter_mutation_port = null
 var battle_counter_read_port = null
 var battle_counter_mutation_port = null
+## 仅 Run committed mutation Invocation 注入；Handler 不直接扫描配装或写
+## 持久替换状态。
+var source_behavior_transformation_port = null
 ## 仅真实战斗 mutation Hook 在执行 Invocation 时注入。
 var battle_effect_ports = null
 ## 作用域快照只供窄端口解析；Handler 不从这里取得完整 BattleSide。
@@ -51,6 +54,8 @@ func configure(values: Dictionary):
         "persistent_counter_mutation_port", counter_mutation_port)
     battle_counter_read_port = values.get("battle_counter_read_port")
     battle_counter_mutation_port = values.get("battle_counter_mutation_port")
+    source_behavior_transformation_port = values.get(
+        "source_behavior_transformation_port")
     battle_effect_ports = values.get("battle_effect_ports")
     battle_effect_scope = values.get("battle_effect_scope", {}).duplicate(false)
     if battle_effect_scope.is_empty():
@@ -84,6 +89,8 @@ func for_invocation(current_invocation):
         "persistent_counter_mutation_port": persistent_counter_mutation_port,
         "battle_counter_read_port": battle_counter_read_port,
         "battle_counter_mutation_port": battle_counter_mutation_port,
+        "source_behavior_transformation_port": (
+            source_behavior_transformation_port),
         "battle_effect_ports": battle_effect_ports,
         "battle_effect_scope": battle_effect_scope,
     })

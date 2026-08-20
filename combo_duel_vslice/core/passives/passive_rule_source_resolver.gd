@@ -60,7 +60,7 @@ func collect_sources(context) -> Array:
         if left.source_instance_key != right.source_instance_key:
             return left.source_instance_key < right.source_instance_key
         return left.behavior_index < right.behavior_index)
-    return result
+    return _apply_source_behavior_transformations(result, owner)
 
 func capture_source_snapshot(context) -> Array:
     var result: Array = []
@@ -75,6 +75,7 @@ func capture_source_snapshot(context) -> Array:
             "slot_index": source.slot_index,
             "content_instance_ordinal": source.content_instance_ordinal,
             "behavior_copyable": source.behavior_copyable,
+            "projection": source.projection.duplicate(true),
         })
     return result
 
@@ -84,6 +85,14 @@ func sources_from_snapshot(snapshot: Array) -> Array:
         return result
     for value in snapshot:
         if not value is Dictionary:
+            continue
+        var projection = value.get("projection", {})
+        if projection is Dictionary \
+                and str(projection.get("projection_kind", "")) \
+                    == "source_behavior_transformation":
+            var transformed = _transformed_source_from_snapshot(value)
+            if transformed != null:
+                result.append(transformed)
             continue
         var source_kind := str(value.get("source_kind", ""))
         var content_id := str(value.get("content_id", ""))
@@ -124,6 +133,138 @@ func sources_from_snapshot(snapshot: Array) -> Array:
             return left.source_instance_key < right.source_instance_key
         return left.behavior_index < right.behavior_index)
     return result
+
+func _apply_source_behavior_transformations(
+        sources: Array,
+        owner) -> Array:
+    var store = _property_value(
+        owner, "source_behavior_transformation_store")
+    if store == null:
+        return sources
+    var groups: Dictionary = {}
+    for source in sources:
+        if source.source_kind != "inner_skill" or source.is_projected():
+            continue
+        if not groups.has(source.source_instance_key):
+            groups[source.source_instance_key] = []
+        groups[source.source_instance_key].append(source)
+    var transformed_instances: Dictionary = {}
+    var additions: Array = []
+    for group_value in groups.values():
+        var group: Array = group_value
+        if group.is_empty():
+            continue
+        var provider = group[0]
+        var record: Dictionary = store.record_for(provider)
+        if record.is_empty():
+            continue
+        var projected: Array = []
+        for descriptor_value in record.get("target_behaviors", []):
+            if not descriptor_value is Dictionary:
+                continue
+            var descriptor: Dictionary = descriptor_value.duplicate(true)
+            descriptor["source_kind"] = "inner_skill"
+            descriptor["content_id"] = str(record.get(
+                "target_content_id", ""))
+            var target_source = source_from_descriptor(descriptor)
+            if target_source != null:
+                projected.append(_transformed_source(provider, target_source))
+        if projected.is_empty():
+            continue
+        transformed_instances[provider.source_instance_key] = true
+        additions.append_array(projected)
+    var result: Array = []
+    for source in sources:
+        if not transformed_instances.has(source.source_instance_key):
+            result.append(source)
+    result.append_array(additions)
+    result.sort_custom(func(left, right):
+        if left.source_order != right.source_order:
+            return left.source_order < right.source_order
+        if left.source_instance_key != right.source_instance_key:
+            return left.source_instance_key < right.source_instance_key
+        return left.behavior_index < right.behavior_index)
+    return result
+
+func _transformed_source(provider, target_source):
+    var projection_key := "transformation|%s|%d|%s|%d" % [
+        provider.source_instance_key,
+        int(provider.content_instance_ordinal),
+        target_source.content_id,
+        int(target_source.behavior_index),
+    ]
+    return SourceScript.new().configure({
+        "source_kind": provider.source_kind,
+        "content_id": provider.content_id,
+        "source_instance_key": provider.source_instance_key,
+        "definition": provider.definition,
+        "behavior_id": target_source.behavior_id,
+        "behavior_index": target_source.behavior_index,
+        "state_key": target_source.state_key,
+        "configuration": target_source.configuration,
+        "source_order": provider.source_order,
+        "slot_index": provider.slot_index,
+        "content_instance_ordinal": provider.content_instance_ordinal,
+        "behavior_copyable": false,
+        "projection": {
+            "projection_kind": "source_behavior_transformation",
+            "projection_key": projection_key,
+            "provider_content_id": str(provider.content_id),
+            "provider_content_instance_ordinal": int(
+                provider.content_instance_ordinal),
+            "target_content_id": str(target_source.content_id),
+            "target_behavior_id": str(target_source.behavior_id),
+            "target_behavior_index": int(target_source.behavior_index),
+        },
+        "counter_instance_key": "transform_%d_%s_%d" % [
+            maxi(0, int(provider.content_instance_ordinal)),
+            str(target_source.content_id),
+            int(target_source.behavior_index),
+        ],
+        "counter_definition_source_kind": target_source.source_kind,
+        "counter_definition_content_id": target_source.content_id,
+        "counter_definition_behavior_id": target_source.behavior_id,
+        "counter_definition_behavior_index": target_source.behavior_index,
+        "source_marker_definitions": target_source.source_marker_definitions,
+    })
+
+func _transformed_source_from_snapshot(value: Dictionary):
+    var provider_definition: Dictionary = _catalog.get_by_id(
+        str(value.get("source_kind", "")),
+        str(value.get("content_id", "")))
+    if provider_definition.is_empty():
+        return null
+    var projection: Dictionary = value.get("projection", {})
+    var target_source = source_from_descriptor({
+        "source_kind": "inner_skill",
+        "content_id": str(projection.get("target_content_id", "")),
+        "behavior_id": str(projection.get("target_behavior_id", "")),
+        "behavior_index": int(projection.get("target_behavior_index", -1)),
+    })
+    if target_source == null:
+        return null
+    var provider = SourceScript.new().configure({
+        "source_kind": str(value.get("source_kind", "")),
+        "content_id": str(value.get("content_id", "")),
+        "source_instance_key": str(value.get("source_instance_key", "")),
+        "definition": provider_definition,
+        "behavior_id": "source_behavior_transformation",
+        "behavior_index": 0,
+        "source_order": int(value.get("source_order", 0)),
+        "slot_index": int(value.get("slot_index", -1)),
+        "content_instance_ordinal": int(value.get(
+            "content_instance_ordinal", 0)),
+        "behavior_copyable": false,
+    })
+    return _transformed_source(provider, target_source)
+
+func _property_value(owner, property_name: String):
+    if owner == null or not owner.has_method("get_property_list"):
+        return null
+    for property in owner.get_property_list():
+        if str(property.get("name", "")) == property_name:
+            return owner.get(property_name)
+    return null
 
 func equipped_inner_skill_entries(context) -> Array:
     var owner = context.owner if context != null else null

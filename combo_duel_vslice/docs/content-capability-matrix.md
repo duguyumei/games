@@ -8,7 +8,7 @@
 - 权威清单：内功166门、物品20件、指定暂缓功法8门；数量与文档宣称完全一致。已有首批9门回响/序列内功、卫星、机缘不空、重岳不崩及孤垒不灭共13门内功，修习策略家族6件物品及纳气养命共7件物品正式接入；剩余153门内功、13件物品和8门暂缓功法仍未接入生产内容池。
 - Readiness：A=52，B=69，C=64，D=1，E=8，合计194；其中已正式接入但保留历史复杂度标签的9门内功仍计入C口径。
 - C类缺口引用（去重前）80次；合并后通用能力47项。
-- 原47项能力键中已有/合并46项，余下实现形态为B 0、C1 1、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
+- 原47项能力键已全部已有/合并，当前实现形态为B 0、C1 0、C2 0；D 1（D不计入47项C能力）。这里的B/C1/C2是历史复杂度标签，不表示已接入内容仍有底层缺口，也不重新声称需要同数量的Service或批次。
 - C类中同时服务内功与物品的桥接能力1项：`run_combat_history_facts`；同时服务两种以上content_kind的能力2项：前者及`charging_primary_value_protocol`（内功+暂缓功法）。
 - B类另有两个跨内功/物品的薄适配族：来源中立整数查询Handler、来源中立Run效果Handler；它们不计入C类底层能力数。
 
@@ -54,7 +54,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | inner_skill | 穷途得药 | `desperate_medicine` | [36 §3《穷途得药》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#穷途得药) | 命令提交点（见权威正文） | 权威正文的资格与边界 | 我方每次成功行动时，若触发前持有历练不超过 4 点，则尝试获得 1 个随机丹药，再获得 1 点历练。 | BattleSide working run state → Run committed state | 稳定 RNG + receipt | 现有 命令提交点（见权威正文） + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 毒中得历 | `poisoned_side_experience` | [36 §3《毒中得历》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#毒中得历) | poison_trigger_completed | EffectTargetQuery.anomaly/reshape | 每当任意一方的毒成功触发并完成毒伤结算时，获得 1 点历练；若中毒的一方是我方，额外获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | BattleEventCatalog.poison_trigger_completed; BattleEffectsPassiveHandler; TechniqueEffectExecutor/EffectHandlerRegistry | A |  | 只接内容，不新增底层 |
 | inner_skill | 烈势悟道 | `momentum_enlightenment` | [36 §3《烈势悟道》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#烈势悟道) | battle_start初始化；battle_resource_changed（待补）跨阈值 | source counter/marker | 战斗开始时令 `n=1`。每当我方连势第一次达到或超过 `10×n` 层时，获得 `n` 点历练，然后令 `n=n+1`；一次增加跨过多个阈值时依次结算。 | BattleSide working run state → Run committed state | 计数器/marker 与事件同事务 | `BattleSourceResourceEffectService.write_momentum`/`write_same_qi`已有统一写端口和回执 | C | battle_resource_changed_event | 按能力键合并实现 |
-| inner_skill | 无影藏功 | `invisible_inner_skill` | [36 §3《无影藏功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#无影藏功) | battle_completed | source counter/marker | 装备期间每完成 1 场战斗，进度增加 1，最多 2 点。进度达到 2 的战斗结束时，随机选择另一门当前已装备内功，将无影藏功自身的效果永久改为该内功的可复制效果。 | BattleSide working run state → Run committed state | 选择候选冻结 + RNG/状态回滚 | PassiveRuleSource/Registry/RunPassiveCounterStore 已有 | C | source_behavior_transformation | 按能力键合并实现 |
+| inner_skill | 无影藏功 | `invisible_inner_skill` | [36 §3《无影藏功》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#无影藏功) | battle_completed | source counter/marker | 装备期间每完成 1 场战斗，进度增加 1，最多 2 点。进度达到 2 的战斗结束时，随机选择另一门当前已装备内功，将无影藏功自身的效果永久改为该内功的可复制效果。 | BattleSide working run state → Run committed state | RunAggregateTransaction + 稳定目标选择 + 绝对状态恢复 | `PassiveRuleRuntime/SourceResolver`已投影永久正文，进度继续使用`RunPassiveCounterStore`，替换描述进入Run存档；正式内容未录入 | C | source_behavior_transformation | 底层完成不等于内容接入 |
 | inner_skill | 空脉生财 | `empty_inner_slots_experience` | [36 §4《空脉生财》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#空脉生财) | battle_completed | 权威正文的资格与边界 | 战斗胜利时，战斗开始时每有 1 个空置的有效内功栏位，获得 2 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 现有 battle_completed + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 余劲取利 | `overkill_experience` | [36 §4《余劲取利》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#余劲取利) | damage_resolved | 权威正文的资格与边界 | 我方伤害击败敌人时，每有 10 点溢出伤害，获得 1 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | 现有 damage_resolved + PassiveRuleRuntime/计数器/TechniqueEffectExecutor；只缺来源中立Handler或Context字段 | B | adapter:source_neutral_handler/context | 不得新增平行Service |
 | inner_skill | 化气得资 | `temporary_qi_generation_experience` | [36 §4《化气得资》](../../godot/docs/design-current/martial-arts/36-neigong-implementation-backlog.md#化气得资) | temporary_qi_generated（待补） | trigger_mode/source_kind | 每当我方功法、内功或真气效果在战斗中生成 1 张只持续本场的我方临时真气时，获得 3 点历练。 | BattleSide working run state → Run committed state | 事件或命令既有事务 | `BattleCardEffectService.generate_temporary_normal_card`已有生成入口 | C | temporary_qi_generated_event | 按能力键合并实现 |
@@ -288,7 +288,7 @@ Readiness按主导阻塞项判定：A只需数据/注册；B已有语义，只�
 | `practice_normal_slot_count_query` | query | **已完成**：`PracticeService.resolve_normal_slot_count`经`PassiveIntPolicyResolver`查询并冻结`normal_slot_count` | 库存过剩已正式接入 | item:overstock_plus_two | PracticeService | 批次快照是 | Run committed state | 不修改补充包栏／物品栏 | 已完成 | 当前商店不追溯扩容；冥想不补空位 |
 | `practice_offer_weight_query` | query | **已完成**：类别启用和合法候选产生后，通过来源中立整数查询取得非负权重 | 焕彩、塔罗大亨、星球牌商人已正式接入 | item:awakened_qi_weight_x4<br>item:pill_shop_weight_x4<br>item:insight_shop_weight_x4 | PracticeService | 否 | 纯查询，无状态 | 不改变资格，不推进RNG | 已完成 | 同seed、同来源快照与同权重同结果 |
 | `consumable_capacity_query` | query | **已有**：基础容量2与`consumable_capacity_query`统一投影容量、空位、overflow、breakdown和fingerprint | 已完成；《预兆球》仍未录入 | item:consumable_capacity_plus_two | GrowthInventory + ConsumableUseContext | 是（库存） | Run committed state / BattleSide working run state | BattleSide只消费正式结果，不复制算法 | 已完成 | 购买/奖励/补充包/使用预留/UI/战斗映射一致；降容不丢库存，overflow禁止继续获得 |
-| `source_behavior_transformation` | state | PassiveRuleSource/Registry/RunPassiveCounterStore 已有 | 来源自身可复制正文的合法性、替换投影与持久化 | inner_skill:invisible_inner_skill | PassiveRuleSourceResolver + content schema | 是 | Run committed state / BattleSide working run state | 与临时 copy projection 不同 | 40 | 无合法目标不改写；替换后存档恢复一致 |
+| `source_behavior_transformation` | state | **已有**：`PassiveRuleRuntime`选择合法目标，`PassiveRuleSourceResolver`以来源／正文双身份投影；进度复用Run计数器，稳定描述进入Run绝对快照和存档 | 已完成；《无影藏功》仍未正式录入 | inner_skill:invisible_inner_skill | PassiveRuleRuntime + PassiveRuleSourceResolver + SourceBehaviorTransformationStore | 是 | Run committed state / BattleSide working run state | 与战斗临时copy projection共用执行链但不同生命周期 | 已完成 | 无合法目标保留封顶进度；目标卸下不撤销；来源失去按副本清理；存档恢复一致 |
 | `insight_pack_history_plan` | transaction | **已完成**：正式pack preparation逐候选执行`practice_pack_candidate_priority_query`，冻结保证候选、来源/历史指纹与RNG输入 | 望远镜已正式接入 | item:telescope_insight_focus | PracticeService | preparation是 | Run committed state | 只读`RunCombatHistory`，不重复统计 | 已完成 | 并列/无历史由pack RNG稳定选一；确认不重掷 |
 | `experience_interest_cap_query` | query | **已有**：`RunMutationService.settle_experience_interest_in_place`只查询一次`experience_interest_cap_query`并冻结结算回执 | 已完成；《摇钱树》仍未录入 | item:experience_interest_cap_twenty | RunMutationService + RunSession node completion | 否 | 纯查询 + settlement receipt | 保留`floor(当前历练/5)`公式；重复token复用回执 | 已完成 | 基础上限5；奖励后读余额；查询/增益/节点推进同一聚合事务，失败全回滚 |
 | `practice_offer_category_unlock` | query | **已完成**：正式键为`practice_offer_category_enabled_query`；资格查询与`generated_awakened_qi` provider分离 | 幻象已正式接入 | item:awakened_qi_in_normal_shop | PracticeService | 批次快照是 | Run committed state | 权重查询只调权重 | 已完成 | 完整卡实例冻结恢复；精确实例经RunMutationService购买 |
@@ -364,7 +364,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 - 已有：牌区处置替换、牌库耗尽替换、来源级临时炽气、成长事实／额外计划、燃尽／焕发、临时真气复制、生命周期移除claim与单效果牌批次汇总均已合并进现有事务和状态模型。
 - 已有：Run历练canonical事实、免费冥想状态、基础2的统一消耗品容量、功行生息上限查询和当前层地图重建命令事务均已合并进既有Run所有者；具体消费者仍未录入。
 - 部分已有：回响执行与逐次执行汇总已完成，但仍不能通用修改计划次数；卸力与格挡取消协议已完成；追击只有伤害兼容标签而无结构化完成事件。物品来源地址、marker状态和最大生命统计协议已完成，具体物品内容仍未接入。
-- 仍缺：本表保留的C1 2继续按`merge_family`接入；B类薄适配已全部收口。已完成底层能力的具体内容不能据此标记为已实现。
+- 底层缺口已收口：47项能力键全部为已有／合并，B、C1、C2均为0。已完成底层能力的具体内容仍不能据此标记为已实现。
 - 规则待确认：化虚为实的固化提交表示。
 
 ## 11. C类收缩审计：B / C1 / C2 / D
@@ -419,7 +419,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `practice_normal_slot_count_query` | 已有 | practice_strategy_query | 1 | PracticeService + PassiveIntPolicyResolver |
 | `practice_offer_weight_query` | 已有 | practice_strategy_query | 3 | PracticeService + PassiveIntPolicyResolver |
 | `consumable_capacity_query` | 已有 | inventory_capacity_query | 1 | GrowthInventory + ConsumableUseContext |
-| `source_behavior_transformation` | C1 | passive_source_projection | 1 | PassiveRuleSourceResolver + schema |
+| `source_behavior_transformation` | 已有 | passive_source_projection | 1 | PassiveRuleRuntime + PassiveRuleSourceResolver + SourceBehaviorTransformationStore |
 | `insight_pack_history_plan` | 已有 | practice_strategy_query | 1 | PracticeService pack preparation + RunCombatHistory |
 | `experience_interest_cap_query` | 已有 | run_calculation_query | 1 | RunMutationService node settlement |
 | `practice_offer_category_unlock` | 已有 | practice_strategy_query | 1 | `practice_offer_category_enabled_query` + candidate provider |
@@ -428,7 +428,7 @@ E类未来追加消费者：`charging_primary_value_protocol`还服务风·长�
 | `item_source_marker_state` | 已有 | source_marker_protocol | 2 | SourceMarkerStore + SourceMarkerAddressResolver + SourceContributedStatService |
 | `run_qi_added_and_reshape_events` | 已有 | run_card_mutation_fact | 1 | RunMutationService + BattleCardEffectService；不新增平行事件系统 |
 
-当前数量为：已有/合并46、B 0、C1 1、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；实现排序应按 `merge_family` 和 C2/C1/B 层级组织，而不是按 capability_key 一项一批。
+当前数量为：已有/合并47、B 0、C1 0、C2 0、D 1。原C=47仍保留为内容矩阵兼容字段；D类规则确认和具体内容录入仍是独立工作，不应再扩展为新的平行底层。
 
 ### 11.2.1 最后两个 B 类薄适配收口（2026-08-20）
 
@@ -660,3 +660,28 @@ configuration、hook、计数器定义和marker声明。目标行为身份进入
 所有Godot调用使用不同的显式`/tmp`日志；诊断
 扫描未发现脚本／资源加载、解析、SCRIPT ERROR、ObjectDB／RID、orphan或资源泄漏问题，仅有已知macOS
 CA警告。full按批次约定留到最后一个C1完成后统一执行。
+
+## 14. Run永久来源行为替换收口（2026-08-20）
+
+`source_behavior_transformation`已经合并进既有被动执行链。《无影藏功》式来源仍以自身
+`source_kind/content_id/source_instance_key`参与顺序、压制、日志和效果归属；目标仅提供可复制Handler、
+configuration、hook、marker与计数器定义。转换后的Invocation继续经过唯一
+`PassiveRuleRuntime → ExecutionPlan/Invocation → Handler/EffectExecutor`，没有复制内容对象、直接调用目标
+Handler或建立第二套事件／效果执行器。
+
+进度仍由`RunPassiveCounterStore`保存整数；最终目标是结构化稳定描述，保存在窄值对象
+`SourceBehaviorTransformationStore`。该Store随`GrowthInventory`事务状态、`RunProgressSnapshot`、
+`BattleSide`工作副本和`RunSaveData`绝对恢复，不保存definition、configuration、Callable或Object。目标选择由
+run seed、事件token和来源副本身份派生，事务重试不会重掷；失败由现有`RunAggregateTransaction`连同计数器、
+目标记录和其他成长状态一起恢复。
+
+来源身份使用同内容副本序号而非槽位号，换位不改变已化影内容；目标以后卸下或失去也不撤销已经复制的
+正文。来源自身失去时按当前持有副本数清除对应记录。复制类、计划提供者、显式不可复制行为以及已经投影的
+来源都不能成为目标，因此临时复制与永久化影不会形成链或递归放大。无合法目标时不写空记录并保留封顶
+进度，后续每次`battle_completed`重新尝试。
+
+本批只加入合成专项，没有把《无影藏功》《左右互搏》《镜花水月》《虚位养神》录入正式内容。能力计数
+收口为已有／合并47、B 0、C1 0、C2 0、D 1；正式内功13门、物品7件和8门暂缓功法均不变。最终验证为
+化影专项48条、save-contracts 137条、Run Save v1 202条、battle-contracts 871条、content-contracts
+1081条、项目加载748项和quick 7/7通过。full为46/54；8个失败组均在干净`HEAD e99c4e4`中以相同断言和值
+复现，作为既有基线问题单独保留，不改变本矩阵的能力完成状态。

@@ -6,6 +6,8 @@ const BattleSetupServiceScript = preload("res://core/battle_setup_service.gd")
 const RunDeckScript = preload("res://core/run_deck.gd")
 const PassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
+const SourceBehaviorTransformationStoreScript = preload(
+    "res://core/passives/source_behavior_transformation_store.gd")
 const TechniqueLoadoutPolicyScript = preload(
     "res://core/technique_loadout_policy.gd")
 const InsightGrowthServiceScript = preload(
@@ -56,6 +58,7 @@ var hand_technique_multiplier_modifiers: Dictionary = {}
 var used_unique_consumable_ids: Array[String] = []
 var run_combat_history = RunCombatHistoryScript.new()
 var passive_counter_store
+var source_behavior_transformation_store
 var technique_loadout_policy
 var _content_catalog
 var _int_policy_resolver = null
@@ -68,6 +71,8 @@ const HAND_IDS := [
 func _init(content_catalog = null, initialize_standard_deck: bool = true) -> void:
     _content_catalog = content_catalog
     passive_counter_store = PassiveCounterStoreScript.new(content_catalog)
+    source_behavior_transformation_store = (
+        SourceBehaviorTransformationStoreScript.new(content_catalog))
     technique_loadout_policy = TechniqueLoadoutPolicyScript.new(content_catalog)
     run_deck = RunDeckScript.new(content_catalog)
     _initialize_hand_technique_progression(
@@ -109,6 +114,7 @@ func reset(
     used_unique_consumable_ids.clear()
     run_combat_history.clear()
     passive_counter_store.clear()
+    source_behavior_transformation_store.clear()
     source_marker_store.restore_snapshot({
         "schema_version": SourceMarkerStoreScript.SCHEMA_VERSION,
         "entries": [],
@@ -193,6 +199,8 @@ func capture_mutation_state() -> Dictionary:
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
         "run_combat_history_state": run_combat_history.snapshot(),
         "passive_counter_state": passive_counter_store.capture_state(),
+        "source_behavior_transformation_state": (
+            source_behavior_transformation_store.capture_state()),
     }
 
 func create_mutation_copy():
@@ -226,6 +234,17 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         }))
     if not counter_errors.is_empty():
         return counter_errors
+    var replacement_transformation_store = (
+        SourceBehaviorTransformationStoreScript.new(_content_catalog))
+    var transformation_errors: Array[String] = (
+        replacement_transformation_store.replace_state(state.get(
+            "source_behavior_transformation_state", {
+                "schema_version": (
+                    SourceBehaviorTransformationStoreScript.SCHEMA_VERSION),
+                "records": [],
+            })))
+    if not transformation_errors.is_empty():
+        return transformation_errors
     var replacement_marker_store = SourceMarkerStoreScript.new()
     var marker_errors: Array[String] = replacement_marker_store.restore_snapshot(
         state.get("source_marker_state", {
@@ -276,8 +295,11 @@ func replace_mutation_state(state: Dictionary) -> Array[String]:
         state.get("used_unique_consumable_ids", []))
     run_combat_history = replacement_history
     passive_counter_store = replacement_counter_store
+    source_behavior_transformation_store = replacement_transformation_store
     passive_counter_store.clear_unowned(
         learned_inner_skill_ids, item_ids)
+    source_behavior_transformation_store.clear_unowned(
+        learned_inner_skill_ids)
     return []
 
 func _initialize_hand_technique_progression(sequence_definition: Dictionary) -> void:
@@ -686,6 +708,8 @@ func to_progress_snapshot() -> RunProgressSnapshot:
         "used_unique_consumable_ids": used_unique_consumable_ids.duplicate(),
         "run_combat_history_state": run_combat_history.snapshot(),
         "passive_counter_state": passive_counter_store.capture_state(),
+        "source_behavior_transformation_state": (
+            source_behavior_transformation_store.capture_state()),
     })
 
 func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
@@ -721,6 +745,13 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
             progress_snapshot.passive_counter_state)
         if not counter_errors.is_empty():
             push_error("无法导入本局被动计数器：%s" % "；".join(counter_errors))
+    if progress_snapshot.has_source_behavior_transformation_state:
+        var transformation_errors: Array[String] = (
+            source_behavior_transformation_store.replace_state(
+                progress_snapshot.source_behavior_transformation_state))
+        if not transformation_errors.is_empty():
+            push_error("无法导入来源行为替换：%s" % (
+                "；".join(transformation_errors)))
     if progress_snapshot.has_learned_technique_ids:
         learned_technique_ids.assign(progress_snapshot.learned_technique_ids)
     if progress_snapshot.has_learned_inner_skill_ids:
@@ -769,6 +800,10 @@ func apply_progress_snapshot(progress_snapshot: RunProgressSnapshot) -> void:
             or progress_snapshot.has_item_ids:
         passive_counter_store.clear_unowned(
             learned_inner_skill_ids, item_ids)
+    if progress_snapshot.has_source_behavior_transformation_state \
+            or progress_snapshot.has_learned_inner_skill_ids:
+        source_behavior_transformation_store.clear_unowned(
+            learned_inner_skill_ids)
     recalculate_effective_max_life()
     # 恢复/战果同步可能发生在 Run 被动查询运行时装配之前。此时保留快照中
     # 明确迁移出的 capacity/overflow；装配 resolver 后 use_int_policy_resolver()

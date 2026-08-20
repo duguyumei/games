@@ -23,6 +23,8 @@ const BattleCounterReadPortScript = preload(
     "res://core/passives/battle_passive_counter_read_port.gd")
 const BattleCounterMutationPortScript = preload(
     "res://core/passives/battle_passive_counter_mutation_port.gd")
+const SourceBehaviorTransformationPortScript = preload(
+    "res://core/passives/source_behavior_transformation_port.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 
 const BATTLE_MUTATION_HOOKS := \
@@ -208,6 +210,55 @@ func prepare_battle_projections(
             return repeat_result
     return {"success": true}
 
+## Run committed 事件中把当前来源永久替换为另一门已装备内功的可复制
+## 正文。选择使用事件身份派生的稳定随机，不占用战斗 RNG，也不会因重试
+## 得到不同目标；真正结果写入 GrowthInventory 的事务状态。
+func commit_source_behavior_transformation(source, context) -> Dictionary:
+    if source == null or context == null or context.owner == null:
+        return {"success": false, "reason": "来源行为替换缺少来源或 owner"}
+    if source.source_kind != "inner_skill" or source.is_projected():
+        return {"success": false, "reason": "只有未投影的内功来源可以永久替换正文"}
+    var store = _property_value(
+        context.owner, "source_behavior_transformation_store")
+    if store == null:
+        return {"success": false, "reason": "owner 缺少来源行为替换 Store"}
+    if store.has_record(source):
+        var existing: Dictionary = store.record_for(source)
+        return {
+            "success": true,
+            "transformed": true,
+            "reused": true,
+            "target_content_id": str(existing.get(
+                "target_content_id", "")),
+            "target_behaviors": existing.get(
+                "target_behaviors", []).duplicate(true),
+        }
+    var raw_sources: Array = source_resolver.collect_sources(
+        coerce_context({"owner": context.owner}))
+    var groups: Array = _inner_source_groups(raw_sources)
+    var candidates: Array = _eligible_target_groups(source, groups)
+    if candidates.is_empty():
+        return {
+            "success": true,
+            "transformed": false,
+            "no_legal_target": true,
+        }
+    var selected: Dictionary = candidates[_stable_transformation_index(
+        source, context, candidates.size())]
+    var target_values := _persistent_target_values(selected)
+    var locked: Dictionary = store.lock(source, target_values)
+    if not locked.get("success", false):
+        return locked
+    return {
+        "success": true,
+        "transformed": true,
+        "reused": bool(locked.get("reused", false)),
+        "target_content_id": str(target_values.get(
+            "target_content_id", "")),
+        "target_behaviors": target_values.get(
+            "target_behaviors", []).duplicate(true),
+    }
+
 func effective_sources(context) -> Dictionary:
     var resolved_context = coerce_context(context)
     var raw_sources := collect_sources(resolved_context)
@@ -330,6 +381,7 @@ func execute_invocation(
     # The scoped port retains its Invocation context while the Handler runs.  Clear
     # both references before returning so a RefCounted context/port cycle cannot
     # survive a completed event.
+    invocation_context.source_behavior_transformation_port = null
     if mutation_hook:
         _end_effect_chain()
     if not result.get("success", false):
@@ -795,6 +847,36 @@ func _locked_target_values(group: Dictionary) -> Dictionary:
         "target_behaviors": behaviors,
     }
 
+func _persistent_target_values(group: Dictionary) -> Dictionary:
+    var behaviors: Array = []
+    for source in _copyable_group_sources(group):
+        behaviors.append({
+            "behavior_id": str(source.behavior_id),
+            "behavior_index": int(source.behavior_index),
+        })
+    return {
+        "target_content_id": str(group.get("content_id", "")),
+        "target_behaviors": behaviors,
+    }
+
+func _stable_transformation_index(
+        source,
+        context,
+        candidate_count: int) -> int:
+    if candidate_count <= 1:
+        return 0
+    var identity := JSON.stringify({
+        "run_seed": int(context.get("run_seed")),
+        "act": int(context.get("act")),
+        "node_id": str(context.get("node_id")),
+        "transaction_token": str(context.get("transaction_token")),
+        "source_kind": str(source.source_kind),
+        "content_id": str(source.content_id),
+        "content_instance_ordinal": int(source.content_instance_ordinal),
+        "behavior_index": int(source.behavior_index),
+    }).sha256_text()
+    return posmod(identity.hash(), candidate_count)
+
 func _locked_target_sources(
         provider, context, raw_sources: Array) -> Dictionary:
     var owner = context.owner if context != null else null
@@ -895,12 +977,19 @@ func _attach_counter_ports(source, context, access: String) -> Array:
     context.persistent_counter_mutation_port = null
     context.battle_counter_read_port = null
     context.battle_counter_mutation_port = null
+    context.source_behavior_transformation_port = null
     # Handler 即使不声明任何计数器，也仍需通过 Invocation context 读取自己的
     # 来源身份；不能把 source 注入与计数器端口是否存在绑定在一起。
     context.source = source
     var result: Array = []
     if access == "none" or context.owner == null:
         return result
+    if access == "mutation" \
+            and _property_value(
+                context.owner, "source_behavior_transformation_store") != null:
+        context.source_behavior_transformation_port = (
+            SourceBehaviorTransformationPortScript.new(
+                self, source, context))
     var persistent_store = _property_value(
         context.owner, "passive_counter_store")
     if persistent_store != null:

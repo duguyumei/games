@@ -11,6 +11,8 @@ const BattlePassiveCounterStoreScript = preload(
     "res://core/passives/battle_passive_counter_store.gd")
 const PassiveBehaviorProjectionStoreScript = preload(
     "res://core/passives/passive_behavior_projection_store.gd")
+const SourceBehaviorTransformationStoreScript = preload(
+    "res://core/passives/source_behavior_transformation_store.gd")
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 const SourceMarkerAddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")
@@ -107,6 +109,12 @@ var passive_counter_store = null
 var battle_passive_counter_store = null
 ## 本场随机/锁定被动行为投影；随战斗事务回滚，不进入 RunProgressSnapshot。
 var passive_behavior_projection_store = null
+## 当前 Run 已提交的来源行为替换在战斗内使用工作副本；不同于本场临时
+## projection，它会进入战果绝对快照与 Run 存档。
+var source_behavior_transformation_store = null
+## 保留 RunProgressSnapshot 的部分快照字段存在语义。正式 Run 入口总会装入
+## 该状态；旧版或局部快照未携带时，战后捕获不得凭空补出空字段。
+var source_behavior_transformation_state_active: bool = false
 var source_marker_store = SourceMarkerStoreScript.new()
 var source_marker_address_resolver = SourceMarkerAddressResolverScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
@@ -149,6 +157,8 @@ func use_passive_rule_runtime(runtime) -> void:
     passive_counter_store = RunPassiveCounterStoreScript.new(catalog)
     battle_passive_counter_store = BattlePassiveCounterStoreScript.new()
     passive_behavior_projection_store = PassiveBehaviorProjectionStoreScript.new()
+    source_behavior_transformation_store = (
+        SourceBehaviorTransformationStoreScript.new(catalog))
     technique_loadout_policy = TechniqueLoadoutPolicyScript.new(
         catalog,
         PassiveIntPolicyResolverScript.new(runtime) if runtime != null else null)
@@ -259,6 +269,9 @@ func reset(
         battle_passive_counter_store.clear()
     if passive_behavior_projection_store != null:
         passive_behavior_projection_store.clear()
+    if source_behavior_transformation_store != null:
+        source_behavior_transformation_store.clear()
+    source_behavior_transformation_state_active = false
     source_marker_store.clear_scope("battle")
     source_marker_store.clear_scope("run")
     last_hand_limit_query_result.clear()
@@ -843,6 +856,11 @@ func capture_passive_query_state() -> Dictionary:
         "passive_behavior_projection_state": (
             passive_behavior_projection_store.capture_state() \
             if passive_behavior_projection_store != null else {}),
+        "source_behavior_transformation_state": (
+            source_behavior_transformation_store.capture_state() \
+            if source_behavior_transformation_store != null else {}),
+        "source_behavior_transformation_state_active": (
+            source_behavior_transformation_state_active),
         "source_marker_state": source_marker_store.snapshot(),
         "run_combat_history_state": run_combat_history.snapshot(),
         "last_same_qi_capacity_query_result": (
@@ -993,6 +1011,19 @@ func replace_passive_query_state(state: Dictionary) -> void:
             if not projection_errors.is_empty():
                 push_error("无法恢复被动投影状态：%s" % "；".join(
                     projection_errors))
+    if source_behavior_transformation_store != null:
+        var transformation_state: Dictionary = state.get(
+            "source_behavior_transformation_state", {})
+        if not transformation_state.is_empty():
+            var transformation_errors: Array[String] = (
+                source_behavior_transformation_store.replace_state(
+                    transformation_state))
+            if not transformation_errors.is_empty():
+                push_error("无法恢复来源行为替换状态：%s" % (
+                    "；".join(transformation_errors)))
+    source_behavior_transformation_state_active = bool(state.get(
+        "source_behavior_transformation_state_active",
+        source_behavior_transformation_state_active))
     var source_marker_state: Dictionary = state.get("source_marker_state", {})
     if not source_marker_state.is_empty():
         source_marker_store.restore_snapshot(source_marker_state)

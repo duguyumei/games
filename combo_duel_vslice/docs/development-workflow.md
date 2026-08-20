@@ -1243,3 +1243,28 @@ ObjectDB／RID、orphan或资源泄漏问题，仅有已知macOS CA警告。
 本批不录入《左右互搏》《镜花水月》《虚位养神》，矩阵更新为已有／合并46、B 0、C1 1、C2 0、D 1。
 最终投影专项71条、battle-contracts 871条、Run Save v1 202条断言、项目加载744项、quick 7/7、日志诊断
 扫描和`git diff --check`均通过。最后一个C1 `source_behavior_transformation`完成后再运行最终full。
+
+## Run永久来源行为替换工作流（2026-08-20）
+
+声明此能力的内容使用`source_behavior_transformation`行为、稳定`state_key`与正整数
+`progress_required`。进度只通过Invocation的持久计数器Port更新；达到阈值后Handler只调用
+`source_behavior_transformation_port.transform_current_source()`，不得自行扫描`equipped_inner_skill_ids`、
+拼目标索引或修改Store。
+
+候选资格统一使用Registry的`allows_behavior_copy`：复制／计划类内容、显式`copyable=false`行为和已投影来源
+均不可选。成功记录只保存provider内容ID、副本序号、target内容ID、behavior ID及索引。来源Resolver负责把
+这些稳定字段恢复为双身份`PassiveRuleSource`；内容、Handler和UI不得缓存目标definition或建立专用执行分支。
+
+该状态属于Run committed数据，必须同时经过`GrowthInventory.capture/replace_mutation_state`、
+`RunProgressSnapshot`、`BattleSetupService`和`RunSaveData`。新增字段缺失按旧存档空状态兼容，字段存在则绝对
+校验与替换；战果完整快照必须携带该字段。查询和预览不得选择目标，正式`battle_completed`事件使用稳定事件
+身份选择一次，失败沿现有Run事务恢复。
+
+`BattleSide`还要保留部分快照的字段存在语义：只有入口`RunProgressSnapshot`实际携带替换状态时，战果捕获
+才输出该字段。旧版或局部快照缺失字段时不得凭空补出空状态；正式`GrowthInventory`入口始终携带完整字段，
+因此不会削弱正常战斗的实时提交。该存在标志必须随战斗事务快照一起恢复。
+
+本批不录入《无影藏功》正式数据。能力矩阵收口为已有／合并47、B 0、C1 0、C2 0、D 1。最终验证通过
+化影专项48条、save-contracts 137条、Run Save v1 202条、battle-contracts 871条、content-contracts
+1081条、项目加载748项及quick 7/7。full执行54组，其中46组通过；其余8组在未含本批改动的干净
+`HEAD e99c4e4`中逐项复现相同断言和值，因此记录为既有基线失败，不归因于本能力，也不通过修改期望掩盖。
