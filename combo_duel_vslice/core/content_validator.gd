@@ -1378,6 +1378,8 @@ func _validate_inner_skills(definition: Dictionary) -> void:
             _error(scope + ".forget_value", "必须是非负整数")
         if status == FORMAL_CONTENT_STATUS and not value.has("forget_value"):
             _error(scope + ".forget_value", "正式内功必须配置非负整数遗忘所得")
+        if value.has("copyable") and not value.get("copyable") is bool:
+            _error(scope + ".copyable", "必须是布尔值")
         _validate_marker_definitions(
             value.get("marker_definitions", []),
             scope + ".marker_definitions")
@@ -1593,6 +1595,8 @@ func _validate_passive_behaviors(
             _error(behavior_scope, "必须是对象")
             continue
         var behavior_id = behavior.get("id")
+        if behavior.has("copyable") and not behavior.get("copyable") is bool:
+            _error(behavior_scope + ".copyable", "必须是布尔值")
         if not behavior_id is String or str(behavior_id) == "":
             _error(behavior_scope + ".id", "必须是非空稳定 behavior ID")
             continue

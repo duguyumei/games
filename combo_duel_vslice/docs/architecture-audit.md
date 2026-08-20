@@ -2084,3 +2084,27 @@ EffectSpec令牌前缀，避免与外层功法或同事件其他来源碰撞。
 
 验证覆盖生命周期适配85条、功法运行442条、选择续跑76条断言及quick 7/7；项目加载统计741项。日志
 使用独立`/tmp`路径并排除了已知macOS CA警告，未发现加载、解析、SCRIPT ERROR或退出泄漏诊断。
+
+## 2026-08-20 被动行为复制投影架构收口
+
+复制投影不是新的被动子系统。`PassiveRuleRuntime.effective_sources`只把目标行为投影成复制者来源下的
+`PassiveRuleSource`，后续仍由唯一ExecutionPlan、Invocation、Handler Registry、EffectExecutor与生命周期桥
+执行。复制者拥有公开来源身份、顺序、压制和效果；目标拥有行为实现、配置、hook、marker声明与计数器定义。
+这组双身份被写入投影元数据和计划指纹，避免复制内容对象或按具体内功ID分支。
+
+`content_instance_ordinal`表达同内容的第几个装备副本，只用于在换位后确认战斗锁定身份；实际执行仍读取该
+目标或复制者当前的source instance。随机另一目标和最左目标记录由
+`PassiveBehaviorProjectionStore`保存，随`BattleSide.capture_passive_query_state`进入既有战斗事务回滚，
+不进入RunProgressSnapshot；装配失败恢复Store和RNG，战斗结束清理。实时左邻不写Store，查询、预览与AI均
+不产生随机或状态写入。
+
+投影持久计数器仍由`RunPassiveCounterStore`拥有，战斗计数器仍由`BattlePassiveCounterStore`拥有。
+Key只增加可选`counter_instance_key`和目标定义身份；普通来源不生成这些字段，旧storage key和schema 1
+保持不变。生命周期桥只扩展为按当前Invocation的hook/order匹配，没有建立投影专用时点注册器。复制类内容
+整体、`passive_invocation_plan_query`提供者及显式不可复制行为都被排除，额外执行继续使用已有
+`additional_executions`且不会递归建计划。
+
+本批未录入正式内容，正式内功、物品和暂缓功法数量不变；矩阵为已有／合并46、B 0、C1 1、C2 0、D 1。
+最终投影专项71条、battle-contracts 871条、Run Save v1 202条断言、项目加载744项及quick 7/7通过；
+独立`/tmp`日志诊断扫描无加载、解析、脚本运行或退出泄漏错误。full继续留到
+`source_behavior_transformation`完成后的统一收口。

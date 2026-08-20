@@ -49,6 +49,7 @@ func _resolve(counter_id: String) -> Dictionary:
         "key": KeyScript.new().configure({
             "owner_id": _owner_id,
             "source_instance_key": _source.source_instance_key,
+            "counter_instance_key": _source.counter_instance_key,
             "state_key": _source.state_key,
             "counter_id": counter_id,
         }),

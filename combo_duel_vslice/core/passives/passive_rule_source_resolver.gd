@@ -29,14 +29,17 @@ func collect_sources(context) -> Array:
         if context.has_proposed_inner_skill_ids
         else owner.get("equipped_inner_skill_ids"))
     var technique_slot := int(owner.get("technique_slot_index"))
+    var inner_ordinals: Dictionary = {}
     for slot_index in range(equipped.size()):
         var content_id := str(equipped[slot_index])
+        var content_ordinal := int(inner_ordinals.get(content_id, 0))
+        inner_ordinals[content_id] = content_ordinal + 1
         var definition: Dictionary = _catalog.get_by_id("inner_skill", content_id)
         var source_order := slot_index if slot_index < technique_slot else slot_index + 1
         _append_behaviors(
             result, "inner_skill", content_id,
             "inner:%s:%d:%s" % [owner_id, slot_index, content_id],
-            definition, source_order)
+            definition, source_order, slot_index, content_ordinal)
     var item_ids = owner.get("item_ids")
     if item_ids == null:
         item_ids = []
@@ -69,6 +72,9 @@ func capture_source_snapshot(context) -> Array:
             "behavior_id": source.behavior_id,
             "behavior_index": source.behavior_index,
             "source_order": source.source_order,
+            "slot_index": source.slot_index,
+            "content_instance_ordinal": source.content_instance_ordinal,
+            "behavior_copyable": source.behavior_copyable,
         })
     return result
 
@@ -100,6 +106,16 @@ func sources_from_snapshot(snapshot: Array) -> Array:
             "state_key": str(behavior.get("state_key", "")),
             "configuration": behavior.get("configuration", {}),
             "source_order": int(value.get("source_order", 0)),
+            "slot_index": int(value.get("slot_index", -1)),
+            "content_instance_ordinal": int(value.get(
+                "content_instance_ordinal", 0)),
+            "behavior_copyable": bool(value.get(
+                "behavior_copyable",
+                definition.get("copyable", true) \
+                    and behavior.get("copyable", true))),
+            "source_marker_definitions": definition.get(
+                "marker_definitions",
+                definition.get("source_marker_definitions", [])),
         }))
     result.sort_custom(func(left, right):
         if left.source_order != right.source_order:
@@ -122,8 +138,11 @@ func equipped_inner_skill_entries(context) -> Array:
         else owner.get("equipped_inner_skill_ids"))
     var technique_slot := int(owner.get("technique_slot_index"))
     var result: Array = []
+    var inner_ordinals: Dictionary = {}
     for slot_index in range(equipped.size()):
         var content_id := str(equipped[slot_index])
+        var content_ordinal := int(inner_ordinals.get(content_id, 0))
+        inner_ordinals[content_id] = content_ordinal + 1
         result.append({
             "slot_index": slot_index,
             "content_id": content_id,
@@ -131,6 +150,7 @@ func equipped_inner_skill_entries(context) -> Array:
                 owner_id, slot_index, content_id],
             "source_order": (
                 slot_index if slot_index < technique_slot else slot_index + 1),
+            "content_instance_ordinal": content_ordinal,
             "definition": _catalog.get_by_id("inner_skill", content_id),
         })
     return result
@@ -141,7 +161,9 @@ func _append_behaviors(
         content_id: String,
         instance_key: String,
         definition: Dictionary,
-        source_order: int) -> void:
+        source_order: int,
+        slot_index: int = -1,
+        content_instance_ordinal: int = 0) -> void:
     if definition.is_empty():
         return
     var behaviors = definition.get("behaviors", [])
@@ -161,4 +183,48 @@ func _append_behaviors(
             "state_key": str(behavior.get("state_key", "")),
             "configuration": behavior.get("configuration", {}),
             "source_order": source_order,
+            "slot_index": slot_index,
+            "content_instance_ordinal": content_instance_ordinal,
+            "behavior_copyable": bool(
+                definition.get("copyable", true) \
+                and behavior.get("copyable", true)),
+            "source_marker_definitions": definition.get(
+                "marker_definitions",
+                definition.get("source_marker_definitions", [])),
         }))
+
+func source_from_descriptor(value: Dictionary):
+    if _catalog == null:
+        return null
+    var source_kind := str(value.get("source_kind", ""))
+    var content_id := str(value.get("content_id", ""))
+    var behavior_index := int(value.get("behavior_index", -1))
+    var definition: Dictionary = _catalog.get_by_id(source_kind, content_id)
+    var behaviors = definition.get("behaviors", [])
+    if behavior_index < 0 or behavior_index >= behaviors.size() \
+            or not behaviors[behavior_index] is Dictionary:
+        return null
+    var behavior: Dictionary = behaviors[behavior_index]
+    if value.has("behavior_id") and str(value.get("behavior_id", "")) \
+            != str(behavior.get("id", "")):
+        return null
+    return SourceScript.new().configure({
+        "source_kind": source_kind,
+        "content_id": content_id,
+        "source_instance_key": str(value.get("source_instance_key", "")),
+        "definition": definition,
+        "behavior_id": str(behavior.get("id", "")),
+        "behavior_index": behavior_index,
+        "state_key": str(behavior.get("state_key", "")),
+        "configuration": behavior.get("configuration", {}),
+        "source_order": int(value.get("source_order", 0)),
+        "slot_index": int(value.get("slot_index", -1)),
+        "content_instance_ordinal": int(value.get(
+            "content_instance_ordinal", 0)),
+        "behavior_copyable": bool(
+            definition.get("copyable", true) \
+            and behavior.get("copyable", true)),
+        "source_marker_definitions": definition.get(
+            "marker_definitions",
+            definition.get("source_marker_definitions", [])),
+    })

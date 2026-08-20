@@ -1223,3 +1223,23 @@ B 类薄适配已全部完成，下一阶段只剩 C1 内容接入和最终统�
 本批专项验证为生命周期适配85条、功法运行442条、选择续跑76条断言；quick为7/7，项目加载统计741项。
 所有Godot调用使用独立`/tmp/taiwu-last-b-*.log`，日志扫描未发现脚本／资源加载、解析、SCRIPT ERROR、
 ObjectDB／RID、orphan或资源泄漏问题，仅有已知macOS CA警告。
+
+## 被动行为复制投影工作流（2026-08-20）
+
+复制类内容只声明`passive_behavior_projection`及模式，不注册内容ID专用Handler。可用模式为
+`live_left_adjacent`、`battle_locked_random_other`和`battle_locked_leftmost_repeat`。普通Handler默认可复制；
+全局Invocation计划提供者自动不可复制，内容或behavior还可用`copyable=false`显式排除。复制类内功自身必须
+整体不可复制，避免复制链。
+
+投影必须沿`PassiveRuleRuntime.effective_sources/build_execution_plan`进入既有Invocation链。复制者负责公开
+来源、效果归属和压制，目标只提供行为正文；不得复制目标内容Dictionary、直接调用目标Handler或建立新的
+效果／计数器执行器。锁定投影只在战斗生命周期装配时写入
+`BattleSide.passive_behavior_projection_store`，并与战斗事务和RNG一起恢复；所有查询、预览和AI路径只能读。
+
+同内容多副本和换位使用`content_instance_ordinal`确认锁定身份。投影计数器通过现有CounterKey的可选
+`counter_instance_key`隔离，目标定义字段只用于从目录恢复计数器声明；非投影来源必须继续产生旧四段键，
+不得借本能力升级存档schema或建立投影Store的Run持久化。
+
+本批不录入《左右互搏》《镜花水月》《虚位养神》，矩阵更新为已有／合并46、B 0、C1 1、C2 0、D 1。
+最终投影专项71条、battle-contracts 871条、Run Save v1 202条断言、项目加载744项、quick 7/7、日志诊断
+扫描和`git diff --check`均通过。最后一个C1 `source_behavior_transformation`完成后再运行最终full。

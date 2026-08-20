@@ -30,6 +30,8 @@ const ExtraActionProjectionHandlerScript = preload(
     "res://core/passives/extra_action_projection_passive_handler.gd")
 const CardTriggerTargetPolicyHandlerScript = preload(
     "res://core/passives/card_trigger_target_policy_passive_handler.gd")
+const PassiveBehaviorProjectionHandlerScript = preload(
+    "res://core/passives/passive_behavior_projection_passive_handler.gd")
 const BattleEventCatalogScript = preload("res://core/battle_event_catalog.gd")
 const BattleIntQueryCatalogScript = preload(
     "res://core/passives/battle_int_query_catalog.gd")
@@ -87,6 +89,7 @@ const NON_EVENT_HOOKS := [
     "growth_trigger_execution_plan",
     "action_confirmation_payment",
     "card_trigger_target_policy_query",
+    "passive_behavior_projection_query",
 ] + BattleEventCatalogScript.LIFECYCLE_HOOKS + BATTLE_INT_QUERY_HOOKS + [
     "hand_evaluation_options_query",
     "card_identity_query",
@@ -126,6 +129,7 @@ func _init(
         register_handler(PreTechniqueCostHandlerScript.new())
         register_handler(ExtraActionProjectionHandlerScript.new())
         register_handler(CardTriggerTargetPolicyHandlerScript.new())
+        register_handler(PassiveBehaviorProjectionHandlerScript.new())
 
 func use_effect_registry(effect_registry) -> void:
     for handler_value in _handlers.values():
@@ -190,6 +194,23 @@ func handler_ids() -> Array[String]:
         result.append(str(id))
     result.sort()
     return result
+
+func allows_behavior_copy(
+        behavior_id: String, configuration: Dictionary) -> bool:
+    var current = handler(behavior_id)
+    if current == null or not bool(current.allows_behavior_copy(configuration)):
+        return false
+    ## Invocation 计划提供者会改变其他来源的执行结构，属于全局计划规则，
+    ## 不作为普通可复制正文投影。
+    return not current.supported_hooks().has("passive_invocation_plan_query")
+
+func copy_projection_spec(
+        behavior_id: String, configuration: Dictionary) -> Dictionary:
+    var current = handler(behavior_id)
+    if current == null:
+        return {}
+    var result = current.copy_projection_spec(configuration)
+    return result.duplicate(true) if result is Dictionary else {}
 
 func has_hook(hook: String) -> bool:
     return _known_hooks.has(hook)

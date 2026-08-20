@@ -196,6 +196,7 @@ func _init(
     enemy.use_card_zone_transaction_dependencies(rng, trigger_queue)
     battle_passive_timing_bridge = BattlePassiveTimingBridgeScript.new(
         passive_rule_runtime, timing_system)
+    battle_passive_timing_bridge.use_rng(rng)
     battle_passive_event_service = BattlePassiveCommittedEventServiceScript.new(
         passive_rule_runtime, Callable(self, "_set_scenario_error"))
     battle_passive_event_service.register_weak_listener(

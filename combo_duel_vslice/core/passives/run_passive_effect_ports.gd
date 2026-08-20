@@ -34,9 +34,8 @@ func for_source(
         metadata["source_instance_key"] = str(source.source_instance_key)
         metadata["source_behavior_id"] = str(source.behavior_id)
         metadata["source_behavior_index"] = int(source.behavior_index)
-        metadata["source_marker_definitions"] = source.definition.get(
-            "marker_definitions",
-            source.definition.get("source_marker_definitions", [])).duplicate(true)
+        metadata["source_marker_definitions"] = (
+            source.source_marker_definitions.duplicate(true))
         metadata["trigger_mode"] = "direct"
         metadata["fact_source"] = {
             "source_kind": str(source.source_kind),
@@ -52,16 +51,18 @@ func for_source(
                 "experience_response_ancestry",
                 metadata.get("payload", {}).get(
                     "experience_response_ancestry", [])).duplicate()
-            var behavior_key := "%s|%s" % [
-                str(source.source_instance_key), str(source.behavior_id)]
+            var behavior_key: String = source.behavior_ancestry_key()
             if not ancestry.has(behavior_key):
                 ancestry.append(behavior_key)
             metadata["experience_response_ancestry"] = ancestry
         var parent_event_token := str(metadata.get("event_token", ""))
         if parent_event_token != "":
+            var transaction_source_key := str(source.source_instance_key)
+            if source.is_projected():
+                transaction_source_key = str(source.plan_identity())
             metadata["transaction_token"] = "%s:source:%s:%d" % [
                 parent_event_token,
-                str(source.source_instance_key),
+                transaction_source_key,
                 execution_index,
             ]
         # 只有历练响应需要为每个子 Invocation 重新生成 operation token；其他

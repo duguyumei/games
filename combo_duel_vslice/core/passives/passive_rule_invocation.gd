@@ -26,4 +26,6 @@ func to_dict() -> Dictionary:
         "execution_index": execution_index,
         "execution_count": execution_count,
         "repeat_origin": repeat_origin.duplicate(),
+        "projection": source.projection.duplicate(true) \
+            if source != null else {},
     }

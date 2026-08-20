@@ -9,6 +9,8 @@ const RunPassiveCounterStoreScript = preload(
     "res://core/passives/run_passive_counter_store.gd")
 const BattlePassiveCounterStoreScript = preload(
     "res://core/passives/battle_passive_counter_store.gd")
+const PassiveBehaviorProjectionStoreScript = preload(
+    "res://core/passives/passive_behavior_projection_store.gd")
 const SourceMarkerStoreScript = preload("res://core/source_marker_store.gd")
 const SourceMarkerAddressResolverScript = preload(
     "res://core/source_marker_address_resolver.gd")
@@ -103,6 +105,8 @@ var technique_loadout_policy = TechniqueLoadoutPolicyScript.new()
 var passive_counter_store = null
 ## 只存在于当前战斗，不进入 RunProgressSnapshot 或存档。
 var battle_passive_counter_store = null
+## 本场随机/锁定被动行为投影；随战斗事务回滚，不进入 RunProgressSnapshot。
+var passive_behavior_projection_store = null
 var source_marker_store = SourceMarkerStoreScript.new()
 var source_marker_address_resolver = SourceMarkerAddressResolverScript.new()
 var source_contributed_stat_service = SourceContributedStatServiceScript.new()
@@ -144,6 +148,7 @@ func use_passive_rule_runtime(runtime) -> void:
         else null)
     passive_counter_store = RunPassiveCounterStoreScript.new(catalog)
     battle_passive_counter_store = BattlePassiveCounterStoreScript.new()
+    passive_behavior_projection_store = PassiveBehaviorProjectionStoreScript.new()
     technique_loadout_policy = TechniqueLoadoutPolicyScript.new(
         catalog,
         PassiveIntPolicyResolverScript.new(runtime) if runtime != null else null)
@@ -252,6 +257,8 @@ func reset(
         passive_counter_store.clear()
     if battle_passive_counter_store != null:
         battle_passive_counter_store.clear()
+    if passive_behavior_projection_store != null:
+        passive_behavior_projection_store.clear()
     source_marker_store.clear_scope("battle")
     source_marker_store.clear_scope("run")
     last_hand_limit_query_result.clear()
@@ -833,6 +840,9 @@ func capture_passive_query_state() -> Dictionary:
             if passive_counter_store != null else {},
         "battle_counters": battle_passive_counter_store.capture_state() \
             if battle_passive_counter_store != null else {},
+        "passive_behavior_projection_state": (
+            passive_behavior_projection_store.capture_state() \
+            if passive_behavior_projection_store != null else {}),
         "source_marker_state": source_marker_store.snapshot(),
         "run_combat_history_state": run_combat_history.snapshot(),
         "last_same_qi_capacity_query_result": (
@@ -973,6 +983,16 @@ func replace_passive_query_state(state: Dictionary) -> void:
         passive_counter_store.replace_state(state.get("persistent_counters", {}))
     if battle_passive_counter_store != null:
         battle_passive_counter_store.replace_state(state.get("battle_counters", {}))
+    if passive_behavior_projection_store != null:
+        var projection_state: Dictionary = state.get(
+            "passive_behavior_projection_state", {})
+        if not projection_state.is_empty():
+            var projection_errors: Array[String] = (
+                passive_behavior_projection_store.replace_state(
+                    projection_state))
+            if not projection_errors.is_empty():
+                push_error("无法恢复被动投影状态：%s" % "；".join(
+                    projection_errors))
     var source_marker_state: Dictionary = state.get("source_marker_state", {})
     if not source_marker_state.is_empty():
         source_marker_store.restore_snapshot(source_marker_state)

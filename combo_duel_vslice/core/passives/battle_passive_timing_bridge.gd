@@ -20,6 +20,7 @@ var execution_history: Array[Dictionary] = []
 
 var _runtime_ref: WeakRef
 var _timing_system
+var _rng: RandomNumberGenerator
 var _sides: Array = []
 var _bindings: Dictionary = {}
 var _registered_ids: Array[Dictionary] = []
@@ -31,18 +32,33 @@ func _init(passive_runtime, timing_system) -> void:
     _runtime_ref = weakref(passive_runtime)
     _timing_system = timing_system
 
+func use_rng(rng: RandomNumberGenerator) -> void:
+    _rng = rng
+
 func assemble(sides: Array) -> Dictionary:
     close_battle()
     _sides = sides.duplicate()
     for side in _sides:
         if side != null and side.battle_passive_counter_store != null:
             side.battle_passive_counter_store.clear()
+    var projection_snapshots := _capture_projection_states()
+    var projection_rng_state := int(_rng.state) if _rng != null else 0
+    var runtime = _runtime_ref.get_ref()
+    if runtime == null:
+        return {"success": false, "reason": "被动规则运行时已释放"}
+    var prepared: Dictionary = runtime.prepare_battle_projections(
+        _sides, _rng)
+    if not prepared.get("success", false):
+        _restore_projection_states(projection_snapshots, projection_rng_state)
+        return prepared
     var collected := _collect_bindings()
     if not collected.get("success", false):
+        _restore_projection_states(projection_snapshots, projection_rng_state)
         return collected
     var gate := _cross_side_gate_all_hooks(0)
     if not gate.get("success", false):
         _bindings.clear()
+        _restore_projection_states(projection_snapshots, projection_rng_state)
         return gate
     for hook in RegistryScript.BATTLE_TIMING_HOOKS:
         if not _register(
@@ -51,6 +67,7 @@ func assemble(sides: Array) -> Dictionary:
                 BEGIN_ORDER,
                 Callable(self, "_on_timing_begin").bind(hook)):
             close_battle()
+            _restore_projection_states(projection_snapshots, projection_rng_state)
             return {
                 "success": false,
                 "reason": "无法注册被动战斗时点 begin：%s" % hook,
@@ -66,6 +83,8 @@ func assemble(sides: Array) -> Dictionary:
                     order,
                     Callable(self, "_on_timing_binding").bind(hook, order)):
                 close_battle()
+                _restore_projection_states(
+                    projection_snapshots, projection_rng_state)
                 return {
                     "success": false,
                     "reason": "无法注册被动战斗时点：%s order=%d" % [
@@ -78,6 +97,7 @@ func assemble(sides: Array) -> Dictionary:
                 END_ORDER,
                 Callable(self, "_on_timing_end").bind(hook)):
             close_battle()
+            _restore_projection_states(projection_snapshots, projection_rng_state)
             return {
                 "success": false,
                 "reason": "无法注册被动战斗时点 end：%s" % hook,
@@ -144,7 +164,19 @@ func _collect_bindings() -> Dictionary:
     for side in _sides:
         if side == null:
             continue
-        for source in runtime.collect_sources({"owner": side}):
+        var resolved: Dictionary = runtime.effective_sources({"owner": side})
+        if not resolved.get("success", false):
+            return {
+                "success": false,
+                "reason": "；".join(resolved.get("errors", [])),
+            }
+        var sources: Array = resolved.get("sources", []).duplicate()
+        ## 实时邻接更换目标后仍可能使用其他已装备行为的 order；原始来源
+        ## 提供本场可能出现的完整 order 并集，具体 Invocation 在执行时再匹配。
+        for raw_source in resolved.get("raw_sources", []):
+            if not sources.has(raw_source):
+                sources.append(raw_source)
+        for source in sources:
             var errors: Array[String] = (
                 runtime.registry.validate_battle_timing_bindings(
                     source.behavior_id, source.configuration))
@@ -164,10 +196,7 @@ func _collect_bindings() -> Dictionary:
                     _bindings[hook] = {}
                 if not _bindings[hook].has(order):
                     _bindings[hook][order] = {}
-                if not _bindings[hook][order].has(side.owner_id):
-                    _bindings[hook][order][side.owner_id] = {}
-                _bindings[hook][order][side.owner_id][
-                    _source_identity(source)] = true
+                _bindings[hook][order][side.owner_id] = true
     return {"success": true}
 
 func _register(
@@ -226,14 +255,15 @@ func _on_timing_binding(
         }
     var invocation_entries: Array = []
     for owner in pending["owners"]:
-        var allowed: Dictionary = _bindings.get(
+        var allowed := bool(_bindings.get(
             expected_hook, {}).get(expected_order, {}).get(
-                owner.owner_id, {})
-        if allowed.is_empty():
+                owner.owner_id, false))
+        if not allowed:
             continue
         var plan = pending["plans"][owner.owner_id]
         for invocation in plan.invocations:
-            if not allowed.has(_source_identity(invocation.source)):
+            if not _invocation_has_order(
+                    invocation, expected_hook, expected_order):
                 continue
             invocation_entries.append({"owner": owner, "invocation": invocation})
     pending["active_binding"] = {
@@ -386,6 +416,9 @@ func _on_timing_end(event, expected_hook: String) -> Dictionary:
         for side in _sides:
             if side != null and side.battle_passive_counter_store != null:
                 side.battle_passive_counter_store.clear()
+            if side != null \
+                    and side.passive_behavior_projection_store != null:
+                side.passive_behavior_projection_store.clear()
     return {"success": true, "detail": "被动时点事务完成"}
 
 func _cross_side_gate_all_hooks(round_number: int) -> Dictionary:
@@ -430,9 +463,9 @@ func _cross_side_gate(hook: String, round_number: int) -> Dictionary:
 
 func _has_bound_invocation(hook: String, owner_id: String, plan) -> bool:
     for invocation in plan.invocations:
-        var identity := _source_identity(invocation.source)
         for order in _bindings.get(hook, {}):
-            if _bindings[hook][order].get(owner_id, {}).has(identity):
+            if bool(_bindings[hook][order].get(owner_id, false)) \
+                    and _invocation_has_order(invocation, hook, int(order)):
                 return true
     return false
 
@@ -512,5 +545,31 @@ func _rollback_pending(pending: Dictionary) -> Array[String]:
             snapshot["battle"]))
     return errors
 
-func _source_identity(source) -> String:
-    return "%s|%d" % [source.source_instance_key, source.behavior_index]
+func _invocation_has_order(invocation, hook: String, order: int) -> bool:
+    var runtime = _runtime_ref.get_ref()
+    if runtime == null or invocation == null or invocation.source == null:
+        return false
+    for binding in runtime.registry.battle_timing_bindings(
+            invocation.source.behavior_id,
+            invocation.source.configuration):
+        if str(binding.get("hook", "")) == hook \
+                and int(binding.get("order", 0)) == order:
+            return true
+    return false
+
+func _capture_projection_states() -> Array:
+    var result: Array = []
+    for side in _sides:
+        if side == null or side.passive_behavior_projection_store == null:
+            continue
+        result.append({
+            "store": side.passive_behavior_projection_store,
+            "state": side.passive_behavior_projection_store.capture_state(),
+        })
+    return result
+
+func _restore_projection_states(states: Array, rng_state: int) -> void:
+    for entry in states:
+        entry["store"].replace_state(entry["state"])
+    if _rng != null:
+        _rng.state = rng_state

@@ -128,8 +128,8 @@ func effect_context_for(current_source = null):
         values["source_id"] = resolved_source.content_id
         values["source_name"] = source_name
         values["source_instance_key"] = resolved_source.source_instance_key
-        values["source_marker_definitions"] = resolved_source.definition.get(
-            "marker_definitions", []).duplicate(true)
+        values["source_marker_definitions"] = (
+            resolved_source.source_marker_definitions.duplicate(true))
         values["trigger_mode"] = str(values.get(
             "trigger_mode", "manual" if hook == "action_resolve" else "direct"))
         var captures_by_source: Dictionary = payload.get("captures_by_source", {})

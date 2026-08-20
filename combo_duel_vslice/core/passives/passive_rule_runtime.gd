@@ -159,6 +159,62 @@ func resolve_inner_skill_capacity(
     context.proposed_equipped_inner_skill_ids = proposed_equipped_inner_skill_ids.duplicate()
     return capacity_policy.resolve(context, proposed_equipped_inner_skill_ids)
 
+## 在战斗生命周期装配时一次性建立随机/锁定投影。查询与 build_execution_plan
+## 只读取这些记录，因此预览、AI 与只读查询不会推进 RNG 或写状态。
+func prepare_battle_projections(
+        sides: Array, rng: RandomNumberGenerator) -> Dictionary:
+    var snapshots: Array = []
+    for side in sides:
+        var store = _property_value(side, "passive_behavior_projection_store")
+        if store != null:
+            snapshots.append({"store": store, "state": store.capture_state()})
+    var rng_state := int(rng.state) if rng != null else 0
+    for side in sides:
+        if side == null:
+            continue
+        var context = coerce_context({"owner": side})
+        var raw_sources := collect_sources(context)
+        var random_result := _prepare_locked_mode(
+            "battle_locked_random_other", side, context, raw_sources, rng, -1)
+        if not random_result.get("success", false):
+            _restore_projection_preparation(snapshots, rng, rng_state)
+            return random_result
+    for side in sides:
+        if side == null:
+            continue
+        var context = coerce_context({"owner": side})
+        var raw_sources := collect_sources(context)
+        var equipped_count: int = source_resolver.equipped_inner_skill_entries(
+            context).size()
+        var equipped_value = _property_value(side, "equipped_inner_skill_ids")
+        var equipped_ids: Array = (
+            equipped_value if equipped_value is Array else [])
+        var capacity := resolve_inner_skill_capacity(
+            context, equipped_ids)
+        if not capacity.get("errors", []).is_empty():
+            _restore_projection_preparation(snapshots, rng, rng_state)
+            return {
+                "success": false,
+                "reason": "锁定被动投影的容量查询失败：%s" % "；".join(
+                    capacity.get("errors", [])),
+            }
+        var empty_slots := maxi(
+            0, int(capacity.get("effective_capacity", 0)) - equipped_count)
+        var repeat_result := _prepare_locked_mode(
+            "battle_locked_leftmost_repeat", side, context,
+            raw_sources, rng, empty_slots)
+        if not repeat_result.get("success", false):
+            _restore_projection_preparation(snapshots, rng, rng_state)
+            return repeat_result
+    return {"success": true}
+
+func effective_sources(context) -> Dictionary:
+    var resolved_context = coerce_context(context)
+    var raw_sources := collect_sources(resolved_context)
+    var expanded := _expand_projected_sources(raw_sources, resolved_context)
+    expanded["raw_sources"] = raw_sources
+    return expanded
+
 func build_execution_plan(hook: String, context):
     var resolved_context = coerce_context(context)
     resolved_context.hook = hook
@@ -166,13 +222,17 @@ func build_execution_plan(hook: String, context):
     if not registry.has_hook(hook):
         plan.errors.append("未知被动 hook：%s" % hook)
         return plan
-    var sources := collect_sources(resolved_context)
+    var source_result := effective_sources(resolved_context)
+    if not source_result.get("success", false):
+        plan.errors.append_array(source_result.get("errors", []))
+        return plan
+    var raw_sources: Array = source_result.get("raw_sources", [])
+    var sources: Array = source_result.get("sources", [])
     for source in sources:
         if hook == "experience_change_resolved":
             var ancestry = resolved_context.payload.get(
                 "experience_response_ancestry", [])
-            var behavior_key := "%s|%s" % [
-                str(source.source_instance_key), str(source.behavior_id)]
+            var behavior_key: String = source.behavior_ancestry_key()
             if ancestry is Array and ancestry.has(behavior_key):
                 continue
         var handler = registry.handler(source.behavior_id)
@@ -189,7 +249,7 @@ func build_execution_plan(hook: String, context):
         if not activation.active:
             continue
         var repeat: Dictionary = _resolve_additional_executions(
-            source, sources, resolved_context)
+            source, raw_sources, resolved_context)
         if not repeat.get("success", false):
             plan.errors.append(str(repeat.get("reason", "额外执行次数无效")))
             continue
@@ -314,9 +374,7 @@ func _execute_standard_effects(
     if invocation.hook == "experience_change_resolved":
         var ancestry: Array = _active_effect_chain.get(
             "experience_response_ancestry", []).duplicate()
-        var behavior_key := "%s|%s" % [
-            str(invocation.source.source_instance_key),
-            str(invocation.source.behavior_id)]
+        var behavior_key: String = invocation.source.behavior_ancestry_key()
         if not ancestry.has(behavior_key):
             ancestry.append(behavior_key)
         _active_effect_chain["experience_response_ancestry"] = ancestry
@@ -407,12 +465,16 @@ func _effect_invocation_token(invocation, context) -> String:
         semantic_token = "%s:%s" % [
             invocation.hook,
             str(context.battle_effect_scope.get("timing_serial", -1))]
-    return "%s|%s|%s|%d|%d" % [
+    var projection_suffix := (
+        "|projection:%s" % invocation.source.projection_key().sha256_text().left(16)
+        if invocation.source.is_projected() else "")
+    return "%s|%s|%s|%d|%d%s" % [
         battle_id,
         semantic_token,
         invocation.source.source_instance_key,
         invocation.source.behavior_index,
         invocation.execution_index,
+        projection_suffix,
     ]
 
 func _begin_effect_chain() -> void:
@@ -454,6 +516,8 @@ func execution_plan_fingerprint_values(plan) -> Dictionary:
         activations.append({
             "source_instance_key": entry["source"].source_instance_key,
             "behavior_id": entry["source"].behavior_id,
+            "plan_identity": entry["source"].plan_identity(),
+            "projection": entry["source"].projection.duplicate(true),
             "active": entry["activation"].active,
             "blocked_by": entry["activation"].blocked_by.duplicate(),
         })
@@ -463,8 +527,11 @@ func execution_plan_fingerprint_values(plan) -> Dictionary:
             "source_instance_key": invocation.source.source_instance_key,
             "behavior_id": invocation.source.behavior_id,
             "behavior_index": invocation.source.behavior_index,
+            "plan_identity": invocation.source.plan_identity(),
+            "projection": invocation.source.projection.duplicate(true),
             "execution_index": invocation.execution_index,
             "execution_count": invocation.execution_count,
+            "repeat_origin": invocation.repeat_origin.duplicate(),
         })
     return {
         "hook": plan.hook,
@@ -538,6 +605,288 @@ func _repeat_result_targets(result: Dictionary, target_source) -> bool:
             and str(result["target_source_kind"]) != target_source.source_kind:
         return false
     return true
+
+func _prepare_locked_mode(
+        mode: String,
+        owner,
+        context,
+        raw_sources: Array,
+        rng: RandomNumberGenerator,
+        additional_executions: int) -> Dictionary:
+    var store = _property_value(owner, "passive_behavior_projection_store")
+    if store == null:
+        return {"success": false, "reason": "战斗参与方缺少被动投影状态 Store"}
+    var groups := _inner_source_groups(raw_sources)
+    var providers := _projection_providers(raw_sources, mode)
+    for provider in providers:
+        if store.has_record(provider):
+            continue
+        var candidates := _eligible_target_groups(provider, groups)
+        var selected: Dictionary = {}
+        if mode == "battle_locked_random_other" and not candidates.is_empty():
+            if rng == null:
+                return {"success": false, "reason": "随机被动投影缺少战斗 RNG"}
+            selected = candidates[int(rng.randi_range(0, candidates.size() - 1))]
+        elif mode == "battle_locked_leftmost_repeat" \
+                and not candidates.is_empty():
+            selected = candidates[0]
+        var values := {
+            "mode": mode,
+            "has_target": not selected.is_empty(),
+            "additional_executions": (
+                additional_executions
+                if mode == "battle_locked_leftmost_repeat" else 0),
+        }
+        if not selected.is_empty():
+            values.merge(_locked_target_values(selected), true)
+        var locked: Dictionary = store.lock(provider, values)
+        if not locked.get("success", false):
+            return locked
+    return {"success": true}
+
+func _restore_projection_preparation(
+        snapshots: Array,
+        rng: RandomNumberGenerator,
+        rng_state: int) -> void:
+    for entry in snapshots:
+        entry["store"].replace_state(entry["state"])
+    if rng != null:
+        rng.state = rng_state
+
+func _projection_providers(sources: Array, expected_mode: String = "") -> Array:
+    var result: Array = []
+    for source in sources:
+        if source.is_projected():
+            continue
+        var spec: Dictionary = registry.copy_projection_spec(
+            source.behavior_id, source.configuration)
+        if spec.is_empty():
+            continue
+        if expected_mode != "" and str(spec.get("mode", "")) != expected_mode:
+            continue
+        result.append(source)
+    result.sort_custom(Callable(self, "_source_less"))
+    return result
+
+func _expand_projected_sources(
+        raw_sources: Array, context) -> Dictionary:
+    var result: Array = raw_sources.duplicate()
+    var errors: Array[String] = []
+    var groups := _inner_source_groups(raw_sources)
+    for provider in _projection_providers(raw_sources):
+        var spec: Dictionary = registry.copy_projection_spec(
+            provider.behavior_id, provider.configuration)
+        var mode := str(spec.get("mode", ""))
+        var target_sources: Array = []
+        if mode == "live_left_adjacent":
+            var target_group: Dictionary = _live_left_target_group(
+                provider, groups)
+            if not target_group.is_empty():
+                target_sources = _copyable_group_sources(target_group)
+        elif mode == "battle_locked_random_other":
+            var locked := _locked_target_sources(provider, context, raw_sources)
+            if not locked.get("success", false):
+                errors.append(str(locked.get(
+                    "reason", "锁定被动投影目标无效")))
+                continue
+            target_sources = locked.get("sources", [])
+        elif mode == "battle_locked_leftmost_repeat":
+            continue
+        else:
+            errors.append("未知被动行为投影模式：%s" % mode)
+            continue
+        for target_source in target_sources:
+            result.append(_project_source(provider, target_source))
+    result.sort_custom(Callable(self, "_source_less"))
+    return {
+        "success": errors.is_empty(),
+        "sources": result,
+        "errors": errors,
+    }
+
+func _inner_source_groups(sources: Array) -> Array:
+    var by_key: Dictionary = {}
+    for source in sources:
+        if source.source_kind != "inner_skill" or source.is_projected():
+            continue
+        var key := str(source.source_instance_key)
+        if not by_key.has(key):
+            by_key[key] = {
+                "source_instance_key": key,
+                "content_id": str(source.content_id),
+                "source_order": int(source.source_order),
+                "slot_index": int(source.slot_index),
+                "content_instance_ordinal": int(
+                    source.content_instance_ordinal),
+                "sources": [],
+            }
+        by_key[key]["sources"].append(source)
+    var result: Array = by_key.values()
+    result.sort_custom(func(left, right):
+        if int(left["slot_index"]) != int(right["slot_index"]):
+            return int(left["slot_index"]) < int(right["slot_index"])
+        return str(left["source_instance_key"]) < str(right["source_instance_key"]))
+    return result
+
+func _eligible_target_groups(provider, groups: Array) -> Array:
+    var result: Array = []
+    for group_value in groups:
+        var group: Dictionary = group_value
+        if str(group["source_instance_key"]) == provider.source_instance_key:
+            continue
+        if _copyable_group_sources(group).is_empty():
+            continue
+        result.append(group)
+    result.sort_custom(func(left, right):
+        if int(left["source_order"]) != int(right["source_order"]):
+            return int(left["source_order"]) < int(right["source_order"])
+        return str(left["source_instance_key"]) < str(right["source_instance_key"]))
+    return result
+
+func _live_left_target_group(provider, groups: Array) -> Dictionary:
+    var expected_slot := int(provider.slot_index) - 1
+    for group_value in groups:
+        var group: Dictionary = group_value
+        if int(group["slot_index"]) != expected_slot:
+            continue
+        if _copyable_group_sources(group).is_empty():
+            return {}
+        return group
+    return {}
+
+func _copyable_group_sources(group: Dictionary) -> Array:
+    var sources: Array = group.get("sources", [])
+    ## 复制类内功整体不可成为目标，即使同一内容还声明了其他普通 behavior。
+    for source in sources:
+        if not registry.copy_projection_spec(
+                source.behavior_id, source.configuration).is_empty():
+            return []
+    var result: Array = []
+    for source in sources:
+        if bool(source.behavior_copyable) and registry.allows_behavior_copy(
+                source.behavior_id, source.configuration):
+            result.append(source)
+    result.sort_custom(func(left, right):
+        return int(left.behavior_index) < int(right.behavior_index))
+    return result
+
+func _locked_target_values(group: Dictionary) -> Dictionary:
+    var behaviors: Array = []
+    for source in _copyable_group_sources(group):
+        behaviors.append({
+            "source_kind": str(source.source_kind),
+            "content_id": str(source.content_id),
+            "source_instance_key": str(source.source_instance_key),
+            "source_order": int(source.source_order),
+            "slot_index": int(source.slot_index),
+            "content_instance_ordinal": int(
+                source.content_instance_ordinal),
+            "behavior_id": str(source.behavior_id),
+            "behavior_index": int(source.behavior_index),
+        })
+    return {
+        "target_source_kind": "inner_skill",
+        "target_content_id": str(group["content_id"]),
+        "target_source_instance_key": str(group["source_instance_key"]),
+        "target_source_order": int(group["source_order"]),
+        "target_slot_index": int(group["slot_index"]),
+        "target_content_instance_ordinal": int(
+            group["content_instance_ordinal"]),
+        "target_behaviors": behaviors,
+    }
+
+func _locked_target_sources(
+        provider, context, raw_sources: Array) -> Dictionary:
+    var owner = context.owner if context != null else null
+    var store = _property_value(owner, "passive_behavior_projection_store")
+    if store == null:
+        return {"success": true, "sources": []}
+    var record: Dictionary = store.record_for(provider)
+    if record.is_empty() or not bool(record.get("has_target", false)):
+        return {"success": true, "sources": []}
+    var by_identity: Dictionary = {}
+    for source in raw_sources:
+        by_identity["%s|%d" % [
+            source.source_instance_key, source.behavior_index]] = source
+    var result: Array = []
+    for descriptor_value in record.get("target_behaviors", []):
+        if not descriptor_value is Dictionary:
+            return {"success": false, "reason": "锁定投影包含无效行为描述"}
+        var descriptor: Dictionary = descriptor_value
+        var identity := "%s|%d" % [
+            str(descriptor.get("source_instance_key", "")),
+            int(descriptor.get("behavior_index", -1))]
+        var target_source = by_identity.get(identity)
+        if target_source == null:
+            target_source = source_resolver.source_from_descriptor(descriptor)
+        if target_source == null:
+            return {
+                "success": false,
+                "reason": "无法恢复锁定投影行为：%s" % identity,
+            }
+        if not bool(target_source.behavior_copyable) \
+                or not registry.allows_behavior_copy(
+                    target_source.behavior_id, target_source.configuration):
+            continue
+        result.append(target_source)
+    return {"success": true, "sources": result}
+
+func _project_source(provider, target_source):
+    var projection_key := "projection|%s|%d|%s|%d" % [
+        provider.source_instance_key,
+        provider.behavior_index,
+        target_source.source_instance_key,
+        target_source.behavior_index,
+    ]
+    var counter_instance_key := "copy_%d_projection_%d_%s_%d" % [
+        maxi(0, int(provider.content_instance_ordinal)),
+        int(provider.behavior_index),
+        str(target_source.content_id),
+        int(target_source.behavior_index),
+    ]
+    return SourceScript.new().configure({
+        "source_kind": provider.source_kind,
+        "content_id": provider.content_id,
+        "source_instance_key": provider.source_instance_key,
+        "definition": provider.definition,
+        "behavior_id": target_source.behavior_id,
+        "behavior_index": target_source.behavior_index,
+        "state_key": target_source.state_key,
+        "configuration": target_source.configuration,
+        "source_order": provider.source_order,
+        "slot_index": provider.slot_index,
+        "content_instance_ordinal": provider.content_instance_ordinal,
+        "behavior_copyable": false,
+        "projection": {
+            "projection_key": projection_key,
+            "provider_content_id": str(provider.content_id),
+            "provider_source_instance_key": str(provider.source_instance_key),
+            "provider_behavior_id": str(provider.behavior_id),
+            "provider_behavior_index": int(provider.behavior_index),
+            "target_content_id": str(target_source.content_id),
+            "target_source_instance_key": str(
+                target_source.source_instance_key),
+            "target_behavior_id": str(target_source.behavior_id),
+            "target_behavior_index": int(target_source.behavior_index),
+        },
+        "counter_instance_key": counter_instance_key,
+        "counter_definition_source_kind": target_source.source_kind,
+        "counter_definition_content_id": target_source.content_id,
+        "counter_definition_behavior_id": target_source.behavior_id,
+        "counter_definition_behavior_index": target_source.behavior_index,
+        "source_marker_definitions": target_source.source_marker_definitions,
+    })
+
+func _source_less(left, right) -> bool:
+    if int(left.source_order) != int(right.source_order):
+        return int(left.source_order) < int(right.source_order)
+    if str(left.source_instance_key) != str(right.source_instance_key):
+        return str(left.source_instance_key) < str(right.source_instance_key)
+    if bool(left.is_projected()) != bool(right.is_projected()):
+        return not left.is_projected()
+    if int(left.behavior_index) != int(right.behavior_index):
+        return int(left.behavior_index) < int(right.behavior_index)
+    return str(left.plan_identity()) < str(right.plan_identity())
 
 func _attach_counter_ports(source, context, access: String) -> Array:
     context.counter_read_port = null

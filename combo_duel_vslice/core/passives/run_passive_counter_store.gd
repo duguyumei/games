@@ -58,7 +58,9 @@ func capture_state() -> Dictionary:
         entry["value"] = int(stored["value"])
         entries.append(entry)
     entries.sort_custom(func(left, right):
-        for field in ["source_kind", "content_id", "state_key", "counter_id"]:
+        for field in [
+                "source_kind", "content_id", "counter_instance_key",
+                "state_key", "counter_id"]:
             var left_value := str(left.get(field, ""))
             var right_value := str(right.get(field, ""))
             if left_value != right_value:
@@ -106,20 +108,33 @@ func resolve_definition(key) -> Dictionary:
         return {"success": false, "reason": "；".join(key_errors)}
     if _catalog == null:
         return {"success": false, "reason": "计数器存储缺少内容目录"}
+    var definition_source_kind: String = (
+        key.definition_source_kind
+        if key.definition_behavior_index >= 0 else key.source_kind)
+    var definition_content_id: String = (
+        key.definition_content_id
+        if key.definition_behavior_index >= 0 else key.content_id)
     var definition: Dictionary = _catalog.get_by_id(
-        key.source_kind, key.content_id)
+        definition_source_kind, definition_content_id)
     if definition.is_empty():
         return {
             "success": false,
-            "reason": "未知内容：%s:%s" % [key.source_kind, key.content_id],
+            "reason": "未知内容：%s:%s" % [
+                definition_source_kind, definition_content_id],
         }
     var registry = _catalog.get("passive_rule_registry")
     if registry == null:
         return {"success": false, "reason": "内容目录缺少被动 Registry"}
-    for behavior_value in definition.get("behaviors", []):
+    var behaviors: Array = definition.get("behaviors", [])
+    for behavior_index in range(behaviors.size()):
+        var behavior_value = behaviors[behavior_index]
         if not behavior_value is Dictionary:
             continue
         var behavior: Dictionary = behavior_value
+        if key.definition_behavior_index >= 0 and (
+                behavior_index != key.definition_behavior_index \
+                or str(behavior.get("id", "")) != key.definition_behavior_id):
+            continue
         if str(behavior.get("state_key", "")) != key.state_key:
             continue
         var behavior_id := str(behavior.get("id", ""))
