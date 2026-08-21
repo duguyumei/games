@@ -10556,11 +10556,11 @@ func _test_s2f2f3_practice_shop_packs_items_and_migration() -> void:
     _assert_equal(pack_shapes.get("curio_pack_basic"), [4, 2, 1], "普通奇珍包规格")
     _assert_equal(pack_shapes.get("large_curio_pack"), [6, 4, 1], "大型奇珍包规格")
     _assert_equal(pack_shapes.get("deluxe_curio_pack"), [8, 4, 2], "豪华奇珍包规格")
-    _assert_equal(practice.get("items", {}).get("candidate_ids", []).size(), 7,
-        "物品候选池登记七件正式修习策略物品")
+    _assert_equal(practice.get("items", {}).get("candidate_ids", []).size(), 20,
+        "物品候选池登记二十件正式物品")
     var items_definition: Dictionary = catalog.definition("items")
-    _assert_equal(items_definition.get("items", []).size(), 9,
-        "items.json 登记两个设计候选与七件正式物品")
+    _assert_equal(items_definition.get("items", []).size(), 22,
+        "items.json 登记两个历史候选与二十件正式物品")
     for item in items_definition.get("items", []):
         _assert_true(
             str(item.get("status", "")) in ["candidate", "design_only", "formal"],

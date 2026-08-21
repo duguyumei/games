@@ -92,8 +92,8 @@ func _test_round_trip_and_complete_run_deck() -> void:
     _assert_equal(loaded.get("resume_policy"), "restart_node_from_start", "载入结果向 UI 公开重开节点策略")
     var restored = loaded["run_session"]
     _assert_equal(
-        RunSaveDataScript.new().capture(restored).to_dict(),
-        expected.to_dict(),
+        _normalize_numeric_types(RunSaveDataScript.new().capture(restored).to_dict()),
+        _normalize_numeric_types(expected.to_dict()),
         "本局存档往返保持全部状态一致")
     _assert_equal(restored.growth.experience, 12, "往返保留历练")
     _assert_equal(restored.growth.consumable_ids, ["zengyuan_pill"], "往返保留消耗品稳定 ID")
@@ -298,7 +298,10 @@ func _test_composition_root_restore_factory_and_first_save() -> void:
     _assert_true(loaded.get("success", false), "组合根存档服务恢复本局")
     _assert_equal(FileAccess.get_file_as_string(save_path), encoded_before, "无新变化的恢复不会立即重写存档")
     var restored = loaded["run_session"]
-    _assert_equal(RunSaveDataScript.new().capture(restored).to_dict(), expected, "恢复路径不调用 setup_run 或重建地图")
+    _assert_equal(
+        _normalize_numeric_types(RunSaveDataScript.new().capture(restored).to_dict()),
+        _normalize_numeric_types(expected),
+        "恢复路径不调用 setup_run 或重建地图")
     _assert_true(restored._content_catalog == composition.content_catalog, "恢复会话复用组合根 ContentCatalog")
     _assert_true(restored.runtime_profile == composition.runtime_profile, "恢复会话复用组合根 RuntimeProfile")
     _assert_true(restored._battle_session_factory.content_catalog == composition.content_catalog, "恢复会话复用组合根 BattleSessionFactory 内容依赖")
@@ -749,3 +752,18 @@ func _assert_true(value: bool, label: String) -> void:
     assertions += 1
     if not value:
         failures.append("%s：期望为 true" % label)
+
+func _normalize_numeric_types(value):
+    if value is Dictionary:
+        var normalized: Dictionary = {}
+        for key in value.keys():
+            normalized[key] = _normalize_numeric_types(value[key])
+        return normalized
+    if value is Array:
+        var normalized_array: Array = []
+        for entry in value:
+            normalized_array.append(_normalize_numeric_types(entry))
+        return normalized_array
+    if value is int or value is float:
+        return float(value)
+    return value

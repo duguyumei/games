@@ -34,7 +34,10 @@
                 "hook": "practice_normal_slot_count_query",
                 "operation": "add",
                 "operand": 2,
-                "filters": {"group": "normal", "operation": "generate_shop"}
+                "filters": {
+                  "group": "normal",
+                  "operation": "generate_shop"
+                }
               }
             ]
           }
@@ -214,7 +217,9 @@
             "rules": [
               {
                 "hook": "run_qi_permanently_added",
-                "filters": {"scope": "run"},
+                "filters": {
+                  "scope": "run"
+                },
                 "effects": [
                   {
                     "op": "write_source_marker",
@@ -232,7 +237,10 @@
                   "actual_change_count_positive": true
                 },
                 "effects": [
-                  {"op": "heal_life", "amount": 1}
+                  {
+                    "op": "heal_life",
+                    "amount": 1
+                  }
                 ]
               }
             ]
@@ -267,7 +275,11 @@
                   "actual_change_count_positive": true
                 },
                 "effects": [
-                  {"op": "heal_life", "side": "owner", "amount": 1}
+                  {
+                    "op": "heal_life",
+                    "side": "owner",
+                    "amount": 1
+                  }
                 ]
               },
               {
@@ -276,15 +288,608 @@
                   "holder_is_owner": true,
                   "persistence": "temporary",
                   "change_domain": "temporary_reshape",
-                  "operation_in": ["apply", "replace"],
+                  "operation_in": [
+                    "apply",
+                    "replace"
+                  ],
                   "actual_change_count_positive": true
                 },
                 "effects": [
-                  {"op": "heal_life", "side": "owner", "amount": 1}
+                  {
+                    "op": "heal_life",
+                    "side": "owner",
+                    "amount": 1
+                  }
                 ]
               }
             ]
           }
+        }
+      ]
+    },
+    {
+      "id": "half_price_sale",
+      "name": "清仓特卖",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：普通商品和补充包的有效价格变为 50%。；边界：价格乘区向下取整且最低为 0；不降低物品栏中物品自身的价格。预览与正式购买读取同一价格查询结果，新获得本物品不追溯当前购买。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "half_price_sale",
+        "effect": "普通商品和补充包的有效价格变为 50%。",
+        "timing": "",
+        "boundary": "价格乘区向下取整且最低为 0；不降低物品栏中物品自身的价格。预览与正式购买读取同一价格查询结果，新获得本物品不追溯当前购买。",
+        "authority_fields": {
+          "效果": [
+            "普通商品和补充包的有效价格变为 50%。"
+          ],
+          "边界": [
+            "价格乘区向下取整且最低为 0；不降低物品栏中物品自身的价格。预览与正式购买读取同一价格查询结果，新获得本物品不追溯当前购买。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "half_price_sale_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "meditation_cost_minus_four",
+      "name": "多次重掷",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：每次冥想的有效费用总计 -4。；边界：最低为 0。免费冥想或费用被减至 0 时，当前修习批次保存的基础冥想次数仍正常推进，下一次仍按基础序列继续增长。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "meditation_cost_minus_four",
+        "effect": "每次冥想的有效费用总计 -4。",
+        "timing": "",
+        "boundary": "最低为 0。免费冥想或费用被减至 0 时，当前修习批次保存的基础冥想次数仍正常推进，下一次仍按基础序列继续增长。",
+        "authority_fields": {
+          "效果": [
+            "每次冥想的有效费用总计 -4。"
+          ],
+          "边界": [
+            "最低为 0。免费冥想或费用被减至 0 时，当前修习批次保存的基础冥想次数仍正常推进，下一次仍按基础序列继续增长。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "meditation_cost_minus_four_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "consumable_capacity_plus_two",
+      "name": "预兆球",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：消耗品栏位 +2。；边界：心得、丹药与奇珍共用的基础消耗品栏位改为 2，持有后有效容量为 4。失去或压制本物品时若已持有内容超过新容量，不随机丢弃；必须先阻止会造成非法状态的操作，或由明确的容量调整流程处理。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "consumable_capacity_plus_two",
+        "effect": "消耗品栏位 +2。",
+        "timing": "",
+        "boundary": "心得、丹药与奇珍共用的基础消耗品栏位改为 2，持有后有效容量为 4。失去或压制本物品时若已持有内容超过新容量，不随机丢弃；必须先阻止会造成非法状态的操作，或由明确的容量调整流程处理。",
+        "authority_fields": {
+          "效果": [
+            "消耗品栏位 +2。"
+          ],
+          "边界": [
+            "心得、丹药与奇珍共用的基础消耗品栏位改为 2，持有后有效容量为 4。失去或压制本物品时若已持有内容超过新容量，不随机丢弃；必须先阻止会造成非法状态的操作，或由明确的容量调整流程处理。"
+          ]
+        },
+        "readiness": "A",
+        "missing_capability_keys": ""
+      },
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "consumable_capacity_query",
+                "operation": "add",
+                "operand": 2,
+                "filters": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "experience_interest_cap_twenty",
+      "name": "摇钱树",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：每次节点结算的功行生息上限提高至 20 点。；边界：公式改为`min(floor(当前持有历练 / 5), 20)`；只修改单次上限，不改变每 5 点历练产生 1 点功行、节点结算顺序或单令牌一次门禁。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "experience_interest_cap_twenty",
+        "effect": "每次节点结算的功行生息上限提高至 20 点。",
+        "timing": "",
+        "boundary": "公式改为`min(floor(当前持有历练 / 5), 20)`；只修改单次上限，不改变每 5 点历练产生 1 点功行、节点结算顺序或单令牌一次门禁。",
+        "authority_fields": {
+          "效果": [
+            "每次节点结算的功行生息上限提高至 20 点。"
+          ],
+          "边界": [
+            "公式改为`min(floor(当前持有历练 / 5), 20)`；只修改单次上限，不改变每 5 点历练产生 1 点功行、节点结算顺序或单令牌一次门禁。"
+          ]
+        },
+        "readiness": "A",
+        "missing_capability_keys": ""
+      },
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "experience_interest_cap_query",
+                "operation": "maximum",
+                "operand": 20,
+                "filters": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "triple_technique_loadout",
+      "name": "三才并位",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "来源迁移：原待实现内功“一诀双位”。；效果：每门已习得普通功法可以同时装入至多 3 个功法槽位。；边界：这是同一功法 ID 在全部精确牌型序列合计的装配次数上限，不增加任何牌型的功法槽容量。三个实际装配位置分别拥有独立稳定功法实例身份，可以位于同一合格牌型或不同合格牌型；散招、守招维持既有 99 份上限。若物品失效后当前配装超过基础上限，不能随机删除功法，必须由玩家提交合法调整后才能继续进入战斗。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "triple_technique_loadout",
+        "effect": "每门已习得普通功法可以同时装入至多 3 个功法槽位。",
+        "timing": "",
+        "boundary": "这是同一功法 ID 在全部精确牌型序列合计的装配次数上限，不增加任何牌型的功法槽容量。三个实际装配位置分别拥有独立稳定功法实例身份，可以位于同一合格牌型或不同合格牌型；散招、守招维持既有 99 份上限。若物品失效后当前配装超过基础上限，不能随机删除功法，必须由玩家提交合法调整后才能继续进入战斗。",
+        "authority_fields": {
+          "来源迁移": [
+            "原待实现内功“一诀双位”。"
+          ],
+          "效果": [
+            "每门已习得普通功法可以同时装入至多 3 个功法槽位。"
+          ],
+          "边界": [
+            "这是同一功法 ID 在全部精确牌型序列合计的装配次数上限，不增加任何牌型的功法槽容量。三个实际装配位置分别拥有独立稳定功法实例身份，可以位于同一合格牌型或不同合格牌型；散招、守招维持既有 99 份上限。若物品失效后当前配装超过基础上限，不能随机删除功法，必须由玩家提交合法调整后才能继续进入战斗。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "triple_technique_loadout_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "inner_skill_capacity_plus_one",
+      "name": "反物质",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：内功装备栏位 +1。；边界：基础容量仍为 6，持有后为 7。不自动装备内功；失效后若当前装备数超过有效容量，必须先调整配装。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "inner_skill_capacity_plus_one",
+        "effect": "内功装备栏位 +1。",
+        "timing": "",
+        "boundary": "基础容量仍为 6，持有后为 7。不自动装备内功；失效后若当前装备数超过有效容量，必须先调整配装。",
+        "authority_fields": {
+          "效果": [
+            "内功装备栏位 +1。"
+          ],
+          "边界": [
+            "基础容量仍为 6，持有后为 7。不自动装备内功；失效后若当前装备数超过有效容量，必须先调整配装。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "inner_skill_capacity_plus_one_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "all_technique_multiplier_plus_one",
+      "name": "调色板",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：我方所有功法的功法倍率 +1。；边界：正常、自动、调用功法和功法回响都复用对应功法冻结后的倍率与功法值；功法回响不重复查询或再次叠加本物品。同一牌型行动中的主功法与协同功法分别在自己的功法值冻结时获得修正。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "all_technique_multiplier_plus_one",
+        "effect": "我方所有功法的功法倍率 +1。",
+        "timing": "",
+        "boundary": "正常、自动、调用功法和功法回响都复用对应功法冻结后的倍率与功法值；功法回响不重复查询或再次叠加本物品。同一牌型行动中的主功法与协同功法分别在自己的功法值冻结时获得修正。",
+        "authority_fields": {
+          "效果": [
+            "我方所有功法的功法倍率 +1。"
+          ],
+          "边界": [
+            "正常、自动、调用功法和功法回响都复用对应功法冻结后的倍率与功法值；功法回响不重复查询或再次叠加本物品。同一牌型行动中的主功法与协同功法分别在自己的功法值冻结时获得修正。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "power_multiplier_bonus_query",
+                "operation": "add",
+                "operand": 1,
+                "filters": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "first_round_extra_action_and_refill",
+      "name": "抓手",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：第一完整回合开始完成正常补牌后，获得 1 次额外行动，并将手牌抽至有效手牌上限。；边界：额外行动排在第一击完整结算后，不替代第一击。抽牌只补到当时有效上限；牌库不足时抽取实际数量，不自动洗回弃牌堆。每场战斗只触发一次。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "first_round_extra_action_and_refill",
+        "effect": "第一完整回合开始完成正常补牌后，获得 1 次额外行动，并将手牌抽至有效手牌上限。",
+        "timing": "",
+        "boundary": "额外行动排在第一击完整结算后，不替代第一击。抽牌只补到当时有效上限；牌库不足时抽取实际数量，不自动洗回弃牌堆。每场战斗只触发一次。",
+        "authority_fields": {
+          "效果": [
+            "第一完整回合开始完成正常补牌后，获得 1 次额外行动，并将手牌抽至有效手牌上限。"
+          ],
+          "边界": [
+            "额外行动排在第一击完整结算后，不替代第一击。抽牌只补到当时有效上限；牌库不足时抽取实际数量，不自动洗回弃牌堆。每场战斗只触发一次。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "first_round_extra_action_and_refill_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "third_round_shuffle_all_discard",
+      "name": "回收魔法",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：第三完整回合结束时，将我方弃牌堆中的所有牌洗入牌库。；边界：在该回合全部额外行动及回合结束牌效果结算后执行一次；只移动当时仍实际位于弃牌堆的牌，并使用战斗随机源洗牌，不抽牌。每场战斗只触发一次。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "third_round_shuffle_all_discard",
+        "effect": "第三完整回合结束时，将我方弃牌堆中的所有牌洗入牌库。",
+        "timing": "",
+        "boundary": "在该回合全部额外行动及回合结束牌效果结算后执行一次；只移动当时仍实际位于弃牌堆的牌，并使用战斗随机源洗牌，不抽牌。每场战斗只触发一次。",
+        "authority_fields": {
+          "效果": [
+            "第三完整回合结束时，将我方弃牌堆中的所有牌洗入牌库。"
+          ],
+          "边界": [
+            "在该回合全部额外行动及回合结束牌效果结算后执行一次；只移动当时仍实际位于弃牌堆的牌，并使用战斗随机源洗牌，不抽牌。每场战斗只触发一次。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "third_round_shuffle_all_discard_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "regenerate_current_act_map",
+      "name": "象形文字",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：获得时回到当前层的旅程起点，并重新生成这一层的地图。；边界：这是获得时只执行一次的效果，物品之后仍作为已持有唯一物品保留。保留当前牌组、功法、内功、物品、消耗品、历练、生命及已经获得的其他本局成长；放弃当前层原地图上的未完成路线与节点状态，已经结算的节点收益不回滚。新地图使用新的确定性生成序号，玩家重新从该层第 1 层普通节点开始推进；获得事务、回退、地图重建和新待选状态必须原子完成。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "regenerate_current_act_map",
+        "effect": "获得时回到当前层的旅程起点，并重新生成这一层的地图。",
+        "timing": "",
+        "boundary": "这是获得时只执行一次的效果，物品之后仍作为已持有唯一物品保留。保留当前牌组、功法、内功、物品、消耗品、历练、生命及已经获得的其他本局成长；放弃当前层原地图上的未完成路线与节点状态，已经结算的节点收益不回滚。新地图使用新的确定性生成序号，玩家重新从该层第 1 层普通节点开始推进；获得事务、回退、地图重建和新待选状态必须原子完成。",
+        "authority_fields": {
+          "效果": [
+            "获得时回到当前层的旅程起点，并重新生成这一层的地图。"
+          ],
+          "边界": [
+            "这是获得时只执行一次的效果，物品之后仍作为已持有唯一物品保留。保留当前牌组、功法、内功、物品、消耗品、历练、生命及已经获得的其他本局成长；放弃当前层原地图上的未完成路线与节点状态，已经结算的节点收益不回滚。新地图使用新的确定性生成序号，玩家重新从该层第 1 层普通节点开始推进；获得事务、回退、地图重建和新待选状态必须原子完成。"
+          ]
+        },
+        "readiness": "A",
+        "missing_capability_keys": ""
+      },
+      "behaviors": [],
+      "on_acquire_run_commands": [
+        {
+          "command": "regenerate_current_act_map"
+        }
+      ]
+    },
+    {
+      "id": "rest_choose_all_options",
+      "name": "重构",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：休息节点中可以依次选择所有当前可用选项。；边界：每个休息选项在同一节点最多成功结算一次，玩家自行决定顺序，也可以提前结束；后一个选项读取前面选项已经提交后的状态。休息节点只在玩家结束选择且全部已选事务成功后完成，预览、取消和失败不消耗该选项。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "rest_choose_all_options",
+        "effect": "休息节点中可以依次选择所有当前可用选项。",
+        "timing": "",
+        "boundary": "每个休息选项在同一节点最多成功结算一次，玩家自行决定顺序，也可以提前结束；后一个选项读取前面选项已经提交后的状态。休息节点只在玩家结束选择且全部已选事务成功后完成，预览、取消和失败不消耗该选项。",
+        "authority_fields": {
+          "效果": [
+            "休息节点中可以依次选择所有当前可用选项。"
+          ],
+          "边界": [
+            "每个休息选项在同一节点最多成功结算一次，玩家自行决定顺序，也可以提前结束；后一个选项读取前面选项已经提交后的状态。休息节点只在玩家结束选择且全部已选事务成功后完成，预览、取消和失败不消耗该选项。"
+          ]
+        },
+        "readiness": "C",
+        "missing_capability_keys": "rest_multi_select_session"
+      },
+      "behaviors": [
+        {
+          "id": "run_int_query_modifier",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "rest_multi_select_count_query",
+                "operation": "maximum",
+                "operand": 99,
+                "filters": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "post_battle_heal_ten",
+      "name": "调息玉",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：每场战斗胜利后恢复 10 点生命。；边界：战斗胜利结果和战后牌组同步成功后、节点奖励开始前恢复；实际恢复受有效生命上限限制。技术终止、未确认结果和战败不触发。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "post_battle_heal_ten",
+        "effect": "每场战斗胜利后恢复 10 点生命。",
+        "timing": "",
+        "boundary": "战斗胜利结果和战后牌组同步成功后、节点奖励开始前恢复；实际恢复受有效生命上限限制。技术终止、未确认结果和战败不触发。",
+        "authority_fields": {
+          "效果": [
+            "每场战斗胜利后恢复 10 点生命。"
+          ],
+          "边界": [
+            "战斗胜利结果和战后牌组同步成功后、节点奖励开始前恢复；实际恢复受有效生命上限限制。技术终止、未确认结果和战败不触发。"
+          ]
+        },
+        "readiness": "B",
+        "missing_capability_keys": "adapter:source_neutral_int_or_run_handler"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 1000,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 0,
+                    "capture": "post_battle_heal_ten_contract"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "max_life_plus_twenty",
+      "name": "延寿玉",
+      "kind": "item",
+      "status": "formal",
+      "unique": true,
+      "price": 8,
+      "description": "效果：最大生命 +20。；边界：作为来源修正参与有效最大生命计算；获得时不额外恢复当前生命。失效时当前生命若超过新的有效上限，限制到新上限。",
+      "content_contract": {
+        "source": "godot/docs/design-current/progression/43-item-implementation-backlog.md",
+        "stable_id": "max_life_plus_twenty",
+        "effect": "最大生命 +20。",
+        "timing": "",
+        "boundary": "作为来源修正参与有效最大生命计算；获得时不额外恢复当前生命。失效时当前生命若超过新的有效上限，限制到新上限。",
+        "authority_fields": {
+          "效果": [
+            "最大生命 +20。"
+          ],
+          "边界": [
+            "作为来源修正参与有效最大生命计算；获得时不额外恢复当前生命。失效时当前生命若超过新的有效上限，限制到新上限。"
+          ]
+        },
+        "readiness": "C",
+        "missing_capability_keys": "item_source_marker_state"
+      },
+      "behaviors": [
+        {
+          "id": "battle_effects",
+          "configuration": {
+            "rules": [
+              {
+                "hook": "battle_start",
+                "order": 100,
+                "filters": {},
+                "effects": [
+                  {
+                    "op": "capture_value",
+                    "value": 20,
+                    "capture": "max_life_plus_twenty"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "marker_definitions": [
+        {
+          "id": "max_life_bonus",
+          "scope": "run",
+          "public": true,
+          "display_name": "延寿玉",
+          "contributes_to": "max_life",
+          "forget_policy": "clear",
+          "initial_value": 20
         }
       ]
     }

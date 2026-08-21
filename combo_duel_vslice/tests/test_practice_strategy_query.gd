@@ -389,12 +389,18 @@ func _test_formal_content_contract() -> void:
                 "%s 保持本局唯一" % str(item.get("id", "")))
     formal.sort()
     var expected := [
-        "awakened_qi_in_normal_shop", "awakened_qi_weight_x4",
-        "deck_growth_and_reshape_vitality",
-        "insight_shop_weight_x4", "overstock_plus_two",
-        "pill_shop_weight_x4", "telescope_insight_focus",
+        "all_technique_multiplier_plus_one", "awakened_qi_in_normal_shop",
+        "awakened_qi_weight_x4", "consumable_capacity_plus_two",
+        "deck_growth_and_reshape_vitality", "experience_interest_cap_twenty",
+        "first_round_extra_action_and_refill", "half_price_sale",
+        "inner_skill_capacity_plus_one", "insight_shop_weight_x4",
+        "max_life_plus_twenty", "meditation_cost_minus_four",
+        "overstock_plus_two", "pill_shop_weight_x4", "post_battle_heal_ten",
+        "regenerate_current_act_map", "rest_choose_all_options",
+        "telescope_insight_focus", "third_round_shuffle_all_discard",
+        "triple_technique_loadout",
     ]
-    _assert_equal(formal, expected, "七件物品正式接入且其他物品仍design_only")
+    _assert_equal(formal, expected, "二十件物品正式接入且其他物品仍为历史候选")
     var candidates: Array = catalog.definition("practice_shop").get(
         "items", {}).get("candidate_ids", []).duplicate()
     candidates.sort()

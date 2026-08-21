@@ -65,9 +65,15 @@ func _test_profile_content_dependencies() -> void:
     _assert_true(
         production_catalog.definition("sequences")["high_card"] == ["basic_scatter"],
         "production 合法装配基础散招序列")
+    var production_inner_skills: Array = production_catalog.definition(
+        "inner_skills").get("inner_skills", [])
+    _assert_equal(
+        production_inner_skills.size(), 167,
+        "production 内容目录装配166门正式内功及1个历史占位")
     _assert_true(
-        production_catalog.definition("inner_skills")["inner_skills"].is_empty(),
-        "production 内容目录未装配调试内功")
+        production_inner_skills.filter(func(value):
+            return str(value.get("status", "")) == "formal").size() == 166,
+        "production 内容目录正式内功数量与权威集合一致")
 
     for profile in [RuntimeProfileScript.development(), RuntimeProfileScript.test()]:
         var catalog = ContentCatalogScript.new(profile)
