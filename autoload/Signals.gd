@@ -110,6 +110,8 @@ signal map_location_selected(location_data: LocationData)	# the player clicked o
 signal map_waiting_restored
 signal chest_opened	# player has opened a chest
 signal shop_opened	# player has opened a shop
+## 地图待选阶段打开功法与内功搭配界面。
+signal loadout_opened
 signal shop_visited_first_time # player has visited a shop for the first time
 ## 商店候选、价格或空槽发生变化，界面应只重绘而不重新生成。
 signal shop_inventory_changed

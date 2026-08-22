@@ -86,6 +86,42 @@ var _next_action_order: int = 0
 ## 当前已经冻结、等待结算器处理的请求令牌。
 var _frozen_action_token: String = ""
 
+## 玩家当前连击槽值。
+var _player_combo_value: int = 0
+
+## 敌方当前连击槽值。
+var _enemy_combo_value: int = 0
+
+## 连击槽上限；后续可以由战斗规则查询覆盖。
+var _combo_capacity: int = 5
+
+## 当前回合序号；连击行动不会增加回合序号。
+var _round_number: int = 0
+
+## 下一次行动允许出牌的阵营。
+var _next_action_sides: Array[String] = []
+
+## 下一次行动是否需要先进行回合开始补牌。
+var _needs_round_start_draw: bool = true
+
+## 玩家八种牌型的战斗循环功法队列。
+var _player_gongfa_queues: Dictionary[String, GongfaQueueState] = {}
+
+## 敌方八种牌型的战斗循环功法队列；当前默认为空，保留后续敌人配置入口。
+var _enemy_gongfa_queues: Dictionary[String, GongfaQueueState] = {}
+
+## 玩家战斗内功槽的有序实例 UID快照。
+var _player_neigong_slot_uids: Array[String] = []
+
+## 敌方战斗内功槽的有序实例 UID快照；当前敌方默认全部为空。
+var _enemy_neigong_slot_uids: Array[String] = []
+
+## 玩家战斗内功槽容量快照。
+var _player_neigong_slot_capacity: int = 6
+
+## 敌方战斗内功槽容量快照。
+var _enemy_neigong_slot_capacity: int = 6
+
 ## 每张真气 UID 对应的临时重塑列表。
 var _qi_uid_to_reshape_states: Dictionary = {}
 
@@ -132,6 +168,59 @@ func initialize_zones(
 	_shuffle_zone(_enemy_draw, enemy_shuffle_rng)
 	return true
 
+## 从本局配装创建战斗内功槽和双方八条功法队列。
+func initialize_loadouts(player_data: PlayerData) -> void:
+	_player_gongfa_queues.clear()
+	_enemy_gongfa_queues.clear()
+	_player_neigong_slot_uids.clear()
+	_enemy_neigong_slot_uids.clear()
+	_player_neigong_slot_capacity = 6
+	_enemy_neigong_slot_capacity = 6
+	if player_data == null:
+		return
+	_player_neigong_slot_capacity = player_data.get_effective_neigong_slot_count()
+	for neigong_uid: String in player_data.player_equipped_neigong_uids:
+		if _player_neigong_slot_uids.size() >= _player_neigong_slot_capacity:
+			break
+		if player_data.get_owned_neigong(neigong_uid) != null:
+			_player_neigong_slot_uids.append(neigong_uid)
+	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
+		var player_queue := GongfaQueueState.new()
+		player_queue.initialize(
+			hand_type_id,
+			player_data.get_effective_gongfa_slot_count(hand_type_id),
+			player_data.player_gongfa_hand_sequences.get(hand_type_id, []))
+		_player_gongfa_queues[hand_type_id] = player_queue
+		var enemy_queue := GongfaQueueState.new()
+		enemy_queue.initialize(hand_type_id, 1, [])
+		_enemy_gongfa_queues[hand_type_id] = enemy_queue
+
+## 返回指定阵营和牌型的战斗功法队列内容副本。
+func get_gongfa_queue_entries(side: String, hand_type_id: String) -> Array[Dictionary]:
+	var queues: Dictionary = _player_gongfa_queues if side == SIDE_PLAYER else _enemy_gongfa_queues
+	var queue: GongfaQueueState = queues.get(hand_type_id, null)
+	return queue.get_entries() if queue != null else []
+
+## 返回指定阵营和牌型的战斗功法队列容量。
+func get_gongfa_queue_capacity(side: String, hand_type_id: String) -> int:
+	var queues: Dictionary = _player_gongfa_queues if side == SIDE_PLAYER else _enemy_gongfa_queues
+	var queue: GongfaQueueState = queues.get(hand_type_id, null)
+	return queue.capacity if queue != null else 0
+
+## 返回指定阵营当前装备内功槽的 UID副本。
+func get_neigong_slot_uids(side: String) -> Array[String]:
+	return (_player_neigong_slot_uids if side == SIDE_PLAYER else _enemy_neigong_slot_uids).duplicate()
+
+## 返回指定阵营的战斗内功槽容量。
+func get_neigong_slot_capacity(side: String) -> int:
+	return _player_neigong_slot_capacity if side == SIDE_PLAYER else _enemy_neigong_slot_capacity
+
+## 根据当前待结算区的纯牌型识别结果返回牌型 ID，供冻结请求记录功法槽。
+func _get_pending_hand_type(side: String) -> String:
+	var pattern: QiHandPatternResult = QiHandRecognizer.recognize(
+		get_zone(side, ZONE_PENDING), self)
+	return pattern.hand_type_id if pattern != null and pattern.is_valid() else ""
+
 ## 返回指定阵营和牌区的数组副本；调用方不能直接增删内部牌区。
 func get_zone(side: String, zone: String) -> Array[QiData]:
 	var source: Array[QiData] = _get_zone_reference(side, zone)
@@ -164,6 +253,118 @@ func draw_to_hand_limit(side: String, hand_limit: int = HAND_LIMIT) -> int:
 		drawn_count += 1
 	return drawn_count
 
+## 开始一个行动窗口；仅在新回合时补牌，连击行动保留双方当前手牌。
+func begin_action_window() -> bool:
+	if is_action_frozen() or _next_action_sides.is_empty() and not _needs_round_start_draw:
+		return false
+	if not _needs_round_start_draw:
+		if is_side_eligible(SIDE_PLAYER) and _player_hand.is_empty():
+			_next_action_sides.erase(SIDE_PLAYER)
+		if is_side_eligible(SIDE_ENEMY) and _enemy_hand.is_empty():
+			_next_action_sides.erase(SIDE_ENEMY)
+		if _next_action_sides.is_empty():
+			_needs_round_start_draw = true
+	if _needs_round_start_draw:
+		_round_number += 1
+		draw_to_hand_limit(SIDE_PLAYER, HAND_LIMIT)
+		draw_to_hand_limit(SIDE_ENEMY, HAND_LIMIT)
+		_next_action_sides = [SIDE_PLAYER, SIDE_ENEMY]
+		if _player_hand.is_empty():
+			_next_action_sides.erase(SIDE_PLAYER)
+		if _enemy_hand.is_empty():
+			_next_action_sides.erase(SIDE_ENEMY)
+		_needs_round_start_draw = false
+	return not _next_action_sides.is_empty()
+
+## 返回当前行动是否允许指定阵营出牌。
+func is_side_eligible(side: String) -> bool:
+	return _next_action_sides.has(side)
+
+## 返回当前行动允许出牌的阵营副本。
+func get_eligible_sides() -> Array[String]:
+	return _next_action_sides.duplicate()
+
+## 返回当前回合序号。
+func get_round_number() -> int:
+	return _round_number
+
+## 返回指定阵营的连击槽值。
+func get_combo_value(side: String) -> int:
+	if side == SIDE_PLAYER:
+		return _player_combo_value
+	if side == SIDE_ENEMY:
+		return _enemy_combo_value
+	return 0
+
+## 返回连击槽上限。
+func get_combo_capacity() -> int:
+	return _combo_capacity
+
+## 设置连击槽上限；不会降低当前已积累值。
+func set_combo_capacity(capacity: int) -> void:
+	_combo_capacity = max(capacity, 1)
+
+## 根据本次识别结果推进连击槽并准备下一次行动。
+func advance_after_action(request: QiActionRequest) -> void:
+	var player_gain: int = 0
+	var enemy_gain: int = 0
+	if request.player_result != null and request.player_result.pattern != null:
+		player_gain = request.player_result.pattern.max_same_qi
+	if request.enemy_result != null and request.enemy_result.pattern != null:
+		enemy_gain = request.enemy_result.pattern.max_same_qi
+	request.player_combo_before = _player_combo_value
+	request.enemy_combo_before = _enemy_combo_value
+	_player_combo_value += player_gain
+	_enemy_combo_value += enemy_gain
+	_next_action_sides.clear()
+	if _player_combo_value >= _combo_capacity:
+		_player_combo_value = 0
+		_next_action_sides.append(SIDE_PLAYER)
+	if _enemy_combo_value >= _combo_capacity:
+		_enemy_combo_value = 0
+		_next_action_sides.append(SIDE_ENEMY)
+	request.player_combo_after = _player_combo_value
+	request.enemy_combo_after = _enemy_combo_value
+	if _next_action_sides.is_empty():
+		_needs_round_start_draw = true
+		request.eligible_sides = []
+	else:
+		_needs_round_start_draw = false
+		request.eligible_sides = _next_action_sides.duplicate()
+
+## 返回当前是否等待下一回合补牌。
+func needs_round_start_draw() -> bool:
+	return _needs_round_start_draw
+
+## 返回指定阵营和牌型当前指向的功法实例 UID；没有配装时返回空字符串。
+func get_current_gongfa_instance_uid(
+		hand_type_id: String, side: String = SIDE_PLAYER) -> String:
+	var front: Dictionary = get_current_gongfa_slot(hand_type_id, side)
+	return str(front.get("gongfa_instance_uid", ""))
+
+## 返回指定阵营牌型队列第一项的独立副本。
+func get_current_gongfa_slot(hand_type_id: String, side: String = SIDE_PLAYER) -> Dictionary:
+	var queues: Dictionary = _player_gongfa_queues if side == SIDE_PLAYER else _enemy_gongfa_queues
+	var queue: GongfaQueueState = queues.get(hand_type_id, null)
+	return queue.peek_front() if queue != null else {}
+
+## 校验冻结请求中的战斗功法实例仍是当前队列第一项。
+func is_current_gongfa_slot(
+		hand_type_id: String, side: String, slot_instance_id: String) -> bool:
+	return str(get_current_gongfa_slot(hand_type_id, side).get(
+		"slot_instance_id", "")) == slot_instance_id
+
+## 推进指定阵营牌型队列，并按请求数量尝试生成临时复制品。
+func advance_gongfa_sequence(
+		hand_type_id: String,
+		side: String = SIDE_PLAYER,
+		requested_copy_count: int = 0) -> Dictionary:
+	var queues: Dictionary = _player_gongfa_queues if side == SIDE_PLAYER else _enemy_gongfa_queues
+	var queue: GongfaQueueState = queues.get(hand_type_id, null)
+	if queue == null:
+		return {}
+	return queue.trigger_front(requested_copy_count)
+
 ## 原子提交玩家本批选中的真气；顺序使用调用方给出的点击顺序。
 func commit_player_selection(qi_instance_uids: Array[String]) -> bool:
 	if is_action_frozen() or qi_instance_uids.is_empty() \
@@ -177,7 +378,8 @@ func commit_player_selection(qi_instance_uids: Array[String]) -> bool:
 
 ## 敌方按当前手牌顺序提交前若干张真气到待结算区。
 func prepare_enemy_pending(play_count: int) -> int:
-	if is_action_frozen() or not _enemy_pending.is_empty():
+	if is_action_frozen() or not is_side_eligible(SIDE_ENEMY) \
+		or not _enemy_pending.is_empty():
 		return 0
 	var actual_count: int = min(clamp(play_count, 1, PENDING_LIMIT), _enemy_hand.size())
 	var selected_uids: Array[String] = []
@@ -187,9 +389,10 @@ func prepare_enemy_pending(play_count: int) -> int:
 		_move_qi_unchecked(SIDE_ENEMY, qi_instance_uid, ZONE_HAND, ZONE_PENDING)
 	return actual_count
 
-## 冻结双方待结算区并返回整体行动请求；玩家没有提交真气时拒绝确认。
+## 冻结双方待结算区并返回整体行动请求；连击允许只有一方有牌。
 func freeze_action() -> QiActionRequest:
-	if is_action_frozen() or _player_pending.is_empty() \
+	if is_action_frozen() or _next_action_sides.is_empty() \
+		or is_side_eligible(SIDE_PLAYER) and _player_pending.is_empty() \
 		or _player_pending.size() > PENDING_LIMIT \
 		or _enemy_pending.size() > PENDING_LIMIT:
 		return null
@@ -200,19 +403,33 @@ func freeze_action() -> QiActionRequest:
 		_frozen_action_token,
 		_active_enemy_instance_id,
 		get_zone_uids(SIDE_PLAYER, ZONE_PENDING),
-		get_zone_uids(SIDE_ENEMY, ZONE_PENDING))
-	for qi_instance_uid: String in request.player_qi_instance_uids:
-		_notify_committed_event(EVENT_QI_PLAYED, qi_instance_uid, request.action_token)
-	for qi_instance_uid: String in request.enemy_qi_instance_uids:
-		_notify_committed_event(EVENT_QI_PLAYED, qi_instance_uid, request.action_token)
+		get_zone_uids(SIDE_ENEMY, ZONE_PENDING),
+		_next_action_sides,
+		get_current_gongfa_slot(
+			_get_pending_hand_type(SIDE_PLAYER), SIDE_PLAYER).get("slot_instance_id", ""),
+		get_current_gongfa_slot(
+			_get_pending_hand_type(SIDE_ENEMY), SIDE_ENEMY).get("slot_instance_id", ""))
 	return request
 
 ## 完成指定冻结请求，将双方待结算真气依次移入各自弃牌堆。
 func complete_qi_action(request: QiActionRequest) -> bool:
 	if request == null or not request.is_valid_request() \
 		or request.action_token != _frozen_action_token \
+		or request.enemy_instance_id != _active_enemy_instance_id \
 		or request.player_qi_instance_uids != get_zone_uids(SIDE_PLAYER, ZONE_PENDING) \
 		or request.enemy_qi_instance_uids != get_zone_uids(SIDE_ENEMY, ZONE_PENDING):
+		return false
+	if request.player_result != null and request.player_result.is_valid() \
+		and not is_current_gongfa_slot(
+			request.player_result.pattern.hand_type_id,
+			SIDE_PLAYER,
+			request.player_gongfa_slot_instance_id):
+		return false
+	if request.enemy_result != null and request.enemy_result.is_valid() \
+		and not is_current_gongfa_slot(
+			request.enemy_result.pattern.hand_type_id,
+			SIDE_ENEMY,
+			request.enemy_gongfa_slot_instance_id):
 		return false
 	for qi_instance_uid: String in request.player_qi_instance_uids:
 		_move_qi_unchecked(SIDE_PLAYER, qi_instance_uid, ZONE_PENDING, ZONE_DISCARD)
@@ -220,12 +437,30 @@ func complete_qi_action(request: QiActionRequest) -> bool:
 	for qi_instance_uid: String in request.enemy_qi_instance_uids:
 		_move_qi_unchecked(SIDE_ENEMY, qi_instance_uid, ZONE_PENDING, ZONE_DISCARD)
 		_notify_committed_event(EVENT_QI_DISCARDED, qi_instance_uid, request.action_token)
+	if request.player_result != null and request.player_result.is_valid():
+		advance_gongfa_sequence(
+			request.player_result.pattern.hand_type_id,
+			SIDE_PLAYER,
+			request.player_result.gongfa_copy_count)
+	if request.enemy_result != null and request.enemy_result.is_valid():
+		advance_gongfa_sequence(
+			request.enemy_result.pattern.hand_type_id,
+			SIDE_ENEMY,
+			request.enemy_result.gongfa_copy_count)
+	advance_after_action(request)
 	_frozen_action_token = ""
 	return true
 
 ## 返回当前是否已经确认并等待正式结算。
 func is_action_frozen() -> bool:
 	return _frozen_action_token != ""
+
+## 取消尚未执行效果的冻结请求；牌仍留在待结算区，允许重新确认。
+func cancel_frozen_action(request: QiActionRequest) -> bool:
+	if request == null or request.action_token != _frozen_action_token:
+		return false
+	_frozen_action_token = ""
+	return true
 
 ## 返回当前唯一敌人的实例标识。
 func get_active_enemy_instance_id() -> String:
@@ -337,6 +572,19 @@ func _clear_zones() -> void:
 	_active_enemy_instance_id = ""
 	_frozen_action_token = ""
 	_next_action_order = 0
+	_player_combo_value = 0
+	_enemy_combo_value = 0
+	_combo_capacity = 5
+	_round_number = 0
+	_next_action_sides.clear()
+	_needs_round_start_draw = true
+	_processed_event_tokens.clear()
+	_player_gongfa_queues.clear()
+	_enemy_gongfa_queues.clear()
+	_player_neigong_slot_uids.clear()
+	_enemy_neigong_slot_uids.clear()
+	_player_neigong_slot_capacity = 6
+	_enemy_neigong_slot_capacity = 6
 
 ## 查询事件令牌是否已经结算；供 Global 在同步本局异状时避免重复触发。
 func has_processed_event(event_token: String) -> bool:

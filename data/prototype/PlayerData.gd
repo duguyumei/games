@@ -275,6 +275,9 @@ func normalize_taiwu_loadout_defaults() -> void:
 	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
 		if not player_gongfa_hand_slot_counts.has(hand_type_id):
 			player_gongfa_hand_slot_counts[hand_type_id] = 1
+		else:
+			player_gongfa_hand_slot_counts[hand_type_id] = max(
+				int(player_gongfa_hand_slot_counts[hand_type_id]), 1)
 		if not player_gongfa_hand_sequences.has(hand_type_id):
 			player_gongfa_hand_sequences[hand_type_id] = []
 	player_neigong_slot_count = max(player_neigong_slot_count, 0)
@@ -369,15 +372,38 @@ func get_effective_gongfa_equip_count(gongfa_instance_uid: String) -> int:
 	}, null)
 	return query_action.query_effective_count()
 
+## 通过纯预览查询指定牌型当前有效的功法槽容量。
+func get_effective_gongfa_slot_count(hand_type_id: String) -> int:
+	if not GongfaData.HAND_TYPE_IDS.has(hand_type_id):
+		return 1
+	var query_action: ActionQueryGongfaSlotCount = ActionQueryGongfaSlotCount.new()
+	query_action.init(Global.get_player(), null, [], {
+		"hand_type_id": hand_type_id,
+		"gongfa_slot_count": int(player_gongfa_hand_slot_counts.get(hand_type_id, 1)),
+	}, null)
+	return query_action.query_effective_count()
+
+## 通过纯预览查询当前有效的内功槽容量。
+func get_effective_neigong_slot_count() -> int:
+	var query_action: ActionQueryNeigongSlotCount = ActionQueryNeigongSlotCount.new()
+	query_action.init(Global.get_player(), null, [], {
+		"neigong_slot_count": player_neigong_slot_count,
+	}, null)
+	return query_action.query_effective_count()
+
 ## 校验一份完整功法配装；该方法只读取状态，不修改本局。
 func validate_gongfa_loadout(candidate_sequences: Dictionary) -> bool:
+	for candidate_hand_type: Variant in candidate_sequences.keys():
+		if not candidate_hand_type is String \
+			or not GongfaData.HAND_TYPE_IDS.has(candidate_hand_type):
+			return false
 	var use_count_by_gongfa_uid: Dictionary[String, int] = {}
 	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
 		var sequence_value: Variant = candidate_sequences.get(hand_type_id, [])
 		if not sequence_value is Array:
 			return false
 		var sequence: Array = sequence_value
-		if sequence.size() > player_gongfa_hand_slot_counts.get(hand_type_id, 1):
+		if sequence.size() > get_effective_gongfa_slot_count(hand_type_id):
 			return false
 		for gongfa_instance_uid_value: Variant in sequence:
 			if not gongfa_instance_uid_value is String:
@@ -443,7 +469,7 @@ func remove_neigong_instance(neigong_instance_uid: String) -> bool:
 
 ## 校验一份完整内功配装；该方法只读取状态，不修改本局。
 func validate_neigong_loadout(candidate_uids: Array[String]) -> bool:
-	if candidate_uids.size() > player_neigong_slot_count:
+	if candidate_uids.size() > get_effective_neigong_slot_count():
 		return false
 	var seen_uids: Dictionary[String, bool] = {}
 	for neigong_instance_uid: String in candidate_uids:

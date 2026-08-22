@@ -119,6 +119,7 @@ func _ready():
 	commit_qi_button.button_up.connect(_on_commit_qi_button_up)
 	confirm_qi_button.button_up.connect(_on_confirm_qi_button_up)
 	Signals.qi_zones_changed.connect(refresh_qi_battle_ui)
+	Signals.qi_action_completed.connect(_on_qi_action_completed)
 	_set_qi_controls_visible(false)
 	
 ## Recalculates the transforms of Card objects in hand and tweens them to their new positions.
@@ -266,7 +267,9 @@ func _on_card_selected(card: Card):
 ## 切换一张玩家手牌的本批选择；新增选择严格记录点击顺序。
 func _on_qi_hand_card_selected(qi_card: QiCard) -> void:
 	if hand_disabled or Global.battle_qi_state == null \
-		or Global.battle_qi_state.is_action_frozen() or qi_card.qi_data == null:
+		or Global.battle_qi_state.is_action_frozen() \
+		or not Global.battle_qi_state.is_side_eligible(BattleQiState.SIDE_PLAYER) \
+		or qi_card.qi_data == null:
 		return
 	var qi_instance_uid: String = qi_card.qi_data.object_uid
 	if selected_qi_instance_uids.has(qi_instance_uid):
@@ -281,7 +284,9 @@ func _on_qi_hand_card_selected(qi_card: QiCard) -> void:
 
 ## 将当前批次整批提交；失败时手牌和选择顺序都保持不变。
 func _on_commit_qi_button_up() -> void:
-	if Global.battle_qi_state == null or selected_qi_instance_uids.is_empty():
+	if Global.battle_qi_state == null \
+		or not Global.battle_qi_state.is_side_eligible(BattleQiState.SIDE_PLAYER) \
+		or selected_qi_instance_uids.is_empty():
 		return
 	if not Global.battle_qi_state.commit_player_selection(
 		selected_qi_instance_uids.duplicate()):
@@ -293,6 +298,8 @@ func _on_commit_qi_button_up() -> void:
 func _on_confirm_qi_button_up() -> void:
 	if Global.battle_qi_state == null:
 		return
+	if not Global.battle_qi_state.is_side_eligible(BattleQiState.SIDE_PLAYER):
+		return
 	var request: QiActionRequest = Global.battle_qi_state.freeze_action()
 	if request == null:
 		return
@@ -300,6 +307,10 @@ func _on_confirm_qi_button_up() -> void:
 	selected_qi_instance_uids.clear()
 	refresh_qi_battle_ui()
 	Signals.qi_action_ready.emit(request)
+	# 玩家确认就是正式结算入口，不再等待第二个完成按钮。
+	if not Global.resolve_qi_action(request):
+		hand_disabled = false
+		refresh_qi_battle_ui()
 
 ## 从 BattleQiState 重新绘制玩家手牌和敌我待结算区。
 func refresh_qi_battle_ui() -> void:
@@ -340,6 +351,16 @@ func refresh_qi_battle_ui() -> void:
 		enemy_pending_qi_container.add_child(qi_card)
 		qi_card.init(qi_data, false, battle_state)
 		qi_card.set_face_down(true)
+	player_pending_qi_label.text = "我方待结算 %d/%d　连击 %d/%d" % [
+		battle_state.get_zone(BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_PENDING).size(),
+		BattleQiState.PENDING_LIMIT,
+		battle_state.get_combo_value(BattleQiState.SIDE_PLAYER),
+		battle_state.get_combo_capacity()]
+	enemy_pending_qi_label.text = "敌方待结算 %d/%d　连击 %d/%d" % [
+		battle_state.get_zone(BattleQiState.SIDE_ENEMY, BattleQiState.ZONE_PENDING).size(),
+		BattleQiState.PENDING_LIMIT,
+		battle_state.get_combo_value(BattleQiState.SIDE_ENEMY),
+		battle_state.get_combo_capacity()]
 	_update_qi_selection_display()
 
 ## 清空战斗真气 UI，不修改任何牌区数据。
@@ -350,6 +371,21 @@ func clear_qi_battle_cards() -> void:
 	_clear_control_children(player_pending_qi_container)
 	_clear_control_children(enemy_pending_qi_container)
 
+## 显示刚刚完成结算的双方牌型、同气和功法值摘要。
+func _on_qi_action_completed(request: QiActionRequest) -> void:
+	if request == null:
+		return
+	if request.player_result != null and request.player_result.pattern != null:
+		player_pending_qi_label.text = "我方 %s　同气 %s　P:%d" % [
+			request.player_result.pattern.hand_type_id,
+			str(request.player_result.pattern.attribute_counts),
+			request.player_result.final_power]
+	if request.enemy_result != null and request.enemy_result.pattern != null:
+		enemy_pending_qi_label.text = "敌方 %s　同气 %s　P:%d" % [
+			request.enemy_result.pattern.hand_type_id,
+			str(request.enemy_result.pattern.attribute_counts),
+			request.enemy_result.final_power]
+
 ## 根据当前点击顺序更新选中序号和按钮状态。
 func _update_qi_selection_display() -> void:
 	var battle_state: BattleQiState = Global.battle_qi_state
@@ -359,15 +395,17 @@ func _update_qi_selection_display() -> void:
 		pending_count = battle_state.get_zone(
 			BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_PENDING).size()
 		action_frozen = battle_state.is_action_frozen()
+	var player_eligible: bool = battle_state != null \
+		and battle_state.is_side_eligible(BattleQiState.SIDE_PLAYER)
 	for qi_instance_uid: String in qi_uid_to_hand_card:
 		var qi_card: QiCard = qi_uid_to_hand_card[qi_instance_uid]
 		var selection_order: int = selected_qi_instance_uids.find(qi_instance_uid) + 1
 		qi_card.set_selection_order(selection_order)
-		qi_card.disabled = hand_disabled or action_frozen
-	commit_qi_button.disabled = hand_disabled or action_frozen \
+		qi_card.disabled = hand_disabled or action_frozen or not player_eligible
+	commit_qi_button.disabled = hand_disabled or action_frozen or not player_eligible \
 		or selected_qi_instance_uids.is_empty() \
 		or pending_count + selected_qi_instance_uids.size() > BattleQiState.PENDING_LIMIT
-	confirm_qi_button.disabled = hand_disabled or action_frozen \
+	confirm_qi_button.disabled = hand_disabled or action_frozen or not player_eligible \
 		or pending_count < 1 or pending_count > BattleQiState.PENDING_LIMIT
 
 ## 将真气手牌按现有扇形区域的宽度横向排列。

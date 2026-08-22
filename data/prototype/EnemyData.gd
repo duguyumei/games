@@ -32,6 +32,9 @@ class_name EnemyData
 ## 基础策略每次行动从手牌前方提交的真气数量。
 @export_range(1, 5, 1) var enemy_qi_play_count: int = 5
 
+## 敌方按精确牌型配置的功法效果动作；动作格式与 GongfaData.gongfa_effects 相同。
+@export var enemy_gongfa_effects_by_hand_type: Dictionary[String, Array] = {}
+
 enum ENEMY_TYPES {STANDARD, MINIBOSS, BOSS}
 @export var enemy_type: int = ENEMY_TYPES.STANDARD
 ## Minion enemies do not need to be killed for combat to end.

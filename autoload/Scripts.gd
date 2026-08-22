@@ -99,6 +99,8 @@ const ACTION_APPLY_QI_RESHAPE: String = "res://scripts/actions/taiwu_actions/Act
 const ACTION_REMOVE_QI_RESHAPE: String = "res://scripts/actions/taiwu_actions/ActionRemoveQiReshape.gd"
 const ACTION_APPLY_QI_ANOMALY: String = "res://scripts/actions/taiwu_actions/ActionApplyQiAnomaly.gd"
 const ACTION_REMOVE_QI_ANOMALY: String = "res://scripts/actions/taiwu_actions/ActionRemoveQiAnomaly.gd"
+## 真气行动效果完成后的统一牌区收尾动作。
+const ACTION_RESOLVE_QI_ACTION: String = "res://scripts/actions/taiwu_actions/ActionResolveQiAction.gd"
 
 # artifact actions
 const ACTION_INCREASE_ARTIFACT_CHARGE: String = "res://scripts/actions/artifact_actions/ActionIncreaseArtifactCharge.gd"

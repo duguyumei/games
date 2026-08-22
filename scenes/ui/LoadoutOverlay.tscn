@@ -1,0 +1,109 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/LoadoutOverlay.gd" id="1_loadout_overlay"]
+
+[node name="LoadoutOverlay" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_loadout_overlay")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.203922, 0.188235, 0.215686, 0.78)
+
+[node name="Panel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 24.0
+offset_right = 1152.0
+offset_bottom = 676.0
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "搭配"
+horizontal_alignment = 1
+
+[node name="GongfaTitle" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "功法槽（按牌型）"
+
+[node name="GongfaScroll" type="ScrollContainer" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 270)
+layout_mode = 2
+horizontal_scroll_mode = 3
+
+[node name="GongfaRows" type="VBoxContainer" parent="Panel/Margin/VBox/GongfaScroll"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="NeigongTitle" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "内功槽（有序装备）"
+
+[node name="NeigongScroll" type="ScrollContainer" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+horizontal_scroll_mode = 3
+vertical_scroll_mode = 2
+
+[node name="NeigongSlots" type="HBoxContainer" parent="Panel/Margin/VBox/NeigongScroll"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ChoiceTitle" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "请选择一个槽位"
+
+[node name="ChoiceScroll" type="ScrollContainer" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 90)
+layout_mode = 2
+horizontal_scroll_mode = 3
+
+[node name="ChoiceContainer" type="VBoxContainer" parent="Panel/Margin/VBox/ChoiceScroll"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="StatusLabel" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "节点完成后可调整搭配；修改后分别点击应用"
+horizontal_alignment = 1
+
+[node name="ActionButtons" type="HBoxContainer" parent="Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="ApplyGongfaButton" type="Button" parent="Panel/Margin/VBox/ActionButtons"]
+layout_mode = 2
+text = "应用功法"
+
+[node name="ApplyNeigongButton" type="Button" parent="Panel/Margin/VBox/ActionButtons"]
+layout_mode = 2
+text = "应用内功"
+
+[node name="CloseButton" type="Button" parent="Panel/Margin/VBox/ActionButtons"]
+layout_mode = 2
+text = "返回地图"

@@ -338,6 +338,11 @@ func begin_qi_battle_state() -> BattleQiState:
 func initialize_qi_battle_zones(enemy_data: EnemyData) -> bool:
 	if enemy_data == null or player_data == null:
 		return false
+	# 动态槽位或内容移除后，非法配装不能带入战斗现场。
+	if not player_data.is_current_gongfa_loadout_valid() \
+		or not player_data.validate_neigong_loadout(player_data.player_equipped_neigong_uids):
+		DebugLogger.log_error("Cannot start qi combat with an invalid loadout")
+		return false
 	if battle_qi_state == null:
 		begin_qi_battle_state()
 	var enemy_qi_deck: Array[QiData] = []
@@ -355,18 +360,43 @@ func initialize_qi_battle_zones(enemy_data: EnemyData) -> bool:
 	var enemy_instance_id: String = enemy_data.object_uid
 	if enemy_instance_id == "":
 		enemy_instance_id = enemy_data.object_id
-	return battle_qi_state.initialize_zones(
+	var initialized: bool = battle_qi_state.initialize_zones(
 		player_data.player_qi_deck,
 		enemy_qi_deck,
 		player_data.get_player_rng("rng_qi_player_shuffle"),
 		player_data.get_player_rng("rng_qi_enemy_shuffle"),
 		enemy_instance_id)
+	if initialized:
+		battle_qi_state.initialize_loadouts(player_data)
+	return initialized
 
 ## 返回当前战斗真气现场；没有战斗时返回 null。
 func get_qi_battle_state() -> BattleQiState:
 	return battle_qi_state
 
-## 由未来牌型与功法结算器调用，完成冻结请求并准备下一次行动。
+## 确认后立即计算牌型、同气和功法值，并把功法效果排入现有行为队列。
+func resolve_qi_action(request: QiActionRequest) -> bool:
+	if battle_qi_state == null or request == null \
+		or not battle_qi_state.is_action_frozen():
+		return false
+	if not QiActionResolver.calculate_request_results(request, battle_qi_state):
+		battle_qi_state.cancel_frozen_action(request)
+		Signals.qi_zones_changed.emit()
+		return false
+	# 真气只有在确认通过基础校验后才发送正式打出事件。
+	for qi_instance_uid: String in request.player_qi_instance_uids:
+		notify_qi_event(BattleQiState.EVENT_QI_PLAYED, qi_instance_uid, request.action_token)
+	for qi_instance_uid: String in request.enemy_qi_instance_uids:
+		notify_qi_event(BattleQiState.EVENT_QI_PLAYED, qi_instance_uid, request.action_token)
+	var generated_actions: Array[BaseAction] = QiActionResolver.build_effect_actions(
+		request, battle_qi_state)
+	var finish_action: ActionResolveQiAction = ActionResolveQiAction.new()
+	finish_action.init_qi_action(request)
+	generated_actions.append(finish_action)
+	ActionHandler.add_actions(generated_actions, true)
+	return true
+
+## 由真气行动收尾动作调用，完成冻结请求并准备下一次行动。
 func complete_qi_action(request: QiActionRequest) -> bool:
 	if battle_qi_state == null or not battle_qi_state.complete_qi_action(request):
 		return false

@@ -532,10 +532,13 @@ func _on_enemy_turn_ended():
 		return
 	start_turn_animation()
 
-## 冻结行动完成后开启下一次真气行动窗口。
+## 冻结行动完成后开启下一次真气行动窗口；连击不发送新的回合开始信号。
 func _on_qi_action_completed(_request: QiActionRequest) -> void:
 	if _is_qi_combat_active():
-		start_turn_animation()
+		if Global.battle_qi_state.needs_round_start_draw():
+			start_turn_animation()
+		else:
+			_start_qi_action()
 	
 func _on_end_turn_button_up():
 	queue_end_turn(CombatEndTurn.END_TURN_QUEUE_IMMEDIACY.WAIT_FOR_ALL_CARD_PLAYS)
@@ -609,7 +612,7 @@ func end_turn_animation() -> void:
 func start_turn_animation() -> void:
 	combat_animation_player.play("start_turn")
 
-## 补充敌我手牌并让基础敌方策略先提交待结算真气。
+## 按当前回合或连击状态打开行动窗口，并让可行动敌方先提交真气。
 func _start_qi_action() -> void:
 	var battle_state: BattleQiState = Global.battle_qi_state
 	if battle_state == null or battle_state.is_action_frozen():
@@ -618,12 +621,19 @@ func _start_qi_action() -> void:
 	if alive_enemies.size() != 1:
 		DebugLogger.log_error("Qi action cannot start without exactly one enemy")
 		return
+	if not battle_state.begin_action_window():
+		return
 	HandManager.set_disable_hand(true)
-	battle_state.draw_to_hand_limit(BattleQiState.SIDE_PLAYER)
-	battle_state.draw_to_hand_limit(BattleQiState.SIDE_ENEMY)
-	battle_state.prepare_enemy_pending(alive_enemies[0].enemy_data.enemy_qi_play_count)
+	if battle_state.is_side_eligible(BattleQiState.SIDE_ENEMY):
+		battle_state.prepare_enemy_pending(alive_enemies[0].enemy_data.enemy_qi_play_count)
 	Signals.qi_zones_changed.emit()
-	HandManager.set_disable_hand(false)
+	if battle_state.is_side_eligible(BattleQiState.SIDE_PLAYER):
+		HandManager.set_disable_hand(false)
+	else:
+		# 敌方单独连击时不等待玩家按钮，直接冻结并结算。
+		var enemy_only_request: QiActionRequest = battle_state.freeze_action()
+		if enemy_only_request != null:
+			Global.resolve_qi_action(enemy_only_request)
 	update_combat_display()
 
 ## 返回当前是否已经建立可用的真气战斗牌区。

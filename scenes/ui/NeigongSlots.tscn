@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/NeigongSlots.gd" id="1_neigong_slots"]
+
+[node name="NeigongSlots" type="HBoxContainer"]
+custom_minimum_size = Vector2(480, 40)
+theme_override_constants/separation = 4
+script = ExtResource("1_neigong_slots")

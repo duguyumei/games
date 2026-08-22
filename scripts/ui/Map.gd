@@ -4,6 +4,7 @@ extends Control
 @onready var location_container = $ScrollContainer/LocationContainer
 @onready var back_button: Button = $BackButton
 @onready var practice_button: Button = $PracticeButton
+@onready var loadout_button: Button = $LoadoutButton
 @onready var practice_money_label: Label = $PracticeMoneyLabel
 
 @onready var map_button = %MapButton
@@ -21,6 +22,7 @@ func _ready():
 	map_button.button_up.connect(_on_map_button_up)
 	back_button.button_up.connect(_on_back_button_up)
 	practice_button.button_up.connect(_on_practice_button_up)
+	loadout_button.button_up.connect(_on_loadout_button_up)
 	
 	Signals.combat_started.connect(_on_combat_started)
 	Signals.combat_ended.connect(_on_combat_ended)
@@ -151,6 +153,12 @@ func _on_practice_button_up() -> void:
 		return
 	Signals.shop_opened.emit()
 
+## 只有地图待选阶段可以打开功法和内功搭配页面。
+func _on_loadout_button_up() -> void:
+	if not can_travel or ActionHandler.actions_being_performed:
+		return
+	Signals.loadout_opened.emit()
+
 ## 金币变化后同步地图常驻入口下方的余额。
 func _on_player_money_changed(_delta: int = 0) -> void:
 	if practice_money_label != null:
@@ -161,3 +169,5 @@ func _update_practice_access() -> void:
 	if not is_node_ready() or practice_button == null:
 		return
 	practice_button.disabled = not can_travel
+	if loadout_button != null:
+		loadout_button.disabled = not can_travel
