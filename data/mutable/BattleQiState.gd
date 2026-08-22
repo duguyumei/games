@@ -128,8 +128,41 @@ var _qi_uid_to_reshape_states: Dictionary = {}
 ## 每张真气 UID 对应的战斗异状列表。
 var _qi_uid_to_anomaly_states: Dictionary = {}
 
+## 玩家护盾来源队列；每条来源独立扣减和回合衰减。
+var _player_shield_entries: Array[BattleDefenseEntry] = []
+
+## 敌方护盾来源队列；每条来源独立扣减和回合衰减。
+var _enemy_shield_entries: Array[BattleDefenseEntry] = []
+
+## 玩家反震比例来源队列；实际结算取有效来源中的最大值。
+var _player_reflect_entries: Array[BattleDefenseEntry] = []
+
+## 敌方反震比例来源队列；实际结算取有效来源中的最大值。
+var _enemy_reflect_entries: Array[BattleDefenseEntry] = []
+
+## 玩家格挡来源队列；下一次直接伤害严格消耗队首。
+var _player_guard_entries: Array[BattleDefenseEntry] = []
+
+## 敌方格挡来源队列；下一次直接伤害严格消耗队首。
+var _enemy_guard_entries: Array[BattleDefenseEntry] = []
+
+## 玩家化解值来源队列；总值可叠加，消耗按来源顺序处理。
+var _player_resolution_entries: Array[BattleDefenseEntry] = []
+
+## 敌方化解值来源队列；总值可叠加，消耗按来源顺序处理。
+var _enemy_resolution_entries: Array[BattleDefenseEntry] = []
+
+## 玩家穿透比例来源队列；按伤害类型读取最高有效值。
+var _player_penetration_entries: Array[BattleDefenseEntry] = []
+
+## 敌方穿透比例来源队列；按伤害类型读取最高有效值。
+var _enemy_penetration_entries: Array[BattleDefenseEntry] = []
+
 ## 递增序号保证同一来源状态的替换和处理顺序稳定。
 var _next_state_order: int = 0
+
+## 递增序号保证防御来源条目的注册顺序稳定。
+var _next_defense_entry_order: int = 0
 
 ## 已处理的事件令牌，避免同一结算事件重复移除状态。
 var _processed_event_tokens: Dictionary[String, bool] = {}
@@ -214,6 +247,396 @@ func get_neigong_slot_uids(side: String) -> Array[String]:
 ## 返回指定阵营的战斗内功槽容量。
 func get_neigong_slot_capacity(side: String) -> int:
 	return _player_neigong_slot_capacity if side == SIDE_PLAYER else _enemy_neigong_slot_capacity
+
+## 添加一条带来源和生命周期的战斗防御效果，并返回稳定运行时 UID。
+func add_defense_entry(
+		side: String,
+		kind: String,
+		value: float,
+		source_kind: String,
+		source_instance_id: String,
+		affected_damage_types: Array[String] = [],
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1,
+		decay_policy: String = "halve") -> String:
+	if not _is_valid_side(side) or value <= 0.0 \
+		or not [BattleDefenseEntry.SCOPE_BATTLE, BattleDefenseEntry.SCOPE_ROUNDS,
+		BattleDefenseEntry.SCOPE_HITS].has(duration_scope):
+		return ""
+	if not [
+		BattleDefenseEntry.KIND_SHIELD,
+		BattleDefenseEntry.KIND_REFLECT,
+		BattleDefenseEntry.KIND_GUARD,
+		BattleDefenseEntry.KIND_RESOLUTION,
+		BattleDefenseEntry.KIND_PENETRATION,
+	].has(kind):
+		return ""
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(side, kind)
+	_next_defense_entry_order += 1
+	var entry_uid: String = "battle-defense-%d" % _next_defense_entry_order
+	entries.append(BattleDefenseEntry.create(
+		entry_uid,
+		kind,
+		value,
+		source_kind,
+		source_instance_id,
+		_next_defense_entry_order,
+		affected_damage_types,
+		duration_scope,
+		remaining_rounds,
+		remaining_hits,
+		decay_policy))
+	_emit_defense_changed(side, kind)
+	return entry_uid
+
+## 添加护盾来源；护盾默认在回合结束时独立减半。
+func add_shield(
+		side: String,
+		amount: int,
+		source_kind: String,
+		source_instance_id: String,
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1,
+		decay_policy: String = "halve") -> String:
+	return add_defense_entry(
+		side,
+		BattleDefenseEntry.KIND_SHIELD,
+		amount,
+		source_kind,
+		source_instance_id,
+		[],
+		duration_scope,
+		remaining_rounds,
+		remaining_hits,
+		decay_policy)
+
+## 添加反震比例来源；多个有效来源结算时取最高值。
+func add_reflect_ratio(
+		side: String,
+		ratio: float,
+		source_kind: String,
+		source_instance_id: String,
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1) -> String:
+	return add_defense_entry(
+		side,
+		BattleDefenseEntry.KIND_REFLECT,
+		ratio,
+		source_kind,
+		source_instance_id,
+		[],
+		duration_scope,
+		remaining_rounds,
+		remaining_hits)
+
+## 添加指定次数的格挡来源；每一次格挡都是队列中的独立条目。
+func add_guard(
+		side: String,
+		count: int,
+		source_kind: String,
+		source_instance_id: String,
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1) -> int:
+	var added_count: int = 0
+	for _guard_index: int in max(count, 0):
+		if add_defense_entry(
+				side,
+				BattleDefenseEntry.KIND_GUARD,
+				1,
+				source_kind,
+				source_instance_id,
+				[],
+				duration_scope,
+				remaining_rounds,
+				remaining_hits) != "":
+			added_count += 1
+	return added_count
+
+## 添加化解值来源；总化解值不设置上限。
+func add_resolution(
+		side: String,
+		amount: int,
+		source_kind: String,
+		source_instance_id: String,
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1) -> String:
+	return add_defense_entry(
+		side,
+		BattleDefenseEntry.KIND_RESOLUTION,
+		amount,
+		source_kind,
+		source_instance_id,
+		[],
+		duration_scope,
+		remaining_rounds,
+		remaining_hits)
+
+## 添加指定伤害类型的护盾穿透比例来源；不对内容数值设置硬上限。
+func add_shield_penetration(
+		side: String,
+		damage_types: Array[String],
+		ratio: float,
+		source_kind: String,
+		source_instance_id: String,
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1) -> String:
+	return add_defense_entry(
+		side,
+		BattleDefenseEntry.KIND_PENETRATION,
+		ratio,
+		source_kind,
+		source_instance_id,
+		damage_types,
+		duration_scope,
+		remaining_rounds,
+		remaining_hits)
+
+## 返回指定阵营当前护盾总值；来源条目仍保持独立。
+func get_shield(side: String) -> int:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_SHIELD)
+	_cleanup_entries(entries)
+	var total: int = 0
+	for entry: BattleDefenseEntry in entries:
+		total += max(int(entry.value), 0)
+	return total
+
+## 返回指定阵营当前有效的最高反震比例。
+func get_reflect_ratio(side: String) -> float:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_REFLECT)
+	_cleanup_entries(entries)
+	var maximum: float = 0.0
+	for entry: BattleDefenseEntry in entries:
+		maximum = max(maximum, entry.value)
+	return maximum
+
+## 返回指定伤害类型当前有效的最高护盾穿透比例。
+func get_shield_penetration_ratio(side: String, damage_type: String) -> float:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_PENETRATION)
+	_cleanup_entries(entries)
+	var maximum: float = 0.0
+	for entry: BattleDefenseEntry in entries:
+		if entry.affects_damage_type(damage_type):
+			maximum = max(maximum, entry.value)
+	return maximum
+
+## 返回指定阵营当前化解总值；不设置上限。
+func get_resolution_value(side: String) -> int:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_RESOLUTION)
+	_cleanup_entries(entries)
+	var total: int = 0
+	for entry: BattleDefenseEntry in entries:
+		total += max(int(entry.value), 0)
+	return total
+
+## 返回指定阵营当前格挡次数。
+func get_guard_count(side: String) -> int:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_GUARD)
+	_cleanup_entries(entries)
+	return entries.size()
+
+## 消耗指定阵营队首的一层格挡。
+func consume_guard(side: String) -> bool:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_GUARD)
+	_cleanup_entries(entries)
+	if entries.is_empty():
+		return false
+	entries.remove_at(0)
+	_emit_defense_changed(side, BattleDefenseEntry.KIND_GUARD)
+	return true
+
+## 尝试用化解值取消一次直接伤害；超过总值时清空化解但不改变伤害。
+func consume_resolution(side: String, damage_amount: int) -> Dictionary:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_RESOLUTION)
+	_cleanup_entries(entries)
+	var total: int = get_resolution_value(side)
+	if damage_amount <= 0 or total <= 0:
+		return {"prevented": false, "consumed": 0}
+	if damage_amount > total:
+		var consumed_all: int = total
+		for entry: BattleDefenseEntry in entries:
+			if entry.value <= 0.0:
+				continue
+			entry.value = 0.0
+			if entry.remaining_hits > 0:
+				entry.remaining_hits -= 1
+		_cleanup_entries(entries)
+		_emit_defense_changed(side, BattleDefenseEntry.KIND_RESOLUTION)
+		return {"prevented": false, "consumed": consumed_all}
+	var remaining_to_consume: int = damage_amount
+	var consumed: int = 0
+	for entry: BattleDefenseEntry in entries:
+		if remaining_to_consume <= 0:
+			break
+		var entry_value: int = max(int(entry.value), 0)
+		var entry_consumed: int = min(entry_value, remaining_to_consume)
+		entry.value -= entry_consumed
+		remaining_to_consume -= entry_consumed
+		consumed += entry_consumed
+		if entry_consumed > 0 and entry.remaining_hits > 0:
+			entry.remaining_hits -= 1
+	_cleanup_entries(entries)
+	_emit_defense_changed(side, BattleDefenseEntry.KIND_RESOLUTION)
+	return {"prevented": true, "consumed": consumed}
+
+## 按来源顺序吸收护盾，并返回实际吸收量。
+func absorb_shield(side: String, damage_amount: int) -> int:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+		side, BattleDefenseEntry.KIND_SHIELD)
+	_cleanup_entries(entries)
+	var remaining_damage: int = max(damage_amount, 0)
+	var absorbed: int = 0
+	for entry: BattleDefenseEntry in entries:
+		if remaining_damage <= 0:
+			break
+		var entry_value: int = max(int(entry.value), 0)
+		var entry_absorbed: int = min(entry_value, remaining_damage)
+		entry.value -= entry_absorbed
+		remaining_damage -= entry_absorbed
+		absorbed += entry_absorbed
+		if entry_absorbed > 0 and entry.remaining_hits > 0:
+			entry.remaining_hits -= 1
+	_cleanup_entries(entries)
+	if absorbed > 0:
+		_emit_defense_changed(side, BattleDefenseEntry.KIND_SHIELD)
+	return absorbed
+
+## 消耗一个实际采用的最高值修正来源；较低值来源不会被误消耗。
+func consume_highest_modifier_hit(
+		side: String, kind: String, damage_type: String = "") -> bool:
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(side, kind)
+	_cleanup_entries(entries)
+	var maximum: float = -INF
+	for entry: BattleDefenseEntry in entries:
+		if damage_type != "" and not entry.affects_damage_type(damage_type):
+			continue
+		maximum = max(maximum, entry.value)
+	if maximum == -INF:
+		return false
+	for entry: BattleDefenseEntry in entries:
+		if entry.value != maximum:
+			continue
+		if damage_type != "" and not entry.affects_damage_type(damage_type):
+			continue
+		if entry.remaining_hits > 0:
+			entry.remaining_hits -= 1
+		_cleanup_entries(entries)
+		_emit_defense_changed(side, kind)
+		return true
+	return false
+
+## 在回合结束时逐来源衰减护盾，并递减所有回合生命周期。
+func decay_shields_at_round_end() -> void:
+	for side: String in [SIDE_PLAYER, SIDE_ENEMY]:
+		var shield_entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(
+			side, BattleDefenseEntry.KIND_SHIELD)
+		for entry: BattleDefenseEntry in shield_entries:
+			if entry.decay_policy == "halve":
+				entry.value = floor(entry.value * 0.5)
+		for kind: String in [
+			BattleDefenseEntry.KIND_SHIELD,
+			BattleDefenseEntry.KIND_REFLECT,
+			BattleDefenseEntry.KIND_GUARD,
+			BattleDefenseEntry.KIND_RESOLUTION,
+			BattleDefenseEntry.KIND_PENETRATION,
+		]:
+			_decrement_rounds(_get_defense_entries_reference(side, kind))
+		_cleanup_all_defense_entries(side)
+		for kind: String in [
+			BattleDefenseEntry.KIND_SHIELD,
+			BattleDefenseEntry.KIND_REFLECT,
+			BattleDefenseEntry.KIND_GUARD,
+			BattleDefenseEntry.KIND_RESOLUTION,
+			BattleDefenseEntry.KIND_PENETRATION,
+		]:
+			_emit_defense_changed(side, kind)
+
+## 消耗参与本次伤害计算的次数型修正。
+func consume_damage_modifier_hits(
+		side: String, damage_type: String, only_kinds: Array[String]) -> void:
+	for kind: String in only_kinds:
+		var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(side, kind)
+		for entry: BattleDefenseEntry in entries:
+			if not entry.affects_damage_type(damage_type) or entry.remaining_hits < 0:
+				continue
+			entry.remaining_hits -= 1
+		_cleanup_all_defense_entries(side)
+
+## 移除一个精确来源条目。
+func remove_defense_entry(entry_uid: String) -> bool:
+	if entry_uid == "":
+		return false
+	for side: String in [SIDE_PLAYER, SIDE_ENEMY]:
+		for kind: String in [
+			BattleDefenseEntry.KIND_SHIELD,
+			BattleDefenseEntry.KIND_REFLECT,
+			BattleDefenseEntry.KIND_GUARD,
+			BattleDefenseEntry.KIND_RESOLUTION,
+			BattleDefenseEntry.KIND_PENETRATION,
+		]:
+			var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(side, kind)
+			for index: int in entries.size():
+				if entries[index].entry_uid != entry_uid:
+					continue
+				entries.remove_at(index)
+				_emit_defense_changed(side, kind)
+				return true
+	return false
+
+## 清空指定阵营指定类型的所有防御来源。
+func clear_defense_kind(side: String, kind: String) -> void:
+	if not _is_valid_side(side) or not [
+		BattleDefenseEntry.KIND_SHIELD,
+		BattleDefenseEntry.KIND_REFLECT,
+		BattleDefenseEntry.KIND_GUARD,
+		BattleDefenseEntry.KIND_RESOLUTION,
+		BattleDefenseEntry.KIND_PENETRATION,
+	].has(kind):
+		return
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(side, kind)
+	entries.clear()
+	_emit_defense_changed(side, kind)
+
+## 返回指定来源条目的只读副本，供界面和调试使用。
+func get_defense_entries(side: String, kind: String) -> Array[BattleDefenseEntry]:
+	var result: Array[BattleDefenseEntry] = []
+	var entries: Array[BattleDefenseEntry] = _get_defense_entries_reference(side, kind)
+	_cleanup_entries(entries)
+	for entry: BattleDefenseEntry in entries:
+		result.append(entry.copy_entry())
+	return result
+
+## 返回指定阵营按来源顺序排列的护盾条目副本。
+func get_shield_entries(side: String) -> Array[BattleDefenseEntry]:
+	return get_defense_entries(side, BattleDefenseEntry.KIND_SHIELD)
+
+## 返回指定阵营按来源顺序排列的反震条目副本。
+func get_reflect_entries(side: String) -> Array[BattleDefenseEntry]:
+	return get_defense_entries(side, BattleDefenseEntry.KIND_REFLECT)
+
+## 返回指定阵营严格 FIFO 的格挡条目副本。
+func get_guard_entries(side: String) -> Array[BattleDefenseEntry]:
+	return get_defense_entries(side, BattleDefenseEntry.KIND_GUARD)
+
+## 返回指定阵营按来源顺序排列的化解条目副本。
+func get_resolution_entries(side: String) -> Array[BattleDefenseEntry]:
+	return get_defense_entries(side, BattleDefenseEntry.KIND_RESOLUTION)
+
+## 返回指定阵营按伤害类型筛选的穿透条目副本。
+func get_penetration_entries(side: String) -> Array[BattleDefenseEntry]:
+	return get_defense_entries(side, BattleDefenseEntry.KIND_PENETRATION)
 
 ## 根据当前待结算区的纯牌型识别结果返回牌型 ID，供冻结请求记录功法槽。
 func _get_pending_hand_type(side: String) -> String:
@@ -326,6 +749,7 @@ func advance_after_action(request: QiActionRequest) -> void:
 	request.player_combo_after = _player_combo_value
 	request.enemy_combo_after = _enemy_combo_value
 	if _next_action_sides.is_empty():
+		decay_shields_at_round_end()
 		_needs_round_start_draw = true
 		request.eligible_sides = []
 	else:
@@ -466,6 +890,16 @@ func cancel_frozen_action(request: QiActionRequest) -> bool:
 func get_active_enemy_instance_id() -> String:
 	return _active_enemy_instance_id
 
+## 根据战斗对象返回玩家或敌方阵营；未知对象返回空字符串。
+func get_combatant_side(combatant: BaseCombatant) -> String:
+	if combatant == null:
+		return ""
+	if combatant.is_in_group("players"):
+		return SIDE_PLAYER
+	if combatant.is_in_group("enemies_alive_or_dead") or combatant.is_in_group("enemies"):
+		return SIDE_ENEMY
+	return ""
+
 ## 按明确来源和去向移动一张真气；待结算区不能返回手牌。
 func move_qi(
 		side: String,
@@ -585,6 +1019,78 @@ func _clear_zones() -> void:
 	_enemy_neigong_slot_uids.clear()
 	_player_neigong_slot_capacity = 6
 	_enemy_neigong_slot_capacity = 6
+	_clear_defense_entries()
+	_next_defense_entry_order = 0
+
+## 返回指定阵营和类型的内部来源队列。
+func _get_defense_entries_reference(
+		side: String, kind: String) -> Array[BattleDefenseEntry]:
+	if side == SIDE_PLAYER:
+		match kind:
+			BattleDefenseEntry.KIND_SHIELD:
+				return _player_shield_entries
+			BattleDefenseEntry.KIND_REFLECT:
+				return _player_reflect_entries
+			BattleDefenseEntry.KIND_GUARD:
+				return _player_guard_entries
+			BattleDefenseEntry.KIND_RESOLUTION:
+				return _player_resolution_entries
+			BattleDefenseEntry.KIND_PENETRATION:
+				return _player_penetration_entries
+	if side == SIDE_ENEMY:
+		match kind:
+			BattleDefenseEntry.KIND_SHIELD:
+				return _enemy_shield_entries
+			BattleDefenseEntry.KIND_REFLECT:
+				return _enemy_reflect_entries
+			BattleDefenseEntry.KIND_GUARD:
+				return _enemy_guard_entries
+			BattleDefenseEntry.KIND_RESOLUTION:
+				return _enemy_resolution_entries
+			BattleDefenseEntry.KIND_PENETRATION:
+				return _enemy_penetration_entries
+	var empty_entries: Array[BattleDefenseEntry] = []
+	return empty_entries
+
+## 删除已经过期或归零的来源条目。
+func _cleanup_entries(entries: Array[BattleDefenseEntry]) -> void:
+	for index: int in range(entries.size() - 1, -1, -1):
+		if entries[index] == null or not entries[index].is_active():
+			entries.remove_at(index)
+
+## 递减一组按回合持续的来源条目。
+func _decrement_rounds(entries: Array[BattleDefenseEntry]) -> void:
+	for entry: BattleDefenseEntry in entries:
+		if entry.remaining_rounds > 0:
+			entry.remaining_rounds -= 1
+
+## 清理一个阵营的所有防御来源队列。
+func _cleanup_all_defense_entries(side: String) -> void:
+	for kind: String in [
+		BattleDefenseEntry.KIND_SHIELD,
+		BattleDefenseEntry.KIND_REFLECT,
+		BattleDefenseEntry.KIND_GUARD,
+		BattleDefenseEntry.KIND_RESOLUTION,
+		BattleDefenseEntry.KIND_PENETRATION,
+	]:
+		_cleanup_entries(_get_defense_entries_reference(side, kind))
+
+## 清空双方全部防御来源队列。
+func _clear_defense_entries() -> void:
+	_player_shield_entries.clear()
+	_enemy_shield_entries.clear()
+	_player_reflect_entries.clear()
+	_enemy_reflect_entries.clear()
+	_player_guard_entries.clear()
+	_enemy_guard_entries.clear()
+	_player_resolution_entries.clear()
+	_enemy_resolution_entries.clear()
+	_player_penetration_entries.clear()
+	_enemy_penetration_entries.clear()
+
+## 向界面和外部行为发布防御来源变化。
+func _emit_defense_changed(side: String, kind: String) -> void:
+	Signals.battle_defense_changed.emit(side, kind)
 
 ## 查询事件令牌是否已经结算；供 Global 在同步本局异状时避免重复触发。
 func has_processed_event(event_token: String) -> bool:

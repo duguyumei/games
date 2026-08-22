@@ -145,9 +145,15 @@ signal custom_ui_requested
 
 # block
 signal combatant_block_added(base_combatant: BaseCombatant)
-signal combatant_block_broken(base_combatant: BaseCombatant)	# the combatant has had their block broken through. Not emitted if bypassed damage
+signal combatant_block_broken(base_combatant: BaseCombatant)	# 目标护盾被本次可吸收伤害完全耗尽
 signal combatant_blocked(base_combatant: BaseCombatant, damage_blocked: int)	# combatant fully blocked an attack
 signal combatant_damaged(base_combatant: BaseCombatant, unblocked_damage: int, zero_capped_damage: int, overkill_damage: int)	# a combatant has taken health damage. Cannot be 0
+## 战斗护盾、格挡、化解、反震或穿透来源发生变化。
+signal battle_defense_changed(side: String, defense_kind: String)
+## 一次统一伤害结算完成；结果包含伤害类型、来源和护盾吸收量。
+signal combat_damage_resolved(target: BaseCombatant, result: CombatDamageResult)
+## 护盾吸收直接伤害后立即触发的反震事件。
+signal combat_reflect_triggered(source: BaseCombatant, target: BaseCombatant, amount: int)
 
 signal energy_changed	# when the player gains energy not at start of turn
 

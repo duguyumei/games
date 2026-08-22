@@ -53,60 +53,89 @@ func get_animation_data() -> AnimationData:
 	var animation_data: AnimationData = Global.get_animation_data(character_data.character_animation_id)
 	return animation_data
 
-## Does damage to combatant and returns [unblocked damage dealt, damage to 0 (if player dies), overkill damage (if player dies)].
-## eg 15 damage on 10 remaining health and 3 block will return [12, 10, 2].
-## bypass_block = true will do damage directly to health.
-func damage(_damage: int, bypass_block: bool = false) -> Array[int]:
-	var player_data: PlayerData = Global.player_data
-	
-	var bypassed_damage: int = _damage # raw unblocked damage
-	var bypassed_damage_capped: int = 0 # damage done that does not factor in overkill damage
-	var overkill_damage: int = 0 # damage done past 0
+## 通过统一伤害结算器处理玩家受到的真气战斗伤害。
+func damage(
+		_damage: int,
+		damage_type: String,
+		source_side: String = "",
+		source_instance_id: String = "",
+		source_effect_id: String = "",
+		source_kind: String = "") -> Array[int]:
+	var request: CombatDamageRequest = CombatDamageRequest.new()
+	request.amount = _damage
+	request.damage_type = damage_type
+	request.source_side = source_side
+	request.source_instance_id = source_instance_id
+	request.source_effect_id = source_effect_id
+	request.source_kind = source_kind
+	var result: CombatDamageResult = CombatDamageResolver.resolve(
+		self, request, Global.battle_qi_state)
+	return [result.health_damage, result.health_damage, result.overkill_damage]
 
-	if player_data.player_block > 0 and not bypass_block:
-		if player_data.player_block > _damage:
-			# damage less than block
-			player_data.player_block -= _damage
-			bypassed_damage = 0
-			create_block_text()
-			Signals.combatant_blocked.emit(self, _damage)
-		else:
-			# damage exceeds block
-			bypassed_damage = _damage - player_data.player_block
-			player_data.player_block = 0
-			Signals.combatant_block_broken.emit(self)
-	
-	block.visible = player_data.player_block > 0
-	block_amount.text = str(player_data.player_block)
-	
-	if bypassed_damage <= 0:
-		return [0,0,0]
-	
-	create_damage_text(bypassed_damage)
-	overkill_damage = max(0, bypassed_damage - player_data.player_health)
-	bypassed_damage_capped = bypassed_damage - overkill_damage
-	
-	if player_data.player_health > 0:
-		player_data.add_health(-bypassed_damage)
-		Signals.combatant_damaged.emit(self, bypassed_damage, bypassed_damage_capped, overkill_damage)
-		
-	return [bypassed_damage, bypassed_damage_capped, overkill_damage]
+## 直接应用已经完成格挡、化解和护盾结算的生命伤害。
+func apply_health_damage(amount: int) -> Array[int]:
+	var player_data: PlayerData = Global.player_data
+	if amount <= 0 or player_data.player_health <= 0:
+		return [0, 0, 0]
+	var overkill_damage: int = max(0, amount - player_data.player_health)
+	var capped_damage: int = amount - overkill_damage
+	create_damage_text(amount)
+	player_data.add_health(-amount)
+	Signals.combatant_damaged.emit(self, amount, capped_damage, overkill_damage)
+	return [amount, capped_damage, overkill_damage]
 
 func set_block(amount: int) -> void:
-	Global.player_data.player_block = amount
-	Global.player_data.player_block = max(0, Global.player_data.player_block)
-	
-	block.visible = Global.player_data.player_block > 0
-	block_amount.text = str(Global.player_data.player_block)
+	if Global.battle_qi_state == null:
+		return
+	Global.battle_qi_state.clear_defense_kind(
+		BattleQiState.SIDE_PLAYER, BattleDefenseEntry.KIND_SHIELD)
+	if amount > 0:
+		Global.battle_qi_state.add_shield(
+			BattleQiState.SIDE_PLAYER, amount, "action", "set_shield")
+	update_shield_display()
 
 func get_block() -> int:
-	return 	Global.player_data.player_block
+	return get_shield()
 
 func add_block(amount: int) -> void:
-	set_block(Global.player_data.player_block + amount)
-	if amount > 0:
-		create_block_fade()
-		Signals.combatant_block_added.emit(self)
+	add_shield(amount)
+
+## 返回玩家当前护盾。
+func get_shield() -> int:
+	return Global.battle_qi_state.get_shield(BattleQiState.SIDE_PLAYER) \
+		if Global.battle_qi_state != null else 0
+
+## 添加玩家护盾来源。
+func add_shield(
+		amount: int,
+		source_kind: String = "action",
+		source_instance_id: String = "",
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1,
+		decay_policy: String = "halve") -> void:
+	if Global.battle_qi_state == null or amount <= 0:
+		return
+	var entry_uid: String = Global.battle_qi_state.add_shield(
+		BattleQiState.SIDE_PLAYER,
+		amount,
+		source_kind,
+		source_instance_id,
+		duration_scope,
+		remaining_rounds,
+		remaining_hits,
+		decay_policy)
+	if entry_uid == "":
+		return
+	create_block_fade()
+	Signals.combatant_block_added.emit(self)
+	update_shield_display()
+
+## 更新护盾显示；场景节点名称保留但数值来自 BattleQiState。
+func update_shield_display() -> void:
+	var shield_value: int = get_shield()
+	block.visible = shield_value > 0
+	block_amount.text = str(shield_value)
 
 #region Health
 ## Adds health and max health to the combatant
@@ -232,15 +261,22 @@ func _on_run_started():
 
 func _on_run_ended():
 	reset_block()
+	if Global.battle_qi_state == null:
+		block.visible = false
+		block_amount.text = "0"
 	clear_all_status_effects()
 	unregister_all_custom_ui()
 
 func _on_combat_started(_event_id: String):
 	clear_all_status_effects()
+	update_shield_display()
 	
 func _on_combat_ended():
 	clear_all_status_effects()
 	reset_block()
+	if Global.battle_qi_state == null:
+		block.visible = false
+		block_amount.text = "0"
 	update_incoming_damage_amount()
 
 func _on_enemy_intent_changed():

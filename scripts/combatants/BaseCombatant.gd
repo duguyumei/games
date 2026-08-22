@@ -30,6 +30,7 @@ func _ready():
 	Signals.combat_ended.connect(_on_combat_ended)
 	Signals.player_turn_started.connect(_on_player_turn_started)
 	Signals.player_turn_ended.connect(_on_player_turn_ended)
+	Signals.battle_defense_changed.connect(_on_battle_defense_changed)
 	
 	animated_sprite_2d.animation_finished.connect(_on_animation_finished)
 	
@@ -85,6 +86,30 @@ func add_block(_amount: int) -> void:
 	# override
 	breakpoint
 
+## 设置当前阵营护盾；标准真气战斗由 BattleQiState 保存具体来源。
+func set_shield(_amount: int) -> void:
+	set_block(_amount)
+
+## 返回当前阵营护盾总值。
+func get_shield() -> int:
+	return get_block()
+
+## 增加带来源的护盾；标准真气战斗由 BattleQiState 记录来源。
+func add_shield(
+		amount: int,
+		source_kind: String = "action",
+		source_instance_id: String = "",
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		_remaining_hits: int = -1,
+		_decay_policy: String = "halve") -> void:
+	add_block(amount)
+
+## 直接对生命应用已经完成防御结算的伤害。
+func apply_health_damage(_amount: int) -> Array[int]:
+	breakpoint
+	return [0, 0, 0]
+
 func generate_reset_block_action() -> void:
 	# generates a reset block action for this combatant and adds it to the action stack
 	var actions_data: Array[Dictionary] = [
@@ -101,6 +126,22 @@ func generate_reset_block_action() -> void:
 
 func reset_block() -> void:
 	set_block(0)
+
+## 回合结束的护盾衰减入口；不会在连击行动中调用。
+func decay_shield_at_round_end() -> void:
+	if Global.battle_qi_state != null:
+		Global.battle_qi_state.decay_shields_at_round_end()
+
+## 防御来源变化后刷新场景中的护盾数值；具体阵营由子类提供护盾查询。
+func _on_battle_defense_changed(side: String, _defense_kind: String) -> void:
+	if Global.battle_qi_state == null \
+		or Global.battle_qi_state.get_combatant_side(self) != side:
+		return
+	update_shield_display()
+
+## 子类将 BattleQiState 的护盾值同步到现有战斗节点。
+func update_shield_display() -> void:
+	pass
 #endregion
 
 #region Health
@@ -133,7 +174,13 @@ func is_alive() -> bool:
 	return true
 
 ## Does damage to combatant and returns [unblocked damage dealt, overkill damage (if combatant dies)]
-func damage(_damage: int, _bypass_block: bool = false) -> Array[int]:
+func damage(
+		_damage: int,
+		_damage_type: String,
+		_source_side: String = "",
+		_source_instance_id: String = "",
+		_source_effect_id: String = "",
+		_source_kind: String = "") -> Array[int]:
 	breakpoint
 	return [0,0,0]
 #endregion

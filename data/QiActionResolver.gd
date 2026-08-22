@@ -170,16 +170,91 @@ static func _build_side_effect_actions(
 			targets.append(player)
 	var gongfa_data_list: Array[GongfaData] = _get_side_gongfa_data(
 		side, side_result, battle_state)
-	for gongfa_data: GongfaData in gongfa_data_list:
-		for effect_value: Variant in gongfa_data.gongfa_effects:
+	for gongfa_index: int in gongfa_data_list.size():
+		var gongfa_data: GongfaData = gongfa_data_list[gongfa_index]
+		var source_instance_id: String = ""
+		if gongfa_index < side_result.gongfa_instance_uids.size():
+			source_instance_id = side_result.gongfa_instance_uids[gongfa_index]
+		if source_instance_id == "" and side == BattleQiState.SIDE_ENEMY:
+			source_instance_id = battle_state.get_active_enemy_instance_id()
+		for effect_index: int in gongfa_data.gongfa_effects.size():
+			var effect_value: Variant = gongfa_data.gongfa_effects[effect_index]
 			var action_data: Array[Dictionary] = _extract_action_data(effect_value)
 			if action_data.is_empty():
 				continue
 			var resolved_action_data: Array[Dictionary] = _resolve_power_placeholders(
 				action_data, side_result)
+			var effect_id: String = str(
+				effect_value.get("effect_id", "") if effect_value is Dictionary else "")
+			if effect_id == "":
+				effect_id = "gongfa:%s:%d" % [gongfa_data.object_id, effect_index]
+			resolved_action_data = _inject_damage_source_context(
+				resolved_action_data,
+				side,
+				"gongfa",
+				source_instance_id,
+				effect_id)
 			actions.append_array(ActionGenerator.create_actions(
 				parent_combatant, null, targets, resolved_action_data, null))
 	return actions
+
+## 为功法效果生成的所有伤害动作注入可追踪的来源上下文。
+static func _inject_damage_source_context(
+		actions_data: Array[Dictionary],
+		source_side: String,
+		source_kind: String,
+		source_instance_id: String,
+		source_effect_id: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for action_data: Dictionary in actions_data:
+		result.append(_inject_damage_context_variant(
+			action_data, source_side, source_kind, source_instance_id, source_effect_id))
+	return result
+
+## 递归处理动作包装结构，不修改功法固定配置资源。
+static func _inject_damage_context_variant(
+		value: Variant,
+		source_side: String,
+		source_kind: String,
+		source_instance_id: String,
+		source_effect_id: String) -> Variant:
+	if value is Array:
+		var array_result: Array = []
+		for item: Variant in value:
+			array_result.append(_inject_damage_context_variant(
+				item, source_side, source_kind, source_instance_id, source_effect_id))
+		return array_result
+	if not value is Dictionary:
+		return value
+	var dictionary_result: Dictionary = {}
+	for key: Variant in value.keys():
+		var key_string: String = str(key)
+		var child_value: Variant = _inject_damage_context_variant(
+			value[key], source_side, source_kind, source_instance_id, source_effect_id)
+		if _is_source_tracked_action_path(key_string) and child_value is Dictionary:
+			var damage_values: Dictionary = child_value.duplicate(true)
+			damage_values["source_side"] = source_side
+			damage_values["source_kind"] = source_kind
+			damage_values["source_instance_id"] = source_instance_id
+			damage_values["source_effect_id"] = source_effect_id
+			child_value = damage_values
+		dictionary_result[key] = child_value
+	return dictionary_result
+
+## 判断动作路径是否属于统一伤害入口或其多段生成器。
+static func _is_damage_action_path(action_path: String) -> bool:
+	return action_path == Scripts.ACTION_ATTACK \
+		or action_path == Scripts.ACTION_ATTACK_GENERATOR \
+		or action_path == Scripts.ACTION_DIRECT_DAMAGE
+
+## 判断动作路径是否需要记录功法来源，例如护盾和格挡来源。
+static func _is_source_tracked_action_path(action_path: String) -> bool:
+	return _is_damage_action_path(action_path) \
+		or action_path == Scripts.ACTION_BLOCK \
+		or action_path == Scripts.ACTION_ADD_GUARD \
+		or action_path == Scripts.ACTION_ADD_REFLECT \
+		or action_path == Scripts.ACTION_ADD_RESOLUTION \
+		or action_path == Scripts.ACTION_ADD_SHIELD_PENETRATION
 
 ## 读取玩家功法序列或敌方牌型功法配置。
 static func _get_side_gongfa_data(

@@ -311,9 +311,10 @@ func perform_enemy_turn():
 			if intent_number_of_attacks > 0:
 				enemy_actions_data.append(
 				{
-				Scripts.ACTION_ATTACK_GENERATOR: 
+					Scripts.ACTION_ATTACK_GENERATOR:
 					{
 					"damage": intent_attack_damage,
+					"damage_type": CombatDamageRequest.DAMAGE_NORMAL,
 					"number_of_attacks": intent_number_of_attacks,
 					"impact_vfx_animation_id": intent_attack_impact_animation_id,
 					"time_delay": EnemyData.ENEMY_ATTACK_DELAY,

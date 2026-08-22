@@ -14,9 +14,10 @@ func process_action_interception(action_interceptor_processor: ActionInterceptor
 		return ACTION_ACCEPTENCES.REJECTED
 	
 	var damage: int = action_interceptor_processor.get_shadowed_action_values("damage", 0)
-	var bypass_block: bool = action_interceptor_processor.get_shadowed_action_values("bypass_block", false)
+	var damage_type: String = str(action_interceptor_processor.get_shadowed_action_values(
+		"damage_type", CombatDamageRequest.DAMAGE_NORMAL))
 	var target_block: int = target_combatant.get_block()
-	if bypass_block:
+	if damage_type == CombatDamageRequest.DAMAGE_TRUE:
 		target_block = 0
 	
 	if damage > target_block:

@@ -42,6 +42,16 @@ const ACTION_ATTACK: String = "res://scripts/actions/combatant_actions/ActionAtt
 const ACTION_ATTACK_GENERATOR: String = "res://scripts/actions/combatant_actions/ActionAttackGenerator.gd"
 const ACTION_BLOCK: String = "res://scripts/actions/combatant_actions/ActionBlock.gd"
 const ACTION_RESET_BLOCK: String = "res://scripts/actions/combatant_actions/ActionResetBlock.gd"
+## 给目标添加一次或多次格挡来源。
+const ACTION_ADD_GUARD: String = "res://scripts/actions/combatant_actions/ActionAddGuard.gd"
+## 给目标添加可叠加的化解值来源。
+const ACTION_ADD_RESOLUTION: String = "res://scripts/actions/combatant_actions/ActionAddResolution.gd"
+## 给目标添加反震比例来源。
+const ACTION_ADD_REFLECT: String = "res://scripts/actions/combatant_actions/ActionAddReflect.gd"
+## 给目标添加按伤害类型生效的护盾穿透来源。
+const ACTION_ADD_SHIELD_PENETRATION: String = "res://scripts/actions/combatant_actions/ActionAddShieldPenetration.gd"
+## 在明确的回合结束入口执行护盾衰减。
+const ACTION_DECAY_SHIELD: String = "res://scripts/actions/combatant_actions/ActionDecayShield.gd"
 const ACTION_DEATH: String = "res://scripts/actions/combatant_actions/ActionDeath.gd"
 const ACTION_DIRECT_DAMAGE: String = "res://scripts/actions/combatant_actions/ActionDirectDamage.gd"
 const ACTION_TALK: String = "res://scripts/actions/combatant_actions/ActionTalk.gd"

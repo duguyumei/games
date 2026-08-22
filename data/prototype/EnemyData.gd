@@ -19,10 +19,6 @@ class_name EnemyData
 ## Upper limit to the max health this enemy type can spawn with.
 @export var enemy_health_max_random_upper: int = 25
 
-## How much block the enemy has. For EnemyData prototypes, it defines how much block the enemy
-## starts with on turn 1.
-@export var enemy_block: int = 0
-
 ## Action data payload for what to do when the enemy dies.
 @export var enemy_actions_on_death: Array[Dictionary] = []
 
@@ -79,8 +75,6 @@ static var MISSING_INTENT: EnemyIntentData = EnemyIntentData.new("INTENT_DUMMY",
 ## NOTE: Difficulty based enemy intent should be defined using add_intent_state().
 @export var enemy_difficulty_to_enemy_modfiers: Dictionary[String, Dictionary] = {
 	#"2": {
-		# Gives enemy starting block on turn 1 at difficulty 2
-		#"enemy_block": 10,
 	#},
 	
 }

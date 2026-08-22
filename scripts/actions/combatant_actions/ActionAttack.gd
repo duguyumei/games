@@ -1,6 +1,5 @@
-## An individual attack action created by ActionAttackGenerator
-## These actions are what actually damage enemies.
-## Can play a sound for each attack.
+## ActionAttackGenerator 创建的单段攻击行为。
+## 所有生命伤害都通过 CombatDamageResolver 处理。
 extends BaseAction
 
 func perform_action():
@@ -18,15 +17,26 @@ func perform_action():
 		if audio_path != "":
 			ActionGenerator.generate_sound_action(audio_path)
 		
-		# get damage parameters
+		# 伤害类型必须由动作配置明确提供；普通攻击默认是普通直接伤害。
 		var damage: int = action_interceptor_processor.get_shadowed_action_values("damage", 0)
-		var bypass_block: bool = action_interceptor_processor.get_shadowed_action_values("bypass_block", false)
-		
-		# damage the target and return results 
-		var damages: Array[int] = target.damage(damage, bypass_block)
+		var damage_type: String = str(action_interceptor_processor.get_shadowed_action_values(
+			"damage_type", CombatDamageRequest.DAMAGE_NORMAL))
+		var source_side: String = str(action_interceptor_processor.get_shadowed_action_values(
+			"source_side", _get_source_side()))
+		var source_context: Dictionary = action_interceptor_processor.get_source_context()
+		var source_kind: String = str(action_interceptor_processor.get_shadowed_action_values(
+			"source_kind", source_context.get("source_kind", "action")))
+		var source_instance_id: String = str(action_interceptor_processor.get_shadowed_action_values(
+			"source_instance_id", source_context.get("source_instance_id", "")))
+		var source_effect_id: String = str(action_interceptor_processor.get_shadowed_action_values(
+			"source_effect_id", source_context.get("interceptor_id", "")))
+
+		# 伤害结算统一由玩家和敌方的真气战斗状态处理。
+		var damages: Array[int] = target.damage(
+			damage, damage_type, source_side, source_instance_id, source_effect_id, source_kind)
 		var unblocked_damage: int = damages[0]
-		var unblocked_damage_capped: int = damages[1] # damage done that does not factor overkill
-		var overkill_damage: int = damages[2] # damage done beyond killing target
+		var unblocked_damage_capped: int = damages[1]
+		var overkill_damage: int = damages[2]
 		
 		# store unblocked/overkill damage in the CardPlayRequest if it exists.
 		# this will accumulate between *all* actions sharing the same CardPlayRequest, thus
@@ -56,3 +66,11 @@ func is_action_short_circuited():
 func _to_string():
 	var damage: int = get_action_value("damage", 0)
 	return "Attack Action: " + str(damage)
+
+## 从动作拥有者推导伤害来源阵营。
+func _get_source_side() -> String:
+	if parent_combatant != null and parent_combatant.is_in_group("players"):
+		return BattleQiState.SIDE_PLAYER
+	if parent_combatant != null and parent_combatant.is_in_group("enemies_alive_or_dead"):
+		return BattleQiState.SIDE_ENEMY
+	return ""

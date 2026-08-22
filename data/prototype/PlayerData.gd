@@ -14,8 +14,6 @@ var player_energy: int = 3 # in combat energy. Not saved.
 ## The energy the player gains each turn. This can be modified.
 @export var player_energy_max: int = 3
 
-var player_block: int = 0 # in combat block. Not saved.
-
 ## The time the player has been playing the current run, in milliseconds.
 ## See: RunTimer.
 @export var player_run_time: float = 0.0

@@ -53,74 +53,96 @@ func get_animation_data() -> AnimationData:
 	var animation_data: AnimationData = Global.get_animation_data(enemy_data.enemy_animation_id)
 	return animation_data
 
-## Does damage to combatant and returns [unblocked damage dealt, damage to 0 (if enemy dies), overkill damage (if enemy dies)]
-## eg 15 damage on 10 remaining health and 3 block will return [12, 10, 2].
-## bypass_block = true will do damage directly to health.
-func damage(_damage: int, bypass_block: bool = false) -> Array[int]:
-	var bypassed_damage: int = _damage # raw unblocked damage
-	var bypassed_damage_capped: int = 0 # damage done that does not factor in overkill damage
-	var overkill_damage: int = 0 # damage done past 0
-	
-	if enemy_data.enemy_block > 0 and not bypass_block:
-		if enemy_data.enemy_block > _damage:
-			# damage less than block
-			enemy_data.enemy_block -= _damage
-			bypassed_damage = 0
-			create_block_text()
-			Signals.combatant_blocked.emit(self, _damage)
-		else:
-			# damage exceeds block
-			bypassed_damage = _damage - enemy_data.enemy_block
-			enemy_data.enemy_block = 0
-			Signals.combatant_block_broken.emit(self)
-	
-	block.visible = enemy_data.enemy_block > 0
-	block_amount.text = str(enemy_data.enemy_block)
-	
-	if bypassed_damage <= 0:
-		return [0,0,0]
-	
-	create_damage_text(bypassed_damage)
-	
-	overkill_damage = max(0, bypassed_damage - enemy_data.enemy_health)
-	bypassed_damage_capped = bypassed_damage - overkill_damage
-	
-	# check health to prevent multiple deaths
-	if enemy_data.enemy_health > 0:
-		# damage the enemy
-		enemy_data.enemy_health = max(0, enemy_data.enemy_health - bypassed_damage)
-		Signals.combatant_damaged.emit(self, bypassed_damage, bypassed_damage_capped, overkill_damage)
-		
-		# generate an interceptable action and intercept it to possibly change health
-		if enemy_data.enemy_health <= 0:
-			ActionGenerator.generate_combatant_death(self)
-		
-		# update healthbar and potentially kill enemy
-		update_health_bar(true)
-		if enemy_data.enemy_health <= 0:
-			if not death_animation_player.is_playing():
-				animated_sprite_2d.play(AnimationData.ANIMATION_DEATH)
-				death_animation_player.play("Enemy/death")
-				remove_from_group("enemies")
-				Signals.enemy_killed.emit(self)
-	
-	return [bypassed_damage, bypassed_damage_capped, overkill_damage]
+## 通过统一伤害结算器处理敌方受到的真气战斗伤害。
+func damage(
+		_damage: int,
+		damage_type: String,
+		source_side: String = "",
+		source_instance_id: String = "",
+		source_effect_id: String = "",
+		source_kind: String = "") -> Array[int]:
+	var request: CombatDamageRequest = CombatDamageRequest.new()
+	request.amount = _damage
+	request.damage_type = damage_type
+	request.source_side = source_side
+	request.source_instance_id = source_instance_id
+	request.source_effect_id = source_effect_id
+	request.source_kind = source_kind
+	var result: CombatDamageResult = CombatDamageResolver.resolve(
+		self, request, Global.battle_qi_state)
+	return [result.health_damage, result.health_damage, result.overkill_damage]
+
+## 直接应用已经完成格挡、化解和护盾结算的生命伤害。
+func apply_health_damage(amount: int) -> Array[int]:
+	if amount <= 0 or enemy_data.enemy_health <= 0:
+		return [0, 0, 0]
+	var overkill_damage: int = max(0, amount - enemy_data.enemy_health)
+	var capped_damage: int = amount - overkill_damage
+	create_damage_text(amount)
+	enemy_data.enemy_health = max(0, enemy_data.enemy_health - amount)
+	Signals.combatant_damaged.emit(self, amount, capped_damage, overkill_damage)
+	if enemy_data.enemy_health <= 0:
+		ActionGenerator.generate_combatant_death(self)
+	update_health_bar(true)
+	if enemy_data.enemy_health <= 0 and not death_animation_player.is_playing():
+		animated_sprite_2d.play(AnimationData.ANIMATION_DEATH)
+		death_animation_player.play("Enemy/death")
+		remove_from_group("enemies")
+		Signals.enemy_killed.emit(self)
+	return [amount, capped_damage, overkill_damage]
 
 func set_block(amount: int) -> void:
-	enemy_data.enemy_block = amount
-	enemy_data.enemy_block = max(0, enemy_data.enemy_block)
-	
-	block.visible = enemy_data.enemy_block > 0
-	block_amount.text = str(enemy_data.enemy_block)
+	if Global.battle_qi_state == null:
+		return
+	Global.battle_qi_state.clear_defense_kind(
+		BattleQiState.SIDE_ENEMY, BattleDefenseEntry.KIND_SHIELD)
+	if amount > 0:
+		Global.battle_qi_state.add_shield(
+			BattleQiState.SIDE_ENEMY, amount, "action", enemy_data.object_uid)
+	update_shield_display()
 
 func get_block() -> int:
-	return enemy_data.enemy_block
+	return get_shield()
 
 func add_block(amount: int) -> void:
-	set_block(enemy_data.enemy_block + amount)
-	if amount > 0:
-		create_block_fade()
-		Signals.combatant_block_added.emit(self)
+	add_shield(amount)
+
+## 返回敌方当前护盾。
+func get_shield() -> int:
+	return Global.battle_qi_state.get_shield(BattleQiState.SIDE_ENEMY) \
+		if Global.battle_qi_state != null else 0
+
+## 添加敌方护盾来源。
+func add_shield(
+		amount: int,
+		source_kind: String = "action",
+		source_instance_id: String = "",
+		duration_scope: String = "battle",
+		remaining_rounds: int = -1,
+		remaining_hits: int = -1,
+		decay_policy: String = "halve") -> void:
+	if Global.battle_qi_state == null or amount <= 0:
+		return
+	var entry_uid: String = Global.battle_qi_state.add_shield(
+		BattleQiState.SIDE_ENEMY,
+		amount,
+		source_kind,
+		source_instance_id,
+		duration_scope,
+		remaining_rounds,
+		remaining_hits,
+		decay_policy)
+	if entry_uid == "":
+		return
+	create_block_fade()
+	Signals.combatant_block_added.emit(self)
+	update_shield_display()
+
+## 更新护盾显示。
+func update_shield_display() -> void:
+	var shield_value: int = get_shield()
+	block.visible = shield_value > 0
+	block_amount.text = str(shield_value)
 
 #region Health
 func heal_percentage(percent: float):
@@ -192,6 +214,7 @@ func update_enemy_intent():
 			Scripts.ACTION_ATTACK: 
 				{
 				"damage": attack_damage,
+				"damage_type": CombatDamageRequest.DAMAGE_NORMAL,
 				"target_override": BaseAction.TARGET_OVERRIDES.PLAYER
 				}}]
 	var generated_action: BaseAction = ActionGenerator.create_actions(self, null, [player], action_data, null)[0]
@@ -208,8 +231,9 @@ func update_enemy_intent():
 	action_data = [{
 		Scripts.ACTION_ATTACK_GENERATOR: 
 			{
-			"damage": attack_damage,
-			"number_of_attacks": number_of_attacks,
+				"damage": attack_damage,
+				"damage_type": CombatDamageRequest.DAMAGE_NORMAL,
+				"number_of_attacks": number_of_attacks,
 			"target_override": BaseAction.TARGET_OVERRIDES.PLAYER
 			}}]
 	generated_action = ActionGenerator.create_actions(self, null, [player], action_data, null)[0]

@@ -22,6 +22,17 @@ func perform_action():
 		var impact_vfx_animation_id: String = action_interceptor_processor.get_shadowed_action_values("impact_vfx_animation_id", "")
 		
 		var damage: int = action_interceptor_processor.get_shadowed_action_values("damage", 0)
+		var damage_type: String = action_interceptor_processor.get_shadowed_action_values(
+			"damage_type", CombatDamageRequest.DAMAGE_NORMAL)
+		var source_side: String = action_interceptor_processor.get_shadowed_action_values(
+			"source_side", _get_source_side())
+		var source_context: Dictionary = action_interceptor_processor.get_source_context()
+		var source_kind: String = action_interceptor_processor.get_shadowed_action_values(
+			"source_kind", source_context.get("source_kind", "action"))
+		var source_instance_id: String = action_interceptor_processor.get_shadowed_action_values(
+			"source_instance_id", source_context.get("source_instance_id", ""))
+		var source_effect_id: String = action_interceptor_processor.get_shadowed_action_values(
+			"source_effect_id", source_context.get("interceptor_id", ""))
 		var delay: float = action_interceptor_processor.get_shadowed_action_values("time_delay", 0.25)
 		var number_of_attacks: int = action_interceptor_processor.get_shadowed_action_values("number_of_attacks", 1)
 		var merge_attacks: bool = action_interceptor_processor.get_shadowed_action_values("merge_attacks", false)	# this will take all attacks and merge them into a single attack with combined damage
@@ -50,6 +61,11 @@ func perform_action():
 			# attack action
 			var action_data: Array[Dictionary] = [{Scripts.ACTION_ATTACK: {
 				"damage": damage,
+				"damage_type": damage_type,
+				"source_side": source_side,
+				"source_instance_id": source_instance_id,
+				"source_effect_id": source_effect_id,
+				"source_kind": source_kind,
 				"time_delay": delay,
 				"target_override": target_override,
 				"actions_on_lethal": actions_on_lethal,
@@ -83,3 +99,11 @@ func _to_string():
 	var damage: int = get_action_value("damage", 0)
 	var number_of_attacks: int = get_action_value("number_of_attacks", 0)
 	return "Attack Generator Action: " + str(damage) + " x " + str(number_of_attacks)
+
+## 从动作拥有者推导伤害来源阵营。
+func _get_source_side() -> String:
+	if parent_combatant != null and parent_combatant.is_in_group("players"):
+		return BattleQiState.SIDE_PLAYER
+	if parent_combatant != null and parent_combatant.is_in_group("enemies_alive_or_dead"):
+		return BattleQiState.SIDE_ENEMY
+	return ""

@@ -400,7 +400,7 @@ func add_test_consumables() -> void:
 	consumable_damaging.consumable_texture_path = "external/sprites/consumables/consumable_orange.png"
 	consumable_damaging.consumable_values = {
 		"damage": 10,
-		"bypass_block": false,
+		"damage_type": "normal",
 	}
 	consumable_damaging.consumable_actions = [
 		{
@@ -422,7 +422,7 @@ func add_test_consumables() -> void:
 	consumable_multi_damaging.consumable_texture_path = "external/sprites/consumables/consumable_yellow.png"
 	consumable_multi_damaging.consumable_values = {
 		"damage": 10,
-		"bypass_block": false,
+		"damage_type": "normal",
 	}
 	consumable_multi_damaging.consumable_actions = [
 		{
@@ -724,7 +724,7 @@ func add_test_status_effects() -> void:
 						"damage": "invoking_status_effect_charges"
 					},
 			"time_delay": 0.5,
-			"bypass_block": true,
+			"damage_type": "poison",
 			"target_override": BaseAction.TARGET_OVERRIDES.PARENT
 			}
 		}
@@ -752,7 +752,7 @@ func add_test_status_effects() -> void:
 						# convert the bomb's status secondary charges, passed in from BaseStatusEffect, into bomb damage
 						"damage": "invoking_status_effect_secondary_charges"
 					},
-					"bypass_block": false,
+					"damage_type": "normal",
 					"time_delay": 0.5,
 					"target_override": BaseAction.TARGET_OVERRIDES.ALL_ENEMIES # player bombs hit all enemies
 					}
@@ -765,7 +765,7 @@ func add_test_status_effects() -> void:
 						# convert the bomb's status secondary charges, passed in from BaseStatusEffect, into bomb damage
 						"damage": "invoking_status_effect_secondary_charges"
 					},
-					"bypass_block": false,
+					"damage_type": "normal",
 					"time_delay": 0.5,
 					"target_override": BaseAction.TARGET_OVERRIDES.PLAYER # enemy bombs hit player
 					}

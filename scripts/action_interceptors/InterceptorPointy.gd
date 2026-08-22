@@ -18,7 +18,7 @@ func process_action_interception(action_interceptor_processor: ActionInterceptor
 	var pointy_charges: int = target_combatant.get_status_charges(POINTY_STATUS_EFFECT_ID)
 	var action_data: Array[Dictionary] = [{
 		Scripts.ACTION_DIRECT_DAMAGE: {
-			"bypass_block": false,
+			"damage_type": CombatDamageRequest.DAMAGE_REFLECT,
 			"damage": pointy_charges,
 		}
 	}]
