@@ -1,0 +1,16 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_wind_6",
+		"qi_name": "黑桃 6",
+		"qi_description": "黑桃的6真气。",
+		"qi_texture_path": "",
+		"qi_attribute": 0,
+		"qi_rank": 6,
+		"qi_value": -1,
+		"qi_permanent_value_modifier": 0,
+		"qi_permanent_state": {},
+		"qi_reshape_states": [],
+		"qi_persistent_anomaly_states": []
+	}
+}

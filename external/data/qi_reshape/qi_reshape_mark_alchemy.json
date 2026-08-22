@@ -1,0 +1,17 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_reshape_mark_alchemy",
+		"reshape_name": "化丹印",
+		"reshape_description": "明确弃掉并实际进入弃牌堆后，获得随机丹药。",
+		"reshape_texture_path": "",
+		"reshape_slot": "mark",
+		"reshape_kind": "mark",
+		"origin_operation": "",
+		"default_scope": "run",
+		"allowed_scopes": ["run"],
+		"replacement_group": "qi_mark",
+		"effect_script_path": "",
+		"effect_config": {"effect_id": "reward_random_pill"}
+	}
+}

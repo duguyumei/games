@@ -36,12 +36,18 @@ extends Node
 	["CardPackData", CardPackData, "_id_to_card_pack_data", ["card_packs/"]],
 	["ArtifactPackData", ArtifactPackData, "_id_to_artifact_pack_data", ["artifact_packs/"]],
 	["ConsumablePackData", ConsumablePackData, "_id_to_consumable_pack_data", ["consumable_packs/"]],
+	["ConsumableBoosterData", ConsumableBoosterData, "_id_to_consumable_booster_data", ["consumable_boosters/"]],
+	["QiReshapeData", QiReshapeData, "_id_to_qi_reshape_data", ["qi_reshape/"]],
+	["QiAnomalyData", QiAnomalyData, "_id_to_qi_anomaly_data", ["qi_anomaly/"]],
 	["CustomUIData", CustomUIData, "_id_to_custom_ui_data", ["custom_ui/"]],
 	["CustomSignalData", CustomSignalData, "_id_to_custom_signal_data", ["custom_signals/"]],
 	# prototype data
 	["EnemyData", EnemyData,"_id_to_enemy_data", ["enemies/"]],
 	["CardData", CardData, "_id_to_card_data", ["cards/"]],
 	["ArtifactData", ArtifactData, "_id_to_artifact_data", ["artifacts/"]],
+	["QiData", QiData, "_id_to_qi_data", ["qi/"]],
+	["GongfaData", GongfaData, "_id_to_gongfa_data", ["gongfa/"]],
+	["NeigongData", NeigongData, "_id_to_neigong_data", ["neigong/"]],
 	["PlayerData", PlayerData, "_id_to_player_data", ["player/"]],
 ]
 
@@ -77,6 +83,12 @@ var _id_to_run_start_option_data: Dictionary[String, RunStartOptionData] = {}
 var _id_to_card_pack_data: Dictionary[String, CardPackData] = {}
 var _id_to_artifact_pack_data: Dictionary[String, ArtifactPackData] = {}
 var _id_to_consumable_pack_data: Dictionary[String, ConsumablePackData] = {}
+## 补充包固定定义查找表；运行时只读取，不写回资源目录。
+var _id_to_consumable_booster_data: Dictionary[String, ConsumableBoosterData] = {}
+## 真气重塑固定定义查找表；运行时只读取，不写回资源目录。
+var _id_to_qi_reshape_data: Dictionary[String, QiReshapeData] = {}
+## 真气异状固定定义查找表；运行时只读取，不写回资源目录。
+var _id_to_qi_anomaly_data: Dictionary[String, QiAnomalyData] = {}
 var _id_to_custom_ui_data: Dictionary[String, CustomUIData] = {}
 var _id_to_custom_signal_data: Dictionary[String, CustomSignalData] = {}
 
@@ -84,6 +96,12 @@ var _id_to_custom_signal_data: Dictionary[String, CustomSignalData] = {}
 var _id_to_enemy_data: Dictionary[String, EnemyData] = {}
 var _id_to_card_data: Dictionary[String, CardData] = {}
 var _id_to_artifact_data: Dictionary[String, ArtifactData] = {}
+## 真气固定定义查找表；业务代码只能通过原型接口创建实例。
+var _id_to_qi_data: Dictionary[String, QiData] = {}
+## 功法固定定义查找表；业务代码只能通过原型接口创建实例。
+var _id_to_gongfa_data: Dictionary[String, GongfaData] = {}
+## 内功固定定义查找表；业务代码只能通过原型接口创建实例。
+var _id_to_neigong_data: Dictionary[String, NeigongData] = {}
 var _id_to_player_data: Dictionary[String, PlayerData] = {}
 
 # mutable data; These objects are modifiable
@@ -91,6 +109,9 @@ var player_data: PlayerData = PlayerData.new() # the current run. prototype inst
 var user_settings_data: UserSettingsData = UserSettingsData.new() # the user's settings
 var profile_data: ProfileData = ProfileData.new()
 var is_run: bool = false # simple flag to check if a run is currently happening
+
+## 当前战斗的真气现场状态；保存临时牌区、重塑和异状，不写入本局存档。
+var battle_qi_state: BattleQiState = null
 
 ## The RunModifierData object ids for standard difficulty modifiers, allowing for a difficulty select
 ## on the new run menu.
@@ -198,6 +219,13 @@ func _ready():
 	Global._generate_consumable_pack_cache()
 	# force generate all animations
 	FileLoader.generate_all_animations()
+
+	# 商店刷新只监听已提交的节点完成事件，打开页面本身不会生成候选。
+	Signals.node_completed.connect(_on_node_completed)
+	Signals.shop_transaction_committed.connect(_on_shop_transaction_committed)
+	Signals.combat_started.connect(_on_qi_combat_started)
+	Signals.combat_ended.connect(_on_qi_combat_ended)
+	Signals.run_ended.connect(_on_qi_run_ended)
 	
 	### Exporting Data
 	# FileLoader.export_read_only_data() # uncomment to output all unexported test data to file
@@ -227,6 +255,15 @@ func start_run(character_object_id: String, run_seed: int, difficulty_level: int
 	# add starting cards to player
 	for card_object_id in character_data.character_starting_card_object_ids:
 		player_data.player_deck.append(get_card_data_from_prototype(card_object_id))
+
+	# 真气默认使用完整的 52 张标准扑克牌；角色可以通过固定配置改为指定牌面集合。
+	if character_data.character_starting_qi_object_ids.is_empty():
+		player_data.add_standard_qi_deck()
+	else:
+		for qi_object_id: String in character_data.character_starting_qi_object_ids:
+			var qi_data: QiData = get_qi_data_from_prototype(qi_object_id)
+			if qi_data != null:
+				player_data.add_qi_instance(qi_data)
 	
 	# card draft
 	player_data.reward_draft_card_pack_ids.assign(character_data.character_starting_card_draft_card_pack_ids)
@@ -242,6 +279,7 @@ func start_run(character_object_id: String, run_seed: int, difficulty_level: int
 	
 	# location, act, and difficult
 	player_data.player_location_id = "location_0" # hardcoded starting location
+	player_data.player_waiting_for_node_selection = false
 	player_data.player_act = 1
 	player_data.player_run_difficulty_level = difficulty_level
 	
@@ -277,6 +315,9 @@ func start_run(character_object_id: String, run_seed: int, difficulty_level: int
 	
 	# generate world
 	ActionGenerator.generate_act("act_1", true)
+
+	# 新本局只在第一次进入地图前生成一次完整商店。
+	ensure_shop_initialized()
 	
 	# save immediately at start of run
 	FileLoader.autosave()
@@ -287,6 +328,92 @@ func start_run(character_object_id: String, run_seed: int, difficulty_level: int
 	# simulate a win
 	#await get_tree().create_timer(5).timeout
 	#Signals.run_victory.emit()
+
+## 创建一场新的真气战斗现场；重复进入战斗会丢弃旧的未保存现场。
+func begin_qi_battle_state() -> BattleQiState:
+	battle_qi_state = BattleQiState.new()
+	return battle_qi_state
+
+## 在唯一敌人生成后初始化敌我真气牌区；失败时不留下半成品牌区。
+func initialize_qi_battle_zones(enemy_data: EnemyData) -> bool:
+	if enemy_data == null or player_data == null:
+		return false
+	if battle_qi_state == null:
+		begin_qi_battle_state()
+	var enemy_qi_deck: Array[QiData] = []
+	var enemy_definition_ids: Array[String] = enemy_data.enemy_qi_deck_definition_ids
+	if enemy_definition_ids.is_empty():
+		enemy_definition_ids = QiData.get_standard_deck_object_ids()
+	for qi_definition_id: String in enemy_definition_ids:
+		var qi_data: QiData = get_qi_data_from_prototype(qi_definition_id)
+		if qi_data == null:
+			DebugLogger.log_error(
+				"Enemy qi deck contains unknown definition: %s" % qi_definition_id)
+			battle_qi_state.clear_battle()
+			return false
+		enemy_qi_deck.append(qi_data)
+	var enemy_instance_id: String = enemy_data.object_uid
+	if enemy_instance_id == "":
+		enemy_instance_id = enemy_data.object_id
+	return battle_qi_state.initialize_zones(
+		player_data.player_qi_deck,
+		enemy_qi_deck,
+		player_data.get_player_rng("rng_qi_player_shuffle"),
+		player_data.get_player_rng("rng_qi_enemy_shuffle"),
+		enemy_instance_id)
+
+## 返回当前战斗真气现场；没有战斗时返回 null。
+func get_qi_battle_state() -> BattleQiState:
+	return battle_qi_state
+
+## 由未来牌型与功法结算器调用，完成冻结请求并准备下一次行动。
+func complete_qi_action(request: QiActionRequest) -> bool:
+	if battle_qi_state == null or not battle_qi_state.complete_qi_action(request):
+		return false
+	Signals.qi_zones_changed.emit()
+	Signals.qi_action_completed.emit(request)
+	return true
+
+## 向当前真气战斗现场发送一个已提交事件。
+func notify_qi_event(
+		event_id: String,
+		qi_instance_uid: String = "",
+		event_token: String = "") -> Array[String]:
+	if battle_qi_state == null:
+		if qi_instance_uid == "":
+			return []
+		var persistent_qi: QiData = player_data.get_owned_qi(qi_instance_uid)
+		return persistent_qi.notify_run_qi_event(event_id) if persistent_qi != null else []
+	if battle_qi_state.has_processed_event(event_token):
+		return []
+	var removed_definition_ids: Array[String] = battle_qi_state.notify_qi_event(
+		event_id, qi_instance_uid, event_token)
+	if qi_instance_uid != "":
+		var qi_data: QiData = player_data.get_owned_qi(qi_instance_uid)
+		if qi_data != null:
+			removed_definition_ids.append_array(qi_data.notify_run_qi_event(event_id))
+	return removed_definition_ids
+
+## 战斗结束后清理真气现场，不触发任何本局重塑或异状行为。
+func end_qi_battle_state() -> void:
+	if battle_qi_state == null:
+		return
+	battle_qi_state.notify_qi_event(BattleQiState.EVENT_BATTLE_ENDED, "", "combat_end")
+	for qi_data: QiData in player_data.player_qi_deck:
+		qi_data.notify_run_qi_event(BattleQiState.EVENT_BATTLE_ENDED)
+	battle_qi_state = null
+
+## 战斗开始时创建真气现场；旧 CardData 类型保留兼容，但标准战斗不再使用旧牌区。
+func _on_qi_combat_started(_event_id: String) -> void:
+	begin_qi_battle_state()
+
+## 战斗结束时丢弃所有临时真气状态。
+func _on_qi_combat_ended() -> void:
+	end_qi_battle_state()
+
+## 本局结束时清理可能残留的战斗现场。
+func _on_qi_run_ended() -> void:
+	battle_qi_state = null
 
 ## Used for end_run().
 enum RUN_ENDS {QUIT, LOSS, VICTORY}
@@ -407,6 +534,38 @@ func get_all_consumables() -> Array[ConsumableData]:
 
 func get_player_consumable_in_slot_index(consumable_slot_index: int) -> ConsumableData:
 	return player_data.get_consumable_in_slot(consumable_slot_index)
+
+## 根据固定 ID 返回补充包定义副本，业务修改不会污染目录中的原始定义。
+func get_consumable_booster_data(booster_object_id: String) -> ConsumableBoosterData:
+	var booster_data: ConsumableBoosterData = _id_to_consumable_booster_data.get(
+		booster_object_id, null)
+	return booster_data.duplicate(true) if booster_data != null else null
+#endregion
+
+#region Qi Effects
+## 根据固定 ID 返回真气重塑定义副本，避免业务代码污染固定资源。
+func get_qi_reshape_data(reshape_object_id: String) -> QiReshapeData:
+	var reshape_data: QiReshapeData = _id_to_qi_reshape_data.get(reshape_object_id, null)
+	return reshape_data.duplicate(true) if reshape_data != null else null
+
+## 返回全部真气重塑定义副本。
+func get_all_qi_reshape_data() -> Array[QiReshapeData]:
+	var result: Array[QiReshapeData] = []
+	for reshape_data: QiReshapeData in _id_to_qi_reshape_data.values():
+		result.append(reshape_data.duplicate(true))
+	return result
+
+## 根据固定 ID 返回真气异状定义副本，避免业务代码污染固定资源。
+func get_qi_anomaly_data(anomaly_object_id: String) -> QiAnomalyData:
+	var anomaly_data: QiAnomalyData = _id_to_qi_anomaly_data.get(anomaly_object_id, null)
+	return anomaly_data.duplicate(true) if anomaly_data != null else null
+
+## 返回全部真气异状定义副本。
+func get_all_qi_anomaly_data() -> Array[QiAnomalyData]:
+	var result: Array[QiAnomalyData] = []
+	for anomaly_data: QiAnomalyData in _id_to_qi_anomaly_data.values():
+		result.append(anomaly_data.duplicate(true))
+	return result
 #endregion
 
 #region Card Decorators
@@ -554,27 +713,78 @@ func clear_locations() -> void:
 #endregion
 
 #region Shops
-## Creates a new shop and assigns it the player's location
-func generate_shop_at_player_location() -> ShopData:
-	var location_data: LocationData = Global.get_player_location_data()
-	var shop_data: ShopData = ShopData.new()
-	shop_data.shop_location_id = location_data.location_id
-	player_data.player_shop_data = shop_data
+## 返回本局常驻商店，不再校验玩家所在地图位置。
+func get_shop_data() -> ShopData:
+	return player_data.player_shop_data
+
+## 确保本局拥有商店，并且只在没有正式候选时执行第一次全栏生成。
+func ensure_shop_initialized() -> ShopData:
+	if player_data.player_shop_data == null:
+		player_data.player_shop_data = ShopData.new()
+	var shop_data: ShopData = player_data.player_shop_data
+	shop_data.normalize_after_load()
+	if not shop_data.shop_initialized:
+		shop_data.refresh_for(ShopData.REFRESH_REASONS.RUN_START, "run_start")
 	return shop_data
-	
-## Gets the player's shop data if the shop matches the player data. This is used to check against
-## old shops at a previous location.
+
+## 兼容旧调用方；新代码应使用 ensure_shop_initialized()。
+func generate_shop_at_player_location() -> ShopData:
+	return ensure_shop_initialized()
+
+## 兼容旧调用方；商店现在属于整局而不是某个地图位置。
 func get_shop_at_player_location() -> ShopData:
-	var player_shop_data: ShopData = Global.player_data.player_shop_data
-	var player_location_data: LocationData = get_player_location_data()
-	# no shop
-	if player_shop_data == null:
-		return null
-	# shop not at current location
-	if player_shop_data.shop_location_id != player_location_data.location_id:
-		return null
-	
-	return player_shop_data
+	return get_shop_data()
+
+## 将当前节点提交为完成；相同地图节点会产生相同令牌并被 ShopData 去重。
+func complete_current_node() -> void:
+	var location_data: LocationData = get_player_location_data()
+	if location_data == null:
+		return
+	# 必须先记录阶段再保存商店，保证读档不会重新进入已经完成的节点。
+	player_data.player_waiting_for_node_selection = true
+	var completion_token: String = "act:%d:node:%s" % [
+		location_data.location_act,
+		location_data.location_id,
+	]
+	Signals.node_completed.emit(location_data, completion_token)
+
+## 把旧存档中的商店节点迁移为普通事件节点，不再打开位置商店。
+func normalize_legacy_shop_locations() -> void:
+	var act_data: ActData = get_act_data(player_data.player_act_id)
+	for location_data: LocationData in player_data.location_id_to_location_data.values():
+		if location_data.location_type != LocationData.LOCATION_TYPES.SHOP:
+			continue
+		location_data.location_type = LocationData.LOCATION_TYPES.EVENT
+		if act_data != null:
+			location_data.location_event_pool_object_id = (
+				act_data.act_non_combat_event_pool_object_id)
+
+## 根据已完成节点类型刷新对应分栏，并在刷新成功后保存本局。
+func _on_node_completed(
+		location_data: LocationData,
+		completion_token: String) -> void:
+	if location_data == null or not is_run:
+		return
+	var shop_data: ShopData = ensure_shop_initialized()
+	var refresh_reason: int = ShopData.REFRESH_REASONS.NORMAL_NODE
+	match location_data.location_type:
+		LocationData.LOCATION_TYPES.MINIBOSS:
+			refresh_reason = ShopData.REFRESH_REASONS.ELITE_NODE
+		LocationData.LOCATION_TYPES.BOSS:
+			# 第三幕 Boss 完成后本局直接结束，不再生成不可访问的新商店。
+			if is_end_of_run():
+				return
+			refresh_reason = ShopData.REFRESH_REASONS.BOSS_TRANSITION
+
+	if shop_data.refresh_for(refresh_reason, completion_token):
+		FileLoader.autosave()
+
+## 等待购买或冥想的行为队列结束后保存，避免保存到只扣费或只发货的中间态。
+func _on_shop_transaction_committed() -> void:
+	if ActionHandler.actions_being_performed:
+		await ActionHandler.actions_ended
+	if is_run:
+		FileLoader.autosave()
 #endregion
 
 #region Enemies
@@ -618,6 +828,74 @@ func get_card_data_from_prototypes(card_object_ids: Array[String]) -> Array[Card
 	for card_object_id: String in card_object_ids:
 		card_prototypes.append(get_card_data_from_prototype(card_object_id))
 	return card_prototypes
+#endregion
+
+#region Taiwu Domain Data
+## 根据固定 ID 返回真气定义副本，业务修改不会污染目录中的原始模板。
+func get_qi_data(qi_object_id: String) -> QiData:
+	var qi_data: QiData = _id_to_qi_data.get(qi_object_id, null)
+	return qi_data.duplicate(true) if qi_data != null else null
+
+## 返回全部真气固定定义副本。
+func get_all_qi_data() -> Array[QiData]:
+	var result: Array[QiData] = []
+	for qi_data: QiData in _id_to_qi_data.values():
+		result.append(qi_data.duplicate(true))
+	return result
+
+## 根据真气固定定义创建独立的本局实例。
+func get_qi_data_from_prototype(qi_object_id: String) -> QiData:
+	var qi_data: QiData = _id_to_qi_data.get(qi_object_id, null)
+	if qi_data == null:
+		return null
+	return qi_data.get_prototype(true)
+
+## 创建完整 52 张标准扑克牌的本局实例；不会修改固定定义或玩家牌组。
+func get_standard_qi_deck_from_prototypes() -> Array[QiData]:
+	var result: Array[QiData] = []
+	for qi_object_id: String in QiData.get_standard_deck_object_ids():
+		var qi_data: QiData = get_qi_data_from_prototype(qi_object_id)
+		if qi_data != null:
+			result.append(qi_data)
+	return result
+
+## 根据固定 ID 返回功法定义副本，业务修改不会污染目录中的原始模板。
+func get_gongfa_data(gongfa_object_id: String) -> GongfaData:
+	var gongfa_data: GongfaData = _id_to_gongfa_data.get(gongfa_object_id, null)
+	return gongfa_data.duplicate(true) if gongfa_data != null else null
+
+## 返回全部功法固定定义副本。
+func get_all_gongfa_data() -> Array[GongfaData]:
+	var result: Array[GongfaData] = []
+	for gongfa_data: GongfaData in _id_to_gongfa_data.values():
+		result.append(gongfa_data.duplicate(true))
+	return result
+
+## 根据功法固定定义创建独立的本局实例。
+func get_gongfa_data_from_prototype(gongfa_object_id: String) -> GongfaData:
+	var gongfa_data: GongfaData = _id_to_gongfa_data.get(gongfa_object_id, null)
+	if gongfa_data == null:
+		return null
+	return gongfa_data.get_prototype(true)
+
+## 根据固定 ID 返回内功定义副本，业务修改不会污染目录中的原始模板。
+func get_neigong_data(neigong_object_id: String) -> NeigongData:
+	var neigong_data: NeigongData = _id_to_neigong_data.get(neigong_object_id, null)
+	return neigong_data.duplicate(true) if neigong_data != null else null
+
+## 返回全部内功固定定义副本。
+func get_all_neigong_data() -> Array[NeigongData]:
+	var result: Array[NeigongData] = []
+	for neigong_data: NeigongData in _id_to_neigong_data.values():
+		result.append(neigong_data.duplicate(true))
+	return result
+
+## 根据内功固定定义创建独立的本局实例。
+func get_neigong_data_from_prototype(neigong_object_id: String) -> NeigongData:
+	var neigong_data: NeigongData = _id_to_neigong_data.get(neigong_object_id, null)
+	if neigong_data == null:
+		return null
+	return neigong_data.get_prototype(true)
 #endregion
 
 #region Caches and Packs

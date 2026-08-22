@@ -10,8 +10,9 @@ func perform_action() -> void:
 		
 		# set player location to new location
 		Global.player_data.player_location_id = location_id
-		# null out shop data
-		Global.player_data.player_shop_data = null
+		# 从地图待选阶段进入节点；此状态随入口自动保存，读档时会重开节点。
+		Global.player_data.player_waiting_for_node_selection = false
+		# 商店属于整局状态，进入地图节点不会清空候选或空槽。
 		
 		# autosave
 		var autosave_before_visit: bool = action_interceptor_processor.get_shadowed_action_values("autosave_before_visit", true)

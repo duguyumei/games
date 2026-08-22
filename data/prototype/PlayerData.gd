@@ -33,6 +33,8 @@ var player_block: int = 0 # in combat block. Not saved.
 ## LocationData id corresponding to the location in location_id_to_location_data of where the player
 ## is currently located in the act.
 @export var player_location_id: String = "location_0"
+## 当前节点已经完整结算，玩家正在地图上等待选择下一个节点。
+@export var player_waiting_for_node_selection: bool = false
 ## Stores locations for the current act in the run
 @export var location_id_to_location_data: Dictionary[String, LocationData] = {}
 
@@ -194,6 +196,29 @@ var player_reward_consumable_rarity_cache: Dictionary[int, Array] = {}
 ## permanent.
 @export var player_deck: Array[CardData] = []
 
+#region Taiwu Collection and Loadout
+## 本局拥有的全部真气实例；与旧 CardData 牌组互不转换、互不镜像。
+@export var player_qi_deck: Array[QiData] = []
+
+## 本局功法实例库，以实例 UID 为键；同一固定功法 ID 只允许一个实例。
+@export var player_gongfa_uid_to_gongfa_data: Dictionary[String, GongfaData] = {}
+
+## 本局内功实例库，以实例 UID 为键；特殊效果可以允许同定义多实例。
+@export var player_neigong_uid_to_neigong_data: Dictionary[String, NeigongData] = {}
+
+## 八种牌型各自的功法槽容量；旧存档缺失的牌型在初始化时补为一。
+@export var player_gongfa_hand_slot_counts: Dictionary[String, int] = {}
+
+## 八种牌型各自的有序功法实例 UID 序列。
+@export var player_gongfa_hand_sequences: Dictionary[String, Array] = {}
+
+## 有序内功装备实例 UID；数组顺序也是同优先级效果的处理顺序。
+@export var player_equipped_neigong_uids: Array[String] = []
+
+## 内功基础装备容量；动态容量以后可通过独立查询钩子扩展。
+@export var player_neigong_slot_count: int = 6
+#endregion
+
 
 # Statuses
 
@@ -208,7 +233,14 @@ var player_status_effects: Dictionary[String, Array] = {}
 ## new PlayerData instance or loading the game.
 ## Not the same as _init()
 func init():
+	normalize_taiwu_loadout_defaults()
+	for qi_data: QiData in player_qi_deck:
+		if qi_data != null:
+			qi_data.normalize_after_load()
 	generate_cache()
+	# 旧版位置商店在读档后只做数据迁移，不触发任何购买或刷新效果。
+	if player_shop_data != null:
+		player_shop_data.normalize_after_load()
 
 ## Forces a regeneration of all internal cached data structures.
 func generate_cache() -> void:
@@ -237,6 +269,201 @@ func get_player_rng(rng_name: String) -> RandomNumberGenerator:
 
 func set_player_value(value_name: String, value: Variant) -> void:
 	player_values[value_name] = value
+
+## 为旧存档补齐八种牌型的容量和序列，不修改已有配装内容。
+func normalize_taiwu_loadout_defaults() -> void:
+	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
+		if not player_gongfa_hand_slot_counts.has(hand_type_id):
+			player_gongfa_hand_slot_counts[hand_type_id] = 1
+		if not player_gongfa_hand_sequences.has(hand_type_id):
+			player_gongfa_hand_sequences[hand_type_id] = []
+	player_neigong_slot_count = max(player_neigong_slot_count, 0)
+
+## 将真气实例加入新真气牌组；固定定义对象不得直接传入。
+func add_qi_instance(qi_data: QiData) -> bool:
+	if qi_data == null or qi_data.object_uid == "" or not qi_data.is_valid_qi():
+		return false
+	for owned_qi_data: QiData in player_qi_deck:
+		if owned_qi_data.object_uid == qi_data.object_uid:
+			return false
+	player_qi_deck.append(qi_data)
+	Signals.player_qi_changed.emit()
+	return true
+
+## 将完整的 52 张标准扑克牌实例加入本局；重复调用只保留尚未拥有的牌。
+func add_standard_qi_deck() -> int:
+	var added_count: int = 0
+	for qi_data: QiData in Global.get_standard_qi_deck_from_prototypes():
+		if add_qi_instance(qi_data):
+			added_count += 1
+	return added_count
+
+## 按固定内容 ID查找本局拥有的所有真气实例；同一固定牌面未来允许出现多份。
+func get_owned_qi_by_definition_id(qi_object_id: String) -> Array[QiData]:
+	var result: Array[QiData] = []
+	for qi_data: QiData in player_qi_deck:
+		if qi_data != null and qi_data.object_id == qi_object_id:
+			result.append(qi_data)
+	return result
+
+## 按实例 UID 移除一张真气。
+func remove_qi_instance(qi_instance_uid: String) -> bool:
+	for qi_index: int in player_qi_deck.size():
+		if player_qi_deck[qi_index].object_uid == qi_instance_uid:
+			player_qi_deck.remove_at(qi_index)
+			Signals.player_qi_changed.emit()
+			return true
+	return false
+
+## 按本局实例 UID 读取一张真气；不存在时返回 null。
+func get_owned_qi(qi_instance_uid: String) -> QiData:
+	for qi_data: QiData in player_qi_deck:
+		if qi_data.object_uid == qi_instance_uid:
+			return qi_data
+	return null
+
+## 根据固定功法 ID 查找本局唯一实例。
+func get_owned_gongfa_by_definition_id(gongfa_object_id: String) -> GongfaData:
+	for gongfa_data: GongfaData in player_gongfa_uid_to_gongfa_data.values():
+		if gongfa_data.object_id == gongfa_object_id:
+			return gongfa_data
+	return null
+
+## 按实例 UID 读取已拥有功法。
+func get_owned_gongfa(gongfa_instance_uid: String) -> GongfaData:
+	return player_gongfa_uid_to_gongfa_data.get(gongfa_instance_uid, null)
+
+## 加入一个此前未拥有的功法实例。
+func add_gongfa_instance(gongfa_data: GongfaData) -> bool:
+	if gongfa_data == null or gongfa_data.object_uid == "" or not gongfa_data.is_valid_gongfa():
+		return false
+	if get_owned_gongfa_by_definition_id(gongfa_data.object_id) != null:
+		return false
+	player_gongfa_uid_to_gongfa_data[gongfa_data.object_uid] = gongfa_data
+	Signals.player_gongfa_changed.emit()
+	return true
+
+## 移除一个功法实例，并清理所有引用该实例的牌型槽。
+func remove_gongfa_instance(gongfa_instance_uid: String) -> bool:
+	if not player_gongfa_uid_to_gongfa_data.has(gongfa_instance_uid):
+		return false
+	player_gongfa_uid_to_gongfa_data.erase(gongfa_instance_uid)
+	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
+		var current_sequence: Array = player_gongfa_hand_sequences.get(hand_type_id, [])
+		while current_sequence.has(gongfa_instance_uid):
+			current_sequence.erase(gongfa_instance_uid)
+		player_gongfa_hand_sequences[hand_type_id] = current_sequence
+	Signals.player_gongfa_changed.emit()
+	Signals.player_gongfa_loadout_changed.emit()
+	return true
+
+## 通过预览拦截器纯查询功法当前有效可配置次数。
+func get_effective_gongfa_equip_count(gongfa_instance_uid: String) -> int:
+	var gongfa_data: GongfaData = get_owned_gongfa(gongfa_instance_uid)
+	if gongfa_data == null:
+		return 0
+	var query_action: ActionQueryGongfaEquipCount = ActionQueryGongfaEquipCount.new()
+	query_action.init(Global.get_player(), null, [], {
+		"gongfa_data": gongfa_data,
+		"gongfa_equip_count": gongfa_data.gongfa_owned_count,
+	}, null)
+	return query_action.query_effective_count()
+
+## 校验一份完整功法配装；该方法只读取状态，不修改本局。
+func validate_gongfa_loadout(candidate_sequences: Dictionary) -> bool:
+	var use_count_by_gongfa_uid: Dictionary[String, int] = {}
+	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
+		var sequence_value: Variant = candidate_sequences.get(hand_type_id, [])
+		if not sequence_value is Array:
+			return false
+		var sequence: Array = sequence_value
+		if sequence.size() > player_gongfa_hand_slot_counts.get(hand_type_id, 1):
+			return false
+		for gongfa_instance_uid_value: Variant in sequence:
+			if not gongfa_instance_uid_value is String:
+				return false
+			var gongfa_instance_uid: String = gongfa_instance_uid_value
+			var gongfa_data: GongfaData = get_owned_gongfa(gongfa_instance_uid)
+			if gongfa_data == null or not gongfa_data.supports_hand_type(hand_type_id):
+				return false
+			use_count_by_gongfa_uid[gongfa_instance_uid] = \
+				use_count_by_gongfa_uid.get(gongfa_instance_uid, 0) + 1
+	for gongfa_instance_uid: String in use_count_by_gongfa_uid:
+		if use_count_by_gongfa_uid[gongfa_instance_uid] \
+				> get_effective_gongfa_equip_count(gongfa_instance_uid):
+			return false
+	return true
+
+## 一次性替换全部功法序列；任一规则失败时不修改原配装。
+func set_gongfa_loadout(candidate_sequences: Dictionary) -> bool:
+	if not validate_gongfa_loadout(candidate_sequences):
+		return false
+	var normalized_sequences: Dictionary[String, Array] = {}
+	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
+		normalized_sequences[hand_type_id] = candidate_sequences.get(hand_type_id, []).duplicate()
+	player_gongfa_hand_sequences = normalized_sequences
+	Signals.player_gongfa_loadout_changed.emit()
+	return true
+
+## 返回当前功法配装是否仍满足动态有效次数等全部规则。
+func is_current_gongfa_loadout_valid() -> bool:
+	return validate_gongfa_loadout(player_gongfa_hand_sequences)
+
+## 根据固定内功 ID 返回本局所有对应实例。
+func get_owned_neigong_by_definition_id(neigong_object_id: String) -> Array[NeigongData]:
+	var result: Array[NeigongData] = []
+	for neigong_data: NeigongData in player_neigong_uid_to_neigong_data.values():
+		if neigong_data.object_id == neigong_object_id:
+			result.append(neigong_data)
+	return result
+
+## 按实例 UID 读取已拥有内功。
+func get_owned_neigong(neigong_instance_uid: String) -> NeigongData:
+	return player_neigong_uid_to_neigong_data.get(neigong_instance_uid, null)
+
+## 加入一个内功实例。
+func add_neigong_instance(neigong_data: NeigongData) -> bool:
+	if neigong_data == null or neigong_data.object_uid == "" or not neigong_data.is_valid_neigong():
+		return false
+	if player_neigong_uid_to_neigong_data.has(neigong_data.object_uid):
+		return false
+	player_neigong_uid_to_neigong_data[neigong_data.object_uid] = neigong_data
+	Signals.player_neigong_changed.emit()
+	return true
+
+## 移除一个内功实例，并从装备序列中清理该实例。
+func remove_neigong_instance(neigong_instance_uid: String) -> bool:
+	if not player_neigong_uid_to_neigong_data.has(neigong_instance_uid):
+		return false
+	player_neigong_uid_to_neigong_data.erase(neigong_instance_uid)
+	player_equipped_neigong_uids.erase(neigong_instance_uid)
+	Signals.player_neigong_changed.emit()
+	Signals.player_neigong_loadout_changed.emit()
+	return true
+
+## 校验一份完整内功配装；该方法只读取状态，不修改本局。
+func validate_neigong_loadout(candidate_uids: Array[String]) -> bool:
+	if candidate_uids.size() > player_neigong_slot_count:
+		return false
+	var seen_uids: Dictionary[String, bool] = {}
+	for neigong_instance_uid: String in candidate_uids:
+		if seen_uids.has(neigong_instance_uid) \
+				or not player_neigong_uid_to_neigong_data.has(neigong_instance_uid):
+			return false
+		seen_uids[neigong_instance_uid] = true
+	return true
+
+## 一次性替换完整内功装备；任一规则失败时不修改原配装。
+func set_neigong_loadout(candidate_uids: Array[String]) -> bool:
+	if not validate_neigong_loadout(candidate_uids):
+		return false
+	player_equipped_neigong_uids.assign(candidate_uids)
+	Signals.player_neigong_loadout_changed.emit()
+	return true
+
+## 返回指定内功实例当前是否处于装备状态。
+func is_neigong_equipped(neigong_instance_uid: String) -> bool:
+	return player_equipped_neigong_uids.has(neigong_instance_uid)
 
 #endregion
 #region Rest actions
@@ -507,7 +734,7 @@ func remove_artifact_from_pool(artifact_object_id: String) -> void:
 
 func add_artifact(artifact_id: String) -> void:
 	# adds an artifact to the player as if they obtained it
-	if not player_artifact_uid_to_artifact_data.has(artifact_id):
+	if get_player_artifacts_with_artifact_id(artifact_id).is_empty():
 		var artifact_data: ArtifactData = Global.get_artifact_data_from_prototype(artifact_id)
 		
 		if artifact_data == null:
@@ -555,6 +782,19 @@ func get_player_artifacts_with_artifact_id(artifact_object_id: String) -> Array[
 	
 	return returned_artifacts
 #endregion
+
+## 修复 PlayerData 原型复制后仍引用旧功法、内功实例 UID 的配装字段。
+func _repair_internal_uids(old_uid_to_new_uid: Dictionary[String, String]) -> void:
+	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
+		var sequence: Array = player_gongfa_hand_sequences.get(hand_type_id, [])
+		for sequence_index: int in sequence.size():
+			sequence[sequence_index] = old_uid_to_new_uid.get(
+				sequence[sequence_index], sequence[sequence_index])
+		player_gongfa_hand_sequences[hand_type_id] = sequence
+	for equipped_index: int in player_equipped_neigong_uids.size():
+		player_equipped_neigong_uids[equipped_index] = old_uid_to_new_uid.get(
+			player_equipped_neigong_uids[equipped_index],
+			player_equipped_neigong_uids[equipped_index])
 
 ## Gets the texture corresponding to the color for this player.
 func get_player_character_color_texture_path() -> String:

@@ -115,7 +115,9 @@ func perform_action() -> void:
 					# location.location_event_object_id = "event_act_1_easy_combat_1"
 					location.location_event_pool_object_id = act_data.act_easy_combat_event_pool_object_id
 				elif k == 3:
-					location.location_type = LocationData.LOCATION_TYPES.SHOP
+					# 商店改为地图常驻入口，原商店楼层并入普通事件池。
+					location.location_type = LocationData.LOCATION_TYPES.EVENT
+					location.location_event_pool_object_id = act_data.act_non_combat_event_pool_object_id
 				elif k < 3:
 					# easy pool
 					location.location_type = LocationData.LOCATION_TYPES.COMBAT

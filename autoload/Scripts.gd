@@ -84,6 +84,21 @@ const ACTION_CLEAR_REWARDS = "res://scripts/actions/rewards/ActionClearRewards.g
 # shop
 const ACTION_SHOP_PURCHASE_ITEMS: String = "res://scripts/actions/shop_actions/ActionShopPurchaseItems.gd"
 const ACTION_SHOP_POPULATE_ITEMS: String = "res://scripts/actions/shop_actions/ActionShopPopulateItems.gd"
+const ACTION_SHOP_MEDITATE: String = "res://scripts/actions/shop_actions/ActionShopMeditate.gd"
+
+# 太吾领域数据行为
+const ACTION_ADD_QI: String = "res://scripts/actions/taiwu_actions/ActionAddQi.gd"
+const ACTION_REMOVE_QI: String = "res://scripts/actions/taiwu_actions/ActionRemoveQi.gd"
+const ACTION_ADD_GONGFA: String = "res://scripts/actions/taiwu_actions/ActionAddGongfa.gd"
+const ACTION_REMOVE_GONGFA: String = "res://scripts/actions/taiwu_actions/ActionRemoveGongfa.gd"
+const ACTION_SET_GONGFA_LOADOUT: String = "res://scripts/actions/taiwu_actions/ActionSetGongfaLoadout.gd"
+const ACTION_ADD_NEIGONG: String = "res://scripts/actions/taiwu_actions/ActionAddNeigong.gd"
+const ACTION_REMOVE_NEIGONG: String = "res://scripts/actions/taiwu_actions/ActionRemoveNeigong.gd"
+const ACTION_SET_NEIGONG_LOADOUT: String = "res://scripts/actions/taiwu_actions/ActionSetNeigongLoadout.gd"
+const ACTION_APPLY_QI_RESHAPE: String = "res://scripts/actions/taiwu_actions/ActionApplyQiReshape.gd"
+const ACTION_REMOVE_QI_RESHAPE: String = "res://scripts/actions/taiwu_actions/ActionRemoveQiReshape.gd"
+const ACTION_APPLY_QI_ANOMALY: String = "res://scripts/actions/taiwu_actions/ActionApplyQiAnomaly.gd"
+const ACTION_REMOVE_QI_ANOMALY: String = "res://scripts/actions/taiwu_actions/ActionRemoveQiAnomaly.gd"
 
 # artifact actions
 const ACTION_INCREASE_ARTIFACT_CHARGE: String = "res://scripts/actions/artifact_actions/ActionIncreaseArtifactCharge.gd"
@@ -97,6 +112,8 @@ const ACTION_CARD_PLAY_END: String = "res://scripts/actions/card_actions/card_pl
 const ACTION_CHANGE_CARD_PLAY_DESTINATION: String = "res://scripts/actions/card_actions/card_play_actions/ActionChangeCardPlayDestination.gd"
 # 	pick card actions, used to select cards and typically apply cardset child actions
 const ACTION_PICK_CARDS: String = "res://scripts/actions/card_actions/pick_card_actions/ActionPickCards.gd"
+## 真气多选动作脚本路径。
+const ACTION_PICK_QI: String = "res://scripts/actions/taiwu_actions/ActionPickQi.gd"
 const ACTION_PICK_UPGRADE_CARDS: String = "res://scripts/actions/card_actions/pick_card_actions/ActionPickUpgradeCards.gd"
 const ACTION_PICK_DUPLICATE_CARDS: String = "res://scripts/actions/card_actions/pick_card_actions/ActionPickDuplicateCards.gd"
 const ACTION_CREATE_CARDS: String = "res://scripts/actions/card_actions/pick_card_actions/ActionCreateCards.gd"

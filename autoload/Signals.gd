@@ -55,6 +55,10 @@ signal card_queue_refunded
 # card picking
 signal card_pick_requested(card_pick_action: ActionBasePickCards)	# an action has requested cards from the player. Action's card_pick_type affects the ui used for selection
 signal card_pick_confirmed	# the card pick is finished
+## 一个真气选择动作请求打开独立选择界面。
+signal qi_pick_requested(qi_pick_action: ActionBasePickQi)
+## 真气选择界面已经确认或取消当前选择。
+signal qi_pick_confirmed
 
 signal card_added_to_deck(card_data: CardData) # card was added to player's permanent deck
 signal card_removed_from_deck(card_data: CardData) # card was removed from player's permanent deck
@@ -83,14 +87,36 @@ signal player_health_changed
 signal player_artifacts_changed # used for updating the ui
 signal player_artifact_added(artifact_data: ArtifactData)
 signal player_artifact_removed(artifact_data: ArtifactData)
+## 本局真气牌组发生变化。
+signal player_qi_changed
+## 本局或战斗中的真气重塑状态发生变化。
+signal qi_reshape_changed(qi_instance_uid: String, scope: String)
+## 本局或战斗中的真气异状状态发生变化。
+signal qi_anomaly_changed(qi_instance_uid: String, scope: String)
+## 本局拥有的功法或其获得次数发生变化。
+signal player_gongfa_changed
+## 八种牌型的功法配装发生变化。
+signal player_gongfa_loadout_changed
+## 本局拥有的内功发生变化。
+signal player_neigong_changed
+## 内功装备顺序发生变化。
+signal player_neigong_loadout_changed
 signal combat_stat_changed(stat_enum: int)	# can be used to hook into certain stats
 #endregion
 
 #region Overworld
 signal map_location_selected(location_data: LocationData)	# the player clicked on a location that can be traveled to
+## 读档恢复到节点已结算的地图待选阶段，不重新进入当前节点。
+signal map_waiting_restored
 signal chest_opened	# player has opened a chest
 signal shop_opened	# player has opened a shop
 signal shop_visited_first_time # player has visited a shop for the first time
+## 商店候选、价格或空槽发生变化，界面应只重绘而不重新生成。
+signal shop_inventory_changed
+## 一次购买或冥想已经提交，等待行为队列结束后可以保存本局。
+signal shop_transaction_committed
+## 当前节点及其奖励已经全部完成；相同 completion_token 只能刷新一次商店。
+signal node_completed(location_data: LocationData, completion_token: String)
 signal dialogue_started
 signal dialogue_ended
 signal rest_action_ended(rest_action_id: String) # a rest action has finished
@@ -100,6 +126,12 @@ signal rest_action_ended(rest_action_id: String) # a rest action has finished
 # turns
 signal combat_started(event_id: String) # invokes combat when emitted. If empty string for event_id, will use the location's combat event
 signal combat_ended
+## 敌我任一真气牌区已经提交变化，战斗界面应重新读取当前牌区。
+signal qi_zones_changed
+## 玩家确认双方待结算区后发出的冻结行动请求。
+signal qi_action_ready(request: QiActionRequest)
+## 结算器完成冻结行动并将真气移入后续牌区。
+signal qi_action_completed(request: QiActionRequest)
 signal player_turn_started
 signal player_turn_ended
 signal enemy_turn_started
@@ -129,6 +161,12 @@ signal enemy_spawn_requested(enemy_object_id: String, slot_id: int)	# requests s
 signal artifact_proc(artifact_data: ArtifactData)	# an artifact's effect has been triggered
 signal artifact_counter_changed(artifact_data: ArtifactData)
 signal artifact_purchased(artifact_data: ArtifactData)
+## 玩家从商店购买了一张真气定义。
+signal qi_purchased(qi_object_id: String)
+## 玩家从商店购买了一门功法定义。
+signal gongfa_purchased(gongfa_object_id: String)
+## 玩家从商店购买了一门内功定义。
+signal neigong_purchased(neigong_object_id: String)
 
 # consumables
 signal consumable_discarded(consumable_index: int, consumable_object_id: String)	# player got rid of a consumable

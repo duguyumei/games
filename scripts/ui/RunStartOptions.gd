@@ -99,6 +99,9 @@ func _on_dialogue_option_clicked(dialogue_option: DialogueOption):
 	if ActionHandler.actions_being_performed:
 		await ActionHandler.actions_ended
 	
+	# 初始选择完成后才进入正式地图待选阶段，并立即保存该阶段。
+	Global.player_data.player_waiting_for_node_selection = true
+	FileLoader.autosave()
 	map.can_travel = true
 	map.show_map()
 	

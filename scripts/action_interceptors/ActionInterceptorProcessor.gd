@@ -15,6 +15,12 @@ var target: BaseCombatant = null	# the sub target to use for interception proces
 ## instead of modifying this directly.
 var shadowed_action_values: Dictionary = {}
 
+## 当前正在执行的拦截器来源上下文；拦截器只能通过 getter 读取副本。
+var _current_source_context: Dictionary[String, Variant] = {}
+
+## 当前拦截器是否运行在无副作用预览模式。
+var _is_preview_mode: bool = false
+
 func _init(_parent_action: BaseAction, _target: BaseCombatant):
 	parent_action = _parent_action
 	target = _target
@@ -23,15 +29,55 @@ func _init(_parent_action: BaseAction, _target: BaseCombatant):
 ## iterates over all interceptors, returning if the chain was accepted or rejected for further processing the action
 ## preview_mode flag is used for things like displaying cards in hand after modifiers or hovering cards over enemies. This tells interceptors to not create actual side effects
 func process_interceptor_chain(preview_mode: bool = false) -> bool:
-	var action_interceptors: Array[BaseActionInterceptor] = _get_action_interceptors_modifying_pair(parent_action, parent_action.parent_combatant, target)
-	for action_interceptor in action_interceptors:
+	var action_interceptors: Array[Dictionary] = _get_action_interceptors_modifying_pair(parent_action, parent_action.parent_combatant, target)
+	if preview_mode:
+		ActionHandler.begin_action_interceptor_preview()
+	var accepted: bool = true
+	_is_preview_mode = preview_mode
+	for interceptor_entry: Dictionary in action_interceptors:
+		var action_interceptor: BaseActionInterceptor = interceptor_entry["interceptor"]
+		_current_source_context = interceptor_entry["source_context"].duplicate(true)
 		var result: int = action_interceptor.process_action_interception(self, preview_mode)
 		if result == BaseActionInterceptor.ACTION_ACCEPTENCES.STOPPED:
 			break
 		if result == BaseActionInterceptor.ACTION_ACCEPTENCES.REJECTED:
-			return false
-	
-	return true
+			accepted = false
+			break
+	_current_source_context.clear()
+	_is_preview_mode = false
+	if preview_mode:
+		ActionHandler.end_action_interceptor_preview()
+	return accepted
+
+## 返回当前拦截器的只读来源上下文副本。
+func get_source_context() -> Dictionary[String, Variant]:
+	return _current_source_context.duplicate(true)
+
+## 返回当前是否处于禁止副作用的预览查询。
+func is_preview_mode() -> bool:
+	return _is_preview_mode
+
+## 根据当前来源上下文解析对应的本局实例；未知或旧来源返回 null。
+func get_source_instance() -> Variant:
+	var source_kind: String = _current_source_context.get("source_kind", "")
+	var source_instance_id: String = _current_source_context.get("source_instance_id", "")
+	match source_kind:
+		"artifact":
+			return _protect_preview_source(Global.player_data \
+				.player_artifact_uid_to_artifact_data.get(source_instance_id, null))
+		"neigong":
+			return _protect_preview_source(
+				Global.player_data.get_owned_neigong(source_instance_id))
+		"gongfa":
+			return _protect_preview_source(
+				Global.player_data.get_owned_gongfa(source_instance_id))
+	return null
+
+## 预览模式返回来源资源深副本，正式模式返回真实本局实例。
+func _protect_preview_source(source_instance: Variant) -> Variant:
+	if _is_preview_mode and source_instance is Resource:
+		return source_instance.duplicate(true)
+	return source_instance
 
 ## Used by both interceptors during processing, then by the action after processing has taken place.
 ## this will shadow the parent action's values, allowing for interceptors to "modify" an action's
@@ -56,9 +102,9 @@ func set_shadowed_action_values(key: String, value: Variant) -> void:
 ## Both parent and target can be the same, and one or both can be null.
 ## Additional flags ignore_all_interceptors, ignored_interceptor_ids, and forced_interceptor_ids can
 ## be provided through the action's values to alter which interceptors are allowed to be populated.
-func _get_action_interceptors_modifying_pair(action: BaseAction, parent_combatant: BaseCombatant, target_combatant: BaseCombatant) -> Array[BaseActionInterceptor]:
-	var returned_action_interceptors: Array[BaseActionInterceptor] = []
-	var interceptor_data_list: Array[ActionInterceptorData] = [] # used to sort by priority before creating returned interceptors
+func _get_action_interceptors_modifying_pair(action: BaseAction, parent_combatant: BaseCombatant, target_combatant: BaseCombatant) -> Array[Dictionary]:
+	var returned_action_interceptors: Array[Dictionary] = []
+	var interceptor_entries: Array[Dictionary] = []
 	
 	### Get interceptor flags from action data
 	# Use ignore_all_interceptors = true for actions which should always be performed unmodified
@@ -76,12 +122,15 @@ func _get_action_interceptors_modifying_pair(action: BaseAction, parent_combatan
 	
 	### Parent Interceptors
 	# get ids of all interceptors the parent has
-	var parent_action_interceptor_object_ids: Array[String] = []
-	parent_action_interceptor_object_ids.assign(ActionHandler._registered_action_interceptor_object_ids.get(parent_combatant, []))
+	var parent_registrations: Array[ActionInterceptorRegistration] = []
+	parent_registrations.assign(ActionHandler._registered_action_interceptors.get(parent_combatant, []))
 	
 	# get data objects of all corresponding interceptors affecting the parent
-	for action_interceptor_object_id in parent_action_interceptor_object_ids:
+	for registration: ActionInterceptorRegistration in parent_registrations:
+		var action_interceptor_object_id: String = registration.interceptor_id
 		var action_interceptor_data: ActionInterceptorData = Global.get_action_interceptor_data(action_interceptor_object_id)
+		if action_interceptor_data == null:
+			continue
 		# filter ignored interceptors
 		if ignored_interceptor_ids.has(action_interceptor_object_id):
 			continue
@@ -90,17 +139,20 @@ func _get_action_interceptors_modifying_pair(action: BaseAction, parent_combatan
 			# must modifiy this action
 			var action_script_path: String = action.get_script().resource_path
 			if action_interceptor_data.action_intercepted_action_paths.has(action_script_path):
-				interceptor_data_list.append(action_interceptor_data)
+				interceptor_entries.append({"data": action_interceptor_data, "registration": registration})
 				forced_interceptor_ids.erase(action_interceptor_object_id)
 	
 	### Target Interceptors
 	# get ids of all interceptors the target has
-	var target_action_interceptor_object_ids: Array[String] = []
-	target_action_interceptor_object_ids.assign(ActionHandler._registered_action_interceptor_object_ids.get(target_combatant, []))
+	var target_registrations: Array[ActionInterceptorRegistration] = []
+	target_registrations.assign(ActionHandler._registered_action_interceptors.get(target_combatant, []))
 	
 	# get data objects of all corresponding affecting the target
-	for action_interceptor_object_id in target_action_interceptor_object_ids:
+	for registration: ActionInterceptorRegistration in target_registrations:
+		var action_interceptor_object_id: String = registration.interceptor_id
 		var action_interceptor_data: ActionInterceptorData = Global.get_action_interceptor_data(action_interceptor_object_id)
+		if action_interceptor_data == null:
+			continue
 		# filter ignored interceptors
 		if ignored_interceptor_ids.has(action_interceptor_object_id):
 			continue
@@ -110,35 +162,51 @@ func _get_action_interceptors_modifying_pair(action: BaseAction, parent_combatan
 			# must modifiy this action
 			var action_script_path: String = action.get_script().resource_path
 			if action_interceptor_data.action_intercepted_action_paths.has(action_script_path):
-				interceptor_data_list.append(action_interceptor_data)
+				interceptor_entries.append({"data": action_interceptor_data, "registration": registration})
 				forced_interceptor_ids.erase(action_interceptor_object_id)
 	
 	### Forced Interceptors
 	# apply forced parent interceptors from action data
 	for forced_interceptor_id: String in forced_interceptor_ids:
-		if parent_action_interceptor_object_ids.has(forced_interceptor_id):
+		if parent_registrations.any(func(registration: ActionInterceptorRegistration) -> bool:
+			return registration.interceptor_id == forced_interceptor_id):
 			continue # ignore duplicates
-		if target_action_interceptor_object_ids.has(forced_interceptor_id):
+		if target_registrations.any(func(registration: ActionInterceptorRegistration) -> bool:
+			return registration.interceptor_id == forced_interceptor_id):
 			continue # ignore duplicates
 		var action_interceptor_data: ActionInterceptorData = Global.get_action_interceptor_data(forced_interceptor_id)
-		interceptor_data_list.append(action_interceptor_data)
+		if action_interceptor_data == null:
+			continue
+		var forced_registration := ActionInterceptorRegistration.new(
+			forced_interceptor_id, "forced", "", 0, 0)
+		interceptor_entries.append({"data": action_interceptor_data, "registration": forced_registration})
 	
 	### Return
 	# sort interceptor data by their priority
-	interceptor_data_list.sort_custom(_sort_action_interceptor_priorities)
+	interceptor_entries.sort_custom(_sort_action_interceptor_entries)
 	
 	# create interceptors from data
-	for action_interceptor_data in interceptor_data_list:
+	for interceptor_entry: Dictionary in interceptor_entries:
+		var action_interceptor_data: ActionInterceptorData = interceptor_entry["data"]
+		var registration: ActionInterceptorRegistration = interceptor_entry["registration"]
 		# create interceptor
 		var action_interceptor_asset = load(action_interceptor_data.action_interceptor_script_path)
 		var action_interceptor: BaseActionInterceptor = action_interceptor_asset.new()
-		returned_action_interceptors.append(action_interceptor)
+		returned_action_interceptors.append({
+			"interceptor": action_interceptor,
+			"source_context": registration.get_source_context(),
+		})
 	
 	return returned_action_interceptors
 
-func _sort_action_interceptor_priorities(action_interceptor_data_1: ActionInterceptorData, action_interceptor_data_2: ActionInterceptorData) -> bool:
-	# custom sort method for sorting the priorities of a given list of interceptors
-	if action_interceptor_data_1.action_interceptor_priority == action_interceptor_data_2.action_interceptor_priority:
-		return action_interceptor_data_1.object_id > action_interceptor_data_2.object_id
-	else:
-		return action_interceptor_data_1.action_interceptor_priority > action_interceptor_data_2.action_interceptor_priority
+func _sort_action_interceptor_entries(entry_1: Dictionary, entry_2: Dictionary) -> bool:
+	# 优先级较高者先执行；同优先级按装备顺序和稳定注册顺序执行。
+	var data_1: ActionInterceptorData = entry_1["data"]
+	var data_2: ActionInterceptorData = entry_2["data"]
+	if data_1.action_interceptor_priority != data_2.action_interceptor_priority:
+		return data_1.action_interceptor_priority > data_2.action_interceptor_priority
+	var registration_1: ActionInterceptorRegistration = entry_1["registration"]
+	var registration_2: ActionInterceptorRegistration = entry_2["registration"]
+	if registration_1.source_order != registration_2.source_order:
+		return registration_1.source_order < registration_2.source_order
+	return registration_1.registration_order < registration_2.registration_order

@@ -1,0 +1,17 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_enhancement_multiplier",
+		"reshape_name": "乘势",
+		"reshape_description": "参与功法数值计算时，本次功法倍率加 1。",
+		"reshape_texture_path": "",
+		"reshape_slot": "enhancement",
+		"reshape_kind": "enhancement",
+		"origin_operation": "",
+		"default_scope": "run",
+		"allowed_scopes": ["run"],
+		"replacement_group": "qi_enhancement",
+		"effect_script_path": "",
+		"effect_config": {"multiplier_add": 1}
+	}
+}

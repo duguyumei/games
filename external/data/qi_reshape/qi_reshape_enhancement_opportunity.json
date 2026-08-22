@@ -1,0 +1,17 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_enhancement_opportunity",
+		"reshape_name": "机缘",
+		"reshape_description": "正式确认时有五分之一概率使功法倍率加 1，十分之一概率获得 20 点历练。",
+		"reshape_texture_path": "",
+		"reshape_slot": "enhancement",
+		"reshape_kind": "enhancement",
+		"origin_operation": "",
+		"default_scope": "run",
+		"allowed_scopes": ["run"],
+		"replacement_group": "qi_enhancement",
+		"effect_script_path": "",
+		"effect_config": {"multiplier_chance_denominator": 5, "experience_chance_denominator": 10, "experience_reward": 20}
+	}
+}

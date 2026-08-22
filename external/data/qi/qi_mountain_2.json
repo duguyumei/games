@@ -1,0 +1,16 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_mountain_2",
+		"qi_name": "方块 2",
+		"qi_description": "方块的2真气。",
+		"qi_texture_path": "",
+		"qi_attribute": 3,
+		"qi_rank": 2,
+		"qi_value": -1,
+		"qi_permanent_value_modifier": 0,
+		"qi_permanent_state": {},
+		"qi_reshape_states": [],
+		"qi_persistent_anomaly_states": []
+	}
+}

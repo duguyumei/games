@@ -4,6 +4,11 @@
 extends BaseAction
 
 func perform_action():
+	# 第一阶段真气战斗只支持唯一敌人，召唤不能产生部分牌区状态。
+	if Global.battle_qi_state != null \
+		and Global.battle_qi_state.get_active_enemy_instance_id() != "":
+		DebugLogger.log_warning("Qi combat currently rejects additional enemy summons")
+		return
 	var action_interceptor_processors: Array[ActionInterceptorProcessor] = _intercept_action()
 	
 	for action_interceptor_processor in action_interceptor_processors:

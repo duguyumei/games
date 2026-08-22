@@ -88,6 +88,8 @@ func _on_combat_started(_event_id: String):
 
 func _on_continue_button_up():
 	if not Global.is_end_of_run():
+		# 休息操作全部结束并确认离开后，才提交本节点和刷新商店。
+		Global.complete_current_node()
 		map.can_travel = true
 		map.show_map()
 	else:

@@ -5,12 +5,12 @@
 ## NOTE: Use ActionGenerator to create interceptable Hand related actions, which call these methods
 extends Node
 
-## How many cards player naturally draws at start of turn. See: ActionGenerator.generate_start_of_turn_draw_actions().
+## 旧的固定回合抽牌默认值；当前战斗流程会显式传入手牌缺口。
 const PLAYER_CARD_DRAW_PER_TURN: int = 5
 
-## The default max number of cards available in player's hand. Exceeding this will discard the cards.
+## 玩家基础手牌上限；回合开始时会补牌至该数量。
 ## Intercept ActionAddCardsToHand and ActionDraw's hand_card_count_max to adjust the max hand size.
-const PLAYER_DEFAULT_HAND_CARD_COUNT_MAX: int = 10
+const PLAYER_DEFAULT_HAND_CARD_COUNT_MAX: int = 8
 
 ## If multipe cards are queueed how long it takes between them. Tweaking this will speed up plays slightly
 const TIME_BETWEEN_CARD_PLAYS: float = 0.2
@@ -555,6 +555,15 @@ func _on_combat_started(_event_id: String):
 	HandManager.cards_retained_this_turn.clear()
 	HandManager.cards_with_modified_turn_energy.clear()
 	HandManager.clear_card_queue()
+	# 标准战斗已经切换为真气牌区时，只清空旧牌区，不再从 player_deck 创建 CardData 战斗副本。
+	if Global.battle_qi_state != null:
+		HandManager.player_hand.clear()
+		HandManager.player_draw.clear()
+		HandManager.player_discard.clear()
+		HandManager.player_exhaust.clear()
+		HandManager._empty_custom_piles()
+		hand.clear_hand_cards()
+		return
 	HandManager.reset_deck()
 	
 func _on_combat_ended():
@@ -603,14 +612,9 @@ func draw_cards(number_of_cards: int, hand_card_count_max: int) -> void:
 		if len(HandManager.player_hand) >= hand_card_count_max:
 			Signals.card_hand_limit_reached.emit()
 			break
-		# check if enough cards to draw
+		# 抽牌堆为空时停止抽牌；弃牌堆只会被明确的洗牌效果回收。
 		if len(HandManager.player_draw) == 0:
-			# try to reshuffle
-			if len(HandManager.player_discard) == 0:
-				# no cards to shuffle into draw
-				break
-			else:
-				shuffle_draw(true, true)
+			break
 		
 		# draw
 		var card_data: CardData = HandManager.player_draw.pop_back()

@@ -167,25 +167,154 @@ func generate_add_location_rewards() -> void:
 	var grant_reward_action: BaseAction = ActionGenerator.create_actions(player, null, [player], action_data, null)[0]
 	grant_reward_action.perform_action()
 
-## Generates and processes an action to populate a shop with given items and their parallel prices.
-## Called from ShopData.visit_shop().
-func generate_populate_shop_items(shop_cards: Array[CardData], shop_card_prices: Array[int],
-shop_artifact_ids: Array[String], shop_artifact_prices: Array[int], 
-shop_consumable_ids: Array[String], shop_consumable_prices: Array[int]) -> void:
+## 生成并立即执行一次可拦截的商店分栏刷新。
+func generate_populate_shop_items(
+		normal_offers: Dictionary[String, ShopOfferData],
+		pack_offers: Dictionary[String, ShopOfferData],
+		artifact_offers: Dictionary[String, ShopOfferData],
+		replace_normal: bool,
+		replace_pack: bool,
+		replace_artifact: bool,
+		refresh_token: String) -> void:
 	var action_data: Array[Dictionary] = [{
 		Scripts.ACTION_SHOP_POPULATE_ITEMS: {
-			"shop_cards": shop_cards,
-			"shop_card_prices": shop_card_prices,
-			"shop_artifact_ids": shop_artifact_ids,
-			"shop_artifact_prices": shop_artifact_prices,
-			"shop_consumable_ids": shop_consumable_ids,
-			"shop_consumable_prices": shop_consumable_prices,
+			"normal_offers": normal_offers,
+			"pack_offers": pack_offers,
+			"artifact_offers": artifact_offers,
+			"replace_normal": replace_normal,
+			"replace_pack": replace_pack,
+			"replace_artifact": replace_artifact,
+			"refresh_token": refresh_token,
 			}
 		}]
 	var generated_action: BaseAction = ActionGenerator.create_actions(Global.get_player(), null, [], action_data, null)[0]
 	
 	# immediately process this action without ActionHandler
 	generated_action.perform_action()
+
+## 将冥想行为加入统一行为队列，使费用和候选都可以被拦截。
+func generate_shop_meditation() -> void:
+	var shop_data: ShopData = Global.get_shop_data()
+	if shop_data == null:
+		return
+	var action_data: Array[Dictionary] = [{
+		Scripts.ACTION_SHOP_MEDITATE: {
+			"money_amount": shop_data.next_meditation_cost,
+		}
+	}]
+	var generated_action: BaseAction = ActionGenerator.create_actions(
+		Global.get_player(), null, [], action_data, null)[0]
+	ActionHandler.add_action(generated_action)
+
+## 将一个太吾领域行为加入统一行为队列。
+func generate_taiwu_data_action(
+		action_script_path: String,
+		action_values: Dictionary[String, Variant]) -> void:
+	var action_data: Array[Dictionary] = [{action_script_path: action_values}]
+	var generated_action: BaseAction = ActionGenerator.create_actions(
+		Global.get_player(), null, [], action_data, null)[0]
+	ActionHandler.add_action(generated_action)
+
+## 经过行为管线获得一张真气。
+func generate_add_qi(qi_object_id: String) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_ADD_QI, {
+		"qi_object_id": qi_object_id,
+	})
+
+## 经过行为管线移除一张真气实例。
+func generate_remove_qi(qi_instance_uid: String) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_REMOVE_QI, {
+		"qi_instance_uid": qi_instance_uid,
+	})
+
+## 经过行为管线给一张真气应用重塑；scope=run 写入本局，scope=battle 写入战斗现场。
+func generate_apply_qi_reshape(
+		qi_instance_uid: String,
+		reshape_definition_id: String,
+		result_values: Dictionary[String, Variant],
+		scope: String = QiReshapeData.SCOPE_RUN) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_APPLY_QI_RESHAPE, {
+		"qi_instance_uid": qi_instance_uid,
+		"reshape_definition_id": reshape_definition_id,
+		"result_values": result_values,
+		"scope": scope,
+	})
+
+## 经过行为管线移除一张真气的本局重塑槽。
+func generate_remove_qi_reshape(
+		qi_instance_uid: String,
+		reshape_slot: String,
+		scope: String = QiReshapeData.SCOPE_RUN,
+		reshape_state_uid: String = "") -> void:
+	generate_taiwu_data_action(Scripts.ACTION_REMOVE_QI_RESHAPE, {
+		"qi_instance_uid": qi_instance_uid,
+		"reshape_slot": reshape_slot,
+		"reshape_state_uid": reshape_state_uid,
+		"scope": scope,
+	})
+
+## 经过行为管线给一张真气应用异状；scope=run 写入本局，scope=battle 写入战斗现场。
+func generate_apply_qi_anomaly(
+		qi_instance_uid: String,
+		anomaly_definition_id: String,
+		stacks: int = 1,
+		secondary_stacks: int = 0,
+		scope: String = QiAnomalyData.SCOPE_BATTLE) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_APPLY_QI_ANOMALY, {
+		"qi_instance_uid": qi_instance_uid,
+		"anomaly_definition_id": anomaly_definition_id,
+		"stacks": stacks,
+		"secondary_stacks": secondary_stacks,
+		"scope": scope,
+	})
+
+## 经过行为管线移除一张真气的本局异状。
+func generate_remove_qi_anomaly(
+		qi_instance_uid: String,
+		anomaly_definition_id: String,
+		scope: String = QiAnomalyData.SCOPE_BATTLE) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_REMOVE_QI_ANOMALY, {
+		"qi_instance_uid": qi_instance_uid,
+		"anomaly_definition_id": anomaly_definition_id,
+		"scope": scope,
+	})
+
+## 经过行为管线获得功法；默认不允许重复获得。
+func generate_add_gongfa(gongfa_object_id: String) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_ADD_GONGFA, {
+		"gongfa_object_id": gongfa_object_id,
+	})
+
+## 经过行为管线遗忘功法实例的一定次数。
+func generate_remove_gongfa(gongfa_instance_uid: String, remove_count: int = 1) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_REMOVE_GONGFA, {
+		"gongfa_instance_uid": gongfa_instance_uid,
+		"gongfa_remove_count": remove_count,
+	})
+
+## 经过行为管线一次性替换八种牌型的功法序列。
+func generate_set_gongfa_loadout(gongfa_hand_sequences: Dictionary) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_SET_GONGFA_LOADOUT, {
+		"gongfa_hand_sequences": gongfa_hand_sequences,
+	})
+
+## 经过行为管线获得内功；默认不允许同定义重复获得。
+func generate_add_neigong(neigong_object_id: String) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_ADD_NEIGONG, {
+		"neigong_object_id": neigong_object_id,
+	})
+
+## 经过行为管线移除一个内功实例。
+func generate_remove_neigong(neigong_instance_uid: String) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_REMOVE_NEIGONG, {
+		"neigong_instance_uid": neigong_instance_uid,
+	})
+
+## 经过行为管线一次性替换内功装备顺序。
+func generate_set_neigong_loadout(equipped_neigong_uids: Array[String]) -> void:
+	generate_taiwu_data_action(Scripts.ACTION_SET_NEIGONG_LOADOUT, {
+		"equipped_neigong_uids": equipped_neigong_uids,
+	})
 
 ## Generates and instantly performs an action to give the player an artifact
 func generate_add_artifact(artifact_id: String) -> void:

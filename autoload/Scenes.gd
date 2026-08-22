@@ -1,6 +1,8 @@
 extends Node
 
 var CARD: PackedScene = load("res://scenes/ui/card/Card.tscn")
+## 独立的真气扑克牌视图，不复用旧 Card 场景。
+var QI_CARD: PackedScene = load("res://scenes/ui/qi/QiCard.tscn")
 var CARD_TRAIL: PackedScene = load("res://scenes/ui/card/CardTrail.tscn")
 var CARD_DECORATOR: PackedScene = load("res://scenes/ui/card/CardDecorator.tscn")
 
@@ -29,6 +31,8 @@ var BASE_SHOP_BUTTON: PackedScene = load("res://scenes/ui/shop/BaseShopButton.ts
 var CARD_SHOP_BUTTON: PackedScene = load("res://scenes/ui/shop/CardShopButton.tscn")
 var ARTIFACT_SHOP_BUTTON: PackedScene = load("res://scenes/ui/shop/ArtifactShopButton.tscn")
 var CONSUMABLE_SHOP_BUTTON: PackedScene = load("res://scenes/ui/shop/ConsumableShopButton.tscn")
+## 真气、功法、内功和补充包共用的文字商品按钮。
+var CONTENT_SHOP_BUTTON: PackedScene = load("res://scenes/ui/shop/ContentShopButton.tscn")
 
 var TEXT_FADE: PackedScene = load("res://scenes/combatants/fades/TextFade.tscn")
 var ARTIFACT_FADE: PackedScene = load("res://scenes/combatants/fades/ArtifactFade.tscn")

@@ -2,6 +2,9 @@
 extends SerializableData
 class_name ConsumableData
 
+## 消耗品的武侠内容类别；GENERIC 用于兼容已有固定内容。
+enum CONSUMABLE_CATEGORIES {GENERIC, PILL, INSIGHT, CURIO}
+
 @export var consumable_name: String = ""
 ## How this appears in tooltips.
 @export var consumable_description: String = ""
@@ -9,6 +12,9 @@ class_name ConsumableData
 @export var consumable_use_text: String = "Drink"
 ## Display texture path for the consumable.
 @export var consumable_texture_path: String = ""
+
+## 消耗品类别：兼容、丹药、心得或奇珍。
+@export var consumable_category: int = CONSUMABLE_CATEGORIES.GENERIC
 
 ## The color of the consumable. Affects appearances in consumable packs.
 @export var consumable_color_id: String = ""

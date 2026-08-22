@@ -1,6 +1,8 @@
 ## Provides modification and acceptance/rejection of actions as they are being currently processed by ActionHandler
 ## Handled by a parent ActionInterceptorProcessor which stores the final values of the chain
 ## Purely functional. Do not attach properties to these.
+## preview_mode 为 true 时禁止修改实例、发信号或创建正式行为。
+## 可通过 ActionInterceptorProcessor.get_source_context() 和 get_source_instance() 读取来源。
 extends Resource
 class_name BaseActionInterceptor
 

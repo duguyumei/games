@@ -3,10 +3,16 @@ extends Control
 @onready var scroll_container = $ScrollContainer
 @onready var location_container = $ScrollContainer/LocationContainer
 @onready var back_button: Button = $BackButton
+@onready var practice_button: Button = $PracticeButton
+@onready var practice_money_label: Label = $PracticeMoneyLabel
 
 @onready var map_button = %MapButton
 
-var can_travel: bool = false	# if clicking on a location brings you to the next location
+## 是否已经完成当前节点并等待选择下一个节点；修习入口与路线选择共用该门禁。
+var can_travel: bool = false:
+	set(value):
+		can_travel = value
+		_update_practice_access()
 
 ## Adds a margin to the bottom of the map display
 const MAP_Y_MARGIN: float = 150
@@ -14,6 +20,7 @@ const MAP_Y_MARGIN: float = 150
 func _ready():
 	map_button.button_up.connect(_on_map_button_up)
 	back_button.button_up.connect(_on_back_button_up)
+	practice_button.button_up.connect(_on_practice_button_up)
 	
 	Signals.combat_started.connect(_on_combat_started)
 	Signals.combat_ended.connect(_on_combat_ended)
@@ -25,6 +32,10 @@ func _ready():
 	Signals.shop_opened.connect(_on_shop_opened)
 	
 	Signals.map_location_selected.connect(_on_map_location_selected)
+	Signals.map_waiting_restored.connect(_on_map_waiting_restored)
+	Signals.player_money_changed.connect(_on_player_money_changed)
+	_update_practice_access()
+	_on_player_money_changed()
 	
 func populate_locations(locations: Array[LocationData] = Global.get_all_act_locations()):
 	clear_locations()
@@ -76,6 +87,8 @@ func clear_locations() -> void:
 func show_map():
 	populate_locations()
 	visible = true
+	_update_practice_access()
+	_on_player_money_changed()
 
 func hide_map():
 	visible = false
@@ -96,25 +109,33 @@ func _on_map_location_selected(location_data: LocationData):
 	can_travel = false
 	hide_map()
 
+## 读档恢复到节点结算后的待选阶段时，直接显示地图而不重开当前节点。
+func _on_map_waiting_restored() -> void:
+	can_travel = true
+	show_map()
+
 func _on_combat_started(_event_id: String):
 	can_travel = false
 
 func _on_combat_ended():
-	can_travel = true
+	# 战斗结束不代表奖励已经领取，必须等奖励页确认后才能修习。
+	can_travel = false
 
 func _on_player_killed(_player: Player) -> void:
 	hide_map()
 	clear_locations()
 
 func _on_chest_opened():
-	can_travel = true
+	# 宝箱打开后仍有奖励页，不能提前开放修习。
+	can_travel = false
 
 func _on_shop_opened():
-	can_travel = true
+	hide_map()
 
 func _on_dialogue_ended():
 	var player: Player = Global.get_player()
 	if player.is_alive():
+		Global.complete_current_node()
 		can_travel = true
 		show_map()
 	else:
@@ -123,3 +144,20 @@ func _on_dialogue_ended():
 func _on_back_button_up():
 	hide_map()
 	get_combined_minimum_size()
+
+## 只有地图待选阶段可以从常驻按钮打开修习页面。
+func _on_practice_button_up() -> void:
+	if not can_travel or ActionHandler.actions_being_performed:
+		return
+	Signals.shop_opened.emit()
+
+## 金币变化后同步地图常驻入口下方的余额。
+func _on_player_money_changed(_delta: int = 0) -> void:
+	if practice_money_label != null:
+		practice_money_label.text = "金币 %d" % Global.player_data.player_money
+
+## 根据节点阶段统一更新修习按钮，避免奖励页期间提前进入。
+func _update_practice_access() -> void:
+	if not is_node_ready() or practice_button == null:
+		return
+	practice_button.disabled = not can_travel

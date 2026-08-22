@@ -48,7 +48,7 @@ func _ready() -> void:
 		[draw_pile_button, "[color=orange]Draw Pile[/color]\nThese cards will be drawn", false, false, false, $TooltipPositions/EnergyTooltipPos],
 		
 		[exhaust_pile_button, "[color=orange]Exhaust Pile[/color]\nThese cards have been removed from play", false, false, false, $TooltipPositions/ExhaustTooltipPos],
-		[discard_pile_button, "[color=orange]Discard Pile[/color]\nThese cards will be reshuffled back", false, false, false, $TooltipPositions/DiscardTooltipPos],
+		[discard_pile_button, "[color=orange]Discard Pile[/color]\nThese cards remain here until an effect returns them", false, false, false, $TooltipPositions/DiscardTooltipPos],
 		[end_turn_button, "[color=orange]End Turn[/color]\nEnds your turn", false, false, false, $TooltipPositions/DiscardTooltipPos],
 		]
 	

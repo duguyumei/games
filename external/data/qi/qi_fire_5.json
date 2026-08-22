@@ -1,0 +1,16 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_fire_5",
+		"qi_name": "红桃 5",
+		"qi_description": "红桃的5真气。",
+		"qi_texture_path": "",
+		"qi_attribute": 2,
+		"qi_rank": 5,
+		"qi_value": -1,
+		"qi_permanent_value_modifier": 0,
+		"qi_permanent_state": {},
+		"qi_reshape_states": [],
+		"qi_persistent_anomaly_states": []
+	}
+}

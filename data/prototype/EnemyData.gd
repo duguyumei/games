@@ -26,6 +26,12 @@ class_name EnemyData
 ## Action data payload for what to do when the enemy dies.
 @export var enemy_actions_on_death: Array[Dictionary] = []
 
+## 敌方真气牌组使用的固定定义 ID；为空时使用标准 52 张真气。
+@export var enemy_qi_deck_definition_ids: Array[String] = []
+
+## 基础策略每次行动从手牌前方提交的真气数量。
+@export_range(1, 5, 1) var enemy_qi_play_count: int = 5
+
 enum ENEMY_TYPES {STANDARD, MINIBOSS, BOSS}
 @export var enemy_type: int = ENEMY_TYPES.STANDARD
 ## Minion enemies do not need to be killed for combat to end.

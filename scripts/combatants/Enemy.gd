@@ -241,7 +241,16 @@ func _on_combat_ended():
 	queue_free()
 
 func _on_player_turn_started():
+	# 真气战斗的敌方行动由待结算区统一表示，不再轮换旧意图。
+	if Global.battle_qi_state != null \
+		and Global.battle_qi_state.get_active_enemy_instance_id() != "":
+		enemy_intent.hide()
+		return
 	cycle_enemy_intent()
+
+## 进入真气战斗后隐藏旧的伤害、格挡和减益意图图标。
+func enable_qi_battle_display() -> void:
+	enemy_intent.hide()
 
 func _on_selection_button_up():
 	if is_alive():

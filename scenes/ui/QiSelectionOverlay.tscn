@@ -1,0 +1,75 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/QiSelectionOverlay.gd" id="1_qi_overlay"]
+
+[node name="QiSelectionOverlay" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_qi_overlay")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.203922, 0.188235, 0.215686, 0.78)
+
+[node name="Panel" type="PanelContainer" parent="."]
+layout_mode = 0
+offset_left = 96.0
+offset_top = 36.0
+offset_right = 1104.0
+offset_bottom = 664.0
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "选择真气"
+horizontal_alignment = 1
+
+[node name="PickLabel" type="Label" parent="Panel/Margin/VBox"]
+layout_mode = 2
+text = "选择 3 张真气（已选 0，还可选 3）"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Panel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 490)
+layout_mode = 2
+horizontal_scroll_mode = 3
+
+[node name="QiContainer" type="GridContainer" parent="Panel/Margin/VBox/ScrollContainer"]
+layout_mode = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
+columns = 5
+
+[node name="Buttons" type="HBoxContainer" parent="Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="BackButton" type="Button" parent="Panel/Margin/VBox/Buttons"]
+layout_mode = 2
+text = "取消"
+
+[node name="ConfirmButton" type="Button" parent="Panel/Margin/VBox/Buttons"]
+layout_mode = 2
+text = "确认"

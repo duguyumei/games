@@ -36,6 +36,30 @@ var current_selected_card: Card = null	# used for cards with targeting
 var hand_disabled: bool = false	# the player cannot play additional cards manually
 var performing_card_right_click: bool = false	# flag used to lock card plays while a right click action happens
 
+## 真气战斗中按点击顺序保存的本批手牌选择。
+var selected_qi_instance_uids: Array[String] = []
+
+## 真气实例 UID 到当前手牌 UI 的映射。
+var qi_uid_to_hand_card: Dictionary[String, QiCard] = {}
+
+## 玩家已经提交且不可撤回的待结算区容器。
+@onready var player_pending_qi_container: HBoxContainer = $%PlayerPendingQiContainer
+
+## 敌方已经确定但只显示牌背的待结算区容器。
+@onready var enemy_pending_qi_container: HBoxContainer = $%EnemyPendingQiContainer
+
+## 将当前选择整批提交到待结算区的按钮。
+@onready var commit_qi_button: Button = $%CommitQiButton
+
+## 冻结敌我待结算区并交给结算器的按钮。
+@onready var confirm_qi_button: Button = $%ConfirmQiButton
+
+## 玩家待结算区标题。
+@onready var player_pending_qi_label: Label = $%PlayerPendingQiLabel
+
+## 敌方待结算区标题。
+@onready var enemy_pending_qi_label: Label = $%EnemyPendingQiLabel
+
 
 # Mapping
 ## Maps a CardData object to the actual Card represented by it in hand.
@@ -92,6 +116,10 @@ func _ready():
 	confirm_pick_button.button_up.connect(_on_confirm_pick_button_up)
 	
 	background_button.button_up.connect(_on_background_button_up)
+	commit_qi_button.button_up.connect(_on_commit_qi_button_up)
+	confirm_qi_button.button_up.connect(_on_confirm_qi_button_up)
+	Signals.qi_zones_changed.connect(refresh_qi_battle_ui)
+	_set_qi_controls_visible(false)
 	
 ## Recalculates the transforms of Card objects in hand and tweens them to their new positions.
 func tween_hand():
@@ -234,6 +262,148 @@ func _on_card_selected(card: Card):
 	else:
 		### picking
 		attempt_pick_card(card)
+
+## 切换一张玩家手牌的本批选择；新增选择严格记录点击顺序。
+func _on_qi_hand_card_selected(qi_card: QiCard) -> void:
+	if hand_disabled or Global.battle_qi_state == null \
+		or Global.battle_qi_state.is_action_frozen() or qi_card.qi_data == null:
+		return
+	var qi_instance_uid: String = qi_card.qi_data.object_uid
+	if selected_qi_instance_uids.has(qi_instance_uid):
+		selected_qi_instance_uids.erase(qi_instance_uid)
+	else:
+		var pending_count: int = Global.battle_qi_state.get_zone(
+			BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_PENDING).size()
+		if pending_count + selected_qi_instance_uids.size() >= BattleQiState.PENDING_LIMIT:
+			return
+		selected_qi_instance_uids.append(qi_instance_uid)
+	_update_qi_selection_display()
+
+## 将当前批次整批提交；失败时手牌和选择顺序都保持不变。
+func _on_commit_qi_button_up() -> void:
+	if Global.battle_qi_state == null or selected_qi_instance_uids.is_empty():
+		return
+	if not Global.battle_qi_state.commit_player_selection(
+		selected_qi_instance_uids.duplicate()):
+		return
+	selected_qi_instance_uids.clear()
+	Signals.qi_zones_changed.emit()
+
+## 冻结敌我待结算区；确认后禁止继续选择和提交。
+func _on_confirm_qi_button_up() -> void:
+	if Global.battle_qi_state == null:
+		return
+	var request: QiActionRequest = Global.battle_qi_state.freeze_action()
+	if request == null:
+		return
+	hand_disabled = true
+	selected_qi_instance_uids.clear()
+	refresh_qi_battle_ui()
+	Signals.qi_action_ready.emit(request)
+
+## 从 BattleQiState 重新绘制玩家手牌和敌我待结算区。
+func refresh_qi_battle_ui() -> void:
+	var battle_state: BattleQiState = Global.battle_qi_state
+	if battle_state == null or battle_state.get_active_enemy_instance_id() == "":
+		clear_qi_battle_cards()
+		_set_qi_controls_visible(false)
+		return
+	_set_qi_controls_visible(true)
+	_clear_control_children(card_container)
+	_clear_control_children(player_pending_qi_container)
+	_clear_control_children(enemy_pending_qi_container)
+	qi_uid_to_hand_card.clear()
+	var player_hand: Array[QiData] = battle_state.get_zone(
+		BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_HAND)
+	var player_hand_uids: Array[String] = battle_state.get_zone_uids(
+		BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_HAND)
+	# 牌区效果可能在重绘前移动手牌，失效的旧选择不能继续阻塞本批提交。
+	for selection_index: int in range(selected_qi_instance_uids.size() - 1, -1, -1):
+		if not player_hand_uids.has(selected_qi_instance_uids[selection_index]):
+			selected_qi_instance_uids.remove_at(selection_index)
+	for qi_data: QiData in player_hand:
+		var qi_card: QiCard = Scenes.QI_CARD.instantiate()
+		card_container.add_child(qi_card)
+		qi_card.init(qi_data, true, battle_state)
+		qi_card.qi_selected.connect(_on_qi_hand_card_selected)
+		qi_uid_to_hand_card[qi_data.object_uid] = qi_card
+	_layout_qi_hand_cards()
+	for qi_data: QiData in battle_state.get_zone(
+		BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_PENDING):
+		var qi_card: QiCard = Scenes.QI_CARD.instantiate()
+		player_pending_qi_container.add_child(qi_card)
+		qi_card.init(qi_data, false, battle_state)
+		qi_card.disabled = true
+	for qi_data: QiData in battle_state.get_zone(
+		BattleQiState.SIDE_ENEMY, BattleQiState.ZONE_PENDING):
+		var qi_card: QiCard = Scenes.QI_CARD.instantiate()
+		enemy_pending_qi_container.add_child(qi_card)
+		qi_card.init(qi_data, false, battle_state)
+		qi_card.set_face_down(true)
+	_update_qi_selection_display()
+
+## 清空战斗真气 UI，不修改任何牌区数据。
+func clear_qi_battle_cards() -> void:
+	selected_qi_instance_uids.clear()
+	qi_uid_to_hand_card.clear()
+	_clear_control_children(card_container)
+	_clear_control_children(player_pending_qi_container)
+	_clear_control_children(enemy_pending_qi_container)
+
+## 根据当前点击顺序更新选中序号和按钮状态。
+func _update_qi_selection_display() -> void:
+	var battle_state: BattleQiState = Global.battle_qi_state
+	var pending_count: int = 0
+	var action_frozen: bool = false
+	if battle_state != null:
+		pending_count = battle_state.get_zone(
+			BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_PENDING).size()
+		action_frozen = battle_state.is_action_frozen()
+	for qi_instance_uid: String in qi_uid_to_hand_card:
+		var qi_card: QiCard = qi_uid_to_hand_card[qi_instance_uid]
+		var selection_order: int = selected_qi_instance_uids.find(qi_instance_uid) + 1
+		qi_card.set_selection_order(selection_order)
+		qi_card.disabled = hand_disabled or action_frozen
+	commit_qi_button.disabled = hand_disabled or action_frozen \
+		or selected_qi_instance_uids.is_empty() \
+		or pending_count + selected_qi_instance_uids.size() > BattleQiState.PENDING_LIMIT
+	confirm_qi_button.disabled = hand_disabled or action_frozen \
+		or pending_count < 1 or pending_count > BattleQiState.PENDING_LIMIT
+
+## 将真气手牌按现有扇形区域的宽度横向排列。
+func _layout_qi_hand_cards() -> void:
+	var qi_cards: Array[QiCard] = []
+	for qi_data: QiData in Global.battle_qi_state.get_zone(
+		BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_HAND):
+		var qi_card: QiCard = qi_uid_to_hand_card.get(qi_data.object_uid, null)
+		if qi_card != null:
+			qi_cards.append(qi_card)
+	if qi_cards.is_empty():
+		return
+	var card_width: float = 112.0
+	var available_width: float = max(card_container.size.x, 880.0)
+	var separation: float = min(card_width, available_width / qi_cards.size())
+	var total_width: float = separation * float(qi_cards.size() - 1) + card_width
+	var start_x: float = (available_width - total_width) / 2.0
+	for qi_index: int in qi_cards.size():
+		var qi_card: QiCard = qi_cards[qi_index]
+		qi_card.scale = Vector2(0.78, 0.78)
+		qi_card.position = Vector2(start_x + separation * qi_index, -112.0)
+
+## 显示或隐藏真气待结算区及操作按钮。
+func _set_qi_controls_visible(visible_state: bool) -> void:
+	player_pending_qi_container.visible = visible_state
+	enemy_pending_qi_container.visible = visible_state
+	player_pending_qi_label.visible = visible_state
+	enemy_pending_qi_label.visible = visible_state
+	commit_qi_button.visible = visible_state
+	confirm_qi_button.visible = visible_state
+
+## 立即移除容器中的旧视图，避免同一帧刷新时暂时重复显示。
+func _clear_control_children(container: Control) -> void:
+	for child: Node in container.get_children():
+		container.remove_child(child)
+		child.queue_free()
 		
 func _on_card_right_clicked(card: Card):
 	current_selected_card = null
@@ -397,12 +567,14 @@ func clear_hand_cards() -> void:
 	for child in card_container.get_children():
 		child.queue_free()
 	card_data_to_hand_card.clear()
+	qi_uid_to_hand_card.clear()
 
 func disable_hand(_disabled: bool = true):
 	hand_disabled = _disabled
 	if hand_disabled:
 		current_selected_card = null
 		_unprompt_target()
+	_update_qi_selection_display()
 
 #endregion
 
@@ -414,10 +586,14 @@ func _on_combat_started(_event_id: String):
 func _on_combat_ended():
 	_unprompt_target()
 	clear_hand_cards()
+	clear_qi_battle_cards()
+	_set_qi_controls_visible(false)
 
 func _on_run_ended():
 	_unprompt_target()
 	clear_hand_cards()
+	clear_qi_battle_cards()
+	_set_qi_controls_visible(false)
 
 #region Card Trails
 func create_card_trail_from_card(card: Card, card_destination_pile: String, is_combat: bool) -> void:

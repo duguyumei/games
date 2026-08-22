@@ -23,7 +23,6 @@ extends Control
 @onready var player = $Player
 @onready var hand = $Hand
 @onready var chest = $Chest
-@onready var shop = $Shop
 
 @onready var background_button: TextureButton = %BackgroundButton
 
@@ -44,6 +43,8 @@ func _ready():
 	Signals.player_turn_ended.connect(_on_player_turn_ended)
 	Signals.enemy_turn_ended.connect(_on_enemy_turn_ended)
 	Signals.enemy_turn_started.connect(_on_enemy_turn_started)
+	Signals.qi_zones_changed.connect(update_combat_display)
+	Signals.qi_action_completed.connect(_on_qi_action_completed)
 	
 	Signals.end_turn_requested.connect(_on_end_turn_requested)
 	
@@ -84,7 +85,6 @@ func _on_map_location_selected(location_data: LocationData):
 	var location_type: int = location_data.location_type
 	
 	chest.visible = false
-	shop.visible = false
 	
 	set_combat_display_visibility(false)
 	
@@ -93,8 +93,6 @@ func _on_map_location_selected(location_data: LocationData):
 			ActionGenerator.generate_combat_start("") # emit empty event to get location's combat event
 		LocationData.LOCATION_TYPES.TREASURE:
 			chest.visible = true
-		LocationData.LOCATION_TYPES.SHOP:
-			shop.visible = true
 	
 	_update_background()
 	
@@ -102,9 +100,17 @@ func _on_map_location_selected(location_data: LocationData):
 
 func update_combat_display():
 	energy_count.text = str(Global.player_data.player_energy) + "/" + str(Global.player_data.player_energy_max)
-	draw_count.text = str(len(HandManager.player_draw))
-	discard_count.text = str(len(HandManager.player_discard))
-	exhaust_count.text = str(len(HandManager.player_exhaust))
+	if _is_qi_combat_active():
+		draw_count.text = str(Global.battle_qi_state.get_zone(
+			BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_DRAW).size())
+		discard_count.text = str(Global.battle_qi_state.get_zone(
+			BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_DISCARD).size())
+		exhaust_count.text = str(Global.battle_qi_state.get_zone(
+			BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_EXHAUST).size())
+	else:
+		draw_count.text = str(len(HandManager.player_draw))
+		discard_count.text = str(len(HandManager.player_discard))
+		exhaust_count.text = str(len(HandManager.player_exhaust))
 	_on_player_health_changed()
 	_on_player_money_changed()
 
@@ -134,11 +140,11 @@ func _update_background() -> void:
 	
 
 func set_combat_display_visibility(display_visibility: bool) -> void:
-	energy.visible = display_visibility
+	energy.visible = display_visibility and not _is_qi_combat_active()
 	draw_pile_button.visible = display_visibility
 	discard_pile_button.visible = display_visibility
 	exhaust_pile_button.visible = display_visibility
-	end_turn_button.visible = display_visibility
+	end_turn_button.visible = display_visibility and not _is_qi_combat_active()
 
 func _on_card_played(_card_play_request: CardPlayRequest):
 	update_combat_display()
@@ -170,12 +176,20 @@ func _on_player_health_changed():
 ### Deck Buttons
 
 func _on_deck_button_up():
+	if _is_qi_combat_active():
+		return
 	card_selection_overlay.view_deck()
 func _on_draw_pile_button_up():
+	if _is_qi_combat_active():
+		return
 	card_selection_overlay.view_draw_pile()
 func _on_discard_pile_button_up():
+	if _is_qi_combat_active():
+		return
 	card_selection_overlay.view_discard()
 func _on_exhaust_pile_button_up():
+	if _is_qi_combat_active():
+		return
 	card_selection_overlay.view_exhaust()
 
 ### Turn Handling
@@ -212,6 +226,20 @@ func _on_combat_started(event_id: String):
 		current_event = Global.get_event_data(event_id)
 	
 	enemy_container.populate_enemies_from_event(current_event)
+	var alive_enemies: Array[Enemy] = Global.get_alive_enemies()
+	if alive_enemies.size() != 1:
+		DebugLogger.log_error(
+			"Qi combat requires exactly one enemy, found %d" % alive_enemies.size())
+		Global.battle_qi_state.clear_battle()
+		set_combat_display_visibility(false)
+		return
+	var active_enemy: Enemy = alive_enemies[0]
+	if not Global.initialize_qi_battle_zones(active_enemy.enemy_data):
+		DebugLogger.log_error("Failed to initialize qi combat zones")
+		set_combat_display_visibility(false)
+		return
+	active_enemy.enable_qi_battle_display()
+	Signals.qi_zones_changed.emit()
 	start_turn_animation()
 	
 	Global.player_data.player_energy = Global.player_data.player_energy_max
@@ -358,6 +386,9 @@ func perform_enemy_turn():
 
 	
 func _on_player_turn_started():
+	if _is_qi_combat_active():
+		_start_qi_action()
+		return
 	# prevent player from playing cards manually
 	HandManager.set_disable_hand(true)
 	
@@ -436,8 +467,11 @@ func _on_player_turn_started():
 	if _end_combat_check():
 		return
 	
-	# draw cards
-	ActionGenerator.generate_start_of_turn_draw_actions()
+	# 回合开始只补足手牌缺口，未使用的手牌会跨回合保留。
+	var cards_to_draw: int = max(
+		0,
+		HandManager.PLAYER_DEFAULT_HAND_CARD_COUNT_MAX - len(HandManager.player_hand))
+	ActionGenerator.generate_start_of_turn_draw_actions(cards_to_draw)
 	if ActionHandler.actions_being_performed:
 		await ActionHandler.actions_ended
 	# if player is dead stop
@@ -460,13 +494,6 @@ func _on_player_turn_ended():
 	
 	# perform all end of turn actions and await
 	player.perform_status_effect_process_actions(StatusEffectData.STATUS_EFFECT_PROCESS_TIMES.PRE_DISCARD_PLAYER_END_TURN)
-	if ActionHandler.actions_being_performed:
-		await ActionHandler.actions_ended
-	if _end_combat_check():
-		return
-	
-	# discard non retained cards and perform card actions
-	HandManager.perform_end_of_turn_hand_actions()
 	if ActionHandler.actions_being_performed:
 		await ActionHandler.actions_ended
 	if _end_combat_check():
@@ -496,10 +523,19 @@ func _on_player_end_turn_animation_finished():
 		Signals.enemy_turn_started.emit()
 
 func _on_enemy_turn_started():
+	if _is_qi_combat_active():
+		return
 	perform_enemy_turn()
 	
 func _on_enemy_turn_ended():
+	if _is_qi_combat_active():
+		return
 	start_turn_animation()
+
+## 冻结行动完成后开启下一次真气行动窗口。
+func _on_qi_action_completed(_request: QiActionRequest) -> void:
+	if _is_qi_combat_active():
+		start_turn_animation()
 	
 func _on_end_turn_button_up():
 	queue_end_turn(CombatEndTurn.END_TURN_QUEUE_IMMEDIACY.WAIT_FOR_ALL_CARD_PLAYS)
@@ -572,3 +608,25 @@ func end_turn_animation() -> void:
 	
 func start_turn_animation() -> void:
 	combat_animation_player.play("start_turn")
+
+## 补充敌我手牌并让基础敌方策略先提交待结算真气。
+func _start_qi_action() -> void:
+	var battle_state: BattleQiState = Global.battle_qi_state
+	if battle_state == null or battle_state.is_action_frozen():
+		return
+	var alive_enemies: Array[Enemy] = Global.get_alive_enemies()
+	if alive_enemies.size() != 1:
+		DebugLogger.log_error("Qi action cannot start without exactly one enemy")
+		return
+	HandManager.set_disable_hand(true)
+	battle_state.draw_to_hand_limit(BattleQiState.SIDE_PLAYER)
+	battle_state.draw_to_hand_limit(BattleQiState.SIDE_ENEMY)
+	battle_state.prepare_enemy_pending(alive_enemies[0].enemy_data.enemy_qi_play_count)
+	Signals.qi_zones_changed.emit()
+	HandManager.set_disable_hand(false)
+	update_combat_display()
+
+## 返回当前是否已经建立可用的真气战斗牌区。
+func _is_qi_combat_active() -> bool:
+	return Global.battle_qi_state != null \
+		and Global.battle_qi_state.get_active_enemy_instance_id() != ""

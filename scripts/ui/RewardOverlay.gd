@@ -218,12 +218,18 @@ func _on_chest_opened():
 	populate_reward_display()
 
 func _on_continue_button_up():
+	# 奖励页确认后节点才算完整完成，商店刷新不能早于这个边界。
+	Global.complete_current_node()
+
 	# increment the act and potentially generate a new one
 	if Global.is_end_of_act():
 		if not Global.is_end_of_run():
 			ActionGenerator.generate_next_act()
+			# Boss 商店刷新与下一幕地图必须一起进入最终存档。
+			FileLoader.autosave()
 	
 	if not Global.is_end_of_run():
+		map.can_travel = true
 		map.show_map()
 	else:
 		visible = false

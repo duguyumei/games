@@ -19,6 +19,7 @@ func _ready():
 	
 	Signals.player_artifact_added.connect(_on_artifact_added)
 	Signals.player_artifact_removed.connect(_on_artifact_removed)
+	Signals.player_neigong_loadout_changed.connect(_on_neigong_loadout_changed)
 
 func reset_player() -> void:
 	var character_data: CharacterData = Global.get_player_character_data()
@@ -39,6 +40,8 @@ func reset_player() -> void:
 	register_run_modifier_interceptors()
 	# artifact interceptors
 	register_artifact_interceptors()
+	# 只有当前已装备的内功注册拦截器。
+	register_neigong_interceptors()
 	
 	# reset animation and state
 	var location_data: LocationData = Global.get_player_location_data()
@@ -181,19 +184,45 @@ func register_run_modifier_interceptors() -> void:
 
 ## Attaches interceptors from artifacts the player has
 func register_artifact_interceptors() -> void:
-	# attaches intercepotors from artifacts to the player
-	for artifact_uid in Global.player_data.player_artifact_uid_to_artifact_data:
+	# 重新建立奇物来源注册，避免读档或重置后保留旧实例引用。
+	ActionHandler.unregister_action_interceptors_by_source_kind(self, "artifact")
+	var artifact_order: int = 0
+	for artifact_uid: String in Global.player_data.player_artifact_uid_to_artifact_data:
 		var artifact_data: ArtifactData = Global.player_data.player_artifact_uid_to_artifact_data[artifact_uid]
 		for interceptor_id: String in artifact_data.artifact_interceptor_ids:
-			ActionHandler.register_action_interceptor(self, interceptor_id)
+			ActionHandler.register_action_interceptor(
+				self, interceptor_id, "artifact", artifact_data.object_uid, artifact_order)
+		artifact_order += 1
+
+## 只按当前内功装备顺序注册来源实例拦截器。
+func register_neigong_interceptors() -> void:
+	ActionHandler.unregister_action_interceptors_by_source_kind(self, "neigong")
+	for source_order: int in Global.player_data.player_equipped_neigong_uids.size():
+		var neigong_instance_uid: String = Global.player_data.player_equipped_neigong_uids[
+			source_order]
+		var neigong_data: NeigongData = Global.player_data.get_owned_neigong(
+			neigong_instance_uid)
+		if neigong_data == null:
+			continue
+		for interceptor_id: String in neigong_data.neigong_interceptor_ids:
+			ActionHandler.register_action_interceptor(
+				self, interceptor_id, "neigong", neigong_instance_uid, source_order)
 
 func _on_artifact_added(artifact_data: ArtifactData) -> void:
 	for action_interceptor_id: String in artifact_data.artifact_interceptor_ids:
-		ActionHandler.register_action_interceptor(self, action_interceptor_id)
+		ActionHandler.register_action_interceptor(
+			self,
+			action_interceptor_id,
+			"artifact",
+			artifact_data.object_uid,
+			Global.player_data.player_artifact_uid_to_artifact_data.size() - 1)
 
 func _on_artifact_removed(artifact_data: ArtifactData) -> void:
-	for action_interceptor_id: String in artifact_data.artifact_interceptor_ids:
-		ActionHandler.unregister_action_interceptor(self, action_interceptor_id)
+	ActionHandler.unregister_action_interceptors_from_source(self, artifact_data.object_uid)
+
+## 内功配装发生变化后整体重建来源注册，保证装备顺序稳定。
+func _on_neigong_loadout_changed() -> void:
+	register_neigong_interceptors()
 
 #endregion
 

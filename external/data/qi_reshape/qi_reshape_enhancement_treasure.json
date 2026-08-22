@@ -1,0 +1,17 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "qi_enhancement_treasure",
+		"reshape_name": "藏金",
+		"reshape_description": "战斗胜利时，若此真气在手牌或牌库，获得 3 点历练。",
+		"reshape_texture_path": "",
+		"reshape_slot": "enhancement",
+		"reshape_kind": "enhancement",
+		"origin_operation": "",
+		"default_scope": "run",
+		"allowed_scopes": ["run"],
+		"replacement_group": "qi_enhancement",
+		"effect_script_path": "",
+		"effect_config": {"experience_reward": 3}
+	}
+}

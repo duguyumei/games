@@ -83,6 +83,14 @@
 				"class_name": "PlayerData",
 				"table_name": "_id_to_player_data"
 			},
+			"external/data/qi_reshape/": {
+				"class_name": "QiReshapeData",
+				"table_name": "_id_to_qi_reshape_data"
+			},
+			"external/data/qi/": {
+				"class_name": "QiData",
+				"table_name": "_id_to_qi_data"
+			},
 			"external/data/rest_actions/": {
 				"class_name": "RestActionData",
 				"table_name": "_id_to_rest_action_data"

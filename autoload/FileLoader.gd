@@ -425,12 +425,18 @@ func load_game(start_game: bool = true, file_dir: String = SAVE_DIR_PATH, file_n
 		Global.player_data = player_data
 		Global.is_run = true
 		player_data.init()
+		# 旧地图中的商店节点只在读档边界转换，不触发节点效果。
+		Global.normalize_legacy_shop_locations()
+		Global.ensure_shop_initialized()
 		StatsHandler.current_run_stats = player_data.player_run_stats # update reference
 		
 		if start_game:
-			# simulate the run starting and visiting the player's location
+			# 恢复整局界面；待选阶段只打开地图，节点进行阶段才重开当前节点。
 			Signals.run_started.emit()
-			Signals.map_location_selected.emit(Global.get_player_location_data())
+			if player_data.player_waiting_for_node_selection:
+				Signals.map_waiting_restored.emit()
+			else:
+				Signals.map_location_selected.emit(Global.get_player_location_data())
 
 ## Wrapper for saving the game. It automatically determines the file name
 ## TODO: Profile implementation

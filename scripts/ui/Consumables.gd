@@ -160,6 +160,22 @@ func use_consumable(selected_target: BaseCombatant, consumable_slot_index: int =
 			ActionGenerator.generate_use_consumable(selected_target, consumable_slot_index)
 			deselect_consumable()
 
+## 供商店等战斗外界面复用消耗品使用逻辑；需要敌人目标的内容会被拒绝。
+func use_consumable_from_external_ui(consumable_slot_index: int) -> bool:
+	var consumable_data: ConsumableData = Global.get_player_consumable_in_slot_index(
+		consumable_slot_index)
+	if consumable_data == null or consumable_data.consumable_requires_target:
+		return false
+	var intercepted: Dictionary[String, Variant] = (
+		consumable_data.get_consumable_intercepted_action_results())
+	if intercepted.get("consumable_use_disabled", false):
+		return false
+	if Global.player_data.player_energy < intercepted.get("consumable_energy_cost", 0):
+		return false
+	selected_consumable_slot_index = consumable_slot_index
+	use_consumable(null, consumable_slot_index)
+	return true
+
 func add_consumable(consumable_object_id: String) -> void:
 	# attempts to add a consumable, if enough slots are available
 	var player_data: PlayerData = Global.player_data

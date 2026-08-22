@@ -11,7 +11,14 @@ var current_action: BaseAction = null # the current action being invoked
 var actions_being_performed: bool = false	# flag to prevent multiple actions being performed simultaneously and check for blocking
 
 # action interceptors
-var _registered_action_interceptor_object_ids: Dictionary	= {}	# maps an object to a sorted list of registered action interceptor ids used when the object is involved in an action
+## 将战斗对象映射到其拦截器来源注册记录。
+var _registered_action_interceptors: Dictionary = {}
+
+## 下一个稳定注册序号。
+var _next_action_interceptor_registration_order: int = 0
+
+## 当前是否正在执行无副作用预览拦截器。
+var _action_interceptor_preview_depth: int = 0
 
 # signals
 signal actions_ended	# all actions completed, typically signalling the end of an enemy attack or card play
@@ -36,6 +43,9 @@ func add_action(action: BaseAction, enqueue: bool = false, front_of_queue: bool 
 ## if front_of_queue = true it will place the actions in front of the current queue, effectively always making them
 ## the next action to take place.
 func add_actions(actions: Array[BaseAction], enqueue: bool = false, front_of_queue: bool = false):
+	# 预览查询期间禁止拦截器向正式行为队列写入新行为。
+	if is_previewing_action_interceptors():
+		return
 	if enqueue:
 		# adding to queue
 		if len(action_stack) == 0:
@@ -123,23 +133,94 @@ func clear_all_actions() -> void:
 
 ### Action Interception
 
-func register_action_interceptor(base_combatant: BaseCombatant, action_interceptor_object_id: String) -> void:
-	# registers a given action interceptor for an object
-	# note that generally speaking any interceptor should only ever have one source of registration. Delegate to status effects with charges if you want multiple things to create the same effect
-	var interceptor_ids: Array = _registered_action_interceptor_object_ids.get(base_combatant, [])
-	if not interceptor_ids.has(action_interceptor_object_id):
-		interceptor_ids.append(action_interceptor_object_id)
-	_registered_action_interceptor_object_ids[base_combatant] = interceptor_ids
-	
-func unregister_action_interceptor(base_combatant: BaseCombatant, action_interceptor_object_id: String) -> void:
-	var interceptor_ids: Array = _registered_action_interceptor_object_ids.get(base_combatant, [])
-	interceptor_ids.erase(action_interceptor_object_id)
-	_registered_action_interceptor_object_ids[base_combatant] = interceptor_ids
-	if len(interceptor_ids) == 0:
-		_registered_action_interceptor_object_ids.erase(base_combatant)
+func register_action_interceptor(
+		base_combatant: BaseCombatant,
+		action_interceptor_object_id: String,
+		source_kind: String = "legacy",
+		source_instance_id: String = "",
+		source_order: int = 0) -> void:
+	# 旧调用不传来源实例时继续按拦截器 ID 去重；实例来源按 ID 与来源 UID 组合去重。
+	var registrations: Array[ActionInterceptorRegistration] = []
+	registrations.assign(_registered_action_interceptors.get(base_combatant, []))
+	for registration: ActionInterceptorRegistration in registrations:
+		if registration.interceptor_id != action_interceptor_object_id:
+			continue
+		if source_instance_id == "" and registration.source_instance_id == "":
+			return
+		if source_instance_id != "" and registration.source_instance_id == source_instance_id:
+			registration.source_kind = source_kind
+			registration.source_order = source_order
+			return
+	_next_action_interceptor_registration_order += 1
+	registrations.append(ActionInterceptorRegistration.new(
+		action_interceptor_object_id,
+		source_kind,
+		source_instance_id,
+		source_order,
+		_next_action_interceptor_registration_order))
+	_registered_action_interceptors[base_combatant] = registrations
+
+## 注销旧式拦截器，或注销指定来源实例注册的拦截器。
+func unregister_action_interceptor(
+		base_combatant: BaseCombatant,
+		action_interceptor_object_id: String,
+		source_instance_id: String = "") -> void:
+	var registrations: Array[ActionInterceptorRegistration] = []
+	registrations.assign(_registered_action_interceptors.get(base_combatant, []))
+	for registration_index: int in range(registrations.size() - 1, -1, -1):
+		var registration: ActionInterceptorRegistration = registrations[registration_index]
+		if registration.interceptor_id != action_interceptor_object_id:
+			continue
+		if source_instance_id == "" and registration.source_instance_id != "":
+			continue
+		if source_instance_id != "" and registration.source_instance_id != source_instance_id:
+			continue
+		registrations.remove_at(registration_index)
+	_registered_action_interceptors[base_combatant] = registrations
+	if registrations.is_empty():
+		_registered_action_interceptors.erase(base_combatant)
+
+## 注销一个来源实例注册的全部拦截器。
+func unregister_action_interceptors_from_source(
+		base_combatant: BaseCombatant,
+		source_instance_id: String) -> void:
+	var registrations: Array[ActionInterceptorRegistration] = []
+	registrations.assign(_registered_action_interceptors.get(base_combatant, []))
+	registrations = registrations.filter(func(registration: ActionInterceptorRegistration) -> bool:
+		return registration.source_instance_id != source_instance_id)
+	if registrations.is_empty():
+		_registered_action_interceptors.erase(base_combatant)
+	else:
+		_registered_action_interceptors[base_combatant] = registrations
+
+## 注销某一来源类别注册的全部拦截器。
+func unregister_action_interceptors_by_source_kind(
+		base_combatant: BaseCombatant,
+		source_kind: String) -> void:
+	var registrations: Array[ActionInterceptorRegistration] = []
+	registrations.assign(_registered_action_interceptors.get(base_combatant, []))
+	registrations = registrations.filter(func(registration: ActionInterceptorRegistration) -> bool:
+		return registration.source_kind != source_kind)
+	if registrations.is_empty():
+		_registered_action_interceptors.erase(base_combatant)
+	else:
+		_registered_action_interceptors[base_combatant] = registrations
 
 func clear_all_action_interceptors() -> void:
-	_registered_action_interceptor_object_ids.clear()
+	_registered_action_interceptors.clear()
+	_next_action_interceptor_registration_order = 0
+
+## 返回当前是否处于拦截器预览查询中。
+func is_previewing_action_interceptors() -> bool:
+	return _action_interceptor_preview_depth > 0
+
+## 标记开始一层无副作用预览查询。
+func begin_action_interceptor_preview() -> void:
+	_action_interceptor_preview_depth += 1
+
+## 结束一层无副作用预览查询。
+func end_action_interceptor_preview() -> void:
+	_action_interceptor_preview_depth = max(_action_interceptor_preview_depth - 1, 0)
 
 
 func _on_combat_ended():

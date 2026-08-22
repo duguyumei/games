@@ -88,6 +88,11 @@ func clear_enemies():
 		child.queue_free()
 
 func _on_enemy_spawn_requested(enemy_object_id: String, slot_id: int):
+	# 真气战斗第一阶段只允许一个敌人，绕过 Action 的直接召唤信号同样需要拒绝。
+	if Global.battle_qi_state != null \
+		and Global.battle_qi_state.get_active_enemy_instance_id() != "":
+		DebugLogger.log_warning("Qi combat currently rejects direct enemy spawn requests")
+		return
 	spawn_enemy_at_slot(enemy_object_id, slot_id)
 
 func _on_run_ended():
