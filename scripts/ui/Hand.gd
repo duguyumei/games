@@ -345,12 +345,15 @@ func refresh_qi_battle_ui() -> void:
 		player_pending_qi_container.add_child(qi_card)
 		qi_card.init(qi_data, false, battle_state)
 		qi_card.disabled = true
+	var enemy_revealed_count: int = battle_state.get_enemy_revealed_pending_count()
+	var enemy_pending_index: int = 0
 	for qi_data: QiData in battle_state.get_zone(
 		BattleQiState.SIDE_ENEMY, BattleQiState.ZONE_PENDING):
 		var qi_card: QiCard = Scenes.QI_CARD.instantiate()
 		enemy_pending_qi_container.add_child(qi_card)
 		qi_card.init(qi_data, false, battle_state)
-		qi_card.set_face_down(true)
+		qi_card.set_face_down(enemy_pending_index >= enemy_revealed_count)
+		enemy_pending_index += 1
 	player_pending_qi_label.text = "我方待结算 %d/%d　连击 %d/%d" % [
 		battle_state.get_zone(BattleQiState.SIDE_PLAYER, BattleQiState.ZONE_PENDING).size(),
 		BattleQiState.PENDING_LIMIT,

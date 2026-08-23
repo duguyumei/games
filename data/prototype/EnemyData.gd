@@ -31,6 +31,18 @@ class_name EnemyData
 ## 敌方按精确牌型配置的功法效果动作；动作格式与 GongfaData.gongfa_effects 相同。
 @export var enemy_gongfa_effects_by_hand_type: Dictionary[String, Array] = {}
 
+## 敌方战斗内功固定定义 ID，顺序就是战斗中的内功槽顺序。
+@export var enemy_neigong_definition_ids: Array[String] = []
+
+## 敌方八种牌型的功法固定定义 ID序列；每条序列按触发顺序循环。
+@export var enemy_gongfa_loadout: Dictionary[String, Array] = {}
+
+## 敌方八种牌型的功法槽容量；未配置的牌型默认容量为一。
+@export var enemy_gongfa_slot_counts: Dictionary[String, int] = {}
+
+## 敌方内功槽容量；只属于敌人的固定战斗设定。
+@export var enemy_neigong_slot_count: int = 6
+
 enum ENEMY_TYPES {STANDARD, MINIBOSS, BOSS}
 @export var enemy_type: int = ENEMY_TYPES.STANDARD
 ## Minion enemies do not need to be killed for combat to end.

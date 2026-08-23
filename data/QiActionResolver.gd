@@ -75,7 +75,7 @@ static func _collect_gongfa_modifiers(
 		hand_type_id: String,
 		battle_state: BattleQiState) -> void:
 	if side_result.side == BattleQiState.SIDE_ENEMY:
-		_collect_enemy_gongfa_modifiers(side_result, hand_type_id)
+		_collect_enemy_gongfa_modifiers(side_result, hand_type_id, battle_state)
 		return
 	if Global.player_data == null:
 		return
@@ -115,21 +115,57 @@ static func _get_gongfa_copy_count(gongfa_data: GongfaData) -> int:
 
 ## 读取敌方牌型功法配置中的数值修正。
 static func _collect_enemy_gongfa_modifiers(
-		side_result: QiActionSideResult, hand_type_id: String) -> void:
+		side_result: QiActionSideResult,
+		hand_type_id: String,
+		battle_state: BattleQiState) -> void:
+	var current_slot: Dictionary = battle_state.get_current_gongfa_slot(
+		hand_type_id, BattleQiState.SIDE_ENEMY)
+	var gongfa_data_list: Array[GongfaData] = _get_enemy_gongfa_data(
+		hand_type_id, current_slot)
+	for gongfa_data: GongfaData in gongfa_data_list:
+		if current_slot.is_empty():
+			side_result.gongfa_instance_uids.append(
+				battle_state.get_active_enemy_instance_id())
+			side_result.gongfa_slot_instance_ids.append("")
+		else:
+			side_result.gongfa_instance_uids.append(
+				str(current_slot.get("gongfa_instance_uid", "")))
+			side_result.gongfa_slot_instance_ids.append(
+				str(current_slot.get("slot_instance_id", "")))
+		side_result.gongfa_copy_count = _get_gongfa_copy_count(gongfa_data)
+		for effect_value: Variant in gongfa_data.gongfa_effects:
+			if not effect_value is Dictionary:
+				continue
+			var effect: Dictionary = effect_value
+			side_result.multiplier_modifiers += int(effect.get("multiplier_modifier", 0))
+			side_result.direct_fixed_modifier += int(effect.get("power_fixed", 0))
+			side_result.direct_percent_modifier += int(effect.get("power_percent", 0))
+
+## 读取敌方当前队列功法；没有固定功法时保留内嵌效果配置作为空槽替代来源。
+static func _get_enemy_gongfa_data(
+		hand_type_id: String, current_slot: Dictionary) -> Array[GongfaData]:
+	var result: Array[GongfaData] = []
+	if not current_slot.is_empty():
+		var definition_id: String = str(current_slot.get("gongfa_definition_id", ""))
+		var configured_gongfa: GongfaData = Global.get_gongfa_data(definition_id)
+		if configured_gongfa != null:
+			result.append(configured_gongfa)
+		return result
 	var enemies: Array[Enemy] = Global.get_alive_enemies()
 	if enemies.is_empty():
-		return
+		return result
 	var effect_groups: Variant = enemies[0].enemy_data.get(
 		"enemy_gongfa_effects_by_hand_type")
 	if not effect_groups is Dictionary:
-		return
+		return result
 	for effect_value: Variant in effect_groups.get(hand_type_id, []):
 		if not effect_value is Dictionary:
 			continue
-		var effect: Dictionary = effect_value
-		side_result.multiplier_modifiers += int(effect.get("multiplier_modifier", 0))
-		side_result.direct_fixed_modifier += int(effect.get("power_fixed", 0))
-		side_result.direct_percent_modifier += int(effect.get("power_percent", 0))
+		var fallback_gongfa: GongfaData = GongfaData.new()
+		fallback_gongfa.gongfa_eligible_hand_ids = [hand_type_id]
+		fallback_gongfa.gongfa_effects = [effect_value]
+		result.append(fallback_gongfa)
+	return result
 
 ## 为双方当前牌型构造现有 Action/Interceptor 可执行的功法动作。
 static func build_effect_actions(
@@ -269,21 +305,9 @@ static func _get_side_gongfa_data(
 			if gongfa_data != null and gongfa_data.supports_hand_type(hand_type_id):
 				result.append(gongfa_data)
 		return result
-	var enemies: Array[Enemy] = Global.get_alive_enemies()
-	if enemies.is_empty():
-		return result
-	var enemy_effects: Variant = enemies[0].enemy_data.get("enemy_gongfa_effects_by_hand_type")
-	# 敌方效果没有独立 GongfaData 时用临时对象承载相同动作格式。
-	if enemy_effects is Dictionary:
-		for effect_value: Variant in enemy_effects.get(hand_type_id, []):
-			var enemy_gongfa: GongfaData = GongfaData.new()
-			enemy_gongfa.gongfa_eligible_hand_ids = [hand_type_id]
-			if effect_value is Dictionary:
-				var enemy_effects_list: Array[Dictionary] = []
-				enemy_effects_list.append(effect_value)
-				enemy_gongfa.gongfa_effects = enemy_effects_list
-			result.append(enemy_gongfa)
-	return result
+	var current_slot: Dictionary = battle_state.get_current_gongfa_slot(
+		hand_type_id, BattleQiState.SIDE_ENEMY)
+	return _get_enemy_gongfa_data(hand_type_id, current_slot)
 
 ## 从一个功法效果配置中读取动作列表；兼容直接动作和 actions 包装格式。
 static func _extract_action_data(effect_value: Variant) -> Array[Dictionary]:

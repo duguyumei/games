@@ -30,6 +30,30 @@ func initialize(
 			break
 		_entries.append(_create_entry(str(gongfa_uid_value), false, "", ""))
 
+## 从敌方固定功法定义 ID创建只属于本场战斗的循环队列。
+func initialize_from_definition_ids(
+		_hand_type_id: String,
+		_capacity: int,
+		gongfa_definition_ids: Array,
+		instance_prefix: String) -> bool:
+	hand_type_id = _hand_type_id
+	capacity = max(_capacity, 1)
+	_entries.clear()
+	_next_serial = 0
+	for gongfa_definition_value: Variant in gongfa_definition_ids:
+		if not gongfa_definition_value is String:
+			return false
+		var gongfa_definition_id: String = str(gongfa_definition_value)
+		if gongfa_definition_id == "" or _entries.size() >= capacity:
+			if gongfa_definition_id == "":
+				return false
+			break
+		var battle_instance_uid: String = "%s-gongfa-%s-%d" % [
+			instance_prefix, hand_type_id, _entries.size()]
+		_entries.append(_create_entry(
+			battle_instance_uid, false, "", gongfa_definition_id))
+	return true
+
 ## 返回队列当前内容的深复制，调用方不能直接修改队列。
 func get_entries() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -90,7 +114,9 @@ func _create_entry(
 		gongfa_definition_id: String) -> Dictionary:
 	_next_serial += 1
 	var definition_id: String = gongfa_definition_id
-	if definition_id == "" and Global.player_data != null:
+	if definition_id == "" and gongfa_instance_uid.begins_with("enemy-"):
+		definition_id = ""
+	elif definition_id == "" and Global.player_data != null:
 		var gongfa_data: GongfaData = Global.player_data.get_owned_gongfa(gongfa_instance_uid)
 		if gongfa_data != null:
 			definition_id = gongfa_data.object_id

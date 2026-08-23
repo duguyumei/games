@@ -19,6 +19,7 @@
 [ext_resource type="Script" uid="uid://dgls5w4w7ym84" path="res://scripts/ui/menus/CodexMenu.gd" id="9_uxrgu"]
 [ext_resource type="Script" uid="uid://brwptyvf1yacl" path="res://scripts/ui/CardSelectionOverlay.gd" id="10_bwtvr"]
 [ext_resource type="PackedScene" path="res://scenes/ui/QiSelectionOverlay.tscn" id="50_qi_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/ui/battle/BattleHud.tscn" id="53_battle_hud"]
 [ext_resource type="Script" uid="uid://nkhf5a8dd47j" path="res://ui/components/resizing_grid_scroll_container/ResizingGridScrollContainer.gd" id="10_kpmo0"]
 [ext_resource type="Script" uid="uid://ejl2op54o7aw" path="res://scripts/ui/RewardOverlay.gd" id="10_u2l48"]
 [ext_resource type="Script" uid="uid://b8gg8exxeg26k" path="res://scripts/ui/Chest.gd" id="11_1uvyw"]
@@ -2260,6 +2261,15 @@ text = "HH:MM:SS"
 horizontal_alignment = 1
 vertical_alignment = 1
 script = ExtResource("30_plfau")
+
+[node name="BattleHud" parent="RunScreen/Combat" instance=ExtResource("53_battle_hud")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
 
 [node name="RestOverlay" type="Control" parent="RunScreen" unique_id=15522777]
 unique_name_in_owner = true

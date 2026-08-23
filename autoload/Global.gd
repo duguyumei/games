@@ -366,8 +366,9 @@ func initialize_qi_battle_zones(enemy_data: EnemyData) -> bool:
 		player_data.get_player_rng("rng_qi_player_shuffle"),
 		player_data.get_player_rng("rng_qi_enemy_shuffle"),
 		enemy_instance_id)
-	if initialized:
-		battle_qi_state.initialize_loadouts(player_data)
+	if initialized and not battle_qi_state.initialize_loadouts(player_data, enemy_data):
+		battle_qi_state.clear_battle()
+		return false
 	return initialized
 
 ## 返回当前战斗真气现场；没有战斗时返回 null。

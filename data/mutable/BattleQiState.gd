@@ -77,6 +77,9 @@ var _enemy_exhaust: Array[QiData] = []
 ## 敌方当前待结算区。
 var _enemy_pending: Array[QiData] = []
 
+## 当前行动中敌方待结算区已经翻开的牌数；只属于战斗现场，不参与结算请求或存档。
+var _enemy_revealed_pending_count: int = 0
+
 ## 当前唯一敌人的实例标识。
 var _active_enemy_instance_id: String = ""
 
@@ -121,6 +124,9 @@ var _player_neigong_slot_capacity: int = 6
 
 ## 敌方战斗内功槽容量快照。
 var _enemy_neigong_slot_capacity: int = 6
+
+## 敌方战斗内功槽使用的固定定义 ID；实例只属于本场战斗。
+var _enemy_neigong_definition_ids: Array[String] = []
 
 ## 每张真气 UID 对应的临时重塑列表。
 var _qi_uid_to_reshape_states: Dictionary = {}
@@ -201,22 +207,34 @@ func initialize_zones(
 	_shuffle_zone(_enemy_draw, enemy_shuffle_rng)
 	return true
 
-## 从本局配装创建战斗内功槽和双方八条功法队列。
-func initialize_loadouts(player_data: PlayerData) -> void:
+## 从玩家本局配装和敌方固定设定创建战斗内功槽及八条功法队列。
+func initialize_loadouts(
+		player_data: PlayerData,
+		enemy_data: EnemyData = null) -> bool:
 	_player_gongfa_queues.clear()
 	_enemy_gongfa_queues.clear()
 	_player_neigong_slot_uids.clear()
 	_enemy_neigong_slot_uids.clear()
+	_enemy_neigong_definition_ids.clear()
 	_player_neigong_slot_capacity = 6
 	_enemy_neigong_slot_capacity = 6
-	if player_data == null:
-		return
+	if player_data == null or enemy_data == null:
+		return false
 	_player_neigong_slot_capacity = player_data.get_effective_neigong_slot_count()
 	for neigong_uid: String in player_data.player_equipped_neigong_uids:
 		if _player_neigong_slot_uids.size() >= _player_neigong_slot_capacity:
 			break
 		if player_data.get_owned_neigong(neigong_uid) != null:
 			_player_neigong_slot_uids.append(neigong_uid)
+	_enemy_neigong_slot_capacity = max(enemy_data.enemy_neigong_slot_count, 0)
+	if enemy_data.enemy_neigong_definition_ids.size() > _enemy_neigong_slot_capacity:
+		return false
+	for definition_id: String in enemy_data.enemy_neigong_definition_ids:
+		if definition_id == "" or Global.get_neigong_data(definition_id) == null:
+			return false
+		_enemy_neigong_definition_ids.append(definition_id)
+		_enemy_neigong_slot_uids.append("enemy-neigong-%s-%d" % [
+			_active_enemy_instance_id, _enemy_neigong_definition_ids.size() - 1])
 	for hand_type_id: String in GongfaData.HAND_TYPE_IDS:
 		var player_queue := GongfaQueueState.new()
 		player_queue.initialize(
@@ -225,8 +243,31 @@ func initialize_loadouts(player_data: PlayerData) -> void:
 			player_data.player_gongfa_hand_sequences.get(hand_type_id, []))
 		_player_gongfa_queues[hand_type_id] = player_queue
 		var enemy_queue := GongfaQueueState.new()
-		enemy_queue.initialize(hand_type_id, 1, [])
+		var enemy_capacity: int = max(int(
+			enemy_data.enemy_gongfa_slot_counts.get(hand_type_id, 1)), 1)
+		var enemy_definition_values: Variant = enemy_data.enemy_gongfa_loadout.get(
+			hand_type_id, [])
+		if not enemy_definition_values is Array:
+			return false
+		if enemy_definition_values.size() > enemy_capacity:
+			return false
+		for enemy_definition_value: Variant in enemy_definition_values:
+			if not enemy_definition_value is String \
+					or str(enemy_definition_value) == "":
+				return false
+			var enemy_gongfa_data: GongfaData = Global.get_gongfa_data(
+				str(enemy_definition_value))
+			if enemy_gongfa_data == null \
+					or not enemy_gongfa_data.supports_hand_type(hand_type_id):
+				return false
+		if not enemy_queue.initialize_from_definition_ids(
+			hand_type_id,
+			enemy_capacity,
+			enemy_definition_values,
+			"enemy-%s" % _active_enemy_instance_id):
+			return false
 		_enemy_gongfa_queues[hand_type_id] = enemy_queue
+	return true
 
 ## 返回指定阵营和牌型的战斗功法队列内容副本。
 func get_gongfa_queue_entries(side: String, hand_type_id: String) -> Array[Dictionary]:
@@ -243,6 +284,29 @@ func get_gongfa_queue_capacity(side: String, hand_type_id: String) -> int:
 ## 返回指定阵营当前装备内功槽的 UID副本。
 func get_neigong_slot_uids(side: String) -> Array[String]:
 	return (_player_neigong_slot_uids if side == SIDE_PLAYER else _enemy_neigong_slot_uids).duplicate()
+
+## 返回双方战斗内功槽的展示数据，不暴露可修改的内部数组。
+func get_neigong_slot_entries(side: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if side == SIDE_PLAYER and Global.player_data != null:
+		for neigong_uid: String in _player_neigong_slot_uids:
+			var player_neigong: NeigongData = Global.player_data.get_owned_neigong(neigong_uid)
+			result.append({
+				"instance_uid": neigong_uid,
+				"definition_id": player_neigong.object_id if player_neigong != null else "",
+				"name": player_neigong.neigong_name if player_neigong != null else "空槽",
+			})
+		return result
+	if side == SIDE_ENEMY:
+		for definition_index: int in _enemy_neigong_definition_ids.size():
+			var definition_id: String = _enemy_neigong_definition_ids[definition_index]
+			var enemy_neigong: NeigongData = Global.get_neigong_data(definition_id)
+			result.append({
+				"instance_uid": _enemy_neigong_slot_uids[definition_index],
+				"definition_id": definition_id,
+				"name": enemy_neigong.neigong_name if enemy_neigong != null else definition_id,
+			})
+	return result
 
 ## 返回指定阵营的战斗内功槽容量。
 func get_neigong_slot_capacity(side: String) -> int:
@@ -798,6 +862,7 @@ func commit_player_selection(qi_instance_uids: Array[String]) -> bool:
 		return false
 	for qi_instance_uid: String in qi_instance_uids:
 		_move_qi_unchecked(SIDE_PLAYER, qi_instance_uid, ZONE_HAND, ZONE_PENDING)
+	_reveal_enemy_pending(qi_instance_uids.size())
 	return true
 
 ## 敌方按当前手牌顺序提交前若干张真气到待结算区。
@@ -805,6 +870,7 @@ func prepare_enemy_pending(play_count: int) -> int:
 	if is_action_frozen() or not is_side_eligible(SIDE_ENEMY) \
 		or not _enemy_pending.is_empty():
 		return 0
+	_enemy_revealed_pending_count = 0
 	var actual_count: int = min(clamp(play_count, 1, PENDING_LIMIT), _enemy_hand.size())
 	var selected_uids: Array[String] = []
 	for qi_index: int in actual_count:
@@ -820,6 +886,7 @@ func freeze_action() -> QiActionRequest:
 		or _player_pending.size() > PENDING_LIMIT \
 		or _enemy_pending.size() > PENDING_LIMIT:
 		return null
+	_reveal_enemy_pending(_enemy_pending.size())
 	_next_action_order += 1
 	_frozen_action_token = "qi-action-%d" % _next_action_order
 	var request: QiActionRequest = QiActionRequest.new()
@@ -873,11 +940,23 @@ func complete_qi_action(request: QiActionRequest) -> bool:
 			request.enemy_result.gongfa_copy_count)
 	advance_after_action(request)
 	_frozen_action_token = ""
+	_enemy_revealed_pending_count = 0
 	return true
 
 ## 返回当前是否已经确认并等待正式结算。
 func is_action_frozen() -> bool:
 	return _frozen_action_token != ""
+
+## 返回当前行动中敌方待结算区已经翻开的牌数。
+func get_enemy_revealed_pending_count() -> int:
+	return _enemy_revealed_pending_count
+
+## 按玩家本次成功提交的牌数，从敌方待结算区左侧继续翻牌。
+func _reveal_enemy_pending(reveal_count: int) -> void:
+	_enemy_revealed_pending_count = clamp(
+		_enemy_revealed_pending_count + max(0, reveal_count),
+		0,
+		_enemy_pending.size())
 
 ## 取消尚未执行效果的冻结请求；牌仍留在待结算区，允许重新确认。
 func cancel_frozen_action(request: QiActionRequest) -> bool:
@@ -1003,6 +1082,7 @@ func _clear_zones() -> void:
 	_enemy_discard.clear()
 	_enemy_exhaust.clear()
 	_enemy_pending.clear()
+	_enemy_revealed_pending_count = 0
 	_active_enemy_instance_id = ""
 	_frozen_action_token = ""
 	_next_action_order = 0
@@ -1017,6 +1097,7 @@ func _clear_zones() -> void:
 	_enemy_gongfa_queues.clear()
 	_player_neigong_slot_uids.clear()
 	_enemy_neigong_slot_uids.clear()
+	_enemy_neigong_definition_ids.clear()
 	_player_neigong_slot_capacity = 6
 	_enemy_neigong_slot_capacity = 6
 	_clear_defense_entries()
