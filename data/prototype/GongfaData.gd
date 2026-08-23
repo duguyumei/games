@@ -6,11 +6,11 @@ class_name GongfaData
 const HAND_TYPE_IDS: Array[String] = [
 	"high_card",
 	"pair",
-	"two_pair",
 	"three_kind",
-	"straight",
-	"full_house",
+	"two_pair",
 	"four_kind",
+	"full_house",
+	"straight",
 	"five_kind",
 ]
 
@@ -61,8 +61,14 @@ enum GONGFA_RARITIES {COMMON, UNCOMMON, RARE, LEGENDARY}
 ## 允许配置此功法的牌型 ID。
 @export var gongfa_eligible_hand_ids: Array[String] = []
 
-## 功法效果配置；真气结算器会读取其中的 Action/Interceptor 动作定义。
-@export var gongfa_effects: Array[Dictionary] = []
+## 功法的有序原子；每个原子包含一个按配置顺序执行的 Action 数组。
+@export var gongfa_atoms: Array[Dictionary] = []
+
+## 功法作为被动来源参与统一数值查询的固定配置。
+@export var qi_value_effects: Array[Dictionary] = []
+
+## 功法监听战斗事件时使用的固定效果配置。
+@export var qi_battle_event_effects: Array[Dictionary] = []
 
 ## 本局获得此功法的次数；首次获得为一。
 @export var gongfa_owned_count: int = 1
@@ -95,7 +101,7 @@ func decrease_owned_count(amount: int = 1) -> bool:
 	gongfa_owned_count -= amount
 	return true
 
-## 校验价格、牌型、次数和效果配置是否可持久化。
+## 校验价格、牌型、次数、数值钩子和功法原子是否可持久化。
 func is_valid_gongfa() -> bool:
 	if gongfa_purchase_price < 0 or gongfa_sell_price < 0 or gongfa_owned_count < 1:
 		return false
@@ -105,4 +111,9 @@ func is_valid_gongfa() -> bool:
 		for hand_type_id: String in gongfa_eligible_hand_ids:
 			if not HAND_TYPE_IDS.has(hand_type_id):
 				return false
-	return JsonStateValidator.is_json_compatible(gongfa_effects)
+	return JsonStateValidator.is_json_compatible(gongfa_atoms) \
+		and JsonStateValidator.is_json_compatible(qi_value_effects) \
+		and JsonStateValidator.is_json_compatible(qi_battle_event_effects) \
+		and QiValuePipeline.validate_value_effects(qi_value_effects) \
+		and GongfaAtomScheduler.validate_atom_definitions(gongfa_atoms) \
+		and QiActionResolver.validate_atom_formulas(gongfa_atoms)

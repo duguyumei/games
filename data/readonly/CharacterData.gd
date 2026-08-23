@@ -39,8 +39,6 @@ class_name CharacterData
 @export var character_starting_consumable_pack_ids: Array[String] = []
 ## Cards added to player on run start
 @export var character_starting_card_object_ids: Array[String] = []
-## 真气牌加入本局时使用的固定 ID；为空时默认加入完整 52 张标准扑克牌。
-@export var character_starting_qi_object_ids: Array[String] = []
 ## Money added to player on start
 @export var character_starting_money: int = 999
 @export var character_starting_health: int = 50

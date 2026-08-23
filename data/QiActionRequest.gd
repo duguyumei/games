@@ -41,6 +41,12 @@ var player_combo_after: int = 0
 ## 敌方连击槽结算后的数值。
 var enemy_combo_after: int = 0
 
+## 玩家本次队首功法的全部原子是否已经实际执行完毕。
+var player_gongfa_completed: bool = false
+
+## 敌方本次队首功法的全部原子是否已经实际执行完毕。
+var enemy_gongfa_completed: bool = false
+
 ## 初始化冻结请求；传入数组始终复制，调用方不能继续污染请求内容。
 func initialize(
 		_action_token: String,
@@ -92,3 +98,25 @@ func get_side_result(side: String) -> QiActionSideResult:
 	if side == BattleQiState.SIDE_ENEMY:
 		return enemy_result
 	return null
+
+## 记录一方实际完成的原子；复制数量只来自已经执行的原子。
+func record_gongfa_atom_execution(
+		side: String,
+		copy_self_count: int,
+		is_last_atom: bool) -> void:
+	var side_result: QiActionSideResult = get_side_result(side)
+	if side_result == null:
+		return
+	side_result.gongfa_copy_count += max(copy_self_count, 0)
+	if side == BattleQiState.SIDE_PLAYER and is_last_atom:
+		player_gongfa_completed = true
+	elif side == BattleQiState.SIDE_ENEMY and is_last_atom:
+		enemy_gongfa_completed = true
+
+## 返回指定阵营的队首功法是否已经完整执行。
+func is_gongfa_completed(side: String) -> bool:
+	if side == BattleQiState.SIDE_PLAYER:
+		return player_gongfa_completed
+	if side == BattleQiState.SIDE_ENEMY:
+		return enemy_gongfa_completed
+	return false

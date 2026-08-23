@@ -10,6 +10,12 @@ var current_action_queue: Array[BaseAction] = []
 var current_action: BaseAction = null # the current action being invoked
 var actions_being_performed: bool = false	# flag to prevent multiple actions being performed simultaneously and check for blocking
 
+## 功法原子内部同步执行时临时接管新生成的行为，避免它们越过当前原子组延后执行。
+var _inline_action_capture_depth: int = 0
+
+## 当前原子子行为生成的同步后续行为。
+var _inline_captured_actions: Array[BaseAction] = []
+
 # action interceptors
 ## 将战斗对象映射到其拦截器来源注册记录。
 var _registered_action_interceptors: Dictionary = {}
@@ -46,6 +52,12 @@ func add_actions(actions: Array[BaseAction], enqueue: bool = false, front_of_que
 	# 预览查询期间禁止拦截器向正式行为队列写入新行为。
 	if is_previewing_action_interceptors():
 		return
+	if _inline_action_capture_depth > 0:
+		if front_of_queue:
+			_inline_captured_actions = actions + _inline_captured_actions
+		else:
+			_inline_captured_actions += actions
+		return
 	if enqueue:
 		# adding to queue
 		if len(action_stack) == 0:
@@ -74,6 +86,23 @@ func add_actions(actions: Array[BaseAction], enqueue: bool = false, front_of_que
 	if len(actions) > 0:	# automatically perform the actions when they're added
 		if not actions_being_performed:	# check to prevent multiple automatic calls of this method
 			_perform_actions()
+
+## 开始捕获原子内部同步行为生成的后续行为。
+func begin_inline_action_capture() -> void:
+	_inline_action_capture_depth += 1
+
+## 取出当前已经捕获的行为，并保持它们的生成顺序。
+func take_inline_captured_actions() -> Array[BaseAction]:
+	var result: Array[BaseAction] = []
+	result.assign(_inline_captured_actions)
+	_inline_captured_actions.clear()
+	return result
+
+## 结束一层原子内部行为捕获。
+func end_inline_action_capture() -> void:
+	_inline_action_capture_depth = max(_inline_action_capture_depth - 1, 0)
+	if _inline_action_capture_depth == 0:
+		_inline_captured_actions.clear()
 
 func _perform_actions() -> void:	
 	# performs all actions on the action stack
@@ -126,6 +155,8 @@ func clear_all_actions() -> void:
 	
 	action_stack.clear()
 	current_action_queue.clear()
+	_inline_captured_actions.clear()
+	_inline_action_capture_depth = 0
 	
 	if actions_being_performed:
 		actions_being_performed = false

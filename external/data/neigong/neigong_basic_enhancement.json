@@ -1,0 +1,27 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "neigong_basic_enhancement",
+		"neigong_name": "基础强化",
+		"neigong_description": "每次行动中，待结算区第一张真气的最终真气值增加2。",
+		"neigong_texture_path": "",
+		"neigong_purchase_price": 0,
+		"neigong_sell_price": 0,
+		"neigong_category": "basic",
+		"neigong_rarity": 0,
+		"neigong_interceptor_ids": [],
+		"qi_value_effects": [
+			{
+				"effect_id": "basic_enhancement_first_qi",
+				"stage": "final_qi_value",
+				"operation": "add",
+				"value": 2,
+				"target": "first_pending"
+			}
+		],
+		"qi_battle_event_effects": [],
+		"neigong_counter": 0,
+		"neigong_used": false,
+		"neigong_runtime_state": {}
+	}
+}

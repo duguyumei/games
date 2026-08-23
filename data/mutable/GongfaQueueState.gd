@@ -14,13 +14,18 @@ var _entries: Array[Dictionary] = []
 ## 生成稳定且只在本场战斗有效的实例序号。
 var _next_serial: int = 0
 
+## 敌我和不同战斗对象之间用于隔离槽实例 ID 的稳定前缀。
+var _slot_instance_prefix: String = "side"
+
 ## 从本局永久功法 UID 序列创建战斗队列。
 func initialize(
 		_hand_type_id: String,
 		_capacity: int,
-		permanent_gongfa_uids: Array) -> void:
+		permanent_gongfa_uids: Array,
+		instance_prefix: String = "player") -> void:
 	hand_type_id = _hand_type_id
 	capacity = max(_capacity, 1)
+	_slot_instance_prefix = instance_prefix if instance_prefix != "" else "player"
 	_entries.clear()
 	_next_serial = 0
 	for gongfa_uid_value: Variant in permanent_gongfa_uids:
@@ -38,6 +43,7 @@ func initialize_from_definition_ids(
 		instance_prefix: String) -> bool:
 	hand_type_id = _hand_type_id
 	capacity = max(_capacity, 1)
+	_slot_instance_prefix = instance_prefix if instance_prefix != "" else "enemy"
 	_entries.clear()
 	_next_serial = 0
 	for gongfa_definition_value: Variant in gongfa_definition_ids:
@@ -121,7 +127,8 @@ func _create_entry(
 		if gongfa_data != null:
 			definition_id = gongfa_data.object_id
 	return {
-		"slot_instance_id": "battle-gongfa-%s-%d" % [hand_type_id, _next_serial],
+		"slot_instance_id": "battle-gongfa-%s-%s-%d" % [
+			_slot_instance_prefix, hand_type_id, _next_serial],
 		"gongfa_instance_uid": gongfa_instance_uid,
 		"gongfa_definition_id": definition_id,
 		"hand_type_id": hand_type_id,

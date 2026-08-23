@@ -38,14 +38,14 @@ func _format_side(side_name: String, result: QiActionSideResult) -> String:
 		return "%s  无有效牌型" % side_name
 	var counts: Array[String] = []
 	for attribute_id: String in QiData.ATTRIBUTE_IDS:
-		counts.append("%s%d" % [attribute_id, result.pattern.get_attribute_count(attribute_id)])
+		counts.append("%s%d" % [attribute_id, result.attribute_counts.get(attribute_id, 0)])
 	return "%s  %s  同气%s  C%d  M%d  P%d" % [
 		side_name,
 		_get_hand_type_name(result.pattern.hand_type_id),
 		"/".join(counts),
 		result.qi_value_sum,
-		result.base_multiplier + result.multiplier_modifiers,
-		result.final_power]
+		result.final_multiplier,
+		result.effective_power]
 
 func _get_hand_type_name(hand_type_id: String) -> String:
 	var names: Dictionary = {

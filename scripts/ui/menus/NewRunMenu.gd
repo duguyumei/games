@@ -1,14 +1,14 @@
 ## Menu for starting a new run
 extends BaseMenu
 
-@onready var character_name_label = %CharacterNameLabel
-@onready var character_health_label = %CharacterHealthLabel
-@onready var character_money_label = %CharacterMoneyLabel
-@onready var character_description_label = %CharacterDescriptionLabel
+@onready var deck_name_label = %CharacterNameLabel
+@onready var deck_health_label = %CharacterHealthLabel
+@onready var deck_money_label = %CharacterMoneyLabel
+@onready var deck_description_label = %CharacterDescriptionLabel
 
-@onready var character_artifact_texture_rect = %CharacterArtifactTextureRect
-@onready var character_artifact_name_label = %CharacterArtifactNameLabel
-@onready var character_artifact_description_label = %CharacterArtifactDescriptionLabel
+@onready var deck_texture_rect = %CharacterArtifactTextureRect
+@onready var deck_content_name_label = %CharacterArtifactNameLabel
+@onready var deck_content_description_label = %CharacterArtifactDescriptionLabel
 
 @onready var decrease_difficulty_button: Button = %DecreaseDifficultyButton
 @onready var difficulty_label: LabelAutoSizer = %DifficultyLabel
@@ -16,13 +16,14 @@ extends BaseMenu
 
 @onready var custom_run_modifier_button_container: VBoxContainer = %CustomRunModifierButtonContainer
 
-@onready var character_button_container: GridContainer = %CharacterButtonContainer
+@onready var deck_button_container: GridContainer = %CharacterButtonContainer
 
 @onready var seed_visibility_toggle: Button = %SeedVisibilityToggle
 @onready var seed_input: LineEdit = %SeedInput
 @onready var start_run_button: Button = %StartRunButton
 
-var selected_character_object_id: String = ""
+## 当前选择的初始真气卡组固定 ID。
+var selected_starting_qi_deck_object_id: String = ""
 var selected_difficulty_level: int = 0: set = set_selected_difficulty_level
 
 var _run_modifier_object_id_to_checkbox: Dictionary = {}
@@ -44,65 +45,66 @@ func _ready():
 
 func populate_menu() -> void:
 	super()
-	populate_character_buttons()
+	populate_starting_qi_deck_buttons()
 	populate_custom_run_modifiers()
 
 func clear_menu() -> void:
 	super()
-	clear_character_buttons()
+	clear_starting_qi_deck_buttons()
 	clear_custom_run_modifiers()
 
-#region Character Selection
-func populate_character_buttons() -> void:
-	clear_character_buttons()
+#region Starting Qi Deck Selection
+## 创建全部固定初始真气卡组按钮；玩家看到的是卡组而不是底层角色。
+func populate_starting_qi_deck_buttons() -> void:
+	clear_starting_qi_deck_buttons()
 	
-	var character_object_ids: Array = Global._id_to_character_data.keys()
+	var deck_object_ids: Array = Global._id_to_starting_qi_deck_data.keys()
+	deck_object_ids.sort()
 	
 	var first_button: TextureButton = null
 	
-	for character_object_id in character_object_ids:
-		# create character button
-		var character_selection_button: CharacterSelectionButton = Scenes.CHARACTER_SELECTION_BUTTON.instantiate()
-		character_button_container.add_child(character_selection_button)
-		character_selection_button.init(character_object_id)
-		# connect signal
-		character_selection_button.character_selected.connect(_on_character_selected)
+	for deck_object_id: String in deck_object_ids:
+		var deck_selection_button: StartingQiDeckSelectionButton = Scenes.STARTING_QI_DECK_SELECTION_BUTTON.instantiate()
+		deck_button_container.add_child(deck_selection_button)
+		deck_selection_button.init(deck_object_id)
+		deck_selection_button.starting_qi_deck_selected.connect(_on_starting_qi_deck_selected)
 		
 		if first_button == null:
-			first_button = character_selection_button
+			first_button = deck_selection_button
 	
 	# auto press the first button
 	if first_button != null:
 		first_button.button_pressed = true
 		first_button.button_up.emit()
 	
-func clear_character_buttons() -> void:
-	for child in character_button_container.get_children():
+## 清理初始真气卡组按钮。
+func clear_starting_qi_deck_buttons() -> void:
+	for child in deck_button_container.get_children():
 		child.queue_free()
 
-func populate_character_info(character_object_id: String) -> void:
-	var character_data: CharacterData = Global.get_character_data(character_object_id)
+## 显示固定卡组内容和其底层开局生命、金币信息。
+func populate_starting_qi_deck_info(deck_object_id: String) -> void:
+	var deck_data: StartingQiDeckData = Global.get_starting_qi_deck_data(deck_object_id)
+	if deck_data == null:
+		return
+	var character_data: CharacterData = Global.get_character_data(deck_data.deck_character_object_id)
+	deck_name_label.text = deck_data.deck_name
+	deck_description_label.text = deck_data.deck_description
+	deck_content_name_label.text = "真气牌组"
+	deck_content_description_label.text = "共 {0} 张固定真气".format([deck_data.deck_qi_object_ids.size()])
+	deck_texture_rect.visible = deck_data.deck_icon_texture_path != ""
+	if deck_texture_rect.visible:
+		deck_texture_rect.texture = FileLoader.load_texture(deck_data.deck_icon_texture_path)
 	if character_data != null:
-		character_name_label.text = character_data.character_name
-		character_health_label.text = "HP: {0}".format([character_data.character_starting_health])
-		character_money_label.text = "Money: {0}".format([character_data.character_starting_money])
-		character_description_label.text = character_data.character_description
-		
-		# TODO potentially update ui to support multiple starter artifacts displayed
-		if len(character_data.character_starting_artifact_ids) > 0:
-			var artifact_data: ArtifactData = Global.get_artifact_data(character_data.character_starting_artifact_ids[0])
-			if artifact_data != null:
-				character_artifact_texture_rect.texture = FileLoader.load_texture(artifact_data.artifact_texture_path)
-				character_artifact_name_label.text = artifact_data.artifact_name
-				character_artifact_description_label.text = artifact_data.artifact_description
-		
-		# play character selection audio if it exists
+		deck_health_label.text = "生命：{0}".format([character_data.character_starting_health])
+		deck_money_label.text = "金币：{0}".format([character_data.character_starting_money])
 		if character_data.character_selection_audio_path != "":
 			ActionGenerator.generate_sound_action(character_data.character_selection_audio_path, false)
 
-func _on_character_selected(character_object_id: String):
-	selected_character_object_id = character_object_id
-	populate_character_info(selected_character_object_id)
+func _on_starting_qi_deck_selected(deck_object_id: String) -> void:
+	selected_starting_qi_deck_object_id = deck_object_id
+	populate_starting_qi_deck_info(selected_starting_qi_deck_object_id)
+	set_selected_difficulty_level(selected_difficulty_level)
 
 #endregion
 
@@ -121,8 +123,10 @@ func _on_seed_input_text_changed(new_text: String):
 #region Difficulty
 func set_selected_difficulty_level(value: int) -> void:
 	# set difficulty label
-	if selected_character_object_id != "":
-		var character_highest_difficulty_win: int = Global.profile_data.profile_character_id_to_highest_difficulty.get(selected_character_object_id, 0)
+	if selected_starting_qi_deck_object_id != "":
+		var deck_data: StartingQiDeckData = Global.get_starting_qi_deck_data(selected_starting_qi_deck_object_id)
+		var character_object_id: String = deck_data.deck_character_object_id if deck_data != null else ""
+		var character_highest_difficulty_win: int = Global.profile_data.profile_character_id_to_highest_difficulty.get(character_object_id, 0)
 		if ProfileData.ENABLE_ALL_DIFFICULTIES:
 			selected_difficulty_level = value
 		else:
@@ -180,7 +184,7 @@ func _on_custom_run_modifier_toggled(toggle: bool, run_modifier_data: RunModifie
 func _on_start_run_button_presssed():
 	# get the seed and start the run
 	var run_seed: int = seed_input.text.to_int()
-	Global.start_run(selected_character_object_id, run_seed, selected_difficulty_level, selected_custom_run_modififers)
+	Global.start_run(selected_starting_qi_deck_object_id, run_seed, selected_difficulty_level, selected_custom_run_modififers)
 
 func _on_run_ended():
 	# go back to tile screen on failed run (save deleted), but not abandoned run (save kept)

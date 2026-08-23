@@ -121,7 +121,10 @@ func perform_action() -> void:
 				elif k < 3:
 					# easy pool
 					location.location_type = LocationData.LOCATION_TYPES.COMBAT
-					location.location_event_pool_object_id = act_data.act_easy_combat_event_pool_object_id
+					location.location_event_pool_object_id = \
+						"event_pool_taiwu_first_combat" \
+						if act_number == 1 and k == 0 \
+						else act_data.act_easy_combat_event_pool_object_id
 				else:
 					# hard pool
 					location.location_type = LocationData.LOCATION_TYPES.COMBAT
@@ -133,7 +136,8 @@ func perform_action() -> void:
 						location.location_obfuscated = true
 				
 				# randomly convert some to dialogue events
-				if [LocationData.LOCATION_TYPES.COMBAT].has(location.location_type):
+				if [LocationData.LOCATION_TYPES.COMBAT].has(location.location_type) \
+					and not (act_number == 1 and k == 0):
 					if rng_world_generation.randf() < location_non_combat_event_rate:
 						location.location_obfuscated = true
 						location.location_type = LocationData.LOCATION_TYPES.EVENT

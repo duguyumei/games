@@ -111,6 +111,10 @@ const ACTION_APPLY_QI_ANOMALY: String = "res://scripts/actions/taiwu_actions/Act
 const ACTION_REMOVE_QI_ANOMALY: String = "res://scripts/actions/taiwu_actions/ActionRemoveQiAnomaly.gd"
 ## 真气行动效果完成后的统一牌区收尾动作。
 const ACTION_RESOLVE_QI_ACTION: String = "res://scripts/actions/taiwu_actions/ActionResolveQiAction.gd"
+## 从真气牌库抽取固定数量真气。
+const ACTION_DRAW_QI: String = "res://scripts/actions/taiwu_actions/ActionDrawQi.gd"
+## 从当前真气手牌弃置固定数量真气。
+const ACTION_DISCARD_QI: String = "res://scripts/actions/taiwu_actions/ActionDiscardQi.gd"
 
 # artifact actions
 const ACTION_INCREASE_ARTIFACT_CHARGE: String = "res://scripts/actions/artifact_actions/ActionIncreaseArtifactCharge.gd"

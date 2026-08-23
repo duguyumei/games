@@ -81,15 +81,26 @@ func apply_health_damage(amount: int) -> Array[int]:
 	create_damage_text(amount)
 	enemy_data.enemy_health = max(0, enemy_data.enemy_health - amount)
 	Signals.combatant_damaged.emit(self, amount, capped_damage, overkill_damage)
-	if enemy_data.enemy_health <= 0:
-		ActionGenerator.generate_combatant_death(self)
 	update_health_bar(true)
-	if enemy_data.enemy_health <= 0 and not death_animation_player.is_playing():
-		animated_sprite_2d.play(AnimationData.ANIMATION_DEATH)
-		death_animation_player.play("Enemy/death")
-		remove_from_group("enemies")
-		Signals.enemy_killed.emit(self)
+	if enemy_data.enemy_health <= 0 and not _is_qi_death_deferred():
+		finalize_deferred_qi_death()
 	return [amount, capped_damage, overkill_damage]
+
+## 原子组结束后统一播放敌方死亡并发送一次死亡信号。
+func finalize_deferred_qi_death() -> void:
+	if enemy_data.enemy_health > 0 or death_animation_player.is_playing() \
+		or not is_in_group("enemies"):
+		return
+	ActionGenerator.generate_combatant_death(self)
+	animated_sprite_2d.play(AnimationData.ANIMATION_DEATH)
+	death_animation_player.play("Enemy/death")
+	remove_from_group("enemies")
+	Signals.enemy_killed.emit(self)
+
+## 返回当前真气原子组是否延迟死亡表现。
+func _is_qi_death_deferred() -> bool:
+	return Global.battle_qi_state != null \
+		and Global.battle_qi_state.is_death_resolution_deferred()
 
 func set_block(amount: int) -> void:
 	if Global.battle_qi_state == null:

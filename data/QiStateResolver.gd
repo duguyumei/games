@@ -123,6 +123,16 @@ static func get_contribution_qi_value(
 	if qi_data == null:
 		return 0
 	var value: int = get_effective_qi_value(qi_data, battle_state)
+	return apply_contribution_modifiers(qi_data, value, battle_state, context)
+
+## 在给定有效真气值上应用重塑和异状的最终贡献修正，供统一数值管线复用。
+static func apply_contribution_modifiers(
+		qi_data: QiData,
+		value: int,
+		battle_state: BattleQiState = null,
+		context: Dictionary = {}) -> int:
+	if qi_data == null:
+		return 0
 	var value_add: int = 0
 	var value_multiplier: int = 1
 	for state: QiReshapeState in qi_data.qi_reshape_states:

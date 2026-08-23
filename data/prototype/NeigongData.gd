@@ -29,6 +29,12 @@ enum NEIGONG_RARITIES {COMMON, UNCOMMON, RARE, LEGENDARY}
 ## 装备后注册到行为管线的拦截器固定 ID。
 @export var neigong_interceptor_ids: Array[String] = []
 
+## 内功作为效果来源参与统一数值查询的固定配置。
+@export var qi_value_effects: Array[Dictionary] = []
+
+## 内功监听战斗事件时使用的固定效果配置。
+@export var qi_battle_event_effects: Array[Dictionary] = []
+
 ## 本局实例的通用计数。
 @export var neigong_counter: int = 0
 
@@ -54,4 +60,7 @@ func is_valid_neigong() -> bool:
 	return neigong_purchase_price >= 0 \
 		and neigong_sell_price >= 0 \
 		and neigong_counter >= 0 \
-		and JsonStateValidator.is_json_compatible(neigong_runtime_state)
+		and JsonStateValidator.is_json_compatible(neigong_runtime_state) \
+		and JsonStateValidator.is_json_compatible(qi_value_effects) \
+		and JsonStateValidator.is_json_compatible(qi_battle_event_effects) \
+		and QiValuePipeline.validate_value_effects(qi_value_effects)

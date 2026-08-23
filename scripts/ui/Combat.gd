@@ -29,6 +29,9 @@ extends Control
 @onready var end_turn_button: Button = $EndTurnButton
 var end_turn_object: CombatEndTurn = null
 
+## 防止行动开始事件等待期间重复开启同一真气行动窗口。
+var _qi_action_starting: bool = false
+
 func _ready():
 	Signals.player_money_changed.connect(_on_player_money_changed)
 	Signals.player_health_changed.connect(_on_player_health_changed)
@@ -615,6 +618,8 @@ func start_turn_animation() -> void:
 
 ## 按当前回合或连击状态打开行动窗口，并让可行动敌方先提交真气。
 func _start_qi_action() -> void:
+	if _qi_action_starting:
+		return
 	var battle_state: BattleQiState = Global.battle_qi_state
 	if battle_state == null or battle_state.is_action_frozen():
 		return
@@ -623,6 +628,17 @@ func _start_qi_action() -> void:
 		DebugLogger.log_error("Qi action cannot start without exactly one enemy")
 		return
 	if not battle_state.begin_action_window():
+		return
+	_qi_action_starting = true
+	var action_start_actions: Array[BaseAction] = QiBattleEventResolver.build_event_actions(
+		QiBattleEventResolver.EVENT_ACTION_STARTED,
+		battle_state.get_eligible_sides(),
+		battle_state)
+	ActionHandler.add_actions(action_start_actions, true)
+	if ActionHandler.actions_being_performed:
+		await ActionHandler.actions_ended
+	if Global.battle_qi_state != battle_state or _end_combat_check():
+		_qi_action_starting = false
 		return
 	HandManager.set_disable_hand(true)
 	if battle_state.is_side_eligible(BattleQiState.SIDE_ENEMY):
@@ -635,6 +651,7 @@ func _start_qi_action() -> void:
 		var enemy_only_request: QiActionRequest = battle_state.freeze_action()
 		if enemy_only_request != null:
 			Global.resolve_qi_action(enemy_only_request)
+	_qi_action_starting = false
 	update_combat_display()
 
 ## 返回当前是否已经建立可用的真气战斗牌区。

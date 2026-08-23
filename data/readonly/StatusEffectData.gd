@@ -141,6 +141,12 @@ enum STATUS_EFFECT_DECAY_TYPES {
 ## from having interceptors or you'll run into problems with them unregistering. 
 @export var status_effect_interceptor_ids: Array[String] = []
 
+## 状态作为效果来源参与统一真气数值查询的固定配置。
+@export var qi_value_effects: Array[Dictionary] = []
+
+## 状态监听真气战斗事件时使用的固定效果配置。
+@export var qi_battle_event_effects: Array[Dictionary] = []
+
 ## Gets the texture for this status given the provided textures and charges
 func get_status_effect_texture_path(charge_count: int) -> String:
 	if charge_count < 0 and status_effect_negative_charges_texture_path != "":

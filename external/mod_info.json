@@ -59,6 +59,14 @@
 				"class_name": "EnemyData",
 				"table_name": "_id_to_enemy_data"
 			},
+			"external/data/gongfa/": {
+				"class_name": "GongfaData",
+				"table_name": "_id_to_gongfa_data"
+			},
+			"external/data/neigong/": {
+				"class_name": "NeigongData",
+				"table_name": "_id_to_neigong_data"
+			},
 			"external/data/event_pools/": {
 				"class_name": "EventPoolData",
 				"table_name": "_id_to_event_pool_data"
@@ -83,6 +91,10 @@
 				"class_name": "QiData",
 				"table_name": "_id_to_qi_data"
 			},
+			"external/data/qi_anomaly/": {
+				"class_name": "QiAnomalyData",
+				"table_name": "_id_to_qi_anomaly_data"
+			},
 			"external/data/rest_actions/": {
 				"class_name": "RestActionData",
 				"table_name": "_id_to_rest_action_data"
@@ -98,6 +110,10 @@
 			"external/data/status_effects/": {
 				"class_name": "StatusEffectData",
 				"table_name": "_id_to_status_data"
+			},
+			"external/data/starting_qi_decks/": {
+				"class_name": "StartingQiDeckData",
+				"table_name": "_id_to_starting_qi_deck_data"
 			}
 		},
 		"mod_game_version": {

@@ -60,6 +60,12 @@ const STANDARD_ATTRIBUTES: Array[int] = [
 ## 允许跨战斗存在的特殊异状；普通战斗异状存放在 BattleQiState。
 @export var qi_persistent_anomaly_states: Array[QiAnomalyState] = []
 
+## 真气作为效果来源参与统一数值查询的固定配置；查询期间不会消耗状态或生成行为。
+@export var qi_value_effects: Array[Dictionary] = []
+
+## 真气监听战斗事件时使用的固定效果配置；正式事件确认后才会生成行为。
+@export var qi_battle_event_effects: Array[Dictionary] = []
+
 ## 返回标准扑克牌牌阶对应的稳定 ID。
 static func get_standard_rank_id(rank: int) -> String:
 	if rank < 1 or rank > STANDARD_RANK_IDS.size():
@@ -465,7 +471,8 @@ func is_valid_qi() -> bool:
 		and qi_rank >= 1 \
 		and qi_rank <= 13 \
 		and qi_value >= -1 \
-		and JsonStateValidator.is_json_compatible(qi_permanent_state)):
+		and JsonStateValidator.is_json_compatible(qi_permanent_state) \
+		and QiValuePipeline.validate_value_effects(qi_value_effects)):
 		return false
 	var seen_state_uids: Dictionary[String, bool] = {}
 	var slot_counts: Dictionary[String, int] = {}

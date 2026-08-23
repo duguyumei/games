@@ -305,7 +305,15 @@ func play_attack_animation() -> void:
 	animation_player.play("Player/attack")
 
 func play_death_animation() -> void:
+	if Global.battle_qi_state != null \
+		and Global.battle_qi_state.is_death_resolution_deferred():
+		return
 	if not animation_player.is_playing():
 		animated_sprite_2d.play(AnimationData.ANIMATION_DEATH)
 		animation_player.play("Player/death")
 		Signals.player_killed.emit(self)
+
+## 原子组结束后统一提交玩家死亡；存活时不产生任何效果。
+func finalize_deferred_qi_death() -> void:
+	if Global.player_data.player_health <= 0:
+		play_death_animation()

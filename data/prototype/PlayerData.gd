@@ -291,14 +291,6 @@ func add_qi_instance(qi_data: QiData) -> bool:
 	Signals.player_qi_changed.emit()
 	return true
 
-## 将完整的 52 张标准扑克牌实例加入本局；重复调用只保留尚未拥有的牌。
-func add_standard_qi_deck() -> int:
-	var added_count: int = 0
-	for qi_data: QiData in Global.get_standard_qi_deck_from_prototypes():
-		if add_qi_instance(qi_data):
-			added_count += 1
-	return added_count
-
 ## 按固定内容 ID查找本局拥有的所有真气实例；同一固定牌面未来允许出现多份。
 func get_owned_qi_by_definition_id(qi_object_id: String) -> Array[QiData]:
 	var result: Array[QiData] = []

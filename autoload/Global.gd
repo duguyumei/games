@@ -30,6 +30,7 @@ extends Node
 	["ColorData", ColorData, "_id_to_color_data", ["colors/"]],
 	["KeywordData", KeywordData, "_id_to_keyword_data", ["keywords/"]],
 	["CharacterData", CharacterData, "_id_to_character_data", ["characters/"]],
+	["StartingQiDeckData", StartingQiDeckData, "_id_to_starting_qi_deck_data", ["starting_qi_decks/"]],
 	["AnimationData", AnimationData, "_id_to_animation_data", ["animations/"]],
 	["RunModifierData", RunModifierData, "_id_to_run_modifier_data", ["run_modifiers/"]],
 	["RunStartOptionData", RunStartOptionData, "_id_to_run_start_option_data", ["run_start_options/"]],
@@ -77,6 +78,8 @@ var _id_to_action_interceptor_data: Dictionary[String, ActionInterceptorData] = 
 var _id_to_color_data: Dictionary[String, ColorData] = {}
 var _id_to_keyword_data: Dictionary[String, KeywordData] = {}
 var _id_to_character_data: Dictionary[String, CharacterData] = {}
+## 初始真气卡组固定定义查找表；开局只从这里读取明确维护的卡组内容。
+var _id_to_starting_qi_deck_data: Dictionary[String, StartingQiDeckData] = {}
 var _id_to_animation_data: Dictionary[String, AnimationData] = {}
 var _id_to_run_modifier_data: Dictionary[String, RunModifierData] = {}
 var _id_to_run_start_option_data: Dictionary[String, RunStartOptionData] = {}
@@ -232,9 +235,16 @@ func _ready():
 
 
 #region Run
-## Starts a new run under a given seed with a given character
-func start_run(character_object_id: String, run_seed: int, difficulty_level: int = 0, custom_run_modifier_object_ids: Array[String] = []) -> void:
-	var character_data: CharacterData = get_character_data(character_object_id)
+## 使用选中的固定初始真气卡组开始一局；角色只作为底层玩家原型来源。
+func start_run(starting_qi_deck_object_id: String, run_seed: int, difficulty_level: int = 0, custom_run_modifier_object_ids: Array[String] = []) -> void:
+	var starting_qi_deck_data: StartingQiDeckData = get_starting_qi_deck_data(starting_qi_deck_object_id)
+	if starting_qi_deck_data == null or not starting_qi_deck_data.is_valid_starting_deck():
+		DebugLogger.log_error("Global.start_run(): Invalid starting qi deck: {0}".format([starting_qi_deck_object_id]))
+		return
+	var character_data: CharacterData = get_character_data(starting_qi_deck_data.deck_character_object_id)
+	if character_data == null:
+		DebugLogger.log_error("Global.start_run(): Missing character prototype for starting qi deck: {0}".format([starting_qi_deck_object_id]))
+		return
 	
 	# initialize player data from a prototype using selected character
 	player_data = get_player_data_from_prototype(character_data.character_player_id)
@@ -248,22 +258,14 @@ func start_run(character_object_id: String, run_seed: int, difficulty_level: int
 	# NOTE: This holds all artifacts, regardless of packs
 	player_data.initialize_artifact_pool()
 	
-	# add starting artifacts to player
-	for artifact_id in character_data.character_starting_artifact_ids:
-		player_data.add_artifact(artifact_id)
-	
-	# add starting cards to player
-	for card_object_id in character_data.character_starting_card_object_ids:
-		player_data.player_deck.append(get_card_data_from_prototype(card_object_id))
-
-	# 真气默认使用完整的 52 张标准扑克牌；角色可以通过固定配置改为指定牌面集合。
-	if character_data.character_starting_qi_object_ids.is_empty():
-		player_data.add_standard_qi_deck()
-	else:
-		for qi_object_id: String in character_data.character_starting_qi_object_ids:
-			var qi_data: QiData = get_qi_data_from_prototype(qi_object_id)
-			if qi_data != null:
-				player_data.add_qi_instance(qi_data)
+	# 初始真气必须来自固定卡组的明确清单；缺少任何定义都会终止开局，不能静默生成替代牌。
+	for qi_object_id: String in starting_qi_deck_data.deck_qi_object_ids:
+		var qi_data: QiData = get_qi_data_from_prototype(qi_object_id)
+		if qi_data == null or not player_data.add_qi_instance(qi_data):
+			DebugLogger.log_error("Global.start_run(): Invalid qi in starting deck: {0}".format([qi_object_id]))
+			player_data = PlayerData.new()
+			is_run = false
+			return
 	
 	# card draft
 	player_data.reward_draft_card_pack_ids.assign(character_data.character_starting_card_draft_card_pack_ids)
@@ -348,7 +350,9 @@ func initialize_qi_battle_zones(enemy_data: EnemyData) -> bool:
 	var enemy_qi_deck: Array[QiData] = []
 	var enemy_definition_ids: Array[String] = enemy_data.enemy_qi_deck_definition_ids
 	if enemy_definition_ids.is_empty():
-		enemy_definition_ids = QiData.get_standard_deck_object_ids()
+		DebugLogger.log_error("Enemy qi deck must reference a fixed deck explicitly")
+		battle_qi_state.clear_battle()
+		return false
 	for qi_definition_id: String in enemy_definition_ids:
 		var qi_data: QiData = get_qi_data_from_prototype(qi_definition_id)
 		if qi_data == null:
@@ -378,19 +382,30 @@ func get_qi_battle_state() -> BattleQiState:
 ## 确认后立即计算牌型、同气和功法值，并把功法效果排入现有行为队列。
 func resolve_qi_action(request: QiActionRequest) -> bool:
 	if battle_qi_state == null or request == null \
-		or not battle_qi_state.is_action_frozen():
+		or not battle_qi_state.is_action_frozen() \
+		or battle_qi_state.is_qi_action_resolution_started():
 		return false
 	if not QiActionResolver.calculate_request_results(request, battle_qi_state):
 		battle_qi_state.cancel_frozen_action(request)
 		Signals.qi_zones_changed.emit()
 		return false
-	# 真气只有在确认通过基础校验后才发送正式打出事件。
-	for qi_instance_uid: String in request.player_qi_instance_uids:
-		notify_qi_event(BattleQiState.EVENT_QI_PLAYED, qi_instance_uid, request.action_token)
-	for qi_instance_uid: String in request.enemy_qi_instance_uids:
-		notify_qi_event(BattleQiState.EVENT_QI_PLAYED, qi_instance_uid, request.action_token)
 	var generated_actions: Array[BaseAction] = QiActionResolver.build_effect_actions(
 		request, battle_qi_state)
+	if not battle_qi_state.begin_qi_action_resolution(request):
+		return false
+	if not battle_qi_state.commit_qi_effect_receipts(request):
+		battle_qi_state.cancel_frozen_action(request)
+		Signals.qi_zones_changed.emit()
+		return false
+	# 真气只有在确认通过基础校验后才发送正式打出事件。
+	for qi_instance_uid: String in request.player_qi_instance_uids:
+		notify_qi_event(BattleQiState.EVENT_QI_PLAYED, qi_instance_uid,
+			"%s:%s:%s" % [request.action_token, BattleQiState.EVENT_QI_PLAYED,
+			qi_instance_uid])
+	for qi_instance_uid: String in request.enemy_qi_instance_uids:
+		notify_qi_event(BattleQiState.EVENT_QI_PLAYED, qi_instance_uid,
+			"%s:%s:%s" % [request.action_token, BattleQiState.EVENT_QI_PLAYED,
+			qi_instance_uid])
 	var finish_action: ActionResolveQiAction = ActionResolveQiAction.new()
 	finish_action.init_qi_action(request)
 	generated_actions.append(finish_action)
@@ -404,6 +419,17 @@ func complete_qi_action(request: QiActionRequest) -> bool:
 	Signals.qi_zones_changed.emit()
 	Signals.qi_action_completed.emit(request)
 	return true
+
+## 在同优先级原子组结束后统一提交玩家和敌人的死亡表现。
+func finalize_qi_atomic_group_deaths() -> void:
+	if battle_qi_state == null or battle_qi_state.is_death_resolution_deferred():
+		return
+	for enemy_node: Node in get_tree().get_nodes_in_group("enemies_alive_or_dead"):
+		if enemy_node is Enemy:
+			(enemy_node as Enemy).finalize_deferred_qi_death()
+	var player: Player = get_player()
+	if player != null:
+		player.finalize_deferred_qi_death()
 
 ## 向当前真气战斗现场发送一个已提交事件。
 func notify_qi_event(
@@ -657,6 +683,10 @@ func get_keyword_data(keyword_object_id: String) -> KeywordData:
 #region Characters
 func get_character_data(character_object_id: String) -> CharacterData:
 	return _id_to_character_data.get(character_object_id, null)
+
+## 按固定 ID 读取初始真气卡组定义；业务代码不得修改返回对象。
+func get_starting_qi_deck_data(starting_qi_deck_object_id: String) -> StartingQiDeckData:
+	return _id_to_starting_qi_deck_data.get(starting_qi_deck_object_id, null)
 
 func get_player_character_data() -> CharacterData:
 	# gets the character data that the current player is playing as

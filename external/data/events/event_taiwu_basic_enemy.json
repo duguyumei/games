@@ -1,0 +1,20 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "event_taiwu_basic_enemy",
+		"event_pool_validator_data": [],
+		"location_event_pool_validator_failed_strategy": 1,
+		"event_weighted_enemy_object_ids": [
+			{"enemy_taiwu_basic": 1}
+		],
+		"event_enemy_placement_is_automatic": true,
+		"event_enemy_placement_positions": [[0, 0]],
+		"event_initial_combat_actions": [],
+		"event_post_combat_actions": [],
+		"event_has_combat_rewards": true,
+		"event_dialogue_object_id": "",
+		"event_music_file_path": "",
+		"event_background_texture_path": "",
+		"event_death_message_bbcode": "败于基础敌人"
+	}
+}

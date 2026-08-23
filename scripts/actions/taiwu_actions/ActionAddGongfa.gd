@@ -39,7 +39,6 @@ func perform_action() -> void:
 			return
 		var gongfa_data: GongfaData = Global.get_gongfa_data_from_prototype(gongfa_object_id)
 		if gongfa_data != null:
-			gongfa_data.gongfa_owned_count = 1
 			Global.player_data.add_gongfa_instance(gongfa_data)
 		return
 

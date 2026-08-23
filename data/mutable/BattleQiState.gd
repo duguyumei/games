@@ -89,6 +89,9 @@ var _next_action_order: int = 0
 ## 当前已经冻结、等待结算器处理的请求令牌。
 var _frozen_action_token: String = ""
 
+## 当前已经进入正式结算、不能再次确认的行动令牌。
+var _resolving_action_token: String = ""
+
 ## 玩家当前连击槽值。
 var _player_combo_value: int = 0
 
@@ -173,6 +176,18 @@ var _next_defense_entry_order: int = 0
 ## 已处理的事件令牌，避免同一结算事件重复移除状态。
 var _processed_event_tokens: Dictionary[String, bool] = {}
 
+## 特殊真气效果来源；键为阵营和显式来源组，只存在于当前战斗。
+var _registered_qi_effect_sources: Dictionary[String, Array] = {}
+
+## 统一数值效果在本场战斗中已经正式消费的次数。
+var _qi_value_effect_consumed_uses: Dictionary[String, int] = {}
+
+## 已经提交数值效果回执的行动令牌，防止重复消费。
+var _committed_effect_receipt_tokens: Dictionary[String, bool] = {}
+
+## 原子组执行期间延迟死亡表现，保证同优先级双方都获得执行资格。
+var _deferred_death_depth: int = 0
+
 ## 使用敌我牌组初始化战斗牌区；输入对象会深复制，牌区不会修改本局牌组。
 func initialize_zones(
 		player_deck: Array[QiData],
@@ -240,7 +255,8 @@ func initialize_loadouts(
 		player_queue.initialize(
 			hand_type_id,
 			player_data.get_effective_gongfa_slot_count(hand_type_id),
-			player_data.player_gongfa_hand_sequences.get(hand_type_id, []))
+			player_data.player_gongfa_hand_sequences.get(hand_type_id, []),
+			"player")
 		_player_gongfa_queues[hand_type_id] = player_queue
 		var enemy_queue := GongfaQueueState.new()
 		var enemy_capacity: int = max(int(
@@ -740,6 +756,168 @@ func draw_to_hand_limit(side: String, hand_limit: int = HAND_LIMIT) -> int:
 		drawn_count += 1
 	return drawn_count
 
+## 从指定阵营牌库顶抽取固定数量真气；牌库为空时直接停止且不会自动洗回。
+func draw_qi(side: String, draw_count: int) -> int:
+	if not _is_valid_side(side) or draw_count <= 0:
+		return 0
+	var draw_zone: Array[QiData] = _get_zone_reference(side, ZONE_DRAW)
+	var hand_zone: Array[QiData] = _get_zone_reference(side, ZONE_HAND)
+	var actual_count: int = min(draw_count, draw_zone.size())
+	for _draw_index: int in actual_count:
+		hand_zone.append(draw_zone.pop_back())
+	return actual_count
+
+## 按当前手牌从左到右弃置固定数量真气，并发送实际入弃牌堆事件。
+func discard_qi_from_hand(side: String, discard_count: int, event_token: String) -> int:
+	if not _is_valid_side(side) or discard_count <= 0:
+		return 0
+	var hand_zone: Array[QiData] = _get_zone_reference(side, ZONE_HAND)
+	var selected_uids: Array[String] = []
+	for qi_index: int in min(discard_count, hand_zone.size()):
+		selected_uids.append(hand_zone[qi_index].object_uid)
+	for qi_instance_uid: String in selected_uids:
+		_move_qi_unchecked(side, qi_instance_uid, ZONE_HAND, ZONE_DISCARD)
+		_notify_committed_event(EVENT_QI_DISCARDED, qi_instance_uid, event_token)
+	return selected_uids.size()
+
+## 注册一个显式归属固定顺序组的特殊效果来源；未指定合法组时拒绝注册。
+func register_qi_effect_source(
+		side: String,
+		source_group: String,
+		source_kind: String,
+		source_instance_id: String,
+		source_order: int,
+		value_effects: Array,
+		battle_event_effects: Array = []) -> bool:
+	if not _is_valid_side(side) or not QiValuePipeline.SOURCE_GROUPS.has(source_group) \
+		or source_kind == "" or source_instance_id == "" \
+		or not JsonStateValidator.is_json_compatible(value_effects) \
+		or not QiValuePipeline.validate_value_effects(value_effects) \
+		or not JsonStateValidator.is_json_compatible(battle_event_effects):
+		return false
+	var key: String = "%s:%s" % [side, source_group]
+	var sources: Array = _registered_qi_effect_sources.get(key, [])
+	for source_index: int in sources.size():
+		if str(sources[source_index].get("source_instance_id", "")) != source_instance_id:
+			continue
+		sources.remove_at(source_index)
+		break
+	sources.append({
+		"source_group": source_group,
+		"source_kind": source_kind,
+		"source_instance_id": source_instance_id,
+		"source_order": source_order,
+		"value_effects": value_effects.duplicate(true),
+		"battle_event_effects": battle_event_effects.duplicate(true),
+	})
+	sources.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		if int(left.get("source_order", 0)) != int(right.get("source_order", 0)):
+			return int(left.get("source_order", 0)) < int(right.get("source_order", 0))
+		return str(left.get("source_instance_id", "")) < str(right.get("source_instance_id", "")))
+	_registered_qi_effect_sources[key] = sources
+	return true
+
+## 返回指定阵营和顺序组的特殊来源深复制。
+func get_registered_qi_effect_sources(side: String, source_group: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for source: Dictionary in _registered_qi_effect_sources.get(
+			"%s:%s" % [side, source_group], []):
+		result.append(source.duplicate(true))
+	return result
+
+## 查询一个统一数值效果是否还剩足够的本场战斗使用次数。
+func can_use_qi_value_effect(
+		side: String,
+		source_kind: String,
+		source_instance_id: String,
+		effect_id: String,
+		max_uses: int,
+		required_uses: int = 1) -> bool:
+	if not _is_valid_side(side) or source_kind == "" or source_instance_id == "" \
+		or effect_id == "" or max_uses <= 0 or required_uses <= 0:
+		return false
+	var usage_key: String = _get_qi_value_effect_usage_key(
+		side, source_kind, source_instance_id, effect_id)
+	return int(_qi_value_effect_consumed_uses.get(usage_key, 0)) + required_uses \
+		<= max_uses
+
+## 将冻结请求中的纯查询回执原子提交一次；任一回执非法时完全不消费。
+func commit_qi_effect_receipts(request: QiActionRequest) -> bool:
+	if request == null or request.action_token == "" \
+		or request.action_token != _resolving_action_token \
+		or _committed_effect_receipt_tokens.has(request.action_token):
+		return false
+	var required_uses_by_key: Dictionary[String, int] = {}
+	var max_uses_by_key: Dictionary[String, int] = {}
+	for side_result: QiActionSideResult in [request.player_result, request.enemy_result]:
+		if side_result == null:
+			continue
+		for receipt: Dictionary in side_result.effect_receipts:
+			var consume_value: Variant = receipt.get("consume", null)
+			if not consume_value is Dictionary:
+				return false
+			var consume: Dictionary = consume_value
+			var side: String = str(receipt.get("source_side", ""))
+			var source_kind: String = str(receipt.get("source_kind", ""))
+			var source_instance_id: String = str(receipt.get("source_instance_id", ""))
+			var effect_id: String = str(receipt.get("effect_id", ""))
+			var max_uses: int = int(consume.get("max_uses", 0))
+			var amount: int = int(consume.get("amount", 1))
+			if not _is_valid_side(side) or source_kind == "" \
+				or source_instance_id == "" or effect_id == "" \
+				or max_uses <= 0 or amount <= 0:
+				return false
+			var usage_key: String = _get_qi_value_effect_usage_key(
+				side, source_kind, source_instance_id, effect_id)
+			if bool(consume.get("once_per_action", true)) \
+				and required_uses_by_key.has(usage_key):
+				continue
+			if max_uses_by_key.has(usage_key) \
+				and int(max_uses_by_key[usage_key]) != max_uses:
+				return false
+			max_uses_by_key[usage_key] = max_uses
+			required_uses_by_key[usage_key] = \
+				int(required_uses_by_key.get(usage_key, 0)) + amount
+	for usage_key: String in required_uses_by_key:
+		if int(_qi_value_effect_consumed_uses.get(usage_key, 0)) \
+			+ int(required_uses_by_key[usage_key]) > int(max_uses_by_key[usage_key]):
+			return false
+	for usage_key: String in required_uses_by_key:
+		_qi_value_effect_consumed_uses[usage_key] = \
+			int(_qi_value_effect_consumed_uses.get(usage_key, 0)) \
+			+ int(required_uses_by_key[usage_key])
+	_committed_effect_receipt_tokens[request.action_token] = true
+	return true
+
+## 返回一个数值效果在本场战斗中已经正式消费的次数。
+func get_qi_value_effect_consumed_uses(
+		side: String,
+		source_kind: String,
+		source_instance_id: String,
+		effect_id: String) -> int:
+	return int(_qi_value_effect_consumed_uses.get(_get_qi_value_effect_usage_key(
+		side, source_kind, source_instance_id, effect_id), 0))
+
+## 为不同阵营和实例上的同名效果生成互不冲突的运行时键。
+func _get_qi_value_effect_usage_key(
+		side: String,
+		source_kind: String,
+		source_instance_id: String,
+		effect_id: String) -> String:
+	return "%s|%s|%s|%s" % [side, source_kind, source_instance_id, effect_id]
+
+## 开始延迟当前原子组的死亡表现。
+func begin_deferred_death_resolution() -> void:
+	_deferred_death_depth += 1
+
+## 结束一层死亡延迟；真正的死亡表现由原子组统一收尾。
+func end_deferred_death_resolution() -> void:
+	_deferred_death_depth = max(_deferred_death_depth - 1, 0)
+
+## 返回当前是否正在冻结同优先级原子组的双方执行资格。
+func is_death_resolution_deferred() -> bool:
+	return _deferred_death_depth > 0
+
 ## 开始一个行动窗口；仅在新回合时补牌，连击行动保留双方当前手牌。
 func begin_action_window() -> bool:
 	if is_action_frozen() or _next_action_sides.is_empty() and not _needs_round_start_draw:
@@ -795,10 +973,10 @@ func set_combo_capacity(capacity: int) -> void:
 func advance_after_action(request: QiActionRequest) -> void:
 	var player_gain: int = 0
 	var enemy_gain: int = 0
-	if request.player_result != null and request.player_result.pattern != null:
-		player_gain = request.player_result.pattern.max_same_qi
-	if request.enemy_result != null and request.enemy_result.pattern != null:
-		enemy_gain = request.enemy_result.pattern.max_same_qi
+	if request.player_result != null:
+		player_gain = request.player_result.base_multiplier
+	if request.enemy_result != null:
+		enemy_gain = request.enemy_result.base_multiplier
 	request.player_combo_before = _player_combo_value
 	request.enemy_combo_before = _enemy_combo_value
 	_player_combo_value += player_gain
@@ -902,10 +1080,24 @@ func freeze_action() -> QiActionRequest:
 			_get_pending_hand_type(SIDE_ENEMY), SIDE_ENEMY).get("slot_instance_id", ""))
 	return request
 
+## 将一次冻结请求标记为正式结算中；重复确认同一令牌会被拒绝。
+func begin_qi_action_resolution(request: QiActionRequest) -> bool:
+	if request == null or not request.is_valid_request() \
+		or request.action_token != _frozen_action_token \
+		or _resolving_action_token != "":
+		return false
+	_resolving_action_token = request.action_token
+	return true
+
+## 返回当前是否已经有一次确认进入正式结算。
+func is_qi_action_resolution_started() -> bool:
+	return _resolving_action_token != ""
+
 ## 完成指定冻结请求，将双方待结算真气依次移入各自弃牌堆。
 func complete_qi_action(request: QiActionRequest) -> bool:
 	if request == null or not request.is_valid_request() \
 		or request.action_token != _frozen_action_token \
+		or request.action_token != _resolving_action_token \
 		or request.enemy_instance_id != _active_enemy_instance_id \
 		or request.player_qi_instance_uids != get_zone_uids(SIDE_PLAYER, ZONE_PENDING) \
 		or request.enemy_qi_instance_uids != get_zone_uids(SIDE_ENEMY, ZONE_PENDING):
@@ -928,18 +1120,21 @@ func complete_qi_action(request: QiActionRequest) -> bool:
 	for qi_instance_uid: String in request.enemy_qi_instance_uids:
 		_move_qi_unchecked(SIDE_ENEMY, qi_instance_uid, ZONE_PENDING, ZONE_DISCARD)
 		_notify_committed_event(EVENT_QI_DISCARDED, qi_instance_uid, request.action_token)
-	if request.player_result != null and request.player_result.is_valid():
+	if request.player_result != null and request.player_result.is_valid() \
+		and request.is_gongfa_completed(SIDE_PLAYER):
 		advance_gongfa_sequence(
 			request.player_result.pattern.hand_type_id,
 			SIDE_PLAYER,
 			request.player_result.gongfa_copy_count)
-	if request.enemy_result != null and request.enemy_result.is_valid():
+	if request.enemy_result != null and request.enemy_result.is_valid() \
+		and request.is_gongfa_completed(SIDE_ENEMY):
 		advance_gongfa_sequence(
 			request.enemy_result.pattern.hand_type_id,
 			SIDE_ENEMY,
 			request.enemy_result.gongfa_copy_count)
 	advance_after_action(request)
 	_frozen_action_token = ""
+	_resolving_action_token = ""
 	_enemy_revealed_pending_count = 0
 	return true
 
@@ -963,6 +1158,7 @@ func cancel_frozen_action(request: QiActionRequest) -> bool:
 	if request == null or request.action_token != _frozen_action_token:
 		return false
 	_frozen_action_token = ""
+	_resolving_action_token = ""
 	return true
 
 ## 返回当前唯一敌人的实例标识。
@@ -1085,6 +1281,7 @@ func _clear_zones() -> void:
 	_enemy_revealed_pending_count = 0
 	_active_enemy_instance_id = ""
 	_frozen_action_token = ""
+	_resolving_action_token = ""
 	_next_action_order = 0
 	_player_combo_value = 0
 	_enemy_combo_value = 0
@@ -1093,6 +1290,10 @@ func _clear_zones() -> void:
 	_next_action_sides.clear()
 	_needs_round_start_draw = true
 	_processed_event_tokens.clear()
+	_registered_qi_effect_sources.clear()
+	_qi_value_effect_consumed_uses.clear()
+	_committed_effect_receipt_tokens.clear()
+	_deferred_death_depth = 0
 	_player_gongfa_queues.clear()
 	_enemy_gongfa_queues.clear()
 	_player_neigong_slot_uids.clear()

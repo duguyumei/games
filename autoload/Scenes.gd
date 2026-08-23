@@ -24,6 +24,8 @@ var REST_ACTION_BUTTON: PackedScene = load("res://scenes/ui/RestActionButton.tsc
 
 var CONSUMABLE_BUTTON: PackedScene = load("res://scenes/ui/ConsumableButton.tscn")
 var CHARACTER_SELECTION_BUTTON: PackedScene = load("res://scenes/ui/CharacterSelectionButton.tscn")
+## 初始真气卡组选择按钮；与旧角色选择按钮分离。
+var STARTING_QI_DECK_SELECTION_BUTTON: PackedScene = load("res://scenes/ui/StartingQiDeckSelectionButton.tscn")
 
 var CUSTOM_RUN_MODIFIER_CHECKBOX: PackedScene = load("res://scenes/ui/CustomRunModifierCheckbox.tscn")
 

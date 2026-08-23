@@ -1,0 +1,31 @@
+{
+	"patch_data": {},
+	"properties": {
+		"object_id": "gongfa_basic_attack",
+		"gongfa_name": "基础招式",
+		"gongfa_description": "造成有效功法值四分之一的普通伤害。",
+		"gongfa_texture_path": "",
+		"gongfa_purchase_price": 0,
+		"gongfa_sell_price": 0,
+		"gongfa_category": "general",
+		"gongfa_rarity": 0,
+		"gongfa_eligible_hand_ids": [],
+		"gongfa_atoms": [
+			{
+				"atom_id": "basic_attack_damage",
+				"actions": [
+					{
+						"res://scripts/actions/combatant_actions/ActionAttack.gd": {
+							"damage": "floor($effective_power / 4)",
+							"damage_type": "normal",
+							"time_delay": 0.0
+						}
+					}
+				]
+			}
+		],
+		"qi_value_effects": [],
+		"qi_battle_event_effects": [],
+		"gongfa_owned_count": 8
+	}
+}

@@ -8,6 +8,10 @@ class_name ArtifactData
 @export var artifact_texture_path: String = "external/sprites/artifacts/artifact_white.png"
 @export var artifact_script_path: String = "res://scripts/artifacts/BaseArtifact.gd"
 @export var artifact_interceptor_ids: Array[String] = []
+## 奇物作为效果来源参与统一真气数值查询的固定配置。
+@export var qi_value_effects: Array[Dictionary] = []
+## 奇物监听真气战斗事件时使用的固定效果配置。
+@export var qi_battle_event_effects: Array[Dictionary] = []
 @export var artifact_counter: int = 0 # do not adjust directly
 @export var artifact_counter_max: int = 1
 ## A disabled artifact can no longer listen for events, proc actions, or change its counter.
