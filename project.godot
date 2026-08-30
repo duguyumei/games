@@ -15,30 +15,14 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Slay the Robot"
-run/main_scene="res://scenes/Root.tscn"
 config/features=PackedStringArray("4.7")
 config/icon="uid://8kopj5luv8dc"
 
 [audio]
 
-buses/default_bus_layout="res://sounds/default_bus_layout.tres"
 
 [autoload]
 
-Signals="*res://autoload/Signals.gd"
-Scenes="*res://autoload/Scenes.gd"
-Scripts="*res://autoload/Scripts.gd"
-FileLoader="*res://autoload/FileLoader.gd"
-Random="*res://autoload/Random.gd"
-Global="*res://autoload/Global.gd"
-GlobalTestDataGenerator="*res://autoload/GlobalTestDataGenerator.gd"
-GlobalProdDataGenerator="*res://autoload/GlobalProdDataGenerator.gd"
-ActionHandler="*res://autoload/ActionHandler.gd"
-ActionGenerator="*res://autoload/ActionGenerator.gd"
-DebugLogger="*res://autoload/DebugLogger.gd"
-HandManager="*res://autoload/HandManager.gd"
-SoundManager="*uid://bjkhgdroa1wwd"
-StatsHandler="*res://autoload/StatsHandler.gd"
 
 [debug]
 

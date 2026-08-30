@@ -1,8 +1,0 @@
-{
-	"patch_data": {},
-	"properties": {
-		"object_id": "event_pool_taiwu_first_combat",
-		"event_pool_event_object_ids": ["event_taiwu_basic_enemy"],
-		"event_pool_fallback_event_object_id": "event_taiwu_basic_enemy"
-	}
-}
