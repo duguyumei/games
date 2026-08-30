@@ -130,6 +130,23 @@ signal combat_started(event_id: String) # invokes combat when emitted. If empty 
 signal combat_ended
 ## 敌我任一真气牌区已经提交变化，战斗界面应重新读取当前牌区。
 signal qi_zones_changed
+
+## 一张真气完成了牌区运转。
+##
+## 这是所有牌区移动的统一事件 —— 抽取、调度、弃置、洗回都发这一个信号，
+## 监听方通过 from_zone 与 to_zone 的组合判断具体方向。例如「每当凝气运转为行气」：
+##     if from_zone == QiEnums.ZONES.DRAW and to_zone == QiEnums.ZONES.HAND
+##
+## is_auto 区分自动运转（流程驱动：抽取、回合末收尾、洗回）与主动运转（功法驱动），
+## 因为部分内容只统计主动运转。
+signal qi_circulated(qi: QiData, from_zone: int, to_zone: int, is_auto: bool, source_uid: String)
+
+## 一张真气从牌库中被移除；耗散与消耗型功法触发。
+## 被移除的真气仍记录在战斗容器中，供「每消耗 N 张真气」这类效果读取。
+signal qi_removed_from_deck(qi: QiData, from_zone: int, is_auto: bool, source_uid: String)
+
+## 一张真气发生了毒发。
+signal qi_poison_burst(qi: QiData, poison_amount: int, source_uid: String)
 ## 玩家确认双方待结算区后发出的冻结行动请求。
 signal qi_action_ready(request: QiActionRequest)
 ## 结算器完成冻结行动并将真气移入后续牌区。

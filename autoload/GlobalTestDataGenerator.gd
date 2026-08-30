@@ -10,6 +10,7 @@ func generate_test_data() -> void:
 	
 	add_test_status_effects() # must be defined before enemies
 	add_test_action_interceptors()
+	add_test_qi_interceptors()
 	
 	add_test_enemies()
 	add_test_events()
@@ -1515,7 +1516,25 @@ func add_test_action_interceptors() -> void:
 	interceptor_negate_add_money.action_intercepted_action_paths = [Scripts.ACTION_ADD_MONEY]
 	
 	Global.register_rod(interceptor_negate_add_money)
-	
+
+
+#endregion
+
+#region Qi Interceptors
+## 按动作类型注册的真气拦截器配置；须与 GlobalProdDataGenerator 中的同名段保持一致。
+func add_test_qi_interceptors() -> void:
+	# 运转时给该真气施加气力；增减量由内功的 neigong_interceptor_values 决定。
+	var qi_interceptor_momentum_on_circulate: QiInterceptorData = QiInterceptorData.new(
+		"qi_interceptor_momentum_on_circulate")
+	qi_interceptor_momentum_on_circulate.qi_interceptor_priority = 1000
+	qi_interceptor_momentum_on_circulate.qi_interceptor_watches_opponent = false
+	qi_interceptor_momentum_on_circulate.qi_interceptor_phase = QiInterceptorData.PHASES.BEFORE
+	qi_interceptor_momentum_on_circulate.qi_interceptor_script_path = \
+		Scripts.QI_INTERCEPTOR_MOMENTUM_ON_CIRCULATE
+	qi_interceptor_momentum_on_circulate.qi_intercepted_action_paths = [
+		Scripts.ACTION_CIRCULATE_QI]
+
+	Global.register_rod(qi_interceptor_momentum_on_circulate)
 
 #endregion
 

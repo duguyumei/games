@@ -27,6 +27,7 @@ extends Node
 	["EventPoolData", EventPoolData, "_id_to_event_pool_data", ["event_pools/"]],
 	["DialogueData", DialogueData, "_id_to_dialogue_data", ["dialogue/"]],
 	["ActionInterceptorData", ActionInterceptorData, "_id_to_action_interceptor_data", ["action_interceptors/"]],
+	["QiInterceptorData", QiInterceptorData, "_id_to_qi_interceptor_data", ["qi_interceptors/"]],
 	["ColorData", ColorData, "_id_to_color_data", ["colors/"]],
 	["KeywordData", KeywordData, "_id_to_keyword_data", ["keywords/"]],
 	["CharacterData", CharacterData, "_id_to_character_data", ["characters/"]],
@@ -75,6 +76,8 @@ var _id_to_event_data: Dictionary[String, EventData] = {}
 var _id_to_event_pool_data: Dictionary[String, EventPoolData] = {}
 var _id_to_dialogue_data: Dictionary[String, DialogueData] = {}
 var _id_to_action_interceptor_data: Dictionary[String, ActionInterceptorData] = {}
+## 真气拦截器固定配置查找表；按动作类型注册的新拦截器体系使用。
+var _id_to_qi_interceptor_data: Dictionary[String, QiInterceptorData] = {}
 var _id_to_color_data: Dictionary[String, ColorData] = {}
 var _id_to_keyword_data: Dictionary[String, KeywordData] = {}
 var _id_to_character_data: Dictionary[String, CharacterData] = {}
@@ -668,6 +671,12 @@ func get_dialogue_data(dialogue_object_id: String) -> DialogueData:
 #region Action Interceptors
 func get_action_interceptor_data(action_interceptor_object_id: String) -> ActionInterceptorData:
 	return _id_to_action_interceptor_data.get(action_interceptor_object_id, null)
+#endregion
+
+#region Qi Interceptors
+## 返回真气拦截器的固定配置；未登记时返回 null。
+func get_qi_interceptor_data(qi_interceptor_object_id: String) -> QiInterceptorData:
+	return _id_to_qi_interceptor_data.get(qi_interceptor_object_id, null)
 #endregion
 
 #region Colors

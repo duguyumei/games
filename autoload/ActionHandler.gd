@@ -26,6 +26,10 @@ var _next_action_interceptor_registration_order: int = 0
 ## 当前是否正在执行无副作用预览拦截器。
 var _action_interceptor_preview_depth: int = 0
 
+## 真气拦截器注册表；按动作类型索引，敌我记录混排后按优先级统一排序。
+## 与上面的旧体系并存：旧的服务框架原有动作，这套服务真气、内功、功法。
+var qi_interceptors: QiInterceptorRegistry = QiInterceptorRegistry.new()
+
 # signals
 signal actions_ended	# all actions completed, typically signalling the end of an enemy attack or card play
 
@@ -256,10 +260,14 @@ func end_action_interceptor_preview() -> void:
 
 func _on_combat_ended():
 	_clear_current_async_action()
+	# 只清敌方留下的真气拦截器注册：敌方战斗者随战斗销毁，注册不清会一直留在表里。
+	# 玩家的内功注册由一局开始时的 Player.reset_player() 建立，跨战斗持续有效，不能清。
+	qi_interceptors.unregister_except_owner(Global.get_player())
 
 func _on_player_killed(_player: Player):
 	clear_all_actions()
 
 func _on_run_ended():
 	clear_all_action_interceptors()
+	qi_interceptors.clear_all()
 	clear_all_actions()

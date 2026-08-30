@@ -10,6 +10,7 @@ func generate_production_data() -> void:
 	
 	add_status_effects() # must be defined before enemies
 	add_action_interceptors()
+	add_qi_interceptors()
 	
 	add_enemies()
 	add_events()
@@ -1528,6 +1529,27 @@ func add_action_interceptors() -> void:
 	interceptor_negate_add_money.action_intercepted_action_paths = [Scripts.ACTION_ADD_MONEY]
 	
 	Global.register_rod(interceptor_negate_add_money)
+
+#endregion
+
+#region Qi Interceptors
+## 按动作类型注册的真气拦截器配置。
+##
+## 与上面的行为拦截器分开：这套不用 modifies_parent 表达方向，而用 watches_opponent
+## 声明「关心自己发起」还是「关心对方发起」，因此敌我效果能在同一条链里按优先级排序。
+func add_qi_interceptors() -> void:
+	# 运转时给该真气施加气力；增减量由内功的 neigong_interceptor_values 决定。
+	var qi_interceptor_momentum_on_circulate: QiInterceptorData = QiInterceptorData.new(
+		"qi_interceptor_momentum_on_circulate")
+	qi_interceptor_momentum_on_circulate.qi_interceptor_priority = 1000
+	qi_interceptor_momentum_on_circulate.qi_interceptor_watches_opponent = false
+	qi_interceptor_momentum_on_circulate.qi_interceptor_phase = QiInterceptorData.PHASES.BEFORE
+	qi_interceptor_momentum_on_circulate.qi_interceptor_script_path = \
+		Scripts.QI_INTERCEPTOR_MOMENTUM_ON_CIRCULATE
+	qi_interceptor_momentum_on_circulate.qi_intercepted_action_paths = [
+		Scripts.ACTION_CIRCULATE_QI]
+
+	Global.register_rod(qi_interceptor_momentum_on_circulate)
 
 #endregion
 

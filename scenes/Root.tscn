@@ -11,15 +11,11 @@
 [ext_resource type="PackedScene" uid="uid://c0sxkaemtqb5x" path="res://scenes/combatants/Player.tscn" id="5_7crh0"]
 [ext_resource type="Script" uid="uid://c4twsg7v4ky8u" path="res://scripts/ui/menus/NewRunMenu.gd" id="5_878fa"]
 [ext_resource type="Script" uid="uid://cedacrx3ip1sl" path="res://scripts/ui/ArtifactContainer.gd" id="5_a7j3r"]
-[ext_resource type="PackedScene" path="res://scenes/ui/NeigongSlots.tscn" id="51_neigong_slots"]
-[ext_resource type="PackedScene" path="res://scenes/ui/LoadoutOverlay.tscn" id="52_loadout_overlay"]
 [ext_resource type="Script" uid="uid://csw1vv4b1hbnb" path="res://addons/label_font_auto_sizer/label_auto_sizer.gd" id="8_lhx3c"]
 [ext_resource type="Shortcut" uid="uid://d3saxt3nuwqbg" path="res://shortcuts/esc_shortcut.tres" id="8_xur7f"]
 [ext_resource type="Script" uid="uid://cu62o32eaklx7" path="res://scripts/ui/TurnOverlay.gd" id="9_u2w0b"]
 [ext_resource type="Script" uid="uid://dgls5w4w7ym84" path="res://scripts/ui/menus/CodexMenu.gd" id="9_uxrgu"]
 [ext_resource type="Script" uid="uid://brwptyvf1yacl" path="res://scripts/ui/CardSelectionOverlay.gd" id="10_bwtvr"]
-[ext_resource type="PackedScene" path="res://scenes/ui/QiSelectionOverlay.tscn" id="50_qi_overlay"]
-[ext_resource type="PackedScene" path="res://scenes/ui/battle/BattleHud.tscn" id="53_battle_hud"]
 [ext_resource type="Script" uid="uid://nkhf5a8dd47j" path="res://ui/components/resizing_grid_scroll_container/ResizingGridScrollContainer.gd" id="10_kpmo0"]
 [ext_resource type="Script" uid="uid://ejl2op54o7aw" path="res://scripts/ui/RewardOverlay.gd" id="10_u2l48"]
 [ext_resource type="Script" uid="uid://b8gg8exxeg26k" path="res://scripts/ui/Chest.gd" id="11_1uvyw"]
@@ -59,6 +55,10 @@
 [ext_resource type="Theme" uid="uid://2714jm71pkv4" path="res://themes/keyword_tooltip_theme.tres" id="41_0h1ar"]
 [ext_resource type="Script" uid="uid://d2fxhtmdfmtdf" path="res://scripts/ui/general/KeywordContainer.gd" id="42_wtekq"]
 [ext_resource type="Script" uid="uid://c5i0sjwlko88l" path="res://addons/label_font_auto_sizer/rich_label_auto_sizer.gd" id="43_gs3rm"]
+[ext_resource type="PackedScene" path="res://scenes/ui/QiSelectionOverlay.tscn" id="50_qi_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/ui/NeigongSlots.tscn" id="51_neigong_slots"]
+[ext_resource type="PackedScene" path="res://scenes/ui/LoadoutOverlay.tscn" id="52_loadout_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/ui/battle/BattleHud.tscn" id="53_battle_hud"]
 
 [sub_resource type="Animation" id="Animation_m5prp"]
 resource_name = "end_turn"
@@ -243,13 +243,13 @@ NodePath("VBoxContainer/ProfileStatsButton"): NodePath("../ProfileStatsMenu")
 }
 
 [node name="Label" type="Label" parent="TitleScreen/MainMenu" unique_id=860604846]
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
 offset_top = 16.0
 offset_bottom = 67.0
 grow_horizontal = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 text = "Slay the Robot"
 horizontal_alignment = 1
@@ -341,13 +341,13 @@ NodePath("StartRun/VBoxContainer/MainMenuButton"): NodePath("../MainMenu")
 }
 
 [node name="Label" type="Label" parent="TitleScreen/NewRunMenu" unique_id=2061026023]
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
 offset_top = 16.0
 offset_bottom = 67.0
 grow_horizontal = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 text = "选择初始真气卡组"
 horizontal_alignment = 1
@@ -370,8 +370,8 @@ grow_vertical = 2
 
 [node name="CharacterNameLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer" unique_id=1473832797]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 36
 text = "卡组名称"
@@ -383,7 +383,6 @@ layout_mode = 2
 
 [node name="CharacterHealthLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control" unique_id=1228433366]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_top = 0.5
@@ -393,6 +392,7 @@ offset_top = -12.0
 offset_right = 160.0
 offset_bottom = 12.0
 grow_vertical = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 17
 text = "生命："
@@ -400,7 +400,6 @@ vertical_alignment = 1
 
 [node name="CharacterMoneyLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control" unique_id=948848595]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_top = 0.5
@@ -410,6 +409,7 @@ offset_top = -12.0
 offset_right = 323.0
 offset_bottom = 12.0
 grow_vertical = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 17
 text = "金币："
@@ -424,8 +424,8 @@ theme_override_constants/margin_bottom = 32
 [node name="CharacterDescriptionLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/MarginContainer" unique_id=1051847027]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 64)
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
 text = "卡组说明"
 autowrap_mode = 2
@@ -454,16 +454,16 @@ offset_bottom = 178.0
 
 [node name="CharacterArtifactNameLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control2/VBoxContainer" unique_id=1043437012]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
 text = "真气牌组"
 clip_text = true
 
 [node name="CharacterArtifactDescriptionLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control2/VBoxContainer" unique_id=1447978852]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
 text = "固定卡组内容"
 autowrap_mode = 2
@@ -499,7 +499,6 @@ layout_mode = 2
 
 [node name="SeedVisibilityToggle" type="Button" parent="TitleScreen/NewRunMenu/StartRun/VBoxContainer/SeedSelect" unique_id=2143920552]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -507,6 +506,7 @@ anchor_bottom = 1.0
 offset_right = -352.0
 grow_horizontal = 2
 grow_vertical = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 24
 toggle_mode = true
@@ -557,7 +557,6 @@ text = "<--"
 
 [node name="DifficultyLabel" type="Label" parent="TitleScreen/NewRunMenu/StartRun/VBoxContainer/DifficultySelect" unique_id=876493831]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
@@ -566,6 +565,7 @@ offset_left = -144.0
 offset_right = 144.0
 offset_bottom = 31.0
 grow_horizontal = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
 text = "Difficulty 0"
 horizontal_alignment = 1
@@ -622,8 +622,8 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="Label" type="Label" parent="TitleScreen/NewRunMenu/CustomModifiers/VBoxContainer" unique_id=296747209]
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 32
 text = "Custom Modifiers"
@@ -1805,14 +1805,15 @@ offset_bottom = 112.0
 mouse_filter = 2
 script = ExtResource("5_a7j3r")
 
-[node name="PlayerNeigongSlots" parent="RunScreen/Combat" instance=ExtResource("51_neigong_slots")]
+[node name="PlayerNeigongSlots" parent="RunScreen/Combat" unique_id=1747791621 instance=ExtResource("51_neigong_slots")]
+layout_mode = 0
 offset_left = 16.0
 offset_top = 120.0
 offset_right = 496.0
 offset_bottom = 160.0
-side = "player"
 
-[node name="EnemyNeigongSlots" parent="RunScreen/Combat" instance=ExtResource("51_neigong_slots")]
+[node name="EnemyNeigongSlots" parent="RunScreen/Combat" unique_id=1546273643 instance=ExtResource("51_neigong_slots")]
+layout_mode = 0
 offset_left = 704.0
 offset_top = 72.0
 offset_right = 1184.0
@@ -2111,7 +2112,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="EnemyPendingQiLabel" type="Label" parent="RunScreen/Combat"]
+[node name="EnemyPendingQiLabel" type="Label" parent="RunScreen/Combat" unique_id=1918353357]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -2122,7 +2123,7 @@ offset_bottom = 112.0
 text = "敌方待结算区"
 horizontal_alignment = 1
 
-[node name="EnemyPendingQiContainer" type="HBoxContainer" parent="RunScreen/Combat"]
+[node name="EnemyPendingQiContainer" type="HBoxContainer" parent="RunScreen/Combat" unique_id=289896461]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -2133,7 +2134,7 @@ offset_bottom = 304.0
 theme_override_constants/separation = 0
 alignment = 1
 
-[node name="PlayerPendingQiLabel" type="Label" parent="RunScreen/Combat"]
+[node name="PlayerPendingQiLabel" type="Label" parent="RunScreen/Combat" unique_id=855524767]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -2144,7 +2145,7 @@ offset_bottom = 406.0
 text = "我方待结算区"
 horizontal_alignment = 1
 
-[node name="PlayerPendingQiContainer" type="HBoxContainer" parent="RunScreen/Combat"]
+[node name="PlayerPendingQiContainer" type="HBoxContainer" parent="RunScreen/Combat" unique_id=959909479]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -2155,7 +2156,7 @@ offset_bottom = 598.0
 theme_override_constants/separation = 0
 alignment = 1
 
-[node name="CommitQiButton" type="Button" parent="RunScreen/Combat"]
+[node name="CommitQiButton" type="Button" parent="RunScreen/Combat" unique_id=387711298]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -2166,7 +2167,7 @@ offset_bottom = 472.0
 disabled = true
 text = "打出"
 
-[node name="ConfirmQiButton" type="Button" parent="RunScreen/Combat"]
+[node name="ConfirmQiButton" type="Button" parent="RunScreen/Combat" unique_id=440247644]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -2262,14 +2263,8 @@ horizontal_alignment = 1
 vertical_alignment = 1
 script = ExtResource("30_plfau")
 
-[node name="BattleHud" parent="RunScreen/Combat" instance=ExtResource("53_battle_hud")]
+[node name="BattleHud" parent="RunScreen/Combat" unique_id=1583504156 instance=ExtResource("53_battle_hud")]
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 1
 
 [node name="RestOverlay" type="Control" parent="RunScreen" unique_id=15522777]
 unique_name_in_owner = true
@@ -2333,12 +2328,6 @@ offset_right = 1200.0
 offset_bottom = 700.0
 script = ExtResource("17_stqr4")
 
-[node name="LoadoutOverlay" parent="RunScreen" instance=ExtResource("52_loadout_overlay")]
-unique_name_in_owner = true
-process_mode = 1
-visible = false
-z_index = 111
-
 [node name="Background" type="ColorRect" parent="RunScreen/ShopOverlay" unique_id=78866647]
 layout_mode = 0
 offset_right = 1200.0
@@ -2360,7 +2349,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.0941176, 0.0862745, 0.101961, 0.67451)
 
-[node name="TitleLabel" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="TitleLabel" type="Label" parent="RunScreen/ShopOverlay" unique_id=1365681382]
 layout_mode = 0
 offset_left = 40.0
 offset_top = 24.0
@@ -2369,7 +2358,7 @@ offset_bottom = 67.0
 theme_override_font_sizes/font_size = 32
 text = "修 习"
 
-[node name="MoneyLabel" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="MoneyLabel" type="Label" parent="RunScreen/ShopOverlay" unique_id=1538925756]
 layout_mode = 0
 offset_left = 920.0
 offset_top = 30.0
@@ -2379,7 +2368,7 @@ theme_override_font_sizes/font_size = 24
 text = "金币 0"
 horizontal_alignment = 2
 
-[node name="NormalTitle" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="NormalTitle" type="Label" parent="RunScreen/ShopOverlay" unique_id=1095095690]
 layout_mode = 0
 offset_left = 40.0
 offset_top = 82.0
@@ -2388,7 +2377,7 @@ offset_bottom = 112.0
 theme_override_font_sizes/font_size = 20
 text = "普通商品"
 
-[node name="NormalContainer" type="HBoxContainer" parent="RunScreen/ShopOverlay"]
+[node name="NormalContainer" type="HBoxContainer" parent="RunScreen/ShopOverlay" unique_id=1338407582]
 layout_mode = 0
 offset_left = 40.0
 offset_top = 120.0
@@ -2396,7 +2385,7 @@ offset_right = 352.0
 offset_bottom = 328.0
 theme_override_constants/separation = 20
 
-[node name="PackTitle" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="PackTitle" type="Label" parent="RunScreen/ShopOverlay" unique_id=260006074]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 82.0
@@ -2405,7 +2394,7 @@ offset_bottom = 112.0
 theme_override_font_sizes/font_size = 20
 text = "补充包"
 
-[node name="PackHint" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="PackHint" type="Label" parent="RunScreen/ShopOverlay" unique_id=791104315]
 layout_mode = 0
 offset_left = 488.0
 offset_top = 86.0
@@ -2414,7 +2403,7 @@ offset_bottom = 108.0
 text = "当前阶段暂接直接获得的消耗品"
 horizontal_alignment = 2
 
-[node name="PackContainer" type="HBoxContainer" parent="RunScreen/ShopOverlay"]
+[node name="PackContainer" type="HBoxContainer" parent="RunScreen/ShopOverlay" unique_id=1185085650]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 120.0
@@ -2422,7 +2411,7 @@ offset_right = 936.0
 offset_bottom = 176.0
 theme_override_constants/separation = 20
 
-[node name="ArtifactTitle" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="ArtifactTitle" type="Label" parent="RunScreen/ShopOverlay" unique_id=1837661385]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 210.0
@@ -2439,7 +2428,7 @@ offset_right = 656.0
 offset_bottom = 304.0
 theme_override_constants/separation = 20
 
-[node name="MeditationButton" type="Button" parent="RunScreen/ShopOverlay"]
+[node name="MeditationButton" type="Button" parent="RunScreen/ShopOverlay" unique_id=1836070494]
 layout_mode = 0
 offset_left = 72.0
 offset_top = 352.0
@@ -2447,7 +2436,7 @@ offset_right = 320.0
 offset_bottom = 392.0
 text = "冥想刷新（5 金币）"
 
-[node name="ConsumableTitle" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="ConsumableTitle" type="Label" parent="RunScreen/ShopOverlay" unique_id=775624368]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 344.0
@@ -2456,7 +2445,7 @@ offset_bottom = 374.0
 theme_override_font_sizes/font_size = 20
 text = "当前消耗品与槽位"
 
-[node name="PlayerConsumableContainer" type="HBoxContainer" parent="RunScreen/ShopOverlay"]
+[node name="PlayerConsumableContainer" type="HBoxContainer" parent="RunScreen/ShopOverlay" unique_id=1136313713]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 384.0
@@ -2464,7 +2453,7 @@ offset_right = 936.0
 offset_bottom = 432.0
 theme_override_constants/separation = 16
 
-[node name="ConsumableStatusLabel" type="Label" parent="RunScreen/ShopOverlay"]
+[node name="ConsumableStatusLabel" type="Label" parent="RunScreen/ShopOverlay" unique_id=18131869]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 448.0
@@ -2472,7 +2461,7 @@ offset_right = 936.0
 offset_bottom = 478.0
 text = "请选择一个已有消耗品"
 
-[node name="UseConsumableButton" type="Button" parent="RunScreen/ShopOverlay"]
+[node name="UseConsumableButton" type="Button" parent="RunScreen/ShopOverlay" unique_id=133780146]
 layout_mode = 0
 offset_left = 400.0
 offset_top = 488.0
@@ -2481,7 +2470,7 @@ offset_bottom = 528.0
 disabled = true
 text = "使用"
 
-[node name="DiscardConsumableButton" type="Button" parent="RunScreen/ShopOverlay"]
+[node name="DiscardConsumableButton" type="Button" parent="RunScreen/ShopOverlay" unique_id=134927148]
 layout_mode = 0
 offset_left = 568.0
 offset_top = 488.0
@@ -2497,6 +2486,13 @@ offset_top = 632.0
 offset_right = 696.0
 offset_bottom = 672.0
 text = "返回地图"
+
+[node name="LoadoutOverlay" parent="RunScreen" unique_id=80129716 instance=ExtResource("52_loadout_overlay")]
+unique_name_in_owner = true
+process_mode = 1
+visible = false
+z_index = 111
+layout_mode = 1
 
 [node name="DialogueOverlay" type="Control" parent="RunScreen" unique_id=2021660251]
 unique_name_in_owner = true
@@ -2822,10 +2818,6 @@ offset_right = 1200.0
 offset_bottom = 700.0
 script = ExtResource("11_yys3c")
 
-[node name="QiSelectionOverlay" parent="RunScreen" instance=ExtResource("50_qi_overlay")]
-visible = false
-z_index = 11
-
 [node name="Background" type="ColorRect" parent="RunScreen/CardDraftSelectionOverlay" unique_id=1345787303]
 layout_mode = 0
 offset_right = 1200.0
@@ -2855,6 +2847,11 @@ offset_top = 432.0
 offset_right = 672.0
 offset_bottom = 463.0
 text = "Skip"
+
+[node name="QiSelectionOverlay" parent="RunScreen" unique_id=1189299945 instance=ExtResource("50_qi_overlay")]
+visible = false
+z_index = 11
+layout_mode = 1
 
 [node name="Map" type="Control" parent="RunScreen" unique_id=1094624931]
 unique_name_in_owner = true
@@ -2895,27 +2892,27 @@ offset_right = 648.0
 offset_bottom = 63.0
 text = "<----"
 
-[node name="PracticeButton" type="Button" parent="RunScreen/Map"]
+[node name="PracticeButton" type="Button" parent="RunScreen/Map" unique_id=1644657831]
 layout_mode = 0
 offset_left = 1032.0
 offset_top = 568.0
 offset_right = 1176.0
 offset_bottom = 616.0
-disabled = true
 theme_override_font_sizes/font_size = 20
+disabled = true
 text = "修习"
 
-[node name="LoadoutButton" type="Button" parent="RunScreen/Map"]
+[node name="LoadoutButton" type="Button" parent="RunScreen/Map" unique_id=513705664]
 layout_mode = 0
 offset_left = 1032.0
 offset_top = 512.0
 offset_right = 1176.0
 offset_bottom = 560.0
-disabled = true
 theme_override_font_sizes/font_size = 20
+disabled = true
 text = "搭配"
 
-[node name="PracticeMoneyLabel" type="Label" parent="RunScreen/Map"]
+[node name="PracticeMoneyLabel" type="Label" parent="RunScreen/Map" unique_id=380924712]
 layout_mode = 0
 offset_left = 1032.0
 offset_top = 624.0

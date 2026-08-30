@@ -1,33 +1,24 @@
-## 一张可持久化的真气扑克牌；固定定义和本局实例共用此格式。
+## 一张真气。
+##
+## 真气分三层，从内到外：
+##   基础层（基础属性、基础内力）—— 永不改变，是真气的身份来源
+##   重塑层（QiReshape 列表）    —— 跨探索永久保留，局外用资源改造
+##   状态层（QiStateEntry 列表） —— 按各自生命周期范围清理，净化会全部清除
+##
+## 本类只提供数据与纯查询方法。所有状态改变都由动作（Action）施加，
+## 因此这里没有 purify、readValue 之类会产生副作用的方法。
+##
+## 两个内力数值的区别：
+##   存有的内力 = 基础内力 + 全部内力重塑        —— 面板显示、毒发门槛
+##   提供的内力 = 存有的内力 + 气力，或冻结时为 1 —— 功法实际读取的值
 extends PrototypeData
 class_name QiData
 
-## 真气支持的四种武侠属性，同时映射为扑克牌花色。
-enum QI_ATTRIBUTES {WIND, FOREST, FIRE, MOUNTAIN}
+## ============================================================
+## 身份
+## ============================================================
 
-## 属性枚举对应的稳定内容 ID。
-const ATTRIBUTE_IDS: Array[String] = ["wind", "forest", "fire", "mountain"]
-
-## 属性枚举对应的扑克牌花色名称。
-const ATTRIBUTE_SUIT_NAMES: Array[String] = ["黑桃", "梅花", "红桃", "方块"]
-
-## 属性枚举对应的扑克牌花色稳定 ID。
-const ATTRIBUTE_SUIT_IDS: Array[String] = ["spades", "clubs", "hearts", "diamonds"]
-
-## 标准扑克牌的 13 个牌阶稳定 ID；本阶段不包含大小王。
-const STANDARD_RANK_IDS: Array[String] = [
-	"a", "2", "3", "4", "5", "6", "7", "8", "9", "10", "j", "q", "k"
-]
-
-## 标准扑克牌的四种属性顺序；顺序必须与属性枚举和花色映射保持一致。
-const STANDARD_ATTRIBUTES: Array[int] = [
-	QI_ATTRIBUTES.WIND,
-	QI_ATTRIBUTES.FOREST,
-	QI_ATTRIBUTES.FIRE,
-	QI_ATTRIBUTES.MOUNTAIN,
-]
-
-## 真气的显示名称。
+## 真气的显示名称，例如「金 7」。
 @export var qi_name: String = ""
 
 ## 真气的说明文本。
@@ -36,474 +27,398 @@ const STANDARD_ATTRIBUTES: Array[int] = [
 ## 真气的显示图片路径。
 @export var qi_texture_path: String = ""
 
-## 真气属性；依次对应风、林、火、山。
-@export var qi_attribute: int = QI_ATTRIBUTES.WIND
+## 所属阵营；取值见 QiEnums.SIDES。可变，因为后续会有夺取真气的效果。
+@export var qi_side: int = QiEnums.SIDES.PLAYER
 
-## 真气牌阶；1 表示 A，11 至 13 表示 J、Q、K。
-@export_range(1, 13, 1) var qi_rank: int = 1
+## 是否为战斗中生成的临时真气；战斗结束时删除，不写入探索牌库。
+## 临时真气没有重塑槽，也不参与局外改造。
+@export var qi_is_temporary: bool = false
 
-## 本局实例当前使用的真气值；固定定义使用 -1，实例化时初始化为牌阶对应值。
-@export var qi_value: int = -1
 
-## 本局永久增加或减少的真气值；固定定义中应保持为 0。
-@export var qi_permanent_value_modifier: int = 0
+## ============================================================
+## 基础层：永不改变
+## ============================================================
 
-## 本局本源是否已经完成；固定模板保持为 false。
-@export var qi_origin_locked: bool = false
+## 基础属性；取值见 QiEnums.ELEMENTS。
+@export var qi_base_element: int = QiEnums.ELEMENTS.METAL
 
-## 旧版本兼容的本局改造字典；新代码不再写入，读取时只作为迁移来源。
-@export var qi_permanent_state: Dictionary[String, Variant] = {}
+## 基础内力；起始牌库的合法范围为 5～9。
+@export_range(1, 99, 1) var qi_base_value: int = QiEnums.BASE_VALUE_MIN
 
-## 本局持久化的真气重塑；战斗临时重塑存放在 BattleQiState。
-@export var qi_reshape_states: Array[QiReshapeState] = []
 
-## 允许跨战斗存在的特殊异状；普通战斗异状存放在 BattleQiState。
-@export var qi_persistent_anomaly_states: Array[QiAnomalyState] = []
+## ============================================================
+## 重塑层：跨探索永久保留
+## ============================================================
+
+## 本张真气已挂载的持久重塑。
+@export var qi_reshapes: Array[QiReshape] = []
+
+## 本张真气的重塑槽容量；起始为 1，可用局外资源单张扩容，硬上限见 QiEnums.RESHAPE_SLOT_MAX。
+@export var qi_reshape_slot_capacity: int = 1
+
+
+## ============================================================
+## 状态层
+## ============================================================
+
+## 全部状态记录，写入存档。
+##
+## 只追加不修改：施加追加一条，减少也追加一条负数记录，因此每条的来源都保留。
+## 战斗结束时气力与毒量会被压缩成一条历史记录，避免存档随战斗场数膨胀。
+@export var qi_states: Array[QiStateEntry] = []
+
+## 当前所在牌区；取值见 QiEnums.ZONES。
+@export var qi_zone: int = QiEnums.ZONES.DRAW
+
+## 归属功法的实例 UID；进入驭气时写入，进入散气时清空。
+@export var qi_owning_gongfa_uid: String = ""
+
+
+## ============================================================
+## 效果钩子：特殊真气自带的效果配置
+## ============================================================
 
 ## 真气作为效果来源参与统一数值查询的固定配置；查询期间不会消耗状态或生成行为。
 @export var qi_value_effects: Array[Dictionary] = []
 
-## 真气监听战斗事件时使用的固定效果配置；正式事件确认后才会生成行为。
+## 真气监听战斗事件时使用的固定效果配置。
 @export var qi_battle_event_effects: Array[Dictionary] = []
 
-## 返回标准扑克牌牌阶对应的稳定 ID。
-static func get_standard_rank_id(rank: int) -> String:
-	if rank < 1 or rank > STANDARD_RANK_IDS.size():
-		return ""
-	return STANDARD_RANK_IDS[rank - 1]
 
-## 返回标准扑克牌真气的固定内容 ID。
-static func get_standard_qi_object_id(attribute: int, rank: int) -> String:
-	if attribute < 0 or attribute >= ATTRIBUTE_IDS.size():
-		return ""
-	var rank_id: String = get_standard_rank_id(rank)
-	if rank_id == "":
-		return ""
-	return "qi_%s_%s" % [ATTRIBUTE_IDS[attribute], rank_id]
+## ============================================================
+## 构造
+## ============================================================
 
-## 返回完整 52 张标准扑克牌的固定内容 ID，不创建可修改实例。
-static func get_standard_deck_object_ids() -> Array[String]:
-	var object_ids: Array[String] = []
-	for attribute: int in STANDARD_ATTRIBUTES:
-		for rank: int in range(1, STANDARD_RANK_IDS.size() + 1):
-			object_ids.append(get_standard_qi_object_id(attribute, rank))
-	return object_ids
+## 按属性与基础内力创建一张真气；名称自动生成。
+static func create(element: int, base_value: int, side: int = QiEnums.SIDES.PLAYER) -> QiData:
+	var qi := QiData.new()
+	qi.qi_base_element = element
+	qi.qi_base_value = base_value
+	qi.qi_side = side
+	qi.qi_name = "%s %d" % [QiEnums.get_element_name(element), base_value]
+	qi.object_id = "qi_%s_%d" % [QiEnums.get_element_id(element), base_value]
+	return qi
 
-## 从固定真气定义创建本局实例，并初始化该实例的使用值。
-func get_prototype(duplicate_sub_prototypes: bool = true) -> QiData:
-	var prototype: QiData = super.get_prototype(duplicate_sub_prototypes) as QiData
-	prototype.initialize_instance_value()
-	return prototype
 
-## 返回真气属性的稳定内容 ID。
-func get_attribute_id() -> String:
-	if qi_attribute < 0 or qi_attribute >= ATTRIBUTE_IDS.size():
-		return ""
-	return ATTRIBUTE_IDS[qi_attribute]
+## ============================================================
+## 查询：纯函数，无副作用，不触发毒发
+## ============================================================
 
-## 返回固定真气定义中的原始属性 ID；本局和战斗重塑不会改写此值。
-func get_original_attribute_id() -> String:
-	return get_attribute_id()
+## 当前属性 = 属性覆盖 → 属性替换重塑 → 基础属性。
+## 覆盖与重塑各自取应用顺序最大的一条。
+func peek_element() -> int:
+	var override := get_element_override()
+	if override >= 0:
+		return override
 
-## 返回本局本源重塑后的基础属性；没有本源时返回固定属性。
-func get_base_attribute_id() -> String:
-	return QiStateResolver.get_base_attribute_id(self)
+	var reshape := _find_last_element_replace()
+	if reshape != null:
+		return reshape.target_element
 
-## 返回真气属性映射后的扑克牌花色名称。
-func get_suit_name() -> String:
-	var attribute_id: String = get_effective_attribute_id()
-	var attribute_index: int = ATTRIBUTE_IDS.find(attribute_id)
-	if attribute_index < 0 or attribute_index >= ATTRIBUTE_SUIT_NAMES.size():
-		return ""
-	return ATTRIBUTE_SUIT_NAMES[attribute_index]
+	return qi_base_element
 
-## 返回当前有效属性对应的扑克牌花色稳定 ID。
-func get_suit_id(battle_state: BattleQiState = null) -> String:
-	var attribute_id: String = get_effective_attribute_id(battle_state)
-	var attribute_index: int = ATTRIBUTE_IDS.find(attribute_id)
-	if attribute_index < 0 or attribute_index >= ATTRIBUTE_SUIT_IDS.size():
-		return ""
-	return ATTRIBUTE_SUIT_IDS[attribute_index]
+## 存有的内力 = 基础内力 + 全部内力重塑，下限 0。
+## 用于面板显示、毒发门槛判断，以及气力的取值边界。
+func peek_stored_value() -> int:
+	var value := qi_base_value
+	for reshape: QiReshape in qi_reshapes:
+		if reshape.reshape_kind == QiReshape.KINDS.VALUE_ADJUST:
+			value += reshape.value_delta
+	return max(value, 0)
 
-## 返回适合界面展示的牌阶文本。
-func get_rank_name() -> String:
-	return get_rank_name_for_rank(get_effective_rank())
+## 提供的内力 = 存有的内力 + 气力；冻结生效时固定为 1。
+## 用于先手内力比较、输入资格判断，以及功法实际读取的值。
+##
+## 气力在此处才做上下限约束，而不在施加时约束 —— 保留原始数值，
+## 因此之后若存有的内力提高，先前超限的气力会自动生效更多。
+func peek_provided_value() -> int:
+	if has_state(QiStateEntry.KINDS.FROZEN):
+		return 1
 
-## 按指定牌阶返回展示文本，供战斗临时牌阶查询使用。
-static func get_rank_name_for_rank(rank: int) -> String:
-	match rank:
-		1:
-			return "A"
-		11:
-			return "J"
-		12:
-			return "Q"
-		13:
-			return "K"
-	return str(rank)
+	var stored := peek_stored_value()
+	var momentum := get_state_amount(QiStateEntry.KINDS.MOMENTUM)
+	momentum = clampi(momentum, -stored, stored * 2)
+	return max(stored + momentum, 0)
 
-## 返回本局重塑和战斗临时重塑共同决定的有效属性 ID。
-func get_effective_attribute_id(battle_state: BattleQiState = null) -> String:
-	return QiStateResolver.get_effective_attribute_id(self, battle_state)
+## ============================================================
+## 状态查询：结果查询
+## ============================================================
 
-## 返回当前有效的全部属性身份；混元和临时属性可能产生多个身份。
-func get_effective_attribute_ids(battle_state: BattleQiState = null) -> Array[String]:
-	return QiStateResolver.get_effective_attribute_ids(self, battle_state)
-
-## 返回本局重塑和战斗临时重塑共同决定的有效牌阶。
-func get_effective_rank(battle_state: BattleQiState = null) -> int:
-	return QiStateResolver.get_effective_rank(self, battle_state)
-
-## 返回本源重塑后的基础牌阶，不读取战斗临时牌阶。
-func get_base_rank() -> int:
-	return QiStateResolver.get_base_rank(self)
-
-## 返回固定真气定义中的原始牌阶；本局重塑不会改写此值。
-func get_original_rank() -> int:
-	return qi_rank
-
-## 返回当前有效牌阶对应的展示文本。
-func get_effective_rank_name(battle_state: BattleQiState = null) -> String:
-	return get_rank_name_for_rank(get_effective_rank(battle_state))
-
-## 按有效牌阶返回基础真气值：A 为 12，J、Q、K 为 11，其余等于牌阶。
-func get_base_qi_value(battle_state: BattleQiState = null) -> int:
-	return QiStateResolver.get_base_qi_value(self, battle_state)
-
-## 根据固定定义中的原始牌阶返回原始基础真气值。
-func get_original_base_qi_value() -> int:
-	if qi_rank == 1:
-		return 12
-	if qi_rank >= 11 and qi_rank <= 13:
-		return 11
-	return qi_rank
-
-## 返回包含本局重塑和旧兼容修正的真气值；战斗异状动态修正由战斗计算器继续处理。
-func get_qi_value(battle_state: BattleQiState = null) -> int:
-	return QiStateResolver.get_effective_qi_value(self, battle_state)
-
-## 返回参与功法数值计算时的真气贡献值；查询不会修改真气或触发行为。
-func get_contribution_qi_value(
-		battle_state: BattleQiState = null,
-		context: Dictionary = {}) -> int:
-	return QiStateResolver.get_contribution_qi_value(self, battle_state, context)
-
-## 返回永久强化提供的功法倍率修正；机缘判定由战斗结算阶段处理。
-func get_gongfa_multiplier_modifier() -> int:
-	return QiStateResolver.get_gongfa_multiplier_modifier(self)
-
-## 创建本局真气实例时初始化使用值；固定定义仍保持 -1，不会被写回。
-func initialize_instance_value() -> void:
-	if object_uid != "" and qi_value < 0:
-		qi_value = get_original_base_qi_value()
-
-## 返回本局某个重塑槽的状态；不返回战斗临时重塑。
-func get_reshape_state(reshape_slot: String) -> QiReshapeState:
-	var latest_state: QiReshapeState = null
-	for state: QiReshapeState in qi_reshape_states:
-		if state.reshape_slot != reshape_slot:
-			continue
-		if latest_state == null or state.applied_order > latest_state.applied_order:
-			latest_state = state
-	return latest_state
-
-## 返回本局指定异状的状态；没有该异状时返回 null。
-func get_persistent_anomaly_state(anomaly_definition_id: String) -> QiAnomalyState:
-	for state: QiAnomalyState in qi_persistent_anomaly_states:
-		if state.definition_id == anomaly_definition_id:
-			return state
-	return null
-
-## 应用一项本局重塑；固定定义只读，实例只保存变化后的结果值。
-func apply_run_reshape(
-		reshape_definition: QiReshapeData,
-		result_values: Dictionary[String, Variant]) -> bool:
-	if object_uid == "" \
-		or reshape_definition == null \
-		or not reshape_definition.is_valid_definition() \
-		or not reshape_definition.allows_scope(QiReshapeData.SCOPE_RUN) \
-		or not JsonStateValidator.is_json_compatible(result_values):
-		return false
-	var normalized_result: Dictionary[String, Variant] = build_reshape_result(
-		reshape_definition, result_values)
-	if normalized_result.is_empty() \
-		and reshape_definition.reshape_kind == QiReshapeData.KIND_ORIGIN:
-		return false
-	result_values = normalized_result
-	if reshape_definition.reshape_kind == QiReshapeData.KIND_ORIGIN:
-		if qi_origin_locked or not _validate_origin_result(reshape_definition, result_values):
-			return false
-	else:
-		if reshape_definition.reshape_slot == QiReshapeData.SLOT_ORIGIN:
-			return false
-		if reshape_definition.reshape_slot.begins_with("temporary_"):
-			return false
-	var state: QiReshapeState = QiReshapeState.new()
-	state.definition_id = reshape_definition.object_id
-	state.state_uid = "%s-reshape-%d" % [object_uid, _get_next_reshape_order()]
-	state.reshape_slot = reshape_definition.reshape_slot
-	state.origin_operation = reshape_definition.origin_operation
-	state.scope = QiReshapeData.SCOPE_RUN
-	state.result_values = result_values.duplicate(true)
-	state.applied_order = _get_next_reshape_order()
-	var kept_states: Array[QiReshapeState] = []
-	for existing_state: QiReshapeState in qi_reshape_states:
-		if state.reshape_slot != QiReshapeData.SLOT_OTHER \
-			and existing_state.reshape_slot == state.reshape_slot:
-			continue
-		kept_states.append(existing_state)
-	kept_states.append(state)
-	qi_reshape_states = kept_states
-	if reshape_definition.reshape_kind == QiReshapeData.KIND_ORIGIN:
-		qi_origin_locked = true
-	return true
-
-## 根据固定定义和请求参数构造一项完整重塑结果；只读当前真气。
-func build_reshape_result(
-		reshape_definition: QiReshapeData,
-		requested_values: Dictionary[String, Variant]) -> Dictionary[String, Variant]:
-	if reshape_definition == null or not reshape_definition.is_valid_definition() \
-		or not JsonStateValidator.is_json_compatible(requested_values):
-		return {}
-	var result: Dictionary[String, Variant] = requested_values.duplicate(true)
-	if reshape_definition.reshape_kind != QiReshapeData.KIND_ORIGIN:
-		return result
-	match reshape_definition.origin_operation:
-		QiReshapeData.ORIGIN_ATTRIBUTE:
-			if not result.has("attribute_id"):
-				return {}
-		QiReshapeData.ORIGIN_RANK_SHIFT:
-			var direction: String = str(result.get("direction", ""))
-			var target_rank: int = _get_rank_shift_target(qi_rank, direction)
-			if result.has("rank") and int(result.get("rank", 0)) != target_rank:
-				return {}
-			if target_rank < 1:
-				return {}
-			result["rank"] = target_rank
-			result["base_qi_value"] = QiStateResolver.get_standard_qi_value(target_rank)
-		QiReshapeData.ORIGIN_AWAKEN:
-			result["awakening_attribute_id"] = get_attribute_id()
-	return result
-
-## 预校验本局重塑；不会创建状态或调用效果。
-func can_apply_run_reshape(
-		reshape_definition: QiReshapeData,
-		result_values: Dictionary[String, Variant]) -> bool:
-	if object_uid == "" or reshape_definition == null \
-		or not reshape_definition.is_valid_definition() \
-		or not reshape_definition.allows_scope(QiReshapeData.SCOPE_RUN) \
-		or (reshape_definition.reshape_kind == QiReshapeData.KIND_ORIGIN and qi_origin_locked):
-		return false
-	var normalized_result: Dictionary[String, Variant] = build_reshape_result(
-		reshape_definition, result_values)
-	if normalized_result.is_empty() \
-		and reshape_definition.reshape_kind == QiReshapeData.KIND_ORIGIN:
-		return false
-	if reshape_definition.reshape_kind == QiReshapeData.KIND_ORIGIN:
-		return _validate_origin_result(reshape_definition, normalized_result)
-	return reshape_definition.reshape_slot != QiReshapeData.SLOT_ORIGIN \
-		and not reshape_definition.reshape_slot.begins_with("temporary_")
-
-## 校验本源操作的参数和边界，不修改当前真气。
-func _validate_origin_result(
-		reshape_definition: QiReshapeData,
-		result_values: Dictionary[String, Variant]) -> bool:
-	match reshape_definition.origin_operation:
-		QiReshapeData.ORIGIN_ATTRIBUTE:
-			var attribute_id: String = str(result_values.get("attribute_id", ""))
-			return ATTRIBUTE_IDS.has(attribute_id) \
-				and _matches_required_attribute(reshape_definition)
-		QiReshapeData.ORIGIN_RANK_SHIFT:
-			var target_rank: int = int(result_values.get("rank", 0))
-			var expected_value: int = QiStateResolver.get_standard_qi_value(target_rank)
-			return target_rank >= 1 and target_rank <= 13 \
-				and target_rank != qi_rank \
-				and int(result_values.get("base_qi_value", expected_value)) == expected_value \
-				and target_rank == _get_rank_shift_target(
-					qi_rank, str(result_values.get("direction", "")))
-		QiReshapeData.ORIGIN_AWAKEN:
-			var awakening_attribute_id: String = str(
-				result_values.get("awakening_attribute_id", get_attribute_id()))
-			return ATTRIBUTE_IDS.has(awakening_attribute_id) \
-				and awakening_attribute_id == get_attribute_id() \
-				and _matches_required_attribute(reshape_definition)
-	return false
-
-## 检查固定觉醒定义要求的基础属性。
-func _matches_required_attribute(reshape_definition: QiReshapeData) -> bool:
-	var required_attribute_id: String = str(
-		reshape_definition.effect_config.get("required_attribute_id", ""))
-	return required_attribute_id == "" or required_attribute_id == get_attribute_id()
-
-## 根据权威规则计算易阶目标；到达 A 或 2 时返回 -1。
-func _get_rank_shift_target(current_rank: int, direction: String) -> int:
-	var upward_order: Array[int] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1]
-	var current_index: int = upward_order.find(current_rank)
-	if current_index < 0:
-		return -1
-	if direction == "up" and current_index < upward_order.size() - 1:
-		return upward_order[current_index + 1]
-	if direction == "down" and current_index > 0:
-		return upward_order[current_index - 1]
-	return -1
-
-## 应用一个允许跨战斗存在的异状；普通战斗异状必须使用 BattleQiState。
-func apply_run_anomaly(
-		anomaly_definition: QiAnomalyData,
-		stacks: int = 1,
-		secondary_stacks: int = 0) -> bool:
-	if object_uid == "" \
-		or anomaly_definition == null \
-		or not anomaly_definition.is_valid_definition() \
-		or not anomaly_definition.allows_scope(QiAnomalyData.SCOPE_RUN) \
-		or stacks <= 0:
-		return false
-	for state: QiAnomalyState in qi_persistent_anomaly_states:
-		if state.definition_id != anomaly_definition.object_id:
-			continue
-		match anomaly_definition.stack_policy:
-			QiAnomalyData.STACK_ADD:
-				state.stacks += stacks
-				state.secondary_stacks += secondary_stacks
-			QiAnomalyData.STACK_REPLACE:
-				state.stacks = stacks
-				state.secondary_stacks = secondary_stacks
-			QiAnomalyData.STACK_KEEP:
-				pass
-		if anomaly_definition.max_stacks > 0:
-			state.stacks = min(state.stacks, anomaly_definition.max_stacks)
-		return true
-	var state: QiAnomalyState = QiAnomalyState.new()
-	state.definition_id = anomaly_definition.object_id
-	state.scope = QiAnomalyData.SCOPE_RUN
-	state.stacks = stacks
-	state.secondary_stacks = secondary_stacks
-	state.expire_events = anomaly_definition.expire_events.duplicate()
-	state.applied_order = _get_next_reshape_order()
-	if anomaly_definition.max_stacks > 0:
-		state.stacks = min(state.stacks, anomaly_definition.max_stacks)
-	qi_persistent_anomaly_states.append(state)
-	return true
-
-## 移除本局重塑；战斗临时状态由 BattleQiState 管理。
-func remove_run_reshape(reshape_slot: String, state_uid: String = "") -> bool:
-	if reshape_slot == QiReshapeData.SLOT_ORIGIN:
-		return false
-	for state_index: int in range(qi_reshape_states.size() - 1, -1, -1):
-		var state: QiReshapeState = qi_reshape_states[state_index]
-		if state.reshape_slot != reshape_slot:
-			continue
-		if state_uid != "" and state.state_uid != state_uid:
-			continue
-		qi_reshape_states.remove_at(state_index)
-		return true
-	return false
-
-## 移除一个本局异状。
-func remove_run_anomaly(anomaly_definition_id: String) -> bool:
-	for state_index: int in range(qi_persistent_anomaly_states.size() - 1, -1, -1):
-		if qi_persistent_anomaly_states[state_index].definition_id == anomaly_definition_id:
-			qi_persistent_anomaly_states.remove_at(state_index)
+## 是否携带指定种类的状态。
+## 毒量与气力按总量判断 —— 追加负数记录抵消后总量为 0 时视为不携带。
+func has_state(kind: int) -> bool:
+	if kind == QiStateEntry.KINDS.POISON or kind == QiStateEntry.KINDS.MOMENTUM:
+		return get_state_amount(kind) != 0
+	for entry: QiStateEntry in qi_states:
+		if entry.state_kind == kind:
 			return true
 	return false
 
-## 处理一个已提交的本局范围真气事件；普通战斗状态不经过此方法。
-func notify_run_qi_event(event_id: String) -> Array[String]:
-	if event_id == "":
-		return []
-	var removed_definition_ids: Array[String] = []
-	var global_node: Node = _get_global_node()
-	if global_node == null:
-		return removed_definition_ids
-	for state_index: int in range(qi_persistent_anomaly_states.size() - 1, -1, -1):
-		var state: QiAnomalyState = qi_persistent_anomaly_states[state_index]
-		var definition: QiAnomalyData = global_node.get_qi_anomaly_data(state.definition_id)
-		QiEffectRuntime.invoke_anomaly_event(
-			definition, object_uid, state, event_id, {"scope": QiAnomalyData.SCOPE_RUN})
-		if not state.expire_events.has(event_id):
+## 返回指定种类状态的总量；同种记录求和。
+## 毒量截下限 0（毒发追加负数记录后可能为负）；气力可正可负。
+func get_state_amount(kind: int) -> int:
+	var total := 0
+	for entry: QiStateEntry in qi_states:
+		if entry.state_kind == kind:
+			total += entry.amount
+	if kind == QiStateEntry.KINDS.POISON:
+		return max(total, 0)
+	return total
+
+## 返回属性覆盖的目标属性；取应用顺序最大的一条。无覆盖时返回 -1。
+func get_element_override() -> int:
+	var best: QiStateEntry = null
+	for entry: QiStateEntry in qi_states:
+		if entry.state_kind != QiStateEntry.KINDS.ELEMENT_OVERRIDE:
 			continue
-		QiEffectRuntime.invoke_anomaly_remove(
-			definition, object_uid, state, {"scope": QiAnomalyData.SCOPE_RUN})
-		removed_definition_ids.append(state.definition_id)
-		qi_persistent_anomaly_states.remove_at(state_index)
-	return removed_definition_ids
+		if best == null or entry.applied_order >= best.applied_order:
+			best = entry
+	return best.element if best != null else -1
 
-## 通过场景树读取 Global，避免固定数据类与 Global 自动加载脚本形成编译循环。
-func _get_global_node() -> Node:
-	var main_loop: MainLoop = Engine.get_main_loop()
-	if main_loop == null or not main_loop is SceneTree:
-		return null
-	return (main_loop as SceneTree).root.get_node_or_null("Global")
+## 返回该真气携带的全部状态种类，同种只出现一次；供状态处理器遍历。
+func get_state_kinds() -> Array[int]:
+	var kinds: Array[int] = []
+	for entry: QiStateEntry in qi_states:
+		if not kinds.has(entry.state_kind):
+			kinds.append(entry.state_kind)
+	return kinds
 
-## 计算下一项重塑或持久异状的稳定顺序。
-func _get_next_reshape_order() -> int:
-	var max_order: int = 0
-	for state: QiReshapeState in qi_reshape_states:
-		max_order = max(max_order, state.applied_order)
-	for state: QiAnomalyState in qi_persistent_anomaly_states:
-		max_order = max(max_order, state.applied_order)
-	return max_order + 1
 
-## 归一化旧存档中的真气状态；不执行任何效果。
-func normalize_after_load() -> void:
-	if qi_reshape_states == null:
-		qi_reshape_states = []
-	if qi_persistent_anomaly_states == null:
-		qi_persistent_anomaly_states = []
-	initialize_instance_value()
-	for state: QiReshapeState in qi_reshape_states:
-		state.reshape_slot = QiReshapeData.normalize_legacy_slot(state.reshape_slot)
-		if state.state_uid == "":
-			state.state_uid = "%s-reshape-%d" % [object_uid, state.applied_order]
-		if state.reshape_slot == QiReshapeData.SLOT_ORIGIN:
-			qi_origin_locked = true
-	for state_index: int in range(qi_reshape_states.size() - 1, -1, -1):
-		if not qi_reshape_states[state_index].is_valid_state():
-			qi_reshape_states.remove_at(state_index)
-	for state_index: int in range(qi_persistent_anomaly_states.size() - 1, -1, -1):
-		if not qi_persistent_anomaly_states[state_index].is_valid_state():
-			qi_persistent_anomaly_states.remove_at(state_index)
+## ============================================================
+## 状态查询：明细查询
+##
+## 只在需要展示来源时使用，例如悬浮提示与战斗日志。
+## 常规显示与功法读取都用上面的结果查询。
+## ============================================================
 
-## 校验固定牌面与本局永久状态是否合法。
-func is_valid_qi() -> bool:
-	if not (qi_attribute >= 0 \
-		and qi_attribute < ATTRIBUTE_IDS.size() \
-		and qi_rank >= 1 \
-		and qi_rank <= 13 \
-		and qi_value >= -1 \
-		and JsonStateValidator.is_json_compatible(qi_permanent_state) \
-		and QiValuePipeline.validate_value_effects(qi_value_effects)):
+## 返回指定种类状态的全部记录，按应用顺序升序。
+func get_state_entries(kind: int) -> Array[QiStateEntry]:
+	var result: Array[QiStateEntry] = []
+	for entry: QiStateEntry in qi_states:
+		if entry.state_kind == kind:
+			result.append(entry)
+	result.sort_custom(func(a: QiStateEntry, b: QiStateEntry) -> bool:
+		return a.applied_order < b.applied_order)
+	return result
+
+## 当前毒量是否大于 0。
+func is_poisoned() -> bool:
+	return get_state_amount(QiStateEntry.KINDS.POISON) > 0
+
+## 运转进入散气时是否应触发毒发；门槛使用存有的内力，不是提供的内力。
+func should_burst_on_discard() -> bool:
+	var poison := get_state_amount(QiStateEntry.KINDS.POISON)
+	return poison > 0 and poison >= peek_stored_value()
+
+## 是否携带指定标记。
+func has_mark(mark_id: String) -> bool:
+	for reshape: QiReshape in qi_reshapes:
+		if reshape.reshape_kind == QiReshape.KINDS.MARK and reshape.mark_id == mark_id:
+			return true
+	return false
+
+
+## ============================================================
+## 离场去向
+## ============================================================
+
+## 本应进入散气时的实际去向；只计算，不移动真气。
+##
+## 保留、耗散、归根三种状态都改变去向，同时存在时按固定优先级取一个：
+##   保留（留在行气）> 耗散（从牌库移除）> 归根（洗回凝气）
+##
+## 返回 -1 表示从牌库移除，此时由战斗容器记入本场被移除的真气列表。
+func resolve_discard_target() -> int:
+	if has_state(QiStateEntry.KINDS.RETAINED):
+		return QiEnums.ZONES.HAND
+	if has_state(QiStateEntry.KINDS.CONSUMING):
+		return -1
+	if has_state(QiStateEntry.KINDS.RETURNING):
+		return QiEnums.ZONES.DRAW
+	return QiEnums.ZONES.DISCARD
+
+## 是否因封脉而无法运转。
+func is_sealed() -> bool:
+	return has_state(QiStateEntry.KINDS.SEALED)
+
+
+## ============================================================
+## 重塑操作：发生在局外，无需事件与拦截
+## ============================================================
+
+## 实际可用的重塑槽数量；受本张真气的容量与全局硬上限共同约束。
+func get_effective_slot_capacity() -> int:
+	return min(qi_reshape_slot_capacity, QiEnums.RESHAPE_SLOT_MAX)
+
+## 是否还有空余重塑槽。
+func can_add_reshape() -> bool:
+	return qi_reshapes.size() < get_effective_slot_capacity()
+
+## 追加一个重塑；槽位已满或重塑不合法时返回 false。
+func add_reshape(reshape: QiReshape) -> bool:
+	if reshape == null or not reshape.is_valid():
 		return false
-	var seen_state_uids: Dictionary[String, bool] = {}
-	var slot_counts: Dictionary[String, int] = {}
-	var origin_count: int = 0
-	for state: QiReshapeState in qi_reshape_states:
-		if state == null or not state.is_valid_state():
-			return false
-		if seen_state_uids.has(state.state_uid):
-			return false
-		seen_state_uids[state.state_uid] = true
-		if state.scope != QiReshapeData.SCOPE_RUN:
-			return false
-		if state.reshape_slot == QiReshapeData.SLOT_ORIGIN:
-			origin_count += 1
+	if not can_add_reshape():
+		return false
+	reshape.applied_order = _next_reshape_order()
+	qi_reshapes.append(reshape)
+	return true
+
+## 移除指定下标的重塑并腾出槽位；被移除的重塑不返还。
+func remove_reshape(index: int) -> bool:
+	if index < 0 or index >= qi_reshapes.size():
+		return false
+	qi_reshapes.remove_at(index)
+	return true
+
+## 扩充本张真气的重塑槽容量；已达硬上限时返回 false。
+func expand_reshape_slot() -> bool:
+	if qi_reshape_slot_capacity >= QiEnums.RESHAPE_SLOT_MAX:
+		return false
+	qi_reshape_slot_capacity += 1
+	return true
+
+
+## ============================================================
+## 状态变更
+## ============================================================
+
+## 追加一条状态记录。
+##
+## 标记类状态**不叠加** —— 已存在时忽略本次施加，
+## 因为同一张真气获得两次保留只生效一次。
+func add_state(incoming: QiStateEntry) -> bool:
+	if incoming == null or not incoming.is_valid():
+		return false
+	if QiStateEntry.is_flag_kind(incoming.state_kind) and has_state(incoming.state_kind):
+		return false
+
+	incoming.applied_order = _next_state_order()
+	qi_states.append(incoming)
+	return true
+
+## 移除指定种类状态的全部记录。
+func remove_state(kind: int) -> int:
+	var kept: Array[QiStateEntry] = []
+	var removed := 0
+	for entry: QiStateEntry in qi_states:
+		if entry.state_kind == kind:
+			removed += 1
 		else:
-			slot_counts[state.reshape_slot] = int(slot_counts.get(state.reshape_slot, 0)) + 1
-	for slot: String in slot_counts.keys():
-		if slot != QiReshapeData.SLOT_OTHER and slot_counts[slot] > 1:
-			return false
-	if origin_count > 1 \
-		or (origin_count == 1 and not qi_origin_locked) \
-		or (origin_count == 0 and qi_origin_locked):
+			kept.append(entry)
+	qi_states = kept
+	return removed
+
+## 移除指定种类状态中来源匹配的记录。
+func remove_state_by_source(kind: int, source_uid: String) -> int:
+	var kept: Array[QiStateEntry] = []
+	var removed := 0
+	for entry: QiStateEntry in qi_states:
+		if entry.state_kind == kind and entry.source_uid == source_uid:
+			removed += 1
+		else:
+			kept.append(entry)
+	qi_states = kept
+	return removed
+
+## 净化：清除本场战斗产生的全部状态，不区分正负。
+##
+## 归档记录代表「进入本场战斗时的状态」，因此保留 ——
+## 净化后真气恰好还原到本场开局的形态。
+## 净化**不清除持久重塑**，那属于构筑而非战斗状态。
+func purify() -> void:
+	var kept: Array[QiStateEntry] = []
+	for entry: QiStateEntry in qi_states:
+		if entry.is_history():
+			kept.append(entry)
+	qi_states = kept
+
+## 战斗结束的状态归档。
+##
+## 气力与毒量压缩成一条历史记录 —— 一场战斗可能产生十几条记录，
+## 不压缩会让存档随战斗场数膨胀。
+## 其余状态由各自的处理器在战斗结束时移除，此处不处理。
+##
+## 例：毒+1(功法A)、毒+3(功法B)、毒-4(毒发)、毒+5(功法C) → 毒+5(历史)
+func archive_states() -> void:
+	for kind: int in get_state_kinds():
+		if not QiStateEntry.needs_archive(kind):
+			continue
+		var total := get_state_amount(kind)
+		remove_state(kind)
+		if total != 0:
+			qi_states.append(QiStateEntry.history(kind, total))
+
+	qi_zone = QiEnums.ZONES.DRAW
+	qi_owning_gongfa_uid = ""
+
+
+## ============================================================
+## 校验与展示
+## ============================================================
+
+## 校验本张真气的字段是否合法。
+func is_valid_qi() -> bool:
+	if not QiEnums.is_valid_element(qi_base_element):
 		return false
-	for state: QiAnomalyState in qi_persistent_anomaly_states:
-		if state == null or not state.is_valid_state():
-			return false
+	if qi_base_value <= 0:
+		return false
+	if qi_reshape_slot_capacity < 0:
+		return false
+	if qi_reshapes.size() > get_effective_slot_capacity():
+		return false
 	return true
 
-## 安全替换本局永久改造状态，非法值不会写入实例。
-func set_permanent_state(value: Dictionary[String, Variant]) -> bool:
-	if object_uid == "" or not JsonStateValidator.is_json_compatible(value):
-		return false
-	qi_permanent_state = value.duplicate(true)
-	return true
+## 返回用于界面展示的当前形态，例如「火 9」。
+func get_display_text() -> String:
+	return "%s %d" % [QiEnums.get_element_name(peek_element()), peek_provided_value()]
+
+
+## ============================================================
+## 内部工具
+## ============================================================
+
+## 返回应用顺序最大的属性替换重塑；没有时返回 null。
+func _find_last_element_replace() -> QiReshape:
+	var result: QiReshape = null
+	for reshape: QiReshape in qi_reshapes:
+		if reshape.reshape_kind != QiReshape.KINDS.ELEMENT_REPLACE:
+			continue
+		if result == null or reshape.applied_order >= result.applied_order:
+			result = reshape
+	return result
+
+## 返回下一个可用的重塑应用顺序值。
+func _next_reshape_order() -> int:
+	var maximum := -1
+	for reshape: QiReshape in qi_reshapes:
+		maximum = max(maximum, reshape.applied_order)
+	return maximum + 1
+
+## 返回下一个可用的状态应用顺序值；属性覆盖依赖它取最后一条。
+func _next_state_order() -> int:
+	var maximum := -1
+	for entry: QiStateEntry in qi_states:
+		maximum = max(maximum, entry.applied_order)
+	return maximum + 1
+
+
+## ============================================================
+## 起始牌库
+## ============================================================
+
+## 生成起始牌库：五行 × 内力 5～9 各一张，共 25 张，全部为纯基础真气。
+##
+## 这是一个中性起点 —— 每属性 5 张、每内力值 5 张，既不偏向属性线也不偏向内力线，
+## 因此第一次改造的方向完全由玩家决定。实际调用方是存档创建流程。
+static func create_starting_deck(side: int = QiEnums.SIDES.PLAYER) -> Array[QiData]:
+	var deck: Array[QiData] = []
+	for element: int in range(QiEnums.ELEMENT_COUNT):
+		for value: int in range(QiEnums.BASE_VALUE_MIN, QiEnums.BASE_VALUE_MAX + 1):
+			var qi := QiData.create(element, value, side)
+			qi.object_uid = PrototypeData.generate_unique_id(qi)
+			deck.append(qi)
+	return deck
+
+
+

@@ -226,6 +226,7 @@ func register_artifact_interceptors() -> void:
 ## 只按当前内功装备顺序注册来源实例拦截器。
 func register_neigong_interceptors() -> void:
 	ActionHandler.unregister_action_interceptors_by_source_kind(self, "neigong")
+	ActionHandler.qi_interceptors.unregister_by_source_kind(self, "neigong")
 	for source_order: int in Global.player_data.player_equipped_neigong_uids.size():
 		var neigong_instance_uid: String = Global.player_data.player_equipped_neigong_uids[
 			source_order]
@@ -234,7 +235,10 @@ func register_neigong_interceptors() -> void:
 		if neigong_data == null:
 			continue
 		for interceptor_id: String in neigong_data.neigong_interceptor_ids:
+			# 同一份 ID 列表送进两套体系；各自查不到配置就跳过，因此并存不冲突。
 			ActionHandler.register_action_interceptor(
+				self, interceptor_id, "neigong", neigong_instance_uid, source_order)
+			ActionHandler.qi_interceptors.register(
 				self, interceptor_id, "neigong", neigong_instance_uid, source_order)
 
 func _on_artifact_added(artifact_data: ArtifactData) -> void:

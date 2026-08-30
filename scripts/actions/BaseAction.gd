@@ -246,3 +246,29 @@ func _intercept_action(_targets: Array[BaseCombatant] = get_adjusted_action_targ
 			accepted_interceptor_processors.append(action_interceptor_processor)
 	
 	return accepted_interceptor_processors
+
+
+## 跑真气拦截链，返回可用于读取修改后参数的 resolver；返回 null 表示动作被拒绝。
+##
+## 与 _intercept_action() 的区别：那个按 target 分裂成多条链，适合攻击这类有明确
+## 受击者的动作。真气动作作用于自己，只需要一条链，敌我拦截器靠归属者与发起者的
+## 关系区分，在同一条链里按优先级统一排序。
+##
+## 两个时机各跑一条独立的链：
+##     BEFORE —— 动作执行前，可以改参数或拒绝动作
+##     AFTER  —— 动作执行完，只能读结果与追加效果，返回 REJECTED 会被忽略
+##
+## 用法：
+##     var resolver := _intercept_qi_action()
+##     if resolver == null:
+##         return                      # 被拒绝，动作不执行
+##     var to_zone: int = resolver.get_shadowed_value("to_zone", -1)
+##     ...执行动作...
+##     _intercept_qi_action(QiInterceptorData.PHASES.AFTER)
+func _intercept_qi_action(
+		phase: int = QiInterceptorData.PHASES.BEFORE,
+		preview_mode: bool = false) -> QiInterceptorResolver:
+	var resolver := QiInterceptorResolver.new(self, phase)
+	if not resolver.run(preview_mode):
+		return null
+	return resolver

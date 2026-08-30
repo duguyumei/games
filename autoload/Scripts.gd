@@ -115,6 +115,8 @@ const ACTION_RESOLVE_QI_ACTION: String = "res://scripts/actions/taiwu_actions/Ac
 const ACTION_DRAW_QI: String = "res://scripts/actions/taiwu_actions/ActionDrawQi.gd"
 ## 从当前真气手牌弃置固定数量真气。
 const ACTION_DISCARD_QI: String = "res://scripts/actions/taiwu_actions/ActionDiscardQi.gd"
+## 真气运转：唯一的牌区移动动作，方向由 from_zone 与 to_zone 表达。
+const ACTION_CIRCULATE_QI: String = "res://scripts/actions/taiwu_actions/ActionCirculateQi.gd"
 
 # artifact actions
 const ACTION_INCREASE_ARTIFACT_CHARGE: String = "res://scripts/actions/artifact_actions/ActionIncreaseArtifactCharge.gd"
@@ -248,6 +250,11 @@ const INTERCEPTOR_PRESERVE_ENERGY: String = "res://scripts/action_interceptors/I
 const INTERCEPTOR_PRESERVE_BLOCK: String = "res://scripts/action_interceptors/InterceptorPreserveBlock.gd"
 const INTERCEPTOR_TEMP_PRESERVE_BLOCK: String = "res://scripts/action_interceptors/InterceptorTempPreserveBlock.gd"
 const INTERCEPTOR_PRESERVE_OVERSHIELD: String = "res://scripts/action_interceptors/status_effect_decay_interceptors/InterceptorPreserveOvershield.gd"
+#endregion
+
+#region Qi Interceptors
+## 按动作类型注册的真气拦截器；服务内功、功法与真气动作。
+const QI_INTERCEPTOR_MOMENTUM_ON_CIRCULATE: String = "res://scripts/qi_interceptors/InterceptorQiMomentumOnCirculate.gd"
 #endregion
 
 #region Run Modifiers

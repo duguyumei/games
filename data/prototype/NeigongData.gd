@@ -29,6 +29,13 @@ enum NEIGONG_RARITIES {COMMON, UNCOMMON, RARE, LEGENDARY}
 ## 装备后注册到行为管线的拦截器固定 ID。
 @export var neigong_interceptor_ids: Array[String] = []
 
+## 拦截器读取的固定参数。
+##
+## 拦截器脚本本身不写死数值，运行时通过 QiInterceptorResolver.get_source_instance()
+## 拿到本内功实例后从这里读。因此「运转时气力 +1」与「运转时气力 +2」共用同一个
+## 拦截器脚本，差异只在这份配置里。
+@export var neigong_interceptor_values: Dictionary[String, Variant] = {}
+
 ## 内功作为效果来源参与统一数值查询的固定配置。
 @export var qi_value_effects: Array[Dictionary] = []
 
