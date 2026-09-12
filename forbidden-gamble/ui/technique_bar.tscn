@@ -1,0 +1,71 @@
+[gd_scene load_steps=4 format=3 uid="uid://bvknj1tt3t1ad"]
+
+[ext_resource type="PackedScene" path="res://ui/technique_card.tscn" id="1"]
+[ext_resource type="PackedScene" uid="uid://djipuhvu08twd" path="res://ui/qi_slot_group.tscn" id="2"]
+[ext_resource type="Script" path="res://ui/technique_bar.gd" id="3_bar"]
+
+[sub_resource type="StyleBoxFlat" id="empty_bg"]
+bg_color = Color(0.93, 0.89, 0.8, 0.25)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.48, 0.44, 0.6)
+
+[node name="TechniqueBar" type="Control"]
+custom_minimum_size = Vector2(1280, 224)
+size = Vector2(1280, 224)
+script = ExtResource("3_bar")
+
+[node name="Bg" type="ColorRect" parent="."]
+size = Vector2(1280, 224)
+color = Color(0.82, 0.78, 0.7, 1)
+
+[node name="Card1" parent="." instance=ExtResource("1")]
+position = Vector2(54, 14)
+
+[node name="QiSlots" parent="Card1" instance=ExtResource("2")]
+slot_count = 1
+demo_filled = 1
+
+[node name="Card2" parent="." instance=ExtResource("1")]
+position = Vector2(258, 14)
+
+[node name="QiSlots" parent="Card2" instance=ExtResource("2")]
+slot_count = 2
+demo_filled = 1
+
+[node name="Card3" parent="." instance=ExtResource("1")]
+position = Vector2(462, 14)
+
+[node name="QiSlots" parent="Card3" instance=ExtResource("2")]
+slot_count = 3
+demo_filled = 1
+
+[node name="Card4" parent="." instance=ExtResource("1")]
+position = Vector2(666, 14)
+
+[node name="QiSlots" parent="Card4" instance=ExtResource("2")]
+slot_count = 4
+slot_layout = 1
+demo_filled = 1
+
+[node name="Card5" parent="." instance=ExtResource("1")]
+position = Vector2(870, 14)
+
+[node name="QiSlots" parent="Card5" instance=ExtResource("2")]
+slot_count = 5
+slot_layout = 2
+demo_filled = 1
+
+[node name="EmptySlot" type="Panel" parent="."]
+position = Vector2(1074, 14)
+size = Vector2(150, 210)
+theme_override_styles/panel = SubResource("empty_bg")
+
+[node name="EmptyLabel" type="Label" parent="EmptySlot"]
+size = Vector2(150, 210)
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.5, 0.48, 0.44, 0.6)
+text = "空位"

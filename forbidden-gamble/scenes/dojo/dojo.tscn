@@ -1,0 +1,160 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/dojo/dojo.gd" id="1_dojo"]
+[ext_resource type="Theme" path="res://ui/theme/main_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://ui/qi_count_cell.tscn" id="3_cell"]
+
+[node name="Dojo" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_dojo")
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.902, 0.863, 0.769, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 40
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "演武场 · 随意构筑，择敌练招"
+horizontal_alignment = 1
+
+[node name="Body" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 40
+
+[node name="Left" type="VBoxContainer" parent="Margin/VBox/Body"]
+layout_mode = 2
+custom_minimum_size = Vector2(360, 0)
+theme_override_constants/separation = 10
+
+[node name="EnemyTitle" type="Label" parent="Margin/VBox/Body/Left"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "一、择敌"
+
+[node name="EnemyPick" type="OptionButton" parent="Margin/VBox/Body/Left"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 40)
+
+[node name="EnemyInfo" type="Label" parent="Margin/VBox/Body/Left"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 15
+text = " "
+
+[node name="RightScroll" type="ScrollContainer" parent="Margin/VBox/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_scroll_mode = 0
+
+[node name="Right" type="VBoxContainer" parent="Margin/VBox/Body/RightScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="TechTitle" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "二、功法六槽（点击槽位换功法）"
+
+[node name="TechSlots" type="HFlowContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="XinfaTitle" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "三、内功五槽（点击槽位换内功）"
+
+[node name="XinfaSlots" type="HFlowContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="WearTitle" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "四、随身装备（演武场无耐久）"
+
+[node name="WearRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="WeaponPick" type="OptionButton" parent="Margin/VBox/Body/RightScroll/Right/WearRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 36)
+
+[node name="ArmorPick" type="OptionButton" parent="Margin/VBox/Body/RightScroll/Right/WearRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 36)
+
+[node name="QiTitle" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "五、真气牌组（数量不限）"
+
+[node name="FengRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LinRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="HuoRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ShanRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="DeckTotal" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "牌组合计：15 张"
+
+[node name="BottomRow" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 24
+
+[node name="StartButton" type="Button" parent="Margin/VBox/BottomRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(220, 52)
+theme_override_font_sizes/font_size = 22
+text = "开 战"
+
+[node name="HomeButton" type="Button" parent="Margin/VBox/BottomRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(140, 52)
+text = "回主菜单"

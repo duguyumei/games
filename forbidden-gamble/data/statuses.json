@@ -1,0 +1,22 @@
+{
+  "poison": {
+    "name": "毒",
+    "scope": "battle",
+    "on": "breath",
+    "phase": "post",
+    "priority": 0,
+    "action": "hp_loss",
+    "amount": "stacks",
+    "decay": 1
+  },
+  "youshen": {
+    "name": "游身",
+    "scope": "battle",
+    "on": "damage",
+    "phase": "pre",
+    "priority": -50,
+    "action": "damage_modify",
+    "amount": -2,
+    "decay": 1
+  }
+}

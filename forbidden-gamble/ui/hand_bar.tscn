@@ -1,0 +1,203 @@
+[gd_scene load_steps=9 format=3 uid="uid://de8ho7t2pg0i1"]
+
+[ext_resource type="PackedScene" path="res://ui/qi_orb.tscn" id="1"]
+[ext_resource type="Script" path="res://ui/hand_bar.gd" id="2_hand"]
+
+[sub_resource type="StyleBoxFlat" id="channel_bg"]
+bg_color = Color(0.35, 0.32, 0.28, 0.45)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+
+[sub_resource type="StyleBoxFlat" id="socket_bg"]
+bg_color = Color(0.25, 0.22, 0.18, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.5, 0.46, 0.4, 1)
+corner_radius_top_left = 24
+corner_radius_top_right = 24
+corner_radius_bottom_right = 24
+corner_radius_bottom_left = 24
+
+[sub_resource type="StyleBoxFlat" id="dantian_bg"]
+bg_color = Color(0.82, 0.76, 0.58, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.7, 0.55, 0.2, 1)
+corner_radius_top_left = 36
+corner_radius_top_right = 36
+corner_radius_bottom_right = 36
+corner_radius_bottom_left = 36
+
+[sub_resource type="StyleBoxFlat" id="taiji_black"]
+bg_color = Color(0.2, 0.18, 0.15, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="taiji_white"]
+bg_color = Color(0.93, 0.9, 0.82, 1)
+corner_radius_top_left = 14
+corner_radius_bottom_left = 14
+
+[sub_resource type="StyleBoxFlat" id="qihai_bg"]
+bg_color = Color(0.28, 0.26, 0.23, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.5, 0.48, 0.44, 1)
+corner_radius_top_left = 32
+corner_radius_top_right = 32
+corner_radius_bottom_right = 32
+corner_radius_bottom_left = 32
+
+[node name="HandBar" type="Control"]
+custom_minimum_size = Vector2(1280, 110)
+size = Vector2(1280, 110)
+script = ExtResource("2_hand")
+
+[node name="Bg" type="ColorRect" parent="."]
+size = Vector2(1280, 110)
+color = Color(0.8, 0.76, 0.68, 1)
+
+[node name="MeldInfo" type="Label" parent="."]
+position = Vector2(0, 2)
+size = Vector2(1280, 20)
+theme_override_colors/font_color = Color(0.25, 0.22, 0.18, 1)
+theme_override_font_sizes/font_size = 13
+horizontal_alignment = 1
+text = "凝招：对子 · 内力 8"
+
+[node name="Channel" type="Panel" parent="."]
+position = Vector2(104, 42)
+size = Vector2(1080, 36)
+theme_override_styles/panel = SubResource("channel_bg")
+
+[node name="Socket1" type="Panel" parent="."]
+position = Vector2(388, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Socket2" type="Panel" parent="."]
+position = Vector2(464, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Socket3" type="Panel" parent="."]
+position = Vector2(540, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Socket4" type="Panel" parent="."]
+position = Vector2(616, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Socket5" type="Panel" parent="."]
+position = Vector2(692, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Socket6" type="Panel" parent="."]
+position = Vector2(768, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Socket7" type="Panel" parent="."]
+position = Vector2(844, 36)
+size = Vector2(48, 48)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Dantian" type="Panel" parent="."]
+position = Vector2(24, 19)
+size = Vector2(72, 72)
+theme_override_styles/panel = SubResource("dantian_bg")
+
+[node name="TaijiBlack" type="Panel" parent="Dantian"]
+position = Vector2(22, 12)
+size = Vector2(28, 28)
+theme_override_styles/panel = SubResource("taiji_black")
+
+[node name="TaijiWhite" type="Panel" parent="Dantian/TaijiBlack"]
+size = Vector2(14, 28)
+theme_override_styles/panel = SubResource("taiji_white")
+
+[node name="TaijiDotB" type="Panel" parent="Dantian/TaijiBlack"]
+position = Vector2(4, 11)
+size = Vector2(6, 6)
+theme_override_styles/panel = SubResource("taiji_black")
+
+[node name="TaijiDotW" type="Panel" parent="Dantian/TaijiBlack"]
+position = Vector2(18, 11)
+size = Vector2(6, 6)
+theme_override_styles/panel = SubResource("taiji_white")
+
+[node name="DantianNum" type="Label" parent="Dantian"]
+position = Vector2(0, 42)
+size = Vector2(72, 24)
+theme_override_colors/font_color = Color(0.3, 0.26, 0.18, 1)
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 1
+text = "23"
+
+[node name="DantianName" type="Label" parent="."]
+position = Vector2(24, 92)
+size = Vector2(72, 16)
+theme_override_colors/font_color = Color(0.35, 0.3, 0.22, 1)
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1
+text = "丹田·牌库"
+
+[node name="QiHai" type="Panel" parent="."]
+position = Vector2(1192, 23)
+size = Vector2(64, 64)
+theme_override_styles/panel = SubResource("qihai_bg")
+
+[node name="Swirl1" type="Panel" parent="QiHai"]
+position = Vector2(14, 14)
+size = Vector2(36, 36)
+theme_override_styles/panel = SubResource("socket_bg")
+
+[node name="Swirl2" type="Panel" parent="QiHai"]
+position = Vector2(24, 24)
+size = Vector2(16, 16)
+theme_override_styles/panel = SubResource("qihai_bg")
+
+[node name="QiHaiNum" type="Label" parent="QiHai"]
+position = Vector2(0, 42)
+size = Vector2(64, 20)
+theme_override_colors/font_color = Color(0.75, 0.72, 0.66, 1)
+theme_override_font_sizes/font_size = 12
+horizontal_alignment = 1
+text = "7"
+
+[node name="QiHaiName" type="Label" parent="."]
+position = Vector2(1192, 92)
+size = Vector2(64, 16)
+theme_override_colors/font_color = Color(0.35, 0.3, 0.22, 1)
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1
+text = "气海·弃牌"
+
+[node name="HandOrb1" parent="." instance=ExtResource("1")]
+position = Vector2(384, 32)
+orb_color = Color(0.45, 0.72, 0.68, 1)
+force_text = "4"
+selected = true
+
+[node name="HandOrb2" parent="." instance=ExtResource("1")]
+position = Vector2(460, 32)
+orb_color = Color(0.75, 0.35, 0.25, 1)
+force_text = "4"
+
+[node name="HandOrb3" parent="." instance=ExtResource("1")]
+position = Vector2(536, 32)
+orb_color = Color(0.45, 0.42, 0.5, 1)
+force_text = "3"

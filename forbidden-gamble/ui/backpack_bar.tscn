@@ -1,0 +1,132 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/backpack_bar.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="PackBg"]
+bg_color = Color(0.94902, 0.909804, 0.835294, 0.94)
+border_color = Color(0.168627, 0.141176, 0.109804, 0.4)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="BackpackBar" type="Panel"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -598.0
+offset_top = -116.0
+offset_right = -22.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("PackBg")
+script = ExtResource("1_script")
+
+[node name="Box" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="Head" type="HBoxContainer" parent="Box"]
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="Box/Head"]
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.168627, 0.141176, 0.109804, 1)
+theme_override_font_sizes/font_size = 15
+text = "背包 0/0"
+
+[node name="Spacer" type="Control" parent="Box/Head"]
+size_flags_horizontal = 3
+
+[node name="UseButton" type="Button" parent="Box/Head"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "使用"
+
+[node name="DropButton" type="Button" parent="Box/Head"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "丢弃"
+
+[node name="StashButton" type="Button" parent="Box/Head"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "入囊"
+
+[node name="EquipButton" type="Button" parent="Box/Head"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "穿上"
+
+[node name="Grid" type="GridContainer" parent="Box"]
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 12
+
+[node name="WearHead" type="HBoxContainer" parent="Box"]
+theme_override_constants/separation = 12
+
+[node name="WearTitle" type="Label" parent="Box/WearHead"]
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.168627, 0.141176, 0.109804, 1)
+theme_override_font_sizes/font_size = 15
+text = "穿戴"
+
+[node name="WearSpacer" type="Control" parent="Box/WearHead"]
+size_flags_horizontal = 3
+
+[node name="UnequipButton" type="Button" parent="Box/WearHead"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "卸下"
+
+[node name="WearRow" type="HBoxContainer" parent="Box"]
+theme_override_constants/separation = 4
+
+[node name="PouchHead" type="HBoxContainer" parent="Box"]
+theme_override_constants/separation = 12
+
+[node name="PouchTitle" type="Label" parent="Box/PouchHead"]
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.168627, 0.141176, 0.109804, 1)
+theme_override_font_sizes/font_size = 15
+text = "锦囊 0/2"
+
+[node name="PouchSpacer" type="Control" parent="Box/PouchHead"]
+size_flags_horizontal = 3
+
+[node name="PouchUseButton" type="Button" parent="Box/PouchHead"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "使用"
+
+[node name="UnstashButton" type="Button" parent="Box/PouchHead"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "回包"
+
+[node name="PouchDropButton" type="Button" parent="Box/PouchHead"]
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "丢弃"
+
+[node name="PouchGrid" type="GridContainer" parent="Box"]
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+columns = 4

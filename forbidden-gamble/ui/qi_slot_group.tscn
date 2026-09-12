@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://djipuhvu08twd"]
+
+[ext_resource type="Script" uid="uid://4g6jiraunt16" path="res://ui/qi_slot_group.gd" id="1"]
+
+[node name="QiSlotGroup" type="Control" unique_id=1229249573]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 65.0
+offset_top = -14.0
+offset_right = 126.0
+offset_bottom = 49.0
+script = ExtResource("1")

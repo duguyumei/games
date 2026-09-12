@@ -1,0 +1,78 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource path="res://scenes/battle/battle.gd" type="Script" id="1_main"]
+[ext_resource path="res://ui/battle_stage.tscn" type="PackedScene" id="2_stage"]
+[ext_resource path="res://ui/hand_bar.tscn" type="PackedScene" id="3_hand"]
+[ext_resource path="res://ui/technique_bar.tscn" type="PackedScene" id="4_tech"]
+[ext_resource path="res://ui/battle_top_bar.tscn" type="PackedScene" id="6_topbar"]
+[ext_resource path="res://ui/log_view.tscn" type="PackedScene" id="7_logview"]
+[ext_resource path="res://ui/battle_end_overlay.tscn" type="PackedScene" id="8_endoverlay"]
+
+[sub_resource type="StyleBoxFlat" id="overlay_bg"]
+bg_color = Color(0.13, 0.14, 0.16, 0.95)
+
+[node name="CombatSandbox" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.16, 0.17, 0.19, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Column" type="VBoxContainer" parent="Center"]
+layout_mode = 2
+theme_override_constants/separation = 0
+mouse_filter = 2
+
+[node name="TopBar" parent="Center/Column" instance=ExtResource("6_topbar")]
+
+[node name="Stage" parent="Center/Column" instance=ExtResource("2_stage")]
+
+[node name="HandLayer" parent="Center/Column" instance=ExtResource("3_hand")]
+
+[node name="TechLayer" parent="Center/Column" instance=ExtResource("4_tech")]
+
+[node name="EndOverlay" parent="." instance=ExtResource("8_endoverlay")]
+
+[node name="LogOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Panel" parent="LogOverlay" instance=ExtResource("7_logview")]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 0.55
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+theme_override_styles/panel = SubResource("overlay_bg")
+
+[node name="Lines" parent="LogOverlay/Panel/Scroll" index="0"]
+theme_override_colors/default_color = Color(0.85, 0.82, 0.74, 1)
+theme_override_font_sizes/normal_font_size = 13

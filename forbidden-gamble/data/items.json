@@ -1,0 +1,529 @@
+{
+  "shangyao": {
+    "id": "shangyao",
+    "name": "伤药",
+    "type": "consumable",
+    "subtype": "medicine",
+    "rarity": "common",
+    "value": 10,
+    "max_stack": 5,
+    "desc": "止血生肌的粗制药散。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "heal",
+          "amount": 10
+        }
+      ]
+    }
+  },
+  "jinchuang": {
+    "id": "jinchuang",
+    "name": "金创药",
+    "type": "consumable",
+    "subtype": "medicine",
+    "rarity": "common",
+    "value": 15,
+    "max_stack": 5,
+    "desc": "金创外科良药，疗效笃实。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "heal",
+          "amount": 16
+        }
+      ]
+    }
+  },
+  "diedajiu": {
+    "id": "diedajiu",
+    "name": "跌打酒",
+    "type": "consumable",
+    "subtype": "medicine",
+    "rarity": "fine",
+    "value": 18,
+    "max_stack": 5,
+    "desc": "行医郎中的接骨药酒，辛辣冲鼻，战时亦能急用。",
+    "use": {
+      "scopes": [
+        "battle",
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "heal",
+          "amount": 22
+        }
+      ]
+    }
+  },
+  "renshen": {
+    "id": "renshen",
+    "name": "百年老参",
+    "type": "consumable",
+    "subtype": "medicine",
+    "rarity": "rare",
+    "value": 75,
+    "max_stack": 3,
+    "desc": "百年药龄的老参，大补气血。",
+    "use": {
+      "scopes": [
+        "battle",
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "heal",
+          "amount": 40
+        }
+      ]
+    }
+  },
+  "feibiao": {
+    "id": "feibiao",
+    "name": "淬毒飞镖",
+    "type": "consumable",
+    "subtype": "hidden_weapon",
+    "rarity": "rare",
+    "value": 55,
+    "max_stack": 3,
+    "desc": "淬了毒的精钢飞镖，出手阴狠。高手听风辨器，威力打折。",
+    "use": {
+      "scopes": [
+        "battle"
+      ],
+      "target": "enemy",
+      "effects": [
+        {
+          "kind": "damage",
+          "amount": 10
+        },
+        {
+          "kind": "apply_status",
+          "status": "poison",
+          "stacks": 2
+        }
+      ]
+    }
+  },
+  "baixiyao": {
+    "id": "baixiyao",
+    "name": "百匣钥",
+    "type": "consumable",
+    "subtype": "tool",
+    "rarity": "rare",
+    "value": 40,
+    "max_stack": 3,
+    "desc": "机关匠人的怪钥，投入任一锁孔簧片自走，将此地暗锁尽数崩开。用过即崩。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "open_all_chests"
+        }
+      ]
+    }
+  },
+  "mizong_xiang": {
+    "id": "mizong_xiang",
+    "name": "迷踪香",
+    "type": "consumable",
+    "subtype": "tool",
+    "rarity": "rare",
+    "value": 35,
+    "max_stack": 3,
+    "desc": "燃后青烟裹身，气息断绝。接下来数点行动力内，动东西不会惊动任何人。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "sneak_window",
+          "amount": 3
+        }
+      ]
+    }
+  },
+  "huozhezi": {
+    "id": "huozhezi",
+    "name": "火折子",
+    "type": "consumable",
+    "subtype": "tool",
+    "rarity": "common",
+    "value": 8,
+    "desc": "一吹即燃的火种。（黑暗地形机制后续接入）"
+  },
+  "bigu_xia": {
+    "id": "bigu_xia",
+    "name": "辟谷丹·下品",
+    "type": "consumable",
+    "subtype": "provision",
+    "rarity": "common",
+    "value": 12,
+    "max_stack": 1,
+    "desc": "门派丹房的入门配给，服一粒可抵数日奔行。禁地内无从寻得。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "restore_ap",
+          "amount": 3
+        }
+      ]
+    },
+    "no_drop": true
+  },
+  "bigu_zhong": {
+    "id": "bigu_zhong",
+    "name": "辟谷丹·中品",
+    "type": "consumable",
+    "subtype": "provision",
+    "rarity": "fine",
+    "value": 25,
+    "max_stack": 1,
+    "desc": "行商有售的中品辟谷丹，药力更绵长。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "restore_ap",
+          "amount": 5
+        }
+      ]
+    },
+    "no_drop": true
+  },
+  "bigu_shang": {
+    "id": "bigu_shang",
+    "name": "辟谷丹·上品",
+    "type": "consumable",
+    "subtype": "provision",
+    "rarity": "rare",
+    "value": 60,
+    "max_stack": 1,
+    "desc": "丹房亲炼的上品，一粒顶三粒。",
+    "use": {
+      "scopes": [
+        "explore"
+      ],
+      "target": "self",
+      "effects": [
+        {
+          "kind": "restore_ap",
+          "amount": 8
+        }
+      ]
+    },
+    "no_drop": true
+  },
+  "jianling": {
+    "id": "jianling",
+    "name": "青锋剑令",
+    "type": "consumable",
+    "subtype": "credential",
+    "rarity": "rare",
+    "value": 80,
+    "desc": "青锋剑宗弟子信物，持令可入内门禁地（藏宝阁）。"
+  },
+  "yaoshi": {
+    "id": "yaoshi",
+    "name": "铜钥匙",
+    "type": "consumable",
+    "subtype": "credential",
+    "rarity": "common",
+    "value": 6,
+    "desc": "黄铜钥匙，能开上锁的房间。"
+  },
+  "masheng": {
+    "id": "masheng",
+    "name": "麻绳",
+    "type": "material",
+    "rarity": "common",
+    "value": 3,
+    "desc": "结实的麻绳，据点制作可用。"
+  },
+  "jingtie": {
+    "id": "jingtie",
+    "name": "精铁",
+    "type": "material",
+    "rarity": "fine",
+    "value": 20,
+    "desc": "百炼精铁，锻造与据点升级的硬材料。"
+  },
+  "jiansui": {
+    "id": "jiansui",
+    "name": "剑穗",
+    "type": "material",
+    "rarity": "fine",
+    "value": 25,
+    "desc": "剑宗制式剑穗，做工讲究。"
+  },
+  "yinzi": {
+    "id": "yinzi",
+    "name": "散碎银两",
+    "type": "valuable",
+    "rarity": "common",
+    "value": 12,
+    "desc": "历代闯入者遗留的银钱，卖回门派换钱。"
+  },
+  "yupei": {
+    "id": "yupei",
+    "name": "玉佩",
+    "type": "valuable",
+    "rarity": "fine",
+    "value": 30,
+    "desc": "温润玉佩。个人无用，门派鉴宝高价收。"
+  },
+  "jianpu": {
+    "id": "jianpu",
+    "name": "残破剑谱",
+    "type": "manual",
+    "rarity": "rare",
+    "value": 60,
+    "desc": "虫蛀的剑谱残页。研读可参悟功法《一气·引》。参悟即蚀，卷不离手。",
+    "teach": {
+      "kind": "technique",
+      "id": "一气·引"
+    }
+  },
+  "shisanshi": {
+    "id": "shisanshi",
+    "name": "青锋十三式残卷",
+    "type": "manual",
+    "rarity": "legend",
+    "value": 150,
+    "desc": "青锋剑宗失传绝学的残卷。研读可参悟功法《二合·吐纳》。参悟即蚀，卷不离手。",
+    "teach": {
+      "kind": "technique",
+      "id": "二合·吐纳"
+    }
+  },
+  "shouduanjian": {
+    "id": "shouduanjian",
+    "name": "守冢断剑",
+    "type": "valuable",
+    "rarity": "legend",
+    "value": 120,
+    "desc": "剑冢深处所得的断剑——剑已断，意未散。闯过镇物追杀的凭证。"
+  },
+  "zhishi_tiejian": {
+    "id": "zhishi_tiejian",
+    "name": "制式铁剑",
+    "type": "weapon",
+    "rarity": "common",
+    "value": 15,
+    "weapon": {
+      "school": "剑法",
+      "level": 1,
+      "base_dur": 3,
+      "effects": []
+    },
+    "desc": "青锋剑宗的制式配剑，剑刃朴实。剑徒身上常见，捡来就能用。"
+  },
+  "yanling_dao": {
+    "id": "yanling_dao",
+    "name": "雁翎刀",
+    "type": "weapon",
+    "rarity": "fine",
+    "value": 45,
+    "weapon": {
+      "school": "刀法",
+      "level": 2,
+      "base_dur": 5,
+      "effects": []
+    },
+    "desc": "刀身如雁翎，劈砍势沉。刀法招式借此如虎添翼。"
+  },
+  "pi_shoutao": {
+    "id": "pi_shoutao",
+    "name": "皮手套",
+    "type": "weapon",
+    "rarity": "fine",
+    "value": 40,
+    "weapon": {
+      "school": "掌法",
+      "level": 1,
+      "base_dur": 5,
+      "effects": []
+    },
+    "desc": "浸油牛皮缝制的掌套，护住指节。掌法招式打得更狠。"
+  },
+  "zhanlu": {
+    "id": "zhanlu",
+    "name": "名剑·湛卢",
+    "type": "weapon",
+    "rarity": "legend",
+    "value": 200,
+    "weapon": {
+      "school": "剑法",
+      "level": 3,
+      "base_dur": 10,
+      "effects": []
+    },
+    "desc": "传说中的仁者之剑，剑身温润无锋，催动剑法却锋芒万丈。"
+  },
+  "huwan": {
+    "id": "huwan",
+    "name": "牛皮护腕",
+    "type": "armor",
+    "rarity": "fine",
+    "value": 35,
+    "armor": {
+      "level": 1,
+      "base_dur": 4,
+      "effects": []
+    },
+    "desc": "牛皮护腕，格挡时能卸去几分力。"
+  },
+  "suozijia": {
+    "id": "suozijia",
+    "name": "锁子软甲",
+    "type": "armor",
+    "rarity": "rare",
+    "value": 70,
+    "armor": {
+      "level": 2,
+      "base_dur": 6,
+      "effects": []
+    },
+    "desc": "精铁环环相扣的贴身软甲，刀剑难透。"
+  },
+  "cubu_xingnang": {
+    "id": "cubu_xingnang",
+    "name": "粗布行囊",
+    "type": "container",
+    "rarity": "common",
+    "value": 10,
+    "container": {
+      "slots": 5
+    },
+    "desc": "闯荡者常用的粗布行囊，装不下多少东西。"
+  },
+  "hangshang_beinang": {
+    "id": "hangshang_beinang",
+    "name": "行商背囊",
+    "type": "container",
+    "rarity": "fine",
+    "value": 50,
+    "container": {
+      "slots": 8
+    },
+    "desc": "行脚商人用的多层背囊，能装。"
+  },
+  "daku_xingnang": {
+    "id": "daku_xingnang",
+    "name": "大座行囊",
+    "type": "container",
+    "rarity": "rare",
+    "value": 120,
+    "container": {
+      "slots": 12
+    },
+    "desc": "商会大库的制式行囊，容积惊人。"
+  },
+  "tunamenjing": {
+    "id": "tunamenjing",
+    "name": "吐纳门径",
+    "type": "manual",
+    "rarity": "common",
+    "value": 20,
+    "teach": {
+      "kind": "xinfa",
+      "id": "先纳功"
+    },
+    "desc": "最朴素的养气入门书。研读可参悟心法《先纳功》。参悟即蚀，卷不离手。"
+  },
+  "diaoxiyaoshu": {
+    "id": "diaoxiyaoshu",
+    "name": "调息要术",
+    "type": "manual",
+    "rarity": "common",
+    "value": 20,
+    "teach": {
+      "kind": "xinfa",
+      "id": "调息诀"
+    },
+    "desc": "讲气息周转的手抄小册。研读可参悟心法《调息诀》。参悟即蚀，卷不离手。"
+  },
+  "yangmuqingjuan": {
+    "id": "yangmuqingjuan",
+    "name": "养木青卷",
+    "type": "manual",
+    "rarity": "common",
+    "value": 25,
+    "teach": {
+      "kind": "xinfa",
+      "id": "养木功"
+    },
+    "desc": "药人谷弟子的日常功课。研读可参悟心法《养木功》。参悟即蚀，卷不离手。"
+  },
+  "guixigupian": {
+    "id": "guixigupian",
+    "name": "龟息古篇",
+    "type": "manual",
+    "rarity": "fine",
+    "value": 50,
+    "teach": {
+      "kind": "xinfa",
+      "id": "龟息功"
+    },
+    "desc": "竹简残篇，讲的呼吸之道。研读可参悟心法《龟息功》。参悟即蚀，卷不离手。"
+  },
+  "pangengujue": {
+    "id": "pangengujue",
+    "name": "盘根古诀",
+    "type": "manual",
+    "rarity": "rare",
+    "value": 80,
+    "teach": {
+      "kind": "xinfa",
+      "id": "盘根诀"
+    },
+    "desc": "老树盘根的护体古诀。研读可参悟心法《盘根诀》。参悟即蚀，卷不离手。"
+  },
+  "xianjijue_canjuan": {
+    "id": "xianjijue_canjuan",
+    "name": "先机诀残卷",
+    "type": "manual",
+    "rarity": "fine",
+    "value": 50,
+    "teach": {
+      "kind": "xinfa",
+      "id": "先机诀"
+    },
+    "desc": "讲抢占先机的风系残卷。研读可参悟心法《先机诀》。参悟即蚀，卷不离手。"
+  },
+  "changxijue_chao": {
+    "id": "changxijue_chao",
+    "name": "长息诀抄本",
+    "type": "manual",
+    "rarity": "common",
+    "value": 25,
+    "teach": {
+      "kind": "xinfa",
+      "id": "长息诀"
+    },
+    "desc": "教人把气练长的入门抄本。研读可参悟心法《长息诀》。参悟即蚀，卷不离手。"
+  }
+}

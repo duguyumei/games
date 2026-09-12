@@ -1,0 +1,53 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/bg/battle_bamboo.png" id="1_bg"]
+[ext_resource type="PackedScene" path="res://ui/fighter_panel.tscn" id="2_panel"]
+
+[node name="BattleStage" type="Control"]
+custom_minimum_size = Vector2(1280, 350)
+size = Vector2(1280, 350)
+
+[node name="Bg" type="TextureRect" parent="."]
+size = Vector2(1280, 350)
+mouse_filter = 2
+texture = ExtResource("1_bg")
+stretch_mode = 3
+
+[node name="PlayerPanel" parent="." instance=ExtResource("2_panel")]
+position = Vector2(16, 0)
+
+[node name="EnemyPanel" parent="." instance=ExtResource("2_panel")]
+position = Vector2(944, 0)
+side = 1
+portrait_color = Color(0.5, 0.35, 0.3, 1)
+
+[node name="CenterZone" type="Control" parent="."]
+position = Vector2(336, 0)
+size = Vector2(608, 350)
+mouse_filter = 2
+
+[node name="Buttons" type="HBoxContainer" parent="CenterZone"]
+position = Vector2(154, 160)
+size = Vector2(300, 40)
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="ConfirmButton" type="Button" parent="CenterZone/Buttons"]
+layout_mode = 2
+focus_mode = 0
+text = "确认"
+
+[node name="CancelButton" type="Button" parent="CenterZone/Buttons"]
+layout_mode = 2
+focus_mode = 0
+text = "取消"
+
+[node name="PassButton" type="Button" parent="CenterZone/Buttons"]
+layout_mode = 2
+focus_mode = 0
+text = "提气"
+
+[node name="BreatheButton" type="Button" parent="CenterZone/Buttons"]
+layout_mode = 2
+focus_mode = 0
+text = "调息"

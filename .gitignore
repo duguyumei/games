@@ -1,0 +1,6 @@
+.DS_Store
+.godot/
+.mimosa/
+.video_agent/
+.zcode/
+out/

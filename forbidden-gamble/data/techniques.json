@@ -1,0 +1,138 @@
+{
+  "点星式": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "ONE_QI"
+    ],
+    "effects": [
+      {
+        "type": "damage",
+        "base": 6,
+        "scale": 3
+      }
+    ]
+  },
+  "连风式": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "HEAVY_2"
+    ],
+    "effects": [
+      {
+        "type": "damage",
+        "base": 4,
+        "scale": 1,
+        "per_supreme": 1
+      },
+      {
+        "type": "damage",
+        "base": 4,
+        "scale": 1,
+        "per_supreme": 1
+      }
+    ]
+  },
+  "纵横式": {
+    "level": 2,
+    "school": "通用",
+    "patterns": [
+      "MIX_2"
+    ],
+    "charge": 1,
+    "effects": [
+      {
+        "type": "damage",
+        "base": 10,
+        "scale": 5
+      }
+    ]
+  },
+  "一气·拒": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "ONE_QI"
+    ],
+    "effects": [
+      {
+        "type": "guard_cover",
+        "base": 5,
+        "scale": 3
+      }
+    ]
+  },
+  "二重·壁": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "HEAVY_2"
+    ],
+    "effects": [
+      {
+        "type": "guard_cover",
+        "base": 7,
+        "scale": 2
+      }
+    ]
+  },
+  "二合·屏": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "MIX_2"
+    ],
+    "effects": [
+      {
+        "type": "guard_cover",
+        "base": 7,
+        "scale": 2
+      }
+    ]
+  },
+  "一气·引": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "ONE_QI"
+    ],
+    "effects": [
+      {
+        "type": "draw",
+        "base": 1,
+        "scale": 1
+      }
+    ]
+  },
+  "二重·换": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "HEAVY_2"
+    ],
+    "cooldown": 1,
+    "effects": [
+      {
+        "type": "draw",
+        "base": 3
+      }
+    ]
+  },
+  "二合·吐纳": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "MIX_2"
+    ],
+    "tags": [
+      "压制"
+    ],
+    "effects": [
+      {
+        "type": "draw",
+        "base": 1
+      }
+    ]
+  }
+}

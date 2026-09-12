@@ -1,0 +1,46 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/qi_count_cell.gd" id="1_cell"]
+
+[sub_resource type="StyleBoxFlat" id="chip_bg"]
+bg_color = Color(0.94902, 0.909804, 0.835294, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.168627, 0.141176, 0.109804, 0.6)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="QiCountCell" type="HBoxContainer"]
+script = ExtResource("1_cell")
+
+[node name="ValueLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(22, 0)
+theme_override_font_sizes/font_size = 15
+text = "下品"
+horizontal_alignment = 1
+
+[node name="MinusButton" type="Button" parent="."]
+custom_minimum_size = Vector2(26, 26)
+theme_override_font_sizes/font_size = 14
+text = "－"
+
+[node name="CountLabel" type="Label" parent="."]
+custom_minimum_size = Vector2(34, 0)
+theme_override_font_sizes/font_size = 14
+text = "×0"
+horizontal_alignment = 1
+
+[node name="PlusButton" type="Button" parent="."]
+custom_minimum_size = Vector2(26, 26)
+theme_override_font_sizes/font_size = 14
+text = "＋"
+
+[node name="FuseButton" type="Button" parent="."]
+custom_minimum_size = Vector2(30, 26)
+theme_override_font_sizes/font_size = 14
+text = "凝"
+tooltip_text = "融合：同属性同品级 2 张凝成 1 张品阶更高的真气（上品封顶，牌库不下 12 张）"

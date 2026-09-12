@@ -1,0 +1,23 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/card_face.gd" id="1_script"]
+[ext_resource type="FontFile" path="res://assets/fonts/MaShanZheng.ttf" id="2_brush"]
+
+[node name="CardFace" type="Panel"]
+custom_minimum_size = Vector2(88, 124)
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="NameLabel" type="Label" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.168627, 0.141176, 0.109804, 1)
+theme_override_fonts/font = ExtResource("2_brush")
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
