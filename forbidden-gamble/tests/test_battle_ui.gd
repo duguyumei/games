@@ -5,16 +5,17 @@ extends GutTest
 # 按钮全隐、手牌锁死，玩家被袭击后无法操作。
 
 func before_each() -> void:
-	ExpeditionSession.reset_for_tests()
+	DojoConfig.clear()
 
 func test_ambush_enemy_first_strike_runs_and_returns_control() -> void:
-	ExpeditionSession.start_run(11)
 	var enemy_id := _first_enemy_id()
 	assert_false(enemy_id.is_empty(), "敌人表里有敌人可打")
-	ExpeditionSession.prepare_battle(enemy_id, true)  # 被袭击：敌方先手
+	DojoConfig.active = true
+	DojoConfig.enemy_id = enemy_id
+	DojoConfig.enemy_first = true  # 被袭击：敌方先手
 	var main: Control = load("res://scenes/battle/battle.tscn").instantiate()
 	add_child_autofree(main)
-	assert_not_null(main.combat, "远征战斗应加载成功")
+	assert_not_null(main.combat, "演武场战斗应加载成功")
 	assert_not_null(main.turn_manager, "回合控制器应就位")
 	if main.combat == null or main.turn_manager == null:
 		return

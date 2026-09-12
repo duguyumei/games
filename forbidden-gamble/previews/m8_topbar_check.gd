@@ -4,9 +4,9 @@ extends Node
 # 2) 沙盒上下文 + 回合·行动方（金色"你的行动"）
 # 3) 顶栏战报行随提气更新
 # 4) 设置弹窗：演出速度三档切换 _pace、当前档禁用
-# 5) 背包弹窗：沙盒提示不带物资；与设置弹窗互斥
+# 5) 点弹窗外任意处关闭设置弹窗（不与顶栏重叠）
 # 6) ESC 收弹窗
-# 7) 沙盒弃战两段确认 → 切回主菜单（放最后：切场景会释放本脚本）
+# 7) 结束演练两段确认 → 切回主菜单（放最后：切场景会释放本脚本）
 
 func _ready() -> void:
 	var fails: Array[String] = []
@@ -100,33 +100,13 @@ func _ready() -> void:
 					fails.append("[4] 点标准后 _pace=%.2f（应 1.00）" % main._pace)
 		print("[4] 速度档切换 OK，当前 _pace=%.2f（弹窗开着=%s）" % [main._pace, main._popup_kind == "settings"])
 
-	# --- 5) 背包弹窗（与设置互斥；不与顶栏重叠；点外可关） ---
+	# --- 5) 点弹窗外任意处关闭（全屏背板捕获；设置弹窗开着） ---
 	get_window().size = Vector2i(1280, 800)  # 非 16:9 窗口：expand 下画布变高，验证弹窗贴顶栏而非贴屏幕角
 	await get_tree().process_frame
-	main.get_node("Center/Column/TopBar/Bar/BagButton").pressed.emit()
-	await get_tree().process_frame
-	var bag_panel: Control = main._popup_host.current_content()
-	if bag_panel == null or main._popup_kind != "bag":
-		fails.append("[5] 背包按钮未弹出背包面板（kind=%s）" % main._popup_kind)
+	var popup_panel: Control = main._popup_host.current_content()
 	var bar_rect: Rect2 = (main.get_node("Center/Column/TopBar") as Control).get_global_rect()
-	if bag_panel != null and bag_panel.get_global_rect().intersects(bar_rect):
-		fails.append("[5] 背包弹窗与顶栏重叠（bar=%s panel=%s）" % [bar_rect, bag_panel.get_global_rect()])
-	var bag_text := ""
-	if bag_panel != null:
-		for label in _all_labels(bag_panel):
-			bag_text += label.text + "\n"
-		if not bag_text.contains("演武场演练，不带物资"):
-			fails.append("[5] 沙盒背包提示缺失（'%s'）" % bag_text.replace("\n", "｜"))
-	print("[5] 背包（沙盒）文本='%s' bar底=%.0f 弹窗顶=%.0f" % [
-		bag_text.replace("\n", "｜").strip_edges(), bar_rect.end.y,
-		bag_panel.get_global_rect().position.y if bag_panel != null else -1.0])
-	if DisplayServer.get_name() != "headless" and bag_panel != null:
-		var bag_shot := get_viewport().get_texture().get_image()
-		if bag_shot != null:
-			bag_shot.save_png("user://m8_bag_shot.png")
-			print("截图：user://m8_bag_shot.png")
-
-	# --- 5.5) 点弹窗外任意处关闭（全屏背板捕获） ---
+	if popup_panel != null and popup_panel.get_global_rect().intersects(bar_rect):
+		fails.append("[5] 设置弹窗与顶栏重叠（bar=%s panel=%s）" % [bar_rect, popup_panel.get_global_rect()])
 	var click_out := InputEventMouseButton.new()
 	click_out.button_index = MOUSE_BUTTON_LEFT
 	click_out.pressed = true
@@ -134,9 +114,9 @@ func _ready() -> void:
 	get_viewport().push_input(click_out)
 	await get_tree().process_frame
 	if main._popup_kind != "" or main._popup_host.is_open():
-		fails.append("[5.5] 点弹窗外未关闭背包（kind=%s）" % main._popup_kind)
+		fails.append("[5] 点弹窗外未关闭设置弹窗（kind=%s）" % main._popup_kind)
 	else:
-		print("[5.5] 点外关闭背包 OK（kind='%s'）" % main._popup_kind)
+		print("[5] 点外关闭设置弹窗 OK（kind='%s'）" % main._popup_kind)
 
 	# --- 6) ESC 收弹窗（重开设置后按 ESC） ---
 	main._on_settings_pressed()
@@ -172,31 +152,6 @@ func _ready() -> void:
 	if overlay.visible:
 		fails.append("[6.7] ESC 未关闭战报罩层")
 	print("[6.7] ESC 关闭战报=%s" % (not overlay.visible))
-
-	# --- 6.5) 远征口径背包：列出携带物 + 败北提示（伪远征态，用后复原） ---
-	var keep_expedition: bool = ExpeditionSession.is_in_expedition()
-	var keep_board: BoardState = ExpeditionSession.board_state
-	var bs := BoardState.new()
-	bs.inventory = [
-		{"id": "shangyao", "name": "伤药", "rarity": "common", "value": 10, "qty": 2},
-		{"id": "yupei", "name": "玉佩", "rarity": "fine", "value": 30, "qty": 1},
-	]
-	ExpeditionSession._in_expedition = true
-	ExpeditionSession.board_state = bs
-	main._on_bag_pressed()
-	await get_tree().process_frame
-	var exp_text := ""
-	if main._popup_host.current_content() != null:
-		for label in _all_labels(main._popup_host.current_content()):
-			exp_text += label.text + "\n"
-	if not exp_text.contains("随身物资 · 2 件") or not exp_text.contains("伤药 ×2") or not exp_text.contains("玉佩"):
-		fails.append("[6.5] 远征背包未列出携带物（'%s'）" % exp_text.replace("\n", "｜"))
-	if not exp_text.contains("战斗中不能整理背包。败北将全部丢失"):
-		fails.append("[6.5] 远征背包缺提示文案")
-	print("[6.5] 远征背包='%s'" % exp_text.replace("\n", "｜").strip_edges())
-	main._on_bag_pressed()
-	ExpeditionSession._in_expedition = keep_expedition
-	ExpeditionSession.board_state = keep_board
 
 	# --- 8) 演出节点不挤占 Column 布局（M3 返修：横幅/幽灵/飘字挂 FxLayer） ---
 	# 横幅若是 VBox 直接子节点，其 52px 最小高会把列撑到 772：顶栏被切、功法层沉底。
@@ -264,7 +219,7 @@ func _ready() -> void:
 		+ "\telif %s:\n" % ("true" if earlier_failed else "false") \
 		+ "\t\tget_tree().quit(1)\n" \
 		+ "\telse:\n" \
-		+ "\t\tprint(\"PASS: M8 顶栏（结构/上下文/战报行/速度档/背包/ESC/弃战出口）全部通过\")\n" \
+		+ "\t\tprint(\"PASS: M8 顶栏（结构/上下文/战报行/速度档/点外关闭/ESC/结束演练出口）全部通过\")\n" \
 		+ "\t\tget_tree().quit(0)\n"
 	if ws.reload() != OK:
 		push_error("M8 CHECK FAIL: [7] 看门狗脚本编译失败")
@@ -273,11 +228,3 @@ func _ready() -> void:
 	watchdog.set_script(ws)
 	get_tree().root.add_child(watchdog)
 	abandon_btn.pressed.emit()
-
-func _all_labels(node: Node) -> Array[Label]:
-	var found: Array[Label] = []
-	for child in node.get_children():
-		if child is Label:
-			found.append(child)
-		found.append_array(_all_labels(child))
-	return found

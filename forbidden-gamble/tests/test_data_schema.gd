@@ -6,9 +6,8 @@ func test_real_data_passes_validation() -> void:
 	assert_eq(DataRepo.validate_all(), [], "六份数据应通过全部校验")
 
 func _pack(items: Dictionary, enemies: Dictionary = {}, techniques: Dictionary = {},
-		statuses: Dictionary = {}, config: Dictionary = {}) -> Dictionary:
+		statuses: Dictionary = {}) -> Dictionary:
 	return {
-		"location_qingfeng.json": config,
 		"items.json": items,
 		"enemies.json": enemies,
 		"techniques.json": techniques,
@@ -30,7 +29,7 @@ func test_catches_id_key_mismatch() -> void:
 func test_catches_missing_technique_ref() -> void:
 	var errs := DataRepo.validate_pack(_pack(
 		{"dan": {"id": "dan", "name": "丹", "rarity": "common", "value": 1}},
-		{"shan": {"id": "shan", "name": "山匪", "tier": "normal", "loot_chest": "wood",
+		{"shan": {"id": "shan", "name": "山匪", "tier": "normal",
 			"max_hp": 10, "techniques": ["无影脚"], "ai_priority": [], "deck": [
 				{"id": "c1", "attribute": "火", "grade": "下品"}]}}))
 	assert_true(errs.any(func(e: String) -> bool: return e.contains("不存在的功法")), "敌人引用不存在的功法应被抓")
@@ -43,27 +42,20 @@ func test_catches_dangling_apply_status() -> void:
 
 func test_catches_empty_enemy_deck() -> void:
 	var errs := DataRepo.validate_pack(_pack(
-		{}, {"shan": {"id": "shan", "name": "山匪", "tier": "normal", "loot_chest": "wood",
+		{}, {"shan": {"id": "shan", "name": "山匪", "tier": "normal",
 			"max_hp": 10, "techniques": [], "ai_priority": [], "deck": []}}))
 	assert_true(errs.any(func(e: String) -> bool: return e.contains("牌组为空")), "空牌组应被抓")
-
-func test_catches_scatter_table_dangling_item() -> void:
-	var errs := DataRepo.validate_pack(_pack({}, {}, {}, {}, {
-		"ap": {"start": 40}, "scatter_table": ["buxianzai"], "alert_levels": [], "pursuer_table": []}))
-	assert_true(errs.any(func(e: String) -> bool: return e.contains("散落表引用了不存在的物品")), "散落表坏引用应被抓")
 
 func test_valid_minimal_pack_passes() -> void:
 	var errs := DataRepo.validate_pack(_pack(
 		{"dan": {"id": "dan", "name": "丹", "type": "consumable", "subtype": "medicine",
 			"rarity": "common", "value": 1,
 			"use": {"scopes": ["explore"], "target": "self", "effects": [{"kind": "heal", "amount": 5}]}}},
-		{"shan": {"id": "shan", "name": "山匪", "tier": "normal", "loot_chest": "wood",
+		{"shan": {"id": "shan", "name": "山匪", "tier": "normal",
 			"max_hp": 10, "techniques": [], "ai_priority": [], "deck": [
 				{"id": "c1", "attribute": "火", "grade": "下品"}]}},
 		{"点星式": {"level": 1, "school": "通用", "patterns": ["ONE_QI"], "effects": [{"type": "damage", "base": 6}]}},
-		{"poison": {"name": "毒", "scope": "battle", "on": "breath", "phase": "post", "priority": 0, "action": "hp_loss", "amount": "stacks", "decay": 1}},
-		{"ap": {"start": 40}, "scatter_table": ["dan"], "alert_levels": [], "pursuer_table": [],
-			"chests": {"wood": {"ap_cost": 1, "table": ["dan"]}}}))
+		{"poison": {"name": "毒", "scope": "battle", "on": "breath", "phase": "post", "priority": 0, "action": "hp_loss", "amount": "stacks", "decay": 1}}))
 	assert_eq(errs, [], "合法最小数据包应通过：%s" % [errs])
 
 func test_catches_unknown_item_type() -> void:
@@ -114,7 +106,7 @@ func test_catches_bad_max_stack() -> void:
 func test_catches_reduction_out_of_range() -> void:
 	var errs := DataRepo.validate_pack(_pack(
 		{},
-		{"shan": {"id": "shan", "name": "山匪", "tier": "normal", "loot_chest": "wood",
+		{"shan": {"id": "shan", "name": "山匪", "tier": "normal",
 			"max_hp": 10, "techniques": [], "ai_priority": [], "deck": [
 				{"id": "c1", "attribute": "火", "grade": "下品"}],
 			"item_damage_reduction": 1.5}}))
@@ -122,7 +114,7 @@ func test_catches_reduction_out_of_range() -> void:
 
 func test_catches_bad_card_grade() -> void:
 	var errs := DataRepo.validate_pack(_pack(
-		{}, {"shan": {"id": "shan", "name": "山匪", "tier": "normal", "loot_chest": "wood",
+		{}, {"shan": {"id": "shan", "name": "山匪", "tier": "normal",
 			"max_hp": 10, "techniques": [], "ai_priority": [], "deck": [
 				{"id": "c1", "attribute": "火", "grade": "极品"}]}}))
 	assert_true(errs.any(func(e: String) -> bool: return e.contains("品级不完整")), "未知品级应被抓")

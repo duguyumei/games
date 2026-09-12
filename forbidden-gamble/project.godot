@@ -16,8 +16,6 @@ config/features=PackedStringArray("4.7")
 
 [autoload]
 
-MetaArchive="*res://core/meta/meta_archive.gd"
-ExpeditionSession="*res://core/expedition/expedition_session.gd"
 Sfx="*res://core/sfx.gd"
 DataRepo="*res://core/data/data_repo.gd"
 

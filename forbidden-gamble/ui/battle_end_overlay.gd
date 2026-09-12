@@ -1,7 +1,7 @@
 class_name BattleEndOverlay
 extends Control
 
-# 终局结算浮层：胜/败/平摘要 + 明确出口（远征→返回地图；沙盒→重开一场）。
+# 终局结算浮层：胜/败/平摘要 + 明确出口（重开一场 / 回演武场）。
 # 结局文案由场景根计算后经 show_result 灌入；本组件只管呈现与按钮上抛。
 
 signal report_requested
@@ -21,8 +21,8 @@ func _ready() -> void:
 	restart_button.pressed.connect(func(): restart_requested.emit())
 	return_button.pressed.connect(func(): return_requested.emit())
 
-# kind：player/enemy/draw；return_text 为远征模式返回按钮文案（沙盒不显示返回）。
-func show_result(kind: String, sub_lines: Array[String], in_expedition: bool, return_text: String) -> void:
+# kind：player/enemy/draw。重开与返回两个出口常驻（演武场口径）。
+func show_result(kind: String, sub_lines: Array[String]) -> void:
 	var accent := BP.COLOR_GOLD
 	var title_text := "—— 战斗胜利 ——"
 	match kind:
@@ -35,7 +35,7 @@ func show_result(kind: String, sub_lines: Array[String], in_expedition: bool, re
 	title.text = title_text
 	title.add_theme_color_override("font_color", accent)
 	sub.text = "\n".join(sub_lines)
-	return_button.visible = in_expedition
-	restart_button.visible = not in_expedition
-	return_button.text = return_text
+	restart_button.visible = true
+	return_button.visible = true
+	return_button.text = "回演武场"
 	visible = true

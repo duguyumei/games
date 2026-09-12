@@ -2,12 +2,11 @@ extends Node
 
 # 数据定义层（autoload DataRepo；脚本不写 class_name——Godot 禁止与 autoload 同名遮蔽）：
 # 全部游戏 JSON 的唯一加载入口——缓存 + schema 校验 + reload() 失效重载。
-# 此前同一份 JSON 读取逻辑存在四份（BoardState/EncounterLoader/TechniqueResolver/
-# StatusRuntime），且 TechniqueResolver/StatusRuntime 的静态缓存永不失效。
+# 此前同一份 JSON 读取逻辑存在多份（EncounterLoader/TechniqueResolver/StatusRuntime），
+# 且 TechniqueResolver/StatusRuntime 的静态缓存永不失效。
 # 校验：validate_pack 是纯函数（测试可喂损坏数据）；validate_all 启动时跑一遍，
 # 坏数据 push_error 带「文件/条目/字段」上下文——静默 .get() 默认值吞错的时代结束。
 
-const CONFIG_PATH := "res://data/location_qingfeng.json"
 const ITEMS_PATH := "res://data/items.json"
 const ENEMIES_PATH := "res://data/enemies.json"
 const TECHNIQUES_PATH := "res://data/techniques.json"
@@ -69,9 +68,6 @@ func load_json(path: String) -> Dictionary:
 func reload() -> void:
 	_cache.clear()
 
-func config() -> Dictionary:
-	return load_json(CONFIG_PATH)
-
 func items() -> Dictionary:
 	return load_json(ITEMS_PATH)
 
@@ -98,7 +94,6 @@ func player_def() -> Dictionary:
 
 func validate_all() -> Array[String]:
 	return validate_pack({
-		"location_qingfeng.json": config(),
 		"items.json": items(),
 		"enemies.json": enemies(),
 		"techniques.json": techniques(),
@@ -110,7 +105,6 @@ func validate_all() -> Array[String]:
 # pack: {文件名: 数据}。纯函数，返回错误清单（空 = 全部通过）。
 static func validate_pack(pack: Dictionary) -> Array[String]:
 	var errs: Array[String] = []
-	var config: Dictionary = pack.get("location_qingfeng.json", {})
 	var items: Dictionary = pack.get("items.json", {})
 	var enemies: Dictionary = pack.get("enemies.json", {})
 	var techniques: Dictionary = pack.get("techniques.json", {})
@@ -217,8 +211,7 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 		if not STATUS_ACTIONS.has(str(status.get("action", ""))):
 			errs.append("statuses.json[%s]：未知动作 %s" % [key, status.get("action")])
 
-	# 敌人：id 与键一致、档次四档、气血为正、功法引用存在、行囊档次在箱子表里
-	var chests: Dictionary = config.get("chests", {})
+	# 敌人：id 与键一致、档次四档、气血为正、功法/心法引用存在、牌组完整
 	for key in enemies:
 		var enemy: Dictionary = enemies[key]
 		if str(enemy.get("id", "")) != str(key):
@@ -238,8 +231,6 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 		for card in enemy.get("deck", []):
 			if str((card as Dictionary).get("attribute", "")).is_empty() or not QiCard.GRADE_NAMES.has(str((card as Dictionary).get("grade", ""))):
 				errs.append("enemies.json[%s]：牌组里有属性/品级不完整的牌 %s" % [key, card])
-		if not chests.has(str(enemy.get("loot_chest", ""))):
-			errs.append("enemies.json[%s]：掉落行囊 %s 不在地点包箱子表里" % [key, enemy.get("loot_chest")])
 		if enemy.has("item_damage_reduction") and not (0.0 <= float(enemy.get("item_damage_reduction", 0.0)) and float(enemy.get("item_damage_reduction", 0.0)) <= 1.0):
 			errs.append("enemies.json[%s]：item_damage_reduction 应在 0~1 之间" % key)
 
@@ -251,33 +242,6 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 		for xf_id in player_def.get("xinfa", []):
 			if not xinfa.has(str(xf_id)):
 				errs.append("player.json：引用了不存在的心法 %s" % xf_id)
-
-	# 地点包：行动力起点为正、警戒/追兵/散落/箱子表的跨文件引用有效
-	if int(config.get("ap", {}).get("start", 0)) <= 0:
-		errs.append("location_qingfeng.json：ap.start 应为正整数")
-	var enemy_keys := enemies.keys()
-	for level in config.get("alert_levels", []):
-		for enemy in (level as Dictionary).get("enemies", []):
-			if not enemy_keys.has(str(enemy)):
-				errs.append("location_qingfeng.json：警戒 %s 引用了不存在的敌人 %s" % [level.get("name"), enemy])
-	for enemy in config.get("pursuer_table", []):
-		if not enemy_keys.has(str(enemy)):
-			errs.append("location_qingfeng.json：追兵表引用了不存在的敌人 %s" % enemy)
-	for item in config.get("scatter_table", []):
-		if not items.has(str(item)):
-			errs.append("location_qingfeng.json：散落表引用了不存在的物品 %s" % item)
-	for chest_id in chests:
-		for item in (chests[chest_id] as Dictionary).get("table", []):
-			if not items.has(str(item)):
-				errs.append("location_qingfeng.json：箱子 %s 掉落表引用了不存在的物品 %s" % [chest_id, item])
-	var npcs: Dictionary = config.get("npcs", {})
-	for site_type in config.get("site_types", {}):
-		for spec in (config.get("site_types", {})[site_type] as Dictionary).get("cards", []):
-			var kind := str((spec as Dictionary).get("kind", ""))
-			if kind == "enemy" and not _all_in((spec as Dictionary).get("table", []), enemy_keys):
-				errs.append("location_qingfeng.json：地块 %s 的敌人表引用了不存在的敌人" % site_type)
-			if kind == "npc" and not _all_in((spec as Dictionary).get("table", []), npcs.keys()):
-				errs.append("location_qingfeng.json：地块 %s 的 NPC 表引用了不存在的 NPC" % site_type)
 	return errs
 
 # 消耗品 use 结构：scopes/target 已知、效果词表受控、数值为正、apply_status 引用存在。
@@ -311,9 +275,3 @@ static func _validate_item_use(key: String, item: Dictionary, statuses: Dictiona
 			if int((effect as Dictionary).get("stacks", 0)) <= 0:
 				errs.append("items.json[%s]：apply_status 的 stacks 应为正整数" % key)
 	return errs
-
-static func _all_in(table: Array, keys: Array) -> bool:
-	for entry in table:
-		if not keys.has(str(entry)):
-			return false
-	return true

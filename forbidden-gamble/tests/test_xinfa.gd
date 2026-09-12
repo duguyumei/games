@@ -192,7 +192,6 @@ func test_equipped_school_count() -> void:
 
 func test_validate_pack_rejects_bad_xinfa() -> void:
 	var pack := {
-		"location_qingfeng.json": DataRepo.config(),
 		"items.json": DataRepo.items(),
 		"enemies.json": DataRepo.enemies(),
 		"techniques.json": DataRepo.techniques(),

@@ -60,9 +60,9 @@ func _ready() -> void:
 	if not sub.contains("致命一击"):
 		fails.append("[3] 败北摘要缺致命一击（'%s'）" % sub)
 	if not main.get_node("EndOverlay/Center/Panel/Margin/Column/BtnRow/RestartButton").visible:
-		fails.append("[3] 沙盒模式应显示重开按钮")
-	if main.get_node("EndOverlay/Center/Panel/Margin/Column/BtnRow/ReturnButton").visible:
-		fails.append("[3] 沙盒模式不应显示返回地图按钮")
+		fails.append("[3] 应显示重开按钮")
+	if not main.get_node("EndOverlay/Center/Panel/Margin/Column/BtnRow/ReturnButton").visible:
+		fails.append("[3] 应显示回演武场按钮")
 	print("[2] 演出→浮层耗时 %.0fms（含 0.6s 行动拍 + 0.8s 终局拍）" % elapsed)
 	print("[3] 浮层：标题='%s'" % title)
 	print("[3] 摘要：'%s'" % sub.replace("\n", " ｜ "))

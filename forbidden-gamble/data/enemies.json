@@ -5,7 +5,6 @@
     "school": "刀法",
     "weapon_level": 0,
     "tier": "normal",
-    "loot_chest": "pockets_daoke",
     "max_hp": 30,
     "weapon_durability": 0,
     "techniques": [
@@ -85,7 +84,6 @@
     "school": "掌法",
     "weapon_level": 0,
     "tier": "normal",
-    "loot_chest": "pockets_quanshi",
     "max_hp": 24,
     "weapon_durability": 0,
     "techniques": [
@@ -165,7 +163,6 @@
     "school": "剑法",
     "weapon_level": 0,
     "tier": "veteran",
-    "loot_chest": "pockets_jiantu",
     "max_hp": 26,
     "weapon_durability": 0,
     "techniques": [
@@ -250,7 +247,6 @@
     "school": "掌法",
     "weapon_level": 0,
     "tier": "normal",
-    "loot_chest": "pockets_default",
     "max_hp": 20,
     "weapon_durability": 0,
     "techniques": [

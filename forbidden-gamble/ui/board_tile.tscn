@@ -1,7 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://ui/board_tile.gd" id="1_script"]
-
-[node name="BoardTile" type="Control"]
-custom_minimum_size = Vector2(210, 296)
-script = ExtResource("1_script")

@@ -24,7 +24,7 @@ func _ready() -> void:
 	_fill_techniques()
 	_fill_xinfa()
 	($Margin/VBox/BottomRow/BackButton as Button).pressed.connect(
-		func(): get_tree().change_scene_to_file(SceneRoutes.STRONGHOLD))
+		func(): get_tree().change_scene_to_file(SceneRoutes.TITLE))
 
 
 func _heading(text: String) -> Label:

@@ -238,7 +238,7 @@ func test_changxijue_grants_extra_lift_and_double_first() -> void:
 
 func test_cancel_requires_pre_phase() -> void:
 	var pack := {
-		"location_qingfeng.json": {}, "items.json": {}, "enemies.json": {},
+		"items.json": {}, "enemies.json": {},
 		"techniques.json": {}, "statuses.json": {},
 		"xinfa.json": {
 			"坏词": {"tier": 1, "school": "通用", "desc": "x", "effects": [
