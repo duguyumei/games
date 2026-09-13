@@ -4,8 +4,6 @@
     "id": "player",
     "name": "独行武者",
     "max_hp": 30,
-    "weapon_type": "剑",
-    "weapon_durability": 3,
     "techniques": [
       "点星式",
       "连风式",
@@ -15,52 +13,99 @@
       "二合·屏"
     ],
     "deck": [
-      {"id": "p_wind_low", "attribute": "风", "grade": "下品"},
-      {"id": "p_wind_mid", "attribute": "风", "grade": "中品"},
-      {"id": "p_wind_high", "attribute": "风", "grade": "上品"},
-      {"id": "p_forest_low", "attribute": "林", "grade": "下品"},
-      {"id": "p_forest_mid", "attribute": "林", "grade": "中品"},
-      {"id": "p_forest_high", "attribute": "林", "grade": "上品"},
-      {"id": "p_fire_low", "attribute": "火", "grade": "下品"},
-      {"id": "p_fire_mid", "attribute": "火", "grade": "中品"},
-      {"id": "p_fire_high", "attribute": "火", "grade": "上品"},
-      {"id": "p_mountain_low", "attribute": "山", "grade": "下品"},
-      {"id": "p_mountain_mid", "attribute": "山", "grade": "中品"},
-      {"id": "p_mountain_high", "attribute": "山", "grade": "上品"}
+      {
+        "id": "p_wind_low",
+        "attribute": "风",
+        "grade": "下品"
+      },
+      {
+        "id": "p_wind_mid",
+        "attribute": "风",
+        "grade": "中品"
+      },
+      {
+        "id": "p_wind_high",
+        "attribute": "风",
+        "grade": "上品"
+      },
+      {
+        "id": "p_forest_low",
+        "attribute": "林",
+        "grade": "下品"
+      },
+      {
+        "id": "p_forest_mid",
+        "attribute": "林",
+        "grade": "中品"
+      },
+      {
+        "id": "p_forest_high",
+        "attribute": "林",
+        "grade": "上品"
+      },
+      {
+        "id": "p_fire_low",
+        "attribute": "火",
+        "grade": "下品"
+      },
+      {
+        "id": "p_fire_mid",
+        "attribute": "火",
+        "grade": "中品"
+      },
+      {
+        "id": "p_fire_high",
+        "attribute": "火",
+        "grade": "上品"
+      },
+      {
+        "id": "p_mountain_low",
+        "attribute": "山",
+        "grade": "下品"
+      },
+      {
+        "id": "p_mountain_mid",
+        "attribute": "山",
+        "grade": "中品"
+      },
+      {
+        "id": "p_mountain_high",
+        "attribute": "山",
+        "grade": "上品"
+      }
     ]
   },
   "enemy": {
-    "id": "enemy",
+    "id": "qingfeng",
     "name": "青锋剑徒",
     "max_hp": 26,
-    "weapon_type": "剑",
-    "weapon_durability": 0,
-    "techniques": [
-      "连风式",
-      "点星式",
-      "二重·壁"
-    ],
-    "ai_priority": [
-      "连风式",
-      "点星式",
-      "二重·壁"
+    "breathe_policy": "singletons",
+    "hand": [
+      {"id": "e_m1", "attribute": "山", "grade": "下品"},
+      {"id": "e_m2", "attribute": "山", "grade": "下品"},
+      {"id": "e_f1", "attribute": "风", "grade": "下品"},
+      {"id": "e_h1", "attribute": "火", "grade": "下品"}
     ],
     "deck": [
-      {"id": "e_wind_lo", "attribute": "风", "grade": "下品"},
-      {"id": "e_wind_mid", "attribute": "风", "grade": "中品"},
-      {"id": "e_wind_hi", "attribute": "风", "grade": "上品"},
-      {"id": "e_forest_lo", "attribute": "林", "grade": "下品"},
-      {"id": "e_forest_mid", "attribute": "林", "grade": "中品"},
-      {"id": "e_forest_hi", "attribute": "林", "grade": "上品"},
-      {"id": "e_fire_lo", "attribute": "火", "grade": "下品"},
-      {"id": "e_fire_mid", "attribute": "火", "grade": "中品"},
-      {"id": "e_fire_hi", "attribute": "火", "grade": "上品"},
-      {"id": "e_mountain_lo", "attribute": "山", "grade": "下品"},
-      {"id": "e_mountain_mid", "attribute": "山", "grade": "中品"},
-      {"id": "e_mountain_hi", "attribute": "山", "grade": "上品"}
+      {"id": "e_m3", "attribute": "山", "grade": "下品"},
+      {"id": "e_m4", "attribute": "山", "grade": "中品"},
+      {"id": "e_m5", "attribute": "山", "grade": "中品"},
+      {"id": "e_f2", "attribute": "风", "grade": "下品"},
+      {"id": "e_f3", "attribute": "风", "grade": "下品"},
+      {"id": "e_f4", "attribute": "风", "grade": "中品"},
+      {"id": "e_h2", "attribute": "火", "grade": "下品"},
+      {"id": "e_h3", "attribute": "火", "grade": "中品"}
     ],
-    "xinfa": [
-      "先纳功"
+    "ladder": [
+      {"technique": "重盾式", "when": {"guard_lt": 3}},
+      {"technique": "蓄势斩", "when": {"guard_gt": 8}},
+      {"technique": "连风式", "when": {"status_gte": {"li": 3}}},
+      {"technique": "磨刃式", "cooldown": 1},
+      {"technique": "调息"}
+    ],
+    "hooks": [
+      {"kind": "乱", "on": "guard_broken", "technique": "重盾式", "cooldown": 2},
+      {"kind": "应", "on": "player_breathed", "technique": "窥隙脚", "arm": {"guard_gte": 3}, "cooldown": 3}
     ]
   }
 }

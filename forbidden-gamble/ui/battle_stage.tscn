@@ -42,11 +42,6 @@ layout_mode = 2
 focus_mode = 0
 text = "取消"
 
-[node name="PassButton" type="Button" parent="CenterZone/Buttons"]
-layout_mode = 2
-focus_mode = 0
-text = "提气"
-
 [node name="BreatheButton" type="Button" parent="CenterZone/Buttons"]
 layout_mode = 2
 focus_mode = 0

@@ -1,8 +1,9 @@
 extends GutTest
 
 # 心法系统（D-060/D-061）测试：词表词条逐类验证、once 记账、系别计数条件、
-# 敌我同规则、schema 校验。v1 阶段二：九门名册落齐（先纳功/调息诀/长息诀/气海无涯/
-# 化浊诀为新版），事件锚心法全部带方向条件（只随本人的调息/出招/提气触发）。
+# 敌我同规则、schema 校验。v1 阶段二：九门名册落齐（先纳功/调息诀/气海无涯/
+# 化浊诀为新版；长息诀已随提气退役，2026-09-13），事件锚心法全部带方向条件
+# （只随本人的调息/出招触发）。
 # 旧心法（传输类词条/顺子锚）已按用户决定删除，重做时从文档从零录入。
 # 牌堆从尾部抽牌；所有测试 start_battle(false) 关洗牌保证确定性。
 
@@ -10,7 +11,6 @@ func _fighter(id: String, xinfa_list: Array = [], techniques: Array = ["点星�
 	var fighter := FighterState.new(id, id, 30)
 	fighter.techniques.assign(techniques)
 	fighter.xinfa.assign(xinfa_list)
-	fighter.ai_priority.assign(techniques)
 	return fighter
 
 func _cards(specs: Array, prefix: String) -> Array:
@@ -32,14 +32,6 @@ func test_tunasi_draws_extra_card_on_battle_start() -> void:
 	var tm := TurnManager.new(_combat(player, _fighter("e")))
 	tm.start_battle(false)
 	assert_eq(player.hand.size(), 7, "先纳功：战斗开始应额外提 1 张（6+1）")
-
-func test_enemy_xinfa_same_rules() -> void:
-	# D-055：敌我同一条心法规则（敌方龟息功受伤同样减损）
-	var enemy := _fighter("e", ["龟息功"], ["点星式"])
-	var player := _fighter("p")
-	var combat := _combat(player, enemy)
-	combat.pipeline.submit(GameAction.new("damage", enemy, 7, player))
-	assert_eq(enemy.hp, 24, "敌方龟息功：受伤 7 实扣 6")
 
 # ---------- damage 词条 ----------
 

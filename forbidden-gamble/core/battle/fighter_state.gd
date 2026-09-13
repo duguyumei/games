@@ -6,26 +6,18 @@ var display_name: String
 var max_hp: int
 var hp: int
 var guard: int = 0
-# 兵器系别与等级（M4：招式不受装备限制，兵器按系增幅——school 与功法一致时伤害 +level）
-var weapon_school: String = ""
-var weapon_level: int = 0
-# 护具等级＝每次受到的气血伤害固定减免（护境吸收后的余伤再减，最低 0）
-var armor_defend: int = 0
-# 档次（探索侧扣行动力/道具直伤减免缺省表用）；玩家侧不使用
-var tier: String = "normal"
-# 道具伤害减免（0~1）；-1 = 未配置，按档次查缺省表
-var item_damage_reduction := -1.0
 var hand: Array = []
 var draw_pile: Array = []
 var discard_pile: Array = []
 var techniques: Array[String] = []
-# 装备心法（D-060：5 平权槽的小丑牌式被动，XinfaRuntime 注册成管线钩子；敌我同规则）
+# 装备心法（D-060：5 平权槽的小丑牌式被动，XinfaRuntime 注册成管线钩子；玩家侧专用）
 var xinfa: Array[String] = []
-var ai_priority: Array[String] = []
-# 提气（原暂让）：这一拍不动、交权、从丹田提 1 张；每口气限 1 次，调息时重置（敌我同限）。
-# lifts_this_breath＝本口气已提次数；lift_allowance＝心法授予的额外次数（长息诀：调息后+1）。
-var lifts_this_breath := 0
-var lift_allowance := 0
+# 破绽（跳过下次获得行动权；不叠加、即查即耗）。铸币厂仅两处：钩子转换
+# （EnemyBrain 乱/应）与压制动词（TechniqueResolver）。破盾＝纯物理，不给破绽。
+var flawed := false
+# 敌方对手卡定义（敌方系统 v2）：{hand, deck, breathe_policy, ladder, hooks}，
+# 由 EncounterLoader 填充；CombatState 据此构建 EnemyBrain。玩家侧不用。
+var enemy_def: Dictionary = {}
 # 战斗内状态（毒等）：status_id -> 层数。战斗结束即消失。
 var statuses: Dictionary = {}
 # 功法级战斗状态（26 号 §5 词条族）：
@@ -78,7 +70,7 @@ func take_damage(amount: int) -> Dictionary:
 	var incoming := maxi(amount, 0)
 	var guard_damage := mini(guard, incoming)
 	guard -= guard_damage
-	var hp_damage := maxi(incoming - guard_damage - armor_defend, 0)
+	var hp_damage := maxi(incoming - guard_damage, 0)
 	hp = maxi(hp - hp_damage, 0)
 	return {"guard_damage": guard_damage, "hp_damage": hp_damage}
 

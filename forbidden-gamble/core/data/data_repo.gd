@@ -17,23 +17,31 @@ const PLAYER_PATH := "res://data/player.json"
 
 # schema 枚举（与规则实现同步维护）
 const RARITIES := ["common", "fine", "rare", "legend"]
-const TIERS := ["normal", "veteran", "elite", "master"]
+# 敌方对手卡（敌方系统 v2，同核）：梯级自况条件键 / 钩子族与事件 / 应手武装键 / 调息策略
+const ENEMY_LADDER_WHEN := ["guard_lt", "guard_gt", "hp_lte", "status_gte"]
+const ENEMY_HOOK_KINDS := ["乱", "应"]
+const ENEMY_HOOK_ON := ["guard_broken", "player_breathed"]
+const ENEMY_ARM_KEYS := ["guard_gte", "hp_gte"]
+const ENEMY_BREATHE_POLICIES := ["all", "low_grade", "high_grade", "singletons"]
+const ENEMY_FLOOR := "调息"
+const ENEMY_GRADES := ["下品", "中品", "上品"]
 # 牌型（v1 属性轴）：一气＋重族 N 张同属性＋合族 N 张异属性，选牌上限 4
 const PATTERNS := ["ONE_QI", "HEAVY_2", "HEAVY_3", "HEAVY_4", "MIX_2", "MIX_3", "MIX_4"]
 # 功法效果类型（v1 数值语法：效果＝基值＋系数×真气量）
 const EFFECT_TYPES := ["damage", "guard_cover", "apply_status", "remove_guard", "heal", "draw", "self_hp_loss"]
-# 功法词条标签：压制＝行动权不转让（冷却定价重复）
+# 功法词条标签：压制＝给对方施加破绽（敌方系统 v1 §2.4 重定义）
 const TECHNIQUE_TAGS := ["压制"]
 # 功法效果条件键（_condition_met 支持）
 const TECHNIQUE_WHEN_KEYS := ["attribute_gte"]
 const STATUS_ACTIONS := ["hp_loss", "damage_modify"]
+const STATUS_AS := ["attacker", "target"]
 const STATUS_ON := ["battle_start", "breath", "technique_use", "damage"]
 # 心法词表（D-060/D-061，契约见《27》§3）
 const XINFA_SCHOOLS := ["风", "林", "火", "山", "通用"]
-const XINFA_ON := ["battle_start", "breath", "lift_qi", "technique_prepare", "technique_use", "damage", "initiative_gain", "initiative_transfer", "initiative_seize"]
+const XINFA_ON := ["battle_start", "breath", "technique_prepare", "technique_use", "damage", "initiative_gain", "initiative_seize"]  # lift_qi 随提气退役（2026-09-13）
 const XINFA_PHASES := ["pre", "post"]
-const XINFA_CONDITION_KEYS := ["attribute_gte", "grade_lte", "first_lift", "xinfa_school_gte", "pattern", "transfer_gte", "breath_gte", "as_attacker", "as_target", "target_is_enemy", "source_is_enemy", "once_per_breath", "once_per_battle"]
-const XINFA_DO_TYPES := ["transfer_bonus", "damage_bonus", "damage_resist", "reflect", "guard_bonus", "heal", "draw", "wash_back", "breath_transform", "lift_bonus", "qi_amount_bonus", "apply_status", "self_hp_loss", "seize_initiative", "cancel", "amount_bonus"]
+const XINFA_CONDITION_KEYS := ["attribute_gte", "grade_lte", "xinfa_school_gte", "pattern", "transfer_gte", "breath_gte", "as_attacker", "as_target", "target_is_enemy", "source_is_enemy", "once_per_breath", "once_per_battle"]
+const XINFA_DO_TYPES := ["transfer_bonus", "damage_bonus", "damage_resist", "reflect", "guard_bonus", "heal", "draw", "wash_back", "breath_transform", "qi_amount_bonus", "apply_status", "self_hp_loss", "seize_initiative", "cancel", "amount_bonus"]
 # 物品大类与消耗品小类（25 号暂定稿）；container＝行囊（M4 穿戴容量件）；
 # use 效果词表 = 已实现执行器的清单
 const ITEM_TYPES := ["consumable", "material", "valuable", "manual", "weapon", "armor", "container", "readable"]
@@ -203,36 +211,67 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 			elif str(do_dict.get("type", "")) == "apply_status" and not statuses.has(str(do_dict.get("status", ""))):
 				errs.append("xinfa.json[%s]：apply_status 引用了不存在的状态 %s" % [key, do_dict.get("status")])
 
-	# 状态：触发时机与动作已知
+	# 状态：触发时机与动作已知；damage_modify 的 as 方向合法
 	for key in statuses:
 		var status: Dictionary = statuses[key]
 		if not STATUS_ON.has(str(status.get("on", ""))):
 			errs.append("statuses.json[%s]：未知触发时机 %s" % [key, status.get("on")])
 		if not STATUS_ACTIONS.has(str(status.get("action", ""))):
 			errs.append("statuses.json[%s]：未知动作 %s" % [key, status.get("action")])
+		if status.has("as") and not STATUS_AS.has(str(status.get("as", ""))):
+			errs.append("statuses.json[%s]：未知方向 as=%s" % [key, status.get("as")])
 
-	# 敌人：id 与键一致、档次四档、气血为正、功法/心法引用存在、牌组完整
+	# 敌人（同核对手卡，敌方系统 v2）：id 与键一致、气血为正、起手/牌库真气合法、
+	# 调息策略白名单、行为链梯非空且末位是调息地板、梯级与钩子引用的功法必须存在于
+	# techniques.json、条件/事件/武装键全在白名单、冷却非负。
 	for key in enemies:
 		var enemy: Dictionary = enemies[key]
 		if str(enemy.get("id", "")) != str(key):
 			errs.append("enemies.json[%s]：id（%s）与键不一致" % [key, enemy.get("id")])
-		if not TIERS.has(str(enemy.get("tier", ""))):
-			errs.append("enemies.json[%s]：未知档次 %s" % [key, enemy.get("tier")])
 		if int(enemy.get("max_hp", 0)) <= 0:
 			errs.append("enemies.json[%s]：max_hp 应为正整数" % key)
-		for technique in enemy.get("techniques", []) + (enemy.get("ai_priority", []) as Array):
-			if not techniques.has(str(technique)):
-				errs.append("enemies.json[%s]：引用了不存在的功法 %s" % [key, technique])
-		for xf_id in enemy.get("xinfa", []):
-			if not xinfa.has(str(xf_id)):
-				errs.append("enemies.json[%s]：引用了不存在的心法 %s" % [key, xf_id])
-		if (enemy.get("deck", []) as Array).is_empty():
-			errs.append("enemies.json[%s]：牌组为空" % key)
-		for card in enemy.get("deck", []):
-			if str((card as Dictionary).get("attribute", "")).is_empty() or not QiCard.GRADE_NAMES.has(str((card as Dictionary).get("grade", ""))):
-				errs.append("enemies.json[%s]：牌组里有属性/品级不完整的牌 %s" % [key, card])
-		if enemy.has("item_damage_reduction") and not (0.0 <= float(enemy.get("item_damage_reduction", 0.0)) and float(enemy.get("item_damage_reduction", 0.0)) <= 1.0):
-			errs.append("enemies.json[%s]：item_damage_reduction 应在 0~1 之间" % key)
+		if not ENEMY_BREATHE_POLICIES.has(str(enemy.get("breathe_policy", "all"))):
+			errs.append("enemies.json[%s]：未知调息策略 %s" % [key, enemy.get("breathe_policy")])
+		errs.append_array(_validate_enemy_cards(key, "hand", enemy.get("hand", [])))
+		errs.append_array(_validate_enemy_cards(key, "deck", enemy.get("deck", [])))
+		var ladder: Array = enemy.get("ladder", [])
+		if ladder.is_empty():
+			errs.append("enemies.json[%s]：行为链梯为空" % key)
+		for index in range(ladder.size()):
+			var rule: Dictionary = ladder[index]
+			var technique := str(rule.get("technique", ""))
+			var is_floor := technique == ENEMY_FLOOR and index == ladder.size() - 1
+			if technique.is_empty():
+				errs.append("enemies.json[%s]：梯级 %d 缺少 technique" % [key, index])
+			elif not is_floor and not techniques.has(technique):
+				errs.append("enemies.json[%s]：梯级 %d 引用了不存在的功法 %s" % [key, index, technique])
+			if is_floor:
+				if not (rule.get("when", {}) as Dictionary).is_empty():
+					errs.append("enemies.json[%s]：调息地板不得带自况条件" % key)
+			else:
+				for ckey in (rule.get("when", {}) as Dictionary).keys():
+					if not ENEMY_LADDER_WHEN.has(str(ckey)):
+						errs.append("enemies.json[%s]：梯级 %d 未知条件键 %s" % [key, index, ckey])
+					elif ckey == "status_gte":
+						for sid in (rule.get("when", {}) as Dictionary)[ckey].keys():
+							if not statuses.has(str(sid)):
+								errs.append("enemies.json[%s]：梯级 %d 引用了不存在的状态 %s" % [key, index, sid])
+			if rule.has("cooldown") and int(rule.get("cooldown", 0)) < 0:
+				errs.append("enemies.json[%s]：梯级 %d 的 cooldown 应为非负整数" % [key, index])
+		for hook in enemy.get("hooks", []):
+			var hook_index := (enemy.get("hooks", []) as Array).find(hook)
+			if not ENEMY_HOOK_KINDS.has(str((hook as Dictionary).get("kind", ""))):
+				errs.append("enemies.json[%s]：钩子 %d 未知族 %s" % [key, hook_index, (hook as Dictionary).get("kind")])
+			if not ENEMY_HOOK_ON.has(str((hook as Dictionary).get("on", ""))):
+				errs.append("enemies.json[%s]：钩子 %d 未知事件 %s" % [key, hook_index, (hook as Dictionary).get("on")])
+			var hook_tech := str((hook as Dictionary).get("technique", ""))
+			if not techniques.has(hook_tech):
+				errs.append("enemies.json[%s]：钩子 %d 引用了不存在的功法 %s" % [key, hook_index, hook_tech])
+			for akey in (hook as Dictionary).get("arm", {}).keys():
+				if not ENEMY_ARM_KEYS.has(str(akey)):
+					errs.append("enemies.json[%s]：钩子 %d 未知武装键 %s" % [key, hook_index, akey])
+			if (hook as Dictionary).has("cooldown") and int((hook as Dictionary).get("cooldown", 0)) < 0:
+				errs.append("enemies.json[%s]：钩子 %d 的 cooldown 应为非负整数" % [key, hook_index])
 
 	# 玩家定义：功法/心法引用存在（player.json 进 pack 后生效；纯函数喂包不带则跳过）
 	if not player_def.is_empty():
@@ -242,6 +281,16 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 		for xf_id in player_def.get("xinfa", []):
 			if not xinfa.has(str(xf_id)):
 				errs.append("player.json：引用了不存在的心法 %s" % xf_id)
+	return errs
+
+# 敌方真气（起手/牌库）：属性非空、品级三档。
+static func _validate_enemy_cards(key: String, pile: String, cards: Array) -> Array[String]:
+	var errs: Array[String] = []
+	for card in cards:
+		if str((card as Dictionary).get("attribute", "")).is_empty():
+			errs.append("enemies.json[%s].%s：真气缺少 attribute" % [key, pile])
+		if not ENEMY_GRADES.has(str((card as Dictionary).get("grade", ""))):
+			errs.append("enemies.json[%s].%s：未知品级 %s" % [key, pile, (card as Dictionary).get("grade")])
 	return errs
 
 # 消耗品 use 结构：scopes/target 已知、效果词表受控、数值为正、apply_status 引用存在。

@@ -17,6 +17,29 @@
     "priority": -50,
     "action": "damage_modify",
     "amount": -2,
+    "as": "target",
     "decay": 1
+  },
+  "li": {
+    "name": "力",
+    "scope": "battle",
+    "on": "damage",
+    "phase": "pre",
+    "priority": -40,
+    "action": "damage_modify",
+    "amount": "stacks",
+    "as": "attacker",
+    "decay": 0
+  },
+  "ti": {
+    "name": "体",
+    "scope": "battle",
+    "on": "damage",
+    "phase": "pre",
+    "priority": -40,
+    "action": "damage_modify",
+    "amount": "stacks",
+    "as": "target",
+    "decay": 0
   }
 }

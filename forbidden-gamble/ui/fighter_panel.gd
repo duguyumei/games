@@ -32,12 +32,6 @@ const CHIP_W := 78.0
 	set(value):
 		guard = maxi(value, 0)
 		_apply()
-## 护甲平铺减伤（FighterState.armor_defend）：>0 时状态行显示「甲护·N」胶囊，
-## 让"装备替你挡了伤"在战斗里可见（承伤透明化，试玩报告 P1）。
-@export var armor_defend: int = 0:
-	set(value):
-		armor_defend = maxi(value, 0)
-		_apply()
 ## 敌方手牌数（仅 ENEMY 显示，与气血条同一行）。
 @export var enemy_hand: int = 4:
 	set(value):
@@ -52,6 +46,15 @@ const CHIP_W := 78.0
 @export var status_names: String = "毒":
 	set(value):
 		status_names = value
+		_apply()
+## 应手灯（敌方系统 v2，仅 ENEMY）：预埋反制的绊线状态（如"窥隙·就绪"），悬浮显示明码。
+@export var hook_lamp_text: String = "":
+	set(value):
+		hook_lamp_text = value
+		_apply()
+@export var hook_lamp_tooltip: String = "":
+	set(value):
+		hook_lamp_tooltip = value
 		_apply()
 @export var portrait_color: Color = Color(0.45, 0.55, 0.5):
 	set(value):
@@ -165,6 +168,29 @@ func _flash_hurt() -> void:
 	_flash_tween = create_tween()
 	_flash_tween.tween_property(portrait, "modulate", Color.WHITE, 0.4)
 
+# 破绽震慑（敌方系统 v1 §2.2 表现层）：立绘金光一闪＋横向抖动——
+# 破绽在结算里产生即消耗，不补这个可见瞬间，玩家只会觉得行动权莫名连转。
+func flash_flaw() -> void:
+	_flash_recoil(Color(1.0, 0.82, 0.35))
+
+# 护境被击碎：青白闪光＋抖动（破盾是破绽的主要来源，两者视觉上要连成一件事）。
+func flash_guard_break() -> void:
+	_flash_recoil(Color(0.68, 0.85, 1.0))
+
+func _flash_recoil(tint: Color) -> void:
+	var portrait: ColorRect = get_node_or_null("Portrait")
+	if portrait == null:
+		return
+	if _flash_tween != null and _flash_tween.is_valid():
+		_flash_tween.kill()
+	portrait.modulate = tint
+	_flash_tween = create_tween()
+	var origin_x := portrait.position.x
+	_flash_tween.tween_property(portrait, "position:x", origin_x + 7.0, 0.05)
+	_flash_tween.tween_property(portrait, "position:x", origin_x - 5.0, 0.05)
+	_flash_tween.tween_property(portrait, "position:x", origin_x, 0.06)
+	_flash_tween.tween_property(portrait, "modulate", Color.WHITE, 0.4)
+
 
 # 心法竖排（立绘外侧：我方左、敌方右）+ 状态行横排。
 # 无心法时整列隐藏；胶囊悬浮披露效果文本（数据即真相，XinfaRuntime.effect_text）。
@@ -199,11 +225,6 @@ func _rebuild_chips() -> void:
 	if status_row != null:
 		_detach_children(status_row)
 		var x := 0.0
-		if armor_defend > 0:
-			var armor_chip := _make_chip("甲护·%d" % armor_defend, Color(0.32, 0.26, 0.16, 0.85), Color(0.93, 0.86, 0.66))
-			armor_chip.position = Vector2(x, 0)
-			status_row.add_child(armor_chip)
-			x += armor_chip.size.x + 6.0
 		if guard > 0:
 			var guard_chip := _make_chip("护体·%d" % guard, Color(0.2, 0.28, 0.38, 0.85), Color(0.75, 0.85, 0.95))
 			guard_chip.position = Vector2(x, 0)
@@ -217,6 +238,14 @@ func _rebuild_chips() -> void:
 			chip.position = Vector2(x, 0)
 			status_row.add_child(chip)
 			x += chip.size.x + 6.0
+		# 应手灯（敌方专用）：绊线状态胶囊——亮＝就绪、歇N＝冷却、哑＝未武装/付不起
+		var lamp_text := hook_lamp_text.strip_edges()
+		if side == 1 and not lamp_text.is_empty():
+			var lamp := _make_chip(lamp_text, Color(0.38, 0.16, 0.24, 0.9), Color(0.98, 0.82, 0.6))
+			lamp.tooltip_text = hook_lamp_tooltip
+			lamp.mouse_filter = Control.MOUSE_FILTER_STOP
+			lamp.position = Vector2(x, 0)
+			status_row.add_child(lamp)
 
 
 # 同帧多次重建（hp/guard/甲护/状态各触发一次 _apply）时，queue_free 是延迟释放、

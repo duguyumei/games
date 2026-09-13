@@ -1,9 +1,8 @@
 extends Control
 
-## 演武场（战斗工作台）：择敌 → 卡槽点选构筑（功法六/内功五/装备/真气牌组）→ 开战。
+## 演武场（战斗工作台）：择敌 → 卡槽点选构筑（功法六/内功五/真气牌组）→ 开战。
 ## 槽位与选卡弹层全部由编辑器模板实例化；选择写入 DojoConfig，battle.gd 优先读取。
 
-const ENEMY_TIERS := {"normal": "普通", "elite": "精英", "boss": "头目"}
 const ATTRS := ["风", "林", "火", "山"]
 const ATTR_ROW_NAMES := ["FengRow", "LinRow", "HuoRow", "ShanRow"]
 const CELL_SCENE := preload("res://ui/qi_count_cell.tscn")
@@ -15,8 +14,6 @@ const PICKER_SCENE := preload("res://ui/card_picker.tscn")
 var _enemies: Dictionary = {}
 var _technique_ids: Array = []
 var _xinfa_ids: Array = []
-var _weapons: Array = []
-var _armors: Array = []
 var _cells: Dictionary = {}
 var _tech_sel: Array[String] = ["", "", "", "", "", ""]
 var _xinfa_sel: Array[String] = ["", "", "", "", ""]
@@ -26,8 +23,6 @@ var _picker: CardPicker
 @onready var enemy_info: Label = $Margin/VBox/Body/Left/EnemyInfo
 @onready var tech_slots: HFlowContainer = $Margin/VBox/Body/RightScroll/Right/TechSlots
 @onready var xinfa_slots: HFlowContainer = $Margin/VBox/Body/RightScroll/Right/XinfaSlots
-@onready var weapon_pick: OptionButton = $Margin/VBox/Body/RightScroll/Right/WearRow/WeaponPick
-@onready var armor_pick: OptionButton = $Margin/VBox/Body/RightScroll/Right/WearRow/ArmorPick
 @onready var deck_total: Label = $Margin/VBox/Body/RightScroll/Right/DeckTotal
 @onready var start_button: Button = $Margin/VBox/BottomRow/StartButton
 
@@ -35,7 +30,6 @@ var _picker: CardPicker
 func _ready() -> void:
 	_load_data()
 	_build_enemy_pick()
-	_build_wear_picks()
 	_build_qi_cells()
 	_picker = PICKER_SCENE.instantiate()
 	add_child(_picker)
@@ -58,41 +52,51 @@ func _load_data() -> void:
 	_enemies = DataRepo.load_json(DataRepo.ENEMIES_PATH)
 	_technique_ids = (DataRepo.load_json(DataRepo.TECHNIQUES_PATH) as Dictionary).keys()
 	_xinfa_ids = (DataRepo.load_json(DataRepo.XINFA_PATH) as Dictionary).keys()
-	var items: Dictionary = DataRepo.load_json(DataRepo.ITEMS_PATH)
-	for id in items.keys():
-		var e: Dictionary = items[id]
-		match str(e.get("type", "")):
-			"weapon":
-				var w: Dictionary = e.get("weapon", {})
-				_weapons.append({"id": str(id), "name": str(e.get("name", id)),
-					"school": str(w.get("school", "")), "level": int(w.get("level", 0))})
-			"armor":
-				var a: Dictionary = e.get("armor", {})
-				_armors.append({"id": str(id), "name": str(e.get("name", id)),
-					"defend": int(a.get("level", 0))})
 
 
 func _build_enemy_pick() -> void:
-	var order := {"normal": 0, "elite": 1, "boss": 2}
-	var ids := _enemies.keys().duplicate()
-	ids.sort_custom(func(a, b):
-		return order.get(str(_enemies[a].get("tier", "normal")), 9) \
-			< order.get(str(_enemies[b].get("tier", "normal")), 9))
-	for id in ids:
-		var tier := str(_enemies[id].get("tier", "normal"))
-		enemy_pick.add_item("%s（%s）" % [str(id), ENEMY_TIERS.get(tier, tier)])
+	for id in _enemies.keys():
+		var e: Dictionary = _enemies[id]
+		enemy_pick.add_item("%s（气血 %d）" % [str(e.get("name", id)), int(e.get("max_hp", 0))])
 		enemy_pick.set_item_metadata(enemy_pick.item_count - 1, str(id))
 	enemy_pick.item_selected.connect(_on_enemy_selected)
 	enemy_pick.select(0)
 	_on_enemy_selected(0)
 
 
+# 敌方信息（敌方系统 v2，同核对手卡）：功法表＋行为链梯＋钩子＋换手策略全明码披露——
+# 对手卡是看得见考卷：WHAT 永远公开，WHEN/WHETHER 靠玩家在战斗里读。
 func _on_enemy_selected(_index: int) -> void:
 	var id := str(enemy_pick.get_item_metadata(enemy_pick.selected))
 	var e: Dictionary = _enemies.get(id, {})
-	enemy_info.text = "%s ｜ 气血 %d ｜ %s\n功法：%s" % [
-		id, int(e.get("max_hp", 0)), str(e.get("school", "—")),
-		"、".join(e.get("techniques", []))]
+	var techs: Array[String] = []
+	for rule in e.get("ladder", []):
+		var technique := str((rule as Dictionary).get("technique", ""))
+		if technique.is_empty() or technique == "调息":
+			continue
+		if not techs.has(technique):
+			techs.append(technique)
+	for hook in e.get("hooks", []):
+		var hook_tech := str((hook as Dictionary).get("technique", ""))
+		if not hook_tech.is_empty() and not techs.has(hook_tech):
+			techs.append(hook_tech)
+	var ladder_text := EnemyBrain.new(e).ladder_overview()
+	var hooks: Array[String] = []
+	for hook in e.get("hooks", []):
+		var kind := str((hook as Dictionary).get("kind", ""))
+		var event_text := str({"guard_broken": "它护境被击碎", "player_breathed": "你调息"}.get(
+			str((hook as Dictionary).get("on", "")), str((hook as Dictionary).get("on", ""))))
+		var arm: Dictionary = (hook as Dictionary).get("arm", {})
+		var arm_text := "常驻"
+		if not arm.is_empty():
+			arm_text = "盾≥%d" % int(arm.get("guard_gte", 0))
+		hooks.append("%s·%s→【%s】（歇%d·武装：%s）" % [kind, event_text,
+			str((hook as Dictionary).get("technique", "")), int((hook as Dictionary).get("cooldown", 0)), arm_text])
+	enemy_info.text = "%s ｜ 气血 %d ｜ 功法：%s\n出招梯：%s\n钩子：%s\n换手策略：%s" % [
+		str(e.get("name", id)), int(e.get("max_hp", 0)), "、".join(techs), ladder_text,
+		"；".join(hooks) if not hooks.is_empty() else "无",
+		{"all": "全换", "low_grade": "只换下品", "high_grade": "弃上品", "singletons": "弃孤张"}.get(
+			str(e.get("breathe_policy", "all")), "全换")]
 
 
 # ---------- 功法六槽 / 内功五槽：卡槽点选（弹窗标注当前槽；选已装项＝换位，一门不占两槽） ----------
@@ -222,25 +226,7 @@ func _tech_level(tid: String) -> int:
 	return int(t.get("level", 1))
 
 
-# ---------- 装备 / 真气 ----------
-
-func _build_wear_picks() -> void:
-	weapon_pick.add_item("（空手）")
-	weapon_pick.set_item_metadata(0, -1)
-	for i in range(_weapons.size()):
-		var w: Dictionary = _weapons[i]
-		weapon_pick.add_item("%s（%s·+%d）" % [w["name"], w["school"], w["level"]])
-		weapon_pick.set_item_metadata(weapon_pick.item_count - 1, i)
-	weapon_pick.select(0)
-
-	armor_pick.add_item("（无护具）")
-	armor_pick.set_item_metadata(0, -1)
-	for i in range(_armors.size()):
-		var a: Dictionary = _armors[i]
-		armor_pick.add_item("%s（减伤 %d）" % [a["name"], a["defend"]])
-		armor_pick.set_item_metadata(armor_pick.item_count - 1, i)
-	armor_pick.select(0)
-
+# ---------- 真气 ----------
 
 # 品级三档（v1 三品化）：4 属性 × 3 品级网格
 const GRADES := [1, 2, 3]
@@ -262,7 +248,6 @@ func _build_qi_cells() -> void:
 			var cell := CELL_SCENE.instantiate() as QiCountCell
 			cell.setup(value, int(counts.get("%s%d" % [ATTRS[attr_i], value], 0)))
 			cell.count_changed.connect(_refresh_deck_total)
-			cell.fuse_requested.connect(_on_cell_fuse.bind(ATTRS[attr_i], value))
 			row.add_child(cell)
 			_cells["%s%d" % [ATTRS[attr_i], value]] = cell
 	_refresh_deck_total()
@@ -272,29 +257,11 @@ func _refresh_deck_total() -> void:
 	deck_total.text = "牌组合计：%d 张" % _deck_total()
 
 
-# ---------- 凝（融合）：同属性同品级 2 张 → 1 张品级＋1（《战斗系统底层_v1》§1） ----------
-
 func _deck_total() -> int:
 	var total := 0
 	for cell in _cells.values():
 		total += (cell as QiCountCell).count
 	return total
-
-func _on_cell_fuse(attribute: String, grade: int) -> void:
-	var cell: QiCountCell = _cells["%s%d" % [attribute, grade]]
-	var verdict := FusionRules.can_fuse(cell.count, grade, _deck_total())
-	if not bool(verdict.ok):
-		_flash_hint(str(verdict.get("reason", "不可凝")))
-		return
-	cell.set_count(cell.count - 2)
-	var upgraded: QiCountCell = _cells["%s%d" % [attribute, grade + 1]]
-	upgraded.set_count(upgraded.count + 1)
-	_refresh_deck_total()
-
-# 合计行闪一句提示，2 秒后还原（演武场没有独立状态栏，借合计行一用）
-func _flash_hint(text: String) -> void:
-	deck_total.text = text
-	get_tree().create_timer(2.0).timeout.connect(_refresh_deck_total)
 
 
 func _on_start() -> void:
@@ -308,15 +275,6 @@ func _on_start() -> void:
 	for sel in _xinfa_sel:
 		if not sel.is_empty():
 			DojoConfig.xinfa.append(sel)
-	var wi: int = int(weapon_pick.get_item_metadata(weapon_pick.selected))
-	if wi >= 0:
-		DojoConfig.weapon_school = str(_weapons[wi]["school"])
-		DojoConfig.weapon_level = int(_weapons[wi]["level"])
-	else:
-		DojoConfig.weapon_school = ""
-		DojoConfig.weapon_level = 0
-	var ai: int = int(armor_pick.get_item_metadata(armor_pick.selected))
-	DojoConfig.armor_defend = int(_armors[ai]["defend"]) if ai >= 0 else 0
 	DojoConfig.deck = []
 	for key in _cells.keys():
 		var cell: QiCountCell = _cells[key]

@@ -1,14 +1,13 @@
 extends GutTest
 
-# 管线纯化（D-064）：行动权/护境动作化 + 通用取消词 + 方向条件 + 持有方优先排序。
-# 用户心法设计（先机诀/长息诀）作为数据落地的行为验证。
-# 牌堆从尾部抽牌；start_battle(false) 关洗牌保证确定性。
+# 管线纯化（D-064 延续，敌方系统 v1 后行动权为判定制）：夺取/护境动作化 +
+# 通用取消词 + 方向条件 + 持有方优先排序。用户心法设计（先机诀/长息诀）作为
+# 数据落地的行为验证。牌堆从尾部抽牌；start_battle(false) 关洗牌保证确定性。
 
 func _fighter(id: String, xinfa_list: Array = [], techniques: Array = ["二重·壁", "点星式"]) -> FighterState:
 	var fighter := FighterState.new(id, id, 30)
 	fighter.techniques.assign(techniques)
 	fighter.xinfa.assign(xinfa_list)
-	fighter.ai_priority.assign(techniques)
 	return fighter
 
 func _cards(specs: Array, prefix: String) -> Array:
@@ -36,41 +35,6 @@ func _pair_hand() -> Array:
 
 func _pair_deck() -> Array:
 	return _wind(14, "p")
-
-# ---------- 引擎纯度：移交可取消（压制）与改写（改道） ----------
-
-func test_transfer_cancel_keeps_right() -> void:
-	var player := _fighter("p")
-	player.hand = _pair_hand()
-	player.draw_pile = _pair_deck()
-	var enemy := _fighter("e", [], ["点星式"])
-	enemy.hand = _cards([["火", 2], ["山", 2]], "e")
-	enemy.draw_pile = _wind(14, "e")
-	var tm := _start(player, enemy)
-	tm.combat.pipeline.register_hook({"carrier": "test", "on": "initiative_transfer", "phase": "pre", "priority": 0,
-		"handler": func(action: GameAction) -> void: action.cancelled = true})
-	var result := tm.player_act("二重·壁", [player.hand[0], player.hand[1]])
-	assert_true(bool(result.get("ok", false)))
-	assert_eq(tm.combat.active_side, "player", "取消移交＝压制：行动权保留")
-	# 调息后的取消被引擎驳回（铁律：调息永远是链条终点）
-	tm.player_breathe()
-	assert_eq(tm.combat.active_side, "enemy", "调息后取消无效，强制移交")
-	var text := "".join(tm.drain_messages())
-	assert_string_contains(text, "必让")
-
-func test_transfer_retarget_keeps_holder() -> void:
-	# 改写移交动作的 target＝改道：把"交给对方"改成"交回自己"，效果等同保留但走的是 RESOLVE
-	var player := _fighter("p")
-	player.hand = _pair_hand()
-	player.draw_pile = _pair_deck()
-	var enemy := _fighter("e", [], ["点星式"])
-	enemy.hand = _cards([["火", 2], ["山", 2]], "e")
-	enemy.draw_pile = _wind(14, "e")
-	var tm := _start(player, enemy)
-	tm.combat.pipeline.register_hook({"carrier": "test", "on": "initiative_transfer", "phase": "pre", "priority": 0,
-		"handler": func(action: GameAction) -> void: action.target = action.source})
-	tm.player_act("二重·壁", [player.hand[0], player.hand[1]])
-	assert_eq(tm.combat.active_side, "player", "改写 target 为让权方＝行动权转回自己")
 
 # ---------- 引擎纯度：夺取是可拦截的动作 ----------
 
@@ -160,79 +124,27 @@ func test_direction_conditions() -> void:
 	assert_true(runtime._conditions_met(when_source, player, from_enemy))
 	assert_false(runtime._conditions_met(when_source, player, from_player))
 
-# ---------- ① 先机诀：开战夺取，同修互抵 ----------
-
-func test_xianjijue_enemy_seizes_first_right() -> void:
-	var player := _fighter("p")
-	player.draw_pile = _pair_deck()
-	var enemy := _fighter("e", ["先机诀"], ["点星式"])
-	enemy.draw_pile = _wind(14, "e")
-	var tm := _start(player, enemy)
-	assert_eq(tm.combat.active_side, "enemy", "敌方先机诀：开战夺得第一次行动权")
-
-func test_xianjijue_mutual_cancel() -> void:
-	var player := _fighter("p", ["先机诀"])
-	player.draw_pile = _pair_deck()
-	var enemy := _fighter("e", ["先机诀"], ["点星式"])
-	enemy.draw_pile = _wind(14, "e")
-	var tm := _start(player, enemy)
-	assert_eq(tm.combat.active_side, "player", "双方同修：互抵无效，回落默认（玩家先）")
-	var text := "".join(tm.drain_messages())
-	assert_string_contains(text, "相抵")
+# ---------- ① 先机诀：开战夺取（玩家侧；敌方系统 v1 后敌方不装心法） ----------
 
 func test_xianjijue_recovers_from_ambush() -> void:
 	var player := _fighter("p", ["先机诀"])
 	player.draw_pile = _pair_deck()
-	var enemy := _fighter("e", [], ["点星式"])
-	enemy.draw_pile = _wind(14, "e")
+	var enemy := _fighter("e")
 	var tm := _start(player, enemy, true)
 	assert_eq(tm.combat.active_side, "player", "被袭击时先机诀夺回第一次行动权")
 
 func test_xianjijue_no_double_gain_at_start() -> void:
 	# 开局夺取只发一次 gain（夺取方），不给被夺方补发
-	var player := _fighter("p")
+	var player := _fighter("p", ["先机诀"])
 	player.draw_pile = _pair_deck()
-	var enemy := _fighter("e", ["先机诀"], ["点星式"])
-	enemy.draw_pile = _wind(14, "e")
+	var enemy := _fighter("e")
 	var combat := CombatState.new(player, enemy)
 	var gained: Array = []
 	combat.pipeline.register_hook({"carrier": "test", "on": "initiative_gain", "phase": "post", "priority": 0,
 		"handler": func(action: GameAction) -> void: gained.append((action.target as FighterState).fighter_id)})
 	var tm := TurnManager.new(combat)
-	tm.start_battle(false)
-	assert_eq(gained, ["e"], "只有夺取方获得一次 gain")
-
-# ---------- ② 长息诀：调息后提气次数+1，首次提气提 2 ----------
-
-func test_changxijue_grants_extra_lift_and_double_first() -> void:
-	var player := _fighter("p", ["长息诀"])
-	player.draw_pile = _wind(16, "p")
-	var enemy := _fighter("e", [], ["点星式"])
-	enemy.draw_pile = _wind(16, "e")
-	var tm := _start(player, enemy)
-	tm.player_breathe()
-	assert_eq(tm.combat.active_side, "enemy")
-	tm.enemy_act()
-	# 长息诀：本口气提气 2 次（1+加成）；第一次提 2 张
-	assert_eq(player.lift_allowance, 1, "调息后授予额外提气")
-	var size_before := player.hand.size()
-	tm.player_lift()
-	assert_eq(player.hand.size(), size_before + 2, "第一次提气提 2 张")
-	assert_eq(player.lifts_this_breath, 1)
-	tm.enemy_act()
-	size_before = player.hand.size()
-	tm.player_lift()
-	assert_eq(player.hand.size(), size_before + 1, "第二次提气提 1 张")
-	assert_eq(player.lifts_this_breath, 2)
-	# 第三次被限（基础1＋加成1已用完）
-	tm.enemy_act()
-	size_before = player.hand.size()
-	tm.player_lift()
-	assert_eq(player.hand.size(), size_before, "本口气提气次数用完")
-	# 再调息重置（RESOLVE 清零，POST 重新授予）
-	tm.player_breathe()
-	assert_eq(player.lift_allowance, 1, "新一口气重新授予")
-	assert_eq(player.lifts_this_breath, 0)
+	tm.start_battle(false, true)  # 被袭击＋玩家先机诀：夺取翻回玩家
+	assert_eq(gained, ["p"], "只有夺取方获得一次 gain")
 
 # ---------- 词表校验 ----------
 
@@ -256,7 +168,3 @@ func test_new_xinfa_rule_text_generated() -> void:
 	var text := XinfaRuntime.effect_text("先机诀")
 	assert_string_contains(text, "战斗开始时")
 	assert_string_contains(text, "夺取行动权")
-	var text3 := XinfaRuntime.effect_text("长息诀")
-	assert_string_contains(text3, "每次调息时")
-	assert_string_contains(text3, "本口气提气次数+1")
-	assert_string_contains(text3, "本口气第一次提气时")

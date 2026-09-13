@@ -3,8 +3,9 @@ extends GutTest
 func _card(attr: String, grade := 2) -> QiCard:
 	return QiCard.new("%s%d_%d" % [attr, grade, randi()], attr, grade)
 
-func test_technique_table_loads_nine_entries() -> void:
-	assert_eq(TechniqueResolver.technique_ids().size(), 9, "v1 基础功法九门")
+func test_technique_table_loads_player_entries() -> void:
+	# v1 九门通用功法 + 敌方系统 v2 青锋功法表四门（剑法派，共享同一功法池）
+	assert_eq(TechniqueResolver.technique_ids().size(), 13, "通用九门＋剑法四门")
 
 func test_unknown_technique_is_illegal() -> void:
 	assert_false(TechniqueResolver.can_use("不存在的功法", [_card("风")]))
@@ -80,41 +81,6 @@ func test_illegal_resolve_is_rejected() -> void:
 	var result := TechniqueResolver.resolve("连风式", [_card("火", 2)], user, target)
 	assert_false(bool(result.get("ok", false)))
 	assert_eq(target.hp, 99, "非法发动不应造成伤害")
-
-# ---------- M4 系别增幅与护具减伤 ----------
-
-# v1 九门全通用：任何兵器都不吃增幅
-func test_v1_techniques_never_amplified() -> void:
-	var user := FighterState.new("u", "掌客", 30)
-	user.weapon_school = "剑法"
-	user.weapon_level = 5
-	for tid in TechniqueResolver.technique_ids():
-		assert_eq(TechniqueResolver.technique_amp(TechniqueResolver.data_for(tid), user), 0, "%s 不吃兵器增幅" % tid)
-
-# 引擎规则仍保留系别增幅通路（将来门派功法用），用合成数据钉住
-func test_school_amp_logic_kept_for_future() -> void:
-	var user := FighterState.new("u", "刀客", 30)
-	user.weapon_school = "刀法"
-	user.weapon_level = 2
-	assert_eq(TechniqueResolver.technique_amp({"school": "刀法"}, user), 2)
-	assert_eq(TechniqueResolver.technique_amp({"school": "剑法"}, user), 0, "异系不增幅")
-	user.weapon_level = 0
-	assert_eq(TechniqueResolver.technique_amp({"school": "刀法"}, user), 0, "等级 0 不增幅")
-
-# 护具减伤：护境吸收后的余伤再减 armor_defend，最低 0
-func test_armor_defend_reduces_leaking_damage() -> void:
-	var fighter := FighterState.new("f", "穿甲", 30)
-	fighter.guard = 3
-	fighter.armor_defend = 2
-	var report: Dictionary = fighter.take_damage(10)
-	assert_eq(report["guard_damage"], 3, "护境先吸收")
-	assert_eq(report["hp_damage"], 5, "余伤 7 再被护具减 2")
-	assert_eq(fighter.hp, 25)
-	# 打不穿的攻击：护境全吸后护具再压到 0，不掉血
-	fighter.guard = 0
-	var chip: Dictionary = fighter.take_damage(1)
-	assert_eq(chip["hp_damage"], 0, "护具把 1 点余伤压到 0")
-	assert_eq(fighter.hp, 25)
 
 # 连风式双段：两段各自独立吃护境（第一段破盾，第二段直扣气血）
 func test_lianfeng_segments_hit_guard_separately() -> void:

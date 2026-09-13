@@ -15,9 +15,8 @@ func _snapshot(tm: TurnManager) -> Dictionary:
 		"player_draw": tm.combat.player.draw_pile.size(),
 		"enemy_hp": tm.combat.enemy.hp,
 		"enemy_guard": tm.combat.enemy.guard,
-		"enemy_hand": tm.combat.enemy.hand.map(func(c): return c.card_id),
+		"enemy_li": tm.combat.enemy.get_status("li"),
 		"intent": str(tm.enemy_intent.get("technique", "")),
-		"stalled": tm.battle_stalled,
 	}
 
 # 固定脚本策略：按固定功法顺序发动第一个可用功法，否则调息；敌方由 TurnManager 驱动。
@@ -64,10 +63,11 @@ func test_different_seeds_give_different_hands() -> void:
 	assert_ne(run_a[0]["player_hand"], run_b[0]["player_hand"], "不同种子的初始手牌应不同")
 
 func test_scripted_battle_reaches_a_result() -> void:
-	# 脚本化战斗应能在限定步数内分出结果（胜负或僵局），不会无限进行。
+	# 脚本化战斗应能在限定步数内分出胜负（敌方力量逐循环滚雪球＝软时钟，拖延必死），
+	# 不会无限进行。
 	var snapshots := _run_scripted_battle(12345, 200)
 	var last: Dictionary = snapshots[snapshots.size() - 1]
 	assert_true(
-		bool(last["stalled"]) or int(last["player_hp"]) <= 0 or int(last["enemy_hp"]) <= 0,
+		int(last["player_hp"]) <= 0 or int(last["enemy_hp"]) <= 0,
 		"200步内应结束战斗"
 	)

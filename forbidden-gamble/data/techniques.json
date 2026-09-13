@@ -134,5 +134,63 @@
         "base": 1
       }
     ]
+  },
+  "重盾式": {
+    "level": 1,
+    "school": "剑法",
+    "patterns": [
+      "ONE_QI"
+    ],
+    "effects": [
+      {
+        "type": "guard_cover",
+        "base": 10,
+        "scale": 2
+      }
+    ]
+  },
+  "磨刃式": {
+    "level": 1,
+    "school": "剑法",
+    "patterns": [
+      "ONE_QI"
+    ],
+    "effects": [
+      {
+        "type": "apply_status",
+        "status": "li",
+        "to": "self",
+        "base": 1
+      }
+    ]
+  },
+  "蓄势斩": {
+    "level": 1,
+    "school": "剑法",
+    "patterns": [
+      "HEAVY_2"
+    ],
+    "charge": 1,
+    "effects": [
+      {
+        "type": "damage",
+        "base": 8,
+        "scale": 4
+      }
+    ]
+  },
+  "窥隙脚": {
+    "level": 1,
+    "school": "剑法",
+    "patterns": [
+      "ONE_QI"
+    ],
+    "effects": [
+      {
+        "type": "damage",
+        "base": 2,
+        "scale": 1
+      }
+    ]
   }
 }

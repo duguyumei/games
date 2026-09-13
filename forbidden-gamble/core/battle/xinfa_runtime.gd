@@ -118,9 +118,6 @@ func _conditions_met(when: Dictionary, unit: FighterState, action: GameAction) -
 				owned_low += 1
 		if owned_low < int(grade_spec.get("count", 1)):
 			return false
-	# first_lift：本口气的第一次提气（长息诀"调息后的第一次提气"）
-	if when.has("first_lift") and unit.lifts_this_breath != 0:
-		return false
 	if when.has("xinfa_school_gte"):
 		var spec: Dictionary = when["xinfa_school_gte"]
 		if equipped_school_count(unit.xinfa, str(spec.get("school", ""))) < int(spec.get("count", 1)):
@@ -234,8 +231,7 @@ func _apply_do(do_dict: Dictionary, unit: FighterState, xf_id: String, action: G
 				action.context["keep_hand"] = true
 			_emit("【%s】气海无涯，真气不散。" % xf_id)
 		"lift_bonus":
-			# 长息诀：本口气提气次数 +value（纯被动记账，不弹行）
-			unit.lift_allowance += int(do_dict.get("value", 1))
+			pass  # 已退役（长息诀随提气删除，2026-09-13）；分支保留空壳防旧档数据报错
 		"qi_amount_bonus":
 			# 化浊诀：technique_prepare 的 PRE 改写本次真气量（amount_modifier 通道）
 			action.context["amount_modifier"] = int(action.context.get("amount_modifier", 0)) + int(do_dict.get("value", 0))
@@ -315,8 +311,6 @@ static func _when_text(when: Dictionary) -> String:
 	if when.has("grade_lte"):
 		var spec: Dictionary = when["grade_lte"]
 		parts.append("选入≥%d张品级≤%d的真气时" % [int(spec.get("count", 1)), int(spec.get("grade", 1))])
-	if when.has("first_lift"):
-		parts.append("本口气第一次提气时")
 	if when.has("xinfa_school_gte"):
 		var spec: Dictionary = when["xinfa_school_gte"]
 		parts.append("装备≥%d门%s系心法时" % [int(spec.get("count", 1)), str(spec.get("school", ""))])
@@ -366,7 +360,7 @@ static func _do_text(do_dict: Dictionary) -> String:
 			var draws := int(do_dict.get("draws", 3))
 			return "调息不再弃置手牌，改为从丹田提%d张（手牌净涨）" % draws
 		"lift_bonus":
-			return "本口气提气次数+%d" % int(do_dict.get("value", 1))
+			return "（已退役）本口气提气次数+%d" % int(do_dict.get("value", 1))
 		"qi_amount_bonus":
 			return "本次真气量+%d" % int(do_dict.get("value", 0))
 		"apply_status":

@@ -2,7 +2,7 @@ extends Node
 # M8 顶栏验收（C-017）：
 # 1) 结构：TopBar 在列首、旧 LogStrip/TurnInfo 已删、总高恰好 720（36+350+110+224）
 # 2) 沙盒上下文 + 回合·行动方（金色"你的行动"）
-# 3) 顶栏战报行随提气更新
+# 3) 顶栏战报行随调息更新
 # 4) 设置弹窗：演出速度三档切换 _pace、当前档禁用
 # 5) 点弹窗外任意处关闭设置弹窗（不与顶栏重叠）
 # 6) ESC 收弹窗
@@ -47,11 +47,12 @@ func _ready() -> void:
 	# --- 3) 战报行随事件更新 ---
 	var log_line: Label = main.get_node("Center/Column/TopBar/Bar/LogLine")
 	var log_before := log_line.text
-	main._on_lift_pressed()
+	main._on_breathe_pressed()
+	main.confirm_breathe()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	if log_line.text == log_before or log_line.text.strip_edges().is_empty():
-		fails.append("[3] 提气后顶栏战报行未更新（'%s'）" % log_line.text)
+		fails.append("[3] 调息后顶栏战报行未更新（'%s'）" % log_line.text)
 	print("[3] 战报行 '%s' → '%s'" % [log_before, log_line.text])
 	while main.sequencer.busy:
 		await get_tree().process_frame

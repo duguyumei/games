@@ -98,29 +98,10 @@ text = "三、内功五槽（点击槽位换内功）"
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="WearTitle" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "四、随身装备（演武场无耐久）"
-
-[node name="WearRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="WeaponPick" type="OptionButton" parent="Margin/VBox/Body/RightScroll/Right/WearRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-custom_minimum_size = Vector2(0, 36)
-
-[node name="ArmorPick" type="OptionButton" parent="Margin/VBox/Body/RightScroll/Right/WearRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-custom_minimum_size = Vector2(0, 36)
-
 [node name="QiTitle" type="Label" parent="Margin/VBox/Body/RightScroll/Right"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 20
-text = "五、真气牌组（数量不限）"
+text = "四、真气牌组（数量不限）"
 
 [node name="FengRow" type="HBoxContainer" parent="Margin/VBox/Body/RightScroll/Right"]
 layout_mode = 2

@@ -80,38 +80,9 @@ position = Vector2(104, 42)
 size = Vector2(1080, 36)
 theme_override_styles/panel = SubResource("channel_bg")
 
-[node name="Socket1" type="Panel" parent="."]
+[node name="SocketTemplate" type="Panel" parent="."]
+visible = false
 position = Vector2(388, 36)
-size = Vector2(48, 48)
-theme_override_styles/panel = SubResource("socket_bg")
-
-[node name="Socket2" type="Panel" parent="."]
-position = Vector2(464, 36)
-size = Vector2(48, 48)
-theme_override_styles/panel = SubResource("socket_bg")
-
-[node name="Socket3" type="Panel" parent="."]
-position = Vector2(540, 36)
-size = Vector2(48, 48)
-theme_override_styles/panel = SubResource("socket_bg")
-
-[node name="Socket4" type="Panel" parent="."]
-position = Vector2(616, 36)
-size = Vector2(48, 48)
-theme_override_styles/panel = SubResource("socket_bg")
-
-[node name="Socket5" type="Panel" parent="."]
-position = Vector2(692, 36)
-size = Vector2(48, 48)
-theme_override_styles/panel = SubResource("socket_bg")
-
-[node name="Socket6" type="Panel" parent="."]
-position = Vector2(768, 36)
-size = Vector2(48, 48)
-theme_override_styles/panel = SubResource("socket_bg")
-
-[node name="Socket7" type="Panel" parent="."]
-position = Vector2(844, 36)
 size = Vector2(48, 48)
 theme_override_styles/panel = SubResource("socket_bg")
 

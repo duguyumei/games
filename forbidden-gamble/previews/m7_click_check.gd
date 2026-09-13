@@ -21,8 +21,7 @@ func _ready() -> void:
 	var panel: FighterPanel = main.get_node("Center/Column/Stage/PlayerPanel")
 	var confirm: Button = main.get_node("Center/Column/Stage/CenterZone/Buttons/ConfirmButton")
 	var cancel: Button = main.get_node("Center/Column/Stage/CenterZone/Buttons/CancelButton")
-	var pass_btn: Button = main.get_node("Center/Column/Stage/CenterZone/Buttons/PassButton")
-	var close_btn: Button = main.get_node("Center/Column/Stage/CenterZone/Buttons/BreatheButton")
+	var breathe_btn: Button = main.get_node("Center/Column/Stage/CenterZone/Buttons/BreatheButton")
 	var meld: Label = main.get_node("Center/Column/HandLayer/MeldInfo")
 
 	# 主角功法：非蓄力、当前手牌能凑出的第一门（沙盒种子固定，选取确定）
@@ -47,9 +46,9 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# --- 0) 按钮组互换：未装配＝[调息][提气]，装配＝[确认][取消]（C-018/D-063） ---
-	if not pass_btn.visible or not close_btn.visible or confirm.visible or cancel.visible:
-		fails.append("[0] 未装配时应显示[调息][提气]、隐藏[确认][取消]")
+	# --- 0) 按钮组互换：未装配＝[调息]，装配＝[确认][取消]（B2 后无提气按钮） ---
+	if not breathe_btn.visible or confirm.visible or cancel.visible:
+		fails.append("[0] 未装配时应显示[调息]、隐藏[确认][取消]")
 
 	# --- 1) 无预选：点一次功法 → 智能补齐 → 直接待确认 ---
 	await _click_async(_center_of(card))
@@ -68,14 +67,14 @@ func _ready() -> void:
 	print("[1] 单击装配：%s selected=%s 准备槽='%s' 确认可用=%s 压灰检查=%s（%s）" % [
 		tech_id, main.selected_indices, panel.intent_name, not confirm.disabled,
 		blocked_id if blocked_id.is_empty() else "有", blocked_id])
-	if not confirm.visible or not cancel.visible or pass_btn.visible or close_btn.visible:
-		fails.append("[1] 装配后应显示[确认][取消]、隐藏[调息][提气]")
+	if not confirm.visible or not cancel.visible or breathe_btn.visible:
+		fails.append("[1] 装配后应显示[确认][取消]、隐藏[调息]")
 
 	# --- 2) 取消，预选一颗可参与的珠再点功法 → 带入并围绕它补齐 ---
 	main._cancel_pending()
 	await get_tree().process_frame
-	if not pass_btn.visible or not close_btn.visible or confirm.visible or cancel.visible:
-		fails.append("[2] 取消后应回到[调息][提气]")
+	if not breathe_btn.visible or confirm.visible or cancel.visible:
+		fails.append("[2] 取消后应回到[调息]")
 	var anchor: QiCard = legal[0]
 	var anchor_index: int = fighter.hand.find(anchor)
 	await _click_async(_center_of(hand._runtime_orbs[anchor_index]))

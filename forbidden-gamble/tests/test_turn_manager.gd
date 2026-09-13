@@ -1,17 +1,52 @@
 extends GutTest
 
-# 行动权模型（26 号 §11，D-063 换轴）：行动权是唯一时序令牌——无大回合、无收势。
-# 原子行动（功法/调息/提气）结束即转让；调息＝弃全部手牌入气海再纳 HAND_SIZE 口；
-# 提气＝交权从丹田提 1 张、每口气限 1 次（调息重置）；僵局保险＝连续无功法动作
-# （提气＋调息）累计到上限判平局（视同败北）。牌堆从尾部抽牌；start_battle(false) 关洗牌。
+# 行动权判定制：行动权是标记，每次原子行动后重新判定——首拍玩家优先（被袭击反转），
+# 后续非前手优先；逐候选查破绽（有则消耗＋跳过）。敌方＝同核对手卡（敌方系统 v2：
+# 发动功法与调息，行为链梯驱动）。破盾＝纯物理不给破绽（钩子与压制动词是仅有的
+# 破绽铸币厂）。牌堆从尾部抽牌；start_battle(false) 关洗牌保证确定性。
 
-func _fighter(id: String, techniques: Array, priority: Array = []) -> FighterState:
-	var fighter := FighterState.new(id, id, 30)
-	fighter.techniques.assign(techniques)
-	fighter.ai_priority.assign(priority)
-	return fighter
+const LOOP_DEF := {
+	"breathe_policy": "all",
+	"hand": [
+		{"id": "e1", "attribute": "山", "grade": "下品"},
+		{"id": "e2", "attribute": "山", "grade": "下品"},
+	],
+	"deck": [
+		{"id": "e3", "attribute": "山", "grade": "下品"},
+		{"id": "e4", "attribute": "山", "grade": "下品"},
+	],
+	"ladder": [
+		{"technique": "重盾式", "when": {"guard_lt": 3}},
+		{"technique": "调息"},
+	],
+	"hooks": [],
+}
 
-# specs：["风2","火3",...]＝属性＋品级数字
+const FLURRY_DEF := {
+	"breathe_policy": "all",
+	"hand": [
+		{"id": "e1", "attribute": "风", "grade": "下品"},
+		{"id": "e2", "attribute": "风", "grade": "下品"},
+	],
+	"deck": [
+		{"id": "e3", "attribute": "风", "grade": "下品"},
+		{"id": "e4", "attribute": "风", "grade": "下品"},
+	],
+	"ladder": [{"technique": "连风式"}, {"technique": "调息"}],
+	"hooks": [],
+}
+
+const SMASH_DEF := {
+	"breathe_policy": "all",
+	"hand": [{"id": "e1", "attribute": "风", "grade": "上品"}],
+	"deck": [
+		{"id": "e2", "attribute": "风", "grade": "上品"},
+		{"id": "e3", "attribute": "风", "grade": "上品"},
+	],
+	"ladder": [{"technique": "点星式"}, {"technique": "调息"}],
+	"hooks": [],
+}
+
 func _cards(specs: Array, prefix: String) -> Array:
 	var cards: Array = []
 	var index := 0
@@ -26,11 +61,19 @@ func _wind(count: int, grade: int, prefix: String) -> Array:
 		specs.append("风%d" % grade)
 	return _cards(specs, prefix)
 
-func _start(player_deck: Array, enemy_deck: Array, enemy_first := false) -> TurnManager:
-	var player := _fighter("p", ["点星式", "二重·壁"])
-	player.draw_pile = player_deck
-	var enemy := _fighter("e", ["连风式", "点星式"], ["连风式", "点星式"])
-	enemy.draw_pile = enemy_deck
+func _player(deck: Array) -> FighterState:
+	var fighter := FighterState.new("p", "p", 30)
+	fighter.techniques.assign(["点星式", "二重·壁"])
+	fighter.draw_pile = deck
+	return fighter
+
+func _enemy(def: Dictionary, hp := 26) -> FighterState:
+	var fighter := FighterState.new("e", "e", hp)
+	fighter.enemy_def = def
+	EncounterLoader.fill_enemy_body(fighter, def)
+	return fighter
+
+func _start(player: FighterState, enemy: FighterState, enemy_first := false) -> TurnManager:
 	var tm := TurnManager.new(CombatState.new(player, enemy))
 	tm.start_battle(false, enemy_first)
 	return tm
@@ -38,20 +81,21 @@ func _start(player_deck: Array, enemy_deck: Array, enemy_first := false) -> Turn
 # ---------- 开战与第一次行动权 ----------
 
 func test_start_battle_draws_six_and_player_holds_right() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	assert_eq(tm.combat.player.hand.size(), 6, "起手各纳 6 口（HAND_SIZE=6）")
-	assert_eq(tm.combat.enemy.hand.size(), 6)
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	assert_eq(tm.combat.player.hand.size(), 6, "起手纳 6 口（HAND_SIZE=6）")
+	assert_eq(tm.combat.enemy.hand.size(), 2, "敌方起手手牌 authored（本卡 2 口）")
 	assert_eq(tm.combat.active_side, "player", "默认玩家持有第一次行动权")
-	assert_eq(str(tm.enemy_intent.get("technique", "PASS")), "连风式", "开战即锁敌方意图")
+	assert_eq(str(tm.enemy_intent.get("technique", "")), "重盾式", "开战即锁敌方意图（梯顶）")
+	assert_eq(str(tm.enemy_intent.get("label", "")), "重盾式")
 
 func test_ambush_gives_enemy_first_right() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"), true)
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF), true)
 	assert_eq(tm.combat.active_side, "enemy", "被袭击＝敌方获得第一次行动权")
 
-# ---------- 原子行动与行动权流转 ----------
+# ---------- 原子行动与判定 ----------
 
-func test_player_act_transfers_right() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
+func test_player_act_transfers_to_non_previous() -> void:
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
 	var selection := TechniqueResolver.find_legal_selection("二重·壁", tm.combat.player.hand)
 	assert_false(selection.is_empty(), "手牌应含同属性对")
 	var result := tm.player_act("二重·壁", selection)
@@ -59,189 +103,176 @@ func test_player_act_transfers_right() -> void:
 	assert_eq(tm.combat.player.guard, 11, "两张中品量2：7+2×2")
 	assert_eq(tm.combat.player.hand.size(), 4, "用过的真气离开手牌")
 	assert_eq(tm.combat.player.discard_pile.size(), 2, "选入真气散入气海")
-	assert_eq(tm.combat.active_side, "enemy", "行动结束即转让行动权")
+	assert_eq(tm.combat.active_side, "enemy", "行动结束判定给非前手")
 
 func test_enemy_act_executes_locked_intent() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	tm.player_lift()
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	tm.player_breathe()
 	assert_eq(tm.combat.active_side, "enemy")
 	tm.enemy_act()
-	# 连风式两张中品：量2、每段 4+2=6、双段 12
-	assert_eq(tm.combat.player.hp, 18, "敌方连风式双段共 12 点伤害")
-	assert_eq(tm.combat.active_side, "player", "敌方行动后行动权回到玩家")
+	assert_eq(tm.combat.enemy.guard, 10, "敌方第一招＝盾 10")
+	assert_eq(tm.combat.active_side, "player", "敌方行动后判定给玩家")
 
 func test_player_act_when_not_holder_rejected() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"), true)
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF), true)
 	var result := tm.player_act("点星式", [tm.combat.player.hand[0]])
 	assert_false(bool(result.get("ok", false)), "不持有行动权不能行动")
 
-# ---------- 调息（吐故纳新） ----------
+# ---------- 调息（B2：弃任意张，纳至六口） ----------
 
 func test_breathe_discards_hand_and_draws_six() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
 	var used := tm.combat.player.hand.duplicate()
 	tm.player_breathe()
-	assert_eq(tm.combat.player.hand.size(), 6, "调息后纳满 6 口")
+	assert_eq(tm.combat.player.hand.size(), 6, "无参调息＝弃全部，纳满 6 口")
 	assert_eq(tm.combat.player.discard_pile.size(), 6, "旧手牌全部吐入气海")
 	for card in used:
 		assert_false(tm.combat.player.hand.has(card), "吐故之气不应还在手上")
 	assert_eq(tm.combat.player_breath_count, 1, "玩家气口计数 +1")
-	assert_eq(tm.combat.active_side, "enemy", "调息立即转让行动权（链条终点）")
+	assert_eq(tm.combat.active_side, "enemy", "调息后判定给敌方（喘气也是花）")
 
 func test_breathe_reshuffles_discard_when_draw_pile_empty() -> void:
 	# 10 张牌：起手 6 张用 2 张后调息——丹田剩 2 张不够纳 6，洗气海续
-	var tm := _start(_wind(10, 2, "p"), _wind(12, 2, "e"))
+	var tm := _start(_player(_wind(10, 2, "p")), _enemy(LOOP_DEF))
 	var selection := TechniqueResolver.find_legal_selection("二重·壁", tm.combat.player.hand)
 	tm.player_act("二重·壁", selection)
 	tm.enemy_act()
 	tm.player_breathe()
 	assert_eq(tm.combat.player.hand.size(), 6, "丹田不足洗气海续纳")
 
-# ---------- 提气（原暂让） ----------
+func test_breathe_partial_discard_keeps_unselected() -> void:
+	# B2 核心：弃 2 保 4——留下要攒的半成品，洗掉废牌，纳回 6 口
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	var kept: Array = [tm.combat.player.hand[1], tm.combat.player.hand[3], tm.combat.player.hand[4], tm.combat.player.hand[5]]
+	tm.player_breathe([0, 2])
+	assert_eq(tm.combat.player.discard_pile.size(), 2, "只有所选两口入气海")
+	assert_eq(tm.combat.player.hand.size(), 6, "纳至六口")
+	for card in kept:
+		assert_true(tm.combat.player.hand.has(card), "未选真气留在手上")
+	assert_eq(tm.combat.active_side, "enemy", "调息让权")
 
-func test_lift_draws_one_and_transfers() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	var before := tm.combat.player.hand.size()
-	tm.player_lift()
-	assert_eq(tm.combat.player.hand.size(), before + 1, "提气从丹田提 1 张（不弃手牌）")
-	assert_eq(tm.combat.active_side, "enemy")
-	assert_eq(tm.combat.player.draw_pile.size(), 12 - 6 - 1)
-
-func test_lift_limited_once_per_breath() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	tm.player_lift()
-	var before := tm.combat.player.hand.size()
-	assert_eq(tm.combat.player.lifts_this_breath, 1, "本口气已提过")
-	tm.player_lift()
-	assert_eq(tm.combat.player.hand.size(), before, "同一口气第二次提气无效")
-	assert_eq(tm.combat.active_side, "enemy", "无效提气不产生新行动")
-
-func test_lift_reset_by_breathe() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	tm.player_lift()
-	assert_eq(tm.combat.player.lifts_this_breath, 1)
+func test_breathe_zero_discard_only_refills() -> void:
+	# 弃 0 张＝只补不弃（原提气用途）：打完功法手牌 4，补回 6，一张不弃
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	var selection := TechniqueResolver.find_legal_selection("二重·壁", tm.combat.player.hand)
+	tm.player_act("二重·壁", selection)
 	tm.enemy_act()
-	tm.player_breathe()
-	assert_eq(tm.combat.player.lifts_this_breath, 0, "调息重置提气次数")
-	tm.enemy_act()
-	var size_after_breath := tm.combat.player.hand.size()
-	tm.player_lift()
-	assert_eq(tm.combat.player.hand.size(), size_after_breath + 1, "新一口气可再提气")
+	var kept := tm.combat.player.hand.duplicate()
+	var qi_hai_before := tm.combat.player.discard_pile.size()
+	tm.player_breathe([])
+	assert_eq(tm.combat.player.hand.size(), 6, "补至六口")
+	for card in kept:
+		assert_true(tm.combat.player.hand.has(card), "一口没弃，全数在手")
+	assert_eq(tm.combat.player.discard_pile.size(), qi_hai_before, "弃 0 张不进气海")
+	assert_eq(tm.combat.active_side, "enemy", "让权照常")
 
-# ---------- 气持有即保留（无回合末自动回收） ----------
+func test_breathe_unlimited_no_per_breath_gate() -> void:
+	# 不限次：连续调息每拍都成立（限速器＝让权代价，不是次数条）
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	tm.player_breathe([])
+	tm.enemy_act()
+	tm.player_breathe([])
+	assert_eq(tm.combat.active_side, "enemy", "第二次调息同样成立并让权")
+
+# ---------- 气持有即保留 ----------
 
 func test_cards_held_across_actions() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	tm.player_lift()
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	tm.player_breathe([])  # 弃 0 张让权：手牌原样
 	var held = tm.combat.player.hand[0]
 	tm.enemy_act()
 	assert_true(tm.combat.player.hand.has(held), "捏着的气不散（无自动回收）")
-	assert_eq(tm.combat.player.hand.size(), 7, "提气 +1 后手牌保持")
+	assert_eq(tm.combat.player.hand.size(), 6, "弃 0 调息后手牌保持六口")
 
-# ---------- 僵局保险 ----------
+# ---------- 破绽与判定制 ----------
 
-func _stuck_start() -> TurnManager:
-	# 双方都无力法可用：玩家提气/调息空转；敌方无任何功法（提一次后只剩调息）
-	var player := _fighter("p", [])
-	player.draw_pile = _wind(12, 2, "p")
-	var enemy := _fighter("e", [])
-	enemy.draw_pile = _wind(12, 2, "e")
-	var tm := TurnManager.new(CombatState.new(player, enemy))
-	tm.start_battle(false)
-	return tm
-
-func test_idle_actions_end_in_draw() -> void:
-	var tm := _stuck_start()
-	var rounds := 0
-	while not tm.is_over() and rounds < 30:
-		if tm.combat.player.lifts_this_breath >= 1:
-			tm.player_breathe()
-		else:
-			tm.player_lift()
-		if tm.is_over():
-			break
-		tm.enemy_act()
-		rounds += 1
-	assert_true(tm.battle_stalled, "双方僵持应触发平局保险")
-	assert_true(tm.is_over())
-
-func test_technique_action_resets_idle_counter() -> void:
-	var player := _fighter("p", ["点星式"])
-	player.draw_pile = _wind(12, 2, "p")
-	var enemy := _fighter("e", [])
-	enemy.draw_pile = _wind(12, 2, "e")
-	var tm := TurnManager.new(CombatState.new(player, enemy))
-	tm.start_battle(false)
-	for _step in range(5):
-		if tm.combat.player.lifts_this_breath >= 1:
-			tm.player_breathe()
-		else:
-			tm.player_lift()
-		if tm.is_over():
-			break
-		tm.enemy_act()
-	assert_false(tm.is_over(), "互让远未到僵局上限")
+func test_flaw_skips_and_consumes() -> void:
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	tm.combat.enemy.flawed = true
 	tm.player_act("点星式", [tm.combat.player.hand[0]])
-	# 功法发动重置 idle 计数——之后再让几轮也不该立即僵局
-	for _step in range(5):
-		if tm.combat.player.lifts_this_breath >= 1:
-			tm.player_breathe()
-		else:
-			tm.player_lift()
-		if tm.is_over():
-			break
-		tm.enemy_act()
-	assert_false(tm.is_over(), "功法行动重置僵局计数")
+	assert_eq(tm.combat.active_side, "player", "敌方破绽：跳过一次获得行动权，玩家连动")
+	assert_false(tm.combat.enemy.flawed, "破绽即查即耗")
+	tm.player_act("点星式", [tm.combat.player.hand[0]])
+	assert_eq(tm.combat.active_side, "enemy", "破绽只跳一拍——下一次判定照常轮流")
 
-# ---------- 敌方空转 ----------
-
-func test_enemy_breathes_when_no_legal_technique() -> void:
-	# 意图直接注入"调息"：验证敌方调息吐故纳新并交权
-	var tm := _stuck_start()
-	tm.enemy_intent = {"action": "breathe"}
-	tm.combat.active_side = "enemy"
-	var before := tm.combat.enemy.discard_pile.size()
+func test_guard_shatter_is_pure_physics_no_flaw() -> void:
+	# 敌方系统 v2 修订：破盾＝纯物理（漏血），不给破绽——敌方 12 点砸穿玩家 11 盾后
+	# 行动权照常轮流回玩家（破绽铸币厂只剩钩子与压制动词）。
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(SMASH_DEF))
+	tm.combat.player.guard = 11
+	tm.player_breathe([])
 	tm.enemy_act()
-	assert_eq(tm.combat.enemy.discard_pile.size(), before + 6, "敌方调息吐故 6 口入气海")
-	assert_eq(tm.combat.enemy.hand.size(), 6, "敌方纳新 6 口")
-	assert_eq(tm.combat.active_side, "player")
+	assert_eq(tm.combat.player.guard, 0, "护盾被击碎")
+	assert_eq(tm.combat.player.hp, 29, "溢出 1 点扣气血")
+	assert_false(tm.combat.player.flawed, "破盾不给破绽")
+	assert_eq(tm.combat.active_side, "player", "判定照常轮流")
 
-func test_enemy_intent_locks_lift_then_breathe_when_stuck() -> void:
-	var tm := _stuck_start()
-	tm.player_breathe()
-	assert_eq(str(tm.enemy_intent.get("action", "")), "lift_qi", "敌方无合法功法应先锁提气意图")
-	# 敌方提气一次后，下一口气内只剩调息
+func test_guard_shatter_via_player_attack_grants_no_flaw() -> void:
+	# 玩家用上品点星（6+3×2=12）击碎敌方 10 盾：纯物理——无钩子的卡不吃破绽
+	var tm := _start(_player(_wind(12, 3, "p")), _enemy(LOOP_DEF))
+	tm.player_breathe([])
+	tm.enemy_act()  # 梯顶：重盾式 → 盾 10
+	assert_eq(tm.combat.enemy.guard, 10)
+	tm.player_act("点星式", [tm.combat.player.hand[0]])
+	assert_eq(tm.combat.enemy.guard, 0, "敌方护盾被击碎")
+	assert_eq(tm.combat.enemy.hp, 24, "溢出 2 点扣气血")
+	assert_false(tm.combat.enemy.flawed, "无乱钩的卡：破盾不产生破绽")
+	assert_eq(tm.combat.active_side, "enemy", "判定照常轮流")
+
+func test_no_shatter_when_guard_already_zero() -> void:
+	# 护境已归零再挨打＝无盾可碎，不触发破绽
+	var tm := _start(_player(_wind(12, 3, "p")), _enemy(LOOP_DEF))
+	tm.player_act("点星式", [tm.combat.player.hand[0]])
+	assert_false(tm.combat.enemy.flawed, "无护盾可破：不产生破绽")
+	assert_eq(tm.combat.active_side, "enemy", "判定照常轮流")
+
+func test_guard_remove_is_not_shatter() -> void:
+	# 拆除（guard_remove）是拆不是碎——不触发破绽
+	var player := _player([])
+	var enemy := _enemy(LOOP_DEF)
+	enemy.guard = 5
+	var combat := CombatState.new(player, enemy)
+	combat.pipeline.submit(GameAction.new("guard_remove", enemy, 5, player))
+	assert_eq(enemy.guard, 0, "护境被拆除")
+	assert_false(enemy.flawed, "拆除不触发破绽")
+
+func test_multi_hit_shatters_on_breaking_segment() -> void:
+	# 段破段触发：玩家 3 盾挨连风式双段——第一段打碎护盾那一刻触发破盾事件（纯物理，
+	# 无钩子不生破绽），第二段直落气血
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(FLURRY_DEF))
+	tm.combat.player.guard = 3
+	tm.player_breathe([])
 	tm.enemy_act()
-	assert_eq(str(tm.enemy_intent.get("action", "")), "breathe", "已提过气则锁定调息意图")
+	assert_eq(tm.combat.player.guard, 0)
+	assert_eq(tm.combat.player.hp, 25, "两段各 4（风下品对量0）：碎 3 盾后 1+4 落气血")
+	assert_eq(tm.combat.active_side, "player", "无破绽：判定照常轮流")
 
-# ---------- 行动权点位与压制引擎钩子 ----------
+func test_both_flawed_burns_both() -> void:
+	# 双破绽（将来机制可能造成）：两候选各烧一个，回到队首非前手获得
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	tm.combat.player.flawed = true
+	tm.combat.enemy.flawed = true
+	tm.player_act("点星式", [tm.combat.player.hand[0]])
+	assert_eq(tm.combat.active_side, "enemy", "双方各烧一个破绽后，非前手（敌方）获得")
+	assert_false(tm.combat.player.flawed)
+	assert_false(tm.combat.enemy.flawed)
 
-func test_initiative_points_fire_on_transfer() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
+# ---------- 行动权点位 ----------
+
+func test_initiative_points_fire_on_gain() -> void:
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
 	var gained: Array = []
 	tm.combat.pipeline.register_hook({"carrier": "test", "on": "initiative_gain", "phase": "post", "priority": 0,
 		"handler": func(action: GameAction) -> void: gained.append((action.target as FighterState).fighter_id)})
-	tm.player_lift()
-	assert_eq(gained, ["e"], "行动权移交后新持有方收到 initiative_gain")
-
-func test_transfer_cancel_keeps_right() -> void:
-	# 压制引擎钩子（D-064）：PRE 取消移交动作（仅功法类行动有效）→ 行动权保留
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	tm.combat.pipeline.register_hook({"carrier": "test", "on": "initiative_transfer", "phase": "pre", "priority": 0,
-		"handler": func(action: GameAction) -> void: action.cancelled = true})
-	tm.player_act("点星式", [tm.combat.player.hand[0]])
-	assert_eq(tm.combat.active_side, "player", "取消移交＝压制：行动权保留")
-	tm.drain_messages()
-	# 调息后不可保留：调息永远是链条终点（引擎铁律覆盖取消）
-	tm.player_breathe()
-	assert_eq(tm.combat.active_side, "enemy", "调息后取消被驳回（链条终点）")
+	tm.player_breathe([])
+	assert_eq(gained, ["e"], "判定落定后新持有方收到 initiative_gain")
 
 # ---------- 度量计数 ----------
 
 func test_action_and_breath_counters() -> void:
-	var tm := _start(_wind(12, 2, "p"), _wind(12, 2, "e"))
-	tm.player_lift()         # 行动1
-	tm.enemy_act()           # 行动2（功法）
-	tm.player_breathe()      # 行动3、玩家气口1
+	var tm := _start(_player(_wind(12, 2, "p")), _enemy(LOOP_DEF))
+	tm.player_breathe([])     # 行动1（弃 0 张也是调息）
+	tm.enemy_act()            # 行动2
+	tm.player_breathe()       # 行动3
 	assert_eq(tm.combat.action_count, 3)
-	assert_eq(tm.combat.player_breath_count, 1)
+	assert_eq(tm.combat.player_breath_count, 2, "两次调息两口气的计数")

@@ -1,6 +1,6 @@
 extends Node
 # 敌方连拍演出 + 终局结算浮层验收：
-# 1) 玩家提气把行动权交给敌方后，演出链进入 busy 态（不是一帧内全结算完）
+# 1) 玩家调息把行动权交给敌方后，演出链进入 busy 态（不是一帧内全结算完）
 # 2) 敌方出手有节奏（浮层出现时间 ≥ 一拍停顿），期间面板/日志已更新
 # 3) 玩家被击倒 → 终局浮层弹出：败北标题 + 致命一击 + 重开按钮（沙盒）
 # 4) 重开一场 → 浮层收起、新战斗就绪（第 1 回合、满气血）
@@ -16,18 +16,18 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# --- 1) 演出链 busy：提气后敌方回合应进入逐条演出态 ---
+	# --- 1) 演出链 busy：调息让权后敌方回合应进入逐条演出态 ---
 	main.combat.player.hp = 1
 	var started := Time.get_ticks_msec()
-	main._on_lift_pressed()
+	main._on_breathe_pressed()
+	main.confirm_breathe()
 	await get_tree().process_frame
 	if not main.sequencer.busy:
 		fails.append("[1] 敌方回合未进入演出 busy 态")
 	var banner_during: String = main.get_node("Center/Column/TopBar/Bar/TurnLabel").text
-	print("[1] 提气后 busy=%s 顶栏回合行='%s'" % [main.sequencer.busy, banner_during])
+	print("[1] 调息让权后 busy=%s 顶栏回合行='%s'" % [main.sequencer.busy, banner_during])
 
 	# 敌方偶尔锁防御意图时不掉血：最多再试两轮，每轮前压到 1 血保证致死。
-	# 提气每口气限 1 次，重试改用调息交权（调息同时重置提气次数）。
 	for attempt in range(2):
 		if main.turn_manager.is_over():
 			break
@@ -38,6 +38,7 @@ func _ready() -> void:
 		main.combat.player.hp = 1
 		started = Time.get_ticks_msec()
 		main._on_breathe_pressed()
+		main.confirm_breathe()
 		await get_tree().process_frame
 
 	# --- 2)+3) 等终局浮层（演出一拍 + 终局停一拍后弹出） ---

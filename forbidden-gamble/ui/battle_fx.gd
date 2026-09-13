@@ -21,6 +21,7 @@ var pace := 1.0
 var _stage: Control
 var _hand: HandBar
 var _player_panel: FighterPanel
+var _enemy_panel: FighterPanel
 # 演出节点的挂载层（全屏、忽略鼠标）：必须 OUTSIDE Column——横幅/幽灵/飘字若是
 # VBox 的直接子节点，会被容器当布局孩子排位（横幅 52px 最小高把列撑到 772，
 # 顶栏被切、功法层沉底、横幅自己被排到列尾贴底）。battle.gd 注入。
@@ -32,10 +33,11 @@ var _banner_tween: Tween
 # ctx：{side, technique, used_qi（含起飞坐标与颜色的快照）}
 var _effects := {}
 
-func setup(stage: Control, hand: HandBar, player_panel: FighterPanel, fx_layer: Control = null) -> void:
+func setup(stage: Control, hand: HandBar, player_panel: FighterPanel, fx_layer: Control = null, enemy_panel: FighterPanel = null) -> void:
 	_stage = stage
 	_hand = hand
 	_player_panel = player_panel
+	_enemy_panel = enemy_panel
 	_fx_layer = fx_layer
 
 func register_effect(technique_id: String, effect: Callable) -> void:
@@ -63,10 +65,39 @@ func play_message(message: String, used_qi: Array = [], hand_colors: Array = [])
 				"side": "enemy", "technique": technique, "used_qi": used_qi})
 		else:
 			technique_banner("enemy", technique)
+	elif message.contains("改招"):
+		# 乱钩翻牌（敌方系统 v2）：盾碎瞬间慌忙换招——闪光＋抖动＋飘字（贴事件原位）
+		var flip_panel := _panel_for(message)
+		if flip_panel != null:
+			flip_panel.flash_guard_break()
+			_float_text("改招！", flip_panel, Color(0.98, 0.82, 0.6), 26)
+	elif message.contains("改出"):
+		# 应钩翻牌：它抓住你的空隙改出应手——敌方亮招＋我方破绽双闪
+		var counter_panel := _panel_for(message)
+		if counter_panel != null:
+			counter_panel.flash_flaw()
+			_float_text("改出！", counter_panel, Color(0.98, 0.62, 0.5), 26)
+		if _player_panel != null:
+			_player_panel.flash_flaw()
+	elif message.contains("护境被击碎"):
+		# 破盾先于破绽匹配（同一条消息两个词都含）：闪光＋抖动＋飘字
+		var guard_panel := _panel_for(message)
+		if guard_panel != null:
+			guard_panel.flash_guard_break()
+			_float_text("护境碎！", guard_panel, Color(0.75, 0.88, 1.0), 24)
+	elif message.contains("露出破绽，错失一拍"):
+		var flaw_panel := _panel_for(message)
+		if flaw_panel != null:
+			flaw_panel.flash_flaw()
+			_float_text("破绽！", flaw_panel, BP.COLOR_GOLD, 26)
 	elif message.contains("双方各抽") and not message.contains("第1回合"):
 		_draw_flow(hand_colors)
 	elif message.begins_with("剩余真气收回丹田"):
 		_recycle_flow()
+
+# 消息归属面板：以"你"开头的消息归我方，其余（名字开头）归敌方。
+func _panel_for(message: String) -> FighterPanel:
+	return _player_panel if message.begins_with("你") else _enemy_panel
 
 # 抽牌流入：丹田 → 各孔位（状态已更新，取的正是新手牌）。
 func _draw_flow(colors: Array) -> void:
@@ -178,6 +209,27 @@ func heal_feedback(before: int, after: int, panel: FighterPanel) -> void:
 	floater.add_theme_font_size_override("font_size", 24)
 	floater.add_theme_color_override("font_color", BP.COLOR_GOLD)
 	floater.position = rect.position + Vector2(rect.size.x * 0.5 - 18.0, -4.0)
+	floater.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	floater.z_index = 50
+	_battle_root().add_child(floater)
+	var tween := create_tween()
+	tween.tween_property(floater, "position:y", floater.position.y - 46.0, FLOATER_SEC * pace)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(floater, "modulate:a", 0.0, FLOATER_SEC * pace).set_ease(Tween.EASE_IN)
+	tween.finished.connect(floater.queue_free)
+
+# 通用状态飘字（破绽/护境碎）：面板上方浮起并淡出，与气血飘字同动效。
+func _float_text(text: String, panel: FighterPanel, color: Color, font_size: int) -> void:
+	if panel == null:
+		return
+	var rect := panel.get_global_rect()
+	var floater := Label.new()
+	floater.text = text
+	floater.add_theme_font_override("font", BP.BRUSH_FONT)
+	floater.add_theme_font_size_override("font_size", font_size)
+	floater.add_theme_color_override("font_color", color)
+	floater.position = rect.position + Vector2(
+		rect.size.x * 0.5 - text.length() * font_size * 0.5, -30.0)
 	floater.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	floater.z_index = 50
 	_battle_root().add_child(floater)

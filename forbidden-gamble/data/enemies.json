@@ -1,323 +1,35 @@
 {
-  "山匪刀客": {
-    "id": "山匪刀客",
-    "name": "山匪刀客",
-    "school": "刀法",
-    "weapon_level": 0,
-    "tier": "normal",
-    "max_hp": 30,
-    "weapon_durability": 0,
-    "techniques": [
-      "点星式",
-      "二重·壁"
-    ],
-    "ai_priority": [
-      "点星式",
-      "二重·壁"
-    ],
-    "deck": [
-      {
-        "id": "d_wind_lo1",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "d_wind_lo2",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "d_wind_mid",
-        "attribute": "风",
-        "grade": "中品"
-      },
-      {
-        "id": "d_forest_lo1",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "d_forest_lo2",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "d_forest_mid",
-        "attribute": "林",
-        "grade": "中品"
-      },
-      {
-        "id": "d_fire_lo1",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "d_fire_lo2",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "d_fire_mid",
-        "attribute": "火",
-        "grade": "中品"
-      },
-      {
-        "id": "d_mountain_lo1",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "d_mountain_lo2",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "d_mountain_mid",
-        "attribute": "山",
-        "grade": "中品"
-      }
-    ]
-  },
-  "落魄拳师": {
-    "id": "落魄拳师",
-    "name": "落魄拳师",
-    "school": "掌法",
-    "weapon_level": 0,
-    "tier": "normal",
-    "max_hp": 24,
-    "weapon_durability": 0,
-    "techniques": [
-      "点星式",
-      "一气·拒"
-    ],
-    "ai_priority": [
-      "点星式",
-      "一气·拒"
-    ],
-    "deck": [
-      {
-        "id": "q_wind_lo1",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "q_wind_lo2",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "q_wind_mid",
-        "attribute": "风",
-        "grade": "中品"
-      },
-      {
-        "id": "q_forest_lo1",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "q_forest_lo2",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "q_forest_mid",
-        "attribute": "林",
-        "grade": "中品"
-      },
-      {
-        "id": "q_fire_lo1",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "q_fire_lo2",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "q_fire_mid",
-        "attribute": "火",
-        "grade": "中品"
-      },
-      {
-        "id": "q_mountain_lo1",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "q_mountain_lo2",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "q_mountain_mid",
-        "attribute": "山",
-        "grade": "中品"
-      }
-    ]
-  },
-  "青锋剑徒": {
-    "id": "青锋剑徒",
+  "qingfeng": {
+    "id": "qingfeng",
     "name": "青锋剑徒",
-    "school": "剑法",
-    "weapon_level": 0,
-    "tier": "veteran",
     "max_hp": 26,
-    "weapon_durability": 0,
-    "techniques": [
-      "连风式",
-      "点星式",
-      "二重·壁"
-    ],
-    "ai_priority": [
-      "连风式",
-      "点星式",
-      "二重·壁"
+    "breathe_policy": "singletons",
+    "hand": [
+      {"id": "e_m1", "attribute": "山", "grade": "下品"},
+      {"id": "e_m2", "attribute": "山", "grade": "下品"},
+      {"id": "e_f1", "attribute": "风", "grade": "下品"},
+      {"id": "e_h1", "attribute": "火", "grade": "下品"}
     ],
     "deck": [
-      {
-        "id": "j_wind_lo",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "j_wind_mid",
-        "attribute": "风",
-        "grade": "中品"
-      },
-      {
-        "id": "j_wind_hi",
-        "attribute": "风",
-        "grade": "上品"
-      },
-      {
-        "id": "j_forest_lo",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "j_forest_mid",
-        "attribute": "林",
-        "grade": "中品"
-      },
-      {
-        "id": "j_forest_hi",
-        "attribute": "林",
-        "grade": "上品"
-      },
-      {
-        "id": "j_fire_lo",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "j_fire_mid",
-        "attribute": "火",
-        "grade": "中品"
-      },
-      {
-        "id": "j_fire_hi",
-        "attribute": "火",
-        "grade": "上品"
-      },
-      {
-        "id": "j_mountain_lo",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "j_mountain_mid",
-        "attribute": "山",
-        "grade": "中品"
-      },
-      {
-        "id": "j_mountain_hi",
-        "attribute": "山",
-        "grade": "上品"
-      }
+      {"id": "e_m3", "attribute": "山", "grade": "下品"},
+      {"id": "e_m4", "attribute": "山", "grade": "中品"},
+      {"id": "e_m5", "attribute": "山", "grade": "中品"},
+      {"id": "e_f2", "attribute": "风", "grade": "下品"},
+      {"id": "e_f3", "attribute": "风", "grade": "下品"},
+      {"id": "e_f4", "attribute": "风", "grade": "中品"},
+      {"id": "e_h2", "attribute": "火", "grade": "下品"},
+      {"id": "e_h3", "attribute": "火", "grade": "中品"}
     ],
-    "xinfa": [
-      "先纳功"
-    ]
-  },
-  "剑冢石仆": {
-    "id": "剑冢石仆",
-    "name": "剑冢石仆",
-    "school": "掌法",
-    "weapon_level": 0,
-    "tier": "normal",
-    "max_hp": 20,
-    "weapon_durability": 0,
-    "techniques": [
-      "点星式",
-      "一气·拒"
+    "ladder": [
+      {"technique": "重盾式", "when": {"guard_lt": 3}},
+      {"technique": "蓄势斩", "when": {"guard_gt": 8}},
+      {"technique": "连风式", "when": {"status_gte": {"li": 3}}},
+      {"technique": "磨刃式", "cooldown": 1},
+      {"technique": "调息"}
     ],
-    "ai_priority": [
-      "点星式",
-      "一气·拒"
-    ],
-    "deck": [
-      {
-        "id": "s_wind_lo1",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "s_wind_lo2",
-        "attribute": "风",
-        "grade": "下品"
-      },
-      {
-        "id": "s_wind_mid",
-        "attribute": "风",
-        "grade": "中品"
-      },
-      {
-        "id": "s_forest_lo1",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "s_forest_lo2",
-        "attribute": "林",
-        "grade": "下品"
-      },
-      {
-        "id": "s_forest_mid",
-        "attribute": "林",
-        "grade": "中品"
-      },
-      {
-        "id": "s_fire_lo1",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "s_fire_lo2",
-        "attribute": "火",
-        "grade": "下品"
-      },
-      {
-        "id": "s_fire_mid",
-        "attribute": "火",
-        "grade": "中品"
-      },
-      {
-        "id": "s_mountain_lo1",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "s_mountain_lo2",
-        "attribute": "山",
-        "grade": "下品"
-      },
-      {
-        "id": "s_mountain_mid",
-        "attribute": "山",
-        "grade": "中品"
-      }
+    "hooks": [
+      {"kind": "乱", "on": "guard_broken", "technique": "重盾式", "cooldown": 2},
+      {"kind": "应", "on": "player_breathed", "technique": "窥隙脚", "arm": {"guard_gte": 3}, "cooldown": 3}
     ]
   }
 }

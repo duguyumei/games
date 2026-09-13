@@ -1,25 +1,24 @@
-[gd_resource type="Theme" load_steps=8 format=3]
+[gd_resource type="Theme" format=3 uid="uid://brgxorty18lgw"]
 
-[ext_resource type="FontFile" path="res://assets/fonts/NotoSansSC.ttf" id="1_noto"]
+[ext_resource type="FontFile" uid="uid://cryy7kr50fofn" path="res://assets/fonts/NotoSansSC.ttf" id="1_noto"]
 
-; 纸墨主题（阶段一基线）：纸色面板 + 墨色描边 + 朱砂点缀。
-; 色板与既有 screen（title/stronghold 的 Bg/PanelCard）取同源值，避免两套观感。
-
-[sub_resource type="StyleBoxFlat" id="btn_normal"]
+[sub_resource type="StyleBoxFlat" id="btn_disabled"]
 content_margin_left = 18.0
 content_margin_top = 8.0
 content_margin_right = 18.0
 content_margin_bottom = 8.0
-bg_color = Color(0.94902, 0.909804, 0.835294, 1)
+bg_color = Color(0.94902, 0.909804, 0.835294, 0.55)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.168627, 0.141176, 0.109804, 0.85)
+border_color = Color(0.168627, 0.141176, 0.109804, 0.3)
 corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxEmpty" id="btn_focus"]
 
 [sub_resource type="StyleBoxFlat" id="btn_hover"]
 content_margin_left = 18.0
@@ -53,23 +52,21 @@ corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
-[sub_resource type="StyleBoxFlat" id="btn_disabled"]
+[sub_resource type="StyleBoxFlat" id="btn_normal"]
 content_margin_left = 18.0
 content_margin_top = 8.0
 content_margin_right = 18.0
 content_margin_bottom = 8.0
-bg_color = Color(0.94902, 0.909804, 0.835294, 0.55)
+bg_color = Color(0.94902, 0.909804, 0.835294, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.168627, 0.141176, 0.109804, 0.3)
+border_color = Color(0.168627, 0.141176, 0.109804, 0.85)
 corner_radius_top_left = 6
 corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
-
-[sub_resource type="StyleBoxEmpty" id="btn_focus"]
 
 [sub_resource type="StyleBoxFlat" id="panel_card"]
 bg_color = Color(0.94902, 0.909804, 0.835294, 0.97)
@@ -87,16 +84,16 @@ corner_radius_bottom_left = 8
 default_font = ExtResource("1_noto")
 default_font_size = 16
 Button/colors/font_color = Color(0.168627, 0.141176, 0.109804, 1)
+Button/colors/font_disabled_color = Color(0.168627, 0.141176, 0.109804, 0.35)
+Button/colors/font_focus_color = Color(0.168627, 0.141176, 0.109804, 1)
 Button/colors/font_hover_color = Color(0.109804, 0.090196, 0.070588, 1)
 Button/colors/font_pressed_color = Color(0.109804, 0.090196, 0.070588, 1)
-Button/colors/font_focus_color = Color(0.168627, 0.141176, 0.109804, 1)
-Button/colors/font_disabled_color = Color(0.168627, 0.141176, 0.109804, 0.35)
-Button/styles/normal = SubResource("btn_normal")
-Button/styles/hover = SubResource("btn_hover")
-Button/styles/pressed = SubResource("btn_pressed")
 Button/styles/disabled = SubResource("btn_disabled")
 Button/styles/focus = SubResource("btn_focus")
+Button/styles/hover = SubResource("btn_hover")
 Button/styles/hover_pressed = SubResource("btn_pressed")
+Button/styles/normal = SubResource("btn_normal")
+Button/styles/pressed = SubResource("btn_pressed")
 Label/colors/font_color = Color(0.168627, 0.141176, 0.109804, 1)
 Panel/styles/panel = SubResource("panel_card")
 PanelContainer/styles/panel = SubResource("panel_card")

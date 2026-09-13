@@ -100,36 +100,6 @@
       }
     ]
   },
-  "长息诀": {
-    "tier": 1,
-    "school": "通用",
-    "desc": "呼吸绵长。每次调息后，本口气提气次数+1；调息后的第一次提气改为提 2 张。",
-    "effects": [
-      {
-        "on": "breath",
-        "phase": "post",
-        "do": {
-          "type": "lift_bonus",
-          "value": 1
-        },
-        "when": {
-          "as_target": true
-        }
-      },
-      {
-        "on": "lift_qi",
-        "phase": "pre",
-        "when": {
-          "first_lift": true,
-          "as_target": true
-        },
-        "do": {
-          "type": "amount_bonus",
-          "value": 1
-        }
-      }
-    ]
-  },
   "气海无涯": {
     "tier": 2,
     "school": "通用",

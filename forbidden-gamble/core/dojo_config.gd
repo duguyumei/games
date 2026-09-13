@@ -8,9 +8,6 @@ static var enemy_id := ""
 static var enemy_first := false  # 被袭击制（敌方先手）：测试注入用，演武场 UI 暂不设置
 static var techniques: Array[String] = []
 static var xinfa: Array[String] = []
-static var weapon_school := ""
-static var weapon_level := 0
-static var armor_defend := 0
 static var hp := 0  # 0＝用 player.json 默认气血
 static var deck: Array = []  # 空＝用 player.json 默认真气牌组
 
@@ -21,8 +18,5 @@ static func clear() -> void:
 	enemy_first = false
 	techniques = []
 	xinfa = []
-	weapon_school = ""
-	weapon_level = 0
-	armor_defend = 0
 	hp = 0
 	deck = []

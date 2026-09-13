@@ -20,6 +20,8 @@ var combat_log: CombatLog
 # 为前提智能补齐，补不齐提示并保持装配态（增删真气后再点即重试）；满足条件＝待确认。
 var armed_technique: String = ""
 var selected_indices: Array[int] = []
+# 调息选弃中（B2）：真气点击＝标记弃置（金环），确认＝弃所选纳至六口，取消＝退出。
+var breathe_picking := false
 var log_lines: Array[String] = []
 var _end_message_shown := false
 var _techniques_built := false
@@ -38,7 +40,6 @@ var _popup_kind := ""  # "" / "settings"
 @onready var enemy_panel: FighterPanel = $Center/Column/Stage/EnemyPanel
 @onready var confirm_button: Button = $Center/Column/Stage/CenterZone/Buttons/ConfirmButton
 @onready var cancel_button: Button = $Center/Column/Stage/CenterZone/Buttons/CancelButton
-@onready var pass_button: Button = $Center/Column/Stage/CenterZone/Buttons/PassButton
 @onready var breathe_button: Button = $Center/Column/Stage/CenterZone/Buttons/BreatheButton
 @onready var buttons_row: Control = $Center/Column/Stage/CenterZone/Buttons
 @onready var hand_layer: HandBar = $Center/Column/HandLayer
@@ -51,7 +52,6 @@ var _popup_kind := ""  # "" / "settings"
 func _ready() -> void:
 	confirm_button.pressed.connect(_confirm_pending)
 	cancel_button.pressed.connect(_cancel_pending)
-	pass_button.pressed.connect(_on_lift_pressed)
 	breathe_button.pressed.connect(_on_breathe_pressed)
 	end_overlay.report_requested.connect(func(): log_overlay.visible = true)
 	end_overlay.restart_requested.connect(_on_restart_pressed)
@@ -69,7 +69,7 @@ func _ready() -> void:
 	_popup_host.closed.connect(func(): _popup_kind = "")
 	add_child(_popup_host)
 	fx = BattleFx.new()
-	fx.setup(stage, hand_layer, player_panel, fx_layer)
+	fx.setup(stage, hand_layer, player_panel, fx_layer, enemy_panel)
 	add_child(fx)
 	sequencer = BattleSequencer.new()
 	sequencer.pace_getter = func() -> float: return _pace
@@ -88,7 +88,7 @@ func _ready() -> void:
 
 func _start_demo() -> void:
 	if DojoConfig.active:
-		# 演武场：敌人来自 enemies.json，构筑/兵器来自 DojoConfig（选敌→选构筑→对战）
+		# 演武场：敌人来自 enemies.json，构筑来自 DojoConfig（选敌→选构筑→对战）
 		var dplayer := EncounterLoader.load_player(DataRepo.PLAYER_PATH)
 		var denemy := EncounterLoader.load_enemy(DataRepo.ENEMIES_PATH, DojoConfig.enemy_id)
 		if dplayer == null or denemy == null:
@@ -97,9 +97,6 @@ func _start_demo() -> void:
 			return
 		combat = CombatState.new(dplayer, denemy)
 		combat.battle_seed = randi()
-		combat.player.weapon_school = DojoConfig.weapon_school
-		combat.player.weapon_level = DojoConfig.weapon_level
-		combat.player.armor_defend = DojoConfig.armor_defend
 		if not DojoConfig.deck.is_empty():
 			combat.player.draw_pile.clear()
 			combat.player.hand.clear()
@@ -162,18 +159,14 @@ func _refresh_ui() -> void:
 				log_lines.append("战斗结束：你获胜了！")
 			"enemy":
 				log_lines.append("战斗结束：你败北了。")
-			"draw":
-				log_lines.append("战斗结束：平局。")
 	var player_turn := combat.active_side == "player" and over.is_empty()
 	# 蓄力占用玩家的行动机会：充能拍自动执行（延后一帧跑，避免在刷新中递归）
 	var charging_now := player_turn and combat.player.has_active_charge() and not sequencer.busy
 	# 回合·行动方（顶栏）：演出时按钮全隐，这是全场唯一的"轮到谁"指示
 	if not over.is_empty():
-		var end_text := "—— 平局 ——"
+		var end_text := "—— 你败北了 ——"
 		if over == "player":
 			end_text = "—— 你获胜了 ——"
-		elif over == "enemy":
-			end_text = "—— 你败北了 ——"
 		top_bar.set_turn(end_text, BP.COLOR_TURN_END)
 	elif player_turn:
 		top_bar.set_turn("第 %d 口气 · ▶ 你的行动" % (combat.player_breath_count + 1), BP.COLOR_GOLD)
@@ -191,23 +184,25 @@ func _refresh_ui() -> void:
 		tech_layer.set_techniques(_technique_entries())
 		_techniques_built = true
 	tech_layer.set_states(_technique_states(player_turn))
-	# 中央操作按钮两组互换（C-018 口径延续，D-063 换轴）：未装配＝只显示[调息][提气]；
-	# 装配中/待确认＝只显示[确认][取消]；敌方回合与演出停顿整行隐藏；蓄力充能拍无按钮。
+	# 中央操作按钮两组互换：未装配＝只显示[调息]（B2：调息进选弃流）；装配中/待确认/
+	# 调息选弃＝只显示[确认][取消]；敌方回合与演出停顿整行隐藏；蓄力充能拍无按钮。
 	buttons_row.visible = player_turn and not sequencer.busy and not charging_now
 	var armed := not armed_technique.is_empty()
-	confirm_button.visible = armed
-	cancel_button.visible = armed
-	pass_button.visible = not armed
-	breathe_button.visible = not armed
-	# 可用性：确认需牌型齐（装配不完整保持灰，原因在功法卡与信息行）；提气每口气限
-	# 1 次＋心法加成（长息诀），丹田/气海无牌可提时不可用；其余可见即可用。
-	# 提气余量随按钮文本披露（v1 UI 标记）。
-	confirm_button.disabled = armed_technique.is_empty() or not _can_player_use(armed_technique)
+	var picking := breathe_picking
+	confirm_button.visible = armed or picking
+	cancel_button.visible = armed or picking
+	breathe_button.visible = not armed and not picking
+	# 可用性：确认需牌型齐（装配不完整保持灰，原因在功法卡与信息行）；
+	# 调息选弃的确认恒可用（弃 0 张＝只补不弃）。
+	if picking:
+		confirm_button.disabled = false
+	else:
+		confirm_button.disabled = not _can_player_use(armed_technique)
 	cancel_button.disabled = false
-	var lift_left := maxi(1 + combat.player.lift_allowance - combat.player.lifts_this_breath, 0)
-	pass_button.text = "提气（余%d）" % lift_left if lift_left > 0 else "提气（已尽）"
-	pass_button.disabled = lift_left == 0 \
-		or (combat.player.draw_pile.is_empty() and combat.player.discard_pile.is_empty())
+	if picking:
+		confirm_button.text = "调息（弃 %d）" % selected_indices.size()
+	elif confirm_button.text != "确认":
+		confirm_button.text = "确认"
 	breathe_button.disabled = false
 	_render_log()
 	if charging_now:
@@ -218,30 +213,25 @@ func _update_panel(panel: FighterPanel, unit: FighterState, is_enemy: bool) -> v
 	panel.max_hp = unit.max_hp
 	panel.hp = unit.hp
 	panel.guard = unit.guard
-	panel.armor_defend = unit.armor_defend
 	panel.status_names = _status_names(unit)
 	# 心法胶囊（D-060）：敌我装备心法都竖排披露，悬浮显示效果文本
 	panel.xinfa_names = ",".join(unit.xinfa)
 	if is_enemy:
-		# 敌方：意图锁定展示 + 手牌仅计数（D-025：牌面隐藏）。行动权模型下意图
-		# 可以是功法，也可以是"调息"（敌方换气的公开暴露，26 号 §6）或"蓄力"
-		# （X/N 倒计时——引而不发的公开读招窗口，26 号 §5/§11.4）。
-		panel.enemy_hand = unit.hand.size()
-		var intent_action := str(turn_manager.enemy_intent.get("action", ""))
-		var technique := str(turn_manager.enemy_intent.get("technique", "PASS"))
-		if intent_action == "charging":
-			panel.show_intent = true
-			panel.intent_name = "%s·蓄力%d/%d" % [technique, int(turn_manager.enemy_intent.get("charge", 0)), int(turn_manager.enemy_intent.get("need", 0))]
-		elif intent_action == "breathe":
-			panel.show_intent = true
-			panel.intent_name = "调息"
-		elif intent_action == "lift_qi":
-			panel.show_intent = true
-			panel.intent_name = "提气"
+		# 敌方（敌方系统 v2）：意图＝脑锁定的即将行动（功法名/调息/蓄力招，活读数——
+		# 钩子翻牌时实时变化，翻转即演出）；应手灯常驻披露绊线状态（明码：悬浮看配置）；
+		# 手牌张数公开（内容不透明——罚行不罚藏）。
+		var action := str(turn_manager.enemy_intent.get("action", ""))
+		var technique := str(turn_manager.enemy_intent.get("technique", ""))
+		if unit.has_active_charge():
+			panel.intent_name = "%s·蓄力%d/%d" % [technique,
+				int(unit.charging.get("charge", 0)), int(unit.charging.get("need", 0))]
 		else:
-			panel.show_intent = technique != "PASS"
-			panel.intent_name = technique
+			panel.intent_name = str(turn_manager.enemy_intent.get("label", technique))
+		panel.show_intent = not action.is_empty()
 		panel.set_intent_tooltip(_intent_preview())
+		panel.enemy_hand = unit.hand.size()
+		panel.hook_lamp_text = _hook_lamp_text()
+		panel.hook_lamp_tooltip = _hook_lamp_tooltip()
 	else:
 		# 我方：准备槽显示装配中功法（C-011）；蓄力期间改显蓄力进度
 		if unit.has_active_charge():
@@ -260,6 +250,9 @@ func _meld_info_text(player_turn: bool) -> String:
 	if combat.player.has_active_charge():
 		var ch: Dictionary = combat.player.charging
 		return "蓄力中：%s（%d/%d）——引而不发，充能拍自动执行" % [str(ch.get("technique", "")), int(ch.get("charge", 0)), int(ch.get("need", 0))]
+	if breathe_picking:
+		return "调息选弃：点真气标记弃置（已标 %d 张）——[确认] 弃所选并纳至 %d 口，弃 0 张＝只补不弃" % [
+			selected_indices.size(), TurnManager.HAND_SIZE]
 	if not armed_technique.is_empty():
 		var armed_selected := _selected_cards()
 		if _can_player_use(armed_technique):
@@ -277,7 +270,7 @@ func _meld_info_text(player_turn: bool) -> String:
 			return "已选 %d 张真气（未成牌型）· 品级合计 %d" % [selected.size(), _grade_sum(selected)]
 		return "凝招：%s · 品级合计 %d" % ["/".join(names), _grade_sum(selected)]
 	if not combat.player.has_legal_action():
-		return "手牌凑不成功法：可【调息】吐故纳新换一手，或【提气】让一拍"
+		return "手牌凑不成功法：可【调息】弃掉不要的、纳至满手（弃 0 张＝只补不弃）"
 	return "点功法卡：带入已选真气并智能补齐，凑成即待确认"
 
 # 功法层卡位数据：等级、效果摘要、镶孔槽数与排布（按所需牌型最大张数）。
@@ -323,32 +316,16 @@ func _technique_states(player_turn: bool) -> Dictionary:
 	return states
 
 # 不可用原因：蓄力占用行动机会 / 冷却中 / 手牌凑不出牌型（顺序即优先级）。
-# v1 全通用功法无属性锁，内力门槛已随传输概念退役。
+# 牌型可达性直接问 TechniqueResolver（find_legal_selection 位掩码枚举），不再手抄一份。
 func _technique_block_reason(technique_id: String) -> String:
 	if combat.player.has_active_charge():
 		return "蓄力中"
 	var cooldown_left := int(combat.player.technique_cooldowns.get(technique_id, 0))
 	if cooldown_left > 0:
 		return "冷却%d" % cooldown_left
-	var data := TechniqueResolver.data_for(technique_id)
-	var patterns: Array = data.get("patterns", [])
-	var hand := combat.player.hand
-	var has_pattern := false
-	for mask in range(1, 1 << hand.size()):
-		var subset: Array = []
-		for index in range(hand.size()):
-			if mask & (1 << index):
-				subset.append(hand[index])
-		var owned: Array[String] = PatternEvaluator.evaluate(subset)
-		for pattern in patterns:
-			if pattern in owned:
-				has_pattern = true
-				break
-		if has_pattern:
-			break
-	if not has_pattern:
+	if TechniqueResolver.find_legal_selection(technique_id, combat.player.hand, combat.player).is_empty():
 		var names: Array[String] = []
-		for pattern in patterns:
+		for pattern in TechniqueResolver.data_for(technique_id).get("patterns", []):
 			names.append(PATTERN_NAMES.get(str(pattern), str(pattern)))
 		return "缺牌型·" + "/".join(names)
 	return ""
@@ -357,6 +334,9 @@ func _can_player_use(technique_id: String) -> bool:
 	return not selected_indices.is_empty() and TechniqueResolver.can_use(technique_id, _selected_cards(), combat.player)
 
 func _confirm_pending() -> void:
+	if breathe_picking:
+		confirm_breathe()
+		return
 	if armed_technique.is_empty() or turn_manager.is_over():
 		return
 	if not _can_player_use(armed_technique):
@@ -377,21 +357,32 @@ func _confirm_pending() -> void:
 
 # 取消装配：功法出槽，已选真气保留（可继续微调后再装配）。
 func _cancel_pending() -> void:
+	if breathe_picking:
+		breathe_picking = false
+		selected_indices = []
+		_refresh_ui()
+		return
 	armed_technique = ""
 	_refresh_ui()
 
-func _on_lift_pressed() -> void:
-	_cancel_pending()
-	_log_action("操作：提气")
-	turn_manager.player_lift()
-	_drain_log()
-	_after_player_input()
-
+# 调息（B2）：进入选弃流——点真气＝标记弃置，确认＝弃所选＋纳至六口（费一拍）。
 func _on_breathe_pressed() -> void:
-	_cancel_pending()
-	selected_indices = []  # 调息换手后旧索引全部失效
-	_log_action("操作：调息")
-	turn_manager.player_breathe()
+	if turn_manager.is_over() or combat.active_side != "player" or sequencer.busy:
+		return
+	if combat.player.has_active_charge():
+		return
+	armed_technique = ""
+	breathe_picking = true
+	selected_indices = []
+	_refresh_ui()
+
+# 确认调息：弃所选（可为 0 张＝只补不弃）入气海，纳至六口。
+func confirm_breathe() -> void:
+	breathe_picking = false
+	var indices := selected_indices.duplicate()
+	_log_action("操作：调息（弃 %d 口：%s）" % [indices.size(), _cards_text(_selected_cards())])
+	selected_indices = []
+	turn_manager.player_breathe(indices)
 	_drain_log()
 	_after_player_input()
 
@@ -428,6 +419,14 @@ func _auto_charge_tick() -> void:
 func _on_card_clicked(index: int) -> void:
 	if turn_manager.is_over() or combat.active_side != "player":
 		return
+	if breathe_picking:
+		# 调息选弃：点选＝标记弃置（金环），无张数上限（弃 0～全部皆合法）
+		if index in selected_indices:
+			selected_indices.erase(index)
+		else:
+			selected_indices.append(index)
+		_refresh_ui()
+		return
 	if armed_technique.is_empty():
 		# 未装配：自由凝招（点功法后带入）；牌型上限 4 张，超过先点掉已选
 		if index in selected_indices:
@@ -455,6 +454,8 @@ func _on_card_clicked(index: int) -> void:
 func _on_technique_clicked(technique_id: String) -> void:
 	if turn_manager.is_over() or combat.active_side != "player":
 		return
+	if breathe_picking:
+		return  # 选弃中不装配：先取消调息再点功法
 	# 点功法（一次）＝装配：已选真气带入镶孔，满足即待确认；还缺则智能补齐（以已选为
 	# 前提补最少张数）；补不齐提示原因并保持装配态，增删真气后再点功法即重试。
 	armed_technique = technique_id
@@ -546,6 +547,8 @@ func _drain_log(used_qi: Array = []) -> void:
 			combat_log.write(message)
 	# 日志保留完整历史，窄条显示最新一条，展开罩层滚动回看全场。
 	log_lines.append_array(drained)
+	# 每拍末快照（试玩复盘口径）：一行读全双边状态，免去事后手工推血。
+	_log_snapshot()
 	# 消息驱动的演出在刷新 UI 前播（见 BattleFx.play_message 注释）
 	if not drained.is_empty():
 		var hand_colors: Array = []
@@ -557,6 +560,20 @@ func _drain_log(used_qi: Array = []) -> void:
 func _log_action(text: String) -> void:
 	if combat_log != null:
 		combat_log.write(text)
+
+# 双边状态快照行：气血/护境/手牌与牌堆；敌方加力层与意图（对手卡同核，牌堆口径与玩家一致）。
+func _log_snapshot() -> void:
+	if combat_log == null or combat == null:
+		return
+	var p := combat.player
+	var e := combat.enemy
+	var player_text := "你 气血%d/%d 护境%d 手牌%d 丹田%d 气海%d" % [
+		p.hp, p.max_hp, p.guard, p.hand.size(), p.draw_pile.size(), p.discard_pile.size()]
+	var enemy_text := "%s 气血%d/%d 护境%d 手牌%d 丹田%d 气海%d 力%d 意图[%s]" % [
+		e.display_name, e.hp, e.max_hp, e.guard, e.hand.size(), e.draw_pile.size(),
+		e.discard_pile.size(), e.get_status("li"),
+		str(turn_manager.enemy_intent.get("label", ""))]
+	combat_log.write("快照｜%s ｜ %s" % [player_text, enemy_text])
 
 # 顶栏战报行显示最新一条（按事件类型着色）；展开罩层显示全部（同套配色）。
 func _render_log() -> void:
@@ -571,9 +588,9 @@ func _render_log() -> void:
 func _log_line_color(line: String) -> Color:
 	if line.begins_with("你发动") or line.begins_with("你蓄力已满") or line.begins_with("战斗结束：你获胜"):
 		return BP.COLOR_GOLD
-	if line.begins_with("敌方发动") or line.begins_with("敌方蓄力已满") or line.begins_with("战斗结束：你败北"):
+	if line.begins_with("敌方发动") or line.begins_with("敌方蓄力已满") or line.begins_with("敌方调息") or line.begins_with("战斗结束：你败北"):
 		return BP.COLOR_ENEMY
-	if line.begins_with("提示"):
+	if line.begins_with("提示") or line.contains("护境被击碎") or line.contains("露出破绽") or line.contains("改招") or line.contains("改出"):
 		return BP.COLOR_HINT
 	if line.begins_with("——") or line.begins_with("战斗结束"):
 		return BP.COLOR_TURN_END
@@ -582,34 +599,47 @@ func _log_line_color(line: String) -> Color:
 func _combat_result() -> String:
 	if combat == null or turn_manager == null or not turn_manager.is_over():
 		return ""
-	if turn_manager.battle_stalled:
-		return "draw"
 	if not combat.enemy.is_alive():
 		return "player"
 	return "enemy"
 
+# 意图悬浮预览（敌方系统 v2）：即将行动的效果明码（功法走效果摘要；调息披露策略）。
 func _intent_preview() -> String:
-	var intent_action := str(turn_manager.enemy_intent.get("action", ""))
-	if intent_action == "charging":
-		var tech := str(turn_manager.enemy_intent.get("technique", ""))
-		return "%s（蓄力 %d/%d——引而不发，蓄满自动发动：%s）" % [
-			tech, int(turn_manager.enemy_intent.get("charge", 0)),
-			int(turn_manager.enemy_intent.get("need", 0)),
-			TechniqueResolver.effect_summary(tech)]
-	if intent_action == "breathe":
-		return "调息（弃全部手牌，纳新 6 口——它要换气）"
-	if intent_action == "lift_qi":
-		return "提气（让一拍，从丹田提 1 张）"
-	var technique_id := str(turn_manager.enemy_intent.get("technique", "PASS"))
-	if technique_id == "PASS":
-		return "无（暂让）"
-	var summary := TechniqueResolver.effect_summary(technique_id)
-	var suffix := ""
-	if (TechniqueResolver.data_for(technique_id).get("tags", []) as Array).has("压制"):
-		suffix = "（压制·行动权未让）"
-	if summary.is_empty():
-		return technique_id + suffix
-	return "%s（%s）%s" % [technique_id, summary, suffix]
+	var action := str(turn_manager.enemy_intent.get("action", ""))
+	var technique := str(turn_manager.enemy_intent.get("technique", ""))
+	if action == "breathe":
+		return "敌方下一拍：调息（回填手牌，弃置策略：%s）" % _breathe_policy_text()
+	if technique.is_empty():
+		return "无"
+	if combat.enemy.has_active_charge():
+		return "蓄力中：%s——引而不发（蓄力期间它的钩子全部下线）" % technique
+	return "敌方下一拍：%s（%s）" % [technique, TechniqueResolver.effect_summary(technique)]
+
+func _hook_lamp_text() -> String:
+	var parts: Array[String] = []
+	for lamp in combat.enemy_brain.hook_lamps(combat.enemy):
+		var short := str(lamp.get("technique", ""))
+		match str(lamp.get("state", "")):
+			"ready":
+				short += "·亮"
+			"cooldown":
+				short += "·歇%d" % int(lamp.get("cooldown", 0))
+			_:
+				short += "·哑"
+		parts.append(short)
+	return "，".join(parts)
+
+func _hook_lamp_tooltip() -> String:
+	var parts: Array[String] = []
+	for lamp in combat.enemy_brain.hook_lamps(combat.enemy):
+		parts.append(str(lamp.get("tooltip", "")))
+	return "\n".join(parts)
+
+func _breathe_policy_text() -> String:
+	return {
+		"all": "全换", "low_grade": "只换下品", "high_grade": "弃上品",
+		"singletons": "弃孤张",
+	}.get(str(combat.enemy.enemy_def.get("breathe_policy", "all")), "全换")
 
 # 终局结算：文案在此计算，呈现交给 BattleEndOverlay（重开一场 / 回演武场两个出口）。
 func _show_end_overlay() -> void:
@@ -618,14 +648,19 @@ func _show_end_overlay() -> void:
 	var over := _combat_result()
 	if over.is_empty():
 		return
+	# 结局先行落盘：用户可能在结算浮层直接关窗（_exit_tree 不保证走到），
+	# 胜负与终局快照必须在浮层弹出这一刻就写进日志。
+	if combat_log != null:
+		var verdict := "胜（敌方气绝）" if over == "player" else "负（我方气绝）"
+		combat_log.write("战斗结束：%s ｜ 历经 %d 次行动、%d 口气" % [
+			verdict, combat.action_count, combat.player_breath_count])
+		_log_snapshot()
 	var lines: Array[String] = ["历经 %d 次行动、%d 口气。" % [combat.action_count, combat.player_breath_count]]
 	match over:
 		"player":
 			lines.append("你尚余 %d/%d 气血。" % [combat.player.hp, combat.player.max_hp])
 		"enemy":
 			lines.append("致命一击：%s" % _killing_blow_text())
-		"draw":
-			lines.append("双方僵持不下，各自收手。")
 	_close_popups()
 	end_overlay.show_result(over, lines)
 
@@ -646,6 +681,7 @@ func _on_restart_pressed() -> void:
 	_end_message_shown = false
 	_techniques_built = false
 	armed_technique = ""
+	breathe_picking = false
 	selected_indices = []
 	log_lines.clear()
 	_start_demo()

@@ -32,7 +32,16 @@ func play(tm: TurnManager, combat: CombatState) -> void:
 	var safety := 20
 	while not tm.is_over() and combat.active_side == "enemy" and safety > 0:
 		safety -= 1
+		# 玩家中破绽的停拍由敌方连动自身的节拍消化（这里清零，避免链尾多停一拍）
+		tm.pending_skip_beats = 0
 		on_step.call()
+		await get_tree().create_timer(ENEMY_STEP_SEC * pace_getter.call()).timeout
+		if token != _token:
+			return
+	# 破绽停拍（敌方系统 v1 §2.2 表现层）：敌方中破绽错失一拍、行动权直接回到玩家时，
+	# 若不补一拍，演出上就是"按钮瞬间弹回"，踉跄完全看不见——为此多停一拍再还控制权。
+	while not tm.is_over() and combat.active_side == "player" and tm.pending_skip_beats > 0:
+		tm.pending_skip_beats -= 1
 		await get_tree().create_timer(ENEMY_STEP_SEC * pace_getter.call()).timeout
 		if token != _token:
 			return
