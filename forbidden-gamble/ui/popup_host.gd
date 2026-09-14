@@ -13,6 +13,7 @@ signal closed
 var _catcher: Control
 var _content: Control
 var _anchor: Control
+var _centered := false
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -28,7 +29,22 @@ func current_content() -> Control:
 
 func open(anchor: Control, content: Control) -> void:
 	close(false)
+	_centered = false
 	_anchor = anchor
+	_catcher = Control.new()
+	_catcher.name = "PopupCatcher"
+	_catcher.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_catcher.mouse_filter = Control.MOUSE_FILTER_STOP
+	_catcher.gui_input.connect(_on_catcher_input)
+	add_child(_catcher)
+	_content = content
+	add_child(_content)
+	_reposition()
+
+# 居中开窗（详情页类）：屏幕中央弹出，不锚定控件——点外关闭/ESC/互斥照旧。
+func open_centered(content: Control) -> void:
+	close(false)
+	_centered = true
 	_catcher = Control.new()
 	_catcher.name = "PopupCatcher"
 	_catcher.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -49,6 +65,7 @@ func close(notify := true) -> void:
 		_content.queue_free()
 	_content = null
 	_anchor = null
+	_centered = false
 	if was_open and notify:
 		closed.emit()
 
@@ -59,9 +76,13 @@ func _notification(what: int) -> void:
 		_reposition()
 
 func _reposition() -> void:
-	if _anchor == null or not is_instance_valid(_anchor) or not is_open():
+	if not is_open():
 		return
 	_content.reset_size()
+	if _centered or _anchor == null or not is_instance_valid(_anchor):
+		var vp := get_viewport_rect().size
+		_content.position = (vp - _content.size) * 0.5
+		return
 	var rect := _anchor.get_global_rect()
 	_content.position = Vector2(rect.end.x - _content.size.x - 2.0, rect.end.y + 6.0)
 

@@ -17,10 +17,10 @@ border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.5, 0.46, 0.4, 1)
-corner_radius_top_left = 24
-corner_radius_top_right = 24
-corner_radius_bottom_right = 24
-corner_radius_bottom_left = 24
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
 
 [sub_resource type="StyleBoxFlat" id="dantian_bg"]
 bg_color = Color(0.82, 0.76, 0.58, 1)
@@ -124,7 +124,7 @@ size = Vector2(72, 16)
 theme_override_colors/font_color = Color(0.35, 0.3, 0.22, 1)
 theme_override_font_sizes/font_size = 11
 horizontal_alignment = 1
-text = "丹田·牌库"
+text = "气海·灵气"
 
 [node name="QiHai" type="Panel" parent="."]
 position = Vector2(1192, 23)
@@ -155,20 +155,23 @@ size = Vector2(64, 16)
 theme_override_colors/font_color = Color(0.35, 0.3, 0.22, 1)
 theme_override_font_sizes/font_size = 11
 horizontal_alignment = 1
-text = "气海·弃牌"
+text = "牌河·浊气"
 
 [node name="HandOrb1" parent="." instance=ExtResource("1")]
 position = Vector2(384, 32)
 orb_color = Color(0.45, 0.72, 0.68, 1)
 force_text = "4"
+suit_text = "风"
 selected = true
 
 [node name="HandOrb2" parent="." instance=ExtResource("1")]
 position = Vector2(460, 32)
 orb_color = Color(0.75, 0.35, 0.25, 1)
 force_text = "4"
+suit_text = "火"
 
 [node name="HandOrb3" parent="." instance=ExtResource("1")]
 position = Vector2(536, 32)
 orb_color = Color(0.45, 0.42, 0.5, 1)
 force_text = "3"
+suit_text = "山"

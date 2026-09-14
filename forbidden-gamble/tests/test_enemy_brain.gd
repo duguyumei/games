@@ -1,292 +1,149 @@
 extends GutTest
 
-# 敌方脑（敌方系统 v2）：行为链梯（条件→账面→隔）、调息地板与策略、
-# 钩子两族（乱＝自况事件翻牌＋后坐破绽；应＝你的事件翻牌＋你得破绽）、
-# 应手武装门、钩子行动钟冷却、蓄力锁（起蓄后钩子全灭）、力状态走同一管线。
+# 敌方脑（真气语法 v2.2）：行为链梯（条件→账面三张成型→隔N）、架势地板与策略、
+# 意图锁定时序、应读数（实时活算：手牌搭子＋功法冷却；蓄力中全哑）。
+# 截牌钩子系统已退役（2026-09-15）——同构必截的行为验证在 test_turn_manager。
 
-const QINGFENG_DEF := {
-	"breathe_policy": "singletons",
+const LADDER_DEF := {
+	"swap_policy": "all",
 	"hand": [
-		{"id": "e1", "attribute": "山", "grade": "下品"},
-		{"id": "e2", "attribute": "山", "grade": "下品"},
-		{"id": "e3", "attribute": "风", "grade": "下品"},
+		{"attribute": "山", "value": 4}, {"attribute": "山", "value": 4}, {"attribute": "山", "value": 4},
 	],
-	"deck": [],
+	"deck": {"风": {"3": 2, "4": 2}},
 	"ladder": [
 		{"technique": "重盾式", "when": {"guard_lt": 3}},
 		{"technique": "磨刃式", "cooldown": 1},
-		{"technique": "调息"},
+		{"technique": "架势"},
 	],
-	"hooks": [],
 }
 
-const LADDER_ONLY_DEF := {
-	"breathe_policy": "all",
-	"hand": [{"id": "e1", "attribute": "山", "grade": "下品"}],
-	"deck": [],
-	"ladder": [{"technique": "重盾式", "when": {"guard_lt": 3}}, {"technique": "调息"}],
-	"hooks": [],
+const BROKE_DEF := {
+	"swap_policy": "all",
+	"hand": [{"attribute": "风", "value": 3}, {"attribute": "火", "value": 6}],
+	"deck": {"风": {"3": 2, "4": 2}},
+	"ladder": [{"technique": "重盾式", "when": {"guard_lt": 3}}, {"technique": "架势"}],
 }
 
-const LUAN_DEF := {
-	"breathe_policy": "all",
+# 应读数卡：崩山式＋起手两张山4 → "碰山4" 是明码雷区
+const THREAT_DEF := {
+	"swap_policy": "all",
 	"hand": [
-		{"id": "e1", "attribute": "山", "grade": "下品"},
-		{"id": "e2", "attribute": "山", "grade": "下品"},
-		{"id": "e3", "attribute": "山", "grade": "下品"},
+		{"attribute": "山", "value": 4}, {"attribute": "山", "value": 4},
+		{"attribute": "风", "value": 3}, {"attribute": "风", "value": 5},
 	],
-	"deck": [
-		{"id": "e4", "attribute": "山", "grade": "下品"},
-		{"id": "e5", "attribute": "山", "grade": "下品"},
-	],
-	"ladder": [{"technique": "磨刃式"}, {"technique": "调息"}],
-	"hooks": [
-		{"kind": "乱", "on": "guard_broken", "technique": "重盾式", "cooldown": 2},
-	],
+	"deck": {"风": {"3": 2}},
+	"ladder": [{"technique": "崩山式"}, {"technique": "点星式"}, {"technique": "架势"}],
 }
 
-const YING_DEF := {
-	"breathe_policy": "all",
-	"hand": [{"id": "e1", "attribute": "风", "grade": "下品"}],
-	"deck": [{"id": "e2", "attribute": "风", "grade": "下品"}],
-	"ladder": [{"technique": "磨刃式"}, {"technique": "调息"}],
-	"hooks": [
-		{"kind": "应", "on": "player_breathed", "technique": "窥隙脚", "arm": {"guard_gte": 3}, "cooldown": 3},
-	],
-}
+func _card(attr: String, value := 3) -> QiCard:
+	return QiCard.new("%s%d_%d" % [attr, value, randi()], attr, value)
 
-const CHARGE_DEF := {
-	"breathe_policy": "all",
-	"hand": [
-		{"id": "e1", "attribute": "山", "grade": "下品"},
-		{"id": "e2", "attribute": "山", "grade": "下品"},
-		{"id": "e3", "attribute": "山", "grade": "下品"},
-	],
-	"deck": [
-		{"id": "e4", "attribute": "山", "grade": "下品"},
-		{"id": "e5", "attribute": "山", "grade": "下品"},
-	],
-	"ladder": [
-		{"technique": "重盾式", "when": {"guard_lt": 3}},
-		{"technique": "蓄势斩", "when": {"guard_gt": 8}},
-		{"technique": "调息"},
-	],
-	"hooks": [
-		{"kind": "应", "on": "player_breathed", "technique": "窥隙脚", "arm": {"guard_gte": 3}, "cooldown": 3},
-	],
-}
-
-func _cards(specs: Array, prefix: String) -> Array:
-	var cards: Array = []
-	var index := 0
-	for spec in specs:
-		index += 1
-		cards.append(QiCard.new("%s%d" % [prefix, index], str(spec).left(1), int(str(spec).right(1))))
-	return cards
-
-func _wind(count: int, grade: int, prefix: String) -> Array:
-	var specs: Array = []
-	for _i in range(count):
-		specs.append("风%d" % grade)
-	return _cards(specs, prefix)
-
-func _player(deck: Array) -> FighterState:
-	var fighter := FighterState.new("p", "你", 30)
-	fighter.techniques.assign(["点星式"])
-	fighter.draw_pile = deck
+func _player() -> FighterState:
+	var fighter := FighterState.new("p", "独行武者", 40)
+	fighter.techniques.assign(["崩山式", "点星式"])
+	# 倒序写（尾部先抽入丹田）：丹田前三是山4 刻子
+	fighter.destiny_pile = [
+		_card("火", 2), _card("山", 2), _card("风", 5), _card("风", 4),
+		_card("风", 3), _card("山", 4), _card("山", 4), _card("山", 4),
+	]
 	return fighter
 
-func _enemy(def: Dictionary, hp := 26) -> FighterState:
-	var fighter := FighterState.new("e", "敌方", hp)
-	fighter.enemy_def = def
+func _enemy(def: Dictionary) -> FighterState:
+	var fighter := FighterState.new("e", "青锋剑徒", 40)
 	EncounterLoader.fill_enemy_body(fighter, def)
 	return fighter
 
-func _start(player: FighterState, enemy: FighterState, enemy_first := false) -> TurnManager:
-	var tm := TurnManager.new(CombatState.new(player, enemy))
-	tm.start_battle(false, enemy_first)
+func _start(def: Dictionary) -> TurnManager:
+	var tm := TurnManager.new(CombatState.new(_player(), _enemy(def)))
+	tm.start_battle(false)
 	return tm
 
-func _enemy_beat(tm: TurnManager) -> Dictionary:
-	tm.combat.active_side = "enemy"
-	tm.combat.pipeline.acting_side = "enemy"
-	return tm.enemy_act()
+# ---------- 行为链梯 ----------
 
-func _player_beat(tm: TurnManager) -> void:
-	tm.combat.active_side = "player"
-	tm.combat.pipeline.acting_side = "player"
-
-# ---------- 行为链梯：条件 → 账面 → 隔（最后一层） ----------
-
-func test_ladder_walks_conditions_then_payability() -> void:
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(QINGFENG_DEF))
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "重盾式", "盾<3：梯顶锁重盾式")
-	_enemy_beat(tm)  # 重盾式（山下品量0）→ 盾 10
-	assert_eq(tm.combat.enemy.guard, 10, "重盾式走 guard_set（基值10）")
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式", "盾10：规则一不满足 → 磨刃式")
-
-func test_rule_cooldown_intercepts_and_decrements() -> void:
-	# 磨刃式 隔1：执行后，下一次「条件全过」的判断被拦（-1）落链到调息，再下一次可用
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(QINGFENG_DEF))
-	_enemy_beat(tm)  # 重盾式 → 盾10
-	_enemy_beat(tm)  # 磨刃式 → 力+1（隔1 置满）
-	assert_eq(tm.combat.enemy.get_status("li"), 1, "磨刃式施加力+1")
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "调息", "隔1 拦截：本次可行却不采取，落链到地板")
-	_enemy_beat(tm)  # 调息（弃孤张）
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式", "拦截一次后隔归零：磨刃式恢复可用")
-
-func test_floor_breathes_with_policy_and_reshuffles() -> void:
-	# 弃孤张策略：手中山×2风×1 → 只弃风；气海洗回续纳
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(QINGFENG_DEF))
-	_enemy_beat(tm)  # 重盾式（耗一山）
-	_enemy_beat(tm)  # 磨刃式（再耗一山）
-	_enemy_beat(tm)  # 调息：手上只剩风×1＝孤张 → 弃之，洗气海纳回
-	assert_eq(tm.combat.enemy.hand.size(), 3, "气海三张（山山风）洗回全数纳回")
-	assert_eq(tm.combat.enemy.discard_pile.size(), 0, "气海被洗走")
-
-func test_payability_failure_falls_through_without_touching_cooldown() -> void:
-	# 蓄势斩（二重）：手上没有同属性对 → 账面不过 → 落链且隔不递减（条件没过冷却不发言）
-	var enemy := _enemy(CHARGE_DEF)
-	enemy.hand.clear()  # 只留一张山：二重凑不出
-	var tm := _start(_player(_wind(12, 2, "p")), enemy)
-	enemy.guard = 10
-	tm.combat.enemy_brain.lock_intent(enemy)
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "调息", "蓄势斩凑不齐 → 落链到调息")
-
-# ---------- 乱钩：破盾 → 翻牌重盾式 → 执行完入账破绽 ----------
-
-func test_luan_hook_flips_intent_then_deferred_flaw() -> void:
-	var tm := _start(_player(_wind(12, 3, "p")), _enemy(LUAN_DEF))
-	tm.combat.enemy.guard = 10
+func test_ladder_walks_condition_then_payable() -> void:
+	var tm := _start(LADDER_DEF)
+	# 盾 0（<3）且手里山4 刻子可付 → 锁重盾式
+	assert_eq(str(tm.enemy_intent.get("technique", "")), "重盾式")
+	tm.combat.enemy.guard = 10  # 条件不过 → 落到磨刃式（刻子可付）
 	tm.combat.enemy_brain.lock_intent(tm.combat.enemy)
 	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式")
-	_player_beat(tm)
-	tm.player_act("点星式", [tm.combat.player.hand[0]])  # 12 击碎 10 盾
-	assert_eq(tm.combat.enemy.guard, 0, "护境被击碎")
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "重盾式", "乱钩翻牌：意图当场变成重盾式")
-	assert_false(tm.combat.enemy.flawed, "后坐破绽未入账：先落子后踉跄")
-	_enemy_beat(tm)  # 它的拍：重盾式照常执行
-	assert_eq(tm.combat.enemy.guard, 10, "翻牌的招当拍执行（这一拍不跳）")
-	assert_true(tm.combat.enemy.flawed, "执行完入账：下一拍踉跄")
-	_player_beat(tm)
-	tm.player_act("点星式", [tm.combat.player.hand[0]])  # 玩家连动（敌方未跳，判定给玩家）
-	assert_eq(tm.combat.active_side, "player", "敌方破绽生效：玩家再连动一拍（偷到一拍）")
 
-func test_luan_hook_skips_when_intent_already_matches() -> void:
-	# 与当前意图相同：无转换、无代价
-	var tm := _start(_player(_wind(12, 3, "p")), _enemy(LUAN_DEF))
-	tm.combat.enemy.guard = 10
-	tm.combat.enemy_brain.intent = {"action": "technique", "technique": "重盾式", "label": "重盾式"}
-	_player_beat(tm)
-	tm.player_act("点星式", [tm.combat.player.hand[0]])
-	assert_false(tm.combat.enemy.flawed, "意图本就是重盾式：不翻不罚")
-	assert_false(tm.combat.enemy_brain.pending_flaw)
+# 账面不可付（三张不成型）：落链到地板
+func test_unpayable_falls_to_swap_floor() -> void:
+	var tm := _start(BROKE_DEF)
+	assert_eq(str(tm.enemy_intent.get("action", "")), "swap", "手里无成型三张 → 架势地板")
+	assert_eq(str(tm.enemy_intent.get("label", "")), "架势")
 
-func test_luan_hook_respects_action_clock_cooldown() -> void:
-	# 歇2（行动钟）：翻牌执行后，它接下来两次行动内再破盾不再触发
-	var tm := _start(_player(_wind(12, 3, "p")), _enemy(LUAN_DEF))
-	tm.combat.enemy.guard = 10
-	tm.combat.enemy_brain.lock_intent(tm.combat.enemy)
-	_player_beat(tm)
-	tm.player_act("点星式", [tm.combat.player.hand[0]])  # 碎盾 → 翻牌
-	_enemy_beat(tm)  # 重盾式执行 → 钩子冷却置 2 → 破绽入账 → 行动前钟已减 1（置2在行动后）
-	assert_eq(int(tm.combat.enemy_brain.hook_cooldowns.get(0, 0)), 2, "歇2 执行时置满")
-	# 再碎一次盾：冷却中（≥1）不触发
-	tm.combat.enemy.guard = 10
-	_player_beat(tm)
-	tm.player_act("点星式", [tm.combat.player.hand[0]])
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式", "冷却中乱钩不翻牌")
+# 隔1：可行却被拦 → 跳过并递减；下一轮放行
+func test_opportunity_cooldown_intercepts_then_releases() -> void:
+	var tm := _start(LADDER_DEF)
+	tm.combat.enemy.guard = 10  # 重盾式条件不过
+	tm.combat.enemy_brain.lock_intent(tm.combat.enemy)  # 磨刃式放行锁定
+	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式")
+	tm.combat.enemy_brain.after_execute(tm.combat.enemy)  # 执行磨刃式 → 隔1 置满
+	tm.combat.enemy_brain.lock_intent(tm.combat.enemy)  # 隔1 拦截 → 落地板
+	assert_eq(str(tm.enemy_intent.get("action", "")), "swap", "隔1 拦截 → 落地板")
+	tm.combat.enemy_brain.lock_intent(tm.combat.enemy)  # 递减后第二轮放行
+	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式", "递减归零后放行")
 
-# ---------- 应钩：你调息 → 翻牌窥隙脚 → 你得破绽 ----------
+# 敌方功法表由梯级声明序填充（截牌选功法＝声明序第一个可付的）
+func test_techniques_filled_from_ladder_order() -> void:
+	var enemy := _enemy(LADDER_DEF)
+	assert_eq(enemy.techniques, ["重盾式", "磨刃式"] as Array[String], "架势地板不入功法表")
 
-func test_ying_hook_pins_player_on_breathe() -> void:
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(YING_DEF))
-	tm.combat.enemy.guard = 10  # 武装条件：盾≥3
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	assert_true(bool(tm.combat.enemy_brain.armed.get(0, false)), "盾≥3 且可付：灯亮")
-	_player_beat(tm)
-	var hp_before := tm.combat.player.hp
-	tm.player_breathe([])  # 你调息：应钩在事件瞬间翻牌
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "窥隙脚", "应钩翻牌：改出窥隙脚")
-	assert_true(tm.combat.player.flawed, "被抓住的是你：当场得破绽")
-	_enemy_beat(tm)  # 它的拍：窥隙脚当拍执行（风下品量0：2 点伤）
-	assert_eq(tm.combat.player.hp, hp_before - 2, "窥隙脚走同一伤害管线")
-	assert_eq(tm.combat.active_side, "enemy", "你的破绽被跳过：敌方连动（钉住一拍）")
+# 换手策略：弃低值，至多 4 张
+func test_swap_policy_low_value_discards_low() -> void:
+	var def := THREAT_DEF.duplicate(true)
+	def["swap_policy"] = "low_value"
+	def["hand"] = [
+		{"attribute": "山", "value": 2}, {"attribute": "山", "value": 2},
+		{"attribute": "火", "value": 7}, {"attribute": "风", "value": 8},
+	]
+	var tm := _start(def)
+	var result := tm.combat.enemy_brain.execute(tm.combat.enemy, tm.combat.player, tm.combat.pipeline, tm.rng, 4)
+	assert_eq(str(result.get("action", "")), "swap")
+	assert_eq(int(result.get("discarded", 0)), 2, "只弃两张低值（≤4）")
+	# 低值牌全部进它自己的牌河
+	assert_eq(tm.combat.river_of("enemy").size(), 2)
+	for entry in tm.combat.river_of("enemy"):
+		assert_true((entry as Dictionary)["card"].value <= 4)
 
-func test_ying_hook_dark_when_guard_low() -> void:
-	# 武装门：盾<3 灯不亮——你调息安全过站
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(YING_DEF))
-	tm.combat.enemy.guard = 0
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	assert_false(bool(tm.combat.enemy_brain.armed.get(0, false)), "盾<3：灯灭")
-	_player_beat(tm)
-	tm.player_breathe([])
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "磨刃式", "灯灭不触发：意图不变")
-	assert_false(tm.combat.player.flawed, "无破绽")
-
-func test_ying_hook_unpayable_means_dark() -> void:
-	# 付不起＝无法监控：封死它的风 → 灯哑，你调息白过
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(YING_DEF))
-	tm.combat.enemy.guard = 10
-	tm.combat.enemy.hand.clear()  # 无风可付窥隙脚
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	assert_false(bool(tm.combat.enemy_brain.armed.get(0, false)), "付不起：灯哑")
-	_player_beat(tm)
-	tm.player_breathe([])
-	assert_false(tm.combat.player.flawed, "哑灯不触发")
-
-# ---------- 蓄力：跨拍承诺、期间钩子全灭 ----------
-
-func test_charge_intent_locks_and_fires() -> void:
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(CHARGE_DEF))
-	_enemy_beat(tm)  # 盾<3 → 重盾式 → 盾 10
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "蓄势斩", "盾>8：锁蓄势斩")
-	var hp_before := tm.combat.player.hp
-	_enemy_beat(tm)  # 起手（蓄力 0/1）
-	assert_true(tm.combat.enemy.has_active_charge(), "起手建蓄力态")
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "蓄势斩", "蓄力期间意图＝蓄力招")
-	_enemy_beat(tm)  # 充能拍：1/1 满值自动发动（山下品对量0：8 点）
-	assert_false(tm.combat.enemy.has_active_charge(), "发动后蓄力清空")
-	assert_eq(tm.combat.player.hp, hp_before - 8, "蓄势斩落地")
-
-func test_charge_lock_silences_hooks() -> void:
-	# 蓄力期间钩子全灭：敌方起蓄后你调息，应手不触发
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(CHARGE_DEF))
-	_enemy_beat(tm)  # 重盾式 → 盾 10
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	assert_true(bool(tm.combat.enemy_brain.armed.get(0, false)))
-	_enemy_beat(tm)  # 蓄势斩起手
-	assert_false(bool(tm.combat.enemy_brain.armed.get(0, false)), "蓄力锁：武装下线")
-	_player_beat(tm)
-	tm.player_breathe([])
-	assert_false(tm.combat.player.flawed, "它蓄力时你随便调息（安全窗）")
-	assert_eq(str(tm.enemy_intent.get("technique", "")), "蓄势斩")
-
-# ---------- 力状态走同一管线（attacker 方向修正） ----------
+# ---------- 力状态走同一管线 ----------
 
 func test_li_status_boosts_enemy_damage() -> void:
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(YING_DEF))
-	tm.combat.enemy.guard = 10  # 满足武装门：应钩可用
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	tm.combat.enemy.add_status("li", 2)
-	tm.combat.status_runtime.ensure_hooks(tm.combat.enemy, "li")
-	var hp_before := tm.combat.player.hp
-	_player_beat(tm)
-	tm.player_breathe([])  # 触发应钩 → 窥隙脚（量0 基2 + 力2 = 4）
-	_enemy_beat(tm)
-	assert_eq(tm.combat.player.hp, hp_before - 4, "力×2 修正敌方伤害（伤害 PRE＋层数）")
+	var tm := _start(BROKE_DEF)
+	# 上力走管线（status_apply 注册状态钩子），与实战同路
+	var apply := GameAction.new("status_apply", tm.combat.enemy, 2)
+	apply.context["status"] = "li"
+	tm.combat.pipeline.submit(apply)
+	assert_eq(tm.combat.enemy.get_status("li"), 2)
+	var player_hp_before := tm.combat.player.hp
+	var result := TechniqueResolver.resolve("点星式",
+		[_card("风", 6), _card("风", 7), _card("风", 8)],
+		tm.combat.enemy, tm.combat.player, tm.combat.pipeline, tm.rng)
+	assert_true(bool(result.get("ok", false)))
+	assert_eq(tm.combat.player.hp, player_hp_before - (2 + 21 + 2), "2＋21＋力2")
 
-# ---------- 钩子灯（UI 披露口径） ----------
+# ---------- 应读数（实时活算） ----------
 
-func test_hook_lamps_expose_three_states() -> void:
-	var tm := _start(_player(_wind(12, 2, "p")), _enemy(YING_DEF))
-	tm.combat.enemy.guard = 10
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	var lamps := tm.combat.enemy_brain.hook_lamps(tm.combat.enemy)
-	assert_eq(lamps.size(), 1, "只有应手亮灯（乱无灯）")
-	assert_eq(str(lamps[0].get("state", "")), "ready", "武装＝就绪")
-	assert_string_contains(str(lamps[0].get("tooltip", "")), "你调息", "灯的明码披露触发条件")
-	tm.combat.enemy.guard = 0
-	tm.combat.enemy_brain.evaluate_arms(tm.combat.enemy)
-	lamps = tm.combat.enemy_brain.hook_lamps(tm.combat.enemy)
-	assert_eq(str(lamps[0].get("state", "")), "dark", "条件不满足＝哑")
+func test_claim_threats_from_real_hand() -> void:
+	var tm := _start(THREAT_DEF)
+	var threats := tm.combat.claim_threats(tm.combat.enemy)
+	var texts: Array[String] = []
+	for threat in threats:
+		texts.append("%s%s%d" % [str(threat.get("claim", "")), str(threat.get("attribute", "")), int(threat.get("value", 0))])
+	assert_true(texts.has("碰山4"), "两张山4 在手＋崩山式待发 → 弃山4 是明码雷区（%s）" % "、".join(texts))
+	assert_true(texts.has("吃风4"), "风3+风5 在手＋点星式待发 → 弃风4 可被吃")
+
+func test_claim_threats_dumb_while_charging() -> void:
+	var tm := _start(THREAT_DEF)
+	tm.combat.enemy.charging = {"technique": "蓄势斩", "charge": 0, "need": 1, "cards": []}
+	assert_eq(tm.combat.claim_threats(tm.combat.enemy).size(), 0, "蓄力锁：应读数全哑")
+
+func test_claim_threats_need_ready_kezi_technique() -> void:
+	var tm := _start(THREAT_DEF)
+	tm.combat.enemy.technique_cooldowns["崩山式"] = 1  # 唯一刻子功法进冷却
+	var threats := tm.combat.claim_threats(tm.combat.enemy)
+	for threat in threats:
+		assert_ne(str(threat.get("claim", "")), "碰", "碰威胁随刻子功法冷却消失")
+		assert_ne(str(threat.get("claim", "")), "杠", "杠威胁随刻子功法冷却消失")

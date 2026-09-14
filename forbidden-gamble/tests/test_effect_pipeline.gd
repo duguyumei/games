@@ -1,7 +1,8 @@
 extends GutTest
 
 # 动作管线地基测试：PRE 拦截可改可挡、RESOLVE 默认结算、POST 触发入队、
-# 链长上限防死循环、毒状态端到端（数据载体→管线钩子→回合开始结算）。
+# 链长上限防死循环、毒状态端到端（数据载体→管线钩子→换牌时点结算）。
+# 真气语法 v2：玩家本命填 destiny_pile；毒随本人换牌发作（on: swap）。
 
 func _fighter(fid: String, hp: int = 30) -> FighterState:
 	return FighterState.new(fid, fid, hp)
@@ -12,9 +13,10 @@ func _damage_pipeline() -> EffectPipeline:
 		action.context["damage_result"] = (action.target as FighterState).take_damage(maxi(action.amount, 0)))
 	return pipe
 
-func _give_deck(unit: FighterState, n: int = 20) -> void:
+func _give_destiny(unit: FighterState, n: int = 8) -> void:
+	# 本命填八张同牌（火3），开局洗抽全数入丹田（关洗牌时确定）
 	for i in range(n):
-		unit.draw_pile.append(QiCard.new("%s_%d" % [unit.fighter_id, i], "火", 3))
+		unit.destiny_pile.append(QiCard.new("%s_%d" % [unit.fighter_id, i], "火", 3))
 
 # ---------- 管线基础 ----------
 
@@ -101,27 +103,25 @@ func test_is_alive_gates_hook() -> void:
 func test_poison_ticks_and_decays_via_combat() -> void:
 	var player := _fighter("玩家")
 	var enemy := _fighter("敌人")
-	_give_deck(player)
-	_give_deck(enemy)
+	_give_destiny(player)
 	var combat := CombatState.new(player, enemy)
 	var turn_manager := TurnManager.new(combat, 1)
-	turn_manager.start_battle()
+	turn_manager.start_battle(false)
 	var apply := GameAction.new("status_apply", enemy, 2)
 	apply.context["status"] = "poison"
 	combat.pipeline.submit(apply)
 	assert_eq(enemy.get_status("poison"), 2, "上毒 2 层")
 	turn_manager.drain_messages()
-	_breathe(combat, enemy)  # 毒随本人调息发作（D-063）
-	assert_eq(enemy.hp, 28, "敌方调息时毒发 2 点")
+	_swap(combat, enemy)  # 毒随本人换牌发作
+	assert_eq(enemy.hp, 28, "敌方换牌时毒发 2 点")
 	assert_eq(enemy.get_status("poison"), 1, "毒发后递减")
-	_breathe(combat, enemy)
+	_swap(combat, enemy)
 	assert_eq(enemy.hp, 27, "第二次毒发 1 点")
 	assert_eq(enemy.get_status("poison"), 0, "毒尽消散")
-	_breathe(combat, enemy)
+	_swap(combat, enemy)
 	assert_eq(enemy.hp, 27, "毒尽后不再掉血")
 
 func test_apply_status_via_pipeline() -> void:
-	# v1 九门无上状态功法；状态施加走管线动作（功法将来的挂点同一条路）
 	var user := _fighter("用户")
 	var target := _fighter("目标")
 	var pipe := EffectPipeline.new()
@@ -139,12 +139,12 @@ func test_technique_damage_unchanged_without_pipeline() -> void:
 	var user := _fighter("用户")
 	var target := _fighter("目标")
 	target.guard = 8
-	var cards := [QiCard.new("c3", "火", 1)]
+	var cards := [QiCard.new("c1", "火", 2), QiCard.new("c2", "火", 3), QiCard.new("c3", "火", 4)]
 	var result := TechniqueResolver.resolve("点星式", cards, user, target)
 	assert_true(bool(result.get("ok", false)))
-	assert_eq(int(result.get("damage", 0)), 6, "下品量0：6+3×0")
-	assert_eq(target.hp, 30, "6 点伤害全被护境挡住")
-	assert_eq(target.guard, 2)
+	assert_eq(int(result.get("damage", 0)), 11, "火234：2+1×9")
+	assert_eq(target.hp, 27, "11 点伤害破 8 盾后 3 点落气血")
+	assert_eq(target.guard, 0)
 
 # ---------- 点位目录：伤害 vs 失去气血、抽象时点 ----------
 
@@ -172,45 +172,43 @@ func test_damage_and_hp_loss_are_separate_points() -> void:
 func test_poison_bypasses_guard_via_combat() -> void:
 	var player := _fighter("玩家")
 	var enemy := _fighter("敌人")
-	_give_deck(player)
-	_give_deck(enemy)
+	_give_destiny(player)
 	var combat := CombatState.new(player, enemy)
 	var turn_manager := TurnManager.new(combat, 1)
-	turn_manager.start_battle()
+	turn_manager.start_battle(false)
 	var apply := GameAction.new("status_apply", enemy, 2)
 	apply.context["status"] = "poison"
 	combat.pipeline.submit(apply)
 	enemy.guard = 10
-	_breathe(combat, enemy)
+	_swap(combat, enemy)
 	assert_eq(enemy.hp, 28, "毒发是失去气血，护境不挡")
 	assert_eq(enemy.guard, 10, "护境不被毒发消耗")
 
 func test_battle_start_point_fires() -> void:
 	var player := _fighter("玩家")
 	var enemy := _fighter("敌人")
-	_give_deck(player)
-	_give_deck(enemy)
+	_give_destiny(player)
 	var combat := CombatState.new(player, enemy)
 	var fired := [false]
 	combat.pipeline.register_hook({"carrier": "test", "on": "battle_start", "phase": "post", "priority": 0,
 		"handler": func(_action: GameAction) -> void: fired[0] = true})
 	var turn_manager := TurnManager.new(combat, 1)
-	turn_manager.start_battle()
+	turn_manager.start_battle(false)
 	assert_true(fired[0], "战斗开始点位应触发")
 
 func test_technique_use_point_fires() -> void:
 	var player := _fighter("玩家")
+	player.techniques.assign(["二重·壁"])
 	var enemy := _fighter("敌人")
-	_give_deck(player)
-	_give_deck(enemy)
+	_give_destiny(player)
 	var combat := CombatState.new(player, enemy)
 	var seen: Array[String] = []
 	combat.pipeline.register_hook({"carrier": "test", "on": "technique_use", "phase": "post", "priority": 0,
 		"handler": func(action: GameAction) -> void: seen.append(str(action.context.get("technique", "")))})
 	var turn_manager := TurnManager.new(combat, 1)
-	turn_manager.start_battle()
-	# 起手五张都是 火3，任选两张成同属性对发动二重·壁
-	var cards := [combat.player.hand[0], combat.player.hand[1]]
+	turn_manager.start_battle(false)
+	# 起手八张全是 火3，任选三张成刻子发动二重·壁
+	var cards := [combat.player.hand[0], combat.player.hand[1], combat.player.hand[2]]
 	var result := turn_manager.player_act("二重·壁", cards)
 	assert_true(bool(result.get("ok", false)))
 	assert_eq(seen, ["二重·壁"], "发动功法点位应带着功法名触发")
@@ -227,8 +225,9 @@ func test_qi_card_carries_statuses() -> void:
 	assert_eq(card.get_status("poison"), 0)
 	assert_false(card.statuses.has("poison"), "归 0 清除词条")
 
-# 直接对某单位提交一次调息动作（amount 0＝只吐故不纳新），驱动 breath 时点结算。
-func _breathe(combat: CombatState, unit: FighterState) -> void:
-	var action := GameAction.new("breath", unit, 0, unit)
+# 直接对某单位提交一次换牌动作（不弃牌只走时点），驱动 swap 时点结算。
+func _swap(combat: CombatState, unit: FighterState) -> void:
+	var action := GameAction.new("swap", unit, 0, unit)
 	action.context["rng"] = RandomNumberGenerator.new()
+	action.context["discard_indices"] = []
 	combat.pipeline.submit(action)

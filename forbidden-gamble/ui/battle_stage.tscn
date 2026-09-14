@@ -45,4 +45,4 @@ text = "取消"
 [node name="BreatheButton" type="Button" parent="CenterZone/Buttons"]
 layout_mode = 2
 focus_mode = 0
-text = "调息"
+text = "架势"

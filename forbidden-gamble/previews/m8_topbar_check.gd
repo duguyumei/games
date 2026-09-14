@@ -2,7 +2,7 @@ extends Node
 # M8 顶栏验收（C-017）：
 # 1) 结构：TopBar 在列首、旧 LogStrip/TurnInfo 已删、总高恰好 720（36+350+110+224）
 # 2) 沙盒上下文 + 回合·行动方（金色"你的行动"）
-# 3) 顶栏战报行随调息更新
+# 3) 顶栏战报行随换牌更新
 # 4) 设置弹窗：演出速度三档切换 _pace、当前档禁用
 # 5) 点弹窗外任意处关闭设置弹窗（不与顶栏重叠）
 # 6) ESC 收弹窗
@@ -37,8 +37,8 @@ func _ready() -> void:
 	var turn: Label = main.get_node("Center/Column/TopBar/Bar/TurnLabel")
 	if context.text != "演武场 · 演练":
 		fails.append("[2] 沙盒遭遇名='%s'（应为 演武场 · 演练）" % context.text)
-	if not turn.text.contains("第 1 口气") or not turn.text.contains("你的行动"):
-		fails.append("[2] 回合行='%s'（应含 第 1 口气 与 你的行动）" % turn.text)
+	if not turn.text.contains("架势 0 次") or not turn.text.contains("你的行动"):
+		fails.append("[2] 回合行='%s'（应含 架势 0 次 与 你的行动）" % turn.text)
 	var turn_color: Color = turn.get_theme_color("font_color")
 	if absf(turn_color.r - 0.85) > 0.05 or absf(turn_color.g - 0.68) > 0.05:
 		fails.append("[2] 你的行动未着金（%s）" % turn_color)
@@ -47,14 +47,18 @@ func _ready() -> void:
 	# --- 3) 战报行随事件更新 ---
 	var log_line: Label = main.get_node("Center/Column/TopBar/Bar/LogLine")
 	var log_before := log_line.text
-	main._on_breathe_pressed()
-	main.confirm_breathe()
+	main._on_swap_pressed()
+	main._on_card_clicked(0)
+	main.confirm_swap()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	if log_line.text == log_before or log_line.text.strip_edges().is_empty():
-		fails.append("[3] 调息后顶栏战报行未更新（'%s'）" % log_line.text)
+		fails.append("[3] 架势后顶栏战报行未更新（'%s'）" % log_line.text)
 	print("[3] 战报行 '%s' → '%s'" % [log_before, log_line.text])
 	while main.sequencer.busy:
+		await get_tree().process_frame
+	while main.turn_manager.awaiting_player_claims and not main.turn_manager.is_over():
+		main._release_claim_window()
 		await get_tree().process_frame
 
 	# --- 4) 设置弹窗与演出速度 ---

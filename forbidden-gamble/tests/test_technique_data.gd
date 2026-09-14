@@ -1,9 +1,9 @@
 extends GutTest
 
 # 功法数据表的 schema 校验：每门功法一份参数，新增功法自动纳入检查。
-# v1 数值语法：效果＝基值＋系数×真气量（damage/guard_cover/draw 带 base，scale/per_supreme 可选）。
+# 真气语法 v2：效果＝基值＋系数×数值和；牌型＝刻子/顺子，输入固定三张。
 
-const KNOWN_PATTERNS := ["ONE_QI", "HEAVY_2", "HEAVY_3", "HEAVY_4", "MIX_2", "MIX_3", "MIX_4"]
+const KNOWN_PATTERNS := ["KEZI", "SHUNZI"]
 const KNOWN_EFFECTS := ["damage", "guard_cover", "remove_guard", "apply_status", "heal", "draw", "self_hp_loss"]
 const KNOWN_SCHOOLS := ["通用", "剑法", "刀法", "掌法"]
 
@@ -21,7 +21,6 @@ func test_technique_schema(p = use_parameters(_technique_params())) -> void:
 	var school := str(data.get("school", "通用"))
 	assert_has(KNOWN_SCHOOLS, school, technique_id + " 的功法系别未知: " + school)
 
-	# D-044：功法等级 1~5（素白/绿/蓝/紫/金），人工定级
 	assert_true(data.has("level"), technique_id + " 缺 level 字段")
 	var level := int(data.get("level", 0))
 	assert_between(level, 1, 5, technique_id + " 的 level 应在 1~5: " + str(level))
@@ -39,7 +38,7 @@ func test_technique_schema(p = use_parameters(_technique_params())) -> void:
 		match effect_type:
 			"damage", "guard_cover", "draw":
 				assert_true(effect.has("base"), technique_id + " 的 " + effect_type + " 需要 base（基值）")
-				for num_field in ["base", "scale", "per_supreme"]:
+				for num_field in ["base", "scale"]:
 					if effect.has(num_field):
 						assert_true(int(effect[num_field]) >= 0, technique_id + " 的 " + num_field + " 应非负")
 			"apply_status":

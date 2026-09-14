@@ -35,16 +35,21 @@ func _ready() -> void:
 
 	var saw_banner := false
 	var ghost_peak := 0
-	main._on_breathe_pressed()
+	main._on_swap_pressed()
+	main._on_card_clicked(0)  # 架势须弃 1–4 张：选中第 0 张再确认
+	main.confirm_swap()
 	await get_tree().process_frame
-	if buttons.visible:
+	if main.sequencer.busy and buttons.visible:
 		fails.append("[2] 敌方演出期间按钮行应隐藏")
-	print("[2] 敌方演出期间按钮行可见=%s busy=%s" % [buttons.visible, main.sequencer.busy])
-	# 收链后必须自行恢复按钮行（不依赖玩家再点一下触发重绘）
+	print("[2] 敌方演出期间按钮行可见=%s busy=%s active=%s（busy 或敌方截链同步结算皆合法）" % [
+		buttons.visible, main.sequencer.busy, main.combat.active_side])
+	# 收链后必须自行恢复按钮行（不依赖玩家再点一下触发重绘）；截牌窗一律放行
 	var waited := 0.0
-	while main.sequencer.busy and waited < 8.0:
+	while (main.sequencer.busy or main.turn_manager.awaiting_player_claims) and waited < 8.0:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
+		if main.turn_manager.awaiting_player_claims and not main.sequencer.busy:
+			main._release_claim_window()
 	await get_tree().create_timer(0.2).timeout
 	if not buttons.visible:
 		fails.append("[2] 敌方演出结束后按钮行未自行恢复（缺收链重绘）")
@@ -62,11 +67,16 @@ func _ready() -> void:
 				if banner_image != null:
 					banner_image.save_png("user://m7c_banner_shot.png")
 		ghost_peak = maxi(ghost_peak, get_tree().get_nodes_in_group("qi_ghost").size())
-		if main.combat.player_breath_count >= 1 and not main.sequencer.busy:
+		if main.turn_manager.awaiting_player_claims and not main.sequencer.busy:
+			main._release_claim_window()
+		if main.combat.player_swap_count >= 1 and not main.sequencer.busy:
 			break
 		if not main.sequencer.busy and main.combat.active_side == "player" \
-				and main.combat.player_breath_count < 1 and not main.turn_manager.is_over():
-			main._on_breathe_pressed()
+				and not main.turn_manager.awaiting_player_claims \
+				and main.combat.player_swap_count < 1 and not main.turn_manager.is_over():
+			main._on_swap_pressed()
+			main._on_card_clicked(0)
+			main.confirm_swap()
 	if not saw_banner:
 		fails.append("[3] 未观察到功法横幅（沙盒种子下敌方第1回合应发动功法）")
 	if ghost_peak < 3:

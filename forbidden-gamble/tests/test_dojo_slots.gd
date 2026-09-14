@@ -4,9 +4,9 @@ extends GutTest
 
 const DojoScene := preload("res://scenes/dojo/dojo.tscn")
 
-# 初始装配（data/player.json）：techniques 6 槽满编、xinfa 前 3 槽
-const TECH_INITIAL := ["点星式", "连风式", "纵横式", "一气·拒", "二重·壁", "二合·屏"]
-const XINFA_INITIAL := ["调息诀", "先纳功", "养木功"]
+# 初始装配（data/player.json，真气语法 v2）：techniques 6 槽满编、xinfa 前 3 槽
+const TECH_INITIAL := ["点星式", "崩山式", "行云式", "二重·壁", "蓄势斩", "行气式"]
+const XINFA_INITIAL := ["先纳功", "养木功", "龟息功"]
 
 func _make_dojo() -> Control:
 	var ui: Control = DojoScene.instantiate()
@@ -53,7 +53,7 @@ func test_picking_equipped_technique_swaps_slots() -> void:
 	var ui := await _make_dojo()
 	ui._on_picked({"kind": "tech", "index": 4, "id": "点星式"})
 	assert_eq(ui._tech_sel[4], "点星式", "点星式换到第 5 槽")
-	assert_eq(ui._tech_sel[0], "二重·壁", "原第 5 槽功法填回第 1 槽（互换）")
+	assert_eq(ui._tech_sel[0], "蓄势斩", "原第 5 槽功法填回第 1 槽（互换）")
 	var seen := {}
 	for sel in ui._tech_sel:
 		assert_false(seen.has(sel), "每门功法只占一槽：%s" % sel)

@@ -1,25 +1,8 @@
 {
-  "调息诀": {
-    "tier": 1,
-    "school": "通用",
-    "desc": "行气的入门功夫。每次调息时，手牌中随机一张最高品的真气不入气海，改为洗入丹田——好气快回。",
-    "effects": [
-      {
-        "on": "breath",
-        "phase": "pre",
-        "do": {
-          "type": "wash_back"
-        },
-        "when": {
-          "as_target": true
-        }
-      }
-    ]
-  },
   "先纳功": {
     "tier": 1,
     "school": "通用",
-    "desc": "最朴素的养气法门。临敌之际抢先调匀呼吸，战斗开始时额外纳入一口气。（原《吐纳术》，避功法撞名改今名）",
+    "desc": "最朴素的养气法门。临敌之际抢先调匀呼吸，战斗开始时额外从气海多纳一口真气入丹田。",
     "effects": [
       {
         "on": "battle_start",
@@ -51,14 +34,14 @@
   },
   "养木功": {
     "tier": 1,
-    "school": "林",
-    "desc": "木气主生发。每次调息时温养气血，回复1点。",
+    "school": "通用",
+    "desc": "木气主生发。每次架势时温养气血，回复1点。",
     "effects": [
       {
-        "on": "breath",
+        "on": "swap",
         "phase": "post",
         "when": {
-          "once_per_breath": true,
+          "once_per_swap": true,
           "as_target": true
         },
         "do": {
@@ -70,11 +53,11 @@
   },
   "盘根诀": {
     "tier": 2,
-    "school": "林",
-    "desc": "根深而叶茂。每次调息时护境+2。",
+    "school": "通用",
+    "desc": "根深而叶茂。每次架势时护境+2。",
     "effects": [
       {
-        "on": "breath",
+        "on": "swap",
         "phase": "post",
         "do": {
           "type": "guard_bonus",
@@ -89,55 +72,13 @@
   "先机诀": {
     "tier": 2,
     "school": "风",
-    "desc": "先下手为强。战斗开始时夺取行动权；若对方亦同修此诀，气机相抵，两家都夺不成。",
+    "desc": "先下手为强。遭遇偷袭时抢先夺回先手；若对方亦同修此诀，气机相抵，两家都夺不成。",
     "effects": [
       {
         "on": "battle_start",
         "phase": "post",
         "do": {
           "type": "seize_initiative"
-        }
-      }
-    ]
-  },
-  "气海无涯": {
-    "tier": 2,
-    "school": "通用",
-    "desc": "气海容积，无涯无际。调息不再弃置手牌，改为从丹田提 3 张——手牌净涨，杂气滞留自衡。",
-    "effects": [
-      {
-        "on": "breath",
-        "phase": "pre",
-        "do": {
-          "type": "breath_transform",
-          "draws": 3,
-          "keep_hand": true
-        },
-        "when": {
-          "as_target": true
-        }
-      }
-    ]
-  },
-  "化浊诀": {
-    "tier": 1,
-    "school": "通用",
-    "desc": "化浊归纯。出招选入真气含下品时，本次真气量+1（每次行动至多触发一次），随后冷却 2。",
-    "effects": [
-      {
-        "on": "technique_prepare",
-        "phase": "pre",
-        "when": {
-          "grade_lte": {
-            "grade": 1,
-            "count": 1
-          },
-          "as_attacker": true
-        },
-        "cooldown": 2,
-        "do": {
-          "type": "qi_amount_bonus",
-          "value": 1
         }
       }
     ]

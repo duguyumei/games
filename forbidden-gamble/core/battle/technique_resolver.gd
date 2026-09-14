@@ -2,11 +2,9 @@ class_name TechniqueResolver
 extends RefCounted
 
 # 通用功法解释器：功法条件是数据（data/techniques.json），本类只做解释执行。
-# 新增加法 = 新增一行数据；数据表达不了的效果 = 新增一个 effect type。
-# 功法数据经 DataRepo 统一加载（缓存可失效）。
-# v1 数值语法（《战斗系统底层_v1》§3/§6）：效果 ＝ 基值 ＋ 系数 × 真气量；
-# 真气量 ＝ Σ(品级值 − 功法等级)（见 QiAmountCalculator），效果值下限 0。
-# 内力/传输/劲道概念已退役（2026-09-11 定案）。
+# 真气语法 v2（《真气语法_v2》§2）：**功法输入固定三张（刻子或顺子，功法声明）**；
+# **威力 ＝ 基值 ＋ 系数 × 数值和**（数值和＝选入真气数值之和，占位）。
+# 品级/真气量公式（Σ(品级值−等级)）已退役（2026-09-14 定案）。
 
 static func technique_ids() -> Array[String]:
 	var ids: Array[String] = []
@@ -16,9 +14,15 @@ static func technique_ids() -> Array[String]:
 static func data_for(technique_id: String) -> Dictionary:
 	return DataRepo.techniques().get(technique_id, {})
 
+# 数值和：本次选入真气的数值合计（力度的唯一计量）
+static func value_sum(cards: Array) -> int:
+	var total := 0
+	for card in cards:
+		total += int(card.value)
+	return total
+
 # 精确判断"这一组选中的真气"是否满足功法条件（玩家确认和 UI 提示用）。
-# 条件只剩牌型与词条门控——冷却中的功法不可发动；蓄力占用行动机会，
-# 蓄力期间任何功法都不可发起（充能拍由引擎自动执行）。
+# 条件＝三张成 型（刻子/顺子）＋词条门控（冷却/蓄力占用）。
 static func can_use(technique_id: String, cards: Array, fighter: FighterState = null) -> bool:
 	var data := data_for(technique_id)
 	if data.is_empty():
@@ -43,55 +47,50 @@ static func can_use(technique_id: String, cards: Array, fighter: FighterState = 
 	return true
 
 # 在手牌中搜索一组满足条件的真气（AI 和"是否有合法行动"用）。
-# 牌型只判断明确选择的真气，所以这里枚举手牌子集；手牌约6张，位掩码枚举开销可忽略。
+# 输入固定三张——只枚举三元组，开销可忽略。
 static func find_legal_selection(technique_id: String, hand: Array, fighter: FighterState = null) -> Array:
 	var hand_size := hand.size()
-	for mask in range(1, 1 << hand_size):
-		var selection: Array = []
-		for index in range(hand_size):
-			if mask & (1 << index):
-				selection.append(hand[index])
-		if can_use(technique_id, selection, fighter):
-			return selection
+	for i in range(hand_size):
+		for j in range(i + 1, hand_size):
+			for k in range(j + 1, hand_size):
+				var selection: Array = [hand[i], hand[j], hand[k]]
+				if can_use(technique_id, selection, fighter):
+					return selection
 	return []
 
-# 一键补齐（M7b 装配流）：在包含 must_include 全部真气的前提下，搜索满足功法条件的最小子集。
+# 一键补齐（装配流）：在包含 must_include 全部真气的前提下，搜索满足功法条件的三张组。
 # 找不到返回空数组（调用方提示"当前选中真气无法凑成条件"）。
 static func find_legal_selection_containing(technique_id: String, hand: Array, must_include: Array = [], fighter: FighterState = null) -> Array:
-	var hand_size := hand.size()
-	var must_mask := 0
+	if must_include.size() > PatternEvaluator.PATTERN_SIZE:
+		return []
+	var base: Array = []
 	for card in must_include:
-		var index := hand.find(card)
-		if index < 0:
+		if not hand.has(card):
 			return []
-		must_mask |= (1 << index)
-	# 枚举所有包含 must_include 的子集，取满足条件的张数最少者（"补齐"＝在已选基础上补最少的牌）
-	var best: Array = []
-	var best_size := hand_size + 1
-	for mask in range(1, 1 << hand_size):
-		if (mask & must_mask) != must_mask:
-			continue
-		if _popcount(mask) >= best_size:
-			continue
-		var selection: Array = []
-		for index in range(hand_size):
-			if mask & (1 << index):
-				selection.append(hand[index])
-		if can_use(technique_id, selection, fighter):
-			best = selection
-			best_size = selection.size()
-	return best
+		base.append(card)
+	if base.size() == PatternEvaluator.PATTERN_SIZE:
+		return base if can_use(technique_id, base, fighter) else []
+	var rest: Array = []
+	for card in hand:
+		if not base.has(card):
+			rest.append(card)
+	if base.size() == 2:
+		for c1 in rest:
+			var selection: Array = base + [c1]
+			if can_use(technique_id, selection, fighter):
+				return selection
+	elif base.size() == 1:
+		for i in range(rest.size()):
+			for j in range(i + 1, rest.size()):
+				var selection: Array = base + [rest[i], rest[j]]
+				if can_use(technique_id, selection, fighter):
+					return selection
+	elif base.is_empty():
+		return find_legal_selection(technique_id, hand, fighter)
+	return []
 
-static func _popcount(value: int) -> int:
-	var count := 0
-	var rest := value
-	while rest != 0:
-		count += rest & 1
-		rest >>= 1
-	return count
-
-# pre_validated：蓄力满值发动用——选入真气（含喂气）在起手时已验过合法性，复检会被
-# 喂气多出的牌破坏牌型判断；此路径只保留数据存在性检查。
+# pre_validated：蓄力满值/杠升档发动用——选入真气在起手时已验过合法性，
+# 杠的四张组合不满足三张牌型判断；此路径只保留数据存在性检查。
 static func resolve(technique_id: String, cards: Array, user: FighterState, target: FighterState, pipeline: EffectPipeline = null, randomizer: RandomNumberGenerator = null, pre_validated := false) -> Dictionary:
 	var tech_data := data_for(technique_id)
 	if tech_data.is_empty():
@@ -103,15 +102,14 @@ static func resolve(technique_id: String, cards: Array, user: FighterState, targ
 	if pipe == null:
 		pipe = _transient_pipeline()
 	var level := int(tech_data.get("level", 1))
-	# technique_prepare：真气量计算前的唯一改写窗口——心法词条（化浊诀类）在 PRE 改
-	# amount_modifier，这里读回后结算。
+	# technique_prepare：数值计算前的唯一改写窗口（将来估值型丹田改造挂这里）。
 	var prep := GameAction.new("technique_prepare", target, 0, user)
 	prep.context["technique"] = technique_id
 	prep.context["cards"] = cards
 	prep.context["level"] = level
 	prep.context["amount_modifier"] = 0
 	pipe.submit(prep)
-	var amount := QiAmountCalculator.qi_amount(cards, level, int(prep.context["amount_modifier"]))
+	var amount := value_sum(cards) + int(prep.context["amount_modifier"])
 	var result: Dictionary = {
 		"ok": true,
 		"technique": technique_id,
@@ -123,14 +121,11 @@ static func resolve(technique_id: String, cards: Array, user: FighterState, targ
 		if not ConditionEvaluator.evaluate(effect.get("when", {}), {"cards": cards}):
 			continue
 		_apply_effect(effect, amount, user, target, effect_texts, result, pipe, cards, randomizer)
-	# 压制词条（敌方系统 v1 §2.4 重定义）：该招给对方施加破绽（跳过下次获得行动权；
-	# 不再是"行动权不转让"的特权——统一货币，判定制函数保持纯净）。
+	# 压制词条：该招给对方施加破绽（跳过下次获得行动权；统一货币）。
 	if (tech_data.get("tags", []) as Array).has("压制"):
 		target.flawed = true
 		effect_texts.append("压制：对方露出破绽")
 	result["effect"] = "；".join(effect_texts)
-	# technique_use（结算成功后的时点）：功法完整生命周期 prepare→效果→use 统一在 resolve 内
-	# 提交——无论入口是 TurnManager 还是纯函数式调用，心法 use 词条行为一致。
 	var use_action := GameAction.new("technique_use", target, 0, user)
 	use_action.context["technique"] = technique_id
 	use_action.context["cards"] = cards
@@ -140,36 +135,33 @@ static func resolve(technique_id: String, cards: Array, user: FighterState, targ
 	pipe.submit(use_action)
 	return result
 
-# 效果数值＝基值＋系数×真气量（＋每张上品的额外加成），下限 0（负真气量可把效果压到 0，不倒扣）。
+# 效果数值＝基值＋系数×数值和，下限 0。
 static func effect_value(effect: Dictionary, amount: int, cards: Array) -> int:
 	var value := int(effect.get("base", 0)) + int(effect.get("scale", 0)) * amount
-	if int(effect.get("per_supreme", 0)) > 0:
-		var supremes := 0
-		for card in cards:
-			if card.grade >= 3:
-				supremes += 1
-		value += int(effect["per_supreme"]) * supremes
 	return maxi(value, 0)
 
-# 公式透明（2026-09-13 定案）：效果文本附带算式，玩家每拍看得见构筑在哪起作用。
+# 伤害算式注记：基值＋系数×数值和（公式透明）＋力修正（管线 PRE 生效，实结数含它——
+# 显示数必须等于实结数）。力为 0 时不添段。
+static func _damage_note(effect: Dictionary, amount: int, cards: Array, user: FighterState) -> String:
+	var note := _formula_note(effect, amount, cards)
+	var li := user.get_status("li")
+	if li <= 0:
+		return note
+	if note.is_empty():
+		return "（＋力%d）" % li
+	return note.left(note.length() - 1) + "＋力%d）" % li
+
+# 公式透明：效果文本附带算式，玩家每拍看得见构筑在哪起作用。
 # 系数参与才披露（纯基值无信息量）；返回带前导空格的注记，无信息时为空串。
 static func _formula_note(effect: Dictionary, amount: int, cards: Array) -> String:
 	var scale := int(effect.get("scale", 0))
 	if scale == 0:
 		return ""
 	var parts: Array[String] = ["基值%d" % int(effect.get("base", 0))]
-	parts.append("系数%d×真气%d" % [scale, amount])
-	if int(effect.get("per_supreme", 0)) > 0:
-		var supremes := 0
-		for card in cards:
-			if card.grade >= 3:
-				supremes += 1
-		if supremes > 0:
-			parts.append("上品%d×%d" % [int(effect["per_supreme"]), supremes])
+	parts.append("系数%d×数值和%d" % [scale, amount])
 	return "（%s）" % "＋".join(parts)
 
-# 直接函数式调用时的临时管线：纯机体结算共用 ResolverTable（与 CombatState 同源不漂移），
-# 伤害/上状态/蓄前时点为本层特化（无事件文案、无词表注册——纯函数语义）。
+# 直接函数式调用时的临时管线：纯机体结算共用 ResolverTable（与 CombatState 同源不漂移）。
 static func _transient_pipeline() -> EffectPipeline:
 	var pipe := EffectPipeline.new()
 	ResolverTable.register(pipe)
@@ -186,7 +178,6 @@ static func _apply_effect(effect: Dictionary, amount: int, user: FighterState, t
 			var dmg := effect_value(effect, amount, used_cards)
 			var action := GameAction.new("damage", target, dmg, user)
 			action.context["technique"] = str(result.get("technique", ""))
-			# 出招真气随伤害动作流转：心法按属性/系计数词条在 damage PRE 可读
 			action.context["cards"] = used_cards
 			pipe.submit(action)
 			if action.cancelled:
@@ -195,9 +186,8 @@ static func _apply_effect(effect: Dictionary, amount: int, user: FighterState, t
 			else:
 				result["damage"] = action.amount
 				result["damage_result"] = action.context.get("damage_result", {})
-				texts.append("造成%d点伤害%s" % [action.amount, _formula_note(effect, amount, used_cards)])
+				texts.append("造成%d点伤害%s" % [action.amount, _damage_note(effect, amount, used_cards, user)])
 		"guard_cover":
-			# D-064：护境覆盖走管线（guard_set 实际动作，PRE 可拦截＝"护境被压"类词条）
 			var cover := effect_value(effect, amount, used_cards)
 			var set_action := GameAction.new("guard_set", user, cover, user)
 			pipe.submit(set_action)
@@ -206,7 +196,6 @@ static func _apply_effect(effect: Dictionary, amount: int, user: FighterState, t
 			else:
 				texts.append("护境覆盖为%d%s" % [user.guard, _formula_note(effect, amount, used_cards)])
 		"remove_guard":
-			# D-064：护境移除走管线（guard_remove 实际动作，可被拦截＝"护境不破"类词条）
 			var guard_before := target.guard
 			var remove_action := GameAction.new("guard_remove", target, int(effect.get("value", 0)), user)
 			remove_action.context["cards"] = used_cards
@@ -218,7 +207,6 @@ static func _apply_effect(effect: Dictionary, amount: int, user: FighterState, t
 		"apply_status":
 			var stacks := effect_value(effect, amount, used_cards)
 			var status_id := str(effect.get("status", ""))
-			# to:self＝施加给自己（自我增益；默认打在出招目标身上）
 			var status_target := user if str(effect.get("to", "")) == "self" else target
 			var action := GameAction.new("status_apply", status_target, stacks, user)
 			action.context["status"] = status_id
@@ -231,7 +219,6 @@ static func _apply_effect(effect: Dictionary, amount: int, user: FighterState, t
 			pipe.submit(heal_action)
 			texts.append("回气%d" % healed)
 		"draw":
-			# 提气需要 rng（TurnManager 注入）；纯函数式调用无 rng 时跳过并告警
 			if randomizer == null:
 				push_warning("TechniqueResolver: draw 效果缺少 rng，跳过")
 				texts.append("提气失败（无随机源）")
@@ -249,40 +236,37 @@ static func _apply_effect(effect: Dictionary, amount: int, user: FighterState, t
 			push_warning("未知功法效果类型: " + str(effect.get("type", "")))
 
 # 意图展示用的效果摘要（按公开信息口径，由数据计算，不写死文案）。
-# 词条级信息（蓄力/压制/冷却）前置标注——行动权流向是公开信息（宪法第 6 条）。
 static func effect_summary(technique_id: String) -> String:
-	var data := data_for(technique_id)
-	var parts: Array[String] = []
-	if int(data.get("charge", 0)) > 0:
-		parts.append("蓄力%d" % int(data.get("charge", 0)))
-	if (data.get("tags", []) as Array).has("压制"):
-		parts.append("压制·对方露出破绽")
-	if int(data.get("cooldown", 0)) > 0:
-		parts.append("冷却%d" % int(data.get("cooldown", 0)))
-	for effect in data.get("effects", []):
-		match str(effect.get("type", "")):
-			"damage":
-				parts.append("伤%s" % _amount_text(effect))
-			"guard_cover":
-				parts.append("盾%s" % _amount_text(effect))
-			"remove_guard":
-				parts.append("移除护境%d" % int(effect.get("value", 0)))
-			"apply_status":
-				var to := "（己）" if str(effect.get("to", "")) == "self" else ""
-				parts.append("施%s%s" % [StatusRuntime.status_name(str(effect.get("status", ""))), to])
-			"heal":
-				parts.append("回气%d" % int(effect.get("value", 0)))
-			"draw":
-				parts.append("提%s" % _amount_text(effect))
-			"self_hp_loss":
-				parts.append("自损%d" % int(effect.get("value", 0)))
-	return "，".join(parts)
+		var data := data_for(technique_id)
+		var parts: Array[String] = []
+		if int(data.get("charge", 0)) > 0:
+			parts.append("蓄力%d" % int(data.get("charge", 0)))
+		if (data.get("tags", []) as Array).has("压制"):
+			parts.append("压制·对方露出破绽")
+		if int(data.get("cooldown", 0)) > 0:
+			parts.append("冷却%d" % int(data.get("cooldown", 0)))
+		for effect in data.get("effects", []):
+			match str(effect.get("type", "")):
+				"damage":
+					parts.append("伤%s" % _amount_text(effect))
+				"guard_cover":
+					parts.append("盾%s" % _amount_text(effect))
+				"remove_guard":
+					parts.append("移除护境%d" % int(effect.get("value", 0)))
+				"apply_status":
+					var to := "（己）" if str(effect.get("to", "")) == "self" else ""
+					parts.append("施%s%s" % [StatusRuntime.status_name(str(effect.get("status", ""))), to])
+				"heal":
+					parts.append("回气%d" % int(effect.get("value", 0)))
+				"draw":
+					parts.append("提%s" % _amount_text(effect))
+				"self_hp_loss":
+					parts.append("自损%d" % int(effect.get("value", 0)))
+		return "，".join(parts)
 
-# 数值段文案：基值＋系数×量（系数为 0 只写基值；每张上品加成单独标注）
+# 数值段文案：基值＋系数×数值和（系数为 0 只写基值）
 static func _amount_text(effect: Dictionary) -> String:
 	var text := "%d" % int(effect.get("base", 0))
 	if int(effect.get("scale", 0)) != 0:
-		text += "+%d×量" % int(effect.get("scale", 0))
-	if int(effect.get("per_supreme", 0)) > 0:
-		text += "+%d/上品" % int(effect.get("per_supreme", 0))
+		text += "+%d×和" % int(effect.get("scale", 0))
 	return text

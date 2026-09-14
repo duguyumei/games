@@ -17,31 +17,29 @@ const PLAYER_PATH := "res://data/player.json"
 
 # schema 枚举（与规则实现同步维护）
 const RARITIES := ["common", "fine", "rare", "legend"]
-# 敌方对手卡（敌方系统 v2，同核）：梯级自况条件键 / 钩子族与事件 / 应手武装键 / 调息策略
+# 敌方对手卡（敌方系统 v2 ×真气语法 v2.2）：梯级自况条件键 / 换手策略。
+# 截牌钩系统已退役（2026-09-15）——敌方截牌改同构必截（CombatState.claim_options）。
 const ENEMY_LADDER_WHEN := ["guard_lt", "guard_gt", "hp_lte", "status_gte"]
-const ENEMY_HOOK_KINDS := ["乱", "应"]
-const ENEMY_HOOK_ON := ["guard_broken", "player_breathed"]
-const ENEMY_ARM_KEYS := ["guard_gte", "hp_gte"]
-const ENEMY_BREATHE_POLICIES := ["all", "low_grade", "high_grade", "singletons"]
-const ENEMY_FLOOR := "调息"
-const ENEMY_GRADES := ["下品", "中品", "上品"]
-# 牌型（v1 属性轴）：一气＋重族 N 张同属性＋合族 N 张异属性，选牌上限 4
-const PATTERNS := ["ONE_QI", "HEAVY_2", "HEAVY_3", "HEAVY_4", "MIX_2", "MIX_3", "MIX_4"]
-# 功法效果类型（v1 数值语法：效果＝基值＋系数×真气量）
+const ENEMY_SWAP_POLICIES := ["all", "low_value", "high_value", "singletons"]
+const ENEMY_FLOOR := "架势"
+const ENEMY_ATTRIBUTES := ["风", "火", "山"]  # 基础三门（对应麻将三门花色，占位）；字牌（红中类）映射未拍板
+# 牌型（真气语法 v2）：功法输入固定三张——刻子（三张全同）或顺子（同属性连三）
+const PATTERNS := ["KEZI", "SHUNZI"]
+# 功法效果类型（威力＝基值＋系数×数值和）
 const EFFECT_TYPES := ["damage", "guard_cover", "apply_status", "remove_guard", "heal", "draw", "self_hp_loss"]
-# 功法词条标签：压制＝给对方施加破绽（敌方系统 v1 §2.4 重定义）
+# 功法词条标签：压制＝给对方施加破绽
 const TECHNIQUE_TAGS := ["压制"]
 # 功法效果条件键（_condition_met 支持）
 const TECHNIQUE_WHEN_KEYS := ["attribute_gte"]
 const STATUS_ACTIONS := ["hp_loss", "damage_modify"]
 const STATUS_AS := ["attacker", "target"]
-const STATUS_ON := ["battle_start", "breath", "technique_use", "damage"]
-# 心法词表（D-060/D-061，契约见《27》§3）
-const XINFA_SCHOOLS := ["风", "林", "火", "山", "通用"]
-const XINFA_ON := ["battle_start", "breath", "technique_prepare", "technique_use", "damage", "initiative_gain", "initiative_seize"]  # lift_qi 随提气退役（2026-09-13）
+const STATUS_ON := ["battle_start", "swap", "technique_use", "damage"]
+# 心法词表（D-060/D-061；真气语法 v2：调息→换牌，品级类词条随品级退役）
+const XINFA_SCHOOLS := ["风", "火", "山", "通用"]
+const XINFA_ON := ["battle_start", "swap", "technique_prepare", "technique_use", "damage", "initiative_gain", "initiative_seize"]
 const XINFA_PHASES := ["pre", "post"]
-const XINFA_CONDITION_KEYS := ["attribute_gte", "grade_lte", "xinfa_school_gte", "pattern", "transfer_gte", "breath_gte", "as_attacker", "as_target", "target_is_enemy", "source_is_enemy", "once_per_breath", "once_per_battle"]
-const XINFA_DO_TYPES := ["transfer_bonus", "damage_bonus", "damage_resist", "reflect", "guard_bonus", "heal", "draw", "wash_back", "breath_transform", "qi_amount_bonus", "apply_status", "self_hp_loss", "seize_initiative", "cancel", "amount_bonus"]
+const XINFA_CONDITION_KEYS := ["attribute_gte", "xinfa_school_gte", "pattern", "breath_gte", "as_attacker", "as_target", "target_is_enemy", "source_is_enemy", "once_per_swap", "once_per_battle"]
+const XINFA_DO_TYPES := ["damage_bonus", "damage_resist", "reflect", "guard_bonus", "heal", "draw", "apply_status", "self_hp_loss", "seize_initiative", "cancel", "amount_bonus"]
 # 物品大类与消耗品小类（25 号暂定稿）；container＝行囊（M4 穿戴容量件）；
 # use 效果词表 = 已实现执行器的清单
 const ITEM_TYPES := ["consumable", "material", "valuable", "manual", "weapon", "armor", "container", "readable"]
@@ -170,7 +168,7 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 				errs.append("techniques.json[%s]：apply_status 引用了不存在的状态 %s" % [key, effect.get("status")])
 			if etype in ["damage", "guard_cover", "draw"] and not effect.has("base"):
 				errs.append("techniques.json[%s]：%s 效果缺少 base（基值）" % [key, etype])
-			for num_field in ["base", "scale", "per_supreme"]:
+			for num_field in ["base", "scale"]:
 				if (effect as Dictionary).has(num_field) and int((effect as Dictionary).get(num_field, 0)) < 0:
 					errs.append("techniques.json[%s]：%s 应为非负整数" % [key, num_field])
 			for ckey in (effect as Dictionary).get("when", {}).keys():
@@ -221,19 +219,21 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 		if status.has("as") and not STATUS_AS.has(str(status.get("as", ""))):
 			errs.append("statuses.json[%s]：未知方向 as=%s" % [key, status.get("as")])
 
-	# 敌人（同核对手卡，敌方系统 v2）：id 与键一致、气血为正、起手/牌库真气合法、
-	# 调息策略白名单、行为链梯非空且末位是调息地板、梯级与钩子引用的功法必须存在于
-	# techniques.json、条件/事件/武装键全在白名单、冷却非负。
+	# 敌人（对手卡，敌方系统 v2 ×真气语法 v2.2）：id 与键一致、气血为正、起手/气海真气合法、
+	# 换手策略白名单、行为链梯非空且末位是架势地板、梯级功法引用存在、条件键白名单、
+	# 冷却非负。
 	for key in enemies:
 		var enemy: Dictionary = enemies[key]
 		if str(enemy.get("id", "")) != str(key):
 			errs.append("enemies.json[%s]：id（%s）与键不一致" % [key, enemy.get("id")])
 		if int(enemy.get("max_hp", 0)) <= 0:
 			errs.append("enemies.json[%s]：max_hp 应为正整数" % key)
-		if not ENEMY_BREATHE_POLICIES.has(str(enemy.get("breathe_policy", "all"))):
-			errs.append("enemies.json[%s]：未知调息策略 %s" % [key, enemy.get("breathe_policy")])
-		errs.append_array(_validate_enemy_cards(key, "hand", enemy.get("hand", [])))
-		errs.append_array(_validate_enemy_cards(key, "deck", enemy.get("deck", [])))
+		if not ENEMY_SWAP_POLICIES.has(str(enemy.get("swap_policy", "all"))):
+			errs.append("enemies.json[%s]：未知换手策略 %s" % [key, enemy.get("swap_policy")])
+		errs.append_array(_validate_qi(key, "hand", enemy.get("hand", [])))
+		errs.append_array(_validate_qi(key, "deck", enemy.get("deck", {})))
+		if (enemy.get("deck", {}) as Dictionary).is_empty():
+			errs.append("enemies.json[%s]：气海配置（deck）不能为空" % key)
 		var ladder: Array = enemy.get("ladder", [])
 		if ladder.is_empty():
 			errs.append("enemies.json[%s]：行为链梯为空" % key)
@@ -247,7 +247,7 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 				errs.append("enemies.json[%s]：梯级 %d 引用了不存在的功法 %s" % [key, index, technique])
 			if is_floor:
 				if not (rule.get("when", {}) as Dictionary).is_empty():
-					errs.append("enemies.json[%s]：调息地板不得带自况条件" % key)
+					errs.append("enemies.json[%s]：架势地板不得带自况条件" % key)
 			else:
 				for ckey in (rule.get("when", {}) as Dictionary).keys():
 					if not ENEMY_LADDER_WHEN.has(str(ckey)):
@@ -258,22 +258,8 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 								errs.append("enemies.json[%s]：梯级 %d 引用了不存在的状态 %s" % [key, index, sid])
 			if rule.has("cooldown") and int(rule.get("cooldown", 0)) < 0:
 				errs.append("enemies.json[%s]：梯级 %d 的 cooldown 应为非负整数" % [key, index])
-		for hook in enemy.get("hooks", []):
-			var hook_index := (enemy.get("hooks", []) as Array).find(hook)
-			if not ENEMY_HOOK_KINDS.has(str((hook as Dictionary).get("kind", ""))):
-				errs.append("enemies.json[%s]：钩子 %d 未知族 %s" % [key, hook_index, (hook as Dictionary).get("kind")])
-			if not ENEMY_HOOK_ON.has(str((hook as Dictionary).get("on", ""))):
-				errs.append("enemies.json[%s]：钩子 %d 未知事件 %s" % [key, hook_index, (hook as Dictionary).get("on")])
-			var hook_tech := str((hook as Dictionary).get("technique", ""))
-			if not techniques.has(hook_tech):
-				errs.append("enemies.json[%s]：钩子 %d 引用了不存在的功法 %s" % [key, hook_index, hook_tech])
-			for akey in (hook as Dictionary).get("arm", {}).keys():
-				if not ENEMY_ARM_KEYS.has(str(akey)):
-					errs.append("enemies.json[%s]：钩子 %d 未知武装键 %s" % [key, hook_index, akey])
-			if (hook as Dictionary).has("cooldown") and int((hook as Dictionary).get("cooldown", 0)) < 0:
-				errs.append("enemies.json[%s]：钩子 %d 的 cooldown 应为非负整数" % [key, hook_index])
 
-	# 玩家定义：功法/心法引用存在（player.json 进 pack 后生效；纯函数喂包不带则跳过）
+	# 玩家定义：功法/心法引用存在＋本命牌组合法（属性白名单＋数值 2–8）
 	if not player_def.is_empty():
 		for technique in player_def.get("techniques", []):
 			if not techniques.has(str(technique)):
@@ -281,20 +267,42 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 		for xf_id in player_def.get("xinfa", []):
 			if not xinfa.has(str(xf_id)):
 				errs.append("player.json：引用了不存在的心法 %s" % xf_id)
+		for card_data in player_def.get("deck", []):
+			var card: Dictionary = card_data
+			if not ENEMY_ATTRIBUTES.has(str(card.get("attribute", ""))):
+				errs.append("player.json：本命含未知属性 %s" % card.get("attribute"))
+			if not QiCard.value_valid(int(card.get("value", 0))):
+				errs.append("player.json：本命数值越界 %s（2–8）" % card.get("value"))
 	return errs
 
-# 敌方真气（起手/牌库）：属性非空、品级三档。
-static func _validate_enemy_cards(key: String, pile: String, cards: Array) -> Array[String]:
+# 真气配置（真气语法 v2，数值 2–8）：起手＝简写串（"山4"）或显式卡（{attribute, value}）；
+# 气海（deck）＝配置式 {属性: {数值: 张数}}（张数为正）。
+static func _validate_qi(key: String, pile: String, data) -> Array[String]:
 	var errs: Array[String] = []
-	for card in cards:
-		if str((card as Dictionary).get("attribute", "")).is_empty():
-			errs.append("enemies.json[%s].%s：真气缺少 attribute" % [key, pile])
-		if not ENEMY_GRADES.has(str((card as Dictionary).get("grade", ""))):
-			errs.append("enemies.json[%s].%s：未知品级 %s" % [key, pile, (card as Dictionary).get("grade")])
+	if data is Dictionary:
+		for attribute in data:
+			if not ENEMY_ATTRIBUTES.has(str(attribute)):
+				errs.append("enemies.json[%s].%s：未知属性 %s" % [key, pile, attribute])
+			for value in (data as Dictionary)[attribute]:
+				var value_num := int(str(value))
+				if not QiCard.value_valid(value_num):
+					errs.append("enemies.json[%s].%s：%s 的数值 %s 越界（2–8）" % [key, pile, attribute, value])
+				if int((data as Dictionary)[attribute][value]) <= 0:
+					errs.append("enemies.json[%s].%s：%s%s 的张数应为正整数" % [key, pile, attribute, value])
+	elif data is Array:
+		for item in data:
+			if item is Dictionary:
+				if not ENEMY_ATTRIBUTES.has(str((item as Dictionary).get("attribute", ""))):
+					errs.append("enemies.json[%s].%s：未知属性 %s" % [key, pile, (item as Dictionary).get("attribute")])
+				if not QiCard.value_valid(int((item as Dictionary).get("value", 0))):
+					errs.append("enemies.json[%s].%s：数值越界 %s（2–8）" % [key, pile, (item as Dictionary).get("value")])
+			elif item is String:
+				var token := str(item)
+				if token.length() != 2 or not QiCard.value_valid(int(token.substr(1))) \
+						or not ENEMY_ATTRIBUTES.has(token.substr(0, 1)):
+					errs.append("enemies.json[%s].%s：无法解析的真气简写 %s" % [key, pile, token])
 	return errs
 
-# 消耗品 use 结构：scopes/target 已知、效果词表受控、数值为正、apply_status 引用存在。
-# 无 use 是合法形态（凭证/粮草类被动作或地点引用，不直接点用）。
 static func _validate_item_use(key: String, item: Dictionary, statuses: Dictionary) -> Array[String]:
 	var errs: Array[String] = []
 	if not item.has("use"):

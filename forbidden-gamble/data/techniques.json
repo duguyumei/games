@@ -3,63 +3,41 @@
     "level": 1,
     "school": "通用",
     "patterns": [
-      "ONE_QI"
+      "SHUNZI"
     ],
     "effects": [
       {
         "type": "damage",
-        "base": 6,
-        "scale": 3
+        "base": 2,
+        "scale": 1
       }
     ]
   },
-  "连风式": {
+  "崩山式": {
     "level": 1,
     "school": "通用",
     "patterns": [
-      "HEAVY_2"
+      "KEZI"
     ],
     "effects": [
       {
         "type": "damage",
-        "base": 4,
-        "scale": 1,
-        "per_supreme": 1
-      },
-      {
-        "type": "damage",
-        "base": 4,
-        "scale": 1,
-        "per_supreme": 1
+        "base": 2,
+        "scale": 1
       }
     ]
   },
-  "纵横式": {
-    "level": 2,
-    "school": "通用",
-    "patterns": [
-      "MIX_2"
-    ],
-    "charge": 1,
-    "effects": [
-      {
-        "type": "damage",
-        "base": 10,
-        "scale": 5
-      }
-    ]
-  },
-  "一气·拒": {
+  "行云式": {
     "level": 1,
     "school": "通用",
     "patterns": [
-      "ONE_QI"
+      "SHUNZI"
     ],
     "effects": [
       {
         "type": "guard_cover",
-        "base": 5,
-        "scale": 3
+        "base": 4,
+        "scale": 1
       }
     ]
   },
@@ -67,63 +45,50 @@
     "level": 1,
     "school": "通用",
     "patterns": [
-      "HEAVY_2"
+      "KEZI"
     ],
     "effects": [
       {
         "type": "guard_cover",
-        "base": 7,
-        "scale": 2
-      }
-    ]
-  },
-  "二合·屏": {
-    "level": 1,
-    "school": "通用",
-    "patterns": [
-      "MIX_2"
-    ],
-    "effects": [
-      {
-        "type": "guard_cover",
-        "base": 7,
-        "scale": 2
-      }
-    ]
-  },
-  "一气·引": {
-    "level": 1,
-    "school": "通用",
-    "patterns": [
-      "ONE_QI"
-    ],
-    "effects": [
-      {
-        "type": "draw",
-        "base": 1,
+        "base": 4,
         "scale": 1
       }
     ]
   },
-  "二重·换": {
-    "level": 1,
+  "蓄势斩": {
+    "level": 2,
     "school": "通用",
     "patterns": [
-      "HEAVY_2"
+      "KEZI"
     ],
-    "cooldown": 1,
+    "charge": 1,
     "effects": [
       {
-        "type": "draw",
-        "base": 3
+        "type": "damage",
+        "base": 4,
+        "scale": 1
       }
     ]
   },
-  "二合·吐纳": {
+  "行气式": {
     "level": 1,
     "school": "通用",
     "patterns": [
-      "MIX_2"
+      "SHUNZI"
+    ],
+    "effects": [
+      {
+        "type": "draw",
+        "base": 2,
+        "scale": 0
+      }
+    ]
+  },
+  "缠丝劲": {
+    "level": 1,
+    "school": "通用",
+    "patterns": [
+      "KEZI"
     ],
     "tags": [
       "压制"
@@ -131,7 +96,22 @@
     "effects": [
       {
         "type": "draw",
-        "base": 1
+        "base": 1,
+        "scale": 0
+      }
+    ]
+  },
+  "连风式": {
+    "level": 1,
+    "school": "剑法",
+    "patterns": [
+      "SHUNZI"
+    ],
+    "effects": [
+      {
+        "type": "damage",
+        "base": 1,
+        "scale": 1
       }
     ]
   },
@@ -139,13 +119,13 @@
     "level": 1,
     "school": "剑法",
     "patterns": [
-      "ONE_QI"
+      "KEZI"
     ],
     "effects": [
       {
         "type": "guard_cover",
-        "base": 10,
-        "scale": 2
+        "base": 6,
+        "scale": 1
       }
     ]
   },
@@ -153,29 +133,16 @@
     "level": 1,
     "school": "剑法",
     "patterns": [
-      "ONE_QI"
+      "KEZI"
     ],
+    "cooldown": 1,
     "effects": [
       {
         "type": "apply_status",
         "status": "li",
         "to": "self",
-        "base": 1
-      }
-    ]
-  },
-  "蓄势斩": {
-    "level": 1,
-    "school": "剑法",
-    "patterns": [
-      "HEAVY_2"
-    ],
-    "charge": 1,
-    "effects": [
-      {
-        "type": "damage",
-        "base": 8,
-        "scale": 4
+        "base": 1,
+        "scale": 0
       }
     ]
   },
@@ -183,12 +150,12 @@
     "level": 1,
     "school": "剑法",
     "patterns": [
-      "ONE_QI"
+      "SHUNZI"
     ],
     "effects": [
       {
         "type": "damage",
-        "base": 2,
+        "base": 0,
         "scale": 1
       }
     ]

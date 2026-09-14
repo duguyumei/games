@@ -1,6 +1,6 @@
 extends Node
 # 敌方连拍演出 + 终局结算浮层验收：
-# 1) 玩家调息把行动权交给敌方后，演出链进入 busy 态（不是一帧内全结算完）
+# 1) 玩家换牌把行动权交给敌方后，演出链进入 busy 态（不是一帧内全结算完）
 # 2) 敌方出手有节奏（浮层出现时间 ≥ 一拍停顿），期间面板/日志已更新
 # 3) 玩家被击倒 → 终局浮层弹出：败北标题 + 致命一击 + 重开按钮（沙盒）
 # 4) 重开一场 → 浮层收起、新战斗就绪（第 1 回合、满气血）
@@ -16,18 +16,20 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 
-	# --- 1) 演出链 busy：调息让权后敌方回合应进入逐条演出态 ---
+	# --- 1) 演出链 busy：架势让权后敌方回合应进入逐条演出态（若敌方截链同步结算，则行动权已回玩家） ---
 	main.combat.player.hp = 1
 	var started := Time.get_ticks_msec()
-	main._on_breathe_pressed()
-	main.confirm_breathe()
+	main._on_swap_pressed()
+	main._on_card_clicked(0)
+	main.confirm_swap()
 	await get_tree().process_frame
-	if not main.sequencer.busy:
+	if not main.sequencer.busy and main.combat.active_side == "enemy":
 		fails.append("[1] 敌方回合未进入演出 busy 态")
 	var banner_during: String = main.get_node("Center/Column/TopBar/Bar/TurnLabel").text
-	print("[1] 调息让权后 busy=%s 顶栏回合行='%s'" % [main.sequencer.busy, banner_during])
+	print("[1] 架势让权后 busy=%s active=%s 顶栏回合行='%s'" % [main.sequencer.busy, main.combat.active_side, banner_during])
 
-	# 敌方偶尔锁防御意图时不掉血：最多再试两轮，每轮前压到 1 血保证致死。
+	# 敌方偶尔锁防御意图时不掉血：最多再试两轮，每轮前压到 1 血保证致死；
+	# 玩家截牌窗开着则一律放行（窗口作废）再操作。
 	for attempt in range(2):
 		if main.turn_manager.is_over():
 			break
@@ -35,10 +37,14 @@ func _ready() -> void:
 		while main.sequencer.busy and w < 6.0:
 			await get_tree().create_timer(0.1).timeout
 			w += 0.1
+		while main.turn_manager.awaiting_player_claims and not main.turn_manager.is_over():
+			main._release_claim_window()
+			await get_tree().process_frame
 		main.combat.player.hp = 1
 		started = Time.get_ticks_msec()
-		main._on_breathe_pressed()
-		main.confirm_breathe()
+		main._on_swap_pressed()
+		main._on_card_clicked(0)
+		main.confirm_swap()
 		await get_tree().process_frame
 
 	# --- 2)+3) 等终局浮层（演出一拍 + 终局停一拍后弹出） ---
@@ -81,11 +87,11 @@ func _ready() -> void:
 	await get_tree().process_frame
 	if overlay.visible:
 		fails.append("[4] 重开后浮层未收起")
-	if main.combat.player_breath_count != 0 or main.combat.player.hp != main.combat.player.max_hp:
-		fails.append("[4] 重开未复位（气口=%d 气血=%d/%d）" % [main.combat.player_breath_count, main.combat.player.hp, main.combat.player.max_hp])
+	if main.combat.player_swap_count != 0 or main.combat.player.hp != main.combat.player.max_hp:
+		fails.append("[4] 重开未复位（气口=%d 气血=%d/%d）" % [main.combat.player_swap_count, main.combat.player.hp, main.combat.player.max_hp])
 	if main.sequencer.busy:
 		fails.append("[4] 重开后演出链仍在 busy")
-	print("[4] 重开：气口=%d 气血=%d/%d busy=%s" % [main.combat.player_breath_count, main.combat.player.hp, main.combat.player.max_hp, main.sequencer.busy])
+	print("[4] 重开：气口=%d 气血=%d/%d busy=%s" % [main.combat.player_swap_count, main.combat.player.hp, main.combat.player.max_hp, main.sequencer.busy])
 
 	_finish(fails)
 

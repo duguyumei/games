@@ -23,11 +23,11 @@ var _used := {}
 
 func _init(pipeline: EffectPipeline) -> void:
 	_pipeline = pipeline
-	# 内部钟：调息动作（TurnManager 提交，target＝喘气者）。优先级 -10 抢在所有心法
-	# 之前计数——否则本次调息触发的词条会拿旧的 key，误判"本口气已用过"。
+	# 内部钟：架势动作（TurnManager 提交，target＝架势者）。优先级 -10 抢在所有心法
+	# 之前计数——否则本次架势触发的词条会拿旧的 key，误判"本次已用过"。
 	_pipeline.register_hook({
 		"carrier": "xinfa_runtime:clock",
-		"on": "breath",
+		"on": "swap",
 		"phase": "post",
 		"priority": -10,
 		"handler": func(action: GameAction) -> void:
@@ -88,12 +88,12 @@ func _fire(unit: FighterState, xf_id: String, effect_index: int, effect: Diction
 		return
 	if when.get("once_per_battle", false) and _used.has(_key(unit, xf_id, effect_index, "")):
 		return
-	if when.get("once_per_breath", false) and _used.has(_key(unit, xf_id, effect_index, "|b%d" % _breath_count(unit))):
+	if when.get("once_per_swap", false) and _used.has(_key(unit, xf_id, effect_index, "|s%d" % _breath_count(unit))):
 		return
 	if when.get("once_per_battle", false):
 		_used[_key(unit, xf_id, effect_index, "")] = true
-	if when.get("once_per_breath", false):
-		_used[_key(unit, xf_id, effect_index, "|b%d" % _breath_count(unit))] = true
+	if when.get("once_per_swap", false):
+		_used[_key(unit, xf_id, effect_index, "|s%d" % _breath_count(unit))] = true
 	_apply_do(effect.get("do", {}), unit, xf_id, action)
 	# 触发后写冷却（与自己原子行动同钟递减；"每次行动至多一次"由此保证）
 	if int(effect.get("cooldown", 0)) > 0:
@@ -109,15 +109,6 @@ func _conditions_met(when: Dictionary, unit: FighterState, action: GameAction) -
 		var spec: Dictionary = when["attribute_gte"]
 		if _attribute_count(action, str(spec.get("attribute", ""))) < int(spec.get("count", 1)):
 			return false
-	# grade_lte：选入真气中品级 ≤ grade 的张数 ≥ count（化浊诀"含下品"）
-	if when.has("grade_lte"):
-		var grade_spec: Dictionary = when["grade_lte"]
-		var owned_low := 0
-		for card in action.context.get("cards", []):
-			if card.grade <= int(grade_spec.get("grade", 1)):
-				owned_low += 1
-		if owned_low < int(grade_spec.get("count", 1)):
-			return false
 	if when.has("xinfa_school_gte"):
 		var spec: Dictionary = when["xinfa_school_gte"]
 		if equipped_school_count(unit.xinfa, str(spec.get("school", ""))) < int(spec.get("count", 1)):
@@ -129,7 +120,7 @@ func _conditions_met(when: Dictionary, unit: FighterState, action: GameAction) -
 	if when.has("transfer_gte") and int(action.context.get("transfer", 0)) < int(when["transfer_gte"]):
 		return false
 	if when.has("breath_gte") and _breath_count(unit) < int(when["breath_gte"]):
-		return false
+		return false  # 呼吸钟：现＝换牌计数（键名沿用）
 	if when.get("as_attacker", false) and action.source != unit:
 		return false
 	if when.get("as_target", false) and action.target != unit:
@@ -155,12 +146,6 @@ func _attribute_count(action: GameAction, attribute: String) -> int:
 
 func _apply_do(do_dict: Dictionary, unit: FighterState, xf_id: String, action: GameAction) -> void:
 	match str(do_dict.get("type", "")):
-		"transfer_bonus":
-			# technique_prepare 的 PRE 阶段改 transfer_modifier，resolve 读回后结算
-			var bonus := int(do_dict.get("value", 0))
-			if do_dict.has("per_attribute"):
-				bonus = int(do_dict.get("value", 0)) * _attribute_count(action, str(do_dict["per_attribute"]))
-			action.context["transfer_modifier"] = int(action.context.get("transfer_modifier", 0)) + bonus
 		"damage_bonus":
 			action.amount += int(do_dict.get("value", 0))
 		"damage_resist":
@@ -202,39 +187,6 @@ func _apply_do(do_dict: Dictionary, unit: FighterState, xf_id: String, action: G
 		"draw":
 			_submit_draw(unit, int(do_dict.get("value", 0)), action)
 			_emit("【%s】纳入%d口气。" % [xf_id, int(do_dict.get("value", 0))])
-		"wash_back":
-			# 调息诀：调息时手牌中随机一张最高品级真气不入气海，改为洗入丹田（好气快回）。
-			# 必须 PRE：RESOLVE 才弃牌，晚了牌已进气海。
-			if unit.hand.is_empty():
-				return
-			var best_grade := -1
-			for card in unit.hand:
-				best_grade = maxi(best_grade, card.grade)
-			var candidates: Array = []
-			for card in unit.hand:
-				if card.grade == best_grade:
-					candidates.append(card)
-			var randomizer: RandomNumberGenerator = action.context.get("rng")
-			var rescued = candidates[0]
-			if randomizer != null and candidates.size() > 1:
-				rescued = candidates[randomizer.randi_range(0, candidates.size() - 1)]
-			unit.hand.erase(rescued)
-			if randomizer != null and not unit.draw_pile.is_empty():
-				unit.draw_pile.insert(randomizer.randi_range(0, unit.draw_pile.size()), rescued)
-			else:
-				unit.draw_pile.push_front(rescued)
-			_emit("【%s】%s不入气海，洗回丹田。" % [xf_id, rescued.display_name()])
-		"breath_transform":
-			# 气海无涯：调息行为改写——不弃手牌，改为从丹田提 draws 张（手牌净涨）
-			action.amount = int(do_dict.get("draws", action.amount))
-			if bool(do_dict.get("keep_hand", false)):
-				action.context["keep_hand"] = true
-			_emit("【%s】气海无涯，真气不散。" % xf_id)
-		"lift_bonus":
-			pass  # 已退役（长息诀随提气删除，2026-09-13）；分支保留空壳防旧档数据报错
-		"qi_amount_bonus":
-			# 化浊诀：technique_prepare 的 PRE 改写本次真气量（amount_modifier 通道）
-			action.context["amount_modifier"] = int(action.context.get("amount_modifier", 0)) + int(do_dict.get("value", 0))
 		"apply_status":
 			var target: FighterState = action.target if str(do_dict.get("to", "opponent")) == "opponent" else unit
 			if not (target is FighterState):
@@ -292,7 +244,7 @@ static func effect_text(xf_id: String) -> String:
 static func _on_text(on: String, phase: String) -> String:
 	var prefix = {
 		"battle_start": "战斗开始时",
-		"breath": "每次调息时" if phase != "pre" else "调息纳气之际",
+		"swap": "每次架势时" if phase != "pre" else "架势弃气之际",
 		"technique_prepare": "出招凝劲时",
 		"technique_use": "出招之后",
 		"damage": "伤害结算时",
@@ -319,7 +271,7 @@ static func _when_text(when: Dictionary) -> String:
 	if when.has("transfer_gte"):
 		parts.append("传输内力≥%d时" % int(when["transfer_gte"]))
 	if when.has("breath_gte"):
-		parts.append("第%d次调息起" % int(when["breath_gte"]))
+		parts.append("第%d次架势起" % int(when["breath_gte"]))
 	if when.get("as_attacker", false):
 		parts.append("自己出手时")
 	if when.get("as_target", false):
@@ -328,8 +280,8 @@ static func _when_text(when: Dictionary) -> String:
 		parts.append("事涉敌方时")
 	if when.get("source_is_enemy", false):
 		parts.append("事出敌方时")
-	if when.get("once_per_breath", false):
-		parts.append("每口气一次")
+	if when.get("once_per_swap", false):
+		parts.append("每次架势一次")
 	if when.get("once_per_battle", false):
 		parts.append("每场一次")
 	if parts.is_empty():
@@ -338,10 +290,6 @@ static func _when_text(when: Dictionary) -> String:
 
 static func _do_text(do_dict: Dictionary) -> String:
 	match str(do_dict.get("type", "")):
-		"transfer_bonus":
-			if do_dict.has("per_attribute"):
-				return "每张%s系真气使传输内力+%d" % [str(do_dict["per_attribute"]), int(do_dict.get("value", 0))]
-			return "本次传输内力+%d" % int(do_dict.get("value", 0))
 		"damage_bonus":
 			return "伤害+%d" % int(do_dict.get("value", 0))
 		"damage_resist":
@@ -354,15 +302,6 @@ static func _do_text(do_dict: Dictionary) -> String:
 			return "回气%d" % int(do_dict.get("value", 0))
 		"draw":
 			return "额外抽%d口气" % int(do_dict.get("value", 0))
-		"wash_back":
-			return "调息时手牌中随机一张最高品真气不入气海，改为洗入丹田"
-		"breath_transform":
-			var draws := int(do_dict.get("draws", 3))
-			return "调息不再弃置手牌，改为从丹田提%d张（手牌净涨）" % draws
-		"lift_bonus":
-			return "（已退役）本口气提气次数+%d" % int(do_dict.get("value", 1))
-		"qi_amount_bonus":
-			return "本次真气量+%d" % int(do_dict.get("value", 0))
 		"apply_status":
 			var to := "予出招目标" if str(do_dict.get("to", "opponent")) == "opponent" else "予自身"
 			return "施%s×%d（%s）" % [StatusRuntime.status_name(str(do_dict.get("status", ""))), int(do_dict.get("value", 0)), to]

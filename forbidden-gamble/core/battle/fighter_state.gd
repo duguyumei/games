@@ -1,33 +1,38 @@
 class_name FighterState
 extends RefCounted
 
+# 战斗单位（真气语法 v2.2 区域语义，《真气语法_v2》§3）：
+# - hand＝**丹田**（体内真气；上限＝dantian_capacity，被动获得行动权时补满）
+# - melds＝**副露区**（功法打出的牌——主动打出＋吃碰杠截来打出的；公开、锁死、不可截）
+# - destiny_pile＝**本命牌组**（仅开局洗抽入丹田，战中不回流；系统挂起）
+# 气海（共墙）与个人牌河是战斗级共享/分属区，住 CombatState。
 var fighter_id: String
 var display_name: String
 var max_hp: int
 var hp: int
 var guard: int = 0
 var hand: Array = []
-var draw_pile: Array = []
-var discard_pile: Array = []
+var destiny_pile: Array = []
+# 副露区：每次功法打出的一组牌（Array of Array[QiCard]）
+var melds: Array = []
+# 丹田容量（个体化：玩家 8 占位；敌方＝对手卡起手张数——身体各有大小）
+var dantian_capacity := 8
 var techniques: Array[String] = []
 # 装备心法（D-060：5 平权槽的小丑牌式被动，XinfaRuntime 注册成管线钩子；玩家侧专用）
 var xinfa: Array[String] = []
-# 破绽（跳过下次获得行动权；不叠加、即查即耗）。铸币厂仅两处：钩子转换
-# （EnemyBrain 乱/应）与压制动词（TechniqueResolver）。破盾＝纯物理，不给破绽。
+# 破绽（下一次被动获得行动权时跳过该次行动；不叠加、即查即耗；主动夺取不受影响）。
+# 铸币厂（v3）：杠（被杠者）＋压制动词。
 var flawed := false
-# 敌方对手卡定义（敌方系统 v2）：{hand, deck, breathe_policy, ladder, hooks}，
+# 敌方对手卡定义（敌方系统 v2 + 真气语法 v2.2）：{hand, qi_sea, swap_policy, ladder}，
 # 由 EncounterLoader 填充；CombatState 据此构建 EnemyBrain。玩家侧不用。
 var enemy_def: Dictionary = {}
 # 战斗内状态（毒等）：status_id -> 层数。战斗结束即消失。
 var statuses: Dictionary = {}
-# 功法级战斗状态（26 号 §5 词条族）：
-# technique_cooldowns：tech_id -> 剩余冷却次数（自己每次原子行动开始时递减，归零解锁）
+# 功法级战斗状态：technique_cooldowns tech_id -> 剩余冷却次数；
+# xinfa_cooldowns "心法名|词条下标" -> 剩余次数（同一口钟）
 var technique_cooldowns: Dictionary = {}
-# 心法词条级冷却（化浊诀"触发冷却"）：键 "心法名|词条下标" -> 剩余次数
-# （自己每次原子行动开始时递减，归零解锁；与功法冷却同一口钟）
 var xinfa_cooldowns: Dictionary = {}
-# charging：当前蓄力（蓄力 N 词条）——{technique, charge, need, cards}；选入与喂气的
-# 真气都停在 cards 里，满值自动发动。同一时刻至多一门蓄力（起手占行动权，无并行）。
+# charging：当前蓄力（蓄力 N 词条）——{technique, charge, need, cards}；满值自动发动。
 var charging: Dictionary = {}
 
 func _init(new_id: String, new_name: String, new_max_hp: int) -> void:
@@ -39,8 +44,7 @@ func _init(new_id: String, new_name: String, new_max_hp: int) -> void:
 func is_alive() -> bool:
 	return hp > 0
 
-# 冷却计时：自己的每次原子行动开始时调用（行动本身不计入自己刚触发的冷却——
-# "冷却 N＝后续 N 次行动内不可再发动"，第 N+1 次行动起可用）。功法与心法同一口钟。
+# 冷却计时：自己的每次拍起手调用（被动获得或截链首段）。功法与心法同一口钟。
 func tick_cooldowns() -> void:
 	for tech_id in technique_cooldowns.keys():
 		var left := int(technique_cooldowns[tech_id]) - 1
@@ -58,13 +62,12 @@ func tick_cooldowns() -> void:
 func has_active_charge() -> bool:
 	return not charging.is_empty()
 
+# 有没有合法行动（流动制的"无气让拍"判据）：蓄力占位 → 有；手里还有牌 → 至少可架势；
+# 手牌耗尽且未蓄力 → 无气可动（让过一拍，疲劳照计——气竭判负已退役）。
 func has_legal_action() -> bool:
 	if has_active_charge():
-		return true  # 蓄力占用行动机会，充能拍由引擎自动执行
-	for technique_id in techniques:
-		if not TechniqueResolver.find_legal_selection(technique_id, hand, self).is_empty():
-			return true
-	return false
+		return true
+	return not hand.is_empty()
 
 func take_damage(amount: int) -> Dictionary:
 	var incoming := maxi(amount, 0)

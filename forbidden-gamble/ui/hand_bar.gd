@@ -25,7 +25,7 @@ var _runtime_rings: Array[Control] = []
 func _ready() -> void:
 	_clear_orbs()
 
-## 抽牌堆/弃牌堆计数。
+## 气海（共墙）/河（弃牌）计数（真气语法 v2）。
 func set_piles(deck_count: int, discard_count: int) -> void:
 	var deck_label: Label = get_node_or_null("Dantian/DantianNum")
 	if deck_label != null:
@@ -40,7 +40,7 @@ func set_meld_info(text: String) -> void:
 	if info != null:
 		info.text = text
 
-## 重摆手牌丹珠：cards 为真气卡（attribute/grade/statuses），
+## 重摆手牌丹珠：cards 为真气卡（attribute/value/statuses），
 ## selected 为选中索引（金环），interactive 为 false 时整排压暗不可点。
 func set_hand(cards: Array, selected: Array[int], interactive: bool) -> void:
 	_clear_orbs()
@@ -54,7 +54,8 @@ func set_hand(cards: Array, selected: Array[int], interactive: bool) -> void:
 		var card = cards[index]
 		var orb: QiOrb = QI_ORB_SCENE.instantiate() as QiOrb
 		orb.position = sockets[index] + ORB_ON_SOCKET_OFFSET
-		orb.force_text = card.grade_short()
+		orb.force_text = card.value_text()
+		orb.suit_text = str(card.attribute)
 		orb.orb_color = QiOrb.color_for_attribute(str(card.attribute))
 		orb.selected = selected.has(index)
 		orb.status_ring = not card.statuses.is_empty()

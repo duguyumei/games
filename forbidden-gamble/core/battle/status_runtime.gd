@@ -45,9 +45,9 @@ func _build_handler(unit: FighterState, status_id: String, data: Dictionary) -> 
 		var pipe: EffectPipeline = pipeline_ref.get_ref()
 		if pipe == null:
 			return
-		# breath 时点（D-063）：状态只随本人的调息发作——别人的喘气不催你的毒
+		# swap 时点（真气语法 v2）：状态只随本人的架势发作——别人的弃气不催你的毒
 		var on_point := str(data.get("on", ""))
-		if on_point == "breath" and action.target != unit:
+		if on_point == "swap" and action.target != unit:
 			return
 		# damage_modify（力/体/游身）：按 as 方向挂在伤害 PRE 修正 amount
 		if str(data.get("action", "")) == "damage_modify":

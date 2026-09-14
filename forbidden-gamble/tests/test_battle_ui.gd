@@ -27,6 +27,10 @@ func test_ambush_enemy_first_strike_runs_and_returns_control() -> void:
 	while (main.sequencer.busy or main.combat.active_side == "enemy") and waited < 5.0:
 		await get_tree().create_timer(0.1).timeout
 		waited += 0.1
+	# 敌方架势开出的截牌窗：测试策略一律放行（窗口作废 → 玩家被动获得行动权）
+	while main.turn_manager.awaiting_player_claims and not main.turn_manager.is_over():
+		main._release_claim_window()
+		await get_tree().process_frame
 	if main.turn_manager.is_over():
 		# 敌方第一击直接终结战斗（极端情况）：终局停拍后结算浮层必须弹出。
 		var overlay_wait := 0.0

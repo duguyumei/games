@@ -78,6 +78,7 @@ const CHIP_W := 78.0
 var _prev_hp := -1
 var _hp_fill_tween: Tween
 var _flash_tween: Tween
+var _intent_tween: Tween
 
 func _ready() -> void:
 	_prev_hp = -1
@@ -168,10 +169,22 @@ func _flash_hurt() -> void:
 	_flash_tween = create_tween()
 	_flash_tween.tween_property(portrait, "modulate", Color.WHITE, 0.4)
 
-# 破绽震慑（敌方系统 v1 §2.2 表现层）：立绘金光一闪＋横向抖动——
-# 破绽在结算里产生即消耗，不补这个可见瞬间，玩家只会觉得行动权莫名连转。
+# 破绽震慑：立绘金光一闪＋横向抖动——破绽在结算里产生即消耗，
+# 不补这个可见瞬间，玩家只会觉得行动权莫名连转。
 func flash_flaw() -> void:
 	_flash_recoil(Color(1.0, 0.82, 0.35))
+
+# 意图翻牌脉冲（敌方系统 v2：钩子改变意图＝翻牌即演出——意图卡闪色回落，
+# 玩家视线钉在意图区时不漏看）。
+func flash_intent(tint := Color(1.0, 0.62, 0.45)) -> void:
+	var intent_demo: Control = get_node_or_null("IntentDemo")
+	if intent_demo == null:
+		return
+	if _intent_tween != null and _intent_tween.is_valid():
+		_intent_tween.kill()
+	intent_demo.modulate = tint
+	_intent_tween = create_tween()
+	_intent_tween.tween_property(intent_demo, "modulate", Color.WHITE, 0.5)
 
 # 护境被击碎：青白闪光＋抖动（破盾是破绽的主要来源，两者视觉上要连成一件事）。
 func flash_guard_break() -> void:

@@ -1,32 +1,80 @@
 {
   "id": "player",
   "name": "独行武者",
-  "max_hp": 30,
+  "max_hp": 40,
   "techniques": [
     "点星式",
-    "连风式",
-    "纵横式",
-    "一气·拒",
+    "崩山式",
+    "行云式",
     "二重·壁",
-    "二合·屏"
+    "蓄势斩",
+    "行气式"
   ],
   "deck": [
-    {"id": "p_wind_low", "attribute": "风", "grade": "下品"},
-    {"id": "p_wind_mid", "attribute": "风", "grade": "中品"},
-    {"id": "p_wind_high", "attribute": "风", "grade": "上品"},
-    {"id": "p_forest_low", "attribute": "林", "grade": "下品"},
-    {"id": "p_forest_mid", "attribute": "林", "grade": "中品"},
-    {"id": "p_forest_high", "attribute": "林", "grade": "上品"},
-    {"id": "p_fire_low", "attribute": "火", "grade": "下品"},
-    {"id": "p_fire_mid", "attribute": "火", "grade": "中品"},
-    {"id": "p_fire_high", "attribute": "火", "grade": "上品"},
-    {"id": "p_mountain_low", "attribute": "山", "grade": "下品"},
-    {"id": "p_mountain_mid", "attribute": "山", "grade": "中品"},
-    {"id": "p_mountain_high", "attribute": "山", "grade": "上品"}
+    {
+      "id": "p_f3a",
+      "attribute": "风",
+      "value": 3
+    },
+    {
+      "id": "p_f3b",
+      "attribute": "风",
+      "value": 3
+    },
+    {
+      "id": "p_f4a",
+      "attribute": "风",
+      "value": 4
+    },
+    {
+      "id": "p_f4b",
+      "attribute": "风",
+      "value": 4
+    },
+    {
+      "id": "p_f4c",
+      "attribute": "风",
+      "value": 4
+    },
+    {
+      "id": "p_f5a",
+      "attribute": "风",
+      "value": 5
+    },
+    {
+      "id": "p_f5b",
+      "attribute": "风",
+      "value": 5
+    },
+    {
+      "id": "p_s4a",
+      "attribute": "山",
+      "value": 4
+    },
+    {
+      "id": "p_s4b",
+      "attribute": "山",
+      "value": 4
+    },
+    {
+      "id": "p_s5",
+      "attribute": "山",
+      "value": 5
+    },
+    {
+      "id": "p_h6",
+      "attribute": "火",
+      "value": 6
+    },
+    {
+      "id": "p_l3",
+      "attribute": "山",
+      "value": 3
+    }
   ],
   "xinfa": [
-    "调息诀",
     "先纳功",
-    "养木功"
+    "养木功",
+    "龟息功"
   ]
 }

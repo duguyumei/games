@@ -66,19 +66,24 @@ func play_message(message: String, used_qi: Array = [], hand_colors: Array = [])
 		else:
 			technique_banner("enemy", technique)
 	elif message.contains("改招"):
-		# 乱钩翻牌（敌方系统 v2）：盾碎瞬间慌忙换招——闪光＋抖动＋飘字（贴事件原位）
+		# 乱钩翻牌（敌方系统 v2）：盾碎瞬间慌忙换招——中央横幅＋碎盾闪光＋
+		# 意图卡脉冲＋大号飘字（三层信号叠在事件原位，翻牌必被看见）
 		var flip_panel := _panel_for(message)
 		if flip_panel != null:
 			flip_panel.flash_guard_break()
-			_float_text("改招！", flip_panel, Color(0.98, 0.82, 0.6), 26)
+			flip_panel.flash_intent(Color(0.98, 0.82, 0.6))
+			_float_text("改招！", flip_panel, Color(0.98, 0.82, 0.6), 30)
+		technique_banner("enemy", "改　招")
 	elif message.contains("改出"):
-		# 应钩翻牌：它抓住你的空隙改出应手——敌方亮招＋我方破绽双闪
+		# 应钩翻牌：它抓住你的空隙改出应手——中央横幅＋敌方意图脉冲＋我方破绽闪
 		var counter_panel := _panel_for(message)
 		if counter_panel != null:
 			counter_panel.flash_flaw()
-			_float_text("改出！", counter_panel, Color(0.98, 0.62, 0.5), 26)
+			counter_panel.flash_intent(Color(0.98, 0.62, 0.5))
+			_float_text("窥隙！", counter_panel, Color(0.98, 0.62, 0.5), 30)
 		if _player_panel != null:
 			_player_panel.flash_flaw()
+		technique_banner("enemy", "窥　隙")
 	elif message.contains("护境被击碎"):
 		# 破盾先于破绽匹配（同一条消息两个词都含）：闪光＋抖动＋飘字
 		var guard_panel := _panel_for(message)
@@ -89,14 +94,18 @@ func play_message(message: String, used_qi: Array = [], hand_colors: Array = [])
 		var flaw_panel := _panel_for(message)
 		if flaw_panel != null:
 			flaw_panel.flash_flaw()
-			_float_text("破绽！", flaw_panel, BP.COLOR_GOLD, 26)
+			_float_text("破 绽 ！", flaw_panel, BP.COLOR_GOLD, 34)
 	elif message.contains("双方各抽") and not message.contains("第1回合"):
 		_draw_flow(hand_colors)
 	elif message.begins_with("剩余真气收回丹田"):
 		_recycle_flow()
 
-# 消息归属面板：以"你"开头的消息归我方，其余（名字开头）归敌方。
+# 消息归属面板：以"你"或我方名字开头的消息归我方，其余（名字开头）归敌方。
+# （修复：玩家名非"你"时——如"独行武者露出破绽"——闪光曾错打在敌方立绘上。）
 func _panel_for(message: String) -> FighterPanel:
+	if _player_panel != null and not _player_panel.fighter_name.is_empty() \
+			and message.begins_with(_player_panel.fighter_name):
+		return _player_panel
 	return _player_panel if message.begins_with("你") else _enemy_panel
 
 # 抽牌流入：丹田 → 各孔位（状态已更新，取的正是新手牌）。

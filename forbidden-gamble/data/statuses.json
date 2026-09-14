@@ -2,7 +2,7 @@
   "poison": {
     "name": "毒",
     "scope": "battle",
-    "on": "breath",
+    "on": "swap",
     "phase": "post",
     "priority": 0,
     "action": "hp_loss",

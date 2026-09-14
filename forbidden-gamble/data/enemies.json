@@ -2,34 +2,64 @@
   "qingfeng": {
     "id": "qingfeng",
     "name": "青锋剑徒",
-    "max_hp": 26,
-    "breathe_policy": "singletons",
+    "max_hp": 40,
+    "swap_policy": "low_value",
     "hand": [
-      {"id": "e_m1", "attribute": "山", "grade": "下品"},
-      {"id": "e_m2", "attribute": "山", "grade": "下品"},
-      {"id": "e_f1", "attribute": "风", "grade": "下品"},
-      {"id": "e_h1", "attribute": "火", "grade": "下品"}
+      "山4",
+      "山4",
+      "山5",
+      "风3",
+      "风4",
+      "火6"
     ],
-    "deck": [
-      {"id": "e_m3", "attribute": "山", "grade": "下品"},
-      {"id": "e_m4", "attribute": "山", "grade": "中品"},
-      {"id": "e_m5", "attribute": "山", "grade": "中品"},
-      {"id": "e_f2", "attribute": "风", "grade": "下品"},
-      {"id": "e_f3", "attribute": "风", "grade": "下品"},
-      {"id": "e_f4", "attribute": "风", "grade": "中品"},
-      {"id": "e_h2", "attribute": "火", "grade": "下品"},
-      {"id": "e_h3", "attribute": "火", "grade": "中品"}
-    ],
+    "deck": {
+      "风": {
+        "3": 2,
+        "4": 2,
+        "5": 3
+      },
+      "火": {
+        "4": 3,
+        "5": 3,
+        "6": 1
+      },
+      "山": {
+        "3": 2,
+        "4": 3,
+        "5": 3,
+        "6": 2,
+        "7": 2,
+        "8": 1
+      }
+    },
     "ladder": [
-      {"technique": "重盾式", "when": {"guard_lt": 3}},
-      {"technique": "蓄势斩", "when": {"guard_gt": 8}},
-      {"technique": "连风式", "when": {"status_gte": {"li": 3}}},
-      {"technique": "磨刃式", "cooldown": 1},
-      {"technique": "调息"}
-    ],
-    "hooks": [
-      {"kind": "乱", "on": "guard_broken", "technique": "重盾式", "cooldown": 2},
-      {"kind": "应", "on": "player_breathed", "technique": "窥隙脚", "arm": {"guard_gte": 3}, "cooldown": 3}
+      {
+        "technique": "重盾式",
+        "when": {
+          "guard_lt": 6
+        }
+      },
+      {
+        "technique": "蓄势斩",
+        "when": {
+          "guard_gt": 10
+        }
+      },
+      {
+        "technique": "连风式",
+        "when": {
+          "status_gte": {
+            "li": 3
+          }
+        }
+      },
+      {
+        "technique": "磨刃式",
+        "cooldown": 1
+      },
+      {
+        "technique": "架势"
+      }
     ]
   }
 }

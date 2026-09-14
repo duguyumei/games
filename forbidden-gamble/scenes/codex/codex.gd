@@ -8,9 +8,9 @@ const XINFA_CARD_SCENE := preload("res://ui/xinfa_card.tscn")
 const ITEM_CARD_SCENE := preload("res://ui/item_card.tscn")
 const QI_ORB_SCENE := preload("res://ui/qi_orb.tscn")
 
-const ATTRS := ["风", "林", "火", "山"]
+const ATTRS := ["风", "火", "山"]
 # 品级三档（v1 三品化）：下/中/上
-const GRADES := ["下", "中", "上"]
+const VALUES := ["2", "3", "4", "5", "6", "7", "8"]
 
 @onready var qi_content: VBoxContainer = $Margin/VBox/Tabs/真气/Scroll/QiContent
 @onready var equip_grid: GridContainer = $Margin/VBox/Tabs/装备/Scroll/EquipGrid
@@ -36,16 +36,17 @@ func _heading(text: String) -> Label:
 
 
 func _fill_qi() -> void:
-	# 每属性一行：属性名＋下/中/上三颗丹珠（复用战斗丹珠组件）
+	# 每属性一行：属性名＋数值 2–8 七颗丹珠（复用战斗丹珠组件）
 	for attr in ATTRS:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 18)
 		var head := _heading(attr)
 		head.custom_minimum_size = Vector2(28, 0)
 		row.add_child(head)
-		for grade_index in range(GRADES.size()):
+		for value_index in range(VALUES.size()):
 			var orb := QI_ORB_SCENE.instantiate() as QiOrb
-			orb.force_text = GRADES[grade_index]
+			orb.force_text = VALUES[value_index]
+			orb.suit_text = attr
 			orb.orb_color = QiOrb.color_for_attribute(attr)
 			row.add_child(orb)
 		qi_content.add_child(row)

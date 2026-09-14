@@ -1,15 +1,13 @@
 class_name QiCountCell
 extends HBoxContainer
 
-# 演武场真气牌组编辑的计数格（编辑器模板）：某属性某品级的携带张数（品级 1/2/3＝下/中/上）。
+# 演武场本命牌组编辑的计数格（真气语法 v2）：某属性某数值（2–8）的携带张数。
 # setup() 在入树前调用（父容器 add_child 之前），不能依赖 @onready。
 
 signal count_changed
 
-var value := 1
+var value := 3
 var count := 0
-
-const GRADE_LABELS := ["下品", "中品", "上品"]
 
 
 func _ready() -> void:
@@ -39,5 +37,5 @@ func _on_minus_pressed() -> void:
 func _refresh() -> void:
 	if not is_inside_tree():
 		return
-	($ValueLabel as Label).text = GRADE_LABELS[clampi(value, 1, 3) - 1]
+	($ValueLabel as Label).text = str(value)
 	($CountLabel as Label).text = "×%d" % count
