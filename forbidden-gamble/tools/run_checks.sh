@@ -41,7 +41,7 @@ fi
 
 # ---------- 3) 场景冒烟：能起、能跑、零脚本错误 ----------
 step "scene smoke"
-for scene in title dojo codex board battle prep map_editor; do
+for scene in title dojo codex battle mahjong_battle; do
 	path="scenes/$scene/$scene.tscn"
 	"$GODOT" --headless --path . "res://$path" --quit-after 60 > "/tmp/rc_$scene.log" 2>&1
 	errs=$(grep -c "SCRIPT ERROR" "/tmp/rc_$scene.log" || true)
@@ -54,7 +54,7 @@ done
 
 # ---------- 4) 行为预览（自校验，退出码即结论） ----------
 step "behavior previews"
-for pv in m7_click_check m7c_check m7_end_check m8_topbar_check m9_container_check m10_mapeditor_check m11_mapboard_check; do
+for pv in m7_click_check m7c_check m7_end_check m8_topbar_check m9_container_check m10_mapeditor_check m11_mapboard_check m12_mahjong_sim m13_ui_autoplay; do
 	"$GODOT" --headless --path . "res://previews/$pv.tscn" > "/tmp/rc_$pv.log" 2>&1
 	rc=$?
 	echo "$pv  exit=$rc"

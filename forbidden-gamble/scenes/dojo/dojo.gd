@@ -48,6 +48,8 @@ func _ready() -> void:
 	_render_tech_slots()
 	_render_xinfa_slots()
 	start_button.pressed.connect(_on_start)
+	($Margin/VBox/BottomRow/MjButton as Button).pressed.connect(
+		func(): get_tree().change_scene_to_file(SceneRoutes.MJ_BATTLE))
 	($Margin/VBox/BottomRow/HomeButton as Button).pressed.connect(
 		func(): get_tree().change_scene_to_file(SceneRoutes.TITLE))
 

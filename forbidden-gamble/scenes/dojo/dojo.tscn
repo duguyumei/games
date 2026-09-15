@@ -129,6 +129,12 @@ custom_minimum_size = Vector2(220, 52)
 theme_override_font_sizes/font_size = 22
 text = "开 战"
 
+[node name="MjButton" type="Button" parent="Margin/VBox/BottomRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(180, 52)
+theme_override_font_sizes/font_size = 20
+text = "麻将演武（v3）"
+
 [node name="HomeButton" type="Button" parent="Margin/VBox/BottomRow"]
 layout_mode = 2
 custom_minimum_size = Vector2(140, 52)
