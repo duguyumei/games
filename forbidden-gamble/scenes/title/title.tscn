@@ -53,6 +53,12 @@ horizontal_alignment = 1
 [node name="Spacer" type="Control" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 32)
 
+[node name="ChallengeButton" type="Button" parent="Center/VBox"]
+custom_minimum_size = Vector2(240, 44)
+focus_mode = 0
+theme_override_font_sizes/font_size = 20
+text = "开始挑战"
+
 [node name="DojoButton" type="Button" parent="Center/VBox"]
 custom_minimum_size = Vector2(240, 44)
 focus_mode = 0

@@ -82,6 +82,7 @@ func _note(text: String) -> void:
 
 
 func _drive_one(scene: Control, player_ai: MJAI) -> void:
+	# 招架（截牌）＝居中弹窗（2026-09-17 重排）：底部按钮「取消（放行）」＋碰/杠/吃执行键
 	if scene._claim_popup.visible:
 		_note("claim-popup")
 		var decision := player_ai.decide(scene._current_request)
@@ -92,23 +93,34 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 			for c in (child as Control).get_children():
 				if c is Button:
 					buttons.append(c)
-		# 弹窗两键：「截（N）」＝执行全部选中（含吃/碰/杠）、「跳过」＝整批放行
-		var target := "截" if want_claim else "跳过"
+		var target := ""
 		for b in buttons:
-			if String((b as Button).text).begins_with(target):
-				(b as Button).pressed.emit()
+			var text := String((b as Button).text)
+			if want_claim:
+				if not text.begins_with("取") and not (b as Button).disabled:
+					target = text
+					break
+			elif text.begins_with("取"):
+				target = text
 				break
+		if target != "":
+			for b in buttons:
+				if String((b as Button).text).begins_with(target):
+					(b as Button).pressed.emit()
+					break
 		return
 	var request: Dictionary = scene._current_request
 	if request.is_empty():
 		return
 	if String(request.get("side", "")) != "player":
 		# 不耐烦行为：敌方演出期间乱点仍可交互的旧按钮/手牌——修复后应全部无效
+		# （按钮嵌在小字包裹层下——递归收集，2026-09-17 审计修复：直查恒空＝探针失效）
 		if randf() < 0.05:
-			for child in scene._action_bar.get_children():
-				if child is Button and not (child as Button).disabled:
+			var stale := _action_buttons(scene)
+			for b in stale.keys():
+				if b is Button and not (b as Button).disabled:
 					_note("stale-click")
-					(child as Button).pressed.emit()
+					(b as Button).pressed.emit()
 					break
 			scene._on_tile_clicked(0)
 		return
@@ -116,28 +128,6 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 	match String(request.get("phase", "")):
 		"free_fire":
 			var texts := _action_buttons(scene)
-			# 选项视图：功法多付法（点第一行＝贪心默认变体）；变招视图则退回（贪心玩家不用变招）
-			var has_back := false
-			for t in texts.values():
-				if String(t).begins_with("返"):
-					has_back = true
-			if has_back:
-				var first_option := ""
-				for b in texts.keys():
-					if not String(texts[b]).begins_with("返"):
-						first_option = String(texts[b])
-						break
-				if first_option.begins_with("换"):
-					for b in texts.keys():
-						if String(texts[b]).begins_with("返"):
-							(b as Button).pressed.emit()
-							break
-					return
-				for b in texts.keys():
-					if not String(texts[b]).begins_with("返"):
-						(b as Button).pressed.emit()
-						break
-				return
 			var fire: Array = decision.get("fire", [])
 			if not fire.is_empty():
 				# 找 id -> 功法名，点对应按钮
@@ -153,19 +143,19 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 			if str(decision.get("defense", "")) != "":
 				var clicked := false
 				for b in texts.keys():
-					if String(texts[b]).begins_with("护体·") and not (b as Button).disabled:
+					if (b as Button).has_meta("defense_button") and not (b as Button).disabled:
 						_note("defense-btn")
 						(b as Button).pressed.emit()
 						clicked = true
 						break
 				if clicked:
 					return
-			_note("defense greyed→play")
-			# 三成概率走"点牌开局"路径（麻将原生交互：free_fire 直接点手牌＝进入选弃）
-			if randf() < 0.3 and not scene.match_.fighter("player").hand.is_empty():
-				_note("tile-first")
-				scene._on_tile_clicked(0)
-				return
+			_note("select→play")
+			# 打出按钮有选区闸（2026-09-16 用户令）：先点足需打出张数，再按「打 出」
+			var p: MJFighter = scene.match_.fighter("player")
+			var need := maxi(1, p.hand.size() - p.rest_cap())
+			for i in range(mini(need, p.hand.size())):
+				scene._on_tile_clicked(i)
 			for b in texts.keys():
 				if String(texts[b]) == "打 出" and not (b as Button).disabled:
 					_note("play-btn submit")
@@ -184,7 +174,7 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 					scene._on_tile_clicked(int(idx))
 			if str(decision.get("defense", "")) != "":
 				for b in _action_buttons(scene).keys():
-					if String((b as Button).text).begins_with("护体·") and not (b as Button).disabled:
+					if (b as Button).has_meta("defense_button") and not (b as Button).disabled:
 						(b as Button).pressed.emit()
 						break
 			for b in _action_buttons(scene).keys():
@@ -195,10 +185,15 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 
 func _action_buttons(scene: Control) -> Dictionary:
 	var out := {}
-	for child in scene._action_bar.get_children():
+	_collect_buttons(scene._action_bar, out)
+	return out
+
+# 打出行三区＋小字包裹层之下——递归收集全部 Button（2026-09-16 结构化后按钮不再直接挂行）。
+func _collect_buttons(node: Node, out: Dictionary) -> void:
+	for child in node.get_children():
 		if child is Button:
 			out[child] = String((child as Button).text)
-	return out
+		_collect_buttons(child, out)
 
 
 func _dump(scene: Control) -> String:

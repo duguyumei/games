@@ -24,6 +24,8 @@ var gang_qi_cost := 0
 var windup := 0
 
 var tags: Array[String] = []
+# 效果全文（浮窗详情用）：明码印刷在类内——一类一文件，打开即见这门功法全部侧面。
+var brief := ""
 # 重击倍率（百分比整数；v3.5：倍率住功法——同一门功夫内力深者威力不同，基数＝攻击面板）。
 var power := 0
 

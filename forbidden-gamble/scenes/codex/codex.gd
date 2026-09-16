@@ -1,115 +1,140 @@
 extends Control
 
-## 图鉴（卡牌网格版）：真气（丹珠）/装备（装备卡）/功法（功法卡复用战斗卡面）/内功（内功卡）。
-## 只读展示，全部数据来自 DataRepo；卡片组件在编辑器可调。
+## 图鉴（发现制收藏，挑战层 v1.4 §4.9——参考我地麻 Illustration 重构）：
+## 四页全量收录现行 v3 内容——真气（万/筒/条×1–9 牌面总览，全量展示）／武学（功法·护体·心法三组）／
+## 牌灵／对手卡；武学/牌灵/对手＝发现制（获得/交战才亮，未发现显示「？？？——未发现」剪影）；
+## 头部收藏完成度百分比。收藏档 CodexState（user://mj_meta.json，跨局存活）。
+## v2.2 旧四页（风火山真气/装备/旧功法/旧内功）退役出图鉴（数据与代码不动）。
+## 修为解锁/成就解锁/搜索/稀有度分组＝后置（见《组挑战_代码设计_v1》§4.9 对照表）。
 
-const TECH_CARD_SCENE := preload("res://ui/technique_card.tscn")
-const XINFA_CARD_SCENE := preload("res://ui/xinfa_card.tscn")
-const ITEM_CARD_SCENE := preload("res://ui/item_card.tscn")
-const QI_ORB_SCENE := preload("res://ui/qi_orb.tscn")
-
-const ATTRS := ["风", "火", "山"]
-# 品级三档（v1 三品化）：下/中/上
-const VALUES := ["2", "3", "4", "5", "6", "7", "8"]
-
-@onready var qi_content: VBoxContainer = $Margin/VBox/Tabs/真气/Scroll/QiContent
-@onready var equip_grid: GridContainer = $Margin/VBox/Tabs/装备/Scroll/EquipGrid
-@onready var tech_grid: GridContainer = $Margin/VBox/Tabs/功法/Scroll/TechGrid
-@onready var xinfa_grid: GridContainer = $Margin/VBox/Tabs/内功/Scroll/XinfaGrid
+@onready var tabs: TabContainer = $Margin/VBox/Tabs
+@onready var ratio_label: Label = $Margin/VBox/RatioLabel
 
 
 func _ready() -> void:
 	_fill_qi()
-	_fill_equipment()
-	_fill_techniques()
-	_fill_xinfa()
+	_fill_wuxue()
+	_fill_pailing()
+	_fill_opponents()
+	ratio_label.text = "收藏 %d/%d（%d%%）" % [CodexState.discovered_count(), CodexState.all_ids().size(),
+		int(CodexState.discovered_ratio() * 100)]
 	($Margin/VBox/BottomRow/BackButton as Button).pressed.connect(
 		func(): get_tree().change_scene_to_file(SceneRoutes.TITLE))
+	await PreviewCapture.maybe_capture(self)
+
+
+func _page(name: String) -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.name = name
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_theme_constant_override("separation", 6)
+	scroll.add_child(v)
+	tabs.add_child(scroll)
+	return v
 
 
 func _heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 18)
-	label.add_theme_color_override("font_color", Color(0.109804, 0.090196, 0.070588, 1))
 	return label
 
 
+# —— 真气：三门×九值牌面总览（结构性内容，全量展示不参与发现） ——
 func _fill_qi() -> void:
-	# 每属性一行：属性名＋数值 2–8 七颗丹珠（复用战斗丹珠组件）
-	for attr in ATTRS:
+	var v := _page("真气")
+	v.add_child(_heading("三门×九值——共 108 张均匀气海"))
+	for suit in MJTile.SUITS:
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 18)
-		var head := _heading(attr)
-		head.custom_minimum_size = Vector2(28, 0)
-		row.add_child(head)
-		for value_index in range(VALUES.size()):
-			var orb := QI_ORB_SCENE.instantiate() as QiOrb
-			orb.force_text = VALUES[value_index]
-			orb.suit_text = attr
-			orb.orb_color = QiOrb.color_for_attribute(attr)
-			row.add_child(orb)
-		qi_content.add_child(row)
-	qi_content.add_child(_heading("牌型一览"))
-	var techniques: Dictionary = DataRepo.load_json(DataRepo.TECHNIQUES_PATH)
-	var used: Array = []
-	for tid in techniques.keys():
-		for p in techniques[tid].get("patterns", []):
-			if not used.has(p):
-				used.append(p)
-	var names: Array = []
-	for p in used:
-		names.append(PatternEvaluator.pattern_name(str(p)))
-	var label := Label.new()
-	label.text = "、".join(names)
-	label.add_theme_font_size_override("font_size", 15)
-	qi_content.add_child(label)
+		row.add_theme_constant_override("separation", 8)
+		row.add_child(_heading(suit))
+		for value in range(MJTile.VALUE_MIN, MJTile.VALUE_MAX + 1):
+			var tile := Label.new()
+			tile.text = "%s%d" % [suit, value]
+			tile.custom_minimum_size = Vector2(44, 34)
+			tile.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			tile.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			tile.add_theme_font_size_override("font_size", 18)
+			row.add_child(tile)
+		v.add_child(row)
 
 
-func _fill_equipment() -> void:
-	var items: Dictionary = DataRepo.load_json(DataRepo.ITEMS_PATH)
-	for id in items.keys():
-		var e: Dictionary = items[id]
-		var stat_line := ""
-		match str(e.get("type", "")):
-			"weapon":
-				var w: Dictionary = e.get("weapon", {})
-				stat_line = "%s·+%d" % [str(w.get("school", "—")), int(w.get("level", 0))]
-			"armor":
-				var a: Dictionary = e.get("armor", {})
-				stat_line = "护体·减伤 %d" % int(a.get("level", 0))
-			"container":
-				stat_line = "行囊"
-			_:
-				continue
-		var card := ITEM_CARD_SCENE.instantiate()
-		card.setup(str(e.get("name", id)), str(e.get("rarity", "")), stat_line, str(e.get("desc", "")))
-		equip_grid.add_child(card)
+# —— 武学：功法/护体/心法三组，发现制 ——
+func _fill_wuxue() -> void:
+	var v := _page("武学")
+	var groups := {
+		"功法（攻·耗式重击）": MJTechniqueLibrary.attack_roster(),
+		"护体（守·罡气即时）": MJTechniqueLibrary.defense_roster(),
+		"心法（被动）": MJTechniqueLibrary.xinfa_roster(),
+	}
+	for group_name in groups:
+		v.add_child(_heading(group_name))
+		for id_str in groups[group_name]:
+			v.add_child(_entry(str(id_str), _describe_wuxue.bind(str(id_str))))
+	v.add_child(_heading("获取：战后三选一免费拿一；修习货架历练购买"))
 
 
-func _fill_techniques() -> void:
-	var techniques: Dictionary = DataRepo.load_json(DataRepo.TECHNIQUES_PATH)
-	var ids := techniques.keys().duplicate()
-	ids.sort_custom(func(a, b):
-		return int(techniques[a].get("level", 0)) < int(techniques[b].get("level", 0)))
-	for tid in ids:
-		var t: Dictionary = techniques[tid]
-		var card := TECH_CARD_SCENE.instantiate()
-		var patterns: Array = []
-		for p in t.get("patterns", []):
-			patterns.append(PatternEvaluator.pattern_name(str(p)))
-		card.set_card(str(tid), "需：%s\n%s" % ["、".join(patterns), TechniqueResolver.effect_summary(str(tid))],
-			int(t.get("level", 1)))
-		tech_grid.add_child(card)
+func _describe_wuxue(id_str: String) -> String:
+	var t := MJTechniqueLibrary.make(id_str)
+	if t == null:
+		return id_str
+	if t.kind == "defense":
+		return "%s（护体·罡气%d）——%s" % [t.display_name, t.gang_qi_cost, t.brief]
+	var parts: Array[String] = []
+	for symbol in t.recipe:
+		parts.append("%s×%d" % [symbol, int(t.recipe[symbol])])
+	return "%s（%s·%d%%）——%s" % [t.display_name, "＋".join(parts), t.power, t.brief]
 
 
-func _fill_xinfa() -> void:
-	var xinfa: Dictionary = DataRepo.load_json(DataRepo.XINFA_PATH)
-	var ids := xinfa.keys().duplicate()
-	ids.sort_custom(func(a, b):
-		return int(xinfa[a].get("tier", 0)) < int(xinfa[b].get("tier", 0)))
-	for xid in ids:
-		var x: Dictionary = xinfa[xid]
-		var card := XINFA_CARD_SCENE.instantiate()
-		card.setup(str(xid), int(x.get("tier", 1)), str(x.get("school", "—")), str(x.get("desc", "")))
-		xinfa_grid.add_child(card)
+# —— 牌灵：发现制（获得即亮） ——
+func _fill_pailing() -> void:
+	var v := _page("牌灵")
+	v.add_child(_heading("缚于具体牌种（购入时自择；每牌种限一枚）"))
+	for id_str in MJPaiLing.roster():
+		v.add_child(_entry(str(id_str), _describe_pailing.bind(str(id_str))))
+	v.add_child(_heading("获取：修习货架购买；三选一在武学槽满时以牌灵补位"))
+
+
+func _describe_pailing(id_str: String) -> String:
+	var ling := MJPaiLing.make(id_str, "万", 0)
+	if ling == null:
+		return id_str
+	return ling.summary().replace("·万0", "")
+
+
+# —— 对手卡：发现制（交战即亮） ——
+func _fill_opponents() -> void:
+	var v := _page("对手")
+	v.add_child(_heading("一组三战（小/小/首领）——同构：强度住内力，血量贴玩家"))
+	for key in DataRepo.mj_opponents().keys():
+		v.add_child(_entry(str(key), _describe_opponent.bind(str(key))))
+
+
+func _describe_opponent(key: String) -> String:
+	var opp: Dictionary = DataRepo.mj_opponents()[key]
+	var n: Dictionary = opp.get("neili", {})
+	var techs: Array[String] = []
+	for wid in opp.get("techniques", []):
+		var t := MJTechniqueLibrary.make(str(wid))
+		techs.append(t.display_name if t != null else str(wid))
+	return "%s【%s】气血 %d｜内力 劲%d·骨%d·气%d｜功法 %s" % [
+		opp.get("name", ""), "首领" if str(opp.get("tier")) == "boss" else "喽啰",
+		int(opp.get("base_max_hp", 100)),
+		int(n.get("jin", 1)), int(n.get("gu", 1)), int(n.get("qi", 1)),
+		"、".join(techs)]
+
+
+# 发现制条目：已发现→全文明码；未发现→剪影。
+func _entry(id_str: String, describe: Callable) -> Control:
+	var line := Label.new()
+	if CodexState.is_discovered(id_str):
+		line.text = "◆ " + str(describe.call())
+		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	else:
+		line.text = "◇ ？？？——未发现"
+		line.modulate = Color(0.55, 0.52, 0.48)
+	return line

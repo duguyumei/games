@@ -8,10 +8,10 @@ extends RefCounted
 # ## 事件表（Input 键 → Output 键）
 # | 事件 | 时机 | Input | Output |
 # |---|---|---|---|
-# | POSTURE | 打出批次确定（虚招/普攻/反击弃牌） | {side, batch: Array[MJTile]} | {} |
+# | POSTURE | 打出批次确定（虚招/普攻/反击弃牌） | {side, batch: Array[MJTile], kind: "xu"|"normal"|"counter"} | {bian_charge: int = 0}（引擎回落方生效——灵变） |
 # | CLAIM_DONE | 招架成立（碰/杠/暗杠入副露） | {side, claim_type, symbol, tile} | {} |
-# | TECH_FIRE | 重击发射进在途 | {side, tech_id} | {} |
-# | TECH_RESOLVE | 在途结算（发射者可行动拍开头） | {side, tech_id, power} | {pct_bonus: int = 0, break_enemy_pending: bool = false, notes: Array[String]} |
+# | TECH_FIRE | 重击发射进在途 | {side, tech_id, windup, tiles: Array[MJTile]（本次耗式清单，挑战层牌灵标记用）} | {} |
+# | TECH_RESOLVE | 在途结算（发射者可行动拍开头） | {side, tech_id, power, opp_flawed: bool} | {pct_bonus: int = 0, break_enemy_pending: bool = false, debuff_gu_next: int = 0（削对方下拍骨力）, notes: Array[String]} |
 # | PENDING_BROKEN | 在途被断势击碎 | {side, tech_id} | {} |
 # | DAMAGE_DEALT | 伤害落地后 | {side: 受击方, amount_fp, display, source} | {} |
 # | BEAT_END | 一拍结束 | {beat, actor} | {} |
@@ -19,6 +19,7 @@ extends RefCounted
 # | COUNTER_PLAYED | 反击打出（招架后的打出，v3.5 插座） | {side, batch} | {} |
 # | IRON_END | 护体到期/衰减归零解除 | {side} | {} |
 # | FLAW_GAINED | 破绽获得（空手兜底即时触发，v3.6） | {side} | {} |
+# | TILE_DRAWN | 摸到牌（挑战层牌灵挂点）：破绽拍/正常拍/缺牌补充/岭上各一次 emit | {side, tiles: Array[MJTile], reason: "flaw"/"draw"/"topup"/"rinshan"} | {gang_qi: int = 0, iron_bonus_next: int = 0}（引擎回落方生效） |
 #
 # v3.5 退役：SHIKI_BASIC（式基本招伤害系统随普攻体系退役）；反击伤害为 0（插座，
 # 将来"反击时造成 X%"类词条挂 COUNTER_PLAYED——明码印刷，不做系统级条件伤害）。
@@ -36,6 +37,7 @@ const BIAN_DONE := "bian_done"
 const COUNTER_PLAYED := "counter_played"
 const IRON_END := "iron_end"
 const FLAW_GAINED := "flaw_gained"
+const TILE_DRAWN := "tile_drawn"
 
 var _listeners: Dictionary = {}  # event -> Array[{owner, callable}]
 

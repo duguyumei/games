@@ -94,11 +94,13 @@ func _ready() -> void:
 	else:
 		print("[5] 最新行非敌方发动（'%s'），跳过着色断言" % log_line.text)
 
-	# 截图留档（headless 假渲染无纹理时跳过）
+	# 截图留档（headless 假渲染无纹理——只开真实窗口才截，2026-09-17：
+	# dummy 纹理曾在 headless 下触发 "Parameter t is null" 运行时错）
 	await get_tree().create_timer(0.3).timeout
-	var image := get_viewport().get_texture().get_image()
-	if image != null:
-		image.save_png("user://m7c_shot.png")
+	if not DisplayServer.get_name().to_lower().contains("headless"):
+		var image := get_viewport().get_texture().get_image()
+		if image != null:
+			image.save_png("user://m7c_shot.png")
 
 	if fails.is_empty():
 		print("PASS: M7 收官（流动/横幅/按钮隐藏/镶孔/日志着色）全部通过")

@@ -11,6 +11,7 @@ func _init() -> void:
 	display_name = "铁布衫"
 	kind = "defense"
 	gang_qi_cost = 3
+	brief = "80% 免伤·3 敌方拍；每累计减免 5 点免伤率 −10%；期间禁功法、罡气冻结。"
 
 
 func apply_defense(f: MJFighter) -> Dictionary:

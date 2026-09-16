@@ -1,0 +1,18 @@
+{
+  "basic": {
+    "id": "basic",
+    "name": "初入江湖",
+    "desc": "无门无派，一身体力。",
+    "base_attack": 10,
+    "base_defense": 0,
+    "base_jing": 1,
+    "base_max_hp": 100,
+    "neili": { "jin": 1, "gu": 1, "qi": 1 },
+    "slots": { "gongfa": 1, "xinfa": 1, "hushen": 1 },
+    "loadout": {
+      "gongfa": ["dian_xue"],
+      "xinfa": ["zhao_jia_jue"],
+      "hushen": ["tie_bu_shan"]
+    }
+  }
+}

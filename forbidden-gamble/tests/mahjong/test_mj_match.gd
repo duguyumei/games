@@ -8,11 +8,23 @@ extends GutTest
 
 
 var match_: MJMatch
+var _counter_batches: Array = []
+var _posture_kinds: Array = []
 
 
 func before_each() -> void:
 	match_ = MJMatch.new()
 	match_.setup({"seed": 123})
+	_counter_batches.clear()
+	_posture_kinds.clear()
+
+
+func _on_counter_played(input: Dictionary) -> void:
+	_counter_batches.append(input.get("batch", []))
+
+
+func _on_posture_kind(input: Dictionary) -> void:
+	_posture_kinds.append(String(input.get("kind", "")))
 
 
 func _t(suit: String, value: int) -> MJTile:
@@ -130,6 +142,8 @@ func test_claim_cancels_attack_and_counter_deals_none() -> void:
 	_set_hand("player", [_t("条", 5), _t("万", 3), _t("万", 5), _t("万", 7), _t("筒", 4),
 		_t("筒", 6), _t("筒", 8), _t("条", 2), _t("条", 3), _t("条", 4), _t("万", 9), _t("筒", 9), _t("条", 8),
 		_t("筒", 1), _t("筒", 2), _t("筒", 3)])
+	match_.hooks.on(MJHooks.COUNTER_PLAYED, self, Callable(self, "_on_counter_played"))
+	match_.hooks.on(MJHooks.POSTURE, self, Callable(self, "_on_posture_kind"))
 	match_.decide({"fire": []})
 	match_.decide({"discard_indexes": [0, 1, 2]})  # 弃条5＋万3＋万5
 	match_.decide({"claim": {"type": "pon", "batch_index": 0}})
@@ -138,12 +152,27 @@ func test_claim_cancels_attack_and_counter_deals_none() -> void:
 	assert_eq(enemy.melds.size(), 1)
 	assert_eq(String(enemy.melds[0]["symbol"]), "撼", "条重＝撼")
 	assert_eq(enemy.gang_qi, 1, "招架 +1（v3.5 经济）")
+	# 副露 claimed 标记（2026-09-16 UI 轮）：被截那张（批位 0＝条5）记录实例 id，两张手牌伴牌无标记
+	var claimed: Array = enemy.melds[0].get("claimed", [])
+	assert_eq(claimed.size(), 1, "claimed 恰一张＝截来的")
+	var meld_ids: Array = []
+	for t in enemy.melds[0]["tiles"]:
+		meld_ids.append((t as MJTile).get_instance_id())
+	assert_true(meld_ids.has(int(claimed[0])), "claimed id 属本组牌")
 	# 截牌拍：敌方（截者）打出至上限＝1 张＝反击（不可截、暂不造成伤害）
 	var posture := match_.next_request()
 	assert_eq(String(posture["side"]), "enemy", "截牌拍归截者")
 	assert_eq(String(posture.get("play_kind", "")), "counter", "反击拍单列标记：不得按虚招/普攻口径提示（不可截）")
 	assert_eq(int(posture["discard_count"]), 1, "碰后恰好弃 1（麻将原生）")
 	match_.decide({"discard_indexes": [0]})
+	# 回归（2026-09-16）：pending_batch 曾与 picked 同引用，clear() 连坐致日志恒显"打出 0 张"、COUNTER_PLAYED 载荷为空
+	assert_true(match_.log.any(func(l): return l.contains("反击：招架后打出 1 张")), "反击日志张数如实")
+	assert_eq(_counter_batches.size(), 1, "COUNTER_PLAYED 触发一次")
+	assert_eq(_counter_batches[0].size(), 1, "钩子载荷携带反击实牌")
+	# POSTURE kind 契约（当前打出条数据源）：普攻＝normal、反击＝counter
+	assert_eq(_posture_kinds.size(), 2, "两次打出（玩家普攻＋敌方反击）")
+	assert_eq(_posture_kinds[0], "normal", "普攻打出 kind=normal")
+	assert_eq(_posture_kinds[1], "counter", "反击打出 kind=counter")
 	# 反击不可被截（v3.6）：不开窗——下一请求直接归玩家
 	var next := match_.next_request()
 	assert_eq(String(next["phase"]), "free_fire", "反击无窗：直接轮到玩家")
@@ -151,6 +180,11 @@ func test_claim_cancels_attack_and_counter_deals_none() -> void:
 	assert_eq(match_.fighter("player").hp_fp, 10000, "反击暂不造成伤害（插座）")
 	assert_eq(match_.river.side_at(match_.river.size() - 1), "enemy", "反击的牌入气河（绝对安全弃牌）")
 	assert_eq(match_.fighter("enemy").bian_charge, 3, "招架拍充能 2（1+气1）＋拆招诀 1＝3")
+	# 气河按次分组（2026-09-16 UI 轮）：玩家余批 2 张同批、敌方反击 1 张另批
+	assert_eq(match_.river.size(), 3, "余批2＋反击1")
+	assert_eq(match_.river.batch_at(0), match_.river.batch_at(1), "同一次打出＝同批次号")
+	assert_ne(match_.river.batch_at(1), match_.river.batch_at(2), "另一次打出＝不同批次号")
+	assert_eq(match_.river.batch_at(99), -1, "越界哨兵")
 
 
 # ---------- 虚招（v3.6：打出时无超额→0 伤、可被吃） ----------
@@ -544,6 +578,7 @@ func test_ankan_meld_rinshan() -> void:
 	match_.decide({"ankan": "万5", "fire": []})
 	var p := match_.fighter("player")
 	assert_eq(String(p.melds[0]["type"]), "KAN", "四张入副露＝本门万能式")
+	assert_eq((p.melds[0].get("claimed", ["x"]) as Array).size(), 0, "暗杠无截来牌（claimed 空）")
 	assert_eq(p.hand.size(), 16 - 4 + 1, "岭上摸 1：手 13")
 	assert_eq(match_.wall.live_left(), wall_before - 1, "岭上消耗一张墙牌")
 	assert_eq(p.gang_qi, 2, "暗杠拍：架势（摸牌）+1＋暗杠+1")

@@ -1,0 +1,65 @@
+{
+  "wuxue_pool": [
+    {
+      "id": "lianhuan_zhang",
+      "kind": "gongfa",
+      "price": 50
+    },
+    {
+      "id": "po_jia_quan",
+      "kind": "gongfa",
+      "price": 50
+    },
+    {
+      "id": "yun_zhou_jue",
+      "kind": "xinfa",
+      "price": 40
+    },
+    {
+      "id": "xi_lian_jue",
+      "kind": "xinfa",
+      "price": 40
+    },
+    {
+      "id": "jin_zhong_zhao",
+      "kind": "hushen",
+      "price": 60
+    }
+  ],
+  "pailing_pool": [
+    {
+      "id": "ling_gang",
+      "price": 40
+    },
+    {
+      "id": "ling_zhong",
+      "price": 45
+    },
+    {
+      "id": "ling_bian",
+      "price": 35
+    },
+    {
+      "id": "ling_jia",
+      "price": 45
+    }
+  ],
+  "heal_item": {
+    "id": "liao_shang_dan",
+    "name": "疗伤丹",
+    "price": 30,
+    "heal": 60
+  },
+  "slot_unlock": {
+    "base": 20,
+    "step": 15,
+    "cap": 5
+  },
+  "shelf_size": 3,
+  "reroll_base": 10,
+  "reroll_step": 5,
+  "reward_lianli": [
+    60,
+    90
+  ]
+}

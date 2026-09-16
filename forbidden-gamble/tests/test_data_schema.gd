@@ -132,3 +132,90 @@ func test_catches_unknown_item_type() -> void:
 		"dan": {"id": "dan", "name": "丹", "type": "wuxing", "rarity": "common", "value": 1},
 	}))
 	assert_true(errs.any(func(e: String) -> bool: return e.contains("未知大类")), "未知物品大类应被抓")
+
+# ---------- 组挑战三份（mj_*，挑战层 v1.4 §3） ----------
+
+func _mj_pack(decks := {}, opponents := {}, shop := {}) -> Dictionary:
+	var pack := _pack({}, {}, {}, {})
+	pack["mj_decks.json"] = decks
+	pack["mj_opponents.json"] = opponents
+	pack["mj_shop.json"] = shop
+	return pack
+
+func _deck_def(extra := {}) -> Dictionary:
+	var def := {
+		"id": "basic", "base_attack": 10, "base_defense": 0, "base_jing": 1, "base_max_hp": 100,
+		"neili": {"jin": 1, "gu": 1, "qi": 1},
+		"slots": {"gongfa": 1, "xinfa": 1, "hushen": 1},
+		"loadout": {"gongfa": ["dian_xue"], "xinfa": ["zhao_jia_jue"], "hushen": ["tie_bu_shan"]},
+	}
+	def.merge(extra, true)
+	return def
+
+func _opp_def(extra := {}) -> Dictionary:
+	var def := {
+		"id": "grp1_x", "tier": "small", "base_attack": 10, "base_defense": 0, "base_jing": 1,
+		"base_max_hp": 90, "neili": {"jin": 1, "gu": 1, "qi": 1},
+		"techniques": ["dian_xue"], "defenses": [], "xinfa": [],
+		"ai": {"suit_weights": {"万": 1.0}, "defense_hp_ratio": 0.35, "charge_threat_power": 150},
+	}
+	def.merge(extra, true)
+	return def
+
+func test_mj_real_data_passes() -> void:
+	var errs := DataRepo.validate_all()
+	assert_eq(errs, [], "真数据（含 mj_*）应通过：%s" % [errs])
+
+func test_mj_catches_bad_deck_slots() -> void:
+	var errs := DataRepo.validate_pack(_mj_pack(
+		{"bad": _deck_def({"id": "bad", "slots": {"gongfa": 0, "xinfa": 1, "hushen": 1}})}))
+	assert_true(errs.any(func(e: String) -> bool: return e.contains("slots.gongfa")), "槽位越界应被抓")
+
+func test_mj_catches_loadout_overflow() -> void:
+	var errs := DataRepo.validate_pack(_mj_pack(
+		{"bad": _deck_def({"id": "bad",
+			"loadout": {"gongfa": ["a", "b"], "xinfa": [], "hushen": []}})}))
+	assert_true(errs.any(func(e: String) -> bool: return e.contains("超出槽位")), "起始件超槽应被抓")
+
+func test_mj_catches_bad_tier_and_ratio() -> void:
+	var errs := DataRepo.validate_pack(_mj_pack({},
+		{"bad": _opp_def({"id": "bad", "tier": "elite"})}, {}))
+	assert_true(errs.any(func(e: String) -> bool: return e.contains("tier")), "非法 tier 应被抓")
+	errs = DataRepo.validate_pack(_mj_pack({},
+		{"bad": _opp_def({"id": "bad",
+			"ai": {"suit_weights": {"万": 1.0}, "defense_hp_ratio": 2.0, "charge_threat_power": 100}})}))
+	assert_true(errs.any(func(e: String) -> bool: return e.contains("defense_hp_ratio")), "血线越界应被抓")
+
+func test_mj_catches_bad_shop_fields() -> void:
+	var errs := DataRepo.validate_pack(_mj_pack({}, {},
+		{"wuxue_pool": [{"id": "x", "kind": "xifa", "price": 10}]}))
+	assert_true(errs.any(func(e: String) -> bool: return e.contains("未知 kind")), "未知武学轨应被抓")
+	errs = DataRepo.validate_pack(_mj_pack({}, {},
+		{"heal_item": {"id": "h", "price": 10, "heal": 0}}))
+	assert_true(errs.any(func(e: String) -> bool: return e.contains("heal_item")), "疗伤丹非法应被抓")
+
+func test_mj_pools_and_opponents_ids_registered() -> void:
+	# 池 id 与工厂注册一致性（代码设计 §6）：对手卡引用的武学/心法、货架池武学必须可被工厂制造
+	var errs: Array[String] = []
+	var opponents := DataRepo.mj_opponents()
+	var shop := DataRepo.mj_shop()
+	var known: Array[String] = []
+	for id_str in MJTechniqueLibrary.attack_roster():
+		known.append(id_str)
+	for id_str in MJTechniqueLibrary.defense_roster():
+		known.append(id_str)
+	for id_str in MJTechniqueLibrary.xinfa_roster():
+		known.append(id_str)
+	for entry in shop.get("wuxue_pool", []):
+		var id_str := str((entry as Dictionary).get("id", ""))
+		if not known.has(id_str):
+			errs.append("mj_shop.wuxue_pool 引用未注册武学: " + id_str)
+	for key in opponents:
+		var opp: Dictionary = opponents[key]
+		for id_str in (opp.get("techniques", []) as Array) + (opp.get("defenses", []) as Array):
+			if not MJTechniqueLibrary.attack_roster().has(str(id_str)) and not MJTechniqueLibrary.defense_roster().has(str(id_str)):
+				errs.append("mj_opponents[%s] 引用未注册武学: %s" % [key, id_str])
+		for id_str in opp.get("xinfa", []):
+			if not MJTechniqueLibrary.xinfa_roster().has(str(id_str)):
+				errs.append("mj_opponents[%s] 引用未注册心法: %s" % [key, id_str])
+	assert_eq(errs, [], "池与对手卡引用必须全部可制造：%s" % [errs])

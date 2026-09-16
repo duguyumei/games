@@ -35,6 +35,7 @@ var river := MJRiver.new()
 var fighters: Dictionary = {}   # side -> MJFighter
 var techniques: Dictionary = {}  # side -> Dictionary{id -> MJTechnique}（功法槽＋护身槽）
 var xinfa: Dictionary = {}       # side -> Array[MJXinfa]（心法槽，引擎直呼小协议）
+var pai_ling: Dictionary = {}    # side -> Array[MJPaiLing]（牌灵，挑战层——挂 TILE_DRAWN 等事件）
 var hooks := MJHooks.new()
 var log: Array[String] = []
 var last_marker := ""  # UI 用：最近特殊事件标记（"flaw:side:beat" 破绽——回气拍已退役）
@@ -66,8 +67,11 @@ func setup(cfg: Dictionary = {}) -> void:
 		f.jin_li = int(cfg.get(side + "_jin_li", 1))
 		f.gu_li = int(cfg.get(side + "_gu_li", 1))
 		f.qi_li = int(cfg.get(side + "_qi_li", 1))
+		f.base_jing = int(cfg.get(side + "_base_jing", 1))  # 架势数＝基础精力＋2（挑战层卡组注入）
 		f.apply_neili()
 		f.hp_fp = f.max_hp_fp
+		if cfg.has(side + "_start_hp_fp"):
+			f.hp_fp = clampi(int(cfg[side + "_start_hp_fp"]), 1, f.max_hp_fp)  # 血量带入（挑战层）
 		fighters[side] = f
 		# 构筑三轨槽（v3.5）：功法槽＋护身槽合一张注册表（kind 区分），心法槽独立
 		var ids: Array = cfg.get(side + "_techniques", MJTechniqueLibrary.all_ids())
@@ -83,6 +87,14 @@ func setup(cfg: Dictionary = {}) -> void:
 			if xf != null:
 				xf_list.append(xf)
 		xinfa[side] = xf_list
+		# 牌灵（挑战层）：绑具体牌种的效果件，technique 同款 owner_side 包装注册
+		var paillings: Array[MJPaiLing] = []
+		for pl in cfg.get(side + "_pailing", []):
+			var ling := MJPaiLing.make(str(pl.get("id", "")), str(pl.get("suit", "")), int(pl.get("value", 0)))
+			if ling != null:
+				ling.register(hooks, side)
+				paillings.append(ling)
+		pai_ling[side] = paillings
 	turn_side = String(cfg.get("first_side", "player"))
 	log.clear()
 	state = "idle"
@@ -143,18 +155,24 @@ func _begin_turn(side: String) -> void:
 	if f.flawed:
 		f.flawed = false
 		last_marker = "flaw:%s:%d" % [side, beat]
-		_log("%s 露出破绽：只自然摸牌 %d 张，错失本拍" % [f.display_name, f.draw_count()])
-		f.hand.append_array(_draw_with_recycle(f.draw_count()))
+		var flaw_drawn := _draw_with_recycle(f.draw_count() + _consume_draw_bonus(f))
+		f.hand.append_array(flaw_drawn)
+		_log("%s 露出破绽：只自然摸牌 %d 张，错失本拍" % [f.display_name, flaw_drawn.size()])
+		_emit_tile_drawn(side, flaw_drawn, "flaw")
 		f.add_gang_qi(1)  # 摸牌进账照常（不充能、不补缺）
 		_end_turn_flow()
 		return
-	f.hand.append_array(_draw_with_recycle(f.draw_count()))
+	var drawn := _draw_with_recycle(f.draw_count() + _consume_draw_bonus(f))
+	f.hand.append_array(drawn)
+	_emit_tile_drawn(side, drawn, "draw")
 	f.add_gang_qi(1)  # 每次摸牌 +1（护体期间冻结在 fighter 内闸）
 	# 缺牌补充（v3.6 气力）：正常摸牌后仍低于容量 → 补 ⌊气÷3⌋、至容量（每拍只查一次）
 	var deficit := f.rest_cap() - f.hand.size()
 	if deficit > 0 and f.topup_count() > 0:
 		var extra := mini(f.topup_count(), deficit)
-		f.hand.append_array(_draw_with_recycle(extra))
+		var topped := _draw_with_recycle(extra)
+		f.hand.append_array(topped)
+		_emit_tile_drawn(side, topped, "topup")
 		_log("%s 缺牌补充：+%d（气力 %d）" % [f.display_name, extra, f.qi_li])
 	# 变招充能（v3.6 按拍）：每个自身拍 +（1＋气力）
 	f.add_bian_charge(1 + f.qi_li)
@@ -226,8 +244,14 @@ func _decide_posture(decision: Dictionary) -> void:
 	idx_desc.reverse()
 	for i in idx_desc:
 		f.hand.remove_at(int(i))
-	pending_batch = picked
-	hooks.emit_event(MJHooks.POSTURE, {"side": turn_side, "batch": picked.duplicate()})
+	pending_batch = picked.duplicate()  # 副本：反击拍的 clear() 不得连坐 picked——日志张数与 COUNTER_PLAYED 载荷在 clear 后仍要读
+	var kind := "counter" if _counter_beat else ("xu" if xu else "normal")
+	for result in hooks.emit_event(MJHooks.POSTURE, {"side": turn_side, "batch": picked.duplicate(), "kind": kind}):
+		var out: Dictionary = result["out"]
+		if int(out.get("bian_charge", 0)) != 0:
+			f.add_bian_charge(int(out["bian_charge"]))  # 灵变：打出批次含绑定牌→充能
+	for xf in xinfa[turn_side]:
+		(xf as MJXinfa).on_posture_played(f, kind)  # 心法直呼（洗练诀）
 	if _counter_beat:
 		# 反击不可被截（v3.6）：直接入河收拍，不开窗
 		river.add(picked, turn_side)
@@ -364,7 +388,9 @@ func _do_one_claim(batch_index: int, claim_type: String) -> bool:
 		symbol = MJShiki.symbol_for(MJShiki.HEAVY, suit)
 	elif claim_type == "chi":
 		symbol = MJShiki.symbol_for(MJShiki.LIGHT, suit)
-	var meld := {"tiles": meld_tiles, "type": claim_type.to_upper(), "suit": suit, "symbol": symbol}
+	# claimed＝招架获得的牌（批次那张）的实例 id——副露标记"哪张是截来的"（暗杠无）。
+	var meld := {"tiles": meld_tiles, "type": claim_type.to_upper(), "suit": suit, "symbol": symbol,
+		"claimed": [tile.get_instance_id()]}
 	claimant.melds.append(meld)
 	claimant.add_gang_qi(1)  # 招架 +1（v3.5 经济；吃同族）
 	var claim_name := "碰"
@@ -422,9 +448,11 @@ func try_ankan(side: String, key: String) -> bool:
 	for t in quad:
 		f.hand.erase(t)
 	var suit := (quad[0] as MJTile).suit
-	f.melds.append({"tiles": quad, "type": "KAN", "suit": suit, "symbol": ""})
+	f.melds.append({"tiles": quad, "type": "KAN", "suit": suit, "symbol": "", "claimed": []})
 	f.add_gang_qi(1)
-	f.hand.append_array(_draw_with_recycle(1))  # 岭上摸 1（麻将原生补张）
+	var rinshan := _draw_with_recycle(1)  # 岭上摸 1（麻将原生补张）
+	f.hand.append_array(rinshan)
+	_emit_tile_drawn(side, rinshan, "rinshan")
 	_log("%s 暗杠：%s 四张入副露（罡气+1→%d），岭上摸 1" % [f.display_name, key, f.gang_qi])
 	hooks.emit_event(MJHooks.CLAIM_DONE, {"side": side, "claim_type": "ankan",
 		"symbol": MJShiki.symbol_for(MJShiki.HEAVY, suit), "tile": quad[0]})
@@ -483,13 +511,19 @@ func try_fire(side: String, tech_id: String, variant_index := 0) -> bool:
 	var variants := _plan_variants(f, tech.recipe)
 	if variant_index < 0 or variant_index >= variants.size():
 		return false
-	_execute_plan(f, variants[variant_index], side)
+	var plan: Array = variants[variant_index]
+	var fired_tiles: Array[MJTile] = []
+	for pay in plan:
+		var src_tiles: Array = pay["meld"]["tiles"] if String(pay["src"]) == "meld" else pay["group"]["tiles"]
+		for t in src_tiles:
+			fired_tiles.append(t)
+	_execute_plan(f, plan, side)
 	f.last_fire_beat = beat
 	var windup := tech.windup if tech.windup > 0 else _recipe_count(tech.recipe)
 	f.pending.append({"tech_id": tech_id, "windup": windup, "elapsed": 0})
 	_log("%s 重击·%s：%d%% 前摇 %d 拍进在途（式已入河明牌；对方经过 %d 拍后、我方摸牌后发动）" % [
 		f.display_name, tech.display_name, tech.power, windup, windup])
-	hooks.emit_event(MJHooks.TECH_FIRE, {"side": side, "tech_id": tech_id, "windup": windup})
+	hooks.emit_event(MJHooks.TECH_FIRE, {"side": side, "tech_id": tech_id, "windup": windup, "tiles": fired_tiles})
 	return true
 
 
@@ -772,6 +806,8 @@ func _strike(from_side: String, pct: int, source: String) -> Dictionary:
 			_log("铁布衫被击渐损：免伤率 → %d%%" % target.iron_reduction)
 	hooks.emit_event(MJHooks.DAMAGE_DEALT, {
 		"side": opponent(from_side), "amount_fp": after_iron, "display": display, "source": source})
+	if target.gu_drop_next > 0:
+		target.gu_drop_next = 0  # 破甲（一次性）：本次受击结算已吃减防，用后即清
 	_check_win()
 	return {"dealt_fp": after_iron, "display": display}
 
@@ -826,13 +862,19 @@ func _resolve_pending(side: String) -> void:
 		var pct := tech.power
 		var pct_bonus := 0
 		var break_pending := false
-		for result in hooks.emit_event(MJHooks.TECH_RESOLVE, {"side": side, "tech_id": tech_id, "power": pct}):
+		var debuff_gu := 0
+		var foe := fighter(opponent(side))
+		for result in hooks.emit_event(MJHooks.TECH_RESOLVE, {"side": side, "tech_id": tech_id, "power": pct, "opp_flawed": foe.flawed}):
 			var out: Dictionary = result["out"]
 			pct_bonus += int(out.get("pct_bonus", 0))
 			break_pending = break_pending or bool(out.get("break_enemy_pending", false))
+			debuff_gu += int(out.get("debuff_gu_next", 0))
 			for note in out.get("notes", []):
 				_log("%s" % str(note))
 		_strike(side, pct + pct_bonus, "%s·在途" % tech.display_name)
+		if debuff_gu > 0:
+			foe.gu_drop_next += debuff_gu  # 破甲拳：对方下一次被打结算时防御 −N（一次性）
+			_log("%s 骨力受创：下次受击防御 −%d" % [foe.display_name, debuff_gu])
 		if break_pending:
 			var enemy := fighter(opponent(side))
 			if enemy.has_pending():
@@ -871,6 +913,25 @@ func _draw_with_recycle(count: int) -> Array[MJTile]:
 
 
 # ———— 请求构建（公开信息口径：面板/明式/罡气/变招/护体/气血全公开，手牌只给本人） ————
+
+func _consume_draw_bonus(f: MJFighter) -> int:
+	var bonus := f.draw_bonus_next
+	f.draw_bonus_next = 0  # 消费即清（正常/破绽拍摸牌生效；缺牌补充不吃加成）
+	return bonus
+
+
+# TILE_DRAWN（牌灵挂点，挑战层）：emit 后回收 Output（gang_qi/iron_bonus_next）回落方生效。
+func _emit_tile_drawn(side: String, tiles: Array[MJTile], reason: String) -> void:
+	if tiles.is_empty():
+		return
+	var f := fighter(side)
+	for result in hooks.emit_event(MJHooks.TILE_DRAWN, {"side": side, "tiles": tiles, "reason": reason}):
+		var out: Dictionary = result["out"]
+		if int(out.get("gang_qi", 0)) != 0:
+			f.add_gang_qi(int(out["gang_qi"]))
+		if int(out.get("iron_bonus_next", 0)) != 0:
+			f.iron_bonus_next += int(out["iron_bonus_next"])
+
 
 func _build_request(actor: String) -> Dictionary:
 	var f := fighter(actor)

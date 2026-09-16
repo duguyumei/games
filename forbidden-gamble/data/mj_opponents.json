@@ -1,0 +1,91 @@
+{
+  "grp1_ronin": {
+    "id": "grp1_ronin",
+    "name": "落魄浪人",
+    "tier": "small",
+    "base_attack": 5,
+    "base_defense": 0,
+    "base_jing": 1,
+    "base_max_hp": 90,
+    "neili": {
+      "jin": 1,
+      "gu": 1,
+      "qi": 1
+    },
+    "techniques": [
+      "dian_xue"
+    ],
+    "defenses": [],
+    "xinfa": [],
+    "ai": {
+      "suit_weights": {
+        "万": 1.0,
+        "筒": 1.0,
+        "条": 1.0
+      },
+      "defense_hp_ratio": 0.35,
+      "charge_threat_power": 150
+    }
+  },
+  "grp1_bruiser": {
+    "id": "grp1_bruiser",
+    "name": "铁臂力士",
+    "tier": "small",
+    "base_attack": 5,
+    "base_defense": 0,
+    "base_jing": 1,
+    "base_max_hp": 100,
+    "neili": {
+      "jin": 2,
+      "gu": 1,
+      "qi": 1
+    },
+    "techniques": [
+      "dian_xue"
+    ],
+    "defenses": [
+      "tie_bu_shan"
+    ],
+    "xinfa": [],
+    "ai": {
+      "suit_weights": {
+        "万": 1.0,
+        "筒": 1.0,
+        "条": 1.0
+      },
+      "defense_hp_ratio": 0.4,
+      "charge_threat_power": 150
+    }
+  },
+  "grp1_boss": {
+    "id": "grp1_boss",
+    "name": "坐镇老拳师",
+    "tier": "boss",
+    "base_attack": 6,
+    "base_defense": 1,
+    "base_jing": 2,
+    "base_max_hp": 100,
+    "neili": {
+      "jin": 2,
+      "gu": 1,
+      "qi": 2
+    },
+    "techniques": [
+      "dian_xue",
+      "po_jia_quan"
+    ],
+    "defenses": [],
+    "xinfa": [
+      "yun_zhou_jue"
+    ],
+    "ai": {
+      "suit_weights": {
+        "万": 1.0,
+        "筒": 1.0,
+        "条": 1.0
+      },
+      "defense_hp_ratio": 0.45,
+      "charge_threat_power": 130
+    }
+  }
+}

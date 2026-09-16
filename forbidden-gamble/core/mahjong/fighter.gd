@@ -10,13 +10,13 @@ extends RefCounted
 
 const REST_TOTAL := 13    # 静息账本：手牌 ＋ 3×明式数 收敛于 13（一本账上限）
 const GANG_QI_CAP := 5    # 罡气上限（占位；增长轴全走内容层——资源不进加点）
-const DRAW_BASE := 3      # 每拍基础摸牌数（占位；增减只走内容词条，气力不管摸牌）
 const BIAN_STEP := 6      # 变招充能兑换门槛（6 充能＝1 机会）
 
-# —— 内力·基础数值（机体底盘：对手卡/玩家配置的横向差异旋钮；不设升级入口）——
+# —— 内力·基础数值（机体底盘：卡组/对手卡携带，挑战层注入；缺省＝演武场现状）——
 var base_attack := 10     # 1:5 比例定稿（2026-09-16 用户拍板"数值按1比5"，×10 缩放弃用）
 var base_defense := 0     # 玩家 0；敌方基础防＝身份旋钮（厚防墙）
-var base_max_hp := 100    # 骨力不管血（v3.6 解耦）；轮层每过一组 +20（未实装）
+var base_jing := 1        # 基础精力：架势数＝base_jing＋2（v3.6 摸牌 3 定值由此派生；卡组可改）
+var base_max_hp := 100    # 骨力不管血（v3.6 解耦）；轮层每过一组 +20（挑战层注入）
 
 # —— 内力·增幅（成长轴；开局 1/1/1，无单项硬上限——K 曲线自限）——
 var jin_li := 1           # 劲力：出力——攻击面板 +2/点
@@ -33,6 +33,11 @@ var hand: Array[MJTile] = []
 # PON → 该门重式；KAN → 本门万能式；CHI → 该门轻式（吃仅对虚招，v3.6）。
 # 每组副露面子给普攻 +50%（光环）。
 var melds: Array[Dictionary] = []
+
+# 内容词条瞬态（挑战层内容件用，引擎消费即清）：
+var draw_bonus_next := 0     # 下次摸牌 +N（洗练诀；正常/破绽拍摸牌时消费清零，缺牌补充不吃）
+var gu_drop_next := 0        # 下拍骨力临时 −N（破甲拳；自身拍末消费清零）
+var iron_bonus_next := 0     # 下次护体免伤 +N%（灵甲；start_iron 消费清零）
 
 var gang_qi := 0
 # 变招（v3.6）：按拍充能——每个自身拍 +（1＋气力），满 6 转 1 机会（机会上限 9）。
@@ -68,7 +73,7 @@ func attack_panel() -> int:
 
 
 func defense_panel() -> int:
-	return base_defense + gu_li
+	return maxi(base_defense + gu_li - gu_drop_next, 0)
 
 
 # 承伤比（千分之整数，显示/请求用）：5/(5+防御)×1000。
@@ -76,9 +81,9 @@ func damage_taken_ratio() -> int:
 	return 5000 / (5 + maxi(defense_panel(), 0))
 
 
-# 每拍基础摸牌数（3 定值；内容词条将来在此叠加——气力不管摸牌）。
+# 每拍基础摸牌数（架势数＝基础精力＋2；内容词条走 draw_bonus_next 瞬态叠加）。
 func draw_count() -> int:
-	return DRAW_BASE
+	return base_jing + 2
 
 
 # 缺牌补充量（v3.6 气力）：正常摸牌后仍低于容量 → 补 ⌊气力÷3⌋（至容量由引擎钳）。
@@ -120,11 +125,12 @@ func add_bian_charge(amount: int) -> void:
 		bian_charge = mini(bian_charge, BIAN_STEP - 1)  # 机会满后充能不再积压（明码浪费）
 
 
-func start_iron() -> void:
+func start_iron(reduction := 80, beats := 3) -> void:
 	iron_active = true
-	iron_reduction = 80
+	iron_reduction = mini(reduction + iron_bonus_next, 100)
+	iron_bonus_next = 0
 	iron_absorbed_fp = 0
-	iron_beats_left = 3
+	iron_beats_left = beats
 
 
 func end_iron() -> void:

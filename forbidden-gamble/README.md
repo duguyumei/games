@@ -4,35 +4,56 @@
 
 ## 当前进度
 
-- 已完成（最新）：**真气语法 v3.6 内力攻防与四攻击（2026-09-16，run_checks 全绿：166 测）**——伤害 K 曲线（承伤比＝5/(5＋防御)，永不到满免伤）；三力重分工（劲＝攻 10＋2×劲、骨＝纯防、气＝流转：变招按拍充能＋缺牌补充）；**回气拍退役**（一拍＝摸牌或招架→自动效果→附属行为→打出恰一次，张数＝max(1, 超额)）；**攻击四式**（虚招 0 伤可被吃/普攻可被碰杠取消/重击前摇不可截/反击不可截无窗）；**吃有条件回归**（仅对虚招、成轻式）；**前摇**（功法声明、对方拍计数、我方摸牌后发动、在途锁防御）；空手破绽兜底＋破绽拍＝只自然摸牌；m12 五种子 15–17 拍终局（TTK 观察项启动）。**重击无超额前置**＋反击拍标记＋多截全无效按放行（同日审计修正）；§14 成长分类与轮结构设计冻结未实装。
+- 已完成（最新）：**组挑战第一组全链路（挑战层 v1.4，2026-09-16，run_checks 全绿：GUT 219 测＋九场景冒烟＋十行为预览）**——小丑牌式循环：选卡组（`data/mj_decks.json`·人物「基础」＝现行缺省数值）→ 一组三战（对手卡 `data/mj_opponents.json`：同构·强度住内力、血量贴玩家）→ 每胜结算（历练＋内力+1＋武学三选一〔槽满类型自动缺位、牌灵补位〕）→ 修习（货架/重掷递增/开槽〔历练消费递增价·上限 5〕/疗伤丹/免费洗点）→ 组终胜利屏（对齐小丑牌：不再发奖）；**血量组内带入**；**Saver 主档** `user://mj_run_save.json`（存锚不存局·写穿·坏档改名 .bad·退出续战）；**牌灵通道**（绑具体牌种的效果件首发四枚：灵罡/灵重/灵变/灵甲——引擎缝＝TILE_DRAWN 事件〔破绽拍/正常/缺补/岭上四 reason〕＋TECH_FIRE.tiles＋心法 on_posture_played 直呼）；新武学五件（连环掌/破甲拳/金钟罩/运筹诀/洗练诀）；**图鉴重构＝发现制收藏**（真气牌面/武学/牌灵/对手四页、未发现剪影、完成度百分比、`mj_meta.json` 跨局收藏档；v2.2 旧四页退役出图鉴）。场景链 `scenes/challenge/`（deck_select/challenge_hub/settlement/xiuxi）＋RunSession 注入 mahjong_battle。设计文档＝`../game-design-docs/组挑战_代码设计_v1.md`（评审审计 F1–F21＋m14 AI 基线校准：三战 12/15/20 拍、Boss 战余血 12 险胜——贪心基线，真人预期更宽）。
+- 已完成：**真气语法 v3.6 内力攻防与四攻击（2026-09-16）**——伤害 K 曲线（承伤比＝5/(5＋防御)，永不到满免伤）；三力重分工（劲＝攻 10＋2×劲、骨＝纯防、气＝流转：变招按拍充能＋缺牌补充）；**回气拍退役**（一拍＝摸牌或招架→自动效果→附属行为→打出恰一次，张数＝max(1, 超额)）；**攻击四式**（虚招 0 伤可被吃/普攻可被碰杠取消/重击前摇不可截/反击不可截无窗）；**吃有条件回归**（仅对虚招、成轻式）；**前摇**（功法声明、对方拍计数、我方摸牌后发动、在途锁防御）；空手破绽兜底＋破绽拍＝只自然摸牌；m12 五种子 15–17 拍终局（TTK 观察项启动）。**重击无超额前置**＋反击拍标记＋多截全无效按放行（同日审计修正）；§14 成长分类与轮结构设计冻结未实装。
 - 已完成：**v2.2 旧战斗并行保留**（`core/battle/`：流动制＋对手卡敌方系统）；演武场工作台（scenes/dojo：择敌〔对手卡卡牌＋详情页〕＋功法/心法卡槽＋真气配置）；图鉴（scenes/codex）；意图/护境覆盖/力体/伤害三分类/透明边界等全局规则（《战斗系统底层_v1》§12）。
-- 主线流程（2026-09-12 定）：title → 演武场 → 战斗。搜打撤层（远征会话/版图/据点/备战/局外仓库）已下架，回滚锚点＝git 首个基线提交。
-- 待做：全部数值占位待演武场校准（《真气语法_v3》§13.7 观察项）；轮结构实装（§14，敌方成长表后置）；搜集层未立项；心法/状态等后置系统见现行文档开放项。
+- 主线流程：title →（开始挑战→选卡组→组挑战循环 ｜ 演武场→战斗沙盒 ｜ 图鉴）。搜打撤层（2026-09-12 下架）回滚锚点＝git 首个基线提交。
+- 待做：全部数值占位待演武场校准（m14 AI 基线已过第一轮：敌方基础攻 5/5/6、历练 60/90、疗伤丹 60）；多组化（§14 五组＋敌方成长表）；牌灵/武学内容扩池（D13 慢慢加）；修为解锁/成就/搜索等图鉴后置件。
 
 ## 运行
 
-用 Godot 4.7 打开本目录并运行，主场景 `scenes/title/title.tscn`（主菜单）。主菜单「演武场」→ `scenes/dojo/dojo.tscn`（择敌＋自由构筑工作台：开战走 v2.2 `scenes/battle/battle.tscn`，「麻将演武（v3）」走 `scenes/mahjong_battle/mahjong_battle.tscn`）；「图鉴」→ `scenes/codex/codex.tscn`。正文字体 Noto Sans SC、标题字体 MaShanZheng（`assets/fonts/`，均 OFL 协议）。
+用 Godot 4.7 打开本目录并运行，主场景 `scenes/title/title.tscn`（主菜单）。主菜单「开始挑战」→ 选卡组 → 组挑战循环（`scenes/challenge/`：hub 迎战→mahjong_battle→settlement→xiuxi；战斗中退出＝回锚重打，进度在 `user://mj_run_save.json`）；「演武场」→ `scenes/dojo/dojo.tscn`（择敌＋自由构筑工作台：开战走 v2.2 `scenes/battle/battle.tscn`，「麻将演武（v3）」走 `scenes/mahjong_battle/mahjong_battle.tscn`）；「图鉴」→ `scenes/codex/codex.tscn`（发现制收藏）。正文字体 Noto Sans SC、标题字体 MaShanZheng（`assets/fonts/`，均 OFL 协议）。
 
 ## 目录结构
 
 ```
-scenes/           五屏（场景根脚本只做编排）
-  title/          主菜单
+scenes/           九屏（场景根脚本只做编排）
+  title/          主菜单（开始挑战/演武场/图鉴）
+  challenge/      组挑战（挑战层 v1.4）：deck_select 选卡组（=人物）／challenge_hub 三战总览
+                  （对手卡横列＋状态栏＋组终战绩屏）／settlement 战胜结算（历练+内力+三选一）／
+                  xiuxi 修习（货架/疗伤丹/开槽/洗点；牌灵购入弹 27 宫选牌种·tile_picker）
   dojo/           演武场（战斗工作台：择敌＋卡槽构筑）
-  mahjong_battle/ 真气语法 v3 麻将战斗（现行）
+  mahjong_battle/ 真气语法 v3 麻将战斗（现行；根脚本＝驱动协调器，区块组件在 ui/：
+                  top_bar 顶栏（返回/问号词条/设置）／top_center 气海背牌墙（固定高；记牌浮窗＝
+                  27 张小牌矩阵挂背牌墙，每张底部×剩余数）／fighter_panel 信息簇（气血行居左旁挂
+                  心法、丹田数领衔资源条、敌方手牌带＝防御翼·手牌恒中·攻击翼、运行态挂武学名）／
+                  river_panel 气河区（定宽；敌住中部左翼列、我方与副露同行居左；从左缘向右排、
+                  批次一行不拆、溢行我上排敌下排、滞后入河——该侧下一拍才落河）／meld_strip 副露区
+                  （定宽同源；敌住中部右翼列、我方与牌河同行居右；从右缘向左排、一行三组、式名组内
+                  居中〔我上敌下〕、截来牌顶缘金条、组可选＝变招目标）／play_line 最新打出行（中央列
+                  顶部、行高预留：标签〔敌｜我〕居中相邻、牌向中间收拢、重击付式也进、被招架牌置灰）／
+                  log_panel 战报（中央列向下占满）／hand_strip 丹田牌行（落底；选中＝升起、新牌顶缘
+                  金条整拍、候选金边）／action_row 打出行（手牌上方：防御｜暗杠·攻击｜变招·打出；
+                  窄片描边＋资源小字＋运行态＋两击备付微金调）／claim_popup 招架窗（居中：标题点名
+                  类型→牌行→底部〔取消｜碰/杠/吃执行键〕，招架期打出行置灰不消失）／settings/glossary
+                  弹层／tip_float 浮窗（悬停延迟防误触，文字/自绘双通道））
   battle/         v2.2 旧战斗（并行保留）
   codex/          图鉴
 core/             规则与数据（纯逻辑）
   mahjong/        v3 麻将内核：tile/wall/river/shiki/fighter/technique/match/ai ＋ techniques/（功法一类一文件）
+                  ＋ pai_ling/（牌灵一类一文件：绑具体牌种的效果件）＋ xinfa_*.gd（心法直呼协议）
+  run/            挑战层流程逻辑：run_state（组状态机·phase 存档锚）/run_session（场景交接）/
+                  run_saver（主档：写穿·坏档改名）/shop（货架/重掷/开槽/疗伤）
+  codex_state.gd  图鉴发现制收藏档（user://mj_meta.json，跨局）
   battle/         v2.2 战斗内核：combat_state/turn_manager/technique_resolver/effect_pipeline/status_runtime/enemy_brain/…
   data/           数据定义层（data_repo：七份 JSON 统一加载＋schema 校验）
   dojo_config.gd  演武场→战斗交接（静态类）
   scene_routes.gd 场景路径唯一出处
   sfx.gd          音效池
 ui/               UI 组件（battle_palette 暗墨 / board_palette 纸墨亮；theme/main_theme.tres 纸墨基线）
-data/             游戏数据 JSON（techniques/xinfa/enemies/items/statuses/player/sandbox_encounter）
-tests/            GUT 单元/模型测试（tests/mahjong/ 为 v3；余为 v2.2 侧＋数据 schema）
-previews/         行为预览与视觉截图工具（自校验，退出码即结论；m12 麻将仿真、m13 UI 自动驾驶）
+data/             游戏数据 JSON（v2.2 七份＋挑战层三份：mj_decks 卡组/mj_opponents 对手卡×3/mj_shop 修习池）
+tests/            GUT 单元/模型测试（tests/mahjong/ 为 v3、tests/run/ 为挑战层；余为 v2.2 侧＋数据 schema）
+previews/         行为预览与视觉截图工具（自校验，退出码即结论；m12 麻将仿真、m13 UI 自动驾驶、m14 组挑战全流程仿真）
 tools/            run_checks.sh 一键验证
 ```
 

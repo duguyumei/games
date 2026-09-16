@@ -14,6 +14,9 @@ const XINFA_PATH := "res://data/xinfa.json"
 const STATUSES_PATH := "res://data/statuses.json"
 const SANDBOX_ENCOUNTER_PATH := "res://data/sandbox_encounter.json"
 const PLAYER_PATH := "res://data/player.json"
+const MJ_DECKS_PATH := "res://data/mj_decks.json"
+const MJ_OPPONENTS_PATH := "res://data/mj_opponents.json"
+const MJ_SHOP_PATH := "res://data/mj_shop.json"
 
 # schema 枚举（与规则实现同步维护）
 const RARITIES := ["common", "fine", "rare", "legend"]
@@ -47,6 +50,8 @@ const CONSUMABLE_SUBTYPES := ["medicine", "hidden_weapon", "tool", "provision", 
 const USE_SCOPES := ["battle", "explore"]
 const USE_TARGETS := ["self", "enemy"]
 const USE_EFFECT_KINDS := ["heal", "restore_ap", "damage", "apply_status", "open_all_chests", "sneak_window"]
+# 组挑战武学三轨（挑战层）：功法/心法/护身（与 technique_library 的 kind 对应）
+const WUXUE_KINDS := ["gongfa", "xinfa", "hushen"]
 
 var _cache := {}
 
@@ -96,6 +101,16 @@ func sandbox_encounter() -> Dictionary:
 func player_def() -> Dictionary:
 	return load_json(PLAYER_PATH)
 
+# 组挑战三份（真气语法 v3.6 挑战层）：卡组/对手卡/修习货架
+func mj_decks() -> Dictionary:
+	return load_json(MJ_DECKS_PATH)
+
+func mj_opponents() -> Dictionary:
+	return load_json(MJ_OPPONENTS_PATH)
+
+func mj_shop() -> Dictionary:
+	return load_json(MJ_SHOP_PATH)
+
 # ---------- schema 校验 ----------
 
 func validate_all() -> Array[String]:
@@ -106,6 +121,9 @@ func validate_all() -> Array[String]:
 		"xinfa.json": xinfa(),
 		"statuses.json": statuses(),
 		"player.json": player_def(),
+		"mj_decks.json": mj_decks(),
+		"mj_opponents.json": mj_opponents(),
+		"mj_shop.json": mj_shop(),
 	})
 
 # pack: {文件名: 数据}。纯函数，返回错误清单（空 = 全部通过）。
@@ -273,6 +291,72 @@ static func validate_pack(pack: Dictionary) -> Array[String]:
 				errs.append("player.json：本命含未知属性 %s" % card.get("attribute"))
 			if not QiCard.value_valid(int(card.get("value", 0))):
 				errs.append("player.json：本命数值越界 %s（2–8）" % card.get("value"))
+
+	# —— 组挑战三份（mj_*）：结构校验；内容 id 与工厂注册的一致性在 test_data_schema 交叉验证 ——
+	var mj_decks: Dictionary = pack.get("mj_decks.json", {})
+	var mj_opponents: Dictionary = pack.get("mj_opponents.json", {})
+	var mj_shop: Dictionary = pack.get("mj_shop.json", {})
+	const DECK_INT_FIELDS := ["base_attack", "base_defense", "base_jing", "base_max_hp"]
+	for key in mj_decks:
+		var deck: Dictionary = mj_decks[key]
+		if str(deck.get("id", "")) != str(key):
+			errs.append("mj_decks.json[%s]：id 与键不一致" % key)
+		for field in DECK_INT_FIELDS:
+			if int(deck.get(field, -1)) < 0:
+				errs.append("mj_decks.json[%s]：%s 应为非负整数" % [key, field])
+		var dn: Dictionary = deck.get("neili", {})
+		for nkey in ["jin", "gu", "qi"]:
+			if int(dn.get(nkey, -1)) < 0:
+				errs.append("mj_decks.json[%s]：neili.%s 应为非负整数" % [key, nkey])
+		var slots: Dictionary = deck.get("slots", {})
+		var loadout: Dictionary = deck.get("loadout", {})
+		for skey in WUXUE_KINDS:
+			if int(slots.get(skey, 0)) < 1 or int(slots.get(skey, 0)) > 5:
+				errs.append("mj_decks.json[%s]：slots.%s 应为 1~5" % [key, skey])
+			if (loadout.get(skey, []) as Array).size() > int(slots.get(skey, 0)):
+				errs.append("mj_decks.json[%s]：loadout.%s 超出槽位" % [key, skey])
+	const OPP_INT_FIELDS := ["base_attack", "base_defense", "base_jing", "base_max_hp"]
+	for key in mj_opponents:
+		var opp: Dictionary = mj_opponents[key]
+		if str(opp.get("id", "")) != str(key):
+			errs.append("mj_opponents.json[%s]：id 与键不一致" % key)
+		if not ["small", "boss"].has(str(opp.get("tier", ""))):
+			errs.append("mj_opponents.json[%s]：tier 应为 small/boss" % key)
+		for field in OPP_INT_FIELDS:
+			if int(opp.get(field, -1)) < 0:
+				errs.append("mj_opponents.json[%s]：%s 应为非负整数" % [key, field])
+		var on: Dictionary = opp.get("neili", {})
+		for nkey in ["jin", "gu", "qi"]:
+			if int(on.get(nkey, -1)) < 0:
+				errs.append("mj_opponents.json[%s]：neili.%s 应为非负整数" % [key, nkey])
+		var ai: Dictionary = opp.get("ai", {})
+		var ratio := float(ai.get("defense_hp_ratio", -1.0))
+		if ratio < 0.0 or ratio > 1.0:
+			errs.append("mj_opponents.json[%s]：ai.defense_hp_ratio 应在 0~1" % key)
+		if int(ai.get("charge_threat_power", -1)) < 0:
+			errs.append("mj_opponents.json[%s]：ai.charge_threat_power 应为非负整数" % key)
+	if not mj_shop.is_empty():
+		var pool: Array = mj_shop.get("wuxue_pool", [])
+		for entry in pool:
+			var e: Dictionary = entry
+			if not WUXUE_KINDS.has(str(e.get("kind", ""))):
+				errs.append("mj_shop.json：wuxue_pool[%s] 未知 kind %s" % [e.get("id"), e.get("kind")])
+			if int(e.get("price", -1)) < 0:
+				errs.append("mj_shop.json：wuxue_pool[%s] price 应为非负" % e.get("id"))
+		for entry in mj_shop.get("pailing_pool", []):
+			if int((entry as Dictionary).get("price", -1)) < 0:
+				errs.append("mj_shop.json：pailing_pool[%s] price 应为非负" % (entry as Dictionary).get("id"))
+		var heal: Dictionary = mj_shop.get("heal_item", {})
+		if int(heal.get("price", -1)) < 0 or int(heal.get("heal", -1)) <= 0:
+			errs.append("mj_shop.json：heal_item 的 price/heal 非法")
+		var su: Dictionary = mj_shop.get("slot_unlock", {})
+		if int(su.get("base", -1)) < 0 or int(su.get("step", -1)) < 0 or int(su.get("cap", 0)) < 2:
+			errs.append("mj_shop.json：slot_unlock 字段非法")
+		if int(mj_shop.get("shelf_size", 0)) < 1:
+			errs.append("mj_shop.json：shelf_size 应≥1")
+		for reward in mj_shop.get("reward_lianli", []):
+			if int(reward) < 0:
+				errs.append("mj_shop.json：reward_lianli 含负数")
 	return errs
 
 # 真气配置（真气语法 v2，数值 2–8）：起手＝简写串（"山4"）或显式卡（{attribute, value}）；

@@ -14,6 +14,12 @@ func summary() -> String:
 	return display_name
 
 
-# 招架成立（碰/杠/暗杠入副露）——拆招诀的挂点。
+# 招架成立（碰/杠/暗杠入副露）——拆招诀/运筹诀的挂点。
 func on_claim_done(_f: MJFighter) -> void:
+	pass
+
+
+# 打出批次确定（POSTURE 同点引擎直呼，挑战层内容件挂点）——洗练诀等。
+# kind: "xu"|"normal"|"counter"。
+func on_posture_played(_f: MJFighter, _kind: String) -> void:
 	pass
