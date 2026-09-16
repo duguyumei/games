@@ -4,3 +4,9 @@
 .video_agent/
 .zcode/
 out/
+
+# 逆向研究工作产物（我地麻：仅设计笔记 README 与分析报告入库）
+reference/demonic-mahjong/work/
+
+# 根目录 previews＝一次性设计截图堆放处（游戏内预览在 forbidden-gamble/previews/）
+/previews/
