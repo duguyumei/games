@@ -2,9 +2,9 @@ class_name MJShiki
 extends RefCounted
 
 # 六式（真气语法 v3 §4）：**顺＝轻式、刻＝重式**，三门各一对（名目占位，随三门改名重锚）。
-# 截来的全是重式（碰杠皆刻子经济）；轻式只能自产（手牌暗顺，无吃）。
-# 基本招：一个式触发一次——明式在入副露（截牌）时；暗式在被功法消耗时。
-# 轻重＝功法配方的价格语言（崩×2 重击 vs 点×3 连击）。
+# 截来的式（v3.6 吃回归）：碰/杠＝重式、吃＝轻式（吃仅对虚招）；手牌暗顺＝轻式自产。
+# 式＝面子＝功法弹药（重击的配方单位，v3.5）。式基本招伤害系统已随 v3.5 普攻体系退役
+# （伤害全部走打出阶梯：普攻/重击/变招），轻重只做功法配方的价格语言。
 
 const LIGHT := "轻"
 const HEAVY := "重"
@@ -18,9 +18,6 @@ const SYMBOLS := {
 const SUIT_OF_SYMBOL := {"点": "万", "崩": "万", "刺": "筒", "劈": "筒", "碾": "条", "撼": "条"}
 const WEIGHT_OF_SYMBOL := {"点": LIGHT, "崩": HEAVY, "刺": LIGHT, "劈": HEAVY, "碾": LIGHT, "撼": HEAVY}
 
-# 基本招威力占位（v3 §10：数字全占位，演武场校准）
-const BASIC_DAMAGE := {LIGHT: 2, HEAVY: 4}
-
 
 static func symbol_for(kind: String, suit: String) -> String:
 	return String(SYMBOLS.get(suit + kind, ""))
@@ -32,10 +29,6 @@ static func suit_of(symbol: String) -> String:
 
 static func weight_of(symbol: String) -> String:
 	return String(WEIGHT_OF_SYMBOL.get(symbol, ""))
-
-
-static func basic_damage(symbol: String) -> int:
-	return int(BASIC_DAMAGE.get(weight_of(symbol), 0))
 
 
 # 暗式检测（v3 §4：手牌成组可被功法直接消耗，不必晒出）。

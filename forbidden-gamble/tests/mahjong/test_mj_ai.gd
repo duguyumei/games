@@ -64,34 +64,34 @@ func test_claim_dedupes_same_batch_index() -> void:
 func test_fire_picks_strongest_usable() -> void:
 	var ai := MJAI.new()
 	var techniques: Array = [
-		{"id": "tie_bi", "kind": "defense", "can_use": false, "gang_qi_cost": 3, "summary": "铁壁式（守·罡气3）"},
-		{"id": "dian_lie", "kind": "attack", "can_use": true, "power": 3, "summary": "点列式（点×1·伤3）"},
-		{"id": "beng_shan", "kind": "attack", "can_use": true, "power": 10, "summary": "崩山式（崩×2·伤10）"},
+		{"id": "tie_bu_shan", "kind": "defense", "can_use": false, "gang_qi_cost": 3, "summary": "铁布衫（护体·罡气3）"},
+		{"id": "dian_xue", "kind": "attack", "can_use": true, "power": 200, "summary": "点穴式（点×1·200%）"},
+		{"id": "fake_heavy", "kind": "attack", "can_use": true, "power": 120, "summary": "测试用低倍功法"},
 	]
 	var decision := ai.decide({"phase": "free_fire", "techniques": techniques})
 	var fire: Array = decision["fire"]
 	assert_eq(fire.size(), 1)
-	assert_eq(String(fire[0]), "beng_shan", "威力大者优先（直读 power 字段）")
+	assert_eq(String(fire[0]), "dian_xue", "倍率大者优先（直读 power% 字段）")
 
 
 func test_defense_engages_under_threat() -> void:
 	var ai := MJAI.new()
 	var decision := ai.decide({
-		"phase": "free_fire", "hp": 10, "max_hp": 40, "gang_qi": 4,
-		"opp_pending": [{"tech_id": "beng_shan", "power": 10}],
-		"techniques": [{"id": "tie_bi", "kind": "defense", "can_use": true, "gang_qi_cost": 3}],
+		"phase": "free_fire", "hp": 15, "max_hp": 60, "gang_qi": 4,
+		"opp_pending": [{"tech_id": "dian_xue", "power": 200}],
+		"techniques": [{"id": "tie_bu_shan", "kind": "defense", "can_use": true, "gang_qi_cost": 3}],
 	})
-	assert_eq(String(decision.get("defense", "")), "tie_bi", "血线 25%＋威胁 10 ≥ 阈值 → 附带防御")
+	assert_eq(String(decision.get("defense", "")), "tie_bu_shan", "血线 25%＋在途倍率 200% ≥ 阈值 150 → 附带护体")
 
 
 func test_defense_skips_when_healthy() -> void:
 	var ai := MJAI.new()
 	var decision := ai.decide({
-		"phase": "free_fire", "hp": 38, "max_hp": 40, "gang_qi": 6,
-		"opp_pending": [{"tech_id": "beng_shan", "power": 10}],
-		"techniques": [{"id": "tie_bi", "kind": "defense", "can_use": true, "gang_qi_cost": 3}],
+		"phase": "free_fire", "hp": 57, "max_hp": 60, "gang_qi": 5,
+		"opp_pending": [{"tech_id": "dian_xue", "power": 200}],
+		"techniques": [{"id": "tie_bu_shan", "kind": "defense", "can_use": true, "gang_qi_cost": 3}],
 	})
-	assert_false(decision.has("defense"), "血线健康不守")
+	assert_false(decision.has("defense"), "血线健康不护体")
 
 
 func test_ankan_taken_greedily() -> void:

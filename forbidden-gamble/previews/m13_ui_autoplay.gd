@@ -85,26 +85,19 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 	if scene._claim_popup.visible:
 		_note("claim-popup")
 		var decision := player_ai.decide(scene._current_request)
-		var claim = decision.get("claim")
+		var indexes = decision.get("claim_indexes")
+		var want_claim := indexes is Array and not (indexes as Array).is_empty()
 		var buttons: Array = []
 		for child in scene._claim_box.get_children():
 			for c in (child as Control).get_children():
 				if c is Button:
 					buttons.append(c)
-		var clicked := false
-		if claim is Dictionary and not (claim as Dictionary).is_empty():
-			for b in buttons:
-				var text := String((b as Button).text)
-				var want := ("碰" if String(claim.get("type", "")) == "pon" else "杠")
-				if not text.begins_with("跳过") and text.begins_with(want):
-					(b as Button).pressed.emit()
-					clicked = true
-					break
-		if not clicked:
-			for b in buttons:
-				if String((b as Button).text).begins_with("跳过"):
-					(b as Button).pressed.emit()
-					break
+		# 弹窗两键：「截（N）」＝执行全部选中（含吃/碰/杠）、「跳过」＝整批放行
+		var target := "截" if want_claim else "跳过"
+		for b in buttons:
+			if String((b as Button).text).begins_with(target):
+				(b as Button).pressed.emit()
+				break
 		return
 	var request: Dictionary = scene._current_request
 	if request.is_empty():
@@ -123,12 +116,23 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 	match String(request.get("phase", "")):
 		"free_fire":
 			var texts := _action_buttons(scene)
-			# 多付法选项视图：点第一行（贪心默认变体）
+			# 选项视图：功法多付法（点第一行＝贪心默认变体）；变招视图则退回（贪心玩家不用变招）
 			var has_back := false
 			for t in texts.values():
 				if String(t).begins_with("返"):
 					has_back = true
 			if has_back:
+				var first_option := ""
+				for b in texts.keys():
+					if not String(texts[b]).begins_with("返"):
+						first_option = String(texts[b])
+						break
+				if first_option.begins_with("换"):
+					for b in texts.keys():
+						if String(texts[b]).begins_with("返"):
+							(b as Button).pressed.emit()
+							break
+					return
 				for b in texts.keys():
 					if not String(texts[b]).begins_with("返"):
 						(b as Button).pressed.emit()
@@ -149,7 +153,7 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 			if str(decision.get("defense", "")) != "":
 				var clicked := false
 				for b in texts.keys():
-					if String(texts[b]).begins_with("守·") and not (b as Button).disabled:
+					if String(texts[b]).begins_with("护体·") and not (b as Button).disabled:
 						_note("defense-btn")
 						(b as Button).pressed.emit()
 						clicked = true
@@ -180,7 +184,7 @@ func _drive_one(scene: Control, player_ai: MJAI) -> void:
 					scene._on_tile_clicked(int(idx))
 			if str(decision.get("defense", "")) != "":
 				for b in _action_buttons(scene).keys():
-					if String((b as Button).text).begins_with("守·"):
+					if String((b as Button).text).begins_with("护体·") and not (b as Button).disabled:
 						(b as Button).pressed.emit()
 						break
 			for b in _action_buttons(scene).keys():

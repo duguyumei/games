@@ -1,6 +1,7 @@
 extends GutTest
 
-# 六式（真气语法 v3 §4）：符号表、轻重基本招、暗式检测（先刻后顺）。
+# 六式（真气语法 v3 §4）：符号表、暗式检测（先刻后顺）。
+# 式基本招伤害系统已随 v3.5 普攻体系退役（伤害走打出阶梯）。
 
 
 func _t(suit: String, value: int) -> MJTile:
@@ -16,11 +17,6 @@ func test_symbol_table() -> void:
 	assert_eq(MJShiki.symbol_for(MJShiki.HEAVY, "条"), "撼")
 	assert_eq(MJShiki.suit_of("崩"), "万")
 	assert_eq(MJShiki.weight_of("点"), MJShiki.LIGHT)
-
-
-func test_basic_damage_light_heavy() -> void:
-	assert_eq(MJShiki.basic_damage("点"), 2, "轻式基本招伤 2（占位）")
-	assert_eq(MJShiki.basic_damage("崩"), 4, "重式基本招伤 4（占位）")
 
 
 func test_find_groups_kezi() -> void:

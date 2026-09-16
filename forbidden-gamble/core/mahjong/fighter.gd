@@ -1,46 +1,137 @@
 class_name MJFighter
 extends RefCounted
 
-# 对弈者状态（真气语法 v3 §2–5）：丹田 13＋静息不变量、副露活式仓、罡气、蓄力、冷却、破绽。
-# 敌我同构（§6）：敌方同 13 张手牌、同规则打牌。
+# 对弈者状态（真气语法 v3.6）：内力三力（劲＝出力/骨＝承伤/气＝流转——"属性"概念退役）、
+# 丹田 13（静息收敛于 13，重击挖坑后逐拍回填）、副露活式仓、罡气、变招充能/机会（按拍充能）、
+# 护体（铁布衫）、在途功法（前摇）、破绽。
+# 气血以"百分之一"定点整数记账（内部两位小数、显示一律向上取整）。
+# 数值全占位（规则冻结、数值不冻结——演武场校准）。
 
 
-const REST_TOTAL := 13   # 静息不变量：手牌 ＋ 3×明式数 ＝ 13
-const GANG_QI_CAP := 6   # 罡气上限（占位）
+const REST_TOTAL := 13    # 静息账本：手牌 ＋ 3×明式数 收敛于 13（一本账上限）
+const GANG_QI_CAP := 5    # 罡气上限（占位；增长轴全走内容层——资源不进加点）
+const DRAW_BASE := 3      # 每拍基础摸牌数（占位；增减只走内容词条，气力不管摸牌）
+const BIAN_STEP := 6      # 变招充能兑换门槛（6 充能＝1 机会）
+
+# —— 内力·基础数值（机体底盘：对手卡/玩家配置的横向差异旋钮；不设升级入口）——
+var base_attack := 10     # 1:5 比例定稿（2026-09-16 用户拍板"数值按1比5"，×10 缩放弃用）
+var base_defense := 0     # 玩家 0；敌方基础防＝身份旋钮（厚防墙）
+var base_max_hp := 100    # 骨力不管血（v3.6 解耦）；轮层每过一组 +20（未实装）
+
+# —— 内力·增幅（成长轴；开局 1/1/1，无单项硬上限——K 曲线自限）——
+var jin_li := 1           # 劲力：出力——攻击面板 +2/点
+var gu_li := 1            # 骨力：承伤——防御 +1/点（承伤比＝5/(5+防御)）
+var qi_li := 1            # 气力：流转——每拍变招充能 +1；每逢 3 点缺牌补充 +1
 
 var side: String  # "player" | "enemy"
 var display_name := ""
-var max_hp := 40  # 占位
-var hp := 40
-var guard := 0    # 护境（覆盖制，v3 不动件：新的覆盖旧的）
+var max_hp_fp := 10000  # 血量面板（百分之一单位）＝基础血量×100
+var hp_fp := 10000
 
 var hand: Array[MJTile] = []
-# 副露（活式仓）：{tiles: Array[MJTile], type: "PON"|"KAN", suit, symbol}
-# PON → 该门重式；KAN → 本门万能式（可付本门轻或重，v3 §4 提案态）。
+# 副露（活式仓）：{tiles: Array[MJTile], type: "PON"|"KAN"|"CHI", suit, symbol}
+# PON → 该门重式；KAN → 本门万能式；CHI → 该门轻式（吃仅对虚招，v3.6）。
+# 每组副露面子给普攻 +50%（光环）。
 var melds: Array[Dictionary] = []
 
 var gang_qi := 0
-# 在途功法（v3.3）：[{tech_id: String}]——发射者下次能够行动的那一刻自动结算；
-# 回气拍/破绽拍/截牌拍不解算（暂定，内容钩子空间）。结构性在途至多一门。
+# 变招（v3.6）：按拍充能——每个自身拍 +（1＋气力），满 6 转 1 机会（机会上限 9）。
+var bian_charge := 0
+var bian_opps := 0
+
+# 在途功法（v3.6 前摇）：按对方经过拍数计，到期在发射者自身摸牌后的自动效果阶段结算；
+# 招架拍/破绽拍不摸牌→不解算。结构性在途至多一门。在途期间不能发动防御（双向承诺互斥）。
 var pending: Array[Dictionary] = []
-var flawed := false             # 破绽：跳过下次获得行动权（不叠加）
-var last_fire_beat := -1        # 功法＝打出：每拍至多一门（v3.2 §3）
+var flawed := false             # 破绽：下一拍＝只自然摸牌（生产通道＝手牌清零即时触发）
+var last_fire_beat := -1        # 重击（功法＝打出）：每拍至多一门（v3.2 §3）
+
+# 护体（铁布衫，v3.5）：激活期免伤；每累计减免 5 点免伤率 −10%（最低 0）；
+# 持续 3 个敌方拍（敌方拍末 −1）；期间不能发功法、罡气冻结。
+var iron_active := false
+var iron_reduction := 0     # 当前免伤（百分比整数；激活时 80）
+var iron_absorbed_fp := 0   # 本次激活累计已减免量（百分之一单位）
+var iron_beats_left := 0    # 剩余敌方拍
 
 
 func rest_cap() -> int:
 	return REST_TOTAL - 3 * melds.size()
 
 
-func at_rest() -> bool:
-	return hand.size() == rest_cap()
-
-
 func rest_total() -> int:
 	return hand.size() + 3 * melds.size()
 
 
+# —— 面板（v3.6 两层账）——
+
+func attack_panel() -> int:
+	return base_attack + 2 * jin_li
+
+
+func defense_panel() -> int:
+	return base_defense + gu_li
+
+
+# 承伤比（千分之整数，显示/请求用）：5/(5+防御)×1000。
+func damage_taken_ratio() -> int:
+	return 5000 / (5 + maxi(defense_panel(), 0))
+
+
+# 每拍基础摸牌数（3 定值；内容词条将来在此叠加——气力不管摸牌）。
+func draw_count() -> int:
+	return DRAW_BASE
+
+
+# 缺牌补充量（v3.6 气力）：正常摸牌后仍低于容量 → 补 ⌊气力÷3⌋（至容量由引擎钳）。
+func topup_count() -> int:
+	return qi_li / 3
+
+
+# 基础数值/增幅改动后刷新派生账（setup 与测试改数值时调用；不回血）。
+func apply_neili() -> void:
+	max_hp_fp = base_max_hp * 100
+
+
+# 显示口径：一律向上取整（v3.5 用户拍板）。
+static func ceil_fp(fp: int) -> int:
+	return (fp + 99) / 100
+
+
+func hp_display() -> int:
+	return ceil_fp(hp_fp)
+
+
+func max_hp_display() -> int:
+	return max_hp_fp / 100
+
+
 func add_gang_qi(amount: int) -> void:
+	if iron_active and amount > 0:
+		return  # 护体生效期间罡气冻结（v3.5）
 	gang_qi = clampi(gang_qi + amount, 0, GANG_QI_CAP)
+
+
+# 按拍充能（v3.6）：每个自身拍 +amount（＝1＋气力，招架拍同），满 6 转 1 机会。
+func add_bian_charge(amount: int) -> void:
+	bian_charge += amount
+	while bian_charge >= BIAN_STEP and bian_opps < 9:
+		bian_charge -= BIAN_STEP
+		bian_opps += 1
+	if bian_opps >= 9:
+		bian_charge = mini(bian_charge, BIAN_STEP - 1)  # 机会满后充能不再积压（明码浪费）
+
+
+func start_iron() -> void:
+	iron_active = true
+	iron_reduction = 80
+	iron_absorbed_fp = 0
+	iron_beats_left = 3
+
+
+func end_iron() -> void:
+	iron_active = false
+	iron_reduction = 0
+	iron_absorbed_fp = 0
+	iron_beats_left = 0
 
 
 func has_pending() -> bool:

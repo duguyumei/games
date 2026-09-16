@@ -1,6 +1,6 @@
 extends Control
 
-## 麻将演武（真气语法 v3.2 统一循环的演出场）。
+## 麻将演武（真气语法 v3.6 拍结构的演出场：摸牌→自动效果→附属行为→打出恰一次）。
 ## 驱动 MJMatch 请求/应答状态机：玩家走 UI 按钮，敌方走 MJAI 贪心。
 ## 美术边界：**零提取商业资产**——占位牌面（代码绘制）＋同风格演出
 ## （截牌窗高亮、伤害弹字、拍幅横幅、tween 动效）；正式美术后补。
@@ -10,8 +10,9 @@ const SUIT_COLORS := {"万": Color(0.2, 0.47, 0.34), "筒": Color(0.66, 0.25, 0.
 var match_ := MJMatch.new()
 var ai := MJAI.new()
 var _current_request: Dictionary = {}
-var _selected: Dictionary = {}  # 手牌索引 -> true（架势选弃；索引＝引擎手牌序，非显示序）
+var _selected: Dictionary = {}  # 手牌索引 -> true（打出选弃；索引＝引擎手牌序，非显示序）
 var _marker_seen := ""
+var _bian_mode := false         # 变招·换一张：点手牌即换（弃 1 摸 1，机会-1）
 var _auto_sort := true        # 自动理牌开关（我地麻 IsAutoSort 同位；暂存会话，持久化随设置面板轮）
 # 敌方演出节奏（秒）——预览/自动驾驶会调小快进；玩家默认 0.6/0.35
 var enemy_step_pause := 0.6
@@ -59,14 +60,12 @@ func _pump() -> void:
 		if match_.state == "over":
 			_show_result()
 			return
-		# 回气/破绽拍横幅（引擎自动跳拍的可见性；marker 带拍号——连拍不吞演出）
+		# 破绽拍横幅（回气拍已退役；marker 带拍号——连拍不吞演出）
 		if match_.last_marker != _marker_seen:
 			_marker_seen = match_.last_marker
 			var marker_side := _marker_seen.split(":")[1] if _marker_seen.split(":").size() > 1 else ""
-			if _marker_seen.begins_with("rest:"):
-				_banner_show("回气 · %s 错失一拍" % ("你" if marker_side == "player" else "对方"))
-			elif _marker_seen.begins_with("flaw:"):
-				_banner_show("破绽 · %s 错失一拍" % ("你" if marker_side == "player" else "对方"))
+			if _marker_seen.begins_with("flaw:"):
+				_banner_show("破绽 · %s 只自然摸牌" % ("你" if marker_side == "player" else "对方"))
 		_current_request = match_.next_request()
 		if _current_request.is_empty():
 			_show_result()
@@ -89,6 +88,7 @@ func _pump() -> void:
 
 func _prepare_player_phase() -> void:
 	_selected.clear()
+	_bian_mode = false
 	for child in _action_bar.get_children():
 		child.queue_free()
 	_set_buttons_enabled(true)
@@ -96,8 +96,9 @@ func _prepare_player_phase() -> void:
 	var phase := String(_current_request["phase"])
 	match phase:
 		"free_fire":
-			_phase_hint.text = "打出二选一：点手牌＝选弃打出（架势），或点功法按钮发动（耗式＝打出）"
+			_phase_hint.text = "打出二选一：点手牌＝普攻（普通打出），或点功法按钮＝重击（耗式·前摇后落地）"
 			_add_defense_button()
+			_add_bian_button()
 			# 暗杠按钮（特殊动作按需浮现，我地麻 AnGangButton 同位）：手里四张全同才出现
 			for option in _current_request.get("ankan_options", []):
 				var kan_key := String(option["key"])
@@ -112,8 +113,15 @@ func _prepare_player_phase() -> void:
 			play.custom_minimum_size = Vector2(190, 52)
 		"posture":
 			var need := int(_current_request.get("discard_count", 0))
-			_phase_hint.text = ("架势：点选 %d 张打出（超几张打几张，开截牌窗，罡气+1）" % need) if need > 0 else "打出 0 张：确认收拍"
+			match String(_current_request.get("play_kind", "")):
+				"counter":
+					_phase_hint.text = "反击：招架后的打出（不可被截·绝对安全弃牌）——点选 %d 张" % need
+				"xuzhao":
+					_phase_hint.text = "虚招：手牌无超额——打出 1 张试探（0 伤，可被吃/碰/杠截走）"
+				_:
+					_phase_hint.text = "普攻：点选 %d 张打出（超几张打几张）——放行伤落地，被招架则取消" % need
 			_add_defense_button()
+			_add_bian_button()
 			var confirm := _add_action_button("打 出", func(): _submit_posture())
 			confirm.disabled = true
 			confirm.name = "ConfirmButton"
@@ -121,7 +129,7 @@ func _prepare_player_phase() -> void:
 			if need == 0:
 				confirm.disabled = false
 		"claim":
-			# 截牌窗只在真能碰/杠时弹（无选项静默放行）；弹出前默认全选可截项
+			# 截牌窗（招架）只在真能碰/杠时弹（无选项静默放行）；弹出前默认全选可截项
 			var options: Array = _current_request.get("claim_options", [])
 			if options.is_empty():
 				_submit({"claim": null})
@@ -168,29 +176,73 @@ func _plan_label(plan: Dictionary) -> String:
 	return label
 
 
-# 守功法＝行动期间免费即时（v3.4）：自己摸牌后、出牌前的两个阶段（free_fire/posture）可放，
-# 直接结算不入应答流；按钮只在这两阶段出现，与引擎窗口闸一致。
+# 护体（护身槽·守功法）＝行动窗口内免费即时：自己摸牌后或招架后、打出前的两个阶段（free_fire/posture）
+# 可放，直接结算不入应答流；按钮只在这两阶段出现，与引擎窗口闸一致。
 # 点过之后立即同步按钮态（lambda 值捕获拿不到按钮自身，用 meta 标记统一刷）——
 # 罡气是请求构建时的旧值，不刷新会静默失败打转（用户卡住报告的第二根源）。
 func _add_defense_button() -> void:
+	var iron: Dictionary = _current_request.get("iron", {})
 	for tech in _current_request.get("techniques", []):
 		if String(tech["kind"]) != "defense":
 			continue
 		var cost := int(tech.get("gang_qi_cost", 0))
 		var tech_id := String(tech["id"])
-		var b := _add_action_button("守·%s" % str(tech["summary"]), func():
+		var b := _add_action_button("护体·%s" % str(tech["summary"]), func():
 			if match_.try_defense("player", tech_id):
-				_refresh()
+				_after_free_action()
 			_sync_defense_buttons())
 		b.set_meta("defense_cost", cost)
 		b.disabled = not bool(tech["can_use"])
+		if bool(iron.get("active", false)):
+			b.text = "护体中·免伤%d%%（剩%d拍）" % [int(iron.get("reduction", 0)), int(iron.get("beats_left", 0))]
+			b.disabled = true
 
 
 func _sync_defense_buttons() -> void:
-	var gang := match_.fighter("player").gang_qi
+	var p := match_.fighter("player")
 	for child in _action_bar.get_children():
 		if child is Button and (child as Button).has_meta("defense_cost"):
-			(child as Button).disabled = gang < int((child as Button).get_meta("defense_cost"))
+			(child as Button).disabled = p.iron_active or p.gang_qi < int((child as Button).get_meta("defense_cost"))
+
+
+# ———— 变招（v3.5 资源：窗口内免费操作，不占打出） ————
+# 换一张：1 机会弃 1 摸 1；换面子组（手牌暗组/副露明组一视同仁）：3 机会、弃整组摸等量、每组 50% 伤害。
+func _add_bian_button() -> void:
+	var opps := int(_current_request.get("bian_opps", 0))
+	if opps <= 0:
+		return
+	_add_action_button("变招（机会%d）" % opps, func(): _open_bian_options())
+
+
+func _open_bian_options() -> void:
+	for child in _action_bar.get_children():
+		child.queue_free()
+	var opps := int(_current_request.get("bian_opps", 0))
+	var groups: Array = _current_request.get("bian_groups", [])
+	_phase_hint.text = "变招：窗口内免费——换牌调手、换组回收死面子（不占打出）"
+	if opps >= 1:
+		_add_action_button("换一张（机会−1）", func():
+			_bian_mode = true
+			_phase_hint.text = "点一张手牌变招：弃掉换新（机会−1）")
+	if opps >= 3:
+		for gi in range(groups.size()):
+			var g: Dictionary = groups[gi]
+			var label := "换组·%s（机会−3·伤50%%）" % "＋".join(PackedStringArray(g.get("keys", [])))
+			if String(g.get("kind", "")) == "meld":
+				label = "换副露·%s" % label
+			var meld_index := int(g.get("meld_index", -1))
+			var hand_indexes: Array = g.get("indexes", [])
+			_add_action_button(label, func():
+				if match_.try_bian_group("player", meld_index, hand_indexes):
+					_after_free_action())
+	_add_action_button("返 回", func(): _prepare_player_phase())
+
+
+# 窗口内免费操作（护体/变招）完成后的公共收尾：请求已过期，重取＋重建按钮＋刷新。
+func _after_free_action() -> void:
+	_current_request = match_.next_request()
+	_prepare_player_phase()
+	_refresh()
 
 
 func _submit(decision: Dictionary) -> bool:
@@ -217,12 +269,16 @@ func _submit_posture() -> void:
 	_submit({"discard_indexes": indexes})
 
 
-# 手牌点选：麻将原生交互——想弃牌直接点牌（在"选打出"阶段点第一张＝自动走进架势选牌），
-# 点足张数后按「打 出」确认；选中的再点一下取消。
+# 手牌点选：麻将原生交互——想弃牌直接点牌（在"选打出"阶段点第一张＝自动走进打出选牌），
+# 点足张数后按「打 出」确认；选中的再点一下取消。变招·换一张模式下点牌即换。
 func _on_tile_clicked(index: int) -> void:
+	if _bian_mode:
+		if match_.try_bian_hand("player", index):
+			_after_free_action()
+		return
 	var phase := String(_current_request.get("phase", ""))
 	if phase == "free_fire":
-		# 点牌＝选正常打出：先推进到架势选牌阶段（fire 空应答＝不发动功法），手牌与索引不变
+		# 点牌＝选普攻打出：先推进到打出选牌阶段（fire 空应答＝不发动重击），手牌与索引不变
 		if not _submit({"fire": []}):
 			return
 		phase = String(_current_request.get("phase", ""))
@@ -250,14 +306,19 @@ func _open_claim_popup() -> void:
 	var batch: Array = _current_request.get("batch", [])
 	var options: Array = _current_request.get("claim_options", [])
 	var kan_marks := {}
+	var chi_marks := {}
 	var claimable := {}
 	for option in options:
 		var bi := int(option["batch_index"])
 		claimable[bi] = true
 		if String(option["type"]) == "kan":
 			kan_marks[bi] = true
+		elif String(option["type"]) == "chi":
+			chi_marks[bi] = true
+	var is_xu := bool(_current_request.get("batch_is_xu", false))
 	var title := Label.new()
-	title.text = "截牌窗：点牌改选（默认全选）——「碰」一次执行，手里三张的自动按杠"
+	title.text = "招架（截牌窗）：碰/杠＝拆掉对方这一记普攻%s——点牌改选（默认全选），「截」一次执行，手里三张的自动按杠" % (
+		"；虚招还能吃（顺子成轻式）" if is_xu else "")
 	title.add_theme_font_size_override("font_size", 16)
 	_claim_box.add_child(title)
 	var row := HBoxContainer.new()
@@ -271,7 +332,7 @@ func _open_claim_popup() -> void:
 			widget = _glow(widget, Color(0.98, 0.85, 0.3))
 			widget.position.y -= 6
 			var badge := Label.new()
-			badge.text = "杠" if kan_marks.has(i) else "碰"
+			badge.text = "杠" if kan_marks.has(i) else ("吃" if chi_marks.has(i) else "碰")
 			badge.add_theme_font_size_override("font_size", 12)
 			badge.add_theme_color_override("font_color", Color(0.98, 0.8, 0.25))
 			badge.position = Vector2(widget.custom_minimum_size.x - 20, 0)
@@ -286,7 +347,7 @@ func _open_claim_popup() -> void:
 	_claim_box.add_child(buttons)
 	var confirm := Button.new()
 	confirm.name = "ClaimConfirm"
-	confirm.text = "碰（%d）" % _claim_selected.size()
+	confirm.text = "截（%d）" % _claim_selected.size()
 	confirm.custom_minimum_size = Vector2(150, 48)
 	confirm.disabled = _claim_selected.is_empty()
 	confirm.pressed.connect(func(): _submit({"claim_indexes": _claim_selected.keys()}))
@@ -330,16 +391,18 @@ func _close_claim_popup() -> void:
 func _refresh() -> void:
 	var p := match_.fighter("player")
 	var e := match_.fighter("enemy")
-	_enemy_hp_bar.max_value = e.max_hp
-	_enemy_hp_bar.value = e.hp
-	_enemy_hp_label.text = "%d / %d" % [e.hp, e.max_hp]
-	_enemy_stats.text = "罡气 %d／护境 %d／手牌 %d" % [e.gang_qi, e.guard, e.hand.size()]
+	_enemy_hp_bar.max_value = e.max_hp_display()
+	_enemy_hp_bar.value = mini(e.hp_display(), e.max_hp_display())
+	_enemy_hp_label.text = "%d / %d" % [e.hp_display(), e.max_hp_display()]
+	_enemy_stats.text = "罡气 %d｜变招 %d｜护体 %s｜攻 %d｜承伤 %d%%｜手牌 %d" % [
+		e.gang_qi, e.bian_opps, _iron_text(e), e.attack_panel(), e.damage_taken_ratio() / 10, e.hand.size()]
 	_enemy_pending.text = _pending_text(e)
 	_render_melds(_enemy_melds, e)
-	_player_hp_bar.max_value = p.max_hp
-	_player_hp_bar.value = p.hp
-	_player_hp_label.text = "%d / %d" % [p.hp, p.max_hp]
-	_player_stats.text = "罡气 %d／护境 %d" % [p.gang_qi, p.guard]
+	_player_hp_bar.max_value = p.max_hp_display()
+	_player_hp_bar.value = mini(p.hp_display(), p.max_hp_display())
+	_player_hp_label.text = "%d / %d" % [p.hp_display(), p.max_hp_display()]
+	_player_stats.text = "罡气 %d｜变招 %d（充%d）｜护体 %s｜攻 %d｜承伤 %d%%" % [
+		p.gang_qi, p.bian_opps, p.bian_charge, _iron_text(p), p.attack_panel(), p.damage_taken_ratio() / 10]
 	_player_pending.text = _pending_text(p)
 	_render_melds(_player_melds, p)
 	_render_hand()
@@ -348,13 +411,20 @@ func _refresh() -> void:
 	_render_log()
 
 
+func _iron_text(f: MJFighter) -> String:
+	if not f.iron_active:
+		return "—"
+	return "%d%%·%d拍" % [f.iron_reduction, f.iron_beats_left]
+
+
 func _pending_text(f: MJFighter) -> String:
 	if f.pending.is_empty():
 		return "在途：—"
 	var parts: Array[String] = []
 	for c in f.pending:
 		var tech: MJTechnique = match_.techniques[f.side].get(String(c["tech_id"]))
-		parts.append("%s（下次行动时发动·伤%d）" % [tech.display_name if tech != null else "?", tech.power if tech != null else 0])
+		parts.append("%s（剩%d拍·%d%%）" % [tech.display_name if tech != null else "?",
+			maxi(int(c.get("windup", 1)) - int(c.get("elapsed", 0)), 0), tech.power if tech != null else 0])
 	return "在途：" + "、".join(parts)
 
 
@@ -400,7 +470,8 @@ func _render_melds(row: HBoxContainer, f: MJFighter) -> void:
 		var box := HBoxContainer.new()
 		box.add_theme_constant_override("separation", 2)
 		var tag := Label.new()
-		tag.text = ("杠" if String(meld["type"]) == "KAN" else "碰") + String(meld["suit"])
+		var meld_type := String(meld["type"])
+		tag.text = ("杠" if meld_type == "KAN" else ("吃" if meld_type == "CHI" else "碰")) + String(meld["suit"])
 		tag.add_theme_font_size_override("font_size", 12)
 		box.add_child(tag)
 		for t in meld["tiles"]:
@@ -439,11 +510,15 @@ func _dump_battle_state() -> void:
 		String(req.get("phase", "")), String(req.get("side", "")),
 		String(_current_request.get("phase", "")), String(_current_request.get("side", "")),
 		_claim_popup.visible, match_.pending_batch.size()])
-	lines.append("player hand=%d gang=%d guard=%d pending=%d melds=%d | enemy hand=%d gang=%d guard=%d pending=%d melds=%d | wall=%d river=%d" % [
-		match_.fighter("player").hand.size(), match_.fighter("player").gang_qi, match_.fighter("player").guard,
+	lines.append("player hand=%d gang=%d bian=%d iron=%s pending=%d melds=%d hp=%.2f | enemy hand=%d gang=%d bian=%d iron=%s pending=%d melds=%d hp=%.2f | wall=%d river=%d" % [
+		match_.fighter("player").hand.size(), match_.fighter("player").gang_qi,
+		match_.fighter("player").bian_opps, match_.fighter("player").iron_active,
 		match_.fighter("player").pending.size(), match_.fighter("player").melds.size(),
-		match_.fighter("enemy").hand.size(), match_.fighter("enemy").gang_qi, match_.fighter("enemy").guard,
+		match_.fighter("player").hp_fp / 100.0,
+		match_.fighter("enemy").hand.size(), match_.fighter("enemy").gang_qi,
+		match_.fighter("enemy").bian_opps, match_.fighter("enemy").iron_active,
 		match_.fighter("enemy").pending.size(), match_.fighter("enemy").melds.size(),
+		match_.fighter("enemy").hp_fp / 100.0,
 		match_.wall.live_left(), match_.river.size()])
 	for line in match_.log.slice(maxi(0, match_.log.size() - 30)):
 		lines.append(line)
@@ -466,14 +541,23 @@ func _flash_decision(decision: Dictionary) -> void:
 	var text := ""
 	match phase:
 		"free_fire":
-			text = "对方发动功法" if (decision.get("fire", []) as Array).size() > 0 else "对方架势"
+			text = "对方重击蓄势" if (decision.get("fire", []) as Array).size() > 0 else "对方打出"
 			if str(decision.get("defense", "")) != "":
-				text = "对方守功法"
+				text = "对方护体"
 		"posture":
-			text = "对方打出"
+			match String(_current_request.get("play_kind", "")):
+				"counter":
+					text = "对方反击（不可截）"
+				"xuzhao":
+					text = "对方虚招（0 伤，可截走）"
+				_:
+					text = "对方普攻"
 		"claim":
 			var claim = decision.get("claim")
-			text = "对方截牌" if claim is Dictionary and not (claim as Dictionary).is_empty() else ""
+			var indexes = decision.get("claim_indexes")
+			var claimed := (claim is Dictionary and not (claim as Dictionary).is_empty()) \
+				or (indexes is Array and not (indexes as Array).is_empty())
+			text = "对方招架——你的打出被截" if claimed else ""
 	if not text.is_empty():
 		_banner_show(text)
 
@@ -663,7 +747,7 @@ func _build_ui() -> void:
 	hand_title_row.add_theme_constant_override("separation", 12)
 	root.add_child(hand_title_row)
 	var hand_title := Label.new()
-	hand_title.text = "丹田（静息不变量：手牌 ＋ 3×明式 ＝ 13）"
+	hand_title.text = "丹田（静息账本：手牌 ＋ 3×明式 收敛于 13——重击挖坑后逐拍回填）"
 	hand_title.add_theme_font_size_override("font_size", 12)
 	hand_title_row.add_child(hand_title)
 	var sort_toggle := CheckBox.new()

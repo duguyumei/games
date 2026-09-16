@@ -1,19 +1,17 @@
 class_name MJTechniqueLibrary
 extends RefCounted
 
-# 功法库（v3 首发四式，占位）：id -> 工厂。新功法＝techniques/ 下一个文件＋此处一行。
+# 构筑三轨槽（v3.5）：功法槽（攻）／护身槽（护体）／心法槽。
+# 初始各 1、解锁至 5（解锁＝搜集层，暂只有基础件）。旧四功法/心法内容件已全删。
+# 新功法＝techniques/ 下一个文件＋此处一行；新心法＝根目录一个文件＋此处一行。
 
 
 static func factory(id: String) -> Callable:
 	match id:
-		"beng_shan":
-			return func() -> MJTechnique: return TechBengShan.new()
-		"dian_lie":
-			return func() -> MJTechnique: return TechDianLie.new()
-		"duan_shi_zhan":
-			return func() -> MJTechnique: return TechDuanShiZhan.new()
-		"tie_bi":
-			return func() -> MJTechnique: return TechTieBi.new()
+		"dian_xue":
+			return func() -> MJTechnique: return TechDianXue.new()
+		"tie_bu_shan":
+			return func() -> MJTechnique: return TechTieBuShan.new()
 	return Callable()
 
 
@@ -33,5 +31,20 @@ static func make_all(ids: Array) -> Array[MJTechnique]:
 	return list
 
 
+# —— 三轨缺省（全占位）——
 static func all_ids() -> Array[String]:
-	return ["beng_shan", "dian_lie", "duan_shi_zhan", "tie_bi"]
+	return ["dian_xue"]
+
+
+static func defense_ids() -> Array[String]:
+	return ["tie_bu_shan"]
+
+
+static func make_xinfa(id: String) -> MJXinfa:
+	if id == "zhao_jia_jue":
+		return MJXinfaZhaoJiaJue.new()
+	return null
+
+
+static func xinfa_ids() -> Array[String]:
+	return ["zhao_jia_jue"]
