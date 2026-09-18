@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1j3d7t1e7ma9"]
+
+[ext_resource type="Script" path="res://scenes/mahjong3d/mj3d_tile.gd" id="1_tile"]
+
+[node name="Mj3dTile" type="Node3D"]
+script = ExtResource("1_tile")
+
+[node name="Body" type="MeshInstance3D" parent="."]

@@ -8,5 +8,8 @@ out/
 # 逆向研究工作产物（我地麻：仅设计笔记 README 与分析报告入库）
 reference/demonic-mahjong/work/
 
+# 素材调研原始文件（2026-09-17 用户令不入库：fluffystuff/code-inferno 牌面源件，65MB）
+reference/tile-assets/
+
 # 根目录 previews＝一次性设计截图堆放处（游戏内预览在 forbidden-gamble/previews/）
 /previews/

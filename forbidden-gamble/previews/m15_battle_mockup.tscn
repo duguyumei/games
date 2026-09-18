@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://c5m2lad4q7pbr"]
+
+[ext_resource type="Script" path="res://previews/m15_battle_mockup.gd" id="1_m15"]
+
+[node name="M15BattleMockup" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_m15")

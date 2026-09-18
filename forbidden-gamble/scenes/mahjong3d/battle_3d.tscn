@@ -1,0 +1,107 @@
+[gd_scene load_steps=13 format=3 uid="uid://c4k6b8d0s2nbx"]
+
+[ext_resource type="Script" path="res://scenes/mahjong3d/battle_3d.gd" id="1_battle"]
+
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
+sky_top_color = Color(0.015, 0.02, 0.035, 1)
+sky_horizon_color = Color(0.06, 0.045, 0.055, 1)
+sky_curve = 0.12
+ground_bottom_color = Color(0.02, 0.02, 0.02, 1)
+ground_horizon_color = Color(0.05, 0.04, 0.05, 1)
+sun_angle_max = 20.0
+
+[sub_resource type="Sky" id="Sky_sky"]
+sky_material = SubResource("Sky_mat")
+
+[sub_resource type="Environment" id="Env_env"]
+background_mode = 2
+sky = SubResource("Sky_sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.3, 0.3, 0.32, 1)
+ambient_light_energy = 2.3
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Mat_wood"]
+shading_mode = 0
+albedo_color = Color(0.22, 0.15, 0.09, 1)
+roughness = 0.55
+
+[sub_resource type="BoxMesh" id="BoxMesh_top"]
+material = SubResource("Mat_wood")
+size = Vector3(15.0, 0.45, 7.6)
+
+[sub_resource type="StandardMaterial3D" id="Mat_felt"]
+shading_mode = 0
+albedo_color = Color(0.06, 0.35, 0.19, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_felt"]
+material = SubResource("Mat_felt")
+size = Vector3(14.4, 0.07, 7.0)
+
+[sub_resource type="BoxMesh" id="BoxMesh_apron"]
+material = SubResource("Mat_wood")
+size = Vector3(14.2, 0.42, 6.5)
+
+[sub_resource type="BoxMesh" id="BoxMesh_leg"]
+material = SubResource("Mat_wood")
+size = Vector3(0.5, 0.34, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.05, 0.05, 0.06, 1)
+roughness = 1.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+material = SubResource("Mat_floor")
+size = Vector2(60, 60)
+
+[node name="Battle3D" type="Node3D"]
+script = ExtResource("1_battle")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.841, -0.385, 0.382, 0, 0.704, 0.71, -0.541, -0.598, 0.592, 0, 8, 0)
+shadow_enabled = true
+
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.9, 10.5)
+fov = 48.0
+
+[node name="Table" type="Node3D" parent="."]
+
+[node name="Top" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+mesh = SubResource("BoxMesh_top")
+
+[node name="Felt" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.81, 0)
+mesh = SubResource("BoxMesh_felt")
+
+[node name="Apron" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.32, 0)
+mesh = SubResource("BoxMesh_apron")
+
+[node name="LegFL" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8, 0.17, -2.7)
+mesh = SubResource("BoxMesh_leg")
+
+[node name="LegFR" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.8, 0.17, -2.7)
+mesh = SubResource("BoxMesh_leg")
+
+[node name="LegBL" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8, 0.17, 2.7)
+mesh = SubResource("BoxMesh_leg")
+
+[node name="LegBR" type="MeshInstance3D" parent="Table"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5.8, 0.17, 2.7)
+mesh = SubResource("BoxMesh_leg")
+
+[node name="Floor" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_floor")
+
+[node name="Zones" type="Node3D" parent="."]
