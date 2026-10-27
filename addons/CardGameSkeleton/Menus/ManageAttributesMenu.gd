@@ -1,0 +1,164 @@
+@tool
+extends MarginContainer
+
+@export var card_library: CardLibrary
+@export var back_button : Button
+@export var name_input: LineEdit
+@export var type_input: OptionButton
+@export var options_box : HBoxContainer
+@export var options_input: LineEdit
+@export var save_button: Button
+@export var attribute_list_container: VBoxContainer
+
+
+func _ready() -> void:
+	type_input.clear()
+	type_input.add_item("Text", CardAttribute.AttributeType.TEXT)
+	type_input.add_item("Number", CardAttribute.AttributeType.NUMBER)
+	type_input.add_item("Selection", CardAttribute.AttributeType.SELECTION)
+	
+	type_input.item_selected.connect(_on_type_changed)
+	save_button.pressed.connect(_on_save_pressed)
+	if card_library:
+		back_button.pressed.connect(get_parent().show_last_menu)
+	
+	_on_type_changed(0)
+	_refresh_list()
+
+
+func _on_type_changed(index: int) -> void:
+	var selected_id = type_input.get_item_id(index)
+	options_box.visible = (selected_id == CardAttribute.AttributeType.SELECTION)
+
+
+func _on_save_pressed() -> void:
+	if name_input.text.strip_edges() == "":
+		print("Error: Attribute name cannot be empty.")
+		return
+		
+	if not card_library or not card_library.settings_resource:
+		print("Error: CardLibrary or Settings Resource is missing.")
+		return
+	
+	# Create new attribute
+	var new_attr = CardAttribute.new()
+	new_attr.attribute_name = name_input.text
+	new_attr.type = type_input.get_selected_id()
+	
+	if new_attr.type == CardAttribute.AttributeType.SELECTION:
+		var raw_text = options_input.text
+		var split_options = raw_text.split(",")
+		var clean_options: Array[String] = []
+		for opt in split_options:
+			clean_options.append(opt.strip_edges())
+		new_attr.selection_options = clean_options
+	
+	card_library.settings_resource.custom_attributes.append(new_attr)
+	_save_resource()
+	
+	_clear_form()
+	_refresh_list()
+	
+	card_library.attributes_changed.emit()
+
+
+func _refresh_list() -> void:
+	# Clear existing items
+	for child in attribute_list_container.get_children():
+		child.queue_free()
+		
+	if not card_library or not card_library.settings_resource:
+		return
+		
+	# Loop through attributes
+	var attributes = card_library.settings_resource.custom_attributes
+	for i in range(attributes.size()):
+		var attr = attributes[i]
+		
+		var row = HBoxContainer.new()
+		
+		# Name label
+		var name_label = Label.new()
+		name_label.text = attr.attribute_name
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_label)
+		
+		# Type label
+		var type_label = Label.new()
+		var type_name = CardAttribute.AttributeType.keys()[attr.type]
+		type_label.text = type_name.capitalize()
+		type_label.modulate = Color(0.7, 0.7, 0.7)
+		row.add_child(type_label)
+		
+		# Separator
+		var spacer = Control.new()
+		spacer.custom_minimum_size = Vector2(10, 0)
+		row.add_child(spacer)
+		
+		# Delete button
+		var delete_btn = Button.new()
+		delete_btn.text = "Delete"
+		
+		if attr.attribute_name == "Card Name" or attr.attribute_name == "Scene Location":
+			delete_btn.disabled = true
+			delete_btn.modulate.a = 0.5 
+			delete_btn.tooltip_text = "This is a core attribute and cannot be deleted."
+		else:
+			delete_btn.pressed.connect(_on_delete_pressed.bind(i))
+			delete_btn.modulate = Color(1, 0.4, 0.4) 
+			
+		row.add_child(delete_btn)
+		
+		attribute_list_container.add_child(row)
+
+
+func _create_list_row(attr: CardAttribute, index: int) -> void:
+	var row = HBoxContainer.new()
+	row.custom_minimum_size = Vector2(300, 0)
+	
+	# Name label
+	var name_label = Label.new()
+	name_label.text = attr.attribute_name
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(name_label)
+	
+	# Type label
+	var type_label = Label.new()
+	match attr.type:
+		CardAttribute.AttributeType.TEXT: type_label.text = "[Text]"
+		CardAttribute.AttributeType.NUMBER: type_label.text = "[Number]"
+		CardAttribute.AttributeType.SELECTION: type_label.text = "[Select]"
+	
+	type_label.modulate = Color(0.7, 0.7, 0.7)
+	row.add_child(type_label)
+	
+	# Delete button
+	var del_btn = Button.new()
+	del_btn.text = "X"
+	del_btn.pressed.connect(_on_delete_pressed.bind(index))
+	del_btn.set_modulate(Color(1,0,0))
+	row.add_child(del_btn)
+	
+	attribute_list_container.add_child(row)
+	print("Added " + str(row) + " to Existing Attributes")
+
+
+func _on_delete_pressed(index: int) -> void:
+	card_library.settings_resource.custom_attributes.remove_at(index)
+	_save_resource()
+	_refresh_list()
+	card_library.attributes_changed.emit()
+
+
+func _save_resource() -> void:
+	var save_path = card_library.settings_resource.resource_path
+	if save_path == "":
+		save_path = "res://addons/CardGameSkeleton/CardLibrary/ProjectAttributes.tres"
+	ResourceSaver.save(card_library.settings_resource, save_path)
+
+
+func _clear_form() -> void:
+	name_input.text = ""
+	options_input.text = ""
+	type_input.selected = 0
+	_on_type_changed(0)
