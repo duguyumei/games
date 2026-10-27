@@ -56,6 +56,40 @@
 [ext_resource type="Theme" uid="uid://2714jm71pkv4" path="res://themes/keyword_tooltip_theme.tres" id="41_0h1ar"]
 [ext_resource type="Script" uid="uid://d2fxhtmdfmtdf" path="res://scripts/ui/general/KeywordContainer.gd" id="42_wtekq"]
 [ext_resource type="Script" uid="uid://c5i0sjwlko88l" path="res://addons/label_font_auto_sizer/rich_label_auto_sizer.gd" id="43_gs3rm"]
+[ext_resource type="FontFile" uid="uid://bvue2prwgnkxm" path="res://assets/fonts/zcool_huangyou.ttf" id="44_zcool"]
+[ext_resource type="Script" uid="uid://dg6ttrjs0fei" path="res://qiforge/QiRunFlow.gd" id="45_qiflow"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qifbtn"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.18, 0.165, 0.145, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.949, 0.922, 0.847, 0.9)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qifbtn_hover"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.28, 0.255, 0.22, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.949, 0.922, 0.847, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
 
 [sub_resource type="Animation" id="Animation_m5prp"]
 resource_name = "end_turn"
@@ -240,15 +274,15 @@ NodePath("VBoxContainer/ProfileStatsButton"): NodePath("../ProfileStatsMenu")
 }
 
 [node name="Label" type="Label" parent="TitleScreen/MainMenu" unique_id=860604846]
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
 offset_top = 16.0
 offset_bottom = 67.0
 grow_horizontal = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
-text = "Slay the Robot"
+text = "气铸"
 horizontal_alignment = 1
 
 [node name="VBoxContainer" type="VBoxContainer" parent="TitleScreen/MainMenu" unique_id=1669219020]
@@ -265,45 +299,45 @@ grow_vertical = 0
 visible = false
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Continue"
+text = "继续"
 
 [node name="ForfeitRunButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=2040220208]
 visible = false
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Forfeit Run"
+text = "放弃本局"
 
 [node name="NewRunButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=281880096]
 unique_name_in_owner = true
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "New Game"
+text = "开始新游戏"
 
 [node name="SettingsButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=1950778943]
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Settings"
+text = "设置"
 
 [node name="CodexButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=608866653]
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Codex"
+text = "图鉴"
 
 [node name="ProfileStatsButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=1632255188]
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Character Stats"
+text = "角色属性"
 
 [node name="RunHistoryButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=1632287860]
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Run History"
+text = "对局历史"
 
 [node name="ExitGameButton" type="Button" parent="TitleScreen/MainMenu/VBoxContainer" unique_id=111357402]
 unique_name_in_owner = true
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Exit"
+text = "退出"
 
 [node name="VBoxContainer2" type="VBoxContainer" parent="TitleScreen/MainMenu" unique_id=253856764]
 layout_mode = 0
@@ -315,13 +349,13 @@ offset_bottom = 176.0
 [node name="LinkButton" type="LinkButton" parent="TitleScreen/MainMenu/VBoxContainer2" unique_id=2020267856]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-text = "Project Wiki and Tutorials"
+text = "项目维基与教程"
 uri = "https://github.com/DesirePathGames/Slay-The-Robot/wiki"
 
 [node name="LinkButton2" type="LinkButton" parent="TitleScreen/MainMenu/VBoxContainer2" unique_id=1067582963]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-text = "Support the Creator"
+text = "支持作者"
 uri = "https://buymeacoffee.com/desirepathgames"
 
 [node name="NewRunMenu" type="Control" parent="TitleScreen" unique_id=1700370497 node_paths=PackedStringArray("navigation_button_to_menu")]
@@ -338,15 +372,15 @@ NodePath("StartRun/VBoxContainer/MainMenuButton"): NodePath("../MainMenu")
 }
 
 [node name="Label" type="Label" parent="TitleScreen/NewRunMenu" unique_id=2061026023]
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
 offset_top = 16.0
 offset_bottom = 67.0
 grow_horizontal = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
-text = "New Run"
+text = "新对局"
 horizontal_alignment = 1
 
 [node name="CharacterSelect" type="Control" parent="TitleScreen/NewRunMenu" unique_id=1360860974]
@@ -367,11 +401,11 @@ grow_vertical = 2
 
 [node name="CharacterNameLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer" unique_id=1473832797]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 36
-text = "Character Name"
+text = "角色名称"
 horizontal_alignment = 1
 
 [node name="Control" type="Control" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer" unique_id=1904766542]
@@ -380,7 +414,6 @@ layout_mode = 2
 
 [node name="CharacterHealthLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control" unique_id=1228433366]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_top = 0.5
@@ -390,14 +423,14 @@ offset_top = -12.0
 offset_right = 160.0
 offset_bottom = 12.0
 grow_vertical = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 17
-text = "HP: "
+text = "生命 "
 vertical_alignment = 1
 
 [node name="CharacterMoneyLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control" unique_id=948848595]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = -1
 anchor_top = 0.5
@@ -407,9 +440,10 @@ offset_top = -12.0
 offset_right = 323.0
 offset_bottom = 12.0
 grow_vertical = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 17
-text = "Money:"
+text = "历练："
 
 [node name="MarginContainer" type="MarginContainer" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer" unique_id=2122819924]
 layout_mode = 2
@@ -420,11 +454,11 @@ theme_override_constants/margin_bottom = 32
 
 [node name="CharacterDescriptionLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/MarginContainer" unique_id=1051847027]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 64)
-layout_direction = 2
+custom_minimum_size = Vector2(0, 88)
 layout_mode = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
-text = "Character Description"
+text = "角色描述"
 autowrap_mode = 2
 
 [node name="Control2" type="Control" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer" unique_id=455039422]
@@ -451,18 +485,18 @@ offset_bottom = 178.0
 
 [node name="CharacterArtifactNameLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control2/VBoxContainer" unique_id=1043437012]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
-text = "Artifact Name"
+text = "饰品名称"
 clip_text = true
 
 [node name="CharacterArtifactDescriptionLabel" type="Label" parent="TitleScreen/NewRunMenu/CharacterSelect/VBoxContainer/Control2/VBoxContainer" unique_id=1447978852]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
-text = "Description "
+text = "描述 "
 autowrap_mode = 2
 
 [node name="StartRun" type="Control" parent="TitleScreen/NewRunMenu" unique_id=142426646]
@@ -496,7 +530,6 @@ layout_mode = 2
 
 [node name="SeedVisibilityToggle" type="Button" parent="TitleScreen/NewRunMenu/StartRun/VBoxContainer/SeedSelect" unique_id=2143920552]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -504,10 +537,11 @@ anchor_bottom = 1.0
 offset_right = -352.0
 grow_horizontal = 2
 grow_vertical = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 24
 toggle_mode = true
-text = "Seed"
+text = "种子"
 
 [node name="SeedInput" type="LineEdit" parent="TitleScreen/NewRunMenu/StartRun/VBoxContainer/SeedSelect" unique_id=184633736]
 unique_name_in_owner = true
@@ -554,7 +588,6 @@ text = "<--"
 
 [node name="DifficultyLabel" type="Label" parent="TitleScreen/NewRunMenu/StartRun/VBoxContainer/DifficultySelect" unique_id=876493831]
 unique_name_in_owner = true
-layout_direction = 2
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
@@ -563,8 +596,9 @@ offset_left = -144.0
 offset_right = 144.0
 offset_bottom = 31.0
 grow_horizontal = 2
+layout_direction = 2
 theme_override_font_sizes/font_size = 16
-text = "Difficulty 0"
+text = "难度 0"
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
@@ -589,7 +623,7 @@ text = "-->"
 unique_name_in_owner = true
 layout_mode = 2
 theme = ExtResource("2_bi5lp")
-text = "Start Run"
+text = "开始对局"
 
 [node name="MainMenuButton" type="Button" parent="TitleScreen/NewRunMenu/StartRun/VBoxContainer" unique_id=1859148937]
 layout_mode = 2
@@ -597,7 +631,7 @@ theme = ExtResource("2_bi5lp")
 shortcut = ExtResource("8_xur7f")
 shortcut_feedback = false
 shortcut_in_tooltip = false
-text = "Back"
+text = "返回"
 
 [node name="CustomModifiers" type="Control" parent="TitleScreen/NewRunMenu" unique_id=1333666331]
 layout_mode = 1
@@ -605,7 +639,7 @@ anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -344.0
+offset_left = -600.0
 offset_top = 96.0
 grow_horizontal = 0
 grow_vertical = 2
@@ -619,11 +653,11 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="Label" type="Label" parent="TitleScreen/NewRunMenu/CustomModifiers/VBoxContainer" unique_id=296747209]
-layout_direction = 2
 layout_mode = 2
+layout_direction = 2
 theme = ExtResource("2_bi5lp")
 theme_override_font_sizes/font_size = 32
-text = "Custom Modifiers"
+text = "开局饰品（服饰·头饰·腿部 各选一）"
 horizontal_alignment = 1
 
 [node name="ScrollContainer" type="ScrollContainer" parent="TitleScreen/NewRunMenu/CustomModifiers/VBoxContainer" unique_id=708751212]
@@ -660,7 +694,7 @@ offset_left = 56.0
 offset_top = 96.0
 offset_right = 160.0
 offset_bottom = 152.0
-text = "Back"
+text = "返回"
 
 [node name="MuteBackgroundCheckButton" type="CheckButton" parent="TitleScreen/SettingsMenu" unique_id=1586824831]
 unique_name_in_owner = true
@@ -669,7 +703,7 @@ offset_left = 216.0
 offset_top = 104.0
 offset_right = 696.0
 offset_bottom = 152.0
-text = "Mute in Background"
+text = "后台静音"
 
 [node name="Label" type="Label" parent="TitleScreen/SettingsMenu" unique_id=1362980258]
 layout_mode = 0
@@ -677,7 +711,7 @@ offset_left = 224.0
 offset_top = 168.0
 offset_right = 328.0
 offset_bottom = 240.0
-text = "Master"
+text = "总音量"
 vertical_alignment = 1
 
 [node name="Label2" type="Label" parent="TitleScreen/SettingsMenu" unique_id=1342160033]
@@ -686,7 +720,7 @@ offset_left = 224.0
 offset_top = 256.0
 offset_right = 328.0
 offset_bottom = 328.0
-text = "Music"
+text = "音乐"
 vertical_alignment = 1
 
 [node name="Label3" type="Label" parent="TitleScreen/SettingsMenu" unique_id=2128500764]
@@ -695,7 +729,7 @@ offset_left = 224.0
 offset_top = 344.0
 offset_right = 328.0
 offset_bottom = 416.0
-text = "Effects"
+text = "效果"
 vertical_alignment = 1
 
 [node name="MasterVolumeSlider" parent="TitleScreen/SettingsMenu" unique_id=26544493 instance=ExtResource("18_plfau")]
@@ -777,7 +811,7 @@ theme = ExtResource("2_bi5lp")
 shortcut = ExtResource("8_xur7f")
 shortcut_feedback = false
 shortcut_in_tooltip = false
-text = "Back"
+text = "返回"
 
 [node name="MarginContainer2" type="MarginContainer" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer" unique_id=1272074714]
 layout_mode = 2
@@ -804,7 +838,7 @@ theme_override_constants/margin_bottom = 8
 [node name="CodexShowCardsButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer/MarginContainer" unique_id=734554613]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Cards"
+text = "卡牌"
 
 [node name="MarginContainer2" type="MarginContainer" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer" unique_id=1292057516]
 layout_mode = 1
@@ -822,7 +856,7 @@ theme_override_constants/margin_bottom = 8
 [node name="CodexShowArtifactsButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer/MarginContainer2" unique_id=1402277876]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Artifacts"
+text = "饰品"
 
 [node name="MarginContainer3" type="MarginContainer" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer" unique_id=1789177042]
 layout_mode = 1
@@ -840,7 +874,7 @@ theme_override_constants/margin_bottom = 8
 [node name="CodexShowConsumablesButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer/MarginContainer3" unique_id=711189038]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Consumables"
+text = "消耗品"
 
 [node name="MarginContainer4" type="MarginContainer" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer" unique_id=1151655601]
 layout_mode = 1
@@ -858,7 +892,7 @@ theme_override_constants/margin_bottom = 8
 [node name="CodexShowEnemiesButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/VBoxContainer/MarginContainer2/VBoxContainer/MarginContainer4" unique_id=202692058]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Enemies"
+text = "敌人"
 
 [node name="CodexContentDisplay" type="Control" parent="TitleScreen/CodexMenu/VSplitContainer" unique_id=1879933480]
 layout_mode = 2
@@ -944,7 +978,7 @@ offset_right = 360.0
 offset_bottom = 31.0
 toggle_mode = true
 button_pressed = true
-text = "Rarity"
+text = "稀有度"
 
 [node name="CodexCardCostSortButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/CodexContentDisplay/CodexCardsMenu" unique_id=651014274]
 unique_name_in_owner = true
@@ -954,7 +988,7 @@ offset_right = 680.0
 offset_bottom = 31.0
 toggle_mode = true
 button_pressed = true
-text = "Cost"
+text = "费用"
 
 [node name="CodexCardTypeSortButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/CodexContentDisplay/CodexCardsMenu" unique_id=1897095373]
 unique_name_in_owner = true
@@ -964,7 +998,7 @@ offset_right = 520.0
 offset_bottom = 31.0
 toggle_mode = true
 button_pressed = true
-text = "Type"
+text = "类型"
 
 [node name="CodexCardAlphaSortButton" type="Button" parent="TitleScreen/CodexMenu/VSplitContainer/CodexContentDisplay/CodexCardsMenu" unique_id=710390932]
 unique_name_in_owner = true
@@ -1143,7 +1177,7 @@ anchor_right = 1.0
 anchor_bottom = 0.05
 offset_bottom = 23.0
 grow_horizontal = 2
-text = "Enemy Name"
+text = "敌人名称"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -1159,7 +1193,7 @@ offset_bottom = -0.200001
 grow_horizontal = 0
 grow_vertical = 2
 toggle_mode = true
-text = "Intents"
+text = "意图"
 
 [node name="CodexEnemyTexture" type="TextureRect" parent="TitleScreen/CodexMenu/VSplitContainer/CodexContentDisplay/CodexEnemiesMenu/MarginContainer/HSplitContainer/HSplitContainer/EnemyInfo" unique_id=515187530]
 unique_name_in_owner = true
@@ -1230,7 +1264,7 @@ offset_left = 24.0
 offset_top = 88.0
 offset_right = 168.0
 offset_bottom = 136.0
-text = "Back"
+text = "返回"
 
 [node name="SmoothScrollContainer" type="ScrollContainer" parent="TitleScreen/ProfileStatsMenu" unique_id=2102862504]
 layout_mode = 1
@@ -1255,7 +1289,7 @@ alignment = 1
 [node name="Label" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer" unique_id=851969620]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Profile Stats"
+text = "战绩"
 horizontal_alignment = 1
 
 [node name="ProfileStats" type="Control" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer" unique_id=1637222903]
@@ -1285,60 +1319,60 @@ columns = 3
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Wins: 0"
+text = "胜场：0"
 
 [node name="ProfileLossesLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=539442114]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Losses: 0"
+text = "负场：0"
 
 [node name="ProfileWinRateLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=287249939]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Win rate: XX.XX%"
+text = "胜率：XX.XX%"
 
 [node name="ProfileCurrentWinStreakLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=1978181270]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Current Win Streak: 0"
+text = "当前连胜：0"
 
 [node name="ProfileHighestWinStreakLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=277560648]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Highest Win Streak: 0"
+text = "最高连胜：0"
 
 [node name="ProfilePlayTimeLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=397748388]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Play Time: HHHH:MM:SS"
+text = "游玩时长：HH:MM:SS"
 
 [node name="ProfileCurrentLossStreakLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=1897494379]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Current Loss Streak: 0"
+text = "当前连败：0"
 
 [node name="ProfileHighestLossStreakLabel" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=1511849071]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Highest Loss Streak: 0"
+text = "最高连败：0"
 
 [node name="ProfileFastestRunTime" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer/ProfileStats/CenterContainer/GridContainer" unique_id=216947908]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
-text = "Fastest Run: HH:MM:SS"
+text = "最快对局：HH:MM:SS"
 
 [node name="Label2" type="Label" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer" unique_id=1037753955]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "Character Stats"
+text = "角色属性"
 horizontal_alignment = 1
 
 [node name="StatContainer" type="GridContainer" parent="TitleScreen/ProfileStatsMenu/SmoothScrollContainer/VBoxContainer" unique_id=1215377295]
@@ -1370,7 +1404,7 @@ offset_left = 8.0
 offset_top = 64.0
 offset_right = 192.0
 offset_bottom = 128.0
-text = "Back"
+text = "返回"
 
 [node name="NoRunsLabel" type="Label" parent="TitleScreen/RunHistoryMenu" unique_id=175013954]
 layout_mode = 1
@@ -1379,7 +1413,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "No Runs Found"
+text = "暂无对局记录"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -1395,7 +1429,7 @@ offset_left = 208.0
 offset_top = 24.0
 offset_right = 318.0
 offset_bottom = 55.0
-text = "Previous Run"
+text = "上一局"
 
 [node name="RunHistoryCharacterIcon" type="TextureRect" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=397167289]
 custom_minimum_size = Vector2(48, 48)
@@ -1424,7 +1458,7 @@ offset_left = 400.0
 offset_top = 24.0
 offset_right = 510.0
 offset_bottom = 55.0
-text = "Next Run"
+text = "下一局"
 
 [node name="RunHistoryCharacterNameLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1186691118]
 layout_mode = 0
@@ -1432,7 +1466,7 @@ offset_left = 208.0
 offset_top = 64.0
 offset_right = 792.0
 offset_bottom = 88.0
-text = "Character Name"
+text = "角色名称"
 
 [node name="RunHistorySeedLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=818351509]
 layout_mode = 0
@@ -1440,7 +1474,7 @@ offset_left = 536.0
 offset_top = 96.0
 offset_right = 776.0
 offset_bottom = 119.0
-text = "Run Seed"
+text = "对局种子"
 
 [node name="RunHistoryCompletionDateLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=352968888]
 layout_mode = 0
@@ -1448,7 +1482,7 @@ offset_left = 536.0
 offset_top = 64.0
 offset_right = 840.0
 offset_bottom = 87.0
-text = "Run Completion Date"
+text = "完成日期"
 
 [node name="RunHistoryMessageLabel" type="RichTextLabel" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1971599030]
 layout_mode = 0
@@ -1457,7 +1491,7 @@ offset_top = 128.0
 offset_right = 792.0
 offset_bottom = 152.0
 bbcode_enabled = true
-text = "Victory/Death Message"
+text = "结局消息"
 scroll_active = false
 
 [node name="RunHistoryHealthLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=2046085025]
@@ -1466,7 +1500,7 @@ offset_left = 536.0
 offset_top = 24.0
 offset_right = 664.0
 offset_bottom = 56.0
-text = "HP: 100/100"
+text = "生命 100/100"
 vertical_alignment = 1
 
 [node name="RunHistoryMoneyLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1200969089]
@@ -1475,7 +1509,7 @@ offset_left = 648.0
 offset_top = 24.0
 offset_right = 760.0
 offset_bottom = 56.0
-text = "Money: 99999"
+text = "历练 99999"
 vertical_alignment = 1
 
 [node name="RunHistoryRunTimeLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1423510278]
@@ -1484,7 +1518,7 @@ offset_left = 208.0
 offset_top = 96.0
 offset_right = 368.0
 offset_bottom = 119.0
-text = "End Time: HH:MM:SS"
+text = "结束时间：HH:MM:SS"
 
 [node name="RunHistoryFloorLabel" type="Label" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=2053730622]
 layout_mode = 0
@@ -1492,7 +1526,7 @@ offset_left = 768.0
 offset_top = 24.0
 offset_right = 844.0
 offset_bottom = 56.0
-text = "Floor: 999"
+text = "第 999 层"
 vertical_alignment = 1
 
 [node name="RunHistoryConsumableContainer" type="HBoxContainer" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1004632530]
@@ -1513,7 +1547,7 @@ offset_top = 176.0
 offset_right = 1200.0
 offset_bottom = 221.0
 theme_override_font_sizes/font_size = 32
-text = "Cards"
+text = "卡牌"
 horizontal_alignment = 1
 
 [node name="SmoothScrollContainer" type="ScrollContainer" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1675255001]
@@ -1587,7 +1621,7 @@ offset_top = 424.0
 offset_right = 1200.0
 offset_bottom = 469.0
 theme_override_font_sizes/font_size = 32
-text = "Artifacts"
+text = "饰品"
 horizontal_alignment = 1
 
 [node name="SmoothScrollContainer2" type="ScrollContainer" parent="TitleScreen/RunHistoryMenu/RunsExistContainer" unique_id=1820487054]
@@ -1690,28 +1724,35 @@ layout_mode = 2
 [node name="RunScreen" type="Control" parent="." unique_id=2146255345]
 visible = false
 anchors_preset = 0
-offset_right = 40.0
-offset_bottom = 40.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("12_elxq6")
 
 [node name="Combat" type="Control" parent="RunScreen" unique_id=797179111]
 unique_name_in_owner = true
 process_mode = 1
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("3_h4evn")
 
 [node name="Background" type="ColorRect" parent="RunScreen/Combat" unique_id=39069088]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.202309, 0.187588, 0.216973, 1)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/Combat" unique_id=1118416378]
 layout_mode = 0
-offset_right = 1200.0
+anchor_right = 1.0
 offset_bottom = 64.0
+grow_horizontal = 2
 color = Color(0.135517, 0.124494, 0.146491, 1)
 
 [node name="BackgroundButton" type="TextureButton" parent="RunScreen/Combat" unique_id=321482324]
@@ -1726,72 +1767,83 @@ button_mask = 3
 ignore_texture_size = true
 stretch_mode = 0
 
-[node name="PauseButton" type="TextureButton" parent="RunScreen/Combat" unique_id=647341802]
+[node name="PauseButton" type="Button" parent="RunScreen/Combat" unique_id=647341802]
 unique_name_in_owner = true
 layout_mode = 0
 offset_left = 16.0
 offset_top = 8.0
-offset_right = 66.0
-offset_bottom = 58.0
+offset_right = 76.0
+offset_bottom = 56.0
+theme_override_colors/font_color = Color(0.949, 0.922, 0.847, 1)
+theme_override_fonts/font = ExtResource("44_zcool")
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_qifbtn")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_qifbtn")
+theme_override_styles/hover = SubResource("StyleBoxFlat_qifbtn_hover")
 shortcut = ExtResource("8_xur7f")
 shortcut_feedback = false
 shortcut_in_tooltip = false
-texture_normal = ExtResource("3_8ax2e")
-ignore_texture_size = true
-stretch_mode = 0
+text = "暂停"
 script = ExtResource("13_i7igs")
 
-[node name="MapButton" type="TextureButton" parent="RunScreen/Combat" unique_id=268662246]
+[node name="MapButton" type="Button" parent="RunScreen/Combat" unique_id=268662246]
 unique_name_in_owner = true
+visible = false
 layout_mode = 0
-offset_left = 72.0
+offset_left = 82.0
 offset_top = 8.0
-offset_right = 122.0
-offset_bottom = 58.0
-texture_normal = ExtResource("3_8ax2e")
-ignore_texture_size = true
-stretch_mode = 0
+offset_right = 142.0
+offset_bottom = 56.0
+theme_override_colors/font_color = Color(0.949, 0.922, 0.847, 1)
+theme_override_fonts/font = ExtResource("44_zcool")
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_qifbtn")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_qifbtn")
+theme_override_styles/hover = SubResource("StyleBoxFlat_qifbtn_hover")
+text = "地图"
 
-[node name="DeckButton" type="TextureButton" parent="RunScreen/Combat" unique_id=1171146295]
+[node name="DeckButton" type="Button" parent="RunScreen/Combat" unique_id=1171146295]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 128.0
+offset_left = 148.0
 offset_top = 8.0
-offset_right = 178.0
-offset_bottom = 58.0
-texture_normal = ExtResource("3_8ax2e")
-ignore_texture_size = true
-stretch_mode = 0
+offset_right = 208.0
+offset_bottom = 56.0
+theme_override_colors/font_color = Color(0.949, 0.922, 0.847, 1)
+theme_override_fonts/font = ExtResource("44_zcool")
+theme_override_font_sizes/font_size = 15
+theme_override_styles/normal = SubResource("StyleBoxFlat_qifbtn")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_qifbtn")
+theme_override_styles/hover = SubResource("StyleBoxFlat_qifbtn_hover")
+text = "卡组"
 
 [node name="MoneyLabel" type="Label" parent="RunScreen/Combat" unique_id=1231323859]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_left = 199.0
+layout_mode = 0
+offset_left = 216.0
 offset_top = 8.0
-offset_right = -887.0
+offset_right = 384.0
 offset_bottom = 56.0
-grow_horizontal = 2
 mouse_filter = 1
-theme_override_font_sizes/font_size = 34
-text = "$10000"
-horizontal_alignment = 2
+theme_override_colors/font_color = Color(0.949, 0.922, 0.847, 1)
+theme_override_fonts/font = ExtResource("44_zcool")
+theme_override_font_sizes/font_size = 22
+text = "历练 0"
+vertical_alignment = 1
 
 [node name="HealthLabel" type="Label" parent="RunScreen/Combat" unique_id=453838396]
 unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_left = 352.0
+layout_mode = 0
+offset_left = 392.0
 offset_top = 8.0
-offset_right = -712.0
+offset_right = 560.0
 offset_bottom = 56.0
-grow_horizontal = 2
 mouse_filter = 1
-theme_override_font_sizes/font_size = 34
-text = "99/99"
-horizontal_alignment = 2
+theme_override_colors/font_color = Color(0.949, 0.922, 0.847, 1)
+theme_override_fonts/font = ExtResource("44_zcool")
+theme_override_font_sizes/font_size = 22
+text = "50/50"
+vertical_alignment = 1
 
 [node name="ArtifactContainer" type="HBoxContainer" parent="RunScreen/Combat" unique_id=1591838213]
 layout_mode = 0
@@ -1805,17 +1857,22 @@ script = ExtResource("5_a7j3r")
 [node name="Player" parent="RunScreen/Combat" unique_id=524412048 instance=ExtResource("5_7crh0")]
 unique_name_in_owner = true
 layout_mode = 0
+anchor_top = 0.5
+anchor_bottom = 0.5
 offset_left = 200.0
-offset_top = 336.0
+offset_top = -14.0
 offset_right = 400.0
-offset_bottom = 480.0
+offset_bottom = 130.0
 
 [node name="EnemyContainer" type="Control" parent="RunScreen/Combat" unique_id=754159237]
 anchors_preset = 0
-offset_left = 568.0
+anchor_left = 0.45
+anchor_right = 1.0
+offset_left = 28.0
 offset_top = 256.0
-offset_right = 1176.0
+offset_right = -24.0
 offset_bottom = 448.0
+grow_horizontal = 2
 mouse_filter = 2
 script = ExtResource("4_kvn7e")
 metadata/_edit_group_ = true
@@ -1834,8 +1891,10 @@ mouse_filter = 2
 
 [node name="Consumables" type="Control" parent="RunScreen/Combat" unique_id=322094683]
 anchors_preset = 0
-offset_left = 512.0
-offset_right = 752.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -88.0
+offset_right = 152.0
 offset_bottom = 104.0
 script = ExtResource("11_c46y0")
 
@@ -1920,7 +1979,7 @@ vertical_alignment = 1
 [node name="UseConsumableLabel" type="Label" parent="RunScreen/Combat/Consumables/ConsumableActionDropdown/UseConsumableButton/HSplitContainer" unique_id=719537466]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Use"
+text = "使用"
 horizontal_alignment = 1
 vertical_alignment = 1
 text_overrun_behavior = 4
@@ -1932,15 +1991,17 @@ offset_top = 48.0
 offset_right = 184.0
 offset_bottom = 79.0
 theme_override_font_sizes/font_size = 16
-text = "Discard"
+text = "弃牌堆"
 
 [node name="Chest" type="TextureButton" parent="RunScreen/Combat" unique_id=336087146]
 visible = false
 layout_mode = 0
+anchor_top = 0.5
+anchor_bottom = 0.5
 offset_left = 768.0
-offset_top = 256.0
+offset_top = -94.0
 offset_right = 960.0
-offset_bottom = 448.0
+offset_bottom = 98.0
 texture_normal = ExtResource("3_8ax2e")
 ignore_texture_size = true
 stretch_mode = 0
@@ -1952,16 +2013,18 @@ offset_top = -56.0
 offset_right = 192.0
 offset_bottom = -11.0
 theme_override_font_sizes/font_size = 32
-text = "Chest"
+text = "宝箱"
 horizontal_alignment = 1
 
 [node name="Shop" type="TextureButton" parent="RunScreen/Combat" unique_id=302804716]
 visible = false
 layout_mode = 0
+anchor_top = 0.5
+anchor_bottom = 0.5
 offset_left = 768.0
-offset_top = 256.0
+offset_top = -94.0
 offset_right = 960.0
-offset_bottom = 448.0
+offset_bottom = 98.0
 texture_normal = ExtResource("3_8ax2e")
 ignore_texture_size = true
 stretch_mode = 0
@@ -1973,17 +2036,19 @@ offset_top = -56.0
 offset_right = 192.0
 offset_bottom = -11.0
 theme_override_font_sizes/font_size = 32
-text = "Shop"
+text = "商店"
 horizontal_alignment = 1
 
 [node name="Energy" type="TextureButton" parent="RunScreen/Combat" unique_id=517286826]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 24.0
-offset_top = 560.0
+offset_top = -140.0
 offset_right = 74.0
-offset_bottom = 610.0
+offset_bottom = -90.0
 texture_normal = ExtResource("3_8ax2e")
 ignore_texture_size = true
 stretch_mode = 0
@@ -2002,10 +2067,12 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
+anchor_top = 1.0
+anchor_bottom = 1.0
 offset_left = 24.0
-offset_top = 616.0
+offset_top = -84.0
 offset_right = 74.0
-offset_bottom = 666.0
+offset_bottom = -34.0
 texture_normal = ExtResource("3_8ax2e")
 ignore_texture_size = true
 stretch_mode = 0
@@ -2024,10 +2091,14 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-offset_left = 1136.0
-offset_top = 560.0
-offset_right = 1186.0
-offset_bottom = 610.0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -64.0
+offset_top = -140.0
+offset_right = -14.0
+offset_bottom = -90.0
 texture_normal = ExtResource("3_8ax2e")
 ignore_texture_size = true
 stretch_mode = 0
@@ -2046,10 +2117,14 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-offset_left = 1080.0
-offset_top = 560.0
-offset_right = 1130.0
-offset_bottom = 610.0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -120.0
+offset_top = -140.0
+offset_right = -70.0
+offset_bottom = -90.0
 texture_normal = ExtResource("3_8ax2e")
 ignore_texture_size = true
 stretch_mode = 0
@@ -2068,10 +2143,14 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 visible = false
 anchors_preset = 0
-offset_left = 160.0
-offset_top = 208.0
-offset_right = 968.0
-offset_bottom = 568.0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -404.0
+offset_top = -180.0
+offset_right = 404.0
+offset_bottom = 180.0
 
 [node name="CardPickLabel" type="Label" parent="RunScreen/Combat/CardPicking" unique_id=663104816]
 unique_name_in_owner = true
@@ -2084,7 +2163,7 @@ offset_top = -180.0
 offset_bottom = -157.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "Pick X cards"
+text = "选 X 张牌"
 horizontal_alignment = 1
 
 [node name="ConfirmPickButton" type="Button" parent="RunScreen/Combat/CardPicking" unique_id=1476605964]
@@ -2094,15 +2173,19 @@ offset_left = 200.0
 offset_top = 240.0
 offset_right = 584.0
 offset_bottom = 271.0
-text = "Confirm"
+text = "确认"
 
 [node name="Hand" type="Control" parent="RunScreen/Combat" unique_id=1468352038]
 unique_name_in_owner = true
 anchors_preset = 0
-offset_left = 168.0
-offset_top = 632.0
-offset_right = 1048.0
-offset_bottom = 692.0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -560.0
+offset_top = -68.0
+offset_right = 560.0
+offset_bottom = -8.0
 script = ExtResource("4_i2yfj")
 
 [node name="CardContainer" type="Control" parent="RunScreen/Combat/Hand" unique_id=2017383676]
@@ -2119,22 +2202,30 @@ unique_name_in_owner = true
 visible = false
 self_modulate = Color(1, 1, 1, 0.258824)
 layout_mode = 0
-offset_left = 168.0
-offset_top = 632.0
-offset_right = 1048.0
-offset_bottom = 692.0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -560.0
+offset_top = -68.0
+offset_right = 560.0
+offset_bottom = -8.0
 mouse_filter = 2
 
 [node name="EndTurnButton" type="Button" parent="RunScreen/Combat" unique_id=1702274490]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-offset_left = 1080.0
-offset_top = 624.0
-offset_right = 1192.0
-offset_bottom = 664.0
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -120.0
+offset_top = -76.0
+offset_right = -8.0
+offset_bottom = -36.0
 disabled = true
-text = "End Turn"
+text = "结束回合"
 
 [node name="SelectTargetLabel" type="Label" parent="RunScreen/Combat" unique_id=198237144]
 unique_name_in_owner = true
@@ -2146,7 +2237,7 @@ offset_top = 192.0
 offset_bottom = 240.0
 grow_horizontal = 2
 theme_override_font_sizes/font_size = 34
-text = "Select a target"
+text = "选择一个目标"
 horizontal_alignment = 1
 
 [node name="TurnOverlay" type="Control" parent="RunScreen/Combat" unique_id=253104370]
@@ -2179,7 +2270,7 @@ offset_top = -30.0
 offset_bottom = 42.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "Turn"
+text = "回合"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -2189,10 +2280,13 @@ libraries/ = SubResource("AnimationLibrary_yww7o")
 [node name="RunTimer" type="Label" parent="RunScreen/Combat" unique_id=833142312]
 process_mode = 4
 layout_mode = 0
-offset_left = 1016.0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -184.0
 offset_top = 8.0
-offset_right = 1186.0
+offset_right = -14.0
 offset_bottom = 56.0
+grow_horizontal = 2
 theme_override_font_sizes/font_size = 34
 text = "HH:MM:SS"
 horizontal_alignment = 1
@@ -2205,21 +2299,27 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("14_k6wys")
 
 [node name="Background" type="ColorRect" parent="RunScreen/RestOverlay" unique_id=380902333]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.635294)
 
 [node name="ScrollContainer" type="ScrollContainer" parent="RunScreen/RestOverlay" unique_id=149519148]
 layout_mode = 0
-offset_left = 208.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -392.0
 offset_top = 104.0
-offset_right = 1008.0
+offset_right = 408.0
 offset_bottom = 608.0
 follow_focus = true
 horizontal_scroll_mode = 3
@@ -2245,11 +2345,15 @@ columns = 3
 
 [node name="ContinueButton" type="Button" parent="RunScreen/RestOverlay" unique_id=760028813]
 layout_mode = 0
-offset_left = 528.0
-offset_top = 624.0
-offset_right = 672.0
-offset_bottom = 655.0
-text = "Continue"
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -72.0
+offset_top = -76.0
+offset_right = 72.0
+offset_bottom = -45.0
+text = "继续"
 
 [node name="ShopOverlay" type="Control" parent="RunScreen" unique_id=1618705129]
 unique_name_in_owner = true
@@ -2257,14 +2361,18 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("17_stqr4")
 
 [node name="Background" type="ColorRect" parent="RunScreen/ShopOverlay" unique_id=78866647]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.635294)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/ShopOverlay" unique_id=1833017692]
@@ -2333,7 +2441,7 @@ offset_left = 528.0
 offset_top = 656.0
 offset_right = 672.0
 offset_bottom = 687.0
-text = "Continue"
+text = "继续"
 
 [node name="DialogueOverlay" type="Control" parent="RunScreen" unique_id=2021660251]
 unique_name_in_owner = true
@@ -2341,14 +2449,18 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("25_tn5yy")
 
 [node name="Background" type="ColorRect" parent="RunScreen/DialogueOverlay" unique_id=819239096]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.635294)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/DialogueOverlay" unique_id=1150024936]
@@ -2418,14 +2530,18 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("21_fj66g")
 
 [node name="Background" type="ColorRect" parent="RunScreen/RunSummaryOverlay" unique_id=1204848117]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.635294)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/RunSummaryOverlay" unique_id=1916268882]
@@ -2451,7 +2567,7 @@ offset_top = 64.0
 offset_right = 1168.0
 offset_bottom = 184.0
 theme_override_font_sizes/font_size = 50
-text = "Victory"
+text = "胜利"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -2463,7 +2579,7 @@ offset_top = 64.0
 offset_right = 1168.0
 offset_bottom = 184.0
 theme_override_font_sizes/font_size = 50
-text = "Defeat"
+text = "战败"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -2475,7 +2591,7 @@ offset_top = 203.0
 offset_right = 1168.0
 offset_bottom = 240.0
 bbcode_enabled = true
-text = "Death or Victory Message"
+text = "结局消息"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -2504,7 +2620,7 @@ offset_top = 528.0
 offset_right = 856.0
 offset_bottom = 609.0
 theme_override_font_sizes/font_size = 32
-text = "Back To Main Menu"
+text = "返回主菜单"
 
 [node name="RunStartOptions" type="Control" parent="RunScreen" unique_id=330842242]
 unique_name_in_owner = true
@@ -2512,16 +2628,19 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("25_ll3o0")
 
 [node name="StartingOptionContainer" type="VBoxContainer" parent="RunScreen/RunStartOptions" unique_id=21744175]
 layout_mode = 0
 offset_left = 24.0
-offset_top = 528.0
-offset_right = 520.0
-offset_bottom = 640.0
+offset_top = 210.0
+offset_right = 720.0
+offset_bottom = 870.0
+theme_override_constants/separation = 8
 
 [node name="RewardOverlay" type="Control" parent="RunScreen" unique_id=50214048]
 unique_name_in_owner = true
@@ -2529,14 +2648,18 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("10_u2l48")
 
 [node name="Background" type="ColorRect" parent="RunScreen/RewardOverlay" unique_id=1286800736]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.635294)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/RewardOverlay" unique_id=832259791]
@@ -2575,7 +2698,7 @@ offset_left = 528.0
 offset_top = 544.0
 offset_right = 672.0
 offset_bottom = 575.0
-text = "Continue"
+text = "继续"
 
 [node name="CardSelectionOverlay" type="Control" parent="RunScreen" unique_id=262278364]
 unique_name_in_owner = true
@@ -2583,14 +2706,18 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("10_bwtvr")
 
 [node name="Background" type="ColorRect" parent="RunScreen/CardSelectionOverlay" unique_id=257922218]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.631373)
 
 [node name="BackButton" type="Button" parent="RunScreen/CardSelectionOverlay" unique_id=414985548]
@@ -2609,7 +2736,7 @@ offset_left = 504.0
 offset_top = 40.0
 offset_right = 648.0
 offset_bottom = 71.0
-text = "Confirm"
+text = "确认"
 
 [node name="CardPickLabel" type="Label" parent="RunScreen/CardSelectionOverlay" unique_id=1269392340]
 layout_mode = 0
@@ -2617,7 +2744,7 @@ offset_left = 176.0
 offset_top = 8.0
 offset_right = 1016.0
 offset_bottom = 32.0
-text = "Pick X Cards"
+text = "选 X 张牌"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -2655,14 +2782,18 @@ process_mode = 1
 visible = false
 z_index = 10
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("11_yys3c")
 
 [node name="Background" type="ColorRect" parent="RunScreen/CardDraftSelectionOverlay" unique_id=1345787303]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.631373)
 
 [node name="CardContainer" type="HBoxContainer" parent="RunScreen/CardDraftSelectionOverlay" unique_id=1634988066]
@@ -2687,7 +2818,7 @@ offset_left = 528.0
 offset_top = 432.0
 offset_right = 672.0
 offset_bottom = 463.0
-text = "Skip"
+text = "跳过"
 
 [node name="Map" type="Control" parent="RunScreen" unique_id=1094624931]
 unique_name_in_owner = true
@@ -2695,14 +2826,18 @@ process_mode = 1
 visible = false
 z_index = 100
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("14_fc5ht")
 
 [node name="Background" type="ColorRect" parent="RunScreen/Map" unique_id=1988191387]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.631373)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/Map" unique_id=1738550303]
@@ -2746,20 +2881,34 @@ allow_horizontal_scroll = false
 [node name="LocationContainer" type="Control" parent="RunScreen/Map/ScrollContainer" unique_id=629671273]
 layout_mode = 2
 
+[node name="QiRunFlow" type="Control" parent="RunScreen" unique_id=951372461]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("45_qiflow")
+
 [node name="PauseOverlay" type="Control" parent="RunScreen" unique_id=2135841897]
 unique_name_in_owner = true
 process_mode = 3
 visible = false
 z_index = 100
 anchors_preset = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 script = ExtResource("29_p8axl")
 
 [node name="Background" type="ColorRect" parent="RunScreen/PauseOverlay" unique_id=1057281171]
 layout_mode = 0
-offset_right = 1200.0
-offset_bottom = 700.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.203922, 0.188235, 0.215686, 0.141176)
 
 [node name="Background2" type="ColorRect" parent="RunScreen/PauseOverlay" unique_id=726319778]
@@ -2796,19 +2945,19 @@ layout_mode = 2
 shortcut = SubResource("Shortcut_elxq6")
 shortcut_feedback = false
 shortcut_in_tooltip = false
-text = "Resume"
+text = "继续游戏"
 
 [node name="ReturnToTitleButton" type="Button" parent="RunScreen/PauseOverlay/Background2/VBoxContainer" unique_id=1455356130]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
-text = "Return to Title"
+text = "回到标题"
 
 [node name="ForfeitRunButton" type="Button" parent="RunScreen/PauseOverlay/Background2/VBoxContainer" unique_id=408019789]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
-text = "Forfeit Run"
+text = "放弃本局"
 
 [node name="Tooptips" type="Control" parent="." unique_id=1044105944]
 unique_name_in_owner = true
