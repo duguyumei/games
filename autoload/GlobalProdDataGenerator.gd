@@ -2612,13 +2612,13 @@ func add_cards_green() -> void:
 	card_fertilize.card_name = "Fertilize"
 	card_fertilize.card_color_id = "color_{0}".format([color])
 	card_fertilize.card_texture_path = "external/sprites/cards/{0}/card_{0}.png".format([color])
-	card_fertilize.card_description = "Gain {0}{0}. Lose [self_damage] HP.".format([Card.ENERGY_ICON_KEYWORD])
+	card_fertilize.card_description = "Gain {0}{0}. Lose [self_damage] HP.".format(["[energy_icon]"])
 	card_fertilize.card_type = CardData.CARD_TYPES.SKILL
 	card_fertilize.card_rarity = CardData.CARD_RARITIES.RARE
 	card_fertilize.card_requires_target = false
 	card_fertilize.card_values = {"self_damage": 12, "energy_amount": 2}
 	card_fertilize.card_upgrade_value_improvements = {"self_damage": 3, "energy_amount": 1}
-	card_fertilize.card_first_upgrade_property_changes = {"card_description": "Gain {0}{0}. Lose [self_damage] HP.".format([Card.ENERGY_ICON_KEYWORD])}
+	card_fertilize.card_first_upgrade_property_changes = {"card_description": "Gain {0}{0}. Lose [self_damage] HP.".format(["[energy_icon]"])}
 	card_fertilize.card_play_actions = [
 		{
 			Scripts.ACTION_DIRECT_DAMAGE: {
@@ -2637,7 +2637,7 @@ func add_cards_green() -> void:
 	card_fruit.card_name = "Fruit"
 	card_fruit.card_color_id = "color_{0}".format([color])
 	card_fruit.card_texture_path = "external/sprites/cards/{0}/card_{0}.png".format([color])
-	card_fruit.card_description = "Randomly gain [small_max_health_amount] Max HP, [big_max_health_amount] Max HP, or {0}".format([Card.ENERGY_ICON_KEYWORD])
+	card_fruit.card_description = "Randomly gain [small_max_health_amount] Max HP, [big_max_health_amount] Max HP, or {0}".format(["[energy_icon]"])
 	card_fruit.card_type = CardData.CARD_TYPES.SKILL
 	card_fruit.card_rarity = CardData.CARD_RARITIES.COMMON
 	card_fruit.card_requires_target = false
@@ -3230,7 +3230,7 @@ func add_cards_green() -> void:
 	card_feedback_loop.card_name = "Feedback Loop"
 	card_feedback_loop.card_color_id = "color_{0}".format([color])
 	card_feedback_loop.card_texture_path = "external/sprites/cards/{0}/card_{0}.png".format([color])
-	card_feedback_loop.card_description = "Gain {0} whenever you Overheat.".format([Card.ENERGY_ICON_KEYWORD])
+	card_feedback_loop.card_description = "Gain {0} whenever you Overheat.".format(["[energy_icon]"])
 	card_feedback_loop.card_type = CardData.CARD_TYPES.POWER
 	card_feedback_loop.card_rarity = CardData.CARD_RARITIES.COMMON
 	card_feedback_loop.card_requires_target = false

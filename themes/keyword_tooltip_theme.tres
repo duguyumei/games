@@ -1,14 +1,21 @@
 [gd_resource type="Theme" format=3 uid="uid://2714jm71pkv4"]
 
-[ext_resource type="Texture2D" uid="uid://d33u8m744fh03" path="res://icon.svg" id="1_1h3vb"]
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_klxee"]
-texture = ExtResource("1_1h3vb")
-texture_margin_left = 10.0
-texture_margin_top = 10.0
-texture_margin_right = 10.0
-texture_margin_bottom = 10.0
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qif_tooltip"]
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+bg_color = Color(0.12, 0.11, 0.1, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.949, 0.922, 0.847, 0.9)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
 
 [resource]
-PanelContainer/styles/panel = SubResource("StyleBoxTexture_klxee")
-RichTextLabel/font_sizes/normal_font_size = 12
+PanelContainer/styles/panel = SubResource("StyleBoxFlat_qif_tooltip")
+RichTextLabel/font_sizes/normal_font_size = 13

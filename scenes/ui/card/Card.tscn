@@ -1,8 +1,8 @@
-[gd_scene load_steps=8 format=3 uid="uid://btxmfagad05n5"]
+[gd_scene load_steps=11 format=3 uid="uid://btxmfagad05n5"]
 
-[ext_resource type="Texture2D" uid="uid://nh32y87hcke5" path="res://icon.svg" id="1_7f6u3"]
 [ext_resource type="Script" uid="uid://k4n0whn5t0m" path="res://scripts/ui/card/Card.gd" id="1_u8ksl"]
 [ext_resource type="Script" uid="uid://c5i0sjwlko88l" path="res://addons/label_font_auto_sizer/rich_label_auto_sizer.gd" id="3_8gkbw"]
+[ext_resource type="FontFile" uid="uid://bvue2prwgnkxm" path="res://assets/fonts/zcool_huangyou.ttf" id="4_font"]
 
 [sub_resource type="Animation" id="Animation_qe6gy"]
 length = 0.001
@@ -16,7 +16,7 @@ tracks/0/keys = {
 "times": PackedFloat32Array(0),
 "transitions": PackedFloat32Array(1),
 "update": 0,
-"values": [Vector2(72, 90)]
+"values": [Vector2(90, 115)]
 }
 
 [sub_resource type="Animation" id="Animation_utg8m"]
@@ -32,7 +32,7 @@ tracks/0/keys = {
 "times": PackedFloat32Array(0, 0.2),
 "transitions": PackedFloat32Array(1, 1),
 "update": 0,
-"values": [Vector2(72, 90), Vector2(72, 70)]
+"values": [Vector2(90, 115), Vector2(90, 93)]
 }
 
 [sub_resource type="Animation" id="Animation_obl53"]
@@ -48,7 +48,7 @@ tracks/0/keys = {
 "times": PackedFloat32Array(0, 0.2),
 "transitions": PackedFloat32Array(1, 1),
 "update": 0,
-"values": [Vector2(72, 60), Vector2(72, 98)]
+"values": [Vector2(90, 82), Vector2(90, 124)]
 }
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_156sy"]
@@ -58,145 +58,195 @@ _data = {
 &"card_unhover": SubResource("Animation_obl53")
 }
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_frame"]
+bg_color = Color(0.788235, 0.227451, 0.227451, 1)
+corner_radius_top_left = 11
+corner_radius_top_right = 11
+corner_radius_bottom_right = 11
+corner_radius_bottom_left = 11
+shadow_color = Color(0, 0, 0, 0.4)
+shadow_size = 4
+shadow_offset = Vector2(0, 3)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.94902, 0.921569, 0.847059, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_glow"]
+bg_color = Color(0.968627, 0.909804, 0.627451, 0.5)
+corner_radius_top_left = 13
+corner_radius_top_right = 13
+corner_radius_bottom_right = 13
+corner_radius_bottom_left = 13
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_desc"]
+bg_color = Color(0.960784, 0.945098, 0.901961, 1)
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.788235, 0.760784, 0.678431, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pip"]
+bg_color = Color(0.180392, 0.227451, 0.34902, 1)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.94902, 0.921569, 0.847059, 1)
+
 [node name="Card" type="Control" groups=["cards"]]
-custom_minimum_size = Vector2(144, 184)
+custom_minimum_size = Vector2(180, 230)
 layout_mode = 3
 anchors_preset = 0
-offset_right = 144.0
-offset_bottom = 184.0
+offset_right = 180.0
+offset_bottom = 230.0
 script = ExtResource("1_u8ksl")
 
 [node name="Pivot" type="Node2D" parent="."]
-position = Vector2(72, 90)
+position = Vector2(90, 115)
 
 [node name="CardVisual" type="Control" parent="Pivot"]
-custom_minimum_size = Vector2(144, 180)
+custom_minimum_size = Vector2(180, 226)
 layout_mode = 3
 anchors_preset = 0
-offset_left = -72.0
-offset_top = -90.0
-offset_right = 72.0
-offset_bottom = 94.0
+offset_left = -90.0
+offset_top = -115.0
+offset_right = 90.0
+offset_bottom = 124.0
 
-[node name="CardGlow" type="ColorRect" parent="Pivot/CardVisual"]
+[node name="CardGlow" type="Panel" parent="Pivot/CardVisual"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-offset_left = -8.0
-offset_top = -8.0
-offset_right = 152.0
-offset_bottom = 192.0
-color = Color(0.909804, 0.901961, 0.992157, 0.392157)
+offset_left = -9.0
+offset_top = -9.0
+offset_right = 189.0
+offset_bottom = 239.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_glow")
 
-[node name="ColorBackground" type="ColorRect" parent="Pivot/CardVisual"]
+[node name="ColorBackground" type="Panel" parent="Pivot/CardVisual"]
 unique_name_in_owner = true
 layout_mode = 2
-offset_right = 144.0
-offset_bottom = 184.0
+offset_right = 180.0
+offset_bottom = 230.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_frame")
 
-[node name="Background" type="ColorRect" parent="Pivot/CardVisual"]
-layout_mode = 2
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 140.0
-offset_bottom = 180.0
-color = Color(0.207843, 0.207843, 0.207843, 1)
-
-[node name="CardDescription" type="RichTextLabel" parent="Pivot/CardVisual"]
+[node name="CardName" type="RichTextLabel" parent="Pivot/CardVisual"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 8.0
-offset_top = 112.0
-offset_right = 136.0
-offset_bottom = 184.0
-theme_override_font_sizes/normal_font_size = 12
+offset_left = 9.0
+offset_top = 11.0
+offset_right = 171.0
+offset_bottom = 40.0
+theme_override_colors/default_color = Color(1, 0.98, 0.92, 1)
+theme_override_colors/font_outline_color = Color(0.16, 0.12, 0.08, 1)
+theme_override_constants/outline_size = 4
+theme_override_fonts/normal_font = ExtResource("4_font")
+theme_override_font_sizes/normal_font_size = 17
 bbcode_enabled = true
-text = "If you can see this something is wrong"
+text = "卡名"
 scroll_active = false
 script = ExtResource("3_8gkbw")
-_max_size = 12
-_current_font_size = 12
-_editor_defaults_set = true
-
-[node name="EnergySprite" type="TextureRect" parent="Pivot/CardVisual"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = -12.0
-offset_top = -12.0
-offset_right = 20.0
-offset_bottom = 20.0
-texture = ExtResource("1_7f6u3")
-expand_mode = 1
-metadata/_edit_group_ = true
-
-[node name="EnergyCost" type="Label" parent="Pivot/CardVisual/EnergySprite"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_right = 32.0
-offset_bottom = 32.0
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/line_spacing = -3
-theme_override_constants/outline_size = 3
-theme_override_font_sizes/font_size = 23
-text = "??"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="CardTexture" type="TextureRect" parent="Pivot/CardVisual"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 24.0
-offset_top = 12.0
-offset_right = 120.0
-offset_bottom = 108.0
-texture = ExtResource("1_7f6u3")
-expand_mode = 1
-
-[node name="CardName" type="RichTextLabel" parent="Pivot/CardVisual/CardTexture"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = -16.0
-offset_top = -4.0
-offset_right = 112.0
-offset_bottom = 12.0
-theme_override_font_sizes/normal_font_size = 11
-bbcode_enabled = true
-text = "Card Name"
-scroll_active = false
-script = ExtResource("3_8gkbw")
-_max_size = 12
-_current_font_size = 11
+_max_size = 17
+_current_font_size = 17
 _editor_defaults_set = true
 
 [node name="CardType" type="Label" parent="Pivot/CardVisual"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 8.0
-offset_top = 95.0
-offset_right = 136.0
-offset_bottom = 112.0
-theme_override_constants/line_spacing = -3
-theme_override_font_sizes/font_size = 12
-text = "Card Type"
+offset_left = 9.0
+offset_top = 42.0
+offset_right = 171.0
+offset_bottom = 62.0
+theme_override_colors/font_color = Color(1, 0.98, 0.92, 0.85)
+theme_override_font_sizes/font_size = 13
+text = "类别"
 horizontal_alignment = 1
+
+[node name="CardTexture" type="TextureRect" parent="Pivot/CardVisual"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 11.0
+offset_top = 67.0
+offset_right = 169.0
+offset_bottom = 127.0
+expand_mode = 1
+
+[node name="DescriptionPanel" type="Panel" parent="Pivot/CardVisual"]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 131.0
+offset_right = 171.0
+offset_bottom = 218.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_desc")
+
+[node name="CardDescription" type="RichTextLabel" parent="Pivot/CardVisual"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 16.0
+offset_top = 138.0
+offset_right = 164.0
+offset_bottom = 211.0
+theme_override_colors/default_color = Color(0.2, 0.188235, 0.164706, 1)
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+text = "卡牌说明"
+scroll_active = false
+script = ExtResource("3_8gkbw")
+_max_size = 15
+_current_font_size = 15
+_editor_defaults_set = true
+
+[node name="EnergySprite" type="Panel" parent="Pivot/CardVisual"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = -16.0
+offset_top = -13.0
+offset_right = 29.0
+offset_bottom = 31.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_pip")
+
+[node name="EnergyCost" type="Label" parent="Pivot/CardVisual/EnergySprite"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 44.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(1, 0.98, 0.92, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.12, 0.18, 1)
+theme_override_constants/outline_size = 4
+theme_override_fonts/font = ExtResource("4_font")
+theme_override_font_sizes/font_size = 26
+text = "?"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="CardDecoratorContainer" type="VBoxContainer" parent="Pivot/CardVisual"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = -8.0
-offset_top = 24.0
-offset_right = 16.0
-offset_bottom = 104.0
+offset_left = 162.0
+offset_top = 67.0
+offset_right = 189.0
+offset_bottom = 127.0
 theme_override_constants/separation = 4
 
 [node name="CardButton" type="Button" parent="Pivot"]
 unique_name_in_owner = true
 self_modulate = Color(1, 1, 1, 0)
-custom_minimum_size = Vector2(144, 184)
-offset_left = -72.0
-offset_top = -90.0
-offset_right = 72.0
-offset_bottom = 94.0
+custom_minimum_size = Vector2(180, 230)
+offset_left = -90.0
+offset_top = -115.0
+offset_right = 90.0
+offset_bottom = 124.0
 button_mask = 3
 metadata/_edit_lock_ = true
 

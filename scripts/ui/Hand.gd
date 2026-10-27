@@ -51,7 +51,7 @@ const HAND_CARD_ROTATION_CURVE_MULTIPLIER: float = 6.0 # multiplies the curve sa
 @export var hand_card_y_offset_curve: Curve = preload("res://misc/curves/hand_y_curve.tres")
 const HAND_CARD_Y_OFFSET_CURVE_MULTIPLIER: float = -20.0 # multiplies the curve sampling
 
-const CARD_WIDTH: float = 144.0 # how big the Card asset is. NOTE: Update this if you update Card's size at all
+const CARD_WIDTH: float = 180.0 # how big the Card asset is. NOTE: Update this if you update Card's size at all
 const CARD_SEPERATION_WIDTH: float = CARD_WIDTH * .75 # how far apart each card should be from one another. Generally between .5 to 1X the card width
 
 const MIDDLE_OFFSET: float = CARD_WIDTH / 2

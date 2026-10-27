@@ -1,5 +1,5 @@
 # UI element that pauses the game
-extends TextureButton
+extends Button
 
 @onready var map: Control = %Map
 @onready var shop_overlay: Control = %ShopOverlay

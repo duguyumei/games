@@ -4,4 +4,4 @@ extends Control
 
 func update_turn_label() -> void:
 	# called from animation player
-	turn_label.text = "Turn %s" % StatsHandler.get_turn_count()
+	turn_label.text = "回合 %s" % StatsHandler.get_turn_count()

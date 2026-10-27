@@ -26,34 +26,34 @@ func init(character_id: String) -> void:
 
 	# wins/losses
 	var character_wins: int = profile_data.profile_character_id_to_wins.get(character_id, 0)
-	character_wins_label.text = "Wins: {0}".format([character_wins])
+	character_wins_label.text = "胜 {0}".format([character_wins])
 	var character_losses: int = profile_data.profile_character_id_to_losses.get(character_id, 0)
-	character_losses_label.text = "Losses: {0}".format([character_losses])
+	character_losses_label.text = "负 {0}".format([character_losses])
 	
 	# win rate
 	var character_total_runs: int = character_wins + character_losses
 	var character_win_rate: float = float(character_wins) / float(max(character_total_runs, 1))
 	var win_rate_formatted: String = "%0.2f" % (character_win_rate * 100)
-	character_win_rate_label.text = "Win Rate: {0}%".format([win_rate_formatted])
+	character_win_rate_label.text = "胜率：{0}%".format([win_rate_formatted])
 	
 	# win/loss streaks
 	var character_current_win_streak: int = profile_data.profile_character_id_to_current_win_streak.get(character_id, 0)
-	character_current_win_streak_label.text = "Current Win Streak: {0}".format([character_current_win_streak])
+	character_current_win_streak_label.text = "当前连胜 {0}".format([character_current_win_streak])
 	
 	var character_highest_win_streak: int = profile_data.profile_character_id_to_highest_win_streak.get(character_id, 0)
-	character_highest_win_streak_label.text = "Highest Win Streak: {0}".format([character_highest_win_streak])
+	character_highest_win_streak_label.text = "最高连胜 {0}".format([character_highest_win_streak])
 	
 	var character_current_loss_streak: int = profile_data.profile_character_id_to_current_loss_streak.get(character_id, 0)
-	character_current_loss_streak_label.text = "Current Loss Streak: {0}".format([character_current_loss_streak])
+	character_current_loss_streak_label.text = "当前连败 {0}".format([character_current_loss_streak])
 	
 	var character_highest_loss_streak: int = profile_data.profile_character_id_to_highest_loss_streak.get(character_id, 0)
-	character_highest_loss_streak_label.text = "Highest Loss Streak: {0}".format([character_highest_loss_streak])
+	character_highest_loss_streak_label.text = "最高连败 {0}".format([character_highest_loss_streak])
 	
 	# format total run time
 	var character_total_run_time_seconds: int = int(profile_data.profile_character_id_to_total_run_time.get(character_id, 0.0))
 	var datetime_dict: Dictionary = Time.get_datetime_dict_from_unix_time(int(character_total_run_time_seconds))
 	# HH:MM:SS
-	character_play_time_label.text = "Total Play Time: %02d:%02d:%02d" % [datetime_dict["hour"],
+	character_play_time_label.text = "总游玩时长 %02d:%02d:%02d" % [datetime_dict["hour"],
 		datetime_dict["minute"],
 		datetime_dict["second"],
 	]

@@ -5,14 +5,14 @@
 extends Control
 class_name Tooltip
 
-@onready var pause_button: TextureButton = %PauseButton
-@onready var map_button: TextureButton = %MapButton
+@onready var pause_button: BaseButton = %PauseButton
+@onready var map_button: BaseButton = %MapButton
 
 @onready var money_label: Label = %MoneyLabel
 @onready var health_label: Label = %HealthLabel
 
 @onready var energy: TextureButton = %Energy
-@onready var deck_button: TextureButton = %DeckButton
+@onready var deck_button: BaseButton = %DeckButton
 @onready var draw_pile_button: TextureButton = %DrawPile
 @onready var discard_pile_button: TextureButton = %DiscardPile
 @onready var exhaust_pile_button: TextureButton = %ExhaustPile

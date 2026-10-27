@@ -77,7 +77,7 @@ func _populate_codex_enemies() -> void:
 func populate_codex_enemy(enemy_data: EnemyData) -> void:
 	codex_enemy_name_label.text = enemy_data.enemy_name
 	codex_enemy_texture.texture = FileLoader.load_texture(enemy_data.enemy_texture_path)
-	codex_enemy_health_label.text = "HP: {0}-{1}".format([enemy_data.enemy_health_max_random_lower, enemy_data.enemy_health_max_random_upper])
+	codex_enemy_health_label.text = "生命 {0}-{1}".format([enemy_data.enemy_health_max_random_lower, enemy_data.enemy_health_max_random_upper])
 	populate_codex_enemy_intents(enemy_data)
 
 ## Populates a list of intents for a given enemy

@@ -4,7 +4,6 @@ extends Control
 @onready var reward_container: VBoxContainer = $RewardContainer
 @onready var continue_button: Button = $ContinueButton
 
-@onready var map = $%Map
 
 # reward values; These are sorted into mutually exclusive groups
 # they can be added to via ActionGrantRewards to allow things to affect them
@@ -218,16 +217,9 @@ func _on_chest_opened():
 	populate_reward_display()
 
 func _on_continue_button_up():
-	# increment the act and potentially generate a new one
-	if Global.is_end_of_act():
-		if not Global.is_end_of_run():
-			ActionGenerator.generate_next_act()
-	
-	if not Global.is_end_of_run():
-		map.show_map()
-	else:
-		visible = false
-		Signals.run_victory.emit()
+	# qi-forge：小丑牌式流程——奖励收口后交备战层（组/场推进由 QiRunFlow 管理）
+	visible = false
+	get_node("%QiRunFlow").on_fight_finished()
 
 func _on_map_location_selected(_location_data: LocationData):
 	visible = false

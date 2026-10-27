@@ -14,7 +14,7 @@ extends BaseMenu
 @onready var difficulty_label: LabelAutoSizer = %DifficultyLabel
 @onready var increase_difficulty_button: Button = %IncreaseDifficultyButton
 
-@onready var custom_run_modifier_button_container: VBoxContainer = %CustomRunModifierButtonContainer
+@onready var custom_run_modifier_button_container: Container = %CustomRunModifierButtonContainer
 
 @onready var character_button_container: GridContainer = %CharacterButtonContainer
 
@@ -84,12 +84,31 @@ func populate_character_info(character_object_id: String) -> void:
 	var character_data: CharacterData = Global.get_character_data(character_object_id)
 	if character_data != null:
 		character_name_label.text = character_data.character_name
-		character_health_label.text = "HP: {0}".format([character_data.character_starting_health])
-		character_money_label.text = "Money: {0}".format([character_data.character_starting_money])
-		character_description_label.text = character_data.character_description
-		
+		# qi-forge：四维与三命中分行短句显示（历练不在开局面板显示；短句防固定槽换行叠字）
+		character_health_label.text = "生命 {0}".format([character_data.character_starting_health])
+		if character_data.character_starting_speed > 0:
+			character_money_label.text = "攻 {0} ｜ 防 {1} ｜ 速 {2}".format([
+				character_data.character_starting_attack,
+				character_data.character_starting_defense,
+				character_data.character_starting_speed,
+			])
+		if not character_data.character_starting_hits.is_empty():
+			character_description_label.text = "力道 {0} ｜ 迅疾 {1} ｜ 精妙 {2}\n{3}".format([
+				character_data.character_starting_hits.get("力道", 0),
+				character_data.character_starting_hits.get("迅疾", 0),
+				character_data.character_starting_hits.get("精妙", 0),
+				character_data.character_description,
+			])
+		else:
+			character_description_label.text = character_data.character_description
+
+		# 无初始遗物时隐藏遗物展示位（qi-forge：武者饰品走开局下拉，不走此位）
+		var has_starting_artifact: bool = len(character_data.character_starting_artifact_ids) > 0
+		character_artifact_texture_rect.visible = has_starting_artifact
+		character_artifact_name_label.visible = has_starting_artifact
+		character_artifact_description_label.visible = has_starting_artifact
 		# TODO potentially update ui to support multiple starter artifacts displayed
-		if len(character_data.character_starting_artifact_ids) > 0:
+		if has_starting_artifact:
 			var artifact_data: ArtifactData = Global.get_artifact_data(character_data.character_starting_artifact_ids[0])
 			if artifact_data != null:
 				character_artifact_texture_rect.texture = FileLoader.load_texture(artifact_data.artifact_texture_path)
@@ -144,17 +163,109 @@ func _on_increase_difficulty_button_pressed():
 #region Custom Run Modifiers
 func populate_custom_run_modifiers() -> void:
 	clear_custom_run_modifiers()
-	
+
 	var run_modifier_object_ids: Array = Global._id_to_run_modifier_data.keys()
-	
+
+	# 分组词条：每组一列（列名 Label ＋ 下拉 OptionButton，单选紧凑）；
+	# 未分组词条：走原勾选框路径，保持 StR 通用性。
+	var group_name_to_dropdown: Dictionary = {}
+	var group_name_to_ids: Dictionary = {}
+	var group_name_to_description_label: Dictionary = {}
+
 	for run_modifier_object_id in run_modifier_object_ids:
 		var run_modifier_data: RunModifierData = Global.get_run_modifier_data(run_modifier_object_id)
-		if run_modifier_data.run_modifier_is_custom:
+		if not run_modifier_data.run_modifier_is_custom:
+			continue
+		var group_name: String = run_modifier_data.run_modifier_group_name
+		if group_name == "":
 			var custom_run_modifier_checkbox: CheckBox = Scenes.CUSTOM_RUN_MODIFIER_CHECKBOX.instantiate()
 			custom_run_modifier_button_container.add_child(custom_run_modifier_checkbox)
 			custom_run_modifier_checkbox.init(run_modifier_object_id)
 			custom_run_modifier_checkbox.toggled.connect(_on_custom_run_modifier_toggled.bind(run_modifier_data))
 			_run_modifier_object_id_to_checkbox[run_modifier_object_id] = custom_run_modifier_checkbox
+			continue
+
+		# 每组一块（qi-forge: 开局饰品）：第一行＝组名＋下拉按钮，第二行＝效果说明整行，
+		# 块尾留间距再进下一组。ScrollContainer 按最小宽排布，说明行必须自带最小宽。
+		if not group_name_to_dropdown.has(group_name):
+			var group_block: VBoxContainer = VBoxContainer.new()
+			var group_row: HBoxContainer = HBoxContainer.new()
+			var group_header: Label = Label.new()
+			group_header.text = group_name
+			group_header.custom_minimum_size = Vector2(48, 0)
+			group_row.add_child(group_header)
+			var group_dropdown: OptionButton = OptionButton.new()
+			group_dropdown.custom_minimum_size = Vector2(200, 0)
+			group_row.add_child(group_dropdown)
+			group_block.add_child(group_row)
+			var group_description_label: Label = Label.new()
+			group_description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			group_description_label.custom_minimum_size = Vector2(520, 48)
+			group_description_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			group_block.add_child(group_description_label)
+			var group_spacer: Control = Control.new()
+			group_spacer.custom_minimum_size = Vector2(0, 16)
+			group_block.add_child(group_spacer)
+			custom_run_modifier_button_container.add_child(group_block)
+			group_name_to_dropdown[group_name] = group_dropdown
+			group_name_to_ids[group_name] = [] as Array[String]
+			group_name_to_description_label[group_name] = group_description_label
+
+		var group_ids: Array[String] = group_name_to_ids[group_name]
+		var dropdown: OptionButton = group_name_to_dropdown[group_name]
+		var description_label: Label = group_name_to_description_label[group_name]
+		dropdown.add_item(run_modifier_data.run_modifier_name)
+		var item_index: int = dropdown.item_count - 1
+		dropdown.set_item_tooltip(item_index, run_modifier_data.run_modifier_description)
+		group_ids.append(run_modifier_object_id)
+		if run_modifier_data.run_modifier_is_default_enabled:
+			dropdown.select(item_index)
+			description_label.text = run_modifier_data.run_modifier_description
+			selected_custom_run_modififers.append(run_modifier_object_id)
+		if not dropdown.item_selected.is_connected(_on_group_dropdown_item_selected):
+			dropdown.item_selected.connect(_on_group_dropdown_item_selected.bind(group_ids, description_label))
+
+	# default-enable flagged ungrouped modifiers
+	for run_modifier_object_id in _run_modifier_object_id_to_checkbox.keys():
+		var default_modifier_data: RunModifierData = Global.get_run_modifier_data(run_modifier_object_id)
+		if default_modifier_data != null and default_modifier_data.run_modifier_is_default_enabled:
+			var default_checkbox: CheckBox = _run_modifier_object_id_to_checkbox[run_modifier_object_id]
+			default_checkbox.set_pressed_no_signal(true)
+			selected_custom_run_modififers.append(run_modifier_object_id)
+
+	_refresh_accessory_summary()
+
+## 把当前选中的 qi-forge 饰品镜像到角色面板原遗物位：名称一行、悬停悬浮窗看全部效果。
+func _refresh_accessory_summary() -> void:
+	var accessory_names: Array[String] = []
+	var tooltip_lines: Array[String] = []
+	for modifier_id: String in selected_custom_run_modififers:
+		if not modifier_id.begins_with("qif_acc_"):
+			continue
+		var modifier_data: RunModifierData = Global.get_run_modifier_data(modifier_id)
+		if modifier_data == null:
+			continue
+		accessory_names.append(modifier_data.run_modifier_name)
+		tooltip_lines.append("{0}：{1}".format([modifier_data.run_modifier_name, modifier_data.run_modifier_description]))
+	var has_accessories: bool = not accessory_names.is_empty()
+	character_artifact_name_label.visible = has_accessories
+	character_artifact_description_label.visible = has_accessories
+	if has_accessories:
+		var tooltip_text: String = "\n".join(tooltip_lines)
+		character_artifact_name_label.text = " ／ ".join(accessory_names)
+		character_artifact_name_label.tooltip_text = tooltip_text
+		character_artifact_description_label.text = "（悬停名称查看效果）"
+		character_artifact_description_label.tooltip_text = tooltip_text
+
+func _on_group_dropdown_item_selected(index: int, group_ids: Array[String], description_label: Label) -> void:
+	# 组内单选：整组清除后只留当前选择；同时刷新常驻效果说明
+	for group_id: String in group_ids:
+		selected_custom_run_modififers.erase(group_id)
+	selected_custom_run_modififers.append(group_ids[index])
+	var selected_modifier_data: RunModifierData = Global.get_run_modifier_data(group_ids[index])
+	if selected_modifier_data != null:
+		description_label.text = selected_modifier_data.run_modifier_description
+	_refresh_accessory_summary()
 
 func clear_custom_run_modifiers() -> void:
 	_run_modifier_object_id_to_checkbox.clear()

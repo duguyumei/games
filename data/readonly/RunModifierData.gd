@@ -15,6 +15,13 @@ class_name RunModifierData
 ## Whether this should appear as a custom modifier.
 @export var run_modifier_is_custom: bool = false
 
+## Optional grouping label for custom modifiers. Non-empty modifiers sharing this name render in
+## their own column with a header (qi-forge: 开局饰品按服饰/头饰/腿部分栏).
+@export var run_modifier_group_name: String = ""
+
+## Whether this modifier starts checked when the custom modifier list populates (qi-forge: 开局饰品默认件).
+@export var run_modifier_is_default_enabled: bool = false
+
 ## Automatic modifiers are always registered during a run.
 ## This allows you to attach standard listening behavior which has some niche uses.
 @export var run_modifier_is_automatic: bool = false

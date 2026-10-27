@@ -1563,8 +1563,8 @@ func add_test_colors() -> void:
 #region Keywords
 func add_test_keywords() -> void:
 	var keyword_block: KeywordData = KeywordData.new("keyword_block")
-	keyword_block.keyword_name = "Block"
-	keyword_block.keyword_text_bb_code = "Prevents Damage"
+	keyword_block.keyword_name = "格挡"
+	keyword_block.keyword_text_bb_code = "抵挡伤害（占位：正式规则为伤害减免）"
 	Global.register_rod(keyword_block)
 	
 	var keyword_discard: KeywordData = KeywordData.new("keyword_discard")
@@ -3806,14 +3806,14 @@ func add_test_cards() -> void:
 	card_energy_on_discard.card_name = "Energy Discard"
 	card_energy_on_discard.card_color_id = "color_green"
 	card_energy_on_discard.card_texture_path = "external/sprites/cards/green/card_green.png"
-	card_energy_on_discard.card_description = "Grant {0}{0} energy on discard".format([Card.ENERGY_ICON_KEYWORD])
+	card_energy_on_discard.card_description = "Grant {0}{0} energy on discard".format(["[energy_icon]"])
 	card_energy_on_discard.card_is_playable = false
 	card_energy_on_discard.card_type = CardData.CARD_TYPES.SKILL
 	card_energy_on_discard.card_rarity = CardData.CARD_RARITIES.COMMON
 	card_energy_on_discard.card_requires_target = false
 	card_energy_on_discard.card_values = {"energy_amount": 2}
 	card_energy_on_discard.card_upgrade_value_improvements = {"energy_amount": 1}
-	card_energy_on_discard.card_first_upgrade_property_changes = {"card_description": "Grant {0}{0}{0} energy on discard".format([Card.ENERGY_ICON_KEYWORD])}
+	card_energy_on_discard.card_first_upgrade_property_changes = {"card_description": "Grant {0}{0}{0} energy on discard".format(["[energy_icon]"])}
 	card_energy_on_discard.card_discard_actions = [
 	{
 	Scripts.ACTION_ADD_ENERGY: {}
@@ -3946,7 +3946,7 @@ func add_test_cards() -> void:
 	card_attack_increase_cost_on_damage_taken.card_color_id = "color_green"
 	card_attack_increase_cost_on_damage_taken.card_texture_path = "external/sprites/cards/green/card_green.png"
 	card_attack_increase_cost_on_damage_taken.card_energy_cost = 0
-	card_attack_increase_cost_on_damage_taken.card_description = "Attack for [damage] damage. Costs 1 additional {0} each time damage taken this combat".format([Card.ENERGY_ICON_KEYWORD])
+	card_attack_increase_cost_on_damage_taken.card_description = "Attack for [damage] damage. Costs 1 additional {0} each time damage taken this combat".format(["[energy_icon]"])
 	card_attack_increase_cost_on_damage_taken.card_type = CardData.CARD_TYPES.ATTACK
 	card_attack_increase_cost_on_damage_taken.card_rarity = CardData.CARD_RARITIES.UNCOMMON
 	card_attack_increase_cost_on_damage_taken.card_requires_target = true
@@ -4476,7 +4476,7 @@ func add_test_cards() -> void:
 	card_grant_energy.card_name = "Energy Card"
 	card_grant_energy.card_color_id = "color_red"
 	card_grant_energy.card_texture_path = "external/sprites/cards/red/card_red.png"
-	card_grant_energy.card_description = "Gives {0}{0} when played".format([Card.ENERGY_ICON_KEYWORD])
+	card_grant_energy.card_description = "Gives {0}{0} when played".format(["[energy_icon]"])
 	card_grant_energy.card_is_playable = true
 	card_grant_energy.card_energy_cost = 0
 	card_grant_energy.card_type = CardData.CARD_TYPES.SKILL
@@ -4484,7 +4484,7 @@ func add_test_cards() -> void:
 	card_grant_energy.card_requires_target = false
 	card_grant_energy.card_values = {"energy_amount": 2}
 	card_grant_energy.card_upgrade_value_improvements = {"energy_amount": 1}
-	card_grant_energy.card_first_upgrade_property_changes = {"card_description": "Gives {0}{0}{0} when played".format([Card.ENERGY_ICON_KEYWORD])}
+	card_grant_energy.card_first_upgrade_property_changes = {"card_description": "Gives {0}{0}{0} when played".format(["[energy_icon]"])}
 	card_grant_energy.card_play_actions = [
 	{
 	Scripts.ACTION_ADD_ENERGY: {}
@@ -4498,14 +4498,14 @@ func add_test_cards() -> void:
 	card_energy_on_draw.card_name = "Energy Draw Card"
 	card_energy_on_draw.card_color_id = "color_orange"
 	card_energy_on_draw.card_texture_path = "external/sprites/cards/orange/card_orange.png"
-	card_energy_on_draw.card_description = "Gives {0}{0} when drawn".format([Card.ENERGY_ICON_KEYWORD])
+	card_energy_on_draw.card_description = "Gives {0}{0} when drawn".format(["[energy_icon]"])
 	card_energy_on_draw.card_is_playable = false
 	card_energy_on_draw.card_type = CardData.CARD_TYPES.SKILL
 	card_energy_on_draw.card_rarity = CardData.CARD_RARITIES.UNCOMMON
 	card_energy_on_draw.card_requires_target = false
 	card_energy_on_draw.card_values = {"energy_amount": 2}
 	card_energy_on_draw.card_upgrade_value_improvements = {"energy_amount": 1}
-	card_energy_on_draw.card_first_upgrade_property_changes = {"card_description": "Gives {0}{0}{0} when drawn".format([Card.ENERGY_ICON_KEYWORD])}
+	card_energy_on_draw.card_first_upgrade_property_changes = {"card_description": "Gives {0}{0}{0} when drawn".format(["[energy_icon]"])}
 	card_energy_on_draw.card_draw_actions = [
 	{
 	Scripts.ACTION_ADD_ENERGY: {}

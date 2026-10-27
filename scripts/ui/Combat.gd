@@ -10,7 +10,7 @@ extends Control
 @onready var discard_count: Label = $DiscardPile/DiscardCount
 @onready var exhaust_count: Label = $ExhaustPile/ExhaustCount
 
-@onready var deck_button: TextureButton = %DeckButton
+@onready var deck_button: BaseButton = %DeckButton
 @onready var draw_pile_button: TextureButton = %DrawPile
 @onready var discard_pile_button: TextureButton = %DiscardPile
 @onready var exhaust_pile_button: TextureButton = %ExhaustPile
@@ -162,7 +162,7 @@ func _on_card_queue_refunded():
 	update_combat_display()
 
 func _on_player_money_changed(_delta: int = 0):
-	money_label.text = "$%s" % Global.player_data.player_money
+	money_label.text = "历练 " + str(Global.player_data.player_money)
 
 func _on_player_health_changed():
 	health_label.text = "%s / %s" % [Global.player_data.player_health, Global.player_data.player_health_max]

@@ -15,9 +15,25 @@ var _card_is_rerendering: bool = false
 const CARD_SUFFICIENT_ENERGY_LABEL_COLOR: Color = Color.WHITE
 ## The label text for energy will be displayed in this color if the player does not have enough energy
 ## to play the card.
-const CARD_INSUFFICIENT_ENERGY_LABEL_COLOR: Color = Color.FIREBRICK
+const CARD_INSUFFICIENT_ENERGY_LABEL_COLOR: Color = Color(1, 0.45, 0.45)
 const CARD_TEXT_IMAGE_SIZE: int = 16	# images in card descriptions will be set to this size
 const ENERGY_ICON_KEYWORD: String = "[energy_icon]"	# tells description to display an energy icon in place
+
+# qi-forge：卡身按牌类别平涂（攻红/术蓝/功绿/异灰/咒紫），不随角色色
+const CARD_TYPE_BODY_COLORS: Dictionary = {
+	CardData.CARD_TYPES.ATTACK: Color(0.788, 0.227, 0.227),
+	CardData.CARD_TYPES.SKILL: Color(0.227, 0.435, 0.788),
+	CardData.CARD_TYPES.POWER: Color(0.227, 0.651, 0.353),
+	CardData.CARD_TYPES.STATUS: Color(0.478, 0.478, 0.522),
+	CardData.CARD_TYPES.CURSE: Color(0.42, 0.29, 0.541),
+}
+const CARD_TYPE_LABELS_ZH: Dictionary = {
+	CardData.CARD_TYPES.ATTACK: "攻",
+	CardData.CARD_TYPES.SKILL: "术",
+	CardData.CARD_TYPES.POWER: "功",
+	CardData.CARD_TYPES.STATUS: "异",
+	CardData.CARD_TYPES.CURSE: "咒",
+}
 
 var tooltip_left_side: bool = false # if tooltip should display to the left of the card when hovered
 
@@ -30,13 +46,13 @@ var tooltip_left_side: bool = false # if tooltip should display to the left of t
 @onready var card_name: RichLabelAutoSizer = %CardName
 @onready var card_type: Label = %CardType
 @onready var card_description: RichLabelAutoSizer = %CardDescription
-@onready var card_energy_sprite: TextureRect = %EnergySprite
+@onready var card_energy_sprite: Panel = %EnergySprite
 @onready var card_energy_cost_label: Label = %EnergyCost
-@onready var card_color: ColorRect = %ColorBackground
+@onready var card_color: Panel = %ColorBackground
 @onready var card_decorator_container: VBoxContainer = %CardDecoratorContainer
 
 @onready var animation_player: AnimationPlayer = $AnimationPlayer
-@onready var card_glow: ColorRect = %CardGlow
+@onready var card_glow: Panel = %CardGlow
 
 @onready var keyword_timer = $KeywordTimer
 
@@ -93,7 +109,7 @@ func update_card_display(selected_enemy: Enemy = null) -> void:
 	# updates the card's display
 	card_name.set_bbcode("[center]" + card_data.get_card_name() + "[/center]")
 	card_description.set_bbcode(get_card_description(selected_enemy))
-	card_type.text = CardData.CARD_RARITIES.keys()[card_data.card_rarity] + " " + CardData.CARD_TYPES.keys()[card_data.card_type]
+	card_type.text = CARD_TYPE_LABELS_ZH.get(card_data.card_type, "？")
 	
 	# update energy
 	_update_energy_display(selected_enemy)
@@ -104,12 +120,10 @@ func _update_energy_display(selected_enemy: Enemy = null) -> void:
 	# flags used for determining playability
 	var card_is_in_hand: bool = _is_card_in_hand()
 	
-	# set the energy texture
-	var color_data: ColorData = Global.get_color_data(card_data.card_color_id)
-	if color_data != null:
-		card_color.color = color_data.color
-		if color_data.color_energy_icon_texture_path != "":
-			card_energy_sprite.texture = FileLoader.load_texture(color_data.color_energy_icon_texture_path)
+	# qi-forge：费用圆点由场景绘制（弃用角色能量贴图）；卡身按类别平涂
+	var frame_style: StyleBoxFlat = (card_color.get_theme_stylebox("panel") as StyleBoxFlat).duplicate()
+	frame_style.bg_color = CARD_TYPE_BODY_COLORS.get(card_data.card_type, Color(0.478, 0.478, 0.522))
+	card_color.add_theme_stylebox_override("panel", frame_style)
 	
 	# reset energy cost display
 	card_energy_sprite.visible = card_data.card_is_playable

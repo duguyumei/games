@@ -42,4 +42,9 @@ class_name CharacterData
 ## Money added to player on start
 @export var character_starting_money: int = 999
 @export var character_starting_health: int = 50
+## qi-forge: 通用模板四维与三命中底盘（0/空＝不显示，供开局面板展示）
+@export var character_starting_attack: int = 0
+@export var character_starting_defense: int = 0
+@export var character_starting_speed: int = 0
+@export var character_starting_hits: Dictionary = {} # {"力道": 5, "迅疾": 5, "精妙": 5}
 #endregion

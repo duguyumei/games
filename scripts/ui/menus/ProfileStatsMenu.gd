@@ -18,26 +18,26 @@ func populate_menu() -> void:
 	# Aggregate stats
 	
 	# wins/losses
-	profile_wins_label.text = "Wins: {0}".format([profile_data.profile_total_wins])
-	profile_losses_label.text = "Losses: {0}".format([profile_data.profile_total_losses])
+	profile_wins_label.text = "胜 {0}".format([profile_data.profile_total_wins])
+	profile_losses_label.text = "负 {0}".format([profile_data.profile_total_losses])
 	
 	# win rate
 	var total_runs: int = profile_data.profile_total_wins + profile_data.profile_total_losses
 	var win_rate: float = float(profile_data.profile_total_wins) / float(max(total_runs, 1))
 	var win_rate_formatted: String = "%0.2f" % (win_rate * 100)
-	profile_win_rate_label.text = "Win Rate: {0}%".format([win_rate_formatted])
+	profile_win_rate_label.text = "胜率：{0}%".format([win_rate_formatted])
 	
 	# win/loss streaks
-	profile_current_win_streak_label.text = "Current Win Streak: {0}".format([profile_data.profile_current_win_streak]) 
-	profile_highest_win_streak_label.text = "Highest Win Streak: {0}".format([profile_data.profile_highest_win_streak]) 
-	profile_current_loss_streak_label.text = "Current Loss Streak: {0}".format([profile_data.profile_current_loss_streak]) 
-	profile_highest_loss_streak_label.text = "Highest Loss Streak: {0}".format([profile_data.profile_highest_loss_streak]) 
+	profile_current_win_streak_label.text = "当前连胜 {0}".format([profile_data.profile_current_win_streak]) 
+	profile_highest_win_streak_label.text = "最高连胜 {0}".format([profile_data.profile_highest_win_streak]) 
+	profile_current_loss_streak_label.text = "当前连败 {0}".format([profile_data.profile_current_loss_streak]) 
+	profile_highest_loss_streak_label.text = "最高连败 {0}".format([profile_data.profile_highest_loss_streak]) 
 	
 	# format total run time
 	var total_run_time_seconds: int = profile_data.profile_total_run_time
 	var datetime_dict: Dictionary = Time.get_datetime_dict_from_unix_time(int(profile_data.profile_total_run_time))
 	# HH:MM:SS
-	profile_play_time_label.text = "Total Play Time: %02d:%02d:%02d" % [datetime_dict["hour"],
+	profile_play_time_label.text = "总游玩时长 %02d:%02d:%02d" % [datetime_dict["hour"],
 		datetime_dict["minute"],
 		datetime_dict["second"],
 	]
