@@ -11,3 +11,9 @@ export_presets.cfg
 .mono/
 /external/saves
 external/profile.json
+
+# 本机工具工件（探针截图/扫描/会话目录，不入库）
+.mimosa/
+.video_agent/
+.zcode/
+.qi_*

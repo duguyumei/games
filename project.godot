@@ -14,9 +14,9 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
-config/name="Slay the Robot"
-run/main_scene="res://scenes/Root.tscn"
-config/features=PackedStringArray("4.6")
+config/name="气铸"
+run/main_scene="res://qiforge/QiRoot.tscn"
+config/features=PackedStringArray("4.7")
 config/icon="uid://8kopj5luv8dc"
 
 [audio]
@@ -47,13 +47,16 @@ gdscript/warnings/integer_division=0
 
 [display]
 
-window/size/viewport_width=1200
-window/size/viewport_height=700
-window/size/resizable=false
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1920
+window/size/window_height_override=1080
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/sound_manager/plugin.cfg")
+enabled=PackedStringArray("res://addons/sound_manager/plugin.cfg", "res://addons/CardGameSkeleton/plugin.cfg")
 
 [input]
 
