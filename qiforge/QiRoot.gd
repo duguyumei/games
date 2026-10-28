@@ -202,6 +202,8 @@ func _on_child_exiting(node: Node) -> void:
 		return
 	var result := String(node.get_meta("qi_result", ""))
 	if result == "win":
+		QI_DATA.apply_team_out(_run, node.get_meta("qi_team_out", []))   # 耐久写回（§7 跨场持久）
+		QI_DATA.reserve_tick(_run)   # 后备池每场战后回血（含阵亡缓复）
 		_run["fight"] = int(_run.get("fight", 0)) + 1
 		var gi: int = int(_run.get("group", 0))
 		if gi < QI_DATA.GROUPS.size() and int(_run["fight"]) < QI_DATA.GROUPS[gi]["fights"].size():

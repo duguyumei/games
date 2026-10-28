@@ -34,6 +34,7 @@ func _run() -> void:
 	for c in layer.get_children():
 		if c is HBoxContainer:
 			row = c
+			break   # 取首个＝真组合行（2026-10-28 回血制后层内另有按钮 HBox，勿取末个）
 	if row == null:
 		fails.append("详情层内无组合行")
 		_finish()
@@ -44,6 +45,16 @@ func _run() -> void:
 	var col: Control = row.get_child(1)
 	_near(main_c.size.x, QICARD.size_of("detail").x, 4.0, "主卡宽（工厂 detail 档）")
 	_near(main_c.size.y, QICARD.size_of("detail").y, 4.0, "主卡高（工厂 detail 档）")
+	var btn_txt := ""
+	for c in layer.get_children():
+		if c is HBoxContainer and c != row:
+			for b in c.get_children():
+				if b is Button:
+					btn_txt += str(b.text) + "|"
+	if not ("疗伤" in btn_txt or "耐久完好" in btn_txt):
+		fails.append("回血制：详情层应有疗伤/耐久完好钮（收 %s）" % btn_txt)
+	if not ("收起入后备" in btn_txt):
+		fails.append("回血制：详情层应有收起入后备钮（收 %s）" % btn_txt)
 	if col.global_position.x <= main_c.global_position.x + main_c.size.x:
 		fails.append("衍生列应在主卡右侧")
 	if col.get_child_count() != 3:

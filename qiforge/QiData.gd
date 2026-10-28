@@ -304,16 +304,87 @@ static func build_deck(team: Array) -> Array:
 				deck.push_back({"wid": String(m["id"]), "sid": String(s["id"]), "dir": 0})
 	return deck
 
+## 换装随卡组进出（升级保留制 2026-10-28 §3：下场器灵的功法卡含升级 dir 原样存档——
+## 记录仍在队/后备＝挂成员档案 cards；记录被删回未解锁池＝挂 run.pool_cards；再装备优先按档案重建）
 static func deck_swap(run: Dictionary, out_wid: String, in_wid: String = "") -> void:
 	var deck: Array = run.get("deck", [])
-	for i in range(deck.size() - 1, -1, -1):
-		if String(deck[i]["wid"]) == out_wid:
-			deck.remove_at(i)
+	if out_wid != "":
+		var stash: Array = []
+		for i in range(deck.size() - 1, -1, -1):
+			if String(deck[i]["wid"]) == out_wid:
+				stash.push_front(deck[i])
+				deck.remove_at(i)
+		if not stash.is_empty():
+			var rec := find_member(run, out_wid)
+			if not rec.is_empty():
+				rec["cards"] = stash
+			else:
+				var pool: Dictionary = run.get("pool_cards", {})
+				pool[out_wid] = stash
+				run["pool_cards"] = pool
 	if in_wid != "" and WEAPONS.has(in_wid):
-		for s in WEAPONS[in_wid]["spells"]:
-			for i in COPIES_PER_SPELL:
-				deck.push_back({"wid": in_wid, "sid": String(s["id"]), "dir": 0})
+		var restore: Array = []
+		var irec := find_member(run, in_wid)
+		if not irec.is_empty() and irec.has("cards"):
+			restore = irec["cards"]
+			irec.erase("cards")
+		elif run.get("pool_cards", {}).has(in_wid):
+			restore = run["pool_cards"][in_wid]
+			run["pool_cards"].erase(in_wid)
+		if restore.is_empty():
+			for s in WEAPONS[in_wid]["spells"]:
+				for i in COPIES_PER_SPELL:
+					deck.push_back({"wid": in_wid, "sid": String(s["id"]), "dir": 0})
+		else:
+			for e in restore:
+				deck.push_back(e)
 	run["deck"] = deck
+
+#region 回血制套件（2026-10-28 §7 耐久跨场持久：全 run 无自动回血复活，三通道＝后备/金币/奖励位；数值暂定非锁定）
+const RESERVE_HEAL_PCT := 25     # 后备每场战后回血 %（暂定）
+const HEAL_COPPER_PER_HP := 1.0  # 金币回复 铜每点（暂定）
+const REVIVE_COPPER_PER_HP := 1.5  # 阵亡复活溢价（暂定）
+const REWARD_HEAL_PCT := 50      # 奖励位回复 %（暂定）
+
+static func mhp_of(m: Dictionary) -> int:
+	return int(weapon_panel(String(m["id"]), m.get("equips", [])).get("hp", 0))
+
+static func hp_of(m: Dictionary) -> int:
+	var mhp := mhp_of(m)
+	return clampi(int(m.get("hp", mhp)), 0, mhp)
+
+static func find_member(run: Dictionary, wid: String) -> Dictionary:
+	for arr in [run.get("team", []), run.get("reserve", [])]:
+		for m in arr:
+			if String(m["id"]) == wid:
+				return m
+	return {}
+
+## 后备池每场战后回血（含阵亡缓复：0 血逐场累积，>0 即可再上阵）
+static func reserve_tick(run: Dictionary) -> void:
+	for m in run.get("reserve", []):
+		var mhp := mhp_of(m)
+		m["hp"] = mini(mhp, int(m.get("hp", mhp)) + int(ceil(mhp * RESERVE_HEAL_PCT / 100.0)))
+
+## 金币回复价（疗伤至满）：存活＝缺口×1；阵亡＝缺口×1.5（暂定）
+static func heal_price(m: Dictionary) -> int:
+	var mhp := mhp_of(m)
+	var now := hp_of(m)
+	if now >= mhp:
+		return 0
+	var rate := REVIVE_COPPER_PER_HP if now <= 0 else HEAL_COPPER_PER_HP
+	return int(ceil(float(mhp - now) * rate))
+
+static func reward_heal_amount(m: Dictionary) -> int:
+	return int(ceil(mhp_of(m) * REWARD_HEAL_PCT / 100.0))
+
+## 战后耐久写回（战斗屏 team_out → QiRoot 胜利分支调用）
+static func apply_team_out(run: Dictionary, tout: Array) -> void:
+	for rec in tout:
+		var m := find_member(run, String(rec.get("id", "")))
+		if not m.is_empty():
+			m["hp"] = clampi(int(rec.get("hp", mhp_of(m))), 0, mhp_of(m))
+#endregion
 
 static func spell_of(wid: String, sid: String, dir: int) -> Dictionary:
 	var base: Dictionary = {}
@@ -389,18 +460,22 @@ static func _split_sents(text: String) -> Array:
 #region 战后奖励六类操作池（基础规则 v0.7 §7；先掷类型→子池掷对象）
 ## 类型：add_spirit 新增器灵／upgrade_spirit 升级器灵（被动）／add_spell 新增功法／
 ## upgrade_spell 升级功法牌／remove_spell 删除功法牌／copy_spell 复制功法牌
-const OP_KINDS := ["add_spirit", "upgrade_spirit", "add_spell", "upgrade_spell", "remove_spell", "copy_spell"]
+const OP_KINDS := ["add_spirit", "upgrade_spirit", "add_spell", "upgrade_spell", "remove_spell", "copy_spell", "heal"]
 const OP_NAMES := {
 	"add_spirit": "新增器灵", "upgrade_spirit": "升级器灵", "add_spell": "新增功法",
 	"upgrade_spell": "升级功法牌", "remove_spell": "删除功法牌", "copy_spell": "复制功法牌",
+	"heal": "回复",
 }
 const OP_BUTTONS := {
 	"add_spirit": "入后备", "upgrade_spirit": "升级被动", "add_spell": "添加",
 	"upgrade_spell": "升级", "remove_spell": "删除", "copy_spell": "复制",
+	"heal": "回复",
 }
 
-## 商店操作位定价（2026-10-27 用户裁定两档制：功法类 50／器灵类 70；升级相关 +10）
+## 商店操作位定价（2026-10-27 用户裁定两档制：功法类 50／器灵类 70；升级相关 +10；回复类暂 50）
 static func op_price(kind: String) -> int:
+	if kind == "heal":
+		return 50
 	var base := 70 if kind in ["add_spirit", "upgrade_spirit"] else 50
 	if kind in ["upgrade_spirit", "upgrade_spell"]:
 		base += 10
@@ -459,6 +534,12 @@ static func op_pool(run: Dictionary, kind: String) -> Array:
 				if not seen4.has(key4):
 					seen4[key4] = true
 					out.push_back({"kind": kind, "wid": String(e["wid"]), "sid": String(e["sid"]), "dir": int(e.get("dir", 0))})
+		"heal":
+			# 回复（2026-10-28 第七类）：子池＝我方全体带伤/阵亡器灵（满血出局；无 hp 字段＝满血）
+			for arr in [run.get("team", []), run.get("reserve", [])]:
+				for m in arr:
+					if int(m.get("hp", -1)) >= 0 and int(m["hp"]) < mhp_of(m):
+						out.push_back({"kind": kind, "wid": String(m["id"])})
 	return out
 #endregion
 
@@ -556,6 +637,8 @@ static func default_run() -> Dictionary:
 	var run := {"copper": 130, "bag": [],
 		"team": START_TEAM.duplicate(true),
 		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026}
+	for m in run["team"]:
+		m["hp"] = mhp_of(m)   # 新局满血（耐久跨场持久制 §7）
 	run["deck"] = build_deck(run["team"])
 	return run
 

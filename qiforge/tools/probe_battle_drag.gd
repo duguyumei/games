@@ -33,7 +33,11 @@ func _run() -> void:
 	_eq("我方卡拖到敌卡＝可落点", true, ok_atk)
 	_eq("预估伤害=18（幽冥 26−8）", 18, b.preview_normal_attack(ally_rec["unit"], dashou))
 	_eq("悬停高亮已亮", true, (enemy_rec["mark"]["ring"] as Control).visible)
-	_eq("预估文案", "预估 18", (enemy_rec["mark"]["est"] as Label).text)
+	# 2026-10-28 用户裁定（并行轮）：卡面不显数字——数值走线边＋血条将受段；仅不可攻态留字
+	_eq("可攻态卡面数字隐藏", false, (enemy_rec["mark"]["est"] as Label).visible)
+	var seg16: Panel = enemy_rec.get("hpprev", null)
+	_eq("血条将受段预览＝主攻18＋追击2（合计 20）", true,
+		seg16 != null and seg16.visible and "-20" in str((seg16.get_child(0) as Label).text))
 	screen._clear_drag_marks()
 	_eq("清罩后高亮灭", false, (enemy_rec["mark"]["ring"] as Control).visible)
 

@@ -63,7 +63,12 @@ func setup(run: Dictionary) -> void:
 	draw_base = DATA.draw_of(int(run.get("sys_lv", 2)))
 	allies = []
 	for m in run.get("team", []):
+		var hp0 := int(m.get("hp", -1))
+		if hp0 == 0:
+			continue   # 阵亡未复活者不上场（耐久跨场持久制 §7；复活只走回血通道）
 		allies.push_back(_make_ally(String(m["id"]), m.get("equips", []), int(m.get("pdir", 0))))
+		if hp0 > 0:
+			allies[allies.size() - 1]["hp"] = hp0   # 上场＝带当前耐久上阵，不重置（§7）
 	enemies = []
 	var gi: int = int(run.get("group", 0))
 	var fi: int = int(run.get("fight", 0))
@@ -81,6 +86,13 @@ func setup(run: Dictionary) -> void:
 	for entry in deck:
 		draw_pile.push_back(_make_card_instance(entry))
 	_shuffle(draw_pile)
+
+## 战后耐久写回源（§7 耐久跨场持久）：QiRoot 胜利分支取此经 QiData.apply_team_out 写回 run
+func team_out() -> Array:
+	var out: Array = []
+	for a in allies:
+		out.push_back({"id": a["id"], "hp": maxi(0, int(a["hp"]))})
+	return out
 
 func _make_card_instance(entry: Dictionary) -> Dictionary:
 	_card_uid += 1
@@ -609,14 +621,38 @@ func _drain_deferred() -> void:
 				event.emit("尸毒蔓延：「%s」的毒向「%s」扩散 %d 层" % [act["from_name"], to["name"], act["stacks"]])
 				apply_status(to, "zhongdu", int(act["stacks"]), 0, -1, true)
 
-## 普攻预估＝实际结算同口径（攻＋破绽×1−防，下限 1）；不可攻＝0
+## 普攻命中预估（纯查询，2026-10-28 起严格镜像 resolve_damage 普攻通道：
+## 杀意「所有」池＋虚弱/怒意倍率＋受方破绽−防御，封底 1）
+func _preview_hit(a: Dictionary, e: Dictionary) -> int:
+	var amt := float(atk_of(a))
+	var shayi_per := 2 if (a.get("passive", {}).get("id") == "sha_yi" and int(a.get("pdir", 0)) == 1) else 1
+	if _has_fx(a, "shayi_all"):
+		amt += float(status_total(a, "shayi")) * float(shayi_per)
+	if status_total(a, "xuruo") > 0:
+		amt *= 0.5
+	if status_total(a, "nuyi") > 0:
+		amt *= 1.5
+	amt += VULN_PER_STACK * float(status_total(e, "poxian"))
+	return maxi(1, int(round(amt)) - def_of(e))
+
 func preview_normal_attack(a: Dictionary, e: Dictionary) -> int:
 	if phase != "player" or not a["alive"] or not e["alive"]:
 		return 0
 	if int(a["acts"]) <= 0 or has_status(a, "jiaoxie") or has_status(a, "xuan"):
 		return 0
-	var amt := float(atk_of(a)) + VULN_PER_STACK * float(status_total(e, "poxian"))
-	return maxi(1, int(round(amt)) - def_of(e))
+	return _preview_hit(a, e)
+
+## 追击连带预估（拖拽连线用）：镜像真实触发门（不耗攻次；缴械/眩晕不放行；同链每人至多一次）
+func preview_pursuits(a: Dictionary, e: Dictionary) -> Array:
+	var out: Array = []
+	if phase != "player" or not a["alive"] or not e["alive"]:
+		return out
+	for t in allies:
+		if t["alive"] and t["uid"] != a["uid"] and t.get("passive", {}).get("id") == "zhuiji" \
+				and not has_status(t, "jiaoxie") and not has_status(t, "xuan"):
+			out.push_back({"uid": int(t["uid"]), "name": String(t["name"]),
+				"dmg": _preview_hit(t, e)})
+	return out
 
 func play_card(card_uid: int, target: Dictionary = {}) -> void:
 	var card := {}

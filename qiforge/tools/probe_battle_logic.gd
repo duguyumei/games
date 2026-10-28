@@ -434,6 +434,65 @@ func _run() -> void:
 	_eq("Lv2 池充实（≥8 件）", true, QI_DATA.tier_pool(2).size() >= 8)
 	_eq("Lv1 池充实（≥3 件）", true, QI_DATA.tier_pool(1).size() >= 3)
 
+	# —— 局十五：普攻预览族（2026-10-28 用户裁定）：镜像结算口径＋追击连带查询 ——
+	var b15: RefCounted = QI_BATTLE.new()
+	b15.setup({"copper": 0,
+		"team": [{"id": "youming", "equips": [], "pdir": 0},
+			{"id": "tiansi", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b15.start()
+	var ym15: Dictionary = b15.allies[0]
+	var ts15: Dictionary = b15.allies[1]
+	var e15: Dictionary = b15.enemies[0]
+	_eq("主攻预估 26−8=18", 18, b15.preview_normal_attack(ym15, e15))
+	var ps15: Array = b15.preview_pursuits(ym15, e15)
+	_eq("追击连带 1 人（天丝）", 1, ps15.size())
+	_eq("追击预估 10−8=2", 2, int(ps15[0]["dmg"]))
+	b15.apply_status(ym15, "shayi", 5)
+	_eq("杀意只入功法池·普攻预估不变", 18, b15.preview_normal_attack(ym15, e15))
+	b15.apply_status(ts15, "xuruo", 1)
+	_eq("追击者虚弱×0.5 镜像 → 封底 1", 1, int(b15.preview_pursuits(ym15, e15)[0]["dmg"]))
+	b15._consume_stacks(ts15, "xuruo", 9)
+	b15.apply_status(ts15, "jiaoxie", 1, 0, -1, true)
+	_eq("追击者缴械→不放行", 0, b15.preview_pursuits(ym15, e15).size())
+	ym15["acts"] = 0
+	_eq("主攻攻次耗尽→预估 0", 0, b15.preview_normal_attack(ym15, e15))
+
+	# —— 局十六：回血制（2026-10-28 §7 耐久跨场持久）——带伤上阵/跳阵亡/写回/档案制/后备回血/疗伤价/奖励池 ——
+	var run16: Dictionary = QI_DATA.default_run()
+	run16["team"][0]["hp"] = 10     # 幽冥 34 血带伤
+	run16["team"][1]["hp"] = 0      # 天丝阵亡（不上场）
+	var b16: RefCounted = QI_BATTLE.new()
+	b16.setup(run16)
+	b16.start()
+	_eq("带伤上阵：幽冥 10 血", 10, int(b16.allies[0]["hp"]))
+	_eq("阵亡未复活者不上场（仅幽冥）", 1, b16.allies.size())
+	_eq("team_out 写回源", true, b16.team_out().size() == 1 and int(b16.team_out()[0]["hp"]) == 10)
+	QI_DATA.apply_team_out(run16, b16.team_out())
+	_eq("apply_team_out 写回", 10, int(QI_DATA.find_member(run16, "youming")["hp"]))
+	# 档案制（升级保留）：升级卡随收起存档、随上阵还原
+	for e in run16["deck"]:
+		if String(e["wid"]) == "youming" and String(e["sid"]) == "miehun":
+			e["dir"] = 1
+			break
+	QI_DATA.deck_swap(run16, "youming", "")
+	QI_DATA.deck_swap(run16, "", "youming")
+	var seen_up16 := false
+	for e in run16["deck"]:
+		if String(e["wid"]) == "youming" and String(e["sid"]) == "miehun" and int(e["dir"]) == 1:
+			seen_up16 = true
+	_eq("升级随档：收起再上阵还原 dir=1", true, seen_up16)
+	# 后备每场回血 25%（青蛊 40 血：8 → 18）；疗伤价（缺 22×1＝22；阵亡天丝缺 48×1.5＝72）
+	run16["reserve"] = [{"id": "qinggu", "equips": ["", "", ""], "pdir": 0, "hp": 8}]
+	QI_DATA.reserve_tick(run16)
+	_eq("后备每场回血 25%（40 血 8→18）", 18, int(run16["reserve"][0]["hp"]))
+	_eq("疗伤价＝缺口×1", 22, QI_DATA.heal_price(run16["reserve"][0]))
+	_eq("复活价＝缺口×1.5", 72, QI_DATA.heal_price(run16["team"][1]))
+	# 奖励回复池：带伤幽冥(10/34)＋阵亡天丝(0/48)＋带伤青蛊(18/40) 入池；满血出局
+	_eq("回复池＝3（带伤×2＋阵亡×1）", 3, QI_DATA.op_pool(run16, "heal").size())
+	run16["reserve"][0]["hp"] = QI_DATA.mhp_of(run16["reserve"][0])
+	_eq("满血者不入回复池", 2, QI_DATA.op_pool(run16, "heal").size())
+
 	_finish()
 
 func _count_wid(pile: Array, wid: String) -> int:

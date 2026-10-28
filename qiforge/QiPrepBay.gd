@@ -143,10 +143,12 @@ func _crew_entry(m: Dictionary) -> Dictionary:
 	var spells: Array = []
 	for s in w["spells"]:
 		spells.push_back("%s（%d 能量）：%s" % [s["name"], s["cost"], s["desc"]])
+	var hp_now := clampi(int(m.get("hp", p["hp"])), 0, int(p["hp"]))   # 跨场持久耐久（§7；无字段＝满血）
 	return {"name": w["name"], "seal": w["seal"], "_member": m,
 		"passive": passive_txt,
 		"equips": eq_names,
-		"attrs": {"耐久": "%d/%d" % [p["hp"], p["hp"]], "攻击": p["atk"], "威力": p["pow"],
+		"hp": hp_now, "mhp": int(p["hp"]),
+		"attrs": {"耐久": "%d/%d" % [hp_now, p["hp"]], "攻击": p["atk"], "威力": p["pow"],
 			"防御": p["def"], "抗性": p["res"], "攻击次数": p["acts"]},
 		"spells": spells}
 
@@ -558,14 +560,23 @@ func _rebuild_crew_cols() -> void:
 			col.add_child(pad)
 			col.add_child(_make_empty_slot(i))
 		else:
-			col.add_child(_make_col_name(String(_crew[i]["name"])))
+			var hp_i := int(_crew[i].get("hp", 1))
+			var mhp_i := int(_crew[i].get("mhp", 1))
+			var hp_txt := "%d/%d" % [hp_i, mhp_i]
+			var warn := false
+			if hp_i <= 0:
+				hp_txt = "阵亡"
+				warn = true
+			elif hp_i < mhp_i:
+				warn = true
+			col.add_child(_make_col_name("%s　%s" % [String(_crew[i]["name"]), hp_txt], warn))
 			col.add_child(_make_crew_card(i, _crew[i]))
 			col.add_child(_make_equip_row(i))
 		_crew_row.add_child(col)
 	if _crew_count_lbl:
 		_crew_count_lbl.text = "%d / 7" % _crew_count()
 
-func _make_col_name(text: String) -> Control:
+func _make_col_name(text: String, warn := false) -> Control:
 	# 定高 36 容器内居中（Label 行高会超 min，空位垫块是定值 36——不定高则相邻列卡顶差 3px 跳位）
 	var box := Control.new()
 	box.custom_minimum_size = Vector2(PREP_W, NAME_ROW)
@@ -576,7 +587,7 @@ func _make_col_name(text: String) -> Control:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	QISTYLE.font(l, QISTYLE.FS_TITLE, true)
-	l.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
+	l.add_theme_color_override("font_color", Color("e07a6a") if warn else QISTYLE.TEXT_MAIN)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(l)
 	return box
@@ -880,6 +891,55 @@ func _open_detail(d: Dictionary) -> void:
 	row.add_child(col)
 	var layer: Control = QICARD.make_detail_layer(row, row.get_combined_minimum_size())
 	add_child(layer)
+	# 回血制（2026-10-28 §7）：疗伤（金币通道）＋收起入后备（手动后备显式入口，拖拽同效）——
+	# 按钮挂层内卡正下方（不动详情卡尺寸；layer 已建故闭包引用合法）
+	var act_row := HBoxContainer.new()
+	act_row.add_theme_constant_override("separation", 12)
+	act_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	var mem_d: Dictionary = d["_member"]
+	var mhp_d := QI_DATA.mhp_of(mem_d)
+	var cost_d := QI_DATA.heal_price(mem_d)
+	var heal_btn := Button.new()
+	if cost_d > 0:
+		heal_btn.text = "疗伤（%d 铜，回复至满）" % cost_d
+	else:
+		heal_btn.text = "耐久完好"
+	heal_btn.tooltip_text = "金币通道：存活＝缺口×1 铜；阵亡＝缺口×1.5 铜（暂定）。"
+	heal_btn.disabled = cost_d <= 0 or int(run_data.get("copper", 0)) < cost_d
+	QISTYLE.apply_ghost(heal_btn)
+	QISTYLE.font(heal_btn, QISTYLE.FS_SMALL)
+	heal_btn.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
+	heal_btn.pressed.connect(func() -> void:
+		run_data["copper"] = int(run_data.get("copper", 0)) - cost_d
+		_copper = int(run_data["copper"])
+		if _copper_lbl:
+			_copper_lbl.text = str(_copper)
+		mem_d["hp"] = mhp_d
+		if layer.is_inside_tree():
+			layer.queue_free()
+		_rebuild_crew_cols()
+		_flash("「%s」已回复至满耐久（−%d 铜）" % [String(d["name"]), cost_d]))
+	act_row.add_child(heal_btn)
+	var slot_d := -1
+	for i in 7:
+		if _crew[i] != null and _crew[i]["_member"] == mem_d:
+			slot_d = i
+	if slot_d >= 0:
+		var bench_btn := Button.new()
+		bench_btn.text = "收起入后备"
+		bench_btn.tooltip_text = "手动收后备：功法卡随档保留（升级不清零）；每场战后备战池回血。"
+		QISTYLE.apply_ghost(bench_btn)
+		QISTYLE.font(bench_btn, QISTYLE.FS_SMALL)
+		bench_btn.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
+		bench_btn.pressed.connect(func() -> void:
+			if layer.is_inside_tree():
+				layer.queue_free()
+			_bench_at(slot_d))
+		act_row.add_child(bench_btn)
+	layer.add_child(act_row)
+	act_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	act_row.offset_top = 16.0
+	act_row.offset_bottom = 62.0
 	var closer := func() -> void:
 		if layer.is_inside_tree():
 			layer.queue_free()
@@ -1075,10 +1135,18 @@ func _on_swap(from_i: int, to_i: int) -> void:
 func _on_bench(data, _zone) -> void:
 	if not (data is Dictionary) or not data.has("drag_data"):
 		return
-	var i := int(data["drag_data"]["slot"])
-	if _crew[i] == null:
+	_bench_at(int(data["drag_data"]["slot"]))
+
+## 收起入后备（拖到「后备」区与详情页按钮同入口；升级保留制＝功法卡随档带走 2026-10-28）
+func _bench_at(i: int) -> void:
+	if i < 0 or i >= 7 or _crew[i] == null:
 		return
-	# v0.6 卡组制：收起入后备＝该器灵的功法卡随之下场（卡组推导自装备中器灵）
+	if _reserve.size() >= RESERVE_CAP:
+		_flash("后备已满（%d/%d）——先上阵或替换一件" % [_reserve.size(), RESERVE_CAP])
+		return
+	if _crew_count() <= 1:
+		_flash("编队至少保留一件器灵")
+		return
 	var wid := String(_crew[i]["_member"]["id"])
 	var removed := 0
 	for de in run_data.get("deck", []):
@@ -1090,7 +1158,7 @@ func _on_bench(data, _zone) -> void:
 	_sync_team()
 	_rebuild_crew_cols()
 	_reserve_lbl.text = "后备（%d）" % _reserve.size()
-	_flash("已收起入后备（其 %d 张功法卡移出卡组）" % removed)
+	_flash("已收起入后备（%d 张功法卡随档保留，每场战后回血）" % removed)
 
 ## 弹窗：后备名册（1080×600）——可上阵（入首个空位；卡组随供牌）
 func _open_reserve() -> void:
@@ -1098,15 +1166,18 @@ func _open_reserve() -> void:
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 10)
 	var head := Label.new()
-	head.text = "后备 %d/%d（上阵＝入编队首个空位，其功法卡随入卡组；拖编队卡到「后备」即可收起）" % [_reserve.size(), RESERVE_CAP]
+	head.text = "后备 %d/%d（上阵＝入编队首个空位，功法卡随档还原；拖编队卡到「后备」即可收起；每场战后备战池回血）" % [_reserve.size(), RESERVE_CAP]
 	QISTYLE.font(head, QISTYLE.FS_SMALL)
 	head.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 	body.add_child(head)
 	for r in _reserve:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 12)
+		var mhp_r := QI_DATA.mhp_of(r["_member"])
+		var hp_r := clampi(int(r["_member"].get("hp", mhp_r)), 0, mhp_r)
 		var lbl := Label.new()
-		lbl.text = "· %s　%s" % [String(r["name"]), String(r["passive"])]
+		lbl.text = "· %s（耐久 %d/%d%s）　%s" % [String(r["name"]), hp_r, mhp_r,
+			"·阵亡" if hp_r <= 0 else "", String(r["passive"])]
 		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		QISTYLE.font(lbl, QISTYLE.FS_SMALL)
@@ -1114,7 +1185,26 @@ func _open_reserve() -> void:
 		row.add_child(lbl)
 		var up := Button.new()
 		up.text = "上阵"
-		up.tooltip_text = "入编队首个空位；其功法副本随入卡组。"
+		up.tooltip_text = "入编队首个空位；功法卡随档还原（升级保留）。阵亡者须经回复通道复活。"
+		up.disabled = hp_r <= 0
+		var hb := Button.new()
+		var cost_r := QI_DATA.heal_price(r["_member"])
+		hb.text = "疗伤 %d 铜" % cost_r
+		hb.tooltip_text = "金币通道：回复至满耐久（存活＝缺口×1 铜、阵亡＝×1.5，暂定）。"
+		hb.disabled = cost_r <= 0 or int(run_data.get("copper", 0)) < cost_r
+		QISTYLE.apply_ghost(hb)
+		QISTYLE.font(hb, QISTYLE.FS_SMALL)
+		hb.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
+		var rm: Dictionary = r["_member"]
+		hb.pressed.connect(func() -> void:
+			run_data["copper"] = int(run_data.get("copper", 0)) - cost_r
+			_copper = int(run_data["copper"])
+			if _copper_lbl:
+				_copper_lbl.text = str(_copper)
+			rm["hp"] = mhp_r
+			dialog.hide()
+			_flash("「%s」已回复至满耐久（−%d 铜）" % [String(r["name"]), cost_r]))
+		row.add_child(hb)
 		QISTYLE.apply_ghost(up)
 		QISTYLE.font(up, QISTYLE.FS_SMALL)
 		up.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)

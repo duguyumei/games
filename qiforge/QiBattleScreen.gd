@@ -1,7 +1,7 @@
 ## 战斗屏 v5（布局＝UI实施 §8 v3.2；数据层接 QiBattle v0.7 属性重构管线）。
 ## 分区：顶栏 y0~7｜意图行贴敌牌上 25px（图标＋实际结算数字，实时刷新）｜敌排 y15~36.3
 ## ｜我排 y44.5~65.8（+卡下被动行）｜手牌扇 216×304 底裁 y69.5~
-## ｜拖我方卡到敌卡＝普攻（连线/预估/高亮）｜打牌一律拖放（禁点按）：
+## ｜拖我方卡到敌卡＝普攻（连线/高亮＋预览族 2026-10-28：主攻线边数字＋追击虚线＋血条将受段）｜打牌一律拖放（禁点按）：
 ## 敌方目标功法拖到敌卡；器灵目标功法（护壁/铁壁诀/引丝诀）拖到我方卡；无目标功法拖到敌区/我区任意处。
 ## 左能量竖栈＝奇偶制上限。战后奖励＝六类操作池三选一（刷新带价＋跳过得铜＋Boss 保证位）。
 ## 用法：godot --path . res://qiforge/QiBattleScreen.tscn -- --qi-shot → 1.4s 自动截图退出
@@ -15,6 +15,7 @@ const QIDIALOG := preload("res://qiforge/QiDialog.gd")
 const QI_DATA := preload("res://qiforge/QiData.gd")
 const QI_BATTLE := preload("res://qiforge/QiBattle.gd")
 const QIUP := preload("res://qiforge/QiUpgradePick.gd")
+const QI_DASH := preload("res://qiforge/QiDashLine.gd")
 
 ## 尺寸制 v3.0（2026-10-27 用户裁定）：唯一基准 300×422×场合系数（工厂 size_of 唯一权威）
 static var CARD_W := QICARD.size_of("field").x
@@ -44,6 +45,8 @@ var _busy := false
 var _log_lbl: Label = null
 var _line: Line2D = null                    # 拖拽连线（普攻＝源器灵→吸附敌卡；目标功法＝升卡→吸附/鼠标；尸姬制贝塞尔）
 var _arrow: Line2D = null                   # 连线箭头双翼
+var _dash_pool: Array = []                  # 追击虚线池（QiDashLine；自动连带攻击＝虚线制 2026-10-28）
+var _num_pool: Array = []                   # 线边伤害数字池（Label：主攻＋各追击源）
 var _drag_mark: Dictionary = {}             # {rec, side, from} 当前吸附槽＋拖源（普攻/功法共用，side＝enemy/ally）
 var _spell_drag: Dictionary = {}            # {wrap, card, tw} 目标功法箭头拖拽（卡升起不跟手，2026-10-28 STS2 制）
 var _hand_focus: Control = null             # 悬停手牌（弹起位，2026-10-28 STS2 RefreshLayout 制）
@@ -1062,7 +1065,7 @@ func _make_mark_layer(wrap: Control) -> Dictionary:
 	return {"ring": ring, "est": est, "gx1": marks["gx1"], "gx2": marks["gx2"], "go": marks["go"]}
 
 func _mark_drag(rec: Dictionary, atk_uid: int) -> void:
-	## 普攻拖拽吸附：红环＋×＋预估＋源到目标连线（尸姬制）。
+	## 普攻拖拽吸附：红环＋×＋连线＋追击虚线＋线边数字＋血条将受段（尸姬制＋2026-10-28 预览制）。
 	if _drag_mark.get("rec") != rec:
 		_unsnap_mark()
 		var from: Control = null
@@ -1074,20 +1077,74 @@ func _mark_drag(rec: Dictionary, atk_uid: int) -> void:
 		_pop_glyph(rec)
 		_play_sfx("click-b", 1.25)
 	var est := 0
+	var src_unit: Dictionary = {}
 	for r in _ally_slots:
 		if int(r["unit"]["uid"]) == atk_uid:
-			est = battle.preview_normal_attack(r["unit"], rec["enemy"])
+			src_unit = r["unit"]
+			est = battle.preview_normal_attack(src_unit, rec["enemy"])
+	var follows: Array = battle.preview_pursuits(src_unit, rec["enemy"]) if est > 0 else []
+	_drag_mark["est"] = est
+	_drag_mark["follows"] = follows
 	rec["snap"] = "enemy"
 	_render_mark(rec)
+	# 卡面不显数字（2026-10-28 用户裁定：数值走线边＋血条）；仅不可攻态留字
 	var lbl := rec["mark"]["est"] as Label
-	if est > 0:
-		lbl.text = "预估 %d" % est
-		lbl.visible = true
-	else:
+	lbl.visible = est <= 0
+	if est <= 0:
 		lbl.text = "不可普攻"
-		lbl.visible = true
+	_render_hp_preview(rec, est, follows)
 	if _drag_mark.get("from") != null:
 		_line.visible = true
+
+## 血条将受伤害预览（2026-10-28 用户裁定；STS2 血条分层前景制＝PoisonForeground 同族）：
+## 主攻＋追击合计从血端左蚀琥珀段，段上标「-合计」；解除吸附即消。
+func _render_hp_preview(rec: Dictionary, est: int, follows: Array) -> void:
+	var total := est
+	for f in follows:
+		total += int(f["dmg"])
+	var seg: Panel = rec.get("hpprev", null)
+	if seg == null or total <= 0:
+		return
+	var e: Dictionary = rec["enemy"]
+	var mhp := maxi(1, int(e["mhp"]))
+	var cur := clampi(int(e["hp"]), 0, mhp)
+	seg.anchor_left = maxf(0.0, float(cur - total) / float(mhp))
+	seg.anchor_right = float(cur) / float(mhp)
+	seg.visible = true
+	(seg.get_child(0) as Label).text = "-%d" % total
+
+func _clear_hp_preview(rec: Dictionary) -> void:
+	var seg: Panel = rec.get("hpprev", null)
+	if seg != null:
+		seg.visible = false
+
+## 追击虚线/线边数字池（懒长；普攻吸附态由 _process 逐帧落位，其余态隐藏）
+func _get_dash(i: int) -> Control:
+	while _dash_pool.size() <= i:
+		var d: Control = QI_DASH.new()
+		add_child(d)
+		_dash_pool.push_back(d)
+	return _dash_pool[i]
+
+func _get_num(i: int) -> Label:
+	while _num_pool.size() <= i:
+		var l := Label.new()
+		QISTYLE.font(l, 18, true)
+		l.add_theme_color_override("font_color", Color("ffe9b0"))
+		l.add_theme_color_override("font_outline_color", Color(0.06, 0.05, 0.03, 0.9))
+		l.add_theme_constant_override("outline_size", 4)
+		l.size = Vector2(64.0, 26.0)
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		l.z_index = 45
+		add_child(l)
+		_num_pool.push_back(l)
+	return _num_pool[i]
+
+func _hide_line_numbers() -> void:
+	for d in _dash_pool:
+		(d as Control).visible = false
+	for l in _num_pool:
+		(l as Label).visible = false
 
 func _snap_drag(rec: Dictionary, side: String) -> void:
 	## 功法拖拽吸附（drop_ok 轮询入口；仅有效目标可达——drop_ok 已把门）。
@@ -1110,11 +1167,13 @@ func _unsnap_mark() -> void:
 		if estl != null:
 			estl.visible = false
 		_render_mark(rec)
+		_clear_hp_preview(rec)
 	_drag_mark = {}
 	if _line:
 		_line.visible = false
 	if _arrow:
 		_arrow.visible = false
+	_hide_line_numbers()
 
 func _clear_drag_marks() -> void:
 	_unsnap_mark()
@@ -1224,6 +1283,9 @@ func _process(_d: float) -> void:
 				or not swrap.get_global_rect().grow(10.0).has_point(mpos):
 			_unsnap_mark()
 	# 连线：普攻＝源器灵→吸附敌卡；目标功法 arrow＝升卡→吸附卡（无吸附则指鼠标，STS2 箭头制）
+	# 线边数字/追击虚线＝普攻吸附态专属，其余态（功法箭头/游离/解除）逐帧先隐藏
+	if _drag_mark.is_empty() or not _drag_mark.has("est"):
+		_hide_line_numbers()
 	var from: Control = null
 	if not _spell_drag.is_empty():
 		from = _spell_drag.get("wrap")
@@ -1262,6 +1324,38 @@ func _process(_d: float) -> void:
 		back + dir.orthogonal() * 9.0, tip, back - dir.orthogonal() * 9.0])
 	_line.visible = true
 	_arrow.visible = true
+	# —— 普攻预览族（2026-10-28 用户裁定）：主攻数字落主线中点；追击（自动攻击）＝虚线＋各自数字 ——
+	if _drag_mark.has("est") and to_wrap != null:
+		var est_n := int(_drag_mark["est"])
+		var follows: Array = _drag_mark.get("follows", [])
+		var n0 := _get_num(0)
+		n0.text = "-%d" % est_n
+		n0.position = mid + Vector2(-32.0, -46.0)
+		n0.visible = est_n > 0
+		var ni := 1
+		for f in follows:
+			var fw: Control = null
+			for r in _ally_slots:
+				if int(r["unit"]["uid"]) == int(f["uid"]):
+					fw = r["wrap"]
+			if fw == null:
+				continue
+			var c0 := fw.get_global_rect().get_center()
+			var d := _get_dash(ni - 1)
+			d.p_from = c0
+			d.p_to = b0
+			d.lift = clampf(c0.distance_to(b0) * 0.22, 40.0, 150.0)
+			d.visible = true
+			d.queue_redraw()
+			var nl := _get_num(ni)
+			ni += 1
+			nl.text = "-%d" % int(f["dmg"])
+			nl.position = d.bez_mid() + Vector2(-32.0, -46.0)
+			nl.visible = true
+		for k in range(ni, _num_pool.size()):
+			(_num_pool[k] as Label).visible = false
+		for k in range(ni - 1, _dash_pool.size()):
+			(_dash_pool[k] as Control).visible = false
 	#endregion
 
 ## 牌堆钮（v0.6 五区牌堆；STS2 制＝左下抽牌堆/右下弃牌堆，消耗堆随行）：
@@ -1663,10 +1757,15 @@ func _reward_option_cell(dialog: Control, opt: Dictionary) -> Control:
 	head.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
 	col.add_child(head)
 	var card: Control
-	if kind in ["add_spirit", "upgrade_spirit"]:
+	if kind in ["add_spirit", "upgrade_spirit", "heal"]:
 		var w: Dictionary = QI_DATA.WEAPONS[String(opt["wid"])]
 		var ptxt := "被动「%s」：%s" % [w["passive"]["name"], w["passive"]["desc"]]
-		if opt.has("pre_dir"):
+		if kind == "heal":
+			var mem := QI_DATA.find_member(run_data, String(opt["wid"]))
+			var amt: int = QI_DATA.reward_heal_amount(mem)
+			ptxt = "耐久 %d/%d → 回复 %d 点（至 %d/%d）" % [QI_DATA.hp_of(mem), QI_DATA.mhp_of(mem), amt,
+				mini(QI_DATA.mhp_of(mem), QI_DATA.hp_of(mem) + amt), QI_DATA.mhp_of(mem)]
+		elif opt.has("pre_dir"):
 			ptxt += "\n已升级（方向%d）：%s" % [int(opt["pre_dir"]), String(w["passive"]["ups"].get(str(opt["pre_dir"]), ""))]
 		card = QICARD.make_spirit_card({"name": String(w["name"]), "desc": ptxt})
 	else:
@@ -1709,6 +1808,16 @@ func _reward_apply(dialog: Control, opt: Dictionary) -> void:
 			run_data.get("deck", []).push_back({"wid": opt["wid"], "sid": opt["sid"], "dir": int(opt.get("dir", 0))})
 			_reward_finish(dialog, "已复制「%s」1 张（含升级方向）"
 				% QI_DATA.spell_of(opt["wid"], opt["sid"], int(opt.get("dir", 0)))["name"])
+		"heal":
+			var mem := QI_DATA.find_member(run_data, String(opt["wid"]))
+			if not mem.is_empty():
+				var amt: int = QI_DATA.reward_heal_amount(mem)
+				var mhp: int = QI_DATA.mhp_of(mem)
+				mem["hp"] = mini(mhp, QI_DATA.hp_of(mem) + amt)
+				_reward_finish(dialog, "「%s」回复 %d 点耐久（%d/%d）"
+					% [QI_DATA.WEAPONS[String(opt["wid"])]["name"], amt, int(mem["hp"]), mhp])
+			else:
+				_reward_finish(dialog, "目标已不在队伍中")
 
 ## 功法升级方向页（v3：三真卡对照＋句级 diff 标记，点升级卡＝选方向）
 func _reward_page_spell_dir(dialog: Control, opt: Dictionary) -> void:
@@ -1760,6 +1869,7 @@ func _reward_page_spirit_dir(dialog: Control, opt: Dictionary) -> void:
 func _reward_add_spirit(dialog: Control, opt: Dictionary) -> void:
 	var wid := String(opt["wid"])
 	var member := {"id": wid, "equips": ["", "", ""], "pdir": int(opt.get("pre_dir", 0))}
+	member["hp"] = QI_DATA.mhp_of(member)   # 新获得器灵满血（从未受伤，非入队赠血）
 	var reserve: Array = run_data.get("reserve", [])
 	if reserve.size() < RESERVE_CAP:
 		reserve.push_back(member)
@@ -1801,7 +1911,8 @@ func _reward_add_spirit(dialog: Control, opt: Dictionary) -> void:
 			for i in range(team2.size() - 1, -1, -1):
 				if String(team2[i]["id"]) == out_wid:
 					team2.remove_at(i)
-			team2.push_back({"id": wid, "equips": ["", "", ""], "pdir": int(opt.get("pre_dir", 0))})
+			team2.push_back({"id": wid, "equips": ["", "", ""], "pdir": int(opt.get("pre_dir", 0)),
+				"hp": QI_DATA.mhp_of({"id": wid, "equips": ["", "", ""]})})
 			run_data["team"] = team2
 			QI_DATA.deck_swap(run_data, out_wid, wid)
 			_reward_finish(dialog, "「%s」已替换「%s」上阵（后者回未解锁池）"
@@ -1822,6 +1933,7 @@ func _reward_finish(dialog: Control, note: String) -> void:
 		fin.content().add_child(body)
 		fin.confirmed.connect(func() -> void:
 			fin.queue_free()
+			set_meta("qi_team_out", battle.team_out())   # 耐久写回源（§7 持久制）
 			set_meta("qi_result", "win")
 			queue_free())
 		fin.popup_centered(Vector2i(520, 260)))
@@ -1895,6 +2007,32 @@ func _make_sts2_hp_bar(rec: Dictionary, unit: Dictionary) -> Control:
 	pois.visible = false
 	pois.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	host.add_child(pois)
+	# 将受伤害预览段（2026-10-28 用户裁定；STS2 血条分层前景制——PoisonForeground 同族）：
+	# 普攻拖拽吸附时＝主攻＋追击合计，从血端左蚀琥珀段，段上标合计数字。
+	var prevp := Panel.new()
+	prevp.anchor_top = 0.0
+	prevp.anchor_bottom = 1.0
+	prevp.offset_left = 0.0
+	prevp.offset_right = 0.0
+	var pvs := StyleBoxFlat.new()
+	pvs.bg_color = Color(0.906, 0.627, 0.188, 0.95)
+	prevp.add_theme_stylebox_override("panel", pvs)
+	prevp.visible = false
+	prevp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(prevp)
+	var prevl := Label.new()
+	prevl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	prevl.offset_top = -7.0
+	prevl.offset_bottom = 8.0
+	prevl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prevl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	QISTYLE.font(prevl, 15, true)
+	prevl.add_theme_color_override("font_color", Color(1, 0.965, 0.886))
+	prevl.add_theme_color_override("font_outline_color", Color(0.42, 0.24, 0.02, 1))
+	prevl.add_theme_constant_override("outline_size", 4)
+	prevl.visible = false
+	prevl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	prevp.add_child(prevl)
 	var lbl := Label.new()
 	lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
 	lbl.offset_top = -7.0
@@ -1954,6 +2092,7 @@ func _make_sts2_hp_bar(rec: Dictionary, unit: Dictionary) -> Control:
 	rec["hpbox"] = box
 	rec["hpfill"] = fill
 	rec["hppois"] = pois
+	rec["hpprev"] = prevp
 	rec["hplbl"] = lbl
 	rec["hpout"] = outline
 	rec["hpblk"] = blk
