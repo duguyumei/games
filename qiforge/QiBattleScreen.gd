@@ -23,6 +23,7 @@ static var HAND_W := QICARD.size_of("hand").x
 static var HAND_H := QICARD.size_of("hand").y
 const SLOT_GAP := 55
 const STAT_ICON := 20
+const HAND_POP := Vector2(1.25, 1.25)   # 悬停弹起缩放＝详情档等效（216×304×1.25＝270×380）
 const C_DEF := Color("57b8d6")   # 防御意图蓝
 ## 伤害飘字配色（蓝本 DemageTip 制：按伤害类型染前后色）
 const FX_COLORS := {"普攻": Color("ff8a70"), "功法": Color("b48ae0"), "真伤": Color("f2f2ec"),
@@ -41,9 +42,12 @@ var _cur_lbl: Label = null
 var _energy_col: Control = null
 var _busy := false
 var _log_lbl: Label = null
-var _line: Line2D = null                    # 普攻拖拽连线（源器灵→悬停敌卡；尸姬制贝塞尔）
+var _line: Line2D = null                    # 拖拽连线（普攻＝源器灵→吸附敌卡；目标功法＝升卡→吸附/鼠标；尸姬制贝塞尔）
 var _arrow: Line2D = null                   # 连线箭头双翼
-var _drag_mark: Dictionary = {}             # {rec, from} 当前拖拽悬停的敌槽＋拖源
+var _drag_mark: Dictionary = {}             # {rec, side, from} 当前吸附槽＋拖源（普攻/功法共用，side＝enemy/ally）
+var _spell_drag: Dictionary = {}            # {wrap, card, tw} 目标功法箭头拖拽（卡升起不跟手，2026-10-28 STS2 制）
+var _hand_focus: Control = null             # 悬停手牌（弹起位，2026-10-28 STS2 RefreshLayout 制）
+var _sfx_cache: Dictionary = {}             # Kenney ui-pack 音效懒载（探针环境无 FileLoader 时静默）
 var _pile_draw_btn: Button = null           # v0.6 牌堆钮（抽/弃/消）
 var _pile_discard_btn: Button = null
 var _pile_exhaust_btn: Button = null
@@ -241,12 +245,12 @@ func _build_enemy_row() -> void:
 					return false
 				var uid := int(dd["hand_uid"])
 				if _none_target_ok(uid):
-					_mark_drag(rec, 0)
+					_snap_drag(rec, "enemy")
 					return true
 				var card := _hand_card_by_uid(uid)
 				if not battle.can_target(card, e):
 					return false
-				_mark_drag(rec, 0)
+				_snap_drag(rec, "enemy")
 				return true
 			if not dd.has("atk_uid") or battle.phase != "player" or not e["alive"]:
 				return false
@@ -357,7 +361,7 @@ func _build_ally_row() -> void:
 			var card0 := _hand_card_by_uid(uid0)
 			if not battle.can_target(card0, a):
 				return false   # 无效目标＝放不下（原生取消弹回，2026-10-28 尸姬 CheckCardUse 制）
-			_mark_drag(rec, 0)
+			_snap_drag(rec, "ally")
 			return true
 		wrap.on_drop = func(data, _zone) -> void:
 			var uid := int(data["drag_data"]["hand_uid"])
@@ -604,26 +608,34 @@ func _rebuild_hand() -> void:
 		w.name = "HandCard%d" % int(card["uid"])
 		w.size = Vector2(HAND_W, HAND_H)
 		w.card_data = {"hand_uid": int(card["uid"])}
+		var desc: String = String(card["spell"]["desc"])
+		if bool(card.get("exhaust", false)):
+			desc += "（消耗）"   # 消耗版副本标记（打出进消耗堆，2026-10-28）
 		w.preview_card = QICARD.make_hand_spell_card(String(card["spell"]["name"]),
-			battle.card_cost(card), String(card["spell"]["desc"]))
+			battle.card_cost(card), desc)
 		var visual: Button = QICARD.make_hand_spell_card(String(card["spell"]["name"]),
-			battle.card_cost(card), String(card["spell"]["desc"]))
+			battle.card_cost(card), desc)
 		visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		visual.set_anchors_preset(Control.PRESET_FULL_RECT)
 		w.add_child(visual)
-		# 拖放照明（2026-10-28）：起拖亮全部有效目标＋归属；悬停亮归属；收拖全清
+		# 拖拽形态分流（2026-10-28 STS2 制）：目标功法＝arrow（卡升起＋箭头）；无目标功法＝preview 整卡跟手
+		w.drag_style = "arrow" if String(card["spell"]["target"]) != "none" else "preview"
+		# 拖放照明＋STS2 手感：起拖亮全部有效目标；悬停手牌＝弹起＋亮归属；收拖全清复位
 		var the_card: Dictionary = card
-		w.on_drag_begin = func() -> void: _light_spell_targets(the_card)
-		w.on_drag_end = func() -> void:
-			_clear_drag_marks()
-			_clear_spell_lights()
-		w.mouse_entered.connect(func() -> void: _light_owner_only(the_card))
-		# 拖拽期间引擎会强制退出悬停态——清灯只在该卡真离开且无拖拽时做（修「起拖高亮闪一下就灭」）
+		w.on_drag_begin = func() -> void: _begin_card_drag(w, the_card)
+		w.on_drag_end = func() -> void: _end_card_drag(w)
+		w.mouse_entered.connect(func() -> void:
+			if not get_viewport().gui_is_dragging():
+				_light_owner_only(the_card)
+			_set_hand_focus(w))
+		# 拖拽期间引擎会强制退出悬停态——清灯/散焦只在该卡真离开且无拖拽时做（修「起拖高亮闪一下就灭」）
 		w.mouse_exited.connect(func() -> void:
 			if not get_viewport().gui_is_dragging():
-				_clear_spell_lights())
+				_clear_spell_lights()
+				_set_hand_focus(null))
 		add_child(w)
 		_hand_wraps.push_back(w)
+	_hand_focus = null
 	_layout_hand(false)
 	_refresh_playability()
 
@@ -644,27 +656,115 @@ func _refresh_playability() -> void:
 			var sb: StyleBoxFlat = (pip as Panel).get_theme_stylebox("panel") as StyleBoxFlat
 			sb.border_color = Color("e05545") if not ok else Color(0.95, 0.92, 0.84)
 
+## 手牌布局（2026-10-28 STS2 NPlayerHand.RefreshLayout 制）：
+## 指卡（_hand_focus）瞬起——拍平/升出扇顶/放大到详情档等效；邻牌让位（≤100px、4 张内衰减）；
+## 其余补间归位。箭头拖拽中的升卡归 _begin/_end_card_drag 管，本函数跳过。
 func _layout_hand(animate: bool) -> void:
 	var n := _hand_wraps.size()
 	if n == 0:
 		return
 	var mid := float(n - 1) / 2.0
 	var vp := get_viewport_rect().size
+	var fi := -1
+	if _hand_focus != null and is_instance_valid(_hand_focus):
+		fi = _hand_wraps.find(_hand_focus)
 	for i in n:
 		var w: Control = _hand_wraps[i]
+		if not _spell_drag.is_empty() and (_spell_drag["wrap"] as Control) == w:
+			continue
 		# 216×304 手牌：步距/扇角适档，底缘微出屏
 		var x := vp.x * 0.5 + (i - mid) * vp.x * 0.075 - HAND_W * 0.5
 		var y := vp.y * 0.752
 		var rot := (i - mid) * 0.032
+		var sc := Vector2.ONE
 		w.pivot_offset = Vector2(HAND_W * 0.5, HAND_H)
+		if fi == i:
+			# STS2 制瞬起——只弹内层卡面、wrap 原地不动（命中区稳定＝hover/浮窗锚不断链，
+			# modal_tip 连续性教训）：拍平（反向抵消扇角）＋升出扇＋放大到详情档等效。
+			var vis: Control = w.get_child(0)
+			vis.pivot_offset = Vector2(HAND_W * 0.5, HAND_H)
+			vis.rotation = -rot
+			vis.scale = HAND_POP
+			vis.position = Vector2(0.0, -HAND_H * 0.55)
+			vis.z_index = 20
+			continue
+		elif fi > -1:
+			x += signf(i - fi) * lerpf(100.0, 0.0, minf(1.0, absf(fi - i) / 4.0))
+		w.z_index = 0
+		var vis0: Control = w.get_child(0)
+		vis0.z_index = 0
 		if animate:
 			var tw := create_tween().set_parallel(true)
-			tw.tween_property(w, "position:x", x, 0.15)
-			tw.tween_property(w, "position:y", y, 0.15)
+			tw.tween_property(w, "position", Vector2(x, y), 0.15)
 			tw.tween_property(w, "rotation", rot, 0.15)
+			tw.tween_property(w, "scale", sc, 0.15)
+			tw.tween_property(vis0, "scale", Vector2.ONE, 0.15)
+			tw.tween_property(vis0, "rotation", 0.0, 0.15)
+			tw.tween_property(vis0, "position", Vector2.ZERO, 0.15)
 		else:
 			w.position = Vector2(x, y)
 			w.rotation = rot
+			w.scale = sc
+			vis0.scale = Vector2.ONE
+			vis0.rotation = 0.0
+			vis0.position = Vector2.ZERO
+
+func _set_hand_focus(w: Control) -> void:
+	if _hand_focus == w:
+		return
+	_hand_focus = w
+	_layout_hand(true)
+
+## 起拖（2026-10-28 STS2 NMouseCardPlay 制）：抓卡音效＋亮有效目标集；
+## 目标功法＝arrow 制——原卡拍平小升起（不跟手、静默鼠标防挡落点），连线画箭头；
+## 无目标功法＝preview 制（QiDragCard 整卡跟手），只亮灯不动卡。
+func _begin_card_drag(w: Control, card: Dictionary) -> void:
+	_play_sfx("click-a", 1.0)
+	_light_spell_targets(card)
+	_set_hand_focus(null)
+	if String(card["spell"]["target"]) == "none":
+		return
+	w.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	w.z_index = 50
+	var vp := get_viewport_rect().size
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(w, "position:y", vp.y * 0.752 - HAND_H * 0.30, 0.12)\
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.tween_property(w, "rotation", 0.0, 0.12)
+	tw.tween_property(w, "scale", Vector2(1.08, 1.08), 0.12)
+	_spell_drag = {"wrap": w, "card": card, "tw": tw}
+
+## 收拖（无论成否）：清吸附/灯；arrow 卡归位（打出时 wrap 归 _anim_play_card 飞行动画管，勿抢）
+func _end_card_drag(w: Control) -> void:
+	_clear_drag_marks()
+	_clear_spell_lights()
+	if _spell_drag.is_empty():
+		return
+	var rt: Tween = _spell_drag.get("tw")
+	if rt is Tween and rt.is_valid():
+		rt.kill()
+	_spell_drag = {}
+	if not is_instance_valid(w):
+		return
+	w.mouse_filter = Control.MOUSE_FILTER_STOP
+	w.z_index = 0
+	if not _busy:
+		_layout_hand(true)
+
+## ui-pack 音效懒载＋播放（FileLoader/SoundManager 链，QiPrepBay _deny_sfx 同制；探针环境静默跳过）
+func _play_sfx(stream_name: String, pitch: float) -> void:
+	if not _sfx_cache.has(stream_name):
+		var fl: Node = get_node_or_null("/root/FileLoader")
+		var st: AudioStream = null
+		if fl != null:
+			st = fl.load_audio("res://external/kenney/ui-pack/Sounds/%s.ogg" % stream_name, true)
+		_sfx_cache[stream_name] = st
+	var stream: AudioStream = _sfx_cache[stream_name]
+	if stream == null or not (stream is AudioStreamOggVorbis):
+		return
+	var sm: Node = get_node_or_null("/root/SoundManager")
+	if sm != null:
+		sm.play_ui_sound_with_pitch(stream, pitch)
 
 func _drop_attack(atk_uid: int, e: Dictionary) -> void:
 	if _busy:
@@ -723,6 +823,15 @@ func _anim_attack(from: Control, to: Control, impact: Callable) -> void:
 
 func _anim_play_card(wrap: Control, to_center: Vector2, impact: Callable) -> void:
 	_busy = true
+	# 打出闪白（STS2 CardHighlight.AnimFlash 同款意）：self_modulate 独立于透明度链互不抢
+	var fl := create_tween()
+	fl.tween_property(wrap, "self_modulate", Color(1.9, 1.9, 1.9), 0.06)
+	fl.tween_property(wrap, "self_modulate", Color(1, 1, 1), 0.12)
+	# arrow 拖拽的升卡补间即停——飞行起点取升卡现位（DRAG_END 尚未到，此处先接管）
+	if not _spell_drag.is_empty():
+		var rt: Tween = _spell_drag.get("tw")
+		if rt is Tween and rt.is_valid():
+			rt.kill()
 	wrap.pivot_offset = Vector2(HAND_W, HAND_H) * 0.5
 	# 弧线飞行（2026-10-28 尸姬贝塞尔同式：中点上抬）——替换直线插值
 	var start := wrap.global_position
@@ -915,32 +1024,63 @@ func _make_mark_layer(wrap: Control) -> Dictionary:
 	est.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	est.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ring.add_child(est)
+	## 吸附符（2026-10-28 用户裁定）：吸附中心＝敌「×」／友「○」——几何件免字体缺字；
+	## 挂 ring 层随环显隐，pivot 居中（缩放弹出/旋转不飘）。
+	var cx := CARD_W * 0.5
+	var cy := CARD_H * 0.5
+	var marks := {"gx1": null, "gx2": null, "go": null}
+	for kname in ["gx1", "gx2"]:
+		var arm := Panel.new()
+		arm.name = "Glyph" + kname
+		var asb := StyleBoxFlat.new()
+		asb.bg_color = Color("e88a70")
+		arm.add_theme_stylebox_override("panel", asb)
+		arm.size = Vector2(66.0, 9.0)
+		arm.position = Vector2(cx - 33.0, cy - 4.5)
+		arm.pivot_offset = Vector2(33.0, 4.5)
+		arm.rotation = -PI / 4 if kname == "gx1" else PI / 4
+		arm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		arm.visible = false
+		ring.add_child(arm)
+		marks[kname] = arm
+	var orb := Panel.new()
+	orb.name = "GlyphO"
+	var osb := StyleBoxFlat.new()
+	osb.bg_color = Color(0, 0, 0, 0)
+	osb.border_color = Color("8fd8b0")
+	osb.set_border_width_all(9)
+	osb.set_corner_radius_all(30)
+	orb.add_theme_stylebox_override("panel", osb)
+	orb.size = Vector2(58.0, 58.0)
+	orb.position = Vector2(cx - 29.0, cy - 29.0)
+	orb.pivot_offset = Vector2(29.0, 29.0)
+	orb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	orb.visible = false
+	ring.add_child(orb)
+	marks["go"] = orb
 	wrap.add_child(ring)
-	return {"ring": ring, "est": est}
+	return {"ring": ring, "est": est, "gx1": marks["gx1"], "gx2": marks["gx2"], "go": marks["go"]}
 
 func _mark_drag(rec: Dictionary, atk_uid: int) -> void:
+	## 普攻拖拽吸附：红环＋×＋预估＋源到目标连线（尸姬制）。
 	if _drag_mark.get("rec") != rec:
-		_clear_drag_marks()
+		_unsnap_mark()
 		var from: Control = null
 		if atk_uid > 0:
 			for r in _ally_slots:
 				if int(r["unit"]["uid"]) == atk_uid:
 					from = r["wrap"]
-		_drag_mark = {"rec": rec, "from": from}
+		_drag_mark = {"rec": rec, "side": "enemy", "from": from}
+		_pop_glyph(rec)
+		_play_sfx("click-b", 1.25)
 	var est := 0
-	if atk_uid > 0:
-		for r in _ally_slots:
-			if int(r["unit"]["uid"]) == atk_uid:
-				est = battle.preview_normal_attack(r["unit"], rec["enemy"])
-	# 普攻拖放＝红框口径（环样式可能被功法照明染过色，回落红）
-	var sb0: StyleBoxFlat = (rec["mark"]["ring"].get_theme_stylebox("panel") as StyleBoxFlat)
-	sb0.border_color = Color("e88a70")
-	sb0.bg_color = Color(0.55, 0.16, 0.12, 0.10)
-	(rec["mark"]["ring"] as Control).visible = true
+	for r in _ally_slots:
+		if int(r["unit"]["uid"]) == atk_uid:
+			est = battle.preview_normal_attack(r["unit"], rec["enemy"])
+	rec["snap"] = "enemy"
+	_render_mark(rec)
 	var lbl := rec["mark"]["est"] as Label
-	if atk_uid <= 0:
-		lbl.visible = false   # 功法拖放：只亮框不显预估（伤害以卡面为准）
-	elif est > 0:
+	if est > 0:
 		lbl.text = "预估 %d" % est
 		lbl.visible = true
 	else:
@@ -949,24 +1089,44 @@ func _mark_drag(rec: Dictionary, atk_uid: int) -> void:
 	if _drag_mark.get("from") != null:
 		_line.visible = true
 
-func _clear_drag_marks() -> void:
+func _snap_drag(rec: Dictionary, side: String) -> void:
+	## 功法拖拽吸附（drop_ok 轮询入口；仅有效目标可达——drop_ok 已把门）。
+	## 换目标＝旧槽回落底灯（不灭灯，修 2026-10-28「移开高亮消失」bug）。
+	if _drag_mark.get("rec") != rec:
+		_unsnap_mark()
+		_drag_mark = {"rec": rec, "side": side, "from": null}
+		_pop_glyph(rec)
+		_play_sfx("click-b", 1.25 if side == "enemy" else 1.55)
+	rec["snap"] = side
+	_render_mark(rec)
+	(rec["mark"]["est"] as Label).visible = false   # 功法不显预估（伤害以卡面为准）
+
+func _unsnap_mark() -> void:
 	var rec: Dictionary = _drag_mark.get("rec", {})
 	if not rec.is_empty():
-		var ring := rec.get("mark", {}).get("ring") as Control
-		if ring != null and is_instance_valid(ring):
-			ring.visible = false
+		rec["snap"] = ""
+		var m: Dictionary = rec.get("mark", {})
+		var estl: Label = m.get("est", null)
+		if estl != null:
+			estl.visible = false
+		_render_mark(rec)
 	_drag_mark = {}
 	if _line:
 		_line.visible = false
 	if _arrow:
 		_arrow.visible = false
+
+func _clear_drag_marks() -> void:
+	_unsnap_mark()
 	for zname in ["EnemyZone", "AllyZone"]:
 		var zn := find_child(zname, false, false)
 		if zn != null:
 			(zn.get_meta("glow") as Panel).visible = false
 
-#region 功法目标/归属照明（2026-10-28 尸姬 Card_TargetLine·MarkTarget 制）
-## 起拖＝全部有效目标亮玉环＋归属器灵亮琥珀环；悬停手牌＝仅亮归属；口径唯一来源 battle.can_target。
+#region 功法目标/归属照明（2026-10-28 尸姬 Card_TargetLine·MarkTarget 制；STS2 层级模型）
+## 槽位照明状态机（唯一写环入口 _render_mark）：底灯 rec.light＝""/owner（琥珀）/valid（玉环）
+## 常亮有效集；吸附 rec.snap＝""/enemy（红环粗＋×）/ally（玉环粗＋○）压底灯，解除回落底灯。
+## 口径唯一来源 battle.can_target。
 var _spell_lights: Array = []
 
 func _light_spell_targets(card: Dictionary) -> void:
@@ -975,66 +1135,133 @@ func _light_spell_targets(card: Dictionary) -> void:
 		return
 	for r in _enemy_slots:
 		if battle.can_target(card, r["enemy"]):
-			_show_ring(r, "valid")
+			_set_light(r, "valid")
 	for r in _ally_slots:
 		if battle.can_target(card, r["unit"]):
-			_show_ring(r, "valid")
-	_show_owner_ring(String(card.get("wid", "")))
+			_set_light(r, "valid")
+	for r in _ally_slots:
+		if String(r["unit"]["id"]) == String(card.get("wid", "")):
+			if String(r.get("light", "")) != "valid":
+				_set_light(r, "owner")
+			break
 
 func _light_owner_only(card: Dictionary) -> void:
 	_clear_spell_lights()
 	if card.is_empty():
 		return
-	_show_owner_ring(String(card.get("wid", "")))
-
-func _show_owner_ring(wid: String) -> void:
 	for r in _ally_slots:
-		if String(r["unit"]["id"]) == wid:
-			_show_ring(r, "owner")
-			return
+		if String(r["unit"]["id"]) == String(card.get("wid", "")):
+			_set_light(r, "owner")
+			break
 
-func _show_ring(rec: Dictionary, kind: String) -> void:
+func _set_light(rec: Dictionary, s: String) -> void:
+	rec["light"] = s
+	if s != "" and not _spell_lights.has(rec):
+		_spell_lights.push_back(rec)
+	_render_mark(rec)
+
+func _clear_spell_lights() -> void:
+	for rec in _spell_lights:
+		rec["light"] = ""
+		_render_mark(rec)
+	_spell_lights = []
+
+func _render_mark(rec: Dictionary) -> void:
 	var m: Dictionary = rec.get("mark", {})
 	if m.is_empty():
 		return
 	var ring: Panel = m["ring"]
 	var sb: StyleBoxFlat = ring.get_theme_stylebox("panel") as StyleBoxFlat
-	if kind == "owner":
+	var snap := String(rec.get("snap", ""))
+	var light := String(rec.get("light", ""))
+	if snap == "enemy" or snap == "ally":
+		var is_e := snap == "enemy"
+		sb.border_color = Color("e88a70") if is_e else Color("8fd8b0")
+		sb.bg_color = Color(0.55, 0.16, 0.12, 0.16) if is_e else Color(0.10, 0.32, 0.18, 0.16)
+		sb.set_border_width_all(5)
+		ring.visible = true
+	elif light == "owner":
 		sb.border_color = Color("ffd766")
 		sb.bg_color = Color(0.55, 0.42, 0.10, 0.10)
-	else:
+		sb.set_border_width_all(3)
+		ring.visible = true
+	elif light == "valid":
 		sb.border_color = Color("8fd8b0")
 		sb.bg_color = Color(0.10, 0.32, 0.18, 0.10)
-	ring.visible = true
-	(m["est"] as Control).visible = false
-	_spell_lights.push_back(rec)
+		sb.set_border_width_all(3)
+		ring.visible = true
+	else:
+		sb.set_border_width_all(3)
+		ring.visible = false
+	(m["gx1"] as Panel).visible = snap == "enemy"
+	(m["gx2"] as Panel).visible = snap == "enemy"
+	(m["go"] as Panel).visible = snap == "ally"
 
-func _clear_spell_lights() -> void:
-	for rec in _spell_lights:
-		var ring := rec.get("mark", {}).get("ring") as Control
-		if ring != null and is_instance_valid(ring):
-			ring.visible = false
-	_spell_lights = []
+## 吸附符弹出（STS2 箭头 Elastic 制的等比轻量版）：中心缩放 0.4→1 Back.Out
+func _pop_glyph(rec: Dictionary) -> void:
+	var m: Dictionary = rec.get("mark", {})
+	for kname in ["gx1", "gx2", "go"]:
+		var g: Panel = m.get(kname, null)
+		if g == null:
+			continue
+		g.scale = Vector2(0.4, 0.4)
+		var tw := g.create_tween()
+		tw.tween_property(g, "scale", Vector2.ONE, 0.16)\
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 #endregion
 
 func _process(_d: float) -> void:
-	if _line and _line.visible and not _drag_mark.is_empty():
-		var from: Control = _drag_mark.get("from")
-		var to_wrap: Control = (_drag_mark["rec"] as Dictionary)["wrap"]
-		if from != null and is_instance_valid(from) and is_instance_valid(to_wrap):
-			var a0 := from.get_global_rect().get_center()
-			var b0 := to_wrap.get_global_rect().get_center()
-			var mid := (a0 + b0) * 0.5 + Vector2(0.0, -clampf(a0.distance_to(b0) * 0.22, 40.0, 150.0))
-			var pts := PackedVector2Array()
-			for i in 17:
-				pts.push_back(_bez(a0, mid, b0, float(i) / 16.0))
-			_line.points = pts
-			var dir := (b0 - mid).normalized()
-			var tip := b0 - dir * 12.0
-			var back := tip - dir * 15.0
-			_arrow.points = PackedVector2Array([
-				back + dir.orthogonal() * 9.0, tip, back - dir.orthogonal() * 9.0])
-			_arrow.visible = true
+	var vp_size := get_viewport_rect().size
+	var mpos := get_viewport().get_mouse_position()
+	# 鼠标合理性门：离屏/未聚焦窗下 get_mouse_position 是窗原点换算出的窗外垃圾值——
+	# 不可信则跳过脱离检测（吸附保持），避免探针环境误杀吸附；全屏局内真实鼠标恒在窗内。
+	var mouse_sane := mpos.x >= 0.0 and mpos.y >= 0.0 and mpos.x <= vp_size.x and mpos.y <= vp_size.y
+	# 吸附脱离检测：鼠标离开吸附卡（无效目标/空地）＝解除吸附回落底灯——修「换目标后灯残留/灭灯」
+	if mouse_sane and not _drag_mark.is_empty():
+		var srec: Dictionary = _drag_mark.get("rec", {})
+		var swrap: Control = srec.get("wrap", null)
+		if swrap == null or not is_instance_valid(swrap) \
+				or not swrap.get_global_rect().grow(10.0).has_point(mpos):
+			_unsnap_mark()
+	# 连线：普攻＝源器灵→吸附敌卡；目标功法 arrow＝升卡→吸附卡（无吸附则指鼠标，STS2 箭头制）
+	var from: Control = null
+	if not _spell_drag.is_empty():
+		from = _spell_drag.get("wrap")
+		if from != null and not is_instance_valid(from):
+			from = null
+	elif _line.visible:
+		from = _drag_mark.get("from")
+	if from == null or not is_instance_valid(from):
+		return
+	var to_wrap: Control = null
+	if not _drag_mark.is_empty():
+		to_wrap = (_drag_mark.get("rec", {}) as Dictionary).get("wrap", null)
+	var b0 := mpos
+	if to_wrap != null and is_instance_valid(to_wrap):
+		b0 = to_wrap.get_global_rect().get_center()
+	elif _spell_drag.is_empty():
+		return   # 普攻无吸附＝不画
+	var side := String(_drag_mark.get("side", ""))
+	var col := Color("e88a70")
+	if side == "ally":
+		col = Color("8fd8b0")
+	elif side == "":
+		col = Color(0.91, 0.72, 0.42, 0.85)   # 游离态＝琥珀淡（未吸附）
+	_line.default_color = col
+	_arrow.default_color = col
+	var a0 := from.get_global_rect().get_center()
+	var mid := (a0 + b0) * 0.5 + Vector2(0.0, -clampf(a0.distance_to(b0) * 0.22, 40.0, 150.0))
+	var pts := PackedVector2Array()
+	for i in 17:
+		pts.push_back(_bez(a0, mid, b0, float(i) / 16.0))
+	_line.points = pts
+	var dir := (b0 - mid).normalized()
+	var tip := b0 - dir * 12.0
+	var back := tip - dir * 15.0
+	_arrow.points = PackedVector2Array([
+		back + dir.orthogonal() * 9.0, tip, back - dir.orthogonal() * 9.0])
+	_line.visible = true
+	_arrow.visible = true
 	#endregion
 
 ## 牌堆钮（v0.6 五区牌堆；STS2 制＝左下抽牌堆/右下弃牌堆，消耗堆随行）：

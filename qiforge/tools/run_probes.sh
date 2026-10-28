@@ -10,7 +10,7 @@
 GODOT="/Applications/Godot.app/Contents/MacOS/Godot"
 PROJ="/Users/cc/Documents/qi-forge-2"
 HEADLESS=(battle_logic upgrade shop_deny longtext dialog battle_ui qiv3 prep geo reward flow_win save)
-INPUT=(battle_drag prep_drag detail modal_tip)
+INPUT=(battle_drag prep_drag detail modal_tip drag_shot)
 WATCH_S=150
 RUN_INPUT=0
 [[ "$1" == "--input" ]] && { RUN_INPUT=1; shift; }
@@ -27,27 +27,19 @@ run_headless() {
 	_summarize "$name" "$e" "$log"
 }
 
-## 后台离屏：open -g 不抢焦点；轮询探针 DONE 标记收账（open 拿不到退出码）
+## 后台离屏：直启二进制后台（2026-10-28 修——open -a 在编辑器已开时无法接管 stdout 重定向，
+## 探针日志丢失全挂看门狗）；--position 离屏不抢前台；轮询探针 DONE 标记收账；超时按脚本名杀。
 run_input_bg() {
 	local name=$1
 	local log="/tmp/probe_${name}.log"
 	rm -f "$log"
-	open -g -a "Godot" --stdout "$log" --stderr "$log" --args \
-		--path "$PROJ" --position 19000,19000 \
-		--script "res://qiforge/tools/probe_${name}.gd"
-	local i=0
-	while (( i < WATCH_S * 5 )); do
-		sleep 0.2
-		grep -qE "PROBE_DONE" "$log" 2>/dev/null && break
-		(( i++ ))
-	done
-	if (( i >= WATCH_S * 5 )); then
-		pkill -f "tools/probe_${name}.gd" 2>/dev/null
-		print "FAIL ${name}  watchdog（无 DONE 标记）"
-		TOTAL+=("FAIL${name}")
-		return
-	fi
-	_summarize "$name" 0 "$log"
+	"$GODOT" --path "$PROJ" --position 19000,19000 \
+		--script "res://qiforge/tools/probe_${name}.gd" > "$log" 2>&1 &
+	local p=$!
+	( sleep $WATCH_S; kill -9 $p 2>/dev/null ) & local guard=$!
+	wait $p; local e=$?
+	kill $guard 2>/dev/null
+	_summarize "$name" "$e" "$log"
 }
 
 _summarize() {
