@@ -46,6 +46,10 @@ var _uid := 0
 var _turn_cards_played := 0
 var _current_sid := ""
 var _fanji_used := {}              # uid -> 本回合已反击次数（反击 N＝每回合上限 N）
+var _forms := {}                   # uid -> "dao"/"jian"（两仪刀剑形态；缺键＝无形态，逐段判定）
+var _cost_cut := {}                # card uid -> 本回合临时降费额（两仪升1；回合末清）
+var _round_spell_used := false     # 本回合已打出过功法（两仪配件3「回合首功法 −1」充能判定）
+var _playing_uid := -1             # 正在结算的卡 uid（两仪升1 随机降费排除其自身）
 # —— 防环（蓝本伤害管线制）——
 var _chain: Array = []
 var _in_pursuit := false   # 追击链内（命中上报改标「追击」——飘字/受击由追击自己的命中帧接管）
@@ -320,6 +324,7 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 		event.emit("「%s」对「%s」造成 %d 点%s伤害" % [src["name"], dst["name"], total, channel])
 		hit_landed.emit(dst, total, "追击" if _in_pursuit else channel)
 		_after_deal_damage(src, dst, total)
+		_form_check(src, channel)
 		# 插件5（通用）：每次攻击造成一层破绽（持续 1 回合）——逐段独立
 		if src.get("side") == "ally" and _has_fx(src, "hit_poxian") and dst["alive"]:
 			apply_status(dst, "poxian", int(1), 0, 1, true, src)
@@ -353,6 +358,10 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 					event.emit("反击：「%s」向「%s」反击" % [dst["name"], src["name"]])
 					_basic_attack(dst, src)
 					_chain.pop_back()
+		# 普攻段命中后钩子（2026-10-28「视为普通攻击」口径）：真实普攻与功法内普攻段共用——
+		# 铁壁/插件6/破绽/追击/回耐久等普攻系词条在功法内普攻段同样触发（不耗攻次；仅普攻通道）
+		if channel == "普攻" and src.get("side", "") == "ally" and src.get("alive", false):
+			_after_attack_landed(src, dst)
 	return dealt
 
 func _after_deal_damage(src: Dictionary, dst: Dictionary, amount: int) -> void:
@@ -371,6 +380,73 @@ func _gain_shayi(a: Dictionary, n: int) -> void:
 		_shayi_gained[a["uid"]] = int(_shayi_gained[a["uid"]]) % 3
 		event.emit("杀意·升2：累计 3 层，抽一张牌")
 		draw_cards(1)
+
+## 两仪刀剑「亦刀亦剑」形态机（逐段判定；仅形态实际改变时触发）：
+## 普攻伤害段→刀（+1 层强度）、功法伤害段→剑（+1 层力量）；间接伤害旁路不触发；
+## 升1＝转换后随机手牌功法 −1 费；升2＝转换后全队护盾 3+威/5（按自身威力，实时连锁）。
+func _form_check(src: Dictionary, channel: String) -> void:
+	if src.get("side", "") != "ally" or not src.get("alive", false):
+		return
+	if src.get("passive", {}).get("id", "") != "yi_dao_yi_jian":
+		return
+	var want := "dao" if channel == "普攻" else "jian"
+	if String(_forms.get(int(src["uid"]), "")) == want:
+		return
+	_forms[int(src["uid"])] = want
+	event.emit("亦刀亦剑：「%s」转为%s形态" % [src["name"], "刀" if want == "dao" else "剑"])
+	if want == "dao":
+		apply_status(src, "qiangdu", 1)
+	else:
+		apply_status(src, "liliang", 1)
+	if int(src.get("pdir", 0)) == 1:
+		_discount_random_spell()
+	elif int(src.get("pdir", 0)) == 2:
+		var amt6 := 3 + int(float(pow_of(src)) / 5.0)
+		for t6 in allies:
+			if t6["alive"]:
+				apply_status(t6, "hudun", 1, amt6)
+		event.emit("亦刀亦剑·升2：全队获得 %d 点护盾" % amt6)
+	if _has_fx(src, "form_shayi"):
+		for t6 in allies:
+			if t6["alive"]:
+				_gain_shayi(t6, 1)
+	if want == "jian" and _has_fx(src, "jian_draw"):
+		draw_cards(1)
+	if want == "dao" and _has_fx(src, "dao_act"):
+		var cap6 := int(_fx_val(src, "dao_act", "cap", 9))
+		if int(src["acts"]) < cap6:
+			src["acts"] = int(src["acts"]) + 1
+			event.emit("两仪二：「%s」攻击次数 +1（现 %d）" % [src["name"], int(src["acts"])])
+
+## 两仪升1：随机一张手牌功法 −1 费（至回合末，可叠，封 0；排除正在结算的卡）
+func _discount_random_spell() -> void:
+	var pool6: Array = []
+	for c in hand:
+		if int(c["uid"]) != _playing_uid:
+			pool6.push_back(c)
+	if pool6.is_empty():
+		return
+	var pick6: Dictionary = pool6[rng.randi_range(0, pool6.size() - 1)]
+	var cut_uid := int(pick6["uid"])
+	_cost_cut[cut_uid] = int(_cost_cut.get(cut_uid, 0)) + 1
+	event.emit("亦刀亦剑·升1：「%s」本回合费用 −%d" % [pick6["spell"]["name"], int(_cost_cut[cut_uid])])
+
+## 敌方目标＋动态相邻（左右各取最近存活者，与战场行收拢相邻一致）
+func _target_and_adjacent_enemies(target: Dictionary) -> Array:
+	var out6 := [target]
+	var idx6 := enemies.find(target)
+	if idx6 >= 0:
+		var lo6 := idx6 - 1
+		while lo6 >= 0 and not enemies[lo6]["alive"]:
+			lo6 -= 1
+		if lo6 >= 0:
+			out6.push_back(enemies[lo6])
+		var hi6 := idx6 + 1
+		while hi6 < enemies.size() and not enemies[hi6]["alive"]:
+			hi6 += 1
+		if hi6 < enemies.size():
+			out6.push_back(enemies[hi6])
+	return out6
 
 func _absorb_shield(dst: Dictionary, amount: int) -> int:
 	var left := amount
@@ -457,8 +533,24 @@ func _wipe_wid_cards(wid: String) -> void:
 #endregion
 
 #region 我方操作
+## 费用＝实时查询制（2026-10-28 立，STS2 制）：显示/校验/扣费三处同一活查询，
+## 临时降费与形态条件随状态即时跳；恢复时点＝首张功法提交打出时（非结算完）。
 func card_cost(card: Dictionary) -> int:
-	return maxi(0, int(card["spell"]["cost"]))
+	var c := int(card["spell"]["cost"])
+	c -= int(_cost_cut.get(int(card["uid"]), 0))   # 两仪升1：随机功法 −1（至回合末，封 0）
+	if not _round_spell_used and _first_spell_free_ready():
+		c -= 1                                      # 两仪配件3：回合首功法 −1（充能期全牌面同显）
+	var owner := _owner_of(card)
+	if String(card["sid"]) == "daojian" and int(card.get("dir", 0)) == 2 \
+			and not owner.is_empty() and String(_forms.get(int(owner["uid"]), "")) == "dao":
+		c = 0                                       # 刀剑合击·升二：刀形态下 0 费
+	return maxi(0, c)
+
+func _first_spell_free_ready() -> bool:
+	for a in allies:
+		if a["alive"] and _has_fx(a, "first_spell_free"):
+			return true
+	return false
 
 func can_play(card: Dictionary) -> bool:
 	if phase != "player":
@@ -512,11 +604,12 @@ func normal_attack(a: Dictionary, e: Dictionary) -> void:
 	check_end()
 	changed.emit()
 
-## 普攻一次（含追击）：结算＋全套命中后钩子
+## 普攻一次（含追击/反击）：命中后钩子由 resolve_damage 普攻段落地处统一触发
 func _basic_attack(a: Dictionary, e: Dictionary) -> void:
-	var dmg := resolve_damage(a, e, float(atk_of(a)), "普攻")
-	if dmg <= 0:
-		return
+	resolve_damage(a, e, float(atk_of(a)), "普攻")
+
+## 普攻命中后全套钩子（真实普攻与功法内普攻段共用；不耗攻次）
+func _after_attack_landed(a: Dictionary, e: Dictionary) -> void:
 	# 金刚盾被动：每回合自身第一次普攻后，自身＋相邻各 +1 防御
 	if a.get("passive", {}).get("id") == "tie_bi" and not _jg_first_used.get(a["uid"], false):
 		_jg_first_used[a["uid"]] = true
@@ -562,6 +655,11 @@ func _basic_attack(a: Dictionary, e: Dictionary) -> void:
 		if not pool_a.is_empty():
 			var lucky: Dictionary = pool_a[rng.randi_range(0, pool_a.size() - 1)]
 			apply_status(lucky, "gebi", 1)
+	# 插件·两仪二特殊：每次普攻后恢复 5 点耐久
+	if _has_fx(a, "atk_heal"):
+		var heal := int(_fx_val(a, "atk_heal", "hp", 5))
+		a["hp"] = mini(int(a["mhp"]), int(a["hp"]) + heal)
+		event.emit("两仪二：「%s」恢复 %d 点耐久" % [a["name"], heal])
 	# 插件·青蛊三专属：每次普通攻击触发一次敌人的毒
 	if _has_fx(a, "atk_poison_tick") and e["alive"] and status_total(e, "zhongdu") > 0:
 		_poison_tick(e)
@@ -685,10 +783,13 @@ func play_card(card_uid: int, target: Dictionary = {}) -> void:
 				return
 	energy -= card_cost(card)
 	_turn_cards_played += 1
+	_round_spell_used = true   # 两仪配件3：首张提交即消耗「回合首功法 −1」充能
 	_current_sid = String(card["sid"])
 	event.emit("施放「%s」" % card["spell"]["name"])
+	_playing_uid = int(card["uid"])
 	for op in card["spell"]["ops"]:
 		_run_op(op, owner, target)
+	_playing_uid = -1
 	_current_sid = ""
 	# 打出记账＋专属/特殊钩子
 	_spell_played[owner["uid"]] = int(_spell_played.get(owner["uid"], 0)) + 1
@@ -731,7 +832,12 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 					break
 				if not src.get("alive", false):
 					break   # 攻方段间死亡→剩余段作废（2026-10-28 裁定，STS2 AttackCommand 同制）
+				# per_pow＝每点威力乘数（灭魂斩族）；atk_step/pow_step＝每 N 点攻/威 +1（裂甲斩族÷）
 				var amt := float(op["value"]) + float(op.get("per_pow", 0)) * float(pow_of(src))
+				if op.has("atk_step"):
+					amt += float(int(float(atk_of(src)) / float(op["atk_step"])))
+				if op.has("pow_step"):
+					amt += float(int(float(pow_of(src)) / float(op["pow_step"])))
 				resolve_damage(src, target, amt, String(op.get("channel", "功法")))
 		"dmg_bounce":
 			# 弹射：首发（目标或随机）＋弹射段（随机敌），段数＝bounce+1＋每 per_pow_bounce 威力 +1
@@ -870,6 +976,48 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 			if not target.is_empty() and target.get("alive", false) and status_total(target, "biaoji") > 0:
 				apply_status(target, "xuan", 1, 0, -1, false, src)
 				event.emit("乱心蛊·升二：「%s」被标记，眩晕" % target["name"])
+		"attack_after":
+			# 功法内普攻段（刀剑合击）：视为普通攻击——走普攻通道，
+			# 命中后钩子（转形态/铁壁/插件/追击）由 resolve_damage 普攻段统一触发
+			if target.get("alive", false) and src.get("alive", false):
+				resolve_damage(src, target, float(atk_of(src)) * float(op.get("atk_mult", 1.0)), "普攻")
+		"pojia_aoe":
+			# 裂甲斩：目标＋动态相邻 1+威/per_pow 层破甲
+			var pj7 := int(op.get("stacks", 1)) + int(float(pow_of(src)) / float(op.get("per_pow", 5)))
+			for te7 in _target_and_adjacent_enemies(target):
+				if te7.get("alive", false):
+					apply_status(te7, "pojia", pj7, 0, -1, false, src)
+			event.emit("裂甲斩：「%s」及相邻受到 %d 层破甲" % [target["name"], pj7])
+		"pojia_all":
+			# 裂甲斩·升二：全体 威/per_pow 层（无基础层）；护甲层数高于将受破甲层数者翻倍
+			var pj8 := int(float(pow_of(src)) / float(op.get("per_pow", 5)))
+			for te8 in _alive_enemies():
+				if not te8["alive"]:
+					continue
+				var k8 := pj8
+				if pj8 > 0 and status_total(te8, "hujia") > pj8:
+					k8 = pj8 * 2
+					event.emit("裂甲斩·升二：「%s」护甲高于破甲，层数翻倍" % te8["name"])
+				if k8 > 0:
+					apply_status(te8, "pojia", k8, 0, -1, false, src)
+		"self_status_scale":
+			# 裂甲斩·升二：自身获层＝stacks＋每 atk_step/pow_step 点属性 +1
+			var st9 := int(op.get("stacks", 1))
+			if op.has("atk_step"):
+				st9 += int(float(atk_of(src)) / float(op["atk_step"]))
+			if op.has("pow_step"):
+				st9 += int(float(pow_of(src)) / float(op["pow_step"]))
+			if st9 > 0:
+				apply_status(src, String(op.get("sid", "qiangdu")), st9)
+		"spawn_spell":
+			# 裂甲斩·升一/刀剑合击·升一：获得一张基础版另一功法入手中（手满溢出不生成）
+			if hand.size() >= HAND_CAP:
+				event.emit("手牌已满，副本未生成")
+				return
+			var spawn9 := _make_card_instance({"wid": String(src["id"]),
+				"sid": String(op.get("sid", "")), "dir": 0})
+			hand.push_back(spawn9)
+			event.emit("获得一张「%s」" % spawn9["spell"]["name"])
 		"draw":
 			draw_cards(int(op.get("count", 1)))
 		"reroll_intent":
@@ -934,6 +1082,8 @@ func _round_start() -> void:
 	_fanji_used = {}
 	_mark_watch = {}
 	_turn_cards_played = 0
+	_cost_cut = {}
+	_round_spell_used = false
 	for a in allies:
 		if a["alive"]:
 			a["acts"] = a["acts_max"]

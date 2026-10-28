@@ -7,7 +7,7 @@
 ## 数值全为暂定（用户裁「数值后面都可以改」）；功法新名/插件名占位待正名。
 extends RefCounted
 
-#region 器灵（4 件；panel 四维＋def/res 出厂 0；passive.ups＝被动升级方向 1/2）
+#region 器灵（5 件；panel 四维＋def/res 出厂 0；passive.ups＝被动升级方向 1/2）
 const WEAPONS := {
 	"youming": {
 		"name": "幽冥剑", "seal": "冥", "lineage": "剑",
@@ -79,6 +79,25 @@ const WEAPONS := {
 				"ops": [{"op": "block_ally", "per_pow15": true}]},
 		],
 	},
+	"liangyi": {
+		"name": "两仪刀剑", "seal": "仪", "lineage": "刀剑",
+		"panel": {"hp": 42, "atk": 15, "def": 0, "res": 0, "pow": 12, "acts": 1},
+		"passive": {"id": "yi_dao_yi_jian", "name": "亦刀亦剑",
+			"desc": "初始无形态。造成普攻伤害（含功法内普攻段）时转为刀形态，造成功法伤害时转为剑形态；逐段判定，仅形态实际改变时触发。转为刀时获得 1 层强度，转为剑时获得 1 层力量。",
+			"ups": {
+				"1": "每次形态转换后，随机一张手牌中的功法牌能量消耗 −1（持续到回合结束，可叠加，最低 0）。",
+				"2": "每次形态转换后，所有器灵获得 3 点护盾（每 5 点威力 +1，按两仪刀剑自身威力计）。"}},
+		"spells": [
+			{"id": "liejia", "name": "裂甲斩", "cost": 1, "target": "enemy",
+				"desc": "对目标造成 6 点普攻伤害（每 2 点攻击力 +1，每 3 点威力 +1），并对目标及其相邻单位施加 1 层破甲（每 5 点威力 +1 层）。视为普通攻击。",
+				"ops": [{"op": "dmg_flat", "value": 6, "atk_step": 2, "pow_step": 3, "channel": "普攻"},
+					{"op": "pojia_aoe", "stacks": 1, "per_pow": 5}]},
+			{"id": "daojian", "name": "刀剑合击", "cost": 1, "target": "enemy",
+				"desc": "造成 4 点功法伤害（每点威力 +1），随后对同一目标进行一次攻击力减半的普通攻击。",
+				"ops": [{"op": "dmg_flat", "value": 4, "per_pow": 1, "channel": "功法"},
+					{"op": "attack_after", "atk_mult": 0.5}]},
+		],
+	},
 }
 #endregion
 
@@ -136,8 +155,27 @@ const SPELL_UPS := {
 		"desc": "指定器灵获得一（每 15 点威力 +1）层格挡，并去除随机一个减益状态。",
 		"ops": [{"op": "block_ally", "per_pow15": true}, {"op": "cleanse", "stacks": 1}]},
 		"tiezhao#2": {"name": "铁壁诀·升二", "cost": 0, "exhaust": true,
-		"desc": "指定器灵获得一（每 15 点威力 +1）层格挡。",
-		"ops": [{"op": "block_ally", "per_pow15": true}]},
+			"desc": "指定器灵获得一（每 15 点威力 +1）层格挡。",
+			"ops": [{"op": "block_ally", "per_pow15": true}]},
+		"liejia#1": {"name": "裂甲斩·升一", "cost": 1,
+			"desc": "对目标造成 6 点普攻伤害（每 2 点攻击力 +1，每 3 点威力 +1），并对目标及其相邻单位施加 1 层破甲（每 5 点威力 +1 层）。视为普通攻击。获得一张基础版的「刀剑合击」。",
+			"ops": [{"op": "dmg_flat", "value": 6, "atk_step": 2, "pow_step": 3, "channel": "普攻"},
+				{"op": "pojia_aoe", "stacks": 1, "per_pow": 5},
+				{"op": "spawn_spell", "sid": "daojian"}]},
+		"liejia#2": {"name": "裂甲斩·升二",
+			"desc": "对全体敌人施加破甲（每 5 点威力 +1 层，无基础层）；若某敌人护甲层数高于其将受到的破甲层数，该敌人受到的破甲层数翻倍；对目标造成 6 点普攻伤害（每 2 点攻击力 +1，每 3 点威力 +1），视为普通攻击；获得 1 层强度（每 10 点攻击力 +1 层）。",
+			"ops": [{"op": "pojia_all", "per_pow": 5},
+				{"op": "dmg_flat", "value": 6, "atk_step": 2, "pow_step": 3, "channel": "普攻"},
+				{"op": "self_status_scale", "sid": "qiangdu", "stacks": 1, "atk_step": 10}]},
+		"daojian#1": {"name": "刀剑合击·升一", "cost": 1,
+			"desc": "造成 4 点功法伤害（每点威力 +1），随后对同一目标进行一次攻击力减半的普通攻击。获得一张基础版的「裂甲斩」。",
+			"ops": [{"op": "dmg_flat", "value": 4, "per_pow": 1, "channel": "功法"},
+				{"op": "attack_after", "atk_mult": 0.5},
+				{"op": "spawn_spell", "sid": "liejia"}]},
+		"daojian#2": {"name": "刀剑合击·升二",
+			"desc": "刀形态下此卡能量消耗为 0（费用随形态实时显示与结算）。造成 4 点功法伤害（每点威力 +1），随后对同一目标进行一次普通攻击（攻击力全额）。",
+			"ops": [{"op": "dmg_flat", "value": 4, "per_pow": 1, "channel": "功法"},
+				{"op": "attack_after", "atk_mult": 1.0}]},
 }
 #endregion
 
@@ -245,6 +283,21 @@ const ACCESSORIES := {
 		"excl": {"jingang": {"kind": "def_atk"}},
 		"desc": "防御力 +5。",
 		"excl_desc": {"jingang": "每有一点防御力，自身攻击力提升一点。"}},
+	"x_ly_1": {"name": "插件·两仪一", "lv": 3, "price": 100,
+		"stats": {"res": 25, "hp": 50}, "fx": {},
+		"excl": {"liangyi": {"kind": "jian_draw"}},
+		"desc": "抗性 +25，耐久 +50。",
+		"excl_desc": {"liangyi": "每次转为剑形态后，抽一张牌。"}},
+	"x_ly_2": {"name": "插件·两仪二", "lv": 2, "price": 80,
+		"stats": {"atk": 5}, "fx": {"kind": "atk_heal", "hp": 5},
+		"excl": {"liangyi": {"kind": "dao_act", "cap": 9}},
+		"desc": "攻击力 +5。特殊：每次普攻后恢复 5 点耐久。",
+		"excl_desc": {"liangyi": "每次转为刀形态后，获得一次攻击机会（攻次 +1，可超基础值，硬上限 9）。"}},
+	"x_ly_3": {"name": "插件·两仪三", "lv": 4, "price": 130,
+		"stats": {"pow": 5}, "fx": {"kind": "first_spell_free", "cut": 1},
+		"excl": {"liangyi": {"kind": "form_shayi", "stacks": 1}},
+		"desc": "威力 +5。特殊：每回合首次使用的功法能量消耗 −1。",
+		"excl_desc": {"liangyi": "每次形态转换后，所有器灵获得 1 层杀意。"}},
 }
 
 ## 插件在某器灵上的完整描述（含专属词条）——备战舱装备窗/详情用

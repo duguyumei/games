@@ -71,8 +71,8 @@ func _run() -> void:
 					await create_timer(0.3).timeout
 					_eq("新增器灵入后备（run.reserve=1）", 1, screen.run_data.get("reserve", []).size())
 					var res_wid := String(screen.run_data.get("reserve", [{}])[0].get("id", ""))
-					_eq("入后备者来自未解锁池（青蛊铃/金刚盾）", true,
-						res_wid == "qinggu" or res_wid == "jingang")
+					_eq("入后备者来自未解锁池（青蛊铃/金刚盾/两仪刀剑）", true,
+						res_wid == "qinggu" or res_wid == "jingang" or res_wid == "liangyi")
 					_eq("已升级态入后备（pdir 1/2）", true,
 						int(screen.run_data.get("reserve", [{}])[0].get("pdir", 0)) in [1, 2])
 					await _wait_dialog(screen)

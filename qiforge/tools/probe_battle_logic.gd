@@ -2,7 +2,7 @@
 ## 断言链：奇偶公式 → 普攻过防/功法跳防 → 杀意平值（被动+卡面双产）→ 格挡/抵抗
 ## → 中毒尖塔制 → 护盾回合末清空 → 蛊虫循环（藏身/增幅/回归/毒发计数）→ 弹射段数
 ## → 召蛊三方向 → 铁壁系（被动/升1/升2 分配）→ 插件6 → 引丝诀攻次操控 → 雷反防环
-## → 冲弃/复用/唯一/阵亡牌消。
+## → 冲弃/复用/唯一/阵亡牌消 → 两仪刀剑（形态机/费用实时查询/裂甲破甲/三配件）。
 extends SceneTree
 
 const QI_BATTLE := preload("res://qiforge/QiBattle.gd")
@@ -492,6 +492,118 @@ func _run() -> void:
 	_eq("回复池＝3（带伤×2＋阵亡×1）", 3, QI_DATA.op_pool(run16, "heal").size())
 	run16["reserve"][0]["hp"] = QI_DATA.mhp_of(run16["reserve"][0])
 	_eq("满血者不入回复池", 2, QI_DATA.op_pool(run16, "heal").size())
+
+	# —— 局十七：两仪刀剑（形态机逐段判定＋双功法＋配件三件＋费用实时查询）——
+	# 17A：纯形态机（pdir0 无装）——首伤定形/同形态不触发/一卡两转
+	var b17: RefCounted = QI_BATTLE.new()
+	b17.setup({"copper": 0,
+		"team": [{"id": "liangyi", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b17.start()
+	var ly: Dictionary = b17.allies[0]
+	var d17: Dictionary = b17.enemies[0]
+	var l17: Dictionary = b17.enemies[1]
+	_eq("两仪初始无形态", false, b17._forms.has(int(ly["uid"])))
+	b17.normal_attack(ly, d17)
+	_eq("普攻 15−8=7 → 53", 53, int(d17["hp"]))
+	_eq("首伤定形＝刀", "dao", String(b17._forms[int(ly["uid"])]))
+	_eq("转刀＋1 强度（威 13）", 13, b17.pow_of(ly))
+	ly["acts"] = 1
+	b17.normal_attack(ly, d17)
+	_eq("同形态不触发（强度仍 1 层）", 1, b17.status_total(ly, "qiangdu"))
+	_eq("二次普攻 → 46", 46, int(d17["hp"]))
+	b17.hand = [_card(9001, "liangyi", 1)]
+	b17.play_card(9001, d17)
+	_eq("合击全卡 功法17＋普攻1=18 → 28", 28, int(d17["hp"]))
+	_eq("转剑＋1 力量（攻 16）", 16, b17.atk_of(ly))
+	_eq("合击普攻段 16/2−8=封底1 → 28", 28, int(d17["hp"]))
+	_eq("一张两转终态＝刀", "dao", String(b17._forms[int(ly["uid"])]))
+	_eq("强度累计 2（威 14）", 14, b17.pow_of(ly))
+	var dj2: Dictionary = _card_dir(9102, "liangyi", 1, 2)
+	_eq("合击·升二 刀形态 0 费（实时查询）", 0, b17.card_cost(dj2))
+	b17._forms[int(ly["uid"])] = "jian"
+	_eq("剑形态恢复 1 费", 1, b17.card_cost(dj2))
+	b17._forms.erase(int(ly["uid"]))
+	_eq("无形态恢复 1 费", 1, b17.card_cost(dj2))
+	b17.hand = [_card(9002, "liangyi", 0)]
+	b17.play_card(9002, l17)
+	_eq("裂甲斩 6+16/2+14/3−6=12 → 23", 23, int(l17["hp"]))
+	_eq("伤害段先转刀（威15）→破甲 1+15/5=4（目标）", 4, b17.status_total(l17, "pojia"))
+	_eq("破甲 4（相邻打手）", 4, b17.status_total(d17, "pojia"))
+	b17.hand = [_card_dir(9003, "liangyi", 0, 1)]
+	b17.play_card(9003, l17)
+	_eq("升一附带基础版合击入手", true, b17.hand.size() == 1
+		and String(b17.hand[0]["sid"]) == "daojian" and int(b17.hand[0]["dir"]) == 0)
+	_eq("升一再裂甲（破甲削防 6−4=2）19−2=17 → 6", 6, int(l17["hp"]))
+	_eq("破甲累计 8", 8, b17.status_total(l17, "pojia"))
+	b17.energy = 2
+	b17.hand = [_card_dir(9004, "liangyi", 1, 1)]
+	b17.play_card(9004, d17)
+	_eq("合击·升一 功法19＋（转剑攻17/2=9·破甲防0）普攻9 → 恰好击杀", false, bool(d17["alive"]))
+	_eq("升一互赠基础版裂甲斩入手", true, b17.hand.size() == 1
+		and String(b17.hand[0]["sid"]) == "liejia" and int(b17.hand[0]["dir"]) == 0)
+	_eq("合击·升一两转终态仍刀", "dao", String(b17._forms[int(ly["uid"])]))
+
+	# 17B：升2＋三配件（护盾缩放/杀意跨层/转刀攻次/回耐久/回合首功法降费）
+	var b18: RefCounted = QI_BATTLE.new()
+	b18.setup({"copper": 0,
+		"team": [{"id": "liangyi", "equips": ["x_ly_2", "x_ly_3", "x_ly_1"], "pdir": 2}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b18.start()
+	var ly2: Dictionary = b18.allies[0]
+	var d18: Dictionary = b18.enemies[0]
+	_eq("配件面板 攻20 威17 抗25", "20/17/25",
+		"%d/%d/%d" % [b18.atk_of(ly2), b18.pow_of(ly2), b18.res_of(ly2)])
+	_eq("回合首功法 −1（充能期全牌面）", 0, b18.card_cost(_card(9201, "liangyi", 0)))
+	b18.hand = [_card(9201, "liangyi", 0)]
+	b18.play_card(9201, d18)
+	_eq("裂甲 6+20/2+17/3−8=13 → 47", 47, int(d18["hp"]))
+	_eq("转刀后升2护盾 3+18/5=6", 6, b18._status_valued(ly2, "hudun"))
+	_eq("配件三：转换后 1 层杀意", 1, b18.status_total(ly2, "shayi"))
+	_eq("配件二：转刀攻次+1 → 2", 2, int(ly2["acts"]))
+	_eq("0 费打出（能量未扣）", 3, b18.energy)
+	_eq("首张提交后充能消耗（恢复 1 费）", 1, b18.card_cost(_card(9202, "liangyi", 1)))
+	ly2["hp"] = 50
+	b18.normal_attack(ly2, d18)
+	_eq("普攻 20−(8−破甲4)=16 → 31", 31, int(d18["hp"]))
+	_eq("配件二特殊：普攻后回 5 耐久", 55, int(ly2["hp"]))
+	b18.hand = [_card(9202, "liangyi", 1)]
+	b18.play_card(9202, d18)
+	_eq("合击全卡 功法23＋普攻7=30 → 1", 1, int(d18["hp"]))
+	_eq("转剑抽一张（配件一）", true, b18.hand.size() == 1)
+	_eq("两转后护盾累计 18", 18, b18._status_valued(ly2, "hudun"))
+	_eq("杀意累计 3", 3, b18.status_total(ly2, "shayi"))
+	_eq("终态强度 2（威 19）", 19, b18.pow_of(ly2))
+	_eq("转刀再得攻次 → 2", 2, int(ly2["acts"]))
+
+	# 17C：裂甲·升二 全体破甲＋护甲翻倍＋强度自buff
+	var b19: RefCounted = QI_BATTLE.new()
+	b19.setup({"copper": 0,
+		"team": [{"id": "liangyi", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b19.start()
+	var d19: Dictionary = b19.enemies[0]
+	var l19: Dictionary = b19.enemies[1]
+	b19.apply_status(d19, "hujia", 5)
+	b19.hand = [_card_dir(9100, "liangyi", 0, 2)]
+	b19.play_card(9100, d19)
+	_eq("升二全体破甲 威12/5=2（无护甲者）", 2, b19.status_total(l19, "pojia"))
+	_eq("护甲5＞破甲2 → 翻倍 4", 4, b19.status_total(d19, "pojia"))
+	_eq("破甲先行：防 8+5−4=9 → 伤 17−9=8 → 52", 52, int(d19["hp"]))
+	_eq("转刀1＋自buff 1+15/10=2 → 强度3（威 15）", 15, b19.pow_of(b19.allies[0]))
+
+	# 17D：升1 转换后随机手牌功法 −1（至回合末、可叠、封 0；排除正在结算的卡）
+	var b20: RefCounted = QI_BATTLE.new()
+	b20.setup({"copper": 0,
+		"team": [{"id": "liangyi", "equips": [], "pdir": 1}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b20.start()
+	var d20: Dictionary = b20.enemies[0]
+	b20.hand = [_card(9301, "liangyi", 1), _card(9302, "liangyi", 0)]
+	b20.play_card(9301, d20)
+	_eq("一卡两转＝降费叠加（1−2 封 0）", 0, b20.card_cost(b20.hand[0]))
+	b20._round_start()
+	_eq("回合末降费清空（恢复 1 费）", 1, b20.card_cost(b20.hand[0]))
 
 	_finish()
 
