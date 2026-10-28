@@ -44,6 +44,9 @@ static func create(parent: Control, title_text: String, size: Vector2, ok_text: 
 	return [scrim, box]
 
 static func _close_pair(scrim: ColorRect, box: Control) -> void:
+	# 输入门即放行（同帧，STS2 制）；淡出由 tree_exiting/_fade_out 接力，纯视觉
+	if is_instance_valid(scrim):
+		scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if box != null and is_instance_valid(box):
 		box.queue_free()
 	elif is_instance_valid(scrim):
@@ -52,6 +55,10 @@ static func _close_pair(scrim: ColorRect, box: Control) -> void:
 static func _fade_out(scrim: ColorRect) -> void:
 	if not is_instance_valid(scrim):
 		return
+	# STS2 制（NMerchantInventory.CloseInventory 实证）：输入门与视觉解耦——
+	# 关窗决定一下即 mouse_filter 瞬切 IGNORE，淡出纯装饰；旧制「淡完才 free」多出
+	# 0.3s 全屏输入死区（关弹窗后 hover/点击哑掉，modal_tip B 复原挂之根因）。
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tw := scrim.create_tween()
 	tw.tween_property(scrim, "color:a", 0.0, 0.3)
 	tw.tween_callback(func() -> void:

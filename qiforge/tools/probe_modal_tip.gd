@@ -43,9 +43,8 @@ func _run() -> void:
 	chk("B 主张：弹窗开着 hover 命不中底层卡", false, _hit_is(awrap))
 	chk("B 主张：无浮窗生成", 0.0, _tip_count())
 
-	dialog.canceled.emit()   # 走 QiDialog 统一关窗（背板 0.3s 淡出）
-	for i in 26:            # 等淡出完（scrim 淡出期仍是全屏输入门，会误挡 hover）
-		await process_frame
+	dialog.canceled.emit()   # 走 QiDialog 统一关窗（STS2 制：输入门同帧放行，背板 0.3s 淡出纯视觉）
+	await create_timer(0.45).timeout   # 墙钟等淡出（P5：按帧等对撞按时间走的补间——120Hz 屏 26 帧<0.3s 案）
 	await _hover(center)
 	chk("B 复原：关弹窗后 hover 恢复命中", true, _hit_is(awrap))
 	_finish()
