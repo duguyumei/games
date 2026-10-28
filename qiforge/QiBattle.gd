@@ -103,13 +103,19 @@ func start() -> void:
 	changed.emit()
 
 func _battle_start_effects() -> void:
-	# 插件·金刚二特殊：战斗开始获得 25% 最大生命值的护盾
+	# 插件·金刚二特殊：战斗开始获得 25% 最大生命值的护盾；
+	# 通用开局挂状态（插件12 抵抗层等）：kind=battle_start_status, sid, stacks
 	for a in allies:
 		for fx in _fx_of(a):
 			if String(fx.get("kind", "")) == "battle_start_shield_pct":
 				var amt := int(int(a["mhp"]) * float(fx.get("pct", 25)) / 100.0)
 				apply_status(a, "hudun", 1, amt)
 				event.emit("「%s」开局获得 %d 点护盾" % [a["name"], amt])
+			elif String(fx.get("kind", "")) == "battle_start_status":
+				var sid := String(fx.get("sid", ""))
+				apply_status(a, sid, int(fx.get("stacks", 1)))
+				event.emit("「%s」开局获得 %d 层%s" % [a["name"], int(fx.get("stacks", 1)),
+					String(DATA.STATUSES.get(sid, {}).get("name", sid))])
 
 #region 单位与派生值（记录层：面板＋隐藏修正（被动/装备——不进状态栏）＋状态（功法/效果——进状态栏））
 func _make_ally(wid: String, equips: Array, pdir: int) -> Dictionary:

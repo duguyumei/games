@@ -424,6 +424,16 @@ func _run() -> void:
 	_eq("升二打出进消耗堆", 1, b13.exhaust_pile.size())
 	_eq("升二不进弃牌堆", 0, b13.discard_pile.size())
 
+	# —— 局十四：配件轮（2026-10-28）——插件12 开局抵抗层＋品阶重定档（只按通用面定档）——
+	var b14: RefCounted = QI_BATTLE.new()
+	b14.setup({"copper": 0, "team": [{"id": "jingang", "equips": ["p12"], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b14.start()
+	_eq("插件12：开局 1 层抵抗", 1, b14.status_total(b14.allies[0], "dikang"))
+	_eq("品阶重定：金刚三入 Lv2 池（专属不计档）", true, QI_DATA.tier_pool(2).has("x_jg_3"))
+	_eq("Lv2 池充实（≥8 件）", true, QI_DATA.tier_pool(2).size() >= 8)
+	_eq("Lv1 池充实（≥3 件）", true, QI_DATA.tier_pool(1).size() >= 3)
+
 	_finish()
 
 func _count_wid(pile: Array, wid: String) -> int:
