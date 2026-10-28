@@ -128,7 +128,7 @@ func _run() -> void:
 	_eq("毒结算 −%d（间接）" % stacks_before, poisoned_hp - stacks_before, int(hide_on["hp"]))
 	_eq("毒发产虫（3+1=4）", 4, int(qg["bugs"]))
 
-	# 弹射段数：青蛊铃 威 12 → 4+floor(12/5)=6 段 ×3 点（功法跳防）
+	# 弹射段数：青蛊铃 威 12 → 4+floor(12/3)=8 段 ×3 点（功法跳防；威力转化率 1:1 断点律）
 	qg["bugs"] = 0
 	for e in b2.enemies:
 		e["bugs_on"] = 0
@@ -136,7 +136,7 @@ func _run() -> void:
 	b2.energy = 3
 	b2.hand = [_card(9201, "qinggu", 0)]
 	b2.play_card(9201, e0)
-	_eq("弹射 6 段×3=18 伤害总量", hp_sum - 18, int(e0["hp"]) + int(e1["hp"]))
+	_eq("弹射 8 段×3=24 伤害总量", hp_sum - 24, int(e0["hp"]) + int(e1["hp"]))
 
 	# 召蛊术·升二：4 只 → 4 点间接伤分布＋全队护盾 4＋自身清虫
 	qg["bugs"] = 4
@@ -392,7 +392,7 @@ func _run() -> void:
 	_eq("攻方已阵亡", false, bool(ym11["alive"]))
 	_eq("阵亡清状态·尸体不留杀意（首段曾+1，随死清零）", 0, b11.status_total(ym11, "shayi"))
 
-	# 弹射同制：蛊箭术 4+威12/5=6 段，首段雷反反杀 → 弹射段全部作废、另一敌零伤
+	# 弹射同制：蛊箭术 3 段伤+威12/3=8 段，首段雷反反杀 → 弹射段全部作废、另一敌零伤
 	var b12: RefCounted = QI_BATTLE.new()
 	b12.setup({"copper": 0, "team": [{"id": "qinggu", "equips": [], "pdir": 0}],
 		"sys_lv": 2, "group": 0, "fight": 0, "seed": 7})
@@ -404,7 +404,7 @@ func _run() -> void:
 	b12.apply_status(ea, "leifan", 2)
 	var ea_hp: int = int(ea["hp"])
 	var eb_hp: int = int(eb["hp"])
-	b12.hand = [_card(9911, "qinggu", 0)]    # 蛊箭术：弹射 3+1+威12/5=6 段
+	b12.hand = [_card(9911, "qinggu", 0)]    # 蛊箭术：弹射 3+1+威12/3=8 段
 	b12.play_card(9911, ea)
 	_eq("弹射首段反杀攻方·弹射段作废 → 目标只吃首段 3", ea_hp - 3, int(ea["hp"]))
 	_eq("另一敌零伤（后续弹射段未飞出）", eb_hp, int(eb["hp"]))

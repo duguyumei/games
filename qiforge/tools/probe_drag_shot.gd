@@ -79,6 +79,9 @@ func _run() -> void:
 	screen._light_spell_targets(yinsi_card)
 	rec_a0["wrap"].drop_ok.call({"drag_data": {"hand_uid": 911}})
 	screen.set_process(false)
+	# _pop_glyph 弹出补间 0.16s（TRANS_BACK）未走完时环缩着（scale<1），环边采样必落空
+	# （× 采正中心故免疫）——墙钟等补间走完再渲染采样（P5：勿以帧数等补间）。
+	await create_timer(0.25).timeout
 	for i in 2:
 		await process_frame
 	_eq("吸附友：○符出", true, (rec_a0["mark"]["go"] as Control).visible)
