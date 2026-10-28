@@ -57,27 +57,39 @@ func _run() -> void:
 			await process_frame
 		_eq("arrow：升卡接管", true, not screen._spell_drag.is_empty())
 		_eq("arrow：双敌底灯", true, (rec_e1["mark"]["ring"] as Control).visible)
+		_eq("arrow：连线已画", true, (screen.find_child("DragLine", false, false) as Line2D).visible)
 		rec_e0["wrap"].drop_ok.call({"drag_data": {"hand_uid": 910}})
-		for i in 3:
+		# I10 续案：离屏窗垃圾鼠标位「偶落窗内」→ sanity 门放行→脱离轮询一帧内误清吸附
+		# （今晨绿/此刻红＝窗口原点钳位随显示配置漂移，竞态非确定性）。drop 后冻结 _process
+		# 保吸附态过渲染帧，截图像素才采得到 ×/○；真实局不受影响（鼠标恒真值）。
+		screen.set_process(false)
+		for i in 2:
 			await process_frame
 		_eq("吸附敌：×符出", true, (rec_e0["mark"]["gx1"] as Control).visible)
-		_eq("吸附敌：连线已画", true, (screen.find_child("DragLine", false, false) as Line2D).visible)
 		_shot(".qi_drag_snap_enemy.png")
+		screen.set_process(true)
 		var ec: Vector2 = (rec_e0["wrap"] as Control).get_global_rect().get_center()
-		_px(".qi_drag_snap_enemy.png", "×臂交叉点＝敌红", int(ec.x), int(ec.y), Color("e88a70"))
+		_px_any(".qi_drag_snap_enemy.png", "×臂交叉点＝敌红", [Vector2i(int(ec.x), int(ec.y)),
+			Vector2i(int(ec.x) - 3, int(ec.y)), Vector2i(int(ec.x) + 3, int(ec.y)),
+			Vector2i(int(ec.x), int(ec.y) - 3), Vector2i(int(ec.x), int(ec.y) + 3)], Color("e88a70"))
 
 	# ③ 友方吸附○（直接换引丝口径：亮我方集＋吸附 O）
 	screen._unsnap_mark()
 	screen._clear_spell_lights()
 	screen._light_spell_targets(yinsi_card)
 	rec_a0["wrap"].drop_ok.call({"drag_data": {"hand_uid": 911}})
-	for i in 3:
+	screen.set_process(false)
+	for i in 2:
 		await process_frame
 	_eq("吸附友：○符出", true, (rec_a0["mark"]["go"] as Control).visible)
 	_eq("吸附友：×符收", false, (rec_a0["mark"]["gx1"] as Control).visible)
 	_shot(".qi_drag_snap_ally.png")
+	screen.set_process(true)
 	var ac: Vector2 = (rec_a0["wrap"] as Control).get_global_rect().get_center()
-	_px(".qi_drag_snap_ally.png", "○环上缘＝玉绿", int(ac.x), int(ac.y - 28.0), Color("8fd8b0"))
+	_px_any(".qi_drag_snap_ally.png", "○环上缘＝玉绿", [Vector2i(int(ac.x), int(ac.y) - 30),
+		Vector2i(int(ac.x), int(ac.y) - 29), Vector2i(int(ac.x), int(ac.y) - 28),
+		Vector2i(int(ac.x), int(ac.y) - 27), Vector2i(int(ac.x) - 29, int(ac.y)),
+		Vector2i(int(ac.x) + 29, int(ac.y))], Color("8fd8b0"))
 
 	_finish()
 
@@ -85,7 +97,19 @@ func _shot(path: String) -> void:
 	root.get_viewport().get_texture().get_image().save_png("/Users/cc/Documents/qi-forge-2/" + path)
 	await create_timer(0.1).timeout
 
-## 像素采样（V 律回退制的密度档：视觉工具两次伪造后，以真像素为准）
+## 像素采样（V 律回退制的密度档：视觉工具两次伪造后，以真像素为准；
+## 多点任中＝边线 ±2px 舍入漂移容忍，单点踩底色即误报——2026-10-28 吸附轮实测）
+func _px_any(path: String, tag: String, pts: Array, want: Color) -> void:
+	var img := Image.load_from_file("/Users/cc/Documents/qi-forge-2/" + path)
+	if img == null:
+		fails.append(tag + "：截图读不回")
+		return
+	for p in pts:
+		var c: Color = img.get_pixel(int(p.x), int(p.y))
+		if absf(c.r - want.r) <= 0.12 and absf(c.g - want.g) <= 0.12 and absf(c.b - want.b) <= 0.12:
+			return
+	fails.append("%s：多点均未命中 %s" % [tag, want.to_html(false)])
+
 func _px(path: String, tag: String, x: int, y: int, want: Color) -> void:
 	var img := Image.load_from_file("/Users/cc/Documents/qi-forge-2/" + path)
 	if img == null:

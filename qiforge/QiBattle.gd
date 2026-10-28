@@ -87,7 +87,8 @@ func _make_card_instance(entry: Dictionary) -> Dictionary:
 	var spell: Dictionary = DATA.spell_of(String(entry["wid"]), String(entry["sid"]), int(entry.get("dir", 0)))
 	return {"uid": _card_uid, "wid": String(entry["wid"]), "sid": String(entry["sid"]),
 		"dir": int(entry.get("dir", 0)), "spell": spell,
-		"reuse_left": int(spell.get("reuse", 0)), "retain": false}
+		"reuse_left": int(spell.get("reuse", 0)), "retain": false,
+		"exhaust": bool(spell.get("exhaust", false))}
 
 func _shuffle(pile: Array) -> void:
 	for i in range(pile.size() - 1, 0, -1):
@@ -686,6 +687,8 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 			for h in hits:
 				if not target.get("alive", false):
 					break
+				if not src.get("alive", false):
+					break   # 攻方段间死亡→剩余段作废（2026-10-28 裁定，STS2 AttackCommand 同制）
 				var amt := float(op["value"]) + float(op.get("per_pow", 0)) * float(pow_of(src))
 				resolve_damage(src, target, amt, String(op.get("channel", "功法")))
 		"dmg_bounce":
@@ -695,6 +698,8 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 				segs += int(float(pow_of(src)) / float(op["per_pow_bounce"]))
 			var hit_uids := {}
 			for h in segs:
+				if not src.get("alive", false):
+					break   # 攻方段间死亡→剩余段作废（2026-10-28 裁定，STS2 AttackCommand 同制；目标死亡仍换目标继续）
 				var t: Dictionary = {}
 				if h == 0 and not bool(op.get("random", false)) and target.get("alive", false):
 					t = target

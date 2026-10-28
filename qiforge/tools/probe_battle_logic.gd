@@ -210,7 +210,7 @@ func _run() -> void:
 	b4.energy = 3
 	b4.hand = [_card_dir(9303, "youming", 1, 2)]
 	b4.play_card(9303, d4)
-	_eq("升二三段（杀意逐段+1：4+5+6=15）", d4_hp - 15, int(d4["hp"]))
+	_eq("升二三段（杀意逐段+1：5+6+7=18）", d4_hp - 18, int(d4["hp"]))
 	_eq("段伤产杀意 3（升二面不含卡面杀意op）", 3, b4.status_total(ym4, "shayi"))
 	_eq("复用回手", 1, b4.hand.size())
 
@@ -330,7 +330,7 @@ func _run() -> void:
 	b9.hand = [_card_dir(9900, "youming", 1, 1)]
 	var hp9: int = int(d9["hp"])
 	b9.play_card(9900, d9)
-	_eq("升一灭魂斩 20+3×8威+12杀意=56 跳防", hp9 - 56, int(d9["hp"]))
+	_eq("升一灭魂斩 16+2×8威+12杀意=44 跳防", hp9 - 44, int(d9["hp"]))
 	_eq("杀意清空（本刀被动 +1 亦被清）", 0, b9.status_total(ym9, "shayi"))
 	_eq("13 层（12+被动1）→ 副本 2 张", 2, b9.hand.size())
 	var c9: Dictionary = b9.hand[0]
@@ -375,6 +375,54 @@ func _run() -> void:
 	_eq("竭力/护甲/破甲跨回合不消失", true,
 		b10.status_total(ym10, "jieli") == 1 and b10.status_total(e10, "hujia") == 5
 		and b10.status_total(e10, "pojia") == 2)
+
+	# —— 局十一：攻方段间死亡→剩余段作废（2026-10-28 用户裁定，STS2 AttackCommand 同制；弹射同制作废）——
+	var b11: RefCounted = QI_BATTLE.new()
+	b11.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b11.start()
+	var ym11: Dictionary = b11.allies[0]
+	var d11: Dictionary = b11.enemies[0]
+	ym11["hp"] = 4; ym11["mhp"] = 4          # 雷反 2层×2=4 → 首段反杀
+	b11.apply_status(d11, "leifan", 2)
+	b11.hand = [_card_dir(9910, "youming", 1, 2)]   # 灭魂斩·升二：2+威8/5=3 段×5
+	var d11_hp: int = int(d11["hp"])
+	b11.play_card(9910, d11)
+	_eq("雷反首段反杀攻方·剩余段作废 → 敌只吃 1 段（−5）", d11_hp - 5, int(d11["hp"]))
+	_eq("攻方已阵亡", false, bool(ym11["alive"]))
+	_eq("阵亡清状态·尸体不留杀意（首段曾+1，随死清零）", 0, b11.status_total(ym11, "shayi"))
+
+	# 弹射同制：蛊箭术 4+威12/5=6 段，首段雷反反杀 → 弹射段全部作废、另一敌零伤
+	var b12: RefCounted = QI_BATTLE.new()
+	b12.setup({"copper": 0, "team": [{"id": "qinggu", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 7})
+	b12.start()
+	var qg12: Dictionary = b12.allies[0]
+	var ea: Dictionary = b12.enemies[0]
+	var eb: Dictionary = b12.enemies[1]
+	qg12["hp"] = 4; qg12["mhp"] = 4
+	b12.apply_status(ea, "leifan", 2)
+	var ea_hp: int = int(ea["hp"])
+	var eb_hp: int = int(eb["hp"])
+	b12.hand = [_card(9911, "qinggu", 0)]    # 蛊箭术：弹射 3+1+威12/5=6 段
+	b12.play_card(9911, ea)
+	_eq("弹射首段反杀攻方·弹射段作废 → 目标只吃首段 3", ea_hp - 3, int(ea["hp"]))
+	_eq("另一敌零伤（后续弹射段未飞出）", eb_hp, int(eb["hp"]))
+	_eq("弹射攻方已阵亡", false, bool(qg12["alive"]))
+
+	# —— 局十三：静态「消耗」透传（2026-10-28 过秤轮：铁壁诀·升二 0 费·消耗）——
+	var b13: RefCounted = QI_BATTLE.new()
+	b13.setup({"copper": 0, "team": [{"id": "jingang", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b13.start()
+	var c13: Dictionary = b13._make_card_instance({"wid": "jingang", "sid": "tiezhao", "dir": 2})
+	_eq("铁壁诀·升二实例透传静态 exhaust", true, bool(c13.get("exhaust", false)))
+	_eq("铁壁诀·升二 0 费", 0, b13.card_cost(c13))
+	b13.energy = 3
+	b13.hand = [c13]
+	b13.play_card(int(c13["uid"]), b13.allies[0])
+	_eq("升二打出进消耗堆", 1, b13.exhaust_pile.size())
+	_eq("升二不进弃牌堆", 0, b13.discard_pile.size())
 
 	_finish()
 
