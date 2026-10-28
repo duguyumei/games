@@ -28,7 +28,6 @@ func _run() -> void:
 	var hand: Vector2 = QICARD.size_of("hand")
 	var er: HBoxContainer = scr.get_node("EnemyRow")
 	var ar: HBoxContainer = scr.get_node("AllyRow")
-	var en: VBoxContainer = scr.get_node("EnergyStack")
 
 	# —— 敌排（演示局 G1F1＝2 敌；卡＝工厂单位档）——
 	chk("敌排 2 槽（演示局）", er.get_child_count(), 2.0, 0.0)
@@ -56,14 +55,18 @@ func _run() -> void:
 		bt("状态列不出卡底", stat1.global_position.y + stat1.size.y
 			<= wrap1.global_position.y + wrap1.size.y + 3.0)
 
-	# —— 我排（槽位＝实卡数——空位占位 2026-10-28 用户手改撤除；演示局 2 实卡）——
+	# —— 我排（槽位＝实卡数——空位占位 2026-10-28 用户手改撤除；演示局 2 实卡；
+	#    槽子件序 2026-10-28 血条出卡后＝[wrap, STS2 血条, 词条行]）——
 	chk("我排槽＝实卡数（演示 2）", ar.get_child_count(), 2.0, 0.0)
 	var awrap: Control = ar.get_child(0).get_child(0)
 	var acard: Control = awrap.get_child(0)
 	chk("我卡尺寸（工厂 field 档）", acard.size.x + acard.size.y * 0.001, field.x + field.y * 0.001, 1.6)
-	var trow: Control = ar.get_child(0).get_child(1)
-	bt("词条行在卡下（隔 10~30）", trow.global_position.y - (acard.global_position.y + acard.size.y) >= 10.0
-		and trow.global_position.y - (acard.global_position.y + acard.size.y) <= 30.0)
+	var aslot: Control = ar.get_child(0)
+	var ahpb: Control = aslot.get_child(1)
+	var trow: Control = aslot.get_child(2)
+	bt("血条紧贴卡下（STS2 制·卡外下方）", ahpb.global_position.y >= acard.global_position.y + acard.size.y - 2.0)
+	var tgap: float = trow.global_position.y - (ahpb.global_position.y + ahpb.size.y)
+	bt("词条行在血条下（隔 2~30，实测 %.0f）" % tgap, tgap >= 2.0 and tgap <= 30.0)
 
 	# —— 手牌（拖拽件 HandCard*；尺寸＝工厂 hand 档；顶＝75.2% 屏高；底裁出屏）——
 	var hands: Array = []
@@ -79,10 +82,12 @@ func _run() -> void:
 		bt("手牌底裁出屏（底缘动画带）", h0.position.y + h0.size.y > vp.y)
 		bt("词条行不与手牌叠（隔 ≥25）", h0.position.y - (trow.global_position.y + 20.0) >= 25.0)
 
-	# —— 能量栈（珠数＝当前上限 3；竖栈不被拉宽）——
-	chk("能量珠=3（Lv2 上限）", en.get_child_count(), 3.0, 0.0)
-	if en.get_child_count() > 0:
-		chk("能量点宽 16（不被拉宽）", en.get_child(0).size.x, 16.0, 2.0)
+	# —— 能量（2026-10-28 STS2 宝珠制：单珠大数字＋/上限角标；旧 pip 竖栈退役）——
+	var eorb: Control = scr.find_child("EnergyOrb", false, false)
+	bt("能量宝珠存在", eorb != null)
+	if eorb != null:
+		var enlbl: Label = eorb.get_meta("num") as Label
+		chk("能量数字=3（Lv2 上限）", enlbl.text.to_float(), 3.0, 0.0)
 
 	print("QIV3_FAILS=", fails)
 	quit(1 if fails > 0 else 0)

@@ -37,7 +37,6 @@ var _atk_energy_used := {}       # uid -> 本回合插件6（普攻回能）已�
 var _jg_first_used := {}         # uid -> 本回合金刚盾被动（首次普攻）已用
 var _spell_played := {}          # uid -> 该器灵累计打出功法数（幽冥插件2专属）
 var _shayi_gained := {}          # uid -> 该器灵累计获得杀意（幽冥升2：每 3 层抽 1）
-var _free_sids: Array = []       # 本回合同名免费（灭魂斩·升一）
 var _mark_watch := {}            # uid -> 本回合标记的死亡回能额（索敌令）
 var _enemy_intent: Array = []
 var _enemy_hist := {}
@@ -163,7 +162,7 @@ func _has_fx(u: Dictionary, kind: String) -> bool:
 	return false
 
 func atk_of(u: Dictionary) -> int:
-	var v: int = int(u["base"]["atk"]) + _status_flat(u, "gong_up", 2) - _status_flat(u, "gong_dn", 2)
+	var v: int = int(u["base"]["atk"]) + status_total(u, "liliang") - status_total(u, "jieli")
 	# 天丝升1：每一点威力 +1 攻击力（被动修正——隐藏账，实时连锁）
 	if u.get("passive", {}).get("id") == "zhuiji" and int(u.get("pdir", 0)) == 1:
 		v += pow_of(u)
@@ -174,21 +173,18 @@ func atk_of(u: Dictionary) -> int:
 
 func def_of(u: Dictionary) -> int:
 	# 防御＝面板（出厂一般 0＋装备）＋状态（功法/效果给——进状态栏）；只减普攻伤害
-	var v: int = int(u["base"]["def"]) + _status_valued(u, "fangyu")
+	var v: int = int(u["base"]["def"]) + status_total(u, "hujia") - status_total(u, "pojia")
 	return int(round(float(v) * (1.0 + _pct_of(u))))
 
 func res_of(u: Dictionary) -> int:
 	return int(u["base"]["res"]) + _status_valued(u, "kangxing")
 
 func pow_of(u: Dictionary) -> int:
-	var v: int = int(u["base"]["pow"]) + _status_valued(u, "weili")
+	var v: int = int(u["base"]["pow"]) + status_total(u, "qiangdu")
 	# 插件·丝蛊同源（青蛊铃专属）：每只蛊虫 +1 威力（装备修正——隐藏账）
 	if _has_fx(u, "bug_pow"):
 		v += int(u.get("bugs", 0))
 	return int(round(float(v) * (1.0 + _pct_of(u))))
-
-func _status_flat(u: Dictionary, sid: String, per_stack: int) -> int:
-	return status_total(u, sid) * per_stack
 
 func _status_valued(u: Dictionary, sid: String) -> int:
 	var v := 0
@@ -311,11 +307,11 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 		if dst["hp"] <= 0:
 			_on_death(src, dst)
 		else:
-			# 金刚盾升1：耐久损伤→等量护盾＋1 防御（被动修正：防御走 fangyu 状态以外的隐藏账由 fx 承担）
+			# 金刚盾升1：耐久损伤→等量护盾＋1 层护甲（2026-10-28 面板状态具名制）
 			if dst.get("passive", {}).get("id") == "tie_bi" and int(dst.get("pdir", 0)) == 1 and dealt > 0:
 				apply_status(dst, "hudun", 1, dealt)
-				apply_status(dst, "fangyu", 1, 1)
-				event.emit("铁壁·升1：「%s」获得 %d 点护盾与 1 点防御" % [dst["name"], dealt])
+				apply_status(dst, "hujia", 1)
+				event.emit("铁壁·升1：「%s」获得 %d 点护盾与 1 层护甲" % [dst["name"], dealt])
 			# —— 反震/反击＝即时插入（2026-10-27 用户裁定：不排延迟队列，落地后原地结算；
 			#    反震伤走间接＝天然不再触发受方后置位，无环；血统键保同链一来一回封顶）——
 			if src.get("side", "") != dst.get("side", "") and src["alive"]:
@@ -443,9 +439,6 @@ func _wipe_wid_cards(wid: String) -> void:
 
 #region 我方操作
 func card_cost(card: Dictionary) -> int:
-	# 灭魂斩·升一：本回合后续同名功法 0 费
-	if _free_sids.has(String(card["sid"])):
-		return 0
 	return maxi(0, int(card["spell"]["cost"]))
 
 func can_play(card: Dictionary) -> bool:
@@ -509,8 +502,8 @@ func _basic_attack(a: Dictionary, e: Dictionary) -> void:
 	if a.get("passive", {}).get("id") == "tie_bi" and not _jg_first_used.get(a["uid"], false):
 		_jg_first_used[a["uid"]] = true
 		for u in _self_and_adjacent(a):
-			apply_status(u, "fangyu", 1, 1)
-		event.emit("铁壁：「%s」与相邻器灵防御 +1" % a["name"])
+			apply_status(u, "hujia", 1)
+		event.emit("铁壁：「%s」与相邻器灵获得 1 层护甲" % a["name"])
 	# 插件6（通用）：一回合一次普攻后 +1 能量
 	if a["equips"].has("p6") and not _atk_energy_used.get(a["uid"], false):
 		_atk_energy_used[a["uid"]] = true
@@ -519,11 +512,11 @@ func _basic_attack(a: Dictionary, e: Dictionary) -> void:
 	# 插件·幽冥一特殊：造成普攻伤害后敌方 1 层破绽（持续 2 回合）
 	if _has_fx(a, "atk_poxian") and e["alive"]:
 		apply_status(e, "poxian", 1, 0, 2, true, a)
-	# 插件·丝蛊同源（天丝专属）：每次普攻后吸收敌人 3 点攻击力
+	# 插件·丝蛊同源（天丝专属）：每次普攻后敌方 3 层竭力、自身 3 层力量（2026-10-28 面板状态具名制）
 	if _has_fx(a, "drain_atk") and e["alive"]:
-		apply_status(e, "gong_dn", 3, 0, -1, false, a)
-		apply_status(a, "gong_up", 3, 0, -1, false, a)
-		event.emit("丝蛊同源：「%s」吸收 3 点攻击力" % e["name"])
+		apply_status(e, "jieli", 3, 0, -1, false, a)
+		apply_status(a, "liliang", 3, 0, -1, false, a)
+		event.emit("丝蛊同源：「%s」获得 3 层竭力，自身获得 3 层力量" % e["name"])
 	# 插件·天丝二专属：普攻后敌人每有一种减益状态汲取 1 点最大生命值
 	if _has_fx(a, "drain_mhp_per_debuff") and e["alive"]:
 		var kinds := 0
@@ -672,7 +665,12 @@ func play_card(card_uid: int, target: Dictionary = {}) -> void:
 		event.emit("「%s」复用回手（余 %d 次）" % [card["spell"]["name"], card["reuse_left"]])
 	else:
 		hand.erase(card)
-		discard_pile.push_back(card)
+		if bool(card.get("exhaust", false)):
+			# 「消耗」关键词（StS2 制：打出进消耗堆，本场不回弃牌堆；未打出的回合末随手牌冲弃）
+			exhaust_card(card)
+			event.emit("「%s」已消耗" % String(card["spell"]["name"]))
+		else:
+			discard_pile.push_back(card)
 	_drain_deferred()
 	check_end()
 	changed.emit()
@@ -777,9 +775,24 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 		"gain_shayi":
 			if src.get("passive", {}).get("id") == "sha_yi":
 				_gain_shayi(src, int(op.get("stacks", 1)))
-		"free_same":
-			_free_sids.push_back(_current_sid)
-			event.emit("灭魂斩·升一：本回合后续同名功法 0 费")
+		"shayi_cashout":
+			# 灭魂斩·升一（2026-10-28 用户裁定重做）：伤害结算后清空全部杀意
+			# （含本刀被动 +1），每 per 层生成一张 0 费消耗版基础功法入手中；手满则溢出不生成。
+			var sy: int = status_total(src, "shayi")
+			var copies: int = int(float(sy) / float(op.get("per", 5))) if sy > 0 else 0
+			if sy > 0:
+				_consume_stacks(src, "shayi", sy)
+			for i in copies:
+				if hand.size() >= HAND_CAP:
+					event.emit("手牌已满，多余副本未生成")
+					break
+				var spawn := _make_card_instance({"wid": String(src["id"]),
+					"sid": String(op.get("spawn", "miehun")), "dir": 0})
+				spawn["spell"]["cost"] = 0
+				spawn["exhaust"] = true
+				hand.push_back(spawn)
+			if sy > 0:
+				event.emit("灭魂斩·升一：清空 %d 层杀意，生成 %d 张 0 费「消耗」版基础灭魂斩" % [sy, copies])
 		"bug_recall":
 			var bugs := int(src.get("bugs", 0))
 			if bugs <= 0:
@@ -872,7 +885,6 @@ func _round_start() -> void:
 	_atk_energy_used = {}
 	_jg_first_used = {}
 	_fanji_used = {}
-	_free_sids = []
 	_mark_watch = {}
 	_turn_cards_played = 0
 	for a in allies:
@@ -1021,7 +1033,7 @@ func _run_side(side: Dictionary, e: Dictionary, target: Dictionary) -> void:
 			apply_status(target, String(side["sid"]), int(side["stacks"]), 0, -1,
 				side.get("abnormal", false), e)
 		"self_buff":
-			apply_status(e, String(side["sid"]), 1, int(side.get("value", 0)),
+			apply_status(e, String(side["sid"]), int(side.get("stacks", 1)), int(side.get("value", 0)),
 				int(side.get("rounds", -1)), false, e)
 
 func _intent_target(e: Dictionary, i: int) -> Dictionary:
@@ -1073,8 +1085,9 @@ func _tick_statuses() -> void:
 		for i in range(u["statuses"].size() - 1, -1, -1):
 			var s: Dictionary = u["statuses"][i]
 			var sid: String = s["sid"]
-			# 回合末 −1 层：格挡/抵抗/嘲讽
-			if sid in ["gebi", "dikang", "chaofeng"]:
+			# 回合末 −1 层：嘲讽（时长语义）
+			# 格挡/抵抗 2026-10-28 用户裁定改纯按次消耗：不随时间衰减不清空（StS Buffer/Artifact 制）
+			if sid == "chaofeng":
 				s["stacks"] = int(s["stacks"]) - 1
 			elif sid == "xuan":
 				s["stacks"] = 0
@@ -1180,8 +1193,9 @@ func intent_parts(e: Dictionary) -> Array:
 				parts.push_back({"g": DATA.STATUSES[side["sid"]]["glyph"]})
 	else:
 		for side in action.get("side", []):
-			if side.get("op") == "self_buff" and side["sid"] == "fangyu":
-				parts.push_back({"g": "防", "n": "+%d" % int(side.get("value", 0))})
+			if side.get("op") == "self_buff":
+				parts.push_back({"g": DATA.STATUSES[String(side["sid"])]["glyph"],
+					"n": "+%d" % int(side.get("stacks", side.get("value", 0)))})
 	return parts
 
 func intent_target(e: Dictionary) -> Dictionary:

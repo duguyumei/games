@@ -178,9 +178,6 @@ func _ready():
 	### Test data generation
 	GlobalTestDataGenerator.generate_test_data()
 
-	### qi-forge content (our game content; see qiforge/QiForgeDataGenerator.gd)
-	preload("res://qiforge/QiForgeDataGenerator.gd").generate_qiforge_data()
-
 	### Testing flags
 	ProfileData.ENABLE_ALL_DIFFICULTIES = true
 	StatsHandler.TRACK_RUN_HISTORY = true

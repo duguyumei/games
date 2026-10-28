@@ -87,14 +87,17 @@ func _run() -> void:
 	b.finish_round()
 	_eq("毒 5 层回合末 −5（间接直扣）", lieshou_hp - 5, int(lieshou["hp"]))
 	_eq("毒层 −1=4", 4, b.status_total(lieshou, "zhongdu"))
-	_eq("格挡回合末 −1 → 0", 0, b.status_total(dashou, "gebi"))
 	_eq("杀意回合末清空", 0, b.status_total(ym, "shayi"))
 
-	# 护盾回合末清空（直接驱动回合末结算）
+	# 护盾回合末清空＋格挡/抵抗纯按次不衰减（2026-10-28 用户裁定改制，直接驱动回合末结算）
 	b.apply_status(ts, "hudun", 1, 10)
+	b.apply_status(ts, "gebi", 2)
+	b.apply_status(ts, "dikang", 1)
 	_eq("天丝挂盾 10", 10, b._status_valued(ts, "hudun"))
 	b._tick_statuses()
 	_eq("护盾回合末清空", 0, b.status_total(ts, "hudun"))
+	_eq("格挡跨回合末不衰减", 2, b.status_total(ts, "gebi"))
+	_eq("抵抗跨回合末不衰减", 1, b.status_total(ts, "dikang"))
 
 	# —— 局二：青蛊铃蛊虫循环＋弹射＋召蛊 ——
 	var b2: RefCounted = QI_BATTLE.new()
@@ -315,6 +318,63 @@ func _run() -> void:
 	b8.resolve_damage(e8, ym8, 3.0, "功法", {"indirect": true})
 	_eq("间接不触发反击·敌不动", 50, int(e8["hp"]))
 	_eq("间接不触发反击·幽冥 34−3=31", 31, int(ym8["hp"]))
+
+	# —— 局九：灭魂斩·升一清杀意出「消耗」副本（2026-10-28 重做）＋消耗堆路由 ——
+	var b9: RefCounted = QI_BATTLE.new()
+	b9.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b9.start()
+	var ym9: Dictionary = b9.allies[0]
+	var d9: Dictionary = b9.enemies[0]
+	b9.apply_status(ym9, "shayi", 12)
+	b9.hand = [_card_dir(9900, "youming", 1, 1)]
+	var hp9: int = int(d9["hp"])
+	b9.play_card(9900, d9)
+	_eq("升一灭魂斩 20+3×8威+12杀意=56 跳防", hp9 - 56, int(d9["hp"]))
+	_eq("杀意清空（本刀被动 +1 亦被清）", 0, b9.status_total(ym9, "shayi"))
+	_eq("13 层（12+被动1）→ 副本 2 张", 2, b9.hand.size())
+	var c9: Dictionary = b9.hand[0]
+	_eq("副本 0 费", 0, b9.card_cost(c9))
+	_eq("副本带消耗标记", true, bool(c9.get("exhaust", false)))
+	d9["hp"] = 50
+	d9["mhp"] = 50
+	b9.play_card(int(c9["uid"]), d9)
+	_eq("副本伤害 10+8威=18（杀意已清）", 32, int(d9["hp"]))
+	_eq("副本打出进消耗堆", 1, b9.exhaust_pile.size())
+	_eq("弃牌堆只有原升一卡（dir=1，副本不回弃牌堆）", 1, b9.discard_pile.size())
+	_eq("弃牌堆内确为原升一卡", 1, int(b9.discard_pile[0]["dir"]))
+	b9.end_turn()
+	_eq("未打副本回合末冲弃 → 弃牌堆 2（原卡＋副本）", 2, b9.discard_pile.size())
+	_eq("消耗堆仍 1（冲弃不误进消耗堆）", 1, b9.exhaust_pile.size())
+
+	# —— 局十：面板状态具名制（2026-10-28 用户裁定）：力量/竭力/护甲/破甲/强度，±1/层、无持续时间 ——
+	var b10: RefCounted = QI_BATTLE.new()
+	b10.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b10.start()
+	var ym10: Dictionary = b10.allies[0]
+	var e10: Dictionary = b10.enemies[0]
+	ym10["hp"] = 300; ym10["mhp"] = 300   # 垫耐久防敌方阶段致死
+	var atk0: int = b10.atk_of(ym10)
+	b10.apply_status(ym10, "liliang", 3)
+	b10.apply_status(ym10, "jieli", 1)
+	_eq("力量3＋竭力1 → 攻击 +2", atk0 + 2, b10.atk_of(ym10))
+	var pow0: int = b10.pow_of(ym10)
+	b10.apply_status(ym10, "qiangdu", 4)
+	_eq("强度4 → 威力 +4", pow0 + 4, b10.pow_of(ym10))
+	var def0: int = b10.def_of(e10)
+	b10.apply_status(e10, "hujia", 5)
+	b10.apply_status(e10, "pojia", 2)
+	_eq("护甲5＋破甲2 → 防御 +3", def0 + 3, b10.def_of(e10))
+	b10.end_turn()
+	for i in b10.enemies.size():
+		b10.apply_enemy_action(i)
+	b10.finish_round()
+	_eq("力量/强度跨回合不消失（无持续时间）", true,
+		b10.status_total(ym10, "liliang") == 3 and b10.status_total(ym10, "qiangdu") == 4)
+	_eq("竭力/护甲/破甲跨回合不消失", true,
+		b10.status_total(ym10, "jieli") == 1 and b10.status_total(e10, "hujia") == 5
+		and b10.status_total(e10, "pojia") == 2)
 
 	_finish()
 

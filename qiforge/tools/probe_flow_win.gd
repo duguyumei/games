@@ -73,6 +73,20 @@ func _run() -> void:
 	if root_ctl.find_child("QiBattleScreen", false, false) != null:
 		fails.append("组毕战斗屏应移除")
 
+	# —— §3 组末守卫（2026-10-28 修「组毕再出战＝零敌人空战斗、只能手点结束回合收尾」）——
+	var prep := root_ctl.find_child("QiPrepBay", false, false)
+	var gb := (prep.find_child("GoButton", true, false) as Button) if prep else null
+	if gb == null:
+		fails.append("备战舱出战钮缺失")
+	else:
+		_eq("组末出战钮封死", true, gb.disabled)
+		_eq("组末出战钮文案", "已通关", gb.text)
+		gb.pressed.emit()
+		for i in 15:
+			await process_frame
+		if root_ctl.find_child("QiBattleScreen", false, false) != null:
+			fails.append("组末按键不得再出战（防空战斗）")
+
 	_finish()
 
 func _win_battle(screen: Control) -> void:

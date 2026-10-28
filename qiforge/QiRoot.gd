@@ -131,6 +131,14 @@ func _show_prep() -> void:
 	add_child(prep)
 
 func spawn_battle() -> void:
+	# 组末越界守卫（2026-10-28 修「组毕再出战＝零敌人空战斗，只能手点结束回合收尾」）：
+	# 无下一场时拒绝开战回备战；正常流程不该走到这（备用舱出战钮已封死），此处兜底。
+	var gi: int = int(_run.get("group", 0))
+	if gi >= QI_DATA.GROUPS.size() \
+			or int(_run.get("fight", 0)) >= QI_DATA.GROUPS[gi]["fights"].size():
+		push_warning("spawn_battle：无下一场（组末越界），拒绝开战")
+		_show_prep.call_deferred()
+		return
 	_snap = _run.duplicate(true)   # 战前快照（重战源；写档后再开战）
 	QISAVE.write(_run, _snap)
 	var bt := BATTLE.instantiate()

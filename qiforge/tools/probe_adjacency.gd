@@ -26,9 +26,9 @@ func _run() -> void:
 	b1.setup(_make_run())
 	b1.start()
 	b1.normal_attack(b1.allies[0], b1.enemies[0])
-	_expect(b1.has_status(b1.allies[0], "fangyu"), true, "局A 金刚盾自身得防御")
-	_expect(b1.has_status(b1.allies[1], "fangyu"), true, "局A 直邻幽冥剑得防御")
-	_expect(b1.has_status(b1.allies[2], "fangyu"), false, "局A 远位天丝不得防御")
+	_expect(b1.has_status(b1.allies[0], "hujia"), true, "局A 金刚盾自身得防御")
+	_expect(b1.has_status(b1.allies[1], "hujia"), true, "局A 直邻幽冥剑得防御")
+	_expect(b1.has_status(b1.allies[2], "hujia"), false, "局A 远位天丝不得防御")
 
 	## —— 局B：中位阵亡 → 跨死位 ——
 	var b2 = QIBATTLE.new()
@@ -37,9 +37,9 @@ func _run() -> void:
 	b2.allies[1]["alive"] = false
 	b2.allies[1]["hp"] = 0
 	b2.normal_attack(b2.allies[0], b2.enemies[0])
-	_expect(b2.has_status(b2.allies[0], "fangyu"), true, "局B 金刚盾自身得防御")
-	_expect(b2.has_status(b2.allies[1], "fangyu"), false, "局B 死者幽冥剑不得")
-	_expect(b2.has_status(b2.allies[2], "fangyu"), true, "局B 跨死位天丝得防御（动态相邻）")
+	_expect(b2.has_status(b2.allies[0], "hujia"), true, "局B 金刚盾自身得防御")
+	_expect(b2.has_status(b2.allies[1], "hujia"), false, "局B 死者幽冥剑不得")
+	_expect(b2.has_status(b2.allies[2], "hujia"), true, "局B 跨死位天丝得防御（动态相邻）")
 
 	print("ADJ_FAILS=%d" % fails.size())
 	for f in fails:

@@ -1171,12 +1171,18 @@ func _open_group_intel() -> void:
 	dialog.content().add_child(body)
 	dialog.popup_centered()
 
-## 出战：直接进战斗屏（不加确认）
+## 出战：直接进战斗屏（不加确认）；组末无下一场时封死（2026-10-28 修空战斗越界）
 func _build_go() -> void:
 	var b := Button.new()
 	b.name = "GoButton"
 	b.text = "出 战"
 	b.tooltip_text = "进入下一场战斗。"
+	var gi: int = int(run_data.get("group", 0))
+	var fights: Array = QI_DATA.GROUPS[gi]["fights"] if gi < QI_DATA.GROUPS.size() else []
+	if int(run_data.get("fight", 0)) >= fights.size():
+		b.disabled = true
+		b.text = "已通关"
+		b.tooltip_text = "本组全部场次已通关（后续内容待续）。"
 	b.pressed.connect(_on_go)
 	_anchor(b, 0.860, 0.886, 0.990, 0.977)
 	QISTYLE.apply_primary(b)

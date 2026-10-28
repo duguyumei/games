@@ -12,7 +12,7 @@ func _initialize() -> void:
 	_run()
 
 func _run() -> void:
-	# —— §1 spell_diff 句级断言（灭魂斩·升一：改伤害句/删杀意句/增同名零费句/费用行）——
+	# —— §1 spell_diff 句级断言（灭魂斩·升一：改伤害句/删杀意句/增清杀意出消耗副本句/费用行）——
 	var d1: Dictionary = QI_DATA.spell_diff("youming", "miehun", 1)
 	_eq("diff·费用变化标记", true, bool(d1["cost_changed"]))
 	_eq("diff·换名标记", true, bool(d1["name_changed"]))
@@ -21,7 +21,7 @@ func _run() -> void:
 		cls_count[String(l["cls"])] = int(cls_count.get(String(l["cls"]), 0)) + 1
 	_eq("diff·含改（伤害 10→20 句）", true, cls_count.has("mod"))
 	_eq("diff·含删（获得杀意句被删）", true, cls_count.has("del"))
-	_eq("diff·含增（同名 0 费句）", true, cls_count.has("add"))
+	_eq("diff·含增（清杀意出消耗副本句）", true, cls_count.has("add"))
 	_eq("diff·费用行居首且为改", "mod", String(d1["lines"][0]["cls"]))
 	# —— §2 索敌令·升一：费用不变；标记句同、翻倍句增、回能句改 ——
 	var d2: Dictionary = QI_DATA.spell_diff("youming", "suodi", 1)

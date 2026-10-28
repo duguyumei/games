@@ -32,8 +32,9 @@ func _run() -> void:
 		if String(c.name).begins_with("HandCard"):
 			hand_n += 1
 	_eq("手牌节点=4", 4, hand_n)
-	var energy := screen.find_child("EnergyStack", false, false) as Container
-	_eq("能量珠=3（青布衫上限）", 3, energy.get_child_count() if energy else -1)
+	var energy := screen.find_child("EnergyOrb", false, false)
+	var enlbl: Label = (energy.get_meta("num") as Label) if energy else null
+	_eq("能量数字=3（出厂上限；STS2 宝珠制）", "3", enlbl.text if enlbl else "<null>")
 	if screen.find_child("EndButton", false, false) == null:
 		fails.append("结束回合钮缺失")
 	var round_lbl := screen.find_child("RoundLbl", false, false) as Label
@@ -52,18 +53,19 @@ func _run() -> void:
 	for i in 5:
 		await process_frame
 	# 血条引用守卫：屏层事件重绑（_rebind）是异发的，旧 rec 可能整位换新——回读现役槽位
-	var hp_bar: ProgressBar = null
+	# （STS2 制血条＝自绘 Control 非 ProgressBar，断言走 rec["hplbl"] 文本）
+	var hp_lbl: Label = null
 	for i in 30:
-		if screen._enemy_slots.size() > 0 and screen._enemy_slots[0]["hp"] is ProgressBar:
-			hp_bar = screen._enemy_slots[0]["hp"]
+		if screen._enemy_slots.size() > 0 and screen._enemy_slots[0].get("hplbl", null) is Label:
+			hp_lbl = screen._enemy_slots[0]["hplbl"]
 			break
 		await process_frame
-	if hp_bar == null:
-		fails.append("敌方血条引用取不到（重绑竞态）")
+	if hp_lbl == null:
+		fails.append("敌方血条标签取不到（重绑竞态）")
 	else:
-		_eq("普攻+追击后打手血条=40", 40.0, float(hp_bar.value))
+		_eq("普攻+追击后打手血条=40/60", "40/60", hp_lbl.text)
 	var acts0 := screen._ally_slots[0]["acts"] as Label
-	_eq("攻次标签=0", "剩余攻击 0", acts0.text if acts0 != null else "<null>")
+	_eq("攻次珠数字=0", "0", acts0.text if acts0 != null else "<null>")
 	_eq("杀意获得=1（幽冥造成伤害）", 1, screen.battle.status_total(screen.battle.allies[0], "shayi"))
 
 	# 冲弃联动（v0.6 卡组制）：回合末整手进弃牌堆（手动弃置已退役）
