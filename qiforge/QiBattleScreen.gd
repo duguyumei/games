@@ -26,6 +26,8 @@ const SLOT_GAP := 55
 const STAT_ICON := 20
 const HAND_POP := Vector2(1.25, 1.25)   # 悬停弹起缩放＝详情档等效（216×304×1.25＝270×380）
 const C_DEF := Color("57b8d6")   # 防御意图蓝
+const C_SPELL := Color("b48ae0")  # 功法伤意图紫（无视防御）
+const C_POISON := Color("a86ad0") # 毒/间接意图
 ## 伤害飘字配色（蓝本 DemageTip 制：按伤害类型染前后色）
 const FX_COLORS := {"普攻": Color("ff8a70"), "功法": Color("b48ae0"), "真伤": Color("f2f2ec"),
 	"间接": Color("f2f2ec"), "中毒": Color("a86ad0"), "治疗": Color("8fd08a"), "护盾": Color("8ab8d0"),
@@ -1514,6 +1516,14 @@ func _on_event(text: String) -> void:
 func _rebind() -> void:
 	if not is_inside_tree():
 		return
+	# 召唤入场＝敌方行动态重建（槽位数随 enemies 实长）
+	if _enemy_slots.size() != battle.enemies.size():
+		var old_row := find_child("EnemyRow", false, false)
+		_enemy_slots = []
+		if old_row != null:
+			old_row.get_parent().remove_child(old_row)
+			old_row.queue_free()
+		_build_enemy_row()
 	_round_lbl.text = "回合 %d" % battle.round_no
 	_cur_lbl.text = "铜钱 %d" % int(run_data.get("copper", 0))
 	_build_energy_stack()
@@ -1589,7 +1599,9 @@ func _fill_intent_chip(chip: PanelContainer, parts: Array) -> void:
 			var num := Label.new()
 			num.text = String(p["n"])
 			QISTYLE.font(num, 16, true)
-			num.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
+			# 数值随伤害型着色（攻红/法紫/毒），状态数字仍主色
+			num.add_theme_color_override("font_color",
+				tint if String(p["g"]) in ["攻", "法", "毒"] else QISTYLE.TEXT_MAIN)
 			box.add_child(num)
 	chip.add_child(box)
 
@@ -1597,13 +1609,22 @@ func _intent_border(parts: Array) -> Color:
 	for p in parts:
 		if p["g"] == "攻":
 			return QISTYLE.RED
+		if p["g"] == "法":
+			return C_SPELL
+		if p["g"] == "毒":
+			return C_POISON
 		if p["g"] == "防":
 			return C_DEF
 	return QISTYLE.PURPLE
 
+## 意图着色＝伤害三型可辨（2026-10-28 用户裁定）：攻红（过我方防御）／法紫（无视防御）／毒毒色
 func _glyph_tint(g: String) -> Color:
 	if g == "攻":
 		return Color("e88a70")
+	if g == "法":
+		return C_SPELL
+	if g == "毒":
+		return C_POISON
 	if g == "防":
 		return C_DEF
 	return QISTYLE.PURPLE

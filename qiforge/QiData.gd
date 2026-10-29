@@ -608,7 +608,7 @@ const STATUSES := {
 	"chaofeng": {"name": "嘲讽", "glyph": "嘲", "cls": "控制", "color": "b48ae0",
 		"desc": "普攻必须先打嘲讽者；回合末层 -1。"},
 	"biaoji": {"name": "标记", "glyph": "记", "cls": "协同", "color": "e0c26a", "debuff": true,
-		"desc": "减益状态；跨武器协同锚；可多敌共存。"},
+		"desc": "敌方攻击类伤害优先命中被标记者（无视嘲讽）；跨武器协同锚；可多敌共存。"},
 	"zhongdu": {"name": "中毒", "glyph": "毒", "cls": "掉血", "color": "a86ad0", "abnormal": true, "debuff": true,
 		"desc": "回合结束受到等于层数的间接伤害（穿盾穿挡），层 -1。"},
 	"poxian": {"name": "破绽", "glyph": "破", "cls": "易伤", "color": "e07a6a", "abnormal": true, "debuff": true,
@@ -648,151 +648,115 @@ const STATUSES := {
 }
 #endregion
 
-#region 敌方（敌方设计 v0.1：五原型×六组档×场阶；行动池功法化——数值吃属性缩放；被动全走回合时钟）
-## 原型＝被动＋行动池（行动与玩家功法同套数学：普攻吃攻击×倍率、功法吃 value＋威力缩放）；
-## 死亡螺旋律（硬规则）：敌方成长只看回合数与自身行动，永不看玩家状态、不吃玩家失误。
-const ENEMY_THEMES := ["黑风", "野狼", "双锋", "荒骨", "血衣", "两仪殿"]
-
-const ENEMY_ARCH := {
-	"zhanshi": {"seal": "武", "uname": "刀客",
+#region 敌方（敌方设计 v0.2：G1 三场；伤害三型＝攻击伤（过我方防御）／功法伤（无视防御）／毒（间接）；
+## 敌方护盾＝撑过我方回合、于该敌下次行动开始才清；行动池数值吃属性缩放（普攻吃攻击×倍率、功法吃 value＋威力））
+const ENEMIES := {
+	"zhanshi": {
+		"name": "黑风刀客", "seal": "武",
+		"panel": {"hp": 92, "atk": 15, "def": 8, "res": 0, "pow": 0, "acts": 1},
 		"passive": {"id": "zhan_yi", "name": "战意", "hook": "round_start", "sid": "liliang", "stacks": 1,
 			"desc": "每回合开始获得 1 层力量。"},
 		"actions": [
 			{"id": "huiji", "name": "挥击", "kind": "attack", "channel": "普攻", "mult": 1.0,
-				"tip": "挥击：对一件器灵造成 100% 攻击的外伤（已计入防御与破绽）。"},
-			{"id": "mengji", "name": "猛击", "kind": "attack", "channel": "普攻", "mult": 1.4, "cd": 2,
-				"tip": "猛击（冷却 2 回合）：对一件器灵造成 140% 攻击的外伤。"},
+				"tip": "挥击：攻击伤害（过我方防御），100% 攻击。"},
+			{"id": "mengji", "name": "猛击", "kind": "attack", "channel": "普攻", "mult": 1.4, "per_pow": 1, "self_stun": true,
+				"tip": "猛击：攻击伤害（过我方防御），140% 攻击＋每点威力 +1；结算后眩晕自身（下回合无法行动）。"},
 			{"id": "xushi", "name": "蓄势", "kind": "buff",
-				"side": [{"op": "self_buff", "sid": "liliang", "stacks": 2}],
-				"tip": "蓄势：自身获得 2 层力量。"},
-		]},
-	"sheshou": {"seal": "箭", "uname": "猎手",
-		"passive": {"id": "chuan_yang", "name": "穿杨", "hook": "on_hit", "sid": "poxian", "stacks": 1,
-			"desc": "攻击命中后，目标获得 1 层破绽。"},
+				"side": [{"op": "self_buff", "sid": "hudun", "stacks": 1, "value": 8},
+					{"op": "self_buff", "sid": "qiangdu", "stacks": 1}],
+				"tip": "蓄势：获得 8 点护盾与 1 层强度。"},
+		],
+	},
+	"sheshou": {
+		"name": "黑风猎手", "seal": "箭",
+		"panel": {"hp": 49, "atk": 12, "def": 6, "res": 0, "pow": 6, "acts": 1},
+		"passive": {"id": "chuan_jia", "name": "穿甲", "hook": "on_hit", "sid": "pojia", "stacks": 1, "abnormal": false,
+			"desc": "造成伤害后，目标获得 1 层破甲。"},
 		"actions": [
 			{"id": "sheji", "name": "射击", "kind": "attack", "channel": "普攻", "mult": 1.0,
-				"tip": "射击：造成 100% 攻击外伤。"},
-			{"id": "miaozhun", "name": "瞄准", "kind": "buff",
-				"side": [{"op": "self_buff", "sid": "liliang", "stacks": 2}],
-				"tip": "瞄准：自身获得 2 层力量。"},
-			{"id": "lianzhu", "name": "连珠", "kind": "attack", "channel": "普攻", "mult": 0.6, "hits": 2,
-				"tip": "连珠：造成 2 次 60% 攻击外伤（每次命中挂 1 层破绽）。"},
-		]},
-	"fuzhu": {"seal": "祝", "uname": "巫祝",
-		"passive": {"id": "hao_ling", "name": "号令", "hook": "round_end_ally", "sid": "liliang", "stacks": 1,
-			"desc": "每回合结束，随机一名其他友军获得 1 层力量。"},
+				"tip": "射击：攻击伤害（过我方防御），100% 攻击。"},
+			{"id": "miaozhun", "name": "瞄准", "kind": "buff", "cd": 3,
+				"side": [{"op": "mark_ally", "poxian": 1, "rounds": 2}],
+				"tip": "瞄准（冷却 3 回合）：标记一件我方器灵并施加 1 层破绽（持续 2 回合）；敌方攻击优先集火被标记者（无视嘲讽）。"},
+			{"id": "lianzhu", "name": "连珠", "kind": "attack", "channel": "普攻", "mult": 0.6, "hits_base": 2, "hits_pow_step": 6,
+				"tip": "连珠：攻击伤害（过我方防御），2 段 60% 攻击，每 6 点威力 +1 段。"},
+		],
+	},
+	"fuzhu": {
+		"name": "黑风巫祝", "seal": "祝",
+		"panel": {"hp": 45, "atk": 6, "def": 4, "res": 0, "pow": 12, "acts": 1},
+		"passive": {"id": "zhu_dao", "name": "祝祷", "hook": "round_start_adj_shield", "value": 5, "pow_step": 4,
+			"desc": "每回合开始，相邻友军获得 5（每 4 点威力 +1）点护盾。"},
 		"actions": [
-			{"id": "guwu", "name": "蛊雾", "kind": "attack", "channel": "功法", "value": 8, "pow_step": 2,
-				"tip": "蛊雾：造成 8（每 2 点威力 +1）点功法伤害（无视防御，护盾/格挡可挡）。"},
-			{"id": "shouli", "name": "授力", "kind": "buff",
-				"side": [{"op": "ally_buff", "sid": "liliang", "stacks": 2}],
-				"tip": "授力：随机一名其他友军获得 2 层力量。"},
-			{"id": "liaoshang", "name": "疗伤", "kind": "buff",
-				"side": [{"op": "heal", "value": 8, "pow_step": 4}],
-				"tip": "疗伤：为受伤最重的友军回复 8（每 4 点威力 +1）点耐久。"},
-		]},
-	"dun": {"seal": "岩", "uname": "力士",
-		"passive": {"id": "tie_gu", "name": "铁骨", "hook": "round_end", "sid": "hujia", "stacks": 2,
-			"desc": "每回合结束获得 2 层护甲。"},
-		"actions": [
-			{"id": "chongchui", "name": "重锤", "kind": "attack", "channel": "普攻", "mult": 1.1,
-				"tip": "重锤：造成 110% 攻击外伤。"},
-			{"id": "gedang", "name": "格挡姿", "kind": "buff",
-				"side": [{"op": "self_buff", "sid": "hujia", "stacks": 4}],
-				"tip": "格挡姿：自身获得 4 层护甲。"},
-			{"id": "nuhou", "name": "怒吼", "kind": "buff",
-				"side": [{"op": "self_buff", "sid": "chaofeng", "stacks": 1, "rounds": 1},
-					{"op": "self_buff", "sid": "hudun", "stacks": 1, "value": 6}],
-				"tip": "怒吼：自身嘲讽 1 回合并获得 6 点护盾。"},
-		]},
-	"boss": {"seal": "仪", "uname": "两仪剑主",
-		"passive": {"id": "yi_dao_yi_jian", "name": "亦刀亦剑", "hook": "form",
-			"desc": "奇数回合刀形态（刀系行动池，回合结束+1 层强度）；偶数回合剑形态（剑系行动池，回合结束+1 层攻击）。"},
-		"actions": [
-			{"id": "hengzhan", "name": "横斩", "kind": "attack", "channel": "普攻", "mult": 1.0, "form": "dao",
-				"tip": "横斩：造成 100% 攻击外伤。"},
-			{"id": "liekong", "name": "裂空斩", "kind": "attack", "channel": "普攻", "mult": 1.4, "cd": 2, "form": "dao",
-				"tip": "裂空斩（冷却 2 回合）：造成 140% 攻击外伤。"},
-			{"id": "daoshi", "name": "刀势", "kind": "buff", "form": "dao",
-				"side": [{"op": "self_buff", "sid": "liliang", "stacks": 2}],
-				"tip": "刀势：自身获得 2 层力量。"},
-			{"id": "pojiazh", "name": "破甲斩", "kind": "attack", "channel": "普攻", "mult": 0.8, "form": "dao",
-				"side": [{"op": "status", "sid": "pojia", "stacks": 2, "to": "target"}],
-				"tip": "破甲斩：造成 80% 攻击外伤并施加 2 层破甲。"},
-			{"id": "jianqi", "name": "剑气", "kind": "attack", "channel": "功法", "value": 8, "per_pow": 1, "form": "jian",
-				"tip": "剑气：造成 8（每点威力 +1）点功法伤害（无视防御）。"},
-			{"id": "jianwu", "name": "剑舞", "kind": "attack", "channel": "功法", "value": 4, "per_pow": 1, "hits": 2, "form": "jian",
-				"tip": "剑舞：造成 2 次各 4（每点威力 +1）点功法伤害。"},
-			{"id": "jianxin", "name": "剑心", "kind": "buff", "form": "jian",
+			{"id": "ningshen", "name": "凝神", "kind": "buff",
 				"side": [{"op": "self_buff", "sid": "qiangdu", "stacks": 2}],
-				"tip": "剑心：自身获得 2 层强度。"},
-		]},
+				"tip": "凝神：自身获得 2 层强度。"},
+			{"id": "fengxue_zhou", "name": "封穴咒", "kind": "buff",
+				"side": [{"op": "fengxue_random", "stacks": 2, "rounds": 2}],
+				"tip": "封穴咒：随机一件我方器灵获得 2 层封穴（受到的功法伤害 +1/层），持续 2 回合。"},
+			{"id": "shigu", "name": "蚀骨", "kind": "attack", "channel": "功法", "value": 4, "pow_step": 2,
+				"tip": "蚀骨：功法伤害（无视我方防御），4＋每 2 点威力 +1。"},
+		],
+	},
+	"dun": {
+		"name": "黑风力士", "seal": "岩",
+		"panel": {"hp": 130, "atk": 11, "def": 9, "res": 0, "pow": 0, "acts": 1},
+		"passive": {"id": "si_zhou", "name": "死咒", "hook": "on_death",
+			"desc": "死亡时，我方攻击力最高的器灵获得 3 层虚弱。"},
+		"actions": [
+			{"id": "bilei", "name": "壁垒", "kind": "buff",
+				"side": [{"op": "self_buff", "sid": "hudun", "stacks": 1, "value": 8},
+					{"op": "self_buff", "sid": "chaofeng", "stacks": 1, "rounds": 1}],
+				"tip": "壁垒：获得 8 点护盾与嘲讽（1 回合）。"},
+			{"id": "tiebizhen", "name": "铁壁阵", "kind": "buff",
+				"side": [{"op": "adj_armor", "stacks": 2}],
+				"tip": "铁壁阵：自身与相邻单位各获得 2 层护甲。"},
+			{"id": "chuiji", "name": "挥击", "kind": "attack", "channel": "普攻", "mult": 1.0,
+				"tip": "挥击：攻击伤害（过我方防御），100% 攻击。"},
+		],
+	},
+	"boss": {
+		"name": "两仪剑主", "seal": "仪",
+		"panel": {"hp": 210, "atk": 20, "def": 6, "res": 0, "pow": 16, "acts": 1},
+		"passive": {"id": "yi_dao_yi_jian", "name": "亦刀亦剑", "hook": "form",
+			"desc": "奇数回合刀形态（刀系行动池），偶数回合剑形态（剑系行动池）。"},
+		"actions": [
+			{"id": "zhantie", "name": "斩铁", "kind": "attack", "channel": "普攻", "mult": 1.2, "form": "dao",
+				"tip": "斩铁：攻击伤害（过我方防御），120% 攻击。"},
+			{"id": "yuzhao", "name": "御召", "kind": "buff", "cd": 3,
+				"side": [{"op": "summon", "summons": ["daonu", "jianpu"]}],
+				"tip": "御召（冷却 3 回合）：召唤刀奴与剑仆（已存活者不重复召唤；召唤物落地回合不行动）。"},
+			{"id": "jiangang", "name": "剑罡", "kind": "attack", "channel": "功法", "value": 8, "per_pow": 1, "form": "jian",
+				"tip": "剑罡：功法伤害（无视我方防御），8＋每点威力 +1。"},
+		],
+	},
+	"daonu": {
+		"name": "刀奴", "seal": "刃",
+		"panel": {"hp": 18, "atk": 0, "def": 0, "res": 0, "pow": 0, "acts": 1},
+		"passive": {},
+		"actions": [
+			{"id": "shouren", "name": "授刃", "kind": "buff",
+				"side": [{"op": "ally_buff", "sid": "liliang", "stacks": 1}],
+				"tip": "授刃：随机一名其他友军获得 1 层力量。"},
+		],
+	},
+	"jianpu": {
+		"name": "剑仆", "seal": "锋",
+		"panel": {"hp": 18, "atk": 0, "def": 0, "res": 0, "pow": 8, "acts": 1},
+		"passive": {},
+		"actions": [
+			{"id": "shoufeng", "name": "授锋", "kind": "buff",
+				"side": [{"op": "ally_buff", "sid": "qiangdu", "stacks": 1}],
+				"tip": "授锋：随机一名其他友军获得 1 层强度。"},
+		],
+	},
 }
-
-## 六组档数值（[耐久, 攻击, 防御, 威力]；场阶＝档内 F1→F3 耐久 +7%/场，其余轴不动）
-const ENEMY_TIERS := {
-	"zhanshi": [[92, 15, 8, 0], [95, 17, 8, 0], [118, 19, 9, 0], [135, 21, 10, 0], [155, 24, 11, 0], [178, 27, 12, 0]],
-	"sheshou": [[49, 12, 6, 0], [52, 13, 6, 0], [63, 15, 7, 0], [72, 17, 8, 0], [83, 19, 8, 0], [95, 21, 9, 0]],
-	"fuzhu": [[45, 6, 4, 12], [52, 7, 4, 14], [59, 8, 5, 16], [68, 9, 5, 18], [78, 10, 6, 21], [90, 11, 6, 24]],
-	"dun": [[130, 11, 9, 0], [150, 12, 10, 0], [172, 14, 11, 0], [198, 15, 12, 0], [228, 16, 12, 0], [262, 18, 14, 0]],
-	"boss": [[210, 20, 6, 16], [210, 20, 6, 16], [210, 20, 6, 16], [210, 20, 6, 16], [210, 20, 6, 16], [260, 24, 8, 22]],
-}
-
-static var ENEMIES := _build_enemies()
-
-static func _build_enemies() -> Dictionary:
-	var out := {}
-	for arch in ENEMY_ARCH:
-		var spec: Dictionary = ENEMY_ARCH[arch]
-		for g in 6:
-			var tier: Array = ENEMY_TIERS[arch][g]
-			for t in 3:
-				var hp := int(round(float(tier[0]) * (1.0 + 0.07 * t)))
-				var eid := "%s_g%d_t%d" % [arch, g + 1, t + 1]
-				var nm := ""
-				if arch == "boss":
-					nm = "两仪剑主" if g < 5 else "两仪剑主·极"
-				else:
-					nm = String(ENEMY_THEMES[g]) + String(spec["uname"])
-					if t == 2:
-						nm += "·头目"
-				out[eid] = {"name": nm, "seal": String(spec["seal"]),
-					"panel": {"hp": hp, "atk": int(tier[1]), "def": int(tier[2]), "res": 0,
-						"pow": int(tier[3]), "acts": 1},
-					"passive": (spec["passive"] as Dictionary).duplicate(true),
-					"actions": (spec["actions"] as Array).duplicate(true)}
-	return out
 
 const GROUPS := [
 	{"name": "第 1 组 · 黑风寨", "fights": [
-		{"label": "第 1 场", "enemies": ["zhanshi_g1_t1", "sheshou_g1_t1"], "reward": 30},
-		{"label": "第 2 场", "enemies": ["zhanshi_g1_t2", "sheshou_g1_t2"], "reward": 30},
-		{"label": "第 3 场", "enemies": ["zhanshi_g1_t3", "sheshou_g1_t3"], "reward": 30, "boss": true},
-	]},
-	{"name": "第 2 组 · 野狼帮", "fights": [
-		{"label": "第 1 场", "enemies": ["zhanshi_g2_t1", "zhanshi_g2_t1", "sheshou_g2_t1", "fuzhu_g2_t1"], "reward": 40},
-		{"label": "第 2 场", "enemies": ["zhanshi_g2_t2", "zhanshi_g2_t2", "sheshou_g2_t2", "fuzhu_g2_t2"], "reward": 40},
-		{"label": "第 3 场", "enemies": ["zhanshi_g2_t3", "zhanshi_g2_t3", "sheshou_g2_t3", "fuzhu_g2_t3"], "reward": 40, "boss": true},
-	]},
-	{"name": "第 3 组 · 双锋阁", "fights": [
-		{"label": "第 1 场", "enemies": ["zhanshi_g3_t1", "sheshou_g3_t1", "fuzhu_g3_t1"], "reward": 45},
-		{"label": "第 2 场", "enemies": ["dun_g3_t1", "sheshou_g3_t1", "sheshou_g3_t1"], "reward": 50},
-		{"label": "第 3 场", "enemies": ["boss_g3_t1", "dun_g3_t1", "fuzhu_g3_t1"], "reward": 60, "boss": true, "grant": "liangyi"},
-	]},
-	{"name": "第 4 组 · 荒骨盟", "fights": [
-		{"label": "第 1 场", "enemies": ["zhanshi_g4_t1", "zhanshi_g4_t1", "sheshou_g4_t1", "fuzhu_g4_t1"], "reward": 60},
-		{"label": "第 2 场", "enemies": ["zhanshi_g4_t2", "zhanshi_g4_t2", "sheshou_g4_t2", "fuzhu_g4_t2"], "reward": 60},
-		{"label": "第 3 场", "enemies": ["zhanshi_g4_t3", "zhanshi_g4_t3", "sheshou_g4_t3", "fuzhu_g4_t3"], "reward": 60, "boss": true},
-	]},
-	{"name": "第 5 组 · 血衣楼", "fights": [
-		{"label": "第 1 场", "enemies": ["zhanshi_g5_t1", "dun_g5_t1", "sheshou_g5_t1"], "reward": 70},
-		{"label": "第 2 场", "enemies": ["zhanshi_g5_t2", "dun_g5_t2", "sheshou_g5_t2"], "reward": 70},
-		{"label": "第 3 场", "enemies": ["zhanshi_g5_t3", "dun_g5_t3", "sheshou_g5_t3"], "reward": 70, "boss": true},
-	]},
-	{"name": "第 6 组 · 两仪殿", "fights": [
-		{"label": "第 1 场", "enemies": ["dun_g6_t1", "sheshou_g6_t1", "sheshou_g6_t1", "fuzhu_g6_t1"], "reward": 80},
-		{"label": "第 2 场", "enemies": ["dun_g6_t2", "sheshou_g6_t2", "sheshou_g6_t2", "fuzhu_g6_t2"], "reward": 80},
-		{"label": "第 3 场", "enemies": ["boss_g6_t1", "dun_g6_t1", "fuzhu_g6_t1"], "reward": 90, "boss": true},
+		{"label": "第 1 场", "enemies": ["zhanshi", "sheshou"], "reward": 30},
+		{"label": "第 2 场", "enemies": ["zhanshi", "zhanshi", "sheshou", "fuzhu"], "reward": 40},
+		{"label": "第 3 场", "enemies": ["boss", "dun", "fuzhu"], "reward": 60, "boss": true, "grant": "liangyi"},
 	]},
 ]
 

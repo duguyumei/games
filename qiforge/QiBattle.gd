@@ -50,6 +50,7 @@ var _forms := {}                   # uid -> "dao"/"jian"（两仪刀剑形态；
 var _cost_cut := {}                # card uid -> 本回合临时降费额（两仪升1；回合末清）
 var _round_spell_used := false     # 本回合已打出过功法（两仪配件3「回合首功法 −1」充能判定）
 var _playing_uid := -1             # 正在结算的卡 uid（两仪升1 随机降费排除其自身）
+var _spawned_this_turn := {}       # uid -> 本回合入场（召唤物落地回合不行动）
 # —— 防环（蓝本伤害管线制）——
 var _chain: Array = []
 var _in_pursuit := false   # 追击链内（命中上报改标「追击」——飘字/受击由追击自己的命中帧接管）
@@ -161,40 +162,38 @@ func _enemy_form(e: Dictionary) -> String:
 		return ""
 	return "dao" if round_no % 2 == 1 else "jian"
 
-## 敌方回合开始被动（死亡螺旋律：只看回合时钟）——先于掷意图，成长即时入意图显示
+## 敌方回合开始被动——先于掷意图，成长即时入意图显示
 func _enemy_round_start_passives() -> void:
-	for e in enemies:
-		if not e["alive"] or String(e.get("passive", {}).get("hook", "")) != "round_start":
-			continue
-		apply_status(e, String(e["passive"].get("sid", "liliang")), int(e["passive"].get("stacks", 1)))
-		event.emit("「%s」被动「%s」发动" % [e["name"], String(e["passive"].get("name", ""))])
-	# 形态切换预告（意图池随形态过滤，提前一拍可见）
-	for e in enemies:
-		if e["alive"] and _enemy_form(e) != "":
-			event.emit("「%s」转入%s形态" % [e["name"], "刀" if _enemy_form(e) == "dao" else "剑"])
-
-## 敌方回合结束被动＋两仪剑主交叉成长（刀态回合结束+1 强度／剑态+1 力量）
-func _enemy_round_end_passives() -> void:
+	_spawned_this_turn = {}
 	for e in enemies:
 		if not e["alive"]:
 			continue
 		var ph := String(e.get("passive", {}).get("hook", ""))
-		if ph == "round_end":
-			apply_status(e, String(e["passive"].get("sid", "hujia")), int(e["passive"].get("stacks", 2)))
-		elif ph == "round_end_ally":
-			var pool5: Array = []
-			for o in enemies:
-				if o["alive"] and o["uid"] != e["uid"]:
-					pool5.push_back(o)
-			if not pool5.is_empty():
-				var lucky5: Dictionary = pool5[rng.randi_range(0, pool5.size() - 1)]
-				apply_status(lucky5, String(e["passive"].get("sid", "liliang")), int(e["passive"].get("stacks", 1)))
-				event.emit("号令：「%s」获得力量" % lucky5["name"])
+		if ph == "round_start":
+			apply_status(e, String(e["passive"].get("sid", "liliang")), int(e["passive"].get("stacks", 1)))
+			event.emit("「%s」被动「%s」发动" % [e["name"], String(e["passive"].get("name", ""))])
+		elif ph == "round_start_adj_shield":
+			# 祝祷：相邻友军获盾（撑过我方回合，于各自下次行动开始才清——敌方护盾持续制）
+			var amt5 := int(e["passive"].get("value", 5)) \
+				+ int(float(pow_of(e)) / float(e["passive"].get("pow_step", 4)))
+			for t5 in _adjacent_in(enemies, e):
+				apply_status(t5, "hudun", 1, amt5)
+			event.emit("祝祷：「%s」的相邻友军获得 %d 点护盾" % [e["name"], amt5])
 		elif ph == "form":
-			if _enemy_form(e) == "dao":
-				apply_status(e, "qiangdu", 1)
-			else:
-				apply_status(e, "liliang", 1)
+			event.emit("「%s」转入%s形态" % [e["name"], "刀" if _enemy_form(e) == "dao" else "剑"])
+
+## 召唤入场（两仪剑主·御召）：已存活者不重复；落地回合不行动
+func summon_enemy(eid: String) -> void:
+	if not DATA.ENEMIES.has(eid):
+		return
+	for o in enemies:
+		if String(o["id"]) == eid and o["alive"]:
+			return
+	enemies.push_back(_make_enemy(eid))
+	var nu: Dictionary = enemies[enemies.size() - 1]
+	_enemy_intent.push_back({})
+	_spawned_this_turn[int(nu["uid"])] = true
+	event.emit("召唤：「%s」入场" % nu["name"])
 
 ## 插件1（通用）：攻/防/威力 +100% 起，每回合末 −20 个百分点（只此一条百分比源）
 func _pct_of(u: Dictionary) -> float:
@@ -517,13 +516,22 @@ func _consume_stacks(u: Dictionary, sid: String, n: int) -> void:
 			u["statuses"].remove_at(i)
 
 func _on_death(src: Dictionary, dst: Dictionary) -> void:
-	var marked := status_total(dst, "biaoji") > 0
 	var poison_left := status_total(dst, "zhongdu")
 	var bugs_left := int(dst.get("bugs_on", 0))
+	var death_passive := String(dst.get("passive", {}).get("hook", "")) == "on_death"
 	dst["alive"] = false
 	dst["statuses"] = []
 	event.emit("「%s」离场" % dst["name"])
 	if dst["side"] == "enemy":
+		# 死咒（力士）：我方攻击力最高的器灵获得 3 层虚弱
+		if death_passive:
+			var best: Dictionary = {}
+			for a in allies:
+				if a["alive"] and (best.is_empty() or atk_of(a) > atk_of(best)):
+					best = a
+			if not best.is_empty():
+				apply_status(best, "xuruo", 3)
+				event.emit("死咒：「%s」获得 3 层虚弱" % best["name"])
 		# 索敌令：本回合被标记者死亡 → 回能（挂账表触发）
 		if _mark_watch.has(dst["uid"]):
 			gain_energy(int(_mark_watch[dst["uid"]]))
@@ -729,20 +737,24 @@ func _self_and_adjacent(a: Dictionary) -> Array:
 	return out
 
 func _adjacent(a: Dictionary) -> Array:
+	return _adjacent_in(allies, a)
+
+## 动态相邻（左右各取最近存活者，阵亡不占位——敌我两侧同制）
+func _adjacent_in(arr: Array, u: Dictionary) -> Array:
 	var out: Array = []
-	var idx := allies.find(a)
+	var idx := arr.find(u)
 	if idx < 0:
 		return out
 	var lo := idx - 1
-	while lo >= 0 and not allies[lo]["alive"]:
+	while lo >= 0 and not arr[lo]["alive"]:
 		lo -= 1
 	if lo >= 0:
-		out.push_back(allies[lo])
+		out.push_back(arr[lo])
 	var hi := idx + 1
-	while hi < allies.size() and not allies[hi]["alive"]:
+	while hi < arr.size() and not arr[hi]["alive"]:
 		hi += 1
-	if hi < allies.size():
-		out.push_back(allies[hi])
+	if hi < arr.size():
+		out.push_back(arr[hi])
 	return out
 
 ## 延迟队列（v3：反震/反击已改即时插入，本队列只剩尸毒扩散）
@@ -1234,6 +1246,10 @@ func apply_enemy_action(i: int) -> void:
 	var e: Dictionary = enemies[i]
 	if not e["alive"]:
 		return
+	# 敌方护盾持续制：撑过我方回合、本次行动开始才清（我方护盾仍回合末清）
+	_consume_stacks(e, "hudun", 999)
+	if _spawned_this_turn.has(int(e["uid"])):
+		return   # 召唤物落地回合不行动
 	var intent: Dictionary = _enemy_intent[i] if i < _enemy_intent.size() else {}
 	if intent.is_empty():
 		return
@@ -1249,42 +1265,57 @@ func apply_enemy_action(i: int) -> void:
 		_cd_left[e["uid"]] = cds
 	if has_status(e, "xuan"):
 		event.emit("「%s」眩晕，无法行动" % e["name"])
+		_consume_stacks(e, "xuan", 999)   # 敌方眩晕＝跳过本次行动即消耗（不待回合末）
 		return
 	event.emit("「%s」使用「%s」" % [e["name"], action["name"]])
 	if String(action["kind"]) == "attack":
 		var target := _intent_target(e, i)
 		if target.is_empty():
 			return
-		# 行动池功法化（敌方设计 v0.1 §六）：普攻＝攻击×倍率（过我方防御）；功法＝value＋威力缩放（直伤）
+		# 行动池功法化：攻击伤＝（攻击×倍率＋威力缩放）过我方防御；功法伤＝value＋威力缩放（无视防御）
+		var hits5 := int(action.get("hits", 1))
+		if action.has("hits_base"):
+			hits5 = int(action["hits_base"])
+		if action.has("hits_pow_step"):
+			hits5 += int(float(pow_of(e)) / float(action["hits_pow_step"]))
 		if String(action.get("channel", "普攻")) == "功法":
 			var base5 := float(action.get("value", 0))
 			if action.has("per_pow"):
 				base5 += float(action["per_pow"]) * float(pow_of(e))
 			if action.has("pow_step"):
 				base5 += float(int(float(pow_of(e)) / float(action["pow_step"])))
-			for h5 in int(action.get("hits", 1)):
+			for h5 in hits5:
 				if not target.get("alive", false) or not e["alive"]:
 					break
 				if resolve_damage(e, target, base5, "功法") > 0:
 					_enemy_on_hit_passive(e, target)
 		else:
-			var m5 := float(action.get("mult", 1.0))
-			for h5 in int(action.get("hits", 1)):
+			var m5 := float(atk_of(e)) * float(action.get("mult", 1.0))
+			if action.has("per_pow"):
+				m5 += float(action["per_pow"]) * float(pow_of(e))
+			if action.has("pow_step"):
+				m5 += float(int(float(pow_of(e)) / float(action["pow_step"])))
+			for h5 in hits5:
 				if not target.get("alive", false) or not e["alive"]:
 					break
-				if resolve_damage(e, target, float(atk_of(e)) * m5, "普攻") > 0:
+				if resolve_damage(e, target, m5, "普攻") > 0:
 					_enemy_on_hit_passive(e, target)
+		# 猛击·自眩（打完跳过下回合行动）
+		if bool(action.get("self_stun", false)) and e["alive"]:
+			apply_status(e, "xuan", 1)
+			event.emit("「%s」力竭眩晕" % e["name"])
 		for side in action.get("side", []):
 			_run_side(side, e, target)
 	else:
 		for side in action.get("side", []):
 			_run_side(side, e, {})
 
-## 命中型敌方被动（穿杨：攻击命中后目标 1 层破绽——自身行动触发，死亡螺旋律合规）
+## 命中型敌方被动（穿甲：造成伤害后目标挂层——逐段独立）
 func _enemy_on_hit_passive(e: Dictionary, target: Dictionary) -> void:
 	if String(e.get("passive", {}).get("hook", "")) == "on_hit" and target.get("alive", false):
-		apply_status(target, String(e["passive"].get("sid", "poxian")),
-			int(e["passive"].get("stacks", 1)), 0, -1, true, e)
+		apply_status(target, String(e["passive"].get("sid", "pojia")),
+			int(e["passive"].get("stacks", 1)), 0, -1,
+			bool(e["passive"].get("abnormal", false)), e)
 	_drain_deferred()
 	check_end()
 	changed.emit()   # 每敌一刷（2026-10-28 时序裁定：飘字在命中帧弹、血条也必须同帧降——漏发＝冻到 finish_round 才补）
@@ -1300,7 +1331,7 @@ func _run_side(side: Dictionary, e: Dictionary, target: Dictionary) -> void:
 			apply_status(e, String(side["sid"]), int(side.get("stacks", 1)), int(side.get("value", 0)),
 				int(side.get("rounds", -1)), false, e)
 		"ally_buff":
-			# 授力（巫祝）：随机一名其他存活友军挂层
+			# 授刃/授锋（刀奴/剑仆）：随机一名其他存活友军挂层
 			var pool4: Array = []
 			for o in enemies:
 				if o["alive"] and o["uid"] != e["uid"]:
@@ -1309,18 +1340,40 @@ func _run_side(side: Dictionary, e: Dictionary, target: Dictionary) -> void:
 				var lucky4: Dictionary = pool4[rng.randi_range(0, pool4.size() - 1)]
 				apply_status(lucky4, String(side["sid"]), int(side.get("stacks", 1)),
 					int(side.get("value", 0)), int(side.get("rounds", -1)), false, e)
-				event.emit("授力：「%s」获得「%s」" % [lucky4["name"],
+				event.emit("「%s」获得「%s」" % [lucky4["name"],
 					String(DATA.STATUSES.get(String(side["sid"]), {}).get("name", side["sid"]))])
-		"heal":
-			# 疗伤（巫祝）：受伤最重友军回复 value＋每 pow_step 威力 +1
-			var hurt: Dictionary = {}
-			for o in enemies:
-				if o["alive"] and (hurt.is_empty() or int(o["hp"]) < int(hurt["hp"])):
-					hurt = o
-			if not hurt.is_empty():
-				var amt4 := int(side.get("value", 0)) + int(float(pow_of(e)) / float(side.get("pow_step", 4)))
-				hurt["hp"] = mini(int(hurt["mhp"]), int(hurt["hp"]) + amt4)
-				event.emit("疗伤：「%s」回复 %d 点耐久" % [hurt["name"], amt4])
+		"mark_ally":
+			# 瞄准（猎手）：标记随机我方器灵＋1 层破绽（敌方攻击将集火被标记者，无视嘲讽）
+			var pool6: Array = []
+			for a6 in allies:
+				if a6["alive"]:
+					pool6.push_back(a6)
+			if not pool6.is_empty():
+				var mk: Dictionary = pool6[rng.randi_range(0, pool6.size() - 1)]
+				apply_status(mk, "biaoji", 1, 0, -1, false, e)
+				if int(side.get("poxian", 0)) > 0:
+					apply_status(mk, "poxian", int(side["poxian"]), 0, int(side.get("rounds", 2)), true, e)
+				event.emit("瞄准：「%s」被标记" % mk["name"])
+		"fengxue_random":
+			# 封穴咒（巫祝）：随机我方器灵封穴（功法易伤）
+			var pool7: Array = []
+			for a7 in allies:
+				if a7["alive"]:
+					pool7.push_back(a7)
+			if not pool7.is_empty():
+				var fx: Dictionary = pool7[rng.randi_range(0, pool7.size() - 1)]
+				apply_status(fx, "fengxue", int(side.get("stacks", 2)), 0, int(side.get("rounds", 2)), true, e)
+				event.emit("封穴咒：「%s」被封穴" % fx["name"])
+		"adj_armor":
+			# 铁壁阵（力士）：自身与动态相邻各获护甲
+			for t7 in [e] + _adjacent_in(enemies, e):
+				if t7["alive"]:
+					apply_status(t7, "hujia", int(side.get("stacks", 2)))
+			event.emit("铁壁阵：「%s」及相邻获得护甲" % e["name"])
+		"summon":
+			# 御召（两仪剑主）：召唤刀奴与剑仆（已存活者不重复）
+			for eid7 in side.get("summons", []):
+				summon_enemy(String(eid7))
 
 func _intent_target(e: Dictionary, i: int) -> Dictionary:
 	var intent: Dictionary = _enemy_intent[i] if i < _enemy_intent.size() else {}
@@ -1334,15 +1387,19 @@ func _intent_target(e: Dictionary, i: int) -> Dictionary:
 	return target
 
 func _pick_target() -> Dictionary:
+	# 集火制（2026-10-28 用户裁定）：被标记者优先且无视嘲讽 → 嘲讽 → 随机
+	var marked: Array = []
 	var taunts: Array = []
 	var pool: Array = []
 	for a in allies:
 		if not a["alive"]:
 			continue
 		pool.push_back(a)
-		if has_status(a, "chaofeng"):
+		if has_status(a, "biaoji"):
+			marked.push_back(a)
+		elif has_status(a, "chaofeng"):
 			taunts.push_back(a)
-	var from: Array = taunts if not taunts.is_empty() else pool
+	var from: Array = marked if not marked.is_empty() else (taunts if not taunts.is_empty() else pool)
 	if from.is_empty():
 		return {}
 	return from[rng.randi_range(0, from.size() - 1)]
@@ -1375,8 +1432,8 @@ func _tick_statuses() -> void:
 			# 格挡/抵抗 2026-10-28 用户裁定改纯按次消耗：不随时间衰减不清空（StS Buffer/Artifact 制）
 			if sid == "chaofeng":
 				s["stacks"] = int(s["stacks"]) - 1
-			elif sid == "xuan":
-				s["stacks"] = 0
+			elif sid == "xuan" and u.get("side", "") == "ally":
+				s["stacks"] = 0   # 敌方眩晕在跳过行动时消耗（猛击自眩要跨回合）
 			elif sid == "shayi":
 				# 杀意回合末失去所有层（插件·幽冥三专属：保留至多 5 层）
 				if _has_fx(u, "shayi_keep"):
@@ -1384,8 +1441,10 @@ func _tick_statuses() -> void:
 				else:
 					s["stacks"] = 0
 			elif sid == "hudun":
-				# 护盾回合末清空（金刚盾升2例外——自身不清）
-				if not (u.get("passive", {}).get("id") == "tie_bi" and int(u.get("pdir", 0)) == 2):
+				# 我方护盾回合末清空（金刚盾升2例外）；敌方护盾不清——撑过我方回合，
+				# 于该敌下次行动开始才清（敌方护盾持续制，蓝本格挡同制）
+				if u.get("side", "") == "ally" \
+						and not (u.get("passive", {}).get("id") == "tie_bi" and int(u.get("pdir", 0)) == 2):
 					s["stacks"] = 0
 			elif int(s.get("rounds", -1)) > 0:
 				s["rounds"] = int(s["rounds"]) - 1
@@ -1403,8 +1462,6 @@ func _tick_statuses() -> void:
 		var cds: Dictionary = _cd_left[k]
 		for a in cds:
 			cds[a] = maxi(0, int(cds[a]) - 1)
-	# 敌方回合结束被动（铁骨/号令/两仪剑主交叉成长；死亡螺旋律＝回合时钟制）
-	_enemy_round_end_passives()
 
 func check_end() -> bool:
 	var e_alive := false
@@ -1472,8 +1529,13 @@ func intent_parts(e: Dictionary) -> Array:
 		if target.is_empty():
 			target = _pick_target_preview()
 		var n_txt := ""
+		var hits_i := int(action.get("hits", 1))
+		if action.has("hits_base"):
+			hits_i = int(action["hits_base"])
+		if action.has("hits_pow_step"):
+			hits_i += int(float(pow_of(e)) / float(action["hits_pow_step"]))
 		if String(action.get("channel", "普攻")) == "功法":
-			# 功法意图＝value＋威力缩放（不减防；封穴层计入）；多段标 ×n
+			# 功法伤意图（无视防御）：value＋威力缩放；封穴层计入；多段标 ×n
 			var amt3 := float(action.get("value", 0))
 			if action.has("per_pow"):
 				amt3 += float(action["per_pow"]) * float(pow_of(e))
@@ -1482,17 +1544,22 @@ func intent_parts(e: Dictionary) -> Array:
 			if not target.is_empty():
 				amt3 += VULN_PER_STACK * status_total(target, "fengxue")
 			n_txt = str(maxi(1, int(round(amt3))))
-			if int(action.get("hits", 1)) > 1:
-				n_txt = "%s×%d" % [n_txt, int(action["hits"])]
+			if hits_i > 1:
+				n_txt = "%s×%d" % [n_txt, hits_i]
 			parts.push_back({"g": "法", "n": n_txt})
 		else:
+			# 攻击伤意图（过我方防御）：攻击×倍率＋威力缩放；破绽层计入
 			var amt := float(atk_of(e)) * float(action.get("mult", 1.0))
+			if action.has("per_pow"):
+				amt += float(action["per_pow"]) * float(pow_of(e))
+			if action.has("pow_step"):
+				amt += float(int(float(pow_of(e)) / float(action["pow_step"])))
 			if not target.is_empty():
 				amt += VULN_PER_STACK * status_total(target, "poxian")
 				amt = maxf(1.0, amt - float(def_of(target)))
 			n_txt = str(int(round(amt)))
-			if int(action.get("hits", 1)) > 1:
-				n_txt = "%s×%d" % [n_txt, int(action["hits"])]
+			if hits_i > 1:
+				n_txt = "%s×%d" % [n_txt, hits_i]
 			parts.push_back({"g": "攻", "n": n_txt})
 		if not target.is_empty():
 			parts.push_back({"g": "→%d号" % (allies.find(target) + 1), "is_pos": true})
@@ -1507,9 +1574,14 @@ func intent_parts(e: Dictionary) -> Array:
 			elif side.get("op") == "ally_buff":
 				parts.push_back({"g": DATA.STATUSES[String(side["sid"])]["glyph"],
 					"n": "+%d盟" % int(side.get("stacks", 1))})
-			elif side.get("op") == "heal":
-				parts.push_back({"g": "愈", "n": "+%d" % (int(side.get("value", 0))
-					+ int(float(pow_of(e)) / float(side.get("pow_step", 4))))})
+			elif side.get("op") == "mark_ally":
+				parts.push_back({"g": "记", "n": "＋破%d" % int(side.get("poxian", 1))})
+			elif side.get("op") == "fengxue_random":
+				parts.push_back({"g": "穴", "n": "+%d" % int(side.get("stacks", 2))})
+			elif side.get("op") == "adj_armor":
+				parts.push_back({"g": "甲", "n": "+%d阵" % int(side.get("stacks", 2))})
+			elif side.get("op") == "summon":
+				parts.push_back({"g": "召"})
 	return parts
 
 func intent_target(e: Dictionary) -> Dictionary:
@@ -1524,6 +1596,9 @@ func intent_target(e: Dictionary) -> Dictionary:
 	return _pick_target_preview()
 
 func _pick_target_preview() -> Dictionary:
+	for a in allies:   # 预览同集火口径：被标记者优先
+		if a["alive"] and has_status(a, "biaoji"):
+			return a
 	var pool: Array = []
 	for a in allies:
 		if a["alive"]:
