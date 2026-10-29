@@ -326,6 +326,12 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 		event.emit("「%s」格挡了伤害" % dst["name"])
 		return 0
 	var amt := base_amt
+	# 劲力：下一段攻击伤害 +N（数值在层值，用后即清）
+	if channel == "普攻":
+		var vig := _status_valued(src, "jinli")
+		if vig > 0:
+			amt += float(vig)
+			_consume_stacks(src, "jinli", 999)
 	# 攻方侧：三通道取最高（杀意平值入功法通道，专属改所有；怒意/虚弱＝命名倍率）
 	var shayi_per := 2 if (src.get("passive", {}).get("id") == "sha_yi" and int(src.get("pdir", 0)) == 1) else 1
 	var shayi := float(status_total(src, "shayi")) * float(shayi_per)
@@ -789,6 +795,7 @@ func _preview_hit(a: Dictionary, e: Dictionary) -> int:
 	if status_total(a, "nuyi") > 0:
 		amt *= 1.5
 	amt += float(status_total(a, "fengmang"))
+	amt += float(_status_valued(a, "jinli"))
 	amt += VULN_PER_STACK * float(status_total(e, "poxian"))
 	if status_total(e, "cuiruo") > 0:
 		amt *= 1.5
@@ -1452,6 +1459,9 @@ func _tick_statuses() -> void:
 			# 回合末 −1 层：嘲讽（时长语义）
 			# 格挡/抵抗 2026-10-28 用户裁定改纯按次消耗：不随时间衰减不清空（StS Buffer/Artifact 制）
 			if sid == "chaofeng":
+				s["stacks"] = int(s["stacks"]) - 1
+			elif sid == "xiufu":
+				u["hp"] = mini(int(u["mhp"]), int(u["hp"]) + int(s["stacks"]))
 				s["stacks"] = int(s["stacks"]) - 1
 			elif sid == "xuan" and u.get("side", "") == "ally":
 				s["stacks"] = 0   # 敌方眩晕在跳过行动时消耗（猛击自眩要跨回合）

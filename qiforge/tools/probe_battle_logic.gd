@@ -789,6 +789,30 @@ func _run() -> void:
 	_eq("G6 Boss＝两仪剑主·极", true,
 		"两仪剑主·极" == String(QI_DATA.ENEMIES["boss_g5"]["name"]))
 
+	# —— 局二十：劲力（下一段攻击伤+N 用后即清）＋修复（回合末回=层数、层−1）——
+	var b24: RefCounted = QI_BATTLE.new()
+	b24.setup({"copper": 0,
+		"team": [{"id": "youming", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b24.start()
+	var ym24: Dictionary = b24.allies[0]
+	var e24: Dictionary = b24.enemies[0]
+	b24.apply_status(ym24, "jinli", 1, 6)
+	ym24["acts"] = 1
+	b24.normal_attack(ym24, e24)
+	_eq("劲力 6：普攻 26+6−8=24 → 68", 68, int(e24["hp"]))
+	_eq("劲力用后即清", 0, b24._status_valued(ym24, "jinli"))
+	ym24["acts"] = 1
+	b24.normal_attack(ym24, e24)
+	_eq("第二击回基准 18 → 50", 50, int(e24["hp"]))
+	ym24["hp"] = 10
+	b24.apply_status(ym24, "xiufu", 3)
+	b24._tick_statuses()
+	_eq("修复 3 层：回 3 → 13", 13, int(ym24["hp"]))
+	_eq("修复层 −1=2", 2, b24.status_total(ym24, "xiufu"))
+	b24._tick_statuses()
+	_eq("修复再回 2 → 15", 15, int(ym24["hp"]))
+
 	_finish()
 
 func _act_of(e: Dictionary, aid: String) -> Dictionary:
