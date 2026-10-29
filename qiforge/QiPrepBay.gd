@@ -44,6 +44,8 @@ var _crew_row: HBoxContainer
 var _crew_count_lbl: Label
 var _reserve_lbl: Label
 var _reserve_zone: Control
+var _reserve_panel: Panel = null
+var _zone_hot := false
 
 func _ready() -> void:
 	QISTYLE.apply_root_theme(self)
@@ -66,6 +68,7 @@ func _ready() -> void:
 	_build_system()
 	_build_crew_label()
 	_build_crew_row()
+	_build_reserve_zone()
 	_build_go()
 	# Boss 战利品直授提示（敌方设计 v0.1 §五）：一闪即清
 	if String(run_data.get("grant_flash", "")) != "":
@@ -181,8 +184,7 @@ func _reload_reserve() -> void:
 	_reserve = []
 	for m in run_data.get("reserve", []):
 		_reserve.push_back(_crew_entry(m))
-	if _reserve_lbl:
-		_reserve_lbl.text = "后备（%d）" % _reserve.size()
+	_refresh_reserve_count()
 
 func _next_label() -> String:
 	return QI_DATA.fight_label(int(run_data.get("group", 0)), int(run_data.get("fight", 0)))
@@ -477,7 +479,7 @@ func _style_lock(lock: Button, on: bool) -> void:
 	lock.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT if on else QISTYLE.TEXT_SUB)
 	QISTYLE.font(lock, QISTYLE.FS_SMALL)
 
-## 编队标签行 y36.8（随系统带加高下移；后备区高 36 腾缝）：编队 n/7＋注记＋（右）后备区（同壳兼点击/落点）
+## 编队标签行 y36.8（随系统带加高下移）：编队 n/7＋注记（后备落区已移左下角独立件，2026-10-28 用户裁定）
 func _build_crew_label() -> void:
 	var row := HBoxContainer.new()
 	_anchor(row, 0.043, 0.368, 0.957, 0.4015)
@@ -495,40 +497,92 @@ func _build_crew_label() -> void:
 	cnt.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
 	row.add_child(cnt)
 	var note := Label.new()
-	note.text = "拖卡换位 · 点卡看详情 · 拖到「后备」收起 · 卡下＝配件装备格〔格数待定〕"
+	note.text = "拖卡换位 · 点卡看详情 · 拖到左下「后备」收起 · 卡下＝配件装备格〔格数待定〕"
 	note.tooltip_text = "被动＝器灵自身效果，见详情卡。"
 	QISTYLE.font(note, QISTYLE.FS_SMALL)
 	note.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 	row.add_child(note)
-	var sp := Control.new()
-	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(sp)
+	add_child(row)
+
+## 后备落区（2026-10-28 用户裁定：自编队行右上小条移至左下角并放大）——常驻件：
+## 点击＝开后备名册；拖器灵到此＝收起入后备（与详情页按钮同走 _bench_at）；
+## 拖拽悬停亮边＝落点反馈（亮灭见 _process——原生协议无「拖离」回调）。
+func _build_reserve_zone() -> void:
 	_reserve_zone = QI_DRAG.new()
 	_reserve_zone.name = "ReserveZone"
-	_reserve_zone.custom_minimum_size = Vector2(170, 36)
-	_reserve_zone.tooltip_text = "后备器灵（上限 %d；点击查看/上阵）；拖卡到此＝收起入后备。" % RESERVE_CAP
-	_reserve_zone.drop_ok = func(_data) -> bool: return true
+	_reserve_zone.tooltip_text = "后备器灵（上限 %d；点击查看/上阵）；拖器灵到此＝收起入后备。" % RESERVE_CAP
+	_reserve_zone.drop_ok = func(data) -> bool:
+		return data is Dictionary and data.has("drag_data") and data["drag_data"].has("slot")
 	_reserve_zone.on_drop = _on_bench
 	_reserve_zone.gui_input.connect(func(e: InputEvent) -> void:
 		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 			_open_reserve())
-	var rzb := Panel.new()
-	rzb.set_anchors_preset(Control.PRESET_FULL_RECT)
-	rzb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rzb.add_theme_stylebox_override("panel", QISTYLE.button_ghost())
-	_reserve_zone.add_child(rzb)
-	var rz := HBoxContainer.new()
-	rz.set_anchors_preset(Control.PRESET_FULL_RECT)
-	rz.alignment = BoxContainer.ALIGNMENT_CENTER
-	rz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_anchor(_reserve_zone, 0.012, 0.845, 0.192, 0.972)
+	_reserve_panel = Panel.new()
+	_reserve_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_reserve_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_reserve_zone.add_child(_reserve_panel)
+	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 8)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var title := HBoxContainer.new()
+	title.alignment = BoxContainer.ALIGNMENT_CENTER
+	title.add_theme_constant_override("separation", 12)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tl := Label.new()
+	tl.text = "后备"
+	QISTYLE.font(tl, QISTYLE.FS_TITLE, true)
+	tl.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
+	tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.add_child(tl)
 	_reserve_lbl = Label.new()
-	_reserve_lbl.text = "后备（%d）" % _reserve.size()
-	QISTYLE.font(_reserve_lbl, QISTYLE.FS_BODY)
+	_reserve_lbl.text = "%d / %d" % [_reserve.size(), RESERVE_CAP]
+	QISTYLE.font(_reserve_lbl, QISTYLE.FS_TITLE, true)
 	_reserve_lbl.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-	rz.add_child(_reserve_lbl)
-	_reserve_zone.add_child(rz)
-	row.add_child(_reserve_zone)
-	add_child(row)
+	_reserve_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.add_child(_reserve_lbl)
+	v.add_child(title)
+	var hint := Label.new()
+	hint.text = "拖器灵至此收起 · 点击开名册"
+	QISTYLE.font(hint, QISTYLE.FS_SMALL)
+	hint.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(hint)
+	_reserve_panel.add_child(v)
+	_set_zone_hot(false)
+	add_child(_reserve_zone)
+
+## 落区亮边两态（常态＝琥珀细边／拖拽悬停＝玉绿粗边上浮）
+func _set_zone_hot(on: bool) -> void:
+	_zone_hot = on
+	if _reserve_panel == null:
+		return
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.16, 0.135, 0.09, 0.95) if on else Color(0.10, 0.085, 0.06, 0.92)
+	sb.border_color = QISTYLE.JADE if on else Color(QISTYLE.AMBER.r, QISTYLE.AMBER.g, QISTYLE.AMBER.b, 0.55)
+	sb.set_border_width_all(3 if on else 2)
+	sb.set_corner_radius_all(12)
+	_reserve_panel.add_theme_stylebox_override("panel", sb)
+
+## 拖拽期间每帧判光标在区否（非拖拽零成本短路；备战舱可拖物只有编队卡，无需辨拖源）
+func _process(_dt: float) -> void:
+	if _reserve_zone == null or not is_instance_valid(_reserve_zone):
+		return
+	var dragging: bool = get_viewport().gui_is_dragging()
+	if not dragging:
+		if _zone_hot:
+			_set_zone_hot(false)
+		return
+	var hot: bool = _reserve_zone.get_global_rect().has_point(_reserve_zone.get_global_mouse_position())
+	if hot != _zone_hot:
+		_set_zone_hot(hot)
+
+func _refresh_reserve_count() -> void:
+	if _reserve_lbl:
+		_reserve_lbl.text = "%d / %d" % [_reserve.size(), RESERVE_CAP]
 
 func _crew_count() -> int:
 	var n := 0
@@ -576,7 +630,7 @@ func _rebuild_crew_cols() -> void:
 				warn = true
 			col.add_child(_make_col_name("%s　%s" % [String(_crew[i]["name"]), hp_txt], warn))
 			col.add_child(_make_crew_card(i, _crew[i]))
-			col.add_child(_make_equip_row(i))
+			col.add_child(_make_equip_row(_crew[i]["_member"]))
 		_crew_row.add_child(col)
 	if _crew_count_lbl:
 		_crew_count_lbl.text = "%d / 7" % _crew_count()
@@ -671,7 +725,9 @@ func _make_empty_slot(slot_i: int) -> Control:
 	return w
 
 ## 装备格行（卡下，可点＝装配入口）：全配件格（被动＝器灵自身效果走详情）
-func _make_equip_row(team_i: int) -> Control:
+## 绑定＝成员字典引用（2026-10-28 修插件跟槽不跟灵：换位产生空位后，槽位序≠压缩队序，
+## 按 run.team[i] 索引会错读到别的成员——引用制下插件永远跟着器灵走）
+func _make_equip_row(m: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.name = "EquipRow"
 	row.alignment = BoxContainer.ALIGNMENT_CENTER   # 三格 196 宽在 234 列内居中（2026-10-28 用户裁定，勿左贴）
@@ -679,12 +735,12 @@ func _make_equip_row(team_i: int) -> Control:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for slot_i in 3:
 		var eid := ""
-		if team_i < run_data["team"].size() and slot_i < run_data["team"][team_i]["equips"].size():
-			eid = String(run_data["team"][team_i]["equips"][slot_i])
-		row.add_child(_make_equip_slot(eid, team_i, slot_i))
+		if slot_i < m["equips"].size():
+			eid = String(m["equips"][slot_i])
+		row.add_child(_make_equip_slot(eid, m, slot_i))
 	return row
 
-func _make_equip_slot(eid: String, team_i: int, slot_i: int) -> Button:
+func _make_equip_slot(eid: String, m: Dictionary, slot_i: int) -> Button:
 	var ic := Button.new()
 	ic.custom_minimum_size = Vector2(EQ_W, EQ_H)
 	var filled := not eid.is_empty()
@@ -710,17 +766,17 @@ func _make_equip_slot(eid: String, team_i: int, slot_i: int) -> Button:
 			QI_DATA.ACCESSORIES[eid]["lv"], QI_DATA.ACCESSORIES[eid]["desc"]]
 	else:
 		ic.tooltip_text = "空配件格——点击从背包装配。"
-	ic.pressed.connect(func() -> void: _open_equip(team_i, slot_i))
+	ic.pressed.connect(func() -> void: _open_equip(m, slot_i))
 	return ic
 
-## 装备窗（1080×760 固定尺寸制）：当前槽＋背包配件网格，点选即装配/卸下
-func _open_equip(team_i: int, slot_i: int) -> void:
-	if team_i >= run_data["team"].size():
-		return
-	var m: Dictionary = run_data["team"][team_i]
+## 装备窗（1080×760 固定尺寸制）：当前槽＋背包配件网格，点选即装配/卸下（成员引用绑定，随器灵走）
+## 2026-10-28 用户裁定：无背板遮罩（dim=false，输入门保留）＋免 flash 提示＋即点即关（close 管线）
+func _open_equip(m: Dictionary, slot_i: int) -> void:
 	var wname := String(QI_DATA.WEAPONS[m["id"]]["name"])
-	var dialog: Control = QIDIALOG.create(self,
-		"装配 · %s · 槽位 %d" % [wname, slot_i + 1], Vector2(1080, 760), "关闭", "", true, true)[1]
+	var pair: Array = QIDIALOG.create(self,
+		"装配 · %s · 槽位 %d" % [wname, slot_i + 1], Vector2(1080, 760), "关闭", "", true, true, false)
+	var scrim: ColorRect = pair[0]
+	var dialog: Control = pair[1]
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 14)
 	var cur_eid := String(m["equips"][slot_i]) if slot_i < m["equips"].size() else ""
@@ -740,9 +796,8 @@ func _open_equip(team_i: int, slot_i: int) -> void:
 		uneq.pressed.connect(func() -> void:
 			m["equips"][slot_i] = ""
 			run_data.get("bag", []).push_back(cur_eid)
-			dialog.hide()
-			_rebuild_crew_cols()
-			_flash("已卸下：%s" % QI_DATA.ACCESSORIES[cur_eid]["name"]))
+			QIDIALOG.close(scrim, dialog)
+			_rebuild_crew_cols())
 		QISTYLE.apply_ghost(uneq)
 		QISTYLE.font(uneq, QISTYLE.FS_SMALL)
 		uneq.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
@@ -766,12 +821,12 @@ func _open_equip(team_i: int, slot_i: int) -> void:
 	for eid in bag:
 		if not QI_DATA.ACCESSORIES.has(String(eid)):
 			continue
-		grid.add_child(_make_bag_item(String(eid), m, slot_i, dialog))
+		grid.add_child(_make_bag_item(String(eid), m, slot_i, dialog, scrim))
 	body.add_child(grid)
 	dialog.content().add_child(body)
 	dialog.popup_centered(Vector2i(1080, 760))
 
-func _make_bag_item(eid: String, m: Dictionary, slot_i: int, dialog: Control) -> Button:
+func _make_bag_item(eid: String, m: Dictionary, slot_i: int, dialog: Control, scrim: ColorRect) -> Button:
 	var a: Dictionary = QI_DATA.ACCESSORIES[eid]
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(320, 96)
@@ -823,9 +878,8 @@ func _make_bag_item(eid: String, m: Dictionary, slot_i: int, dialog: Control) ->
 	b.pressed.connect(func() -> void:
 		m["equips"][slot_i] = eid
 		bag_remove_one(eid)
-		dialog.hide()
-		_rebuild_crew_cols()
-		_flash("已装配：%s → %s" % [a["name"], QI_DATA.WEAPONS[m["id"]]["name"]]))
+		QIDIALOG.close(scrim, dialog)
+		_rebuild_crew_cols())
 	return b
 
 func bag_remove_one(eid: String) -> void:
@@ -1142,7 +1196,8 @@ func _on_bench(data, _zone) -> void:
 		return
 	_bench_at(int(data["drag_data"]["slot"]))
 
-## 收起入后备（拖到「后备」区与详情页按钮同入口；升级保留制＝功法卡随档带走 2026-10-28）
+## 收起入后备（拖到「后备」区与详情页按钮同入口；升级保留制＝功法卡随档带走 2026-10-28；
+## 配件＝背包资产离队即回收——入后备自动卸下全部插件 2026-10-28 用户裁定）
 func _bench_at(i: int) -> void:
 	if i < 0 or i >= 7 or _crew[i] == null:
 		return
@@ -1158,16 +1213,24 @@ func _bench_at(i: int) -> void:
 		if String(de["wid"]) == wid:
 			removed += 1
 	QI_DATA.deck_swap(run_data, wid, "")
+	var uneq: Array = QI_DATA.unequip_all(run_data, _crew[i]["_member"])
+	for k in 3:   # 列表项缓存名同步清空（详情/浮窗不吃残影）
+		_crew[i]["equips"][k] = ""
 	_reserve.push_back(_crew[i])
 	_crew[i] = null
 	_sync_team()
 	_rebuild_crew_cols()
-	_reserve_lbl.text = "后备（%d）" % _reserve.size()
-	_flash("已收起入后备（%d 张功法卡随档保留，每场战后回血）" % removed)
+	_refresh_reserve_count()
+	var msg := "已收起入后备（%d 张功法卡随档保留，每场战后回血）" % removed
+	if not uneq.is_empty():
+		msg += "；已卸下配件→背包：%s" % "、".join(uneq)
+	_flash(msg)
 
 ## 弹窗：后备名册（1080×600）——可上阵（入首个空位；卡组随供牌）
 func _open_reserve() -> void:
-	var dialog: Control = QIDIALOG.create(self, "后备器灵", Vector2(1080, 600), "关闭")[1]
+	var pair_r: Array = QIDIALOG.create(self, "后备器灵", Vector2(1080, 600), "关闭")
+	var scrim_r: ColorRect = pair_r[0]
+	var dialog: Control = pair_r[1]
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 10)
 	var head := Label.new()
@@ -1207,7 +1270,7 @@ func _open_reserve() -> void:
 			if _copper_lbl:
 				_copper_lbl.text = str(_copper)
 			rm["hp"] = mhp_r
-			dialog.hide()
+			QIDIALOG.close(scrim_r, dialog)
 			_flash("「%s」已回复至满耐久（−%d 铜）" % [String(r["name"]), cost_r]))
 		row.add_child(hb)
 		QISTYLE.apply_ghost(up)
@@ -1229,8 +1292,8 @@ func _open_reserve() -> void:
 			QI_DATA.deck_swap(run_data, "", wid)
 			_sync_team()
 			_rebuild_crew_cols()
-			_reserve_lbl.text = "后备（%d）" % _reserve.size()
-			dialog.hide()
+			_refresh_reserve_count()
+			QIDIALOG.close(scrim_r, dialog)
 			_flash("「%s」已上阵（卡组 +4 张）" % member["name"]))
 		row.add_child(up)
 		body.add_child(row)

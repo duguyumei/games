@@ -330,6 +330,22 @@ static func tier_pool(lv: int) -> Array:
 			out.push_back(id)
 	return out
 
+## 器灵离队（入后备/被替换删除）＝自动卸下全部配件回背包（2026-10-28 用户裁定：
+## 配件＝背包资产，离队即回收；功法卡＝档案权益随档走，两制分离）。
+## 返回卸下的配件名列表（供提示文案）。
+static func unequip_all(run: Dictionary, m: Dictionary) -> Array:
+	if not run.has("bag"):
+		run["bag"] = []
+	var names: Array = []
+	var eqs: Array = m.get("equips", [])
+	for i in eqs.size():
+		var eid := String(eqs[i])
+		if not eid.is_empty() and ACCESSORIES.has(eid):
+			run["bag"].push_back(eid)
+			names.push_back(String(ACCESSORIES[eid]["name"]))
+		eqs[i] = ""
+	return names
+
 static func tier_odds(sys_lv: int) -> Array:
 	return TIER_ODDS[clampi(sys_lv, 1, 5)]
 #endregion

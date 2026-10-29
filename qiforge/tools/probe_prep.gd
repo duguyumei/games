@@ -6,6 +6,8 @@ const PROBE_LIB := preload("res://qiforge/tools/probe_lib.gd")
 
 const PREP := preload("res://qiforge/QiPrepBay.tscn")
 const QICARD := preload("res://qiforge/QiCardStyle.gd")
+const QI_DATA := preload("res://qiforge/QiData.gd")
+const QISTYLE := preload("res://qiforge/QiStyle.gd")
 
 var fails: Array = []
 
@@ -76,6 +78,103 @@ func _run() -> void:
 	_near(go.global_position.y, 957.0, 10.0, "出战 y≈957")
 	_near(go.size.x, 250.0, 12.0, "出战宽 250")
 
+	# —— 后备落区（2026-10-28 用户裁定：自编队行右上小条移至左下角并放大）——
+	var rz: Control = screen.get_node("ReserveZone")
+	_rect_near(rz, Rect2(23.0, 912.6, 345.6, 137.2), 6.0, "后备落区左下（锚 0.012/0.845→0.192/0.972）")
+	var rpanel: Panel = rz.get_child(0) as Panel
+	var rbody: VBoxContainer = rpanel.get_child(0) as VBoxContainer
+	_eqt("落区标题", "后备", String((rbody.get_child(0).get_child(0) as Label).text))
+	_eqt("落区计数 0/3", "0 / 3", String((rbody.get_child(0).get_child(1) as Label).text))
+	_eqt("落区提示文案", "拖器灵至此收起 · 点击开名册", String((rbody.get_child(1) as Label).text))
+	if bool(screen.get("_zone_hot")):
+		fails.append("落区初始非亮边态")
+	screen._set_zone_hot(true)
+	var hsb: StyleBoxFlat = rpanel.get_theme_stylebox("panel") as StyleBoxFlat
+	if hsb == null or hsb.border_color != QISTYLE.JADE:
+		fails.append("亮边态边框应为玉绿（得 %s）" % str(hsb.border_color if hsb != null else "null"))
+	screen._set_zone_hot(false)
+	# 拖放收后备链路（直调＝真拖 on_drop 同入口）：列0 幽冥收起，计数联动刷新
+	screen._on_bench({"drag_data": {"slot": 0}}, null)
+	for i in 8:
+		await process_frame
+	if (screen.get("_crew") as Array)[0] != null:
+		fails.append("落区收后备：列0 应已空")
+	_eq(int(screen.run_data.get("reserve", []).size()), 1, "落区收后备 reserve=1")
+	_eqt("落区计数随收后备刷新 1/3", "1 / 3", String((rbody.get_child(0).get_child(1) as Label).text))
+	# —— 落区渲染像素采样（.qi_prep_preview.png＝--qi-shot 产物；先跑截图再跑本探针，缺档跳过）——
+	var pv_path := "/Users/cc/Documents/qi-forge-2/.qi_prep_preview.png"
+	if FileAccess.file_exists(pv_path):
+		var img := Image.new()
+		if img.load_png_from_buffer(FileAccess.get_file_as_bytes(pv_path)) == OK:
+			var border_px: Color = img.get_pixel(int(23.0 + 345.6 * 0.5), 914)
+			var bg_px: Color = img.get_pixel(int(23.0 + 345.6 * 0.5), 980)
+			if border_px.a < 0.3 or border_px.r < 0.3 or border_px.r < border_px.b * 2.0:
+				fails.append("落区上边框像素非琥珀系（得 %s）" % str(border_px))
+			if bg_px.r > 0.2 or bg_px.r < 0.03:
+				fails.append("落区区内心非暗底（得 %s）" % str(bg_px))
+
+	# —— 装配绑定回归（2026-10-28 修「插件跟槽不跟灵」）：收后备/换位产生空位后，插件跟随原器灵 ——
+	var run2: Dictionary = QI_DATA.default_run()
+	run2["team"] = [
+		{"id": "youming", "equips": ["", "", ""], "pdir": 0},
+		{"id": "tiansi", "equips": ["p4", "", ""], "pdir": 0},
+		{"id": "qinggu", "equips": ["", "", ""], "pdir": 0}]
+	var prep2: Control = PREP.instantiate()
+	prep2.run_data = run2
+	root.add_child(prep2)
+	for i in 15:
+		await process_frame
+	var pname: String = String(QI_DATA.ACCESSORIES["p4"]["name"])
+	var row2: Control = prep2.get_node("CrewRow")
+	var eqtxt := func(col_i: int) -> String:
+		var colx := row2.get_child(col_i) as VBoxContainer
+		return String((colx.get_child(2).get_child(0) as Button).text)
+	_eqt("起手：天丝（列1）带插件4", pname, eqtxt.call(1))
+	# 收起幽冥（列0 入后备）→ run.team 压缩为 [天丝,青蛊]——旧索引制在此错位（列1 读到青蛊）
+	prep2._bench_at(0)
+	for i in 8:
+		await process_frame
+	_eqt("收列0后：天丝仍在列1，插件跟随", pname, eqtxt.call(1))
+	_eqt("青蛊列2 无插件", "空", eqtxt.call(2))
+	# 换位：天丝(列1) ↔ 空位(列4)
+	prep2._on_swap(1, 4)
+	for i in 8:
+		await process_frame
+	_eqt("换位后：天丝列4，插件跟随", pname, eqtxt.call(4))
+	_eqt("青蛊列2 仍无插件", "空", eqtxt.call(2))
+	_eqt("数据层：run.team[1]=天丝 带插件4", pname,
+		String(QI_DATA.ACCESSORIES[String(run2["team"][1]["equips"][0])]["name"]))
+	# 入后备＝自动卸下全部插件回背包（2026-10-28 用户裁定）：天丝（列4 带 p4）入后备
+	var bag_n0: int = (run2.get("bag", []) as Array).count("p4")
+	prep2._bench_at(4)
+	for i in 8:
+		await process_frame
+	_eqt("天丝入后备：插件4 卸回背包", str(bag_n0 + 1),
+		str((run2.get("bag", []) as Array).count("p4")))
+	var mres: Dictionary = run2["reserve"][run2["reserve"].size() - 1]
+	var eq_all_empty := true
+	for x in mres["equips"]:
+		if String(x) != "":
+			eq_all_empty = false
+	_eqt("后备档插件位已清空", "true", str(eq_all_empty))
+	var rentry: Dictionary = prep2._reserve[prep2._reserve.size() - 1]
+	_eqt("后备显示缓存无插件残影", "true",
+		str((rentry["equips"] as Array).all(func(x): return String(x) == "")))
+	# 装备窗＝无背板遮罩（2026-10-28 用户裁定）：开后 QiScrim alpha 恒 0（输入门保留）
+	prep2._open_equip(run2["team"][0], 0)
+	for i in 6:
+		await process_frame
+	var scrim2: ColorRect = prep2.find_child("QiScrim", false, false) as ColorRect
+	_eqt("装备窗无背板遮罩（alpha=0）", "true",
+		str(scrim2 != null and scrim2.color.a < 0.05))
+	if DisplayServer.get_name() != "headless":
+		await process_frame
+		root.get_viewport().get_texture().get_image().save_png(
+			"/Users/cc/Documents/qi-forge-2/.prep_equips_fix.png")
+	prep2.queue_free()
+	for i in 5:
+		await process_frame
+
 	print("PREP_FAILS=%d" % fails.size())
 	for f in fails:
 		print("FAIL: " + f)
@@ -95,3 +194,7 @@ func _near(v: float, want: float, tol: float, tag: String) -> void:
 func _eq(v: int, want: int, tag: String) -> void:
 	if v != want:
 		fails.append("%s 数量错（得 %d 要 %d）" % [tag, v, want])
+
+func _eqt(tag: String, want: String, got: String) -> void:
+	if got != want:
+		fails.append("%s（得「%s」要「%s」）" % [tag, got, want])
