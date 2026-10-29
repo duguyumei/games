@@ -5,7 +5,8 @@
 ##  · INPUT 组（原生拖放/点击/悬停）依赖真 DisplayServer——Godot 4.7 无头实测不派发 GUI 输入
 ##    （push_input/parse_input_event 全灭，实验留档）。**默认不跑**；仅交互代码改动后加 --input
 ##    跑一批：离屏窗口尽力全静默。
-##  · 尾行报整批耗时（提速可见）。
+##  · 尾行报整批耗时＋起止墙钟（v3.1：墙钟区间之外的等待＝宿主 Bash 通道 toll——
+##    2026-10-28 立证：脚本 1s 跑完、调用 2.5min 才关闭；两会话并发时 5-10min）。
 ## 用法：zsh qiforge/tools/run_probes.sh              # 默认：仅静默组
 ##       zsh qiforge/tools/run_probes.sh --input      # 静默组＋交互组
 ##       zsh qiforge/tools/run_probes.sh qiv3 prep    # 只跑指名探针（按组自动选模式）
@@ -19,6 +20,7 @@ RUN_INPUT=0
 
 typeset -a TOTAL
 SECONDS=0
+_W0=$(date '+%H:%M:%S')   # 起跑墙钟（与产物 mtime／调用关闭时刻对照即可定责）
 
 _run_once() {
 	# $1=探针名 $2=模式(headless|input) $3=日志后缀(空=首轮 ".retry"=重试轮)
@@ -84,5 +86,6 @@ else
 	fi
 fi
 local bad=0; for t in $TOTAL; do [[ "$t" == FAIL* ]] && (( bad++ )); done
-print "SUITE: ${#TOTAL} ran, ${bad} failed  （耗时 ${SECONDS}s）"
+_W1=$(date '+%H:%M:%S')
+print "SUITE: ${#TOTAL} ran, ${bad} failed  （耗时 ${SECONDS}s · 墙钟 ${_W0}→${_W1}）"
 exit $(( bad > 0 ? 1 : 0 ))
