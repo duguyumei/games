@@ -1,11 +1,13 @@
 #!/bin/zsh
-## 静默探针跑批 v2（2026-10-28 用户裁定「不要弹窗打断」）。
+## 静默探针跑批 v3（2026-10-28 提速轮）。
 ##  · 默认＝HEADLESS 组（纯逻辑/几何/流程）——零窗口零打扰，probe_lib.fit 矫正无头视口 1920×1080。
+##  · 失败自动重试一次（离屏窗口垃圾鼠标类 flake 一次即愈，免整批重跑）；重试过标 (重试)。
 ##  · INPUT 组（原生拖放/点击/悬停）依赖真 DisplayServer——Godot 4.7 无头实测不派发 GUI 输入
-##    （push_input/parse_input_event 全灭，实验留档）。**默认不跑**；仅交互代码改动后经用户
-##    点头加 --input 跑一批：用 open -g 后台启动（不抢前台焦点）＋离屏窗口，尽力全静默。
+##    （push_input/parse_input_event 全灭，实验留档）。**默认不跑**；仅交互代码改动后加 --input
+##    跑一批：离屏窗口尽力全静默。
+##  · 尾行报整批耗时（提速可见）。
 ## 用法：zsh qiforge/tools/run_probes.sh              # 默认：仅静默组
-##       zsh qiforge/tools/run_probes.sh --input      # 静默组＋交互组（后台离屏一批）
+##       zsh qiforge/tools/run_probes.sh --input      # 静默组＋交互组
 ##       zsh qiforge/tools/run_probes.sh qiv3 prep    # 只跑指名探针（按组自动选模式）
 GODOT="/Applications/Godot.app/Contents/MacOS/Godot"
 PROJ="/Users/cc/Documents/qi-forge-2"
@@ -16,56 +18,71 @@ RUN_INPUT=0
 [[ "$1" == "--input" ]] && { RUN_INPUT=1; shift; }
 
 typeset -a TOTAL
-run_headless() {
-	local name=$1
-	local log="/tmp/probe_${name}.log"
-	"$GODOT" --headless --path "$PROJ" --script "res://qiforge/tools/probe_${name}.gd" > "$log" 2>&1 &
-	local p=$!
-	( sleep $WATCH_S; kill -9 $p 2>/dev/null ) & local guard=$!
-	wait $p; local e=$?
-	kill $guard 2>/dev/null
-	_summarize "$name" "$e" "$log"
-}
+SECONDS=0
 
-## 后台离屏：直启二进制后台（2026-10-28 修——open -a 在编辑器已开时无法接管 stdout 重定向，
-## 探针日志丢失全挂看门狗）；--position 离屏不抢前台；轮询探针 DONE 标记收账；超时按脚本名杀。
-run_input_bg() {
-	local name=$1
-	local log="/tmp/probe_${name}.log"
-	rm -f "$log"
-	"$GODOT" --path "$PROJ" --position 19000,19000 \
-		--script "res://qiforge/tools/probe_${name}.gd" > "$log" 2>&1 &
-	local p=$!
-	( sleep $WATCH_S; kill -9 $p 2>/dev/null ) & local guard=$!
-	wait $p; local e=$?
+_run_once() {
+	# $1=探针名 $2=模式(headless|input) $3=日志后缀(空=首轮 ".retry"=重试轮)
+	local name=$1 mode=$2 sfx=$3
+	local log="/tmp/probe_${name}${sfx}.log"
+	local p guard e
+	if [[ "$mode" == "input" ]]; then
+		rm -f "$log"
+		"$GODOT" --path "$PROJ" --position 19000,19000 \
+			--script "res://qiforge/tools/probe_${name}.gd" > "$log" 2>&1 &
+	else
+		"$GODOT" --headless --path "$PROJ" --script "res://qiforge/tools/probe_${name}.gd" > "$log" 2>&1 &
+	fi
+	p=$!
+	( sleep $WATCH_S; kill -9 $p 2>/dev/null ) & guard=$!
+	wait $p; e=$?
 	kill $guard 2>/dev/null
-	_summarize "$name" "$e" "$log"
+	_summarize "$name" "$e" "$log" "$sfx"
 }
 
 _summarize() {
-	local name=$1 e=$2 log=$3
+	# $4 非空＝重试轮（不计入新 TOTAL 槽位，替换末位）
+	local name=$1 e=$2 log=$3 sfx=$4
 	local fails=$(grep -cE "^FAIL" "$log"); local errs=$(grep -cE "SCRIPT ERROR" "$log")
 	local mark="OK  "; [[ $e -ne 0 || $fails -ne 0 || $errs -ne 0 ]] && mark="FAIL"
-	print "${mark} ${name}  exit=${e} fails=${fails} errs=${errs}"
-	TOTAL+=("${mark}${name}")
-	[[ "$mark" == "FAIL" ]] && grep -E "^FAIL|SCRIPT ERROR" "$log" | head -5 | sed 's/^/      /'
+	if [[ -n "$sfx" ]]; then
+		print "    ↻ 重试：${mark} ${name}  exit=${e} fails=${fails} errs=${errs}"
+	else
+		print "${mark} ${name}  exit=${e} fails=${fails} errs=${errs}"
+	fi
+	if [[ "$mark" == "FAIL" ]]; then
+		grep -E "^FAIL|SCRIPT ERROR" "$log" | head -5 | sed 's/^/      /'
+	fi
+	if [[ -n "$sfx" ]]; then
+		TOTAL[-1]="${mark}${name}(重试)"
+	else
+		TOTAL+=("${mark}${name}")
+	fi
+}
+
+run_probe() {
+	local name=$1 mode=$2
+	_run_once "$name" "$mode" ""
+	# 失败自动重试一次（flake 一次即愈；真坏重试仍红）
+	if [[ "${TOTAL[-1]}" == FAIL* ]]; then
+		_run_once "$name" "$mode" ".retry"
+	fi
 }
 
 cd "$PROJ" || exit 2
 if [[ $# -gt 0 ]]; then
 	for n in "$@"; do
-		if [[ " ${INPUT[@]} " == *" ${n} "* ]]; then run_input_bg "$n"; else run_headless "$n"; fi
+		if [[ " ${INPUT[@]} " == *" ${n} "* ]]; then run_probe "$n" input; else run_probe "$n" headless; fi
 	done
 else
 	print "—— 静默组（无头·零窗口）——"
-	for n in $HEADLESS; do run_headless "$n"; done
+	for n in $HEADLESS; do run_probe "$n" headless; done
 	if [[ $RUN_INPUT -eq 1 ]]; then
-		print "—— 交互组（后台 open -g＋离屏，一批跑完）——"
-		for n in $INPUT; do run_input_bg "$n"; done
+		print "—— 交互组（离屏，失败自动重试一次）——"
+		for n in $INPUT; do run_probe "$n" input; done
 	else
 		print "—— 交互组（${INPUT}）：默认跳过——改了拖放/点击/悬停交互时加 --input 跑一批 ——"
 	fi
 fi
 local bad=0; for t in $TOTAL; do [[ "$t" == FAIL* ]] && (( bad++ )); done
-print "SUITE: ${#TOTAL} ran, ${bad} failed"
+print "SUITE: ${#TOTAL} ran, ${bad} failed  （耗时 ${SECONDS}s）"
 exit $(( bad > 0 ? 1 : 0 ))
