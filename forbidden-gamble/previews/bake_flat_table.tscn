@@ -1,0 +1,284 @@
+[gd_scene load_steps=12 format=3]
+
+[ext_resource type="Script" path="res://previews/bake_flat_table.gd" id="1_bake"]
+[ext_resource type="Script" path="res://previews/bake_rail.gd" id="2_rail"]
+[ext_resource type="Script" path="res://previews/bake_rail_label.gd" id="3_label"]
+[ext_resource type="Script" path="res://previews/bake_hp_band.gd" id="5_hp"]
+[ext_resource type="Script" path="res://previews/bake_avatar.gd" id="7_avatar"]
+[ext_resource type="Script" path="res://previews/bake_foe_vname.gd" id="8_vname"]
+[ext_resource type="Script" path="res://previews/bake_mini_seals.gd" id="10_seal"]
+[ext_resource type="Script" path="res://previews/bake_info_chip.gd" id="12_chip"]
+[ext_resource type="Script" path="res://previews/bake_foe_plate.gd" id="15_plate"]
+[ext_resource type="Script" path="res://previews/bake_stat_block.gd" id="16_block"]
+[ext_resource type="Script" path="res://previews/bake_state_seal.gd" id="17_state"]
+
+[node name="BakeFlatTable" type="Node"]
+script = ExtResource("1_bake")
+
+[node name="架层" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="功法杆" type="Control" parent="架层"]
+offset_left = 40.0
+offset_top = 420.0
+offset_right = 282.0
+offset_bottom = 522.0
+script = ExtResource("2_rail")
+
+[node name="功法签" type="Control" parent="架层/功法杆"]
+offset_left = 210.0
+offset_top = 4.0
+offset_right = 232.0
+offset_bottom = 38.0
+script = ExtResource("3_label")
+label_text = "功法"
+
+[node name="护身杆" type="Control" parent="架层"]
+offset_left = 40.0
+offset_top = 545.0
+offset_right = 304.0
+offset_bottom = 647.0
+script = ExtResource("2_rail")
+rail_type = 1
+
+[node name="护身签" type="Control" parent="架层/护身杆"]
+offset_left = 210.0
+offset_top = 4.0
+offset_right = 232.0
+offset_bottom = 38.0
+script = ExtResource("3_label")
+label_text = "护身"
+
+[node name="敌血带" type="Control" parent="架层"]
+offset_left = 358.0
+offset_top = 278.0
+offset_right = 840.0
+offset_bottom = 304.0
+script = ExtResource("5_hp")
+hp_value = 98
+
+[node name="我血带" type="Control" parent="架层"]
+offset_left = 358.0
+offset_top = 478.0
+offset_right = 840.0
+offset_bottom = 504.0
+script = ExtResource("5_hp")
+
+[node name="敌罡变列" type="Control" parent="架层"]
+offset_left = 848.0
+offset_top = 277.0
+offset_right = 1050.0
+offset_bottom = 305.0
+
+[node name="敌罡" type="Control" parent="架层/敌罡变列"]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 98.0
+offset_bottom = 28.0
+script = ExtResource("12_chip")
+chip_text = "罡 9"
+
+[node name="敌变" type="Control" parent="架层/敌罡变列"]
+offset_left = 104.0
+offset_top = 0.0
+offset_right = 202.0
+offset_bottom = 28.0
+script = ExtResource("12_chip")
+chip_text = "变 9"
+
+[node name="我罡变列" type="Control" parent="架层"]
+offset_left = 848.0
+offset_top = 477.0
+offset_right = 1050.0
+offset_bottom = 505.0
+
+[node name="我罡" type="Control" parent="架层/我罡变列"]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 98.0
+offset_bottom = 28.0
+script = ExtResource("12_chip")
+chip_text = "罡 10"
+
+[node name="我变" type="Control" parent="架层/我罡变列"]
+offset_left = 104.0
+offset_top = 0.0
+offset_right = 202.0
+offset_bottom = 28.0
+script = ExtResource("12_chip")
+chip_text = "变 9"
+
+[node name="敌方名牌组" type="Control" parent="架层"]
+offset_left = 2.0
+offset_top = 36.0
+offset_right = 276.0
+offset_bottom = 162.0
+
+[node name="条体" type="Control" parent="架层/敌方名牌组"]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 274.0
+offset_bottom = 92.0
+script = ExtResource("15_plate")
+divider_y = 62.0
+
+[node name="头像" type="Control" parent="架层/敌方名牌组"]
+offset_left = 12.0
+offset_top = 10.0
+offset_right = 56.0
+offset_bottom = 54.0
+script = ExtResource("7_avatar")
+char_size = 18
+gold_border = true
+
+[node name="名号" type="Control" parent="架层/敌方名牌组"]
+offset_left = 64.0
+offset_top = 10.0
+offset_right = 130.0
+offset_bottom = 54.0
+script = ExtResource("8_vname")
+char_size = 18
+horizontal = true
+gold_text = true
+
+[node name="攻块" type="Control" parent="架层/敌方名牌组"]
+offset_left = 154.0
+offset_top = 10.0
+offset_right = 200.0
+offset_bottom = 54.0
+script = ExtResource("16_block")
+stat_label = "攻"
+stat_value = "12"
+
+[node name="防块" type="Control" parent="架层/敌方名牌组"]
+offset_left = 208.0
+offset_top = 10.0
+offset_right = 254.0
+offset_bottom = 54.0
+script = ExtResource("16_block")
+stat_label = "防"
+stat_value = "8"
+
+[node name="心法印" type="Control" parent="架层/敌方名牌组"]
+offset_left = 12.0
+offset_top = 66.0
+offset_right = 154.0
+offset_bottom = 88.0
+script = ExtResource("10_seal")
+
+[node name="三力" type="Control" parent="架层/敌方名牌组"]
+offset_left = 160.0
+offset_top = 64.0
+offset_right = 264.0
+offset_bottom = 88.0
+script = ExtResource("12_chip")
+chip_text = "劲10 骨3 气12"
+
+[node name="破绽" type="Control" parent="架层/敌方名牌组"]
+offset_left = 0.0
+offset_top = 98.0
+offset_right = 48.0
+offset_bottom = 122.0
+script = ExtResource("17_state")
+
+[node name="护体" type="Control" parent="架层/敌方名牌组"]
+offset_left = 52.0
+offset_top = 98.0
+offset_right = 100.0
+offset_bottom = 122.0
+script = ExtResource("17_state")
+kind = 1
+visible = false
+
+[node name="我方名牌组" type="Control" parent="架层"]
+offset_left = 1004.0
+offset_top = 566.0
+offset_right = 1278.0
+offset_bottom = 692.0
+
+[node name="条体" type="Control" parent="架层/我方名牌组"]
+offset_left = 0.0
+offset_top = 34.0
+offset_right = 274.0
+offset_bottom = 126.0
+script = ExtResource("15_plate")
+divider_y = 62.0
+
+[node name="头像" type="Control" parent="架层/我方名牌组"]
+offset_left = 12.0
+offset_top = 44.0
+offset_right = 56.0
+offset_bottom = 88.0
+script = ExtResource("7_avatar")
+avatar_char = "无"
+char_size = 18
+gold_border = true
+
+[node name="名号" type="Control" parent="架层/我方名牌组"]
+offset_left = 64.0
+offset_top = 44.0
+offset_right = 130.0
+offset_bottom = 88.0
+script = ExtResource("8_vname")
+name_text = "无名"
+char_size = 18
+horizontal = true
+gold_text = true
+
+[node name="攻块" type="Control" parent="架层/我方名牌组"]
+offset_left = 154.0
+offset_top = 44.0
+offset_right = 200.0
+offset_bottom = 88.0
+script = ExtResource("16_block")
+stat_label = "攻"
+stat_value = "12"
+
+[node name="防块" type="Control" parent="架层/我方名牌组"]
+offset_left = 208.0
+offset_top = 44.0
+offset_right = 254.0
+offset_bottom = 88.0
+script = ExtResource("16_block")
+stat_label = "防"
+stat_value = "1"
+
+[node name="心法印" type="Control" parent="架层/我方名牌组"]
+offset_left = 12.0
+offset_top = 100.0
+offset_right = 154.0
+offset_bottom = 122.0
+script = ExtResource("10_seal")
+
+[node name="三力" type="Control" parent="架层/我方名牌组"]
+offset_left = 160.0
+offset_top = 98.0
+offset_right = 264.0
+offset_bottom = 122.0
+script = ExtResource("12_chip")
+chip_text = "劲10 骨3 气12"
+
+[node name="护体" type="Control" parent="架层/我方名牌组"]
+offset_left = 226.0
+offset_top = 0.0
+offset_right = 274.0
+offset_bottom = 24.0
+script = ExtResource("17_state")
+kind = 1
+
+[node name="破绽" type="Control" parent="架层/我方名牌组"]
+offset_left = 174.0
+offset_top = 0.0
+offset_right = 222.0
+offset_bottom = 24.0
+script = ExtResource("17_state")
+visible = false
+
+[node name="我方丹田" type="Control" parent="架层"]
+offset_left = 898.0
+offset_top = 632.0
+offset_right = 996.0
+offset_bottom = 660.0
+script = ExtResource("12_chip")
+chip_text = "丹田 · 14"
+gold_text = true

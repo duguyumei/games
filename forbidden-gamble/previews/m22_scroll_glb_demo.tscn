@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://dx5fxlyqds7n2"]
+
+[ext_resource type="PackedScene" path="res://previews/scroll_diploma_doerlorenz.glb" id="1_glb"]
+[ext_resource type="PackedScene" uid="uid://2b3ibj1x7dys" path="res://scenes/mahjong3d/mj3d_blank_tile.tscn" id="2_tile"]
+
+[sub_resource type="Environment" id="Environment_demo"]
+background_mode = 1
+background_color = Color(0.19, 0.22, 0.26, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.55
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(22, 0.1, 14)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+albedo_color = Color(0.13, 0.2, 0.17, 1)
+roughness = 1.0
+
+[node name="M22ScrollGlbDemo" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_demo")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.383, 0.3214, 0, 0.6428, 0.766, -0.5, -0.6634, 0.5567, 0, 5, 0)
+light_energy = 0.6
+
+[node name="地面" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+mesh = SubResource("BoxMesh_floor")
+surface_material_override/0 = SubResource("StandardMaterial3D_floor")
+
+[node name="卷轴_glb" parent="." instance=ExtResource("1_glb")]
+transform = Transform3D(0, 0, -2.4, 0, 2.4, 0, 2.4, 0, 0, 0, 0.29, 0)
+
+[node name="参照牌" parent="." instance=ExtResource("2_tile")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0.5, 0.8)
+face_id = "1万"
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.49999997, 0.86602545, 0, -0.86602545, 0.49999997, 0, 8, 5.5)
+current = true
+fov = 48.0

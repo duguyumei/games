@@ -1,3 +1,4 @@
+@tool
 class_name MJBMeldStrip
 extends VBoxContainer
 
@@ -8,16 +9,18 @@ extends VBoxContainer
 
 
 const ZONE_W := MJBRiverPanel.ZONE_W  # 区宽单源（2026-09-17 审计项）：与牌河区同宽
-const PER_ROW := 3
+const PER_ROW := 2  # 2026-09-18 尺寸系统：牌变大后一行两组（原三组溢出）
 
 
 var on_group_clicked: Callable  # (meld_index: int) -> void
 
-var _side := "player"
+var _persp_sz := Vector2i(28, 40)  # 透视牌尺寸（update_melds 按本区实测 y 刷新；2026-09-18 尺寸系统）
+
+@export var side := "player"  # 单侧归属（场景装配可调；2026-09-18 场景化改造）
 
 
-func _init(side := "player") -> void:
-	_side = side
+func _init(p_side := "player") -> void:
+	side = p_side
 	custom_minimum_size = Vector2(ZONE_W, 0)
 	add_theme_constant_override("separation", 4)
 
@@ -27,6 +30,7 @@ func update_melds(melds: Array, selected_meld := -1) -> void:
 		child.queue_free()
 	if melds.is_empty():
 		return
+	_persp_sz = MJBPerspective.tile_size_at(get_global_rect().get_center().y)
 	# 1) 分行：一行 PER_ROW 组
 	var rows: Array = []
 	for mi in range(melds.size()):
@@ -34,7 +38,7 @@ func update_melds(melds: Array, selected_meld := -1) -> void:
 			rows.append([])
 		(rows.back() as Array).append(mi)
 	# 2) 我方新行在上（往上排）、敌方新行在下
-	if _side == "player":
+	if side == "player":
 		rows.reverse()
 	for row in rows:
 		var line := HBoxContainer.new()
@@ -73,7 +77,7 @@ func _make_group(meld: Dictionary, mi: int, selected_meld: int) -> Control:
 	var tiles_row := HBoxContainer.new()
 	tiles_row.add_theme_constant_override("separation", 2)
 	# 式名位置分侧（2026-09-17 用户令）：我方在牌上面、敌方在牌下面
-	if _side == "player":
+	if side == "player":
 		inner.add_child(symbol)
 		inner.add_child(tiles_row)
 	else:
@@ -81,7 +85,7 @@ func _make_group(meld: Dictionary, mi: int, selected_meld: int) -> Control:
 		inner.add_child(symbol)
 	var claimed: Array = meld.get("claimed", [])
 	for t in meld["tiles"]:
-		var widget := MJBTileFace.make_tile(t as MJTile, 28, 40)
+		var widget := MJBTileFace.make_tile(t as MJTile, _persp_sz.x, _persp_sz.y)
 		if claimed.has((t as MJTile).get_instance_id()):
 			# 招架获得的牌：顶缘金条（与本拍摸到同款样式，2026-09-17 用户令——非边框亮）
 			MJBTileFace.fresh_mark(widget)

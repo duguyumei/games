@@ -1,0 +1,43 @@
+[gd_scene load_steps=3 format=3 uid="uid://bm18unlitcomp1"]
+
+[ext_resource type="Script" path="res://previews/m18_unlit_composite_demo.gd" id="1_demo"]
+[ext_resource type="Script" path="res://scenes/mahjong_battle/ui/table_cloth.gd" id="2_cloth"]
+
+[node name="M18UnlitComposite" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_demo")
+
+[node name="背景" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.06, 0.055, 0.05, 1)
+
+[node name="桌布" type="Control" parent="."]
+layout_mode = 1
+offset_left = 80.0
+offset_top = 140.0
+offset_right = 1216.0
+offset_bottom = 660.0
+script = ExtResource("2_cloth")
+
+[node name="牌层" type="SubViewportContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+stretch = true
+mouse_filter = 2
+
+[node name="SubViewport" type="SubViewport" parent="牌层"]
+transparent_bg = true
+size = Vector2i(1280, 720)
+
+[node name="TileWorld" type="Node3D" parent="牌层/SubViewport"]
+
+[node name="Camera3D" type="Camera3D" parent="牌层/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 620, 430)
+fov = 48.0

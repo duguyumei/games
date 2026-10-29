@@ -1,0 +1,1516 @@
+[gd_scene format=3 uid="uid://cm20studi0tbl"]
+
+[ext_resource type="Script" uid="uid://ccilv2b6ny42j" path="res://previews/m20_studio_cam.gd" id="1_cam"]
+[ext_resource type="PackedScene" uid="uid://bmj3dt4bl3t8b" path="res://scenes/mahjong3d/mj3d_table.tscn" id="2_table"]
+[ext_resource type="Script" uid="uid://cjxmly5vuw75e" path="res://scenes/mahjong3d/mj3d_hand_row.gd" id="3_hand"]
+[ext_resource type="PackedScene" uid="uid://2b3ibj1x7dys" path="res://scenes/mahjong3d/mj3d_blank_tile.tscn" id="4_tile"]
+[ext_resource type="Texture2D" uid="uid://boy0nxybe624i" path="res://assets/table/felt_user.png" id="5_felt"]
+[ext_resource type="Script" uid="uid://3ibajf2cj3xs" path="res://previews/m20_topbar_mock.gd" id="6_tbar"]
+[ext_resource type="PackedScene" uid="uid://djipuhvu08twd" path="res://ui/qi_slot_group.tscn" id="7_yxpcd"]
+[ext_resource type="Script" uid="uid://gf1dx4qob3mw" path="res://previews/m20_hp_piece.gd" id="9_hp"]
+[ext_resource type="Texture2D" uid="uid://ct7nw1ayhtacg" path="res://previews/m20_v21_reference_bg.png" id="10_ref"]
+[ext_resource type="Script" uid="uid://cwd0w1jshwd12" path="res://scenes/mahjong3d/mj3d_river.gd" id="11_river"]
+[ext_resource type="Script" uid="uid://dodknxp3ppk3w" path="res://scenes/mahjong3d/mj3d_qi_sea.gd" id="12_qisea"]
+[ext_resource type="Script" uid="uid://dcbgrxv1xctqi" path="res://previews/m20_ref_bg.gd" id="13_refbg"]
+[ext_resource type="Script" uid="uid://c6ntlugeh5jsh" path="res://previews/m20_zone_border.gd" id="14_zone"]
+[ext_resource type="Script" uid="uid://djm6f7oydc77g" path="res://scenes/mahjong3d/mj3d_meld_zone.gd" id="15_meld"]
+[ext_resource type="Script" uid="uid://mejebtvof38r" path="res://previews/m20_action_btn.gd" id="18_abtn"]
+
+[sub_resource type="Environment" id="Environment_studio"]
+background_mode = 1
+background_color = Color(0.19, 0.22, 0.26, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.55
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ivrse"]
+bg_color = Color(0.09, 0.085, 0.08, 0.95)
+border_width_bottom = 1
+border_color = Color(0.44, 0.39, 0.3, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_avatar"]
+content_margin_bottom = 4.0
+bg_color = Color(0.13, 0.11, 0.09, 0.8)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.44, 0.39, 0.3, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_chip"]
+content_margin_left = 7.0
+content_margin_top = 2.5
+content_margin_right = 7.0
+content_margin_bottom = 5.5
+bg_color = Color(0.09, 0.085, 0.08, 0.35)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.44, 0.39, 0.3, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qian"]
+content_margin_left = 3.0
+content_margin_top = 16.0
+content_margin_right = 3.0
+content_margin_bottom = 4.0
+bg_color = Color(0.85, 0.8, 0.68, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.44, 0.39, 0.3, 0.8)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_2nygr"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_yodmx"]
+
+[node name="M20TableStudio" type="Node3D" unique_id=533662674]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2130592451]
+environment = SubResource("Environment_studio")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=385568264]
+transform = Transform3D(0.866, -0.383, 0.3214, 0, 0.6428, 0.766, -0.5, -0.6634, 0.5567, 0, 5, 0)
+light_energy = 0.6
+
+[node name="Mj3dTable" parent="." unique_id=77950854 instance=ExtResource("2_table")]
+felt_color = Color(1, 1, 1, 1)
+felt_texture = ExtResource("5_felt")
+
+[node name="HandRow" type="Node3D" parent="Mj3dTable" unique_id=2102775171]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1.5)
+script = ExtResource("3_hand")
+spacing_k = 1.005
+lean_deg = 60.0
+tile_scale = 1.3
+
+[node name="牌01" parent="Mj3dTable/HandRow" unique_id=1030285302 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -9.07, 0.33, 9.94)
+face_id = "1万"
+
+[node name="牌02" parent="Mj3dTable/HandRow" unique_id=1036174816 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -8.12, 0.33, 9.94)
+face_id = "2万"
+
+[node name="牌03" parent="Mj3dTable/HandRow" unique_id=1330895685 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -7.16, 0.33, 9.94)
+face_id = "3万"
+
+[node name="牌04" parent="Mj3dTable/HandRow" unique_id=191823534 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -6.21, 0.33, 9.94)
+face_id = "4万"
+
+[node name="牌05" parent="Mj3dTable/HandRow" unique_id=356407038 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -5.25, 0.33, 9.94)
+face_id = "5万"
+
+[node name="牌06" parent="Mj3dTable/HandRow" unique_id=429021322 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -4.3, 0.33, 9.94)
+face_id = "6万"
+
+[node name="牌07" parent="Mj3dTable/HandRow" unique_id=820731997 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -3.34, 0.33, 9.94)
+face_id = "7万"
+
+[node name="牌08" parent="Mj3dTable/HandRow" unique_id=2073282326 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -2.39, 0.33, 9.94)
+face_id = "8万"
+
+[node name="牌09" parent="Mj3dTable/HandRow" unique_id=1363557243 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -1.43, 0.33, 9.94)
+face_id = "9万"
+
+[node name="牌10" parent="Mj3dTable/HandRow" unique_id=1046609373 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, -0.48, 0.33, 9.94)
+face_id = "1筒"
+
+[node name="牌11" parent="Mj3dTable/HandRow" unique_id=807278713 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 0.48, 0.33, 9.94)
+face_id = "2筒"
+
+[node name="牌12" parent="Mj3dTable/HandRow" unique_id=276236435 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 1.43, 0.33, 9.94)
+face_id = "3筒"
+
+[node name="牌13" parent="Mj3dTable/HandRow" unique_id=2028554024 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 2.39, 0.33, 9.94)
+face_id = "4筒"
+
+[node name="牌14" parent="Mj3dTable/HandRow" unique_id=620001100 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 3.34, 0.33, 9.94)
+face_id = "5筒"
+
+[node name="牌15" parent="Mj3dTable/HandRow" unique_id=620001101 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 4.3, 0.33, 9.94)
+face_id = "6筒"
+
+[node name="牌16" parent="Mj3dTable/HandRow" unique_id=620001102 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 5.25, 0.33, 9.94)
+face_id = "7筒"
+
+[node name="牌17" parent="Mj3dTable/HandRow" unique_id=620001103 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 6.21, 0.33, 9.94)
+face_id = "8筒"
+
+[node name="牌18" parent="Mj3dTable/HandRow" unique_id=620001104 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 7.16, 0.33, 9.94)
+face_id = "9筒"
+
+[node name="牌19" parent="Mj3dTable/HandRow" unique_id=620001105 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 8.12, 0.33, 9.94)
+face_id = "1条"
+
+[node name="牌20" parent="Mj3dTable/HandRow" unique_id=620001106 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0.6499999, 1.125833, 0, -1.125833, 0.6499999, 9.07, 0.33, 9.94)
+face_id = "2条"
+
+[node name="敌方手牌" type="Node3D" parent="Mj3dTable" unique_id=1640819986]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, -0.5)
+script = ExtResource("3_hand")
+spacing_k = 1.005
+lean_deg = 0.0
+inset = 4.2
+tile_scale = 1.3
+
+[node name="敌牌01" parent="Mj3dTable/敌方手牌" unique_id=459186821 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -9.07, 0.65, 7.3)
+
+[node name="敌牌02" parent="Mj3dTable/敌方手牌" unique_id=1911361079 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -8.12, 0.65, 7.3)
+
+[node name="敌牌03" parent="Mj3dTable/敌方手牌" unique_id=437895483 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -7.16, 0.65, 7.3)
+
+[node name="敌牌04" parent="Mj3dTable/敌方手牌" unique_id=2145122066 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -6.21, 0.65, 7.3)
+
+[node name="敌牌05" parent="Mj3dTable/敌方手牌" unique_id=1289198538 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -5.25, 0.65, 7.3)
+
+[node name="敌牌06" parent="Mj3dTable/敌方手牌" unique_id=969590115 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -4.3, 0.65, 7.3)
+
+[node name="敌牌07" parent="Mj3dTable/敌方手牌" unique_id=1446568059 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -3.34, 0.65, 7.3)
+
+[node name="敌牌08" parent="Mj3dTable/敌方手牌" unique_id=1020915839 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -2.39, 0.65, 7.3)
+
+[node name="敌牌09" parent="Mj3dTable/敌方手牌" unique_id=1229282453 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -1.43, 0.65, 7.3)
+
+[node name="敌牌10" parent="Mj3dTable/敌方手牌" unique_id=439429163 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, -0.48, 0.65, 7.3)
+
+[node name="敌牌11" parent="Mj3dTable/敌方手牌" unique_id=1631548771 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 0.48, 0.65, 7.3)
+
+[node name="敌牌12" parent="Mj3dTable/敌方手牌" unique_id=1868375765 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 1.43, 0.65, 7.3)
+
+[node name="敌牌13" parent="Mj3dTable/敌方手牌" unique_id=392176009 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 2.39, 0.65, 7.3)
+
+[node name="敌牌14" parent="Mj3dTable/敌方手牌" unique_id=620001110 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 3.34, 0.65, 7.3)
+
+[node name="敌牌15" parent="Mj3dTable/敌方手牌" unique_id=620001111 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 4.3, 0.65, 7.3)
+
+[node name="敌牌16" parent="Mj3dTable/敌方手牌" unique_id=620001112 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 5.25, 0.65, 7.3)
+
+[node name="敌牌17" parent="Mj3dTable/敌方手牌" unique_id=620001113 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 6.21, 0.65, 7.3)
+
+[node name="敌牌18" parent="Mj3dTable/敌方手牌" unique_id=620001114 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 7.16, 0.65, 7.3)
+
+[node name="敌牌19" parent="Mj3dTable/敌方手牌" unique_id=620001115 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 8.12, 0.65, 7.3)
+
+[node name="敌牌20" parent="Mj3dTable/敌方手牌" unique_id=620001116 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 9.07, 0.65, 7.3)
+
+[node name="我方牌河" type="Node3D" parent="Mj3dTable" unique_id=620000001]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.4)
+script = ExtResource("11_river")
+center_gap = 2.5
+row_len = 13.0
+region_left = -9.0
+max_rows = 3
+
+[node name="组01" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000002]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组01" unique_id=620000003 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "3万"
+
+[node name="组02" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000004]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.69, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组02" unique_id=620000005 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "5条"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组02" unique_id=620000006 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "5条"
+
+[node name="组03" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000007]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.4, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组03" unique_id=620000008 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "7筒"
+
+[node name="组04" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000009]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.09, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组04" unique_id=620000010 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "1条"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组04" unique_id=620000011 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "2条"
+
+[node name="牌3" parent="Mj3dTable/我方牌河/组04" unique_id=620000012 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 2.45, 0.3, 0)
+face_id = "3条"
+
+[node name="组05" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000013]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.82, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组05" unique_id=620000014 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "9万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组05" unique_id=620000015 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "9万"
+
+[node name="组06" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000016]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.47, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组06" unique_id=620000017 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "6筒"
+
+[node name="组07" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000018]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组07" unique_id=620000019 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "4筒"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组07" unique_id=620000020 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "4筒"
+
+[node name="组08" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000021]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.71, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组08" unique_id=620000022 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "2万"
+
+[node name="组09" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000100]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.4, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组09" unique_id=620000101 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "8万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组09" unique_id=620000102 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "8条"
+
+[node name="组10" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.11, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组10" unique_id=620000104 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "1筒"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组10" unique_id=620000105 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "2筒"
+
+[node name="牌3" parent="Mj3dTable/我方牌河/组10" unique_id=620000106 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 2.45, 0.3, 0)
+face_id = "3筒"
+
+[node name="组11" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000107]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组11" unique_id=620000108 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "6万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组11" unique_id=620000109 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "7万"
+
+[node name="组12" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000110]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组12" unique_id=620000111 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "5万"
+
+[node name="组13" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000112]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.69, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组13" unique_id=620000113 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "9条"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组13" unique_id=620000114 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "1条"
+
+[node name="牌3" parent="Mj3dTable/我方牌河/组13" unique_id=620000115 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 2.45, 0.3, 0)
+face_id = "6条"
+
+[node name="组14" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000116]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.42, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组14" unique_id=620000117 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "8筒"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组14" unique_id=620000118 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "9筒"
+
+[node name="组15" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000119]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.13, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组15" unique_id=620000120 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "7条"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组15" unique_id=620000121 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "4条"
+
+[node name="组16" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000122]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组16" unique_id=620000123 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "2万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组16" unique_id=620000124 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "5筒"
+
+[node name="组17" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000125]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.53, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组17" unique_id=620000126 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "7筒"
+
+[node name="组18" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000127]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.21, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组18" unique_id=620000128 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "3万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组18" unique_id=620000129 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "9万"
+
+[node name="牌3" parent="Mj3dTable/我方牌河/组18" unique_id=620000130 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 2.45, 0.3, 0)
+face_id = "4筒"
+
+[node name="组19" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000131]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.95, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组19" unique_id=620000132 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "1万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组19" unique_id=620000133 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "2条"
+
+[node name="组20" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000134]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.66, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组20" unique_id=620000135 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "5条"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组20" unique_id=620000136 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "6筒"
+
+[node name="组21" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000137]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.63, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组21" unique_id=620000138 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "3条"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组21" unique_id=620000139 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "4万"
+
+[node name="组22" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000140]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.53, 0.6, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组22" unique_id=620000141 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "8万"
+
+[node name="牌2" parent="Mj3dTable/我方牌河/组22" unique_id=620000142 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 1.47, 0.3, 0)
+face_id = "9条"
+
+[node name="组23" type="Node3D" parent="Mj3dTable/我方牌河" unique_id=620000143]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.24, 0.6, 4.68)
+
+[node name="牌1" parent="Mj3dTable/我方牌河/组23" unique_id=620000144 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, -5.6824803e-08, 1.3, 0, -1.3, -5.6824803e-08, 0.49, 0.3, 0)
+face_id = "1筒"
+
+[node name="敌方牌河" type="Node3D" parent="Mj3dTable" unique_id=620000023]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0.4)
+script = ExtResource("11_river")
+center_gap = 2.5
+row_len = 13.0
+region_left = -9.0
+max_rows = 3
+
+[node name="组01" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000024]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组01" unique_id=620000025 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "8万"
+
+[node name="组02" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000026]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.69, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组02" unique_id=620000027 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "3筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组02" unique_id=620000028 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "3筒"
+
+[node name="组03" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000029]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.4, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组03" unique_id=620000030 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "6条"
+
+[node name="组04" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000031]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.09, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组04" unique_id=620000032 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "7条"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组04" unique_id=620000033 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "8条"
+
+[node name="牌3" parent="Mj3dTable/敌方牌河/组04" unique_id=620000034 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 2.45, 0.3, 0)
+face_id = "9条"
+
+[node name="组05" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000035]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.82, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组05" unique_id=620000036 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "1万"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组05" unique_id=620000037 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "1万"
+
+[node name="组06" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000038]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.47, 0, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组06" unique_id=620000039 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "5筒"
+
+[node name="组07" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000040]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组07" unique_id=620000041 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "9筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组07" unique_id=620000042 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "9筒"
+
+[node name="组08" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000043]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.71, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组08" unique_id=620000044 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "4万"
+
+[node name="组09" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000200]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.4, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组09" unique_id=620000201 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "5筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组09" unique_id=620000202 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "6筒"
+
+[node name="组10" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000203]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.11, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组10" unique_id=620000204 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "7条"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组10" unique_id=620000205 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "8条"
+
+[node name="牌3" parent="Mj3dTable/敌方牌河/组10" unique_id=620000206 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 2.45, 0.3, 0)
+face_id = "9条"
+
+[node name="组11" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000207]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16, 0, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组11" unique_id=620000208 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "1万"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组11" unique_id=620000209 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "2万"
+
+[node name="组12" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000210]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组12" unique_id=620000211 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "3万"
+
+[node name="组13" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000212]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.69, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组13" unique_id=620000213 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "4万"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组13" unique_id=620000214 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "5万"
+
+[node name="牌3" parent="Mj3dTable/敌方牌河/组13" unique_id=620000215 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 2.45, 0.3, 0)
+face_id = "6条"
+
+[node name="组14" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000216]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.42, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组14" unique_id=620000217 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "7筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组14" unique_id=620000218 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "8筒"
+
+[node name="组15" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000219]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.13, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组15" unique_id=620000220 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "9筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组15" unique_id=620000221 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "1条"
+
+[node name="组16" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000222]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.16, 0, 6.14)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组16" unique_id=620000223 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "2条"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组16" unique_id=620000224 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "3条"
+
+[node name="组17" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000225]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.53, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组17" unique_id=620000226 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "4条"
+
+[node name="组18" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000227]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.21, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组18" unique_id=620000228 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "5条"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组18" unique_id=620000229 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "1筒"
+
+[node name="牌3" parent="Mj3dTable/敌方牌河/组18" unique_id=620000230 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 2.45, 0.3, 0)
+face_id = "2筒"
+
+[node name="组19" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000231]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.95, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组19" unique_id=620000232 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "3筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组19" unique_id=620000233 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "6万"
+
+[node name="组20" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000234]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.66, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组20" unique_id=620000235 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "7万"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组20" unique_id=620000236 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "8万"
+
+[node name="组21" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000237]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.63, 0.6, 3.23)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组21" unique_id=620000238 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "9万"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组21" unique_id=620000239 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "4筒"
+
+[node name="组22" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000240]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8.53, 0.6, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组22" unique_id=620000241 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "5筒"
+
+[node name="牌2" parent="Mj3dTable/敌方牌河/组22" unique_id=620000242 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 1.47, 0.3, 0)
+face_id = "6条"
+
+[node name="组23" type="Node3D" parent="Mj3dTable/敌方牌河" unique_id=620000243]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.24, 0.6, 4.68)
+
+[node name="牌1" parent="Mj3dTable/敌方牌河/组23" unique_id=620000244 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, 0.49, 0.3, 0)
+face_id = "7条"
+
+[node name="我方副露" type="Node3D" parent="Mj3dTable" unique_id=620100001]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8.35, 0, 5.74)
+script = ExtResource("15_meld")
+
+[node name="组01" type="Node3D" parent="Mj3dTable/我方副露" unique_id=620100002]
+
+[node name="牌1" parent="Mj3dTable/我方副露/组01" unique_id=620100007 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "3万"
+
+[node name="牌2" parent="Mj3dTable/我方副露/组01" unique_id=620100008 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "3万"
+
+[node name="牌3" parent="Mj3dTable/我方副露/组01" unique_id=620100009 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "3万"
+
+[node name="组02" type="Node3D" parent="Mj3dTable/我方副露" unique_id=620100003]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1.43)
+
+[node name="牌1" parent="Mj3dTable/我方副露/组02" unique_id=620100010 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "7条"
+
+[node name="牌2" parent="Mj3dTable/我方副露/组02" unique_id=620100011 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "7条"
+
+[node name="牌3" parent="Mj3dTable/我方副露/组02" unique_id=620100012 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "7条"
+
+[node name="组03" type="Node3D" parent="Mj3dTable/我方副露" unique_id=620100004]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.86)
+
+[node name="牌1" parent="Mj3dTable/我方副露/组03" unique_id=620100013 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "5筒"
+
+[node name="牌2" parent="Mj3dTable/我方副露/组03" unique_id=620100014 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "5筒"
+
+[node name="牌3" parent="Mj3dTable/我方副露/组03" unique_id=620100015 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "5筒"
+
+[node name="组04" type="Node3D" parent="Mj3dTable/我方副露" unique_id=620100005]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -4.29)
+
+[node name="牌1" parent="Mj3dTable/我方副露/组04" unique_id=620100016 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "9万"
+
+[node name="牌2" parent="Mj3dTable/我方副露/组04" unique_id=620100017 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "9万"
+
+[node name="牌3" parent="Mj3dTable/我方副露/组04" unique_id=620100018 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "9万"
+
+[node name="牌4" parent="Mj3dTable/我方副露/组04" unique_id=620100019 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -3.8, 0.3, 0)
+face_id = "9万"
+
+[node name="组05" type="Node3D" parent="Mj3dTable/我方副露" unique_id=620100006]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -5.72)
+
+[node name="牌1" parent="Mj3dTable/我方副露/组05" unique_id=620100020 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "2筒"
+
+[node name="牌2" parent="Mj3dTable/我方副露/组05" unique_id=620100021 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "3筒"
+
+[node name="牌3" parent="Mj3dTable/我方副露/组05" unique_id=620100022 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "4筒"
+
+[node name="QiSlotGroup" parent="Mj3dTable/我方副露" unique_id=1229249573 instance=ExtResource("7_yxpcd")]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 190.0
+offset_bottom = 210.0
+mouse_filter = 2
+
+[node name="敌方副露" type="Node3D" parent="Mj3dTable" unique_id=620100023]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, -8.35, 0, -5.74)
+script = ExtResource("15_meld")
+
+[node name="组01" type="Node3D" parent="Mj3dTable/敌方副露" unique_id=620100024]
+
+[node name="牌1" parent="Mj3dTable/敌方副露/组01" unique_id=620100029 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "1条"
+
+[node name="牌2" parent="Mj3dTable/敌方副露/组01" unique_id=620100030 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "1条"
+
+[node name="牌3" parent="Mj3dTable/敌方副露/组01" unique_id=620100031 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "1条"
+
+[node name="组02" type="Node3D" parent="Mj3dTable/敌方副露" unique_id=620100025]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1.43)
+
+[node name="牌1" parent="Mj3dTable/敌方副露/组02" unique_id=620100032 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "9筒"
+
+[node name="牌2" parent="Mj3dTable/敌方副露/组02" unique_id=620100033 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "9筒"
+
+[node name="牌3" parent="Mj3dTable/敌方副露/组02" unique_id=620100034 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "9筒"
+
+[node name="组03" type="Node3D" parent="Mj3dTable/敌方副露" unique_id=620100026]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.86)
+
+[node name="牌1" parent="Mj3dTable/敌方副露/组03" unique_id=620100035 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "5万"
+
+[node name="牌2" parent="Mj3dTable/敌方副露/组03" unique_id=620100036 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "5万"
+
+[node name="牌3" parent="Mj3dTable/敌方副露/组03" unique_id=620100037 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "5万"
+
+[node name="组04" type="Node3D" parent="Mj3dTable/敌方副露" unique_id=620100027]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -4.29)
+
+[node name="牌1" parent="Mj3dTable/敌方副露/组04" unique_id=620100038 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "3条"
+
+[node name="牌2" parent="Mj3dTable/敌方副露/组04" unique_id=620100039 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "3条"
+
+[node name="牌3" parent="Mj3dTable/敌方副露/组04" unique_id=620100040 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "3条"
+
+[node name="牌4" parent="Mj3dTable/敌方副露/组04" unique_id=620100041 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -3.8, 0.3, 0)
+face_id = "3条"
+
+[node name="组05" type="Node3D" parent="Mj3dTable/敌方副露" unique_id=620100028]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -5.72)
+
+[node name="牌1" parent="Mj3dTable/敌方副露/组05" unique_id=620100042 instance=ExtResource("4_tile")]
+transform = Transform3D(0, -1.3, 0, 0, 0, 1.3, -1.3, 0, 0, -1.65, 0.3, 0.175)
+face_id = "6万"
+
+[node name="牌2" parent="Mj3dTable/敌方副露/组05" unique_id=620100043 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -0.475, 0.3, 0)
+face_id = "7万"
+
+[node name="牌3" parent="Mj3dTable/敌方副露/组05" unique_id=620100044 instance=ExtResource("4_tile")]
+transform = Transform3D(1.3, 0, 0, 0, 0, 1.3, 0, -1.3, 0, -2.82, 0.3, 0)
+face_id = "8万"
+
+[node name="气海台" type="Node3D" parent="Mj3dTable" unique_id=620000045]
+script = ExtResource("12_qisea")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=912969882]
+transform = Transform3D(1, 0, 0, 0, 0.49999997, 0.86602545, 0, -0.86602545, 0.49999997, 0, 16, 11)
+current = true
+fov = 48.0
+script = ExtResource("1_cam")
+
+[node name="BattleHUD" type="CanvasLayer" parent="." unique_id=1357851028]
+
+[node name="参考底图" type="TextureRect" parent="BattleHUD" unique_id=513891779]
+visible = false
+offset_right = 1280.0
+offset_bottom = 720.0
+mouse_filter = 2
+texture = ExtResource("10_ref")
+script = ExtResource("13_refbg")
+
+[node name="顶部栏" type="PanelContainer" parent="BattleHUD" unique_id=2028326194]
+custom_minimum_size = Vector2(0, 30)
+anchors_preset = 10
+anchor_right = 1.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_ivrse")
+script = ExtResource("6_tbar")
+title = ""
+turn_text = ""
+bar_height = 30
+back_text = "‹ --演武场"
+record_text = "1-3"
+
+[node name="敌方头像" type="Label" parent="BattleHUD" unique_id=1332901]
+offset_left = 1216.0
+offset_top = 38.0
+offset_right = 1271.0
+offset_bottom = 93.0
+theme_override_colors/font_color = Color(0.92, 0.86, 0.7, 1)
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxFlat_avatar")
+text = "玄"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="敌方丹田" type="Label" parent="BattleHUD" unique_id=1132686396]
+offset_left = 146.0
+offset_top = 34.0
+offset_right = 236.0
+offset_bottom = 62.0
+theme_override_colors/font_color = Color(0.92, 0.86, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "丹田 · 13"
+
+[node name="敌方攻防" type="Label" parent="BattleHUD" unique_id=1690078291]
+offset_left = 1117.0
+offset_top = 65.0
+offset_right = 1215.0
+offset_bottom = 93.0
+theme_override_colors/font_color = Color(0.85, 0.8, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "攻 12　防 8"
+
+[node name="敌方三力" type="Label" parent="BattleHUD" unique_id=533073250]
+offset_left = 1136.0
+offset_top = 94.0
+offset_right = 1270.0
+offset_bottom = 122.0
+theme_override_colors/font_color = Color(0.85, 0.8, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "劲 10　骨 3　气 12"
+
+[node name="敌方罡变" type="Label" parent="BattleHUD" unique_id=2065447891]
+offset_left = 1117.0
+offset_top = 36.0
+offset_right = 1215.0
+offset_bottom = 64.0
+theme_override_colors/font_color = Color(0.85, 0.8, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "罡 10　变 9"
+
+[node name="敌方血量" type="HBoxContainer" parent="BattleHUD" unique_id=217126225]
+offset_left = 1080.0
+offset_top = 126.0
+offset_right = 1265.0
+offset_bottom = 146.0
+mouse_filter = 2
+theme_override_constants/separation = 8
+script = ExtResource("9_hp")
+hp_max = 150
+
+[node name="我方头像" type="Label" parent="BattleHUD" unique_id=1936838785]
+offset_left = 9.0
+offset_top = 651.0
+offset_right = 64.0
+offset_bottom = 706.0
+theme_override_colors/font_color = Color(0.92, 0.86, 0.7, 1)
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxFlat_avatar")
+text = "无"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="我方血量" type="HBoxContainer" parent="BattleHUD" unique_id=2009860754]
+offset_left = 15.0
+offset_top = 598.0
+offset_right = 200.0
+offset_bottom = 618.0
+mouse_filter = 2
+theme_override_constants/separation = 8
+script = ExtResource("9_hp")
+
+[node name="我方攻防" type="Label" parent="BattleHUD" unique_id=1195104050]
+offset_left = 65.0
+offset_top = 651.0
+offset_right = 163.0
+offset_bottom = 679.0
+theme_override_colors/font_color = Color(0.85, 0.8, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "攻 12　防 8"
+
+[node name="我方三力" type="Label" parent="BattleHUD" unique_id=1001710763]
+offset_left = 10.0
+offset_top = 622.0
+offset_right = 144.0
+offset_bottom = 650.0
+theme_override_colors/font_color = Color(0.85, 0.8, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "劲 10　骨 3　气 12"
+
+[node name="我方罡变" type="Label" parent="BattleHUD" unique_id=1241825963]
+offset_left = 65.0
+offset_top = 680.0
+offset_right = 163.0
+offset_bottom = 708.0
+theme_override_colors/font_color = Color(0.85, 0.8, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "罡 10　变 9"
+
+[node name="我方丹田" type="Label" parent="BattleHUD" unique_id=1696399390]
+offset_left = 1116.0
+offset_top = 685.0
+offset_right = 1214.0
+offset_bottom = 713.0
+theme_override_colors/font_color = Color(0.92, 0.86, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_chip")
+text = "丹田 · 16"
+
+[node name="我方功法层" type="Control" parent="BattleHUD" unique_id=1077273321]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 1110.0
+offset_top = 588.0
+offset_right = 1280.0
+offset_bottom = 684.0
+script = ExtResource("14_zone")
+
+[node name="我方功法一" type="Label" parent="BattleHUD/我方功法层" unique_id=898352422]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 34.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "点
+穴"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方功法层/我方功法一" unique_id=1356975997]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.72, 0.25, 0.2, 1)
+
+[node name="我方功法二" type="Label" parent="BattleHUD/我方功法层" unique_id=63278909]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 8.0
+offset_right = 66.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "连
+环
+掌"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方功法层/我方功法二" unique_id=34024695]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.72, 0.25, 0.2, 1)
+
+[node name="我方功法三" type="Label" parent="BattleHUD/我方功法层" unique_id=638124861]
+layout_mode = 0
+offset_left = 72.0
+offset_top = 8.0
+offset_right = 98.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "破
+甲
+拳"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方功法层/我方功法三" unique_id=599813336]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.72, 0.25, 0.2, 1)
+
+[node name="我方护身层" type="Control" parent="BattleHUD" unique_id=979731286]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 1110.0
+offset_top = 490.0
+offset_right = 1280.0
+offset_bottom = 586.0
+script = ExtResource("14_zone")
+
+[node name="我方护身一" type="Label" parent="BattleHUD/我方护身层" unique_id=1476143612]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 34.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "铁
+布
+衫"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方护身层/我方护身一" unique_id=368657223]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.76, 0.61, 0.31, 1)
+
+[node name="我方护身二" type="Label" parent="BattleHUD/我方护身层" unique_id=2128941127]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 8.0
+offset_right = 66.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "金
+钟
+罩"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方护身层/我方护身二" unique_id=302822721]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.76, 0.61, 0.31, 1)
+
+[node name="我方心法层" type="Control" parent="BattleHUD" unique_id=908342021]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 1.0
+offset_top = 498.0
+offset_right = 171.0
+offset_bottom = 594.0
+script = ExtResource("14_zone")
+
+[node name="我方心法一" type="Label" parent="BattleHUD/我方心法层" unique_id=1840485895]
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 34.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "拆
+招
+诀"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方心法层/我方心法一" unique_id=263731593]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.24, 0.33, 0.35, 1)
+
+[node name="我方心法二" type="Label" parent="BattleHUD/我方心法层" unique_id=841732190]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 8.0
+offset_right = 66.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "运
+筹
+诀"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方心法层/我方心法二" unique_id=113659928]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.24, 0.33, 0.35, 1)
+
+[node name="我方心法三" type="Label" parent="BattleHUD/我方心法层" unique_id=1342961272]
+layout_mode = 0
+offset_left = 72.0
+offset_top = 8.0
+offset_right = 98.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "洗
+练
+诀"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/我方心法层/我方心法三" unique_id=1964908487]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.24, 0.33, 0.35, 1)
+
+[node name="敌方功法层" type="Control" parent="BattleHUD" unique_id=23497980]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 27.0
+offset_top = 66.0
+offset_right = 197.0
+offset_bottom = 162.0
+script = ExtResource("14_zone")
+
+[node name="敌方功法一" type="Label" parent="BattleHUD/敌方功法层" unique_id=251936875]
+layout_mode = 0
+offset_left = 136.0
+offset_top = 8.0
+offset_right = 162.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "点
+穴"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方功法层/敌方功法一" unique_id=519311273]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.72, 0.25, 0.2, 1)
+
+[node name="敌方功法二" type="Label" parent="BattleHUD/敌方功法层" unique_id=1904829343]
+layout_mode = 0
+offset_left = 104.0
+offset_top = 8.0
+offset_right = 130.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "连
+环
+掌"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方功法层/敌方功法二" unique_id=1372483667]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.72, 0.25, 0.2, 1)
+
+[node name="敌方功法三" type="Label" parent="BattleHUD/敌方功法层" unique_id=811920183]
+layout_mode = 0
+offset_left = 72.0
+offset_top = 8.0
+offset_right = 98.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "破
+甲
+拳"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方功法层/敌方功法三" unique_id=1666338809]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.72, 0.25, 0.2, 1)
+
+[node name="敌方护身层" type="Control" parent="BattleHUD" unique_id=1765641193]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 27.0
+offset_top = 166.0
+offset_right = 197.0
+offset_bottom = 262.0
+script = ExtResource("14_zone")
+
+[node name="敌方护身一" type="Label" parent="BattleHUD/敌方护身层" unique_id=281222400]
+layout_mode = 0
+offset_left = 136.0
+offset_top = 8.0
+offset_right = 162.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "铁
+布
+衫"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方护身层/敌方护身一" unique_id=957819910]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.76, 0.61, 0.31, 1)
+
+[node name="敌方护身二" type="Label" parent="BattleHUD/敌方护身层" unique_id=346542840]
+layout_mode = 0
+offset_left = 104.0
+offset_top = 8.0
+offset_right = 130.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "金
+钟
+罩"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方护身层/敌方护身二" unique_id=569589309]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.76, 0.61, 0.31, 1)
+
+[node name="敌方心法层" type="Control" parent="BattleHUD" unique_id=240134320]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 1108.0
+offset_top = 151.0
+offset_right = 1278.0
+offset_bottom = 247.0
+script = ExtResource("14_zone")
+
+[node name="敌方心法一" type="Label" parent="BattleHUD/敌方心法层" unique_id=56895436]
+layout_mode = 0
+offset_left = 136.0
+offset_top = 8.0
+offset_right = 162.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "拆
+招
+诀"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方心法层/敌方心法一" unique_id=512196867]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.24, 0.33, 0.35, 1)
+
+[node name="敌方心法二" type="Label" parent="BattleHUD/敌方心法层" unique_id=1921813178]
+layout_mode = 0
+offset_left = 104.0
+offset_top = 8.0
+offset_right = 130.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "运
+筹
+诀"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方心法层/敌方心法二" unique_id=1451160875]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.24, 0.33, 0.35, 1)
+
+[node name="敌方心法三" type="Label" parent="BattleHUD/敌方心法层" unique_id=989388341]
+layout_mode = 0
+offset_left = 72.0
+offset_top = 8.0
+offset_right = 98.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.13, 0.11, 0.09, 1)
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StyleBoxFlat_qian")
+text = "洗
+练
+诀"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="朱印" type="ColorRect" parent="BattleHUD/敌方心法层/敌方心法三" unique_id=1853443470]
+layout_mode = 0
+offset_left = 9.0
+offset_top = 5.0
+offset_right = 17.0
+offset_bottom = 13.0
+color = Color(0.24, 0.33, 0.35, 1)
+
+[node name="行动按钮_变招" type="Button" parent="BattleHUD" unique_id=620100201]
+offset_left = 534.0
+offset_top = 578.0
+offset_right = 638.0
+offset_bottom = 624.0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_2nygr")
+theme_override_styles/pressed = SubResource("StyleBoxEmpty_2nygr")
+theme_override_styles/hover = SubResource("StyleBoxEmpty_2nygr")
+theme_override_styles/disabled = SubResource("StyleBoxEmpty_2nygr")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_2nygr")
+script = ExtResource("18_abtn")
+
+[node name="行动按钮_攻击" type="Button" parent="BattleHUD" unique_id=620100202]
+offset_left = 646.0
+offset_top = 578.0
+offset_right = 750.0
+offset_bottom = 624.0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_yodmx")
+theme_override_styles/pressed = SubResource("StyleBoxEmpty_yodmx")
+theme_override_styles/hover = SubResource("StyleBoxEmpty_yodmx")
+theme_override_styles/disabled = SubResource("StyleBoxEmpty_yodmx")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_yodmx")
+script = ExtResource("18_abtn")
+btn_text = "攻击"
+rail_color = Color(0.72, 0.25, 0.2, 1)

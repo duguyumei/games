@@ -1,3 +1,4 @@
+@tool
 class_name MJBRiverPanel
 extends VBoxContainer
 
@@ -8,31 +9,33 @@ extends VBoxContainer
 ## 区宽与副露区同宽（ZONE_W 两组件共用值）。
 
 
-const ZONE_W := 330.0
-const TILE_W := 26
-const TILE_H := 36
+const ZONE_W := 420.0
 const BATCH_GAP := 14
 const MAX_ROWS := 2
 const TILE_GAP := 2
 
 
-var _side := "enemy"
+@export var side := "enemy"  # 单侧归属（场景装配可调；2026-09-18 场景化改造）
 
 
-func _init(side := "enemy") -> void:
-	_side = side
+func _init(p_side := "enemy") -> void:
+	side = p_side
 	custom_minimum_size = Vector2(ZONE_W, 0)
 
 
 func update_panel(river: MJRiver, hide_ids: Array = []) -> void:
 	for child in get_children():
 		child.queue_free()
+	# 透视定尺寸（2026-09-18 用户令：全桌同大·近大远小）：本区实测中心 y → 缩放
+	var sz := MJBPerspective.tile_size_at(get_global_rect().get_center().y)
+	var tile_w := sz.x
+	var tile_h := sz.y
 	# 1) 收本侧批次（同批次号＝同一次打出；整批隐藏＝批次未落河，跳过）
 	var tiles := river.tiles
 	var start := maxi(0, tiles.size() - 36)
 	var batches: Array = []  # [{batch:int, tiles:Array[MJTile]}]
 	for i in range(start, tiles.size()):
-		if river.side_at(i) != _side:
+		if river.side_at(i) != side:
 			continue
 		var tile := tiles[i]
 		if hide_ids.has(tile.get_instance_id()):
@@ -45,7 +48,7 @@ func update_panel(river: MJRiver, hide_ids: Array = []) -> void:
 	var rows: Array = []
 	var row_width := 0.0
 	for b in batches:
-		var width := float((b["tiles"] as Array).size()) * (TILE_W + TILE_GAP)
+		var width := float((b["tiles"] as Array).size()) * (tile_w + TILE_GAP)
 		if not rows.is_empty() and row_width > 0 and row_width + BATCH_GAP + width > ZONE_W:
 			rows.append([])
 			row_width = 0.0
@@ -60,7 +63,7 @@ func update_panel(river: MJRiver, hide_ids: Array = []) -> void:
 	# 3) 只留最近两行；我方新行在上（往上排）、敌方新行在下（往下排）
 	if rows.size() > MAX_ROWS:
 		rows = rows.slice(rows.size() - MAX_ROWS)
-	if _side == "player":
+	if side == "player":
 		rows.reverse()
 	for row in rows:
 		var line := HBoxContainer.new()
@@ -70,6 +73,6 @@ func update_panel(river: MJRiver, hide_ids: Array = []) -> void:
 			var group := HBoxContainer.new()
 			group.add_theme_constant_override("separation", TILE_GAP)
 			for t in b["tiles"]:
-				group.add_child(MJBTileFace.make_tile(t as MJTile, TILE_W, TILE_H))
+				group.add_child(MJBTileFace.make_tile(t as MJTile, tile_w, tile_h))
 			line.add_child(group)
 		add_child(line)

@@ -108,12 +108,12 @@ func opponent(side: String) -> String:
 	return "enemy" if side == "player" else "player"
 
 
-# 开局：双方各摸 13（v3 §2），随即进入首拍（摸牌环节在拍内）。
+# 开局：双方各摸 REST_TOTAL 张（v3 §2），随即进入首拍（摸牌环节在拍内）。
 func start_battle() -> void:
 	for side in fighters:
 		fighters[side].hand.append_array(wall.draw(MJFighter.REST_TOTAL))
 	state = "running"
-	_log("开局：双方各摸 13，先手 %s" % turn_side)
+	_log("开局：双方各摸 %d，先手 %s" % [MJFighter.REST_TOTAL, turn_side])
 	_begin_turn(turn_side)
 
 

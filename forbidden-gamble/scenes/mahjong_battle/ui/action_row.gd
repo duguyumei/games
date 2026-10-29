@@ -1,3 +1,4 @@
+@tool
 class_name MJBActionRow
 extends HBoxContainer
 
@@ -13,6 +14,7 @@ const COL_BORDER_DIM := Color(0.36, 0.34, 0.3)
 
 
 func _init() -> void:
+	custom_minimum_size = Vector2(0, 40)  # 编辑器占位＝运行时按钮行高（按钮每拍重建，2026-09-18 编辑器对账）
 	size_flags_horizontal = Control.SIZE_SHRINK_CENTER  # 整簇居中
 	add_theme_constant_override("separation", 10)
 

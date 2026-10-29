@@ -1,3 +1,4 @@
+@tool
 class_name MJBPlayLine
 extends HBoxContainer
 
@@ -74,12 +75,13 @@ func _update_block(row: HBoxContainer, info: Dictionary, claimer_melds: Array) -
 		return
 	var kind := String(info.get("kind", ""))
 	var batch: Array = info.get("batch", [])
-	# 大批次动态收窄：块宽有限（半列），9 张也能一行放下（2026-09-17 用户令的 9 张要求）
+	# 透视定尺寸＋大批次动态收窄：块宽有限（半列），9 张也能一行放下（2026-09-17 用户令的 9 张要求）
 	var n := batch.size()
-	var w := 34
-	if n * 36 > 260:
-		w = clampi(int(260.0 / n) - 2, 18, 34)
-	var h := clampi(int(w * 1.42), 26, 48)
+	var sz := MJBPerspective.tile_size_at(row.get_global_rect().get_center().y)
+	var w := sz.x
+	if n * (w + 2) > 260:
+		w = clampi(int(260.0 / n) - 2, 18, sz.x)
+	var h := int(w * 1.42)
 	for t in batch:
 		var tile := t as MJTile
 		var claimed := _in_melds(tile, claimer_melds)

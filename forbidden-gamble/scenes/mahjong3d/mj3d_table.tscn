@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bmj3dt4bl3t8b"]
+
+[ext_resource type="Script" path="res://scenes/mahjong3d/mj3d_table.gd" id="1_table"]
+
+[node name="Mj3dTable" type="Node3D"]
+script = ExtResource("1_table")

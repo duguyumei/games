@@ -1,12 +1,363 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://cpausdpgev505"]
 
-[ext_resource type="Script" path="res://scenes/mahjong_battle/mahjong_battle.gd" id="1"]
+[ext_resource type="Script" uid="uid://dtck3tmermtxl" path="res://scenes/mahjong_battle/mahjong_battle.gd" id="1_root"]
+[ext_resource type="Script" uid="uid://78ugkysouncd" path="res://scenes/mahjong_battle/ui/tip_float.gd" id="2_tip"]
+[ext_resource type="Script" uid="uid://bv4k68rfjknou" path="res://scenes/mahjong_battle/ui/top_bar.gd" id="3_topbar"]
+[ext_resource type="Script" uid="uid://brha8ofe2lwsh" path="res://scenes/mahjong_battle/ui/fighter_panel.gd" id="4_fighter"]
+[ext_resource type="Script" uid="uid://dg5ea13bu8tsj" path="res://scenes/mahjong_battle/ui/river_panel.gd" id="5_river"]
+[ext_resource type="Script" uid="uid://ckdcygpe8vqh6" path="res://scenes/mahjong_battle/ui/meld_strip.gd" id="6_meld"]
+[ext_resource type="Script" uid="uid://dujqivxi11hyd" path="res://scenes/mahjong_battle/ui/play_line.gd" id="7_playline"]
+[ext_resource type="Script" uid="uid://baeighkk7drgo" path="res://scenes/mahjong_battle/ui/log_panel.gd" id="8_log"]
+[ext_resource type="Script" uid="uid://dd3on7magu0vb" path="res://scenes/mahjong_battle/ui/action_row.gd" id="9_action"]
+[ext_resource type="Script" uid="uid://b1qavddt0alyh" path="res://scenes/mahjong_battle/ui/hand_strip.gd" id="10_hand"]
+[ext_resource type="Script" uid="uid://ctfrlfx6apfj8" path="res://scenes/mahjong_battle/ui/settings_popup.gd" id="11_settings"]
+[ext_resource type="Script" uid="uid://bffvvoh2qvauo" path="res://scenes/mahjong_battle/ui/glossary_popup.gd" id="12_glossary"]
+[ext_resource type="Script" uid="uid://bc2olwgwvfbne" path="res://scenes/mahjong_battle/ui/claim_popup.gd" id="13_claim"]
+[ext_resource type="Script" uid="uid://bk6s7ixhv7p1k" path="res://scenes/mahjong_battle/ui/table_cloth.gd" id="14_cloth"]
+[ext_resource type="Script" path="res://scenes/mahjong_battle/ui/editor_outline.gd" id="15_outline"]
+[ext_resource type="Script" path="res://scenes/mahjong_battle/ui/backs_row.gd" id="16_backs"]
 
-[node name="MahjongBattle" type="Control"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_u65g3"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+bg_color = Color(0.13, 0.12, 0.105, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.48, 0.32, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_llhod"]
+bg_color = Color(0.09, 0.085, 0.08, 0.95)
+border_width_bottom = 1
+border_color = Color(0.44, 0.39, 0.3, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rbn43"]
+bg_color = Color(0.16, 0.15, 0.13, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.6, 0.55, 0.4, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wd2nk"]
+content_margin_left = 18.0
+content_margin_top = 14.0
+content_margin_right = 18.0
+content_margin_bottom = 14.0
+bg_color = Color(0.16, 0.15, 0.13, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.6, 0.55, 0.4, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_n3l3q"]
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+bg_color = Color(0.16, 0.15, 0.13, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.95, 0.8, 0.2, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_overlay"]
+bg_color = Color(0, 0, 0, 0.72)
+
+[node name="麻将演武" type="Control" unique_id=1523113095]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("1")
+script = ExtResource("1_root")
+
+[node name="浮窗" type="PanelContainer" parent="." unique_id=560169299]
+unique_name_in_owner = true
+visible = false
+z_index = 60
+layout_mode = 1
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_u65g3")
+script = ExtResource("2_tip")
+
+[node name="背景" type="ColorRect" parent="." unique_id=1115595509]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.12, 0.11, 0.1, 1)
+
+[node name="顶栏" type="PanelContainer" parent="." unique_id=2038645370]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_llhod")
+script = ExtResource("3_topbar")
+
+[node name="主布局" type="VBoxContainer" parent="." unique_id=610690152]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 46.0
+offset_right = -16.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="敌方信息" type="VBoxContainer" parent="主布局" unique_id=374368028]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 3
+script = ExtResource("4_fighter")
+display_name = "石仆"
+
+[node name="中央区" type="Control" parent="主布局" unique_id=2056803874]
+layout_mode = 2
+size_flags_vertical = 3
+
+; 桌布＝用户调定的越屏大桌（左−76/顶−12/右+68 出界＝「人坐桌边」构图，2026-09-18 用户令）
+; 桌上内容列＝牌全上桌：背牌带→三列→河副露行→按钮行→净空→手牌（流式，自适应）
+
+[node name="桌布" type="Control" parent="主布局/中央区" unique_id=457224539]
+unique_name_in_owner = true
+texture_repeat = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -76.0
+offset_top = 0.0
+offset_right = 68.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("14_cloth")
+
+[node name="桌上内容" type="VBoxContainer" parent="主布局/中央区"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="敌方背牌带" type="HBoxContainer" parent="主布局/中央区/桌上内容"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("16_backs")
+
+[node name="三列" type="HBoxContainer" parent="主布局/中央区/桌上内容" unique_id=850883132]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="左列" type="VBoxContainer" parent="主布局/中央区/桌上内容/三列" unique_id=850037838]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+
+[node name="敌方河" type="VBoxContainer" parent="主布局/中央区/桌上内容/三列/左列" unique_id=2054315352]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+script = ExtResource("5_river")
+
+[node name="中列" type="VBoxContainer" parent="主布局/中央区/桌上内容/三列" unique_id=260603505]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="打出展示" type="HBoxContainer" parent="主布局/中央区/桌上内容/三列/中列" unique_id=123100399]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("7_playline")
+
+[node name="战报" type="RichTextLabel" parent="主布局/中央区/桌上内容/三列/中列" unique_id=1612084647]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0.75, 0.72, 0.66, 1)
+theme_override_font_sizes/normal_font_size = 12
+script = ExtResource("8_log")
+
+[node name="右列" type="VBoxContainer" parent="主布局/中央区/桌上内容/三列" unique_id=1664084530]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+
+[node name="敌方副露" type="VBoxContainer" parent="主布局/中央区/桌上内容/三列/右列" unique_id=1701612282]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+theme_override_constants/separation = 4
+script = ExtResource("6_meld")
+side = "enemy"
+
+[node name="河副露行" type="HBoxContainer" parent="主布局/中央区/桌上内容" unique_id=179745405]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="我方河" type="VBoxContainer" parent="主布局/中央区/桌上内容/河副露行" unique_id=293375839]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+script = ExtResource("5_river")
+side = "player"
+
+[node name="间隔" type="Control" parent="主布局/中央区/桌上内容/河副露行" unique_id=2064636541]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="我方副露" type="VBoxContainer" parent="主布局/中央区/桌上内容/河副露行" unique_id=1186698355]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+theme_override_constants/separation = 4
+script = ExtResource("6_meld")
+
+[node name="按钮行" type="HBoxContainer" parent="主布局/中央区/桌上内容" unique_id=1435106554]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+theme_override_constants/separation = 10
+script = ExtResource("9_action")
+
+[node name="升牌净空" type="Control" parent="主布局/中央区/桌上内容" unique_id=412742312]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="手牌" type="VBoxContainer" parent="主布局/中央区/桌上内容" unique_id=695605018]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 74)
+layout_mode = 2
+theme_override_constants/separation = 4
+script = ExtResource("10_hand")
+
+[node name="我方信息" type="VBoxContainer" parent="主布局" unique_id=429395483]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 3
+script = ExtResource("4_fighter")
+display_name = "玩家"
+
+[node name="设置弹窗" type="PanelContainer" parent="." unique_id=1229167539]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+theme_override_styles/panel = SubResource("StyleBoxFlat_rbn43")
+script = ExtResource("11_settings")
+
+[node name="词条弹窗" type="PanelContainer" parent="." unique_id=784167895]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_wd2nk")
+script = ExtResource("12_glossary")
+
+[node name="截牌弹窗" type="PanelContainer" parent="." unique_id=593085293]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_n3l3q")
+script = ExtResource("13_claim")
+
+[node name="横幅" type="Label" parent="." unique_id=967282625]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_top = 120.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.98, 0.9, 0.6, 1)
+theme_override_font_sizes/font_size = 34
+horizontal_alignment = 1
+
+[node name="终局遮罩" type="PanelContainer" parent="." unique_id=1286944218]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_overlay")
+
+[node name="遮罩内容" type="VBoxContainer" parent="终局遮罩" unique_id=314457306]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 16
+alignment = 1
+
+[node name="遮罩标题" type="Label" parent="终局遮罩/遮罩内容" unique_id=836655755]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 40
+horizontal_alignment = 1
+
+[node name="编辑器边框" type="Control" parent="." unique_id=1049854295]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("15_outline")

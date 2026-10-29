@@ -4,14 +4,24 @@ extends Node3D
 ## 3D 麻将牌（2026-09-18 建模重做）：程序化**圆角方盒**牌体（ArrayMesh）。
 ## 比例＝真牌卡尺实测 19.37×26×16.11mm → 0.74:1:0.62；圆角≈4% 牌高、4 段
 ## （依据 mahjong.wtf 实测：bevel 1mm/26mm；算法移植自 wwwtyro 圆角盒）。
+## 2026-09-24 第二来源确认：丝路九天打印麻将（MakerWorld 3MF，只读参考零素材
+## 进仓）切片实测——平面角部 3.4–4.6%、面缘内缩 2.9%、顶卷边带 4.4% 牌长，
+## 4% 落在带内，参数不变；其背面收腰 S 曲线（3.1% 宽）机位下不可见，不采。
 ## 象牙白 roughness≈0.3 带光泽；牌面贴图经图集**平贴圆角面的平坦区**
 ## （圆角带恒象牙白——贴图不弯过棱边，消贴纸感）。
 ## 朝向约定：默认站立、正面朝 +Z（玩家近端镜头方向）；
 ## stand(true)＝背对镜头（敌方手牌）；lean_deg＝立牌后倾（牌面迎镜头）；
 ## lie_flat()＝躺平正面向上（弃牌河/副露/码墙背纹朝上）；lie_face_down()＝扣牌。
 
-const TILE_DIR := "res://assets/tiles/"
-const SUIT_PREFIX := {"万": "Man", "筒": "Pin", "条": "Sou"}
+## 牌面美术（2026-09-18 用户令「有 2.5D 图片做个对应 3D 模型」）：
+## mahjong_graphic 透明背景平面稿（800×1095 纯字面无牌体，UV 正料），
+## 蓝青系已批量调绿 h135 对齐 2D 色板（assets/mj25d 同规）；背面＝纯绿材质
+## （对齐 2D 背基调 20/70/33——2D 背牌即全绿牌体）。
+
+const TILE_DIR := "res://assets/mj3d_faces/"
+const SUIT_PREFIX := {"万": "m", "筒": "p", "条": "s"}
+const BACK_COLOR := Color(20.0 / 255.0, 70.0 / 255.0, 33.0 / 255.0)
+const BACK_ROUGHNESS := 0.35
 
 const SIZE := Vector3(0.74, 1.0, 0.62)   # 宽×高×厚（真牌等比）
 const RADIUS := 0.04                     # 圆角半径（≈4% 牌高）
@@ -21,7 +31,8 @@ const ROUGHNESS := 0.3
 const FACE_COVER := 0.88                 # 牌面贴图在图集内的覆盖（内缩留象牙边）
 const IVORY_UV := Vector2(0.004, 0.004)  # 圆角带/侧面的图集采样点（恒象牙白）
 
-# 六面 [u, v, n]（u×v=n；CULL_DISABLED 下绕序不敏感，法线解析计算）。
+# 六面 [u, v, n]（u×v=n；绕序须正确朝外——CULL_DISABLED 只是显示宽容，
+# 兼容渲染器光照仍按面朝向翻法线，绕序反了方向光就恒零，见 _get_body_mesh v2 注）。
 const _FACES := [
 	[Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0)],
 	[Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0)],
@@ -79,9 +90,12 @@ static func _get_body_mesh() -> ArrayMesh:
 							clampf(p.x, -(he.x - RADIUS), he.x - RADIUS),
 							clampf(p.y, -(he.y - RADIUS), he.y - RADIUS),
 							clampf(p.z, -(he.z - RADIUS), he.z - RADIUS))
-						var dn := (p - c).normalized()
-						gv.append(c + dn * RADIUS)
-						gn.append(dn)
+						# 中心平坦区 p==c（推出量为零向量）→ 法线取面法线 n。
+						# v1 bug：零向量 normalized 仍是零 → 全中心区法线≡0 →
+						# 方向光 N·L≡0（牌体只吃环境光，被误诊为「平行光死了」一下午）。
+						var dn := p - c
+						gv.append(c + (dn.normalized() if dn.length_squared() > 1e-9 else n) * RADIUS)
+						gn.append(n if dn.length_squared() <= 1e-9 else dn.normalized())
 						var uvv := IVORY_UV
 						if n.z > 0.5 and bi == 1 and bj == 1:
 							uvv = Vector2(
@@ -89,13 +103,16 @@ static func _get_body_mesh() -> ArrayMesh:
 								1.0 - (vv + (hv - RADIUS)) / (2.0 * (hv - RADIUS)))
 						gt.append(uvv)
 				var w := res_u + 1
-				for iy in range(res_v):
-					for ix in range(res_u):
-						var a := iy * w + ix
-						var b := iy * w + ix + 1
-						var cc := (iy + 1) * w + ix + 1
-						var dd := (iy + 1) * w + ix
-						for idx in [a, b, cc, a, cc, dd]:
+				for ty in range(res_v):
+					for tx in range(res_u):
+						var a := ty * w + tx
+						var b := ty * w + tx + 1
+						var cc := (ty + 1) * w + tx + 1
+						var dd := (ty + 1) * w + tx
+						# v2 修正：绕序反转（v1 生成的是背向面——CULL_DISABLED 下看着正常，
+						# 但兼容渲染器按 gl_FrontFacing 翻转法线 → 方向光 N·L 恒负恒零，
+						# 牌体只吃环境光；换 cull_back 时正面整面消失实锤）。
+						for idx in [a, cc, b, a, dd, cc]:
 							verts.append(gv[idx])
 							norms.append(gn[idx])
 							uvs.append(gt[idx])
@@ -155,11 +172,17 @@ func _ready() -> void:
 func set_tile(suit: String, value: int) -> void:
 	var prefix: String = SUIT_PREFIX.get(suit, "")
 	if prefix != "":
-		set_face_texture(_texture(prefix + str(value)))
+		set_face_texture(_texture(str(value) + prefix))  # mahjong_graphic 命名＝数值在前（1m/3p/7s）
 
 
 func set_back() -> void:
-	set_face_texture(_texture("Back"))
+	if not _mat_cache.has("back_green"):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = BACK_COLOR
+		m.roughness = BACK_ROUGHNESS
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_mat_cache["back_green"] = m
+	$Body.material_override = _mat_cache["back_green"]
 
 
 func set_face_texture(tex: Texture2D) -> void:

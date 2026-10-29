@@ -1,3 +1,4 @@
+@tool
 class_name MJBHandStrip
 extends VBoxContainer
 
@@ -17,6 +18,7 @@ var _hand_row := HBoxContainer.new()
 
 
 func _init() -> void:
+	custom_minimum_size = Vector2(0, 74)  # 编辑器占位＝运行时手牌行高（牌运行时才生成，2026-09-18 编辑器对账）
 	add_theme_constant_override("separation", 4)
 	_hand_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	add_child(_hand_row)
@@ -46,10 +48,10 @@ func update_hand(hand: Array, selected: Dictionary, candidate_ids: Array = [], f
 	var n := hand.size()
 	if n == 0:
 		return
-	# 动态牌宽：预算内自适应，下限 30（挤而不糊）；张数少时用舒适上限 58
-	# （牌高上限 74——底部块再收一点，手牌行位下移，2026-09-17 用户令）
-	var w := clampi(int(HAND_BUDGET / n) - 2, 30, 58)
-	var h := clampi(int(w * 1.42), 42, 74)
+	# 透视定尺寸（2026-09-18 用户令：全桌同大·近大远小）：行实测中心 y → 缩放；预算兜底挤牌不糊
+	var persp := MJBPerspective.tile_size_at(_hand_row.get_global_rect().get_center().y)
+	var w := mini(persp.x, clampi(int(HAND_BUDGET / n) - 2, 30, 58))
+	var h := int(w * 1.42)
 	_hand_row.add_theme_constant_override("separation", 2 if n > 13 else 5)
 	for entry in _display_order(hand):
 		var index := int(entry["i"])

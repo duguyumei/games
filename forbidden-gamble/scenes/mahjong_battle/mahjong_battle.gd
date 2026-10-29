@@ -1,17 +1,20 @@
 extends Control
 
 ## 麻将演武（真气语法 v3.6 拍结构的演出场：摸牌→自动效果→附属行为→打出恰一次）。
-## 根协调器：驱动 MJMatch 请求/应答状态机（玩家走 UI，敌方走 MJAI 贪心）＋装配区块组件。
-## 区块组件在 ui/ 下（参照《我地麻》逆向研究的桌面分工，零资产提取、仅结构参照）：
-##   top_bar 顶栏（返回/问号词条/设置/拍·行动方）｜top_center 气海背牌墙（浮窗＝记牌器）｜
+## 根协调器：驱动 MJMatch 请求/应答状态机（玩家走 UI，敌方走 MJAI 贪心）。
+## 布局骨架住 mahjong_battle.tscn（2026-09-18 场景化改造——布局可在编辑器里看和调）；
+## 组件在 ui/ 下（参照《我地麻》逆向研究的桌面分工，零资产提取、仅结构参照）：
+##   top_bar 顶栏（返回/问号词条/设置/拍·行动方）｜table_cloth 中央桌布（梯形深绿·远近渐变，直接画；2026-09-18 用户令）｜
 ##   fighter_panel 信息簇（气血行居左旁挂心法、丹田数领衔资源条、敌方手牌带＝防御翼·手牌恒中·
 ##   攻击翼、河/副露区在手牌带**下方**起排、运行态挂武学名）｜river_panel 气河区（定宽：敌方在
 ##   手牌带下行居左、我方与副露同行居左；批次一行不拆、溢行我上排敌下排）｜meld_strip 副露区
 ##   （定宽：敌方在手牌带下行居右、我方与牌河同行居右；一行三组、溢组我上排敌下排）｜
 ##   play_line 最新打出行（中部垂直水平居中；滞后入河——该侧下一拍开始才落河）｜hand_strip 丹田
-##   牌行（落底）｜action_row 打出行（手牌上方：防御｜暗杠·攻击｜变招·打出；窄片描边＋资源小字＋
+##   牌行（近底）→ 我方信息簇（手牌下方，2026-09-18 用户令：血量与基本信息自动到手牌下面）｜
+##   action_row 打出行（手牌上方：防御｜暗杠·攻击｜变招·打出；窄片描边＋资源小字＋
 ##   运行态）｜claim_popup 截牌窗（居中覆盖层）｜settings/glossary 弹层｜log_panel 战报（定宽居中）｜
 ##   tip_float 浮窗。
+##   气海背牌墙区已退役（2026-09-18 用户令：取消气海区域，先不加替代；记牌器随右缘浮层轮另议）。
 ## 交互总纲（2026-09-16 用户令）：先选牌再点按钮——打出/变招的可用性由选区实时闸；
 ## 攻击武学两击（备付→发动）；底部提示行退役；机制说明住顶栏问号词条。
 ## 美术边界：占位牌面（代码绘制）＋同风格演出；正式美术后补。
@@ -29,28 +32,29 @@ var _tech_armed_id := ""        # 攻击武学备付态（第一击自动选付�
 var enemy_step_pause := 0.6
 var enemy_after_pause := 0.35
 
-# —— 区块组件 ——
-var _top_bar: MJBTopBar
-var _top_center: MJBTopCenter
-var _enemy_panel: MJBFighterPanel
-var _enemy_river: MJBRiverPanel    # 气河区·敌方（敌方手牌带左翼——贴手牌左，2026-09-17 用户令）
-var _enemy_melds: MJBMeldStrip     # 副露区·敌方（敌方手牌带右翼——贴手牌右）
-var _play_line: MJBPlayLine     # 最新打出行（打出交换区——普攻/虚招/反击/付式；滞后入河）
-var _log_panel: MJBLogPanel
-var _player_river: MJBRiverPanel   # 气河区·我方（与副露同行居左，手牌上方）
-var _player_panel: MJBFighterPanel
-var _player_melds: MJBMeldStrip    # 副露区·我方（与我方牌河同行居右）
+# —— 区块组件（场景装配：节点住 mahjong_battle.tscn，% 唯一名引用；2026-09-18 场景化改造） ——
+@onready var _top_bar: MJBTopBar = %顶栏
+@onready var _enemy_panel: MJBFighterPanel = %敌方信息
+@onready var _enemy_backs: MJBBacksRow = %敌方背牌带   # 敌方背牌带（独立上桌，2026-09-18 用户令）
+@onready var _table_cloth: MJBTableCloth = %桌布       # 透视单源（尺寸系统，2026-09-18 用户令）
+@onready var _enemy_river: MJBRiverPanel = %敌方河    # 气河区·敌方（敌方手牌带左翼——贴手牌左，2026-09-17 用户令）
+@onready var _enemy_melds: MJBMeldStrip = %敌方副露     # 副露区·敌方（敌方手牌带右翼——贴手牌右）
+@onready var _play_line: MJBPlayLine = %打出展示     # 最新打出行（打出交换区——普攻/虚招/反击/付式；滞后入河）
+@onready var _log_panel: MJBLogPanel = %战报
+@onready var _player_river: MJBRiverPanel = %我方河   # 气河区·我方（与副露同行居左，手牌上方）
+@onready var _player_melds: MJBMeldStrip = %我方副露    # 副露区·我方（与我方牌河同行居右）
+@onready var _action_bar: MJBActionRow = %按钮行    # 打出行（手牌上方）：单行紧凑居中——防御｜变招·打出｜暗杠·攻击
+@onready var _hand_strip: MJBHandStrip = %手牌
+@onready var _player_panel: MJBFighterPanel = %我方信息  # 我方信息簇（手牌下方，2026-09-18 用户令）
+@onready var _claim_popup: MJBClaimPopup = %截牌弹窗  # 截牌窗（居中弹窗——2026-09-16 用户复归令）
+@onready var _claim_box: VBoxContainer = %截牌弹窗.box    # ＝截牌窗内容盒（m13 检视面）
+@onready var _settings_popup: MJBSettingsPopup = %设置弹窗
+@onready var _glossary_popup: MJBGlossaryPopup = %词条弹窗
+@onready var _banner: Label = %横幅
+@onready var _overlay: PanelContainer = %终局遮罩
+@onready var _overlay_box: VBoxContainer = %遮罩内容
+@onready var _overlay_label: Label = %遮罩标题
 var _defense_buttons: Array[Button] = []
-var _hand_strip: MJBHandStrip
-var _action_bar: MJBActionRow    # 打出行（手牌上方）：单行紧凑居中——防御｜变招·打出｜暗杠·攻击
-var _claim_popup: MJBClaimPopup  # 截牌窗（居中弹窗——2026-09-16 用户复归令）
-var _claim_box: VBoxContainer    # ＝截牌窗内容盒（m13 检视面）
-var _settings_popup: MJBSettingsPopup
-var _glossary_popup: MJBGlossaryPopup
-var _banner: Label
-var _overlay: PanelContainer
-var _overlay_box: VBoxContainer
-var _overlay_label: Label
 
 # —— 打出行按钮与小字（选区/运行态实时刷写） ——
 var _play_button: Button
@@ -64,7 +68,14 @@ var _claim_selected := {}  # 批位索引 -> true（弹窗内选牌：可截项�
 
 
 func _ready() -> void:
-	_build_ui()
+	# 接线（布局骨架住 mahjong_battle.tscn）：回调与信号在此挂
+	_hand_strip.on_tile_clicked = Callable(self, "_on_tile_clicked")
+	_player_melds.on_group_clicked = Callable(self, "_on_meld_clicked")
+	_top_bar.back_pressed.connect(func(): get_tree().change_scene_to_file(
+		SceneRoutes.CHALLENGE_HUB if RunSession.active else SceneRoutes.DOJO))
+	_top_bar.settings_pressed.connect(func(): _settings_popup.open(_hand_strip.auto_sort()))
+	_settings_popup.sort_toggled.connect(func(on: bool): _on_sort_toggled(on))
+	_top_bar.help_pressed.connect(func(): _glossary_popup.open())
 	var cfg := {"seed": int(Time.get_unix_time_from_system()) % 100000}
 	if RunSession.active and RunSession.state != null:
 		# 挑战模式：值拷贝快照注入（对手卡＋玩家构筑/血量带入）；敌方 AI 权重由对手卡覆写
@@ -84,6 +95,8 @@ func _ready() -> void:
 	match_.hooks.on(MJHooks.POSTURE, self, Callable(self, "_on_posture_played"))
 	match_.hooks.on(MJHooks.TECH_FIRE, self, Callable(self, "_on_tech_fired"))
 	match_.hooks.on(MJHooks.TILE_DRAWN, self, Callable(self, "_on_tile_drawn"))
+	# 等一帧再开局：首帧容器未排布（透视同步会读到零矩形→首建牌体全按远端缩放，2026-09-18 尺寸系统时序坑）
+	await get_tree().process_frame
 	match_.start_battle()
 	_pump()
 
@@ -608,15 +621,16 @@ func _prepare_claim_selection() -> void:
 # ———— 刷新（渲染下放组件） ————
 
 func _refresh() -> void:
+	MJBPerspective.sync(_table_cloth, _table_cloth.top_width_ratio)  # 透视单源先同步：各出牌区尺寸由此派生
 	var p := match_.fighter("player")
 	var e := match_.fighter("enemy")
 	_top_bar.set_turn("拍 %d · %s" % [match_.beat, "你的回合" if match_.turn_side == "player" else "对方回合"],
 		Color(0.7, 0.85, 0.65) if match_.turn_side == "player" else Color(0.85, 0.65, 0.55))
-	_top_center.update_center(match_.wall.live_left(), match_.river)
 	_play_line.update(_playing, {"enemy": e.melds, "player": p.melds})
-	_enemy_panel.update_panel(e, match_.techniques["enemy"], false, match_.xinfa["enemy"])
+	_enemy_panel.update_panel(e, false, match_.xinfa["enemy"])
+	_enemy_backs.update_backs(e, match_.techniques["enemy"])
 	_enemy_melds.update_melds(e.melds)
-	_player_panel.update_panel(p, match_.techniques["player"], true, match_.xinfa["player"])
+	_player_panel.update_panel(p, true, match_.xinfa["player"])
 	_hand_strip.update_hand(p.hand, _selected, _candidate_ids(), _fresh_ids)
 	_player_melds.update_melds(p.melds, _selected_meld)
 	_enemy_river.update_panel(match_.river, _latest_ids("enemy"))
@@ -774,135 +788,3 @@ func _show_run_result() -> void:
 		hub_btn.text = "回挑战总览"
 		hub_btn.pressed.connect(func(): get_tree().change_scene_to_file(SceneRoutes.CHALLENGE_HUB))
 		_overlay_box.add_child(hub_btn)
-
-
-# ———— 装配 ————
-
-func _build_ui() -> void:
-	# 浮窗详情须最先创建：组件 _init 里的 bind（气海标题等）依赖 active 已就位
-	var _tip := MJBTipFloat.new()
-	add_child(_tip)
-	var bg := ColorRect.new()
-	bg.color = Color(0.12, 0.11, 0.1)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-
-	# —— 顶部栏：返回｜标题｜拍·行动方｜问号词条｜设置 ——
-	_top_bar = MJBTopBar.new()
-	_top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	add_child(_top_bar)
-	_top_bar.back_pressed.connect(func(): get_tree().change_scene_to_file(
-		SceneRoutes.CHALLENGE_HUB if RunSession.active else SceneRoutes.DOJO))
-
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 16
-	root.offset_right = -16
-	root.offset_top = 46
-	root.offset_bottom = -20
-	root.add_theme_constant_override("separation", 4)  # 全局收紧：读数行↔打出行等间隔小些（2026-09-17 用户令）
-	add_child(root)
-
-	# —— 顶部中央块（居中）：气海背牌墙＋最近打出一行 ——
-	_top_center = MJBTopCenter.new()
-	root.add_child(_top_center)
-
-	# —— 敌方区：信息簇＋手牌带（河/副露区住中部两翼列——见下） ——
-	_enemy_panel = MJBFighterPanel.new("石仆", true)
-	root.add_child(_enemy_panel)
-
-	# —— 中部＝三列（牌河列｜中央列｜副露列，2026-09-17 用户令）：两翼列顶对齐装敌方河/副露区
-	# （贴敌手牌带下方起排）；中央列＝打出区（顶部，上移）＋战报（向下占满）——
-	# 日志不再吃两侧河/副露列的横向空间，整列上移 ——
-	var middle := HBoxContainer.new()
-	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	middle.add_theme_constant_override("separation", 12)
-	root.add_child(middle)
-	var side_left := VBoxContainer.new()
-	side_left.custom_minimum_size = Vector2(MJBRiverPanel.ZONE_W, 0)  # 区宽单源：与河/副露区同列
-	middle.add_child(side_left)
-	var mid_col := VBoxContainer.new()
-	mid_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mid_col.add_theme_constant_override("separation", 6)
-	middle.add_child(mid_col)
-	var side_right := VBoxContainer.new()
-	side_right.custom_minimum_size = Vector2(MJBRiverPanel.ZONE_W, 0)
-	middle.add_child(side_right)
-	_enemy_river = MJBRiverPanel.new("enemy")
-	side_left.add_child(_enemy_river)
-	_enemy_melds = MJBMeldStrip.new("enemy")
-	side_right.add_child(_enemy_melds)
-	_play_line = MJBPlayLine.new()  # 打出交换区：中央列顶部（上移），双块定宽标签不跳位
-	mid_col.add_child(_play_line)
-	_log_panel = MJBLogPanel.new()
-	_log_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL  # 战报向下占满中央列
-	mid_col.add_child(_log_panel)
-
-	# —— 我方：牌河＋副露同行（河居左·副露居右，与敌方两区等宽对齐）→ 信息簇 → 打出行 → 手牌（落底） ——
-	var river_meld_row := HBoxContainer.new()
-	river_meld_row.add_theme_constant_override("separation", 12)
-	river_meld_row.custom_minimum_size = Vector2(0, 64)  # 预留（≈副露组高 64）：成河/成露不推挤下方控件
-	root.add_child(river_meld_row)
-	_player_river = MJBRiverPanel.new("player")
-	river_meld_row.add_child(_player_river)
-	var row_gap := Control.new()
-	row_gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	river_meld_row.add_child(row_gap)
-	_player_melds = MJBMeldStrip.new("player")
-	_player_melds.on_group_clicked = Callable(self, "_on_meld_clicked")
-	river_meld_row.add_child(_player_melds)
-	_player_panel = MJBFighterPanel.new("玩家")
-	root.add_child(_player_panel)
-	_action_bar = MJBActionRow.new()
-	root.add_child(_action_bar)
-	# 打出行与手牌之间留空：升起的选中牌（上移 10px）不得挡按钮——净空 12px（全局行距 4 已计入）
-	var raise_gap := Control.new()
-	raise_gap.custom_minimum_size = Vector2(0, 14)
-	raise_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(raise_gap)
-	_hand_strip = MJBHandStrip.new()
-	_hand_strip.on_tile_clicked = Callable(self, "_on_tile_clicked")
-	root.add_child(_hand_strip)
-
-	# —— 弹层：设置（齿轮）｜词条（问号）｜截牌窗（居中） ——
-	_settings_popup = MJBSettingsPopup.new()
-	add_child(_settings_popup)
-	_top_bar.settings_pressed.connect(func(): _settings_popup.open(_hand_strip.auto_sort()))
-	_settings_popup.sort_toggled.connect(func(on: bool): _on_sort_toggled(on))
-	_glossary_popup = MJBGlossaryPopup.new()
-	add_child(_glossary_popup)
-	_top_bar.help_pressed.connect(func(): _glossary_popup.open())
-
-	_claim_popup = MJBClaimPopup.new()
-	add_child(_claim_popup)
-	_claim_box = _claim_popup.box
-
-	# —— 回合横幅 ——
-	_banner = Label.new()
-	_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_banner.offset_top = 120
-	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.add_theme_font_size_override("font_size", 34)
-	_banner.add_theme_color_override("font_color", Color(0.98, 0.9, 0.6))
-	_banner.modulate.a = 0.0
-	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_banner)
-
-	# —— 终局遮罩 ——
-	_overlay = PanelContainer.new()
-	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_overlay.visible = false
-	var osb := StyleBoxFlat.new()
-	osb.bg_color = Color(0, 0, 0, 0.72)
-	_overlay.add_theme_stylebox_override("panel", osb)
-	add_child(_overlay)
-	_overlay_box = VBoxContainer.new()
-	_overlay_box.set_anchors_preset(Control.PRESET_CENTER)
-	_overlay_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_overlay_box.add_theme_constant_override("separation", 16)
-	_overlay.add_child(_overlay_box)
-	_overlay_label = Label.new()
-	_overlay_label.add_theme_font_size_override("font_size", 40)
-	_overlay_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_overlay_box.add_child(_overlay_label)

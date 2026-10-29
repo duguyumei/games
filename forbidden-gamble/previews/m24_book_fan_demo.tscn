@@ -1,0 +1,75 @@
+[gd_scene format=3 uid="uid://cm24bookfan0"]
+
+[ext_resource type="Script" path="res://previews/m24_book.gd" id="1_book"]
+[ext_resource type="PackedScene" uid="uid://2b3ibj1x7dys" path="res://scenes/mahjong3d/mj3d_blank_tile.tscn" id="2_tile"]
+
+[sub_resource type="Environment" id="Environment_demo"]
+background_mode = 1
+background_color = Color(0.19, 0.22, 0.26, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.55
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(22, 0.1, 14)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+albedo_color = Color(0.13, 0.2, 0.17, 1)
+roughness = 1.0
+
+[node name="M24BookFanDemo" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_demo")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.383, 0.3214, 0, 0.6428, 0.766, -0.5, -0.6634, 0.5567, 0, 5, 0)
+light_energy = 0.6
+
+[node name="地面" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+mesh = SubResource("BoxMesh_floor")
+surface_material_override/0 = SubResource("StandardMaterial3D_floor")
+
+[node name="书扇" type="Node3D" parent="."]
+
+[node name="破碑手" type="Node3D" parent="书扇"]
+transform = Transform3D(0.883, 0, -0.469, 0, 1, 0, 0.469, 0, 0.883, -1.22, 0, -0.154)
+script = ExtResource("1_book")
+title = "破碑手"
+seal_text = "功"
+
+[node name="开山掌" type="Node3D" parent="书扇"]
+transform = Transform3D(0.97, 0, -0.242, 0, 1, 0, 0.242, 0, 0.97, -0.629, 0, 0.073)
+script = ExtResource("1_book")
+title = "开山掌"
+seal_text = "功"
+
+[node name="崩拳" type="Node3D" parent="书扇"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.15)
+script = ExtResource("1_book")
+title = "崩拳"
+seal_text = "功"
+lit = false
+
+[node name="截脉指" type="Node3D" parent="书扇"]
+transform = Transform3D(0.97, 0, 0.242, 0, 1, 0, -0.242, 0, 0.97, 0.629, 0, 0.073)
+script = ExtResource("1_book")
+title = "截脉指"
+seal_text = "功"
+
+[node name="游龙步" type="Node3D" parent="书扇"]
+transform = Transform3D(0.883, 0, 0.469, 0, 1, 0, -0.469, 0, 0.883, 1.22, 0, -0.154)
+script = ExtResource("1_book")
+title = "游龙步"
+seal_text = "功"
+lit = false
+
+[node name="参照牌" parent="." instance=ExtResource("2_tile")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.9, 0.5, 1.2)
+face_id = "1万"
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866, 0, -0.866, 0.5, 0, 3.6, 2.5)
+current = true
+fov = 48.0
