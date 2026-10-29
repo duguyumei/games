@@ -20,7 +20,7 @@ func _run() -> void:
 	screen.run_data = {"copper": 100,
 		"team": [{"id": "youming", "equips": ["", "", ""], "pdir": 0},
 			{"id": "tiansi", "equips": ["", "", ""], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 1, "seed": 20261026}
+		"sys_lv": 2, "group": 0, "fight": 2, "seed": 20261026}
 	screen.run_data["deck"] = QI_DATA.build_deck(screen.run_data["team"])
 	root.add_child(screen)
 	for i in 20:

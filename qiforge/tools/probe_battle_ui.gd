@@ -63,7 +63,7 @@ func _run() -> void:
 	if hp_lbl == null:
 		fails.append("敌方血条标签取不到（重绑竞态）")
 	else:
-		_eq("普攻+追击后打手血条=40/60", "40/60", hp_lbl.text)
+		_eq("普攻+追击后刀客血条=72/92", "72/92", hp_lbl.text)
 	var acts0 := screen._ally_slots[0]["acts"] as Label
 	_eq("攻次珠数字=0", "0", acts0.text if acts0 != null else "<null>")
 	_eq("杀意获得=1（幽冥造成伤害）", 1, screen.battle.status_total(screen.battle.allies[0], "shayi"))

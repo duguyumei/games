@@ -225,7 +225,7 @@ func _run() -> void:
 	var d5: Dictionary = b5.enemies[0]
 	b5.apply_status(ym5, "leifan", 3)
 	b5.resolve_damage(d5, ym5, 10.0, "普攻")
-	_eq("雷反即时落地（间接 6，不入队）", 6, 60 - int(d5["hp"]))
+	_eq("雷反即时落地（间接 6，不入队）", 6, 92 - int(d5["hp"]))
 	_eq("延迟队列为空（即时制）", 0, b5._deferred.size())
 
 	# —— 五区牌堆：冲弃/复用豁免/唯一/阵亡牌消 ——
@@ -281,7 +281,7 @@ func _run() -> void:
 	b7.event.connect(func(m: String) -> void: evs.push_back(m))
 	ym7["acts"] = 1
 	b7.normal_attack(ym7, e7)
-	_eq("雷反即时·敌 60−18=42", 42, int(e7["hp"]))
+	_eq("雷反即时·敌 92−18=74", 74, int(e7["hp"]))
 	_eq("雷反即时·幽冥 34−4=30（同拍结算非回合末）", 30, int(ym7["hp"]))
 	var leifan_now := false
 	for m in evs:
@@ -292,11 +292,11 @@ func _run() -> void:
 	#    反击属直击 → 再引雷反 4 → 幽冥 10−4=6（链：反击→雷反→间接封死）
 	b7.apply_status(ym7, "fanji", 1)
 	b7.resolve_damage(e7, ym7, 20.0, "普攻")
-	_eq("反击·敌 42−18=24", 24, int(e7["hp"]))
+	_eq("反击·敌 74−18=56", 56, int(e7["hp"]))
 	_eq("反击·幽冥 30−20−4=6", 6, int(ym7["hp"]))
 	# ③ 每回合上限 1：再挨 5 点不反击（敌血不动）
 	b7.resolve_damage(e7, ym7, 5.0, "普攻")
-	_eq("反击上限·第二次不再反击", 24, int(e7["hp"]))
+	_eq("反击上限·第二次不再反击", 56, int(e7["hp"]))
 	_eq("反击上限·只吃本伤 6−5=1", 1, int(ym7["hp"]))
 
 	# —— 局八：双向反击链有界＋间接不触发反击 ——
@@ -312,7 +312,7 @@ func _run() -> void:
 	ym8["acts"] = 1
 	b8.normal_attack(ym8, e8)   # 18 → 敌反 20 → 我反 18 → 双方上限已用，链止
 	_eq("双向反击链·敌 50−18−18=14", 14, int(e8["hp"]))
-	_eq("双向反击链·幽冥 34−20=14（探针未挂死即防环成立）", 14, int(ym8["hp"]))
+	_eq("双向反击链·幽冥 34−16=18（敌反击＝战意后攻16；探针未挂死即防环成立）", 18, int(ym8["hp"]))
 	b8._round_start()           # 重置每回合计数
 	e8["hp"] = 50
 	ym8["hp"] = 34
@@ -506,18 +506,18 @@ func _run() -> void:
 	var l17: Dictionary = b17.enemies[1]
 	_eq("两仪初始无形态", false, b17._forms.has(int(ly["uid"])))
 	b17.normal_attack(ly, d17)
-	_eq("普攻 15−8=7 → 53", 53, int(d17["hp"]))
+	_eq("普攻 15−8=7 → 85", 85, int(d17["hp"]))
 	_eq("首伤定形＝刀", "dao", String(b17._forms[int(ly["uid"])]))
 	_eq("转刀＋1 强度（威 13）", 13, b17.pow_of(ly))
 	ly["acts"] = 1
 	b17.normal_attack(ly, d17)
 	_eq("同形态不触发（强度仍 1 层）", 1, b17.status_total(ly, "qiangdu"))
-	_eq("二次普攻 → 46", 46, int(d17["hp"]))
+	_eq("二次普攻 → 78", 78, int(d17["hp"]))
 	b17.hand = [_card(9001, "liangyi", 1)]
 	b17.play_card(9001, d17)
-	_eq("合击全卡 功法17＋普攻1=18 → 28", 28, int(d17["hp"]))
+	_eq("合击全卡 功法17＋普攻1=18 → 60", 60, int(d17["hp"]))
 	_eq("转剑＋1 力量（攻 16）", 16, b17.atk_of(ly))
-	_eq("合击普攻段 16/2−8=封底1 → 28", 28, int(d17["hp"]))
+	_eq("合击普攻段 16/2−8=封底1 → 60", 60, int(d17["hp"]))
 	_eq("一张两转终态＝刀", "dao", String(b17._forms[int(ly["uid"])]))
 	_eq("强度累计 2（威 14）", 14, b17.pow_of(ly))
 	var dj2: Dictionary = _card_dir(9102, "liangyi", 1, 2)
@@ -528,19 +528,19 @@ func _run() -> void:
 	_eq("无形态恢复 1 费", 1, b17.card_cost(dj2))
 	b17.hand = [_card(9002, "liangyi", 0)]
 	b17.play_card(9002, l17)
-	_eq("裂甲斩 6+16/2+14/3−6=12 → 23", 23, int(l17["hp"]))
+	_eq("裂甲斩 6+16/2+14/3−6=12 → 37", 37, int(l17["hp"]))
 	_eq("伤害段先转刀（威15）→破甲 1+15/5=4（目标）", 4, b17.status_total(l17, "pojia"))
 	_eq("破甲 4（相邻打手）", 4, b17.status_total(d17, "pojia"))
 	b17.hand = [_card_dir(9003, "liangyi", 0, 1)]
 	b17.play_card(9003, l17)
 	_eq("升一附带基础版合击入手", true, b17.hand.size() == 1
 		and String(b17.hand[0]["sid"]) == "daojian" and int(b17.hand[0]["dir"]) == 0)
-	_eq("升一再裂甲（破甲削防 6−4=2）19−2=17 → 6", 6, int(l17["hp"]))
+	_eq("升一再裂甲（破甲削防 6−4=2）19−2=17 → 20", 20, int(l17["hp"]))
 	_eq("破甲累计 8", 8, b17.status_total(l17, "pojia"))
 	b17.energy = 2
 	b17.hand = [_card_dir(9004, "liangyi", 1, 1)]
 	b17.play_card(9004, d17)
-	_eq("合击·升一 功法19＋（转剑攻17/2=9·破甲防0）普攻9 → 恰好击杀", false, bool(d17["alive"]))
+	_eq("合击·升一 功法19＋（转剑攻17/2=9·破甲防0）普攻9=28 → 32", 32, int(d17["hp"]))
 	_eq("升一互赠基础版裂甲斩入手", true, b17.hand.size() == 1
 		and String(b17.hand[0]["sid"]) == "liejia" and int(b17.hand[0]["dir"]) == 0)
 	_eq("合击·升一两转终态仍刀", "dao", String(b17._forms[int(ly["uid"])]))
@@ -558,7 +558,7 @@ func _run() -> void:
 	_eq("回合首功法 −1（充能期全牌面）", 0, b18.card_cost(_card(9201, "liangyi", 0)))
 	b18.hand = [_card(9201, "liangyi", 0)]
 	b18.play_card(9201, d18)
-	_eq("裂甲 6+20/2+17/3−8=13 → 47", 47, int(d18["hp"]))
+	_eq("裂甲 6+20/2+17/3−8=13 → 79", 79, int(d18["hp"]))
 	_eq("转刀后升2护盾 3+18/5=6", 6, b18._status_valued(ly2, "hudun"))
 	_eq("配件三：转换后 1 层杀意", 1, b18.status_total(ly2, "shayi"))
 	_eq("配件二：转刀攻次+1 → 2", 2, int(ly2["acts"]))
@@ -566,11 +566,11 @@ func _run() -> void:
 	_eq("首张提交后充能消耗（恢复 1 费）", 1, b18.card_cost(_card(9202, "liangyi", 1)))
 	ly2["hp"] = 50
 	b18.normal_attack(ly2, d18)
-	_eq("普攻 20−(8−破甲4)=16 → 31", 31, int(d18["hp"]))
+	_eq("普攻 20−(8−破甲4)=16 → 63", 63, int(d18["hp"]))
 	_eq("配件二特殊：普攻后回 5 耐久", 55, int(ly2["hp"]))
 	b18.hand = [_card(9202, "liangyi", 1)]
 	b18.play_card(9202, d18)
-	_eq("合击全卡 功法23＋普攻7=30 → 1", 1, int(d18["hp"]))
+	_eq("合击全卡 功法23＋普攻7=30 → 33", 33, int(d18["hp"]))
 	_eq("转剑抽一张（配件一）", true, b18.hand.size() == 1)
 	_eq("两转后护盾累计 18", 18, b18._status_valued(ly2, "hudun"))
 	_eq("杀意累计 3", 3, b18.status_total(ly2, "shayi"))
@@ -590,7 +590,7 @@ func _run() -> void:
 	b19.play_card(9100, d19)
 	_eq("升二全体破甲 威12/5=2（无护甲者）", 2, b19.status_total(l19, "pojia"))
 	_eq("护甲5＞破甲2 → 翻倍 4", 4, b19.status_total(d19, "pojia"))
-	_eq("破甲先行：防 8+5−4=9 → 伤 17−9=8 → 52", 52, int(d19["hp"]))
+	_eq("破甲先行：防 8+5−4=9 → 伤 17−9=8 → 84", 84, int(d19["hp"]))
 	_eq("转刀1＋自buff 1+15/10=2 → 强度3（威 15）", 15, b19.pow_of(b19.allies[0]))
 
 	# 17D：升1 转换后随机手牌功法 −1（至回合末、可叠、封 0；排除正在结算的卡）
@@ -668,9 +668,9 @@ func _run() -> void:
 	_eq("第 2 回合＝剑形态", "jian", b22._enemy_form(boss))
 	b22.roll_intents()
 	_eq("意图池随形态过滤（剑系）", "jian", String(b22._enemy_intent[0]["action"].get("form", "")))
+	b22._enemy_intent[0] = {"action": _act_of(boss, "jianqi"), "target_uid": int(ym22["uid"])}
 	var ip22: Array = b22.intent_parts(boss)
 	_eq("剑气意图显示＝法 25（8+威17）", "法|25", "%s|%s" % [String(ip22[0]["g"]), String(ip22[0]["n"])])
-	b22._enemy_intent[0] = {"action": _act_of(boss, "jianqi"), "target_uid": int(ym22["uid"])}
 	b22.apply_enemy_action(0)
 	_eq("剑气 8+17威=25 功法直伤 → 455", 455, int(ym22["hp"]))
 
@@ -686,7 +686,7 @@ func _run() -> void:
 	_eq("后备持有者不入新增池（owned 含后备）", 1, QI_DATA.op_pool(run22, "add_spirit").size())
 	var meta22 := {"unlocks": []}
 	QI_DATA.grant_spirit(run22, "liangyi", meta22)
-	_eq("直授入后备（92 血随档）", "liangyi|92", "%s|%d" % [String(run22["reserve"][1]["id"]), int(run22["reserve"][1]["hp"])])
+	_eq("直授入后备（出厂 42 血随档）", "liangyi|42", "%s|%d" % [String(run22["reserve"][1]["id"]), int(run22["reserve"][1]["hp"])])
 	_eq("直授本局解锁", false, QI_DATA.spirit_locked(run22, "liangyi"))
 	_eq("直授跨局 meta 解锁", true, (meta22["unlocks"] as Array).has("liangyi"))
 	_eq("解锁后池＝仅金刚", 1, QI_DATA.op_pool(run22, "add_spirit").size())

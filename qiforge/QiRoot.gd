@@ -142,7 +142,8 @@ func spawn_battle() -> void:
 	if gi >= QI_DATA.GROUPS.size() \
 			or int(_run.get("fight", 0)) >= QI_DATA.GROUPS[gi]["fights"].size():
 		push_warning("spawn_battle：无下一场（组末越界），拒绝开战")
-		_show_prep.call_deferred()
+		if find_child("QiPrepBay", false, false) == null:
+			_show_prep.call_deferred()   # 已有备战舱则不再叠一层（防重复）
 		return
 	_snap = _run.duplicate(true)   # 战前快照（重战源；写档后再开战）
 	QISAVE.write(_run, _snap, _meta)
@@ -223,6 +224,11 @@ func _on_child_exiting(node: Node) -> void:
 		if gi < QI_DATA.GROUPS.size() and int(_run["fight"]) < QI_DATA.GROUPS[gi]["fights"].size():
 			spawn_battle.call_deferred()   # 内含战前快照＋写档
 		else:
+			# 组间推进（敌方设计 v0.1 §三：6 组 18 场）——组毕自动切下一组第 1 场回备战；
+			# 末组组毕不推进（fight 越界＝旅途尽，备战舱出战钮封「已通关」）
+			if gi + 1 < QI_DATA.GROUPS.size():
+				_run["group"] = gi + 1
+				_run["fight"] = 0
 			QISAVE.write(_run, _snap, _meta)      # 组收尾回备战＝稳定检查点（快照留作备战舱重战）
 			_show_prep.call_deferred()
 	else:
