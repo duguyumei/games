@@ -636,7 +636,13 @@ const STATUSES := {
 	"shayi": {"name": "杀意", "glyph": "杀", "cls": "身份", "color": "d04a4a",
 		"desc": "功法伤害 +1/层，回合末失去所有层数。"},
 	"xuruo": {"name": "虚弱", "glyph": "弱", "cls": "身份", "color": "8a9a58", "debuff": true,
-		"desc": "造成伤害减半，回合末层 -1。"},
+		"desc": "造成伤害 −25%（层＝时长不叠深），回合末层 -1。"},
+	"cuiruo": {"name": "脆弱", "glyph": "脆", "cls": "易伤", "color": "e07a6a", "debuff": true,
+		"desc": "受到的攻击伤害 +50%，回合末层 -1（不吃功法/间接）。"},
+	"fengmang": {"name": "锋芒", "glyph": "锋", "cls": "面板", "color": "d0b06a",
+		"desc": "造成的直接伤害 +1/层（普攻/功法，不含间接），无持续时间（暂名待正名）。"},
+	"renxing": {"name": "韧性", "glyph": "韧", "cls": "面板", "color": "6a9ad0",
+		"desc": "受到的直接伤害 -1/层（普攻/功法，不含间接；保底 1），无持续时间（暂名待正名）。"},
 	"nuyi": {"name": "怒意", "glyph": "怒", "cls": "身份", "color": "d08a4a",
 		"desc": "普攻伤害 +50%，普攻后层 -1。"},
 	"longwei": {"name": "龙威", "glyph": "龙", "cls": "身份", "color": "d0b06a",
@@ -650,9 +656,9 @@ const STATUSES := {
 
 #region 敌方（敌方设计 v0.2：G1 三场；伤害三型＝攻击伤（过我方防御）／功法伤（无视防御）／毒（间接）；
 ## 敌方护盾＝撑过我方回合、于该敌下次行动开始才清；行动池数值吃属性缩放（普攻吃攻击×倍率、功法吃 value＋威力））
-const ENEMIES := {
+const ENEMY_BASE := {
 	"zhanshi": {
-		"name": "黑风刀客", "seal": "武",
+		"name": "刀客", "seal": "武",
 		"panel": {"hp": 92, "atk": 15, "def": 8, "res": 0, "pow": 0, "acts": 1},
 		"passive": {"id": "zhan_yi", "name": "战意", "hook": "round_start", "sid": "liliang", "stacks": 1,
 			"desc": "每回合开始获得 1 层力量。"},
@@ -668,7 +674,7 @@ const ENEMIES := {
 		],
 	},
 	"sheshou": {
-		"name": "黑风猎手", "seal": "箭",
+		"name": "猎手", "seal": "箭",
 		"panel": {"hp": 49, "atk": 12, "def": 6, "res": 0, "pow": 6, "acts": 1},
 		"passive": {"id": "chuan_jia", "name": "穿甲", "hook": "on_hit", "sid": "pojia", "stacks": 1, "abnormal": false,
 			"desc": "造成伤害后，目标获得 1 层破甲。"},
@@ -683,7 +689,7 @@ const ENEMIES := {
 		],
 	},
 	"fuzhu": {
-		"name": "黑风巫祝", "seal": "祝",
+		"name": "巫祝", "seal": "祝",
 		"panel": {"hp": 45, "atk": 6, "def": 4, "res": 0, "pow": 12, "acts": 1},
 		"passive": {"id": "zhu_dao", "name": "祝祷", "hook": "round_start_adj_shield", "value": 5, "pow_step": 4,
 			"desc": "每回合开始，相邻友军获得 5（每 4 点威力 +1）点护盾。"},
@@ -699,7 +705,7 @@ const ENEMIES := {
 		],
 	},
 	"dun": {
-		"name": "黑风力士", "seal": "岩",
+		"name": "力士", "seal": "岩",
 		"panel": {"hp": 130, "atk": 11, "def": 9, "res": 0, "pow": 0, "acts": 1},
 		"passive": {"id": "si_zhou", "name": "死咒", "hook": "on_death",
 			"desc": "死亡时，我方攻击力最高的器灵获得 3 层虚弱。"},
@@ -752,11 +758,82 @@ const ENEMIES := {
 	},
 }
 
+const ENEMY_THEMES := ["黑风", "野狼", "双锋", "荒骨", "血衣", "两仪殿"]
+
+## 组缩放（2026-10-28 用户裁定：G2-G6 与 G1 同阵容、仅属性变化；全暂定）
+const GROUP_SCALE := {
+	"hp": [1.0, 1.25, 1.5, 1.8, 2.15, 2.55],
+	"atk": [0, 2, 4, 6, 8, 10],
+	"def": [0, 1, 2, 3, 4, 5],
+	"pow": [0, 2, 4, 6, 8, 10],
+}
+
+static var ENEMIES := _build_enemies()
+
+static func _build_enemies() -> Dictionary:
+	var out := {}
+	for arch in ENEMY_BASE:
+		var spec: Dictionary = ENEMY_BASE[arch]
+		var p: Dictionary = spec["panel"]
+		for g in 6:
+			var eid := "%s_g%d" % [arch, g]
+			var np := {"hp": int(round(float(p["hp"]) * float(GROUP_SCALE["hp"][g]))),
+				"atk": int(p["atk"]) + int(GROUP_SCALE["atk"][g]),
+				"def": int(p["def"]) + int(GROUP_SCALE["def"][g]),
+				"res": 0, "pow": int(p.get("pow", 0)) + int(GROUP_SCALE["pow"][g]),
+				"acts": int(p.get("acts", 1))}
+			var nm := ""
+			if arch == "boss":
+				nm = "两仪剑主" if g < 5 else "两仪剑主·极"
+			else:
+				nm = String(ENEMY_THEMES[g]) + String(spec["name"])
+			out[eid] = {"name": nm, "seal": String(spec["seal"]), "panel": np,
+				"passive": (spec["passive"] as Dictionary).duplicate(true),
+				"actions": (spec["actions"] as Array).duplicate(true)}
+	out["daonu"] = {"name": "刀奴", "seal": "刃",
+		"panel": {"hp": 18, "atk": 0, "def": 0, "res": 0, "pow": 0, "acts": 1},
+		"passive": {},
+		"actions": [{"id": "shouren", "name": "授刃", "kind": "buff",
+			"side": [{"op": "ally_buff", "sid": "liliang", "stacks": 1}],
+			"tip": "授刃：随机一名其他友军获得 1 层力量。"}]}
+	out["jianpu"] = {"name": "剑仆", "seal": "锋",
+		"panel": {"hp": 18, "atk": 0, "def": 0, "res": 0, "pow": 0, "acts": 1},
+		"passive": {},
+		"actions": [{"id": "shoufeng", "name": "授锋", "kind": "buff",
+			"side": [{"op": "ally_buff", "sid": "qiangdu", "stacks": 1}],
+			"tip": "授锋：随机一名其他友军获得 1 层强度。"}]}
+	return out
+
 const GROUPS := [
 	{"name": "第 1 组 · 黑风寨", "fights": [
-		{"label": "第 1 场", "enemies": ["zhanshi", "sheshou"], "reward": 30},
-		{"label": "第 2 场", "enemies": ["zhanshi", "zhanshi", "sheshou", "fuzhu"], "reward": 40},
-		{"label": "第 3 场", "enemies": ["boss", "dun", "fuzhu"], "reward": 60, "boss": true, "grant": "liangyi"},
+		{"label": "第 1 场", "enemies": ["zhanshi_g0", "sheshou_g0"], "reward": 30},
+		{"label": "第 2 场", "enemies": ["zhanshi_g0", "zhanshi_g0", "sheshou_g0", "fuzhu_g0"], "reward": 40},
+		{"label": "第 3 场", "enemies": ["boss_g0", "dun_g0", "fuzhu_g0"], "reward": 60, "boss": true, "grant": "liangyi"},
+	]},
+	{"name": "第 2 组 · 野狼帮", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g1", "sheshou_g1"], "reward": 40},
+		{"label": "第 2 场", "enemies": ["zhanshi_g1", "zhanshi_g1", "sheshou_g1", "fuzhu_g1"], "reward": 50},
+		{"label": "第 3 场", "enemies": ["boss_g1", "dun_g1", "fuzhu_g1"], "reward": 70, "boss": true},
+	]},
+	{"name": "第 3 组 · 双锋阁", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g2", "sheshou_g2"], "reward": 50},
+		{"label": "第 2 场", "enemies": ["zhanshi_g2", "zhanshi_g2", "sheshou_g2", "fuzhu_g2"], "reward": 60},
+		{"label": "第 3 场", "enemies": ["boss_g2", "dun_g2", "fuzhu_g2"], "reward": 80, "boss": true},
+	]},
+	{"name": "第 4 组 · 荒骨盟", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g3", "sheshou_g3"], "reward": 60},
+		{"label": "第 2 场", "enemies": ["zhanshi_g3", "zhanshi_g3", "sheshou_g3", "fuzhu_g3"], "reward": 70},
+		{"label": "第 3 场", "enemies": ["boss_g3", "dun_g3", "fuzhu_g3"], "reward": 90, "boss": true},
+	]},
+	{"name": "第 5 组 · 血衣楼", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g4", "sheshou_g4"], "reward": 70},
+		{"label": "第 2 场", "enemies": ["zhanshi_g4", "zhanshi_g4", "sheshou_g4", "fuzhu_g4"], "reward": 80},
+		{"label": "第 3 场", "enemies": ["boss_g4", "dun_g4", "fuzhu_g4"], "reward": 100, "boss": true},
+	]},
+	{"name": "第 6 组 · 两仪殿", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g5", "sheshou_g5"], "reward": 80},
+		{"label": "第 2 场", "enemies": ["zhanshi_g5", "zhanshi_g5", "sheshou_g5", "fuzhu_g5"], "reward": 90},
+		{"label": "第 3 场", "enemies": ["boss_g5", "dun_g5", "fuzhu_g5"], "reward": 110, "boss": true},
 	]},
 ]
 

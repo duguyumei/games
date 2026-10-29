@@ -1087,6 +1087,15 @@ func _mark_drag(rec: Dictionary, atk_uid: int) -> void:
 	var follows: Array = battle.preview_pursuits(src_unit, rec["enemy"]) if est > 0 else []
 	_drag_mark["est"] = est
 	_drag_mark["follows"] = follows
+	# 反震/反击预估（2026-10-28 用户裁定）：攻方血条显将受段——雷反/反击连锁伤害预览
+	var arec: Dictionary = {}
+	for r in _ally_slots:
+		if int(r["unit"]["uid"]) == atk_uid:
+			arec = r
+	var refl: int = battle.preview_reflect(src_unit, rec["enemy"]) if est > 0 else 0
+	if not arec.is_empty():
+		_render_reflect_preview(arec, src_unit, refl)
+		_drag_mark["arec"] = arec
 	rec["snap"] = "enemy"
 	_render_mark(rec)
 	# 卡面不显数字（2026-10-28 用户裁定：数值走线边＋血条）；仅不可攻态留字
@@ -1119,6 +1128,18 @@ func _clear_hp_preview(rec: Dictionary) -> void:
 	var seg: Panel = rec.get("hpprev", null)
 	if seg != null:
 		seg.visible = false
+
+## 反震/反击预估段（攻方血条，敌我血条同构复用 hpprev）：解除吸附即消
+func _render_reflect_preview(arec: Dictionary, unit: Dictionary, amount: int) -> void:
+	var seg: Panel = arec.get("hpprev", null)
+	if seg == null or amount <= 0:
+		return
+	var mhp := maxi(1, int(unit["mhp"]))
+	var cur := clampi(int(unit["hp"]), 0, mhp)
+	seg.anchor_left = maxf(0.0, float(cur - amount) / float(mhp))
+	seg.anchor_right = float(cur) / float(mhp)
+	seg.visible = true
+	(seg.get_child(0) as Label).text = "反-%d" % amount
 
 ## 追击虚线/线边数字池（懒长；普攻吸附态由 _process 逐帧落位，其余态隐藏）
 func _get_dash(i: int) -> Control:
@@ -1178,6 +1199,8 @@ func _unsnap_mark() -> void:
 	_hide_line_numbers()
 
 func _clear_drag_marks() -> void:
+	if _drag_mark.has("arec"):
+		_clear_hp_preview(_drag_mark["arec"])   # 反震预估段随吸附解除（先于 _unsnap 清表）
 	_unsnap_mark()
 	for zname in ["EnemyZone", "AllyZone"]:
 		var zn := find_child(zname, false, false)

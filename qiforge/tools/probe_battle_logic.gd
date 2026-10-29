@@ -730,6 +730,65 @@ func _run() -> void:
 	_eq("直授跨局 meta 解锁", true, (meta22["unlocks"] as Array).has("liangyi"))
 	_eq("解锁后池＝仅金刚", 1, QI_DATA.op_pool(run22, "add_spirit").size())
 
+	# —— 局十九：临时增减伤三型＋眩晕意图失效＋反震预估（2026-10-28 用户裁定）——
+	var b23: RefCounted = QI_BATTLE.new()
+	b23.setup({"copper": 0,
+		"team": [{"id": "youming", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+	b23.start()
+	var ym23: Dictionary = b23.allies[0]
+	var e23: Dictionary = b23.enemies[0]
+	ym23["hp"] = 500; ym23["mhp"] = 500
+	e23["hp"] = 500; e23["mhp"] = 500
+	# 虚弱＝−25%（蓝本 0.75 同制；幽冥每结算攒杀意→逐发前清）
+	b23.apply_status(ym23, "xuruo", 1)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("虚弱 20×0.75=15", 15, b23.resolve_damage(ym23, e23, 20.0, "功法"))
+	b23._consume_stacks(ym23, "xuruo", 9)
+	# 锋芒＝直伤固定值 +1/层（间接不吃）
+	b23.apply_status(ym23, "fengmang", 3)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("锋芒 3 层 10+3=13", 13, b23.resolve_damage(ym23, e23, 10.0, "功法"))
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("锋芒不吃间接（10 原样）", 10,
+		b23.resolve_damage(ym23, e23, 10.0, "功法", {"indirect": true}))
+	# 脆弱＝受到攻击伤 ×1.5（功法不吃）
+	b23.apply_status(e23, "cuiruo", 1)
+	b23._consume_stacks(ym23, "fengmang", 9)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("脆弱 20×1.5−防8=22", 22, b23.resolve_damage(ym23, e23, 20.0, "普攻"))
+	b23.apply_status(ym23, "fengmang", 3)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("脆弱不吃功法（10+锋3=13）", 13, b23.resolve_damage(ym23, e23, 10.0, "功法"))
+	# 韧性＝直伤 −1/层（保底 1；间接不吃）
+	b23.apply_status(e23, "renxing", 5)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("韧性 5 层 13−5=8", 8, b23.resolve_damage(ym23, e23, 10.0, "功法"))
+	b23._consume_stacks(e23, "renxing", 99)
+	b23.apply_status(e23, "renxing", 99)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("韧性保底 1", 1, b23.resolve_damage(ym23, e23, 10.0, "功法"))
+	b23._consume_stacks(e23, "renxing", 99)
+	b23._consume_stacks(ym23, "shayi", 99)
+	_eq("韧性不吃间接（10 原样）", 10,
+		b23.resolve_damage(ym23, e23, 10.0, "功法", {"indirect": true}))
+	# 眩晕＝意图失效显示（蓝本 Stun 制）
+	b23.apply_status(e23, "xuan", 1)
+	_eq("眩晕意图位＝眩·失效", "眩|失效",
+		"%s|%s" % [String(b23.intent_parts(e23)[0]["g"]), String(b23.intent_parts(e23)[0]["n"])])
+	# 反震/反击预估（拖拽吸附态）
+	b23._consume_stacks(e23, "xuan", 9)
+	b23.apply_status(e23, "leifan", 2)
+	_eq("反震预估＝雷反 2×2=4", 4, b23.preview_reflect(ym23, e23))
+	b23.apply_status(e23, "fanji", 1)
+	_eq("反震预估＋反击（16−0）＝20", 20, b23.preview_reflect(ym23, e23))
+	# 六组同构缩放抽检（G6 档）
+	_eq("G6 刀客＝黑风×2.55 血＋攻10", "235|25", "%d|%d" % [
+		int(QI_DATA.ENEMIES["zhanshi_g5"]["panel"]["hp"]),
+		int(QI_DATA.ENEMIES["zhanshi_g5"]["panel"]["atk"])])
+	_eq("G6 Boss＝两仪剑主·极", true,
+		"两仪剑主·极" == String(QI_DATA.ENEMIES["boss_g5"]["name"]))
+
 	_finish()
 
 func _act_of(e: Dictionary, aid: String) -> Dictionary:

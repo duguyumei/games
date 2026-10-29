@@ -339,14 +339,19 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 		bonus = maxf(bonus, pools[channel])
 	amt += bonus
 	if status_total(src, "xuruo") > 0:
-		amt *= 0.5
+		amt *= 0.75   # 虚弱＝−25%（蓝本 0.75 同制；层＝时长不叠深）
 	if channel == "普攻" and status_total(src, "nuyi") > 0:
 		amt *= 1.5
-	# 受方侧：易伤两层并算（破绽吃普攻／封穴吃功法；+1/层）
+	if status_total(src, "fengmang") > 0:
+		amt += float(status_total(src, "fengmang"))   # 锋芒：直伤固定值 +1/层（间接旁路不吃）
+	# 受方侧：易伤两层并算（破绽吃普攻／封穴吃功法；+1/层）＋脆弱（攻击伤×1.5）＋韧性（直伤−1/层）
 	if channel == "普攻":
 		amt += VULN_PER_STACK * status_total(dst, "poxian")
+		if status_total(dst, "cuiruo") > 0:
+			amt *= 1.5
 	elif channel == "功法":
 		amt += VULN_PER_STACK * status_total(dst, "fengxue")
+	amt -= float(status_total(dst, "renxing"))
 	var total := maxi(1, int(round(amt)))
 	# 防御＝固定减伤（只减普攻通道；功法伤害无防御降低）
 	if channel == "普攻":
@@ -780,11 +785,14 @@ func _preview_hit(a: Dictionary, e: Dictionary) -> int:
 	if _has_fx(a, "shayi_all"):
 		amt += float(status_total(a, "shayi")) * float(shayi_per)
 	if status_total(a, "xuruo") > 0:
-		amt *= 0.5
+		amt *= 0.75
 	if status_total(a, "nuyi") > 0:
 		amt *= 1.5
+	amt += float(status_total(a, "fengmang"))
 	amt += VULN_PER_STACK * float(status_total(e, "poxian"))
-	return maxi(1, int(round(amt)) - def_of(e))
+	if status_total(e, "cuiruo") > 0:
+		amt *= 1.5
+	return maxi(1, int(round(amt)) - float(status_total(e, "renxing")) - def_of(e))
 
 func preview_normal_attack(a: Dictionary, e: Dictionary) -> int:
 	if phase != "player" or not a["alive"] or not e["alive"]:
@@ -792,6 +800,19 @@ func preview_normal_attack(a: Dictionary, e: Dictionary) -> int:
 	if int(a["acts"]) <= 0 or has_status(a, "jiaoxie") or has_status(a, "xuan"):
 		return 0
 	return _preview_hit(a, e)
+
+## 反震/反击预估（拖拽普攻吸附态用，2026-10-28 用户裁定）：目标雷反＝2×层间接；
+## 反击＝其普攻攻防差（一次）。仅预估，实际以结算为准（多段/格挡会变）。
+func preview_reflect(a: Dictionary, e: Dictionary) -> int:
+	if not e.get("alive", false) or not a.get("alive", false):
+		return 0
+	var n := 0
+	var lei := status_total(e, "leifan")
+	if lei > 0:
+		n += LEIFAN_PER_STACK * lei
+	if status_total(e, "fanji") > 0:
+		n += maxi(1, atk_of(e) - def_of(a))
+	return n
 
 ## 追击连带预估（拖拽连线用）：镜像真实触发门（不耗攻次；缴械/眩晕不放行；同链每人至多一次）
 func preview_pursuits(a: Dictionary, e: Dictionary) -> Array:
@@ -1516,6 +1537,9 @@ func roll_intents() -> void:
 		_enemy_intent.push_back({"action": action, "target_uid": target_uid})
 
 func intent_parts(e: Dictionary) -> Array:
+	# 眩晕＝意图失效（蓝本 Stun 制）：意图位亮「眩」，该回合行动作废、跳过即消耗
+	if has_status(e, "xuan"):
+		return [{"g": "眩", "n": "失效"}]
 	var i := enemies.find(e)
 	if i < 0 or i >= _enemy_intent.size() or _enemy_intent[i].is_empty():
 		return []
@@ -1541,8 +1565,10 @@ func intent_parts(e: Dictionary) -> Array:
 				amt3 += float(action["per_pow"]) * float(pow_of(e))
 			if action.has("pow_step"):
 				amt3 += float(int(float(pow_of(e)) / float(action["pow_step"])))
+			amt3 += float(status_total(e, "fengmang"))
 			if not target.is_empty():
 				amt3 += VULN_PER_STACK * status_total(target, "fengxue")
+				amt3 -= float(status_total(target, "renxing"))
 			n_txt = str(maxi(1, int(round(amt3))))
 			if hits_i > 1:
 				n_txt = "%s×%d" % [n_txt, hits_i]
@@ -1554,9 +1580,12 @@ func intent_parts(e: Dictionary) -> Array:
 				amt += float(action["per_pow"]) * float(pow_of(e))
 			if action.has("pow_step"):
 				amt += float(int(float(pow_of(e)) / float(action["pow_step"])))
+			amt += float(status_total(e, "fengmang"))
 			if not target.is_empty():
 				amt += VULN_PER_STACK * status_total(target, "poxian")
-				amt = maxf(1.0, amt - float(def_of(target)))
+				if status_total(target, "cuiruo") > 0:
+					amt *= 1.5
+				amt = maxf(1.0, amt - float(status_total(target, "renxing")) - float(def_of(target)))
 			n_txt = str(int(round(amt)))
 			if hits_i > 1:
 				n_txt = "%s×%d" % [n_txt, hits_i]

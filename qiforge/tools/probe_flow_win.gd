@@ -88,27 +88,36 @@ func _run() -> void:
 		fails.append("组毕应回备战舱")
 	if root_ctl.find_child("QiBattleScreen", false, false) != null:
 		fails.append("组毕战斗屏应移除")
-	_eq("末组组毕组序不动", 0, int(root_ctl.run()["group"]))
-	_eq("末组组毕场序=3（越界位）", 3, int(root_ctl.run()["fight"]))
-
-	# —— §3 末组组末守卫：出战钮封死、按键与直调都不得开战、恢复备战不叠加 ——
+	# —— G2-G6 同构暂定（2026-10-28 用户裁定）：组毕自动切下一组第 1 场 ——
+	_eq("组毕组序推进=1", 1, int(root_ctl.run()["group"]))
+	_eq("组毕场序归零", 0, int(root_ctl.run()["fight"]))
 	var prep := root_ctl.find_child("QiPrepBay", false, false)
 	var gb := (prep.find_child("GoButton", true, false) as Button) if prep else null
 	if gb == null:
 		fails.append("备战舱出战钮缺失")
 	else:
-		_eq("组末出战钮封死", true, gb.disabled)
-		_eq("组末出战钮文案", "已通关", gb.text)
+		_eq("组毕出战钮可再战（非已通关）", false, gb.disabled)
 		gb.pressed.emit()
 		for i in 15:
 			await process_frame
-		if root_ctl.find_child("QiBattleScreen", false, false) != null:
-			fails.append("组末按键不得再出战（防空战斗）")
+		var sc2 := root_ctl.find_child("QiBattleScreen", false, false)
+		if sc2 == null:
+			fails.append("组间开战应进 G2F1")
+		else:
+			_eq("G2F1 敌数=2（同构缩放档）", 2, sc2.battle.enemies.size())
+			_eq("G2 刀客血＝黑风×1.25=115", 115, int(sc2.battle.enemies[0]["mhp"]))
+
+	# —— §4 终局守卫：末组组毕越界不得开战、恢复备战不叠加 ——
+	root_ctl.run()["group"] = 5
+	root_ctl.run()["fight"] = 99
+	var preps0 := root_ctl.find_children("QiPrepBay", "", false, false).size()
 	root_ctl.spawn_battle()
 	for i in 15:
 		await process_frame
-	_eq("越界直调不得开战", 0, root_ctl.find_children("QiBattleScreen", "", false, false).size())
-	_eq("越界守卫恢复备战舱恰一层", 1, root_ctl.find_children("QiPrepBay", "", false, false).size())
+	_eq("越界不得再开战（仍 1 个战斗屏）", 1,
+		root_ctl.find_children("QiBattleScreen", "", false, false).size())
+	_eq("越界守卫恢复备战舱恰一层（开战时已释放）", 1,
+		root_ctl.find_children("QiPrepBay", "", false, false).size())
 
 	_finish()
 
