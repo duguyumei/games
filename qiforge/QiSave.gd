@@ -10,8 +10,8 @@ const PATH_BAK := "user://qi_run.save.backup"
 const PATH_TMP := "user://qi_run.save.tmp"
 const SCHEMA := 1
 
-static func write(run: Dictionary, snap: Dictionary) -> bool:
-	var payload := {"schema_version": SCHEMA, "run": run, "snap": snap}
+static func write(run: Dictionary, snap: Dictionary, meta: Dictionary = {}) -> bool:
+	var payload := {"schema_version": SCHEMA, "run": run, "snap": snap, "meta": meta}
 	var f := FileAccess.open(PATH_TMP, FileAccess.WRITE)
 	if f == null:
 		push_warning("QiSave：临时档打不开，放弃写档")
@@ -36,7 +36,8 @@ static func read() -> Dictionary:
 		f.close()
 		if parsed is Dictionary and int(parsed.get("schema_version", 0)) == SCHEMA:
 			var d: Dictionary = parsed
-			return {"run": _ints_deep(d.get("run", {})), "snap": _ints_deep(d.get("snap", {}))}
+			return {"run": _ints_deep(d.get("run", {})), "snap": _ints_deep(d.get("snap", {})),
+				"meta": _ints_deep(d.get("meta", {}))}   # meta＝跨局解锁（弃档不清）
 	return {}
 
 static func clear() -> void:

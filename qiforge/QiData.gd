@@ -541,12 +541,13 @@ static func op_pool(run: Dictionary, kind: String) -> Array:
 	var team: Array = run.get("team", [])
 	var deck: Array = run.get("deck", [])
 	var owned := {}
-	for m in team:
-		owned[String(m["id"])] = m
+	for arr in [team, run.get("reserve", [])]:
+		for m in arr:
+			owned[String(m["id"])] = m
 	match kind:
 		"add_spirit":
 			for wid in WEAPONS:
-				if not owned.has(wid):
+				if not owned.has(wid) and not spirit_locked(run, wid):
 					out.push_back({"kind": kind, "wid": wid})
 		"upgrade_spirit":
 			for m in team:
@@ -647,38 +648,175 @@ const STATUSES := {
 }
 #endregion
 
-#region 敌方 G1（黑风寨；敌方防御同制＝只减我方普攻伤害）
-const ENEMIES := {
-	"shanfei_dashou": {
-		"name": "山匪打手", "seal": "匪",
-		"panel": {"hp": 60, "atk": 20, "def": 8, "res": 0, "acts": 1},
+#region 敌方（敌方设计 v0.1：五原型×六组档×场阶；行动池功法化——数值吃属性缩放；被动全走回合时钟）
+## 原型＝被动＋行动池（行动与玩家功法同套数学：普攻吃攻击×倍率、功法吃 value＋威力缩放）；
+## 死亡螺旋律（硬规则）：敌方成长只看回合数与自身行动，永不看玩家状态、不吃玩家失误。
+const ENEMY_THEMES := ["黑风", "野狼", "双锋", "荒骨", "血衣", "两仪殿"]
+
+const ENEMY_ARCH := {
+	"zhanshi": {"seal": "武", "uname": "刀客",
+		"passive": {"id": "zhan_yi", "name": "战意", "hook": "round_start", "sid": "liliang", "stacks": 1,
+			"desc": "每回合开始获得 1 层力量。"},
 		"actions": [
-			{"id": "huiji", "name": "挥击", "kind": "attack", "mult": 1.0,
+			{"id": "huiji", "name": "挥击", "kind": "attack", "channel": "普攻", "mult": 1.0,
 				"tip": "挥击：对一件器灵造成 100% 攻击的外伤（已计入防御与破绽）。"},
-			{"id": "mengji", "name": "猛击", "kind": "attack", "mult": 1.5, "cd": 2,
-				"tip": "猛击（冷却 2 回合）：对一件器灵造成 150% 攻击的外伤。"},
-		],
-	},
-	"shanfei_lieshou": {
-		"name": "山匪猎手", "seal": "猎",
-		"panel": {"hp": 35, "atk": 14, "def": 6, "res": 0, "acts": 1},
+			{"id": "mengji", "name": "猛击", "kind": "attack", "channel": "普攻", "mult": 1.4, "cd": 2,
+				"tip": "猛击（冷却 2 回合）：对一件器灵造成 140% 攻击的外伤。"},
+			{"id": "xushi", "name": "蓄势", "kind": "buff",
+				"side": [{"op": "self_buff", "sid": "liliang", "stacks": 2}],
+				"tip": "蓄势：自身获得 2 层力量。"},
+		]},
+	"sheshou": {"seal": "箭", "uname": "猎手",
+		"passive": {"id": "chuan_yang", "name": "穿杨", "hook": "on_hit", "sid": "poxian", "stacks": 1,
+			"desc": "攻击命中后，目标获得 1 层破绽。"},
 		"actions": [
-			{"id": "sheji", "name": "射击", "kind": "attack", "mult": 1.1,
-				"side": [{"op": "status", "sid": "poxian", "stacks": 1, "abnormal": true, "to": "target"}],
-				"tip": "射击：造成 110% 攻击外伤，并给目标挂 1 层破绽。"},
-			{"id": "ningshen", "name": "凝神", "kind": "buff", "cd": 3,
-				"side": [{"op": "self_buff", "sid": "hujia", "stacks": 5}],
-				"tip": "凝神（冷却 3 回合）：自身获得 5 层护甲（防御 +5）。"},
-		],
-	},
+			{"id": "sheji", "name": "射击", "kind": "attack", "channel": "普攻", "mult": 1.0,
+				"tip": "射击：造成 100% 攻击外伤。"},
+			{"id": "miaozhun", "name": "瞄准", "kind": "buff",
+				"side": [{"op": "self_buff", "sid": "liliang", "stacks": 2}],
+				"tip": "瞄准：自身获得 2 层力量。"},
+			{"id": "lianzhu", "name": "连珠", "kind": "attack", "channel": "普攻", "mult": 0.6, "hits": 2,
+				"tip": "连珠：造成 2 次 60% 攻击外伤（每次命中挂 1 层破绽）。"},
+		]},
+	"fuzhu": {"seal": "祝", "uname": "巫祝",
+		"passive": {"id": "hao_ling", "name": "号令", "hook": "round_end_ally", "sid": "liliang", "stacks": 1,
+			"desc": "每回合结束，随机一名其他友军获得 1 层力量。"},
+		"actions": [
+			{"id": "guwu", "name": "蛊雾", "kind": "attack", "channel": "功法", "value": 8, "pow_step": 2,
+				"tip": "蛊雾：造成 8（每 2 点威力 +1）点功法伤害（无视防御，护盾/格挡可挡）。"},
+			{"id": "shouli", "name": "授力", "kind": "buff",
+				"side": [{"op": "ally_buff", "sid": "liliang", "stacks": 2}],
+				"tip": "授力：随机一名其他友军获得 2 层力量。"},
+			{"id": "liaoshang", "name": "疗伤", "kind": "buff",
+				"side": [{"op": "heal", "value": 8, "pow_step": 4}],
+				"tip": "疗伤：为受伤最重的友军回复 8（每 4 点威力 +1）点耐久。"},
+		]},
+	"dun": {"seal": "岩", "uname": "力士",
+		"passive": {"id": "tie_gu", "name": "铁骨", "hook": "round_end", "sid": "hujia", "stacks": 2,
+			"desc": "每回合结束获得 2 层护甲。"},
+		"actions": [
+			{"id": "chongchui", "name": "重锤", "kind": "attack", "channel": "普攻", "mult": 1.1,
+				"tip": "重锤：造成 110% 攻击外伤。"},
+			{"id": "gedang", "name": "格挡姿", "kind": "buff",
+				"side": [{"op": "self_buff", "sid": "hujia", "stacks": 4}],
+				"tip": "格挡姿：自身获得 4 层护甲。"},
+			{"id": "nuhou", "name": "怒吼", "kind": "buff",
+				"side": [{"op": "self_buff", "sid": "chaofeng", "stacks": 1, "rounds": 1},
+					{"op": "self_buff", "sid": "hudun", "stacks": 1, "value": 6}],
+				"tip": "怒吼：自身嘲讽 1 回合并获得 6 点护盾。"},
+		]},
+	"boss": {"seal": "仪", "uname": "两仪剑主",
+		"passive": {"id": "yi_dao_yi_jian", "name": "亦刀亦剑", "hook": "form",
+			"desc": "奇数回合刀形态（刀系行动池，回合结束+1 层强度）；偶数回合剑形态（剑系行动池，回合结束+1 层攻击）。"},
+		"actions": [
+			{"id": "hengzhan", "name": "横斩", "kind": "attack", "channel": "普攻", "mult": 1.0, "form": "dao",
+				"tip": "横斩：造成 100% 攻击外伤。"},
+			{"id": "liekong", "name": "裂空斩", "kind": "attack", "channel": "普攻", "mult": 1.4, "cd": 2, "form": "dao",
+				"tip": "裂空斩（冷却 2 回合）：造成 140% 攻击外伤。"},
+			{"id": "daoshi", "name": "刀势", "kind": "buff", "form": "dao",
+				"side": [{"op": "self_buff", "sid": "liliang", "stacks": 2}],
+				"tip": "刀势：自身获得 2 层力量。"},
+			{"id": "pojiazh", "name": "破甲斩", "kind": "attack", "channel": "普攻", "mult": 0.8, "form": "dao",
+				"side": [{"op": "status", "sid": "pojia", "stacks": 2, "to": "target"}],
+				"tip": "破甲斩：造成 80% 攻击外伤并施加 2 层破甲。"},
+			{"id": "jianqi", "name": "剑气", "kind": "attack", "channel": "功法", "value": 8, "per_pow": 1, "form": "jian",
+				"tip": "剑气：造成 8（每点威力 +1）点功法伤害（无视防御）。"},
+			{"id": "jianwu", "name": "剑舞", "kind": "attack", "channel": "功法", "value": 4, "per_pow": 1, "hits": 2, "form": "jian",
+				"tip": "剑舞：造成 2 次各 4（每点威力 +1）点功法伤害。"},
+			{"id": "jianxin", "name": "剑心", "kind": "buff", "form": "jian",
+				"side": [{"op": "self_buff", "sid": "qiangdu", "stacks": 2}],
+				"tip": "剑心：自身获得 2 层强度。"},
+		]},
 }
+
+## 六组档数值（[耐久, 攻击, 防御, 威力]；场阶＝档内 F1→F3 耐久 +7%/场，其余轴不动）
+const ENEMY_TIERS := {
+	"zhanshi": [[92, 15, 8, 0], [95, 17, 8, 0], [118, 19, 9, 0], [135, 21, 10, 0], [155, 24, 11, 0], [178, 27, 12, 0]],
+	"sheshou": [[49, 12, 6, 0], [52, 13, 6, 0], [63, 15, 7, 0], [72, 17, 8, 0], [83, 19, 8, 0], [95, 21, 9, 0]],
+	"fuzhu": [[45, 6, 4, 12], [52, 7, 4, 14], [59, 8, 5, 16], [68, 9, 5, 18], [78, 10, 6, 21], [90, 11, 6, 24]],
+	"dun": [[130, 11, 9, 0], [150, 12, 10, 0], [172, 14, 11, 0], [198, 15, 12, 0], [228, 16, 12, 0], [262, 18, 14, 0]],
+	"boss": [[210, 20, 6, 16], [210, 20, 6, 16], [210, 20, 6, 16], [210, 20, 6, 16], [210, 20, 6, 16], [260, 24, 8, 22]],
+}
+
+static var ENEMIES := _build_enemies()
+
+static func _build_enemies() -> Dictionary:
+	var out := {}
+	for arch in ENEMY_ARCH:
+		var spec: Dictionary = ENEMY_ARCH[arch]
+		for g in 6:
+			var tier: Array = ENEMY_TIERS[arch][g]
+			for t in 3:
+				var hp := int(round(float(tier[0]) * (1.0 + 0.07 * t)))
+				var eid := "%s_g%d_t%d" % [arch, g + 1, t + 1]
+				var nm := ""
+				if arch == "boss":
+					nm = "两仪剑主" if g < 5 else "两仪剑主·极"
+				else:
+					nm = String(ENEMY_THEMES[g]) + String(spec["uname"])
+					if t == 2:
+						nm += "·头目"
+				out[eid] = {"name": nm, "seal": String(spec["seal"]),
+					"panel": {"hp": hp, "atk": int(tier[1]), "def": int(tier[2]), "res": 0,
+						"pow": int(tier[3]), "acts": 1},
+					"passive": (spec["passive"] as Dictionary).duplicate(true),
+					"actions": (spec["actions"] as Array).duplicate(true)}
+	return out
 
 const GROUPS := [
 	{"name": "第 1 组 · 黑风寨", "fights": [
-		{"label": "第 1 场", "enemies": ["shanfei_dashou", "shanfei_lieshou"], "reward": 30, "boss": false},
-		{"label": "第 2 场", "enemies": ["shanfei_dashou", "shanfei_dashou", "shanfei_lieshou"], "reward": 30, "boss": true},
+		{"label": "第 1 场", "enemies": ["zhanshi_g1_t1", "sheshou_g1_t1"], "reward": 30},
+		{"label": "第 2 场", "enemies": ["zhanshi_g1_t2", "sheshou_g1_t2"], "reward": 30},
+		{"label": "第 3 场", "enemies": ["zhanshi_g1_t3", "sheshou_g1_t3"], "reward": 30, "boss": true},
+	]},
+	{"name": "第 2 组 · 野狼帮", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g2_t1", "zhanshi_g2_t1", "sheshou_g2_t1", "fuzhu_g2_t1"], "reward": 40},
+		{"label": "第 2 场", "enemies": ["zhanshi_g2_t2", "zhanshi_g2_t2", "sheshou_g2_t2", "fuzhu_g2_t2"], "reward": 40},
+		{"label": "第 3 场", "enemies": ["zhanshi_g2_t3", "zhanshi_g2_t3", "sheshou_g2_t3", "fuzhu_g2_t3"], "reward": 40, "boss": true},
+	]},
+	{"name": "第 3 组 · 双锋阁", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g3_t1", "sheshou_g3_t1", "fuzhu_g3_t1"], "reward": 45},
+		{"label": "第 2 场", "enemies": ["dun_g3_t1", "sheshou_g3_t1", "sheshou_g3_t1"], "reward": 50},
+		{"label": "第 3 场", "enemies": ["boss_g3_t1", "dun_g3_t1", "fuzhu_g3_t1"], "reward": 60, "boss": true, "grant": "liangyi"},
+	]},
+	{"name": "第 4 组 · 荒骨盟", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g4_t1", "zhanshi_g4_t1", "sheshou_g4_t1", "fuzhu_g4_t1"], "reward": 60},
+		{"label": "第 2 场", "enemies": ["zhanshi_g4_t2", "zhanshi_g4_t2", "sheshou_g4_t2", "fuzhu_g4_t2"], "reward": 60},
+		{"label": "第 3 场", "enemies": ["zhanshi_g4_t3", "zhanshi_g4_t3", "sheshou_g4_t3", "fuzhu_g4_t3"], "reward": 60, "boss": true},
+	]},
+	{"name": "第 5 组 · 血衣楼", "fights": [
+		{"label": "第 1 场", "enemies": ["zhanshi_g5_t1", "dun_g5_t1", "sheshou_g5_t1"], "reward": 70},
+		{"label": "第 2 场", "enemies": ["zhanshi_g5_t2", "dun_g5_t2", "sheshou_g5_t2"], "reward": 70},
+		{"label": "第 3 场", "enemies": ["zhanshi_g5_t3", "dun_g5_t3", "sheshou_g5_t3"], "reward": 70, "boss": true},
+	]},
+	{"name": "第 6 组 · 两仪殿", "fights": [
+		{"label": "第 1 场", "enemies": ["dun_g6_t1", "sheshou_g6_t1", "sheshou_g6_t1", "fuzhu_g6_t1"], "reward": 80},
+		{"label": "第 2 场", "enemies": ["dun_g6_t2", "sheshou_g6_t2", "sheshou_g6_t2", "fuzhu_g6_t2"], "reward": 80},
+		{"label": "第 3 场", "enemies": ["boss_g6_t1", "dun_g6_t1", "fuzhu_g6_t1"], "reward": 90, "boss": true},
 	]},
 ]
+
+## 两仪解锁制（敌方设计 v0.1 §五）：锁定器灵未解锁不进「新增器灵」池
+const LOCKED_UNTIL_UNLOCK := ["liangyi"]
+
+static func spirit_locked(run: Dictionary, wid: String) -> bool:
+	return wid in LOCKED_UNTIL_UNLOCK and not (run.get("unlocks", []) as Array).has(wid)
+
+## Boss 战利品直授（QiRoot 胜利分支调用）：入后备（满员超额占位）＋本局解锁＋跨局 meta 解锁
+static func grant_spirit(run: Dictionary, wid: String, meta: Dictionary) -> void:
+	if not WEAPONS.has(wid):
+		return
+	var m := {"id": wid, "equips": ["", "", ""], "pdir": 0}
+	m["hp"] = mhp_of(m)
+	(run.get("reserve", []) as Array).push_back(m)
+	var unl: Array = run.get("unlocks", [])
+	if not unl.has(wid):
+		unl.push_back(wid)
+	run["unlocks"] = unl
+	var munl: Array = meta.get("unlocks", [])
+	if not munl.has(wid):
+		munl.push_back(wid)
+	meta["unlocks"] = munl
 #endregion
 
 ## 开局固定队（试玩切片＝用户亲设幽冥剑＋天丝手套；pdir＝被动升级方向 0=未选）
@@ -689,6 +827,7 @@ const START_TEAM := [{"id": "youming", "equips": ["", "", ""], "pdir": 0},
 static func default_run() -> Dictionary:
 	var run := {"copper": 130, "bag": [],
 		"team": START_TEAM.duplicate(true),
+		"reserve": [], "unlocks": [],
 		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026}
 	for m in run["team"]:
 		m["hp"] = mhp_of(m)   # 新局满血（耐久跨场持久制 §7）

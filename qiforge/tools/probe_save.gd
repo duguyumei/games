@@ -20,7 +20,7 @@ func _run() -> void:
 	var run := {"copper": 130, "sys_lv": 2, "group": 0, "fight": 1, "seed": 20261026,
 		"team": [{"id": "youming", "equips": ["p6", "", ""], "pdir": 1}],
 		"deck": [{"wid": "youming", "sid": "miehun", "dir": 2}]}
-	QISAVE.write(run, {"copper": 99})
+	QISAVE.write(run, {"copper": 99}, {"unlocks": ["liangyi"]})
 	var data: Dictionary = QISAVE.read()
 	_eq("读档非空", false, data.is_empty())
 	if not data.is_empty():
@@ -29,6 +29,7 @@ func _run() -> void:
 		_eq("team.pdir 还原为 int", TYPE_INT, typeof(data["run"]["team"][0].get("pdir", 0.0)))
 		_eq("deck.dir=2", 2, int(data["run"]["deck"][0].get("dir", 0)))
 		_eq("snap.copper=99", 99, int(data["snap"].get("copper", 0)))
+		_eq("meta.unlocks 跨局还原", "liangyi", String(data["meta"].get("unlocks", [""])[0]))
 
 	# —— 2) 坏主档回退 .backup（先写第二版让备档存在）——
 	run["copper"] = 131

@@ -67,6 +67,11 @@ func _ready() -> void:
 	_build_crew_label()
 	_build_crew_row()
 	_build_go()
+	# Boss 战利品直授提示（敌方设计 v0.1 §五）：一闪即清
+	if String(run_data.get("grant_flash", "")) != "":
+		var gw := String(run_data["grant_flash"])
+		run_data.erase("grant_flash")
+		_flash("夺获「%s」！已入后备（跨局解锁：此后新局亦可遇之）" % QI_DATA.WEAPONS[gw]["name"])
 	if "--qi-shot" in OS.get_cmdline_user_args():
 		await get_tree().create_timer(1.2).timeout
 		get_viewport().get_texture().get_image().save_png("/Users/cc/Documents/qi-forge-2/.qi_prep_preview.png")

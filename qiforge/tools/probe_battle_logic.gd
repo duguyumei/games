@@ -42,9 +42,9 @@ func _run() -> void:
 	_eq("天丝面板 攻10 威10 攻次0", "10/10/0",
 		"%d/%d/%d" % [b.atk_of(ts), b.pow_of(ts), int(ts["acts_max"])])
 
-	# 普攻：26−8（打手防）=18；追击（天丝）10−8=2 → 打手 60−20=40
+	# 普攻：26−8（刀客防）=18；追击（天丝）10−8=2 → 刀客 92−20=72
 	b.normal_attack(ym, dashou)
-	_eq("普攻过防 26−8=18＋追击 10−8=2 → 40", 40, int(dashou["hp"]))
+	_eq("普攻过防 26−8=18＋追击 10−8=2 → 72", 72, int(dashou["hp"]))
 	_eq("幽冥攻次耗尽", 0, int(ym["acts"]))
 	_eq("杀意=1（幽冥造成伤害）", 1, b.status_total(ym, "shayi"))
 	_eq("天丝无杀意", 0, b.status_total(ts, "shayi"))
@@ -52,14 +52,14 @@ func _run() -> void:
 	# 功法跳防：灭魂斩 10+威8=19（杀意1×1 已在普攻时产生）→ 21；施法产生伤害→被动+1、卡面「获得1层」→+1＝3
 	b.hand = [_card(9001, "youming", 1)]
 	b.play_card(9001, dashou)
-	_eq("灭魂斩 10+8威+1杀意=19 跳防 → 21", 21, int(dashou["hp"]))
+	_eq("灭魂斩 10+8威+1杀意=19 跳防 → 53", 53, int(dashou["hp"]))
 	_eq("施法后杀意=3（被动+1·卡面+1）", 3, b.status_total(ym, "shayi"))
 
 	# 格挡：打手挂格挡 2 → 普攻被挡一段
 	b.apply_status(dashou, "gebi", 2)
 	ym["acts"] = 1
 	b.normal_attack(ym, dashou)
-	_eq("格挡挡一段（血量不动 21）", 21, int(dashou["hp"]))
+	_eq("格挡挡一段（血量不动 53）", 53, int(dashou["hp"]))
 	_eq("格挡剩 1 层", 1, b.status_total(dashou, "gebi"))
 
 	# 抵抗：打手挂抵抗 1 → 我方施负面（破绽）被挡、层消耗
@@ -68,8 +68,9 @@ func _run() -> void:
 	_eq("抵抗挡下敌方施加的负面", 0, b.status_total(dashou, "poxian"))
 	_eq("抵抗层消耗", 0, b.status_total(dashou, "dikang"))
 
-	# 破绽平值：普攻 = 26 + 破绽1×1 − 防8 = 19（杀意只走功法通道）；天丝追击 10+1−8=3 → 21−22=0 离场
+	# 破绽平值：普攻 = 26 + 破绽1×1 − 防8 = 19（杀意只走功法通道）；天丝追击 10+1−8=3 → 垫至 22 血＝22−22=0 离场
 	b._consume_stacks(dashou, "gebi", 9)
+	dashou["hp"] = 22
 	b.apply_status(dashou, "poxian", 1, 0, -1, true, ym)
 	ym["acts"] = 1
 	b.normal_attack(ym, dashou)
@@ -605,7 +606,98 @@ func _run() -> void:
 	b20._round_start()
 	_eq("回合末降费清空（恢复 1 费）", 1, b20.card_cost(b20.hand[0]))
 
+	# —— 局十八：敌方系统（敌方设计 v0.1）——被动时钟/行动池属性缩放/双通道/两仪剑主形态机/解锁直授 ——
+	# 18A：G2F1（战×2＋射＋辅）——战意/穿杨/蛊雾缩放/号令
+	var b21: RefCounted = QI_BATTLE.new()
+	b21.setup({"copper": 0,
+		"team": [{"id": "youming", "equips": [], "pdir": 0},
+			{"id": "tiansi", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 1, "fight": 0, "seed": 20261026})
+	b21.start()
+	var ym21: Dictionary = b21.allies[0]
+	var ts21: Dictionary = b21.allies[1]
+	var z0: Dictionary = b21.enemies[0]
+	var sh21: Dictionary = b21.enemies[2]
+	var fz21: Dictionary = b21.enemies[3]
+	_eq("G2F1＝四槽（战×2＋射＋辅）", 4, b21.enemies.size())
+	_eq("战意：回合开始战士+1 力量", 1, b21.status_total(z0, "liliang"))
+	_eq("战意即时入面板（攻 17+1=18）", 18, b21.atk_of(z0))
+	b21.phase = "enemy"
+	b21._enemy_intent[0] = {"action": _act_of(z0, "huiji"), "target_uid": int(ym21["uid"])}
+	b21.apply_enemy_action(0)
+	_eq("挥击 18 过防 → 幽冥 34−18=16", 16, int(ym21["hp"]))
+	b21._enemy_intent[2] = {"action": _act_of(sh21, "lianzhu"), "target_uid": int(ts21["uid"])}
+	b21.apply_enemy_action(2)
+	_eq("连珠 8＋(8+破绽1)=17 → 天丝 31", 31, int(ts21["hp"]))
+	_eq("穿杨：两段命中挂 2 层破绽", 2, b21.status_total(ts21, "poxian"))
+	b21._enemy_intent[3] = {"action": _act_of(fz21, "guwu"), "target_uid": int(ts21["uid"])}
+	b21.apply_enemy_action(3)
+	_eq("蛊雾 8+威14/2=15 功法直伤 → 天丝 16", 16, int(ts21["hp"]))
+	var lsum := 0
+	for e21 in [b21.enemies[0], b21.enemies[1], b21.enemies[2]]:
+		lsum += b21.status_total(e21, "liliang")
+	b21._enemy_round_end_passives()
+	var lsum2 := 0
+	for e22 in [b21.enemies[0], b21.enemies[1], b21.enemies[2]]:
+		lsum2 += b21.status_total(e22, "liliang")
+	_eq("号令：回合结束随机其他友军+1 力量", lsum + 1, lsum2)
+	b21._round_start()
+	_eq("战意跨回合累积（≥2）", true, b21.status_total(z0, "liliang") >= 2)
+
+	# 18B：G3F3（两仪剑主＋肉盾＋辅）——奇偶形态/池过滤/交叉成长/剑气缩放
+	var b22: RefCounted = QI_BATTLE.new()
+	b22.setup({"copper": 0,
+		"team": [{"id": "youming", "equips": [], "pdir": 0},
+			{"id": "tiansi", "equips": [], "pdir": 0}],
+		"sys_lv": 2, "group": 2, "fight": 2, "seed": 20261026})
+	b22.start()
+	var boss: Dictionary = b22.enemies[0]
+	var dun22: Dictionary = b22.enemies[1]
+	var ym22: Dictionary = b22.allies[0]
+	ym22["hp"] = 500; ym22["mhp"] = 500
+	_eq("第 1 回合＝刀形态", "dao", b22._enemy_form(boss))
+	_eq("意图池随形态过滤（刀系）", "dao", String(b22._enemy_intent[0]["action"].get("form", "")))
+	b22.phase = "enemy"
+	b22._enemy_intent[0] = {"action": _act_of(boss, "hengzhan"), "target_uid": int(ym22["uid"])}
+	b22.apply_enemy_action(0)
+	_eq("横斩 20 过防 → 480", 480, int(ym22["hp"]))
+	b22._enemy_round_end_passives()
+	_eq("刀态回合结束+1 强度（交叉成长）", 1, b22.status_total(boss, "qiangdu"))
+	_eq("铁骨：肉盾回合结束+2 护甲", 2, b22.status_total(dun22, "hujia"))
+	b22.round_no = 2
+	_eq("第 2 回合＝剑形态", "jian", b22._enemy_form(boss))
+	b22.roll_intents()
+	_eq("意图池随形态过滤（剑系）", "jian", String(b22._enemy_intent[0]["action"].get("form", "")))
+	var ip22: Array = b22.intent_parts(boss)
+	_eq("剑气意图显示＝法 25（8+威17）", "法|25", "%s|%s" % [String(ip22[0]["g"]), String(ip22[0]["n"])])
+	b22._enemy_intent[0] = {"action": _act_of(boss, "jianqi"), "target_uid": int(ym22["uid"])}
+	b22.apply_enemy_action(0)
+	_eq("剑气 8+17威=25 功法直伤 → 455", 455, int(ym22["hp"]))
+
+	# 18C：两仪解锁制——锁池/直授/后备持有者出局
+	var run22: Dictionary = QI_DATA.default_run()
+	_eq("新局未解锁→两仪入锁", true, QI_DATA.spirit_locked(run22, "liangyi"))
+	var ly_in_pool := false
+	for o22 in QI_DATA.op_pool(run22, "add_spirit"):
+		if String(o22["wid"]) == "liangyi":
+			ly_in_pool = true
+	_eq("未解锁局两仪不进新增池（仅青蛊/金刚）", false, ly_in_pool)
+	run22["reserve"] = [{"id": "qinggu", "equips": ["", "", ""], "pdir": 0, "hp": 40}]
+	_eq("后备持有者不入新增池（owned 含后备）", 1, QI_DATA.op_pool(run22, "add_spirit").size())
+	var meta22 := {"unlocks": []}
+	QI_DATA.grant_spirit(run22, "liangyi", meta22)
+	_eq("直授入后备（92 血随档）", "liangyi|92", "%s|%d" % [String(run22["reserve"][1]["id"]), int(run22["reserve"][1]["hp"])])
+	_eq("直授本局解锁", false, QI_DATA.spirit_locked(run22, "liangyi"))
+	_eq("直授跨局 meta 解锁", true, (meta22["unlocks"] as Array).has("liangyi"))
+	_eq("解锁后池＝仅金刚", 1, QI_DATA.op_pool(run22, "add_spirit").size())
+
 	_finish()
+
+func _act_of(e: Dictionary, aid: String) -> Dictionary:
+	for a in e["actions"]:
+		if String(a["id"]) == aid:
+			return a
+	return {}
 
 func _count_wid(pile: Array, wid: String) -> int:
 	var n := 0

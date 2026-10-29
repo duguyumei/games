@@ -16,11 +16,15 @@ const PREP := preload("res://qiforge/QiPrepBay.tscn")
 const BATTLE := preload("res://qiforge/QiBattleScreen.tscn")
 var _run: Dictionary = {}
 var _snap: Dictionary = {}      # 战前快照（重战源；空＝本局尚未开战）
+var _meta: Dictionary = {"unlocks": []}   # 跨局元数据（敌方设计 v0.1 §五：两仪解锁，弃档不清）
 var _back: Button = null
 
 func _ready() -> void:
 	QISTYLE.apply_root_theme(self)
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	var saved0: Dictionary = QISAVE.read()
+	if not (saved0.get("meta", {}) as Dictionary).is_empty():
+		_meta = saved0["meta"]
 	_reset_run()
 	var bg := ColorRect.new()
 	bg.color = QISTYLE.INK_BG
@@ -36,6 +40,7 @@ func _ready() -> void:
 
 func _reset_run() -> void:
 	_run = QI_DATA.default_run()   # 开局固定队＝幽冥剑＋天丝手套（2026-10-27 用户指定）
+	_run["unlocks"] = (_meta.get("unlocks", []) as Array).duplicate()   # 跨局解锁带入新局
 	_snap = {}
 
 ## 主菜单（2026-10-27 基地 MainMenu 制）：有档＝继续游戏＋弃档重开；无档＝新的开局
@@ -113,13 +118,13 @@ func _continue_run(data: Dictionary) -> void:
 func _new_run() -> void:
 	QISAVE.clear()
 	_reset_run()
-	QISAVE.write(_run, _snap)
+	QISAVE.write(_run, _snap, _meta)
 	find_child("QiMenu", false, false).queue_free()
 	_show_prep()
 
 ## 备战舱顶栏「退出」＝存档后回主菜单
 func _exit_to_menu() -> void:
-	QISAVE.write(_run, _snap)
+	QISAVE.write(_run, _snap, _meta)
 	_show_menu()
 
 func run() -> Dictionary:
@@ -140,7 +145,7 @@ func spawn_battle() -> void:
 		_show_prep.call_deferred()
 		return
 	_snap = _run.duplicate(true)   # 战前快照（重战源；写档后再开战）
-	QISAVE.write(_run, _snap)
+	QISAVE.write(_run, _snap, _meta)
 	var bt := BATTLE.instantiate()
 	bt.run_data = _run
 	add_child(bt)
@@ -169,7 +174,7 @@ func _rewind_battle() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		QISAVE.write(_run, _snap)   # 备战舱内购买/升级等改动关窗即存
+		QISAVE.write(_run, _snap, _meta)   # 备战舱内购买/升级等改动关窗即存
 
 func _on_child_entered(node: Node) -> void:
 	if node.name == "QiBattleScreen":
@@ -204,12 +209,21 @@ func _on_child_exiting(node: Node) -> void:
 	if result == "win":
 		QI_DATA.apply_team_out(_run, node.get_meta("qi_team_out", []))   # 耐久写回（§7 跨场持久）
 		QI_DATA.reserve_tick(_run)   # 后备池每场战后回血（含阵亡缓复）
+		# Boss 战利品直授（敌方设计 v0.1 §五）：G3 终战夺两仪刀剑——入后备＋本局解锁＋跨局 meta 解锁
+		var gi0: int = int(_run.get("group", 0))
+		var fi0: int = int(_run.get("fight", 0))
+		if gi0 < QI_DATA.GROUPS.size() and fi0 < QI_DATA.GROUPS[gi0]["fights"].size():
+			var gwid := String(QI_DATA.GROUPS[gi0]["fights"][fi0].get("grant", ""))
+			if gwid != "":
+				QI_DATA.grant_spirit(_run, gwid, _meta)
+				_run["grant_flash"] = gwid
+				QISAVE.write(_run, _snap, _meta)   # 解锁即时落盘（跨局保证）
 		_run["fight"] = int(_run.get("fight", 0)) + 1
 		var gi: int = int(_run.get("group", 0))
 		if gi < QI_DATA.GROUPS.size() and int(_run["fight"]) < QI_DATA.GROUPS[gi]["fights"].size():
 			spawn_battle.call_deferred()   # 内含战前快照＋写档
 		else:
-			QISAVE.write(_run, _snap)      # 组收尾回备战＝稳定检查点（快照留作备战舱重战）
+			QISAVE.write(_run, _snap, _meta)      # 组收尾回备战＝稳定检查点（快照留作备战舱重战）
 			_show_prep.call_deferred()
 	else:
 		_show_prep.call_deferred()

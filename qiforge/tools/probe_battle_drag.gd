@@ -95,7 +95,7 @@ func _run() -> void:
 		await process_frame
 	_release(to)
 	await create_timer(1.05).timeout
-	_eq("拖放普攻已结算（60−18幽冥−2天丝追击=40）", 40, int(dashou["hp"]))
+	_eq("拖放普攻已结算（92−18幽冥−2天丝追击=72）", 72, int(dashou["hp"]))
 	_eq("拖放后拖源攻次=0（幽冥攻次1）", 0, int(ally_rec["unit"]["acts"]))
 	_eq("拖放结束高亮已清", false, (enemy_rec["mark"]["ring"] as Control).visible)
 
