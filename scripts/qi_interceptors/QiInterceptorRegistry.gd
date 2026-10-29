@@ -1,7 +1,7 @@
 ## 真气拦截器注册表。
 ##
 ## 与旧体系最大的差别在于查找维度：旧的以战斗者为 key，查到之后还要用动作路径过滤；
-## 这里直接以**动作脚本路径**为 key，一条注册在它关心的每个动作路径下各存一份。
+## 这里直接以**动作名称**为 key，一条注册在它关心的每个动作名称下各存一份。
 ## 于是执行动作时一次查表就拿到全部候选，敌我双方的记录混在同一个数组里，
 ## 排序后优先级跨阵营有效 —— 这正是旧体系做不到的事。
 ##
@@ -10,8 +10,8 @@
 extends RefCounted
 class_name QiInterceptorRegistry
 
-## 动作脚本路径 -> Array[QiInterceptorRegistration]。
-var _by_action_path: Dictionary = {}
+## 动作名称 -> Array[QiInterceptorRegistration]。
+var _by_action_name: Dictionary = {}
 
 ## 下一个稳定注册序号；保证排序条件完全相同时顺序仍然确定。
 var _next_registration_order: int = 0
@@ -29,7 +29,7 @@ func set_data_lookup(data_lookup: Callable) -> void:
 
 ## 注册一个拦截器。
 ##
-## 读配置里声明的动作路径白名单，在每个路径下各存一条记录。
+## 读配置里声明的动作名称白名单，在每个名称下各存一条记录。
 ## 同 (interceptor_id, owner, source_instance_id) 视为同一条，重复注册只更新不新增，
 ## 因此「先整体注销再重建」这种幂等写法是安全的。
 func register(
@@ -45,15 +45,15 @@ func register(
 		# 配置未登记；可能是旧体系的拦截器 ID，交由旧体系处理。
 		return
 
-	# 一次注册共用一个序号：同一拦截器在多个动作路径下的记录序号相同。
-	# 这不影响排序稳定性，因为每次查找只针对一个动作路径，同一拦截器的多条记录
+	# 一次注册共用一个序号：同一拦截器在多个动作名称下的记录序号相同。
+	# 这不影响排序稳定性，因为每次查找只针对一个动作名称，同一拦截器的多条记录
 	# 不会出现在同一个候选列表里。
 	_next_registration_order += 1
-	for action_path: String in interceptor_data.qi_intercepted_action_paths:
-		if action_path.is_empty():
+	for action_name: String in interceptor_data.qi_intercepted_action_names:
+		if action_name.is_empty():
 			continue
 		var registrations: Array[QiInterceptorRegistration] = []
-		registrations.assign(_by_action_path.get(action_path, []))
+		registrations.assign(_by_action_name.get(action_name, []))
 
 		# 去重：同来源实例的同一拦截器只更新顺序信息。
 		# source_instance_id 为空时（无实例来源，如状态效果），同归属者的同一拦截器
@@ -78,13 +78,13 @@ func register(
 			source_instance_id,
 			source_order,
 			_next_registration_order))
-		_by_action_path[action_path] = registrations
+		_by_action_name[action_name] = registrations
 
 
-## 返回某个动作路径下的全部注册记录副本。
-func get_registrations(action_path: String) -> Array[QiInterceptorRegistration]:
+## 返回某个动作名称下的全部注册记录副本。
+func get_registrations(action_name: String) -> Array[QiInterceptorRegistration]:
 	var registrations: Array[QiInterceptorRegistration] = []
-	registrations.assign(_by_action_path.get(action_path, []))
+	registrations.assign(_by_action_name.get(action_name, []))
 	return registrations
 
 
@@ -121,22 +121,22 @@ func unregister_except_owner(kept_owner: Object) -> void:
 
 ## 清空整张表；一局结束时使用。
 func clear_all() -> void:
-	_by_action_path.clear()
+	_by_action_name.clear()
 	_next_registration_order = 0
 
 
-## 移除所有满足条件的记录，并清掉空掉的动作路径键。
+## 移除所有满足条件的记录，并清掉空掉的动作名称键。
 ## 归属者已被释放的记录一并清除 —— 战斗者随战斗 queue_free 后，其注册不该继续留在表里。
 func _remove_matching(should_remove: Callable) -> void:
-	for action_path: String in _by_action_path.keys():
+	for action_name: String in _by_action_name.keys():
 		var registrations: Array[QiInterceptorRegistration] = []
-		registrations.assign(_by_action_path[action_path])
+		registrations.assign(_by_action_name[action_name])
 		registrations = registrations.filter(
 			func(registration: QiInterceptorRegistration) -> bool:
 				if not is_instance_valid(registration.owner):
 					return false
 				return not should_remove.call(registration))
 		if registrations.is_empty():
-			_by_action_path.erase(action_path)
+			_by_action_name.erase(action_name)
 		else:
-			_by_action_path[action_path] = registrations
+			_by_action_name[action_name] = registrations

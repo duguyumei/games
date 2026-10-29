@@ -18,9 +18,9 @@ enum PHASES {
 ## 拦截器脚本路径；必须是 BaseQiInterceptor 的子类。
 @export var qi_interceptor_script_path: String = ""
 
-## 被本拦截器拦截的动作脚本路径白名单。
-## 与 action.get_script().resource_path 精确比对，因此要用 Scripts 里的路径常量。
-@export var qi_intercepted_action_paths: Array[String] = []
+## 被本拦截器拦截的动作名称白名单。
+## 与 action.action_name 精确比对，例如 ["运转", "抽气"]。
+@export var qi_intercepted_action_names: Array[String] = []
 
 ## 本拦截器关心谁发起的动作。
 ## false（默认）—— 关心自己发起，例如「我运转时气力 +2」。

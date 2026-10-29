@@ -94,14 +94,14 @@ func _collect() -> Array[Dictionary]:
 	ignored_interceptor_ids.assign(
 		parent_action.get_action_value("ignored_interceptor_ids", []))
 
-	var action_path: String = parent_action.get_script().resource_path
+	var action_name: String = parent_action.action_name
 	# 发起者已被释放时无法做阵营判定，整条链跳过。
 	if not is_instance_valid(parent_action.parent_combatant):
 		return entries
-	var actor: BaseCombatant = parent_action.parent_combatant
+	var actor: Variant = parent_action.parent_combatant
 
 	for registration: QiInterceptorRegistration in \
-			ActionHandler.qi_interceptors.get_registrations(action_path):
+			ActionHandler.qi_interceptors.get_registrations(action_name):
 		var interceptor_data: QiInterceptorData = \
 			Global.get_qi_interceptor_data(registration.interceptor_id)
 		if interceptor_data == null:

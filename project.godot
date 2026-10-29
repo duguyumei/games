@@ -18,12 +18,6 @@ config/name="Slay the Robot"
 config/features=PackedStringArray("4.7")
 config/icon="uid://8kopj5luv8dc"
 
-[audio]
-
-
-[autoload]
-
-
 [debug]
 
 gdscript/warnings/unused_signal=0
