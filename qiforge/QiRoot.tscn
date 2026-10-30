@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://cga254vq3a74t"]
 
-[ext_resource type="Script" path="res://qiforge/QiRoot.gd" id="1"]
+[ext_resource type="Script" uid="uid://bqjn8aqj8gf5o" path="res://qiforge/QiRoot.gd" id="1"]
 
-[node name="QiRoot" type="Control"]
+[node name="QiRoot" type="Control" unique_id=693069232]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

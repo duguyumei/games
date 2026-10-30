@@ -1,6 +1,6 @@
 ## 备战舱 v2（v0.7 属性重构轮：系统带＝Lv升级（奇偶制）＋能量/抽牌双徽＋刷新＋货架前5配件＋第6位操作位；
 ## 编队列 y40.7~77.6（名字行→纯立绘卡 234×329→装备格行；空位同基准）；后备 run_data 持久化。
-## 机制（用户裁定）：配件购后补货·战后整架刷新·锁定免刷新·刷新带价；升级＝奇偶交替（奇次抽牌+1/偶次能量+1）；
+## 机制（用户裁定）：配件购后空位（2026-10-29 去自动补货）·战后整架刷新·锁定免刷新·刷新带价；升级＝奇偶交替（奇次抽牌+1/偶次能量+1）；
 ## 最大灵力退役（v0.7）；器灵解锁/升级走战后奖励；拖拽＝原生协议。
 ## 用法：godot --path . res://qiforge/QiPrepBay.tscn -- --qi-shot → 1.2s 自动截图退出
 extends Control
@@ -11,6 +11,8 @@ const QIDIALOG := preload("res://qiforge/QiDialog.gd")
 const QI_DRAG := preload("res://qiforge/QiDragCard.gd")
 const QI_DATA := preload("res://qiforge/QiData.gd")
 const QIUP := preload("res://qiforge/QiUpgradePick.gd")
+const QIPREFS := preload("res://qiforge/QiPrefs.gd")
+const QITIP := preload("res://qiforge/QiTooltip.gd")
 const BATTLE := preload("res://qiforge/QiBattleScreen.tscn")
 
 static var PREP_W := QICARD.size_of("prep").x   # 备战舱展示位（基准 300×422 ×0.78，工厂 size_of 唯一权威）
@@ -20,7 +22,7 @@ const NAME_ROW := 36           # 名字行（卡外顶行）
 const EQ_W := 60               # 装备格
 const EQ_H := 46
 const OP_SLOT := 5             # 货架第 6 位（最右）＝操作位（2026-10-27 用户改裁；前 5 位配件）
-const RESERVE_CAP := 3         # 后备上限（暂定；满员时「新增器灵」转必须装备形态）
+# 2026-10-28 槽位制＋后备上限双退役：上场 ≤7、不上场不限量；上下场走「器灵」弹窗
 
 ## QiRoot 注入的 run 状态（钱袋/编队/后备/背包/卡组/系统等级同源）；直跑 tscn（截图/探针）用默认局
 var run_data: Dictionary = {}
@@ -28,12 +30,16 @@ var run_data: Dictionary = {}
 var _crew: Array = []                               # 7 槽（null＝空位）
 var _reserve: Array = []                            # 后备（成员字典；随 run_data["reserve"] 持久化）
 var _shelf: Array = []                              # 当前货架 6 位（第 6 位＝操作位）
-var _sys_lv := 2
+var _sys_lv := 1
 var _copper := 130
 var _rng := RandomNumberGenerator.new()
-var _odds_lbl: Label = null
-const UPGRADE_COST := 100
-const REFRESH_COST := 30
+var _odds_parts: Array = []            # 出货率行＝前缀＋五分色 Label（RichTextLabel 在 HBox 内被压窄自动折行、
+										 # fit_content 顶爆系统带高度 1358px——2026-10-29 实测弃用，单行场景用 Label 拼）
+## 品阶五色（2026-10-29 用户裁定分档显色）：凡品白／二档绿／三档蓝／四档紫／五档金
+const TIER_COLORS := [Color("e8e2d4"), Color("8fd8b0"), Color("57b8d6"), Color("b48ae0"), Color("ffc94d")]
+## 升级费＝75 起、每次升级 +25（2026-10-29 用户裁定：第 n 次升级＝75+25×(n−1)）
+func _upgrade_cost() -> int:
+	return 75 + 25 * maxi(0, _sys_lv - 1)
 
 var _copper_lbl: Label
 var _lv_btn: Button
@@ -42,10 +48,6 @@ var _draw_lbl: Label
 var _shelf_box: HBoxContainer
 var _crew_row: HBoxContainer
 var _crew_count_lbl: Label
-var _reserve_lbl: Label
-var _reserve_zone: Control
-var _reserve_panel: Panel = null
-var _zone_hot := false
 
 func _ready() -> void:
 	QISTYLE.apply_root_theme(self)
@@ -53,11 +55,10 @@ func _ready() -> void:
 	if run_data.is_empty():
 		run_data = QI_DATA.default_run()
 	_copper = int(run_data.get("copper", 130))
-	_sys_lv = int(run_data.get("sys_lv", 2))   # v0.7：奇偶制（抽=4+⌈(Lv-2)/2⌉／能=3+⌊(Lv-2)/2⌋）
+	_sys_lv = int(run_data.get("sys_lv", 1))   # 开局 Lv1（2026-10-29 再裁）：抽=4+⌊Lv/2⌋／能=3+⌊(Lv−1)/2⌋
 	_crew = []
 	for m in run_data.get("team", []):
-		_crew.push_back(_crew_entry(m))
-	_crew.resize(7)   # 尾部自动补 null＝空位
+		_crew.push_back(_crew_entry(m))   # 2026-10-28 槽位制退役：_crew＝紧凑队序，无空位
 	_reserve = []
 	for m in run_data.get("reserve", []):
 		_reserve.push_back(_crew_entry(m))
@@ -68,7 +69,7 @@ func _ready() -> void:
 	_build_system()
 	_build_crew_label()
 	_build_crew_row()
-	_build_reserve_zone()
+	_build_roster_buttons()
 	_build_go()
 	# Boss 战利品直授提示（敌方设计 v0.1 §五）：一闪即清
 	if String(run_data.get("grant_flash", "")) != "":
@@ -92,9 +93,16 @@ func _draw_op() -> Dictionary:
 	var pool: Array = QI_DATA.op_pool(run_data, kind)
 	var opt: Dictionary = pool[_rng.randi_range(0, pool.size() - 1)]
 	var desc := ""
-	if kind in ["add_spirit", "upgrade_spirit"]:
-		var w: Dictionary = QI_DATA.WEAPONS[String(opt["wid"])]
-		desc = "%s——被动「%s」：%s" % [String(w["name"]), String(w["passive"]["name"]), String(w["passive"]["desc"])]
+	if kind in ["add_spirit", "upgrade_spirit", "heal"]:
+		# heal 条目无 sid（真凶 2026-10-29：heal 掉进功法 else 分支＝opt["sid"] 崩，与奖励页 1804 分支对齐）
+		if kind == "heal":
+			var mem := QI_DATA.find_member(run_data, String(opt["wid"]))
+			var amt: int = QI_DATA.reward_heal_amount(mem)
+			desc = "耐久 %d/%d → 回复 %d 点（至 %d/%d）" % [QI_DATA.hp_of(mem), QI_DATA.mhp_of(mem), amt,
+				mini(QI_DATA.mhp_of(mem), QI_DATA.hp_of(mem) + amt), QI_DATA.mhp_of(mem)]
+		else:
+			var w: Dictionary = QI_DATA.WEAPONS[String(opt["wid"])]
+			desc = "%s——被动「%s」：%s" % [String(w["name"]), String(w["passive"]["name"]), String(w["passive"]["desc"])]
 	else:
 		var spell: Dictionary = QI_DATA.spell_of(String(opt["wid"]), String(opt["sid"]), int(opt.get("dir", 0)))
 		desc = "「%s」（%d 能量）：%s" % [String(spell["name"]), int(spell["cost"]), String(spell["desc"])]
@@ -133,17 +141,12 @@ func _draw_shelf(n: int) -> Array:
 		out.push_back(_draw_op() if i == OP_SLOT else _draw_one())
 	return out
 
-## 编队条目从数据层组装（基础四维＋插件固定值；同源＝战斗管线取数口径）
+## 编队条目＝静态文案壳（名字/被动/功法——不因插件变）；
+## 属性/耐久/配件名单 2026-10-29 起一律显示点现算（weapon_panel/mhp_of 活查询，
+## 装/卸插件实时连锁——旧 attrs/hp/mhp/equips 快照字段已退役，反锁定制）
 func _crew_entry(m: Dictionary) -> Dictionary:
 	var wid: String = m["id"]
 	var w: Dictionary = QI_DATA.WEAPONS[wid]
-	var p: Dictionary = QI_DATA.weapon_panel(wid, m.get("equips", []))
-	var eq_names: Array = []
-	for i in 3:
-		if i < m.get("equips", []).size() and QI_DATA.ACCESSORIES.has(m["equips"][i]):
-			eq_names.push_back(QI_DATA.ACCESSORIES[m["equips"][i]]["name"])
-		else:
-			eq_names.push_back("")
 	var passive_txt := "%s：%s" % [w["passive"]["name"], w["passive"]["desc"]]
 	var pdir := int(m.get("pdir", 0))
 	if pdir > 0:
@@ -151,13 +154,8 @@ func _crew_entry(m: Dictionary) -> Dictionary:
 	var spells: Array = []
 	for s in w["spells"]:
 		spells.push_back("%s（%d 能量）：%s" % [s["name"], s["cost"], s["desc"]])
-	var hp_now := clampi(int(m.get("hp", p["hp"])), 0, int(p["hp"]))   # 跨场持久耐久（§7；无字段＝满血）
 	return {"name": w["name"], "seal": w["seal"], "_member": m,
 		"passive": passive_txt,
-		"equips": eq_names,
-		"hp": hp_now, "mhp": int(p["hp"]),
-		"attrs": {"耐久": "%d/%d" % [hp_now, p["hp"]], "攻击": p["atk"], "威力": p["pow"],
-			"防御": p["def"], "抗性": p["res"], "攻击次数": p["acts"]},
 		"spells": spells}
 
 ## run.team 永远＝_crew 非空位成员序；run.reserve＝后备成员序（换位/入后备/上阵后即同步）
@@ -176,7 +174,6 @@ func _reload_crew() -> void:
 	_crew = []
 	for m in run_data.get("team", []):
 		_crew.push_back(_crew_entry(m))
-	_crew.resize(7)
 	_sync_team()
 	_rebuild_crew_cols()
 
@@ -184,7 +181,6 @@ func _reload_reserve() -> void:
 	_reserve = []
 	for m in run_data.get("reserve", []):
 		_reserve.push_back(_crew_entry(m))
-	_refresh_reserve_count()
 
 func _next_label() -> String:
 	return QI_DATA.fight_label(int(run_data.get("group", 0)), int(run_data.get("fight", 0)))
@@ -198,12 +194,17 @@ func _build_ground() -> void:
 ## 顶栏：左＝功能钮；右＝下一场情报＋本组情报＋铜钱（复用战斗屏建造器形制；金币已退役 2026-10-27）
 func _build_top_bar() -> void:
 	var bar := HBoxContainer.new()
+	bar.name = "TopBar"
 	_anchor(bar, 0.012, 0.014, 0.24, 0.052)
 	bar.add_theme_constant_override("separation", 10)
-	for pair in [["图鉴", "器灵谱与词条图鉴"], ["重战", "快速读档：回到上一场战斗前重打本场（同敌方意图）"], ["设置", "音量与偏好设置"], ["退出", "返回主菜单"]]:
+	for pair in [["卡组", "查看当前卡组全部功法牌（排序：按器灵/按费用；点击看详情）。"],
+			["图鉴", "器灵谱与词条图鉴"], ["重战", "快速读档：回到上一场战斗前重打本场（同敌方意图）"], ["设置", "音量与偏好设置"], ["退出", "返回主菜单"]]:
 		var b := Button.new()
 		b.text = pair[0]
 		b.tooltip_text = pair[1]
+		if String(pair[0]) == "卡组":
+			b.name = "DeckBtn"
+			b.pressed.connect(func() -> void: _open_deck_view())
 		QISTYLE.apply_ghost(b)
 		QISTYLE.font(b, QISTYLE.FS_SMALL)
 		b.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
@@ -212,6 +213,8 @@ func _build_top_bar() -> void:
 				var p := get_parent()
 				if p != null and p.has_method("_rewind_battle"):
 					p._rewind_battle())   # 独立跑 tscn/探针＝无宿主，静默不响应
+		elif String(pair[0]) == "设置":
+			b.pressed.connect(func() -> void: QIPREFS.open_settings(self))
 		elif String(pair[0]) == "退出":
 			b.pressed.connect(func() -> void:
 				var p := get_parent()
@@ -295,7 +298,7 @@ func _build_system() -> void:
 	head.add_theme_constant_override("separation", 18)
 	_lv_btn = Button.new()
 	_lv_btn.name = "LvUpButton"
-	_lv_btn.tooltip_text = "升级系统（奇偶交替）：奇数次升级抽牌 +1，偶数次升级能量上限 +1；配件出货率上浮。"
+	_lv_btn.tooltip_text = "升级系统：升到偶数级→抽牌 +1、升到奇数级→能量上限 +1；费用 75 铜起、每次升级 +25；配件出货率随级上浮。"
 	_lv_btn.pressed.connect(_on_upgrade)
 	QISTYLE.apply_primary(_lv_btn)
 	QISTYLE.font(_lv_btn, QISTYLE.FS_BIG, true)
@@ -346,16 +349,29 @@ func _build_system() -> void:
 	var sp := Control.new()
 	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sp)
-	_odds_lbl = Label.new()
-	_odds_lbl.name = "OddsRow"
-	QISTYLE.font(_odds_lbl, QISTYLE.FS_SMALL)
-	_odds_lbl.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
-	_odds_lbl.tooltip_text = "每次补货/刷新按此概率抽品级，再从该品级池等权抽配件；档率对齐系统蓝本实测（稀有档 1/3/4/5，无 2 档）。"
-	head.add_child(_odds_lbl)
+	var odds_row := HBoxContainer.new()
+	odds_row.name = "OddsRow"
+	odds_row.mouse_filter = Control.MOUSE_FILTER_PASS
+	odds_row.tooltip_text = "每次补货/刷新按此概率抽品级，再从该品级池等权抽配件；五档制（含 Lv2）＝2026-10-29 用户裁定表。"
+	var odds_head := Label.new()
+	odds_head.text = "出货率（随系统升级上浮）："
+	QISTYLE.font(odds_head, QISTYLE.FS_SMALL)
+	odds_head.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+	odds_row.add_child(odds_head)
+	_odds_parts = []
+	for i in QI_DATA.TIER_LADDER.size():
+		var l := Label.new()
+		l.name = "OddsTier%d" % i
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		QISTYLE.font(l, QISTYLE.FS_SMALL)
+		l.add_theme_color_override("font_color", TIER_COLORS[i % TIER_COLORS.size()])
+		odds_row.add_child(l)
+		_odds_parts.push_back(l)
+	head.add_child(odds_row)
 	var rf := Button.new()
 	rf.name = "ReflashButton"
-	rf.text = "刷新 ·%d铜" % REFRESH_COST
-	rf.tooltip_text = "立即整架刷新货架（锁定项保留）。"
+	rf.text = "刷新 ·%d铜" % (1 + _refresh_used)   # 1 铜起每刷 +1（2026-10-29 用户裁定）
+	rf.tooltip_text = "立即整架刷新货架（锁定项保留）。价格 1 铜起、每刷 +1，每场战斗重置。"
 	rf.pressed.connect(_on_refresh)
 	QISTYLE.apply_ghost(rf)
 	QISTYLE.font(rf, QISTYLE.FS_BODY)
@@ -374,16 +390,15 @@ func _build_system() -> void:
 	_rebuild_shelf()
 
 func _refresh_odds() -> void:
-	if _odds_lbl == null:
+	if _odds_parts.is_empty():
 		return
 	var odds: Array = QI_DATA.tier_odds(_sys_lv)
-	var parts: Array = []
-	for i in odds.size():
-		parts.push_back("Lv%d %d%%" % [int(QI_DATA.TIER_LADDER[i]), int(odds[i])])
-	_odds_lbl.text = "出货率（随系统升级上浮）：%s" % "｜".join(PackedStringArray(parts))
+	for i in _odds_parts.size():
+		var seg := "Lv%d %d%%" % [int(QI_DATA.TIER_LADDER[i]), int(odds[i])]
+		(_odds_parts[i] as Label).text = ("" if i == 0 else "｜") + seg
 
 func _restyle_lv() -> void:
-	_lv_btn.text = "系统 Lv%d ↑升级 ·%d铜" % [_sys_lv, UPGRADE_COST]
+	_lv_btn.text = "系统 Lv%d ↑升级 ·%d铜" % [_sys_lv, _upgrade_cost()]
 
 func _rebuild_shelf() -> void:
 	for c in _shelf_box.get_children():
@@ -391,20 +406,68 @@ func _rebuild_shelf() -> void:
 	for d in _shelf:
 		_shelf_box.add_child(_make_goods(d))
 
-## 配件小卡（第 6 位＝操作位变体；2026-10-27 改正方形 170×170）：件面板（名/效果＋右上锁定钮——操作位无锁）＋价格签
+## 配件富浮窗挂接（STS2 制 QiTooltip；2026-10-29 用户点名：配件浮窗与战斗浮窗同款，
+## 不再走原生 tooltip_text——简单动作提示仍留原生，少码优先③边界）。
+## tail＝描述后追加行（专属效果行等）。
+func _bind_tip(host: Control, title: String, desc: String, foot: String,
+		title_color: Variant = null, tail: Array = []) -> void:
+	var trow := {"t": "title", "text": title}
+	if title_color != null:
+		trow["color"] = title_color
+	var rows: Array = [trow, {"t": "sep"}, {"t": "line", "text": desc}]
+	for r in tail:
+		rows.push_back(r)
+	if foot != "":
+		rows.push_back({"t": "line", "text": foot})
+	host.mouse_entered.connect(func() -> void: QITIP.show_for(host, rows, {"min_w": 240.0}))
+	host.mouse_exited.connect(func() -> void: QITIP.hide_for(host))
+
+## 专属效果浮窗行（2026-10-29 用户裁定：浮窗显示专属效果，并列效果各自分框）
+func _excl_tail(aid: String) -> Array:
+	var tail: Array = []
+	for e in QI_DATA.excl_effects(aid):
+		tail.push_back({"t": "frame", "text": "专属·%s：%s" % [e["spirit"], e["text"]]})
+	return tail
+
+func _tier_color_of(lv: int) -> Color:
+	return TIER_COLORS[clampi(QI_DATA.TIER_LADDER.find(lv), 0, TIER_COLORS.size() - 1)]
+
+## 配件小卡（第 6 位＝操作位变体；2026-10-27 改正方形 170×170）：件面板（名/效果）＋
+## 底行〔购买签｜锁定钮〕（2026-10-29 用户裁定：锁钮从面板右上浮层挪到购买旁；操作位无锁）
 func _make_goods(d: Dictionary) -> Control:
 	var goods := VBoxContainer.new()
 	goods.add_theme_constant_override("separation", 5)
 	var part := Panel.new()
 	part.custom_minimum_size = Vector2(170, 170)
 	var sb := StyleBoxFlat.new()
+	if d.is_empty():
+		# 已售空位（2026-10-29 用户裁定：购后不自动补货——空置待手动/战后整架刷新补新）
+		sb.bg_color = Color(0.10, 0.088, 0.06)
+		sb.border_color = Color(0.24, 0.20, 0.12)
+		sb.set_border_width_all(1)
+		sb.set_corner_radius_all(10)
+		part.add_theme_stylebox_override("panel", sb)
+		part.tooltip_text = "已售空位——手动刷新或战后整架刷新补新。"
+		var sold := Label.new()
+		sold.text = "已售"
+		sold.set_anchors_preset(Control.PRESET_FULL_RECT)
+		sold.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sold.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		QISTYLE.font(sold, QISTYLE.FS_SMALL)
+		sold.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+		part.add_child(sold)
+		goods.add_child(part)
+		return goods
 	sb.bg_color = Color(0.165, 0.141, 0.094) if not d.get("is_op", false) else Color(0.13, 0.12, 0.18)
 	sb.border_color = "6b5426" if not d.get("is_op", false) else "6a5a8a"
 	sb.set_border_width_all(2)
 	sb.set_corner_radius_all(10)
 	part.add_theme_stylebox_override("panel", sb)
-	part.tooltip_text = "%s：%s\n%s" % [d["name"], d["desc"],
-		"购后执行该操作；本位按同池补新。" if d.get("is_op", false) else "购入入背包——点器灵下装备格装配。"]
+	if d.get("is_op", false):
+		_bind_tip(part, String(d["name"]), String(d["desc"]), "")
+	else:
+		_bind_tip(part, String(d["name"]), QI_DATA.desc_of(String(d["id"])), "",
+			_tier_color_of(int(d["lv"])), _excl_tail(String(d["id"])))
 	var inner := VBoxContainer.new()
 	inner.set_anchors_preset(Control.PRESET_FULL_RECT)
 	inner.offset_left = 14.0
@@ -415,19 +478,20 @@ func _make_goods(d: Dictionary) -> Control:
 	var row1 := HBoxContainer.new()
 	row1.add_theme_constant_override("separation", 9)
 	var nm := Label.new()
-	nm.text = ("操作 · %s" if d.get("is_op", false) else "配件 · %s") % String(d["name"])
+	# 配件名＝裸名＋品阶色着色（2026-10-29 用户裁定：去「配件 ·」前缀与 Lv 品阶徽，颜色承载品阶；
+	# 操作位仍留「操作 ·」前缀以分位）
+	if d.get("is_op", false):
+		nm.text = "操作 · %s" % String(d["name"])
+		nm.add_theme_color_override("font_color", Color("c8b8f0"))
+	else:
+		nm.text = String(d["name"])
+		nm.add_theme_color_override("font_color",
+			TIER_COLORS[clampi(QI_DATA.TIER_LADDER.find(int(d["lv"])), 0, TIER_COLORS.size() - 1)])
 	QISTYLE.font(nm, QISTYLE.FS_BODY, true)
-	nm.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN if not d.get("is_op", false) else Color("c8b8f0"))
 	row1.add_child(nm)
-	if not d.get("is_op", false):
-		var lv := Label.new()
-		lv.text = "Lv%d" % int(d["lv"])
-		QISTYLE.font(lv, QISTYLE.FS_SMALL)
-		lv.add_theme_color_override("font_color", QISTYLE.JADE)
-		row1.add_child(lv)
 	inner.add_child(row1)
 	var eff := Label.new()
-	eff.text = String(d["desc"])
+	eff.text = String(d["desc"]) if d.get("is_op", false) else QI_DATA.desc_of(String(d["id"]))
 	QISTYLE.font(eff, QISTYLE.FS_SMALL)
 	eff.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 	eff.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -436,35 +500,34 @@ func _make_goods(d: Dictionary) -> Control:
 	sp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	inner.add_child(sp)
 	part.add_child(inner)
-	if not d.get("is_op", false):
-		var lock := Button.new()
-		lock.name = "LockButton"
-		lock.text = "已锁" if d["locked"] else "锁"
-		lock.tooltip_text = "锁定：战后整架刷新时本货位保留。"
-		lock.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		lock.offset_left = -52.0
-		lock.offset_top = 6.0
-		lock.offset_right = -8.0
-		lock.offset_bottom = 32.0
-		lock.pressed.connect(func() -> void:
-			d["locked"] = not d["locked"]
-			lock.text = "已锁" if d["locked"] else "锁"
-			_style_lock(lock, d["locked"]))
-		_style_lock(lock, d["locked"])
-		part.add_child(lock)
 	goods.add_child(part)
+	var brow := HBoxContainer.new()   # 底行＝购买签＋锁定钮并排（2026-10-29 裁定：锁在购买旁）
+	brow.alignment = BoxContainer.ALIGNMENT_CENTER
+	brow.add_theme_constant_override("separation", 8)
 	var price := Button.new()
 	price.text = "●%d" % int(d["price"])
 	if d.get("is_op", false):
 		price.tooltip_text = "购入操作《%s》——购后立即执行（升级类需再选方向）。" % String(d["name"])
 	else:
-		price.tooltip_text = "购入《%s》（Lv%d）；购后入背包，本货位按出货率补新。" % [String(d["name"]), int(d.get("lv", 0))]
+		price.tooltip_text = "购入《%s》；购后入背包，本位空置待刷新补新。" % String(d["name"])
 	price.pressed.connect(_on_buy.bind(d, part))
 	QISTYLE.apply_ghost(price)
 	QISTYLE.font(price, QISTYLE.FS_BODY, true)
 	price.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
-	price.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	goods.add_child(price)
+	brow.add_child(price)
+	if not d.get("is_op", false):
+		var lock := Button.new()
+		lock.name = "LockButton"
+		lock.text = "已锁" if d["locked"] else "锁"
+		lock.tooltip_text = "锁定：战后整架刷新时本货位保留。"
+		lock.custom_minimum_size = Vector2(48, 30)
+		lock.pressed.connect(func() -> void:
+			d["locked"] = not d["locked"]
+			lock.text = "已锁" if d["locked"] else "锁"
+			_style_lock(lock, d["locked"]))
+		_style_lock(lock, d["locked"])
+		brow.add_child(lock)
+	goods.add_child(brow)
 	return goods
 
 func _style_lock(lock: Button, on: bool) -> void:
@@ -497,99 +560,30 @@ func _build_crew_label() -> void:
 	cnt.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
 	row.add_child(cnt)
 	var note := Label.new()
-	note.text = "拖卡换位 · 点卡看详情 · 拖到左下「后备」收起 · 卡下＝配件装备格〔格数待定〕"
+	note.text = "拖卡换位 · 点卡看详情 · 「器灵」弹窗上下场/疗伤 · 卡下＝配件装备格〔格数待定〕"
 	note.tooltip_text = "被动＝器灵自身效果，见详情卡。"
 	QISTYLE.font(note, QISTYLE.FS_SMALL)
 	note.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 	row.add_child(note)
 	add_child(row)
 
-## 后备落区（2026-10-28 用户裁定：自编队行右上小条移至左下角并放大）——常驻件：
-## 点击＝开后备名册；拖器灵到此＝收起入后备（与详情页按钮同走 _bench_at）；
-## 拖拽悬停亮边＝落点反馈（亮灭见 _process——原生协议无「拖离」回调）。
-func _build_reserve_zone() -> void:
-	_reserve_zone = QI_DRAG.new()
-	_reserve_zone.name = "ReserveZone"
-	_reserve_zone.tooltip_text = "后备器灵（上限 %d；点击查看/上阵）；拖器灵到此＝收起入后备。" % RESERVE_CAP
-	_reserve_zone.drop_ok = func(data) -> bool:
-		return data is Dictionary and data.has("drag_data") and data["drag_data"].has("slot")
-	_reserve_zone.on_drop = _on_bench
-	_reserve_zone.gui_input.connect(func(e: InputEvent) -> void:
-		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-			_open_reserve())
-	_anchor(_reserve_zone, 0.012, 0.845, 0.192, 0.972)
-	_reserve_panel = Panel.new()
-	_reserve_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_reserve_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_reserve_zone.add_child(_reserve_panel)
-	var v := VBoxContainer.new()
-	v.set_anchors_preset(Control.PRESET_FULL_RECT)
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 8)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var title := HBoxContainer.new()
-	title.alignment = BoxContainer.ALIGNMENT_CENTER
-	title.add_theme_constant_override("separation", 12)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var tl := Label.new()
-	tl.text = "后备"
-	QISTYLE.font(tl, QISTYLE.FS_TITLE, true)
-	tl.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
-	tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.add_child(tl)
-	_reserve_lbl = Label.new()
-	_reserve_lbl.text = "%d / %d" % [_reserve.size(), RESERVE_CAP]
-	QISTYLE.font(_reserve_lbl, QISTYLE.FS_TITLE, true)
-	_reserve_lbl.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-	_reserve_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.add_child(_reserve_lbl)
-	v.add_child(title)
-	var hint := Label.new()
-	hint.text = "拖器灵至此收起 · 点击开名册"
-	QISTYLE.font(hint, QISTYLE.FS_SMALL)
-	hint.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(hint)
-	_reserve_panel.add_child(v)
-	_set_zone_hot(false)
-	add_child(_reserve_zone)
-
-## 落区亮边两态（常态＝琥珀细边／拖拽悬停＝玉绿粗边上浮）
-func _set_zone_hot(on: bool) -> void:
-	_zone_hot = on
-	if _reserve_panel == null:
-		return
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.16, 0.135, 0.09, 0.95) if on else Color(0.10, 0.085, 0.06, 0.92)
-	sb.border_color = QISTYLE.JADE if on else Color(QISTYLE.AMBER.r, QISTYLE.AMBER.g, QISTYLE.AMBER.b, 0.55)
-	sb.set_border_width_all(3 if on else 2)
-	sb.set_corner_radius_all(12)
-	_reserve_panel.add_theme_stylebox_override("panel", sb)
-
-## 拖拽期间每帧判光标在区否（非拖拽零成本短路；备战舱可拖物只有编队卡，无需辨拖源）
-func _process(_dt: float) -> void:
-	if _reserve_zone == null or not is_instance_valid(_reserve_zone):
-		return
-	var dragging: bool = get_viewport().gui_is_dragging()
-	if not dragging:
-		if _zone_hot:
-			_set_zone_hot(false)
-		return
-	var hot: bool = _reserve_zone.get_global_rect().has_point(_reserve_zone.get_global_mouse_position())
-	if hot != _zone_hot:
-		_set_zone_hot(hot)
-
-func _refresh_reserve_count() -> void:
-	if _reserve_lbl:
-		_reserve_lbl.text = "%d / %d" % [_reserve.size(), RESERVE_CAP]
+# 2026-10-28 槽位制＋后备上限双退役：上场 ≤7、不上场不限量；入口＝顶栏「器灵」「卡组」
+# 整屏页（STS2 DeckViewScreen 制，规格照抄＋免费素材优先）
+## 器灵入口（2026-10-29 用户裁定：出战正上方；250×70＝满编装备格底 866px 下不压列）
+func _build_roster_buttons() -> void:
+	var b := Button.new()
+	b.name = "RosterBtn"
+	b.text = "器 灵"
+	b.tooltip_text = "本局已获全部器灵：上场/离场、疗伤、功法与详情（上场至多 7 件，不上场不限量）。"
+	b.pressed.connect(func() -> void: _open_roster())
+	_anchor(b, 0.860, 0.806, 0.990, 0.876)
+	QISTYLE.apply_primary(b)
+	QISTYLE.font(b, 24, true)
+	b.add_theme_color_override("font_color", Color("ffe9b0"))
+	add_child(b)
 
 func _crew_count() -> int:
-	var n := 0
-	for c in _crew:
-		if c != null:
-			n += 1
-	return n
+	return _crew.size()
 
 ## 编队列 y40.7~77.6：7 列（列＝名字行 36 → 纯立绘卡 235×300 → 装备格行；空位同基准）
 func _build_crew_row() -> void:
@@ -604,33 +598,30 @@ func _build_crew_row() -> void:
 
 func _rebuild_crew_cols() -> void:
 	for c in _crew_row.get_children():
+		_crew_row.remove_child(c)   # 立即离树再释放：queue_free 延帧期间同名新列会被 Godot 自动改名（@VBox…）——按名寻径即炸
 		c.queue_free()
-	for i in 7:
+	# 2026-10-28 槽位制退役：只画在场器灵（紧凑队序），HBox 居中＝自动居中排列；
+	# 换位＝卡拖到卡（_on_swap 保留），空槽/拖后备区已废。
+	for i in _crew.size():
 		var col := VBoxContainer.new()
 		col.name = "CrewCol%d" % i
 		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		col.alignment = BoxContainer.ALIGNMENT_BEGIN
 		col.add_theme_constant_override("separation", 8)
 		col.custom_minimum_size = Vector2(PREP_W, 0)
-		if _crew[i] == null:
-			var pad := Control.new()
-			pad.custom_minimum_size = Vector2(PREP_W, NAME_ROW)
-			pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			col.add_child(pad)
-			col.add_child(_make_empty_slot(i))
-		else:
-			var hp_i := int(_crew[i].get("hp", 1))
-			var mhp_i := int(_crew[i].get("mhp", 1))
-			var hp_txt := "%d/%d" % [hp_i, mhp_i]
-			var warn := false
-			if hp_i <= 0:
-				hp_txt = "阵亡"
-				warn = true
-			elif hp_i < mhp_i:
-				warn = true
-			col.add_child(_make_col_name("%s　%s" % [String(_crew[i]["name"]), hp_txt], warn))
-			col.add_child(_make_crew_card(i, _crew[i]))
-			col.add_child(_make_equip_row(_crew[i]["_member"]))
+		var mem_i: Dictionary = _crew[i]["_member"]
+		var mhp_i := QI_DATA.mhp_of(mem_i)
+		var hp_i := QI_DATA.hp_of(mem_i)
+		var hp_txt := "%d/%d" % [hp_i, mhp_i]
+		var warn := false
+		if hp_i <= 0:
+			hp_txt = "阵亡"
+			warn = true
+		elif hp_i < mhp_i:
+			warn = true
+		col.add_child(_make_col_name("%s　%s" % [String(_crew[i]["name"]), hp_txt], warn))
+		col.add_child(_make_crew_card(i, _crew[i]))
+		col.add_child(_make_equip_row(_crew[i]["_member"]))
 		_crew_row.add_child(col)
 	if _crew_count_lbl:
 		_crew_count_lbl.text = "%d / 7" % _crew_count()
@@ -675,54 +666,9 @@ func _make_crew_card(slot_i: int, d: Dictionary) -> Control:
 	w.add_child(vis)
 	return w
 
-## 纯立绘卡面（整卡＝立绘位；美术到位即换 TextureRect，见两尺寸制）
-func _make_card_visual(_d: Dictionary) -> Panel:
-	var p := Panel.new()
-	p.custom_minimum_size = Vector2(PREP_W, PREP_H)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.165, 0.141, 0.094)
-	sb.border_color = Color("6b5426")
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(10)
-	p.add_theme_stylebox_override("panel", sb)
-	var t := Label.new()
-	t.text = "立绘位"
-	t.set_anchors_preset(Control.PRESET_FULL_RECT)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	QISTYLE.font(t, QISTYLE.FS_BODY)
-	t.add_theme_color_override("font_color", Color(0.36, 0.31, 0.24))
-	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_child(t)
-	return p
-
-## 空槽＝QiDragCard 纯落点（card_data 空＝不可拖，只接换位——拖卡到空槽＝移位；
-## 2026-10-27 备战舱二拖 bug：旧制纯 PanelContainer 不接拖放，拖到空槽静默失败）
-func _make_empty_slot(slot_i: int) -> Control:
-	var w: Control = QI_DRAG.new()
-	w.name = "EmptyWrap%d" % slot_i
-	w.custom_minimum_size = Vector2(PREP_W, PREP_H)
-	w.drop_ok = func(data) -> bool: return data is Dictionary and data.has("drag_data") and data["drag_data"].get("slot") != slot_i
-	w.on_drop = func(data, _zone) -> void: _on_swap(int(data["drag_data"]["slot"]), slot_i)
-	var empty := PanelContainer.new()
-	empty.name = "EmptySlot"
-	empty.set_anchors_preset(Control.PRESET_FULL_RECT)
-	empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	empty.custom_minimum_size = Vector2(PREP_W, PREP_H)
-	var sb := QISTYLE.panel(0.25)
-	sb.border_color = Color(0.42, 0.35, 0.16, 0.5)
-	sb.set_corner_radius_all(10)
-	empty.add_theme_stylebox_override("panel", sb)
-	var el := Label.new()
-	el.text = "空位"
-	QISTYLE.font(el, QISTYLE.FS_BODY)
-	el.add_theme_color_override("font_color", Color(1, 1, 1, 0.25))
-	el.custom_minimum_size = Vector2(PREP_W - 8, 120)
-	el.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	empty.add_child(el)
-	w.add_child(empty)
-	return w
+## 纯立绘卡面（整卡＝立绘位；工厂公共件，无立绘器灵由工厂退「立绘位」占位）
+func _make_card_visual(d: Dictionary) -> Panel:
+	return QICARD.make_portrait_panel(String(d.get("name", "")), "prep")
 
 ## 装备格行（卡下，可点＝装配入口）：全配件格（被动＝器灵自身效果走详情）
 ## 绑定＝成员字典引用（2026-10-28 修插件跟槽不跟灵：换位产生空位后，槽位序≠压缩队序，
@@ -762,8 +708,9 @@ func _make_equip_slot(eid: String, m: Dictionary, slot_i: int) -> Button:
 	QISTYLE.font(ic, 13)
 	ic.add_theme_color_override("font_color", Color(0.85, 0.93, 0.78) if filled else Color(1, 1, 1, 0.28))
 	if filled and QI_DATA.ACCESSORIES.has(eid):
-		ic.tooltip_text = "%s（Lv%d）：%s\n点击更换/卸下。" % [QI_DATA.ACCESSORIES[eid]["name"],
-			QI_DATA.ACCESSORIES[eid]["lv"], QI_DATA.ACCESSORIES[eid]["desc"]]
+		var acc: Dictionary = QI_DATA.ACCESSORIES[eid]
+		_bind_tip(ic, String(acc["name"]), QI_DATA.desc_of(eid), "",
+			_tier_color_of(int(acc["lv"])), _excl_tail(eid))
 	else:
 		ic.tooltip_text = "空配件格——点击从背包装配。"
 	ic.pressed.connect(func() -> void: _open_equip(m, slot_i))
@@ -783,7 +730,7 @@ func _open_equip(m: Dictionary, slot_i: int) -> void:
 	var cur := Label.new()
 	if not cur_eid.is_empty() and QI_DATA.ACCESSORIES.has(cur_eid):
 		var a: Dictionary = QI_DATA.ACCESSORIES[cur_eid]
-		cur.text = "当前：%s（Lv%d）—— %s" % [a["name"], a["lv"], a["desc"]]
+		cur.text = "当前：%s（Lv%d）—— %s" % [a["name"], a["lv"], QI_DATA.desc_of(cur_eid)]
 	else:
 		cur.text = "当前：空槽位。"
 	QISTYLE.font(cur, QISTYLE.FS_BODY)
@@ -795,6 +742,7 @@ func _open_equip(m: Dictionary, slot_i: int) -> void:
 		uneq.tooltip_text = "配件回背包。"
 		uneq.pressed.connect(func() -> void:
 			m["equips"][slot_i] = ""
+			QI_DATA.plugin_hp_shift(m, cur_eid, false)   # 血件卸下：当前耐久同扣（2026-10-29 裁定）
 			run_data.get("bag", []).push_back(cur_eid)
 			QIDIALOG.close(scrim, dialog)
 			_rebuild_crew_cols())
@@ -868,7 +816,7 @@ func _make_bag_item(eid: String, m: Dictionary, slot_i: int, dialog: Control, sc
 	row1.add_child(meta)
 	inner.add_child(row1)
 	var de := Label.new()
-	de.text = String(a["desc"])
+	de.text = QI_DATA.desc_of(eid)   # 含尾行「专属：器灵名」（通用件＝原文）
 	QISTYLE.font(de, QISTYLE.FS_SMALL)
 	de.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 	de.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -876,7 +824,14 @@ func _make_bag_item(eid: String, m: Dictionary, slot_i: int, dialog: Control, sc
 	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(inner)
 	b.pressed.connect(func() -> void:
+		# 替换＝旧件先卸回包（配件＝背包资产，2026-10-29 补：旧覆盖即蒸发之修）＋血件耐久联动
+		var old_eid := String(m["equips"][slot_i])
+		if not old_eid.is_empty():
+			m["equips"][slot_i] = ""
+			QI_DATA.plugin_hp_shift(m, old_eid, false)
+			run_data.get("bag", []).push_back(old_eid)
 		m["equips"][slot_i] = eid
+		QI_DATA.plugin_hp_shift(m, eid, true)
 		bag_remove_one(eid)
 		QIDIALOG.close(scrim, dialog)
 		_rebuild_crew_cols())
@@ -916,14 +871,20 @@ func _open_detail(d: Dictionary) -> void:
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 26)
 	grid.add_theme_constant_override("v_separation", 2)
-	for k in d["attrs"]:
+	# 属性现算（2026-10-29 反锁定制）：打开时点活查询 weapon_panel——装/卸插件即时连锁
+	var mem_a: Dictionary = d["_member"]
+	var panel_a: Dictionary = QI_DATA.weapon_panel(String(mem_a["id"]), mem_a.get("equips", []))
+	var attrs: Dictionary = {"耐久": "%d/%d" % [QI_DATA.hp_of(mem_a), QI_DATA.mhp_of(mem_a)],
+		"攻击": int(panel_a["atk"]), "威力": int(panel_a["pow"]),
+		"防御": int(panel_a["def"]), "抗性": int(panel_a["res"]), "攻击次数": int(panel_a["acts"])}
+	for k in attrs:
 		var kl := Label.new()
 		kl.text = String(k)
 		QISTYLE.font(kl, QISTYLE.FS_SMALL)
 		kl.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 		grid.add_child(kl)
 		var vl := Label.new()
-		vl.text = str(d["attrs"][k])
+		vl.text = str(attrs[k])
 		QISTYLE.font(vl, QISTYLE.FS_SMALL)
 		vl.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
 		grid.add_child(vl)
@@ -979,21 +940,22 @@ func _open_detail(d: Dictionary) -> void:
 		_rebuild_crew_cols()
 		_flash("「%s」已回复至满耐久（−%d 铜）" % [String(d["name"]), cost_d]))
 	act_row.add_child(heal_btn)
-	var slot_d := -1
-	for i in 7:
-		if _crew[i] != null and _crew[i]["_member"] == mem_d:
-			slot_d = i
-	if slot_d >= 0:
+	var on_field := false
+	for c in _crew:
+		if c["_member"] == mem_d:
+			on_field = true
+	if on_field:
 		var bench_btn := Button.new()
-		bench_btn.text = "收起入后备"
-		bench_btn.tooltip_text = "手动收后备：功法卡随档保留（升级不清零）；每场战后备战池回血。"
+		bench_btn.text = "离场"
+		bench_btn.tooltip_text = "功法卡随档保留（升级不清零）；配件卸回背包；未上场池每场战后回血。"
+		bench_btn.disabled = _crew_count() <= 1
 		QISTYLE.apply_ghost(bench_btn)
 		QISTYLE.font(bench_btn, QISTYLE.FS_SMALL)
 		bench_btn.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
 		bench_btn.pressed.connect(func() -> void:
 			if layer.is_inside_tree():
 				layer.queue_free()
-			_bench_at(slot_d))
+			_bench_member(mem_d))
 		act_row.add_child(bench_btn)
 	layer.add_child(act_row)
 	act_row.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -1031,7 +993,8 @@ func _deny_feedback(node: Control) -> void:
 		node.position.x = base_x + sin(p * TAU) * 10.0, 0.0, 2.0, 0.4)\
 		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 
-## 商店操作：配件购入＝扣钱入背包＋按出货率补位；操作位购入＝扣钱立即执行＋同池补位；
+## 商店操作（2026-10-29 用户裁定：购后不自动补货——本位空置「已售」，待手动刷新/战后整架刷新补新，
+## 连锁定一并清）：配件购入＝扣钱入背包＋位空置；操作位购入＝扣钱立即执行＋位空置；
 ## 刷新＝扣钱换未锁位（操作位随刷新重掷）；升级＝奇偶交替＆出货率上浮
 func _on_buy(d: Dictionary, slot_node: Control) -> void:
 	var cost: int = int(d["price"])
@@ -1040,19 +1003,15 @@ func _on_buy(d: Dictionary, slot_node: Control) -> void:
 		return
 	_copper -= cost
 	_refresh_currency()
+	var idx := _shelf.find(d)
+	if idx >= 0:
+		_shelf[idx] = {}
+		_rebuild_shelf()
 	if d.get("is_op", false):
-		_restock(d)
 		_apply_shop_op(d)
 		return
 	run_data.get("bag", []).push_back(String(d["id"]))
-	_restock(d)
 	_flash("已入背包：%s（点器灵下装备格装配）" % String(d["name"]))
-
-func _restock(d: Dictionary) -> void:
-	var idx := _shelf.find(d)
-	if idx >= 0:
-		_shelf[idx] = _draw_op() if idx == OP_SLOT else _draw_one()
-		_rebuild_shelf()
 
 ## 执行操作位购买（升级类弹方向二选一；器灵类走安置规则）
 func _apply_shop_op(d: Dictionary) -> void:
@@ -1074,7 +1033,7 @@ func _apply_shop_op(d: Dictionary) -> void:
 			_flash("已复制 1 张（含升级方向）")
 		"upgrade_spell":
 			_pick_dir_dialog("为「%s」选升级方向" % QI_DATA.spell_of(d["wid"], d["sid"], 0)["name"],
-				QIUP.spell_dir_row.bind(String(d["wid"]), String(d["sid"])),
+				func(cb: Callable) -> Control: return QIUP.spell_dir_row(String(d["wid"]), String(d["sid"]), cb),
 				func(dir: int) -> void:
 					var deck: Array = run_data.get("deck", [])
 					for i in deck.size():
@@ -1086,7 +1045,7 @@ func _apply_shop_op(d: Dictionary) -> void:
 		"upgrade_spirit":
 			var w: Dictionary = QI_DATA.WEAPONS[String(d["wid"])]
 			_pick_dir_dialog("为「%s」的被动「%s」选方向" % [w["name"], w["passive"]["name"]],
-				QIUP.passive_dir_block.bind(String(d["wid"])),
+				func(cb: Callable) -> Control: return QIUP.passive_dir_block(String(d["wid"]), cb),
 				func(dir: int) -> void:
 					for m in run_data.get("team", []):
 						if String(m["id"]) == String(d["wid"]):
@@ -1096,18 +1055,10 @@ func _apply_shop_op(d: Dictionary) -> void:
 			var wid := String(d["wid"])
 			var member := {"id": wid, "equips": ["", "", ""], "pdir": 0}
 			var reserve: Array = run_data.get("reserve", [])
-			if reserve.size() < RESERVE_CAP:
-				reserve.push_back(member)
-				run_data["reserve"] = reserve
-				_reload_reserve()
-				_flash("「%s」已入后备（后备名册可上阵）" % QI_DATA.WEAPONS[wid]["name"])
-			elif _crew_count() < 7:
-				run_data["team"].push_back(member)
-				QI_DATA.deck_swap(run_data, "", wid)
-				_reload_crew()
-				_flash("后备满员——「%s」已直接上阵" % QI_DATA.WEAPONS[wid]["name"])
-			else:
-				_pick_spirit_replace(wid)
+			reserve.push_back(member)   # 未上场池不限量（2026-10-28 后备上限退役）；上场走「器灵」弹窗
+			run_data["reserve"] = reserve
+			_reload_reserve()
+			_flash("「%s」已入未上场池（「器灵」弹窗可上场）" % QI_DATA.WEAPONS[wid]["name"])
 
 ## 方向二选一弹窗（v3：真卡对照件 QiUpgradePick——功法＝三卡＋diff／被动＝主卡＋方向块；
 ## 已付费操作位，必须点选方向才关窗：无取消键、ESC 不关、确认键禁用）
@@ -1123,57 +1074,38 @@ func _pick_dir_dialog(title: String, chooser_bound: Callable, on_pick: Callable)
 	dialog.content().add_child(chooser)
 	dialog.popup_centered(Vector2i(1080, 640))
 
-## 替换安置（后备与装备位皆满）：选一件装备中器灵替换；被替换者删除回未解锁
-func _pick_spirit_replace(in_wid: String) -> void:
-	var dialog: Control = QIDIALOG.create(self, "选一件替换（被替换者删除回未解锁）", Vector2(1080, 600), "取消")[1]
-	var grid := GridContainer.new()
-	grid.columns = 4
-	grid.add_theme_constant_override("h_separation", 14)
-	grid.add_theme_constant_override("v_separation", 14)
-	for m in run_data.get("team", []):
-		var w: Dictionary = QI_DATA.WEAPONS[String(m["id"])]
-		var b := Button.new()
-		b.text = "%s（被动%s）" % [w["name"], "已升级" if int(m.get("pdir", 0)) > 0 else "未升级"]
-		b.custom_minimum_size = Vector2(230, 64)
-		QISTYLE.apply_ghost(b)
-		QISTYLE.font(b, QISTYLE.FS_SMALL)
-		b.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-		var out_wid := String(m["id"])
-		b.pressed.connect(func() -> void:
-			var team2: Array = run_data.get("team", [])
-			for i in range(team2.size() - 1, -1, -1):
-				if String(team2[i]["id"]) == out_wid:
-					team2.remove_at(i)
-			team2.push_back({"id": in_wid, "equips": ["", "", ""], "pdir": 0})
-			QI_DATA.deck_swap(run_data, out_wid, in_wid)
-			dialog.queue_free()
-			_reload_crew()
-			_flash("「%s」已替换「%s」上阵" % [QI_DATA.WEAPONS[in_wid]["name"], QI_DATA.WEAPONS[out_wid]["name"]]))
-		grid.add_child(b)
-	dialog.content().add_child(grid)
-	dialog.popup_centered()
+var _refresh_used := 0   # 刷新递增计数（2026-10-29 用户裁定：1 铜起、每刷 +1）
+
+func _refresh_price() -> int:
+	return 1 + _refresh_used
 
 func _on_refresh() -> void:
-	if _copper < REFRESH_COST:
+	var cost := _refresh_price()
+	if _copper < cost:
 		_flash("铜钱不足")
 		return
-	_copper -= REFRESH_COST
+	_copper -= cost
+	_refresh_used += 1
 	_refresh_currency()
+	var rf2 := find_child("ReflashButton", false, false) as Button
+	if rf2 != null:
+		rf2.text = "刷新 ·%d铜" % _refresh_price()
 	for i in _shelf.size():
-		if not _shelf[i]["locked"]:
+		if not (_shelf[i] as Dictionary).get("locked", false):   # 已售空位无 locked 键——缺省＝未锁，照常掷新
 			_shelf[i] = _draw_op() if i == OP_SLOT else _draw_one()
 	_rebuild_shelf()
 	_flash("货架已刷新")
 
 func _on_upgrade() -> void:
-	if _copper < UPGRADE_COST:
+	var cost := _upgrade_cost()
+	if _copper < cost:
 		_flash("铜钱不足")
 		return
-	# 奇偶制（v0.7）：第 n 次升级（n＝目标 Lv−1）——奇数→抽牌+1，偶数→能量上限+1
-	var n := _sys_lv - 1
-	var eff := "抽牌 %d → %d" % [QI_DATA.draw_of(_sys_lv), QI_DATA.draw_of(_sys_lv + 1)] if n % 2 == 1 \
-		else "能量上限 %d → %d" % [QI_DATA.energy_cap_of(_sys_lv), QI_DATA.energy_cap_of(_sys_lv + 1)]
-	_copper -= UPGRADE_COST
+	# 奇偶制（2026-10-29 再裁）：升到偶数级→抽牌+1、升到奇数级→能量上限+1
+	var dst := _sys_lv + 1
+	var eff := "抽牌 %d → %d" % [QI_DATA.draw_of(_sys_lv), QI_DATA.draw_of(dst)] if dst % 2 == 0 \
+		else "能量上限 %d → %d" % [QI_DATA.energy_cap_of(_sys_lv), QI_DATA.energy_cap_of(dst)]
+	_copper -= cost
 	_refresh_currency()
 	_sys_lv += 1
 	run_data["sys_lv"] = _sys_lv
@@ -1183,122 +1115,390 @@ func _on_upgrade() -> void:
 	_refresh_odds()
 	_flash("系统 Lv%d · %s" % [_sys_lv, eff])
 
-## 编队换位／入后备（原生拖放回调）——run.team 随之同步
+## 编队换位（原生拖放回调；2026-10-28 槽位制退役后＝紧凑队序内换位，卡拖到卡；自动居中排列）
 func _on_swap(from_i: int, to_i: int) -> void:
+	if from_i < 0 or from_i >= _crew.size() or to_i < 0 or to_i >= _crew.size() or from_i == to_i:
+		return
 	var tmp = _crew[from_i]
 	_crew[from_i] = _crew[to_i]
 	_crew[to_i] = tmp
 	_sync_team()
 	_rebuild_crew_cols()
 
-func _on_bench(data, _zone) -> void:
-	if not (data is Dictionary) or not data.has("drag_data"):
-		return
-	_bench_at(int(data["drag_data"]["slot"]))
-
-## 收起入后备（拖到「后备」区与详情页按钮同入口；升级保留制＝功法卡随档带走 2026-10-28；
-## 配件＝背包资产离队即回收——入后备自动卸下全部插件 2026-10-28 用户裁定）
-func _bench_at(i: int) -> void:
-	if i < 0 or i >= 7 or _crew[i] == null:
-		return
-	if _reserve.size() >= RESERVE_CAP:
-		_flash("后备已满（%d/%d）——先上阵或替换一件" % [_reserve.size(), RESERVE_CAP])
+## 离场（详情页按钮与器灵弹窗同入口；升级保留制＝功法卡随档带走；配件离队即卸回背包）
+func _bench_member(m: Dictionary) -> void:
+	var idx := -1
+	for i in _crew.size():
+		if _crew[i]["_member"] == m:
+			idx = i
+			break
+	if idx < 0:
 		return
 	if _crew_count() <= 1:
 		_flash("编队至少保留一件器灵")
 		return
-	var wid := String(_crew[i]["_member"]["id"])
+	var wid := String(m["id"])
 	var removed := 0
 	for de in run_data.get("deck", []):
 		if String(de["wid"]) == wid:
 			removed += 1
 	QI_DATA.deck_swap(run_data, wid, "")
-	var uneq: Array = QI_DATA.unequip_all(run_data, _crew[i]["_member"])
-	for k in 3:   # 列表项缓存名同步清空（详情/浮窗不吃残影）
-		_crew[i]["equips"][k] = ""
-	_reserve.push_back(_crew[i])
-	_crew[i] = null
+	var uneq: Array = QI_DATA.unequip_all(run_data, m)
+	_reserve.push_back(_crew[idx])
+	_crew.remove_at(idx)
 	_sync_team()
 	_rebuild_crew_cols()
-	_refresh_reserve_count()
-	var msg := "已收起入后备（%d 张功法卡随档保留，每场战后回血）" % removed
+	var msg := "已离场（%d 张功法卡随档保留，未上场池每场战后回血）" % removed
 	if not uneq.is_empty():
 		msg += "；已卸下配件→背包：%s" % "、".join(uneq)
 	_flash(msg)
 
-## 弹窗：后备名册（1080×600）——可上阵（入首个空位；卡组随供牌）
-func _open_reserve() -> void:
-	var pair_r: Array = QIDIALOG.create(self, "后备器灵", Vector2(1080, 600), "关闭")
-	var scrim_r: ColorRect = pair_r[0]
-	var dialog: Control = pair_r[1]
+## 上场（器灵弹窗入口；排末位＝备战区最右；阵亡者须经回复通道复活）
+func _field_member(entry: Dictionary) -> bool:
+	if _crew.size() >= 7:
+		_flash("上场已满（7/7）——先离场一件再上")
+		return false
+	var wid := String(entry["_member"]["id"])
+	_crew.push_back(entry)
+	_reserve.erase(entry)
+	QI_DATA.deck_swap(run_data, "", wid)
+	_sync_team()
+	_rebuild_crew_cols()
+	_flash("「%s」已上场（卡组 +4 张，排末位）" % String(entry["name"]))
+	return true
+
+## —— STS2 DeckViewScreen 式整屏页（2026-10-28 用户裁定：弹窗逻辑/画面表现与 STS2 一致；
+## 规格实测 scenes/screens/deck_view_screen.tscn：全屏覆盖＋顶排序带 y92~152 高 60＋
+## 排序钮 250×42 居中间距 50＋滚动区左右各让 175＋底中黑 75% 计数条＋底左返回钮；
+## 素材三步制：底板 kenney CC0（qiforge/assets/kenney），无可搬贴图处自绘复刻）。
+func _sts2_page(page_name: String, bottom_text: String) -> Dictionary:
+	var layer := Control.new()
+	layer.name = page_name
+	layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.z_index = 60
+	layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	var plate := ColorRect.new()
+	plate.color = Color(0, 0, 0, 0.85)
+	plate.set_anchors_preset(Control.PRESET_FULL_RECT)
+	plate.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(plate)
+	# 返回钮（back_button.tscn 位制＝底左）：kenney 西向箭头＋文字
+	var back := Button.new()
+	back.text = " 返回"
+	back.tooltip_text = "回到备战舱。"
+	back.icon = load("res://qiforge/assets/kenney/arrow_basic_w.png") as Texture2D
+	back.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	back.custom_minimum_size = Vector2(190, 56)
+	_anchor(back, 0.012, 0.886, 0.13, 0.964)
+	QISTYLE.apply_ghost(back)
+	QISTYLE.font(back, 20, true)
+	back.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
+	back.pressed.connect(func() -> void: layer.queue_free())
+	layer.add_child(back)
+	# 底中计数条（BottomText 制：黑 75% 圆角＋内边 16）
+	var btm := PanelContainer.new()
+	var bsb := StyleBoxFlat.new()
+	bsb.bg_color = Color(0, 0, 0, 0.7529)
+	bsb.set_corner_radius_all(6)
+	bsb.content_margin_left = 16.0
+	bsb.content_margin_right = 16.0
+	bsb.content_margin_top = 4.0
+	bsb.content_margin_bottom = 4.0
+	btm.add_theme_stylebox_override("panel", bsb)
+	btm.anchor_left = 0.5
+	btm.anchor_right = 0.5
+	btm.anchor_top = 1.0
+	btm.anchor_bottom = 1.0
+	btm.offset_left = -160.0
+	btm.offset_right = 160.0
+	btm.offset_top = -57.0
+	btm.offset_bottom = -17.0
+	var blbl := Label.new()
+	blbl.text = bottom_text
+	QISTYLE.font(blbl, QISTYLE.FS_SMALL)
+	blbl.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
+	btm.add_child(blbl)
+	layer.add_child(btm)
+	# 滚动区（左右各让 175；顶让排序带 176、底让 80）
+	var scroll := ScrollContainer.new()
+	scroll.name = "PageScroll"
+	_anchor(scroll, 0.0, 0.0, 1.0, 1.0)
+	scroll.offset_left = 175.0
+	scroll.offset_right = -175.0
+	scroll.offset_top = 176.0
+	scroll.offset_bottom = -80.0
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	layer.add_child(scroll)
+	# 上下渐隐（card_grid.tscn BorderGradient 制）：单张全屏＋Cubic 平滑＋上下各 5% 黑 0.9；
+	# 旧两张 CONSTANT 阶梯插值是黑线病根（95% 区域全透明渐隐失效＋尾缘 ~3px 硬黑线，2026-10-29 修）
+	var grad := Gradient.new()
+	grad.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CUBIC
+	grad.offsets = PackedFloat32Array([0.0, 0.05, 0.95, 1.0])
+	grad.colors = PackedColorArray([Color(0, 0, 0, 0.9), Color(0, 0, 0, 0),
+		Color(0, 0, 0, 0), Color(0, 0, 0, 0.9)])
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.width = 2
+	gt.height = 256
+	gt.fill_to = Vector2(0, 1)
+	var fade := TextureRect.new()
+	fade.texture = gt
+	fade.stretch_mode = TextureRect.STRETCH_SCALE
+	fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fade.z_index = 5
+	layer.add_child(fade)
+	add_child(layer)
+	return {"layer": layer, "scroll": scroll, "bottom": blbl}
+
+## 器灵页：本局全部已获器灵——真卡＋血量＋功法名＋上场/离场/疗伤；点卡＝详情页
+func _open_roster() -> void:
+	if find_child("RosterPage", false, false) != null:
+		return
+	var page: Dictionary = _sts2_page("RosterPage",
+		"上场 %d/7 · 共 %d 件" % [_crew.size(), _crew.size() + _reserve.size()])
+	var layer: Control = page["layer"]
+	var scroll: ScrollContainer = page["scroll"]
 	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", 10)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 14)
 	var head := Label.new()
-	head.text = "后备 %d/%d（上阵＝入编队首个空位，功法卡随档还原；拖编队卡到「后备」即可收起；每场战后备战池回血）" % [_reserve.size(), RESERVE_CAP]
+	head.text = "本局已获 %d 件 · 上场 %d/7（不上场不限量；未上场池每场战后回血；在场顺序＝备战区排列）" \
+		% [_crew.size() + _reserve.size(), _crew.size()]
 	QISTYLE.font(head, QISTYLE.FS_SMALL)
 	head.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
 	body.add_child(head)
+	for i in _crew.size():
+		body.add_child(_make_roster_row(_crew[i], true, i, layer))
 	for r in _reserve:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 12)
-		var mhp_r := QI_DATA.mhp_of(r["_member"])
-		var hp_r := clampi(int(r["_member"].get("hp", mhp_r)), 0, mhp_r)
-		var lbl := Label.new()
-		lbl.text = "· %s（耐久 %d/%d%s）　%s" % [String(r["name"]), hp_r, mhp_r,
-			"·阵亡" if hp_r <= 0 else "", String(r["passive"])]
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		QISTYLE.font(lbl, QISTYLE.FS_SMALL)
-		lbl.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-		row.add_child(lbl)
-		var up := Button.new()
-		up.text = "上阵"
-		up.tooltip_text = "入编队首个空位；功法卡随档还原（升级保留）。阵亡者须经回复通道复活。"
-		up.disabled = hp_r <= 0
-		var hb := Button.new()
-		var cost_r := QI_DATA.heal_price(r["_member"])
-		hb.text = "疗伤 %d 铜" % cost_r
-		hb.tooltip_text = "金币通道：回复至满耐久（存活＝缺口×1 铜、阵亡＝×1.5，暂定）。"
-		hb.disabled = cost_r <= 0 or int(run_data.get("copper", 0)) < cost_r
-		QISTYLE.apply_ghost(hb)
-		QISTYLE.font(hb, QISTYLE.FS_SMALL)
-		hb.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
-		var rm: Dictionary = r["_member"]
-		hb.pressed.connect(func() -> void:
-			run_data["copper"] = int(run_data.get("copper", 0)) - cost_r
-			_copper = int(run_data["copper"])
-			if _copper_lbl:
-				_copper_lbl.text = str(_copper)
-			rm["hp"] = mhp_r
-			QIDIALOG.close(scrim_r, dialog)
-			_flash("「%s」已回复至满耐久（−%d 铜）" % [String(r["name"]), cost_r]))
-		row.add_child(hb)
-		QISTYLE.apply_ghost(up)
-		QISTYLE.font(up, QISTYLE.FS_SMALL)
-		up.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
-		var member: Dictionary = r
-		up.pressed.connect(func() -> void:
-			var slot_i := -1
-			for i in 7:
-				if _crew[i] == null:
-					slot_i = i
-					break
-			if slot_i < 0:
-				_flash("编队已满（7/7）——先收起一件再上阵")
-				return
-			var wid := String(member["_member"]["id"])
-			_crew[slot_i] = member
-			_reserve.erase(member)
-			QI_DATA.deck_swap(run_data, "", wid)
-			_sync_team()
-			_rebuild_crew_cols()
-			_refresh_reserve_count()
-			QIDIALOG.close(scrim_r, dialog)
-			_flash("「%s」已上阵（卡组 +4 张）" % member["name"]))
-		row.add_child(up)
-		body.add_child(row)
-	dialog.content().add_child(body)
-	dialog.popup_centered()
+		body.add_child(_make_roster_row(r, false, -1, layer))
+	scroll.add_child(body)
+
+func _make_roster_row(entry: Dictionary, equipped: bool, order_i: int, layer: Control) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	# 真卡（点击＝详情页；按钮壳包立绘面板，点击面积＝整卡）
+	var card_btn := Button.new()
+	card_btn.custom_minimum_size = Vector2(PREP_W, PREP_H)
+	card_btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	card_btn.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
+	card_btn.add_theme_stylebox_override("pressed", StyleBoxEmpty.new())
+	card_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var visual: Panel = _make_card_visual(entry)
+	visual.set_anchors_preset(Control.PRESET_FULL_RECT)
+	visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_btn.add_child(visual)
+	card_btn.pressed.connect(func() -> void: _open_detail(entry))
+	row.add_child(card_btn)
+	# 信息列：名（在场位次/阵亡）＋血量＋功法名
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 6)
+	var m: Dictionary = entry["_member"]
+	var mhp := QI_DATA.mhp_of(m)
+	var hp := clampi(int(m.get("hp", mhp)), 0, mhp)
+	var t1 := Label.new()
+	t1.text = "%s%s　耐久 %d/%d%s" % [String(entry["name"]),
+		" · 在场第 %d 位" % (order_i + 1) if equipped else "", hp, mhp,
+		" · 阵亡" if hp <= 0 else ""]
+	QISTYLE.font(t1, QISTYLE.FS_BODY, true)
+	t1.add_theme_color_override("font_color",
+		Color("e07a6a") if hp <= 0 else (QISTYLE.AMBER_BRIGHT if equipped else QISTYLE.TEXT_MAIN))
+	info.add_child(t1)
+	var sp_names: Array = []
+	for s in QI_DATA.WEAPONS[String(m["id"])]["spells"]:
+		sp_names.push_back(String(s["name"]))
+	var t2 := Label.new()
+	t2.text = "功法：%s" % "、".join(PackedStringArray(sp_names))
+	QISTYLE.font(t2, QISTYLE.FS_SMALL)
+	t2.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+	info.add_child(t2)
+	# 操作行：上场/离场＋疗伤（页内即关页再执行，回备战看新状态）
+	var btns := HBoxContainer.new()
+	btns.add_theme_constant_override("separation", 12)
+	var tog := Button.new()
+	if equipped:
+		tog.text = "离场"
+		tog.tooltip_text = "功法卡随档保留（升级不清零）；配件卸回背包；未上场池每场战后回血。"
+		tog.disabled = _crew_count() <= 1
+		tog.pressed.connect(func() -> void:
+			layer.queue_free()
+			_bench_member(m))
+	else:
+		tog.text = "上场"
+		tog.tooltip_text = "入备战区末位；功法卡随档还原（升级保留）。阵亡者须经回复通道复活。"
+		tog.disabled = hp <= 0 or _crew.size() >= 7
+		tog.pressed.connect(func() -> void:
+			if _field_member(entry):
+				layer.queue_free())
+	QISTYLE.apply_ghost(tog)
+	QISTYLE.font(tog, QISTYLE.FS_SMALL)
+	tog.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
+	btns.add_child(tog)
+	var heal := Button.new()
+	var cost_r := QI_DATA.heal_price(m)
+	heal.text = "疗伤 %d 铜" % cost_r if cost_r > 0 else "耐久完好"
+	heal.tooltip_text = "金币通道：回复至满耐久（存活＝缺口×1 铜、阵亡＝×1.5，暂定）。"
+	heal.disabled = cost_r <= 0 or int(run_data.get("copper", 0)) < cost_r
+	heal.pressed.connect(func() -> void:
+		run_data["copper"] = int(run_data.get("copper", 0)) - cost_r
+		_copper = int(run_data["copper"])
+		if _copper_lbl:
+			_copper_lbl.text = str(_copper)
+		m["hp"] = mhp
+		layer.queue_free()
+		_rebuild_crew_cols()
+		_flash("「%s」已回复至满耐久（−%d 铜）" % [String(entry["name"]), cost_r]))
+	QISTYLE.apply_ghost(heal)
+	QISTYLE.font(heal, QISTYLE.FS_SMALL)
+	heal.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
+	btns.add_child(heal)
+	info.add_child(btns)
+	row.add_child(info)
+	return row
+
+var _deck_sort := "wid"   # 卡组弹窗排序："wid"＝按器灵（默认，备战区序）/ "cost"＝按费用
+
+## 卡组页（STS2 DeckViewScreen 制）：顶排序带（钮 250×42 居中间距 50，kenney 底）＋真卡网格＋底中计数
+func _open_deck_view() -> void:
+	if find_child("DeckPage", false, false) != null:
+		return
+	var deck: Array = run_data.get("deck", [])
+	var page: Dictionary = _sts2_page("DeckPage", "当前卡组 %d 张" % deck.size())
+	var layer: Control = page["layer"]
+	var scroll: ScrollContainer = page["scroll"]
+	# 顶排序带（SortingOptions 制：y92~152 高 60、左让 56 右让 33）
+	var strip := PanelContainer.new()
+	var ssb := StyleBoxFlat.new()
+	ssb.bg_color = Color(0.07, 0.06, 0.045, 0.92)
+	ssb.border_color = Color(QISTYLE.AMBER.r, QISTYLE.AMBER.g, QISTYLE.AMBER.b, 0.55)
+	ssb.set_border_width_all(2)
+	ssb.set_corner_radius_all(10)
+	ssb.content_margin_left = 14.0
+	ssb.content_margin_right = 14.0
+	strip.add_theme_stylebox_override("panel", ssb)
+	strip.anchor_top = 0.0
+	strip.anchor_bottom = 0.0
+	strip.anchor_left = 0.0
+	strip.anchor_right = 1.0
+	strip.offset_left = 231.0    # 175 滚动让位＋56
+	strip.offset_right = -208.0  # 175＋33
+	strip.offset_top = 92.0
+	strip.offset_bottom = 152.0
+	var hbox := HBoxContainer.new()
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_theme_constant_override("separation", 50)
+	# kenney CC0 长条钮底＝StyleBoxTexture 九宫格（规格照抄制：免费素材优先）
+	var kbtn: StyleBoxTexture = StyleBoxTexture.new()
+	kbtn.texture = load("res://qiforge/assets/kenney/button_rectangle_flat.png") as Texture2D
+	kbtn.texture_margin_left = 24.0
+	kbtn.texture_margin_right = 24.0
+	kbtn.texture_margin_top = 12.0
+	kbtn.texture_margin_bottom = 12.0
+	kbtn.modulate_color = Color(0.32, 0.27, 0.18)
+	for mode in [["wid", "按器灵分组"], ["cost", "按费用排序"]]:
+		var sb2 := Button.new()
+		sb2.text = mode[1]
+		sb2.tooltip_text = "切换排序：%s。" % mode[1]
+		sb2.custom_minimum_size = Vector2(250, 42)
+		var kx: StyleBoxTexture = kbtn.duplicate() as StyleBoxTexture
+		if String(mode[0]) == _deck_sort:
+			kx.modulate_color = Color(0.52, 0.42, 0.24)
+		sb2.add_theme_stylebox_override("normal", kx)
+		var kxh: StyleBoxTexture = kbtn.duplicate() as StyleBoxTexture
+		kxh.modulate_color = Color(0.62, 0.52, 0.30)
+		sb2.add_theme_stylebox_override("hover", kxh)
+		sb2.add_theme_stylebox_override("pressed", kxh)
+		sb2.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		QISTYLE.font(sb2, 17, true)
+		sb2.add_theme_color_override("font_color", Color("ffe9b0"))
+		var mode_s := String(mode[0])
+		sb2.pressed.connect(func() -> void:
+			_deck_sort = mode_s
+			for c in scroll.get_children():
+				c.queue_free()
+			_fill_deck_scroll(scroll)
+			var sort_name := "按器灵" if _deck_sort == "wid" else "按费用"
+			(page["bottom"] as Label).text = "当前卡组 %d 张 · %s" % [deck.size(), sort_name]
+			for b2 in hbox.get_children():
+				var bb := b2 as Button
+				var is_wid_btn := "器灵" in String(bb.text)
+				var active := (is_wid_btn and _deck_sort == "wid") or (not is_wid_btn and _deck_sort == "cost")
+				var sbx := bb.get_theme_stylebox("normal") as StyleBoxTexture
+				sbx.modulate_color = Color(0.52, 0.42, 0.24) if active else Color(0.32, 0.27, 0.18))
+		hbox.add_child(sb2)
+	strip.add_child(hbox)
+	layer.add_child(strip)
+	_fill_deck_scroll(scroll)
+
+func _fill_deck_scroll(scroll: ScrollContainer) -> void:
+	var deck: Array = run_data.get("deck", [])
+	if _deck_sort == "wid":
+		var by_wid := {}
+		for de in deck:
+			var w0 := String(de["wid"])
+			if not by_wid.has(w0):
+				by_wid[w0] = []
+			by_wid[w0].push_back(de)
+		var grid := VBoxContainer.new()
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_theme_constant_override("separation", 8)
+		var wids: Array = []
+		for e0 in _crew + _reserve:
+			var w1 := String(e0["_member"]["id"])
+			if not wids.has(w1):
+				wids.push_back(w1)
+		for w2 in by_wid.keys():
+			if not wids.has(w2):
+				wids.push_back(w2)
+		for w3 in wids:
+			if not by_wid.has(w3):
+				continue
+			var grp := VBoxContainer.new()
+			grp.add_theme_constant_override("separation", 6)
+			var gl := Label.new()
+			gl.text = "「%s」×%d" % [String(QI_DATA.WEAPONS[w3]["name"]), (by_wid[w3] as Array).size()]
+			QISTYLE.font(gl, QISTYLE.FS_SMALL)
+			gl.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+			grp.add_child(gl)
+			var hb := HFlowContainer.new()
+			hb.add_theme_constant_override("separation", 10)
+			for de0 in by_wid[w3]:
+				hb.add_child(_make_deck_card(de0))
+			grp.add_child(hb)
+			grid.add_child(grp)
+		scroll.add_child(grid)
+	else:
+		var cards: Array = deck.duplicate()
+		cards.sort_custom(func(a, b) -> bool:
+			var ca := _deck_card_cost(a)
+			var cb := _deck_card_cost(b)
+			if ca != cb:
+				return ca < cb
+			if String(a["wid"]) != String(b["wid"]):
+				return String(a["wid"]) < String(b["wid"])
+			return String(a["sid"]) < String(b["sid"]))
+		var flow := HFlowContainer.new()
+		flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		flow.add_theme_constant_override("separation", 10)
+		for de1 in cards:
+			flow.add_child(_make_deck_card(de1))
+		scroll.add_child(flow)
+
+func _deck_card_cost(de: Dictionary) -> int:
+	var sp := QI_DATA.spell_of(String(de["wid"]), String(de["sid"]), int(de.get("dir", 0)))
+	return int(sp.get("cost", 0))
+
+func _make_deck_card(de: Dictionary) -> Button:
+	var sp := QI_DATA.spell_of(String(de["wid"]), String(de["sid"]), int(de.get("dir", 0)))
+	var card: Button = QICARD.make_spell_card(String(sp["name"]), int(sp.get("cost", 0)),
+		String(sp.get("desc", "")), 0, "", "field")
+	var sp_copy: Dictionary = sp
+	card.pressed.connect(func() -> void:
+		var big: Button = QICARD.make_spell_card(String(sp_copy["name"]), int(sp_copy.get("cost", 0)),
+			String(sp_copy.get("desc", "")), 0, "", "detail")
+		add_child(QICARD.make_detail_layer(big)))
+	return card
 
 func _open_group_intel() -> void:
 	var gi: int = int(run_data.get("group", 0))
@@ -1311,8 +1511,10 @@ func _open_group_intel() -> void:
 	for i in fights.size():
 		var f: Dictionary = fights[i]
 		var names: Array = []
-		for eid in f["enemies"]:
-			names.push_back(QI_DATA.ENEMIES[eid]["name"])
+		for eid0 in f["enemies"]:
+			var ids0: Array = eid0 if eid0 is Array else [eid0]   # 块队列制：标签按块顶计
+			if not ids0.is_empty():
+				names.push_back(QI_DATA.ENEMIES[String(ids0[0])]["name"])
 		var state := "（当前）" if i == fi else ("（已胜）" if i < fi else "")
 		var row := VBoxContainer.new()
 		var t := Label.new()

@@ -31,14 +31,14 @@ func _run() -> void:
 
 	# —— 敌排（演示局 G1F1＝2 敌；卡＝工厂单位档）——
 	chk("敌排 2 槽（演示局）", er.get_child_count(), 2.0, 0.0)
-	var wrap1: Control = er.get_child(0).get_child(1)
+	var wrap1: Control = er.get_child(0).get_child(1).get_child(0)   # 块制：slot→zone→wrap（2026-10-29）
 	var card1: Control = wrap1.get_child(0)
 	chk("敌卡宽（工厂 field 档）", card1.size.x, field.x, 1.5)
 	chk("敌卡高（工厂 field 档）", card1.size.y, field.y, 1.5)
 	chk("敌卡在屏内", 1.0 if card1.global_position.y > 90.0
 		and card1.global_position.y + card1.size.y < 480.0 else 0.0, 1.0, 0.0)
 	if er.get_child_count() == 2:
-		var card2: Control = er.get_child(1).get_child(1).get_child(0)
+		var card2: Control = er.get_child(1).get_child(1).get_child(0).get_child(0)
 		var gap: float = card2.global_position.x - (card1.global_position.x + card1.size.x)
 		bt("敌卡不重叠且留隙 ≥20（实测 %.0f）" % gap, gap >= 20.0)
 

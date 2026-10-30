@@ -63,6 +63,22 @@ const COLOR_DIFF_MOD: Color = Color(0.70, 0.50, 0.10)
 static func identity_of(pack_id: String) -> String:
 	return PACK_IDENTITY.get(pack_id, "身法")
 
+## 器灵立绘索引（名→res 路径；未录者保持压暗占位；资源未导入/缺失时 portrait_of 返 null 退占位）
+const PORTRAITS: Dictionary = {
+	"幽冥剑": "res://qiforge/assets/portraits/youming.png",
+}
+static var _portrait_cache: Dictionary = {}
+
+static func portrait_of(name_text: String) -> Texture2D:
+	if not PORTRAITS.has(name_text):
+		return null
+	if not _portrait_cache.has(name_text):
+		var tex: Texture2D = load(String(PORTRAITS[name_text])) as Texture2D
+		if tex == null:
+			return null
+		_portrait_cache[name_text] = tex
+	return _portrait_cache[name_text]
+
 ## 菱头名字带（StyleBoxFlat 只有圆角做不了斜角，自绘六边形）
 class DiamondBand extends Control:
 	var band_color: Color = Color(0.0, 0.0, 0.0, 0.32)
@@ -80,10 +96,40 @@ class DiamondBand extends Control:
 static func make_spirit_card(spirit: Dictionary, ctx: String = "field") -> Button:
 	var k: float = scale_of(ctx)
 	var card: Button = _new_card(SPIRIT_COLOR, k)
-	_add_art_zone(card, k)
+	_add_art_zone(card, k, false, portrait_of(str(spirit.get("name", ""))))
 	_add_band(card, k, str(spirit.get("name", "")), true)
 	_add_effect_panel(card, k, str(spirit.get("desc", "")), 0, "")
 	return card
+
+## 纯立绘卡（整卡＝立绘位，COVERED 裁切；备战舱展示位/战斗我方位共用件；
+## 无立绘器灵退「立绘位」占位——2026-10-29 用户裁定战斗我方卡整卡改立绘）
+static func make_portrait_panel(name_text: String, ctx: String = "prep") -> Panel:
+	var k: float = scale_of(ctx)
+	var p: Panel = Panel.new()
+	p.custom_minimum_size = size_of(ctx)
+	var sb: StyleBoxFlat = StyleBoxFlat.new()
+	sb.bg_color = Color(0.165, 0.141, 0.094)
+	sb.border_color = Color("6b5426")
+	sb.set_border_width_all(maxi(2, roundi(3.0 * k)))
+	sb.set_corner_radius_all(maxi(4, roundi(13.0 * k)))
+	p.add_theme_stylebox_override("panel", sb)
+	var pic: Texture2D = portrait_of(name_text)
+	if pic != null:
+		var tr: TextureRect = TextureRect.new()
+		tr.texture = pic
+		tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		var inset: float = maxi(3.0, roundi(4.0 * k))
+		tr.offset_left = inset
+		tr.offset_top = inset
+		tr.offset_right = -inset
+		tr.offset_bottom = -inset
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		p.add_child(tr)
+		return p
+	_center_text(p, "立绘位", _fs(23, k), Color(0.36, 0.31, 0.24))
+	return p
 
 ## 旧线兼容别名（心法制遗名；复原中的 Root 线在用——随 Root 线终裁一并删）
 static func make_xinfa_card(xinfa: Dictionary, level: int, ctx: String = "field") -> Button:
@@ -132,7 +178,7 @@ static func make_spirit_detail_card(spirit: Dictionary, up1: String = "",
 		up2: String = "", ctx: String = "detail") -> Button:
 	var k: float = scale_of(ctx)
 	var card: Button = _new_card(SPIRIT_COLOR, k)
-	_add_art_zone(card, k, true)
+	_add_art_zone(card, k, true, portrait_of(str(spirit.get("name", ""))))
 	_add_band(card, k, str(spirit.get("name", "")), true)
 	_add_detail_panel(card, k, str(spirit.get("desc", "")), 0, "", up1, up2)
 	return card
@@ -320,8 +366,9 @@ static func _add_lv_pill(card: Control, k: float, level: int) -> void:
 	_center_text(pill, "Lv{0}".format([level]), _fs(22, k), COLOR_AMBER_TEXT)
 	card.add_child(pill)
 
-## 立绘区（暂空压暗占位；strip=true 详情短条）
-static func _add_art_zone(card: Control, k: float, strip: bool = false) -> void:
+## 立绘区（无立绘＝压暗占位；strip=true 详情短条；portrait 非空时铺图 COVERED 裁切）
+static func _add_art_zone(card: Control, k: float, strip: bool = false,
+		portrait: Texture2D = null) -> void:
 	var art: Panel = Panel.new()
 	if strip:
 		_place(art, 15.0 * k, 73.0 * k, -15.0 * k, -292.0 * k)
@@ -332,6 +379,14 @@ static func _add_art_zone(card: Control, k: float, strip: bool = false) -> void:
 	style.set_corner_radius_all(maxi(3, roundi(11.0 * k)))
 	art.add_theme_stylebox_override("panel", style)
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if portrait != null:
+		var pic: TextureRect = TextureRect.new()
+		pic.texture = portrait
+		pic.set_anchors_preset(Control.PRESET_FULL_RECT)
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.add_child(pic)
 	card.add_child(art)
 
 ## 名字带：is_xinfa=true 菱头横带；false 长方形匾额；升级换名时文字转琥珀

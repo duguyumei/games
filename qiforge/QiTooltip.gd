@@ -207,6 +207,32 @@ static func _build_win(rows: Array, opts: Dictionary) -> Control:
 				n.custom_minimum_size.x = min_w
 				n.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				box.add_child(n)
+			"frame":
+				# 分框行（2026-10-29 用户裁定：并列效果各自成框）：暗底细边小面板＋内嵌文字
+				var fr := PanelContainer.new()
+				var fsb := StyleBoxFlat.new()
+				fsb.bg_color = Color(0.07, 0.06, 0.045, 0.88)
+				fsb.border_color = Color(0.72, 0.58, 0.30, 0.75)
+				fsb.set_border_width_all(1)
+				fsb.set_corner_radius_all(6)
+				fsb.content_margin_left = 10.0
+				fsb.content_margin_right = 10.0
+				fsb.content_margin_top = 6.0
+				fsb.content_margin_bottom = 6.0
+				fr.add_theme_stylebox_override("panel", fsb)
+				fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				var ft := RichTextLabel.new()
+				ft.bbcode_enabled = true
+				ft.fit_content = true
+				ft.scroll_active = false
+				ft.custom_minimum_size.x = maxf(60.0, min_w - 24.0)
+				ft.text = String(row.get("text", ""))
+				ft.add_theme_font_override("normal_font", QIF_FONTS.noto())
+				ft.add_theme_font_size_override("normal_font_size", 20)
+				ft.add_theme_color_override("default_color", Color("ffe9b0"))
+				ft.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				fr.add_child(ft)
+				box.add_child(fr)
 			"sep":
 				var sp := HSeparator.new()
 				sp.mouse_filter = Control.MOUSE_FILTER_IGNORE

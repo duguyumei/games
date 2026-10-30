@@ -12,6 +12,7 @@ const QISTYLE := preload("res://qiforge/QiStyle.gd")
 const QI_DATA := preload("res://qiforge/QiData.gd")
 const QISAVE := preload("res://qiforge/QiSave.gd")
 const QIDIALOG := preload("res://qiforge/QiDialog.gd")
+const QIPREFS := preload("res://qiforge/QiPrefs.gd")
 const PREP := preload("res://qiforge/QiPrepBay.tscn")
 const BATTLE := preload("res://qiforge/QiBattleScreen.tscn")
 var _run: Dictionary = {}
@@ -20,6 +21,7 @@ var _meta: Dictionary = {"unlocks": []}   # 跨局元数据（敌方设计 v0.1 
 var _back: Button = null
 
 func _ready() -> void:
+	QIPREFS.apply_display()   # 启动应用显示偏好（全屏/分辨率/可调；无头探针环境内自静默）
 	QISTYLE.apply_root_theme(self)
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var saved0: Dictionary = QISAVE.read()
@@ -67,7 +69,7 @@ func _show_menu() -> void:
 		var cont := Button.new()
 		cont.text = "继续游戏"
 		cont.tooltip_text = "回到上次的局：系统 Lv%d · 第 %d 组 · 第 %d 场（顶栏「重战」＝回上一场战斗前）。" \
-			% [int(saved.get("sys_lv", 2)), int(saved.get("group", 0)) + 1, int(saved.get("fight", 0)) + 1]
+			% [int(saved.get("sys_lv", 1)), int(saved.get("group", 0)) + 1, int(saved.get("fight", 0)) + 1]
 		cont.custom_minimum_size = Vector2(300, 64)
 		QISTYLE.apply_primary(cont)
 		QISTYLE.font(cont, QISTYLE.FS_BODY, true)
@@ -221,16 +223,16 @@ func _on_child_exiting(node: Node) -> void:
 				QISAVE.write(_run, _snap, _meta)   # 解锁即时落盘（跨局保证）
 		_run["fight"] = int(_run.get("fight", 0)) + 1
 		var gi: int = int(_run.get("group", 0))
-		if gi < QI_DATA.GROUPS.size() and int(_run["fight"]) < QI_DATA.GROUPS[gi]["fights"].size():
-			spawn_battle.call_deferred()   # 内含战前快照＋写档
-		else:
-			# 组间推进（敌方设计 v0.1 §三：6 组 18 场）——组毕自动切下一组第 1 场回备战；
-			# 末组组毕不推进（fight 越界＝旅途尽，备战舱出战钮封「已通关」）
+		# 2026-10-29 用户裁定：一场打完一律回备战区（不再组内连场）；
+		# 组末（fight 越界）＝整队回血半条＋阵亡复活（group_heal），再推进下一组；
+		# 末组组毕不推进（fight 越界＝旅途尽，备战舱出战钮封「已通关」）
+		if gi < QI_DATA.GROUPS.size() and int(_run["fight"]) >= QI_DATA.GROUPS[gi]["fights"].size():
+			QI_DATA.group_heal(_run)
 			if gi + 1 < QI_DATA.GROUPS.size():
 				_run["group"] = gi + 1
 				_run["fight"] = 0
-			QISAVE.write(_run, _snap, _meta)      # 组收尾回备战＝稳定检查点（快照留作备战舱重战）
-			_show_prep.call_deferred()
+		QISAVE.write(_run, _snap, _meta)      # 每场收尾回备战＝稳定检查点（快照留作备战舱重战）
+		_show_prep.call_deferred()
 	else:
 		_show_prep.call_deferred()
 

@@ -53,8 +53,8 @@ func _run() -> void:
 					btn_txt += str(b.text) + "|"
 	if not ("疗伤" in btn_txt or "耐久完好" in btn_txt):
 		fails.append("回血制：详情层应有疗伤/耐久完好钮（收 %s）" % btn_txt)
-	if not ("收起入后备" in btn_txt):
-		fails.append("回血制：详情层应有收起入后备钮（收 %s）" % btn_txt)
+	if not ("离场" in btn_txt):
+		fails.append("回血制：详情层应有离场钮（收 %s）" % btn_txt)
 	if col.global_position.x <= main_c.global_position.x + main_c.size.x:
 		fails.append("衍生列应在主卡右侧")
 	if col.get_child_count() != 3:

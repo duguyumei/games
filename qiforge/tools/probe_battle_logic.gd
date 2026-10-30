@@ -14,21 +14,25 @@ func _initialize() -> void:
 	_run()
 
 func _run() -> void:
-	# —— 奇偶公式（QiData 直断言）——
-	_eq("Lv2 能量=3", 3, QI_DATA.energy_cap_of(2))
-	_eq("Lv2 抽牌=4", 4, QI_DATA.draw_of(2))
-	_eq("Lv3 抽牌=5（奇次升级）", 5, QI_DATA.draw_of(3))
-	_eq("Lv3 能量=3（不动）", 3, QI_DATA.energy_cap_of(3))
-	_eq("Lv4 能量=4（偶次升级）", 4, QI_DATA.energy_cap_of(4))
-	_eq("Lv4 抽牌=5", 5, QI_DATA.draw_of(4))
-	_eq("Lv5 抽牌=6", 6, QI_DATA.draw_of(5))
+	# —— 奇偶公式（QiData 直断言；2026-10-29 再裁：开局 Lv1、升偶数级+抽/奇数级+能量）——
+	_eq("Lv1 能量=3（开局）", 3, QI_DATA.energy_cap_of(1))
+	_eq("Lv1 抽牌=4（开局）", 4, QI_DATA.draw_of(1))
+	_eq("Lv2 抽牌=5（升偶数级+抽）", 5, QI_DATA.draw_of(2))
+	_eq("Lv2 能量=3（不动）", 3, QI_DATA.energy_cap_of(2))
+	_eq("Lv3 能量=4（升奇数级+能量）", 4, QI_DATA.energy_cap_of(3))
+	_eq("Lv3 抽牌=5（不动）", 5, QI_DATA.draw_of(3))
+	_eq("Lv4 抽牌=6", 6, QI_DATA.draw_of(4))
+	_eq("Lv4 能量=4（不动）", 4, QI_DATA.energy_cap_of(4))
+	_eq("Lv5 能量=5", 5, QI_DATA.energy_cap_of(5))
+	_eq("Lv5 抽牌=6（不动）", 6, QI_DATA.draw_of(5))
+	_eq("开局 run sys_lv=1", 1, int(QI_DATA.default_run()["sys_lv"]))
 
 	# —— 局一：幽冥＋天丝（默认队）——
 	var b: RefCounted = QI_BATTLE.new()
 	b.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0},
 			{"id": "tiansi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b.start()
 	var ym: Dictionary = b.allies[0]
 	var ts: Dictionary = b.allies[1]
@@ -49,6 +53,17 @@ func _run() -> void:
 	_eq("杀意=1（幽冥造成伤害）", 1, b.status_total(ym, "shayi"))
 	_eq("天丝无杀意", 0, b.status_total(ts, "shayi"))
 
+	# 追击盾挡（2026-10-29 修）：满盾全吸收也算命中——天丝追击仍触发（追击不耗攻次故幽冥 acts0 亦可）
+	b.apply_status(dashou, "hudun", 1, 99)
+	var pf_cnt := [0]   # lambda 值捕获坑：外层 int 不回写，数组引用穿透
+	b.pursuit_fired.connect(func(_a, _t, _d): pf_cnt[0] += 1)
+	ym["acts"] = 1
+	b.normal_attack(ym, dashou)
+	_eq("满盾吸收仍触发天丝追击", 1, pf_cnt[0])
+	_eq("满盾段血量不动（两段均被吸）", 72, int(dashou["hp"]))
+	b._consume_stacks(dashou, "hudun", 99)   # 清残留盾——不污染后续断言序
+	ym["acts"] = 0
+
 	# 功法跳防：灭魂斩 10+威8=19（杀意1×1 已在普攻时产生）→ 21；施法产生伤害→被动+1、卡面「获得1层」→+1＝3
 	b.hand = [_card(9001, "youming", 1)]
 	b.play_card(9001, dashou)
@@ -60,7 +75,7 @@ func _run() -> void:
 	ym["acts"] = 1
 	b.normal_attack(ym, dashou)
 	_eq("格挡挡一段（血量不动 53）", 53, int(dashou["hp"]))
-	_eq("格挡剩 1 层", 1, b.status_total(dashou, "gebi"))
+	_eq("格挡被主攻+追击各挡一段（2026-10-29 追击跟动作制）", 0, b.status_total(dashou, "gebi"))
 
 	# 抵抗：打手挂抵抗 1 → 我方施负面（破绽）被挡、层消耗
 	b.apply_status(dashou, "dikang", 1)
@@ -76,6 +91,22 @@ func _run() -> void:
 	b.normal_attack(ym, dashou)
 	_eq("普攻吃破绽＋追击 → 打手离场", false, bool(dashou["alive"]))
 	_eq("击杀产杀意（段伤+敌亡=+2 → 3+2=5）", 5, b.status_total(ym, "shayi"))
+
+	# —— 小局：功法内普攻段（刀剑合击）＝普攻动作——打出视为普攻的功法同触发天丝追击
+	# （2026-10-29 用户确认口径；独立局不串局一血量/杀意序）
+	var bd := QI_BATTLE.new()
+	bd.setup({"copper": 0,
+		"team": [{"id": "youming", "equips": [], "pdir": 0}, {"id": "tiansi", "equips": [], "pdir": 0}],
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
+	bd.start()
+	var dj := {"uid": 9301, "wid": "youming", "sid": "daojian", "dir": 0,
+		"spell": QI_DATA.spell_of("liangyi", "daojian", 0), "reuse_left": 0, "retain": false}
+	var dj_pf := [0]
+	bd.pursuit_fired.connect(func(_a, _t, _d): dj_pf[0] += 1)
+	bd.energy = 3
+	bd.hand = [dj]
+	bd.play_card(9301, bd.enemies[0])
+	_eq("功法内普攻段同触发追击（视为普攻的功法＝普攻一次）", 1, dj_pf[0])
 
 	# 中毒尖塔制＋回合末结算（垫高我方耐久防敌方阶段致死）
 	ym["hp"] = 300; ym["mhp"] = 300
@@ -104,49 +135,52 @@ func _run() -> void:
 	var b2: RefCounted = QI_BATTLE.new()
 	b2.setup({"copper": 0,
 		"team": [{"id": "qinggu", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 7})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 7})
 	b2.start()
 	var qg: Dictionary = b2.allies[0]
 	qg["hp"] = 300; qg["mhp"] = 300
 	var e0: Dictionary = b2.enemies[0]
 	var e1: Dictionary = b2.enemies[1]
-	qg["bugs"] = 3
+	# 2026-10-29 蛊虫状态化：bugs/bugs_on 字段退役，一律 guchong 状态层数
+	b2.apply_status(qg, "guchong", 3)
 	b2._hide_all_bugs()
-	_eq("蛊虫藏身后自身=0", 0, int(qg["bugs"]))
-	_eq("敌身上蛊虫合计=3", 3, int(e0["bugs_on"]) + int(e1["bugs_on"]))
+	_eq("蛊虫藏身后自身=0", 0, b2.status_total(qg, "guchong"))
+	_eq("敌身上蛊虫合计=3", 3, b2.status_total(e0, "guchong") + b2.status_total(e1, "guchong"))
 	# 施毒增幅：对藏蛊的敌人施 5 层毒 → +藏匿数
-	var hide_on: Dictionary = e0 if int(e0["bugs_on"]) >= int(e1["bugs_on"]) else e1
-	var hide_n: int = int(hide_on["bugs_on"])
+	var hide_on: Dictionary = e0 if b2.status_total(e0, "guchong") >= b2.status_total(e1, "guchong") else e1
+	var hide_n: int = b2.status_total(hide_on, "guchong")
 	b2.apply_status(hide_on, "zhongdu", 5, 0, -1, true, qg)
 	_eq("施毒增幅 5+%d" % hide_n, 5 + hide_n, b2.status_total(hide_on, "zhongdu"))
 	# 回合结束次序（先虫后毒）：蛊虫回归（3）→ 毒结算（敌方毒发 → 青蛊铃 +1/毒敌）
 	b2._return_all_bugs()
-	_eq("蛊虫回归（自身 3）", 3, int(qg["bugs"]))
-	_eq("敌身上蛊虫清零", 0, int(e0["bugs_on"]) + int(e1["bugs_on"]))
+	_eq("蛊虫回归（自身 3）", 3, b2.status_total(qg, "guchong"))
+	_eq("敌身上蛊虫清零", 0, b2.status_total(e0, "guchong") + b2.status_total(e1, "guchong"))
 	var stacks_before: int = b2.status_total(hide_on, "zhongdu")
 	var poisoned_hp: int = int(hide_on["hp"])
 	b2._poison_tick(hide_on)
 	_eq("毒结算 −%d（间接）" % stacks_before, poisoned_hp - stacks_before, int(hide_on["hp"]))
-	_eq("毒发产虫（3+1=4）", 4, int(qg["bugs"]))
+	_eq("毒发产虫（3+1=4）", 4, b2.status_total(qg, "guchong"))
 
-	# 弹射段数：青蛊铃 威 12 → 4+floor(12/3)=8 段 ×3 点（功法跳防；威力转化率 1:1 断点律）
-	qg["bugs"] = 0
-	for e in b2.enemies:
-		e["bugs_on"] = 0
+	# 弹射段数（2026-10-29 调整：1 费 3 伤/段＋每段 1 毒、弹射 2/每 5 威）：
+	# 威 12 → 2+1+⌊12/5⌋=5 段 ×3=15 直伤（毒不即时结算）
+	b2._consume_stacks(qg, "guchong", 99)   # 清虫防串召蛊段计数
 	var hp_sum: int = int(e0["hp"]) + int(e1["hp"])
+	var po_sum: int = b2.status_total(e0, "zhongdu") + b2.status_total(e1, "zhongdu")
 	b2.energy = 3
 	b2.hand = [_card(9201, "qinggu", 0)]
 	b2.play_card(9201, e0)
-	_eq("弹射 8 段×3=24 伤害总量", hp_sum - 24, int(e0["hp"]) + int(e1["hp"]))
+	_eq("弹射 5 段×3=15 伤害总量", hp_sum - 15, int(e0["hp"]) + int(e1["hp"]))
+	_eq("弹射 5 段各 +1 层毒（增量）", 5,
+		b2.status_total(e0, "zhongdu") + b2.status_total(e1, "zhongdu") - po_sum)
 
 	# 召蛊术·升二：4 只 → 4 点间接伤分布＋全队护盾 4＋自身清虫
-	qg["bugs"] = 4
+	b2.apply_status(qg, "guchong", 4)
 	b2.energy = 3
 	b2.hand = [_card_dir(9202, "qinggu", 1, 2)]
 	var hp_sum2: int = int(e0["hp"]) + int(e1["hp"])
 	b2.play_card(9202, {})
 	_eq("召蛊 4 点间接伤", hp_sum2 - 4, int(e0["hp"]) + int(e1["hp"]))
-	_eq("召蛊后自身虫=0", 0, int(qg["bugs"]))
+	_eq("召蛊后自身虫=0", 0, b2.status_total(qg, "guchong"))
 	_eq("全队获护盾=召回数 4", 4, b2._status_valued(qg, "hudun"))
 
 	# —— 局三：金刚盾铁壁系（被动/升1/升2）＋插件6 ——
@@ -154,7 +188,7 @@ func _run() -> void:
 	b3.setup({"copper": 0,
 		"team": [{"id": "jingang", "equips": ["p6"], "pdir": 2},
 			{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 3})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 3})
 	b3.start()
 	var jg: Dictionary = b3.allies[0]
 	var ym3: Dictionary = b3.allies[1]
@@ -167,6 +201,12 @@ func _run() -> void:
 	_eq("插件6 普攻回能 1→2", 2, b3.energy)
 	_eq("铁壁被动：自身防御 +1", 1, b3.def_of(jg))
 	_eq("铁壁被动：相邻幽冥防御 +1", 1, b3.def_of(ym3))
+	# 2026-10-29 用户裁定：去「每回合第一次」限制——第二次普攻再 +1（插件6 仍一回一次不回能）
+	jg["acts"] = 1
+	b3.normal_attack(jg, d3)
+	_eq("铁壁被动每次普攻都触发（自身 2 层）", 2, b3.def_of(jg))
+	_eq("铁壁被动每次普攻都触发（相邻 2 层）", 2, b3.def_of(ym3))
+	_eq("插件6 仍一回合一次（能量不再回）", 2, b3.energy)
 	# 升2：回合末自身盾不清（幽冥的清）→ 回合开始分配（仅一邻 → 各半）
 	b3.apply_status(ym3, "hudun", 1, 6)
 	b3._tick_statuses()
@@ -195,7 +235,7 @@ func _run() -> void:
 	b4.setup({"copper": 0,
 		"team": [{"id": "tiansi", "equips": [], "pdir": 0},
 			{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 11})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 11})
 	b4.start()
 	var ts4: Dictionary = b4.allies[0]
 	var ym4: Dictionary = b4.allies[1]
@@ -219,7 +259,7 @@ func _run() -> void:
 	var b5: RefCounted = QI_BATTLE.new()
 	b5.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 5})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 5})
 	b5.start()
 	var ym5: Dictionary = b5.allies[0]
 	var d5: Dictionary = b5.enemies[0]
@@ -233,7 +273,7 @@ func _run() -> void:
 	b6.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0},
 			{"id": "tiansi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 3})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 3})
 	b6.start()
 	_eq("卡组 8 张（抽4 后堆4）", 4, b6.draw_pile.size())
 	b6.hand = [_card(9401, "youming", 0), _card(9402, "youming", 1)]
@@ -271,7 +311,7 @@ func _run() -> void:
 	# —— 局七：雷反即时插入＋反击引擎（2026-10-27 裁定：不排延迟队列）——
 	var b7: RefCounted = QI_BATTLE.new()
 	b7.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b7.start()
 	var ym7: Dictionary = b7.allies[0]
 	var e7: Dictionary = b7.enemies[0]
@@ -302,7 +342,7 @@ func _run() -> void:
 	# —— 局八：双向反击链有界＋间接不触发反击 ——
 	var b8: RefCounted = QI_BATTLE.new()
 	b8.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b8.start()
 	var ym8: Dictionary = b8.allies[0]
 	var e8: Dictionary = b8.enemies[0]
@@ -323,7 +363,7 @@ func _run() -> void:
 	# —— 局九：灭魂斩·升一清杀意出「消耗」副本（2026-10-28 重做）＋消耗堆路由 ——
 	var b9: RefCounted = QI_BATTLE.new()
 	b9.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b9.start()
 	var ym9: Dictionary = b9.allies[0]
 	var d9: Dictionary = b9.enemies[0]
@@ -351,7 +391,7 @@ func _run() -> void:
 	# —— 局十：面板状态具名制（2026-10-28 用户裁定）：力量/竭力/护甲/破甲/强度，±1/层、无持续时间 ——
 	var b10: RefCounted = QI_BATTLE.new()
 	b10.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b10.start()
 	var ym10: Dictionary = b10.allies[0]
 	var e10: Dictionary = b10.enemies[0]
@@ -380,7 +420,7 @@ func _run() -> void:
 	# —— 局十一：攻方段间死亡→剩余段作废（2026-10-28 用户裁定，STS2 AttackCommand 同制；弹射同制作废）——
 	var b11: RefCounted = QI_BATTLE.new()
 	b11.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b11.start()
 	var ym11: Dictionary = b11.allies[0]
 	var d11: Dictionary = b11.enemies[0]
@@ -396,7 +436,7 @@ func _run() -> void:
 	# 弹射同制：蛊箭术 3 段伤+威12/3=8 段，首段雷反反杀 → 弹射段全部作废、另一敌零伤
 	var b12: RefCounted = QI_BATTLE.new()
 	b12.setup({"copper": 0, "team": [{"id": "qinggu", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 7})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 7})
 	b12.start()
 	var qg12: Dictionary = b12.allies[0]
 	var ea: Dictionary = b12.enemies[0]
@@ -414,7 +454,7 @@ func _run() -> void:
 	# —— 局十三：静态「消耗」透传（2026-10-28 过秤轮：铁壁诀·升二 0 费·消耗）——
 	var b13: RefCounted = QI_BATTLE.new()
 	b13.setup({"copper": 0, "team": [{"id": "jingang", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b13.start()
 	var c13: Dictionary = b13._make_card_instance({"wid": "jingang", "sid": "tiezhao", "dir": 2})
 	_eq("铁壁诀·升二实例透传静态 exhaust", true, bool(c13.get("exhaust", false)))
@@ -428,7 +468,7 @@ func _run() -> void:
 	# —— 局十四：配件轮（2026-10-28）——插件12 开局抵抗层＋品阶重定档（只按通用面定档）——
 	var b14: RefCounted = QI_BATTLE.new()
 	b14.setup({"copper": 0, "team": [{"id": "jingang", "equips": ["p12"], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b14.start()
 	_eq("插件12：开局 1 层抵抗", 1, b14.status_total(b14.allies[0], "dikang"))
 	_eq("品阶重定：金刚三入 Lv2 池（专属不计档）", true, QI_DATA.tier_pool(2).has("x_jg_3"))
@@ -440,7 +480,7 @@ func _run() -> void:
 	b15.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0},
 			{"id": "tiansi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b15.start()
 	var ym15: Dictionary = b15.allies[0]
 	var ts15: Dictionary = b15.allies[1]
@@ -471,6 +511,9 @@ func _run() -> void:
 	_eq("team_out 写回源", true, b16.team_out().size() == 1 and int(b16.team_out()[0]["hp"]) == 10)
 	QI_DATA.apply_team_out(run16, b16.team_out())
 	_eq("apply_team_out 写回", 10, int(QI_DATA.find_member(run16, "youming")["hp"]))
+	# 2026-10-29 裁定：阵亡战后自动入未上场（离场语义全套＝功法随档移除＋配件回包；deck 8−4）
+	_eq("阵亡战后自动入未上场", "tiansi", String(run16["reserve"][0]["id"]))
+	_eq("阵亡功法随档移除", 4, run16["deck"].size())
 	# 档案制（升级保留）：升级卡随收起存档、随上阵还原
 	for e in run16["deck"]:
 		if String(e["wid"]) == "youming" and String(e["sid"]) == "miehun":
@@ -483,15 +526,17 @@ func _run() -> void:
 		if String(e["wid"]) == "youming" and String(e["sid"]) == "miehun" and int(e["dir"]) == 1:
 			seen_up16 = true
 	_eq("升级随档：收起再上阵还原 dir=1", true, seen_up16)
-	# 后备每场回血 25%（青蛊 40 血：8 → 18）；疗伤价（缺 22×1＝22；阵亡天丝缺 48×1.5＝72）
-	run16["reserve"] = [{"id": "qinggu", "equips": ["", "", ""], "pdir": 0, "hp": 8}]
+	# 后备回血/疗伤价（青蛊 40 血 8→18；天丝阵亡入池后缓复 0→12）
+	run16["reserve"].push_back({"id": "qinggu", "equips": ["", "", ""], "pdir": 0, "hp": 8})
 	QI_DATA.reserve_tick(run16)
-	_eq("后备每场回血 25%（40 血 8→18）", 18, int(run16["reserve"][0]["hp"]))
-	_eq("疗伤价＝缺口×1", 22, QI_DATA.heal_price(run16["reserve"][0]))
-	_eq("复活价＝缺口×1.5", 72, QI_DATA.heal_price(run16["team"][1]))
-	# 奖励回复池：带伤幽冥(10/34)＋阵亡天丝(0/48)＋带伤青蛊(18/40) 入池；满血出局
-	_eq("回复池＝3（带伤×2＋阵亡×1）", 3, QI_DATA.op_pool(run16, "heal").size())
-	run16["reserve"][0]["hp"] = QI_DATA.mhp_of(run16["reserve"][0])
+	_eq("阵亡缓复（天丝 0→12）", 12, int(run16["reserve"][0]["hp"]))
+	_eq("后备每场回血 25%（40 血 8→18）", 18, int(run16["reserve"][1]["hp"]))
+	_eq("疗伤价＝缺口×1", 22, QI_DATA.heal_price(run16["reserve"][1]))
+	_eq("复活价＝缺口×1.5（直造 0 血）", 72,
+		QI_DATA.heal_price({"id": "tiansi", "equips": ["", "", ""], "pdir": 0, "hp": 0}))
+	# 奖励回复池：带伤幽冥(10/34)＋缓复天丝(12/48)＋带伤青蛊(18/40) 入池；满血出局
+	_eq("回复池＝3（全带伤）", 3, QI_DATA.op_pool(run16, "heal").size())
+	run16["reserve"][1]["hp"] = QI_DATA.mhp_of(run16["reserve"][1])
 	_eq("满血者不入回复池", 2, QI_DATA.op_pool(run16, "heal").size())
 
 	# —— 局十七：两仪刀剑（形态机逐段判定＋双功法＋配件三件＋费用实时查询）——
@@ -499,7 +544,7 @@ func _run() -> void:
 	var b17: RefCounted = QI_BATTLE.new()
 	b17.setup({"copper": 0,
 		"team": [{"id": "liangyi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b17.start()
 	var ly: Dictionary = b17.allies[0]
 	var d17: Dictionary = b17.enemies[0]
@@ -549,7 +594,7 @@ func _run() -> void:
 	var b18: RefCounted = QI_BATTLE.new()
 	b18.setup({"copper": 0,
 		"team": [{"id": "liangyi", "equips": ["x_ly_2", "x_ly_3", "x_ly_1"], "pdir": 2}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b18.start()
 	var ly2: Dictionary = b18.allies[0]
 	var d18: Dictionary = b18.enemies[0]
@@ -581,7 +626,7 @@ func _run() -> void:
 	var b19: RefCounted = QI_BATTLE.new()
 	b19.setup({"copper": 0,
 		"team": [{"id": "liangyi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b19.start()
 	var d19: Dictionary = b19.enemies[0]
 	var l19: Dictionary = b19.enemies[1]
@@ -597,7 +642,7 @@ func _run() -> void:
 	var b20: RefCounted = QI_BATTLE.new()
 	b20.setup({"copper": 0,
 		"team": [{"id": "liangyi", "equips": [], "pdir": 1}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b20.start()
 	var d20: Dictionary = b20.enemies[0]
 	b20.hand = [_card(9301, "liangyi", 1), _card(9302, "liangyi", 0)]
@@ -612,7 +657,7 @@ func _run() -> void:
 	b21.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0},
 			{"id": "tiansi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 1, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 1, "seed": 20261026})
 	b21.start()
 	var ym21: Dictionary = b21.allies[0]
 	var ts21: Dictionary = b21.allies[1]
@@ -656,10 +701,35 @@ func _run() -> void:
 	b21._enemy_intent[2] = {"action": _act_of(sh21, "sheji"), "target_uid": int(ym21["uid"])}
 	b21.apply_enemy_action(2)
 	_eq("敌盾持续：行动时才清（射后盾 0）", 0, b21._status_valued(sh21, "hudun"))
-	_eq("射击 12 过防 → 466", 466, int(ym21["hp"]))
+	_eq("射击 12+破绽1（吃普攻）过防 → 465", 465, int(ym21["hp"]))
 	b21._enemy_intent[3] = {"action": _act_of(fz21, "shigu"), "target_uid": int(ym21["uid"])}
 	b21.apply_enemy_action(3)
-	_eq("蚀骨 4+12/2=10 功法直伤 → 456", 456, int(ym21["hp"]))
+	_eq("蚀骨 4+12/2=10 功法直伤（不吃破绽）→ 455", 455, int(ym21["hp"]))
+
+	# —— 块队列制（2026-10-29 用户裁定，尸姬 Retrainer_Block 制）专项 ——
+	var bb: RefCounted = QI_BATTLE.new()
+	bb.setup({"copper": 0, "team": [{"id": "youming", "equips": [], "pdir": 0}],
+		"sys_lv": 1, "group": 0, "fight": 1, "seed": 20261026})
+	bb.start()
+	var d0: Dictionary = bb.enemies[0]   # 刀客·块0 顶
+	var d1: Dictionary = bb.enemies[1]   # 刀客·块0 底（候补）
+	_eq("G1F2＝四敌三块", 4, bb.enemies.size())
+	_eq("两刀客同队列（同 block）", true, int(d0.get("block", -1)) == int(d1.get("block", -1)))
+	_eq("底位不可选（is_targetable=false）", false, bb.is_targetable(d1))
+	_eq("底位无意图", true, (bb._enemy_intent[1] if 1 < bb._enemy_intent.size() else {}).is_empty())
+	_eq("目标池只含块顶（3 顶）", 3, bb._alive_enemies().size())
+	var ymb: Dictionary = bb.allies[0]
+	ymb["acts"] = 99
+	d0["hp"] = 1
+	bb.normal_attack(ymb, d0)
+	_eq("块顶死→底位补位升顶", true, bool(d1.get("block_top", false)))
+	_eq("补位者获新意图", true, not (bb._enemy_intent[1] if 1 < bb._enemy_intent.size() else {}).is_empty())
+	for e2 in bb.enemies:
+		if e2["alive"]:
+			e2["hp"] = 1
+			bb.normal_attack(ymb, e2)
+	_eq("队列全清＝胜", "win", String(bb.result))
+
 	b21._enemy_intent[3] = {"action": _act_of(fz21, "fengxue_zhou"), "target_uid": int(ym21["uid"])}
 	b21.apply_enemy_action(3)
 	var fx_seen := false
@@ -673,7 +743,7 @@ func _run() -> void:
 	b22.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0},
 			{"id": "tiansi", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 2, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 2, "seed": 20261026})
 	b22.start()
 	var boss: Dictionary = b22.enemies[0]
 	var dun22: Dictionary = b22.enemies[1]
@@ -734,7 +804,7 @@ func _run() -> void:
 	var b23: RefCounted = QI_BATTLE.new()
 	b23.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b23.start()
 	var ym23: Dictionary = b23.allies[0]
 	var e23: Dictionary = b23.enemies[0]
@@ -793,7 +863,7 @@ func _run() -> void:
 	var b24: RefCounted = QI_BATTLE.new()
 	b24.setup({"copper": 0,
 		"team": [{"id": "youming", "equips": [], "pdir": 0}],
-		"sys_lv": 2, "group": 0, "fight": 0, "seed": 20261026})
+		"sys_lv": 1, "group": 0, "fight": 0, "seed": 20261026})
 	b24.start()
 	var ym24: Dictionary = b24.allies[0]
 	var e24: Dictionary = b24.enemies[0]

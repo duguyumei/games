@@ -1,10 +1,10 @@
-## 全环探针：主菜单→（弃档/新开）备战→出战→（清场速胜）→胜利弹窗→第 2 场自动接续→再胜→回备战＋铜钱入账。
-## 跑法＝非无头 -s。
+## 全环探针（2026-10-29 新战间制）：每场胜→回备战舱（不再组内连场），点出战进下一场；
+## 组末＝整队回血 50%＋阵亡复活（group_heal）＋组间推进。跑法＝非无头 -s。
 extends SceneTree
 
 const PROBE_LIB := preload("res://qiforge/tools/probe_lib.gd")
-
 const ROOT := preload("res://qiforge/QiRoot.tscn")
+const QI_DATA := preload("res://qiforge/QiData.gd")
 
 var fails: Array = []
 
@@ -39,7 +39,7 @@ func _run() -> void:
 		await process_frame
 	var copper0 := int(root_ctl.run()["copper"])
 
-	# —— 第 1 场速胜 ——
+	# —— 第 1 场速胜 → 回备战（2026-10-29 裁定：一场打完一律回备战，不再连场）——
 	var screen: Control = root_ctl.find_child("QiBattleScreen", false, false)
 	if screen == null:
 		fails.append("第 1 场战斗屏未出现")
@@ -53,14 +53,26 @@ func _run() -> void:
 		await process_frame
 	_eq("胜 1 场铜钱 +30+5", copper0 + 35, int(root_ctl.run()["copper"]))
 	_eq("场序推进=1", 1, int(root_ctl.run()["fight"]))
+	if root_ctl.find_child("QiPrepBay", false, false) == null:
+		fails.append("第 1 场胜后应回备战舱（新战间制）")
+	if root_ctl.find_child("QiBattleScreen", false, false) != null:
+		fails.append("胜后战斗屏应移除（新战间制）")
+
+	# —— 备战点出战 → 第 2 场 → 胜回备战 ——
+	go = root_ctl.find_child("GoButton", true, false)
+	if go == null:
+		fails.append("备战舱出战钮缺失（第 2 场前）")
+		_finish()
+		return
+	go.pressed.emit()
+	for i in 15:
+		await process_frame
 	screen = root_ctl.find_child("QiBattleScreen", false, false)
 	if screen == null:
-		fails.append("第 2 场战斗屏应自动接续")
+		fails.append("第 2 场战斗屏未出现")
 		_finish()
 		return
 	_eq("第 2 场敌数=4（战×2＋射＋辅）", 4, screen.battle.enemies.size())
-
-	# —— 第 2 场速胜 → 第 3 场（组末 Boss 保证位场）接续 ——
 	_win_battle(screen)
 	await _confirm_dialog(screen)
 	await _confirm_dialog(screen)
@@ -69,14 +81,24 @@ func _run() -> void:
 		await process_frame
 	_eq("两场铜钱累计 +80", copper0 + 80, int(root_ctl.run()["copper"]))
 	_eq("场序推进=2", 2, int(root_ctl.run()["fight"]))
+
+	# —— 第 3 场（组末 Boss 保证位场）：带伤＋阵亡打完 → 组末整队回血＋复活＋组间推进 ——
+	go = root_ctl.find_child("GoButton", true, false)
+	if go == null:
+		fails.append("备战舱出战钮缺失（第 3 场前）")
+		_finish()
+		return
+	go.pressed.emit()
+	for i in 15:
+		await process_frame
 	screen = root_ctl.find_child("QiBattleScreen", false, false)
 	if screen == null:
-		fails.append("第 3 场战斗屏应自动接续")
+		fails.append("第 3 场战斗屏未出现")
 		_finish()
 		return
 	_eq("第 3 场敌数=3（剑主＋力士＋巫祝）", 3, screen.battle.enemies.size())
-
-	# —— 第 3 场速胜 → 组毕回备战（现仅 G1：无下一组，封已通关）——
+	screen.battle.allies[0]["hp"] = 5      # 带伤（幽冥 5/34）
+	screen.battle.allies[1]["hp"] = 0      # 阵亡（天丝 0/48——胜后自动入未上场池）
 	_win_battle(screen)
 	await _confirm_dialog(screen)
 	await _confirm_dialog(screen)
@@ -84,14 +106,19 @@ func _run() -> void:
 	for i in 30:
 		await process_frame
 	_eq("组毕铜钱累计 +145", copper0 + 145, int(root_ctl.run()["copper"]))
-	if root_ctl.find_child("QiPrepBay", false, false) == null:
-		fails.append("组毕应回备战舱")
-	if root_ctl.find_child("QiBattleScreen", false, false) != null:
-		fails.append("组毕战斗屏应移除")
-	# —— G2-G6 同构暂定（2026-10-28 用户裁定）：组毕自动切下一组第 1 场 ——
 	_eq("组毕组序推进=1", 1, int(root_ctl.run()["group"]))
 	_eq("组毕场序归零", 0, int(root_ctl.run()["fight"]))
+	var run_d: Dictionary = root_ctl.run()
+	var ym: Dictionary = QI_DATA.find_member(run_d, "youming")
+	var ts: Dictionary = QI_DATA.find_member(run_d, "tiansi")
+	_eq("组末回血：幽冥 5+17=22", 22, int(ym.get("hp", -1)))
+	if String(ts.get("id", "")) != "tiansi":
+		fails.append("天丝胜后应自动入未上场池")
+	else:
+		_eq("组末复活回血：天丝 0→(tick+12)+(组末+24)=36", 36, int(ts["hp"]))
 	var prep := root_ctl.find_child("QiPrepBay", false, false)
+	if prep == null:
+		fails.append("组毕应回备战舱")
 	var gb := (prep.find_child("GoButton", true, false) as Button) if prep else null
 	if gb == null:
 		fails.append("备战舱出战钮缺失")
@@ -110,7 +137,6 @@ func _run() -> void:
 	# —— §4 终局守卫：末组组毕越界不得开战、恢复备战不叠加 ——
 	root_ctl.run()["group"] = 5
 	root_ctl.run()["fight"] = 99
-	var preps0 := root_ctl.find_children("QiPrepBay", "", false, false).size()
 	root_ctl.spawn_battle()
 	for i in 15:
 		await process_frame

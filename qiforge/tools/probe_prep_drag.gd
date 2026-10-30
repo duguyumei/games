@@ -1,8 +1,7 @@
-## 备战舱拖拽/装备窗回归探针（2026-10-27 两 bug）。跑法＝非无头：
+## 备战舱拖拽/装备窗回归探针。跑法＝非无头：
 ## godot --path . --script res://qiforge/tools/probe_prep_drag.gd
-## §1 拖真卡入空槽（列1→列5）：拖中引擎在拖＋预览在树；落位后列5占用/列1空
-## §2 复发核心：二拖（列5→列2）必须仍起拖＋预览跟手（修前＝预览模板被引擎释放成
-##    悬空引用，再拖报错起不了拖＝用户所见「看不到卡牌移动」）＋拖中截图 .qi_prep_drag.png
+## §1 卡拖卡换位（2026-10-28 槽位制退役后唯一拖拽形态）：列0 幽冥剑 ↔ 列1 天丝手套
+## §2 复发核心：新位再拖（修前＝预览模板被引擎释放成悬空引用，再拖起不了拖）＋拖中截图
 ## §3 装备窗点击（修前＝AcceptDialog 注解即崩）：QiDialogBox 在树且可见、1080 宽
 ## 注意：合成 motion 必须带 relative（引擎按 relative 累积过阈值才启动拖拽）。
 extends SceneTree
@@ -24,35 +23,33 @@ func _run() -> void:
 		await process_frame
 
 	var row := screen.get_node("CrewRow") as HBoxContainer
+	var name_of := func(col_i: int) -> String:
+		var nl: Label = row.get_child(col_i).get_child(0).get_child(0)
+		return String(nl.text).split("　")[0]
 
-	## —— §1 列1 卡 → 空槽5 ——
+	## —— §1 卡拖卡换位：列0 幽冥剑 → 列1 天丝手套 ——
+	var wrap0d: Control = row.get_child(0).get_child(1)
+	var c0 := wrap0d.global_position + wrap0d.size * 0.5
 	var wrap1: Control = row.get_child(1).get_child(1)
 	var c1 := wrap1.global_position + wrap1.size * 0.5
-	var slot5: Control = row.get_child(5).get_child(1)
-	var c5 := slot5.global_position + slot5.size * 0.5
-	await _drag(c1, c5, "§1")
+	_eq(name_of.call(0), "幽冥剑", "§1 拖前列0=幽冥剑")
+	await _drag(c0, c1, "§1")
 	for i in 10:
 		await process_frame
-	_eq(row.get_child(1).get_child_count(), 2, "§1 拖后列1 应为空位两段")
-	_eq(row.get_child(5).get_child_count(), 3, "§1 拖后列5 应为占用三段")
-	var crew: Array = screen.get("_crew")
-	if crew.size() > 1 and crew[1] != null:
-		fails.append("§1 _crew[1] 应已空")
-	if crew.size() < 6 or crew[5] == null:
-		fails.append("§1 _crew[5] 应有器灵")
+	_eq(name_of.call(0), "天丝手套", "§1 换位后列0=天丝手套")
+	_eq(name_of.call(1), "幽冥剑", "§1 换位后列1=幽冥剑")
+	_eq((screen.get("_crew") as Array).size(), 2, "§1 紧凑序无空位（列数仍 2）")
 
-	## —— §2 复发核心：新位（列5）再拖 → 空槽2 ——
-	var wrap5: Control = row.get_child(5).get_child(1)
-	if not is_instance_valid(wrap5.get("preview_card")):
+	## —— §2 复发核心：新位（列0）再拖 → 列1（拖回复原）——
+	var wrap0b: Control = row.get_child(0).get_child(1)
+	if not is_instance_valid(wrap0b.get("preview_card")):
 		fails.append("§2 新壳预览模板悬空")
-	var c5b := wrap5.global_position + wrap5.size * 0.5
-	var slot2: Control = row.get_child(2).get_child(1)
-	var c2 := slot2.global_position + slot2.size * 0.5
-	await _drag(c5b, c2, "§2", row, wrap5)
+	var c0b := wrap0b.global_position + wrap0b.size * 0.5
+	await _drag(c0b, c1, "§2")
 	for i in 10:
 		await process_frame
-	_eq(row.get_child(2).get_child_count(), 3, "§2 二拖后列2 应占用")
-	_eq(row.get_child(5).get_child_count(), 2, "§2 二拖后列5 应为空")
+	_eq(name_of.call(0), "幽冥剑", "§2 拖回复原列0=幽冥剑")
+	_eq(name_of.call(1), "天丝手套", "§2 拖回复原列1=天丝手套")
 
 	## —— §3 装备窗（真点击：悬停命中→按下→释放；2026-10-28 用户报点击无效）——
 	var col0: Control = row.get_child(0)
@@ -103,7 +100,7 @@ func _run() -> void:
 	quit(1 if fails.size() > 0 else 0)
 
 ## 全程拖放：按下→20 步渐移（带 relative 过阈值起拖）→§2 半程驻留断言＋截图→终点→释放
-func _drag(from: Vector2, to: Vector2, tag: String, row: HBoxContainer = null, wrap5: Control = null) -> void:
+func _drag(from: Vector2, to: Vector2, tag: String) -> void:
 	var press := InputEventMouseButton.new()
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
@@ -137,15 +134,6 @@ func _drag(from: Vector2, to: Vector2, tag: String, row: HBoxContainer = null, w
 			elif not seen_preview:
 				fails.append("§2 二拖预览不在树/不可见（＝用户所见「看不到卡牌移动」）")
 			else:
-				var pv2 := root.find_child("QiDragPreview", true, false)
-				var f := FileAccess.open("/Users/cc/Documents/qi-forge-2/.qi_prep_drag.json", FileAccess.WRITE)
-				f.store_string(JSON.stringify({
-					"preview_rect": [pv2.global_position.x, pv2.global_position.y, pv2.size.x, pv2.size.y],
-					"mouse": ((from + to) * 0.5),
-					"col0": [row.get_child(0).get_child(1).global_position.x, row.get_child(0).get_child(1).size.y],
-					"col5_shell": [wrap5.global_position.x, wrap5.global_position.y],
-				}))
-				f.close()
 				root.get_texture().get_image().save_png("/Users/cc/Documents/qi-forge-2/.qi_prep_drag.png")
 	if not seen_drag:
 		fails.append("%s 未起拖" % tag)

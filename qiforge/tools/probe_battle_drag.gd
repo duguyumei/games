@@ -41,18 +41,19 @@ func _run() -> void:
 	screen._clear_drag_marks()
 	_eq("清罩后高亮灭", false, (enemy_rec["mark"]["ring"] as Control).visible)
 
-	# —— 悬停弹起（2026-10-28 STS2 RefreshLayout 制）：只弹内层卡面、wrap 原地不动 ——
+	# —— 悬停弹起（STS2 RefreshLayout 制；2026-10-29 帧 Lerp 改版）：只弹内层卡面；
+	# 拍平改「wrap 角度瞬置 0」制（原 vis 反向抵消已等效退役）；wrap 不瞬跳（帧 Lerp 平滑回基位）
 	if screen._hand_wraps.size() > 0:
 		var h0: Control = screen._hand_wraps[0]
 		var v0: Control = h0.get_child(0)
 		var pre_pos: Vector2 = h0.position
 		var pre_rot: float = h0.rotation
 		screen._set_hand_focus(h0)
-		_eq("指卡拍平（卡面转角抵消扇角）", "%.3f" % -h0.rotation, "%.3f" % v0.rotation)
+		_eq("指卡拍平（wrap+卡面总转角归零）", "0.000", "%.3f" % (h0.rotation + v0.rotation))
 		_eq("指卡放大到详情档等效 1.25", "1.25", "%.2f" % v0.scale.x)
 		_eq("指卡置顶", 20, v0.z_index)
-		_eq("wrap 原地不动（命中区稳定）", true,
-			absf(h0.position.x - pre_pos.x) < 0.01 and absf(h0.rotation - pre_rot) < 0.001)
+		_eq("wrap 位移不瞬跳（帧 Lerp 平滑，同帧 <2px；拍平角度瞬置系原版制不拦）", true,
+			h0.position.distance_to(pre_pos) < 2.0)
 		screen._set_hand_focus(null)
 		_eq("散焦复位 z", 0, v0.z_index)
 

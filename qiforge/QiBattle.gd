@@ -34,7 +34,6 @@ var result := ""
 var _acted := {}                 # uid -> 本回合普攻过
 var _kill_act_used := {}         # uid -> 本回合插件3（击杀得攻次）已用
 var _atk_energy_used := {}       # uid -> 本回合插件6（普攻回能）已用
-var _jg_first_used := {}         # uid -> 本回合金刚盾被动（首次普攻）已用
 var _spell_played := {}          # uid -> 该器灵累计打出功法数（幽冥插件2专属）
 var _shayi_gained := {}          # uid -> 该器灵累计获得杀意（幽冥升2：每 3 层抽 1）
 var _mark_watch := {}            # uid -> 本回合标记的死亡回能额（索敌令）
@@ -64,8 +63,8 @@ func _chain_push(key: String) -> bool:
 
 func setup(run: Dictionary) -> void:
 	rng.seed = int(run.get("seed", 20261026))
-	energy_cap = DATA.energy_cap_of(int(run.get("sys_lv", 2)))
-	draw_base = DATA.draw_of(int(run.get("sys_lv", 2)))
+	energy_cap = DATA.energy_cap_of(int(run.get("sys_lv", 1)))
+	draw_base = DATA.draw_of(int(run.get("sys_lv", 1)))
 	allies = []
 	for m in run.get("team", []):
 		var hp0 := int(m.get("hp", -1))
@@ -79,8 +78,17 @@ func setup(run: Dictionary) -> void:
 	var fi: int = int(run.get("fight", 0))
 	var fights: Array = DATA.GROUPS[gi]["fights"] if gi < DATA.GROUPS.size() else []
 	if fi < fights.size():
-		for eid in fights[fi]["enemies"]:
-			enemies.push_back(_make_enemy(String(eid)))
+		# 敌方块队列制（2026-10-29 用户裁定，尸姬 Retrainer_Block 制）：enemies 逐元素＝一个块（队列），
+		# 块内 Array＝同队列 1~3 单位（首＝块顶、余＝候补底位）；兼容旧平铺字符串（每敌单块）
+		var blocks: Array = fights[fi]["enemies"]
+		for bi in blocks.size():
+			var g0 = blocks[bi]
+			var ids: Array = g0 if g0 is Array else [g0]
+			for ti in ids.size():
+				var en := _make_enemy(String(ids[ti]))
+				en["block"] = bi
+				en["block_top"] = ti == 0
+				enemies.push_back(en)
 	var deck: Array = run.get("deck", [])
 	if deck.is_empty():
 		deck = DATA.build_deck(run.get("team", []))
@@ -120,7 +128,7 @@ func start() -> void:
 	changed.emit()
 
 func _battle_start_effects() -> void:
-	# 插件·金刚二特殊：战斗开始获得 25% 最大生命值的护盾；
+	# 插件 x_jg_2 特殊：战斗开始获得 25% 最大生命值的护盾；
 	# 通用开局挂状态（插件12 抵抗层等）：kind=battle_start_status, sid, stacks
 	for a in allies:
 		for fx in _fx_of(a):
@@ -142,7 +150,7 @@ func _make_ally(wid: String, equips: Array, pdir: int) -> Dictionary:
 	return {"uid": _uid, "side": "ally", "id": wid, "name": String(w["name"]),
 		"alive": true, "hp": panel["hp"], "mhp": panel["hp"], "base": panel,
 		"acts": panel["acts"], "acts_max": panel["acts"], "statuses": [],
-		"bugs": 0, "pdir": pdir,
+		"pdir": pdir,
 		"spells": w["spells"], "passive": w["passive"],
 		"equips": equips}
 
@@ -153,7 +161,7 @@ func _make_enemy(eid: String) -> Dictionary:
 	return {"uid": _uid, "side": "enemy", "id": eid, "name": String(e["name"]),
 		"alive": true, "hp": p["hp"], "mhp": p["hp"], "base": p.duplicate(),
 		"acts": p["acts"], "acts_max": p["acts"], "statuses": [],
-		"bugs_on": 0, "pdir": 0,
+		"pdir": 0,
 		"spells": [], "passive": e.get("passive", {}), "equips": [], "actions": e["actions"]}
 
 ## 两仪剑主形态（敌方设计 v0.1 §二）：奇数回合＝刀、偶数回合＝剑；非形态单位恒 ""
@@ -166,8 +174,8 @@ func _enemy_form(e: Dictionary) -> String:
 func _enemy_round_start_passives() -> void:
 	_spawned_this_turn = {}
 	for e in enemies:
-		if not e["alive"]:
-			continue
+		if not e["alive"] or not bool(e.get("block_top", true)):
+			continue   # 块底候补不参战（块队列制）
 		var ph := String(e.get("passive", {}).get("hook", ""))
 		if ph == "round_start":
 			apply_status(e, String(e["passive"].get("sid", "liliang")), int(e["passive"].get("stacks", 1)))
@@ -191,6 +199,11 @@ func summon_enemy(eid: String) -> void:
 			return
 	enemies.push_back(_make_enemy(eid))
 	var nu: Dictionary = enemies[enemies.size() - 1]
+	var max_block := -1   # 召唤＝自开新块（块顶；块队列制）
+	for o in enemies:
+		max_block = maxi(max_block, int(o.get("block", -1)))
+	nu["block"] = max_block + 1
+	nu["block_top"] = true
 	_enemy_intent.push_back({})
 	_spawned_this_turn[int(nu["uid"])] = true
 	event.emit("召唤：「%s」入场" % nu["name"])
@@ -229,7 +242,7 @@ func atk_of(u: Dictionary) -> int:
 	# 天丝升1：每一点威力 +1 攻击力（被动修正——隐藏账，实时连锁）
 	if u.get("passive", {}).get("id") == "zhuiji" and int(u.get("pdir", 0)) == 1:
 		v += pow_of(u)
-	# 插件·金刚三专属：每有一点防御力 +1 攻击力
+	# 插件 x_jg_3 专属：每有一点防御力 +1 攻击力
 	if _has_fx(u, "def_atk"):
 		v += def_of(u)
 	return int(round(float(v) * (1.0 + _pct_of(u))))
@@ -244,9 +257,9 @@ func res_of(u: Dictionary) -> int:
 
 func pow_of(u: Dictionary) -> int:
 	var v: int = int(u["base"]["pow"]) + status_total(u, "qiangdu")
-	# 插件·丝蛊同源（青蛊铃专属）：每只蛊虫 +1 威力（装备修正——隐藏账）
+	# 插件 x_ts_1（天丝/青蛊双归属）：每只蛊虫 +1 威力（2026-10-29 蛊虫状态化——层数即蛊数）
 	if _has_fx(u, "bug_pow"):
-		v += int(u.get("bugs", 0))
+		v += status_total(u, "guchong")
 	return int(round(float(v) * (1.0 + _pct_of(u))))
 
 func _status_valued(u: Dictionary, sid: String) -> int:
@@ -289,9 +302,10 @@ func apply_status(dst: Dictionary, sid: String, stacks: int, value: int = 0,
 			event.emit("「%s」的抗性完全抵挡了「%s」" % [dst["name"], DATA.STATUSES[sid]["name"]])
 			return
 	# 蛊虫增幅（v0.7 §6）：敌方被施加毒时 +该敌身上蛊虫数
-	if sid == "zhongdu" and dst.get("side") == "enemy" and int(dst.get("bugs_on", 0)) > 0:
-		land += int(dst["bugs_on"])
-		event.emit("蛊虫增幅：「%s」毒 +%d 层" % [dst["name"], int(dst["bugs_on"])])
+	if sid == "zhongdu" and dst.get("side") == "enemy" and status_total(dst, "guchong") > 0:
+		var gbon := status_total(dst, "guchong")
+		land += gbon
+		event.emit("蛊虫增幅：「%s」毒 +%d 层" % [dst["name"], gbon])
 	for s in dst["statuses"]:
 		if s["sid"] == sid:
 			s["stacks"] = int(s["stacks"]) + land
@@ -396,7 +410,7 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 					event.emit("雷反：「%s」向「%s」反震 %d 点" % [dst["name"], src["name"], lei_amt])
 					resolve_damage(dst, src, float(lei_amt), "功法", {"indirect": true})
 					_chain.pop_back()
-				# 插件·金刚一专属：拥有护盾时 50% 反震（间接）
+				# 插件 x_jg_1 专属：拥有护盾时 50% 反震（间接）
 				if _has_fx(dst, "shield_fanzhen") and status_total(dst, "hudun") > 0 and src["alive"]:
 					var fz_amt := int(round(dealt * 0.5))
 					event.emit("反震：「%s」向「%s」反震 %d 点间接伤害" % [dst["name"], src["name"], fz_amt])
@@ -409,10 +423,12 @@ func resolve_damage(src: Dictionary, dst: Dictionary, base_amt: float, channel: 
 					event.emit("反击：「%s」向「%s」反击" % [dst["name"], src["name"]])
 					_basic_attack(dst, src)
 					_chain.pop_back()
-		# 普攻段命中后钩子（2026-10-28「视为普通攻击」口径）：真实普攻与功法内普攻段共用——
-		# 铁壁/插件6/破绽/追击/回耐久等普攻系词条在功法内普攻段同样触发（不耗攻次；仅普攻通道）
-		if channel == "普攻" and src.get("side", "") == "ally" and src.get("alive", false):
-			_after_attack_landed(src, dst)
+	# 普攻段命中后钩子（2026-10-28「视为普通攻击」口径）：真实普攻与功法内普攻段共用——
+	# 铁壁/插件6/破绽/追击/回耐久等普攻系词条在功法内普攻段同样触发（不耗攻次；仅普攻通道）。
+	# 2026-10-29 挪出 total>0 块：命中即触发——被护盾完全吸收也算命中（修「有盾不触发天丝追击」；
+	# STS2 Thorns 同族口径＝被完全格挡也触发）；_after_attack_landed 内部自判目标存活
+	if channel == "普攻" and src.get("side", "") == "ally" and src.get("alive", false):
+		_after_attack_landed(src, dst)
 	return dealt
 
 func _after_deal_damage(src: Dictionary, dst: Dictionary, amount: int) -> void:
@@ -528,7 +544,7 @@ func _consume_stacks(u: Dictionary, sid: String, n: int) -> void:
 
 func _on_death(src: Dictionary, dst: Dictionary) -> void:
 	var poison_left := status_total(dst, "zhongdu")
-	var bugs_left := int(dst.get("bugs_on", 0))
+	var bugs_left := status_total(dst, "guchong")
 	var death_passive := String(dst.get("passive", {}).get("hook", "")) == "on_death"
 	dst["alive"] = false
 	dst["statuses"] = []
@@ -552,13 +568,24 @@ func _on_death(src: Dictionary, dst: Dictionary) -> void:
 		for a in allies:
 			if a["alive"] and a.get("passive", {}).get("id") == "sha_yi":
 				_gain_shayi(a, 1)
+		# 块队列补位（尸姬 BlockReflash 制，2026-10-29）：块顶离场→块内下一存活者升顶＋掷新意图
+		if bool(dst.get("block_top", false)):
+			dst["block_top"] = false
+			for t in enemies:
+				if int(t.get("block", -1)) == int(dst.get("block", -1)) and t["alive"]:
+					t["block_top"] = true
+					var ti := enemies.find(t)
+					if ti >= 0 and ti < _enemy_intent.size():
+						_enemy_intent[ti] = _pick_intent(t)   # 补位採新意图（reroll_intent 空意图早退不适用）
+					event.emit("「%s」顶上队列（补位）" % t["name"])
+					break
 		# 青蛊铃升2：敌人死亡时身上蛊虫回归
 		if bugs_left > 0:
 			for a in allies:
 				if a["alive"] and a.get("passive", {}).get("id") == "yang_gu" and int(a.get("pdir", 0)) == 2:
-					a["bugs"] = int(a["bugs"]) + bugs_left
+					apply_status(a, "guchong", bugs_left)
 					event.emit("养蛊·升2：回收 %d 只蛊虫" % bugs_left)
-		# 插件3（通用）：一回合一次敌人死亡 +1 攻次；插件·青蛊三特殊：剩余毒一半转移
+		# 插件3（通用）：一回合一次敌人死亡 +1 攻次；插件 x_qg_3 特殊：剩余毒一半转移
 		for a in allies:
 			if a["alive"] and a["equips"].has("p3") and not _kill_act_used.get(a["uid"], false):
 				_kill_act_used[a["uid"]] = true
@@ -632,7 +659,7 @@ func can_target(card: Dictionary, target: Dictionary) -> bool:
 		return false
 	match st:
 		"enemy":
-			return String(target.get("side", "")) == "enemy"
+			return String(target.get("side", "")) == "enemy" and is_targetable(target)
 		"ally":
 			if String(target.get("side", "")) != "ally":
 				return false
@@ -664,15 +691,17 @@ func normal_attack(a: Dictionary, e: Dictionary) -> void:
 	check_end()
 	changed.emit()
 
-## 普攻一次（含追击/反击）：命中后钩子由 resolve_damage 普攻段落地处统一触发
-func _basic_attack(a: Dictionary, e: Dictionary) -> void:
-	resolve_damage(a, e, float(atk_of(a)), "普攻")
+## 普攻一次（含追击）：动作口——伤害走 resolve_damage 普攻通道；动作完成即试追击
+## （2026-10-29 拆挂：追击跟动作不跟伤害，mult＝功法内普攻段倍率）
+func _basic_attack(a: Dictionary, e: Dictionary, mult := 1.0) -> void:
+	resolve_damage(a, e, float(atk_of(a)) * mult, "普攻")
+	_try_pursue(a, e)
 
 ## 普攻命中后全套钩子（真实普攻与功法内普攻段共用；不耗攻次）
 func _after_attack_landed(a: Dictionary, e: Dictionary) -> void:
-	# 金刚盾被动：每回合自身第一次普攻后，自身＋相邻各 +1 防御
-	if a.get("passive", {}).get("id") == "tie_bi" and not _jg_first_used.get(a["uid"], false):
-		_jg_first_used[a["uid"]] = true
+	# 金刚盾被动：每次普攻后，自身＋动态相邻各 +1 防御（2026-10-29 用户裁定：
+	# 去「每回合第一次」限制——功法内普攻段/多次普攻每次都触发）
+	if a.get("passive", {}).get("id") == "tie_bi":
 		for u in _self_and_adjacent(a):
 			apply_status(u, "hujia", 1)
 		event.emit("铁壁：「%s」与相邻器灵获得 1 层护甲" % a["name"])
@@ -705,7 +734,7 @@ func _after_attack_landed(a: Dictionary, e: Dictionary) -> void:
 			event.emit("天丝二：汲取 %d 点最大生命值" % kinds)
 	# 插件·天丝三专属：每次普攻后自身获得一只蛊虫
 	if _has_fx(a, "atk_bug"):
-		a["bugs"] = int(a["bugs"]) + 1
+		apply_status(a, "guchong", 1)
 	# 插件·金刚二专属：普攻后随机器灵获得一层格挡
 	if _has_fx(a, "atk_block"):
 		var pool_a: Array = []
@@ -726,7 +755,12 @@ func _after_attack_landed(a: Dictionary, e: Dictionary) -> void:
 	# 天丝升2：普攻攻击施加一层毒
 	if a.get("passive", {}).get("id") == "zhuiji" and int(a.get("pdir", 0)) == 2 and e["alive"]:
 		apply_status(e, "zhongdu", 1, 0, -1, true, a)
-	# 追击：其他器灵普攻时自动追加（不耗攻次；同链每个追击者至多一次）
+
+## 追击：其他器灵**普攻动作**时自动追加（2026-10-29 用户裁定拆挂——绑定动作非伤害管线：
+## 命中/格挡/盾挡与触发无关；功法内普攻段走 _basic_attack 同触发；不耗攻次；同链每人至多一次）
+func _try_pursue(a: Dictionary, e: Dictionary) -> void:
+	if a.get("side", "") != "ally":
+		return   # 敌方普攻（反击/行动）不触发我方追击
 	for t in allies:
 		if t["alive"] and t["uid"] != a["uid"] and t.get("passive", {}).get("id") == "zhuiji" \
 				and not has_status(t, "jiaoxie") and not has_status(t, "xuan") and e["alive"] \
@@ -750,22 +784,29 @@ func _self_and_adjacent(a: Dictionary) -> Array:
 func _adjacent(a: Dictionary) -> Array:
 	return _adjacent_in(allies, a)
 
-## 动态相邻（左右各取最近存活者，阵亡不占位——敌我两侧同制）
+## 动态相邻（左右各取最近存活者，阵亡不占位——敌我两侧同制；
+## 敌侧按块序取相邻块顶——块底候补不占战斗站位，2026-10-29 块队列制）
 func _adjacent_in(arr: Array, u: Dictionary) -> Array:
+	var seq := arr
+	if String(u.get("side", "")) == "enemy":
+		seq = []
+		for x in arr:
+			if x.get("alive", false) and bool(x.get("block_top", true)):
+				seq.push_back(x)
 	var out: Array = []
-	var idx := arr.find(u)
+	var idx := seq.find(u)
 	if idx < 0:
 		return out
 	var lo := idx - 1
-	while lo >= 0 and not arr[lo]["alive"]:
+	while lo >= 0 and not seq[lo]["alive"]:
 		lo -= 1
 	if lo >= 0:
-		out.push_back(arr[lo])
+		out.push_back(seq[lo])
 	var hi := idx + 1
-	while hi < arr.size() and not arr[hi]["alive"]:
+	while hi < seq.size() and not seq[hi]["alive"]:
 		hi += 1
-	if hi < arr.size():
-		out.push_back(arr[hi])
+	if hi < seq.size():
+		out.push_back(seq[hi])
 	return out
 
 ## 延迟队列（v3：反震/反击已改即时插入，本队列只剩尸毒扩散）
@@ -874,7 +915,7 @@ func play_card(card_uid: int, target: Dictionary = {}) -> void:
 	_current_sid = ""
 	# 打出记账＋专属/特殊钩子
 	_spell_played[owner["uid"]] = int(_spell_played.get(owner["uid"], 0)) + 1
-	# 插件·幽冥二专属：每累计 3 张功法 → +1 能量＋自身抽牌
+	# 插件 x_ym_2专属：每累计 3 张功法 → +1 能量＋自身抽牌
 	if _has_fx(owner, "spell_cycle") and int(_spell_played[owner["uid"]]) % 3 == 0:
 		gain_energy(1)
 		event.emit("幽冥二：能量 +1，执行自身抽牌")
@@ -1028,11 +1069,11 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 			if sy > 0:
 				event.emit("灭魂斩·升一：清空 %d 层杀意，生成 %d 张 0 费「消耗」版基础灭魂斩" % [sy, copies])
 		"bug_recall":
-			var bugs := int(src.get("bugs", 0))
+			var bugs := status_total(src, "guchong")
 			if bugs <= 0:
 				event.emit("「%s」身上没有蛊虫" % src["name"])
 				return
-			src["bugs"] = 0
+			_consume_stacks(src, "guchong", bugs)
 			for i in bugs:
 				var pool2 := _alive_enemies()
 				if pool2.is_empty():
@@ -1046,7 +1087,7 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 					if pool3.is_empty():
 						break
 					var e3: Dictionary = pool3[rng.randi_range(0, pool3.size() - 1)]
-					e3["bugs_on"] = int(e3["bugs_on"]) + 1
+					apply_status(e3, "guchong", 1)
 				event.emit("召蛊术·升一：蛊虫再次藏身")
 			if bool(op.get("shield_own_bugs", false)):
 				for a in allies:
@@ -1061,7 +1102,7 @@ func _run_op(op: Dictionary, src: Dictionary, target: Dictionary) -> void:
 			# 功法内普攻段（刀剑合击）：视为普通攻击——走普攻通道，
 			# 命中后钩子（转形态/铁壁/插件/追击）由 resolve_damage 普攻段统一触发
 			if target.get("alive", false) and src.get("alive", false):
-				resolve_damage(src, target, float(atk_of(src)) * float(op.get("atk_mult", 1.0)), "普攻")
+				_basic_attack(src, target, float(op.get("atk_mult", 1.0)))   # 动作口：功法内普攻段同触发追击/命中钩子
 		"pojia_aoe":
 			# 裂甲斩：目标＋动态相邻 1+威/per_pow 层破甲
 			var pj7 := int(op.get("stacks", 1)) + int(float(pow_of(src)) / float(op.get("per_pow", 5)))
@@ -1110,32 +1151,33 @@ func gain_energy(n: int) -> void:
 		energy = mini(energy_cap, energy + n)
 #endregion
 
-#region 蛊虫循环（v0.7 §6：回合开始藏身→施毒增幅→回合结束先回归再毒）
+#region 蛊虫循环（2026-10-29 用户裁定状态化：bugs/bugs_on 字段退役，一律走 guchong 状态层数）
 ## 某器灵的全部蛊虫藏身随机敌人（可叠同目标）
 func _hide_bugs(a: Dictionary) -> void:
 	var pool := _alive_enemies()
 	if pool.is_empty():
 		return
-	while int(a["bugs"]) > 0:
+	while status_total(a, "guchong") > 0:
 		var e: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
-		e["bugs_on"] = int(e["bugs_on"]) + 1
-		a["bugs"] = int(a["bugs"]) - 1
+		apply_status(e, "guchong", 1)
+		_consume_stacks(a, "guchong", 1)
 
 ## 全体我方蛊虫藏身（回合开始）
 func _hide_all_bugs() -> void:
 	for a in allies:
-		if a["alive"] and int(a["bugs"]) > 0:
+		if a["alive"] and status_total(a, "guchong") > 0:
 			_hide_bugs(a)
 
 ## 全部蛊虫回归（回合结束，先于毒结算）
 func _return_all_bugs() -> void:
 	for e in enemies:
-		if int(e.get("bugs_on", 0)) > 0:
+		var n := status_total(e, "guchong")
+		if n > 0:
 			for a in allies:
 				if a["id"] == "qinggu" and a["alive"]:
-					a["bugs"] = int(a["bugs"]) + int(e["bugs_on"])
+					apply_status(a, "guchong", n)
 					break
-			e["bugs_on"] = 0
+			_consume_stacks(e, "guchong", n)
 
 ## 毒结算：受到＝层数的间接伤害，层 −1（尖塔制）；敌方结算＝毒发（青蛊铃被动计数）
 func _poison_tick(u: Dictionary) -> void:
@@ -1148,7 +1190,7 @@ func _poison_tick(u: Dictionary) -> void:
 	if u["side"] == "enemy":
 		for a in allies:
 			if a["alive"] and a.get("passive", {}).get("id") == "yang_gu":
-				a["bugs"] = int(a["bugs"]) + 1
+				apply_status(a, "guchong", 1)
 	_consume_stacks(u, "zhongdu", 1)
 	if int(u["hp"]) <= 0:
 		_on_death({}, u)
@@ -1159,7 +1201,6 @@ func _round_start() -> void:
 	_acted = {}
 	_kill_act_used = {}
 	_atk_energy_used = {}
-	_jg_first_used = {}
 	_fanji_used = {}
 	_mark_watch = {}
 	_turn_cards_played = 0
@@ -1272,8 +1313,8 @@ func apply_enemy_action(i: int) -> void:
 	if phase != "enemy" or i >= enemies.size():
 		return
 	var e: Dictionary = enemies[i]
-	if not e["alive"]:
-		return
+	if not e["alive"] or not bool(e.get("block_top", true)):
+		return   # 块底候补不行动（块队列制）
 	# 敌方护盾持续制：撑过我方回合、本次行动开始才清（我方护盾仍回合末清）
 	_consume_stacks(e, "hudun", 999)
 	if _spawned_this_turn.has(int(e["uid"])):
@@ -1484,9 +1525,9 @@ func _tick_statuses() -> void:
 	# 插件·青蛊二专属：回合结束自身每有 3 只蛊虫 +1 只
 	for a in allies:
 		if a["alive"] and _has_fx(a, "bug_breed"):
-			var gain := int(a["bugs"]) / int(_fx_val(a, "bug_breed", "per", 3))
+			var gain := status_total(a, "guchong") / int(_fx_val(a, "bug_breed", "per", 3))
 			if gain > 0:
-				a["bugs"] = int(a["bugs"]) + gain
+				apply_status(a, "guchong", gain)
 				event.emit("青蛊二：繁育 %d 只蛊虫" % gain)
 	# 冷却递减
 	for k in _cd_left:
@@ -1522,29 +1563,33 @@ func check_end() -> bool:
 func roll_intents() -> void:
 	_enemy_intent = []
 	for e in enemies:
-		if not e["alive"]:
-			_enemy_intent.push_back({})
+		if not e["alive"] or not bool(e.get("block_top", true)):
+			_enemy_intent.push_back({})   # 块底候补无意图（块队列制）
 			continue
-		var cds: Dictionary = _cd_left.get(e["uid"], {})
-		var hist: Array = _enemy_hist.get(e["uid"], [])
-		var pool: Array = []
-		for a in e["actions"]:
-			if int(cds.get(a["id"], 0)) > 0:
-				continue
-			if String(a.get("form", "")) != "" and String(a.get("form", "")) != _enemy_form(e):
-				continue   # 两仪剑主形态池过滤（敌方设计 v0.1）
-			if hist.size() >= 2 and hist[0] == a["id"] and hist[1] == a["id"]:
-				continue
-			pool.push_back(a)
-		if pool.is_empty():
-			pool = e["actions"]
-		var action: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
-		var target_uid := -1
-		if String(action["kind"]) == "attack":
-			var t := _pick_target()
-			if not t.is_empty():
-				target_uid = int(t["uid"])
-		_enemy_intent.push_back({"action": action, "target_uid": target_uid})
+		_enemy_intent.push_back(_pick_intent(e))
+
+## 单体掷意图（roll_intents 与块补位共用；含冷却/形态池/连出 2 次过滤）
+func _pick_intent(e: Dictionary) -> Dictionary:
+	var cds: Dictionary = _cd_left.get(e["uid"], {})
+	var hist: Array = _enemy_hist.get(e["uid"], [])
+	var pool: Array = []
+	for a in e["actions"]:
+		if int(cds.get(a["id"], 0)) > 0:
+			continue
+		if String(a.get("form", "")) != "" and String(a.get("form", "")) != _enemy_form(e):
+			continue   # 两仪剑主形态池过滤（敌方设计 v0.1）
+		if hist.size() >= 2 and hist[0] == a["id"] and hist[1] == a["id"]:
+			continue
+		pool.push_back(a)
+	if pool.is_empty():
+		pool = e["actions"]
+	var action: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
+	var target_uid := -1
+	if String(action["kind"]) == "attack":
+		var t := _pick_target()
+		if not t.is_empty():
+			target_uid = int(t["uid"])
+	return {"action": action, "target_uid": target_uid}
 
 func intent_parts(e: Dictionary) -> Array:
 	# 眩晕＝意图失效（蓝本 Stun 制）：意图位亮「眩」，该回合行动作废、跳过即消耗
@@ -1744,10 +1789,23 @@ func _hand_has_same_unique(card: Dictionary) -> bool:
 func exhaust_card(card: Dictionary) -> void:
 	exhaust_pile.push_back(card)
 
+## 敌方块队列制（2026-10-29）：只有块顶可被选为目标——底位＝候补（不可选/无意图/不行动）；
+## 块顶离场→块内下一存活者升顶补位（_on_death）。普攻落点/功法目标/弹射随机池全走此门。
+func is_targetable(u: Dictionary) -> bool:
+	return u.get("alive", false) and bool(u.get("block_top", true))
+
+## 当前块顶敌数（屏层敌排重建条件用——块数即槽位数）
+func _targetable_enemy_count() -> int:
+	var n := 0
+	for e in enemies:
+		if e.get("alive", false) and bool(e.get("block_top", true)):
+			n += 1
+	return n
+
 func _alive_enemies() -> Array:
 	var out: Array = []
 	for e in enemies:
-		if e["alive"]:
+		if e["alive"] and bool(e.get("block_top", true)):
 			out.push_back(e)
 	return out
 #endregion

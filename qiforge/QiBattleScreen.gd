@@ -16,6 +16,7 @@ const QI_DATA := preload("res://qiforge/QiData.gd")
 const QI_BATTLE := preload("res://qiforge/QiBattle.gd")
 const QIUP := preload("res://qiforge/QiUpgradePick.gd")
 const QI_DASH := preload("res://qiforge/QiDashLine.gd")
+const QIPREFS := preload("res://qiforge/QiPrefs.gd")
 
 ## 尺寸制 v3.0（2026-10-27 用户裁定）：唯一基准 300×422×场合系数（工厂 size_of 唯一权威）
 static var CARD_W := QICARD.size_of("field").x
@@ -25,6 +26,9 @@ static var HAND_H := QICARD.size_of("hand").y
 const SLOT_GAP := 55
 const STAT_ICON := 20
 const HAND_POP := Vector2(1.25, 1.25)   # 悬停弹起缩放＝详情档等效（216×304×1.25＝270×380）
+## 牌堆中心（STS2 combat_piles_container 实测：draw 15~95/985~1065、discard -94~-14 同行）
+const DRAW_PILE_CENTER := Vector2(55.0, 1025.0)
+const DISCARD_PILE_CENTER := Vector2(1866.0, 1025.0)
 const C_DEF := Color("57b8d6")   # 防御意图蓝
 const C_SPELL := Color("b48ae0")  # 功法伤意图紫（无视防御）
 const C_POISON := Color("a86ad0") # 毒/间接意图
@@ -37,7 +41,8 @@ const FX_COLORS := {"普攻": Color("ff8a70"), "功法": Color("b48ae0"), "真�
 var run_data: Dictionary = {}
 var battle: RefCounted = null
 
-var _enemy_slots: Array = []                # [{wrap, chip, card, hp, grid, statcol, mark, enemy}]
+var _enemy_slots: Array = []                # [{wrap, chip, card, hp, grid, statcol, mark, enemy}]（块队列制＝每块顶一条）
+var _enemy_top_cache: Array = []            # 上次敌排块顶 uid 集（补位检测：顶集变＝重画）
 var _ally_slots: Array = []                 # [{wrap, card, acts, hp, statcol, unit}]
 var _hand_wraps: Array = []
 var _round_lbl: Label = null
@@ -53,6 +58,7 @@ var _drag_mark: Dictionary = {}             # {rec, side, from} 当前吸附槽�
 var _spell_drag: Dictionary = {}            # {wrap, card, tw} 目标功法箭头拖拽（卡升起不跟手，2026-10-28 STS2 制）
 var _hand_focus: Control = null             # 悬停手牌（弹起位，2026-10-28 STS2 RefreshLayout 制）
 var _sfx_cache: Dictionary = {}             # Kenney ui-pack 音效懒载（探针环境无 FileLoader 时静默）
+var _snap_sfx_done: Dictionary = {}         # 本拖拽周期已响过吸附音的单位 uid 集（边界抖动重挂不连发）
 var _pile_draw_btn: Button = null           # v0.6 牌堆钮（抽/弃/消）
 var _pile_discard_btn: Button = null
 var _pile_exhaust_btn: Button = null
@@ -94,6 +100,15 @@ func _build_ground() -> void:
 	add_child(bg)
 
 ## 顶栏 y0~7：左＝功能钮；右＝铜钱＋回合
+## 铜钱唯一写口（2026-10-29 用户裁定：数值一变即刷新——写点一律走此口，禁直写 run_data）
+func _gain_copper(delta: int) -> void:
+	run_data["copper"] = int(run_data.get("copper", 0)) + delta
+	_refresh_copper()
+
+func _refresh_copper() -> void:
+	if _cur_lbl:
+		_cur_lbl.text = "铜钱 %d" % int(run_data.get("copper", 0))
+
 func _build_top_bar() -> void:
 	var bar := HBoxContainer.new()
 	_anchor(bar, 0.012, 0.014, 0.24, 0.052)
@@ -111,11 +126,13 @@ func _build_top_bar() -> void:
 				var p := get_parent()
 				if p != null and p.has_method("_rewind_battle"):
 					p._rewind_battle())   # 独立跑 tscn/探针＝无宿主，静默不响应
+		elif String(pair[0]) == "设置":
+			b.pressed.connect(func() -> void: QIPREFS.open_settings(self))
 		bar.add_child(b)
 	add_child(bar)
 	_cur_lbl = Label.new()
 	_cur_lbl.name = "Currency"
-	_cur_lbl.text = "铜钱 0"
+	_refresh_copper()
 	_anchor(_cur_lbl, 0.70, 0.016, 0.88, 0.05)
 	QISTYLE.font(_cur_lbl, QISTYLE.FS_SMALL, true)
 	_cur_lbl.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
@@ -143,37 +160,16 @@ func _build_energy_stack() -> void:
 	_anchor(orb, 0.008, 0.615, 0.078, 0.76)
 	var num := orb.get_meta("num") as Label
 	num.text = "%d" % battle.energy
-	var cap := Label.new()
-	cap.text = "/%d" % battle.energy_cap
-	QISTYLE.font(cap, 15, true)
-	cap.add_theme_color_override("font_color", Color(0.75, 0.86, 0.94, 0.9))
-	cap.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	cap.offset_top = -24.0
-	cap.offset_bottom = -4.0
-	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	orb.add_child(cap)
+	# 2026-10-29 用户裁定：只要圆珠——「/3」上限标签与淡蓝光晕圈均已裁（上限走 tooltip）
 	add_child(orb)
 	orb.tooltip_text = "能量 %d/%d\n每回合重置到上限。上限＝系统出厂 3＋偶数次系统升级 +1。" % [battle.energy, battle.energy_cap]
 	_energy_col = orb
 
-## 宝珠件（STS2 能量珠分层制：光晕→珠体→内芯→大数字；攻次小珠同款共用）
+## 宝珠件（珠体→内芯→大数字；2026-10-29 用户裁定裁淡色光晕圈——只留圆珠）
 func _make_gem_orb(d: float, hue: Color, empty: bool) -> Control:
 	var orb := Control.new()
 	orb.custom_minimum_size = Vector2(d, d)
 	orb.mouse_filter = Control.MOUSE_FILTER_STOP
-	var glow := Panel.new()
-	glow.set_anchors_preset(Control.PRESET_FULL_RECT)
-	glow.offset_left = -d * 0.08
-	glow.offset_right = d * 0.08
-	glow.offset_top = -d * 0.08
-	glow.offset_bottom = d * 0.08
-	var gs := StyleBoxFlat.new()
-	gs.bg_color = Color(hue.r, hue.g, hue.b, 0.16)
-	gs.set_corner_radius_all(roundi(d * 0.54))
-	glow.add_theme_stylebox_override("panel", gs)
-	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	orb.add_child(glow)
 	var body := Panel.new()
 	body.set_anchors_preset(Control.PRESET_CENTER)
 	body.offset_left = -d * 0.42
@@ -215,7 +211,9 @@ func _make_gem_orb(d: float, hue: Color, empty: bool) -> Control:
 	return orb
 
 ## 右缘弃牌带：拖手牌即显，松手弃置（不扣能量）
-## 敌排：意图徽（实时数字）＋敌卡（QI_DRAG 壳＝普攻落点＋功法目标点击）
+## 敌排（2026-10-29 块队列制，尸姬 Retrainer_Block 制）：按块分列——每块一 slot，
+## 块顶＝正常卡（意图/落点/血条/状态列），块底候补＝叠影小卡（不可交互）＋顶卡「×N」角标；
+## 块顶离场补位后整排重建（_rebind 顶集变化检测）
 func _build_enemy_row() -> void:
 	var row := HBoxContainer.new()
 	row.name = "EnemyRow"
@@ -223,7 +221,22 @@ func _build_enemy_row() -> void:
 	_anchor(row, 0.0, 0.068, 1.0, 0.363)   # 上移让出血条位（2026-10-28：血条移卡外下方）
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", SLOT_GAP)
+	var blocks: Array = []
+	var top_cache: Array = []
 	for e in battle.enemies:
+		var bi := int(e.get("block", blocks.size()))
+		while blocks.size() <= bi:
+			blocks.push_back([])
+		blocks[bi].push_back(e)
+	for group in blocks:
+		var top_e: Dictionary = group[0] if not group.is_empty() else {}
+		for e0 in group:
+			if bool(e0.get("block_top", true)):
+				top_e = e0
+				break
+		if top_e.is_empty():
+			continue
+		top_cache.push_back(int(top_e["uid"]))
 		var slot := VBoxContainer.new()
 		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.alignment = BoxContainer.ALIGNMENT_END
@@ -233,9 +246,21 @@ func _build_enemy_row() -> void:
 		# 悬停只连一次（内容随 _rebind 重建，悬停读实时数据）
 		chip.mouse_entered.connect(func() -> void:
 			QITIP.show_for(chip, [{"t": "title", "text": "敌方意图"},
-				{"t": "line", "text": battle.intent_tip(e)}], {"type": "意图", "min_w": 260.0}))
+				{"t": "line", "text": battle.intent_tip(top_e)}], {"type": "意图", "min_w": 260.0}))
 		chip.mouse_exited.connect(func() -> void: QITIP.hide_for(chip))
 		slot.add_child(chip)
+		var zone := Control.new()
+		zone.custom_minimum_size = Vector2(CARD_W, CARD_H)
+		zone.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var under_i := 0
+		for e1 in group:
+			if e1 == top_e:
+				continue
+			var ghost := _make_under_ghost(e1)
+			ghost.position = Vector2(14.0 + under_i * 6.0, 32.0 + under_i * 5.0)
+			zone.add_child(ghost)
+			under_i += 1
+		var e: Dictionary = top_e
 		var wrap: Control = QI_DRAG.new()   # 纯落点用法（card_data 空＝不可拖）
 		wrap.custom_minimum_size = Vector2(CARD_W, CARD_H)
 		wrap.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -282,11 +307,66 @@ func _build_enemy_row() -> void:
 		wrap.mouse_entered.connect(func() -> void:
 			QITIP.show_for(wrap, _enemy_rows(e), {"type": "敌方", "min_w": 260.0}))
 		wrap.mouse_exited.connect(func() -> void: QITIP.hide_for(wrap))
-		slot.add_child(wrap)
+		zone.add_child(wrap)
+		if group.size() > 1:
+			zone.add_child(_make_block_badge(group.size()))
+		slot.add_child(zone)
 		slot.add_child(_make_sts2_hp_bar(rec, e))   # STS2 制血条＝卡外下方（宽出 24、盾徽压左端）
 		row.add_child(slot)
 		_enemy_slots.push_back(rec)
 	add_child(row)
+	_enemy_top_cache = top_cache
+
+## 块底候补叠影卡（不可交互）：缩小压暗错位叠在块顶后下方
+func _make_under_ghost(e: Dictionary) -> Control:
+	var g := PanelContainer.new()
+	g.custom_minimum_size = Vector2(CARD_W, CARD_H) * 0.86
+	g.scale = Vector2(0.86, 0.86)
+	g.modulate = Color(1, 1, 1, 0.55)
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := QISTYLE.panel(0.75).duplicate() as StyleBoxFlat
+	sb.border_color = Color(0.4, 0.36, 0.3, 0.6)
+	g.add_theme_stylebox_override("panel", sb)
+	var v := VBoxContainer.new()
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	var nm := Label.new()
+	nm.text = String(e["name"])
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	QISTYLE.font(nm, QISTYLE.FS_SMALL, true)
+	nm.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+	v.add_child(nm)
+	var hp := Label.new()
+	hp.text = "候补 %d/%d" % [int(e["hp"]), int(e["mhp"])]
+	hp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	QISTYLE.font(hp, QISTYLE.FS_SMALL)
+	hp.add_theme_color_override("font_color", QISTYLE.TEXT_SUB)
+	v.add_child(hp)
+	g.add_child(v)
+	return g
+
+## 块队列计数角标（×N，顶卡右上角）
+func _make_block_badge(n: int) -> Control:
+	var b := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.04, 0.03, 0.92)
+	sb.border_color = Color(QISTYLE.AMBER.r, QISTYLE.AMBER.g, QISTYLE.AMBER.b, 0.7)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(12)
+	sb.content_margin_left = 10.0
+	sb.content_margin_right = 10.0
+	sb.content_margin_top = 1.0
+	sb.content_margin_bottom = 3.0
+	b.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = "×%d" % n
+	QISTYLE.font(l, 16, true)
+	l.add_theme_color_override("font_color", Color("ffd766"))
+	b.add_child(l)
+	b.position = Vector2(CARD_W - 52.0, -8.0)
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.z_index = 6
+	return b
 
 func _make_enemy_card(rec: Dictionary) -> Control:
 	var e: Dictionary = rec["enemy"]
@@ -432,35 +512,16 @@ func _make_attack_chip(unit_name: String) -> Control:
 
 func _make_ally_card(rec: Dictionary) -> Control:
 	var a: Dictionary = rec["unit"]
-	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(CARD_W, CARD_H)
-	card.add_theme_stylebox_override("panel", QISTYLE.panel(0.75))
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 4)
-	var art := ColorRect.new()
-	art.custom_minimum_size = Vector2(164, 116)
-	art.color = Color("2f4438")
-	v.add_child(art)
-	var stats := Label.new()
-	stats.name = "StatLine"
-	stats.text = _ally_stat_text(a)
-	QISTYLE.font(stats, QISTYLE.FS_SMALL, true)
-	stats.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-	v.add_child(stats)
-	rec["stats"] = stats
-	var nm := Label.new()
-	nm.text = String(a["name"])
-	QISTYLE.font(nm, QISTYLE.FS_BODY, true)
-	nm.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-	v.add_child(nm)
-	card.add_child(v)
-	return card
+	# 整卡纯立绘（2026-10-29 用户裁定，备战舱同制走工厂公共件）：
+	# 属性行/名字撤出卡面——信息走悬停浮窗（_ally_rows）＋卡外血条/被动行
+	rec["stats"] = null
+	return QICARD.make_portrait_panel(String(a["name"]), "field")
 
 ## 我方卡属性行：攻/威/防＋蛊虫计数（实时连锁）
 func _ally_stat_text(a: Dictionary) -> String:
 	var txt := "攻%d 威%d 防%d" % [battle.atk_of(a), battle.pow_of(a), battle.def_of(a)]
-	if int(a.get("bugs", 0)) > 0:
-		txt += " 蛊%d" % int(a["bugs"])
+	if battle.status_total(a, "guchong") > 0:
+		txt += " 蛊%d" % battle.status_total(a, "guchong")
 	return txt
 
 func _ally_rows(a: Dictionary) -> Array:
@@ -473,7 +534,7 @@ func _ally_rows(a: Dictionary) -> Array:
 		{"t": "attr", "k": "防御", "v": battle.def_of(a)},
 		{"t": "attr", "k": "抗性", "v": battle.res_of(a)},
 		{"t": "attr", "k": "攻击次数", "v": "%d/%d" % [a["acts"], a["acts_max"]]},
-		{"t": "attr", "k": "蛊虫", "v": int(a.get("bugs", 0))},
+		{"t": "attr", "k": "蛊虫", "v": battle.status_total(a, "guchong")},
 		{"t": "sep"},
 		{"t": "line", "text": "[color=#ffd766]%s[/color]：%s" % [a["passive"]["name"], a["passive"]["desc"]]},
 	]
@@ -603,10 +664,23 @@ func _make_status_icon(sid: String, glyph: String, stacks: int, tint: Color, nam
 	ic.mouse_exited.connect(func() -> void: QITIP.hide_for(ic))
 	return ic
 
-## 手牌扇：无卡组涌出；打牌一律拖放（禁点按）——目标型拖到该单位卡、无目标型拖到敌方区/我方区；拖右缘弃置
+## 手牌扇：无卡组涌出；打牌一律拖放（禁点按）——目标型拖到该单位卡、无目标型拖到敌方区/我方区
+## 2026-10-29 抽/弃动画（用户裁定照 STS2 流向）：新抽卡＝自抽牌堆位飞入手位（帧 Lerp 同制）；
+## 消失卡（冲弃/移除）＝飞向弃牌堆位缩小淡出（0.32s、逐张 stagger 0.05s）；打出单卡仍走 _anim_play_card。
 func _rebuild_hand() -> void:
+	var old_uids := {}
 	for w in _hand_wraps:
-		w.queue_free()
+		old_uids[int(w.card_data.get("hand_uid", -1))] = true
+	var new_uids := {}
+	for card in battle.hand:
+		new_uids[int(card["uid"])] = true
+	var fly_i := 0
+	for w in _hand_wraps:
+		if not new_uids.has(int(w.card_data.get("hand_uid", -1))):
+			_anim_discard_fly(w, float(fly_i) * 0.05)   # 消失卡：冲弃飞出（stagger 逐张）
+			fly_i += 1
+		else:
+			w.queue_free()   # 原位换新壳（同帧替换无感）
 	_hand_wraps = []
 	for card in battle.hand:
 		var w: Control = QI_DRAG.new()
@@ -634,15 +708,39 @@ func _rebuild_hand() -> void:
 				_light_owner_only(the_card)
 			_set_hand_focus(w))
 		# 拖拽期间引擎会强制退出悬停态——清灯/散焦只在该卡真离开且无拖拽时做（修「起拖高亮闪一下就灭」）
+		# 2026-10-29 修「换牌不突出」：跨卡移动引擎序＝新卡 entered 先行、旧卡 exited 后发——
+		# 旧卡 exited 无条件清焦点会把新卡刚设的焦点抹掉（首卡突出、第二张永不突出）；
+		# 只在焦点仍是自己时才清（焦点已易主＝鼠标已进邻牌，灯与焦点归新卡管）
 		w.mouse_exited.connect(func() -> void:
 			if not get_viewport().gui_is_dragging():
-				_clear_spell_lights()
-				_set_hand_focus(null))
+				if _hand_focus == w:
+					_clear_spell_lights()
+					_set_hand_focus(null))
 		add_child(w)
 		_hand_wraps.push_back(w)
+		if not old_uids.has(int(card["uid"])):
+			# 新抽卡：起点＝抽牌堆中心（飞入手位由 _hand_lerp_tick 帧 Lerp 接管）
+			w.position = DRAW_PILE_CENTER - Vector2(HAND_W, HAND_H) * 0.5
+			w.scale = Vector2(0.35, 0.35)
+			w.rotation = randf_range(-0.22, 0.22)
+			w.modulate.a = 0.25
+			w.set_meta("fly_in", true)
+			var twa := create_tween()
+			twa.tween_property(w, "modulate:a", 1.0, 0.3)
 	_hand_focus = null
 	_layout_hand(false)
 	_refresh_playability()
+
+## 冲弃/移除卡飞出：飞向弃牌堆位缩小淡出（逐张 stagger）
+func _anim_discard_fly(w: Control, delay: float) -> void:
+	var tw := create_tween()
+	tw.tween_interval(delay)
+	tw.tween_property(w, "position", DISCARD_PILE_CENTER - Vector2(HAND_W, HAND_H) * 0.5, 0.32)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(w, "scale", Vector2(0.3, 0.3), 0.32)
+	tw.parallel().tween_property(w, "rotation", 0.15, 0.32)
+	tw.parallel().tween_property(w, "modulate:a", 0.0, 0.3).set_delay(0.06)
+	tw.tween_callback(w.queue_free)
 
 ## 手牌可打性（2026-10-28 用户裁定，STS2 制＝NPlayerHand._disableModulate 灰调）：
 ## 能量不足/属主不可施放＝整卡压灰＋费用徽描边转红；恢复即回亮。实时随 changed 连锁。
@@ -661,9 +759,11 @@ func _refresh_playability() -> void:
 			var sb: StyleBoxFlat = (pip as Panel).get_theme_stylebox("panel") as StyleBoxFlat
 			sb.border_color = Color("e05545") if not ok else Color(0.95, 0.92, 0.84)
 
-## 手牌布局（2026-10-28 STS2 NPlayerHand.RefreshLayout 制）：
-## 指卡（_hand_focus）瞬起——拍平/升出扇顶/放大到详情档等效；邻牌让位（≤100px、4 张内衰减）；
-## 其余补间归位。箭头拖拽中的升卡归 _begin/_end_card_drag 管，本函数跳过。
+## 手牌布局（STS2 NPlayerHand.RefreshLayout 制）：本函数只落**目标位**（meta tgt_*），
+## 动画统一走 _process 帧 Lerp（AnimPosition 同款 delta×7 指数逼近）——无固定时长补间，
+## 换焦/换目标时从当前位置连续续走（线性 tween 杀旧重启的速度跳变＝「一顿一顿」病根）。
+## 焦点卡＝STS2 原版行为：角度/缩放瞬置回正＋Y 抬升瞬置，**X 也走目标位回基**（修「选中卡
+## 停在让位残留位」的位置偏差）；内层卡面瞬跳弹起（hover 瞬跳＝即时反馈，原版同制）。
 func _layout_hand(animate: bool) -> void:
 	var n := _hand_wraps.size()
 	if n == 0:
@@ -681,38 +781,67 @@ func _layout_hand(animate: bool) -> void:
 		var x := vp.x * 0.5 + (i - mid) * vp.x * 0.075 - HAND_W * 0.5
 		var y := vp.y * 0.752
 		var rot := (i - mid) * 0.032
-		var sc := Vector2.ONE
+		var tgt_scale := Vector2.ONE
+		var vis: Control = w.get_child(0)
+		vis.pivot_offset = Vector2(HAND_W * 0.5, HAND_H)
 		w.pivot_offset = Vector2(HAND_W * 0.5, HAND_H)
-		if fi == i:
-			# STS2 制瞬起——只弹内层卡面、wrap 原地不动（命中区稳定＝hover/浮窗锚不断链，
-			# modal_tip 连续性教训）：拍平（反向抵消扇角）＋升出扇＋放大到详情档等效。
-			var vis: Control = w.get_child(0)
-			vis.pivot_offset = Vector2(HAND_W * 0.5, HAND_H)
-			vis.rotation = -rot
+		var is_focus := fi == i
+		if is_focus:
+			# STS2 制瞬起——只弹内层卡面、wrap 拍平回正（命中区稳定＝hover/浮窗锚不断链）
+			w.rotation = 0.0
+			w.scale = Vector2.ONE
+			vis.rotation = 0.0
 			vis.scale = HAND_POP
 			vis.position = Vector2(0.0, -HAND_H * 0.55)
 			vis.z_index = 20
-			continue
-		elif fi > -1:
-			x += signf(i - fi) * lerpf(100.0, 0.0, minf(1.0, absf(fi - i) / 4.0))
-		w.z_index = 0
-		var vis0: Control = w.get_child(0)
-		vis0.z_index = 0
-		if animate:
-			var tw := create_tween().set_parallel(true)
-			tw.tween_property(w, "position", Vector2(x, y), 0.15)
-			tw.tween_property(w, "rotation", rot, 0.15)
-			tw.tween_property(w, "scale", sc, 0.15)
-			tw.tween_property(vis0, "scale", Vector2.ONE, 0.15)
-			tw.tween_property(vis0, "rotation", 0.0, 0.15)
-			tw.tween_property(vis0, "position", Vector2.ZERO, 0.15)
 		else:
+			# 邻牌让位（≤100px、4 张内衰减）；X 抖动来源＝焦点让位，焦点自身不吃
+			if fi > -1:
+				x += signf(i - fi) * lerpf(100.0, 0.0, minf(1.0, absf(fi - i) / 4.0))
+			w.z_index = 0
+			vis.z_index = 0
+		if not animate and not w.has_meta("fly_in"):   # fly_in 卡保留飞入起点，交给帧 Lerp
 			w.position = Vector2(x, y)
-			w.rotation = rot
-			w.scale = sc
-			vis0.scale = Vector2.ONE
-			vis0.rotation = 0.0
-			vis0.position = Vector2.ZERO
+			w.rotation = rot if not is_focus else 0.0
+			w.scale = tgt_scale
+			if not is_focus:
+				vis.scale = Vector2.ONE
+				vis.rotation = 0.0
+				vis.position = Vector2.ZERO
+		w.set_meta("tgt_pos", Vector2(x, y))
+		w.set_meta("tgt_rot", rot if not is_focus else 0.0)
+
+func _hand_lerp_tick(delta: float) -> void:
+	# STS2 AnimPosition/AnimScale/AnimAngle 帧制：每帧朝目标指数逼近（k=delta×7），
+	# 距离小于阈值 snap 收束（原版 <1 停）；非焦点卡的内层卡面回落同制
+	const K := 7.0
+	var snap_d := 0.75   # 原版距离平方 <1（≈1px）；此处统一收束阈值
+	for w in _hand_wraps:
+		var hw: Control = w
+		if not hw.has_meta("tgt_pos"):
+			continue
+		if not _spell_drag.is_empty() and (_spell_drag["wrap"] as Control) == hw:
+			continue
+		var tp: Vector2 = hw.get_meta("tgt_pos")
+		var tr: float = hw.get_meta("tgt_rot")
+		var k: float = minf(delta * K, 1.0)
+		hw.position = hw.position.lerp(tp, k)
+		hw.rotation = lerpf(hw.rotation, tr, k)
+		hw.scale = hw.scale.lerp(Vector2.ONE, k)
+		if hw != _hand_focus:
+			var vis: Control = hw.get_child(0)
+			vis.scale = vis.scale.lerp(Vector2.ONE, k)
+			vis.rotation = lerpf(vis.rotation, 0.0, k)
+			vis.position = vis.position.lerp(Vector2.ZERO, k)
+		if hw.position.distance_squared_to(tp) < snap_d and absf(hw.rotation - tr) < 0.001:
+			hw.position = tp
+			hw.rotation = tr
+			hw.scale = Vector2.ONE
+			if hw != _hand_focus:
+				var vis2: Control = hw.get_child(0)
+				vis2.scale = Vector2.ONE
+				vis2.rotation = 0.0
+				vis2.position = Vector2.ZERO
 
 func _set_hand_focus(w: Control) -> void:
 	if _hand_focus == w:
@@ -720,11 +849,12 @@ func _set_hand_focus(w: Control) -> void:
 	_hand_focus = w
 	_layout_hand(true)
 
-## 起拖（2026-10-28 STS2 NMouseCardPlay 制）：抓卡音效＋亮有效目标集；
+## 起拖（2026-10-28 STS2 NMouseCardPlay 制）：亮有效目标集；
 ## 目标功法＝arrow 制——原卡拍平小升起（不跟手、静默鼠标防挡落点），连线画箭头；
 ## 无目标功法＝preview 制（QiDragCard 整卡跟手），只亮灯不动卡。
 func _begin_card_drag(w: Control, card: Dictionary) -> void:
-	_play_sfx("click-a", 1.0)
+	if QIPREFS.battle_sfx():
+		_play_sfx("click-a", 1.0)   # 抓卡音（偏好开关，2026-10-29 由硬撤改入设置）
 	_light_spell_targets(card)
 	_set_hand_focus(null)
 	if String(card["spell"]["target"]) == "none":
@@ -740,19 +870,21 @@ func _begin_card_drag(w: Control, card: Dictionary) -> void:
 	_spell_drag = {"wrap": w, "card": card, "tw": tw}
 
 ## 收拖（无论成否）：清吸附/灯；arrow 卡归位（打出时 wrap 归 _anim_play_card 飞行动画管，勿抢）
+## 2026-10-29 修「指过的牌再指没反应」：filter/z 恢复提到一切早退之前——STOP/z0 本就是
+## 手牌壳默认态，无条件恢复无害；旧序在 _spell_drag 空判断后 return，会吞掉恢复（卡永久
+## IGNORE＝悬停/点击全绝缘）。
 func _end_card_drag(w: Control) -> void:
 	_clear_drag_marks()
 	_clear_spell_lights()
+	if is_instance_valid(w):
+		w.mouse_filter = Control.MOUSE_FILTER_STOP
+		w.z_index = 0
 	if _spell_drag.is_empty():
 		return
 	var rt: Tween = _spell_drag.get("tw")
 	if rt is Tween and rt.is_valid():
 		rt.kill()
 	_spell_drag = {}
-	if not is_instance_valid(w):
-		return
-	w.mouse_filter = Control.MOUSE_FILTER_STOP
-	w.z_index = 0
 	if not _busy:
 		_layout_hand(true)
 
@@ -820,10 +952,17 @@ func _anim_attack(from: Control, to: Control, impact: Callable) -> void:
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(from, "global_position", stop_at - frect.size * 0.5, 0.15)\
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	tw.tween_callback(func() -> void: impact.call())
+	# 2026-10-29 修「指一张后其他牌全指不动」：_busy 改结算帧即解锁（deferred）——宿主中途被
+	# 释放（攻击者阵亡→战斗行收拢重建）会杀补间、await finished 永挂、_busy 永真，收拖的
+	# _layout_hand 带 busy 门全跳＝手牌冻结。await 尾段保留＝敌方行动循环靠它拿节奏。
+	tw.tween_callback(func() -> void:
+		impact.call()
+		_unbusy.call_deferred())
 	tw.tween_property(from, "position", orig, 0.30)\
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	await tw.finished
+
+func _unbusy() -> void:
 	_busy = false
 
 func _anim_play_card(wrap: Control, to_center: Vector2, impact: Callable) -> void:
@@ -848,18 +987,23 @@ func _anim_play_card(wrap: Control, to_center: Vector2, impact: Callable) -> voi
 		.set_ease(Tween.EASE_IN)
 	tw.tween_property(wrap, "scale", Vector2(0.42, 0.42), 0.26)
 	tw.tween_property(wrap, "modulate:a", 0.3, 0.26)
-	tw.chain().tween_callback(func() -> void: impact.call())
-	await tw.finished
-	_busy = false
+	tw.chain().tween_callback(func() -> void:
+		impact.call()
+		_unbusy.call_deferred())   # 同 _anim_attack：结算帧即解锁，不 await 尾段（防补间悬死 _busy）
 
 ## 命中上报：飘字＋受击抖动闪白＋击破特效（普攻/功法/真伤/中毒共用）；
 ## 「追击」段除外——追击的数值/受击在其自身突进的命中帧表现（2026-10-28 时序裁定）。
 func _on_hit_landed(u: Dictionary, amount: int, kind: String) -> void:
-	var wrap := _wrap_of_uid(int(u["uid"]))
-	if wrap == null or not is_instance_valid(wrap):
-		return
 	if kind == "追击":
 		return
+	var rec := _rec_of_uid(int(u["uid"]))
+	var wrap: Control = rec.get("wrap", null) if not rec.is_empty() else null
+	if wrap == null or not is_instance_valid(wrap):
+		return
+	# 血条跟本段命中帧即时跳（2026-10-29 修「两数字、血条一跳」：结算层同步两段扣完＋changed
+	# 一次性刷终值＝血条一次掉完，与分段飘字不同步；hit_landed 时 hp 恰为本段后值，逐段刷即两跳。
+	# 追击段不在本处——其在 _on_pursuit 突进命中帧刷）
+	_update_unit_hp(rec)
 	var center := wrap.get_global_rect().get_center()
 	_spawn_floater(center, str(amount), kind)
 	if kind != "治疗":
@@ -867,14 +1011,18 @@ func _on_hit_landed(u: Dictionary, amount: int, kind: String) -> void:
 		if not u["alive"]:
 			_spawn_death_fx(center)
 
-func _wrap_of_uid(uid: int) -> Control:
+func _rec_of_uid(uid: int) -> Dictionary:
 	for r in _enemy_slots:
 		if int(r["enemy"]["uid"]) == uid:
-			return r["wrap"]
+			return r
 	for r in _ally_slots:
 		if int(r["unit"]["uid"]) == uid:
-			return r["wrap"]
-	return null
+			return r
+	return {}
+
+func _wrap_of_uid(uid: int) -> Control:
+	var rec := _rec_of_uid(uid)
+	return rec.get("wrap", null) if not rec.is_empty() else null
 
 ## 伤害飘字（蓝本 DemageTip：随机水平偏移＋弹跳缩放＋上飘淡出；通道染色）
 func _spawn_floater(center: Vector2, text: String, kind: String) -> void:
@@ -1077,7 +1225,7 @@ func _mark_drag(rec: Dictionary, atk_uid: int) -> void:
 					from = r["wrap"]
 		_drag_mark = {"rec": rec, "side": "enemy", "from": from}
 		_pop_glyph(rec)
-		_play_sfx("click-b", 1.25)
+		_snap_sfx(rec, 1.25)
 	var est := 0
 	var src_unit: Dictionary = {}
 	for r in _ally_slots:
@@ -1169,6 +1317,19 @@ func _hide_line_numbers() -> void:
 	for l in _num_pool:
 		(l as Label).visible = false
 
+## 吸附音（偏好开关＋同目标一拖只响一次）：drop_ok 轮询与 _process 脱离检测在卡边缘
+## 抖动进出会反复重挂（2026-10-29 用户实测「靠近边框没触发吸附时音效连响」根因）——
+## 按单位 uid 记已响集，拖拽结束清；同目标重挂静默，换目标才再响。
+func _snap_sfx(rec: Dictionary, pitch: float) -> void:
+	if not QIPREFS.battle_sfx():
+		return
+	var unit: Dictionary = rec.get("enemy", rec.get("unit", {}))
+	var uid := int(unit.get("uid", 0))
+	if _snap_sfx_done.has(uid):
+		return
+	_snap_sfx_done[uid] = true
+	_play_sfx("click-b", pitch)
+
 func _snap_drag(rec: Dictionary, side: String) -> void:
 	## 功法拖拽吸附（drop_ok 轮询入口；仅有效目标可达——drop_ok 已把门）。
 	## 换目标＝旧槽回落底灯（不灭灯，修 2026-10-28「移开高亮消失」bug）。
@@ -1176,7 +1337,7 @@ func _snap_drag(rec: Dictionary, side: String) -> void:
 		_unsnap_mark()
 		_drag_mark = {"rec": rec, "side": side, "from": null}
 		_pop_glyph(rec)
-		_play_sfx("click-b", 1.25 if side == "enemy" else 1.55)
+		_snap_sfx(rec, 1.25 if side == "enemy" else 1.55)
 	rec["snap"] = side
 	_render_mark(rec)
 	(rec["mark"]["est"] as Label).visible = false   # 功法不显预估（伤害以卡面为准）
@@ -1199,6 +1360,7 @@ func _unsnap_mark() -> void:
 	_hide_line_numbers()
 
 func _clear_drag_marks() -> void:
+	_snap_sfx_done = {}   # 吸附音已响集随拖拽结束清（同目标一拖一响制）
 	if _drag_mark.has("arec"):
 		_clear_hp_preview(_drag_mark["arec"])   # 反震预估段随吸附解除（先于 _unsnap 清表）
 	_unsnap_mark()
@@ -1295,6 +1457,7 @@ func _pop_glyph(rec: Dictionary) -> void:
 #endregion
 
 func _process(_d: float) -> void:
+	_hand_lerp_tick(_d)   # 手牌帧 Lerp（STS2 AnimPosition 制——目标位动画统一收口）
 	var vp_size := get_viewport_rect().size
 	var mpos := get_viewport().get_mouse_position()
 	# 鼠标合理性门：离屏/未聚焦窗下 get_mouse_position 是窗原点换算出的窗外垃圾值——
@@ -1383,39 +1546,111 @@ func _process(_d: float) -> void:
 			(_dash_pool[k] as Control).visible = false
 	#endregion
 
-## 牌堆钮（v0.6 五区牌堆；STS2 制＝左下抽牌堆/右下弃牌堆，消耗堆随行）：
-## 常驻计数，点击弹 QiDialog 网格视图（工厂卡 180×230）。手动弃牌带已随冲弃制退役。
+## 牌堆件（2026-10-29 用户裁定照 STS2 美术/操作）：图案件非文字钮——
+## 规格＝combat_piles_container.tscn 实测：抽牌堆左下/弃牌堆右下 80×80 贴角
+## （offset 15,-95~95,-15 与 -94,-95~-14,-15）、消耗堆右缘偏上（y800~880，不占底角）；
+## 图案＝自绘叠卡复刻（STS2 原贴图不入仓·三步制第三步）；计数徽章 48×48
+## （draw 右偏/discard 左偏/exhaust 居中——tscn CountContainer 实测）；点击弹牌堆视图。
 func _build_pile_buttons() -> void:
-	_pile_draw_btn = _make_pile_button("DrawPileBtn", "抽 0")
-	_anchor(_pile_draw_btn, 0.012, 0.86, 0.105, 0.925)
+	_pile_draw_btn = _make_pile_widget("DrawPileBtn", "draw", "抽牌堆：剩余抽牌（顺序保密）。")
+	_anchor(_pile_draw_btn, 0.0078, 0.9120, 0.0495, 0.9861)
 	_pile_draw_btn.pressed.connect(func() -> void: _open_pile_view("抽牌堆", battle.draw_pile, true))
 	add_child(_pile_draw_btn)
-	_pile_discard_btn = _make_pile_button("DiscardPileBtn", "弃 0")
-	_anchor(_pile_discard_btn, 0.895, 0.86, 0.988, 0.925)
+	_pile_discard_btn = _make_pile_widget("DiscardPileBtn", "discard", "弃牌堆：本场打出的功法牌。")
+	_anchor(_pile_discard_btn, 0.9510, 0.9120, 0.9927, 0.9861)
 	_pile_discard_btn.pressed.connect(func() -> void: _open_pile_view("弃牌堆", battle.discard_pile, false))
 	add_child(_pile_discard_btn)
-	_pile_exhaust_btn = _make_pile_button("ExhaustPileBtn", "消 0")
-	_anchor(_pile_exhaust_btn, 0.895, 0.785, 0.988, 0.85)
+	_pile_exhaust_btn = _make_pile_widget("ExhaustPileBtn", "exhaust", "消耗堆：本场消耗掉的功法牌。")
+	_anchor(_pile_exhaust_btn, 0.9531, 0.7407, 0.9948, 0.8148)
 	_pile_exhaust_btn.pressed.connect(func() -> void: _open_pile_view("消耗堆", battle.exhaust_pile, false))
 	add_child(_pile_exhaust_btn)
 
-func _make_pile_button(btn_name: String, txt: String) -> Button:
+## 图案件：Button 壳（80×80 点击区＋hover 微亮）＋自绘叠卡 Icon＋计数徽章
+func _make_pile_widget(btn_name: String, kind: String, tip: String) -> Button:
 	var b := Button.new()
 	b.name = btn_name
-	b.text = txt
-	b.tooltip_text = "点击查看牌堆内容（本堆顺序对局内保密的只显示数量与卡面）。"
-	QISTYLE.apply_ghost(b)
-	QISTYLE.font(b, QISTYLE.FS_BODY, true)
-	b.add_theme_color_override("font_color", QISTYLE.AMBER_BRIGHT)
+	b.tooltip_text = tip
+	for sb_name in ["normal", "hover", "pressed", "focus"]:
+		match sb_name:
+			"hover", "pressed":
+				var hs := StyleBoxFlat.new()
+				hs.bg_color = Color(1, 1, 1, 0.07)
+				b.add_theme_stylebox_override(sb_name, hs)
+			_:
+				b.add_theme_stylebox_override(sb_name, StyleBoxEmpty.new())
+	b.add_child(_make_pile_icon(kind))
+	# 计数徽章 48×48：深底圆＋琥珀边＋26 号亮字（2026-10-29 收回钮内 y2——探出按钮顶＝点不到、观感截断）
+	var badge := PanelContainer.new()
+	var bsb := StyleBoxFlat.new()
+	bsb.bg_color = Color(0.05, 0.04, 0.03, 0.92)
+	bsb.border_color = Color(QISTYLE.AMBER.r, QISTYLE.AMBER.g, QISTYLE.AMBER.b, 0.6)
+	bsb.set_border_width_all(2)
+	bsb.set_corner_radius_all(24)
+	bsb.content_margin_left = 4.0
+	bsb.content_margin_right = 4.0
+	bsb.content_margin_top = 0.0
+	bsb.content_margin_bottom = 2.0
+	badge.add_theme_stylebox_override("panel", bsb)
+	badge.custom_minimum_size = Vector2(48, 44)
+	var cnt := Label.new()
+	cnt.name = "Count"
+	QISTYLE.font(cnt, 26, true)
+	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cnt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cnt.add_theme_color_override("font_color", Color(1.0, 0.965, 0.886))
+	cnt.add_theme_color_override("font_outline_color", Color(0.53, 0.12, 0.12))
+	cnt.add_theme_constant_override("outline_size", 6)
+	cnt.text = "0"
+	badge.add_child(cnt)
+	badge.position = Vector2(16.0, 2.0)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(badge)
 	return b
+
+## 自绘叠卡图案（80×80 内）：draw＝三层正叠卡背；discard＝两层斜错；exhaust＝单张斜置灰调
+## （2026-10-29 内敛：卡 40×54、偏移≤6px、斜角≤9°——旋转外扩不出 80×80 框，顶部/左侧无截断）
+func _make_pile_icon(kind: String) -> Control:
+	var icon := Control.new()
+	icon.name = "Icon"
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.clip_contents = false
+	var mk := func(ox: float, oy: float, rot_d: float, mod: Color) -> Panel:
+		var p := Panel.new()
+		p.custom_minimum_size = Vector2(40, 54)
+		p.pivot_offset = Vector2(20, 27)
+		p.position = Vector2(40.0 - 20.0 + ox, 40.0 - 27.0 + oy)
+		p.rotation_degrees = rot_d
+		p.modulate = mod
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.13, 0.11, 0.08, 0.96)
+		sb.border_color = Color(QISTYLE.AMBER.r, QISTYLE.AMBER.g, QISTYLE.AMBER.b, 0.55)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(5)
+		p.add_theme_stylebox_override("panel", sb)
+		return p
+	match kind:
+		"draw":
+			icon.add_child(mk.call(-5.0, 9.0, 0.0, Color(0.55, 0.5, 0.42)))
+			icon.add_child(mk.call(-2.0, 4.0, 0.0, Color(0.75, 0.7, 0.6)))
+			icon.add_child(mk.call(1.0, 0.0, 0.0, Color.WHITE))
+		"discard":
+			icon.add_child(mk.call(-6.0, 5.0, -8.0, Color(0.7, 0.65, 0.55)))
+			icon.add_child(mk.call(5.0, 2.0, 9.0, Color.WHITE))
+		"exhaust":
+			icon.add_child(mk.call(0.0, 3.0, 8.0, Color(0.62, 0.58, 0.54)))
+	return icon
 
 func _refresh_pile_counts() -> void:
 	if _pile_draw_btn:
-		_pile_draw_btn.text = "抽 %d" % battle.draw_pile.size()
+		(_pile_draw_btn.find_child("Count", true, false) as Label).text = str(battle.draw_pile.size())
 	if _pile_discard_btn:
-		_pile_discard_btn.text = "弃 %d" % battle.discard_pile.size()
+		(_pile_discard_btn.find_child("Count", true, false) as Label).text = str(battle.discard_pile.size())
+	# 消耗堆空则整件隐藏（2026-10-29 用户裁定）
 	if _pile_exhaust_btn:
-		_pile_exhaust_btn.text = "消 %d" % battle.exhaust_pile.size()
+		_pile_exhaust_btn.visible = not battle.exhaust_pile.is_empty()
+		if _pile_exhaust_btn.visible:
+			(_pile_exhaust_btn.find_child("Count", true, false) as Label).text = str(battle.exhaust_pile.size())
 
 ## 牌堆视图（1080×600 固定尺寸制）：工厂功法卡网格；secret=抽牌堆（不保序展示，防记序）
 func _open_pile_view(title: String, pile: Array, secret: bool) -> void:
@@ -1444,7 +1679,8 @@ func _build_end_button() -> void:
 	b.text = "结束回合"
 	b.tooltip_text = "结束我方阶段，敌方按意图行动。"
 	b.pressed.connect(_on_end_turn)
-	_anchor(b, 0.88, 0.73, 0.945, 0.82)
+	# STS2 end_turn_button.tscn 实测：右下角 220×90（offset -316,-234 ~ -96,-144——离底 144px，不贴角）
+	_anchor(b, 0.8354, 0.7833, 0.9500, 0.8667)
 	QISTYLE.apply_primary(b)
 	QISTYLE.font(b, QISTYLE.FS_BIG, true)
 	b.add_theme_color_override("font_color", Color("ffe9b0"))
@@ -1489,8 +1725,9 @@ func _anim_enemy(from: Control, to: Control, idx: int) -> void:
 ## 追击画面表现（2026-10-28 时序裁定：数值落各自命中帧）：主攻命中帧即时起跑（主攻回位段并行），
 ## 追击突进自己的命中帧飘「追击」＋伤害数字＋受击抖动；目标已亡则不追（无的可打）。
 func _on_pursuit(attacker: Dictionary, target: Dictionary, dealt: int) -> void:
-	if not bool(target.get("alive", false)) or dealt <= 0:
-		return
+	# 追击表现＝信号即演（2026-10-29 修「有盾不见追击」）：dealt=0（满盾吸收）与击杀段（target
+	# 已亡）皆照演——结算层命中即触发（盾吸算命中），表现层镜像之，被吸直显「0」同普攻口径；
+	# 旧 alive/dealt 双门＝表现层私吞触发（用户实测「有盾不触发」真凶，引擎其实已结算）。
 	var from := _wrap_of_uid(int(attacker["uid"]))
 	var to := _wrap_of_uid(int(target["uid"]))
 	if from == null or to == null or not is_instance_valid(from) or not is_instance_valid(to):
@@ -1512,7 +1749,13 @@ func _on_pursuit(attacker: Dictionary, target: Dictionary, dealt: int) -> void:
 	tw.tween_callback(func() -> void:
 		_spawn_floater(tc, str(dealt), "追击")
 		_spawn_floater(tc + Vector2(0, -30), "追击", "追击")
-		_hit_reaction(to))
+		var prec := _rec_of_uid(int(target["uid"]))
+		if not prec.is_empty():
+			_update_unit_hp(prec)   # 血条跳到追击后值（与本段数字同帧——分段掉血时序制）
+		# 追击飞行 ~0.18s 内目标可因死亡触发 _rebind 整排重建→旧 wrap 已释放；起跳守卫（上方）
+		# 只管起跳时点，回调到达须按实况复检（2026-10-30 修「position on Nil」崩）
+		if is_instance_valid(to):
+			_hit_reaction(to))
 	tw.tween_property(from, "position", orig, 0.22)\
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
@@ -1539,8 +1782,13 @@ func _on_event(text: String) -> void:
 func _rebind() -> void:
 	if not is_inside_tree():
 		return
-	# 召唤入场＝敌方行动态重建（槽位数随 enemies 实长）
-	if _enemy_slots.size() != battle.enemies.size():
+	# 敌排重建（2026-10-29 块队列制）：召唤入场（敌数变）或**块顶集变化**（补位/死亡）
+	# ——补位不改敌数，须靠顶集缓存检测触发重画（底影变顶卡）
+	var top_now: Array = []
+	for e0 in battle.enemies:
+		if bool(e0.get("block_top", true)):
+			top_now.push_back(int(e0["uid"]))
+	if _enemy_slots.size() != battle._targetable_enemy_count() or top_now.hash() != _enemy_top_cache.hash():
 		var old_row := find_child("EnemyRow", false, false)
 		_enemy_slots = []
 		if old_row != null:
@@ -1580,7 +1828,8 @@ func _rebind() -> void:
 			(rec["wrap"] as Control).card_data = {"atk_uid": int(a["uid"])} \
 				if int(a["acts"]) > 0 and not battle.has_status(a, "jiaoxie") and not battle.has_status(a, "xuan") \
 				else {}
-			(rec["stats"] as Label).text = _ally_stat_text(a)
+			if rec["stats"] != null:
+				(rec["stats"] as Label).text = _ally_stat_text(a)
 			_update_unit_hp(rec)
 			_refill_status_col(rec["statcol"])
 	_rebuild_hand()
@@ -1661,7 +1910,7 @@ func _on_ended(result: String) -> void:
 		var base := 0
 		if gi < QI_DATA.GROUPS.size() and fi < QI_DATA.GROUPS[gi]["fights"].size():
 			base = int(QI_DATA.GROUPS[gi]["fights"][fi]["reward"])
-		run_data["copper"] = int(run_data.get("copper", 0)) + base
+		_gain_copper(base)   # 唯一写口（写入即刷新）
 		var arr := QIDIALOG.create(self, "战斗胜利", Vector2(520, 300), "继续")
 		var dialog: Control = arr[1]
 		var body := Label.new()
@@ -1691,7 +1940,7 @@ func _on_ended(result: String) -> void:
 ## 战后奖励＝六类操作池三选一（v0.7 §7：先掷类型→子池掷对象；选项位＝卡面＋动作按钮；
 ## 刷新＝装备中器灵数×1 铜起、每刷 +1；跳过＝+5 铜；Boss 战固定一位「新增器灵·已升级（方向随机）」）。
 const SKIP_COPPER := 5          # 跳过安慰铜（暂定）
-const RESERVE_CAP := 3          # 后备上限（暂定；满员时「新增器灵」转必须装备形态）
+# 2026-10-28 后备上限退役：未上场池不限量，上场 ≤7（备战「器灵」弹窗管理）
 var _reward_rng := RandomNumberGenerator.new()
 var _reward_refreshes := 0
 var _reward_options: Array = []
@@ -1703,7 +1952,7 @@ func _open_card_ops_reward() -> void:
 	var arr := QIDIALOG.create(self, "战利品 · 三选一", Vector2(1080, 640), "跳过（+%d铜）" % SKIP_COPPER)
 	var dialog: Control = arr[1]
 	dialog.confirmed.connect(func() -> void:
-		run_data["copper"] = int(run_data.get("copper", 0)) + SKIP_COPPER
+		_gain_copper(SKIP_COPPER)
 		_reward_finish(dialog, "已跳过奖励，铜钱 +%d" % SKIP_COPPER))
 	dialog.content().add_child(_reward_page(dialog))
 	dialog.popup_centered(Vector2i(1080, 640))
@@ -1770,7 +2019,7 @@ func _reward_page(dialog: Control) -> Control:
 		var price := _reward_refresh_price()
 		if int(run_data.get("copper", 0)) < price:
 			return
-		run_data["copper"] = int(run_data.get("copper", 0)) - price
+		_gain_copper(-price)
 		_reward_refreshes += 1
 		_reward_options = _roll_reward_options()
 		for c in dialog.content().get_children():
@@ -1909,61 +2158,15 @@ func _reward_page_spirit_dir(dialog: Control, opt: Dictionary) -> void:
 		_reward_finish(dialog, "「%s」被动已升级（方向%d）" % [w["name"], dir])))
 	dialog.content().add_child(box)
 
-## 新增器灵：后备有空位→入后备；后备满→必须装备（装备位空直接上；满则选一件替换——被替换者删除回未解锁）
+## 新增器灵：一律入未上场池（2026-10-28 后备上限退役＝替换形态随之退役；上场走备战「器灵」弹窗）
 func _reward_add_spirit(dialog: Control, opt: Dictionary) -> void:
 	var wid := String(opt["wid"])
 	var member := {"id": wid, "equips": ["", "", ""], "pdir": int(opt.get("pre_dir", 0))}
 	member["hp"] = QI_DATA.mhp_of(member)   # 新获得器灵满血（从未受伤，非入队赠血）
 	var reserve: Array = run_data.get("reserve", [])
-	if reserve.size() < RESERVE_CAP:
-		reserve.push_back(member)
-		run_data["reserve"] = reserve
-		_reward_finish(dialog, "「%s」已入后备（备战舱拖上编队供牌）" % QI_DATA.WEAPONS[wid]["name"])
-		return
-	var team: Array = run_data.get("team", [])
-	if team.size() < 7:
-		team.push_back(member)
-		run_data["team"] = team
-		QI_DATA.deck_swap(run_data, "", wid)
-		_reward_finish(dialog, "后备满员——「%s」已直接上阵（卡组 +4 张）" % QI_DATA.WEAPONS[wid]["name"])
-		return
-	# 替换页：选一件装备中器灵替换；被替换者删除回未解锁（升级清零、卡组条目移除）
-	for c in dialog.content().get_children():
-		c.queue_free()
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	var head := Label.new()
-	head.text = "后备与装备位皆满——选一件装备中器灵替换（被替换者删除、回未解锁池）："
-	QISTYLE.font(head, QISTYLE.FS_BODY, true)
-	head.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-	box.add_child(head)
-	var grid := GridContainer.new()
-	grid.columns = 4
-	grid.add_theme_constant_override("h_separation", 14)
-	grid.add_theme_constant_override("v_separation", 14)
-	for m in team:
-		var w: Dictionary = QI_DATA.WEAPONS[String(m["id"])]
-		var b := Button.new()
-		b.text = "%s\n（被动%s）" % [w["name"], "已升级" if int(m.get("pdir", 0)) > 0 else "未升级"]
-		b.custom_minimum_size = Vector2(230, 64)
-		QISTYLE.apply_ghost(b)
-		QISTYLE.font(b, QISTYLE.FS_SMALL)
-		b.add_theme_color_override("font_color", QISTYLE.TEXT_MAIN)
-		var out_wid := String(m["id"])
-		b.pressed.connect(func() -> void:
-			var team2: Array = run_data.get("team", [])
-			for i in range(team2.size() - 1, -1, -1):
-				if String(team2[i]["id"]) == out_wid:
-					team2.remove_at(i)
-			team2.push_back({"id": wid, "equips": ["", "", ""], "pdir": int(opt.get("pre_dir", 0)),
-				"hp": QI_DATA.mhp_of({"id": wid, "equips": ["", "", ""]})})
-			run_data["team"] = team2
-			QI_DATA.deck_swap(run_data, out_wid, wid)
-			_reward_finish(dialog, "「%s」已替换「%s」上阵（后者回未解锁池）"
-				% [QI_DATA.WEAPONS[wid]["name"], QI_DATA.WEAPONS[out_wid]["name"]]))
-		grid.add_child(b)
-	box.add_child(grid)
-	dialog.content().add_child(box)
+	reserve.push_back(member)
+	run_data["reserve"] = reserve
+	_reward_finish(dialog, "「%s」已入未上场池（备战舱「器灵」弹窗可上场）" % QI_DATA.WEAPONS[wid]["name"])
 
 func _reward_finish(dialog: Control, note: String) -> void:
 	dialog.queue_free()
@@ -1981,6 +2184,24 @@ func _reward_finish(dialog: Control, note: String) -> void:
 			set_meta("qi_result", "win")
 			queue_free())
 		fin.popup_centered(Vector2i(520, 260)))
+
+## 血条皮＝kenney CC0 免费素材三步制（2026-10-28 用户裁定换皮；规格照抄不动）：
+## button_rectangle_flat 九宫染色＝底/芯/毒段/预览段；button_rectangle_border＝有盾描边。
+static var _kbar_flat: Texture2D = null
+static var _kbar_ring: Texture2D = null
+
+static func _ken_bar(tint: Color, ring := false) -> StyleBoxTexture:
+	if _kbar_flat == null:
+		_kbar_flat = load("res://qiforge/assets/kenney/button_rectangle_flat.png") as Texture2D
+		_kbar_ring = load("res://qiforge/assets/kenney/button_rectangle_border.png") as Texture2D
+	var sbt := StyleBoxTexture.new()
+	sbt.texture = _kbar_ring if ring else _kbar_flat
+	sbt.modulate_color = tint
+	sbt.texture_margin_left = 7.0
+	sbt.texture_margin_right = 7.0
+	sbt.texture_margin_top = 7.0
+	sbt.texture_margin_bottom = 7.0
+	return sbt
 
 ## 敌方血条（2026-10-28 用户裁定抄 STS2，实测 sts2-extract/scenes/combat/health_bar.tscn＋NHealthBar.cs）：
 ## 卡外下方；条宽＝卡宽＋24（两侧各探 12）高 16；墨青底 α0.75＋有盾淡蓝描边；填充红 F1373E/
@@ -2002,22 +2223,14 @@ func _make_sts2_hp_bar(rec: Dictionary, unit: Dictionary) -> Control:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.offset_left = 1.0
 	bg.offset_right = -1.0
-	var bgs := StyleBoxFlat.new()
-	bgs.bg_color = Color(0.165, 0.376, 0.420, 0.753)
-	bgs.set_corner_radius_all(3)
-	bg.add_theme_stylebox_override("panel", bgs)
+	bg.add_theme_stylebox_override("panel", _ken_bar(Color(0.165, 0.376, 0.420, 0.753)))
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(bg)
 	var outline := Panel.new()
 	outline.set_anchors_preset(Control.PRESET_FULL_RECT)
 	outline.offset_left = 1.0
 	outline.offset_right = -1.0
-	var ols := StyleBoxFlat.new()
-	ols.bg_color = Color(0, 0, 0, 0)
-	ols.border_color = Color(0.706, 0.886, 1.0, 0.95)
-	ols.set_border_width_all(2)
-	ols.set_corner_radius_all(3)
-	outline.add_theme_stylebox_override("panel", ols)
+	outline.add_theme_stylebox_override("panel", _ken_bar(Color(0.706, 0.886, 1.0, 0.95), true))
 	outline.visible = false
 	outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(outline)
@@ -2035,9 +2248,7 @@ func _make_sts2_hp_bar(rec: Dictionary, unit: Dictionary) -> Control:
 	fill.anchor_bottom = 1.0
 	fill.offset_left = 0.0
 	fill.offset_right = 0.0
-	var fs := StyleBoxFlat.new()
-	fs.bg_color = Color("F1373E")
-	fill.add_theme_stylebox_override("panel", fs)
+	fill.add_theme_stylebox_override("panel", _ken_bar(Color("F1373E")))
 	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	host.add_child(fill)
 	var pois := Panel.new()
@@ -2045,9 +2256,7 @@ func _make_sts2_hp_bar(rec: Dictionary, unit: Dictionary) -> Control:
 	pois.anchor_bottom = 1.0
 	pois.offset_left = 0.0
 	pois.offset_right = 0.0
-	var ps := StyleBoxFlat.new()
-	ps.bg_color = Color(0.475, 0.753, 0.235)
-	pois.add_theme_stylebox_override("panel", ps)
+	pois.add_theme_stylebox_override("panel", _ken_bar(Color(0.475, 0.753, 0.235)))
 	pois.visible = false
 	pois.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	host.add_child(pois)
@@ -2058,9 +2267,7 @@ func _make_sts2_hp_bar(rec: Dictionary, unit: Dictionary) -> Control:
 	prevp.anchor_bottom = 1.0
 	prevp.offset_left = 0.0
 	prevp.offset_right = 0.0
-	var pvs := StyleBoxFlat.new()
-	pvs.bg_color = Color(0.906, 0.627, 0.188, 0.95)
-	prevp.add_theme_stylebox_override("panel", pvs)
+	prevp.add_theme_stylebox_override("panel", _ken_bar(Color(0.906, 0.627, 0.188, 0.95)))
 	prevp.visible = false
 	prevp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	host.add_child(prevp)
@@ -2153,7 +2360,7 @@ func _update_unit_hp(rec: Dictionary) -> void:
 	var pois_n := int(battle.status_total(e, "zhongdu"))
 	var ratio := float(cur) / float(mhp)
 	var fill: Panel = rec["hpfill"]
-	(fill.get_theme_stylebox("panel") as StyleBoxFlat).bg_color = Color("3B6FA3") if shield > 0 else Color("F1373E")
+	(fill.get_theme_stylebox("panel") as StyleBoxTexture).modulate_color = Color("3B6FA3") if shield > 0 else Color("F1373E")
 	fill.anchor_right = ratio
 	var pl := maxf(0.0, float(cur - pois_n)) / float(mhp)
 	(rec["hppois"] as Panel).visible = pois_n > 0 and pl < ratio

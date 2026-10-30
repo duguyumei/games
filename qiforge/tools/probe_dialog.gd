@@ -37,6 +37,12 @@ func _run() -> void:
 	# 3) 常规 create：旧四参调用兼容（无取消键）
 	var arr2: Array = QIDIALOG.create(holder, "旧式调用", Vector2(400, 300), "确定")
 	var d2: Control = arr2[1]
+	# 4) 模态置顶（2026-10-29 修「攻次珠浮上奖励弹窗」）：scrim 90/box 91 须盖过屏内件族 z 8~60
+	var sc2: Control = arr2[0]
+	if sc2 != null and int(sc2.z_index) != 90:
+		fails.append("scrim 未置顶 z=90（得 %d）" % int(sc2.z_index))
+	if d2 != null and int(d2.z_index) != 91:
+		fails.append("box 未置顶 z=91（得 %d）" % int(d2.z_index))
 	if d2 == null:
 		fails.append("常规 create 被互斥拒绝（应已释放）")
 	elif d2.get_cancel_button() != null:
