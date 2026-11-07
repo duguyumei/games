@@ -1,0 +1,201 @@
+[gd_scene format=3 uid="uid://cnq7lh7gy0wen"]
+
+[ext_resource type="Script" uid="uid://mbqec2nn3poe" path="res://sandbox/card_lab.gd" id="1_j720d"]
+[ext_resource type="Texture2D" uid="uid://btqmhk1oy41eq" path="res://qiforge/assets/portraits/youming.png" id="4_exaxn"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.26, 0.26, 0.28, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.76, 0.68, 0.46, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="SystemFont" id="SystemFont_kai"]
+font_names = PackedStringArray("Kaiti SC", "STKaiti")
+subpixel_positioning = 0
+
+[node name="CardLab" type="Control" unique_id=298887587]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Card" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -211.0
+offset_right = 150.0
+offset_bottom = 211.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+script = ExtResource("1_j720d")
+
+[node name="Art" type="TextureRect" parent="Card"]
+clip_contents = true
+layout_mode = 0
+offset_left = 16.0
+offset_top = 46.0
+offset_right = 284.0
+offset_bottom = 294.0
+texture = ExtResource("4_exaxn")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Mask" type="ColorRect" parent="Card"]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 295.0
+offset_right = 284.0
+offset_bottom = 405.0
+color = Color(0.94509804, 0.92156863, 0.8509804, 0.39215687)
+
+[node name="divider" type="ColorRect" parent="Card"]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 294.0
+offset_right = 284.0
+offset_bottom = 296.0
+color = Color(0.76, 0.68, 0.46, 0.8)
+
+[node name="title" type="Label" parent="Card"]
+layout_mode = 0
+offset_left = 110.0
+offset_top = 0.0
+offset_right = 190.0
+offset_bottom = 43.0
+theme_override_colors/font_color = Color(0.94509804, 0.92156863, 0.8509804, 1)
+theme_override_colors/font_outline_color = Color(0.08235294, 0.08627451, 0.09803922, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = SubResource("SystemFont_kai")
+theme_override_font_sizes/font_size = 30
+text = "撩"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="content" type="Label" parent="Card"]
+custom_minimum_size = Vector2(262, 0)
+layout_mode = 0
+offset_left = 19.0
+offset_top = 296.0
+offset_right = 281.0
+offset_bottom = 403.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.08235294, 0.08627451, 0.09803922, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = SubResource("SystemFont_kai")
+theme_override_font_sizes/font_size = 12
+text = "造成10点伤害，目标优先为预攻击敌人。"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="tag" type="Label" parent="Card"]
+layout_mode = 0
+offset_left = 101.0
+offset_top = 404.0
+offset_right = 196.0
+offset_bottom = 416.0
+theme_override_font_sizes/font_size = 10
+text = "剑式·撩"
+horizontal_alignment = 1
+
+[node name="badge_qi" type="Control" parent="Card"]
+layout_mode = 0
+offset_left = 7.0
+offset_top = 5.0
+offset_right = 51.0
+offset_bottom = 39.0
+
+[node name="poly" type="Polygon2D" parent="Card/badge_qi"]
+color = Color(0.07, 0.065, 0.06, 0.92)
+polygon = PackedVector2Array(0, 22, 0.19, 19.13, 0.75, 16.31, 1.67, 13.58, 2.95, 11, 4.55, 8.61, 6.44, 6.44, 8.61, 4.55, 11, 2.95, 13.58, 1.67, 16.31, 0.75, 19.13, 0.19, 22, 0, 24.87, 0.19, 27.69, 0.75, 30.33, 1.67, 33, 2.95, 35.39, 4.55, 37.56, 6.44, 39.45, 8.61, 41.05, 11, 42.33, 13.58, 43.25, 16.31, 43.81, 19.13, 44, 22)
+
+[node name="line" type="Line2D" parent="Card/badge_qi"]
+closed = true
+width = 1.5
+default_color = Color(0.78, 0.68, 0.5, 0.9)
+antialiased = true
+points = PackedVector2Array(0, 22, 0.19, 19.13, 0.75, 16.31, 1.67, 13.58, 2.95, 11, 4.55, 8.61, 6.44, 6.44, 8.61, 4.55, 11, 2.95, 13.58, 1.67, 16.31, 0.75, 19.13, 0.19, 22, 0, 24.87, 0.19, 27.69, 0.75, 30.33, 1.67, 33, 2.95, 35.39, 4.55, 37.56, 6.44, 39.45, 8.61, 41.05, 11, 42.33, 13.58, 43.25, 16.31, 43.81, 19.13, 44, 22)
+
+[node name="val" type="Label" parent="Card/badge_qi"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 1.0
+offset_right = 44.0
+offset_bottom = 23.0
+theme_override_colors/font_color = Color(0.94509804, 0.92156863, 0.8509804, 1)
+theme_override_colors/font_outline_color = Color(0.08235294, 0.08627451, 0.09803922, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = SubResource("SystemFont_kai")
+theme_override_font_sizes/font_size = 15
+text = "2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="cap" type="Label" parent="Card/badge_qi"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 23.0
+offset_right = 44.0
+offset_bottom = 35.0
+theme_override_colors/font_color = Color(0.78, 0.75, 0.68, 1)
+theme_override_font_sizes/font_size = 9
+text = "气"
+horizontal_alignment = 1
+
+[node name="badge_shi" type="Control" parent="Card"]
+layout_mode = 0
+offset_left = 249.0
+offset_top = 5.0
+offset_right = 293.0
+offset_bottom = 39.0
+
+[node name="poly" type="Polygon2D" parent="Card/badge_shi"]
+color = Color(0.07, 0.065, 0.06, 0.92)
+polygon = PackedVector2Array(0, 22, 0.19, 19.13, 0.75, 16.31, 1.67, 13.58, 2.95, 11, 4.55, 8.61, 6.44, 6.44, 8.61, 4.55, 11, 2.95, 13.58, 1.67, 16.31, 0.75, 19.13, 0.19, 22, 0, 24.87, 0.19, 27.69, 0.75, 30.33, 1.67, 33, 2.95, 35.39, 4.55, 37.56, 6.44, 39.45, 8.61, 41.05, 11, 42.33, 13.58, 43.25, 16.31, 43.81, 19.13, 44, 22)
+
+[node name="line" type="Line2D" parent="Card/badge_shi"]
+closed = true
+width = 1.5
+default_color = Color(0.78, 0.68, 0.5, 0.9)
+antialiased = true
+points = PackedVector2Array(0, 22, 0.19, 19.13, 0.75, 16.31, 1.67, 13.58, 2.95, 11, 4.55, 8.61, 6.44, 6.44, 8.61, 4.55, 11, 2.95, 13.58, 1.67, 16.31, 0.75, 19.13, 0.19, 22, 0, 24.87, 0.19, 27.69, 0.75, 30.33, 1.67, 33, 2.95, 35.39, 4.55, 37.56, 6.44, 39.45, 8.61, 41.05, 11, 42.33, 13.58, 43.25, 16.31, 43.81, 19.13, 44, 22)
+
+[node name="val" type="Label" parent="Card/badge_shi"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 1.0
+offset_right = 44.0
+offset_bottom = 23.0
+theme_override_colors/font_color = Color(0.94509804, 0.92156863, 0.8509804, 1)
+theme_override_colors/font_outline_color = Color(0.08235294, 0.08627451, 0.09803922, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = SubResource("SystemFont_kai")
+theme_override_font_sizes/font_size = 15
+text = "撩"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="cap" type="Label" parent="Card/badge_shi"]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 23.0
+offset_right = 44.0
+offset_bottom = 35.0
+theme_override_colors/font_color = Color(0.78, 0.75, 0.68, 1)
+theme_override_font_sizes/font_size = 9
+text = "式"
+horizontal_alignment = 1

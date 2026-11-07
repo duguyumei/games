@@ -1,0 +1,114 @@
+[gd_scene format=3 uid="uid://ilu86264rl5g"]
+
+[ext_resource type="Script" uid="uid://mbqec2nn3poe" path="res://sandbox/card_lab.gd" id="1_j720d"]
+[ext_resource type="Texture2D" uid="uid://bn8p5ta76eqyi" path="res://sandbox/vc_ref/attack_card.png" id="vc_face"]
+[ext_resource type="Texture2D" uid="uid://cyy8eycjnqfmu" path="res://sandbox/vc_ref/icon_attack.png" id="vc_icon"]
+[ext_resource type="Texture2D" uid="uid://caba4a3lq3rv8" path="res://sandbox/vc_ref/UI_Mana.png" id="vc_mana"]
+
+[sub_resource type="SystemFont" id="SystemFont_kai"]
+font_names = PackedStringArray("Kaiti SC", "STKaiti")
+subpixel_positioning = 0
+
+[node name="CardLab" type="Control" unique_id=298887587]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Card" type="Panel" parent="." unique_id=1701751106]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -128.0
+offset_top = -192.0
+offset_right = 128.0
+offset_bottom = 192.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_j720d")
+
+[node name="Face" type="TextureRect" parent="Card" unique_id=199413264]
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("vc_face")
+expand_mode = 1
+
+[node name="ManaBall" type="TextureRect" parent="Card" unique_id=384511232]
+texture_filter = 1
+layout_mode = 0
+offset_left = 4.0
+offset_top = 5.0
+offset_right = 50.0
+offset_bottom = 51.0
+mouse_filter = 2
+texture = ExtResource("vc_mana")
+expand_mode = 1
+
+[node name="Cost" type="Label" parent="Card" unique_id=1566717804]
+visible = false
+layout_mode = 0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 72.0
+offset_bottom = 72.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.12, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 28
+text = "2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TypeIcon" type="TextureRect" parent="Card" unique_id=1293719931]
+visible = false
+texture_filter = 1
+layout_mode = 0
+offset_left = 208.0
+offset_top = 8.0
+offset_right = 248.0
+offset_bottom = 48.0
+mouse_filter = 2
+texture = ExtResource("vc_icon")
+expand_mode = 1
+
+[node name="Name" type="Label" parent="Card" unique_id=952057686]
+layout_mode = 0
+offset_left = 56.0
+offset_top = 12.0
+offset_right = 200.0
+offset_bottom = 40.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.12, 1)
+theme_override_constants/outline_size = 3
+theme_override_fonts/font = SubResource("SystemFont_kai")
+theme_override_font_sizes/font_size = 20
+text = "横斩"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Desc" type="Label" parent="Card" unique_id=66831421]
+layout_mode = 0
+offset_left = 18.0
+offset_top = 282.0
+offset_right = 238.0
+offset_bottom = 374.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.12, 1)
+theme_override_constants/outline_size = 2
+theme_override_fonts/font = SubResource("SystemFont_kai")
+theme_override_font_sizes/font_size = 13
+text = "造成 10 点伤害。"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3

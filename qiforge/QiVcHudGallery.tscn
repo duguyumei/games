@@ -1,0 +1,424 @@
+[gd_scene load_steps=23 format=3]
+
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_heart.png" id="t1"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_qi.png" id="t2"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_stack.png" id="t3"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_xpbar.png" id="t4"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_scroll.png" id="t5"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_coin.png" id="t6"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_gear.png" id="t7"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_pause.png" id="t8"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_s1.png" id="t9"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_s2.png" id="t10"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_s3.png" id="t11"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_s4.png" id="t12"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_s5.png" id="t13"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_q1.png" id="t14"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_q2.png" id="t15"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_q3.png" id="t16"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_q4.png" id="t17"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_q5.png" id="t18"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/btn_paper.png" id="t19"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/plate.png" id="t20"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/scene.png" id="t21"]
+
+[node name="HudGallery" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.07, 0.065, 0.06, 1)
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 0
+offset_left = 32.0
+offset_top = 16.0
+offset_right = 900.0
+offset_bottom = 52.0
+text = "HUD 件总览：直接拖节点调位置/大小（每个件下面是名字）"
+
+[node name="T_heart" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 70.0
+offset_right = 320.0
+offset_bottom = 270.0
+texture = ExtResource("t1")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_heart" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 274.0
+offset_right = 320.0
+offset_bottom = 300.0
+text = "heart"
+
+[node name="T_qi" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 70.0
+offset_right = 630.0
+offset_bottom = 270.0
+texture = ExtResource("t2")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_qi" type="Label" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 274.0
+offset_right = 630.0
+offset_bottom = 300.0
+text = "qi"
+
+[node name="T_stack" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 70.0
+offset_right = 940.0
+offset_bottom = 270.0
+texture = ExtResource("t3")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_stack" type="Label" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 274.0
+offset_right = 940.0
+offset_bottom = 300.0
+text = "stack"
+
+[node name="T_xpbar" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 70.0
+offset_right = 1250.0
+offset_bottom = 270.0
+texture = ExtResource("t4")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_xpbar" type="Label" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 274.0
+offset_right = 1250.0
+offset_bottom = 300.0
+text = "xpbar"
+
+[node name="T_scroll" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 1270.0
+offset_top = 70.0
+offset_right = 1560.0
+offset_bottom = 270.0
+texture = ExtResource("t5")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_scroll" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1270.0
+offset_top = 274.0
+offset_right = 1560.0
+offset_bottom = 300.0
+text = "scroll"
+
+[node name="T_coin" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 1580.0
+offset_top = 70.0
+offset_right = 1870.0
+offset_bottom = 270.0
+texture = ExtResource("t6")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_coin" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1580.0
+offset_top = 274.0
+offset_right = 1870.0
+offset_bottom = 300.0
+text = "coin"
+
+[node name="T_gear" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 320.0
+offset_right = 320.0
+offset_bottom = 520.0
+texture = ExtResource("t7")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_gear" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 524.0
+offset_right = 320.0
+offset_bottom = 550.0
+text = "gear"
+
+[node name="T_pause" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 320.0
+offset_right = 630.0
+offset_bottom = 520.0
+texture = ExtResource("t8")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_pause" type="Label" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 524.0
+offset_right = 630.0
+offset_bottom = 550.0
+text = "pause"
+
+[node name="T_s1_斩" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 320.0
+offset_right = 940.0
+offset_bottom = 520.0
+texture = ExtResource("t9")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_s1_斩" type="Label" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 524.0
+offset_right = 940.0
+offset_bottom = 550.0
+text = "s1_斩"
+
+[node name="T_s2_刺" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 320.0
+offset_right = 1250.0
+offset_bottom = 520.0
+texture = ExtResource("t10")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_s2_刺" type="Label" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 524.0
+offset_right = 1250.0
+offset_bottom = 550.0
+text = "s2_刺"
+
+[node name="T_s3_撩" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 1270.0
+offset_top = 320.0
+offset_right = 1560.0
+offset_bottom = 520.0
+texture = ExtResource("t11")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_s3_撩" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1270.0
+offset_top = 524.0
+offset_right = 1560.0
+offset_bottom = 550.0
+text = "s3_撩"
+
+[node name="T_s4_扫" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 1580.0
+offset_top = 320.0
+offset_right = 1870.0
+offset_bottom = 520.0
+texture = ExtResource("t12")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_s4_扫" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1580.0
+offset_top = 524.0
+offset_right = 1870.0
+offset_bottom = 550.0
+text = "s4_扫"
+
+[node name="T_s5_绕" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 570.0
+offset_right = 320.0
+offset_bottom = 770.0
+texture = ExtResource("t13")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_s5_绕" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 774.0
+offset_right = 320.0
+offset_bottom = 800.0
+text = "s5_绕"
+
+[node name="T_q1_斩" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 570.0
+offset_right = 630.0
+offset_bottom = 770.0
+texture = ExtResource("t14")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_q1_斩" type="Label" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 774.0
+offset_right = 630.0
+offset_bottom = 800.0
+text = "q1_斩"
+
+[node name="T_q2_刺" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 570.0
+offset_right = 940.0
+offset_bottom = 770.0
+texture = ExtResource("t15")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_q2_刺" type="Label" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 774.0
+offset_right = 940.0
+offset_bottom = 800.0
+text = "q2_刺"
+
+[node name="T_q3_撩" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 570.0
+offset_right = 1250.0
+offset_bottom = 770.0
+texture = ExtResource("t16")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_q3_撩" type="Label" parent="."]
+layout_mode = 0
+offset_left = 960.0
+offset_top = 774.0
+offset_right = 1250.0
+offset_bottom = 800.0
+text = "q3_撩"
+
+[node name="T_q4_扫" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 1270.0
+offset_top = 570.0
+offset_right = 1560.0
+offset_bottom = 770.0
+texture = ExtResource("t17")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_q4_扫" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1270.0
+offset_top = 774.0
+offset_right = 1560.0
+offset_bottom = 800.0
+text = "q4_扫"
+
+[node name="T_q5_绕" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 1580.0
+offset_top = 570.0
+offset_right = 1870.0
+offset_bottom = 770.0
+texture = ExtResource("t18")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_q5_绕" type="Label" parent="."]
+layout_mode = 0
+offset_left = 1580.0
+offset_top = 774.0
+offset_right = 1870.0
+offset_bottom = 800.0
+text = "q5_绕"
+
+[node name="T_btn" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 820.0
+offset_right = 320.0
+offset_bottom = 1020.0
+texture = ExtResource("t19")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_btn" type="Label" parent="."]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 1024.0
+offset_right = 320.0
+offset_bottom = 1050.0
+text = "btn"
+
+[node name="T_plate" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 820.0
+offset_right = 630.0
+offset_bottom = 1020.0
+texture = ExtResource("t20")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_plate" type="Label" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 1024.0
+offset_right = 630.0
+offset_bottom = 1050.0
+text = "plate"
+
+[node name="T_scene" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 820.0
+offset_right = 940.0
+offset_bottom = 1020.0
+texture = ExtResource("t21")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="L_scene" type="Label" parent="."]
+layout_mode = 0
+offset_left = 650.0
+offset_top = 1024.0
+offset_right = 940.0
+offset_bottom = 1050.0
+text = "scene"

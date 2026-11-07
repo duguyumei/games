@@ -12,7 +12,7 @@
 ##       zsh qiforge/tools/run_probes.sh qiv3 prep    # 只跑指名探针（按组自动选模式）
 GODOT="/Applications/Godot.app/Contents/MacOS/Godot"
 PROJ="/Users/cc/Documents/qi-forge-2"
-HEADLESS=(battle_logic upgrade shop_deny longtext dialog battle_ui qiv3 prep geo reward flow_win save)
+HEADLESS=(battle_logic upgrade shop_deny longtext dialog battle_ui qiv3 prep geo reward flow_win save vc_battle vc_ui vc_map)
 INPUT=(battle_drag prep_drag detail modal_tip drag_shot)
 WATCH_S=30   # 守卫超时（2026-10-29 用户裁定 30s：探针崩在 await 后不退出＝挂到 150s 才被杀，两探针×重试即 626s；正常单发 <5s，30s 富余）
 RUN_INPUT=0

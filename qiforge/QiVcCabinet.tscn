@@ -1,0 +1,229 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_xpbar.png" id="1_xpbar"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_heart.png" id="2_heart"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_qi.png" id="3_qi"]
+[ext_resource type="Texture2D" path="res://qiforge/assets/hud/c_stack.png" id="4_stack"]
+
+[sub_resource type="StyleBoxEmpty" id="SB_bar"]
+[sub_resource type="StyleBoxFlat" id="SB_track"]
+bg_color = Color(0.15, 0.13, 0.1, 0.18)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+[sub_resource type="StyleBoxFlat" id="SB_fill"]
+bg_color = Color(0.184314, 0.419608, 0.847059, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.498039, 0.658824, 0.937255, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+; 机柜公共件（地图屏/战斗屏同壳）——2026-11-04 场景化：静态件从 QiVcCabinet.gd 的
+; build_top/build_wings 搬入此处，位置/大小编辑器里拖；贴图随 .import 走（编辑器可见），
+; 字体/描色仍运行时挂（QiVcCabinet.wire_scene——Noto 运行时加载入不了场景），
+; 数值刷新走 collect_* + refresh_top/refresh_wings。
+
+[node name="Cabinet" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TopBand" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="XpArt" type="TextureRect" parent="TopBand"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 392
+offset_top = 6
+offset_right = 1172
+offset_bottom = 170
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+texture = ExtResource("1_xpbar")
+
+[node name="Bar" type="Panel" parent="TopBand"]
+layout_mode = 0
+offset_left = 378
+offset_top = 76
+offset_right = 1542
+offset_bottom = 128
+mouse_filter = 2
+theme_override_styles/panel = SubResource("SB_bar")
+
+[node name="FloorLbl" type="Label" parent="Bar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 92
+offset_top = 28
+offset_right = 202
+offset_bottom = 64
+mouse_filter = 2
+
+[node name="XpTrack" type="Panel" parent="Bar"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 106
+offset_top = 9
+offset_right = 1014
+offset_bottom = 43
+mouse_filter = 2
+theme_override_styles/panel = SubResource("SB_track")
+
+[node name="XpFill" type="Panel" parent="XpTrack"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 2
+offset_top = 2
+offset_right = 2
+offset_bottom = 32
+mouse_filter = 2
+theme_override_styles/panel = SubResource("SB_fill")
+
+[node name="XpText" type="Label" parent="Bar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 186
+offset_top = 28
+offset_right = 356
+offset_bottom = 64
+mouse_filter = 2
+
+[node name="LvlLbl" type="Label" parent="Bar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 650
+offset_top = 22
+offset_right = 778
+offset_bottom = 58
+horizontal_alignment = 1
+mouse_filter = 2
+
+[node name="HpWidget" type="Control" parent="."]
+layout_mode = 0
+offset_left = 110
+offset_top = 640
+offset_right = 238
+offset_bottom = 758
+mouse_filter = 2
+
+[node name="HeartTex" type="TextureRect" parent="HpWidget"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 120
+offset_bottom = 118
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+texture = ExtResource("2_heart")
+
+[node name="HpText" type="Label" parent="HpWidget"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = 34
+offset_right = 128
+offset_bottom = 70
+horizontal_alignment = 1
+mouse_filter = 2
+
+[node name="QiWidget" type="Control" parent="."]
+layout_mode = 0
+offset_left = 1690
+offset_top = 640
+offset_right = 1818
+offset_bottom = 758
+mouse_filter = 2
+
+[node name="OrbTex" type="TextureRect" parent="QiWidget"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 120
+offset_bottom = 118
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+texture = ExtResource("3_qi")
+
+[node name="QiText" type="Label" parent="QiWidget"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = 34
+offset_right = 128
+offset_bottom = 70
+horizontal_alignment = 1
+mouse_filter = 2
+
+[node name="DrawPile" type="Control" parent="."]
+layout_mode = 0
+offset_left = 70
+offset_top = 930
+offset_right = 170
+offset_bottom = 1030
+mouse_filter = 2
+
+[node name="DrawStack" type="TextureRect" parent="DrawPile"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 4
+offset_right = 96
+offset_bottom = 92
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+texture = ExtResource("4_stack")
+
+[node name="DrawCount" type="Label" parent="DrawPile"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = 92
+offset_right = 92
+offset_bottom = 118
+horizontal_alignment = 1
+mouse_filter = 2
+
+[node name="DiscardPile" type="Control" parent="."]
+layout_mode = 0
+offset_left = 1760
+offset_top = 930
+offset_right = 1860
+offset_bottom = 1030
+mouse_filter = 2
+
+[node name="DiscardStack" type="TextureRect" parent="DiscardPile"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 4
+offset_right = 96
+offset_bottom = 92
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+texture = ExtResource("4_stack")
+
+[node name="DiscardCount" type="Label" parent="DiscardPile"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = 92
+offset_right = 92
+offset_bottom = 118
+horizontal_alignment = 1
+mouse_filter = 2
