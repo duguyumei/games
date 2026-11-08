@@ -319,7 +319,9 @@ static func tcg_def_of(d: Dictionary) -> Dictionary:
 			out["tone"] = "gold"
 			out["type_line"] = "奇窍"
 		_:
-			out["tone"] = {"short": "blue", "long": "ink", "great": "red", "flex": "gold"}.get(stance, "red")
+			# 颜色按**功能**（2026-11-08 用户口径）：攻击一律红，不再按剑型上色；
+			# 剑型只走底部的型图标＋文字（短/长/巨/变招）
+			out["tone"] = "red"
 			var fcn: String = String({"short": "短剑", "long": "长剑", "great": "巨剑", "flex": "变招"}.get(stance, ""))
 			out["type_line"] = ("攻击 · %s" % fcn) if fcn != "" else "攻击"
 	return out
@@ -548,7 +550,7 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	# 2026-11-08 用户报「左上角一直亮」：shader 默认 band_pos=0.2 正好压在左上角，
 	# 静态卡（无 _process 驱动）就会常亮——初始化直接推到卡外
 	glint_mat.set_shader_parameter("band_pos", -0.35)
-	glint_mat.set_shader_parameter("strength", 0.34)   # 金件光带：与卡面扫光同相位，扫到哪段边框就亮哪段
+	glint_mat.set_shader_parameter("strength", 0.0)   # 临时：排查明暗不均是否为光带所致
 	card.glint_mat = glint_mat
 	# 卡底＝深色（深底不会露出米白边）；圆角比金框**更大**，
 	# 让卡底的四角始终缩在金框笔画之内（不再需要额外描边来盖缝）——2026-11-08 用户指正

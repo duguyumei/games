@@ -71,11 +71,16 @@ static func _janitor_tick() -> void:
 	_last_mouse = mouse
 	for host in _by_host.keys().duplicate():
 		var panels: Array = _by_host.get(host, [])
-		if not is_instance_valid(host) or not (host as Control).is_visible_in_tree() \
+		if not is_instance_valid(host):
+			_by_host.erase(host)   # 宿主已释放：直接清键（它进不了 hide_for 的类型检查）
+			continue
+		if not (host as Control).is_visible_in_tree() \
 				or panels.is_empty() or not is_instance_valid(panels[0]):
 			hide_for(host)
 			continue
-		if moved and not _hover_rect(host as Control, panels).grow(28.0).has_point(mouse):
+		# 鼠标移到浮窗上也算"还在指着宿主"（2026-11-08 用户令）——否则这里的守门会立刻把它关掉
+		if moved and not _hover_rect(host as Control, panels).grow(28.0).has_point(mouse) \
+				and not pointer_over_panels(mouse):
 			hide_for(host)
 			continue
 		_place_stack(host as Control, panels, _tilt_of(panels))
@@ -99,7 +104,10 @@ static func show_for(host: Control, rows: Array, opts := {}) -> void:
 static func show_stack(host: Control, groups: Array, opts := {}) -> void:
 	for other in _by_host.keys().duplicate():
 		if other != host:
-			hide_for(other)
+			if is_instance_valid(other):
+				hide_for(other)
+			else:
+				_by_host.erase(other)   # 宿主已被释放：清掉脏键，别再把已释放对象传进 hide_for
 	hide_for(host)
 	if groups.is_empty():
 		return
@@ -127,7 +135,10 @@ static func show_stack(host: Control, groups: Array, opts := {}) -> void:
 	_by_host[host] = panels
 	_settle.call_deferred(host, panels)
 
-static func hide_for(host: Control) -> void:
+static func hide_for(host: Object) -> void:   # Object：允许传入已释放实例，内部再判
+	if host == null or not is_instance_valid(host):
+		_by_host.erase(host)
+		return
 	if _by_host.has(host):
 		var panels: Array = _by_host[host]
 		_by_host.erase(host)
@@ -172,6 +183,20 @@ static func _apply_size(win: Control, sz: Vector2) -> void:
 ## 顶边对齐：斜卡的外接框最高点是某个角，浮窗要按「它所在那一侧的角」对齐，
 ## 否则右侧浮窗会悬在卡右上角上方一截（2026-11-08 用户指正）
 ## 悬停判定用「看得见的卡面」（弹起后比外层壳大；用壳会提前把浮窗关掉）
+## 指针是否落在任一在显示的浮窗上（2026-11-08 用户令：移到浮窗上仍算"指着卡"）
+## 用当前实际矩形判定——淡出动画期间也有效，避免"追不上"的空档
+static func pointer_over_panels(p: Vector2) -> bool:
+	for host in _by_host.keys():
+		if not is_instance_valid(host):
+			continue
+		var arr: Array = _by_host[host]
+		for w in arr:
+			if not is_instance_valid(w):
+				continue
+			if (w as Control).is_visible_in_tree() and (w as Control).get_global_rect().grow(4.0).has_point(p):
+				return true
+	return false
+
 static func _hover_rect(host: Control, panels: Array) -> Rect2:
 	if not panels.is_empty() and is_instance_valid(panels[0]):
 		var fn = panels[0].get_meta("corners_fn", Callable())

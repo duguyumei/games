@@ -100,7 +100,8 @@ static func make_ledger(enemies: Array) -> Array:
 		if bool(e.get("alive", false)):
 			ledger.push_back({"e": e, "hp": int(e.get("hp", 0)),
 				"armor": int(e.get("armor", 0)), "row": int(e.get("row", 0)),
-				"uid": int(e.get("uid", 0)), "hit": false})
+				"uid": int(e.get("uid", 0)), "kbr": float(e.get("knockback_resistance", 0)),
+				"hit": false})
 	return ledger
 
 static func front_row(ledger: Array) -> Array:
@@ -180,7 +181,16 @@ static func calculate(ctx: Dictionary) -> Dictionary:
 			continue
 		var is_crit := roll_crit(rng, params, chain)
 		var dmg := _per_hit_damage(params, targeting, col, is_crit)
-		_apply_hit(ledger, target, dmg, is_crit, ctx, res)
+		# 击退掷（2026-11-08 实装，蓝本 ProcessColumns→CanEnemyBeKnockedBack→击中帧
+		# PlayKnockbackVFX 同构）：几率＝卡 knockback − 敌抗性（clamp ≥0；抗性≥几率＝免疫）；
+		# **仅 knockback>0 的卡掷**——零击退卡不消费 RNG（既有断言序列不变）；纯表现层
+		# 标记（hit 事件带 kb），逻辑位/行动/站位零改动（蓝本实证）
+		var kb := false
+		var kb_chance := float(params.get("knockback", 0.0))
+		if kb_chance > 0.0:
+			kb_chance = maxf(0.0, kb_chance - float(target.get("kbr", 0.0)))
+			kb = rng.randf() < kb_chance
+		_apply_hit(ledger, target, dmg, is_crit, ctx, res, kb)
 		pierced[int(target["uid"])] = int(pierced.get(int(target["uid"]), 0)) + 1
 		hits_left -= 1
 		## 死者出列后指针不动（下一击落顺位）；未死进位（用户规格正文条款）
@@ -227,6 +237,7 @@ static func map_strike_beats(strikes: Array, total: int) -> Array:
 			beat["uid"] = int(st.get("uid", -1))
 			beat["amount"] = int(st.get("amount", 0))
 			beat["crit"] = bool(st.get("is_crit", false))
+			beat["kb"] = bool(st.get("kb", false))   # 击退标记透传（击中帧推退）
 			beat["settle"] = 1
 			i += 1
 		while i < n and String((strikes[i] as Dictionary).get("type", "")) == "death":
@@ -258,7 +269,7 @@ static func _per_hit_damage(params: Dictionary, targeting: String, col: int, is_
 ## （2026-11-08 撤溢出轮，用户批：对齐蓝本「伤害不超剩余血量」——其主链杀敌后无
 ## 伤害转移调用，Overkill 是遗物专属机制与此无关）；跳数记实扣量（甲实扣＋血实扣）。
 static func _apply_hit(ledger: Array, target: Dictionary, dmg: int, is_crit: bool,
-		ctx: Dictionary, res: Dictionary) -> void:
+		ctx: Dictionary, res: Dictionary, kb := false) -> void:
 	var left := dmg
 	var applied := 0
 	if int(target["armor"]) > 0:
@@ -270,12 +281,12 @@ static func _apply_hit(ledger: Array, target: Dictionary, dmg: int, is_crit: boo
 		var to_hp := mini(left, int(target["hp"]))
 		target["hp"] = int(target["hp"]) - to_hp
 		applied += to_hp
-		_emit_hit(target, applied, is_crit, ctx, res)
+		_emit_hit(target, applied, is_crit, ctx, res, kb)
 		if int(target["hp"]) <= 0:
 			ledger.erase(target)
 			_emit_death(target, ctx, res)
 	else:
-		_emit_hit(target, applied, is_crit, ctx, res)
+		_emit_hit(target, applied, is_crit, ctx, res, kb)
 
 ## 暴击爆炸递归（对应 ProcessCritExplosionTrigger 的 depth/nextLevel 双层迭代）
 static func _process_explosions(ledger: Array, cfg: Dictionary, ctx: Dictionary,
@@ -302,13 +313,13 @@ static func _process_explosions(ledger: Array, cfg: Dictionary, ctx: Dictionary,
 		dmg_pct *= 1.0 - float(cfg.get("decay", 0.0)) / 100.0   # 逐层衰减
 
 static func _emit_hit(target: Dictionary, dmg: int, is_crit: bool,
-		ctx: Dictionary, res: Dictionary) -> void:
+		ctx: Dictionary, res: Dictionary, kb := false) -> void:
 	res["hits"].push_back({"uid": int(target["uid"]), "amount": dmg, "is_crit": is_crit})
 	res["damage"][int(target["uid"])] = int(res["damage"].get(int(target["uid"]), 0)) + dmg
 	## 账单事件流（2026-11-08 落账延迟制，对应原版 EnemyDamageInfo 账单＋WeaponCollision
 	## 逐目标落账）：hit/death 按结算序入 events——真落账由调用方在击中帧逐事件执行
 	(res["events"] as Array).push_back({"type": "hit", "e": target.get("e", {}),
-		"uid": int(target["uid"]), "amount": dmg, "is_crit": is_crit})
+		"uid": int(target["uid"]), "amount": dmg, "is_crit": is_crit, "kb": kb})
 
 static func _emit_death(target: Dictionary, ctx: Dictionary, res: Dictionary) -> void:
 	(res["kills"] as Array).push_back(int(target["uid"]))

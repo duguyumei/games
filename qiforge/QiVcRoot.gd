@@ -478,10 +478,11 @@ func _on_battle_over(result: String) -> void:
 ## 首赐「上撩」（开局孤张→两个撩）、再赐「撩月斩」——奖励屏单卡模式＋醍醐灌顶特效。
 func _show_rewards_or_next() -> void:
 	if int(_run.get("pending_picks", 0)) > 0:
-		var gifts: Array = ["shangliao", "cuipo_liao"] if int(_run.get("floor", 0)) == 0 else []
+		var gifts: Array = ["feixing_shu", "cuipo_liao"] if int(_run.get("floor", 0)) == 0 else []
 		_free_screens()
 		_reward = VC_REWARD.new()
 		_reward.setup(_run, gifts)
+		_reward.card_chosen.connect(func(cid: String): _run["deck"].push_back(cid))   # 地图侧落点＝牌组
 		_reward.done.connect(_on_reward_done)
 		add_child(_reward)
 	else:

@@ -291,7 +291,11 @@ func check_end() -> bool:
 
 #region 出牌（去目标制：无目标选择；连击阶梯＝内功「连击堆叠」门控）
 func card_cost(card: Dictionary) -> int:
-	return int(card["def"].get("cost", 0))   # 气费（攻击卡恒 0——普攻催破不耗气）
+	# 气费（攻击卡恒 0——普攻催破不耗气）；free＝升级选出的卡免一次费
+	# （2026-11-08 对齐原版 SetCardFreeToPlay——打出后消耗）
+	if bool(card.get("free", false)):
+		return 0
+	return int(card["def"].get("cost", 0))
 
 func can_play(card: Dictionary) -> bool:
 	# 2026-11-08 状态制：气费回归卡面固定值（软折扣/need 门槛全退役）
@@ -350,6 +354,7 @@ func play_card(card_uid: int) -> void:
 			event.emit("连击 %d（%s ×%d）" % [combo_count, String(def.get("name", "")), combo_count])
 	mult = maxi(1, combo_count)
 	hand.erase(card)
+	card["free"] = false   # 免费标消耗（免一次——原版 SetCardFreeToPlay 同构）
 	card["uses"] = int(card.get("uses", 0)) + 1
 	if int(card["uses"]) >= 5:
 		# 2026-11-06 碎牌机制（原版损坏制，**一回合之内**口径：普通 3 次生裂痕、裂痕态再
@@ -361,13 +366,10 @@ func play_card(card_uid: int) -> void:
 		event.emit("「%s」承受不住，彻底碎裂——从卡组永久消失" % String(def.get("name", "")))
 	elif bool(card.get("exhaust", false)):
 		exhaust_pile.push_back(card)
-	elif combo_count == 0:
-		# 2026-11-08 用户令「零连击交互卡直接弃」（状态制口径）：打出后连击仍 0＝与连击链
-		# 零交互（未解锁教程期全牌；已解锁时连击 0 打无型效果牌）——不进已打出区逗留，直弃。
-		# 攻击牌首打 0→1 自动不直弃。
-		discard_pile.push_back(card)
 	else:
-		# 2026-11-06 四区制（规格 v1）：打出→已打出区（回合末才整堆进弃牌堆——连击链的载体）
+		# 2026-11-06 四区制（规格 v1）：打出→已打出区（回合末才整堆进弃牌堆——连击链的载体）。
+		# 〔2026-11-08 同日撤令〕「零连击交互卡直弃」分支退役——打出的卡默认一律进
+		# 已打出区（右上角，玩家看得到刚打出的牌），回合末统一平移弃牌堆。
 		played_pile.push_back(card)
 		played_changed.emit()
 	# —— 效果执行（2026-11-07 逆向重构）：伤害走单链（与 preview 物理同源），
@@ -520,6 +522,10 @@ func preview_play(card: Dictionary) -> Dictionary:
 		out["crit_damage"][euid3] = int(out["damage"][euid3]) * DATA.CRIT_MULT
 		total += int(out["damage"][euid3])
 	out["total"] = total
+	# 击退能力回传（2026-11-08 用户令「预览要跟上，跟暴击一样」）：预览不掷真随机——
+	# 返回卡的击退几率（0＝无，前端可据此标击退图标/词条）；**打出后**逐击掷定在账单
+	# events[].kb（击中帧照账推退）——「随机但打出来时固定」与暴击快照同构
+	out["knockback"] = float(def.get("knockback", 0.0))
 	return out
 
 ## 该卡打出将吃的倍率（UI/探针查询口）：未获内功＝×1；耗式卡＝新连击（+k）；

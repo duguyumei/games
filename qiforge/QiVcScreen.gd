@@ -50,6 +50,7 @@ var battle: RefCounted = null
 var _pool_hp_max := 1
 var _win_pending := false       # 胜利收尾中：等珠到齐＋升级弹窗全关再弹横幅（2026-11-05 用户令时序）
 var _death_fx_until := 0        # 死亡碎裂特效到期时刻（ms）：没播完不许弹胜利横幅
+var _lvl_fx_until := 0          # 满级条动画到期时刻（ms）：没播完保底段不得抢跑开窗（2026-11-08 双源赛跑修）
 var _win_retry_armed := false   # 已挂重推定时器（防重复挂）
 var _end_overlay_waiting := false   # 结束面板在等溶解播完
 var _xp_flights := 0            # 在飞经验珠数
@@ -58,6 +59,8 @@ var _xp_fx: Control = null      # 经验珠特效层（z 90；全 IGNORE）
 var _combat_fx: Control = null  # 战斗特效层（z 85；全 IGNORE）
 var _combo_badge: Control = null  # 连击徽（贴气珠右侧；z 68）
 var _intent_bar: Control = null   # 敌方总行为条（敌阵上方）
+var _intents_hidden := false     # 出手演出期间藏了意图（重建敌阵时要把新节点也藏住）
+var _finale := false             # 场上已无敌：进入终局（珠立即放飞、手牌隐藏）
 var _aura_layer: Control = null   # 敌卡底光层（独立，整层重建，避免叠光）
 var _aura_pending: Array = []     # 待定位的底光（卡片布局要等一帧才准）
 var _hit_events: Array = []     # 本次出牌的命中快照（uid/伤害/目标矩形）
@@ -109,6 +112,7 @@ var _tilt_t := 0.0                 # 倾斜/光泽带驱动时钟
 
 func setup(run_ref: Dictionary) -> void:
 	run = run_ref
+	_finale = false   # 新战斗：终局标志清空
 	battle = VC_BATTLE.new()
 	battle.setup(run)
 	battle.pending_visual = true   # 落账延迟制（2026-11-08）：伤害账单等击中帧逐事件结算
@@ -482,6 +486,11 @@ func _refresh() -> void:
 	_refresh_stance()
 	if _intent_bar != null:
 		_intent_bar.update_from(battle)
+	_sync_intents()
+	# 安全阀：预判收尾但战斗没结束（还活着）→ 复原，避免手牌永久不见
+	if _finale and String(battle.phase) == "player" and not (battle.encounter["active"] as Array).is_empty() \
+			and Time.get_ticks_msec() >= _fx_busy_until:
+		_finale = false
 	if _combo_badge != null:
 		_combo_badge.update_from(battle)
 	_rebuild_hand()
@@ -490,9 +499,11 @@ func _refresh() -> void:
 	var can_act := String(battle.phase) == "player" and not result_pending()
 	# 2026-11-08 用户令：不可用时保持和可用时一样的底（不置灰），只是**没有字**且点不动
 	if _end_btn != null:
+		_end_btn.visible = not _finale
 		_end_btn.disabled = not can_act
 		_end_btn.text = "结束回合" if can_act else ""
 	if _play_all_btn != null:
+		_play_all_btn.visible = not _finale
 		_play_all_btn.disabled = not can_act
 		_play_all_btn.text = "打出全部" if can_act else ""
 	_maybe_wait_discard()
@@ -567,17 +578,34 @@ func _refresh_enemies() -> void:
 			var euid := int(e["uid"])
 			var tier := String(e.get("tier", "small"))
 			var card: Control = _enemy_cards.get(euid)
+			var is_new := false
 			if card == null or not is_instance_valid(card):
 				card = ENEMY_CARD.make(e, tier, absi(String(e.get("name", "")).hash()) % 3)
 				card.set_meta("euid", euid)
 				_enemy_holder.add_child(card)
 				_enemy_cards[euid] = card
 				_cache_card_img.call_deferred(card)
+				is_new = true
 			else:
 				ENEMY_CARD.refresh(card, e, tier)
-			if not _replay_on:      # 回放期间冻结站位：让留尸的卡和队友都不动
-				card.position = Vector2(start_x + float(j) * (card_w + gap) + float(rr) * 26.0,
+			# 站位（2026-11-08 用户令「死人后不用重新居中」）：同排减员＝活卡**原位不动**
+			# （洞留着）；只有 ①新建卡进场 ②排迁移（排清整排上移 row 变化）才落位/移动
+			var old_row := -1 if is_new else int(card.get_meta("row", -1))
+			card.set_meta("row", rr)
+			if not _replay_on and (is_new or old_row != rr):   # 回放期间冻结站位
+				var tgt := Vector2(start_x + float(j) * (card_w + gap) + float(rr) * 26.0,
 					40.0 - float(rr) * 26.0)
+				if is_new:
+					card.position = tgt
+				else:
+					if card.has_meta("move_tw"):
+						var old_tw: Tween = card.get_meta("move_tw")
+						if old_tw != null and old_tw.is_valid():
+							old_tw.kill()
+					var tw := card.create_tween()
+					card.set_meta("move_tw", tw)
+					tw.tween_property(card, "position", tgt, 0.18)\
+						.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 			if rr > 0:
 				card.modulate = Color(0.86, 0.86, 0.86, 1.0) if rr == 1 else Color(0.72, 0.72, 0.72, 1.0)
 			else:
@@ -605,6 +633,12 @@ func _refresh_enemies() -> void:
 				aura.modulate = Color(0.95, 0.30, 0.20, 0.30) if ik == "attack" \
 					else Color(0.30, 0.56, 1.0, 0.28)
 ## 底光延迟定位：容器布局要等一帧，global_position 才准
+	# 出手演出期间敌阵可能重建：新意图节点要跟着藏住，否则会"中途又冒出来"
+	if _intents_hidden:
+		_apply_intent_hidden()
+		if _intent_bar != null:
+			_intent_bar.visible = false
+
 func _flush_auras() -> void:
 	if _aura_layer == null:
 		return
@@ -692,7 +726,7 @@ func _enemy_death_fx(dead: Control) -> void:
 		var ci := ch as CanvasItem
 		if ci != null:
 			ci.material = burn_mat
-	var burn_time := 0.37 * fx_scale   # 原来 0.55 的 2/3（2026-11-08 用户令：快一点）
+	var burn_time := 0.25 * fx_scale   # 2026-11-08 用户令：整体压到 0.25s
 	# 胜利横幅等到溶解播完再弹（这一行之前被误删了，补回）
 	_death_fx_until = maxi(_death_fx_until, Time.get_ticks_msec() + int(0.45 * fx_scale * 1000.0))
 	var twb := create_tween()
@@ -884,27 +918,54 @@ func _player_hit_fx(dmg: int, mhp: int) -> void:
 		_hit_stop(52)
 		_shake(2.5, 0.12)
 
+
+## 意图可见性（2026-11-08 用户口径）：只有**玩家可操作**时显示；
+## 自动播放/特效演出/敌人行动/弃抽阶段一律隐藏。
+func _intents_should_show() -> bool:
+	if battle == null:
+		return false
+	if String(battle.phase) != "player":
+		return false
+	if Time.get_ticks_msec() < _fx_busy_until:
+		return false
+	return true
+
+## 立即按判据刷新意图可见性
+func _sync_intents() -> void:
+	var show := _intents_should_show()
+	if _intent_bar != null:
+		_intent_bar.visible = show
+	for a in _all_intent_auras():
+		a.visible = show
 ## 敌人出手期间隐去「总行为条 + 敌卡底光」，攻击结束后再出现
 func _hide_intents(dur: float) -> void:
-	var auras: Array = []
+	_intents_hidden = true
 	if _intent_bar != null:
 		_intent_bar.visible = false
-	if _enemy_row != null:
-		for h in _enemy_row.get_children():
-			for c in h.get_children():
-				if c is Control:
-					var a2 := (c as Control).get_node_or_null("IntentAura") as CanvasItem
-					if a2 != null:
-						a2.visible = false
-						auras.append(a2)
+	_apply_intent_hidden()
 	var tw := create_tween()
 	tw.tween_interval(dur)
 	tw.tween_callback(func() -> void:
-		if is_instance_valid(_intent_bar) and _intent_bar.visible == false:
-			_intent_bar.visible = true
-		for a3 in auras:
-			if is_instance_valid(a3):
-				a3.visible = true)
+		_intents_hidden = false
+		_sync_intents())   # 按"玩家是否可操作"决定给不给看
+
+## 把当前所有敌卡的意图底光藏起来（重建后也要再调一次）
+func _apply_intent_hidden() -> void:
+	for a3 in _all_intent_auras():
+		a3.visible = false
+
+## 当前敌阵里所有意图底光（活节点）
+func _all_intent_auras() -> Array:
+	var out: Array = []
+	if _enemy_row == null:
+		return out
+	for h in _enemy_row.get_children():
+		for c in h.get_children():
+			if c is Control:
+				var a3 := (c as Control).get_node_or_null("IntentAura") as CanvasItem
+				if a3 != null:
+					out.push_back(a3)
+	return out
 
 ## 敌方出招：攻击意图的敌卡**前冲**一下（2026-11-07 用户令：改成前冲，不做刀光）
 func _enemy_attack_lunge() -> void:
@@ -1232,6 +1293,7 @@ func _rebuild_hand() -> void:
 		w.size = Vector2(HAND_W, HAND_H + HAND_LIFT + HAND_SHELL_EXTRA)
 		w.set_meta("hand_uid", int(card["uid"]))
 		var vdef: Dictionary = CARD.tcg_def_of(card["def"])
+		vdef["qi"] = battle.card_cost(card)   # 费用活查询（free 卡显示 0——选卡免一次费可见）
 		# 〔2026-11-08 状态制退役〕need 槽实/虚联动（own_stances）——式层数池已退役，注入删
 		vdef["crack_level"] = clampi(int(card.get("uses", 0)) - 2, 1, 3)   # 用 3 次=轻、4=中、（5=重）
 		vdef["combo_gold"] = battle.combo_mult_of(card) > 1            # 连击加成→费用转金
@@ -1300,6 +1362,9 @@ func _play_clicked(card_uid: int) -> void:
 			if not battle.can_play(c):
 				return
 			_played_cid = String(c.get("id", ""))
+			# 2026-11-08 用户令（对齐原版）：伤害固定 → 出牌瞬间就能预判会不会赢；
+			# 若是收尾刀，手牌与按钮**立刻**收起（正常特效照走），不用等最后一个死
+			_predict_end_and_hide(c)
 			if QI_FXSPEC.has_spec(_played_cid):
 				_replay_on = true
 				_dying.clear()
@@ -1458,6 +1523,8 @@ func _hand_lerp_tick(delta: float) -> void:
 		# 四边形会随斜切位移每帧抖动，边缘处判 false；外接框补一个容错圈，避免边界抖动
 		var hold: bool = _card_hit(_hand_focus, mouse, 2.0)
 		if not hold:
+			hold = QITIP.pointer_over_panels(mouse)   # 鼠标移到浮窗上仍保持"指着"
+		if not hold:
 			var qc := _card_face_corners(_hand_focus)
 			if qc.size() == 4:
 				var mn := qc[0]
@@ -1490,6 +1557,8 @@ func _hand_lerp_tick(delta: float) -> void:
 		# 且覆盖 ±0.72 整段（0.72≈卡面对角线归一值），从最左上角扫到最右下角
 		var cyc: float = fmod(_tilt_t * 0.20, 2.0)
 		var sheen_tgt: float = (cyc if cyc <= 1.0 else 2.0 - cyc) * 0.72
+		if OS.has_environment("QI_FREEZE_SHEEN"):
+			sheen_tgt = 0.40
 		var kk: float = clampf(delta * TILT_SMOOTH, 0.0, 1.0)
 		var tip: Vector2 = (tv.get_meta("tip", Vector2.ZERO) as Vector2).lerp(tip_tgt, kk)
 		var sheen: float = lerpf(float(tv.get_meta("sheen", 0.2)), sheen_tgt, kk)
@@ -1501,6 +1570,8 @@ func _hand_lerp_tick(delta: float) -> void:
 		if vc0 != null and is_instance_valid(vc0) and vc0.glint_mat != null:
 			var phase: float = float(tv.get_meta("sheen", 0.2))   # 与斜切扫光同一相位 → 光和框一起走
 			vc0.glint_mat.set_shader_parameter("band_pos", phase)
+			vc0.glint_mat.set_shader_parameter("tip_x", tip.x)   # 金属高光跟着倾斜走
+			vc0.glint_mat.set_shader_parameter("tip_y", tip.y)
 		tv.set_meta("tip", tip)
 		tv.set_meta("sheen", sheen)
 		tv.set_meta("hov", hov)
@@ -1636,6 +1707,9 @@ func _show_card_preview(w: Control) -> void:
 		if cc == null or not is_instance_valid(cc):
 			continue
 		_mk_dmg_mark(cc, val, kills.has(int(euid)), _enemy_row_of(int(euid)) > 0)
+		# 击退标记（2026-11-08 用户令）：带击退的卡，对被命中的敌人加一枚「退」小签
+		if float(card["def"].get("knockback", 0.0)) > 0.0:
+			_mk_kb_mark(cc)
 	# ② 气（气珠在 (1495,704) 110×108）
 	var qi := int(dp.get("qi", 0))
 	if qi > 0:
@@ -1708,6 +1782,19 @@ func _mk_dmg_mark(cc: Control, val: int, lethal: bool, back_row: bool) -> void:
 	_preview_nodes.push_back(holder)
 
 ## 资源标：气珠/血心旁浮一个 +N——跟伤害数字同族（彩色数字＋黑描边），锚真实控件而非写死坐标
+## 击退小签（预览用）：卡右侧一枚琥珀「退」字签，带白描边保证可读
+func _mk_kb_mark(target: Control) -> void:
+	var l := Label.new()
+	l.text = "退"
+	QISTYLE.font(l, 22, true)
+	l.add_theme_color_override("font_color", Color(0.98, 0.78, 0.26))
+	l.add_theme_color_override("font_outline_color", Color(0.10, 0.08, 0.06, 0.95))
+	l.add_theme_constant_override("outline_size", 5)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.position = Vector2(target.size.x - 26.0, target.size.y * 0.42)
+	l.z_index = 96
+	_preview_layer.add_child(l)
+
 func _mk_res_mark(anchor_name: String, amount: String, col: Color) -> void:
 	var a := find_child(anchor_name, true, false) as Control
 	if a == null:
@@ -1919,8 +2006,9 @@ func _run_thrust() -> void:
 			total = _combat_fx.scabbard_timing(spec2, spec_evs.size()) if scab \
 				else _combat_fx.strike_timing(spec2, spec_evs.size())
 		_fx_busy_until = now0 + int(total * 1000.0)
-		# 我方出手期间也隐去敌方意图（总意图条＋敌卡底下红意图），播完自动恢复
+		# 我方出手期间隐去敌方意图；中途敌阵重建时由 _refresh_enemies 再次藏住新节点
 		_hide_intents(total)
+
 		if wait0 > 0.0:
 			await get_tree().create_timer(wait0, false).timeout
 			if not is_inside_tree() or _combat_fx == null:
@@ -1983,7 +2071,7 @@ func _on_thrust_hit(ev: Dictionary, idx := 0) -> void:
 		_combat_fx.hit(at, int(ev["amount"]), rect if alive else Rect2(), 0, idx, int(ev["uid"]))
 	_hit_stop(HIT_STOP_MS)
 	_shake(3.5, 0.12)
-	_recoil(int(ev["uid"]))
+	_recoil(int(ev["uid"]))   # 击退推退表现归美术线——kb 数据在拍上待消费
 	_beat_death(int(ev["uid"]), idx)
 	for du in (ev.get("death_uids", []) as Array):
 		_beat_death(int(du), idx)
@@ -2027,9 +2115,10 @@ func _on_strike_beat(ev: Dictionary, idx: int) -> void:
 		_strike_mark(card, idx, crit)
 	_hit_stop(22)
 	_shake_throttled(1.8, 0.08)
-	_recoil(uid, 6.0)
+	_recoil(uid, 6.0)   # 击退的推退动画归美术线（2026-11-08 用户令）——kb 数据在拍上待消费
 	if _combat_fx != null and int(ev.get("amount", 0)) > 0:
 		_combat_fx.number_stack(at, int(ev.get("amount", 0)), idx, crit)
+	_check_finale()
 	_beat_death(uid, idx)
 	for du in (ev.get("death_uids", []) as Array):
 		_beat_death(int(du), idx)   # 本拍带走的死者（多亡同拍）同拍收尸放珠
@@ -2101,6 +2190,47 @@ func _hp_orb_center() -> Vector2:
 		return orb.get_global_rect().get_center()
 	return _played_from
 
+## 出牌预判收尾：这张牌的推演能把场上所有敌人打死 → 立刻进"不可操作"（手牌/按钮收起）
+## 只是隐藏 UI，特效与结算全部照常；判错由 _refresh 的安全阀复原。
+func _predict_end_and_hide(c: Dictionary) -> void:
+	if battle == null or _finale:
+		return
+	var act: Array = battle.encounter["active"]
+	if act.is_empty():
+		return
+	var pv: Dictionary = battle.preview_play(c)
+	if not bool(pv.get("ok", false)):
+		return
+	var kills: Array = pv.get("kills", [])
+	for e in act:
+		if not kills.has(int(e["uid"])):
+			return
+	_finale = true
+	for w in _hand_wraps:
+		if is_instance_valid(w):
+			w.visible = false
+	if _end_btn != null:
+		_end_btn.visible = false
+	if _play_all_btn != null:
+		_play_all_btn.visible = false
+
+## 终局判定（2026-11-08 用户令·按拍判）：这一拍结算后场上已无存活敌人 →
+## ① 所有待死的敌人立刻发珠（不再排燃烧动画的队）② 手牌与两个按钮隐藏（进入不可操作态）
+## 死亡特效保持与平时一致（用户：先保持一致，看了再改）
+func _check_finale() -> void:
+	if _finale or battle == null:
+		return
+	if not (battle.encounter["active"] as Array).is_empty():
+		return
+	_finale = true
+	for w in _hand_wraps:
+		if is_instance_valid(w):
+			w.visible = false
+	if _end_btn != null:
+		_end_btn.visible = false
+	if _play_all_btn != null:
+		_play_all_btn.visible = false
+
 ## 击拍收尸：这一拍就是它的最后一击 → 此刻才放死亡特效＋经验珠
 func _beat_death(uid: int, idx: int) -> void:
 	if not _dying.has(uid):
@@ -2111,8 +2241,12 @@ func _beat_death(uid: int, idx: int) -> void:
 	_dying.erase(uid)
 	_enemy_cards.erase(uid)
 	if is_instance_valid(card):
-		_spawn_xp_orb(card.get_global_rect().get_center())
+		# 2026-11-08 用户令：**烧完再发珠**（珠子不跟燃烧同时出现）
+		var at2: Vector2 = card.get_global_rect().get_center()
 		_enemy_death_fx(card)
+		var wait_burn: float = 0.25 * (10.0 if OS.has_environment("QI_SLOW_DEATH") else 1.0)
+		var t2 := get_tree().create_timer(wait_burn, false)
+		t2.timeout.connect(func() -> void: _spawn_xp_orb(at2))
 
 ## 回放结束：没等到自己那一拍的死卡（无击事件等）在这里统一收
 func _end_replay() -> void:
@@ -2307,8 +2441,8 @@ static func _fx_art(name: String) -> Texture2D:
 const PLAYED_X := 1678.0          # 堆的左沿（允许遮挡右侧效果图标，原作也遮）
 const PLAYED_TOP := 20.0
 const PLAYED_BOTTOM := 560.0
-const PLAYED_SC := 0.72           # 手牌档（2026-11-06 用户裁定：已打出区与手牌同大）
-const PLAYED_SC_NEW := 0.72       # 与旧牌同档
+const PLAYED_SC := 1.0            # 已打出区＝手牌同尺寸（壳里已是手牌档，再乘 0.72 会二次缩小）
+const PLAYED_SC_NEW := 1.0        # 与旧牌同档
 const PLAYED_H := 304.0 * PLAYED_SC
 
 func _rebuild_played() -> void:
@@ -2462,11 +2596,23 @@ func _xp_orb_arrived(at: Vector2) -> void:
 		return                                     # 弹窗开着：只入账，收尾等关窗（防竞态）
 	var up := int(VC.level_progress(lvl_b, xp_b + gain)["lvl"]) > lvl_b
 	if up and _xp_fx != null:
-		# 满级：条先冲满→金闪→归位（on_flip）→光环/等级弹→开三选一（on_done）
+		# 满级：条先冲满→金闪→归位（on_flip 只入账不升级——2026-11-08 对齐原版：
+		# 弹窗时仍是旧级，「选完才升级」）→光环/等级弹→开三选一（on_done 不归并）。
+		# 动画期标记（双源赛跑修）：_try_finish_win 保底段见此标记必须等——开窗权
+		# 归动画 on_done，保底段不得抢跑（抢跑→窗冻住动画→关窗后 on_done 补发＝双窗）
+		_lvl_fx_until = Time.get_ticks_msec() + 900
 		_xp_fx.play_level_up(_top_refs, pre,
-			func() -> void: _sync_top(true), func() -> void: _after_xp_settle(true))
+			func() -> void: _bank_xp(),
+			func() -> void: _after_xp_settle(true))
 	else:
 		_after_xp_settle(false)
+
+## 经验只入账、不归并升级（延迟制：level/pending_picks 等选完关窗才变——原版
+## ChooseCardModal 关闭回调里才 LevelUp 的同构）
+func _bank_xp() -> void:
+	if battle != null and battle.xp_gained > 0:
+		run["xp"] = int(run.get("xp", 0)) + battle.consume_xp()
+	_refresh()
 
 ## 经验进 run＋顶带归位（instant=true 时填充瞬切——满级换段）
 func _sync_top(instant: bool) -> void:
@@ -2477,33 +2623,44 @@ func _sync_top(instant: bool) -> void:
 	_refresh()
 	_top_instant = false
 
-## 到账收尾：有突破次数就弹三选一，否则继续收胜
-func _after_xp_settle(instant: bool) -> void:
-	_sync_top(instant)
-	if int(run.get("pending_picks", 0)) > 0:
+## 到账收尾（2026-11-08 延迟制）：was_up＝本次满级→弹三选一（不归并，弹窗时仍旧级）；
+## 否则常规归并刷新，胜利挂起则收胜。
+## 双源赛跑守卫（同日修）：开窗仅当「满级仍未消化」（xp≥need 未归并）——保底段已开过
+## 或已归并（关窗升级完）时，解冻补发的 on_done 到这里直接走常规收尾，不再开第二窗
+func _after_xp_settle(was_up: bool) -> void:
+	if was_up and int(run.get("xp", 0)) >= VC.xp_to_next(int(run.get("level", 1))):
 		_open_reward()
-	elif _win_pending:
+		return
+	_sync_top(false)
+	if _win_pending:
 		_try_finish_win()
 
-## 到账经验结转进 run＋满级归并（屏内完成——Root 只取快照不再重算）
+## 到账经验结转＋逐级归并（2026-11-08 连升时序令：只升一级——level+1、扣本级需求、
+## 溢出保留供下一级灌条；两级之间播「条重置→再灌满→金闪」动画间隔后才弹下一窗。
+## 全量归并＋pending_picks 计数制退役——弹窗由「条满」事件驱动、关窗逐级消化）
 func _sync_level() -> void:
-	if battle.xp_gained > 0:
+	if battle != null and battle.xp_gained > 0:
 		run["xp"] = int(run.get("xp", 0)) + battle.consume_xp()
-	var lp: Dictionary = VC.level_progress(int(run.get("level", 1)), int(run.get("xp", 0)))
-	run["level"] = int(lp["lvl"])
-	run["xp"] = int(lp["xp"])
-	if int(lp["gained"]) > 0:
-		run["pending_picks"] = int(run.get("pending_picks", 0)) + int(lp["gained"])
+	var lvl := int(run.get("level", 1))
+	var need := VC.xp_to_next(lvl)
+	if int(run.get("xp", 0)) >= need:
+		run["level"] = lvl + 1
+		run["xp"] = int(run.get("xp", 0)) - need
 
 func _open_reward() -> void:
 	if _reward_ui != null:
 		return
-	var gifts: Array = ["shangliao", "cuipo_liao"] if int(run.get("floor", 0)) == 0 else []
+	var gifts: Array = ["feixing_shu", "cuipo_liao"] if int(run.get("floor", 0)) == 0 else []
 	_reward_ui = VC_REWARD.new()
 	_reward_ui.z_index = 95          # 盖过手牌（0..60）与特效层（90），低于结算浮层（100）
 	_reward_ui.setup(run, gifts)
+	_reward_ui.card_chosen.connect(_on_card_chosen)
 	_reward_ui.done.connect(_on_reward_done)
 	add_child(_reward_ui)
+	# 手牌收起（2026-11-08 用户令：升级时不显示手牌；不是"盖住"，是真的收起来）
+	for w in _hand_wraps:
+		if is_instance_valid(w):
+			w.visible = false
 	# 2026-11-08 用户令「弹窗开＝全世界冻结」：升级三选一是模态旁路（原版 ChooseCardModal
 	# 同构）——剑冻在半空、珠冻在半空，选完关窗恢复、余下的段接着飞（弹窗挂
 	# WHEN_PAUSED 自身照跑；演出层全为节点 Tween/create_timer(false) 暂停敏感）
@@ -2511,13 +2668,56 @@ func _open_reward() -> void:
 
 func _on_reward_done() -> void:
 	get_tree().paused = false   # 世界恢复：余下的攻击段/飞行珠接着走
+	for w in _hand_wraps:
+		if is_instance_valid(w):
+			w.visible = true    # 手牌回来
+	if _reward_ui != null and is_instance_valid(_reward_ui):
+		_reward_ui.queue_free()      # 关窗＝销毁（原来只置空，弹窗留在屏幕上不消失）
 	_reward_ui = null
-	if _win_pending:
+	# 2026-11-08 延迟制（连升时序令）：关窗此刻才升**一级**；若溢出够下一级——
+	# 先播「条重置→再灌满→金闪」动画间隔（原版 ContinueXpFillAfterLevelUp 本义），
+	# 动画完再弹下一窗，不背靠背连弹
+	_sync_level()
+	_refresh()
+	if int(run.get("xp", 0)) >= VC.xp_to_next(int(run.get("level", 1))):
+		if _xp_fx != null:
+			var fired2 := {"on_done": false}   # 同上：on_done 幂等门
+			_xp_fx.play_level_up(_top_refs, 0.0,
+				func() -> void: _refresh(),
+				func() -> void:
+					if fired2["on_done"]:
+						return
+					fired2["on_done"] = true
+					_open_reward())
+		else:
+			_open_reward()   # 哑渲染兜底：无条动画件直接弹
+	elif _win_pending:
 		_try_finish_win()
 
-## 胜利收尾：珠到齐＋升级全关→残余保底入账→（还有突破就弹）→胜利横幅
+## 选卡落点（2026-11-08 对齐原版 MoveChosenCardToHand＋SetCardFreeToPlay）：
+## 进手牌＋免一次费；战斗收尾时手牌随清场流程回牌组（弃堆循环）——手牌只是过站
+func _on_card_chosen(cid: String) -> void:
+	if battle == null:
+		run["deck"].push_back(cid)   # 无战斗上下文兜底：进牌组
+		return
+	var c: Dictionary = battle._make_card(String(cid))
+	c["free"] = true                 # 免一次费（打出后消耗）
+	battle.hand.push_back(c)
+	_refresh()
+
+## 胜利收尾：珠到齐＋升级全关→残余保底入账→（还有突破就弹）→收尾停留→胜利浮层
 func _try_finish_win() -> void:
 	if not _win_pending or _xp_flights > 0 or _reward_ui != null:
+		return
+	# 双源赛跑修（2026-11-08）：满级条动画播完前保底段不得抢跑开窗——开窗权归动画
+	# on_done（保底抢跑→窗冻住动画→关窗后 on_done 补发＝双窗）；到点重推同 retry 模式
+	if Time.get_ticks_msec() < _lvl_fx_until:
+		if not _win_retry_armed:
+			_win_retry_armed = true
+			var wait2 := float(_lvl_fx_until - Time.get_ticks_msec()) / 1000.0 + 0.03
+			get_tree().create_timer(wait2).timeout.connect(func() -> void:
+				_win_retry_armed = false
+				_try_finish_win())
 		return
 	if Time.get_ticks_msec() < _death_fx_until:
 		# 碎卡特效还没播完：挂一次定时器到点重推，避免没有后续回调时横幅永不出现
@@ -2533,13 +2733,18 @@ func _try_finish_win() -> void:
 		if _xp_flights > 0:
 			return
 	battle.settle_all_xp()
+	_bank_xp()               # 保底入账（只清账——2026-11-08 用户令「胜利收尾不要开窗权」：
+	#                         # 满级弹窗唯一归动画链，收尾链不持窗，双源竞态连根拆除）
+	_refresh()
 	_sync_level()
 	_refresh()
-	if int(run.get("pending_picks", 0)) > 0:
-		_open_reward()
-	else:
-		_win_pending = false
-		_show_end_overlay("win")
+	_win_pending = false
+	# 2026-11-08 对齐原版：选完/收完回战斗画面停留一段（残余特效播完的呼吸段）
+	# 再弹胜利浮层（浮层带「返回地图」确认键——点击才回地图）
+	await get_tree().create_timer(0.8, false).timeout
+	if not is_inside_tree():
+		return
+	_show_end_overlay("win")
 
 func _stop_xp_flights() -> void:
 	_xp_flights = 0

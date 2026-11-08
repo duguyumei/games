@@ -50,6 +50,7 @@ static func has_neigong(run: Dictionary, nid: String) -> bool:
 ## ops 同引擎指令集（dmg 加 hits 多段）。
 const KEYWORDS := {
 	"crit": {"name": "暴击", "desc": "有概率造成多倍伤害。"},   # 2026-11-07 用户令：词条文案不带具体数值
+	"knockback": {"name": "击退", "desc": "有几率将敌人击退。"},   # 2026-11-08 飞星术（蓝本 Bible 词条）
 }
 
 const CARDS := {
@@ -57,7 +58,7 @@ const CARDS := {
 	# right_left＝右→左逐列顺发（Knife）；front_row＋pierce_type 0＝前排每敌一击（Death Spiral/
 	# Axe 族）；single＝锁最右首列（单体）。pierce_type 0/1/2＝OncePerEnemy/MultiHit/MultiSwitch。
 	# 下斩＝鞭位（2026-11-07 用户映射：Whip→下斩；「全体＝前排」口径）
-	"hengpi": {"name": "下斩", "cost": 0, "color": "purple", "kind": "attack",
+	"hengpi": {"name": "下斩", "cost": 0, "color": "red", "kind": "attack",
 		"stance": "great", "gain": "斩", "pip": "斩", "targeting": "front_row",
 		"pierce_type": 0,
 		"desc": "对全体敌人造成 5 点伤害；得 1 层「斩」式。",
@@ -66,12 +67,12 @@ const CARDS := {
 	# 总伤 40——蓝本刀页「Deal 40 damage」5 投掷物×8 伤同值）：**左→右**逐列点名
 	# （首目标＝最左，与蓝本那把刀的右→左刚好相反——用户裁）；死者出列顺位接
 	# （顶上来的继续挨打）、环绕、排清才打后排；伤害封顶剩余血量、多余浪费（蓝本无溢出）。
-	"zhici": {"name": "连环刺", "cost": 0, "color": "purple", "kind": "attack",
+	"zhici": {"name": "连环刺", "cost": 0, "color": "red", "kind": "attack",
 		"stance": "short", "gain": "刺", "pip": "刺", "targeting": "left_right",
 		"desc": "造成 40 点伤害。暴击。",
 		"kw": ["crit"],
 		"ops": [{"op": "dmg", "value": 8, "hits": 5, "crit": true}]},
-	"shangliao": {"name": "上撩", "cost": 0, "color": "purple", "kind": "attack",
+	"shangliao": {"name": "上撩", "cost": 0, "color": "red", "kind": "attack",
 		"stance": "long", "gain": "撩", "pip": "撩", "targeting": "single",
 		"desc": "对最前敌人造成 10 点伤害；得 1 层「撩」式。",
 		"ops": [{"op": "dmg", "value": 10, "hits": 1}]},
@@ -115,6 +116,16 @@ const CARDS := {
 		"targeting": "random",
 		"desc": "消耗至多 1 层「刺」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。游走出击，对随机敌人造成 9 点伤害 ×2 段，按新连击数放大；得 1 层「撩」式。",
 		"ops": [{"op": "dmg", "value": 9, "hits": 2}]},
+	# 飞星术＝圣经位（King Bible，2026-11-08 用户令：第二关首升天赐卡，效果/描述/词条/
+	# 费用全对齐蓝本）：5 星×8 点＝40 总伤、1 气；left_right 左→右顺发（与连环刺镜像
+	# ＝蓝本 Bible 基类默认方向）、到最右回最左环绕、排清打后排；词条＝几率击退
+	# （蓝本 "Deal 40 damage with a chance to Knockback"；击退引擎效果后续轮接线，
+	# knockback 几率 0.5 自拟待数值轮）；姿态＝短剑
+	"feixing_shu": {"name": "飞星术", "cost": 1, "color": "red", "kind": "attack",
+		"stance": "short", "targeting": "left_right", "knockback": 0.5,
+		"desc": "造成 40 点伤害，有几率击退。",
+		"kw": ["knockback"],
+		"ops": [{"op": "dmg", "value": 8, "hits": 5}]},
 	# 回身剑＝大蒜位（Garlic 真值：前排 10 伤＋缴械——「描述也一样」实证）
 	"huishen_jian": {"name": "回身剑", "cost": 1, "color": "red", "kind": "attack",
 		"stance": "great", "need": {"stance": "great", "n": 1}, "gain": "刺", "pip": "斩",
@@ -404,7 +415,7 @@ const PLAYER_BASE := {"hp": 50, "qi_base": 0, "draw_per_turn": 3}   # qi_base �
 const QI_BASE_MAX := 2        # 气上限·基础档（可成长：局外 run.qi_max／局内 qi_max 效果——2026-11-06 终裁）
 const QI_CAP := 6             # 气上限成长护栏（数值轮可调；回合重置/洗牌 +当前上限，上限成长两处同步放大）
 const STANCE_CAP := 9         # 〔2026-11-08 状态制退役〕式层数上限旧值——引擎不再消费，留档待文本轮清
-const HAND_CAP := 10
+const HAND_CAP := 10        # 〔2026-11-08 撤上限〕手牌无上限（原版＝地牢 modifier 制，常态无——VC 线零消费留档）
 const CRIT_CHANCE := 0.25   # 暴击率初始 25%（2026-11-07 用户定；倍率 ×2）
 const CRIT_MULT := 2.0
 

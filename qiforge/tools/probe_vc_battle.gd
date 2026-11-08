@@ -179,8 +179,7 @@ func _run() -> void:
 	_eq("dungeon 型回写 run（增量 10+10=20）", 20, int(run10["dungeon_stats"]["might"]))
 	_eq("dungeon 型本战斗现值同步（140）", 140, b10.stat_val("might"))
 	_eq("菠菜不磨连击（中立）", 0, b10.combo_count)
-	_eq("菠菜零连击交互→直弃牌堆（2026-11-08 用户令）", 1, b10.discard_pile.size())
-	_eq("菠菜不进已打出区", 0, b10.played_pile.size())
+	_eq("菠菜→已打出区（直掷已撤——2026-11-08 同日撤令）", 1, b10.played_pile.size())
 	var hp_before := int(b10.player["mhp"])
 	b10.play_card(int(b10.hand[0]["uid"]))   # 空心之心（Destroy：encounter 型 +3 max_hp）
 	_eq("encounter 型血上限 +3（50→53）", hp_before + 3, int(b10.player["mhp"]))

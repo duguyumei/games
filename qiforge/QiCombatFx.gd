@@ -132,6 +132,8 @@ static func slow_k() -> float:
 	return clampf(float(v), 1.0, 12.0)
 
 func strike(spec: Dictionary, events: Array, from_g: Vector2, on_beat: Callable) -> void:
+	if OS.has_environment("QI_FX_LOG"):
+		print("FX strike n=", events.size(), " t=", Time.get_ticks_msec())
 	if events.is_empty():
 		return
 	var K := slow_k()
@@ -228,6 +230,8 @@ func _launch(sw: Node2D, tgt_g: Vector2, dur: float,
 		_splat(tgt_g)
 		if on_beat.is_valid():
 			on_beat.call(ev, idx)
+		if OS.has_environment("QI_FX_LOG"):
+			print("FX sword idx=%d tgt=%s t=%d" % [idx, str(tgt_g.round()), Time.get_ticks_msec()])
 		sw.queue_free())
 
 ## 一柄墨色小飞剑（剑身＋剑格＋剑柄＋剑首，全墨）
@@ -343,6 +347,8 @@ func scabbard_timing(_spec: Dictionary, _n: int) -> float:
 		+ st * float(maxi(0, _n - 1)) + move_t + 0.35
 
 func scabbard_strike(spec: Dictionary, events: Array, orb_g: Vector2, on_beat: Callable, alive_check := Callable()) -> void:
+	if OS.has_environment("QI_FX_LOG"):
+		print("FX scabbard n=", events.size())
 	if events.is_empty():
 		return
 	var K := slow_k()
@@ -393,6 +399,14 @@ func scabbard_strike(spec: Dictionary, events: Array, orb_g: Vector2, on_beat: C
 		t.tween_property(sw, "modulate:a", 1.0, 0.25)
 		t.tween_property(sw, "scale", Vector2.ONE * grow, draw_d)\
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		# 每把刀按【自己的】到位时刻淡出（2026-11-08 用户报：先到的刀停在右边等后到的）
+		# 原来统一时钟到点才一起淡出 → 先到的刀看起来"卡住不动"。
+		var want_i: float = float(tip_x[i]) - L
+		var dist_i: float = maxf(0.0, want_i - (tops[i] as Vector2).x)
+		var arrive_i: float = draw_d + hold_d + stagger_d * float(i) + turn_d + dist_i / speed0
+		var wt: Tween = sw.create_tween()
+		wt.tween_interval(arrive_i + 0.01)
+		wt.tween_callback(sw.queue_free)   # 到位即消失，不做淡化（2026-11-08 用户令）
 	# ── 统一时钟：一个 tween 驱动全部飞行，间距＝起射间隔×速度，恒定 ──
 	var speed := speed0
 	var max_move := 1.0
@@ -441,9 +455,7 @@ func scabbard_strike(spec: Dictionary, events: Array, orb_g: Vector2, on_beat: C
 func _on_sword_arrive(sw: Node2D, i: int, tip_x: Array,
 		tops: Array, tails: Array) -> void:
 	if (tails[i] as bool):
-		var ft: Tween = sw.create_tween()
-		ft.tween_property(sw, "modulate:a", 0.0, 0.18)
-		ft.tween_callback(sw.queue_free)
+		sw.queue_free()   # 甩尾刀到位即消失（不做淡化）
 	else:
 		_splat(Vector2(float(tip_x[i]) + 10.0, (tops[i] as Vector2).y))
 		sw.queue_free()
@@ -495,17 +507,19 @@ func _strike_points(spec: Dictionary, events: Array) -> Array:
 func number_stack(at_g: Vector2, amount: int, idx: int, crit := false) -> void:
 	var l := Label.new()
 	l.text = "-%d" % amount
-	QISTYLE.font(l, 40 if crit else 34, true)
+	# 暴击更醒目（2026-11-08 用户令）：字号更大、颜色更深、描边更粗、起始缩放更小（弹得更狠）
+	QISTYLE.font(l, 58 if crit else 34, true)
 	l.add_theme_color_override("font_color",
-		Color(0.86, 0.12, 0.06) if crit else Color(0.78, 0.20, 0.12))
-	l.add_theme_color_override("font_outline_color", Color(0.99, 0.96, 0.90, 0.95))
-	l.add_theme_constant_override("outline_size", 4)
+		Color(0.62, 0.04, 0.02) if crit else Color(0.78, 0.20, 0.12))
+	l.add_theme_color_override("font_outline_color",
+		Color(1.0, 0.86, 0.42, 1.0) if crit else Color(0.99, 0.96, 0.90, 0.95))
+	l.add_theme_constant_override("outline_size", 6 if crit else 4)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var side := 1.0 if idx % 2 == 0 else -1.0
 	var p := _local(at_g) + Vector2(24.0 * side, -18.0 - float(idx) * 30.0)
 	l.position = p
 	l.pivot_offset = Vector2(18.0, 22.0)
-	l.scale = Vector2(0.55, 0.55)
+	l.scale = Vector2(0.35, 0.35) if crit else Vector2(0.55, 0.55)
 	l.modulate.a = 0.0
 	add_child(l)
 	# 寿命 0.20s（2026-11-08 用户令）：单条 tween_method 精确控时

@@ -10,8 +10,11 @@ extends Control
 const QISTYLE := preload("res://qiforge/QiStyle.gd")
 const CARD := preload("res://qiforge/QiCardStyle.gd")
 const VC := preload("res://qiforge/QiVcData.gd")
+const QITIP := preload("res://qiforge/QiTooltip.gd")
+const TILTV := preload("res://qiforge/QiCardTilt.gd")
 
 signal done
+signal card_chosen(cid: String)   # 2026-11-08 对齐原版：选卡落点由宿主定（战斗屏→进手牌＋免一次费；地图侧→进牌组）
 
 var run: Dictionary = {}
 var _force_gifts: Array = []    # 单卡天赐队列（教程）；空＝常规三选一
@@ -25,6 +28,8 @@ var _banish_btn: Button = null
 var _count_lbl: Label = null
 var _banish_mode := false
 var _animating := false
+var _hover_vis: Control = null
+var _hover_cid := ""
 
 func setup(run_ref: Dictionary, force_cards: Array = []) -> void:
 	run = run_ref
@@ -35,6 +40,7 @@ func _ready() -> void:
 	# 战斗屏开此弹窗时 get_tree().paused=true 冻结世界（剑/珠冻在半空），
 	# 弹窗内 Tween/点击照跑；地图侧使用不暂停时行为不变
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	z_index = 300   # 盖住手牌/HUD（它们各自有 z），升级时不显示世界
 	_fill(self)
 	_rng.seed = int(run.get("seed", 1)) + int(run.get("xp", 0)) * 31 + int(run.get("level", 1)) * 7
 	_build()
@@ -52,7 +58,7 @@ func _fill(c: Control) -> void:
 
 func _build() -> void:
 	var scrim := ColorRect.new()
-	scrim.color = Color(0, 0, 0, 0.72)
+	scrim.color = Color(0.09, 0.08, 0.07, 1.0)   # 不透明：升级时不显示手牌/敌人（照参考蓝本）
 	scrim.mouse_filter = Control.MOUSE_FILTER_STOP   # 模态：挡住底屏点击
 	_fill(scrim)
 	add_child(scrim)
@@ -67,33 +73,43 @@ func _build() -> void:
 	_panel.offset_top = -320.0
 	_panel.offset_bottom = 320.0
 	_panel.add_theme_stylebox_override("panel", QISTYLE.panel(0.95))
+	# 金框画在**独立覆盖层**上：PanelContainer 会强制子节点铺满，直接挂上去会被拉成整块
+	var frame_layer := Control.new()
+	frame_layer.set_anchors_preset(Control.PRESET_CENTER)
+	frame_layer.offset_left = -540.0
+	frame_layer.offset_top = -320.0
+	frame_layer.offset_right = 540.0
+	frame_layer.offset_bottom = 320.0
+	frame_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(frame_layer)
+	_add_gold_frame(frame_layer)
 	add_child(_panel)
 
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 18)
 	_panel.add_child(v)
 
-	var top_row := HBoxContainer.new()
-	top_row.add_theme_constant_override("separation", 16)
-	v.add_child(top_row)
-	var title := Label.new()
-	title.text = "突破 · 择一功法"
-	QISTYLE.font(title, QISTYLE.FS_TITLE, true)
-	QISTYLE.text_color(title, QISTYLE.AMBER_BRIGHT)
-	top_row.add_child(title)
-	var sp := Control.new()
-	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_row.add_child(sp)
+	# 标题：居中大字（2026-11-08 照参考蓝本：升级！／选择一份奖励）
+	var tbox := VBoxContainer.new()
+	tbox.add_theme_constant_override("separation", 2)
+	v.add_child(tbox)
+	var t_main := Label.new()
+	t_main.text = "升级！"
+	t_main.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	QISTYLE.font(t_main, QISTYLE.FS_TITLE + 20, true)
+	QISTYLE.text_color(t_main, QISTYLE.AMBER_BRIGHT)
+	tbox.add_child(t_main)
+	var t_sub := Label.new()
+	t_sub.text = "选择一份奖励"
+	t_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	QISTYLE.font(t_sub, QISTYLE.FS_BODY + 6, true)
+	QISTYLE.text_color(t_sub, Color(0.90, 0.86, 0.76))
+	tbox.add_child(t_sub)
 	_count_lbl = Label.new()
-	QISTYLE.font(_count_lbl, QISTYLE.FS_BODY)
+	_count_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	QISTYLE.font(_count_lbl, QISTYLE.FS_SMALL)
 	QISTYLE.text_color(_count_lbl, QISTYLE.TEXT_SUB)
-	top_row.add_child(_count_lbl)
-
-	var sub := Label.new()
-	sub.text = "习得一门新功法加入卡组——点击即得"
-	QISTYLE.font(sub, QISTYLE.FS_SMALL)
-	QISTYLE.text_color(sub, QISTYLE.TEXT_SUB)
-	v.add_child(sub)
+	tbox.add_child(_count_lbl)
 
 	_card_box = HBoxContainer.new()
 	_card_box.add_theme_constant_override("separation", 40)
@@ -132,12 +148,43 @@ func _refresh_cards() -> void:
 		c.queue_free()
 	var cs := CARD.size_of("detail")
 	for cid in _offers:
-		var vis: Button = CARD.make_tcg_card(CARD.tcg_def_of(VC.CARDS[String(cid)]), "detail")
+		var cdef: Dictionary = CARD.tcg_def_of(VC.CARDS[String(cid)])
+		# 与手牌同一套斜切视图：卡随指针倾斜（2026-11-08 用户令）
+		var vis: Button = Button.new()
+		vis.flat = true
 		vis.size = cs
+		vis.custom_minimum_size = cs
+		var tv: TextureRect = TILTV.make(cdef, "detail", cs.x, cs.y)
+		tv.position = Vector2(-(tv.size.x - cs.x) * 0.5, -(tv.size.y - cs.y) * 0.5)
+		vis.add_child(tv)
+		vis.set_meta("tilt", tv)
 		var the_cid := String(cid)
 		vis.set_meta("offer_id", the_cid)
 		vis.pressed.connect(func() -> void: _card_clicked(the_cid))
+		# 悬停放大＋浮窗（2026-11-08 用户令：和手牌一样）
+		vis.mouse_entered.connect(func() -> void: _offer_hover(vis, the_cid, true))
+		vis.mouse_exited.connect(func() -> void: _offer_hover(vis, the_cid, false))
+		vis.pivot_offset = cs * 0.5
 		_card_box.add_child(vis)
+
+func _process(delta: float) -> void:
+	var mouse := get_global_mouse_position()
+	# 悬停收起：卡与浮窗都不在才收（移到浮窗上保持，2026-11-08 与手牌对齐）
+	if _hover_vis != null:
+		if not is_instance_valid(_hover_vis):
+			_hover_vis = null
+		else:
+			var over_card := _hover_vis.get_global_rect().grow(6.0).has_point(mouse)
+			if not over_card and not QITIP.pointer_over_panels(mouse):
+				var tw2 := create_tween()
+				tw2.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+				tw2.tween_property(_hover_vis, "scale", Vector2.ONE, 0.12)
+				QITIP.hide_for(_hover_vis)
+				_hover_vis = null
+	for c in _card_box.get_children():
+		var tv = c.get_meta("tilt", null)
+		if tv != null:
+			TILTV.drive(tv, mouse, delta)
 
 func _card_clicked(cid: String) -> void:
 	if _animating:
@@ -156,9 +203,10 @@ func _card_clicked(cid: String) -> void:
 		return
 	if not _force_gifts.is_empty():
 		_force_gifts.pop_front()
-	run["deck"].push_back(cid)
+	# 2026-11-08 用户令：不要特效——点完直接结算、关窗（牌由宿主收进手牌/牌组）
+	card_chosen.emit(cid)
 	_animating = true
-	_play_tidi(cid)
+	_after_anim()
 
 ## 醍醐灌顶（选卡特效，2026-11-01 用户裁定）：选中卡升起泛金，金光自顶贯注成柱，
 ## 金粒自卡位迸散升腾后坠落（「灌」意），白闪＋轻屏震；约 0.85s 后结转下一题。
@@ -171,11 +219,18 @@ func _play_tidi(cid: String) -> void:
 	if card_btn == null:
 		_after_anim()
 		return
+	print("TIDI start ", cid)
 	for c in _card_box.get_children():
 		if c != card_btn:
 			var tw_o := create_tween()
 			tw_o.tween_property(c, "modulate:a", 0.0, 0.25)
 	# ① 卡升起＋泛金
+	# 先把选中卡从 HBox 里摘出来（容器每帧重排会把位置的 tween 顶回去 → 抖动/回弹）
+	var gp0: Vector2 = card_btn.global_position
+	_card_box.remove_child(card_btn)
+	add_child(card_btn)
+	card_btn.global_position = gp0
+	card_btn.z_index = 70
 	var tw := create_tween()
 	tw.set_parallel(true)
 	tw.tween_property(card_btn, "position:y", card_btn.position.y - 46.0, 0.45)\
@@ -283,8 +338,9 @@ func _refresh_btns() -> void:
 	_reroll_btn.visible = not forced
 	_banish_btn.visible = not forced
 	if forced:
-		_count_lbl.text = "机缘天降" if int(run.get("pending_picks", 0)) <= 1 \
-			else "机缘天降 ×%d" % int(run.get("pending_picks", 0))
+		# 「机缘天降」撤除（2026-11-08 用户令）：这里只留突破次数，不再显示那四个字
+		_count_lbl.text = "" if int(run.get("pending_picks", 0)) <= 1 \
+			else "×%d" % int(run.get("pending_picks", 0))
 		return
 	_skip_btn.text = "跳过 · 得 %d 经验（%d）" % [VC.SKIP_XP, int(run.get("skips", 0))]
 	_skip_btn.disabled = int(run.get("skips", 0)) <= 0
@@ -296,3 +352,87 @@ func _refresh_btns() -> void:
 		_banish_btn.text = "排除（%d）" % int(run.get("banishes", 0))
 	_banish_btn.disabled = int(run.get("banishes", 0)) <= 0
 	_count_lbl.text = "突破 ×%d" % int(run.get("pending_picks", 0))
+
+## 双层金框＋四角装饰（2026-11-08 照参考蓝本）
+func _add_gold_frame(host: Control) -> void:
+	var GOLD := Color("c8a24e")
+	var out := Panel.new()
+	out.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var ob := StyleBoxFlat.new()
+	ob.bg_color = Color(0, 0, 0, 0)
+	ob.border_color = GOLD
+	ob.set_border_width_all(3)
+	ob.anti_aliasing = true
+	out.add_theme_stylebox_override("panel", ob)
+	out.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(out)
+
+	var inn := Panel.new()
+	inn.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inn.offset_left = 9.0
+	inn.offset_top = 9.0
+	inn.offset_right = -9.0
+	inn.offset_bottom = -9.0
+	var ib := StyleBoxFlat.new()
+	ib.bg_color = Color(0, 0, 0, 0)
+	ib.border_color = GOLD
+	ib.set_border_width_all(1)
+	ib.anti_aliasing = true
+	inn.add_theme_stylebox_override("panel", ib)
+	inn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(inn)
+
+	# 四角装饰块
+	var cs := 18.0
+	var spots := [
+		[Control.PRESET_TOP_LEFT, 0.0, 0.0],
+		[Control.PRESET_TOP_RIGHT, -cs, 0.0],
+		[Control.PRESET_BOTTOM_LEFT, 0.0, -cs],
+		[Control.PRESET_BOTTOM_RIGHT, -cs, -cs],
+	]
+	for sp in spots:
+		var c := Panel.new()
+		c.set_anchors_preset(int(sp[0]))
+		c.offset_left = float(sp[1])
+		c.offset_top = float(sp[2])
+		c.offset_right = float(sp[1]) + cs
+		c.offset_bottom = float(sp[2]) + cs
+		var cb := StyleBoxFlat.new()
+		cb.bg_color = GOLD
+		cb.anti_aliasing = true
+		c.add_theme_stylebox_override("panel", cb)
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		host.add_child(c)
+
+## 悬停：放大 1.12 ＋ 弹词条浮窗（与手牌同一套浮窗工厂）
+func _offer_hover(vis: Control, cid: String, on: bool) -> void:
+	if not is_instance_valid(vis):
+		return
+	if not on:
+		return   # 离开卡不立刻收：交给 _process 判"是否移到浮窗上"（与手牌一致）
+	_hover_vis = vis
+	_hover_cid = cid
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(vis, "scale", Vector2(1.12, 1.12), 0.12)
+	if true:
+		var def: Dictionary = VC.CARDS.get(cid, {})
+		var groups: Array = []
+		for kwd in def.get("kw", []):
+			if VC.KEYWORDS.has(kwd):
+				groups.push_back([
+					{"t": "title", "text": String(VC.KEYWORDS[kwd]["name"])},
+					{"t": "line", "text": String(VC.KEYWORDS[kwd]["desc"])}])
+		if groups.is_empty():
+			groups.push_back([
+				{"t": "title", "text": String(def.get("name", ""))},
+				{"t": "line", "text": String(def.get("desc", ""))}])
+		var tv2 = vis.get_meta("tilt", null)
+		var csz: Vector2 = CARD.size_of("detail")
+		QITIP.show_stack(vis, groups, {
+			"anchor_fn": func() -> Rect2: return vis.get_global_rect(),
+			"corners_fn": func() -> PackedVector2Array:
+				return TILTV.corners(tv2, csz.x, csz.y) if tv2 != null else PackedVector2Array(),
+		})
+	else:
+		QITIP.hide_for(vis)
