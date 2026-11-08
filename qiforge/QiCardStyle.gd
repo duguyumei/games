@@ -304,19 +304,13 @@ static func make_vc_card(card_def: Dictionary, ctx: String = "hand") -> Button:
 ## VC 卡定义 → TCG 卡定义（战斗手牌/奖励屏接入用；2026-11-03 普攻催破合并轮）
 ## kind→tone/type_line 映射；need={stance,n}→耗式图标序列；gain/stance→得式；cost→气费。
 static func tcg_def_of(d: Dictionary) -> Dictionary:
+	# 状态制（2026-11-08）：stance＝剑型四类（short/long/great/flex）；need/gain 轨道退役
+	# （式不再攒耗——卡面左右式轨不画）；type_line 按 FORMS 中文；tone 按型配色。
 	var kind := String(d.get("kind", "effect"))
 	var stance := String(d.get("stance", ""))
-	var need: Array = []
-	var nd: Dictionary = d.get("need", {})
-	if nd.is_empty() and kind == "burst":
-		nd = {"stance": stance, "n": maxi(1, int(d.get("stance_n", 1)))}
-	if not nd.is_empty():
-		for _i in maxi(1, int(nd.get("n", 1))):
-			need.push_back(String(nd.get("stance", "")))
-	var gain := String(d.get("gain", stance if kind == "basic" else ""))
 	var out := {"name": String(d.get("name", "")), "qi": int(d.get("cost", 0)),
-		"need": need, "gain": gain, "rules": String(d.get("desc", "")), "flavor": "",
-		"tone": "red", "type_line": "攻击"}
+		"need": [], "gain": "", "rules": String(d.get("desc", "")), "flavor": "",
+		"tone": "red", "type_line": "攻击", "stance": String(d.get("stance", ""))}
 	match kind:
 		"defense":
 			out["tone"] = "green"
@@ -325,8 +319,9 @@ static func tcg_def_of(d: Dictionary) -> Dictionary:
 			out["tone"] = "gold"
 			out["type_line"] = "奇窍"
 		_:
-			out["tone"] = {"斩": "red", "刺": "blue", "撩": "ink"}.get(stance, "red")
-			out["type_line"] = "攻击 · %s式" % stance
+			out["tone"] = {"short": "blue", "long": "ink", "great": "red", "flex": "gold"}.get(stance, "red")
+			var fcn: String = String({"short": "短剑", "long": "长剑", "great": "巨剑", "flex": "变招"}.get(stance, ""))
+			out["type_line"] = ("攻击 · %s" % fcn) if fcn != "" else "攻击"
 	return out
 
 ## 卡体：硬直角＋粗色框；悬停转亮琥珀描边（不改版式）
@@ -351,7 +346,7 @@ static func _vc_pixel_card(k: float, pal: Dictionary) -> Button:
 
 static func _vc_box(bg: Color, edge: Color, border: int, radius: float) -> StyleBoxFlat:
 	var sb: StyleBoxFlat = StyleBoxFlat.new()
-	sb.anti_aliasing = false
+	sb.anti_aliasing = true   # 金框/分割线/效果区统一开抗锯齿（2026-11-08 用户指正外框锯齿）
 	sb.bg_color = bg
 	sb.border_color = edge
 	sb.set_border_width_all(border)
@@ -550,8 +545,12 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	var glint_mat: ShaderMaterial = ShaderMaterial.new()
 	glint_mat.shader = GLINT_SHADER
+	# 2026-11-08 用户报「左上角一直亮」：shader 默认 band_pos=0.2 正好压在左上角，
+	# 静态卡（无 _process 驱动）就会常亮——初始化直接推到卡外
+	glint_mat.set_shader_parameter("band_pos", -0.35)
+	glint_mat.set_shader_parameter("glint_strength", 0.0)   # 2026-11-08 临时：全关光效看基础形态
 	card.glint_mat = glint_mat
-	var normal: StyleBoxFlat = _vc_box(TCG_PARCH, TCG_GOLD, 0, roundi(12.0 * k))
+	var normal: StyleBoxFlat = _vc_box(frame, TCG_GOLD, 0, roundi(12.0 * k))
 	normal.shadow_color = Color(0, 0, 0, 0.0)
 	normal.shadow_size = 0
 	var hover: StyleBoxFlat = normal.duplicate()
@@ -588,7 +587,8 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	art.add_child(pic)
 
 	# 金件：外框＋分割线（参数集中在 FRAME_* / DIVIDER_* / BAND_BOTTOM）
-	_frame_ring(card, k, glint_mat)
+	if not OS.has_environment("QI_NO_RING"):
+		_frame_ring(card, k, glint_mat)
 	_frame_divider(card, k, glint_mat)
 	# —— 顶部带：左＝气费圆 · 中＝名字 · 右＝获得的式（空则不显）——
 	var name_x0: float = 60.0
@@ -680,9 +680,16 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	var box_top: float = 404.0 * k - box_h
 	var box := Panel.new()
 	_place_abs(box, round(18.0 * k), round(box_top), round(282.0 * k), round(404.0 * k))
+	# 卡型＝当前型：效果区边框转亮金（与型符号方块同一种金）——2026-11-08 用户令
+	var st_now := String(def.get("stance", ""))
+	# 变招天生活合（不锁型）——2026-11-08 用户令：变招一律算匹配
+	var st_matched := st_now != "" and (st_now == "flex" or st_now == String(def.get("cur_form", "")))
 	var eff_box: StyleBoxFlat = _vc_box(Color(TCG_PARCH.r, TCG_PARCH.g, TCG_PARCH.b, 0.74),
-		TCG_GOLD_DARK, maxi(1, roundi(1.0 * k)), roundi(4.0 * k))
+		(Color(1.0, 0.86, 0.46) if st_matched else TCG_GOLD_DARK),
+		maxi(1, roundi(1.0 * k)), roundi(4.0 * k))
 	eff_box.shadow_color = Color(0, 0, 0, 0.45)
+	# （2026-11-08 撤）box/badge 挂 glint 材质后悬停与浮窗异常，先去掉
+
 	eff_box.shadow_size = maxi(2, roundi(6.0 * k))
 	box.add_theme_stylebox_override("panel", eff_box)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -729,6 +736,40 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	# 每枚样式动态——玩家持有够这一枚＝实心块，需要但没持有＝虚线框＋对角线
 	# （样式＝_stance_shape_tex 原设定件，勿再换）。own_stances 由战斗屏建卡时注入，
 	# 手牌全量重建时取最新持有＝实时连锁。
+	# 四型符号：原「式列」左轨格位，方块底＋金边＋图标；卡型＝当前型时整体转金
+	var st_kind := String(def.get("stance", ""))
+	if st_kind != "":
+		var matched := st_matched
+		var badge := Panel.new()
+		var sbf := StyleBoxFlat.new()
+		# 底色＝卡面标题带同色（2026-11-08 用户令：攻击蓝卡就是墨蓝底）
+		var tone_k := String(def.get("tone", "red"))
+		sbf.bg_color = TCG_HEADERS.get(tone_k, TCG_HEADERS["red"])   # 底始终＝标题带色，匹配也不变
+		sbf.border_color = TCG_GOLD_DARK if not matched else Color(1.0, 0.87, 0.55)   # 匹配时亮金
+		sbf.set_border_width_all(maxi(1, roundi(1.0 * k)))   # 与效果区同粗细
+		sbf.set_corner_radius_all(roundi(4.0 * k))            # 与效果区同圆角
+		sbf.anti_aliasing = true   # 去锯齿
+		badge.add_theme_stylebox_override("panel", sbf)
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.size = Vector2(39.0 * k, 39.0 * k)
+		badge.position = Vector2(18.0 * k, (box_top - 4.0 * k) - 39.0 * k)   # 与效果区左边框对齐
+		card.add_child(badge)
+		var pth := "res://qiforge/assets/ui/type_%s%s.png" % [st_kind, "_gold" if matched else "_light"]
+		var stex: Texture2D = ResourceLoader.load(pth)
+		if stex != null:
+			var sic := TextureRect.new()
+			sic.texture = stex
+			sic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			sic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			sic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			sic.set_anchors_preset(Control.PRESET_FULL_RECT)
+			sic.stretch_mode = TextureRect.STRETCH_SCALE
+			sic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR   # 缩放采样用线性，去锯齿
+			sic.offset_left = 3.0 * k
+			sic.offset_top = 3.0 * k
+			sic.offset_right = -3.0 * k
+			sic.offset_bottom = -3.0 * k
+			badge.add_child(sic)
 	var rail_w: float = 39.0
 	var rail_bottom: float = box_top - 6.0 * k
 	var rail_px: float = rail_w * k
@@ -1074,7 +1115,7 @@ static func make_pick_ring() -> Panel:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color(0, 0, 0, 0)
 	style.set_border_width_all(4)
-	style.border_color = COLOR_AMBER
+	style.border_color = TCG_GOLD
 	style.set_corner_radius_all(14)
 	ring.add_theme_stylebox_override("panel", style)
 	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1146,7 +1187,7 @@ static func make_empty_slot_button(ctx: String = "field") -> Button:
 	style.border_color = Color(0.68, 0.64, 0.56)
 	slot.add_theme_stylebox_override("normal", style)
 	var hover: StyleBoxFlat = style.duplicate()
-	hover.border_color = COLOR_AMBER
+	hover.border_color = TCG_GOLD
 	slot.add_theme_stylebox_override("hover", hover)
 	slot.add_theme_stylebox_override("pressed", hover)
 	var empty_label: Label = _text(slot, "空", _fs(23, k), Color(0.62, 0.59, 0.53))
@@ -1162,13 +1203,28 @@ static func _new_card(body_color: Color, k: float) -> Button:
 	card.custom_minimum_size = Vector2(round(BASE_SIZE.x * k), round(BASE_SIZE.y * k))
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
-	var normal: StyleBoxFlat = _card_style(body_color, maxi(4, roundi(17.0 * k)), maxi(2, roundi(5.0 * k)))
+	# 卡体不再画自己的描边（2026-11-08）：外圈那 1px 米白就是它，金框已负责边框
+	var normal: StyleBoxFlat = _card_style(body_color, maxi(4, roundi(17.0 * k)), 0)
 	var hover: StyleBoxFlat = _card_style(body_color, normal.corner_radius_top_left, normal.border_width_left)
-	hover.border_color = COLOR_AMBER
+	hover.border_color = TCG_GOLD
 	var pressed: StyleBoxFlat = hover.duplicate()
 	card.add_theme_stylebox_override("normal", normal)
 	card.add_theme_stylebox_override("hover", hover)
 	card.add_theme_stylebox_override("pressed", pressed)
+
+	# 调试
+	if OS.has_environment("QI_DUMP_CARD"):
+		var all := card.find_children("*", "", true, false)
+		print("CARDDUMP n=", all.size())
+		for ch2 in all:
+			if ch2 is Control:
+				var c3 := ch2 as Control
+				var line := "CARDDUMP %s|%s|%s|%s" % [c3.name, c3.get_class(), str(c3.position.round()), str(c3.size.round())]
+				if c3 is Panel:
+					var sb3 = (c3 as Panel).get_theme_stylebox("panel")
+					if sb3 is StyleBoxFlat:
+						line += "|bg=%s|bd=%s|bw=%d" % [(sb3 as StyleBoxFlat).bg_color.to_html(), (sb3 as StyleBoxFlat).border_color.to_html(), (sb3 as StyleBoxFlat).border_width_top]
+				print(line)
 	return card
 
 ## 左上能量点（v3.1 用户裁定：费用徽居左上；升级预览费用变化时描边转琥珀）
@@ -1181,7 +1237,7 @@ static func _add_cost_pip(card: Control, k: float, cost: Variant, changed: bool 
 	style.bg_color = COLOR_NAVY
 	style.set_corner_radius_all(roundi(30.0 * k))
 	style.set_border_width_all(maxi(2, roundi(5.0 * k)))
-	style.border_color = COLOR_AMBER if changed else COLOR_CREAM
+	style.border_color = TCG_GOLD if changed else COLOR_CREAM
 	pip.add_theme_stylebox_override("panel", style)
 	pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var pip_fs := _fs(27, k)
@@ -1202,7 +1258,7 @@ static func _add_lv_pill(card: Control, k: float, level: int) -> void:
 	style.bg_color = COLOR_AMBER
 	style.set_corner_radius_all(maxi(4, roundi(22.0 * k)))
 	style.set_border_width_all(maxi(1, roundi(3.0 * k)))
-	style.border_color = COLOR_AMBER_DARK
+	style.border_color = TCG_GOLD_DARK
 	pill.add_theme_stylebox_override("panel", style)
 	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_center_text(pill, "Lv{0}".format([level]), _fs(22, k), COLOR_AMBER_TEXT)
@@ -1416,7 +1472,8 @@ static func _card_style(body_color: Color, radius: int, border_px: int) -> Style
 	style.bg_color = body_color
 	style.set_corner_radius_all(radius)
 	style.set_border_width_all(border_px)
-	style.border_color = COLOR_CREAM
+	# 卡体自带描边用金色（原为米白：金色框压在上面时，米白边从外沿露出来→顶部泛白）
+	style.border_color = TCG_GOLD
 	return style
 
 static func _mini_style(mini_color: Color, border_px: int) -> StyleBoxFlat:

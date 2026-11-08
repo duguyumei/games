@@ -110,6 +110,419 @@ func thrust(from_g: Vector2, to_g: Vector2, on_hit: Callable) -> void:
 		spine.queue_free()
 		dot.queue_free())
 
+## ══ 语法轨 v7（2026-11-07 用户裁定）：一起出现 → 3D 椭圆绕圈 → 停 → 依次射 ═══
+## 要点：① 剑是"突"一下一起出现，不分先后；② 绕圈走椭圆（俯视 3D 透视感），
+## ③ 剑身始终指向敌人（不是向外张开）；④ 转完停一下（蓄势），再依次射出去。
+const FORM := {
+	"spawn": 0.16,          # 一起出现（弹出）
+	"orbit_dur": 0.70,      # 绕圈时长（慢一点，看得清）
+	"orbit_turns": 1.0,     # 转几圈
+	"rx": 190.0,            # 椭圆长轴（横）
+	"ry": 76.0,             # 椭圆短轴（纵）＝俯视角
+	"hold": 0.20,           # 蓄势停顿
+	"launch_gap": 0.11,     # 依次射出间隔
+	"travel": 0.22,         # 单柄飞行时间
+}
+
+## 调试慢放倍数（QI_FXSLOW=4 → 全部时长×4；只影响表现时长，不动战斗节奏）
+static func slow_k() -> float:
+	var v := OS.get_environment("QI_FXSLOW")
+	if v == "":
+		return 1.0
+	return clampf(float(v), 1.0, 12.0)
+
+func strike(spec: Dictionary, events: Array, from_g: Vector2, on_beat: Callable) -> void:
+	if events.is_empty():
+		return
+	var K := slow_k()
+	var n: int = events.size()
+	var pts := _strike_points(spec, events)
+	var swords: Array = []
+	var aims: Array = []
+	# 阵心：血珠往场地里偏一点（血珠贴着屏幕左缘）
+	var ctr: Vector2 = from_g + Vector2(300.0, -120.0)   # 阵心移到战场中段，阵才看得见
+	var rx: float = FORM["rx"]
+	var ry: float = FORM["ry"]
+	# 阵环：一圈很淡的墨线（不给的话"绕圈"这条轨迹读不出来）
+	var ring := Line2D.new()
+	ring.width = 1.4
+	ring.default_color = Color(0.12, 0.10, 0.08, 0.0)
+	ring.z_index = 2
+	for k in 49:
+		var a0 := TAU * float(k) / 48.0
+		ring.add_point(ctr + Vector2(cos(a0) * rx, sin(a0) * ry) - global_position)
+	add_child(ring)
+	var rt := ring.create_tween()
+	rt.tween_property(ring, "default_color:a", 0.20, 0.16 * K)
+	# ① 一起出现：全部同时弹出、同时亮起，没有先后
+	for i in n:
+		var sw := _small_sword()
+		var th := TAU * float(i) / float(n) - PI * 0.5
+		sw.position = ctr + Vector2(cos(th) * rx, sin(th) * ry)
+		# 切线式：剑身沿圆周走（剑尖、剑柄各画一个圈），不是指向敌人也不是向外张开
+		sw.rotation = th + PI * 0.5
+		sw.scale = Vector2(0.25, 0.25)
+		sw.modulate.a = 0.0
+		add_child(sw)
+		swords.push_back(sw)
+		var t := sw.create_tween()
+		t.set_parallel(true)
+		t.tween_property(sw, "scale", Vector2.ONE, (float(FORM["spawn"]) * K))\
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		t.tween_property(sw, "modulate:a", 1.0, 0.10 * K)
+	# ② 椭圆绕圈：角度转，位置沿椭圆走；剑尖朝向保持不变（始终指敌）
+	var orbit_at: float = (float(FORM["spawn"]) * K) + 0.02 * K
+	var turns: float = float(FORM["orbit_turns"]) * TAU
+	var orbit := create_tween()
+	orbit.tween_interval(orbit_at)
+	orbit.tween_method(func(v: float) -> void:
+		for i in n:
+			var sw2 = swords[i]
+			if not is_instance_valid(sw2):
+				continue
+			var th2 := TAU * float(i) / float(n) - PI * 0.5 + v
+			sw2.position = ctr + Vector2(cos(th2) * rx, sin(th2) * ry)
+			sw2.rotation = th2 + PI * 0.5
+			# 俯视深度：sin>0 在近处（大、靠前），sin<0 在远处（小、靠后）
+			var depth := (sin(th2) + 1.0) * 0.5
+			var k2 := 0.72 + 0.52 * depth
+			sw2.scale = Vector2(k2, k2)
+			sw2.z_index = 3 + int(depth * 6.0)
+			sw2.modulate.a = 0.72 + 0.28 * depth
+	, 0.0, turns, (float(FORM["orbit_dur"]) * K))
+	# ③ 蓄势 → ④ 依次射出
+	var launch0: float = orbit_at + (float(FORM["orbit_dur"]) * K) + (float(FORM["hold"]) * K)
+	for i in n:
+		var ev: Dictionary = events[i]
+		var tgt: Vector2 = pts[i]
+		var sw3: Node2D = swords[i]
+		var tw := create_tween()
+		tw.tween_interval(launch0 + (float(FORM["launch_gap"]) * K) * float(i))
+		tw.tween_callback(func() -> void:
+			_launch(sw3, tgt, (float(FORM["travel"]) * K), ev, i, on_beat))
+		if i == n - 1:
+			var end_at: float = launch0 + (float(FORM["launch_gap"]) * K) * float(i) + 0.06
+			var rtw := create_tween()
+			rtw.tween_interval(end_at)
+			rtw.tween_property(ring, "default_color:a", 0.0, 0.30)
+			rtw.tween_callback(ring.queue_free)
+
+## 单柄射出：转向前方（目标方向）→ 加速飞过去 → 命中消散
+func _launch(sw: Node2D, tgt_g: Vector2, dur: float,
+		ev: Dictionary, idx: int, on_beat: Callable) -> void:
+	if not is_instance_valid(sw):
+		return
+	var from := sw.position
+	var d := tgt_g - global_position - from
+	if d.length() < 4.0:
+		sw.queue_free()
+		return
+	var ang := d.angle()
+	var tw := sw.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(sw, "rotation", ang, 0.05)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(sw, "position", _local(tgt_g), dur)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(func() -> void:
+		_splat(tgt_g)
+		if on_beat.is_valid():
+			on_beat.call(ev, idx)
+		sw.queue_free())
+
+## 一柄墨色小飞剑（剑身＋剑格＋剑柄＋剑首，全墨）
+func _small_sword(w := 10.5, L := 74.0) -> Node2D:
+	var node := Node2D.new()
+	node.z_index = 4
+	var ink := Color(0.13, 0.11, 0.09, 0.97)
+	var blade := Polygon2D.new()
+	blade.polygon = PackedVector2Array([
+		Vector2(0.0, -w * 0.50), Vector2(L * 0.68, -w * 0.30),
+		Vector2(L, 0.0),
+		Vector2(L * 0.68, w * 0.30), Vector2(0.0, w * 0.50)])
+	blade.color = ink
+	node.add_child(blade)
+	var edge := Line2D.new()
+	edge.width = 1.2
+	edge.default_color = Color(0.62, 0.60, 0.56, 0.55)
+	edge.add_point(Vector2(1.0, -w * 0.40))
+	edge.add_point(Vector2(L * 0.92, -w * 0.06))
+	node.add_child(edge)
+	var guard := Line2D.new()
+	guard.width = 2.6
+	guard.default_color = ink
+	guard.add_point(Vector2(-2.0, -w * 1.05))
+	guard.add_point(Vector2(-2.0, w * 1.05))
+	node.add_child(guard)
+	var grip := Line2D.new()
+	grip.width = 3.2
+	grip.default_color = ink
+	grip.add_point(Vector2(-3.0, 0.0))
+	grip.add_point(Vector2(-15.0, 0.0))
+	grip.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	node.add_child(grip)
+	var pommel := Polygon2D.new()
+	pommel.polygon = PackedVector2Array([
+		Vector2(-15.0, -2.6), Vector2(-19.0, -1.6), Vector2(-19.0, 1.6), Vector2(-15.0, 2.6)])
+	pommel.color = ink
+	node.add_child(pommel)
+	# 淡墨拖尾
+	var tail := Line2D.new()
+	tail.width = 2.2
+	tail.default_color = Color(0.14, 0.12, 0.10, 0.26)
+	tail.add_point(Vector2(-L * 0.84, 0.0))
+	tail.add_point(Vector2(-L * 0.30, 0.0))
+	node.add_child(tail)
+	return node
+
+## 击拍间隔（档案口径）：多段要读得清
+func _gap_of(spec: Dictionary, n: int) -> float:
+	return clampf(float(spec.get("gap_budget", 0.42)) / float(maxi(1, n)),
+		float(spec.get("gap_min", 0.07)), float(spec.get("gap_max", 0.10)))
+
+## 本轮总时长（剑阵口径：凝剑＋绕圈＋停顿＋依次射出＋飞行）
+func strike_timing(spec: Dictionary, n: int) -> float:
+	var K := slow_k()
+	return (float(FORM["spawn"]) * K) + (float(FORM["orbit_dur"]) * K) \
+		+ (float(FORM["hold"]) * K) + (float(FORM["launch_gap"]) * K) * float(maxi(0, n - 1)) \
+		+ (float(FORM["travel"]) * K) + 0.30
+
+## 命中墨点（箭消失时留的一小团，0.3s 收）
+## ── 剑鞘制（2026-11-08 用户令）──
+## ① 出鞘：剑从血珠里竖直抽出（剑尖朝上），在珠心上方“一片区域”里各就各位（5s）
+## ② 蓄力：短暂停顿
+## ③ 飞行：转向后方，从下方划弧打进去（5s）
+## ── 三种剑（2026-11-08 用户定稿：重剑/长剑/短剑，九宫格取 3/2/2，重剑柄压 0.65）──
+const SWORD_LEN := {"heavy": 140.0, "long": 150.0, "short": 100.0}
+static var _sword_tex_cache: Dictionary = {}
+
+func _sword_tex(kind: String) -> Texture2D:
+	if _sword_tex_cache.has(kind):
+		return _sword_tex_cache[kind] as Texture2D
+	var tex := ResourceLoader.load("res://qiforge/assets/fx/sword_%s.png" % kind) as Texture2D
+	_sword_tex_cache[kind] = tex
+	return tex
+
+## 一把贴图剑：节点原点＝剑首（左端），剑身沿 +X
+func _sword_node(kind: String) -> Node2D:
+	var tex := _sword_tex(kind)
+	if tex == null:
+		return _small_sword(6.0, float(SWORD_LEN.get(kind, 100.0)))
+	var node := Node2D.new()
+	node.z_index = 7
+	var sp := Sprite2D.new()
+	sp.texture = tex
+	sp.centered = false
+	sp.offset = Vector2(0.0, -float(tex.get_height()) * 0.5)
+	var L: float = float(SWORD_LEN.get(kind, 100.0))
+	var k: float = L / maxf(1.0, float(tex.get_width()))
+	sp.scale = Vector2(k, k)
+	node.add_child(sp)
+	return node
+
+const SCA := {
+	"draw": 0.25,     # 出鞘时长（秒）
+	"fly": 0.50,      # 飞行时长（秒）
+	"hold": 0.02,     # 出鞘完成后的蓄力停顿
+	"turn": 0.12,     # 转向时长
+	"stagger": 0.20,  # 逐把错开（秒）：≥刀长才不显得叠在一起
+	"rise": 330.0,    # 出鞘点高出珠心
+	"rx": 165.0,      # 出鞘区域横向半径
+	"ry": 95.0,       # 出鞘区域纵向半径
+	"grow": 1.0,      # 贴图剑按 SWORD_LEN 定长，不再二次放大
+	"sw_w": 6.0,      # 剑身宽（细）
+	"sw_l": 95.0,     # 剑身长
+}
+
+func scabbard_timing(_spec: Dictionary, _n: int) -> float:
+	var K := slow_k()
+	var speed0 := 1400.0 / K
+	var st: float = (float(SWORD_LEN.get("short", 100.0)) + 5.0) / speed0
+	var move_t: float = 1389.0 / speed0
+	return (float(SCA["draw"]) + float(SCA["hold"]) + float(SCA["turn"])) * K \
+		+ st * float(maxi(0, _n - 1)) + move_t + 0.35
+
+func scabbard_strike(spec: Dictionary, events: Array, orb_g: Vector2, on_beat: Callable, alive_check := Callable()) -> void:
+	if events.is_empty():
+		return
+	var K := slow_k()
+	var n: int = events.size()
+	var base := _local(orb_g)
+	var draw_d: float = float(SCA["draw"]) * K
+	var hold_d: float = float(SCA["hold"]) * K
+	var turn_d: float = float(SCA["turn"]) * K
+	var speed0 := 1400.0 / K                 # 慢放时飞行也一起放慢
+	var stagger_d: float = 0.0
+	var grow: float = float(SCA["grow"])
+	var L: float = float(SWORD_LEN.get("short", 100.0))
+	stagger_d = (L + 5.0) / speed0           # X 间隔＝刀长 + 5px（2026-11-08 用户令）
+	var tops: Array = []
+	var tip_x: Array = []
+	var tails: Array = []
+	var tex_s := _sword_tex("short")
+	var h_vis := 20.0
+	if tex_s != null:
+		h_vis = (float(tex_s.get_height()) / float(tex_s.get_width())) * L
+	var step := 30.0          # 2026-11-08 用户令：Y 间隔固定 30px
+	for i in n:
+		var ev_a: Dictionary = events[i]
+		var r_a: Rect2 = ev_a.get("rect", Rect2())
+		if r_a.size.x < 2.0:
+			r_a = Rect2(Vector2(880.0, 300.0), Vector2(190.0, 250.0))
+		var tail_shot: bool = (ev_a.get("death", false) == true) \
+			or int(ev_a.get("uid", -1)) < 0 or r_a.size.x < 2.0
+		tails.append(tail_shot)
+		var ys := r_a.position.y + r_a.size.y * 0.5 + (1.0 if i % 2 == 0 else -1.0) * step * 0.5
+		tops.append(Vector2(base.x, ys))
+		tip_x.append(1720.0 if tail_shot else r_a.position.x + 18.0)
+	var swords: Array = []
+	for i in n:
+		var sw := _sword_node("short")
+		sw.z_index = 7
+		sw.rotation = PI * 0.5
+		sw.position = base - Vector2(0.0, 18.0)
+		sw.modulate.a = 0.0
+		sw.scale = Vector2.ONE * 0.55
+		add_child(sw)
+		swords.append(sw)
+		var peak: Vector2 = tops[i]
+		var t := sw.create_tween()
+		t.set_parallel(true)
+		t.tween_property(sw, "position", peak, draw_d)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		t.tween_property(sw, "modulate:a", 1.0, 0.25)
+		t.tween_property(sw, "scale", Vector2.ONE * grow, draw_d)\
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	# ── 统一时钟：一个 tween 驱动全部飞行，间距＝起射间隔×速度，恒定 ──
+	var speed := speed0
+	var max_move := 1.0
+	for i in n:
+		max_move = maxf(max_move, absf(float(tip_x[i]) - base.x - L))
+	var total_t := draw_d + hold_d + stagger_d * float(n - 1) + turn_d + max_move / speed + 0.02
+	var fired: Dictionary = {}
+	var arrived: Dictionary = {}   # 已到达待落账的拍（落账按发射序保序——近敌先扎不改账序）
+	var seq := {"next": 0}         # 引用容器：GDScript lambda 捕获 int 是值拷贝不跨帧持久
+	var clock := create_tween()
+	clock.tween_method(func(t: float) -> void:
+		for i in n:
+			var sw2 = swords[i]
+			if not is_instance_valid(sw2):
+				continue
+			var t0: float = draw_d + hold_d + stagger_d * float(i)
+			if t <= t0:
+				continue
+			var lt: float = t - t0
+			sw2.rotation = lerpf(PI * 0.5, 0.0, clampf(lt / turn_d, 0.0, 1.0))
+			if lt <= turn_d:
+				continue
+			var move: float = (lt - turn_d) * speed
+			var peak2: Vector2 = tops[i]
+			var want: float = float(tip_x[i]) - L
+			var x := minf(peak2.x + move, want)
+			sw2.position = Vector2(x, peak2.y)
+			if x >= want - 0.5 and not fired.has(i):
+				fired[i] = true
+				_on_sword_arrive(sw2, i, tip_x, tops, tails)   # 视觉即时（近敌先扎）
+				arrived[i] = true
+				while arrived.has(seq["next"]):              # 落账按发射序保序补发（2026-11-08
+					var _ev0: Dictionary = events[int(seq["next"])]  # 日志定谳：到达序≠发射序致队列错位）
+					if on_beat.is_valid():
+						on_beat.call(_ev0, int(seq["next"]))
+					seq["next"] = int(seq["next"]) + 1
+	, 0.0, total_t, total_t)
+	clock.tween_callback(func() -> void:
+		for sw3 in swords:
+			if is_instance_valid(sw3) and sw3.modulate.a > 0.01:
+				var ft: Tween = sw3.create_tween()
+				ft.tween_property(sw3, "modulate:a", 0.0, 0.12)
+				ft.tween_callback(sw3.queue_free))
+
+## 单把到位：命中刀溅墨；甩尾刀淡出（视觉层——落账回调已上移至 clock 保序门）
+func _on_sword_arrive(sw: Node2D, i: int, tip_x: Array,
+		tops: Array, tails: Array) -> void:
+	if (tails[i] as bool):
+		var ft: Tween = sw.create_tween()
+		ft.tween_property(sw, "modulate:a", 0.0, 0.18)
+		ft.tween_callback(sw.queue_free)
+	else:
+		_splat(Vector2(float(tip_x[i]) + 10.0, (tops[i] as Vector2).y))
+		sw.queue_free()
+
+func _splat(at_g: Vector2) -> void:
+	var pts := CPUParticles2D.new()
+	pts.position = _local(at_g)
+	pts.one_shot = true
+	pts.amount = 7
+	pts.lifetime = 0.26
+	pts.explosiveness = 1.0
+	pts.direction = Vector2.DOWN
+	pts.spread = 180.0
+	pts.initial_velocity_min = 60.0
+	pts.initial_velocity_max = 170.0
+	pts.damping_min = 220.0
+	pts.damping_max = 380.0
+	pts.gravity = Vector2.ZERO
+	pts.scale_amount_min = 0.035
+	pts.scale_amount_max = 0.075
+	pts.texture = _dot
+	pts.color = Color(0.10, 0.09, 0.08, 0.9)
+	pts.z_index = 3
+	add_child(pts)
+	pts.emitting = true
+	var tw := pts.create_tween()
+	tw.tween_interval(0.5)
+	tw.tween_callback(pts.queue_free)
+
+## 落点表（账本→屏幕点）：同敌连击按 repeat_jitter 绕环散开
+func _strike_points(spec: Dictionary, events: Array) -> Array:
+	var out: Array = []
+	var seen := {}
+	var jr := float(spec.get("repeat_jitter", 9.0))
+	for i in events.size():
+		var ev: Dictionary = events[i]
+		var r: Rect2 = ev.get("rect", Rect2())
+		var p: Vector2 = r.get_center() if r.size.x > 1.0 else Vector2(960.0, 430.0)
+		var uid := int(ev.get("uid", -1))
+		var k := int(seen.get(uid, 0))
+		seen[uid] = k + 1
+		if k > 0:
+			var a := 2.39 * float(k)
+			p += Vector2(cos(a), sin(a)) * jr * (1.0 + 0.35 * float(k - 1))
+		out.push_back(p)
+	return out
+
+## ── 伤害数字：每段一个，不合并；按击序错开 ──
+func number_stack(at_g: Vector2, amount: int, idx: int, crit := false) -> void:
+	var l := Label.new()
+	l.text = "-%d" % amount
+	QISTYLE.font(l, 40 if crit else 34, true)
+	l.add_theme_color_override("font_color",
+		Color(0.86, 0.12, 0.06) if crit else Color(0.78, 0.20, 0.12))
+	l.add_theme_color_override("font_outline_color", Color(0.99, 0.96, 0.90, 0.95))
+	l.add_theme_constant_override("outline_size", 4)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var side := 1.0 if idx % 2 == 0 else -1.0
+	var p := _local(at_g) + Vector2(24.0 * side, -18.0 - float(idx) * 30.0)
+	l.position = p
+	l.pivot_offset = Vector2(18.0, 22.0)
+	l.scale = Vector2(0.55, 0.55)
+	l.modulate.a = 0.0
+	add_child(l)
+	# 寿命 0.20s（2026-11-08 用户令）：单条 tween_method 精确控时
+	var tw := l.create_tween()
+	tw.tween_method(func(t: float) -> void:
+		var a := 1.0
+		if t < 0.10:
+			a = t / 0.10
+		elif t > 0.72:
+			a = maxf(0.0, (1.0 - t) / 0.28)
+		l.modulate.a = a
+		var s := 0.55 + 0.57 * minf(1.0, t / 0.25)
+		l.scale = Vector2(s, s)
+		l.position = p + Vector2(0.0, -30.0 * t)
+	, 0.0, 1.0, 0.20)
+	tw.tween_callback(l.queue_free)
+
 ## 命中白芒（运行期径向渐变，不是火焰贴图）
 static var _dot_cache: Texture2D = null
 static func _soft_dot() -> Texture2D:
@@ -222,16 +635,19 @@ func _number(at_g: Vector2, amount: int, idx := 0, uid := 0) -> void:
 	var now := Time.get_ticks_msec()
 	if uid > 0 and _num_live.has(uid):
 		var rec: Dictionary = _num_live[uid]
-		var old: Label = rec.get("label")
+		# 注意：不能写成 var old: Label = rec["label"]——上一轮已被 clear()/收尾释放的实例
+		# 赋给有类型的变量会直接抛「invalid previously freed instance」（2026-11-07 实测）。
+		var old = rec.get("label")
 		if is_instance_valid(old) and now - int(rec.get("t", 0)) < 220:
 			rec["sum"] = int(rec.get("sum", 0)) + amount
 			rec["t"] = now
 			old.text = "-%d" % int(rec["sum"])
-			var tp := old.create_tween()
+			var tp: Tween = old.create_tween()
 			tp.tween_property(old, "scale", Vector2(1.24, 1.24), 0.05)\
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			tp.tween_property(old, "scale", Vector2.ONE, 0.10)
 			return
+		_num_live.erase(uid)      # 陈旧登记：就地清掉，别留给下一条
 	var l := Label.new()
 	l.text = "-%d" % amount
 	QISTYLE.font(l, 38, true)

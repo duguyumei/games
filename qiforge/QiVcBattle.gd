@@ -34,13 +34,17 @@ var round_no := 0
 var phase := "player"
 var result := ""
 
-var combo_count := 0          # 连击层数（耗式卡 ×新连击放大）
+var combo_count := 0          # 连击数（状态制 2026-11-08：本回合链长——每张 +1、换型断链重 1）
+var current_form := ""        # 当前剑型（状态制：short/long/great/flex；""＝无——回合开始归无）
 var combo_enabled := false    # 连击＝内功「连击堆叠」赋予（2026-11-07 教程轮定：宝箱获得——开局无连击）
 var might_pct := 0            # 本回合伤害增幅（不吃连击倍率）
 var xp_gained := 0            # 本场击杀所得经验（战后写回 run——2026-11-01 经验轮）
 var _run: Dictionary = {}     # 2026-11-07 属性轮：run 引用（stat op dungeon 型回写 dungeon_stats）
 var starting_stats := {}      # 四层之一：三层基线（base＋progression＋dungeon——setup 时合成）
 var encounter_stats := {}    # 四层之二：本场增量（encounter 型黄卡——随实例销毁清零）
+var _pending_strikes: Array = []   # 2026-11-08 落账延迟：待击中帧结算的伤害事件队列（账单制）
+var _strike_total := 0             # 2026-11-08 余段空放制：本次打出的飞行总段数（演出拍数权威）
+var pending_visual := false        # true＝有表现层逐击回调（屏 setup 置位）；false＝play_card 尾自动全落（探针）
 var xp_pending: Array = []    # 击杀入队待到账（2026-11-05 特效轮：珠飞到经验条才入账——VC 制）
 var played_pile: Array = []   # 已打出区（2026-11-06 四区制规格 v1：已结算未进弃牌堆，按打出序）
 var shattered: Array = []     # 碎掉的卡 [{id, uid}]（2026-11-06 碎牌机制：战后从 run 卡组永久移除）
@@ -60,7 +64,7 @@ func setup(run: Dictionary) -> void:
 		"armor": 0, "armor_stat": 0,
 		"qi": 0, "qi_max": int(run.get("qi_max", DATA.QI_BASE_MAX)),   # 气上限＝基础 2，局外 run.qi_max／局内效果可成长
 		"draw_per_turn": int(pb["draw_per_turn"]),
-		"stances": {"斩": 0, "刺": 0, "撩": 0},
+		"stances": {},   # 〔2026-11-08 状态制退役〕式层数池——引擎不再读写，留空壳兼容旧显示引用（文本轮清）
 		"recovery": 0, "hand_cap_mod": 0}
 	# 属性四层（2026-11-07 属性轮，对应原版 GetStartingX 三参＋本场增量）：
 	# starting ＝ base＋progression（meta）＋dungeon（run）；encounter 层本场黄卡直接加，
@@ -110,10 +114,12 @@ func start() -> void:
 ## 合成现值：starting（三层基线）＋ encounter（本场）。stat op 入账后调本函数把派生值
 ## 刷到 player（hp 上限/发牌数等即时生效；might/luck 等结算时经 stat_val 现读）。
 func apply_stats_to_player() -> void:
-	var hp_bonus := stat_val("max_hp") + stat_val("hollow_hp")   # max_hp 轴（pct 表外的计数轴）
-	var new_mhp := int(DATA.PLAYER_BASE["hp"]) + hp_bonus
+	# 双轴血上限（wiki 真值分轴）：max_hp＝固定值（黄卡 Gain 3 Max Health）；max_hp_pct＝养成
+	# 百分比（PowerUp +10%/级，pct 轴 100 基＝×1.0——超出部分才算加成）。涨上限同涨当前血。
+	var new_mhp := int(round(float(DATA.PLAYER_BASE["hp"]) * stat_mult("max_hp_pct"))) \
+		+ stat_val("max_hp")
 	if new_mhp > int(player["mhp"]):
-		player["hp"] = int(player["hp"]) + (new_mhp - int(player["mhp"]))   # 涨上限同时涨当前血（原版 Gain Max Health 语义）
+		player["hp"] = int(player["hp"]) + (new_mhp - int(player["mhp"]))
 	player["mhp"] = new_mhp
 	player["draw_per_turn"] = int(DATA.PLAYER_BASE["draw_per_turn"]) + stat_val("deal_count")
 
@@ -176,7 +182,8 @@ func _round_start() -> void:
 	player["qi"] = int(player["qi_max"])
 	draw_cards(int(player["draw_per_turn"]))
 	might_pct = 0
-	combo_count = 0        # 连击回合清零（洗牌与回合内出牌不清——涨耗式/磨耗气）
+	combo_count = 0        # 连击回合清零（洗牌与回合内出牌不清）
+	current_form = ""      # 剑型回合归无（状态制 2026-11-08：每回合从起手式开始）
 	decide_intents()
 	phase = "player"
 
@@ -217,6 +224,7 @@ func discard_anim_done() -> void:
 func enemy_round() -> void:
 	if phase != "enemy":
 		return
+	settle_all_strikes()   # 落账延迟兜底：演出未落完的账单先全落（终局判定随之收口）
 	# ① 逐敌执行（对应 EnemyEncounterModel.PerformIntents→EnemyAction.Execute）
 	for e in encounter["active"].duplicate():
 		if not e["alive"]:
@@ -286,32 +294,22 @@ func card_cost(card: Dictionary) -> int:
 	return int(card["def"].get("cost", 0))   # 气费（攻击卡恒 0——普攻催破不耗气）
 
 func can_play(card: Dictionary) -> bool:
-	# 2026-11-06 终裁：need 不再拦打（软折扣——无式可打出，付全额气费、连击磨损）；
-	# 气费判定也用减费后实付值（可耗式抵扣的部分不算门槛）
-	return phase == "player" and int(player["qi"]) >= real_cost(card, int(player["stances"].get(_need_stance(card), 0)))
+	# 2026-11-08 状态制：气费回归卡面固定值（软折扣/need 门槛全退役）
+	return phase == "player" and int(player["qi"]) >= card_cost(card)
 
-## need 实际耗式数（2026-11-06 减费制）：k＝min(need.n, 持有)——满足几个耗几个
-func stance_cost_of(card: Dictionary, owns: Dictionary = {}) -> int:
-	var nd: Dictionary = card["def"].get("need", {})
-	if nd.is_empty() and String(card["def"].get("kind", "")) == "burst":   # 旧催破字段兼容
-		nd = {"stance": String(card["def"].get("stance", "斩")), "n": maxi(1, int(card["def"].get("stance_n", 1)))}
-	if nd.is_empty():
+## 干跑：打出一张带此剑型的牌后的连击数（不动真值——play_card/preview/combo_mult_of 共用）
+## 规则（2026-11-08 状态制）：flex 变招→+1；三型→同型续/首张/flex 后＝+1，硬换型＝断链重 1；
+## ""（无型效果牌）→不动；未解锁（无内功）→恒 0。
+func combo_after_play(form: String) -> int:
+	if not combo_enabled:
 		return 0
-	var st := String(nd.get("stance", "斩"))
-	var have := int(player["stances"].get(st, 0)) if owns.is_empty() else int(owns.get(st, 0))
-	return mini(maxi(1, int(nd.get("n", 1))), have)
-
-func _need_stance(card: Dictionary) -> String:
-	var nd: Dictionary = card["def"].get("need", {})
-	if nd.is_empty() and String(card["def"].get("kind", "")) == "burst":
-		nd = {"stance": String(card["def"].get("stance", "斩"))}
-	return String(nd.get("stance", ""))
-
-## 减费后实付气（每耗 1 层式抵 1 气，最低 0）
-func real_cost(card: Dictionary, k := -1) -> int:
-	if k < 0:
-		k = stance_cost_of(card)
-	return maxi(0, card_cost(card) - k)
+	if form == "":
+		return combo_count
+	if form == "flex":
+		return combo_count + 1
+	if current_form == "" or current_form == "flex" or current_form == form:
+		return combo_count + 1
+	return 1   # 硬换剑型＝断链，本张即新链第 1 张
 
 ## 连击（2026-11-06 终裁·涨磨清三口径）：涨＝need 卡按实际耗式 k（+k、本卡 ×新连击）；
 ## 磨＝没耗式的牌按实付气数 −连击（最低 0；功能牌效果 ×当前连击**先结算后磨损**；
@@ -328,46 +326,26 @@ func play_card(card_uid: int) -> void:
 		return
 	var def: Dictionary = card["def"]
 	var kind := String(def.get("kind", "effect"))
-	var is_atk := kind == "attack" or kind == "basic" or kind == "burst"
-	var is_stat := kind == "stat"   # 黄卡（2026-11-07 属性轮）：不吃连击磨损——属性/效果卡中立
-	var st_need := _need_stance(card)
-	var k := stance_cost_of(card)
-	var cost := real_cost(card, k)
+	var cost := card_cost(card)
 	if int(player["qi"]) < cost:
 		event.emit("气不足")
 		return
 	player["qi"] = int(player["qi"]) - cost
-	if k > 0:
-		player["stances"][st_need] = int(player["stances"][st_need]) - k
-	# —— 连击三口径（内功「连击堆叠」门控——2026-11-07 教程轮定：连击靠宝箱内功解锁，
-	# 未获得时无连击无磨损，全部 ×1）
+	# —— 连击·状态制（2026-11-08 改版，内功「连击堆叠」门控保留——教程宝箱解锁，
+	# 未获得时连击恒 0、剑型不换、全部 ×1）：每打出一张 +1；硬换剑型断链重 1；
+	# 变招（stance:flex）照 +1 且不锁型；无型牌（效果牌未标型）不动链。
+	# **先涨后算**——本张按新连击数线性 ×N 结算。
+	var form := String(def.get("stance", ""))
 	var mult := 1
-	if combo_enabled and not is_stat:   # 黄卡中立：不涨不磨（原版 Stat 卡不吃连击）
-		if k > 0:
-			combo_count += k
-			mult = combo_count
-			event.emit("催破！连击 %d（%s ×%d）" % [combo_count, String(def.get("name", "")), mult])
-		elif not is_atk:
-			# 奇窍/护体：效果 ×当前连击先结算（mult 给 ops），结算分支内磨损
-			mult = maxi(1, combo_count)
+	if combo_enabled and form != "":
+		var before := combo_count
+		combo_count = combo_after_play(form)
+		current_form = "flex" if form == "flex" else form
+		if combo_count < before:
+			event.emit("换剑断链！连击 %d（%s ×%d）" % [combo_count, String(def.get("name", "")), combo_count])
 		else:
-			# 攻击卡没耗式（直刺 0 气＝不动；零式硬打 need 卡＝磨损 −实付气费）
-			combo_count = maxi(0, combo_count - cost)
-	# —— 得式（gain 型；need 卡缺 gain 时回退本型式＝自回式，如连珠刺耗 1 回 1）
-	if is_atk:
-		var gs := String(def.get("gain", def.get("stance", "")))
-		if gs != "":
-			player["stances"][gs] = mini(DATA.STANCE_CAP, int(player["stances"].get(gs, 0)) + 1)
-			if k > 0:
-				event.emit("「%s」：耗 %d 层「%s」式、回 1 层（气 −%d）" % [String(def.get("name", "")), k, st_need, cost])
-			else:
-				event.emit("「%s」：得 1 层「%s」式" % [String(def.get("name", "")), gs])
-		elif k > 0:
-			event.emit("「%s」：耗 %d 层「%s」式（气 −%d）" % [String(def.get("name", "")), k, st_need, cost])
-	# —— 奇窍/护体的连击磨损放在 ops 之前结算语义为「先结算后磨损」：
-	# mult 已按当前连击取定，此处先磨损，ops 用锁定倍率跑；黄卡中立不磨
-	if combo_enabled and not is_atk and not is_stat and k == 0:
-		combo_count = maxi(0, combo_count - cost)
+			event.emit("连击 %d（%s ×%d）" % [combo_count, String(def.get("name", "")), combo_count])
+	mult = maxi(1, combo_count)
 	hand.erase(card)
 	card["uses"] = int(card.get("uses", 0)) + 1
 	if int(card["uses"]) >= 5:
@@ -380,6 +358,11 @@ func play_card(card_uid: int) -> void:
 		event.emit("「%s」承受不住，彻底碎裂——从卡组永久消失" % String(def.get("name", "")))
 	elif bool(card.get("exhaust", false)):
 		exhaust_pile.push_back(card)
+	elif combo_count == 0:
+		# 2026-11-08 用户令「零连击交互卡直接弃」（状态制口径）：打出后连击仍 0＝与连击链
+		# 零交互（未解锁教程期全牌；已解锁时连击 0 打无型效果牌）——不进已打出区逗留，直弃。
+		# 攻击牌首打 0→1 自动不直弃。
+		discard_pile.push_back(card)
 	else:
 		# 2026-11-06 四区制（规格 v1）：打出→已打出区（回合末才整堆进弃牌堆——连击链的载体）
 		played_pile.push_back(card)
@@ -392,17 +375,50 @@ func play_card(card_uid: int) -> void:
 		else:
 			EFFECTS.run_op(self, op, mult)
 	check_piles()
-	check_end()
+	if pending_visual and not _pending_strikes.is_empty():
+		## 落账延迟：伤害账单等表现层击中帧逐事件结算，终局判定延后到 settle 内
+		changed.emit()
+		return
+	settle_all_strikes()   # 无屏/无账单：立即全落＋终局判定（同步路径）
 	changed.emit()
 
-## 伤害单链入口（2026-11-07 逆向重构，对应原版 DamageEffect.ExecuteDamageEffect：
-## GenerateDamageParams → WeaponTargeting 单链模拟 → hooks 落真值）。
-## is_real=true 与 preview_play 的 is_real=false 跑**同一套** calculate——永不漂移。
+## 伤害单链入口（2026-11-08 落账延迟制，对应原版「账单算定→WeaponCollision 击中落账」：
+## calculate 模拟产出事件流账单 → **入待落账队列，击中帧逐事件结算**（血量/死亡/数字同步动）。
+## 无表现层（探针/无屏直跑 pending_visual=false）→ play_card 尾自动全落＝同步行为不变。
 func _run_damage_op(op: Dictionary, def: Dictionary, mult: int) -> void:
 	var params: Dictionary = EFFECTS.generate_damage_params(op, def, mult, self)
-	TARGETING.calculate({"enemies": encounter["active"], "params": params,
-		"is_real": true, "rng": rng,
-		"hooks": {"hit": _real_hit, "death": _real_death}})
+	var res: Dictionary = TARGETING.calculate({"enemies": encounter["active"],
+		"params": params, "rng": rng})
+	for ev in (res["events"] as Array):
+		_pending_strikes.push_back(ev)
+	_strike_total = int(res.get("total_strikes", 0))
+
+## 逐事件落账（表现层击中帧回调；hit→真扣血+hit_landed 信号跳数，death→出列/经验/顶替）
+func settle_next_strike() -> bool:
+	if _pending_strikes.is_empty():
+		return false
+	var ev: Dictionary = _pending_strikes.pop_front()
+	if String(ev.get("type", "")) == "hit":
+		_real_hit(ev.get("e", {}), int(ev.get("amount", 0)), bool(ev.get("is_crit", false)))
+	else:
+		_real_death(ev.get("e", {}))
+	changed.emit()
+	return not _pending_strikes.is_empty()
+
+## 全落兜底（无屏/回合推进/演出中断）：落完待账 → 终局判定在此收口
+func settle_all_strikes() -> void:
+	while not _pending_strikes.is_empty():
+		settle_next_strike()
+	if phase == "player":
+		check_end()
+
+## 待落账事件快照（表现层演出驱动用——不动队列）
+func strike_snapshot() -> Array:
+	return (_pending_strikes as Array).duplicate()
+
+## 本次打出的飞行总段数（2026-11-08 余段空放制——表现层拍数权威，含 amount/弹射段）
+func strike_total() -> int:
+	return _strike_total
 
 ## hooks.hit：真值侧同步落账（账本已推演同序列——甲吸收→血扣除；暴击标注传表现层）
 func _real_hit(e: Dictionary, dmg: int, is_crit: bool) -> void:
@@ -434,41 +450,26 @@ func _real_death(e: Dictionary) -> void:
 ## CRIT_MULT 放大的平行档，UI 显示「8（暴击 16）」；随机不进预览、两档并列展示）；
 ## kills＝推演会死的敌 uid；qi＝净气变化（−减费后实付气）；armor＝获甲（立即生效量）；
 ## status_add＝状态施加（burn→"encounter"键、缴械/冰冻→"all"键）；status_delta＝预留恒空；
-## stance_cost/stance_gain＝耗式/得式；combo_after＝打出后连击数。
+## combo_after＝打出后连击数（状态制先涨后算）。
 func preview_play(card: Dictionary) -> Dictionary:
 	var out := {"ok": false, "damage": {}, "kills": [], "qi": 0, "armor": 0,
 		"draw": 0, "heal": 0, "recovery": 0, "qi_max": 0,
 		"crit_damage": {},
 		"status_add": {}, "status_delta": {},
-		"stance_cost": {}, "stance_gain": {}, "combo_after": combo_count}
+		"combo_after": combo_count}
 	if not can_play(card):
 		return out
 	out["ok"] = true
 	var def: Dictionary = card["def"]
-	var kind := String(def.get("kind", "effect"))
-	# —— 连击/费用镜像（严格照 play_card：减费 k＝实际耗式、涨磨三口径；黄卡中立不涨不磨）——
+	# —— 连击/费用镜像（2026-11-08 状态制：干跑 combo_after_play——每张 +1/换型断/flex 桥/
+	# 无型不动；先涨后算；气费＝卡面固定值）——
 	var mult := 1
-	var combo_after := combo_count
-	var is_atk := kind == "attack" or kind == "basic" or kind == "burst"
-	var is_stat := kind == "stat"
-	var k := stance_cost_of(card)
-	var cost := real_cost(card, k)
-	if combo_enabled and not is_stat:
-		if k > 0:
-			combo_after = combo_count + k
-			mult = combo_after
-			out["stance_cost"] = {_need_stance(card): k}
-		elif not is_atk:
-			mult = maxi(1, combo_count)                  # 功能牌 ×当前连击（先结算）
-			combo_after = maxi(0, combo_count - cost)    # 结算后磨损
-		else:
-			combo_after = maxi(0, combo_count - cost)    # 零式硬打磨损；直刺 cost 0＝不动
+	var combo_after := combo_after_play(String(def.get("stance", "")))
+	mult = maxi(1, combo_after)
+	if combo_enabled:
 		out["combo_after"] = combo_after
-	if is_atk:
-		var gs := String(def.get("gain", def.get("stance", "")))
-		if gs != "":
-			out["stance_gain"] = {gs: 1}
-	# —— 气变化镜像：−减费后实付气（不再有攻击 +1 气）——
+	var cost := card_cost(card)
+	# —— 气变化镜像：−卡面固定气费——
 	out["qi"] = -cost
 	# —— ops 干跑（只推演伤害/护甲/状态；暴击随机不进预览；**敌方护甲不进预览**——
 	# 2026-11-07 用户令：预览只给出我方打出的伤害，遭遇护甲的吸收由玩家对照敌方护甲条自行判断）
@@ -481,7 +482,7 @@ func preview_play(card: Dictionary) -> Dictionary:
 			var params: Dictionary = EFFECTS.generate_damage_params(op, def, mult, self)
 			params["crit_chance"] = 0.0
 			var res: Dictionary = TARGETING.calculate({"enemies": encounter["active"],
-				"params": params, "is_real": false, "rng": rng, "hooks": {}})
+				"params": params, "rng": rng})
 			out["damage"] = res["damage"]
 			out["kills"] = res["kills"]
 			if int(params.get("hits", 1)) > 1:
@@ -489,7 +490,7 @@ func preview_play(card: Dictionary) -> Dictionary:
 				out["per"] = int(params["damage_per_hit"])
 		else:
 			match opk:
-				"armor_stat":
+				"armor":
 					out["armor"] = int(out["armor"]) + int(op.get("amount", 0)) * mult
 				"draw":
 					out["draw"] = int(out["draw"]) + int(op.get("count", 1)) * mult
@@ -521,17 +522,11 @@ func preview_play(card: Dictionary) -> Dictionary:
 ## 该卡打出将吃的倍率（UI/探针查询口）：未获内功＝×1；耗式卡＝新连击（+k）；
 ## 功能牌＝当前连击；不耗式攻击卡＝×1
 func combo_mult_of(card: Dictionary) -> int:
-	if not combo_enabled:
-		return 1
-	if stance_cost_of(card) > 0:
-		return maxi(1, combo_count + stance_cost_of(card))
-	var kk := String(card["def"].get("kind", "effect"))
-	if kk == "attack" or kk == "basic" or kk == "burst":
-		return 1
-	return maxi(1, combo_count)
+	# 状态制（2026-11-08）：预估本卡倍率＝干跑打出后连击数（先涨后算；无型牌 ×当前连击）
+	return maxi(1, combo_after_play(String(card["def"].get("stance", ""))))
 
-## 单段伤害掷定与单体溢出结转已退役（2026-11-07 逆向重构）：
-## 伤害全线走 QiVcTargeting.calculate 单链（暴击掷＝roll_crit 连暴链、溢出＝账本内建）；
+## 单段伤害掷定已退役（2026-11-07 逆向重构；2026-11-08 撤溢出轮同日）：
+## 伤害全线走 QiVcTargeting.calculate 单链（暴击掷＝roll_crit 连暴链、伤害封顶剩余血量）；
 ## 非伤害 ops 走 QiVcEffects.HANDLERS。
 #endregion
 
@@ -561,21 +556,29 @@ func _damage_enemy(e: Dictionary, amt: int, bypass_armor: bool = false) -> void:
 ## ＋跳过当次行动（原则②：替补上来的那个不行动）；后排其余原地不动。
 ## 每次死亡各自触发（一次范围杀前排两个＝后排顺位顶两个）。精英占整排＝后批（档留位）。
 func _promote_rows() -> void:
-	var back: Dictionary = {}
-	var back_row := -1
+	# 2026-11-08 用户裁定对齐刀页「row 全清才 target the row behind」：前排尚有存活者
+	# 不顶替；前排全灭→整排上移一行（row≥1 全体 −1），新前排首批 skip=1（原则②跳过
+	# 一次行动保持）。旧制「死一个顶一个」同日退役——那会让顶上者提前成为合法目标。
+	var front_alive := false
 	for e in encounter["active"]:
-		if not e["alive"]:
+		if bool(e.get("alive", false)) and int(e.get("row", 0)) == 0:
+			front_alive = true
+			break
+	if front_alive:
+		return
+	var moved := false
+	for e in encounter["active"]:
+		if not bool(e.get("alive", false)):
 			continue
 		var rr := int(e.get("row", 0))
-		if rr >= 1 and (back_row < 0 or rr < back_row):
-			back = e
-			back_row = rr
-	if back.is_empty():
-		return
-	back["row"] = 0
-	back["skip"] = 1
-	back["just_spawned"] = true   # 意图位空＋结算跳过（一次性）
-	event.emit("「%s」替补登场（本次不行动）" % String(back["name"]))
+		if rr >= 1:
+			e["row"] = rr - 1
+			if rr == 1:
+				e["skip"] = 1
+				e["just_spawned"] = true   # 意图位空＋结算跳过（一次性）
+				moved = true
+	if moved:
+		event.emit("前排尽没，后排整体压上（本次不行动）")
 
 ## 顺发池/最大排深/右→左列已退役（2026-11-07 逆向重构）——索敌全线在 QiVcTargeting。
 

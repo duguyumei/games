@@ -11,6 +11,9 @@ const BRUSH := 268.0
 const INK_NUM := Color(0.06, 0.11, 0.17)
 
 var _value := 0
+var _num_lbl: Label = null
+var _x_lbl: Label = null
+var _preview := -1
 var _on := false
 var _t := 0.0
 var _pulse := 0.0
@@ -104,6 +107,7 @@ func _build() -> void:
 
 func _build_labels() -> void:
 	var lx := Label.new()
+	_x_lbl = lx
 	lx.text = "×"
 	QISTYLE.font(lx, 36, true)
 	QISTYLE.text_color(lx, Color(1.0, 0.85, 0.46))
@@ -113,6 +117,7 @@ func _build_labels() -> void:
 	add_child(lx)
 	_floats.push_back(lx)
 	var l := Label.new()
+	_num_lbl = l
 	l.text = "1"
 	QISTYLE.font(l, 66, true)
 	QISTYLE.text_color(l, Color(1.0, 0.85, 0.46))
@@ -187,6 +192,7 @@ func update_from(b: RefCounted) -> void:
 func set_combo(v: int, on: bool) -> void:
 	var jumped := v > _value
 	_value = v
+	_apply_scale()
 	visible = on and v >= 1
 	if visible and jumped:
 		_pulse = 1.0
@@ -197,7 +203,33 @@ func set_combo(v: int, on: bool) -> void:
 		tw.tween_property(self, "scale", Vector2.ONE, 0.22)\
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
-## 跳档：丹顶窜起一道气柱
+## 预览：悬卡时显示打出后的连击数（-1＝还原真值）
+func set_preview(v: int) -> void:
+	if _preview == v:
+		return
+	_preview = v
+	_apply_scale()
+
+## 连击数字：数值越大字号越大（2026-11-08 用户令；抖动后议）
+func _apply_scale() -> void:
+	var v := maxi(1, _value if _preview < 0 else _preview)
+	var k := clampf(float(v - 1) / 7.0, 0.0, 1.0)
+	var fs := int(round(54.0 + 46.0 * k))
+	var xs := int(round(30.0 + 20.0 * k))
+	if _num_lbl != null:
+		_num_lbl.add_theme_font_size_override("font_size", fs)
+		_num_lbl.text = str(v)
+		_num_lbl.add_theme_color_override("font_color",
+			Color(1.0, 0.93, 0.62) if _preview >= 0 else Color(1.0, 0.85, 0.46))
+	if _x_lbl != null:
+		_x_lbl.add_theme_font_size_override("font_size", xs)
+	for g in _glow_n:
+		var gl: Label = g
+		gl.add_theme_font_size_override("font_size", fs)
+		gl.text = str(v)
+	for gx in _glow_x:
+		(gx as Label).add_theme_font_size_override("font_size", xs)
+#endregion
 func _plume_flash() -> void:
 	var c := _center()
 	var t := TextureRect.new()

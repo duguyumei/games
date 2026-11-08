@@ -58,10 +58,11 @@ static var HANDLERS := {
 	"draw": func(battle, op: Dictionary, mult: int, _ctx: Dictionary) -> void:
 		# 对应原版 DrawCardEffect（keep_last：结算中的卡不参与洗牌回收）
 		battle.draw_cards(int(op.get("count", 1)) * mult, true),
-	"armor_stat": func(battle, op: Dictionary, mult: int, _ctx: Dictionary) -> void:
-		# 对应 ArmorEffect（护甲属性——回合开始按属性刷新；立即生效＋成长）
+	"armor": func(battle, op: Dictionary, mult: int, _ctx: Dictionary) -> void:
+		# 对应 ArmorEffect（2026-11-08 用户裁对齐原版：**临时护甲层**——TryAddArmor
+		# 只叠当前甲，回合开始重置回起始底数＝临时的当回合有效；卡造不出永久甲
+		# ——原版 SetArmorStat 全库零调用，armor_stat 永久底数只属局外养成轴）
 		var amt := int(op.get("amount", 0)) * mult
-		battle.player["armor_stat"] = int(battle.player["armor_stat"]) + amt
 		battle.player["armor"] = int(battle.player["armor"]) + amt,
 	"heal": func(battle, op: Dictionary, mult: int, _ctx: Dictionary) -> void:
 		# 对应 HealEffect

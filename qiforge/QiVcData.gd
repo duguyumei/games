@@ -15,10 +15,21 @@ extends RefCounted
 const NEIGONG := {
 	"combo_stack": {
 		"name": "连击堆叠",
-		"desc": "装备后连击规则生效（2026-11-07 教程轮：宝物获得——开局不带）：耗式卡每耗 1 层式"
-			+ "→连击 +1、效果按**新连击数**放大；没耗式的牌按实付气数**磨损**连击"
-			+ "（结算后 −气费、最低 0；功能牌效果按当前连击数放大）；回合结束连击清零。",
+		"desc": "装备后连击规则生效（2026-11-07 教程轮：宝物获得——开局不带；"
+			+ "2026-11-08 状态制改版）：每打出一张牌连击 +1、按新连击数线性放大；"
+			+ "硬换剑型（短/长/巨互跳）＝断链重 1；变招照 +1 且不锁型；无型牌不动链；"
+			+ "回合开始连击清零、剑型归无。",
 	},
+}
+
+## 剑型四类（2026-11-08 状态制改版，用户裁）：卡表 stance 字段值域——
+## short 短剑（轻快连击向·蓝）/ long 长剑（控场架式向·墨）/ great 巨剑（重破防守势向·红）/
+## flex 变招（稀有标记·金：照常 +1 且不锁型，下一张任何型接链）；效果牌未标型＝""（不动链，后续单项设计补标）
+const FORMS := {
+	"short": {"cn": "短剑", "color": "blue"},
+	"long": {"cn": "长剑", "color": "ink"},
+	"great": {"cn": "巨剑", "color": "red"},
+	"flex": {"cn": "变招", "color": "gold"},
 }
 
 static func has_neigong(run: Dictionary, nid: String) -> bool:
@@ -31,13 +42,12 @@ static func has_neigong(run: Dictionary, nid: String) -> bool:
 ## 气：上限＝基础 2，局外（run.qi_max）／局内（qi_max 效果）可成长（护栏 6）；
 ##     回合开始重置到当前上限（重置在前、抽牌在后；洗牌换气**暂缓撤下**——2026-11-07 用户令）；
 ##     不再有「打攻击 +1 气」。cost＝气费（need 卡每耗 1 层式抵 1 气）。
-## 式：跨回合保存（弹药库，上限 9）；gain 型攻击打出定额得 1 层（need 卡
-##     缺 gain 时回退本型式＝自回式，如「连珠刺耗 2 回 1」）。
-## 连击（涨＝耗式／磨＝耗气／清＝回合末）：need 卡按实际耗式 k → 连击 +k、
-##     ×新连击；没耗式的牌按实付气数 −连击（最低 0；功能牌效果 ×当前连击
-##     **先结算后磨损**；攻击卡伤害不吃连击——锁定放大权在耗式）。
-## need＝软折扣不再拦打：无式可打出（付全额气费、连击磨损）。
-## ops 同引擎指令集（dmg 加 hits 多段）；pip＝旧像素卡费用点显示（兼容留）。
+## 〔2026-11-08 状态制改版〕式＝当前剑型状态（short/long/great/flex），不攒不耗；
+## 旧「式弹药库（gain 得式/need 耗式抵气/跨回合保存/上限 9）」全链退役——
+## gain/need/pip 卡表字段留档不消费（文本轮清）。
+## 连击（涨＝每张 +1／断＝硬换剑型重 1／桥＝变招照涨不锁型／不动＝无型牌／清＝回合开始
+## ＋型归无）：**先涨后算**——本张按新连击数线性 ×N。
+## ops 同引擎指令集（dmg 加 hits 多段）。
 const KEYWORDS := {
 	"crit": {"name": "暴击", "desc": "有概率造成多倍伤害。"},   # 2026-11-07 用户令：词条文案不带具体数值
 }
@@ -48,64 +58,66 @@ const CARDS := {
 	# Axe 族）；single＝锁最右首列（单体）。pierce_type 0/1/2＝OncePerEnemy/MultiHit/MultiSwitch。
 	# 下斩＝鞭位（2026-11-07 用户映射：Whip→下斩；「全体＝前排」口径）
 	"hengpi": {"name": "下斩", "cost": 0, "color": "purple", "kind": "attack",
-		"stance": "斩", "gain": "斩", "pip": "斩", "targeting": "front_row",
+		"stance": "great", "gain": "斩", "pip": "斩", "targeting": "front_row",
 		"pierce_type": 0,
 		"desc": "对全体敌人造成 5 点伤害；得 1 层「斩」式。",
 		"ops": [{"op": "dmg", "value": 5, "hits": 12}]},
-	# 直刺＝匕首制·顺发（RightLeftTargeting）：6 刺×6 点（卡面总伤 36）——右→左逐列点名、
-	# 死者出列顺位接、环绕、排清打顶替上来的新前排；溢出顺位结转（单链内建）。
-	"zhici": {"name": "直刺", "cost": 0, "color": "purple", "kind": "attack",
-		"stance": "刺", "gain": "刺", "pip": "刺", "targeting": "right_left",
-		"desc": "造成 36 点伤害。暴击。",
+	# 连环刺＝匕首制·顺发（2026-11-08 更名「直刺→连环刺」；数值轮：5 刺×8 点＝卡面
+	# 总伤 40——蓝本刀页「Deal 40 damage」5 投掷物×8 伤同值）：**左→右**逐列点名
+	# （首目标＝最左，与蓝本那把刀的右→左刚好相反——用户裁）；死者出列顺位接
+	# （顶上来的继续挨打）、环绕、排清才打后排；伤害封顶剩余血量、多余浪费（蓝本无溢出）。
+	"zhici": {"name": "连环刺", "cost": 0, "color": "purple", "kind": "attack",
+		"stance": "short", "gain": "刺", "pip": "刺", "targeting": "left_right",
+		"desc": "造成 40 点伤害。暴击。",
 		"kw": ["crit"],
-		"ops": [{"op": "dmg", "value": 6, "hits": 6, "crit": true}]},
+		"ops": [{"op": "dmg", "value": 8, "hits": 5, "crit": true}]},
 	"shangliao": {"name": "上撩", "cost": 0, "color": "purple", "kind": "attack",
-		"stance": "撩", "gain": "撩", "pip": "撩", "targeting": "single",
+		"stance": "long", "gain": "撩", "pip": "撩", "targeting": "single",
 		"desc": "对最前敌人造成 10 点伤害；得 1 层「撩」式。",
 		"ops": [{"op": "dmg", "value": 10, "hits": 1}]},
 	# —— 攻击（耗式型·连击位：每耗 1 层式＝气费 −1＋连击 +1）——
 	"cuipo_pi": {"name": "劈空斩", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "斩", "need": {"stance": "斩", "n": 1}, "pip": "斩",
+		"stance": "great", "need": {"stance": "great", "n": 1}, "pip": "斩",
 		"targeting": "front_row", "pierce_type": 0,
 		"desc": "消耗至多 1 层「斩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对前排所有敌人造成 15 点伤害，按新连击数放大；得 1 层「斩」式。",
 		"ops": [{"op": "dmg", "value": 15, "hits": 12}]},
 	"cuipo_ci": {"name": "连珠刺", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "刺", "need": {"stance": "刺", "n": 1}, "pip": "刺",
+		"stance": "short", "need": {"stance": "short", "n": 1}, "pip": "刺",
 		"targeting": "single",
 		"desc": "消耗至多 1 层「刺」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 8 点伤害 ×2 段，按新连击数放大；得 1 层「刺」式。",
 		"ops": [{"op": "dmg", "value": 8, "hits": 2}]},
 	"cuipo_liao": {"name": "撩月斩", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "撩", "need": {"stance": "撩", "n": 1}, "pip": "撩",
+		"stance": "long", "need": {"stance": "long", "n": 1}, "pip": "撩",
 		"targeting": "single",
 		"desc": "消耗至多 1 层「撩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 25 点伤害，按新连击数放大；得 1 层「撩」式。",
 		"ops": [{"op": "dmg", "value": 25, "hits": 1}]},
 	"cuipo_pi_heavy": {"name": "重劈·山崩", "cost": 2, "color": "red", "kind": "attack",
-		"stance": "斩", "need": {"stance": "斩", "n": 2}, "pip": "斩×2",
+		"stance": "great", "need": {"stance": "great", "n": 2}, "pip": "斩×2",
 		"targeting": "front_row", "pierce_type": 0,
 		"desc": "消耗至多 2 层「斩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对前排所有敌人造成 28 点伤害，按新连击数放大；得 1 层「斩」式。",
 		"ops": [{"op": "dmg", "value": 28, "hits": 12}]},
 	"cuipo_liao_heavy": {"name": "重撩·断岳", "cost": 2, "color": "red", "kind": "attack",
-		"stance": "撩", "need": {"stance": "撩", "n": 2}, "pip": "撩×2",
+		"stance": "long", "need": {"stance": "long", "n": 2}, "pip": "撩×2",
 		"targeting": "single",
 		"desc": "消耗至多 2 层「撩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 45 点伤害，按新连击数放大；得 1 层「撩」式。",
 		"ops": [{"op": "dmg", "value": 45, "hits": 1}]},
 	# —— 三剑（2026-11-07 用户映射：Bone/圣经/Garlic 位→弹射/游走/回身）——
 	# 逍遥剑＝骨头位（Bone 弹射投射）：首发单体，段尽后按概率弹跳追击（衰减链）
 	"xiaoyao_jian": {"name": "逍遥剑", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "撩", "need": {"stance": "撩", "n": 1}, "gain": "斩", "pip": "撩",
+		"stance": "long", "need": {"stance": "long", "n": 1}, "gain": "斩", "pip": "撩",
 		"targeting": "single",
 		"bouncy": {"base": 0.5, "decay": 0.15, "max": 3},
 		"desc": "消耗至多 1 层「撩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 12 点伤害，按新连击数放大，有几率弹跳追击；得 1 层「斩」式。",
 		"ops": [{"op": "dmg", "value": 12, "hits": 1}]},
 	# 游龙剑＝圣经位（King Bible 弧形发射→游走多目标近似：random 列袋不重复；数值暂定可调）
 	"youlong_jian": {"name": "游龙剑", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "刺", "need": {"stance": "刺", "n": 1}, "gain": "撩", "pip": "刺",
+		"stance": "short", "need": {"stance": "short", "n": 1}, "gain": "撩", "pip": "刺",
 		"targeting": "random",
 		"desc": "消耗至多 1 层「刺」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。游走出击，对随机敌人造成 9 点伤害 ×2 段，按新连击数放大；得 1 层「撩」式。",
 		"ops": [{"op": "dmg", "value": 9, "hits": 2}]},
 	# 回身剑＝大蒜位（Garlic 真值：前排 10 伤＋缴械——「描述也一样」实证）
 	"huishen_jian": {"name": "回身剑", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "斩", "need": {"stance": "斩", "n": 1}, "gain": "刺", "pip": "斩",
+		"stance": "great", "need": {"stance": "great", "n": 1}, "gain": "刺", "pip": "斩",
 		"targeting": "front_row", "pierce_type": 0,
 		"desc": "消耗至多 1 层「斩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对前排所有敌人造成 10 点伤害，按新连击数放大；缴械（下次攻击跳过）；得 1 层「刺」式。",
 		"ops": [{"op": "dmg", "value": 10, "hits": 12}, {"op": "disarm", "rounds": 1}]},
@@ -188,11 +200,11 @@ const CARDS := {
 		"ops": [{"op": "draw", "count": 2}]},
 	# —— 护体（蓝·耗气：效果 ×当前连击先结算，结算后连击 −气费）——
 	"tiegu": {"name": "铁骨", "cost": 1, "color": "blue", "kind": "defense",
-		"desc": "耗 1 气。护甲属性 +2，按当前连击数放大；连击 −1。",
-		"ops": [{"op": "armor_stat", "amount": 2}]},
+		"desc": "耗 1 气。获得 2 护甲（本回合），按当前连击数放大；连击 −1。",
+		"ops": [{"op": "armor", "amount": 2}]},
 	"jinzzhong": {"name": "金钟罩", "cost": 3, "color": "blue", "kind": "defense",
-		"desc": "耗 3 气。护甲属性 +5，按当前连击数放大；连击 −3。",
-		"ops": [{"op": "armor_stat", "amount": 5}]},
+		"desc": "耗 3 气。获得 5 护甲（本回合），按当前连击数放大；连击 −3。",
+		"ops": [{"op": "armor", "amount": 5}]},
 }
 #endregion
 
@@ -231,80 +243,88 @@ const EVOLUTIONS := [
 ## 七种无对位（暗影炸弹/螳螂/不洁/美杜莎/溺亡者/欺诈者/腥红死神）＝同档插值自拟，标注于此待考古替换。
 const ENEMIES := {
 	# —— 教程蝠族（Tutorial 生物群；max hit 0＝纯靶子不攻击）——
-	"tut_guardian": {"name": "守关者", "hp": 30, "xp": 2,
+	"tut_guardian": {"difficulty": 0.5, "name": "守关者", "hp": 30, "xp": 2,
 		"actions": [{"kind": "wait"}, {"kind": "attack", "value": 1}]},
-	"tut01": {"name": "幼雏蝠", "hp": 3, "xp": 1,
+	"tut01": {"difficulty": 0.0, "name": "幼雏蝠", "hp": 3, "xp": 1,
 		"actions": [{"kind": "wait"}]},
-	"tut01x": {"name": "幼雏蝠·壮", "hp": 13, "xp": 2,
+	"tut01x": {"difficulty": 0.5, "name": "幼雏蝠·壮", "hp": 13, "xp": 2,
 		"actions": [{"kind": "wait"}]},
-	"tut00": {"name": "学步蝠", "hp": 21, "xp": 1,
+	"tut00": {"difficulty": 1.0, "name": "学步蝠", "hp": 21, "xp": 1,
 		"actions": [{"kind": "wait"}]},
-	"tut06": {"name": "学弟蝠", "hp": 26, "xp": 3,
+	"tut06": {"difficulty": 1.5, "name": "学弟蝠", "hp": 26, "xp": 3,
 		"actions": [{"kind": "wait"}]},
-	"tut02": {"name": "学甲蝠", "hp": 20, "xp": 1,
-		"actions": [{"kind": "wait"}, {"kind": "armor", "value": 4}]},
-	"tut04": {"name": "学徒蝠", "hp": 26, "xp": 3,
+	# 教程层敌行为＝固定叠甲（2026-11-08 用户令：「敌人不会造成伤害，只会叠加」；
+	# 每次行动给自身 +4 护甲——与 wiki 敌表 Max armor=4 同值）——不攻击不等待，
+	# 纯软压力教学（拖越久甲越厚）。
+	"tut02": {"difficulty": 1.0, "name": "学甲蝠", "hp": 20, "xp": 1,
+		"actions": [{"kind": "armor", "value": 4}]},
+	# 教程第二场专用对位（2026-11-08 用户令调参「中 15 边 5」——对位原版预览 16/8/8 手感）
+	"tut_side": {"difficulty": 0.5, "name": "雏翼蝠", "hp": 5, "xp": 1,
+		"actions": [{"kind": "armor", "value": 4}]},
+	"tut_mid": {"difficulty": 0.5, "name": "雏翼蝠·壮", "hp": 15, "xp": 2,
+		"actions": [{"kind": "armor", "value": 4}]},   # xp2（2026-11-08 用户令：一级打完第二关正好首升——1+2+1+1=5）
+	"tut04": {"difficulty": 1.5, "name": "学徒蝠", "hp": 26, "xp": 3,
 		"actions": [{"kind": "attack", "value": 1}]},
-	"tut05": {"name": "见习蝠", "hp": 30, "xp": 2,
+	"tut05": {"difficulty": 2.0, "name": "见习蝠", "hp": 30, "xp": 2,
 		"actions": [{"kind": "attack", "value": 1}]},
-	"tut03": {"name": "学长蝠", "hp": 38, "xp": 2,
+	"tut03": {"difficulty": 2.0, "name": "学长蝠", "hp": 38, "xp": 2,
 		"actions": [{"kind": "attack", "value": 1}]},
 	# —— Mad Forest 生物群（真值）——
-	"bat": {"name": "蝙蝠", "hp": 8, "xp": 1,   # 2026-11-07 对齐匕首语义：直刺 8/段＝一发一只
+	"bat": {"difficulty": 1.0, "name": "蝙蝠", "hp": 8, "xp": 1,   # 2026-11-07 对齐匕首语义：直刺 8/段＝一发一只
 		"actions": [{"kind": "attack", "value": 1}]},
-	"flower_wall": {"name": "花墙", "hp": 60, "xp": 4,
+	"flower_wall": {"difficulty": 4.0, "name": "花墙", "hp": 60, "xp": 4,
 		"actions": [{"kind": "attack", "value": 1}, {"kind": "armor", "value": 6}]},
-	"ghoul": {"name": "食尸鬼", "hp": 40, "xp": 3,
+	"ghoul": {"difficulty": 3.5, "name": "食尸鬼", "hp": 40, "xp": 3,
 		"actions": [{"kind": "attack", "value": 2}]},
-	"skeleton3": {"name": "骷髅", "hp": 25, "xp": 2,
+	"skeleton3": {"difficulty": 3.0, "name": "骷髅", "hp": 25, "xp": 2,
 		"actions": [{"kind": "attack", "value": 1}, {"kind": "armor", "value": 5}]},
-	"zombie": {"name": "僵尸", "hp": 125, "xp": 4,
+	"zombie": {"difficulty": 5.0, "name": "僵尸", "hp": 125, "xp": 4,
 		"actions": [{"kind": "wait"}, {"kind": "attack", "value": 2}]},
-	"mudman": {"name": "泥人", "hp": 20, "xp": 1,
+	"mudman": {"difficulty": 2.0, "name": "泥人", "hp": 20, "xp": 1,
 		"actions": [{"kind": "attack", "value": 1}]},
 	# —— Inlaid Library 生物群（真值）——
-	"ecto": {"name": "灵质", "hp": 40, "xp": 2,
+	"ecto": {"difficulty": 4.0, "name": "灵质", "hp": 40, "xp": 2,
 		"actions": [{"kind": "attack", "value": 1}, {"kind": "armor", "value": 6}]},
-	"ghost": {"name": "幽灵", "hp": 100, "xp": 3,
+	"ghost": {"difficulty": 5.0, "name": "幽灵", "hp": 100, "xp": 3,
 		"actions": [{"kind": "attack", "value": 2}]},
-	"shade_bomb": {"name": "暗影炸弹", "hp": 80, "xp": 3,   # xp 自拟插值
+	"shade_bomb": {"difficulty": 4.5, "name": "暗影炸弹", "hp": 80, "xp": 3,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 1}]},
-	"sneaky_head": {"name": "鬼祟头", "hp": 200, "xp": 5,
+	"sneaky_head": {"difficulty": 6.0, "name": "鬼祟头", "hp": 200, "xp": 5,
 		"actions": [{"kind": "attack", "value": 3}]},
-	"lion_head": {"name": "狮首", "hp": 170, "xp": 4,
+	"lion_head": {"difficulty": 6.0, "name": "狮首", "hp": 170, "xp": 4,
 		"actions": [{"kind": "attack", "value": 2}, {"kind": "armor", "value": 8}]},
-	"glowing_bat_elite": {"name": "辉光蝠精英", "hp": 100, "xp": 40, "boss": true,
+	"glowing_bat_elite": {"difficulty": 8.0, "name": "辉光蝠精英", "hp": 100, "xp": 40, "boss": true,
 		"actions": [{"kind": "attack", "value": 1}, {"kind": "multi", "value": 1, "hits": 2},
 			{"kind": "armor", "value": 5}]},
 	# —— 精英/Boss（真值；armor 意图值＝Max armor 折扣暂定）——
-	"bat_elite": {"name": "精英蝙蝠", "hp": 400, "xp": 30,
+	"bat_elite": {"difficulty": 8.0, "name": "精英蝙蝠", "hp": 400, "xp": 30,
 		"actions": [{"kind": "attack", "value": 2}]},
-	"treasure_bat_elite": {"name": "宝箱蝠精英", "hp": 800, "xp": 45, "boss": true,
+	"treasure_bat_elite": {"difficulty": 9.0, "name": "宝箱蝠精英", "hp": 800, "xp": 45, "boss": true,
 		"actions": [{"kind": "attack", "value": 3}]},
-	"skeleton_king": {"name": "骷髅精英王", "hp": 600, "xp": 35, "boss": true,
+	"skeleton_king": {"difficulty": 9.0, "name": "骷髅精英王", "hp": 600, "xp": 35, "boss": true,
 		"actions": [{"kind": "attack", "value": 4}, {"kind": "multi", "value": 2, "hits": 2},
 			{"kind": "armor", "value": 10}]},
-	"mudman_elite": {"name": "泥人精英", "hp": 750, "xp": 35, "boss": true,
+	"mudman_elite": {"difficulty": 9.0, "name": "泥人精英", "hp": 750, "xp": 35, "boss": true,
 		"actions": [{"kind": "attack", "value": 6}, {"kind": "armor", "value": 10}]},
-	"zombie_elite": {"name": "僵尸精英", "hp": 750, "xp": 40, "boss": true,
+	"zombie_elite": {"difficulty": 9.5, "name": "僵尸精英", "hp": 750, "xp": 40, "boss": true,
 		"actions": [{"kind": "attack", "value": 7}, {"kind": "armor", "value": 10}]},
-	"ecto_elite": {"name": "灵质精英", "hp": 1000, "xp": 40, "boss": true,
+	"ecto_elite": {"difficulty": 9.5, "name": "灵质精英", "hp": 1000, "xp": 40, "boss": true,
 		"actions": [{"kind": "attack", "value": 8}, {"kind": "armor", "value": 15}]},
-	"mantis_elite": {"name": "螳螂精英", "hp": 1200, "xp": 45, "boss": true,   # xp 自拟插值
+	"mantis_elite": {"difficulty": 10.0, "name": "螳螂精英", "hp": 1200, "xp": 45, "boss": true,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 12}, {"kind": "multi", "value": 6, "hits": 2}]},
-	"ghost_elite": {"name": "幽灵精英", "hp": 1500, "xp": 45, "boss": true,
+	"ghost_elite": {"difficulty": 10.0, "name": "幽灵精英", "hp": 1500, "xp": 45, "boss": true,
 		"actions": [{"kind": "attack", "value": 9}, {"kind": "armor", "value": 20}]},
-	"lion_head_elite": {"name": "狮首精英", "hp": 2000, "xp": 55, "boss": true,
+	"lion_head_elite": {"difficulty": 10.0, "name": "狮首精英", "hp": 2000, "xp": 55, "boss": true,
 		"actions": [{"kind": "attack", "value": 10}, {"kind": "armor", "value": 25}]},
-	"nesuferit_elite": {"name": "不洁精英", "hp": 4000, "xp": 60, "boss": true,   # xp 自拟插值
+	"nesuferit_elite": {"difficulty": 10.0, "name": "不洁精英", "hp": 4000, "xp": 60, "boss": true,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 14}, {"kind": "armor", "value": 30}]},
-	"queen_medusa_elite": {"name": "美杜莎女王精英", "hp": 3500, "xp": 60, "boss": true,   # xp 自拟插值
+	"queen_medusa_elite": {"difficulty": 10.0, "name": "美杜莎女王精英", "hp": 3500, "xp": 60, "boss": true,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 14}, {"kind": "armor", "value": 35}]},
-	"drowner": {"name": "溺亡者", "hp": 4000, "xp": 65,   # xp 自拟插值
+	"drowner": {"difficulty": 10.0, "name": "溺亡者", "hp": 4000, "xp": 65,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 11}]},
-	"trickster": {"name": "欺诈者", "hp": 30000, "xp": 100,   # xp 自拟插值
+	"trickster": {"difficulty": 10.0, "name": "欺诈者", "hp": 30000, "xp": 100,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 30}]},
-	"red_death": {"name": "腥红死神", "hp": 1000000, "xp": 500,   # xp 自拟插值
+	"red_death": {"difficulty": 10.0, "name": "腥红死神", "hp": 1000000, "xp": 500,   # xp 自拟插值
 		"actions": [{"kind": "attack", "value": 333}]},
 }
 #endregion
@@ -331,18 +351,50 @@ const DUNGEON := ["enc_tut1", "enc_tut2", "enc_bats", "enc_crypt", "enc_king"]
 #region 楼层表（2026-11-01 地图轮：每层＝一张连续网格地图；2026-11-01 用户裁定「原版可走回头路」）
 ## pool＝该层明雷敌池（每雷随机组队 group[min,max] 只）；enemies＝图上明雷数；chests＝宝箱数；
 ## boss 层＝无铲子，杀 Boss 直接通关。教学层零/低威胁（蝠族真值）。
+## FLOORS 难度选敌制（2026-11-07 实装，原版 DifficultyRange 同构）：
+## 每层配 "difficulty"（该层 tile 难度值，0-10）——组队时按 ENEMIES.difficulty 标签过滤
+## 池（|敌难度 − 层难度| ≤ 容差 1.5），归一化方差加权随机（deep 层偏出高难怪）。
+## fixed:"tutorial" 层＝固定编队豁免（明雷 group 嵌套死编队，不走选敌）。
 const FLOORS := [
-	{"name": "蝙蝠（教学）", "fixed": "tutorial", "pool": ["bat"],
-		"group": [1, 1], "enemies": 3, "chests": 1},   # 2026-11-07 三场递进制（1→3→宝箱→5）：表数据对齐 tutorial_floor 实况
-	{"name": "试炼巢（教学）", "pool": ["tut02", "tut04", "tut05", "tut06", "tut03"],
+	{"name": "蝙蝠（教学）", "fixed": "tutorial", "pool": ["tut02"], "difficulty": 0.0,
+		"group": [1, 1], "enemies": 3, "chests": 1},   # 2026-11-08 数值轮：教程默认敌＝学甲蝠 tut02（20 血，wiki Bat Tutorial02）——三场递进 1→3→宝箱→5
+	{"name": "试炼巢（教学）", "pool": ["tut02", "tut04", "tut05", "tut06", "tut03"], "difficulty": 1.5,
 		"group": [1, 2], "enemies": 5, "chests": 1},
-	{"name": "蝙蝠巢", "pool": ["bat", "bat", "bat", "mudman"],
+	{"name": "蝙蝠巢", "pool": ["bat", "bat", "bat", "mudman"], "difficulty": 2.0,
 		"group": [2, 3], "enemies": 5, "chests": 2},
-	{"name": "乱葬岗", "pool": ["mudman", "skeleton3", "bat", "skeleton3"],
+	{"name": "乱葬岗", "pool": ["mudman", "skeleton3", "bat", "skeleton3"], "difficulty": 3.5,
 		"group": [2, 3], "enemies": 6, "chests": 2},
-	{"name": "蝠精英巢穴", "pool": ["skeleton3", "mudman"],
+	{"name": "蝠精英巢穴", "pool": ["skeleton3", "mudman"], "difficulty": 6.0,
 		"group": [1, 2], "enemies": 2, "chests": 1, "boss": "glowing_bat_elite"},
 ]
+
+## 难度→选敌方方差（原版 CalculateEnemyVarianceForDifficulty 同构数学）：
+## variance01 = clamp((tileDifficulty − range.min)/(range.max − range.min), 0, 1)
+## 我方 range 取全表 [0,10]；返回 0-1 进度值（越高偏出高难池）
+static func difficulty_variance(tile_difficulty: float) -> float:
+	return clampf((tile_difficulty - 0.0) / 10.0, 0.0, 1.0)
+
+## 难度选敌（一局组队时从层池按难度标签过滤＋方差加权随机；n＝要选的敌数）：
+## 过滤＝|敌难度 − 层难度| ≤ 容差；加权＝难度贴近层难度的权重高（方差越高高难池越活跃）。
+## 池空时回退全池（保底不空）。boss 敌（boss:true）不进随机池（Boss 由 FLOORS.boss 指定）。
+static func pick_enemies_by_difficulty(rng: RandomNumberGenerator, floor_spec: Dictionary,
+		pool: Array, n: int) -> Array:
+	var out: Array = []
+	if n <= 0 or pool.is_empty():
+		return out
+	var fd := float(floor_spec.get("difficulty", 0.0))
+	var candidates: Array = []
+	for eid in pool:
+		var spec: Dictionary = ENEMIES.get(String(eid), {})
+		if spec.is_empty() or bool(spec.get("boss", false)):
+			continue
+		if absf(float(spec.get("difficulty", 0.0)) - fd) <= 1.5:
+			candidates.push_back(String(eid))
+	if candidates.is_empty():
+		candidates = pool.duplicate()   # 回退：容差内无候选＝用全池（保底）
+	for i in n:
+		out.push_back(candidates[rng.randi_range(0, candidates.size() - 1)])
+	return out
 #endregion
 #endregion
 
@@ -351,12 +403,12 @@ const FLOORS := [
 const PLAYER_BASE := {"hp": 50, "qi_base": 0, "draw_per_turn": 3}   # qi_base 已退役（气改上限重置制，2026-11-06）
 const QI_BASE_MAX := 2        # 气上限·基础档（可成长：局外 run.qi_max／局内 qi_max 效果——2026-11-06 终裁）
 const QI_CAP := 6             # 气上限成长护栏（数值轮可调；回合重置/洗牌 +当前上限，上限成长两处同步放大）
-const STANCE_CAP := 9         # 式层数上限（跨回合保存——2026-11-06 终裁：弹药库制）
+const STANCE_CAP := 9         # 〔2026-11-08 状态制退役〕式层数上限旧值——引擎不再消费，留档待文本轮清
 const HAND_CAP := 10
 const CRIT_CHANCE := 0.25   # 暴击率初始 25%（2026-11-07 用户定；倍率 ×2）
 const CRIT_MULT := 2.0
 
-## 开局卡组（2026-11-03 用户裁定：新手关初始就一张「直刺」——伤害＝首关蝙蝠血量 12，一击教学）
+## 开局卡组（2026-11-03 用户裁定：新手关初始就一张「连环刺」〔原直刺〕——孤张制）
 const START_DECK := ["zhici"]
 
 ## VC 制属性表（2026-11-04 裁定照原版属性表；**2026-11-07 属性轮四层接线**）：
@@ -383,7 +435,8 @@ const STATS := [
 	{"id": "revival", "cn": "复活", "side": "R", "pct": false, "base": 0, "glyph": "复", "color": "d05a5a"},
 	{"id": "risk", "cn": "风险", "side": "R", "pct": true, "base": 100, "glyph": "险", "color": "d08a3e"},
 	{"id": "charm", "cn": "魅惑", "side": "R", "pct": true, "base": 100, "glyph": "魅", "color": "d07aa8"},
-	{"id": "max_hp", "cn": "血上限", "side": "R", "pct": false, "base": 0, "glyph": "命", "color": "c86a5a"},   # 表外计数轴（Hollow Heart 族——apply_stats_to_player 消费）
+	{"id": "max_hp", "cn": "血上限", "side": "R", "pct": false, "base": 0, "glyph": "命", "color": "c86a5a"},   # 固定值轴（黄卡 Gain N Max Health）
+	{"id": "max_hp_pct", "cn": "体魄", "side": "R", "pct": true, "base": 100, "glyph": "魄", "color": "c86a5a"},   # 百分比轴（养成 +10%/级——wiki 真值）
 ]
 
 ## 属性默认值（全部取 base）
@@ -396,9 +449,31 @@ static func default_stats() -> Dictionary:
 ## 三层基线合成（对应原版 GetStartingX 三参——playerConfig/runSettings/progressionData）：
 ## base（STATS.base）＋ progression（QiVcMeta.upgrades 的每级加成）＋ dungeon（run.dungeon_stats）。
 ## meta 传 {} ＝局外层为零（探针/无档环境）。返回值即战斗 starting——encounter 增量在 battle 层另加。
-const PROGRESSION_PER_LEVEL := {"might": 5, "area": 5, "amount": 1, "deal_count": 1, "growth": 5,
-	"greed": 5, "luck": 5, "curse": 5, "revival": 1, "max_hp": 5, "magnet": 1, "recovery": 1}
-const PROGRESSION_MAX_LEVEL := 5   # 每轴 5 级（数值自拟标注——原版资产数值待 AssetRipper 批）
+## 局外养成真值表（2026-11-07 wiki PowerUps 页一手值）：每轴 {每级加成, 满级, 每级花费}。
+## max_hp_pct＝百分比轴（PowerUp Max Health +10%/级）——与黄卡固定值 max_hp 分轴。
+const PROGRESSION_TABLE := {
+	"might": {"per": 20, "max_lv": 5, "cost": 500},
+	"area": {"per": 10, "max_lv": 5, "cost": 850},
+	"amount": {"per": 1, "max_lv": 3, "cost": 1250},
+	"growth": {"per": 20, "max_lv": 5, "cost": 750},
+	"greed": {"per": 25, "max_lv": 4, "cost": 1000},
+	"luck": {"per": 20, "max_lv": 5, "cost": 400},
+	"curse": {"per": 20, "max_lv": 5, "cost": 350},
+	"revival": {"per": 1, "max_lv": 1, "cost": 4000},
+	"max_hp_pct": {"per": 10, "max_lv": 5, "cost": 450},
+	"recovery": {"per": 1, "max_lv": 3, "cost": 500},
+	"duration": {"per": 1, "max_lv": 5, "cost": 250},
+	"deal_count": {"per": 1, "max_lv": 2, "cost": 2500},
+	"magnet": {"per": 1, "max_lv": 1, "cost": 2000},
+	"reroll": {"per": 2, "max_lv": 5, "cost": 200},
+	"skip": {"per": 2, "max_lv": 5, "cost": 250},
+	"banish": {"per": 2, "max_lv": 5, "cost": 300},
+}
+## 兼容别名（旧引用面）
+const PROGRESSION_PER_LEVEL := {
+	"might": 20, "area": 10, "amount": 1, "deal_count": 1, "growth": 20,
+	"greed": 25, "luck": 20, "curse": 20, "revival": 1, "max_hp_pct": 10, "magnet": 1, "recovery": 1}
+const PROGRESSION_MAX_LEVEL := 5   # 多数轴 5 级（真值分轴存 PROGRESSION_TABLE.max_lv）
 
 static func get_starting_stats(meta: Dictionary, run: Dictionary) -> Dictionary:
 	var d := default_stats()
@@ -411,9 +486,9 @@ static func get_starting_stats(meta: Dictionary, run: Dictionary) -> Dictionary:
 		d[axis] = int(d.get(axis, 0)) + int(dun[axis])
 	return d
 
-## 局外养成花费（自拟曲线：50 起步每级 +50；数值轮对齐原版资产后调）
-static func upgrade_cost(axis: String, level: int) -> int:
-	return 50 * (level + 1)
+## 局外养成花费（wiki 真值：每轴固定每级花费）
+static func upgrade_cost(axis: String, _level: int) -> int:
+	return int((PROGRESSION_TABLE.get(axis, {}).get("cost", 500)))
 
 ## 属性轴中文名（UI 查询口——养成面板/属性列用）
 static func stat_cn_of(axis: String) -> String:

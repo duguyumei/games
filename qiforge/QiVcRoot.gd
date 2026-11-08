@@ -40,6 +40,10 @@ func _ready() -> void:
 	if "--qi-shot" in OS.get_cmdline_user_args():
 		# 安全闸：任何一步卡住到点也退出，不让跑图进程挂死
 		var _guard := 22.0 if ("--qi-xp" in OS.get_cmdline_user_args() or "--qi-xp-win" in OS.get_cmdline_user_args() or "--qi-hit" in OS.get_cmdline_user_args()) else 10.0
+		if OS.has_environment("QI_TIP"):
+			_guard = 30.0   # 浮窗跑图：多一张截图，放宽安全闸
+		if OS.has_environment("QI_FXSLOW"):
+			_guard = _guard * clampf(float(OS.get_environment("QI_FXSLOW")), 1.0, 12.0)
 		get_tree().create_timer(_guard).timeout.connect(func(): get_tree().quit())
 		await get_tree().create_timer(1.2).timeout
 		await _shot("/Users/cc/Documents/qi-forge-2/.qi_vc_map.png")
@@ -80,7 +84,11 @@ func _ready() -> void:
 				await get_tree().create_timer(0.5).timeout
 				await _shot("/Users/cc/Documents/qi-forge-2/.qi_xp_end.png")
 			# 战斗特效验收（--qi-hit）：连打一张直刺，抓出招/命中/收尾
-			if "--qi-hit" in OS.get_cmdline_user_args() and _screen != null:
+			if "--qi-hit" in OS.get_cmdline_user_args() and _screen != null \
+					and OS.has_environment("QI_FXSCENE"):
+				# 溢出/替补四场景一次跑完（2026-11-07 用户令）
+				await _fx_scenes()
+			elif "--qi-hit" in OS.get_cmdline_user_args() and _screen != null:
 				var b = _screen.battle
 				if b.hand.size() > 0:
 					# 演示用：把敌人血量顶高，否则一击必杀、胜利浮层立刻盖住特效
@@ -96,6 +104,14 @@ func _ready() -> void:
 							b.encounter["active"].append(dup)
 						else:
 							b.encounter["active"][0]["hp"] = 999
+						# QI_FX=1：三敌并排 999 血——验收「右→左扫过一排」
+						# （单敌 6 击全落一处，走 repeat_jitter 分支，看不出扫的读感）
+						if OS.has_environment("QI_FX"):
+							for _k2 in 2:
+								var d3: Dictionary = b.encounter["active"][0].duplicate(true)
+								d3["uid"] = 9100 + _k2
+								d3["hp"] = 999
+								b.encounter["active"].append(d3)
 					# 演示连击徽（默认没装内功「连击堆叠」是隐藏的）
 					b.combo_enabled = true
 					b.combo_count = 3
@@ -120,8 +136,22 @@ func _ready() -> void:
 							break
 						_screen._play_clicked(int(b.hand[0]["uid"]))
 						if _k == 0:
-							await get_tree().create_timer(0.05).timeout
-							await _shot("/Users/cc/Documents/qi-forge-2/.qi_hit_strike.png")
+							if OS.has_environment("QI_FX"):
+								# 直刺 v1 时间轴抓帧：到点即截（_shot 自带 2 帧等待≈33ms，故刻度前移）
+								var t0 := Time.get_ticks_msec()
+								var marks := [0.16, 0.34, 0.52, 0.70, 0.90, 1.10, 1.32, 1.54]
+								var mi := 0
+								while mi < marks.size():
+									while float(Time.get_ticks_msec() - t0) / 1000.0 \
+											< float(marks[mi]):
+										await get_tree().process_frame
+									await _shot("/Users/cc/Documents/qi-forge-2/.qi_fx_%d.png" % mi)
+									if OS.has_environment("QI_FXDUMP"):
+										_fx_dump(_screen._combat_fx, mi)
+									mi += 1
+							else:
+								await get_tree().create_timer(0.05).timeout
+								await _shot("/Users/cc/Documents/qi-forge-2/.qi_hit_strike.png")
 						await get_tree().create_timer(0.30).timeout
 					# 第三张强制碎：uses 顶到 4，再打一次＝第 5 次 → 原地碎裂
 					if b.hand.size() > 0:
@@ -217,6 +247,135 @@ func _shot(path: String) -> void:
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(path)
 
+## ── 溢出/替补场景验收（QI_FXSCENE=1，配 --qi-hit）─────────────────────────────
+## 四场景一轮跑完：①一击一死（余段空放）②每敌 8 血（溢出顺位）③三排两行（顶替）
+## ④每敌 20 血（打不死，六段分摊）。每个场景打一张手牌并抓五帧。
+func _fx_scenes() -> void:
+	var b: RefCounted = _screen.battle
+	# 2026-11-07 用户令：调试期只跑单卡场景（跑一次快得多）
+	# 2026-11-08 用户令：多敌验证——一排 5 个、两排各 3 个
+	var specs := [
+		{"rows": [1], "hp": 10},         # 单敌一击必杀：验证剩余刀穿透到最右
+		{"rows": [3, 3], "hp": 10},      # 多敌分裂：交错间距 + 碎裂 + 经验珠落地
+	]
+	for si in specs.size():
+		var sp: Dictionary = specs[si]
+		_fx_set_scene(sp["rows"], int(sp["hp"]))
+		await get_tree().create_timer(0.30).timeout
+		if b.hand.is_empty():
+			print("[fxsc] 场景 ", si + 1, "：手牌空，跳过")
+			continue
+		var c0: Dictionary = b.hand[0]
+		print("[fxsc] ── 场景 ", si + 1, " hp=", int(sp["hp"]),
+			" rows=", str(sp["rows"]), " 敌=", b.encounter["active"].size(),
+			" 卡=", String(c0["def"].get("name", "?")))
+		_screen._play_clicked(int(c0["uid"]))
+		var t0 := Time.get_ticks_msec()
+		var slow := 1.0
+		if OS.has_environment("QI_FXSLOW"):
+			slow = clampf(float(OS.get_environment("QI_FXSLOW")), 1.0, 12.0)
+		var n_hits: int = _screen._hit_events.size()
+		var total: float = (0.16 + 0.70 + 0.20 + 0.11 * float(maxi(0, n_hits - 1))
+			+ 0.22) * slow
+		# 剑鞘制（5s 出鞘 + 0.5s 蓄力 + 5s 飞行）：抓帧总时长单开一档
+		var fracs := [0.04, 0.12, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.84, 0.94]
+		if OS.has_environment("QI_FXSCA"):
+			total = 2.95 * slow
+			# 落点在命中前后：飞行中 → 命中 → 数字
+			fracs = [0.04, 0.10, 0.17, 0.24, 0.32, 0.41, 0.50, 0.61, 0.76, 0.90]
+		var marks: Array = []
+		for f in fracs:
+			marks.push_back(total * float(f))
+		var mi := 0
+		while mi < marks.size():
+			while float(Time.get_ticks_msec() - t0) / 1000.0 < float(marks[mi]):
+				await get_tree().process_frame
+			await _shot("/Users/cc/Documents/qi-forge-2/.qi_sc%d_%d.png" % [si + 1, mi])
+			mi += 1
+		var seg := "[fxsc] hits:"
+		for ev in _screen._hit_events:
+			if bool((ev as Dictionary).get("death", false)):
+				seg += " uid%d<death" % int(ev.get("uid", -1))
+			else:
+				seg += " uid%d<-%d" % [int(ev.get("uid", -1)), int(ev.get("amount", 0))]
+		print(seg)
+		for e in b.encounter["active"]:
+			print("[fxsc]   存活 uid=", int(e["uid"]), " hp=", int(e["hp"]),
+				" row=", int(e.get("row", 0)))
+		await get_tree().create_timer(0.5).timeout
+
+## 重建敌阵（静默：不走死亡链、不放经验珠）
+func _fx_set_scene(rows: Array, hp: int) -> void:
+	var b: RefCounted = _screen.battle
+	# 掐掉经验/升级链：四场景连跑时杀敌攒经验会弹「择一功法」，把后两场整个盖住
+	# （2026-11-07 首跑实测：场景 3、4 全是升级弹窗）
+	if _screen._reward_ui != null:
+		_screen._reward_ui.queue_free()
+		_screen._reward_ui = null
+	_screen._stop_xp_flights()
+	b.xp_pending.clear()
+	b.xp_gained = 0
+	_screen.run["level"] = 30          # 高等级＝几点击杀涨不满一条，永不升级
+	_screen.run["xp"] = 0
+	_screen.run["pending_picks"] = 0
+	for uid in _screen._enemy_cards.keys():
+		var c = _screen._enemy_cards[uid]   # 可能已释放：不能声明成有类型的变量
+		if is_instance_valid(c):
+			c.queue_free()
+	_screen._enemy_cards.clear()
+	var tmpl: Dictionary = {}
+	for e in b.encounter["active"]:
+		tmpl = (e as Dictionary).duplicate(true)
+		break
+	if tmpl.is_empty():
+		tmpl = {"id": "bat", "name": "蝙蝠", "alive": true, "armor": 0, "row": 0,
+			"actions": [{"kind": "attack", "value": 3}]}
+	var arr: Array = []
+	var u := 9300
+	for ri in rows.size():
+		for k in int(rows[ri]):
+			var e2: Dictionary = tmpl.duplicate(true)
+			u += 1
+			e2["uid"] = u
+			e2["hp"] = hp
+			e2["mhp"] = hp
+			e2["armor"] = 0
+			e2["row"] = ri
+			e2["alive"] = true
+			e2["skip"] = 0
+			e2["just_spawned"] = false
+			arr.append(e2)
+	b.encounter["active"] = arr
+	# 留一个假替补：全歼也不弹胜利浮层（否则后三帧直接被盖住）
+	b.encounter["reserve"] = ["bat"]
+	_screen._refresh()
+	_screen._refresh_enemies()
+
+## 特效层孩子清单（调试用 QI_FXDUMP=1：查"画面上这条线是谁画的"）
+func _fx_dump(fx: Control, mark: int) -> void:
+	if fx == null:
+		return
+	print("[fx] ── mark ", mark, " children=", fx.get_child_count())
+	for ch in fx.get_children():
+		var ln := "  %s" % ch.get_class()
+		if ch is Control:
+			var c := ch as Control
+			ln += " z=%d pos=%s sc=%s rot=%.2f" % [c.z_index,
+				str(c.position.round()), str(c.scale), c.rotation]
+			if ch is TextureRect:
+				var tr := ch as TextureRect
+				ln += " size=%s mod=%s" % [str(tr.size.round()), str(tr.modulate)]
+			elif ch is Label:
+				ln += " text=%s" % (ch as Label).text
+		elif ch is Line2D:
+			var l2 := ch as Line2D
+			ln += " z=%d col=%s w=%.2f pts=%d" % [l2.z_index, str(l2.default_color),
+				l2.width, l2.get_point_count()]
+		elif ch is CPUParticles2D:
+			var p2 := ch as CPUParticles2D
+			ln += " z=%d col=%s amt=%d" % [p2.z_index, str(p2.color), p2.amount]
+		print("[fx] ", ln)
+
 func _show_map() -> void:
 	_free_screens()
 	_map = VC_MAP.new()
@@ -241,11 +400,11 @@ func _start_battle(entity: Dictionary) -> void:
 		var group_lo := int(spec.get("group", [2, 3])[0])
 		var group_hi := int(spec.get("group", [2, 3])[1])
 		var n := clampi(group_lo + rng.randi_range(0, group_hi - group_lo), 1, 3)
+		# 难度选敌制（2026-11-07 原版 DifficultyRange 同构）：明雷本尊＋队友按层难度
+		# 标签过滤＋加权随机（教程层 fixed 编队走 group 嵌套分支豁免此路）
 		picked = [entity["id"]]
-		for i in n - 1:
-			if pool.is_empty():
-				break
-			picked.push_back(pool[rng.randi_range(0, pool.size() - 1)])
+		var picked_rest: Array = VC.pick_enemies_by_difficulty(rng, spec, pool, n - 1)
+		picked.append_array(picked_rest)
 	_pending = {"cell": entity["cell"], "boss": String(entity["type"]) == "boss"}
 	_free_screens()
 	_screen = VC_SCREEN.instantiate()
@@ -381,21 +540,21 @@ func _open_upgrade_panel() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	# 可升级轴（PROGRESSION_PER_LEVEL 的键＝有每级加成的轴）
-	for axis in VC.PROGRESSION_PER_LEVEL.keys():
+	for axis in VC.PROGRESSION_TABLE.keys():
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		box.add_child(row)
 		var lv: int = _meta.upgrade_level(String(axis))
-		var per: int = int(VC.PROGRESSION_PER_LEVEL[axis])
+		var per: int = int(VC.PROGRESSION_TABLE[axis]["per"])
 		var cn := String(VC.stat_cn_of(String(axis)))
 		var info := Label.new()
-		info.text = "%s  Lv.%d/%d  （每级 %+d%s）" % [cn, lv, VC.PROGRESSION_MAX_LEVEL, per,
+		info.text = "%s  Lv.%d/%d  （每级 %+d%s）" % [cn, lv, int(VC.PROGRESSION_TABLE[axis]["max_lv"]), per,
 			"%" if int(VC.stat_pct_of(String(axis))) else ""]
 		QISTYLE.font(info, 19, false)
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(info)
 		var btn := Button.new()
-		if lv >= VC.PROGRESSION_MAX_LEVEL:
+		if lv >= int(VC.PROGRESSION_TABLE[axis]["max_lv"]):
 			btn.text = "已满"
 			btn.disabled = true
 		else:

@@ -101,11 +101,12 @@ static func tutorial_floor(spec: Dictionary) -> Dictionary:
 	var pool: Array = spec.get("pool", [])
 	var bat := "tut01" if pool.is_empty() else String(pool[0])
 	# 敌阵队列制（2026-11-07 v0.1）：group 嵌套＝排（index 0 前排）——
-	# 第一场一排 1 ／ 第二场一排 3 ／ 宝箱（内容物＝内功「连击堆叠」——连击靠宝物解锁）／
-	# 第三场一排 5（从下往上递进，出口在最上）
+	# 第一场一排 1（20 血学甲蝠＝pool[0]）／第二场一排 3（2026-11-08 用户令调参：
+	# 中 15 血·壮、边 5 血——对位原版预览「中间 16 两边 8」的分配手感）／
+	# 宝箱（内容物＝内功「连击堆叠」——连击靠宝物解锁）／第三场一排 5（从下往上递进，出口在最上）
 	var entities := [
 		{"type": "enemy", "cell": Vector2i(8, 10), "id": bat, "group": [[bat]]},
-		{"type": "enemy", "cell": Vector2i(8, 8), "id": bat, "group": [[bat, bat, bat]]},
+		{"type": "enemy", "cell": Vector2i(8, 8), "id": "tut_mid", "group": [["tut_side", "tut_mid", "tut_side"]]},
 		{"type": "chest", "cell": Vector2i(8, 7), "id": "combo_stack"},
 		{"type": "enemy", "cell": Vector2i(8, 5), "id": bat, "group": [[bat, bat, bat, bat, bat]]},
 		{"type": "exit", "cell": Vector2i(8, 3), "id": ""},

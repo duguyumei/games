@@ -5,7 +5,7 @@ shader_type canvas_item;
 // 底色＝TEXTURE×COLOR：StyleBoxFlat 平涂时 TEXTURE 为白→取 COLOR；
 // StyleBoxTexture（分割线）时 TEXTURE 为贴图——两态都正。
 uniform float band_pos = 0.2;
-uniform float strength : hint_range(0.0, 2.0) = 0.7;
+uniform float strength : hint_range(0.0, 2.0) = 0.0;   // 临时全关
 
 void fragment() {
 	vec4 base = texture(TEXTURE, UV) * COLOR;

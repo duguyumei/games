@@ -246,7 +246,7 @@ func _build_enemy_row() -> void:
 		# 悬停只连一次（内容随 _rebind 重建，悬停读实时数据）
 		chip.mouse_entered.connect(func() -> void:
 			QITIP.show_for(chip, [{"t": "title", "text": "敌方意图"},
-				{"t": "line", "text": battle.intent_tip(top_e)}], {"type": "意图", "min_w": 260.0}))
+				{"t": "line", "text": battle.intent_tip(top_e)}], {}))
 		chip.mouse_exited.connect(func() -> void: QITIP.hide_for(chip))
 		slot.add_child(chip)
 		var zone := Control.new()
@@ -305,7 +305,7 @@ func _build_enemy_row() -> void:
 		rec["mark"] = _make_mark_layer(wrap)
 		rec["statcol"] = _attach_status_col(wrap, e, false)
 		wrap.mouse_entered.connect(func() -> void:
-			QITIP.show_for(wrap, _enemy_rows(e), {"type": "敌方", "min_w": 260.0}))
+			QITIP.show_for(wrap, _enemy_rows(e), {}))
 		wrap.mouse_exited.connect(func() -> void: QITIP.hide_for(wrap))
 		zone.add_child(wrap)
 		if group.size() > 1:
@@ -480,7 +480,7 @@ func _build_ally_row() -> void:
 		rec["mark"] = _make_mark_layer(wrap)   # 器灵目标/归属照明环（2026-10-28）
 		rec["statcol"] = _attach_status_col(wrap, a, true)
 		wrap.mouse_entered.connect(func() -> void:
-			QITIP.show_for(wrap, _ally_rows(a), {"type": "单位", "min_w": 260.0}))
+			QITIP.show_for(wrap, _ally_rows(a), {}))
 		wrap.mouse_exited.connect(func() -> void: QITIP.hide_for(wrap))
 		slot.add_child(wrap)
 		slot.add_child(_make_sts2_hp_bar(rec, a))   # 我方血条同制＝卡外下方（2026-10-28 用户裁定）
@@ -579,10 +579,13 @@ func _make_trait_chip(glyph: String, ttl: String, desc: String) -> Panel:
 	gl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ic.add_child(gl)
 	var rows: Array = [{"t": "title", "text": ttl}, {"t": "line", "text": desc}]
-	ic.mouse_entered.connect(func() -> void: QITIP.show_for(ic, rows, {"type": "被动", "min_w": 240.0}))
+	ic.mouse_entered.connect(func() -> void: QITIP.show_for(ic, rows, {}))
 	ic.mouse_exited.connect(func() -> void: QITIP.hide_for(ic))
 	return ic
 
+## ⚠ 老版 · 不可参考（2026-11-08 用户裁定「我们也没有状态图标」）：
+## 卡右外状态图标列＝元老设计，现役线不再采用；代码暂留不删（用户裁「先留着」），
+## 不要把这里当现行 UI 规格。退役登记见 `design-docs/剥离清单_v0.1.md` 第五节。
 ## 状态列（卡右外）：实例聚合显示（图标＋总层数角标＋悬停详情）
 func _attach_status_col(wrap: Control, u: Dictionary, _ally: bool) -> VBoxContainer:
 	var col := VBoxContainer.new()
@@ -659,9 +662,6 @@ func _make_status_icon(sid: String, glyph: String, stacks: int, tint: Color, nam
 	corner.offset_bottom = 8.0
 	corner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ic.add_child(corner)
-	var rows: Array = [{"t": "title", "text": name}, {"t": "line", "text": desc}]
-	ic.mouse_entered.connect(func() -> void: QITIP.show_for(ic, rows, {"type": "状态", "min_w": 240.0}))
-	ic.mouse_exited.connect(func() -> void: QITIP.hide_for(ic))
 	return ic
 
 ## 手牌扇：无卡组涌出；打牌一律拖放（禁点按）——目标型拖到该单位卡、无目标型拖到敌方区/我方区
@@ -808,6 +808,7 @@ func _layout_hand(animate: bool) -> void:
 				vis.scale = Vector2.ONE
 				vis.rotation = 0.0
 				vis.position = Vector2.ZERO
+		w.set_meta("fan_rot", rot)   # 扇内角度（浮窗梯度用；焦点卡回正不影响这里）
 		w.set_meta("tgt_pos", Vector2(x, y))
 		w.set_meta("tgt_rot", rot if not is_focus else 0.0)
 

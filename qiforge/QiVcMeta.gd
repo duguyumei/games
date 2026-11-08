@@ -49,9 +49,12 @@ func upgrade_level(axis: String) -> int:
 func upgrade_cost(axis: String) -> int:
 	return DATA.upgrade_cost(axis, upgrade_level(axis))
 
+func max_level(axis: String) -> int:
+	return int(DATA.PROGRESSION_TABLE.get(axis, {}).get("max_lv", 5))
+
 ## 升一级（扣金币写档）；成功返回 true
 func try_upgrade(axis: String) -> bool:
-	if upgrade_level(axis) >= DATA.PROGRESSION_MAX_LEVEL:
+	if upgrade_level(axis) >= max_level(axis):
 		return false
 	var cost := upgrade_cost(axis)
 	if int(data["gold"]) < cost:

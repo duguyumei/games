@@ -95,8 +95,11 @@ func _tip(fill: Control) -> Vector2:
 	return _local(Vector2(x, r.position.y + r.size.y * 0.5))
 
 ## 放一颗珠：from 全局坐标；on_land 在到账那一刻回调（参数＝落点全局坐标）
-func fly(from_global: Vector2, fill: Control, on_land: Callable, delay := 0.0) -> void:
+const GROUND_Y := 790.0
+
+func fly(from_global: Vector2, fill: Control, on_land: Callable, delay := 0.0, drop := 0.22) -> void:
 	var a := _local(from_global)
+	var g := Vector2(a.x, GROUND_Y)          # 地面线：珠子先掉到地上，再从地上飞进条
 	# 拖尾（先建 → 画在珠下面）
 	var line := Line2D.new()
 	var wc := Curve.new()
@@ -151,7 +154,16 @@ func fly(from_global: Vector2, fill: Control, on_land: Callable, delay := 0.0) -
 	var tw_fly := orb.create_tween()
 	if delay > 0.0:
 		tw_fly.tween_interval(delay)
-	tw_fly.tween_method(_step.bind(orb, line, a, fill), 0.0, 1.0, dur)\
+	# ① 掉落到地面（纯下落，不弹）
+	if drop > 0.0:
+		tw_fly.tween_method(func(t: float) -> void:
+			var p2 := a.lerp(g, t)
+			orb.position = p2 - orb.size * 0.5
+			line.add_point(p2)
+		, 0.0, 1.0, drop).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw_fly.tween_interval(0.14)
+	# ② 从地面飞进经验条
+	tw_fly.tween_method(_step.bind(orb, line, g if drop > 0.0 else a, fill), 0.0, 1.0, dur)\
 		.set_trans(Tween.TRANS_LINEAR)
 	tw_fly.tween_callback(func() -> void: _arrive(orb, line, on_land))
 

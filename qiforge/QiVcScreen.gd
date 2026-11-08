@@ -13,11 +13,14 @@ const VC_BATTLE := preload("res://qiforge/QiVcBattle.gd")
 const VC_REWARD := preload("res://qiforge/QiVcReward.gd")   # 战斗内升级三选一（2026-11-05 经验特效轮）
 const XP_FX := preload("res://qiforge/QiXpFx.gd")           # 经验珠特效层（2026-11-05 经验美术轮）
 const COMBAT_FX := preload("res://qiforge/QiCombatFx.gd")   # 战斗特效层（2026-11-06 直刺闭环轮）
+const VC_TARGETING := preload("res://qiforge/QiVcTargeting.gd")  # 账单→拍映射（2026-11-08 余段空放制）
+const QI_FXSPEC := preload("res://qiforge/QiVcFxSpec.gd")    # 特效档案表（2026-11-07 语法轨）
 const COMBO_BADGE := preload("res://qiforge/QiComboBadge.gd")  # 连击徽（2026-11-06）
 const INTENT_BAR := preload("res://qiforge/QiIntentBar.gd")  # 敌方总行为（2026-11-06）
 const FXA := preload("res://qiforge/QiFxAtlas.gd")           # 特效图集（死亡墨屑等）
 const QI_ORBIT := preload("res://qiforge/QiQiOrbit.gd")      # 气珠轨道（气值＝绕珠粒子数）
 const CARD := preload("res://qiforge/QiCardStyle.gd")
+const QITIP := preload("res://qiforge/QiTooltip.gd")
 const ENEMY_CARD := preload("res://qiforge/QiEnemyCard.gd")
 const QIFONTS := preload("res://qiforge/QiFontBank.gd")
 const ICONS := preload("res://qiforge/QiVcIcons.gd")
@@ -25,7 +28,7 @@ const TILT_SHADER := preload("res://qiforge/assets/card_tilt_glint.gdshader")
 ## 手牌倾斜（2026-11-03 用户令「我就想在新手第一关就见到倾斜效果」）：
 ## 每张手牌渲进 SubViewport（2× 超采保清晰）→ 贴图 ＋ 单应透视/边缘反光着色器。
 ## 内层因此是纯贴图——事件必须归外壳（手牌标准做法）；倾斜/光效由 _hand_lerp_tick 统一驱动。
-const TILT_SS := 2.0          # 超采样倍数
+const TILT_SS := 3.0          # 超采样倍数（2026-11-08：2.0 时金线与卡面交界的 1px 硬边去不掉，提到 3.0）
 const TILT_MARGIN := 1.18     # 显示矩形外扩（防倾斜切角）
 const TILT_MAX := 0.50        # 倾斜最大量（喂 shader 的 tip）
 const TILT_SMOOTH := 12.0     # 倾斜跟手平滑
@@ -46,6 +49,9 @@ var run: Dictionary = {}
 var battle: RefCounted = null
 var _pool_hp_max := 1
 var _win_pending := false       # 胜利收尾中：等珠到齐＋升级弹窗全关再弹横幅（2026-11-05 用户令时序）
+var _death_fx_until := 0        # 死亡碎裂特效到期时刻（ms）：没播完不许弹胜利横幅
+var _win_retry_armed := false   # 已挂重推定时器（防重复挂）
+var _end_overlay_waiting := false   # 结束面板在等溶解播完
 var _xp_flights := 0            # 在飞经验珠数
 var _xp_spawned := {}           # 已放珠的敌 uid（同帧多次 _refresh 不重复放）
 var _xp_fx: Control = null      # 经验珠特效层（z 90；全 IGNORE）
@@ -56,8 +62,13 @@ var _aura_layer: Control = null   # 敌卡底光层（独立，整层重建，�
 var _aura_pending: Array = []     # 待定位的底光（卡片布局要等一帧才准）
 var _hit_events: Array = []     # 本次出牌的命中快照（uid/伤害/目标矩形）
 var _played_uid := -1           # 本次打出的手牌 uid（决定它走「出招」而不是「丢牌」动画）
+var _played_cid := ""           # 本次打出的卡 id（查特效档案；空/无档案＝继续走旧笔锋线）
 var _played_from := Vector2.ZERO
 var _fx_busy_until := 0   # 特效占线墙钟（错峰用，ms）
+var _shake_prev := 0      # 上次震屏墙钟（连击节流：防 _shake 的 base 吃到上一次的中间位移）
+var _replay_on := false   # 击拍留尸窗口：本轮特效还没播到，被打死的敌卡先别消失
+var _dying := {}          # uid -> 敌卡（已死但还没到它那一拍）
+var _last_beat := {}      # uid -> 本轮最后一次打到它的击序（活到这一拍才收尸）
 var _qi_prev := -1        # 上一帧看到的气值（洗牌回气算增量）
 var _hp_prev := -1        # 上一帧血量（受击特效判定）
 var _hit_vignette: TextureRect = null
@@ -91,13 +102,16 @@ var _overlay: Control = null
 
 var _hand_wraps: Array = []        # 屏级扇排（老屏同制：直接挂屏、视口坐标）
 var _hand_focus: Control = null    # 悬停焦点（弹起位）
-var _kw_tips: Array = []           # 悬卡词条条（分条制——每词条一条独立浮条，2026-11-07）
+var _kw_tip_host: Control = null   # 悬卡词条浮窗宿主（2026-11-08 起走 QiTooltip 工厂）
+var _preview_layer: Control = null  # 悬卡预览层（伤害/气/盾；z 92 全 IGNORE）
+var _preview_nodes: Array = []      # 预览件（换焦点/移开即清）
 var _tilt_t := 0.0                 # 倾斜/光泽带驱动时钟
 
 func setup(run_ref: Dictionary) -> void:
 	run = run_ref
 	battle = VC_BATTLE.new()
 	battle.setup(run)
+	battle.pending_visual = true   # 落账延迟制（2026-11-08）：伤害账单等击中帧逐事件结算
 	_pool_hp_max = _pool_hp_total_max()
 	battle.changed.connect(_refresh)
 	battle.event.connect(_on_event)
@@ -287,38 +301,108 @@ func _style_plaque(b: Button, mirror := false) -> void:
 	b.add_theme_stylebox_override("normal", plate)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", pressed)
+	# 禁用态＝同一张底（2026-11-08 用户令：不可用时底不变，只是没字）；
+	# 不给 disabled 覆盖的话 Godot 会退回主题默认的半透明禁用皮
+	b.add_theme_stylebox_override("disabled", plate)
+	b.add_theme_color_override("font_disabled_color", Color(0.91, 0.86, 0.72))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	b.add_theme_font_size_override("font_size", 20)
 	b.add_theme_color_override("font_color", Color(0.91, 0.86, 0.72))
 	b.add_theme_color_override("font_hover_color", Color(0.93, 0.79, 0.46))
 	b.add_theme_color_override("font_pressed_color", Color(0.10, 0.08, 0.05))
 
-## 式区（2026-11-04 用户令：横排移到经验条下方，从左到右斩→刺→撩）：
-## 容器住场景（%StanceBox＝HBox），编辑器位置＝行首锚点，向右生长
+## 式区（状态制 2026-11-08：式＝当前剑型状态非资源——容器只显**当前型一枚**徽，
+## 无型不显；断链反馈＝美术线后续）：容器住场景（%StanceBox＝HBox）
+## 当前武器型槽（2026-11-08 用户令：不再是「式」方块，直接显示**剑图标**；
+## 变招＝在原型上加金色标记，不做第四型。数字一律不显示——式已不是资源）
+var _last_form := ""      # 最后一次非 flex 的型（flex 时继续显示它）
+static var _form_icons: Dictionary = {}
+
 func _refresh_stance() -> void:
 	if _stance_box == null or battle == null:
 		return
 	for c in _stance_box.get_children():
 		c.queue_free()
-	# 2026-11-05 用户令：预览写死退役——接真数据 stances（每层一枚，斩→刺→撩，0 层不显，上限 9）
+	var form := String(battle.current_form)
+	if form != "" and form != "flex":
+		_last_form = form
+	if form == "" or not battle.combo_enabled:
+		return
+	var show_form := form if form != "flex" else _last_form
+	if show_form == "":
+		return
 	var BADGE := preload("res://qiforge/QiStanceBadge.gd")
-	var st: Dictionary = battle.player.get("stances", {})
-	var shown := 0
-	for g in ["斩", "刺", "撩"]:
-		var n := int(st.get(g, 0))
-		for _i in n:
-			if shown >= 9:
-				break
-			var b := BADGE.new()
-			b.glyph = g
-			b.side = 54.0   # 2026-11-05 用户令：调小到现在的 3/4（72→54）
-			b.owned = true
-			b.diamond = false
-			b.tint = BADGE.TINTS.get(g, Color(0.59, 0.18, 0.14))
-			_stance_box.add_child(b)
-			shown += 1
-		if shown >= 9:
-			break
+	var FORM_TINT := {
+		"short": Color(0.34, 0.56, 0.92), "long": Color(0.46, 0.44, 0.50),
+		"great": Color(0.86, 0.34, 0.26),
+	}
+	var tint: Color = FORM_TINT.get(show_form, Color(0.7, 0.6, 0.4))
+	var b := BADGE.new()
+	b.glyph = ""               # 不再用字
+	b.side = 54.0
+	b.owned = true
+	b.diamond = false
+	b.tint = tint
+	_stance_box.add_child(b)
+	# 剑图标（程序生成，三型比例不同）
+	var ic := TextureRect.new()
+	ic.texture = _weapon_icon(show_form)
+	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ic.size = Vector2(34.0, 34.0)
+	ic.position = (Vector2(54.0, 54.0) - ic.size) * 0.5
+	ic.modulate = Color(0.97, 0.94, 0.86)
+	b.add_child(ic)
+	# 变招待定：加一圈金环（不是第四型，只是标记）
+	if form == "flex":
+		var ring := Panel.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0, 0, 0, 0)
+		sb.border_color = Color(0.98, 0.82, 0.34)
+		sb.set_border_width_all(3)
+		sb.set_corner_radius_all(28)
+		ring.add_theme_stylebox_override("panel", sb)
+		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ring.size = Vector2(54.0, 54.0)
+		b.add_child(ring)
+
+## 三型剑图标（32×32 程序生成；短剑短而窄、长剑细长、巨剑宽厚）
+func _weapon_icon(form: String) -> Texture2D:
+	if _form_icons.has(form):
+		return _form_icons[form]
+	var img := Image.create_empty(32, 32, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var W := 0
+	var L := 0
+	match form:
+		"short":
+			W = 3
+			L = 13
+		"long":
+			W = 3
+			L = 22
+		"great":
+			W = 6
+			L = 17
+		_:
+			W = 3
+			L = 18
+	var cx := 16
+	var top := 6
+	var bot := top + L
+	for x in range(cx - W / 2, cx - W / 2 + W):
+		for y in range(top, bot):
+			img.set_pixel(x, y, Color(0.95, 0.92, 0.84))
+	# 护手
+	for x in range(cx - 6, cx + 6):
+		img.set_pixel(x, bot, Color(0.95, 0.92, 0.84))
+		img.set_pixel(x, bot + 1, Color(0.95, 0.92, 0.84))
+	# 柄
+	for y in range(bot + 2, bot + 6):
+		img.set_pixel(cx, y, Color(0.95, 0.92, 0.84))
+	var tex := ImageTexture.create_from_image(img)
+	_form_icons[form] = tex
+	return tex
 
 ## 手牌排序面板（原版 SortHandButton (parent) 位≈(1757,797)）：标题＋法力/颜色两键，点了即重排
 func _build_sort_panel() -> void:
@@ -433,10 +517,13 @@ func _refresh() -> void:
 	# 两个按钮同进退（2026-11-06 用户指正：战斗结束时只有「结束回合」被置灰，
 	# 跟「打出全部」一个死一个活——要么一起灰、要么一起亮）
 	var can_act := String(battle.phase) == "player" and not result_pending()
+	# 2026-11-08 用户令：不可用时保持和可用时一样的底（不置灰），只是**没有字**且点不动
 	if _end_btn != null:
 		_end_btn.disabled = not can_act
+		_end_btn.text = "结束回合" if can_act else ""
 	if _play_all_btn != null:
 		_play_all_btn.disabled = not can_act
+		_play_all_btn.text = "打出全部" if can_act else ""
 	_maybe_wait_discard()
 
 ## 弃牌表现→逻辑真同步（2026-11-06 用户令）：弃牌动画全部落地后回调 battle 推进
@@ -445,7 +532,7 @@ func _maybe_wait_discard() -> void:
 	if String(battle.phase) != "discarding":
 		return
 	var wait := maxf(0.0, float(_fly_busy_until - Time.get_ticks_msec()) / 1000.0) + 0.1
-	await get_tree().create_timer(wait).timeout
+	await get_tree().create_timer(wait, false).timeout
 	if battle != null and String(battle.phase) == "discarding":
 		battle.discard_anim_done()
 
@@ -459,8 +546,15 @@ func _refresh_enemies() -> void:
 	var alive_uids := {}
 	for e in battle.encounter["active"]:
 		alive_uids[int(e["uid"])] = true
+	# 击拍留尸（2026-11-07 用户裁定「特效打到才有伤害」）：模型先算完，但敌卡不能先消失——
+	# 本轮有特效回放时，死掉的卡先留在原地，等它最后一次被击中的那一拍再收（_beat_death）。
 	for euid in _enemy_cards.keys():
 		if not alive_uids.has(euid):
+			# 回放期间一律兜住：此刻击表可能还不完整（changed 是逐次发的），不能按表筛
+			if _replay_on:
+				if not _dying.has(int(euid)):
+					_dying[int(euid)] = _enemy_cards[euid]
+				continue
 			var dead: Control = _enemy_cards[euid]
 			_enemy_cards.erase(euid)
 			if is_instance_valid(dead):
@@ -468,6 +562,8 @@ func _refresh_enemies() -> void:
 				_enemy_death_fx(dead)
 	var acts: Array = battle.encounter["active"]
 	if acts.is_empty():
+		if _replay_on:
+			return          # 回放期不清场：留尸还在这个容器里，等击拍/收尾再拆
 		_enemy_holder = null
 		for h in _enemy_row.get_children():
 			h.queue_free()
@@ -505,9 +601,12 @@ func _refresh_enemies() -> void:
 				card.set_meta("euid", euid)
 				_enemy_holder.add_child(card)
 				_enemy_cards[euid] = card
+				_cache_card_img.call_deferred(card)
 			else:
 				ENEMY_CARD.refresh(card, e, tier)
-			card.position = Vector2(start_x + float(j) * (card_w + gap) + float(rr) * 26.0, 40.0 - float(rr) * 26.0)
+			if not _replay_on:      # 回放期间冻结站位：让留尸的卡和队友都不动
+				card.position = Vector2(start_x + float(j) * (card_w + gap) + float(rr) * 26.0,
+					40.0 - float(rr) * 26.0)
 			if rr > 0:
 				card.modulate = Color(0.86, 0.86, 0.86, 1.0) if rr == 1 else Color(0.72, 0.72, 0.72, 1.0)
 			else:
@@ -556,55 +655,85 @@ func _flush_auras() -> void:
 		_aura_layer.add_child(aura)
 	_aura_pending.clear()
 
+## 凸多边形半平面裁剪（Voronoi 用）：保留靠 a 一侧（到 a 比到 b 近的部分）
+func _clip_half(poly: Array, a: Vector2, b: Vector2) -> Array:
+	var mid := (a + b) * 0.5
+	var nrm := b - a
+	var out: Array = []
+	var n := poly.size()
+	for i in n:
+		var p1: Vector2 = poly[i]
+		var p2: Vector2 = poly[(i + 1) % n]
+		var d1 := nrm.dot(p1 - mid)
+		var d2 := nrm.dot(p2 - mid)
+		if d1 <= 0.0:
+			out.push_back(p1)
+		if (d1 < 0.0 and d2 > 0.0) or (d1 > 0.0 and d2 < 0.0):
+			var t := d1 / (d1 - d2)
+			out.push_back(p1.lerp(p2, t))
+	return out
+
 ## 敌卡死亡（2026-11-06）：卡牌游戏的死＝「这张牌没了」，别做成爆炸。
 ## 白闪 → 卡面去色下沉淡出 → 几点墨屑外溅；全部 0.32s 内收，与经验珠并行。
-func _enemy_death_fx(dead: Control) -> void:
-	var r: Rect2 = dead.get_global_rect()
-	# 调试：QI_SLOW_DEATH 把墨屑/白闪放慢 4 倍，方便截图验收（正常 0.32s）
-	var fx_scale := 4.0 if OS.has_environment("QI_SLOW_DEATH") else 1.0
-	# 白闪（贴在卡上，短促）
-	var flash := ColorRect.new()
-	flash.color = Color(1.0, 0.99, 0.95, 0.0)
-	flash.position = r.position
-	flash.size = r.size
-	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	flash.z_index = 90
-	add_child(flash)
-	var ft := flash.create_tween()
-	ft.tween_property(flash, "color:a", 0.75, 0.04 * fx_scale)
-	ft.tween_property(flash, "color:a", 0.0, 0.14 * fx_scale)
-	ft.tween_callback(flash.queue_free)
-	# 墨屑：几点从卡面往外溅
-	for i in 6:
-		var blot := TextureRect.new()
-		blot.texture = FXA.cell(6)
-		blot.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		var sz := randf_range(18.0, 44.0)
-		blot.size = Vector2(sz, sz)
-		blot.pivot_offset = blot.size * 0.5
-		blot.position = Vector2(r.position.x + randf() * r.size.x,
-			r.position.y + randf() * r.size.y) - blot.size * 0.5
-		blot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		blot.modulate = Color(0.10, 0.11, 0.14, 0.85)
-		blot.z_index = 89
-		add_child(blot)
-		var dir := Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 0.35)).normalized()
-		var tw := blot.create_tween()
-		tw.tween_property(blot, "position", blot.position + dir * randf_range(34.0, 78.0), 0.30 * fx_scale)\
-			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		tw.parallel().tween_property(blot, "modulate:a", 0.0, 0.30 * fx_scale).set_delay(0.06 * fx_scale)
-		tw.parallel().tween_property(blot, "scale", Vector2(0.6, 0.6), 0.30 * fx_scale)
-		tw.tween_callback(blot.queue_free)
-	# 卡本体：去色 + 下沉 + 微缩，0.32s 后交给逻辑层 free
-	var dt := dead.create_tween()
-	dt.parallel().tween_property(dead, "modulate", Color(0.45, 0.45, 0.48, 0.0), 0.32)
-	dt.parallel().tween_property(dead, "position", dead.position + Vector2(0.0, 12.0), 0.32)\
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	dt.parallel().tween_property(dead, "scale", dead.scale * Vector2(0.94, 0.94), 0.32)
-	dt.tween_callback(dead.queue_free)
+## 卡一建好就缓存一张「完整渲染图」（黑框/米底/人像俱全、无特效污染）。
+## 死亡碎裂直接切这张图——不靠死亡瞬间的屏幕状态，也不复制节点（复制会丢样式）。
+func _cache_card_img(card: Control) -> void:
+	if card == null or not is_instance_valid(card):
+		return
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if not is_instance_valid(card):
+		return
+	var r2: Rect2 = card.get_global_rect().grow(10.0)
+	var shot2 := get_viewport().get_texture().get_image()
+	if shot2 == null or shot2.is_empty():
+		return
+	var rs := Rect2i(roundi(r2.position.x), roundi(r2.position.y),
+		roundi(r2.size.x), roundi(r2.size.y))
+	rs = rs.intersection(Rect2i(0, 0, shot2.get_width(), shot2.get_height()))
+	if rs.size.x < 8 or rs.size.y < 8:
+		return
+	card.set_meta("cached_img", ImageTexture.create_from_image(shot2.get_region(rs)))
 
-## 洗牌换气：N 点气 = N 颗小气粒，从抽牌堆沿弧线飞进气珠（2026-11-06 用户令）
-## 每颗带一条短拖尾；最后一颗到账时气珠跳数字＋飘 +N
+func _enemy_death_fx(dead: Control) -> void:
+	# 外扩 10px：卡的墨色边框画在内容矩形之外，不外扩就只切到「米底＋人像」，
+	# 看起来像人碎了而不是卡碎了（2026-11-08 用户指正）
+	var r: Rect2 = dead.get_global_rect().grow(8.0)
+	# 免疫「腰斩」：死亡特效是异步 tween（慢放 1.12s），而 _end_replay 会重建敌卡容器、
+	# 把旧容器整个 queue_free —— 正在播动画的卡会连根被砍。先把它挪到屏幕层再播。
+	# 不 reparent（2026-11-08 用户指正）：换父节点后位置怎么复位都会偏——卡一律留在原位烧
+	dead.set_meta("dying_fx", true)
+	var _unused_r := r
+	# 调试：QI_SLOW_DEATH 把墨屑/白闪放慢 4 倍，方便截图验收（正常 0.32s）
+	# A 方案（2026-11-08 用户定）：抓屏前把卡恢复原色、等一帧渲染 → 拿到「完整又干净」的卡面。
+	# 之前直接抓屏拿到的是受击高亮态的卡，碎块发白；用卡自身贴图又丢了卡壳底板。
+	var fx_scale := 10.0 if OS.has_environment("QI_SLOW_DEATH") else 1.0
+	# 不抓屏：把这张卡单独渲一遍进 SubViewport 再取图——拿到的是卡本身（含黑框/米底），
+	# 不受死亡瞬间任何淡出/受击高亮影响（2026-11-08 用户令：直接用我原本这个卡）
+	# 焚纸（2026-11-08 用户令）：给卡挂溶解 shader，threshold 0→1 烧穿；不做取图、不切块
+	var burn_mat := ShaderMaterial.new()
+	burn_mat.shader = load("res://qiforge/assets/card_burn.gdshader")
+	burn_mat.set_shader_parameter("threshold", 0.0)
+	burn_mat.set_shader_parameter("edge_width", 0.22)
+	(dead as CanvasItem).material = burn_mat
+	for ch in dead.find_children("*", "CanvasItem", true, false):
+		var ci := ch as CanvasItem
+		if ci != null:
+			ci.material = burn_mat
+	var burn_time := 0.37 * fx_scale   # 原来 0.55 的 2/3（2026-11-08 用户令：快一点）
+	# 胜利横幅等到溶解播完再弹（这一行之前被误删了，补回）
+	_death_fx_until = maxi(_death_fx_until, Time.get_ticks_msec() + int(0.45 * fx_scale * 1000.0))
+	var twb := create_tween()
+	twb.tween_method(func(v: float) -> void: burn_mat.set_shader_parameter("threshold", v),
+		0.0, 1.0, burn_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	twb.tween_callback(func() -> void:
+		if is_instance_valid(dead):
+			dead.queue_free())
+	return
+	# 原卡立刻撤下（碎块已经接管画面）
+	dead.queue_free()
+
 func _spawn_qi_motes(n: int, origin: Vector2) -> void:
 	# 路线（2026-11-06 用户令）：从弃牌堆**左侧**起飞 → 绕到气珠**上方** → 从**右下偏中心**进入。
 	# 三次贝塞尔，比直线多一个「绕过目标」的弧，读起来是气在流动而不是子弹。
@@ -1132,11 +1261,11 @@ func _rebuild_hand() -> void:
 		w.size = Vector2(HAND_W, HAND_H + HAND_LIFT + HAND_SHELL_EXTRA)
 		w.set_meta("hand_uid", int(card["uid"]))
 		var vdef: Dictionary = CARD.tcg_def_of(card["def"])
-		# 2026-11-05 用户令：需要槽实/虚联动玩家当前持有——手牌每次重建取最新＝实时连锁
-		vdef["own_stances"] = battle.player.get("stances", {})
+		# 〔2026-11-08 状态制退役〕need 槽实/虚联动（own_stances）——式层数池已退役，注入删
 		vdef["crack_level"] = clampi(int(card.get("uses", 0)) - 2, 1, 3)   # 用 3 次=轻、4=中、（5=重）
 		vdef["combo_gold"] = battle.combo_mult_of(card) > 1            # 连击加成→费用转金
 		vdef["cracked"] = battle.is_cracked(card)   # 2026-11-06 碎牌：裂痕态卡面画裂纹
+		vdef["cur_form"] = String(vdef.get("stance", "")) if OS.has_environment("QI_MATCH_TEST") else String(battle.current_form)   # 型符号高亮用
 		var vis: Control = _make_tilt_view(vdef)
 		vis.position = _vis_rest(vis)
 		w.set_meta("vc_card", vis.get_meta("vc_card"))
@@ -1199,6 +1328,11 @@ func _play_clicked(card_uid: int) -> void:
 		if int(c["uid"]) == card_uid:
 			if not battle.can_play(c):
 				return
+			_played_cid = String(c.get("id", ""))
+			if QI_FXSPEC.has_spec(_played_cid):
+				_replay_on = true
+				_dying.clear()
+				_last_beat.clear()
 			break
 	_set_hand_focus(null)
 	_played_uid = card_uid
@@ -1253,12 +1387,14 @@ func _layout_hand(animate: bool) -> void:
 		# 同日续令：整体再上提 5px
 		var y := vp.y - (HAND_H + HAND_LIFT + HAND_SHELL_EXTRA) - 5.0 - 30.0 * (1.0 - t * t)
 		var rot := (i - mid) * 0.075   # 扇形（原版实测端卡约 ±10~12°）
+		w.set_meta("fan_rot", rot)    # 浮窗梯度用：扇内角度（焦点卡回正不影响这里）
 		var vis: Control = w.get_child(0)
 		vis.pivot_offset = Vector2(vis.size.x * 0.5, (vis.size.y - HAND_H) * 0.5 + HAND_H * 0.5)
 		w.pivot_offset = Vector2(HAND_W * 0.5, HAND_H + HAND_LIFT + HAND_SHELL_EXTRA)
 		var is_focus := fi == i
 		if is_focus:
-			w.rotation = 0.0
+			# 2026-11-08 用户裁定：悬起的卡不拍平——保留扇角（原版悬起也带倾角），
+			# 浮窗梯度直接读这个角，两者同源
 			w.scale = Vector2.ONE
 			w.z_index = 60
 			vis.z_index = 0
@@ -1268,14 +1404,14 @@ func _layout_hand(animate: bool) -> void:
 			vis.z_index = 0
 		if not animate and not w.has_meta("fly_in"):
 			w.position = Vector2(x, y)
-			w.rotation = rot if not is_focus else 0.0
+			w.rotation = rot
 			w.scale = Vector2.ONE
 			if not is_focus:
 				vis.scale = Vector2.ONE
 				vis.rotation = 0.0
 				vis.position = _vis_rest(vis)
 		w.set_meta("tgt_pos", Vector2(x, y))
-		w.set_meta("tgt_rot", rot if not is_focus else 0.0)
+		w.set_meta("tgt_rot", rot)
 
 func _process(delta: float) -> void:
 	_hand_lerp_tick(delta)
@@ -1288,6 +1424,8 @@ func _exit_tree() -> void:
 	if _hit_stop_until > 0:          # 换屏/退出时绝不能把 time_scale 留在 0.08
 		_hit_stop_until = 0
 		Engine.time_scale = 1.0
+	if get_tree() != null and get_tree().paused:
+		get_tree().paused = false    # 升级弹窗冻结残留兜底（2026-11-08 世界暂停制）
 
 func _hand_lerp_tick(delta: float) -> void:
 	const K := 7.0
@@ -1341,16 +1479,22 @@ func _hand_lerp_tick(delta: float) -> void:
 			var ww: Control = _hand_wraps[i]
 			if ww.get_child_count() == 0:
 				continue
-			var vv: Control = ww.get_child(0)
-			var rr: Rect2 = vv.get_global_rect()
-			var mm: float = (TILT_MARGIN - 1.0) * HAND_W * 0.5
-			if rr.grow(-mm).has_point(mouse):
+			if _card_hit(ww, mouse):
 				_set_hand_focus(ww)
 				break
 	if _hand_focus != null and is_instance_valid(_hand_focus) and _hand_focus.get_child_count() > 0:
-		var fvis: Control = _hand_focus.get_child(0)
-		var hold: bool = (_hand_focus as Control).get_global_rect().grow(2.0).has_point(mouse) \
-			or fvis.get_global_rect().grow(2.0).has_point(mouse)
+		# 焦点保持＝「卡面四边形」∪「卡面外接框外扩 10px」（2026-11-08 用户报靠近边缘就取消）：
+		# 四边形会随斜切位移每帧抖动，边缘处判 false；外接框补一个容错圈，避免边界抖动
+		var hold: bool = _card_hit(_hand_focus, mouse, 2.0)
+		if not hold:
+			var qc := _card_face_corners(_hand_focus)
+			if qc.size() == 4:
+				var mn := qc[0]
+				var mx := qc[0]
+				for qq in qc:
+					mn = Vector2(minf(mn.x, qq.x), minf(mn.y, qq.y))
+					mx = Vector2(maxf(mx.x, qq.x), maxf(mx.y, qq.y))
+				hold = Rect2(mn, mx - mn).grow(10.0).has_point(mouse)
 		if not hold and not has_meta("shot_no_hold"):
 			_set_hand_focus(null)
 	for w in _hand_wraps:
@@ -1376,12 +1520,15 @@ func _hand_lerp_tick(delta: float) -> void:
 		var tip: Vector2 = (tv.get_meta("tip", Vector2.ZERO) as Vector2).lerp(tip_tgt, kk)
 		var sheen: float = lerpf(float(tv.get_meta("sheen", 0.2)), sheen_tgt, kk)
 		var hov: float = lerpf(float(tv.get_meta("hov", 0.0)), 1.0 if inside else 0.0, kk)
+		if OS.has_environment("QI_FORCE_TIP"):
+			tip = Vector2(0.5, 0.3)
 		tv.set_meta("tip", tip)
 		tv.set_meta("sheen", sheen)
 		tv.set_meta("hov", hov)
 		mat.set_shader_parameter("tip_x", tip.x)
 		mat.set_shader_parameter("tip_y", tip.y)
 		mat.set_shader_parameter("sheen_phase", sheen)
+		mat.set_shader_parameter("glint_strength", 0.0)   # 临时全光效关：看基础形态
 		mat.set_shader_parameter("hover", hov)
 
 ## 手牌倾斜视图（2026-11-03 用户令）：真卡渲进 SubViewport（2× 超采保清晰）→
@@ -1392,6 +1539,7 @@ func _make_tilt_view(def: Dictionary) -> TextureRect:
 	vp.transparent_bg = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	vp.disable_3d = true
+	vp.msaa_2d = Viewport.MSAA_4X   # 卡面框线抗锯齿（2026-11-08 用户指正外框锯齿）
 	var card: Control = CARD.make_tcg_card(def, "hand")
 	card.theme = QIFONTS.default_theme()   # SubViewport 不吃根窗主题
 	card.scale = Vector2(TILT_SS, TILT_SS)
@@ -1400,8 +1548,12 @@ func _make_tilt_view(def: Dictionary) -> TextureRect:
 	mat.shader = TILT_SHADER
 	mat.set_shader_parameter("strength", 0.09)
 	mat.set_shader_parameter("uv_scale", TILT_MARGIN)
+	if OS.has_environment("QI_FORCE_TIP"):
+		mat.set_shader_parameter("tip_x", 0.5)
+		mat.set_shader_parameter("tip_y", 0.3)
 	mat.set_shader_parameter("glint_strength", 1.0)
 	var tex := TextureRect.new()
+	tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR   # 斜切采样抗锯齿
 	tex.name = "TiltView"
 	tex.add_child(vp)   # 视口随贴图层同生共死
 	tex.texture = vp.get_texture()
@@ -1443,6 +1595,9 @@ func _set_hand_focus(w: Control) -> void:
 	_hand_focus = w
 	if w != null and not get_meta("shot_no_tip", false):
 		_show_kw_tips(w)
+		_show_card_preview(w)
+	else:
+		_hide_card_preview()
 	_layout_hand(true)
 
 ## 悬卡词条条（分条制，2026-11-07）：竖排于卡右侧，一条一词条（名亮＋说明暗），各条独立
@@ -1455,64 +1610,254 @@ func _show_kw_tips(w: Control) -> void:
 			break
 	if def.is_empty():
 		return
-	var entries: Array = []
+	# 分条制（2026-11-07 用户令）：一条词条＝一块独立浮窗，只放词条，不重复卡面已有的名字/描述/数值
+	var groups: Array = []
 	for kwd in def.get("kw", []):
 		if VC.KEYWORDS.has(kwd):
-			entries.push_back([String(VC.KEYWORDS[kwd]["name"]), String(VC.KEYWORDS[kwd]["desc"])])
-	var gs := String(def.get("gain", ""))
-	if gs != "":
-		entries.push_back(["获得一个%s" % gs, "打出后得 1 层「%s」式" % gs])
-	if entries.is_empty():
+			groups.push_back([
+				{"t": "title", "text": String(VC.KEYWORDS[kwd]["name"])},
+				{"t": "line", "text": String(VC.KEYWORDS[kwd]["desc"])}])
+	# 武学（＝式）词条 2026-11-08 用户令：整块移除（式已改为剑型＝状态，不再「获得式」）
+	if groups.is_empty():
 		return
-	var r: Rect2 = w.get_global_rect()
-	var y := maxf(8.0, r.position.y - 6.0)
-	for e in entries:
-		var bar := PanelContainer.new()
-		var box := StyleBoxFlat.new()
-		box.bg_color = Color(0.07, 0.06, 0.09, 0.94)
-		box.border_color = QISTYLE.AMBER_BRIGHT * Color(1, 1, 1, 0.55)
-		box.border_width_bottom = 1
-		box.border_width_top = 1
-		box.border_width_left = 2
-		box.border_width_right = 2
-		box.corner_radius_top_left = 4
-		box.corner_radius_bottom_left = 4
-		box.content_margin_left = 12.0
-		box.content_margin_right = 12.0
-		box.content_margin_top = 7.0
-		box.content_margin_bottom = 7.0
-		bar.add_theme_stylebox_override("panel", box)
-		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bar.z_index = 120
-		bar.custom_minimum_size = Vector2(196.0, 0.0)
-		var vb := VBoxContainer.new()
-		vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		vb.add_theme_constant_override("separation", 2)
-		bar.add_child(vb)
-		var nm := Label.new()
-		QISTYLE.font(nm, 17, true)
-		QISTYLE.text_color(nm, QISTYLE.AMBER_BRIGHT)
-		nm.text = String(e[0])
-		nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		vb.add_child(nm)
-		var ds := Label.new()
-		QISTYLE.font(ds, 15, false)
-		QISTYLE.text_color(ds, Color(0.78, 0.74, 0.68))
-		ds.text = String(e[1])
-		ds.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		ds.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		vb.add_child(ds)
-		add_child(bar)
-		var bw := bar.get_combined_minimum_size()
-		bar.position = Vector2(minf(r.end.x + 10.0, 1908.0 - bw.x), y)
-		y += bw.y + 6.0
-		_kw_tips.push_back(bar)
+	_kw_tip_host = w
+	# 2026-11-08：位置/尺寸/边框交给浮窗工厂——撑内容、卡外 10px 动态选边、沿扇角带梯度
+	QITIP.show_stack(w, groups, {
+		"tilt_fn": func() -> float: return w.rotation,
+		"anchor_fn": func() -> Rect2: return _card_visual_rect(w),
+		"corners_fn": func() -> PackedVector2Array: return _card_face_corners(w),
+		"avoid": _hud_avoid()})
+	# 注：不用「摆卡上方」兜底——实战里上方常压住敌方卡（价更高），浮窗一律走左右两侧
+
+#region 悬卡预览（2026-11-08 立，照用户口径：红字黑框／致命金框／后排小括号／气珠·血球旁 +N）
+## 数据源＝battle.preview_play（只读干跑，与实战同源，绝不落账）
+func _show_card_preview(w: Control) -> void:
+	_hide_card_preview()
+	if battle == null or battle.phase != "player":
+		return
+	var uid := int(w.get_meta("hand_uid", -1))
+	var card := {}
+	for c in battle.hand:
+		if int(c["uid"]) == uid:
+			card = c
+			break
+	if card.is_empty() or not battle.can_play(card):
+		return
+	var dp: Dictionary = battle.preview_play(card)
+	if not bool(dp.get("ok", false)):
+		return
+	_ensure_preview_layer()
+	# ① 敌人伤害（前排＝红字黑框；致命＝金框；后排＝右下角小括号）
+	var dmg: Dictionary = dp.get("damage", {})
+	var kills: Array = dp.get("kills", [])
+	for euid in dmg:
+		var val := int(dmg[euid])
+		if val <= 0:
+			continue
+		var cc: Control = _enemy_cards.get(int(euid))
+		if cc == null or not is_instance_valid(cc):
+			continue
+		_mk_dmg_mark(cc, val, kills.has(int(euid)), _enemy_row_of(int(euid)) > 0)
+	# ② 气（气珠在 (1495,704) 110×108）
+	var qi := int(dp.get("qi", 0))
+	if qi > 0:
+		_mk_res_mark("QiText", "+%d" % qi, Color(0.96, 0.80, 0.32))
+	# ③ 护盾（血心在 (315,704) 110×108）
+	var ar := int(dp.get("armor", 0))
+	if ar > 0:
+		_mk_res_mark("HpText", "+%d" % ar, Color(0.62, 0.84, 1.0))
+	_update_combo_preview(int(dp.get("combo_after", battle.combo_count)))
+
+func _hide_card_preview() -> void:
+	for n in _preview_nodes:
+		if is_instance_valid(n):
+			(n as Node).queue_free()
+	_preview_nodes = []
+	if _combo_badge != null and _combo_badge.has_method("set_preview"):
+		_combo_badge.set_preview(-1)
+
+func _ensure_preview_layer() -> void:
+	if _preview_layer != null and is_instance_valid(_preview_layer):
+		return
+	_preview_layer = Control.new()
+	_preview_layer.z_index = 92
+	_preview_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_preview_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_preview_layer)
+
+func _enemy_row_of(euid: int) -> int:
+	for e in battle.encounter.get("active", []):
+		if int(e["uid"]) == euid:
+			return int(e.get("row", 0))
+	return 0
+
+## 伤害标（2026-11-08 用户令）：主数字居中；小数字放主数字下面、左对齐、无描边；不套任何矩形框
+func _mk_dmg_mark(cc: Control, val: int, lethal: bool, back_row: bool) -> void:
+	var r := cc.get_global_rect()
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.position = r.position
+	holder.size = r.size
+	_preview_layer.add_child(holder)
+	var fs := 46
+	var l := Label.new()
+	l.text = str(val)
+	QISTYLE.font(l, fs, true)
+	l.add_theme_color_override("font_color", Color(0.89, 0.16, 0.18))
+	l.add_theme_color_override("font_outline_color",
+		Color(0.96, 0.80, 0.32) if lethal else Color(0.05, 0.03, 0.03))
+	l.add_theme_constant_override("outline_size", 8)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 居中＝让标签铺满整张卡再居中对齐（不能拿「估算宽度」的盒子去居中——之前就是这里错位）
+	l.position = Vector2(0.0, r.size.y * 0.5 - float(fs) * 0.95)
+	l.size = Vector2(r.size.x, float(fs) * 1.5)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	holder.add_child(l)
+	if back_row:
+		var sm := Label.new()
+		sm.text = str(int(float(val) * 0.5))
+		QISTYLE.font(sm, 26, false)
+		sm.add_theme_color_override("font_color", Color(0.80, 0.30, 0.28))
+		sm.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		sm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 小数字：与主数字同一行，挂在它的右下方（不居中、不靠右）
+		var tw := QIFONTS.noto().get_string_size(str(val), HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		sm.position = Vector2(r.size.x * 0.5 + tw * 0.5 + 3.0, l.position.y + float(fs) * 0.78)
+		sm.size = Vector2(80.0, 32.0)
+		holder.add_child(sm)
+	_preview_nodes.push_back(holder)
+
+## 资源标：气珠/血心旁浮一个 +N——跟伤害数字同族（彩色数字＋黑描边），锚真实控件而非写死坐标
+func _mk_res_mark(anchor_name: String, amount: String, col: Color) -> void:
+	var a := find_child(anchor_name, true, false) as Control
+	if a == null:
+		return
+	var r := a.get_global_rect()
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.position = r.position + Vector2(r.size.x - 6.0, -14.0)
+	holder.size = Vector2(140.0, 52.0)
+	_preview_layer.add_child(holder)
+	var l := Label.new()
+	l.text = amount
+	QISTYLE.font(l, 38, true)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.03))
+	l.add_theme_constant_override("outline_size", 8)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.position = Vector2.ZERO
+	l.size = Vector2(100.0, 52.0)
+	holder.add_child(l)
+	_preview_nodes.push_back(holder)
+
+## 连击徽：预览打出后的连击数（-1＝还原）
+func _update_combo_preview(v: int) -> void:
+	if _combo_badge != null and _combo_badge.has_method("set_preview"):
+		_combo_badge.set_preview(v)
+#endregion
+
+## 气珠/血心＝禁区：浮窗压到它们就翻边（2026-11-08 用户令：从右换成左就行）
+func _hud_avoid() -> Array:
+	var out: Array = []
+	for n in ["QiText", "HpText"]:
+		var c := find_child(n, true, false) as Control
+		if c != null:
+			out.push_back(c)
+	return out
 
 func _hide_kw_tips() -> void:
-	for bar in _kw_tips:
-		if is_instance_valid(bar):
-			bar.queue_free()
-	_kw_tips = []
+	if _kw_tip_host != null and is_instance_valid(_kw_tip_host):
+		QITIP.hide_for(_kw_tip_host)
+	_kw_tip_host = null
+
+## 卡面真实外接矩形（焦点态卡面被放大上浮，外层壳尺寸对不上——浮窗锚这个而不是壳）
+func _card_visual_rect(w: Control) -> Rect2:
+	if not is_instance_valid(w):
+		return Rect2()
+	if w.get_child_count() == 0:
+		return w.get_global_rect()
+	var pts := _card_face_corners(w)
+	if pts.is_empty():
+		return w.get_global_rect()
+	var mn: Vector2 = pts[0]
+	var mx: Vector2 = pts[0]
+	for q in pts:
+		mn = Vector2(minf(mn.x, q.x), minf(mn.y, q.y))
+		mx = Vector2(maxf(mx.x, q.x), maxf(mx.y, q.y))
+	return Rect2(mn, mx - mn)
+
+## 鼠标是否指着这张卡：直接判「点在卡面四边形内」（不再用外接框+收边凑数）
+func _card_hit(w: Control, p: Vector2, pad := 0.0) -> bool:
+	var q := _card_face_corners(w)
+	if q.size() != 4:
+		return false
+	var sign0 := 0.0
+	for i in 4:
+		var a: Vector2 = q[i]
+		var b: Vector2 = q[(i + 1) % 4]
+		var e := b - a
+		var len := e.length()
+		if len < 0.001:
+			continue
+		var n := Vector2(-e.y, e.x) / len      # 边法线（朝外/朝内一致）
+		var d := n.dot(p - a) - pad
+		if absf(d) < 0.001:
+			continue
+		var sg := signf(d)
+		if sign0 == 0.0:
+			sign0 = sg
+		elif sg != sign0:
+			return false
+	return true
+
+## 卡面「左上/右上」顶角（浮窗按它对齐——外接框的极值点会偏出去一大截）
+func _card_corner(w: Control, right: bool) -> Vector2:
+	var pts := _card_face_corners(w)
+	if pts.size() != 4:
+		return Vector2(-1e9, -1e9)
+	var a: Vector2 = pts[0]
+	var b: Vector2 = pts[1]
+	if right:
+		a = pts[1]
+		b = pts[2]
+	return a if a.y <= b.y else b
+
+## 卡面四角（屏幕坐标）——浮窗按「靠近自己那一侧的顶角」对齐，斜卡才不会悬在上方
+func _card_face_corners(w: Control) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if not is_instance_valid(w) or w.get_child_count() == 0:
+		return out
+	var vis: Control = w.get_child(0)
+	# 贴图层是 TILT_MARGIN（1.18）倍，真正看得见的卡面居中、只有 HAND_W×HAND_H
+	var face := Rect2((vis.size.x - HAND_W) * 0.5, (vis.size.y - HAND_H) * 0.5, HAND_W, HAND_H)
+	var xf := vis.get_global_transform_with_canvas()
+	# 卡面被 shader 斜切（tip 归一化 ±0.5）时，节点几何没变——把斜切量换算成像素补上，
+	# 浮窗/命中都用「看得见的那张歪卡」（2026-11-08 用户令：鼠标动浮窗也要动）
+	var q := [
+		xf * face.position,
+		xf * Vector2(face.end.x, face.position.y),
+		xf * face.end,
+		xf * Vector2(face.position.x, face.end.y)]
+	# —— 粘着：把 shader 造成的「边缘位移」算成像素补到四角上（2026-11-08 用户令）——
+	# shader：t = p/denom + 0.5，denom = 1 + tip_x*0.09*p.x*2 + tip_y*0.09*p.y*2
+	# 卡面可见边＝|p/denom| = 0.5 → p = 0.5/(1 - 0.09*tip_x)；再除 uv_scale 1.18 得 UV 位移
+	var tv3: Vector2 = vis.get_meta("tip", Vector2.ZERO)
+	var sc3: float = vis.scale.x
+	var dux := (0.5 / (1.0 - 0.09 * tv3.x) - 0.5) / 1.18
+	var duy := (0.5 / (1.0 - 0.09 * tv3.y) - 0.5) / 1.18
+	var dx := dux * HAND_W * sc3
+	var dy := duy * HAND_H * sc3
+	# 纵向语义（2026-11-08 用户指正）：指针往上＝上边框后退（远离观者）→ 顶边**往下收**；
+	# 指针往下＝上边框靠近观者 → 顶边**往上抬**。故纵向取反，横向不变。
+	q[1] += Vector2(dx, dy)    # TR
+	q[2] += Vector2(dx, -dy)   # BR
+	q[3] += Vector2(-dx, -dy)  # BL
+	q[0] += Vector2(-dx, dy)   # TL
+	for v in q:
+		out.push_back(v)
+	return out
 #endregion
 
 ## 战报事件（原版事件行已撤——此处留钩子，后面接飘字/日志）
@@ -1533,16 +1878,10 @@ func _hand_card_center(uid: int) -> Vector2:
 			return Vector2(r.position.x + r.size.x * 0.5, r.position.y + r.size.y * 0.4)
 	return Vector2(960.0, 900.0)
 
-## 命中收集（kind 过滤：只收我方对敌的直伤；crit＝暴击段——2026-11-07 单链新参，特效层后用）
+## 命中收集（2026-11-08 落账延迟制后此槽退役为调试计数：演出事件改由 _run_thrust 从
+## battle.strike_snapshot() 快照驱动——hit_landed 现在在击中帧才发，不再用于预收集）
 func _on_hit_landed(target: Dictionary, amount: int, kind: String, crit: bool = false) -> void:
-	if kind != "攻击":
-		return
-	var uid := int(target.get("uid", -1))
-	var rect := Rect2()
-	var card := _find_enemy_card(uid)
-	if card != null:
-		rect = card.get_global_rect()
-	_hit_events.push_back({"uid": uid, "amount": amount, "rect": rect, "crit": crit})
+	pass
 
 func _find_enemy_card(uid: int) -> Control:
 	if _enemy_row == null:
@@ -1554,7 +1893,73 @@ func _find_enemy_card(uid: int) -> Control:
 	return null
 
 func _run_thrust() -> void:
+	# ── 落账延迟（2026-11-08 对齐原版：账单在打出瞬间算定，逐击中帧才结算跳数）──
+	# ── 余段空放制（2026-11-08 同日续裁）：演出拍数＝卡总段数（strike_total），与账单
+	#    事件数解耦——怪死掉后余下的段刀照飞（空放：无闪白无数字），最后一把收招
+	#    才收口终局（对应原版武器飞完全程＋胜利 WaitWhile 等表现清空）。
+	# rect 预快照：结算后敌卡可能重建/消失——演出全程用打出手那刻的卡位。
+	var strikes: Array = battle.strike_snapshot()
+	var rects := {}
+	for e2 in battle.encounter["active"]:
+		var card2 := _find_enemy_card(int(e2["uid"]))
+		if card2 != null:
+			rects[int(e2["uid"])] = card2.get_global_rect()
+	var beats: Array = VC_TARGETING.map_strike_beats(strikes, battle.strike_total())
+	var last_rect := Rect2()
+	for b in beats:
+		var bd: Dictionary = b
+		if bool(bd.get("blank", false)):
+			bd["rect"] = last_rect   # 空放拍落点＝最近命中位（尸位）
+			continue
+		var r2: Rect2 = rects.get(int(bd["uid"]), Rect2())
+		if r2.size.x > 1.0:
+			last_rect = r2
+		bd["rect"] = r2
+	_hit_events = beats
 	if _combat_fx == null or _hit_events.is_empty():
+		battle.settle_all_strikes()   # 无特效件（哑渲染器）兜底全落
+		return
+	# ── 语法轨（2026-11-07 直刺 v1）：有档案的卡走 spec 全套；没档案的继续走旧笔锋线 ──
+	# 逐张迁移：每迁一张跑一次截图批验收（design-docs/特效管线_v0.1.md §9 T1）
+	if QI_FXSPEC.has_spec(_played_cid):
+		var spec2: Dictionary = QI_FXSPEC.get_spec(_played_cid)
+		var spec_evs: Array = _hit_events.duplicate()
+		_last_beat.clear()
+		for i in spec_evs.size():
+			var sd: Dictionary = spec_evs[i]
+			if bool(sd.get("blank", false)):
+				continue        # 空放拍不占「最后击序」
+			_last_beat[int(sd.get("uid", -1))] = i
+			for du in (sd.get("death_uids", []) as Array):
+				_last_beat[int(du)] = i   # 本拍落账的死者：收尸拍号＝本拍（同拍收）
+		var from_g: Vector2 = _hp_orb_center()      # 墨箭从血珠周围出发
+		var now0 := Time.get_ticks_msec()
+		var wait0: float = clampf(float(_fx_busy_until - now0) / 1000.0, 0.0, 0.12)
+		var scab := bool(spec2.get("scabbard", false))
+		var total: float = 0.52
+		if _combat_fx != null:
+			total = _combat_fx.scabbard_timing(spec2, spec_evs.size()) if scab \
+				else _combat_fx.strike_timing(spec2, spec_evs.size())
+		_fx_busy_until = now0 + int(total * 1000.0)
+		# 我方出手期间也隐去敌方意图（总意图条＋敌卡底下红意图），播完自动恢复
+		_hide_intents(total)
+		if wait0 > 0.0:
+			await get_tree().create_timer(wait0, false).timeout
+			if not is_inside_tree() or _combat_fx == null:
+				_end_replay()
+				battle.settle_all_strikes()
+				return
+		if scab:
+			_combat_fx.scabbard_strike(spec2, spec_evs, from_g,
+				func(ev: Dictionary, i: int) -> void: _on_strike_beat(ev, i),
+				func(uid0: int) -> bool: return _find_enemy_card(uid0) != null)
+		else:
+			_combat_fx.strike(spec2, spec_evs, from_g,
+				func(ev: Dictionary, i: int) -> void: _on_strike_beat(ev, i))
+		await get_tree().create_timer(total, false).timeout
+		if is_inside_tree():
+			_end_replay()
+		battle.settle_all_strikes()   # 演出收尾：账单全落（含语法轨未逐段落的部分）
 		return
 	# 多段攻击（2026-11-06 用户令）：一次打出 N 段伤害，逐段播放——
 	# 第一段走完整刀光，其余段只做「命中闪＋伤害数字」。
@@ -1569,17 +1974,29 @@ func _run_thrust() -> void:
 	var wait: float = clampf(float(_fx_busy_until - now_ms) / 1000.0, 0.0, 0.12)
 	_fx_busy_until = now_ms + 100 + int(0.16 * 1000.0)
 	if wait > 0.0:
-		await get_tree().create_timer(wait).timeout
+		await get_tree().create_timer(wait, false).timeout
 	if not is_inside_tree():
+		battle.settle_all_strikes()   # 中途离树兜底：账单全落
 		return
 	var gap: float = clampf(0.45 / float(maxi(1, n)), 0.035, 0.11)
 	for i in range(1, n):
-		await get_tree().create_timer(gap).timeout
+		await get_tree().create_timer(gap, false).timeout
 		if not is_inside_tree() or _combat_fx == null:
+			battle.settle_all_strikes()
 			return
 		_on_thrust_hit(_hit_events[i], i)
+	## 演出收尾：未逐段落的账单（爆炸追加段等）一次性落完——对应原版 DoAllRemainingDamage
+	if is_inside_tree() and battle != null:
+		battle.settle_all_strikes()
 
 func _on_thrust_hit(ev: Dictionary, idx := 0) -> void:
+	# 拍制落账（2026-11-08 余段空放制）：每拍落 settle 条账（1 hit＋紧随 deaths——
+	# 死亡无独立特效，出列/放珠由 refresh 对账驱动）；blank 空放拍不落账无反馈（刀照飞）
+	for k in int(ev.get("settle", 0)):
+		if battle != null:
+			battle.settle_next_strike()
+	if bool(ev.get("blank", false)):
+		return
 	var rect: Rect2 = ev["rect"]
 	var at: Vector2 = rect.get_center() if rect.size.x > 1.0 else Vector2(960.0, 430.0)
 	if _combat_fx != null:
@@ -1589,18 +2006,159 @@ func _on_thrust_hit(ev: Dictionary, idx := 0) -> void:
 	_hit_stop(HIT_STOP_MS)
 	_shake(3.5, 0.12)
 	_recoil(int(ev["uid"]))
+	_beat_death(int(ev["uid"]), idx)
+	for du in (ev.get("death_uids", []) as Array):
+		_beat_death(int(du), idx)
 
 ## 受击后仰（重建会吃掉它——无所谓，那一帧已经打出去了）
-func _recoil(uid: int) -> void:
+func _recoil(uid: int, amount := 7.0) -> void:
 	var card := _find_enemy_card(uid)
 	if card == null:
 		return
 	var base := card.position
+	var brot := card.rotation
+	# 抖动：左右 4 下 + 一点旋转，再回位（受击震动，2026-11-08 用户令）
 	var tw := card.create_tween()
-	tw.tween_property(card, "position", base + Vector2(0.0, 7.0), 0.05)\
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(card, "position", base, 0.16)\
+	for k in 4:
+		var amp := amount * (1.0 - 0.2 * float(k))
+		var dx := amp * (1.0 if k % 2 == 0 else -1.0)
+		tw.tween_property(card, "position", base + Vector2(dx, amp * 0.35), 0.035)\
+			.set_trans(Tween.TRANS_SINE)
+		tw.parallel().tween_property(card, "rotation", brot + deg_to_rad(1.6) * (1.0 if k % 2 == 0 else -1.0), 0.035)
+	tw.tween_property(card, "position", base, 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(card, "rotation", brot, 0.10)
+
+## ── 语法轨每击回调（2026-11-07 直刺 v2）：剑到位的那一帧才做卡面反应与收尸 ──
+## 卡面三件：白闪（打中了的主信号）／留洞（穿刺痕迹）／后缩；手感走档案口径（轻）。
+func _on_strike_beat(ev: Dictionary, idx: int) -> void:
+	# 拍制落账（2026-11-08 余段空放制）：每拍落 settle 条账（1 hit＋紧随 deaths）；
+	# blank 空放拍纯飞过——无闪白无顿帧无数字（对应原版死目标段跳过）
+	for k in int(ev.get("settle", 0)):
+		if battle != null:
+			battle.settle_next_strike()
+	if bool(ev.get("blank", false)):
+		return
+	var uid := int(ev.get("uid", -1))
+	var crit := bool(ev.get("crit", false))
+	var card := _find_enemy_card(uid)
+	var at := Vector2(960.0, 430.0)
+	if card != null and is_instance_valid(card):
+		var cr: Rect2 = card.get_global_rect()
+		at = Vector2(cr.position.x + cr.size.x - 12.0, cr.position.y + 16.0)
+		_hit_flash(card, 0.50 if crit else 0.30)
+		_strike_mark(card, idx, crit)
+	_hit_stop(22)
+	_shake_throttled(1.8, 0.08)
+	_recoil(uid, 6.0)
+	if _combat_fx != null and int(ev.get("amount", 0)) > 0:
+		_combat_fx.number_stack(at, int(ev.get("amount", 0)), idx, crit)
+	_beat_death(uid, idx)
+	for du in (ev.get("death_uids", []) as Array):
+		_beat_death(int(du), idx)   # 本拍带走的死者（多亡同拍）同拍收尸放珠
+
+## 卡面白闪（2026-11-07 用户令「做在卡面上」）：整卡压一层白，0.12s 收
+func _hit_flash(card: Control, a: float) -> void:
+	var p := ColorRect.new()
+	p.color = Color(1, 1, 1, a)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.position = Vector2.ZERO
+	p.size = card.size
+	p.z_index = 52
+	card.add_child(p)
+	var tw := p.create_tween()
+	tw.tween_property(p, "modulate:a", 0.0, 0.15)
+	tw.tween_callback(p.queue_free)
+
+## 卡面墨点（2026-11-07 用户改为「墨箭命中即消失」）：箭不留长口子，只在卡上
+## 砸出一个小墨斑＋几点碎墨，0.4s 收回。多段的数字靠 number_stack 逐个飘。
+func _strike_mark(card: Control, idx: int, crit: bool) -> void:
+	var center: Vector2 = card.size * 0.5 \
+		+ Vector2(randf_range(-34.0, 34.0), randf_range(-40.0, 28.0))
+	var root := Node2D.new()
+	root.position = center
+	root.z_index = 50
+	card.add_child(root)
+	var blot := Polygon2D.new()
+	var pts := PackedVector2Array()
+	for k in 9:
+		var a := TAU * float(k) / 9.0
+		var rr := (8.0 if crit else 6.4) * (0.5 + 0.7 * absf(sin(float(k) * 2.4 + 0.8)))
+		pts.push_back(Vector2(cos(a), sin(a)) * rr)
+	blot.polygon = pts
+	blot.color = Color(0.07, 0.06, 0.05, 0.94)
+	root.add_child(blot)
+	for k in 3:
+		var a2 := randf() * TAU
+		var d := randf_range(10.0, 30.0)
+		var dot := Polygon2D.new()
+		var r := randf_range(1.2, 2.8)
+		dot.polygon = PackedVector2Array([
+			Vector2(-r, -r * 0.6), Vector2(r, -r * 0.8), Vector2(r * 0.7, r * 0.7)])
+		dot.position = Vector2(cos(a2), sin(a2)) * d
+		dot.color = Color(0.10, 0.08, 0.06, 0.85)
+		root.add_child(dot)
+	# 一小滴往下拖
+	var drip := Line2D.new()
+	drip.width = 2.6
+	var dc := Curve.new()
+	dc.add_point(Vector2(0.0, 1.0))
+	dc.add_point(Vector2(1.0, 0.10))
+	drip.width_curve = dc
+	drip.default_color = Color(0.07, 0.06, 0.05, 0.8)
+	drip.add_point(Vector2(1.0, 3.0))
+	drip.add_point(Vector2(2.0, randf_range(10.0, 20.0)))
+	root.add_child(drip)
+	root.scale = Vector2(0.4, 0.4)
+	var tw := root.create_tween()
+	tw.tween_property(root, "scale", Vector2.ONE, 0.08)\
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.28)
+	tw.tween_property(root, "modulate:a", 0.0, 0.35)
+	tw.tween_callback(root.queue_free)
+
+## 血珠中心（全局）：墨箭的发射原点
+func _hp_orb_center() -> Vector2:
+	var orb := find_child("HpWidget", true, false) as Control
+	if orb != null and is_instance_valid(orb):
+		return orb.get_global_rect().get_center()
+	return _played_from
+
+## 击拍收尸：这一拍就是它的最后一击 → 此刻才放死亡特效＋经验珠
+func _beat_death(uid: int, idx: int) -> void:
+	if not _dying.has(uid):
+		return
+	if int(_last_beat.get(uid, -1)) != idx:
+		return
+	var card = _dying[uid]          # 可能已被释放：不能声明成有类型的变量
+	_dying.erase(uid)
+	_enemy_cards.erase(uid)
+	if is_instance_valid(card):
+		_spawn_xp_orb(card.get_global_rect().get_center())
+		_enemy_death_fx(card)
+
+## 回放结束：没等到自己那一拍的死卡（无击事件等）在这里统一收
+func _end_replay() -> void:
+	if not _replay_on and _dying.is_empty():
+		return
+	_replay_on = false
+	for uid in _dying.keys():
+		var card = _dying[uid]      # 同上：可能已释放
+		_enemy_cards.erase(uid)
+		if is_instance_valid(card):
+			_spawn_xp_orb(card.get_global_rect().get_center())
+			_enemy_death_fx(card)
+	_dying.clear()
+	_last_beat.clear()
+	if battle != null:
+		_refresh_enemies()
+
+## 震屏节流：6 连击若每下起一次 _shake，base 会被上一次的中间位移污染（整屏漂走）
+func _shake_throttled(amount: float, dur: float) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _shake_prev < 90:
+		return
+	_shake_prev = now
+	_shake(amount, dur)
 
 ## 屏震：只晃本屏根，不动窗口（窗口位移会露出桌面）
 func _shake(amount: float, dur: float) -> void:
@@ -1968,8 +2526,13 @@ func _open_reward() -> void:
 	_reward_ui.setup(run, gifts)
 	_reward_ui.done.connect(_on_reward_done)
 	add_child(_reward_ui)
+	# 2026-11-08 用户令「弹窗开＝全世界冻结」：升级三选一是模态旁路（原版 ChooseCardModal
+	# 同构）——剑冻在半空、珠冻在半空，选完关窗恢复、余下的段接着飞（弹窗挂
+	# WHEN_PAUSED 自身照跑；演出层全为节点 Tween/create_timer(false) 暂停敏感）
+	get_tree().paused = true
 
 func _on_reward_done() -> void:
+	get_tree().paused = false   # 世界恢复：余下的攻击段/飞行珠接着走
 	_reward_ui = null
 	if _win_pending:
 		_try_finish_win()
@@ -1977,6 +2540,15 @@ func _on_reward_done() -> void:
 ## 胜利收尾：珠到齐＋升级全关→残余保底入账→（还有突破就弹）→胜利横幅
 func _try_finish_win() -> void:
 	if not _win_pending or _xp_flights > 0 or _reward_ui != null:
+		return
+	if Time.get_ticks_msec() < _death_fx_until:
+		# 碎卡特效还没播完：挂一次定时器到点重推，避免没有后续回调时横幅永不出现
+		if not _win_retry_armed:
+			_win_retry_armed = true
+			var wait := float(_death_fx_until - Time.get_ticks_msec()) / 1000.0 + 0.03
+			get_tree().create_timer(wait).timeout.connect(func() -> void:
+				_win_retry_armed = false
+				_try_finish_win())
 		return
 	if not battle.xp_pending.is_empty():
 		_refresh()             # 还有没放出来的经验：先逼出珠，等它落地
@@ -2006,6 +2578,15 @@ func _on_ended(result: String) -> void:
 	_show_end_overlay("lose")
 
 func _show_end_overlay(result: String) -> void:
+	# 唯一出口保险：不管从哪条路进来，只要溶解还没播完就先不弹（2026-11-08 用户实测抢跑）
+	if result == "win" and Time.get_ticks_msec() < _death_fx_until:
+		if not _end_overlay_waiting:
+			_end_overlay_waiting = true
+			var wait2 := float(_death_fx_until - Time.get_ticks_msec()) / 1000.0 + 0.02
+			get_tree().create_timer(wait2).timeout.connect(func() -> void:
+				_end_overlay_waiting = false
+				_show_end_overlay("win"))
+		return
 	_refresh()
 	_overlay = Control.new()
 	_overlay.z_index = 100   # 盖住手牌（手牌 z 序已抬到 0..60）

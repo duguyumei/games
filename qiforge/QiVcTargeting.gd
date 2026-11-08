@@ -112,15 +112,15 @@ static func front_row(ledger: Array) -> Array:
 	out.reverse()   # 数组序＝左→右，反转＝右→左（col 0 = 最右）
 	return out
 
-# ── 结算主链（对应 CalculateEnemiesToHit 全链；is_real_attack 单链制）──
-## ctx＝{enemies, params, is_real, rng, hooks:{hit(e,amount,is_crit), death(e)}}
-## 返回 HitResult：{hits:[{uid,amount,is_crit}], damage:{uid:总伤}, kills:[uid],
-##                 overkill_used:bool, bounce_hits:int, explosion_hits:int}
+# ── 结算主链（对应 CalculateEnemiesToHit 全链；账单制——模拟即定账）──
+## ctx＝{enemies, params, rng}——模拟全程不动真敌（账本推进），产出 events 事件流
+## （hit 含 e/amount/is_crit；death 含 e——按结算序）。真打与预览同一套（原版 isRealAttack 制）；
+## 真落账由调用方逐事件执行（2026-11-08 落账延迟制——击中帧结算跳数，对齐原版 WeaponCollision）。
 static func calculate(ctx: Dictionary) -> Dictionary:
 	var params: Dictionary = ctx["params"]
 	var rng: RandomNumberGenerator = ctx["rng"]
-	var res := {"hits": [], "damage": {}, "kills": [], "overkill_used": false,
-		"bounce_hits": 0, "explosion_hits": 0}
+	var res := {"hits": [], "damage": {}, "kills": [],
+		"bounce_hits": 0, "explosion_hits": 0, "events": [], "total_strikes": 0}
 	var ledger := make_ledger(ctx["enemies"])
 	if ledger.is_empty():
 		return res
@@ -200,12 +200,47 @@ static func calculate(ctx: Dictionary) -> Dictionary:
 				bounce_budget -= 1
 				res["bounce_hits"] = int(res["bounce_hits"]) + 1
 				chance -= float(bouncy.get("decay", 0.0))
+	## 飞行总段数（2026-11-08 余段空放制）：演出拍数＝总段数与账单事件数解耦——武器
+	## 飞完全程（死目标段空放、无账无数字，对应原版 WeaponCollision 死者跳过＋胜利
+	## WaitWhile 等武器）。弹射追加段也计入（bounce_hits 循环内已终值）。
+	res["total_strikes"] = int(params.get("hits", 1)) + int(res["bounce_hits"])
 	## 暴击爆炸（对应 TryTriggerCritExplosion→ProcessCritExplosionTrigger 递归）：
 	## 暴击命中按配置概率对全排追加减伤段，逐层衰减，MaxDepth 封顶
 	var explosion: Dictionary = params.get("crit_explosion", {})
 	if not explosion.is_empty():
 		_process_explosions(ledger, explosion, ctx, res, chain)
 	return res
+
+## 账单→演出拍映射（2026-11-08 余段空放制，纯函数——Screen 与探针共用）：
+## 每拍消费 1 hit＋紧随其后全部 death（同拍落账同拍收尸——死亡本无独立特效）；
+## 拍数不足 total 补空放拍（blank＝刀照飞、无闪白无数字）；事件多于拍数
+## （爆炸段等追加 hit 超额）尾拍吞下剩余全部——由循环尾 settle_all 兜底。
+static func map_strike_beats(strikes: Array, total: int) -> Array:
+	var beats: Array = []
+	var i := 0
+	var n := strikes.size()
+	while i < n:
+		var beat := {"blank": false, "uid": -1, "amount": 0, "crit": false,
+			"settle": 0, "death_uids": []}
+		var st: Dictionary = strikes[i]
+		if String(st.get("type", "")) == "hit":
+			beat["uid"] = int(st.get("uid", -1))
+			beat["amount"] = int(st.get("amount", 0))
+			beat["crit"] = bool(st.get("is_crit", false))
+			beat["settle"] = 1
+			i += 1
+		while i < n and String((strikes[i] as Dictionary).get("type", "")) == "death":
+			(beat["death_uids"] as Array).push_back(int((strikes[i] as Dictionary).get("uid", -1)))
+			beat["settle"] = int(beat["settle"]) + 1
+			i += 1
+		beats.push_back(beat)
+	while i < n:
+		beats[beats.size() - 1]["settle"] = int(beats[beats.size() - 1]["settle"]) + 1
+		i += 1
+	while beats.size() < total:
+		beats.push_back({"blank": true, "uid": -1, "amount": 0, "crit": false,
+			"settle": 0, "death_uids": []})
+	return beats
 
 ## 单击伤害（对应 ApplyWeaponHitsToEnemy 的 GetDamageToDo＋GetEnemyDamage：
 ## 基础×(暴击×倍率)×(1+might)；infinite_corridor 按列距递增——对应其 GetEnemyDamage 覆写）
@@ -219,42 +254,28 @@ static func _per_hit_damage(params: Dictionary, targeting: String, col: int, is_
 	return maxi(1, int(round(dmg)))
 
 ## 单击落账（对应 ResolveArmorDamage→ApplyResolvedDamageToEnemy→OnSimulatedEnemyDied）：
-## 甲吸收不结转（防御成功即消除）；血吸收外的部分＝溢出顺位结转（对应 IsInOverkill 状态机：
-## 打死→下一顺位吃溢出→再溢再流，链式直至耗尽或前排清空；顶替上来的照接）
+## 甲吸收即消除（防御成功不穿透）；血伤**封顶剩余血量——多余伤害浪费不结转**
+## （2026-11-08 撤溢出轮，用户批：对齐蓝本「伤害不超剩余血量」——其主链杀敌后无
+## 伤害转移调用，Overkill 是遗物专属机制与此无关）；跳数记实扣量（甲实扣＋血实扣）。
 static func _apply_hit(ledger: Array, target: Dictionary, dmg: int, is_crit: bool,
 		ctx: Dictionary, res: Dictionary) -> void:
 	var left := dmg
+	var applied := 0
 	if int(target["armor"]) > 0:
 		var absorb := mini(int(target["armor"]), left)
 		target["armor"] = int(target["armor"]) - absorb
 		left -= absorb
-	var over := 0
+		applied += absorb
 	if left > 0:
-		over = left - int(target["hp"])
-		target["hp"] = maxi(0, int(target["hp"]) - left)
-		_emit_hit(target, dmg, is_crit, ctx, res)
+		var to_hp := mini(left, int(target["hp"]))
+		target["hp"] = int(target["hp"]) - to_hp
+		applied += to_hp
+		_emit_hit(target, applied, is_crit, ctx, res)
 		if int(target["hp"]) <= 0:
 			ledger.erase(target)
 			_emit_death(target, ctx, res)
 	else:
-		_emit_hit(target, dmg, is_crit, ctx, res)
-	## 溢出顺位结转（静默：不重复弹 hit 事件、无受击文字——对齐原版「无额外动画」表现）
-	while over > 0:
-		var row := front_row(ledger)
-		if row.is_empty():
-			res["overkill_used"] = true
-			break
-		var nxt: Dictionary = row[0]   # 顺位下一位＝最右存活
-		var o2 := over - (int(nxt["hp"]) + int(nxt["armor"]))
-		var through_armor := mini(int(nxt["armor"]), over)
-		nxt["armor"] = int(nxt["armor"]) - through_armor
-		var to_hp := over - through_armor
-		nxt["hp"] = maxi(0, int(nxt["hp"]) - to_hp)
-		res["damage"][int(nxt["uid"])] = int(res["damage"].get(int(nxt["uid"]), 0)) + over
-		if int(nxt["hp"]) <= 0:
-			ledger.erase(nxt)
-			_emit_death(nxt, ctx, res)
-		over = maxi(0, o2)
+		_emit_hit(target, applied, is_crit, ctx, res)
 
 ## 暴击爆炸递归（对应 ProcessCritExplosionTrigger 的 depth/nextLevel 双层迭代）
 static func _process_explosions(ledger: Array, cfg: Dictionary, ctx: Dictionary,
@@ -284,17 +305,15 @@ static func _emit_hit(target: Dictionary, dmg: int, is_crit: bool,
 		ctx: Dictionary, res: Dictionary) -> void:
 	res["hits"].push_back({"uid": int(target["uid"]), "amount": dmg, "is_crit": is_crit})
 	res["damage"][int(target["uid"])] = int(res["damage"].get(int(target["uid"]), 0)) + dmg
-	if bool(ctx.get("is_real", false)):
-		var hooks: Dictionary = ctx.get("hooks", {})
-		if hooks.has("hit"):
-			hooks["hit"].call(target.get("e", {}), dmg, is_crit)
+	## 账单事件流（2026-11-08 落账延迟制，对应原版 EnemyDamageInfo 账单＋WeaponCollision
+	## 逐目标落账）：hit/death 按结算序入 events——真落账由调用方在击中帧逐事件执行
+	(res["events"] as Array).push_back({"type": "hit", "e": target.get("e", {}),
+		"uid": int(target["uid"]), "amount": dmg, "is_crit": is_crit})
 
 static func _emit_death(target: Dictionary, ctx: Dictionary, res: Dictionary) -> void:
 	(res["kills"] as Array).push_back(int(target["uid"]))
-	if bool(ctx.get("is_real", false)):
-		var hooks: Dictionary = ctx.get("hooks", {})
-		if hooks.has("death"):
-			hooks["death"].call(target.get("e", {}))
+	(res["events"] as Array).push_back({"type": "death", "e": target.get("e", {}),
+		"uid": int(target["uid"])})
 
 # ── UI/预览聚合口（对应 IIntentHolder.TryGetIntentValues 的伤害侧等价物）──
 static func total_damage(res: Dictionary) -> int:

@@ -132,9 +132,26 @@ func _run() -> void:
 	for grp2 in tut_m["entities"][1]["group"]:
 		e1_total += int((grp2 as Array).size())
 	_eq("教程第二场＝3 蝠（一排 3）", 3, e1_total)
-	_eq("两场合计 XP=4（三场制：首升落在第三场 5 蝠中）", 4, xp1 + xp2)
-	var lp_t: Dictionary = VC.level_progress(1, 4)
-	_eq("4 XP 未达首升（差 1）", [1, 4], [int(lp_t["lvl"]), int(lp_t["xp"])])
+	_eq("两场合计 XP=5（2026-11-08 用户令：一级打完第二关正好首升）", 5, xp1 + xp2)
+	var lp_t: Dictionary = VC.level_progress(1, 5)
+	_eq("5 XP 正好首升（余 0）", [2, 0], [int(lp_t["lvl"]), int(lp_t["xp"])])
+
+
+	# —— ⑤ 难度选敌制（2026-11-07：教程固定豁免/标签过滤/回退保底）——
+	var rng5 := RandomNumberGenerator.new()
+	rng5.seed = 42
+	var f_bats: Dictionary = VC.FLOORS[2]   # 蝙蝠巢 difficulty 2.0（池 bat 1.0 / mudman 2.0——均在容差内）
+	var picks5: Array = VC.pick_enemies_by_difficulty(rng5, f_bats, f_bats["pool"], 20)
+	_eq("难度选敌：20 选全在容差池", true, picks5.all(func(e): return ["bat", "mudman"].has(e)))
+	var f_crypt: Dictionary = VC.FLOORS[3]   # 乱葬岗 3.5（bat 1.0 超容差被滤）
+	var picks6: Array = VC.pick_enemies_by_difficulty(rng5, f_crypt, f_crypt["pool"], 20)
+	_eq("难度过滤：蝙蝠(1.0) 不入 3.5 层", true, not picks6.has("bat"))
+	var picks7: Array = VC.pick_enemies_by_difficulty(rng5, f_bats, ["bat"], 3)
+	_eq("单池全中", true, picks7.size() == 3 and picks7.all(func(e): return e == "bat"))
+	var f_tut: Dictionary = VC.FLOORS[0]   # 教程层 fixed——选敌不走（组队由 group 嵌套死编队）
+	_eq("教程层 fixed 标记", "tutorial", String(f_tut.get("fixed", "")))
+	_eq("方差归一：0→0 / 5→0.5 / 10→1", "0.0/0.5/1.0",
+		"%.1f/%.1f/%.1f" % [VC.difficulty_variance(0.0), VC.difficulty_variance(5.0), VC.difficulty_variance(10.0)])
 
 	_finish()
 

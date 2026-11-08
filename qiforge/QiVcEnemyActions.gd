@@ -27,9 +27,14 @@ static func execute(battle, e: Dictionary, act: Dictionary) -> void:
 			for h in hits:
 				_resolve_player_damage(battle, e, per, h)
 		"armor":
-			## 敌自加甲（对应 EnemyActionArmor——每敌独立甲，遭遇池已退役）
+			## 敌自加甲（对应 EnemyActionArmor——每敌独立甲，遭遇池已退役）。
+			## 补满制（2026-11-08 用户令「甲不会重叠——一直存在但不叠加」；wiki 敌表
+			## 列名 Max armor＝上限佐证）：甲＝有上限的层——破了补回、没破不动、
+			## 永不叠超；上限缺省＝本次值（教程 +4＝恒 4），配 armor_max 可表达叠层敌。
 			var v := int(act.get("value", 0))
-			e["armor"] = int(e.get("armor", 0)) + v
+			var cur := int(e.get("armor", 0))
+			var cap := maxi(cur, int(act.get("armor_max", v)))
+			e["armor"] = mini(cur + v, cap)
 			battle.event.emit("「%s」结甲 +%d" % [String(e["name"]), v])
 		"wait":
 			battle.event.emit("「%s」蓄力" % String(e["name"]))

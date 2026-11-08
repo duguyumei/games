@@ -31,6 +31,10 @@ func setup(run_ref: Dictionary, force_cards: Array = []) -> void:
 	_force_gifts = force_cards.duplicate()
 
 func _ready() -> void:
+	# 2026-11-08 用户令「弹窗开＝全世界冻结」：WHEN_PAUSED＝暂停与否都处理——
+	# 战斗屏开此弹窗时 get_tree().paused=true 冻结世界（剑/珠冻在半空），
+	# 弹窗内 Tween/点击照跑；地图侧使用不暂停时行为不变
+	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	_fill(self)
 	_rng.seed = int(run.get("seed", 1)) + int(run.get("xp", 0)) * 31 + int(run.get("level", 1)) * 7
 	_build()
