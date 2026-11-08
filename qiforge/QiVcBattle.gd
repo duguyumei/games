@@ -336,11 +336,14 @@ func play_card(card_uid: int) -> void:
 	# 变招（stance:flex）照 +1 且不锁型；无型牌（效果牌未标型）不动链。
 	# **先涨后算**——本张按新连击数线性 ×N 结算。
 	var form := String(def.get("stance", ""))
+	# 剑型＝状态（2026-11-08 用户报「打出后式槽不显示」）：不受「连击解锁」门控，
+	# 只要打出带型的牌就记录当前型；连击数仍由 combo_enabled 门控。
+	if form != "":
+		current_form = "flex" if form == "flex" else form
 	var mult := 1
 	if combo_enabled and form != "":
 		var before := combo_count
 		combo_count = combo_after_play(form)
-		current_form = "flex" if form == "flex" else form
 		if combo_count < before:
 			event.emit("换剑断链！连击 %d（%s ×%d）" % [combo_count, String(def.get("name", "")), combo_count])
 		else:

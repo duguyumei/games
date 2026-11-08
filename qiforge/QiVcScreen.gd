@@ -326,83 +326,54 @@ func _refresh_stance() -> void:
 	var form := String(battle.current_form)
 	if form != "" and form != "flex":
 		_last_form = form
-	if form == "" or not battle.combo_enabled:
+	# 剑型＝状态，与「连击是否解锁」无关：只要出了牌就该显示（2026-11-08 用户报打出后不显示）
+	if form == "":
 		return
 	var show_form := form if form != "flex" else _last_form
 	if show_form == "":
 		return
-	var BADGE := preload("res://qiforge/QiStanceBadge.gd")
-	var FORM_TINT := {
-		"short": Color(0.34, 0.56, 0.92), "long": Color(0.46, 0.44, 0.50),
-		"great": Color(0.86, 0.34, 0.26),
-	}
-	var tint: Color = FORM_TINT.get(show_form, Color(0.7, 0.6, 0.4))
-	var b := BADGE.new()
-	b.glyph = ""               # 不再用字
-	b.side = 54.0
-	b.owned = true
-	b.diamond = false
-	b.tint = tint
-	_stance_box.add_child(b)
-	# 剑图标（程序生成，三型比例不同）
-	var ic := TextureRect.new()
-	ic.texture = _weapon_icon(show_form)
-	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	ic.size = Vector2(34.0, 34.0)
-	ic.position = (Vector2(54.0, 54.0) - ic.size) * 0.5
-	ic.modulate = Color(0.97, 0.94, 0.86)
-	b.add_child(ic)
-	# 变招待定：加一圈金环（不是第四型，只是标记）
+	# 与卡面**同一套图标资源**（assets/ui/type_*.png），背景统一墨黑＋金边——
+	# 不再用另一套自绘图标（2026-11-08 用户指正：跟卡上的武器图标不一致）
+	var badge := Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.07, 0.06, 0.92)
+	sb.border_color = Color(0.79, 0.65, 0.34)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(roundi(4.0))
+	sb.anti_aliasing = true
+	badge.add_theme_stylebox_override("panel", sb)
+	badge.custom_minimum_size = Vector2(54.0, 54.0)
+	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER   # 不被 HBox 拉成竖长条，保持正方形
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stance_box.add_child(badge)
+	var stex: Texture2D = ResourceLoader.load(
+		"res://qiforge/assets/ui/type_%s%s.png" % [show_form, "_gold" if form == "flex" else "_light"])
+	if stex != null:
+		var ic := TextureRect.new()
+		ic.texture = stex
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ic.set_anchors_preset(Control.PRESET_FULL_RECT)
+		ic.offset_left = 6.0
+		ic.offset_top = 6.0
+		ic.offset_right = -6.0
+		ic.offset_bottom = -6.0
+		badge.add_child(ic)
+	# 变招待定：加一圈金环（不是第四型）
 	if form == "flex":
 		var ring := Panel.new()
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0, 0, 0, 0)
-		sb.border_color = Color(0.98, 0.82, 0.34)
-		sb.set_border_width_all(3)
-		sb.set_corner_radius_all(28)
-		ring.add_theme_stylebox_override("panel", sb)
+		var rsb := StyleBoxFlat.new()
+		rsb.bg_color = Color(0, 0, 0, 0)
+		rsb.border_color = Color(0.98, 0.82, 0.34)
+		rsb.set_border_width_all(2)
+		rsb.set_corner_radius_all(roundi(5.0))
+		ring.add_theme_stylebox_override("panel", rsb)
 		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ring.size = Vector2(54.0, 54.0)
-		b.add_child(ring)
-
-## 三型剑图标（32×32 程序生成；短剑短而窄、长剑细长、巨剑宽厚）
-func _weapon_icon(form: String) -> Texture2D:
-	if _form_icons.has(form):
-		return _form_icons[form]
-	var img := Image.create_empty(32, 32, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var W := 0
-	var L := 0
-	match form:
-		"short":
-			W = 3
-			L = 13
-		"long":
-			W = 3
-			L = 22
-		"great":
-			W = 6
-			L = 17
-		_:
-			W = 3
-			L = 18
-	var cx := 16
-	var top := 6
-	var bot := top + L
-	for x in range(cx - W / 2, cx - W / 2 + W):
-		for y in range(top, bot):
-			img.set_pixel(x, y, Color(0.95, 0.92, 0.84))
-	# 护手
-	for x in range(cx - 6, cx + 6):
-		img.set_pixel(x, bot, Color(0.95, 0.92, 0.84))
-		img.set_pixel(x, bot + 1, Color(0.95, 0.92, 0.84))
-	# 柄
-	for y in range(bot + 2, bot + 6):
-		img.set_pixel(cx, y, Color(0.95, 0.92, 0.84))
-	var tex := ImageTexture.create_from_image(img)
-	_form_icons[form] = tex
-	return tex
+		ring.set_anchors_preset(Control.PRESET_FULL_RECT)
+		badge.add_child(ring)
 
 ## 手牌排序面板（原版 SortHandButton (parent) 位≈(1757,797)）：标题＋法力/颜色两键，点了即重排
 func _build_sort_panel() -> void:
@@ -1515,20 +1486,27 @@ func _hand_lerp_tick(delta: float) -> void:
 		var tip_tgt := Vector2.ZERO
 		if inside:
 			tip_tgt = -Vector2(clampf(nv.x, -1.0, 1.0), clampf(nv.y, -1.0, 1.0)) * TILT_MAX
-		var sheen_tgt: float = fmod(_tilt_t * 0.12, 1.4) - 0.2
+		# 往复扫（2026-11-08 用户令）：原来 fmod 到顶就瞬间跳回起点，很突兀；改成 0→0.72→0 往返，
+		# 且覆盖 ±0.72 整段（0.72≈卡面对角线归一值），从最左上角扫到最右下角
+		var cyc: float = fmod(_tilt_t * 0.20, 2.0)
+		var sheen_tgt: float = (cyc if cyc <= 1.0 else 2.0 - cyc) * 0.72
 		var kk: float = clampf(delta * TILT_SMOOTH, 0.0, 1.0)
 		var tip: Vector2 = (tv.get_meta("tip", Vector2.ZERO) as Vector2).lerp(tip_tgt, kk)
 		var sheen: float = lerpf(float(tv.get_meta("sheen", 0.2)), sheen_tgt, kk)
 		var hov: float = lerpf(float(tv.get_meta("hov", 0.0)), 1.0 if inside else 0.0, kk)
 		if OS.has_environment("QI_FORCE_TIP"):
 			tip = Vector2(0.5, 0.3)
+		# 金件光带流转（2026-11-08）：外框与分割线共用同一材质，band_pos 随时间扫过 → 一起亮
+		var vc0 = hw2.get_meta("vc_card", null)
+		if vc0 != null and is_instance_valid(vc0) and vc0.glint_mat != null:
+			var phase: float = float(tv.get_meta("sheen", 0.2))   # 与斜切扫光同一相位 → 光和框一起走
+			vc0.glint_mat.set_shader_parameter("band_pos", phase)
 		tv.set_meta("tip", tip)
 		tv.set_meta("sheen", sheen)
 		tv.set_meta("hov", hov)
 		mat.set_shader_parameter("tip_x", tip.x)
 		mat.set_shader_parameter("tip_y", tip.y)
 		mat.set_shader_parameter("sheen_phase", sheen)
-		mat.set_shader_parameter("glint_strength", 0.0)   # 临时全光效关：看基础形态
 		mat.set_shader_parameter("hover", hov)
 
 ## 手牌倾斜视图（2026-11-03 用户令）：真卡渲进 SubViewport（2× 超采保清晰）→

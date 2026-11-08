@@ -548,11 +548,12 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	# 2026-11-08 用户报「左上角一直亮」：shader 默认 band_pos=0.2 正好压在左上角，
 	# 静态卡（无 _process 驱动）就会常亮——初始化直接推到卡外
 	glint_mat.set_shader_parameter("band_pos", -0.35)
-	glint_mat.set_shader_parameter("glint_strength", 0.0)   # 2026-11-08 临时：全关光效看基础形态
+	glint_mat.set_shader_parameter("strength", 0.34)   # 金件光带：与卡面扫光同相位，扫到哪段边框就亮哪段
 	card.glint_mat = glint_mat
-	var normal: StyleBoxFlat = _vc_box(frame, TCG_GOLD, 0, roundi(12.0 * k))
-	normal.shadow_color = Color(0, 0, 0, 0.0)
-	normal.shadow_size = 0
+	# 卡底＝深色（深底不会露出米白边）；圆角比金框**更大**，
+	# 让卡底的四角始终缩在金框笔画之内（不再需要额外描边来盖缝）——2026-11-08 用户指正
+	# 卡底：深色，圆角比金框大 → 四角缩在金框内（2026-11-08）
+	var normal: StyleBoxFlat = _vc_box(frame, TCG_GOLD, 0, roundi((12.0 + FRAME_W) * k))
 	var hover: StyleBoxFlat = normal.duplicate()
 	card.add_theme_stylebox_override("normal", normal)
 	card.add_theme_stylebox_override("hover", hover)
@@ -587,9 +588,10 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	art.add_child(pic)
 
 	# 金件：外框＋分割线（参数集中在 FRAME_* / DIVIDER_* / BAND_BOTTOM）
+	# 先画分割线、再画外框：外框永远压在上面，两侧接缝表现一致
+	_frame_divider(card, k, glint_mat)
 	if not OS.has_environment("QI_NO_RING"):
 		_frame_ring(card, k, glint_mat)
-	_frame_divider(card, k, glint_mat)
 	# —— 顶部带：左＝气费圆 · 中＝名字 · 右＝获得的式（空则不显）——
 	var name_x0: float = 60.0
 	var name_x1: float = 240.0 if gain_text != "" else 244.0
@@ -827,7 +829,7 @@ static func _frame_ring(card: Control, k: float, glint: ShaderMaterial = null) -
 	var goldband := Panel.new()
 	_place_abs(goldband, round(FRAME_INSET * k), round(FRAME_INSET * k),
 		round((300.0 - FRAME_INSET) * k), round((422.0 - FRAME_INSET) * k))
-	var ring_b: int = maxi(2, roundi(FRAME_W * k))
+	var ring_b: int = maxi(2, roundi(FRAME_W * k)) + 1   # +1px：内侧多压 1px，盖住卡底与金框之间的缝
 	var ring_r: int = maxi(2, roundi(12.0 * k))
 	goldband.add_theme_stylebox_override("panel", _vc_box(Color(0, 0, 0, 0), TCG_GOLD,
 		ring_b, ring_r))
@@ -837,15 +839,21 @@ static func _frame_ring(card: Control, k: float, glint: ShaderMaterial = null) -
 
 ## 金件②分割线：直段＋两端圆角缺口（上收顶条下角／下收立绘上角），宽度贴外框内侧
 static func _frame_divider(card: Control, k: float, glint: ShaderMaterial = null) -> void:
-	var w_px: int = maxi(8, roundi((300.0 - 2.0 * (FRAME_INSET + FRAME_W)) * k))
-	var bar_px: int = maxi(1, roundi(DIVIDER_H * k))
-	var r_px: int = maxi(2, roundi(float(FILLET_R) * k))
+	# 2026-11-08 用户令：与外框**同一种画法**（都走 StyleBoxFlat 纯色填充），
+	# 这样颜色/抗锯齿/发光完全一致；两端做成胶囊圆头，接在外框内侧。
+	# 两端做方头（不做胶囊圆头）：圆头会在与外框相接处收成尖，看起来"细/有空隙"
+	var w_px: float = round((300.0 - 2.0 * (FRAME_INSET + FRAME_W)) * k) + 6.0
+	var bar_h: float = maxf(1.0, round(DIVIDER_H * k))
 	var junc := Panel.new()
-	var junc_sb := StyleBoxTexture.new()
-	junc_sb.texture = _junction_texture(w_px, bar_px, r_px)
-	junc.position = Vector2(round((FRAME_INSET + FRAME_W) * k), round(BAND_BOTTOM * k) - r_px)
-	junc.size = Vector2(w_px, r_px * 2 + bar_px)
-	junc.add_theme_stylebox_override("panel", junc_sb)
+	var jsb := StyleBoxFlat.new()
+	jsb.bg_color = TCG_GOLD
+	jsb.anti_aliasing = true
+	jsb.set_corner_radius_all(0)
+	junc.add_theme_stylebox_override("panel", jsb)
+	# 左右各向金框内伸 1px，让接缝重叠，消灭抗锯齿造成的"缝"
+	# 两端各往金框里多伸 3px（画在金框上，同色不可见），确保接缝无空隙
+	junc.position = Vector2(round((FRAME_INSET + FRAME_W) * k) - 3.0, round(BAND_BOTTOM * k) - bar_h * 0.5)
+	junc.size = Vector2(w_px, bar_h)
 	junc.material = glint
 	junc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(junc)
