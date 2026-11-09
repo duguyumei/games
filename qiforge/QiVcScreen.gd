@@ -496,14 +496,13 @@ func _refresh() -> void:
 	_rebuild_hand()
 	# 两个按钮同进退（2026-11-06 用户指正：战斗结束时只有「结束回合」被置灰，
 	# 跟「打出全部」一个死一个活——要么一起灰、要么一起亮）
-	var can_act := String(battle.phase) == "player" and not result_pending()
+	var can_act := String(battle.phase) == "player" and not result_pending() and not _finale
 	# 2026-11-08 用户令：不可用时保持和可用时一样的底（不置灰），只是**没有字**且点不动
+	# 2026-11-09 用户令：终局也不许整钮连底隐藏——按钮永远可见，_finale 只并进无字判断
 	if _end_btn != null:
-		_end_btn.visible = not _finale
 		_end_btn.disabled = not can_act
 		_end_btn.text = "结束回合" if can_act else ""
 	if _play_all_btn != null:
-		_play_all_btn.visible = not _finale
 		_play_all_btn.disabled = not can_act
 		_play_all_btn.text = "打出全部" if can_act else ""
 	_maybe_wait_discard()
@@ -2209,8 +2208,9 @@ func _hp_orb_center() -> Vector2:
 		return orb.get_global_rect().get_center()
 	return _played_from
 
-## 出牌预判收尾：这张牌的推演能把场上所有敌人打死 → 立刻进"不可操作"（手牌/按钮收起）
-## 只是隐藏 UI，特效与结算全部照常；判错由 _refresh 的安全阀复原。
+## 出牌预判收尾：这张牌的推演能把场上所有敌人打死 → 立刻进"不可操作"（手牌收起；
+## 按钮不藏——留底无字，2026-11-09 用户令禁连底隐藏）只是隐藏 UI，特效与结算全部照常；
+## 判错由 _refresh 的安全阀复原。
 func _predict_end_and_hide(c: Dictionary) -> void:
 	if battle == null or _finale:
 		return
@@ -2228,13 +2228,10 @@ func _predict_end_and_hide(c: Dictionary) -> void:
 	for w in _hand_wraps:
 		if is_instance_valid(w):
 			w.visible = false
-	if _end_btn != null:
-		_end_btn.visible = false
-	if _play_all_btn != null:
-		_play_all_btn.visible = false
 
 ## 终局判定（2026-11-08 用户令·按拍判）：这一拍结算后场上已无存活敌人 →
-## ① 所有待死的敌人立刻发珠（不再排燃烧动画的队）② 手牌与两个按钮隐藏（进入不可操作态）
+## ① 所有待死的敌人立刻发珠（不再排燃烧动画的队）② 手牌收起（进入不可操作态；
+## 按钮不藏——留底无字，2026-11-09 用户令禁连底隐藏）
 ## 死亡特效保持与平时一致（用户：先保持一致，看了再改）
 func _check_finale() -> void:
 	if _finale or battle == null:
@@ -2245,10 +2242,6 @@ func _check_finale() -> void:
 	for w in _hand_wraps:
 		if is_instance_valid(w):
 			w.visible = false
-	if _end_btn != null:
-		_end_btn.visible = false
-	if _play_all_btn != null:
-		_play_all_btn.visible = false
 
 ## 击拍收尸：这一拍就是它的最后一击 → 此刻才放死亡特效＋经验珠
 func _beat_death(uid: int, idx: int) -> void:
@@ -2713,11 +2706,19 @@ func _on_reward_done() -> void:
 	elif _win_pending:
 		_try_finish_win()
 
-## 选卡落点（2026-11-08 对齐原版 MoveChosenCardToHand＋SetCardFreeToPlay）：
-## 进手牌＋免一次费；战斗收尾时手牌随清场流程回牌组（弃堆循环）——手牌只是过站
+## 选卡落点（2026-11-09 修·双落点）：cid 恒入 run 牌组（跨场持久——战斗四区是开局
+## 快照、从不写回，只进手牌＝「下一场就没了」）；战斗已结束（胜利收尾）＝不进
+## 手牌，直接落抽牌堆（计数即涨；下一场开局随牌组洗入）；战斗仍在打＝另赠当场
+## 上手一张＋免一次费（对齐原版 MoveChosenCardToHand＋SetCardFreeToPlay）。
+## _deck_total 同步＋1＝check_piles 不变量（手牌增援与碎牌 −1 同理）。
 func _on_card_chosen(cid: String) -> void:
+	run["deck"].push_back(cid)
 	if battle == null:
-		run["deck"].push_back(cid)   # 无战斗上下文兜底：进牌组
+		return
+	battle._deck_total += 1
+	if String(battle.phase) == "over":
+		battle.draw_pile.push_back(battle._make_card(String(cid)))
+		_refresh()
 		return
 	var c: Dictionary = battle._make_card(String(cid))
 	c["free"] = true                 # 免一次费（打出后消耗）
@@ -2758,11 +2759,8 @@ func _try_finish_win() -> void:
 	_sync_level()
 	_refresh()
 	_win_pending = false
-	# 2026-11-08 对齐原版：选完/收完回战斗画面停留一段（残余特效播完的呼吸段）
-	# 再弹胜利浮层（浮层带「返回地图」确认键——点击才回地图）
-	await get_tree().create_timer(0.8, false).timeout
-	if not is_inside_tree():
-		return
+	# 2026-11-09 用户令：去掉 0.8s 收尾呼吸段——忙窗放行即弹胜利浮层
+	# （浮层带「返回地图」确认键——点击才回地图）
 	_show_end_overlay("win")
 
 func _stop_xp_flights() -> void:

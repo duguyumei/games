@@ -842,9 +842,15 @@ func is_cracked(card: Dictionary) -> bool:
 
 ## 战后写回源（层推进用；recovery＝红番茄族战后回复、xp_gained＝击杀经验，由宿主在胜利时结转）
 func player_out() -> Dictionary:
+	## 一次性卡（exhaust）：打掉＝**本局 run 永久移除**（2026-11-09 用户令「后续战斗也没了」
+	## ——与碎牌同构，宿主按 cid 删一次出现；本场进消耗区不回收本就成立）
+	var exhausted: Array = []
+	for card in exhaust_pile:
+		exhausted.push_back(String(card["id"]))
 	return {"hp": maxi(0, int(player["hp"])), "armor_stat": int(player["armor_stat"]),
 		"mhp": int(player["mhp"]), "recovery": int(player.get("recovery", 0)),
 		"xp_gained": xp_gained,
 		"gold": gold_reward(),   # 2026-11-07 属性轮：胜场金币（greed 乘后——宿主入局外档）
-		"shattered": shattered.duplicate()}   # 2026-11-06 碎牌：宿主按此从 run 卡组删
+		"shattered": shattered.duplicate(),   # 2026-11-06 碎牌：宿主按此从 run 卡组删
+		"exhausted": exhausted}
 #endregion

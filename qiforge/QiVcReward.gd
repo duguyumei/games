@@ -58,7 +58,8 @@ func _fill(c: Control) -> void:
 
 func _build() -> void:
 	var scrim := ColorRect.new()
-	scrim.color = Color(0.09, 0.08, 0.07, 1.0)   # 不透明：升级时不显示手牌/敌人（照参考蓝本）
+	# 2026-11-09 用户令：半透明压暗（非纯黑板）——手牌已走 visible 真收起，不必靠背板遮
+	scrim.color = Color(0.09, 0.08, 0.07, 0.75)
 	scrim.mouse_filter = Control.MOUSE_FILTER_STOP   # 模态：挡住底屏点击
 	_fill(scrim)
 	add_child(scrim)

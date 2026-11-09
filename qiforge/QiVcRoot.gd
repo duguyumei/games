@@ -463,6 +463,13 @@ func _on_battle_over(result: String) -> void:
 			var di := deck_arr.find(String(sm.get("id", "")))
 			if di >= 0:
 				deck_arr.remove_at(di)
+		# 2026-11-09 一次性卡（exhaust）：消耗＝本局永久移除（用户令「后续战斗也没了」，
+		# 同碎牌删法——删一次出现，同名多张守恒）
+		for cid in out.get("exhausted", []):
+			var deck_arr2: Array = _run.get("deck", [])
+			var ei := deck_arr2.find(String(cid))
+			if ei >= 0:
+				deck_arr2.remove_at(ei)
 		if bool(_pending.get("boss", false)):
 			_after_reward = "clear"
 		else:
