@@ -2077,6 +2077,22 @@ func _on_thrust_hit(ev: Dictionary, idx := 0) -> void:
 		_beat_death(int(du), idx)
 
 ## 受击后仰（重建会吃掉它——无所谓，那一帧已经打出去了）
+## 击退（纯表现，2026-11-08）：被击中且判定击退 → 卡整体向右退出 18px 再回弹归位。
+## 逻辑位置不变（蓝本 PlayKnockbackVFX 同口径）。
+func _knockback_card(card: Control) -> void:
+	if card == null or not is_instance_valid(card):
+		return
+	var base := card.position
+	var tw := card.create_tween()
+	tw.tween_property(card, "position", base + Vector2(18.0, 0.0), 0.07)\
+		.set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(card, "modulate", Color(1.35, 1.20, 0.85), 0.07)
+	tw.tween_property(card, "position", base + Vector2(-3.0, 0.0), 0.10)\
+		.set_trans(Tween.TRANS_SINE)
+	tw.tween_property(card, "position", base, 0.12)\
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(card, "modulate", Color(1, 1, 1), 0.14)
+
 func _recoil(uid: int, amount := 7.0) -> void:
 	var card := _find_enemy_card(uid)
 	if card == null:
@@ -2115,7 +2131,10 @@ func _on_strike_beat(ev: Dictionary, idx: int) -> void:
 		_strike_mark(card, idx, crit)
 	_hit_stop(22)
 	_shake_throttled(1.8, 0.08)
-	_recoil(uid, 6.0)   # 击退的推退动画归美术线（2026-11-08 用户令）——kb 数据在拍上待消费
+	_recoil(uid, 6.0)
+	# 击退表现（2026-11-08 用户令·方案A）：被推出去一截再弹回，逻辑位不变
+	if bool(ev.get("kb", false)):
+		_knockback_card(card)   # 击退的推退动画归美术线（2026-11-08 用户令）——kb 数据在拍上待消费
 	if _combat_fx != null and int(ev.get("amount", 0)) > 0:
 		_combat_fx.number_stack(at, int(ev.get("amount", 0)), idx, crit)
 	_check_finale()
