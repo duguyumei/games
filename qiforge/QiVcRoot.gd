@@ -70,14 +70,18 @@ func _ready() -> void:
 				_screen._set_hand_focus(_screen._hand_wraps[3])
 				await get_tree().create_timer(0.6).timeout
 				await _shot("/Users/cc/Documents/qi-forge-2/.qi_vc_battle_focus.png")
-			# 经验特效验收（--qi-xp）：注 5 点经验、敌位放 5 珠连飞→到账→满级三选一，逐段抓图
+			# 经验特效验收（--qi-xp）：注 5 点经验、敌位放 5 珠连飞→满级三选一，逐段抓图
+			# （2026-11-09 死帧入账制：经验直接进账＋xp_credit 记 +N，珠纯演出）
 			if "--qi-xp" in OS.get_cmdline_user_args() and _screen != null:
-				for i in 5:
-					_screen.battle.xp_pending.push_back(1)
+				var xuids := [9001, 9002, 9003, 9004, 9005]
 				var spots := [Vector2(520, 360), Vector2(700, 430), Vector2(960, 340),
 					Vector2(1200, 430), Vector2(1380, 360)]
-				for p in spots:
-					_screen._spawn_xp_orb(p)
+				for i in xuids.size():
+					_screen.battle.xp_gained += 1
+					_screen.battle.xp_credit[xuids[i]] = 1
+				_screen.battle.changed.emit()
+				for i in spots.size():
+					_screen._spawn_xp_orb(spots[i], xuids[i])
 				for i in 6:
 					await get_tree().create_timer(0.2).timeout
 					await _shot("/Users/cc/Documents/qi-forge-2/.qi_xp_%d.png" % i)
@@ -112,9 +116,8 @@ func _ready() -> void:
 								d3["uid"] = 9100 + _k2
 								d3["hp"] = 999
 								b.encounter["active"].append(d3)
-					# 演示连击徽（默认没装内功「连击堆叠」是隐藏的）
-					b.combo_enabled = true
-					b.combo_count = 3
+					# 演示动态升级（默认没装内功「动态升级」时三公理全跳）
+					b.upgrade_enabled = true
 					# 演示裂纹：第二张牌顶到 uses=3 → 卡面带裂纹
 					if b.hand.size() > 1:
 						b.hand[1]["uses"] = 3
@@ -213,7 +216,7 @@ func _ready() -> void:
 				var n: int = b.encounter["active"].size()
 				for e in b.encounter["active"].duplicate():
 					b._damage_enemy(e, 99999)
-				print("[xpwin] killed=", n, " pending=", b.xp_pending.size(), " orbs=", _screen._xp_flights)
+				print("[xpwin] killed=", n, " gained=", b.xp_gained, " orbs=", _screen._xp_flights)
 				b.check_end()
 				print("[xpwin] after check_end orbs=", _screen._xp_flights,
 					" overlay=", _screen._overlay != null)
@@ -313,7 +316,7 @@ func _fx_set_scene(rows: Array, hp: int) -> void:
 		_screen._reward_ui.queue_free()
 		_screen._reward_ui = null
 	_screen._stop_xp_flights()
-	b.xp_pending.clear()
+	b.xp_credit.clear()
 	b.xp_gained = 0
 	_screen.run["level"] = 30          # 高等级＝几点击杀涨不满一条，永不升级
 	_screen.run["xp"] = 0
@@ -481,11 +484,11 @@ func _on_battle_over(result: String) -> void:
 		_show_map()
 
 ## 升级三选一流：有突破次数先出奖励屏（连锁出题），完了归图/通关。
-## 教程层（第一层）＝单卡天赐（VC Deck_Tutorial 孤张制＋2026-11-01 用户口述「只可以选一个」）：
-## 首赐「上撩」（开局孤张→两个撩）、再赐「撩月斩」——奖励屏单卡模式＋醍醐灌顶特效。
+## 〔2026-11-10 天赐置空〕教程层天赐（旧「飞星术/撩月斩」）随卡表砍除退役——
+## 三张基础卡经 reward_offers 自然出题；单卡天赐制留内容轮再启。
 func _show_rewards_or_next() -> void:
 	if int(_run.get("pending_picks", 0)) > 0:
-		var gifts: Array = ["feixing_shu", "cuipo_liao"] if int(_run.get("floor", 0)) == 0 else []
+		var gifts: Array = []
 		_free_screens()
 		_reward = VC_REWARD.new()
 		_reward.setup(_run, gifts)

@@ -10,7 +10,7 @@ extends Control
 const QISTYLE := preload("res://qiforge/QiStyle.gd")
 const CARD := preload("res://qiforge/QiCardStyle.gd")
 const VC := preload("res://qiforge/QiVcData.gd")
-const QITIP := preload("res://qiforge/QiTooltip.gd")
+const KW_TIP := preload("res://qiforge/QiKeywordTooltip.gd")  # 卡词条浮窗组件（2026-11-10 挂卡下制）
 const TILTV := preload("res://qiforge/QiCardTilt.gd")
 
 signal done
@@ -167,21 +167,35 @@ func _refresh_cards() -> void:
 		vis.mouse_exited.connect(func() -> void: _offer_hover(vis, the_cid, false))
 		vis.pivot_offset = cs * 0.5
 		_card_box.add_child(vis)
+		# 词条浮窗组件（2026-11-10 原版 KeywordTooltip 制）：挂卡按钮下、与卡同生共死
+		# ——弹窗销毁＝卡销毁＝浮窗随销（ChooseCardModal 零浮窗逻辑同构，关窗零善后）
+		var kw_tip := KW_TIP.new()
+		kw_tip.setup(vis, {
+			"anchor_fn": func() -> Rect2: return vis.get_global_rect(),
+			"corners_fn": func() -> PackedVector2Array:
+				var tv0 = vis.get_meta("tilt", null)
+				return TILTV.corners(tv0, cs.x, cs.y) if tv0 != null else PackedVector2Array()})
+		vis.set_meta("kw_tip", kw_tip)
 
 func _process(delta: float) -> void:
 	var mouse := get_global_mouse_position()
-	# 悬停收起：卡与浮窗都不在才收（移到浮窗上保持，2026-11-08 与手牌对齐）
+	# 悬停收起：卡与浮窗都不在才收（移到浮窗上保持；2026-11-10 组件 pointer_over）
 	if _hover_vis != null:
 		if not is_instance_valid(_hover_vis):
 			_hover_vis = null
 		else:
+			var hover_tip = _hover_vis.get_meta("kw_tip", null)
 			var over_card := _hover_vis.get_global_rect().grow(6.0).has_point(mouse)
-			if not over_card and not QITIP.pointer_over_panels(mouse):
+			if not over_card and not (hover_tip != null and hover_tip.pointer_over(mouse)):
+				print("[VCDIAG][reward] hover-fade cid=%s" % [_hover_cid])   # [VCDIAG] 临时埋点
 				var tw2 := create_tween()
 				tw2.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 				tw2.tween_property(_hover_vis, "scale", Vector2.ONE, 0.12)
-				QITIP.hide_for(_hover_vis)
+				if hover_tip != null:
+					hover_tip.set_active(false)
 				_hover_vis = null
+			elif hover_tip != null:
+				hover_tip.check_screen_pos()   # 跟随卡位（放大动画期间同步）
 	for c in _card_box.get_children():
 		var tv = c.get_meta("tilt", null)
 		if tv != null:
@@ -205,6 +219,12 @@ func _card_clicked(cid: String) -> void:
 	if not _force_gifts.is_empty():
 		_force_gifts.pop_front()
 	# 2026-11-08 用户令：不要特效——点完直接结算、关窗（牌由宿主收进手牌/牌组）
+	print("[VCDIAG][reward] pick cid=%s hover_cid=%s hover_valid=%s" % [cid, _hover_cid, is_instance_valid(_hover_vis)])   # [VCDIAG] 临时埋点
+	# 点选即收词条浮窗（2026-11-10 原版「状态转移即开关」锚点制——其余路径＝卡随弹窗销毁同死）
+	if _hover_vis != null and is_instance_valid(_hover_vis):
+		var pick_tip = _hover_vis.get_meta("kw_tip", null)
+		if pick_tip != null:
+			pick_tip.set_active(false)
 	card_chosen.emit(cid)
 	_animating = true
 	_after_anim()
@@ -309,6 +329,7 @@ func _consume_pick() -> void:
 	if int(run.get("pending_picks", 0)) > 0:
 		_roll()
 	else:
+		print("[VCDIAG][reward] done hover_cid=%s hover_valid=%s" % [_hover_cid, is_instance_valid(_hover_vis)])   # [VCDIAG] 临时埋点
 		done.emit()
 
 func _on_skip() -> void:
@@ -411,29 +432,19 @@ func _offer_hover(vis: Control, cid: String, on: bool) -> void:
 		return
 	if not on:
 		return   # 离开卡不立刻收：交给 _process 判"是否移到浮窗上"（与手牌一致）
+	print("[VCDIAG][reward] hover cid=%s" % [cid])   # [VCDIAG] 临时埋点（2026-11-09 排查，完撤）
+	# 单宿主互斥（审计补——旧 show_stack 自带、组件制须显式）：滑到新卡＝旧卡浮窗即关
+	if _hover_vis != null and is_instance_valid(_hover_vis) and _hover_vis != vis:
+		var old_tip = _hover_vis.get_meta("kw_tip", null)
+		if old_tip != null:
+			old_tip.set_active(false)
 	_hover_vis = vis
 	_hover_cid = cid
 	var tw := create_tween()
 	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(vis, "scale", Vector2(1.12, 1.12), 0.12)
-	if true:
-		var def: Dictionary = VC.CARDS.get(cid, {})
-		var groups: Array = []
-		for kwd in def.get("kw", []):
-			if VC.KEYWORDS.has(kwd):
-				groups.push_back([
-					{"t": "title", "text": String(VC.KEYWORDS[kwd]["name"])},
-					{"t": "line", "text": String(VC.KEYWORDS[kwd]["desc"])}])
-		if groups.is_empty():
-			groups.push_back([
-				{"t": "title", "text": String(def.get("name", ""))},
-				{"t": "line", "text": String(def.get("desc", ""))}])
-		var tv2 = vis.get_meta("tilt", null)
-		var csz: Vector2 = CARD.size_of("detail")
-		QITIP.show_stack(vis, groups, {
-			"anchor_fn": func() -> Rect2: return vis.get_global_rect(),
-			"corners_fn": func() -> PackedVector2Array:
-				return TILTV.corners(tv2, csz.x, csz.y) if tv2 != null else PackedVector2Array(),
-		})
-	else:
-		QITIP.hide_for(vis)
+	# 词条浮窗（2026-11-10 原版制）：组装与显示全归卡下组件——无词条不显示
+	# （原版无「兜底全文」分支，卡面 desc 承载全文——自创行为已删）
+	var tip = vis.get_meta("kw_tip", null)
+	if tip != null and tip.refresh(VC.CARDS.get(cid, {})):
+		tip.set_active(true)

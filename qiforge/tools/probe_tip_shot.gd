@@ -1,10 +1,10 @@
-## 浮窗截图探针（2026-11-08）——**跑真游玩场景 QiVcRoot／QiVcBattle**（旧线 QiBattleScreen 不算数）。
+## 浮窗截图探针（2026-11-08；2026-11-10 改组件口径——词条浮窗＝卡下 QiKeywordTooltip 组件，
+## 不再有全局按宿主字典）。
 ## 用法＝"$GODOT" --path . --position 19000,19000 --script res://qiforge/tools/probe_tip_shot.gd
 ## 坑：屏幕必须挂 shot_no_hold（否则真鼠标轮询会清掉合成焦点，截图里没有浮窗）。
 extends SceneTree
 
 const OUT := "/Users/cc/Documents/qi-forge-2/sandbox/"
-const QITIP := preload("res://qiforge/QiTooltip.gd")
 
 func _initialize() -> void:
 	_run()
@@ -51,20 +51,19 @@ func _run() -> void:
 	sc._mk_res_mark("HpText", "+8", Color(0.62, 0.84, 1.0))
 	for i in 50:
 		await process_frame
-	if not QITIP._by_host.has(last):   # 自愈把它关了（合成鼠标没动也可能）→ 补开一次
+	var tip = last.get_meta("kw_tip", null)   # 卡下组件（2026-11-10 制）
+	if tip == null or not tip.is_active():    # 合成鼠标没动被收起 → 补开一次
 		sc._show_kw_tips(last)
 		for i in 20:
 			await process_frame
 	var cs: PackedVector2Array = sc._card_face_corners(last)
 	print("  corners=", cs)
-	var arr2: Array = QITIP._by_host.get(last, [])
-	for q in arr2:
+	tip = last.get_meta("kw_tip", null)
+	for q in tip._panels:
 		print("    panel pos=", (q as Control).position, " size=", (q as Control).size)
 	print("  card_rect=", sc._card_visual_rect(last))
-	print("  meta corner_l=", (arr2[0] as Control).get_meta("corner_l", "MISSING"),
-		" corner_r=", (arr2[0] as Control).get_meta("corner_r", "MISSING"))
 	print("  _card_corner L=", sc._card_corner(last, false), " R=", sc._card_corner(last, true))
-	print("  corner_for_side(-1)=", QITIP._corner_for_side(arr2, sc._card_visual_rect(last), -1))
+	print("  corner_for_side(-1)=", tip._corner_for_side(sc._card_visual_rect(last), -1))
 	# 演示：后排括号款（20(10)）+ 致命金框
 	var ec: Control = null
 	for k2 in sc._enemy_cards.keys():
@@ -77,4 +76,4 @@ func _run() -> void:
 
 func _save(nm: String) -> void:
 	root.get_viewport().get_texture().get_image().save_png(OUT + nm)
-	print("saved ", nm, "  tips=", QITIP._by_host.size())
+	print("saved ", nm)

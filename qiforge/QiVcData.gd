@@ -1,5 +1,5 @@
 ## VC 制数据层（2026-10-31 立档，复刻阶段命名、换皮时整体改名）。
-## 模型＝单主角＋连击阶梯（内功「连击堆叠」）＋血池波次遭遇（去目标制）；
+## 模型＝单主角＋动态升级（内功「动态升级」，2026-11-10 三公理集合制取代连击）＋血池波次遭遇（去目标制）；
 ## 卡＝四色制：红武器（攻击）／蓝道具（防御）／黄道具（特殊）／紫道具（法力）；
 ## **2026-11-01 数值同步轮（用户批「开始」）：卡牌效果/费用全量换官方 wiki 真值**
 ## （vampire.survivors.wiki/w/Crawlers:Cards）＋敌方血量换一手 EnemyDatabase 真值；
@@ -10,21 +10,20 @@
 extends RefCounted
 
 #region 内功（对应原作遗物系统；2026-10-31 用户裁定：先做战斗相关，场外升级后批）
-## 首件「连击堆叠」＝连击规则本体（规格 2026-10-31 三源闭环＋用户口述裁定）：
-## 逐档 +1 连续阶梯／链上第 n 张 ×n／断连重算（断的那张 ×1 结算并成新链第一张）。
+## 首件＝动态升级规则本体（2026-11-10 三公理定稿；id 沿用 combo_stack——地图宝箱硬编码联动，
+## 改名留后续统一）。
 const NEIGONG := {
 	"combo_stack": {
-		"name": "连击堆叠",
-		"desc": "装备后连击规则生效（2026-11-07 教程轮：宝物获得——开局不带；"
-			+ "2026-11-08 状态制改版）：每打出一张牌连击 +1、按新连击数线性放大；"
-			+ "硬换剑型（短/长/巨互跳）＝断链重 1；变招照 +1 且不锁型；无型牌不动链；"
-			+ "回合开始连击清零、剑型归无。",
+		"name": "动态升级",
+		"desc": "装备后动态升级规则生效（宝箱获得——开局不带）：每打出一张牌，手牌中同剑型、"
+			+ "等级不高于它的牌等级 +1、费用 +1；打出与上一张不同剑型＝切招，其余剑型全部复原；"
+			+ "变招属于所有剑型。回合结束全部复原。",
 	},
 }
 
 ## 剑型四类（2026-11-08 状态制改版，用户裁）：卡表 stance 字段值域——
-## short 短剑（轻快连击向·蓝）/ long 长剑（控场架式向·墨）/ great 巨剑（重破防守势向·红）/
-## flex 变招（稀有标记·金：照常 +1 且不锁型，下一张任何型接链）；效果牌未标型＝""（不动链，后续单项设计补标）
+## short 短剑（轻快·蓝）/ long 长剑（控场·墨）/ great 巨剑（重破·红）/
+## flex 变招（稀有·金：型集＝全集，即万能牌——2026-11-10 动态升级轮定义，现役零张、词条待内容轮）
 const FORMS := {
 	"short": {"cn": "短剑", "color": "blue"},
 	"long": {"cn": "长剑", "color": "ink"},
@@ -32,25 +31,47 @@ const FORMS := {
 	"flex": {"cn": "变招", "color": "gold"},
 }
 
+## 型集（2026-11-10 动态升级三公理·集合制）：每张牌的 stance 对应一个型集——
+## 三真型各占单集，flex 变招＝全集（万能牌）。系统只有两个谓词，全部由型集交集算出：
+##   接（旧词「同型」）＝ 两型集有交集；换（旧词「切招」）＝ 两型集无交集。
+## 接/换是完美二分：一张牌对另一张必居其一——A1 升级集与 A2 复原集天然互斥，无优先级规则。
+const FORM_SETS := {
+	"short": ["short"],
+	"long": ["long"],
+	"great": ["great"],
+	"flex": ["short", "long", "great"],
+}
+
+static func forms_connect(a: String, b: String) -> bool:
+	## 接：型集有交集（"" 与任何型视为接——回合首张不构成换；无型牌用户裁定不存在）
+	if a == "" or b == "":
+		return true
+	for f in (FORM_SETS.get(a, [a]) as Array):
+		if (FORM_SETS.get(b, [b]) as Array).has(f):
+			return true
+	return false
+
+static func forms_switch(a: String, b: String) -> bool:
+	## 换：型集无交集（＝切招判定）
+	return not forms_connect(a, b)
+
 static func has_neigong(run: Dictionary, nid: String) -> bool:
 	return (run.get("neigong", []) as Array).has(nid)
 #endregion
 
-#region 卡（2026-11-03 用户裁定：普攻/催破合并为单一「攻击」卡种；新手开局＝直刺孤张）。
-## 卡种＝attack(攻击)/effect(奇窍·耗气)/defense(护体·耗气)。
-## —— 气·式·连击（2026-11-06 终裁）——
+#region 卡（2026-11-10 动态升级引擎轮：卡表砍到三张基础攻击卡，其余卡种/催破族/黄蓝卡随连击退役整体出清）。
+## 卡种口径＝attack(攻击)/effect(奇窍·耗气)/defense(护体·耗气)——后两类现零卡、口径保留待内容轮。
+## —— 气（2026-11-06 终裁）——
 ## 气：上限＝基础 2，局外（run.qi_max）／局内（qi_max 效果）可成长（护栏 6）；
-##     回合开始重置到当前上限（重置在前、抽牌在后；洗牌换气**暂缓撤下**——2026-11-07 用户令）；
-##     不再有「打攻击 +1 气」。cost＝气费（need 卡每耗 1 层式抵 1 气）。
-## 〔2026-11-08 状态制改版〕式＝当前剑型状态（short/long/great/flex），不攒不耗；
-## 旧「式弹药库（gain 得式/need 耗式抵气/跨回合保存/上限 9）」全链退役——
-## gain/need/pip 卡表字段留档不消费（文本轮清）。
-## 连击（涨＝每张 +1／断＝硬换剑型重 1／桥＝变招照涨不锁型／不动＝无型牌／清＝回合开始
-## ＋型归无）：**先涨后算**——本张按新连击数线性 ×N。
-## ops 同引擎指令集（dmg 加 hits 多段）。
+##     回合开始重置到当前上限（重置在前、抽牌在后）；cost＝气费（动态升级的费增量叠加其上）。
+## —— 动态升级（2026-11-10 三公理·集合制，取代连击；全文见 design-docs/动态升级系统_v0.3.md）——
+## A1 升级：打出 p → 手牌中与 p 接、且等级 ≤ p 的牌：等级+1、费用+1（「费用锁定」词条牌不加费）；
+## A2 切招：p 与上一张换 → 手牌中与 p 换的牌：等级与费用复原初始；
+## A3 万能打出：p 为 flex → 手牌中与 p 接者（＝全体）费用复原初始（结算在 A1 后）。
+## 执行顺序＝①A2 判定 → ②A1 升级 → ③A3 万能 → ④记型；离开手牌即复原（打出/弃置/碎牌清等级与费增量）。
+## 旧「式弹药库（gain/need/pip）」字段随砍表全删。ops 同引擎指令集（dmg 加 hits 多段）。
 const KEYWORDS := {
 	"crit": {"name": "暴击", "desc": "有概率造成多倍伤害。"},   # 2026-11-07 用户令：词条文案不带具体数值
-	"knockback": {"name": "击退", "desc": "有几率将敌人击退。"},   # 2026-11-08 飞星术（蓝本 Bible 词条）
 }
 
 const CARDS := {
@@ -59,191 +80,24 @@ const CARDS := {
 	# Axe 族）；single＝锁最右首列（单体）。pierce_type 0/1/2＝OncePerEnemy/MultiHit/MultiSwitch。
 	# 下斩＝鞭位（2026-11-07 用户映射：Whip→下斩；「全体＝前排」口径）
 	"hengpi": {"name": "下斩", "cost": 0, "color": "red", "kind": "attack",
-		"stance": "great", "gain": "斩", "pip": "斩", "targeting": "front_row",
+		"stance": "great", "targeting": "front_row",
 		"pierce_type": 0,
-		"desc": "对全体敌人造成 5 点伤害；得 1 层「斩」式。",
+		"desc": "对全体敌人造成 5 点伤害。巨剑型。",
 		"ops": [{"op": "dmg", "value": 5, "hits": 12}]},
 	# 连环刺＝匕首制·顺发（2026-11-08 更名「直刺→连环刺」；数值轮：5 刺×8 点＝卡面
 	# 总伤 40——蓝本刀页「Deal 40 damage」5 投掷物×8 伤同值）：**左→右**逐列点名
 	# （首目标＝最左，与蓝本那把刀的右→左刚好相反——用户裁）；死者出列顺位接
 	# （顶上来的继续挨打）、环绕、排清才打后排；伤害封顶剩余血量、多余浪费（蓝本无溢出）。
 	"zhici": {"name": "连环刺", "cost": 0, "color": "red", "kind": "attack",
-		"stance": "short", "gain": "刺", "pip": "刺", "targeting": "left_right",
-		"desc": "造成 40 点伤害。暴击。",
+		"stance": "short", "targeting": "left_right",
+		"desc": "造成 40 点伤害。暴击。短剑型。",
 		"kw": ["crit"],
 		"ops": [{"op": "dmg", "value": 8, "hits": 5, "crit": true}]},
 	"shangliao": {"name": "上撩", "cost": 0, "color": "red", "kind": "attack",
-		"stance": "long", "gain": "撩", "pip": "撩", "targeting": "single",
-		"desc": "对最前敌人造成 10 点伤害；得 1 层「撩」式。",
+		"stance": "long", "targeting": "single",
+		"desc": "对最前敌人造成 10 点伤害。长剑型。",
 		"ops": [{"op": "dmg", "value": 10, "hits": 1}]},
-	# —— 攻击（耗式型·连击位：每耗 1 层式＝气费 −1＋连击 +1）——
-	"cuipo_pi": {"name": "劈空斩", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "great", "need": {"stance": "great", "n": 1}, "pip": "斩",
-		"targeting": "front_row", "pierce_type": 0,
-		"desc": "消耗至多 1 层「斩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对前排所有敌人造成 15 点伤害，按新连击数放大；得 1 层「斩」式。",
-		"ops": [{"op": "dmg", "value": 15, "hits": 12}]},
-	"cuipo_ci": {"name": "连珠刺", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "short", "need": {"stance": "short", "n": 1}, "pip": "刺",
-		"targeting": "single",
-		"desc": "消耗至多 1 层「刺」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 8 点伤害 ×2 段，按新连击数放大；得 1 层「刺」式。",
-		"ops": [{"op": "dmg", "value": 8, "hits": 2}]},
-	"cuipo_liao": {"name": "撩月斩", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "long", "need": {"stance": "long", "n": 1}, "pip": "撩",
-		"targeting": "single",
-		"desc": "消耗至多 1 层「撩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 25 点伤害，按新连击数放大；得 1 层「撩」式。",
-		"ops": [{"op": "dmg", "value": 25, "hits": 1}]},
-	"cuipo_pi_heavy": {"name": "重劈·山崩", "cost": 2, "color": "red", "kind": "attack",
-		"stance": "great", "need": {"stance": "great", "n": 2}, "pip": "斩×2",
-		"targeting": "front_row", "pierce_type": 0,
-		"desc": "消耗至多 2 层「斩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对前排所有敌人造成 28 点伤害，按新连击数放大；得 1 层「斩」式。",
-		"ops": [{"op": "dmg", "value": 28, "hits": 12}]},
-	"cuipo_liao_heavy": {"name": "重撩·断岳", "cost": 2, "color": "red", "kind": "attack",
-		"stance": "long", "need": {"stance": "long", "n": 2}, "pip": "撩×2",
-		"targeting": "single",
-		"desc": "消耗至多 2 层「撩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 45 点伤害，按新连击数放大；得 1 层「撩」式。",
-		"ops": [{"op": "dmg", "value": 45, "hits": 1}]},
-	# —— 三剑（2026-11-07 用户映射：Bone/圣经/Garlic 位→弹射/游走/回身）——
-	# 逍遥剑＝骨头位（Bone 弹射投射）：首发单体，段尽后按概率弹跳追击（衰减链）
-	"xiaoyao_jian": {"name": "逍遥剑", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "long", "need": {"stance": "long", "n": 1}, "gain": "斩", "pip": "撩",
-		"targeting": "single",
-		"bouncy": {"base": 0.5, "decay": 0.15, "max": 3},
-		"desc": "消耗至多 1 层「撩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对最前敌人造成 12 点伤害，按新连击数放大，有几率弹跳追击；得 1 层「斩」式。",
-		"ops": [{"op": "dmg", "value": 12, "hits": 1}]},
-	# 游龙剑＝圣经位（King Bible 弧形发射→游走多目标近似：random 列袋不重复；数值暂定可调）
-	"youlong_jian": {"name": "游龙剑", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "short", "need": {"stance": "short", "n": 1}, "gain": "撩", "pip": "刺",
-		"targeting": "random",
-		"desc": "消耗至多 1 层「刺」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。游走出击，对随机敌人造成 9 点伤害 ×2 段，按新连击数放大；得 1 层「撩」式。",
-		"ops": [{"op": "dmg", "value": 9, "hits": 2}]},
-	# 飞星术＝圣经位（King Bible，2026-11-08 用户令：第二关首升天赐卡，效果/描述/词条/
-	# 费用全对齐蓝本）：5 星×8 点＝40 总伤、1 气；left_right 左→右顺发（与连环刺镜像
-	# ＝蓝本 Bible 基类默认方向）、到最右回最左环绕、排清打后排；词条＝几率击退
-	# （蓝本 "Deal 40 damage with a chance to Knockback"；击退引擎效果后续轮接线，
-	# knockback 几率 0.5 自拟待数值轮）；姿态＝短剑
-	"feixing_shu": {"name": "飞星术", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "short", "targeting": "left_right", "knockback": 0.5,
-		"desc": "造成 40 点伤害，有几率击退。",
-		"kw": ["knockback"],
-		"ops": [{"op": "dmg", "value": 8, "hits": 5}]},
-	# 回身剑＝大蒜位（Garlic 真值：前排 10 伤＋缴械——「描述也一样」实证）
-	"huishen_jian": {"name": "回身剑", "cost": 1, "color": "red", "kind": "attack",
-		"stance": "great", "need": {"stance": "great", "n": 1}, "gain": "刺", "pip": "斩",
-		"targeting": "front_row", "pierce_type": 0,
-		"desc": "消耗至多 1 层「斩」式（无式也可打出）。每耗 1 层：气费 −1、连击 +1。对前排所有敌人造成 10 点伤害，按新连击数放大；缴械（下次攻击跳过）；得 1 层「刺」式。",
-		"ops": [{"op": "dmg", "value": 10, "hits": 12}, {"op": "disarm", "rounds": 1}]},
-	# —— 黄卡·属性三型（2026-11-07 属性轮；wiki 真值＋原版持续制实证）——
-	# duration: "dungeon"＝本局（打出入 run.dungeon_stats，跨场保留）／"encounter"＝本场（battle 层，
-	# 随实例销毁清零）；exhaust＝Destroy 自毁型（wiki 明标：打出即效果、卡销毁不回牌堆）。
-	# 属性轴：might/greed/luck/curse（pct 100 基）、amount/deal_count/max_hp/revival（计数 0 基）。
-	"spinach": {"name": "菠菜", "cost": 1, "color": "yellow", "kind": "stat",
-		"desc": "本局威力 +10%（伤害提升）。",
-		"ops": [{"op": "stat", "axis": "might", "amount": 10, "duration": "dungeon"}]},
-	"sprig_spinach": {"name": "嫩菠菜", "cost": 2, "color": "yellow", "kind": "stat",
-		"desc": "本局威力 +20%。",
-		"ops": [{"op": "stat", "axis": "might", "amount": 20, "duration": "dungeon"}]},
-	"candle": {"name": "蜡烛", "cost": 0, "color": "yellow", "kind": "stat",
-		"desc": "本局范围 +5%。",
-		"ops": [{"op": "stat", "axis": "area", "amount": 5, "duration": "dungeon"}]},
-	"candella": {"name": "烛光", "cost": 1, "color": "yellow", "kind": "stat",
-		"desc": "本局范围 +10%。",
-		"ops": [{"op": "stat", "axis": "area", "amount": 10, "duration": "dungeon"}]},
-	"candelabrador": {"name": "烛台", "cost": 2, "color": "yellow", "kind": "stat",
-		"desc": "本局范围 +15%。",
-		"ops": [{"op": "stat", "axis": "area", "amount": 15, "duration": "dungeon"}]},
-	"hollow_heart": {"name": "空心之心", "cost": 1, "color": "yellow", "kind": "stat",
-		"exhaust": true,
-		"desc": "血上限 +3（Destroy：打出自毁）。立即生效。",
-		"ops": [{"op": "stat", "axis": "max_hp", "amount": 3, "duration": "encounter"}]},
-	"forever_heart": {"name": "永恒之心", "cost": 2, "color": "yellow", "kind": "stat",
-		"desc": "本局血上限 +1。",
-		"ops": [{"op": "stat", "axis": "max_hp", "amount": 1, "duration": "dungeon"}]},
-	"crown": {"name": "王冠", "cost": 1, "color": "yellow", "kind": "stat",
-		"exhaust": true,
-		"desc": "本局成长 +15%（经验获取提升）。Destroy。",
-		"ops": [{"op": "stat", "axis": "growth", "amount": 15, "duration": "dungeon"}]},
-	"crystal_crown": {"name": "水晶王冠", "cost": 2, "color": "yellow", "kind": "stat",
-		"exhaust": true,
-		"desc": "本局成长 +20%。Destroy。",
-		"ops": [{"op": "stat", "axis": "growth", "amount": 20, "duration": "dungeon"}]},
-	"stone_mask": {"name": "石面具", "cost": 1, "color": "yellow", "kind": "stat",
-		"exhaust": true,
-		"desc": "本局贪婪 +10%（金币获取提升）。Destroy。",
-		"ops": [{"op": "stat", "axis": "greed", "amount": 10, "duration": "dungeon"}]},
-	"clover": {"name": "三叶草", "cost": 2, "color": "yellow", "kind": "stat",
-		"desc": "本局幸运 +10%（暴击率提升）。",
-		"ops": [{"op": "stat", "axis": "luck", "amount": 10, "duration": "dungeon"}]},
-	"skull_omaniac": {"name": "骷髅咒", "cost": 0, "color": "yellow", "kind": "stat",
-		"exhaust": true,
-		"desc": "本局诅咒 +5%（敌人更强，金币与经验更多）。Destroy。",
-		"ops": [{"op": "stat", "axis": "curse", "amount": 5, "duration": "dungeon"}]},
-	"duplicator": {"name": "分身器", "cost": 1, "color": "yellow", "kind": "stat",
-		"desc": "本局弹数 +1（攻击段数增加）。",
-		"ops": [{"op": "stat", "axis": "amount", "amount": 1, "duration": "dungeon"}]},
-	"du_duplicator": {"name": "双重分身器", "cost": 2, "color": "yellow", "kind": "stat",
-		"desc": "本局弹数 +2。",
-		"ops": [{"op": "stat", "axis": "amount", "amount": 2, "duration": "dungeon"}]},
-	"bracer": {"name": "护腕", "cost": 0, "color": "yellow", "kind": "stat",
-		"desc": "本局发牌 +1（每回合多抽 1 张）。",
-		"ops": [{"op": "stat", "axis": "deal_count", "amount": 1, "duration": "dungeon"}]},
-	"spellbinder": {"name": "咒术书", "cost": 0, "color": "yellow", "kind": "stat",
-		"desc": "本局持续 +5%（时长轴——机制留位）。",
-		"ops": [{"op": "stat", "axis": "duration", "amount": 5, "duration": "dungeon"}]},
-	"tirajisu": {"name": "提拉米苏", "cost": 2, "color": "yellow", "kind": "stat",
-		"exhaust": true,
-		"desc": "获得一次复活（Destroy）。倒下时原地半血复活。",
-		"ops": [{"op": "stat", "axis": "revival", "amount": 1, "duration": "encounter"}]},
-	"attractorb": {"name": "吸引球", "cost": 1, "color": "yellow", "kind": "stat",
-		"desc": "抽 1 张牌。",
-		"ops": [{"op": "draw", "count": 1}]},
-	"friendship_amulet": {"name": "友谊护符", "cost": 1, "color": "yellow", "kind": "stat",
-		"desc": "本局连击基础 +1（催破起始连击更高）。",
-		"ops": [{"op": "stat", "axis": "combo_base", "amount": 1, "duration": "dungeon"}]},
-	# —— 奇窍（黄·耗气：效果 ×当前连击先结算，结算后连击 −气费）——
-	"ningshen": {"name": "凝神诀", "cost": 2, "color": "yellow", "kind": "effect",
-		"desc": "耗 2 气。抽 1 张牌，按当前连击数放大；连击 −2。",
-		"ops": [{"op": "draw", "count": 1}]},
-	"juqi": {"name": "聚气式", "cost": 1, "color": "yellow", "kind": "effect",
-		"desc": "耗 1 气。本回合造成的伤害 +10%；连击 −1。",
-		"ops": [{"op": "might", "pct": 10}]},
-	"yinqi_jue": {"name": "引气诀", "cost": 3, "color": "yellow", "kind": "effect",
-		"desc": "耗 3 气。抽 2 张牌，按当前连击数放大；连击 −3。",
-		"ops": [{"op": "draw", "count": 2}]},
-	# —— 护体（蓝·耗气：效果 ×当前连击先结算，结算后连击 −气费）——
-	"tiegu": {"name": "铁骨", "cost": 1, "color": "blue", "kind": "defense",
-		"desc": "耗 1 气。获得 2 护甲（本回合），按当前连击数放大；连击 −1。",
-		"ops": [{"op": "armor", "amount": 2}]},
-	"jinzzhong": {"name": "金钟罩", "cost": 3, "color": "blue", "kind": "defense",
-		"desc": "耗 3 气。获得 5 护甲（本回合），按当前连击数放大；连击 −3。",
-		"ops": [{"op": "armor", "amount": 5}]},
 }
-#endregion
-
-#region 进化配方（一手全量；materials 按卡 id；本批只录数据不触发——
-## 触发条件＝配方齐＋基础卡空宝石孔＋进化触发点，随宝石批后做）
-const EVOLUTIONS := [
-	{"result": "bloody_tear", "name": "血之泪", "cost": 2, "materials": ["whip", "hollow_heart"]},
-	{"result": "soul_eater", "name": "噬魂者", "cost": 3, "materials": ["garlic", "pummarola"]},
-	{"result": "thousand_edge", "name": "千刃", "cost": 3, "materials": ["knife", "bracer"]},
-	{"result": "hellfire", "name": "地狱火", "cost": 3, "materials": ["fire_wand", "spinach"]},
-	{"result": "holy_wand", "name": "圣杖", "cost": 2, "materials": ["magic_wand", "empty_tome"]},
-	{"result": "unholy_vespers", "name": "邪恶晚祷", "cost": 2, "materials": ["king_bible", "spellbinder"]},
-	{"result": "no_future", "name": "无未来", "cost": 3, "materials": ["runetracer", "armor"]},
-	{"result": "la_borra", "name": "泥沼", "cost": 4, "materials": ["santa_water", "attractorb"]},
-	{"result": "gorgeous_moon", "name": "华丽之月", "cost": 1, "materials": ["pentagram", "crown"]},
-	{"result": "heaven_sword", "name": "天堂之剑", "cost": 3, "materials": ["cross", "clover"]},
-	# —— 以下配方的材料卡不在已实装集内（随卡池扩充批实装）——
-	{"result": "valkyrie_turner", "name": "女武神", "cost": 2, "materials": ["shadow_pinion", "wings"]},
-	{"result": "vicious_hunger", "name": "贪婪之饥", "cost": 2, "materials": ["gatti_amari", "stone_mask"]},
-	{"result": "death_spiral", "name": "死亡螺旋", "cost": 3, "materials": ["axe", "candelabrador"]},
-	{"result": "phieraggi", "name": "菲拉吉", "cost": 4, "materials": ["phiera_der_tuphello", "eight_the_sparrow", "tirajisu"]},
-	{"result": "thunder_loop", "name": "雷电环", "cost": 4, "materials": ["lightning_ring", "duplicator"]},
-	{"result": "vandalier", "name": "破坏者", "cost": 5, "materials": ["peachone", "ebony_wings"]},
-	{"result": "mannajja", "name": "曼纳加", "cost": 5, "materials": ["song_of_mana", "skull_omaniac"]},
-	# —— 待查（一手有成品卡但配方表未录，随考古补）——
-	{"result": "fuwalafuwaloo", "name": "富瓦拉富瓦卢", "cost": 4, "materials": []},
-	{"result": "infinite_corridor", "name": "无限回廊", "cost": 6, "materials": []},
-]
 #endregion
 
 #region 敌人（2026-11-01 敌人页真值轮：hp/max hit 全实证；攻击值＝Max hit 真值——
@@ -409,18 +263,21 @@ static func pick_enemies_by_difficulty(rng: RandomNumberGenerator, floor_spec: D
 #endregion
 #endregion
 
-#region 主角与开局（2026-11-03 用户裁定：初始 50 血 0 气；气只来自攻击卡、跨回合保存、上限 9；
-## 式每回合重置、上限 9 层）
+#region 主角与开局（2026-11-03 用户裁定：初始 50 血；气＝上限重置制 2026-11-06 终裁）
 const PLAYER_BASE := {"hp": 50, "qi_base": 0, "draw_per_turn": 3}   # qi_base 已退役（气改上限重置制，2026-11-06）
 const QI_BASE_MAX := 2        # 气上限·基础档（可成长：局外 run.qi_max／局内 qi_max 效果——2026-11-06 终裁）
 const QI_CAP := 6             # 气上限成长护栏（数值轮可调；回合重置/洗牌 +当前上限，上限成长两处同步放大）
-const STANCE_CAP := 9         # 〔2026-11-08 状态制退役〕式层数上限旧值——引擎不再消费，留档待文本轮清
-const HAND_CAP := 10        # 〔2026-11-08 撤上限〕手牌无上限（原版＝地牢 modifier 制，常态无——VC 线零消费留档）
 const CRIT_CHANCE := 0.25   # 暴击率初始 25%（2026-11-07 用户定；倍率 ×2）
 const CRIT_MULT := 2.0
+const LV_POWER_STEP := 0.3   # 动态升级·等级倍率步进（暂定可调——每级总输出 +30%，词条曲线＝内容轮替换此占位）
 
-## 开局卡组（2026-11-03 用户裁定：新手关初始就一张「连环刺」〔原直刺〕——孤张制）
-const START_DECK := ["zhici"]
+## 等级倍率（动态升级占位公式：等级 n → 总输出 ×(1 + 0.3n)；正式词条曲线待内容轮）
+static func level_mult(lv: int) -> float:
+	return 1.0 + LV_POWER_STEP * float(maxi(0, lv))
+
+## 开局卡组（2026-11-10 动态升级引擎轮：三张基础攻击卡每型 2 张共 6 张——暂定可调；
+## 孤张制〔原「连环刺」单张〕随连击退役）
+const START_DECK := ["hengpi", "hengpi", "zhici", "zhici", "shangliao", "shangliao"]
 
 ## VC 制属性表（2026-11-04 裁定照原版属性表；**2026-11-07 属性轮四层接线**）：
 ## 原版三层合成 GetStartingX(playerConfig, runSettings, progressionData)＋本场增量层——
@@ -518,7 +375,7 @@ static func stat_pct_of(axis: String) -> bool:
 static func default_vc_run() -> Dictionary:
 	return {"hp": PLAYER_BASE["hp"], "copper": 0, "level": 1, "xp": 0,
 		"deck": START_DECK.duplicate(),
-		"neigong": [],   # 2026-11-07 教程轮：开局无连击——内功「连击堆叠」改由宝箱获得（教程层首个）
+		"neigong": [],   # 2026-11-07 教程轮：开局无动态升级——内功改由宝箱获得（教程层首个）
 		"stats": default_stats(),
 		"dungeon_stats": {},   # 2026-11-07 属性轮：本局层（dungeon 型黄卡入账——三层合成的第三层）
 		"enc": 0, "seed": 20261101}
@@ -581,7 +438,7 @@ static func _cards_of_cost(cost: int) -> Array:
 ## 三选一出题：三槽互异；某费池空则重掷（guard 60）。
 ## 低级过滤（VC cardLevelConfig 真值）：3 级前只出攻击型（普攻/催破）且只出卡组没有的新卡。
 const ATTACK_ONLY_UNTIL_LEVEL := 2   # weaponsOnlyUntilLevel（VC 原值 2＝「直到 2 级」）
-const NEW_ONLY_UNTIL_LEVEL := 2
+const NEW_ONLY_UNTIL_LEVEL := 0   # 2026-11-10 砍表后三张基础卡全在开局卡组——new_only 过滤会出空池，暂闭（内容轮重开）
 
 static func reward_offers(rng: RandomNumberGenerator, level: int, deck: Array = []) -> Array:
 	var band := reward_band(level)

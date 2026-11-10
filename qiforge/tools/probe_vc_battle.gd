@@ -192,10 +192,9 @@ func _run() -> void:
 	b10b.play_card(int(b10b.hand[0]["uid"]))
 	var dealt := hp10 - int((b10b.encounter["active"][0] as Dictionary)["hp"]) if not b10b.encounter["active"].is_empty() else -1
 	_eq("might 乘区（125%：每击 6×1.25=7.5→round 8；8×6=48）", 48, dealt)
-	# 金币：greed 乘区（growth 已改 settle_all_xp——胜场金＝xp×greed）
+	# 金币：greed 乘区（2026-11-09 死帧入账制：growth 在击杀拍乘——胜场金＝xp×greed）
 	var b10c: RefCounted = _mk_king_battle(["zhici"], run10)
-	b10c.xp_pending.push_back(35)   # 直注入队（王 600 血一张刺不死——金币口径直测）
-	b10c.settle_all_xp()
+	b10c.xp_gained += 35   # 直注进账（王 600 血一张刺不死——金币口径直测）
 	_eq("胜场金币＝xp×greed（35）", 35, b10c.gold_reward())
 	_eq("player_out 带金币", 35, int(b10c.player_out()["gold"]))
 

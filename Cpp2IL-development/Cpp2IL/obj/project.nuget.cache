@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "dgSpecHash": "3XBMaUp35J8=",
+  "success": true,
+  "projectFilePath": "/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/Cpp2IL.csproj",
+  "expectedPackageFiles": [
+    "/Users/cc/.nuget/packages/commandlineparser/2.9.1/commandlineparser.2.9.1.nupkg.sha512",
+    "/Users/cc/.nuget/packages/microsoft.net.illink.tasks/10.0.12/microsoft.net.illink.tasks.10.0.12.nupkg.sha512",
+    "/Users/cc/.nuget/packages/microsoft.netframework.referenceassemblies/1.0.3/microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "/Users/cc/.nuget/packages/microsoft.netframework.referenceassemblies.net472/1.0.3/microsoft.netframework.referenceassemblies.net472.1.0.3.nupkg.sha512",
+    "/Users/cc/.nuget/packages/pastel/8.0.0/pastel.8.0.0.nupkg.sha512",
+    "/Users/cc/.nuget/packages/polysharp/1.16.0/polysharp.1.16.0.nupkg.sha512",
+    "/Users/cc/.nuget/packages/system.buffers/4.6.1/system.buffers.4.6.1.nupkg.sha512",
+    "/Users/cc/.nuget/packages/system.memory/4.6.3/system.memory.4.6.3.nupkg.sha512",
+    "/Users/cc/.nuget/packages/system.numerics.vectors/4.6.1/system.numerics.vectors.4.6.1.nupkg.sha512",
+    "/Users/cc/.nuget/packages/system.runtime.compilerservices.unsafe/6.1.2/system.runtime.compilerservices.unsafe.6.1.2.nupkg.sha512",
+    "/Users/cc/.nuget/packages/system.runtime.interopservices.runtimeinformation/4.3.0/system.runtime.interopservices.runtimeinformation.4.3.0.nupkg.sha512",
+    "/Users/cc/.nuget/packages/microsoft.netcore.app.runtime.osx-arm64/10.0.12/microsoft.netcore.app.runtime.osx-arm64.10.0.12.nupkg.sha512",
+    "/Users/cc/.nuget/packages/microsoft.aspnetcore.app.runtime.osx-arm64/10.0.12/microsoft.aspnetcore.app.runtime.osx-arm64.10.0.12.nupkg.sha512"
+  ],
+  "logs": []
+}

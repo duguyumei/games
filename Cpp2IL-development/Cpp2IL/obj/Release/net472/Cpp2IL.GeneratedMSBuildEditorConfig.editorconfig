@@ -1,0 +1,15 @@
+is_global = true
+build_property.RootNamespace = Cpp2IL
+build_property.ProjectDir = /Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/
+build_property.EnableComHosting = 
+build_property.EnableGeneratedComInterfaceComImportInterop = 
+build_property.CsWinRTUseWindowsUIXamlProjections = false
+build_property.PolySharpUsePublicAccessibilityForGeneratedTypes = 
+build_property.PolySharpUseEmbeddedAttributeForGeneratedTypes = 
+build_property.PolySharpIncludeRuntimeSupportedAttributes = 
+build_property.PolySharpUseInteropServices2NamespaceForUnmanagedCallersOnlyAttribute = 
+build_property.PolySharpExcludeGeneratedTypes = 
+build_property.PolySharpIncludeGeneratedTypes = 
+build_property.PolySharpExcludeTypeForwardedToDeclarations = 
+build_property.EffectiveAnalysisLevelStyle = 
+build_property.EnableCodeStyleSeverity = 

@@ -83,7 +83,7 @@ func _run() -> void:
 	b.ended.connect(func(r: String): got[0] = String(r))
 	b.play_card(int(b.hand[0]["uid"]))   # 45 伤溢出链清场（refill=0 总池空）
 	_eq("明雷遭遇可胜（无波次）", "win", got[0])
-	b.settle_all_xp()   # 经验延迟制（2026-11-05 珠到账）：settle 后入账
+	# 2026-11-09 死帧入账制：击杀拍已进账，无需 settle
 	_eq("击杀经验累加（清两蝠＝2）", 2, int(b.xp_gained))
 	_eq("写回源带经验（player_out）", 2, int(b.player_out().get("xp_gained", 0)))
 

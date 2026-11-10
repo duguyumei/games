@@ -1,0 +1,6 @@
+/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/obj/Release/net10.0/Cpp2IL.csproj.AssemblyReference.cache
+/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/obj/Release/net10.0/Cpp2IL.GeneratedMSBuildEditorConfig.editorconfig
+/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/obj/Release/net10.0/Cpp2IL.AssemblyInfoInputs.cache
+/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/obj/Release/net10.0/Cpp2IL.AssemblyInfo.cs
+/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/obj/Release/net10.0/Cpp2IL.csproj.CoreCompileInputs.cache
+/Users/cc/Documents/qi-forge-2/Cpp2IL-development/Cpp2IL/obj/Release/net10.0/Cpp2IL.sourcelink.json
