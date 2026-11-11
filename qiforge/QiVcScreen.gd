@@ -20,6 +20,7 @@ const SHOW_COMBO_BADGE := false   # 金丹徽显隐门（2026-11-10 用户裁「
 const QI_PAUSE := preload("res://qiforge/QiVcPause.gd")  # 世界冻结·引用计数（2026-11-09 贴原版 TimeManager）
 const INTENT_BAR := preload("res://qiforge/QiIntentBar.gd")  # 敌方总行为（2026-11-06）
 const KW_TIP := preload("res://qiforge/QiKeywordTooltip.gd")  # 卡词条浮窗组件（2026-11-10 挂卡下制）
+const CMDQ := preload("res://qiforge/QiVcCmdRunner.gd")  # 统一命令队列（2026-11-12 原版 CommandRunner 同构）
 const FXA := preload("res://qiforge/QiFxAtlas.gd")           # 特效图集（死亡墨屑等）
 const QI_ORBIT := preload("res://qiforge/QiQiOrbit.gd")      # 气珠轨道（气值＝绕珠粒子数）
 const CARD := preload("res://qiforge/QiCardStyle.gd")
@@ -35,15 +36,53 @@ const TILT_MARGIN := 1.18     # 显示矩形外扩（防倾斜切角）
 const TILT_MAX := 0.50        # 倾斜最大量（喂 shader 的 tip）
 const TILT_SMOOTH := 12.0     # 倾斜跟手平滑
 
-## 手牌手感常量（照老战斗屏同款移植 2026-11-01 用户裁定「和之前一样」）：
-## 扇位/帧 Lerp/焦点瞬弹/邻牌不让位/抽牌堆飞入/弃牌堆飞出全制照搬。
+## 手牌手感常量（2026-11-11 原版 1:1 资产真值轮——真值/出处全表：
+## design-docs/references/吸血鬼爬行者_手牌系统真值_v0.1.md）。
+## 原版手牌卡 180×277、我方 216×304 → 像素值×1.2 换算；角度/比例/时长不换算。
 static var HAND_W := CARD.size_of("hand").x
 static var HAND_H := CARD.size_of("hand").y
-static var HAND_LIFT := 40.0                # 悬停抬升（原版 hoverHeightOffset=38，1:1 取 40）
+const HAND_K := 216.0 / 180.0               # 换算比 1.2（我方手牌卡宽/原版手牌卡宽；2026-11-12 试过对齐 180 原版宽——观感无变化已还原）
+const HAND_BAND := 860.0                    # 行宽封顶（自拟：受左右舷 HUD 限制；原版实测 906）
+const HAND_SPACING_MAX := 115.0 * HAND_K    # 卡间净距封顶（原版 _maxSpacingBetweenElements 115）
+## 〔弧退役〕原版 MaxPositionOffset 32/PositionOffsetCurve＝死代码（AlignChildrenAlongAxis 次轴
+## 直接 return，FanCardPosition 从未被调用）——手牌平排，2026-11-12 实机图＋汇编双证
+const HAND_ROT_MAX := deg_to_rad(3.5)       # 视觉倾角上限（2026-11-12 汇编层破案：布局写 ±15° 在**槽位层**，
+											# 卡视觉层每帧被 RotateToFollowVelocity 钳到 ±3.5°〔draggedRotationAmountDegrees
+											# 实测〕——原版静止手牌≈直立微倾；15° 只是不可见布局值）
+const HAND_REPEL_BASE := 64.0 * HAND_K      # 劈开 repel 基量（SelectedCardRepelAmount 64）
+const HAND_REPEL_MAX := 64.0 * HAND_K       # 劈开 repel 曲线量（MaxRepelOffset 64）
+const HAND_SPLIT_MIN_N := 6.0               # 劈开量过渡牌数区间（MinMaxCardsForSplit 6→20）
+const HAND_SPLIT_MAX_N := 20.0
+const HAND_SPLIT_L := Vector2(0.0, 48.0 * HAND_K)   # 左翼基础劈开 min→max（LeftSplitMinMaxOffset 0→48）
+const HAND_SPLIT_R := Vector2(0.0, 96.0 * HAND_K)   # 右翼劈开（RightSplitMinMaxOffset 0→96——右翼翻倍）
+static var HAND_LIFT := 38.0 * HAND_K       # 悬停抬升·可付费（hoverHeightOffset 38）
+const HAND_LIFT_BAD := 15.0 * HAND_K        # 悬停抬升·不可付费（invalidHeightOffset 15）
+const HAND_POP := Vector2(1.5, 1.5)         # 悬停放大·可付费（scaleTo 1.5）
+const HAND_POP_BAD := Vector2(1.05, 1.05)   # 悬停放大·不可付费（invalidScaleTo 1.05）
+const HAND_MOVE_SPEED := 750.0 * HAND_K     # 位移速度（moveSpeed 750——匀速寻的脆感；只服务悬停/劈开等布局微移）
+const HAND_DRAW_TIME := 0.2                 # 抽牌单卡飞行时长（drawCardConfig rotate/scaleDuration 0.2 实测）
+const HAND_DRAW_STAGGER := 0.2              # 抽牌节拍（postDrawWait 0.2 实测——命令定长＝流水制，旧 0.07 自拟错峰退役）
+const HAND_DECEL := 0.5 * HAND_K            # 减速带（decelerateDistance 0.5）
+const HAND_SCALE_DUR := 0.05                # 缩放时长（scaleDuration）
+const HAND_SHAKE_AMP := 5.0 * HAND_K        # 不可付费摇头幅度（invalidShakeAmplitude 5）
+const HAND_SHAKE_TIME := 0.3                # 摇头时长（invalidShakeTime 0.3，vibrato 15）
 const HAND_SHELL_EXTRA := 80.0              # 壳额外高（盖住弹起后超出卡面的上沿）
-const HAND_POP := Vector2(1.5, 1.5)            # 悬停放大（VC hoverCardConfig scaleTo）
 const DRAW_PILE_CENTER := Vector2(55.0, 1025.0)     # 老屏常量（仅兜底）
 const DISCARD_PILE_CENTER := Vector2(1866.0, 1025.0)
+
+## 原版曲线（键值/斜率照资产 1:1；Godot Curve 自由切线＝Hermite 同构）
+## 〔弧曲线退役〕PositionOffsetCurve 随 FanCardPosition 死代码退役——真值存 references 参数表
+static var _repel_curve: Curve = null
+
+static func hand_repel_curve() -> Curve:
+	## RepelFalloffCurve：(0,-1)[斜5.78] (0.99,1)[双0斜] (1,0)[斜-105]——相邻卡曲线值 -1 抵掉基量
+	## （2026-11-11 审计修：0.99 键原版切线双 0，初版误写左斜 5.78）
+	if _repel_curve == null:
+		_repel_curve = Curve.new()
+		_repel_curve.add_point(Vector2(0.0, -1.0), 0.0, 5.784103)
+		_repel_curve.add_point(Vector2(0.99, 1.0), 0.0, 0.0)
+		_repel_curve.add_point(Vector2(1.0, 0.0), -105.16883, 0.0)
+	return _repel_curve
 
 signal battle_over(result: String)
 
@@ -85,8 +124,7 @@ var _reward_ui: Control = null  # 战斗内升级三选一（条满立即弹·20
 var _enemy_cards := {}          # uid -> 敌卡（增量对账：节点身份稳定，2026-11-06 规格§7）
 var _enemy_holder: Control = null
 var _played_cards := {}         # uid -> wrap（已打出区右侧留位粗排；正式视觉归用户，规格§6）
-var _fly_busy_until := 0        # 弃牌飞出动画占线墙钟 ms（先弃完再抽——2026-11-06 用户令普适）
-var _shuffle_busy_until := 0    # 洗牌特效占线墙钟 ms（洗完再抽——2026-11-06 对接特效层）
+var _cardq := CMDQ.new()   # 统一命令队列·卡动画线（2026-11-12 原版 CommandRunner 制；墙钟退役）
 
 var _top_refs := {}             # 机柜顶带（等级/经验/层数）
 var _wing_refs := {}            # 机柜舷位（血/抽/弃）
@@ -119,6 +157,8 @@ func setup(run_ref: Dictionary) -> void:
 	_xp_orbs_amt = 0  # 新战斗：在飞珠显示锁清零（2026-11-09 逐珠制）
 	battle = VC_BATTLE.new()
 	battle.setup(run)
+	battle._screen_attached = true   # 有屏标记（2026-11-12 命令队列制）：敌方动作/效果表现命令走 tick 串行
+	battle.fx_launcher = _launch_fx_cmd   # 效果表现启动器注入（现在＝刷新＋即时落定，动画将来挂）
 	battle.pending_visual = true   # 落账延迟制（2026-11-08）：伤害账单等击中帧逐事件结算
 	_pool_hp_max = _pool_hp_total_max()
 	battle.changed.connect(_refresh)
@@ -130,6 +170,8 @@ func setup(run_ref: Dictionary) -> void:
 
 func _ready() -> void:
 	_wire_scene()
+	# 卡动画命令线（2026-11-12 原版制·统一 runner）：启动器随 push 注入——
+	# removed＝弃堆飞出、added＝抽堆起点淡入（完成回调交队列落定）
 	# 经验珠特效层（盖在手牌之上、结算浮层之下）：只在战斗屏建
 	_xp_fx = XP_FX.new()
 	add_child(_xp_fx)
@@ -513,13 +555,13 @@ func _refresh() -> void:
 	_check_level_modal()      # 死帧入账制：数据进账刷完即判阈值（条满瞬间开三选一，2026-11-09 贴原版终裁）
 	_maybe_wait_discard()
 
-## 弃牌表现→逻辑真同步（2026-11-06 用户令）：弃牌动画全部落地后回调 battle 推进
-## （占线墙钟由 _anim_card_fly 登记；无弃牌动画＝当帧即回调——不空等）
+## 弃牌表现→逻辑真同步（2026-11-06 用户令）：弃牌命令全部落定后回调 battle 推进
+## （2026-11-12 原版制：等队列清空＝WaitWhile(IsProcessing) 同构；无弃牌＝当帧即回调）
 func _maybe_wait_discard() -> void:
 	if String(battle.phase) != "discarding":
 		return
-	var wait := maxf(0.0, float(_fly_busy_until - Time.get_ticks_msec()) / 1000.0) + 0.1
-	await get_tree().create_timer(wait, false).timeout
+	if _cardq.is_busy():
+		await _cardq.all_done
 	if battle != null and String(battle.phase) == "discarding":
 		battle.discard_anim_done()
 
@@ -1169,7 +1211,7 @@ func _on_piles_shuffled(src: String) -> void:
 		if OS.has_environment("QI_DEBUG_CENTERS"):
 			print("[shuffle] gained=", gained, " src=", src)
 	# 洗牌特效过后再抽牌（逻辑层对接）：登记占线墙钟
-	_shuffle_busy_until = Time.get_ticks_msec() + 320
+	_cardq.push_wait(0.32)   # 洗牌占位延时命令（2026-11-12 原版制：added 屏障统一覆盖「洗完再抽」）
 
 ## 洗牌换气：N 点气 = N 颗小气粒，从抽牌堆沿弧线飞进气珠（2026-11-06 用户令）
 ## 每颗带一条短拖尾；最后一颗到账时气珠跳数字＋飘 +N
@@ -1244,7 +1286,15 @@ func _mk_enemy_hbox() -> HBoxContainer:
 func _pile_center(node_name: String, fallback: Vector2) -> Vector2:
 	var c := find_child(node_name, true, false)   # 这两个节点没有 unique name，按名字找
 	if c is Control:
-		return (c as Control).get_global_rect().get_center() - global_position
+		var cc := c as Control
+		# 动画锚「看得见的牌堆贴图」（2026-11-11 修偏下）：容器 rect（116 高）比视觉
+		# 牌堆贴图（98 高、顶部对齐）大一截——锚容器中心比视觉牌堆低 ~9px，飞牌落点
+		# 看着沉到剑柄牌堆下方。原版飞向视图真实布局位＝视觉位（CardAddedViewCommand
+		# 协程编排、终点＝TryAddCard 的 slot 位，非写死坐标）
+		for ch in cc.get_children():
+			if ch is TextureRect and String(ch.name).find("Stack") >= 0:
+				return (ch as TextureRect).get_global_rect().get_center() - global_position
+		return cc.get_global_rect().get_center() - global_position
 	return fallback
 
 func _draw_center() -> Vector2:
@@ -1308,6 +1358,8 @@ func _rebuild_hand() -> void:
 		vis.position = _vis_rest(vis)
 		w.set_meta("vc_card", vis.get_meta("vc_card"))
 		w.add_child(vis)
+		# 〔影子不搬〕原版卡下有 112×112 艺术图软影（实测偏移 (10,35)，游玩几乎不可见——
+		# 2026-11-11 用户裁定撤：Godot 硬边近似比原版重、弊大于利；真值存 references 参数表〕
 		var the_uid := int(card["uid"])
 		var the_wrap := w
 		w.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1331,20 +1383,18 @@ func _rebuild_hand() -> void:
 		if not old_uids.has(the_uid):
 			# 新抽卡：起点＝抽牌堆中心（卡面视觉位），飞入手位由帧 Lerp 接管；
 			# 2026-11-05 用户令「开局抽牌动画」：按序错峰 0.07s 一张张飞（从堆里抽一叠的节奏）；
-			# 2026-11-06 用户令「先弃完再抽」**普适版**：凡有弃牌动画在飞（回合冲弃／已打出区
-			# 回收二级抽牌链）新牌一律让路等落地；无人在弃（抽牌堆有牌直抽）＝零等待；
-			# 洗牌特效占线同让（洗完再抽——_on_piles_shuffled 登记），取两者较晚
-			var busy := maxi(_fly_busy_until, _shuffle_busy_until)
-			var base := maxf(0.0, float(busy - Time.get_ticks_msec()) / 1000.0) + 0.08
+			# 2026-11-11 起编入卡动画命令队列（原版 CardAddedViewCommand 制）：
+			# 「先弃完再抽」（2026-11-06 用户令普适版）＋洗牌让路＝队列 added 全局屏障
+			# 天然覆盖；错峰 0.07＝命令 WaitFor 错峰。起点姿态先钉在抽堆（fly_in 大延迟
+			# 扣住帧 Lerp 不偷跑），命令起飞瞬间释放（launch 置 0）
 			w.position = _draw_center() - Vector2(HAND_W, HAND_H) * 0.5 - Vector2(0.0, HAND_LIFT)
 			w.scale = Vector2(0.35, 0.35)
 			w.rotation = randf_range(-0.22, 0.22)
 			w.modulate.a = 0.25
 			w.set_meta("fly_in", true)
-			w.set_meta("fly_in_delay", base + float(new_i) * 0.07)
-			var twa := create_tween()
-			twa.tween_interval(base + float(new_i) * 0.07)
-			twa.tween_property(w, "modulate:a", 1.0, 0.3)
+			w.set_meta("fly_in_delay", 9999.0)
+			_cardq.push("added", w, _start_added_cmd, 0.0,
+				int(w.get_meta("hand_uid", -1)), true)   # barrier＝先弃完再抽＋串行节拍（0.2/张流水）
 			new_i += 1
 		# 手牌重建＝旧 wrap 全销毁（2026-11-09 修孤儿浮窗；2026-11-10 组件挂卡下后
 		# 结构上已同死，此处显式关＝原版 OnRemovedFromHand 状态转移关窗的行为对齐）：
@@ -1352,15 +1402,34 @@ func _rebuild_hand() -> void:
 		_hide_kw_tips()
 		_hide_card_preview()
 		_hand_focus = null
+	# 终局隐藏单向化（2026-11-11 修「手牌隐藏后又闪现」）：终局后任何 changed 触发的
+	# 重建（选卡落点/经验到账等），新 wrap 一律保持收起——原版同语义＝离开玩家回合后
+	# 手牌交互失效，胜利时序 DiscardHand 弃走，不存在「重新出现」
+	if _finale:
+		for w in _hand_wraps:
+			if is_instance_valid(w):
+				w.visible = false
 	_layout_hand(false)
 	_refresh_playability()
 
 ## 消失卡飞出：飞向弃牌堆位缩小淡出（打出/冲弃同走——打出进弃牌堆语义同）
+## 消失卡飞弃：进卡动画命令队列（2026-11-12 原版制改造——原 tween 编排搬进启动器，
+## 完成回调交队列落定；墙钟登记退役）。手牌冲弃（_rebuild_hand）与已打出区回收
+## （_rebuild_played）两路共用本口。
 func _anim_card_fly(w: Control, delay: float) -> void:
+	_cardq.push("removed", w, _start_removed_cmd, delay,
+		int(w.get_meta("hand_uid", -1)))
+
+## removed 命令启动器：飞向弃牌堆缩小淡出（0.32s）。错峰归队列（at 时间戳消化，启动器
+## 不吃 delay——再 interval 会双计）。签名＝(payload, done)：payload＝卡 wrap
+func _start_removed_cmd(payload, done: Callable) -> void:
+	var w := payload as Control
+	if not is_instance_valid(w):
+		done.call()
+		return
 	_kill_card_tween(w)   # 互杀保护（2026-11-06）：打出即触发回收链时 play_out/落位 tween 先废
 	var tw := create_tween()
 	w.set_meta("card_tween", tw)
-	tw.tween_interval(delay)
 	var half: Vector2 = w.size * w.scale * 0.5      # 已打出区的卡是缩小态，按实际尺寸居中
 	tw.tween_property(w, "position", _discard_center() - half
 		- Vector2(0.0, HAND_LIFT), 0.32)\
@@ -1369,9 +1438,31 @@ func _anim_card_fly(w: Control, delay: float) -> void:
 	tw.parallel().tween_property(w, "rotation", 0.15, 0.32)
 	tw.parallel().tween_property(w, "modulate:a", 0.0, 0.3).set_delay(0.06)
 	tw.tween_callback(w.queue_free)
-	# 先弃完再抽（2026-11-06 用户令）：登记本次飞弃动画的占线墙钟——回合首抽据此让路
-	_fly_busy_until = maxi(_fly_busy_until, Time.get_ticks_msec()
-		+ int((delay + 0.4) * 1000.0))
+	tw.tween_callback(done)   # 卡落弃堆（含销毁）＝命令落定（原版 TryAddCard 完成位）
+
+## fx 效果表现命令启动器（2026-11-12 原版制·SetValueCommand 同构占位）：数据已同步
+## 结算，此处表现——现在＝刷新（血球/气珠/牌堆计数即时跳）＋落定；将来 heal 飘字/
+## 护甲光效挂此（挂动画时 done 延到动画完）
+func _launch_fx_cmd(payload, done: Callable) -> void:
+	_refresh()
+	done.call()
+
+## added 命令启动器：释放帧 Lerp（fly_in 清零）＋淡入。原版 CardAddedViewCommand 节奏
+## （2026-11-12 ISIL 实证）：动画全部 fire-and-forget（旋转/缩放/mover/淡入启动即走），
+## 命令长度＝固定等 postDrawWait 0.2 → 下一张 0.2s 节拍接续＝连续流水（上一张刚落
+## 下一张起飞）——不等淡入完成（旧版段落感真凶：串行卡等 alpha 0.3s＋at 顺延加隔）
+func _start_added_cmd(payload, done: Callable) -> void:
+	var w := payload as Control
+	if not is_instance_valid(w):
+		done.call()
+		return
+	if w.has_meta("fly_in"):
+		w.set_meta("fly_in_delay", 0.0)   # 起飞：帧 Lerp 下一帧接管飞入手位
+	var twb := w.create_tween()
+	twb.tween_property(w, "modulate:a", 1.0, 0.3)   # 淡入与飞行并行（fire-and-forget）
+	var twa := w.create_tween()
+	twa.tween_interval(HAND_DRAW_STAGGER)
+	twa.tween_callback(done)
 
 func _play_clicked(card_uid: int) -> void:
 	if String(battle.phase) != "player" or result_pending():
@@ -1380,11 +1471,12 @@ func _play_clicked(card_uid: int) -> void:
 	for c in battle.hand:
 		if int(c["uid"]) == card_uid:
 			if not battle.can_play(c):
+				# 原版点击不可付费＝摇头反馈（PlayableCard.TryPlayCard else PlayInvalidCardShake）
+				var w_bad := _hand_wrap_of(card_uid)
+				if w_bad != null and w_bad.get_child_count() > 0:
+					(w_bad.get_child(0) as Control).set_meta("shake_t", HAND_SHAKE_TIME)
 				return
 			clicked_cid = String(c.get("id", ""))
-			# 2026-11-08 用户令（对齐原版）：伤害固定 → 出牌瞬间就能预判会不会赢；
-			# 若是收尾刀，手牌与按钮**立刻**收起（正常特效照走），不用等最后一个死
-			_predict_end_and_hide(c)
 			break
 	_set_hand_focus(null)
 	# 连打制（2026-11-09 对齐原版「输入不锁动画、命令排队」）：数据层当帧出账
@@ -1446,8 +1538,9 @@ func _refresh_playability() -> void:
 			if icon is TextureRect:
 				(icon as TextureRect).modulate = Color(1, 1, 1, 1) if ok else Color(1.0, 0.55, 0.5, 1.0)
 
-## 手牌布局（2026-11-04 用户令「手牌系统做完」）：扇形＋拱形＋相让＋右压左 z 序；
-## 本函数只落目标位（meta tgt_*），动画统一走 _process 帧 Lerp；焦点卡拍平回正＋内层弹起。
+## 手牌布局（2026-11-11 原版 1:1 资产真值轮）：曲线扇形（弧 32/角 15°/≤2 张不扇）
+## ＋悬停翼内劈开（repel 曲线＋split 随 6→20 张过渡）；本函数只落目标位（meta tgt_*），
+## 位移动画统一走 _process 速度寻的（_hand_lerp_tick）；焦点卡保留扇角（原版悬起不拍平）。
 func _layout_hand(animate: bool) -> void:
 	var n := _hand_wraps.size()
 	if n == 0:
@@ -1457,33 +1550,49 @@ func _layout_hand(animate: bool) -> void:
 	var fi := -1
 	if _hand_focus != null and is_instance_valid(_hand_focus):
 		fi = _hand_wraps.find(_hand_focus)
-	# 相让（用户口述确认「有相让」）：悬停卡左右邻牌各退半个卡宽；左右对称，整行不跑位
-	var extra := HAND_W * 0.35 if fi >= 0 else 0.0
-	# 无上限手牌：行宽封顶，牌多就压缩间距（挤在一起）
-	var step := minf(vp.x * 0.075, (860.0 - HAND_W) / maxf(1.0, float(n - 1)))
+	# 间距＝卡间步距（中心距）封顶 115×1.2（2026-11-12 用户实测体感裁定：步距非净距——
+	# 3 卡重叠紧凑扇；劈开推量 77 恰好把重叠邻牌推到完整露出，数字链自洽）；带内只压缩不拉伸
+	var step := minf(HAND_SPACING_MAX,
+		(HAND_BAND - HAND_W) / maxf(1.0, float(n - 1)))
+	# 悬停劈开（原版 GetSelectedCardOffset）：split 随牌数 6→20 过渡，repel 曲线按翼内距离取值
+	var repel_c := hand_repel_curve()
+	var split_t := clampf((float(n) - HAND_SPLIT_MIN_N) / (HAND_SPLIT_MAX_N - HAND_SPLIT_MIN_N), 0.0, 1.0)
+	var split_l := lerpf(HAND_SPLIT_L.x, HAND_SPLIT_L.y, split_t)
+	var split_r := lerpf(HAND_SPLIT_R.x, HAND_SPLIT_R.y, split_t)
 	for i in n:
 		var w: Control = _hand_wraps[i]
 		var shift := 0.0
 		if fi >= 0 and i != fi:
-			shift = -extra if i < fi else extra
+			# 衰减输入归一化（2026-11-12 ISIL 实测定案，推翻旧推定）：左翼 t=(i+1)/sel、
+			# 右翼 t=(n-i)/(n-1-sel)——相邻卡 t=1（推满基量）、翼端 t=1/翼宽（略减）
+			if i < fi:
+				var d_l := clampf((float(i) + 1.0) / float(fi), 0.0, 1.0)
+				shift = -(split_l + repel_c.sample_baked(d_l) * HAND_REPEL_MAX + HAND_REPEL_BASE)
+			else:
+				var d_r := clampf((float(n) - float(i)) / float(n - 1 - fi), 0.0, 1.0)
+				shift = split_r + repel_c.sample_baked(d_r) * HAND_REPEL_MAX + HAND_REPEL_BASE
 		var x := vp.x * 0.5 + (i - mid) * step + shift - HAND_W * 0.5
-		var t := (float(i) - mid) / maxf(1.0, mid)
-		# 2026-11-04 用户令「手牌贴住屏幕底边」：行锚＝屏底（原 vp.y*0.63）；拱形端卡贴底、中卡抬 30px
-		# 同日续令：整体再上提 5px
-		var y := vp.y - (HAND_H + HAND_LIFT + HAND_SHELL_EXTRA) - 5.0 - 30.0 * (1.0 - t * t)
-		var rot := (i - mid) * 0.075   # 扇形（原版实测端卡约 ±10~12°）
+		# 〔弧＝平排〕2026-11-12 实机图＋汇编双证定案：原版 FanCardPosition（弧）是**死代码**
+		# ——AlignChildrenAlongAxis 对次轴（Y）直接弹栈返回，AlignOnSecondaryAxis 从未被调用，
+		# 槽位 Y 全由锚点决定＝齐平。两次 F6（不抬高/不下沉）皆用户对。弧常量与曲线已退役，
+		# 真值与六环证据链存 references 参数表 §一·六。
+		# 2026-11-04 用户令「手牌贴住屏幕底边」：行锚＝屏底；同日续令整体上提 5px
+		var y := vp.y - (HAND_H + HAND_LIFT + HAND_SHELL_EXTRA) - 5.0
+		# 扇角（原版 FanCardRotation）：n≥3 线性 −1..+1 ×15°、≤2 张无倾角
+		var t_r := ((float(i) / float(n - 1)) * 2.0 - 1.0) if n > 2 else 0.0
+		var rot := t_r * HAND_ROT_MAX
 		w.set_meta("fan_rot", rot)    # 浮窗梯度用：扇内角度（焦点卡回正不影响这里）
 		var vis: Control = w.get_child(0)
 		vis.pivot_offset = Vector2(vis.size.x * 0.5, (vis.size.y - HAND_H) * 0.5 + HAND_H * 0.5)
-		w.pivot_offset = Vector2(HAND_W * 0.5, HAND_H + HAND_LIFT + HAND_SHELL_EXTRA)
+		# 旋转/缩放轴心＝卡面中心（2026-11-12 实测原版卡 RectTransform pivot (0.5,0.5)；
+		# 旧壳底边轴心令 ±15° 顶端摆幅加倍——「倾斜太夸张」真凶）
+		w.pivot_offset = Vector2(HAND_W * 0.5, HAND_LIFT + HAND_SHELL_EXTRA + HAND_H * 0.5)
 		var is_focus := fi == i
 		if is_focus:
-			# 2026-11-08 用户裁定：悬起的卡不拍平——保留扇角（原版悬起也带倾角），
-			# 浮窗梯度直接读这个角，两者同源
+			# 原版悬起不拍平（保留扇角）；弹起/放大动画归 _apply_hover_anim tween
 			w.scale = Vector2.ONE
 			w.z_index = 60
 			vis.z_index = 0
-			# 弹起不再瞬跳（2026-11-03 用户裁定：放大要有动画）——目标值由 _hand_lerp_tick 逼近
 		else:
 			w.z_index = 10 + i   # 右压左；基础 10 起步，保证压在受击红带(3)与剑(5)之上
 			vis.z_index = 0
@@ -1492,13 +1601,15 @@ func _layout_hand(animate: bool) -> void:
 			w.rotation = rot
 			w.scale = Vector2.ONE
 			if not is_focus:
-				vis.scale = Vector2.ONE
 				vis.rotation = 0.0
 				vis.position = _vis_rest(vis)
 		w.set_meta("tgt_pos", Vector2(x, y))
 		w.set_meta("tgt_rot", rot)
 
 func _process(delta: float) -> void:
+	_cardq.tick()   # 卡动画命令队列驱动（2026-11-12 原版制：到点无阻塞即启动）
+	if battle != null:
+		battle.tick_cmds()   # 敌方动作/效果表现命令驱动（原版 CommandRunner 同构）
 	_hand_lerp_tick(delta)
 	# 顿帧收尾：墙钟判，不能用补间（time_scale 会连补间一起缩放）
 	if _hit_stop_until > 0 and Time.get_ticks_msec() >= _hit_stop_until:
@@ -1520,46 +1631,53 @@ func _hand_lerp_tick(delta: float) -> void:
 		if not hw.has_meta("tgt_pos"):
 			continue
 		# 抽牌错峰：delay 未到不飞（2026-11-05 开局抽牌动画）
+		var tp: Vector2 = hw.get_meta("tgt_pos")
+		var tr: float = hw.get_meta("tgt_rot")
 		if hw.has_meta("fly_in_delay"):
 			var dl: float = float(hw.get_meta("fly_in_delay"))
 			if dl > 0.0:
 				hw.set_meta("fly_in_delay", dl - delta)
 				continue
 			hw.remove_meta("fly_in_delay")
-		var tp: Vector2 = hw.get_meta("tgt_pos")
-		var tr: float = hw.get_meta("tgt_rot")
+			# 抽牌飞行＝定长 0.2s（2026-11-12 修：原版 drawCardConfig 实测——微移走 mover(750)、
+			# 长途飞行走 0.2s 补间制；初版把 750 套到 850px 飞行＝匀速爬 0.95s，慢三倍）
+			hw.set_meta("fly_speed", maxf(1.0, hw.position.distance_to(tp)) / HAND_DRAW_TIME)
 		var k: float = minf(delta * K, 1.0)
-		hw.position = hw.position.lerp(tp, k)
+		# 位移＝速度＋减速带寻的（2026-11-11 原版 TransformMover2D 同构——匀速接近、
+		# 进减速带按距离比例刹车、到达即停：替换指数 lerp 的「越近越慢」软感）
+		if hw.has_meta("fly_speed"):
+			_seek_2d(hw, tp, delta, float(hw.get_meta("fly_speed")))
+		else:
+			_seek_2d(hw, tp, delta)
 		hw.rotation = lerpf(hw.rotation, tr, k)
 		hw.scale = hw.scale.lerp(Vector2.ONE, k)
+		var vis: Control = hw.get_child(0)
+		var rest: Vector2 = _vis_rest(vis)
+		var shake := _shake_off(vis, delta)
 		if hw != _hand_focus:
-			var vis: Control = hw.get_child(0)
-			vis.scale = vis.scale.lerp(Vector2.ONE, k)
+			# 收回：位置寻的回静止位（缩放收回走 _apply_hover_anim 的 tween）
 			vis.rotation = lerpf(vis.rotation, 0.0, k)
-			vis.position = vis.position.lerp(_vis_rest(vis), k)
+			_seek_2d(vis, Vector2(rest.x + shake, rest.y), delta)
 		else:
-			# 焦点卡：弹起 ×HAND_POP 动画逼近（与归位同速曲线）
-			var visf: Control = hw.get_child(0)
-			var rest: Vector2 = _vis_rest(visf)
-			visf.scale = visf.scale.lerp(HAND_POP, k)
-			visf.rotation = lerpf(visf.rotation, 0.0, k)
-			visf.position = visf.position.lerp(Vector2(rest.x, rest.y - HAND_LIFT), k)
+			# 焦点卡：抬起量按可付费分档（hover_lift 由 _apply_hover_anim 落）
+			var lift: float = float(vis.get_meta("hover_lift", HAND_LIFT))
+			vis.rotation = lerpf(vis.rotation, 0.0, k)
+			_seek_2d(vis, Vector2(rest.x + shake, rest.y - lift), delta)
 		if hw.position.distance_squared_to(tp) < snap_d and absf(hw.rotation - tr) < 0.001:
 			hw.position = tp
 			hw.rotation = tr
 			hw.scale = Vector2.ONE
-			if hw != _hand_focus:
-				var vis2: Control = hw.get_child(0)
-				vis2.scale = Vector2.ONE
-				vis2.rotation = 0.0
-				vis2.position = _vis_rest(vis2)
+			if hw.has_meta("fly_speed"):
+				hw.remove_meta("fly_speed")
 	# —— 倾斜/光效驱动（2026-11-03）：鼠标指哪边哪边朝里倒＋近侧边框反光；离开回正 ——
 	_tilt_t += delta
 	var mouse: Vector2 = get_global_mouse_position()
 	# 焦点保持判据（StS2 制轮询＋迟滞）：命中区＝壳矩形 ∪ 弹起后卡面矩形——
 	# 鼠标在弹起的卡上半区（探出壳外）不丢焦点；两个矩形都离开才收起
 	# 悬停进入＝每帧轮询卡面矩形（从最右/最上层往下找），不依赖壳的 mouse_entered
-	if _hand_focus == null and not _hand_wraps.is_empty() and not has_meta("shot_no_hover"):
+	# hover 进入门（2026-11-11 补终局门）：终局后手牌不可交互（原版＝离开玩家回合即失效
+	# ——PlayerTurnState 外手牌点击/hover 全关；我方打出已有 phase 门，这里补 hover 轮询）
+	if _hand_focus == null and not _finale and not _hand_wraps.is_empty() and not has_meta("shot_no_hover"):
 		for i in range(_hand_wraps.size() - 1, -1, -1):
 			var ww: Control = _hand_wraps[i]
 			if ww.get_child_count() == 0:
@@ -1568,20 +1686,11 @@ func _hand_lerp_tick(delta: float) -> void:
 				_set_hand_focus(ww)
 				break
 	if _hand_focus != null and is_instance_valid(_hand_focus) and _hand_focus.get_child_count() > 0:
-		# 焦点保持＝「卡面四边形」∪「卡面外接框外扩 10px」（2026-11-08 用户报靠近边缘就取消）：
-		# 四边形会随斜切位移每帧抖动，边缘处判 false；外接框补一个容错圈，避免边界抖动
+		# 焦点保持＝卡面命中（容差 2px）∪ 词条浮窗（2026-11-11 判定简化：悬停动画变轻后
+		# 拆掉「四边形∪外接框外扩 10px」双保险层——边界抖感的根源是重动画全挂在 hover 上）
 		var hold: bool = _card_hit(_hand_focus, mouse, 2.0)
 		if not hold:
 			hold = _kw_tip_over(mouse)   # 鼠标移到浮窗上仍保持"指着"（2026-11-10 组件 pointer_over）
-		if not hold:
-			var qc := _card_face_corners(_hand_focus)
-			if qc.size() == 4:
-				var mn := qc[0]
-				var mx := qc[0]
-				for qq in qc:
-					mn = Vector2(minf(mn.x, qq.x), minf(mn.y, qq.y))
-					mx = Vector2(maxf(mx.x, qq.x), maxf(mx.y, qq.y))
-				hold = Rect2(mn, mx - mn).grow(10.0).has_point(mouse)
 		if not hold and not has_meta("shot_no_hold"):
 			_set_hand_focus(null)
 	# 词条浮窗跟随卡位（原版 CheckTooltipScreenPos 每帧重摆同构）：随扇形布局/弹起动画走
@@ -1692,16 +1801,100 @@ func _unhandled_input(event: InputEvent) -> void:
 func _set_hand_focus(w: Control) -> void:
 	if _hand_focus == w:
 		return
+	# 抽牌飞行中不接焦点（2026-11-12 用户令：飞行中不放大，落地后鼠标仍指着→下一帧轮询
+	# 自然接管。原版 dump 未见专门门（deal 命令无交互锁），但其 deal 0.2s 窗口极小；
+	# 我方轮询进焦点＋飞行缩放 0.35×悬停 1.5 相乘曾致飞行中明显放大）
+	if w != null and (w.has_meta("fly_in_delay") or w.has_meta("fly_speed")):
+		return
 	# 换焦＝旧卡词条条撤（2026-11-07 用户令分条制：每词条一条独立浮条、只放词条——
 	# 卡名/描述等卡面已有信息一律不重复；不带具体数值）
 	_hide_kw_tips()
+	var prev := _hand_focus
 	_hand_focus = w
 	if w != null and not get_meta("shot_no_tip", false):
 		_show_kw_tips(w)
 		_show_card_preview(w)
 	else:
 		_hide_card_preview()
+	_apply_hover_anim(prev, w)
 	_layout_hand(true)
+
+## —— 手牌运动/悬停四帮手（2026-11-11 原版 1:1 轮）——
+
+## 速度＋减速带寻的（原版 TransformMover2D 同构）：匀速接近→进减速带按距离比例刹车→到达即停
+func _seek_2d(c: Control, target: Vector2, delta: float, speed := HAND_MOVE_SPEED) -> void:
+	var d := target - c.position
+	var dist := d.length()
+	if dist <= 0.001:
+		c.position = target
+		return
+	var v := speed
+	if dist < HAND_DECEL:
+		v = speed * clampf(dist / HAND_DECEL, 0.02, 1.0)
+	var step := v * delta
+	if step >= dist:
+		c.position = target
+	else:
+		c.position += d / dist * step
+
+## 不可付费摇头（invalidShake 5/0.3s/vibrato 15）：正弦横摆、按剩余时长衰减；返回本帧 x 偏移
+func _shake_off(vis: Control, delta: float) -> float:
+	if not vis.has_meta("shake_t"):
+		return 0.0
+	var t: float = float(vis.get_meta("shake_t")) - delta
+	if t <= 0.0:
+		vis.remove_meta("shake_t")
+		return 0.0
+	vis.set_meta("shake_t", t)
+	return sin(t * TAU * 15.0) * HAND_SHAKE_AMP * (t / HAND_SHAKE_TIME)
+
+func _hand_card_of(w: Control) -> Dictionary:
+	if battle == null:
+		return {}
+	var uid := int(w.get_meta("hand_uid", -1))
+	for c in battle.hand:
+		if int(c["uid"]) == uid:
+			return c
+	return {}
+
+func _hand_wrap_of(uid: int) -> Control:
+	for w in _hand_wraps:
+		if int((w as Control).get_meta("hand_uid", -1)) == uid:
+			return w
+	return null
+
+## 悬停两级视觉（原版 DoCardHoveredAnim/DoCardUnhoveredAnim 同构）：
+## 可付费＝×1.5/抬 45.6；不可付费＝×1.05/抬 18。〔影子不搬——用户裁定〕
+## 缩放走 tween——ease 实测（游戏自带 DOTween.dll 反编译枚举）：
+## 上＝InOutCubic（scaleUpEase 10）、收＝OutBack（scaleDownEase 27）；时长 scaleDuration 0.05。
+## 抬起位移目标落 meta，由 _hand_lerp_tick 寻的。
+## 摇头不挂悬停（2026-11-12 修：原版 PlayableCard.TryPlayCard else PlayInvalidCardShake
+## ＝点击不可付费才摇头；初版误挂悬停进入）。
+func _apply_hover_anim(prev: Control, next: Control) -> void:
+	if prev != null and is_instance_valid(prev) and prev.get_child_count() > 0:
+		var pv: Control = prev.get_child(0)
+		_kill_hover_tween(pv)
+		pv.set_meta("hover_lift", 0.0)
+		var tw := pv.create_tween()
+		tw.tween_property(pv, "scale", Vector2.ONE, HAND_SCALE_DUR)\
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		pv.set_meta("hover_tween", tw)
+	if next != null and is_instance_valid(next) and next.get_child_count() > 0:
+		var card := _hand_card_of(next)
+		var ok: bool = card.is_empty() or battle.can_play(card)   # 取不到卡数据（异常）按可付费
+		var nv: Control = next.get_child(0)
+		_kill_hover_tween(nv)
+		nv.set_meta("hover_lift", HAND_LIFT if ok else HAND_LIFT_BAD)
+		var tw2 := nv.create_tween()
+		tw2.tween_property(nv, "scale", HAND_POP if ok else HAND_POP_BAD, HAND_SCALE_DUR)\
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		nv.set_meta("hover_tween", tw2)
+
+func _kill_hover_tween(vis: Control) -> void:
+	if vis.has_meta("hover_tween"):
+		var t = vis.get_meta("hover_tween")
+		if t is Tween and t.is_valid():
+			t.kill()
 
 ## 悬卡词条条（分条制，2026-11-07）：竖排于卡右侧，一条一词条（名亮＋说明暗），各条独立
 ## 悬卡词条（2026-11-10 原版制改版）：组装与显示全归卡下组件（GetCardTooltips＋
@@ -2266,27 +2459,16 @@ func _hp_orb_center() -> Vector2:
 ## 出牌预判收尾：这张牌的推演能把场上所有敌人打死 → 立刻进"不可操作"（手牌收起；
 ## 按钮不藏——留底无字，2026-11-09 用户令禁连底隐藏）只是隐藏 UI，特效与结算全部照常；
 ## 判错由 _refresh 的安全阀复原。
-func _predict_end_and_hide(c: Dictionary) -> void:
-	if battle == null or _finale:
-		return
-	var act: Array = battle.encounter["active"]
-	if act.is_empty():
-		return
-	var pv: Dictionary = battle.preview_play(c)
-	if not bool(pv.get("ok", false)):
-		return
-	var kills: Array = pv.get("kills", [])
-	for e in act:
-		if not kills.has(int(e["uid"])):
-			return
-	_finale = true
-	for w in _hand_wraps:
-		if is_instance_valid(w):
-			w.visible = false
+## 〔2026-11-11 退役〕预判瞬隐制（_predict_end_and_hide）整体退役——用户令对齐原版：
+## 原版无「出牌瞬间预判必胜→手牌瞬隐」路径，交互失效与手牌退场都发生在**死亡结算后**
+## （EncounterDefeatedState→离开玩家回合＝交互失效；OnEncounterDefeated→DiscardHand
+## ＝手牌走弃牌动画弃走）。我方统一由 _check_finale 在死亡拍一口承担。
 
-## 终局判定（2026-11-08 用户令·按拍判）：这一拍结算后场上已无存活敌人 →
-## ① 所有待死的敌人立刻发珠（不再排燃烧动画的队）② 手牌收起（进入不可操作态；
-## 按钮不藏——留底无字，2026-11-09 用户令禁连底隐藏）
+## 终局判定（2026-11-08 用户令·按拍判；2026-11-11 对齐原版改版）：这一拍结算后场上
+## 已无存活敌人 → ① _finale 置位（交互失效——hover 门/打出 phase 门/按钮无字；
+## 按钮不藏留底无字，2026-11-09 用户令）② **手牌走弃牌动画弃走**（原版 OnEncounterDefeated
+## →DiscardHand 同构：数据层 hand+played 整体冲弃，表现层 _rebuild_hand 对消失 uid 自动
+## 放飞弃堆动画；弃堆计数同步涨）
 ## 死亡特效保持与平时一致（用户：先保持一致，看了再改）
 func _check_finale() -> void:
 	if _finale or battle == null:
@@ -2294,9 +2476,7 @@ func _check_finale() -> void:
 	if not (battle.encounter["active"] as Array).is_empty():
 		return
 	_finale = true
-	for w in _hand_wraps:
-		if is_instance_valid(w):
-			w.visible = false
+	battle.discard_hand_finale()
 
 ## 击拍收尸：这一拍就是它的最后一击 → 此刻才放死亡特效＋经验珠
 func _beat_death(uid: int, idx: int) -> void:
@@ -2727,9 +2907,12 @@ func _open_reward() -> void:
 
 func _on_reward_done() -> void:
 	QI_PAUSE.release("reward")   # 世界恢复：余下的攻击段/飞行珠接着飞
-	for w in _hand_wraps:
-		if is_instance_valid(w):
-			w.visible = true    # 手牌回来
+	# 手牌回来（2026-11-11 修「先隐藏又闪现」：终局后不回——原版＝离开玩家回合即交互
+	# 失效，胜利时序 DiscardHand 弃走；我方 _predict_end_and_hide 已收起＝单向保持）
+	if not _finale:
+		for w in _hand_wraps:
+			if is_instance_valid(w):
+				w.visible = true    # 手牌回来
 	if _reward_ui != null and is_instance_valid(_reward_ui):
 		_reward_ui.queue_free()      # 关窗＝销毁（原来只置空，弹窗留在屏幕上不消失）
 	_reward_ui = null
@@ -2774,6 +2957,13 @@ func _try_finish_win() -> void:
 			get_tree().create_timer(wait).timeout.connect(func() -> void:
 				_win_retry_armed = false
 				_try_finish_win())
+		return
+	if _cardq.is_busy():
+		# 终局弃牌命令还没落定（2026-11-12 原版制：WaitWhile(IsProcessing) 同构——
+		# 等最后一张手牌落进弃堆再收胜利）。落定后**重入**不落底：等待期间经验珠可能
+		# 已开升级弹窗（顶部 _reward_ui 复查＝双窗竞态守卫，await 直落底会丢——审计修）
+		await _cardq.all_done
+		_try_finish_win()
 		return
 	_bank_xp()               # 保底入账（数据已在击杀拍进账——此处理顺写回；2026-11-09
 	#                         # 死帧入账制：xp_pending/settle_all 队列退役，无「没放出来的经验」一说）

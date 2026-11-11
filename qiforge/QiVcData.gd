@@ -21,12 +21,13 @@ const NEIGONG := {
 	},
 }
 
-## 剑型四类（2026-11-08 状态制改版，用户裁）：卡表 stance 字段值域——
-## short 短剑（轻快·蓝）/ long 长剑（控场·墨）/ great 巨剑（重破·红）/
+## 剑型四类（2026-11-08 状态制改版，用户裁；2026-11-11 用户令卡色按型区分）：卡表 stance 字段值域——
+## short 短剑（轻快·蓝）/ long 长剑（控场·绿）/ great 巨剑（重破·红）/
 ## flex 变招（稀有·金：型集＝全集，即万能牌——2026-11-10 动态升级轮定义，现役零张、词条待内容轮）
+## color 键＝QiCardStyle TCG_HEADERS/TCG_FRAMES 卡色调键，tcg_def_of 按此上色（唯一源）。
 const FORMS := {
 	"short": {"cn": "短剑", "color": "blue"},
-	"long": {"cn": "长剑", "color": "ink"},
+	"long": {"cn": "长剑", "color": "green"},
 	"great": {"cn": "巨剑", "color": "red"},
 	"flex": {"cn": "变招", "color": "gold"},
 }

@@ -18,6 +18,8 @@ extends RefCounted
 const QIF_FONTS = preload("res://qiforge/QiFontBank.gd")
 ## 式徽公共件（2026-11-05 用户令：卡内式徽章与顶部已积攒式同款）
 const STANCE_BADGE = preload("res://qiforge/QiStanceBadge.gd")
+## VC 数据（剑型 FORMS＝卡色/中文名唯一源——2026-11-11 卡色按型制）
+const VC_DATA = preload("res://qiforge/QiVcData.gd")
 ## 金件光效（外框＋分割线光泽带）：band_pos 由 TcgCard._process 驱动（待机慢扫/悬停跟手）
 const GLINT_SHADER: Shader = preload("res://qiforge/assets/tcg_glint.gdshader")
 
@@ -319,10 +321,11 @@ static func tcg_def_of(d: Dictionary) -> Dictionary:
 			out["tone"] = "gold"
 			out["type_line"] = "奇窍"
 		_:
-			# 颜色按**功能**（2026-11-08 用户口径）：攻击一律红，不再按剑型上色；
-			# 剑型只走底部的型图标＋文字（短/长/巨/变招）
-			out["tone"] = "red"
-			var fcn: String = String({"short": "短剑", "long": "长剑", "great": "巨剑", "flex": "变招"}.get(stance, ""))
+			# 颜色按**剑型**（2026-11-11 用户令：短蓝/长绿/巨红/变金——推翻 11-08「攻击一律红」）；
+			# 色键/中文名唯一源＝QiVcData.FORMS
+			var fcfg: Dictionary = VC_DATA.FORMS.get(stance, {}) as Dictionary
+			out["tone"] = String(fcfg.get("color", "red"))
+			var fcn: String = String(fcfg.get("cn", ""))
 			out["type_line"] = ("攻击 · %s" % fcn) if fcn != "" else "攻击"
 	return out
 
