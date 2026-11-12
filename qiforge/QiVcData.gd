@@ -98,6 +98,20 @@ const CARDS := {
 		"stance": "long", "targeting": "single",
 		"desc": "对最前敌人造成 10 点伤害。长剑型。",
 		"ops": [{"op": "dmg", "value": 10, "hits": 1}]},
+	# ——〔临时测试卡·抽牌动画验收用，2026-11-12 用户令；验收完删〕——
+	# 万能型 0 费：打出即抽 N 张（测中盘抽牌节奏）；test_ 前缀＝奖励出题池排除标记
+	"test_draw1": {"name": "试·抽一", "cost": 0, "color": "yellow", "kind": "effect",
+		"stance": "flex",
+		"desc": "抽 1 张牌。〔测试卡〕变招。",
+		"ops": [{"op": "draw", "count": 1}]},
+	"test_draw3": {"name": "试·抽三", "cost": 0, "color": "yellow", "kind": "effect",
+		"stance": "flex",
+		"desc": "抽 3 张牌。〔测试卡〕变招。",
+		"ops": [{"op": "draw", "count": 3}]},
+	"test_draw8": {"name": "试·抽八", "cost": 0, "color": "yellow", "kind": "effect",
+		"stance": "flex",
+		"desc": "抽 8 张牌。〔测试卡〕变招。",
+		"ops": [{"op": "draw", "count": 8}]},
 }
 #endregion
 
@@ -278,7 +292,12 @@ static func level_mult(lv: int) -> float:
 
 ## 开局卡组（2026-11-10 动态升级引擎轮：三张基础攻击卡每型 2 张共 6 张——暂定可调；
 ## 孤张制〔原「连环刺」单张〕随连击退役）
-const START_DECK := ["hengpi", "hengpi", "zhici", "zhici", "shangliao", "shangliao"]
+## 开局卡组（2026-11-10 动态升级引擎轮：三张基础攻击卡每型 2 张共 6 张——暂定可调；
+## 孤张制〔原「连环刺」单张〕随连击退役）
+## 〔2026-11-12 临时〕追加三张抽牌测试卡（抽牌动画验收——验完删）：
+## 12 张开局保证「回合抽 8」「打出抽 8」两种极限场景牌够抽（弃堆循环也兜得住）
+const START_DECK := ["hengpi", "hengpi", "zhici", "zhici", "shangliao", "shangliao",
+	"test_draw1", "test_draw3", "test_draw8"]
 
 ## VC 制属性表（2026-11-04 裁定照原版属性表；**2026-11-07 属性轮四层接线**）：
 ## 原版三层合成 GetStartingX(playerConfig, runSettings, progressionData)＋本场增量层——
@@ -432,6 +451,8 @@ static func reward_band(level: int) -> Dictionary:
 static func _cards_of_cost(cost: int) -> Array:
 	var out: Array = []
 	for cid in CARDS:
+		if String(cid).begins_with("test_"):
+			continue   # 测试卡不进奖励出题池（2026-11-12 抽牌验收用，验完删）
 		if int(CARDS[cid].get("cost", 0)) == cost:
 			out.push_back(String(cid))
 	return out

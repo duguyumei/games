@@ -21,6 +21,12 @@ signal played_changed            # 已打出区变更（增/删/清空——视�
 signal piles_shuffled(src: String)   # 洗牌事件（src=discard/played；飘字/日志可选）
 signal card_shattered(uid: int)  # 卡碎裂（第 5 次打出——视觉层碎裂动画/探针用，2026-11-06 碎牌机制）
 signal enemy_action_started(e: Dictionary, act: Dictionary)   # 敌方动作起拍（2026-11-12 命令化：将来逐敌动画挂口——对位原版 PlayViewAnimation；无动画期当帧过）
+# —— 手牌逐卡事件（2026-11-12 结构 1:1：原版 CardPileModel.CardAdded/CardRemoved 逐卡事件制；
+# 抽牌批走 cards_drawn＝PlayerView.DrawCardsCommand 单命令对位，原版 TryAddCardToTop
+# addToView=false 时逐卡事件不发、视图命令整批走）——
+signal cards_drawn(cards: Array)              # 抽牌批（视图＝DrawCardsCommand 整批命令）
+signal hand_card_removed(card: Dictionary, dest: String)   # 离手（dest=played/discard/shatter/exhaust）
+signal hand_card_added(card: Dictionary)      # 非抽加牌（敌方塞卡等——对位 addToView=true 路径）
 
 const DATA := preload("res://qiforge/QiVcData.gd")
 const TARGETING := preload("res://qiforge/QiVcTargeting.gd")   # 索敌库＋模拟单链（2026-11-07 逆向重构）
@@ -59,9 +65,9 @@ var _card_uid := 0
 var _enemy_uid := 0
 var _intents := {}            # 已退役（2026-11-07：意图挂敌 e.current_intent——保留声明防并行 AI 撞写报错）
 var _last_action := {}        # 敌 uid -> 上一拍动作 kind（防连出）
-var cmds := CMDQ.new()        # 统一命令队列（敌方动作/效果表现命令——Screen _process 持续 tick_cmds 驱动）
-var _screen_attached := false # 有屏标记：true＝命令走 tick 串行（await all_done 收口）；false（探针/无屏）＝drain 同步排空
-var fx_launcher: Callable = Callable()   # 效果表现启动器（Screen 注入：(payload, done)；未注入＝命令即时落定——结构先行，动画将来挂）
+var cmds := CMDQ.new()        # 统一命令队列（敌方动作/效果表现命令——2026-11-12 CommandRunner 1:1 自排空泵）
+var _screen_attached := false # 有屏标记：true＝表现命令入队（泵串行排空）；false（探针/无屏）＝直执行不入队
+var fx_launcher: Callable = Callable()   # 效果表现命令体（Screen 注入：(payload) async；未注入＝fx 不入队）
 
 func setup(run: Dictionary) -> void:
 	rng.seed = int(run.get("seed", 20261031))
@@ -130,6 +136,12 @@ func apply_stats_to_player() -> void:
 		player["hp"] = int(player["hp"]) + (new_mhp - int(player["mhp"]))
 	player["mhp"] = new_mhp
 	player["draw_per_turn"] = int(DATA.PLAYER_BASE["draw_per_turn"]) + stat_val("deal_count")
+	# 抽牌动画测试口（2026-11-12 用户令·临时）：启动参数 --qi-draw=N 覆盖每回合抽牌数
+	# （测 1/5/8 场景——F6 从编辑器跑不传参时可用终端：
+	#   "$GODOT" --path . res://qiforge/QiVcRoot.tscn -- --qi-draw=5 ）
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--qi-draw="):
+			player["draw_per_turn"] = clampi(int(a.substr(10)), 1, 10)
 
 func stat_val(axis: String) -> int:
 	return int(starting_stats.get(axis, 0)) + int(encounter_stats.get(axis, 0))
@@ -200,6 +212,7 @@ func end_turn() -> void:
 	for card in hand:
 		_strip_lv(card)   # 离开手牌即复原（动态升级口径）
 		discard_pile.push_back(card)
+		hand_card_removed.emit(card, "discard")   # 视图＝弃牌飞行（discardCardConfig）
 	hand = []
 	# 2026-11-06 用户令：回合结束瞬间气即回到上限（不等新回合开始——弃牌动画/敌方回合
 	# 期间显示的已是新值）；_round_start 里同款重置兜开局首拍（幂等）
@@ -228,6 +241,7 @@ func discard_hand_finale() -> void:
 	for card in hand:
 		_strip_lv(card)
 		discard_pile.push_back(card)
+		hand_card_removed.emit(card, "discard")   # 终局弃手＝同一弃牌飞行管线
 	hand = []
 	discard_pile.append_array(played_pile)
 	played_pile = []
@@ -248,16 +262,17 @@ func discard_anim_done() -> void:
 ## 敌方回合（2026-11-12 原版制改造·PerformIntents 同构）：入队阶段＋收口两段——
 ## 原版＝逐敌〔EnemyAction.Execute 模型**同步**＋演出协程包成命令 EnqueueCommand〕
 ## 三明治，EnemyTurnState.WaitForTurnEnd＝WaitWhile(IsProcessing‖IsAnyViewUpdating)。
-## 我方：每敌每动作一条 enemy_act 命令（launcher＝发 enemy_action_started 信号〔将来
-## 逐敌动画挂口，对位 PlayViewAnimation〕→ ACTIONS.execute 模型结算 → changed → done）；
-## 现无动画＝命令即时落定（观感与旧同步版一致）；灼烧逐敌同构命令。
-## 回合收口＝await cmds.all_done（WaitForTurnEnd 同构）→ enemy_round_end。
-## 无屏/探针：_screen_attached=false 时入队后 drain() 同步排空＝行为与旧版逐敌一致。
+## 我方（2026-11-12 CommandRunner 1:1）：有屏＝每敌先 Wait(0.12) 呼吸位（原版 Wait(seconds)
+## 同构）再入队 EnemyActCommand；灼烧逐敌同构命令；回合收口＝轮询 IsProcessing 排空
+## （WaitForTurnEnd 同构）→ enemy_round_end。
+## 无屏/探针：_screen_attached=false＝无表现层，模型结算直执行不入队（原版不存在无屏态，
+## 探针专用路径——drain 旧自创件随队列重写退役）。
 func enemy_round() -> void:
 	if phase != "enemy":
 		return
 	settle_all_strikes()   # 落账延迟兜底：演出未落完的账单先全落（终局判定随之收口）
-	# ① 逐敌入队（对应 PerformIntents 逐敌循环）
+	# ① 逐敌构建（对应 PerformIntents 逐敌循环）
+	var actions: Array = []
 	for e in encounter["active"].duplicate():
 		if not e["alive"]:
 			continue
@@ -268,30 +283,43 @@ func enemy_round() -> void:
 			act = {"kind": "skip"}   # 跳过也是一条命令（占演出位，原版同构）
 		elif act.is_empty():
 			continue
-		var the_e: Dictionary = e
-		var the_act: Dictionary = act
-		cmds.push("enemy_act", {"e": the_e, "act": the_act},
-			func(p, done: Callable) -> void: _launch_enemy_action(p, done),
-			0.12, int(e["uid"]))   # 0.12s＝逐敌节奏呼吸位（原版 TweenIntentPosition 的时值位）
-	# ①½ 灼烧逐敌入队（「本回合结束后」——先于补位；穿池甲）
+		actions.push_back([e, act])
+	# ①½ 灼烧逐敌构建（「本回合结束后」——先于补位；穿池甲）
+	var burns: Array = []
 	if int(encounter.get("burn", 0)) > 0:
 		var bt := int(encounter["burn"])
 		encounter["burn"] = 0
 		for e in _alive_active().duplicate():
-			var be: Dictionary = e
-			cmds.push("enemy_burn", {"e": be, "bt": bt},
-				func(p, done: Callable) -> void: _launch_enemy_burn(p, done))
+			burns.push_back([e, bt])
 	if not _screen_attached:
-		cmds.drain()   # 探针/无屏：同步排空＝旧行为
+		# 探针/无屏：模型结算直执行（无表现层；玩家倒下即弃余敌＝旧 clear 对位）
+		for a in actions:
+			if int(player["hp"]) <= 0:
+				break
+			_exec_enemy_action(a[0], a[1])
+		for b in burns:
+			if int(player["hp"]) <= 0:
+				break
+			_exec_enemy_burn(b[0], int(b[1]))
 		enemy_round_end()
 		return
-	await cmds.all_done   # WaitForTurnEnd 同构（Screen _process 持续 tick_cmds 驱动）
+	for a in actions:
+		cmds.Wait(0.12)   # 逐敌节奏呼吸位（原版 Wait(seconds) 同构；旧 push delay 随队列重写退役）
+		cmds.EnqueueCommand(EnemyActCommand.bind(a[0], a[1]))
+	for b in burns:
+		cmds.EnqueueCommand(EnemyBurnCommand.bind(b[0], int(b[1])))
+	while cmds.IsProcessing():   # WaitForTurnEnd 同构（泵自排空，消费者轮询）
+		await (Engine.get_main_loop() as SceneTree).process_frame
 	enemy_round_end()
 
-## enemy_act 命令启动器：信号口→模型结算→changed→落定
-func _launch_enemy_action(payload: Dictionary, done: Callable) -> void:
-	var e: Dictionary = payload["e"]
-	var act: Dictionary = payload["act"]
+## enemy_act 命令体（原版三明治命令层）：执行→玩家倒下则弃队列余敌
+func EnemyActCommand(e: Dictionary, act: Dictionary) -> void:
+	_exec_enemy_action(e, act)
+	if int(player["hp"]) <= 0:
+		cmds.ClearCommands()   # 玩家倒下：弃队列余敌（对位同步循环 break），终局在 end 段收口
+
+## enemy_act 执行体：信号口→模型结算→changed
+func _exec_enemy_action(e: Dictionary, act: Dictionary) -> void:
 	enemy_action_started.emit(e, act)   # 将来逐敌动画挂口（现在无接＝当帧过）
 	if String(act.get("kind", "")) == "skip":
 		var why := "缴械/冰冻"
@@ -300,36 +328,25 @@ func _launch_enemy_action(payload: Dictionary, done: Callable) -> void:
 			e["just_spawned"] = false
 		event.emit("「%s」%s" % [String(e["name"]), why])
 		e["skip"] = int(e["skip"]) - 1
-		done.call()
 		return
 	_last_action[int(e["uid"])] = String(act.get("kind", ""))
 	ACTIONS.execute(self, e, act)   # 原版 EnemyAction.Execute（模型结算＋事件）
 	changed.emit()
-	if int(player["hp"]) <= 0:
-		cmds.clear()   # 玩家倒下：弃队列余敌（对位同步循环 break），终局在 end 段收口
-		done.call()
-		return
-	done.call()
 
-## enemy_burn 命令启动器
-func _launch_enemy_burn(payload: Dictionary, done: Callable) -> void:
-	var e: Dictionary = payload["e"]
-	event.emit("灼烧：「%s」受到 %d 点" % [e["name"], int(payload["bt"])])
-	_damage_enemy(e, int(payload["bt"]), true)
+## enemy_burn 命令体
+func EnemyBurnCommand(e: Dictionary, bt: int) -> void:
+	_exec_enemy_burn(e, bt)
+
+## enemy_burn 执行体
+func _exec_enemy_burn(e: Dictionary, bt: int) -> void:
+	event.emit("灼烧：「%s」受到 %d 点" % [e["name"], bt])
+	_damage_enemy(e, bt, true)
 	changed.emit()
-	done.call()
 
-## fx 效果表现命令启动器（Screen 注入 fx_launcher 则转发，否则即时落定）
-func _launch_fx(payload, done: Callable) -> void:
+## fx 效果表现命令体（Screen 注入 fx_launcher 则转发执行；命令体自含落定＝await 转发跑完）
+func FxViewCommand(op: Dictionary) -> void:
 	if fx_launcher.is_valid():
-		fx_launcher.call(payload, done)
-		return
-	done.call()
-
-## 命令队列驱动口（Screen._process 每帧调——对位原版 CommandRunner.UpdateCommandRunner
-## 的 MonoBehaviour 驱动；敌方动作/效果表现命令由此启动）
-func tick_cmds() -> void:
-	cmds.tick()
+		await fx_launcher.call(op)
 
 ## 敌方回合收口（原序保留：补位→终局→下一回合）
 func enemy_round_end() -> void:
@@ -470,32 +487,34 @@ func play_card(card_uid: int) -> void:
 		# 卡从卡组永久移除。召唤弱化死神＝后续轮，此轮不做（用户令）。
 		shattered.push_back({"id": String(card["id"]), "uid": int(card["uid"])})
 		_deck_total -= 1
+		hand_card_removed.emit(card, "shatter")   # 视图＝DestroyPile 溶解（destroyableCardConfig）
 		card_shattered.emit(int(card["uid"]))
 		event.emit("「%s」承受不住，彻底碎裂——从卡组永久消失" % String(def.get("name", "")))
 	elif bool(card.get("exhaust", false)):
 		exhaust_pile.push_back(card)
+		hand_card_removed.emit(card, "exhaust")   # 视图＝DestroyPile（消耗堆）
 	else:
 		# 2026-11-06 四区制（规格 v1）：打出→已打出区（回合末才整堆进弃牌堆——出牌历史的载体）。
 		# 〔2026-11-08 撤令〕「零连击交互卡直弃」旧分支已随连击制退役——打出的卡默认一律进
 		# 已打出区（右上角，玩家看得到刚打出的牌），回合末统一平移弃牌堆。
 		played_pile.push_back(card)
+		hand_card_removed.emit(card, "played")   # 视图＝OnCardPlayedFull（离手→已打出区）
 		played_changed.emit()
 	# —— ⓪ 效果执行（2026-11-07 逆向重构）：伤害走单链（与 preview 物理同源），
 	# 非伤害走 QiVcEffects 处理器注册表（对应原版 CardEffect.Execute 分发）；
 	# 倍率＝本张打出时等级（动态升级占位公式：每级总输出 +30%——正式词条曲线待内容轮）
 	_play_gen += 1   # 连打制（2026-11-09 对齐原版命令队列）：本张账单事件统一带新代标
 	var mult := DATA.level_mult(p_lv)
-	var the_uid0 := int(card["uid"])
 	for op in card["def"].get("ops", []):
 		if String(op.get("op", "")) == "dmg":
 			_run_damage_op(op, def, mult)
 		else:
 			EFFECTS.run_op(self, op, mult)   # 数据结算**同步**（原版 CardEffect.OnExecuted 同构）
-			# 效果表现命令化（2026-11-12 原版制：入队的是视图命令——PlayerStatView.
-			# SetValueCommand 同构）：fx_launcher 未挂动画＝即时落定，结构先行
-			cmds.push("fx", {"op": String(op.get("op", "")),
-				"value": int(op.get("value", op.get("count", 0)))},
-				_launch_fx, 0.0, the_uid0)
+			# 效果表现命令化（原版 PlayerStatView.SetValueCommand 同构）：有屏才入队
+			# （无屏＝无表现层不入队；fx_launcher 未挂动画＝当帧落定，结构先行）
+			if fx_launcher.is_valid():
+				cmds.EnqueueCommand(FxViewCommand.bind({"op": String(op.get("op", "")),
+					"value": int(op.get("value", op.get("count", 0)))}))
 	# —— 动态升级三公理（结算在效果之后＝doc 4.2「先效果后升级」——本张抽进手的新牌以
 	# 初始值参与 A1）；内功门控：未获内功＝三步全跳、等级与费用纹丝不动；
 	# ④记型不受门控（式槽显示沿用 2026-11-08 裁定）
@@ -867,11 +886,16 @@ func draw_cards(n: int, keep_last_played := false) -> void:
 			draw_pile.append_array(moved2)
 			piles_shuffled.emit("played")
 			event.emit("已打出牌收拢，整堆洗回抽牌堆")
+	var drawn: Array = []
 	for _i in n:
 		if draw_pile.is_empty():
 			break   # 两级都空：抽到为止（规格§4）
-		hand.push_back(draw_pile.pop_front())
+		var c: Dictionary = draw_pile.pop_front()
+		hand.push_back(c)
+		drawn.push_back(c)
 	check_piles()
+	if not drawn.is_empty():
+		cards_drawn.emit(drawn)   # 视图＝DrawCardsCommand 整批命令（PlayerView 对位）
 
 ## 四区不变量自检（规格§8：手+已打出+弃+抽+消耗 ≡ 卡组总数；违者立刻报不吞）
 func check_piles() -> bool:

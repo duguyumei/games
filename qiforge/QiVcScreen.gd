@@ -20,6 +20,10 @@ const SHOW_COMBO_BADGE := false   # 金丹徽显隐门（2026-11-10 用户裁「
 const QI_PAUSE := preload("res://qiforge/QiVcPause.gd")  # 世界冻结·引用计数（2026-11-09 贴原版 TimeManager）
 const INTENT_BAR := preload("res://qiforge/QiIntentBar.gd")  # 敌方总行为（2026-11-06）
 const KW_TIP := preload("res://qiforge/QiKeywordTooltip.gd")  # 卡词条浮窗组件（2026-11-10 挂卡下制）
+const HAND_PILE_VIEW := preload("res://qiforge/vc/HandPileView.gd")   # 手牌系统（2026-11-12 结构 1:1 迁移）
+const DISCARD_PILE_VIEW := preload("res://qiforge/vc/DiscardPileView.gd")
+const DESTROY_PILE_VIEW := preload("res://qiforge/vc/DestroyPileView.gd")
+const VCC := preload("res://qiforge/vc/VcConfig.gd")   # 原版配置真值（VC 名已被卡表占用→VCC）
 const CMDQ := preload("res://qiforge/QiVcCmdRunner.gd")  # 统一命令队列（2026-11-12 原版 CommandRunner 同构）
 const FXA := preload("res://qiforge/QiFxAtlas.gd")           # 特效图集（死亡墨屑等）
 const QI_ORBIT := preload("res://qiforge/QiQiOrbit.gd")      # 气珠轨道（气值＝绕珠粒子数）
@@ -27,62 +31,15 @@ const CARD := preload("res://qiforge/QiCardStyle.gd")
 const ENEMY_CARD := preload("res://qiforge/QiEnemyCard.gd")
 const QIFONTS := preload("res://qiforge/QiFontBank.gd")
 const ICONS := preload("res://qiforge/QiVcIcons.gd")
-const TILT_SHADER := preload("res://qiforge/assets/card_tilt_glint.gdshader")
-## 手牌倾斜（2026-11-03 用户令「我就想在新手第一关就见到倾斜效果」）：
-## 每张手牌渲进 SubViewport（2× 超采保清晰）→ 贴图 ＋ 单应透视/边缘反光着色器。
-## 内层因此是纯贴图——事件必须归外壳（手牌标准做法）；倾斜/光效由 _hand_lerp_tick 统一驱动。
-const TILT_SS := 3.0          # 超采样倍数（2026-11-08：2.0 时金线与卡面交界的 1px 硬边去不掉，提到 3.0）
-const TILT_MARGIN := 1.18     # 显示矩形外扩（防倾斜切角）
-const TILT_MAX := 0.50        # 倾斜最大量（喂 shader 的 tip）
-const TILT_SMOOTH := 12.0     # 倾斜跟手平滑
-
-## 手牌手感常量（2026-11-11 原版 1:1 资产真值轮——真值/出处全表：
-## design-docs/references/吸血鬼爬行者_手牌系统真值_v0.1.md）。
-## 原版手牌卡 180×277、我方 216×304 → 像素值×1.2 换算；角度/比例/时长不换算。
-static var HAND_W := CARD.size_of("hand").x
-static var HAND_H := CARD.size_of("hand").y
-const HAND_K := 216.0 / 180.0               # 换算比 1.2（我方手牌卡宽/原版手牌卡宽；2026-11-12 试过对齐 180 原版宽——观感无变化已还原）
-const HAND_BAND := 860.0                    # 行宽封顶（自拟：受左右舷 HUD 限制；原版实测 906）
-const HAND_SPACING_MAX := 115.0 * HAND_K    # 卡间净距封顶（原版 _maxSpacingBetweenElements 115）
-## 〔弧退役〕原版 MaxPositionOffset 32/PositionOffsetCurve＝死代码（AlignChildrenAlongAxis 次轴
-## 直接 return，FanCardPosition 从未被调用）——手牌平排，2026-11-12 实机图＋汇编双证
-const HAND_ROT_MAX := deg_to_rad(3.5)       # 视觉倾角上限（2026-11-12 汇编层破案：布局写 ±15° 在**槽位层**，
-											# 卡视觉层每帧被 RotateToFollowVelocity 钳到 ±3.5°〔draggedRotationAmountDegrees
-											# 实测〕——原版静止手牌≈直立微倾；15° 只是不可见布局值）
-const HAND_REPEL_BASE := 64.0 * HAND_K      # 劈开 repel 基量（SelectedCardRepelAmount 64）
-const HAND_REPEL_MAX := 64.0 * HAND_K       # 劈开 repel 曲线量（MaxRepelOffset 64）
-const HAND_SPLIT_MIN_N := 6.0               # 劈开量过渡牌数区间（MinMaxCardsForSplit 6→20）
-const HAND_SPLIT_MAX_N := 20.0
-const HAND_SPLIT_L := Vector2(0.0, 48.0 * HAND_K)   # 左翼基础劈开 min→max（LeftSplitMinMaxOffset 0→48）
-const HAND_SPLIT_R := Vector2(0.0, 96.0 * HAND_K)   # 右翼劈开（RightSplitMinMaxOffset 0→96——右翼翻倍）
-static var HAND_LIFT := 38.0 * HAND_K       # 悬停抬升·可付费（hoverHeightOffset 38）
-const HAND_LIFT_BAD := 15.0 * HAND_K        # 悬停抬升·不可付费（invalidHeightOffset 15）
-const HAND_POP := Vector2(1.5, 1.5)         # 悬停放大·可付费（scaleTo 1.5）
-const HAND_POP_BAD := Vector2(1.05, 1.05)   # 悬停放大·不可付费（invalidScaleTo 1.05）
-const HAND_MOVE_SPEED := 750.0 * HAND_K     # 位移速度（moveSpeed 750——匀速寻的脆感；只服务悬停/劈开等布局微移）
-const HAND_DRAW_TIME := 0.2                 # 抽牌单卡飞行时长（drawCardConfig rotate/scaleDuration 0.2 实测）
-const HAND_DRAW_STAGGER := 0.2              # 抽牌节拍（postDrawWait 0.2 实测——命令定长＝流水制，旧 0.07 自拟错峰退役）
-const HAND_DECEL := 0.5 * HAND_K            # 减速带（decelerateDistance 0.5）
-const HAND_SCALE_DUR := 0.05                # 缩放时长（scaleDuration）
-const HAND_SHAKE_AMP := 5.0 * HAND_K        # 不可付费摇头幅度（invalidShakeAmplitude 5）
-const HAND_SHAKE_TIME := 0.3                # 摇头时长（invalidShakeTime 0.3，vibrato 15）
-const HAND_SHELL_EXTRA := 80.0              # 壳额外高（盖住弹起后超出卡面的上沿）
+const TILT_SHADER := preload("res://qiforge/assets/card_tilt_glint.gdshader")   # （vc/CardView 自带同款）
+## 〔2026-11-12 结构 1:1 迁移〕手牌手感常量全家迁入 qiforge/vc/VcConfig.gd（GlobalConfig.asset
+## 直读真值＋HandPile 根 1.14 实测缩放——旧 ×1.2 换算制退役）；真值全表住
+## design-docs/references/吸血鬼爬行者_手牌系统真值_v0.2.md。
 const DRAW_PILE_CENTER := Vector2(55.0, 1025.0)     # 老屏常量（仅兜底）
 const DISCARD_PILE_CENTER := Vector2(1866.0, 1025.0)
 
-## 原版曲线（键值/斜率照资产 1:1；Godot Curve 自由切线＝Hermite 同构）
-## 〔弧曲线退役〕PositionOffsetCurve 随 FanCardPosition 死代码退役——真值存 references 参数表
-static var _repel_curve: Curve = null
-
-static func hand_repel_curve() -> Curve:
-	## RepelFalloffCurve：(0,-1)[斜5.78] (0.99,1)[双0斜] (1,0)[斜-105]——相邻卡曲线值 -1 抵掉基量
-	## （2026-11-11 审计修：0.99 键原版切线双 0，初版误写左斜 5.78）
-	if _repel_curve == null:
-		_repel_curve = Curve.new()
-		_repel_curve.add_point(Vector2(0.0, -1.0), 0.0, 5.784103)
-		_repel_curve.add_point(Vector2(0.99, 1.0), 0.0, 0.0)
-		_repel_curve.add_point(Vector2(1.0, 0.0), -105.16883, 0.0)
-	return _repel_curve
+## 〔2026-11-12 结构 1:1 迁移〕原版曲线/布局/每帧跟随全家迁入 qiforge/vc/（CardLayoutGroup
+## 族＋CardView＋InteractableCard）——屏内旧扇排/帧 Lerp/焦点轮询制退役。
 
 signal battle_over(result: String)
 
@@ -123,8 +80,11 @@ var _hit_stop_until := 0        # 顿帧墙钟截止（ms）
 var _reward_ui: Control = null  # 战斗内升级三选一（条满立即弹·2026-11-09 贴原版零特效令）
 var _enemy_cards := {}          # uid -> 敌卡（增量对账：节点身份稳定，2026-11-06 规格§7）
 var _enemy_holder: Control = null
-var _played_cards := {}         # uid -> wrap（已打出区右侧留位粗排；正式视觉归用户，规格§6）
-var _cardq := CMDQ.new()   # 统一命令队列·卡动画线（2026-11-12 原版 CommandRunner 制；墙钟退役）
+var _played_cards := {}         # uid -> CardView（已打出区右侧留位粗排＝ComboPile 对位，视觉暂用现制）
+var _cardq := CMDQ.new()   # 统一命令队列·卡动画线（2026-11-12 原版 CommandRunner 1:1——自排空泵，无需 _process 驱动）
+var _hand_pile_view: Control = null   # 手牌根（vc/HandPileView——持久卡实体/对象池/每帧跟随）
+var _discard_view: Control = null     # 弃牌飞行（vc/DiscardPileView——discardCardConfig 真值）
+var _destroy_view: Control = null     # 碎牌/消耗（vc/DestroyPileView——destroyableCardConfig）
 
 var _top_refs := {}             # 机柜顶带（等级/经验/层数）
 var _wing_refs := {}            # 机柜舷位（血/抽/弃）
@@ -144,12 +104,8 @@ var _play_all_btn: Button = null
 var _stance_box: HBoxContainer = null
 var _overlay: Control = null
 
-var _hand_wraps: Array = []        # 屏级扇排（老屏同制：直接挂屏、视口坐标）
-var _hand_focus: Control = null    # 悬停焦点（弹起位）
-var _kw_tip_host: Control = null   # 悬卡词条浮窗宿主 wrap（组件挂 wrap 下，经 meta "kw_tip" 取）
 var _preview_layer: Control = null  # 悬卡预览层（伤害/气/盾；z 92 全 IGNORE）
 var _preview_nodes: Array = []      # 预览件（换焦点/移开即清）
-var _tilt_t := 0.0                 # 倾斜/光泽带驱动时钟
 
 func setup(run_ref: Dictionary) -> void:
 	run = run_ref
@@ -167,6 +123,37 @@ func setup(run_ref: Dictionary) -> void:
 	battle.piles_shuffled.connect(_on_piles_shuffled)
 	battle.played_changed.connect(_rebuild_played)
 	battle.hit_landed.connect(_on_hit_landed)
+	_setup_hand_views()   # 手牌系统（2026-11-12 结构 1:1）：持久卡实体＋命令驱动
+
+## 手牌视图三件（HandPileView＝手牌根；Discard/DestroyPileView＝弃/耗飞行）。
+## 战斗重开（Debug Base Directory 快速重开）：视图池复位＋重绑新 battle（引擎映射：
+## 原版场景重载 → 手动复位，登记）。
+func _setup_hand_views() -> void:
+	if _hand_pile_view == null or not is_instance_valid(_hand_pile_view):
+		_hand_pile_view = HAND_PILE_VIEW.new()
+		_hand_pile_view.name = "HandPile"
+		_hand_pile_view.z_index = 10   # 基础层：受击红带(3)与剑(5)之上、特效层(85+)之下
+		add_child(_hand_pile_view)
+		_discard_view = DISCARD_PILE_VIEW.new()
+		_discard_view.name = "DiscardPileView"
+		add_child(_discard_view)
+		_destroy_view = DESTROY_PILE_VIEW.new()
+		_destroy_view.name = "DestroyPileView"
+		add_child(_destroy_view)
+		_hand_pile_view.card_play_clicked.connect(_on_card_play_clicked)
+		_hand_pile_view.card_hover_started.connect(_on_card_hover_started)
+		_hand_pile_view.card_hover_ended.connect(_on_card_hover_ended)
+		_hand_pile_view.card_to_played.connect(_on_card_to_played)
+		_hand_pile_view.card_destroy_fx.connect(_on_card_destroy_fx)
+	else:
+		_hand_pile_view.ResetForNewBattle()
+		_played_cards.clear()
+	_hand_pile_view.setup(battle, _cardq, {"tip_avoid": _hud_avoid()})
+	_discard_view.setup(battle, _cardq, _hand_pile_view, Callable(self, "_discard_center"))
+	_destroy_view.setup(battle, _cardq, _hand_pile_view)
+	battle.cards_drawn.connect(DrawCardsCommand)
+	battle.hand_card_removed.connect(_on_hand_card_removed)
+	battle.hand_card_added.connect(_on_hand_card_added)
 
 func _ready() -> void:
 	_wire_scene()
@@ -540,7 +527,7 @@ func _refresh() -> void:
 		_finale = false
 	if _combo_badge != null:
 		_combo_badge.update_from(battle)
-	_rebuild_hand()
+	_hand_pile_view.RefreshCardsUIAll()   # 手牌刷新（结构 1:1：增删走逐卡事件，changed 只刷费用/可付性）
 	# 两个按钮同进退（2026-11-06 用户指正：战斗结束时只有「结束回合」被置灰，
 	# 跟「打出全部」一个死一个活——要么一起灰、要么一起亮）
 	var can_act := String(battle.phase) == "player" and not result_pending() and not _finale
@@ -560,8 +547,8 @@ func _refresh() -> void:
 func _maybe_wait_discard() -> void:
 	if String(battle.phase) != "discarding":
 		return
-	if _cardq.is_busy():
-		await _cardq.all_done
+	while _cardq.IsProcessing():   # WaitWhile(IsProcessing) 同构（原版消费者轮询制）
+		await get_tree().process_frame
 	if battle != null and String(battle.phase) == "discarding":
 		battle.discard_anim_done()
 
@@ -589,6 +576,8 @@ func _refresh_enemies() -> void:
 			if is_instance_valid(dead):
 				_spawn_xp_orb(dead.get_global_rect().get_center(), int(euid))
 				_enemy_death_fx(dead)
+			else:
+				battle.xp_credit.erase(int(euid))   # 无卡可放珠：凭证清账，经验直接上显示（旧「跳显」语义）
 	var acts: Array = battle.encounter["active"]
 	if acts.is_empty():
 		if _replay_on:
@@ -1211,7 +1200,7 @@ func _on_piles_shuffled(src: String) -> void:
 		if OS.has_environment("QI_DEBUG_CENTERS"):
 			print("[shuffle] gained=", gained, " src=", src)
 	# 洗牌特效过后再抽牌（逻辑层对接）：登记占线墙钟
-	_cardq.push_wait(0.32)   # 洗牌占位延时命令（2026-11-12 原版制：added 屏障统一覆盖「洗完再抽」）
+	_cardq.Wait(0.32)   # 洗牌占位延时命令（原版 CommandRunner.Wait(seconds) 1:1；串行队列天然「洗完再抽」）
 
 ## 洗牌换气：N 点气 = N 颗小气粒，从抽牌堆沿弧线飞进气珠（2026-11-06 用户令）
 ## 每颗带一条短拖尾；最后一颗到账时气珠跳数字＋飘 +N
@@ -1303,189 +1292,84 @@ func _draw_center() -> Vector2:
 func _discard_center() -> Vector2:
 	return _pile_center("DiscardPile", DISCARD_PILE_CENTER)
 
-## 屏级扇排＋帧 Lerp 逼近（k=Δ×7）＋焦点瞬弹（只弹内层卡面 ×1.5，壳稳定）＋邻牌不让位；
-## 新抽卡自抽牌堆位飞入；消失卡（打出/冲弃）飞向弃牌堆位缩小淡出（0.32s、stagger 0.05）。
-func _rebuild_hand() -> void:
-	var old_uids := {}
-	for w in _hand_wraps:
-		old_uids[int(w.get_meta("hand_uid", -1))] = true
-	var new_uids := {}
-	for card in battle.hand:
-		new_uids[int(card["uid"])] = true
-	if OS.has_environment("QI_DEBUG_CENTERS"):
-		print("[centers] draw=", _draw_center(), " discard=", _discard_center())
-	var fly_i := 0
-	var removed_ct := 0
-	var drawn_ct := 0
-	for card in battle.hand:
-		if not old_uids.has(int(card["uid"])):
-			drawn_ct += 1
-	var played_now := {}
-	for pcard in battle.played_pile:
-		played_now[int(pcard["uid"])] = true
-	for w in _hand_wraps:
-		var wuid := int(w.get_meta("hand_uid", -1))
-		if not new_uids.has(wuid):
-			if wuid == _played_uid:
-				_anim_card_play_out(w)   # 打出的卡：先出招——落区/碎裂由 play_out 尾段分流
-			elif played_now.has(wuid):
-				continue                  # 已打出区接管（play_all 等非点击路径；_rebuild_played 已收）
-			elif _shattered_uids().has(wuid):
-				_anim_card_shatter(w)    # 2026-11-06 碎牌：play_all 连打中碎掉的卡——原地碎裂消散
-			else:
-				_anim_card_fly(w, float(fly_i) * 0.05)
-				fly_i += 1
-				removed_ct += 1
-		else:
-			w.queue_free()
-	_played_uid = -1
-	_hand_wraps = []
-	var new_i := 0   # 新抽卡错峰序（2026-11-05 开局抽牌动画）
-	for card in battle.hand:
-		var w := Control.new()
-		w.name = "HandCard%d" % int(card["uid"])
-		# 壳加高盖住「原位＋弹起位」两段：壳管一切事件（悬停稳定＋弹起卡可点＋底部空区不误触）
-		w.size = Vector2(HAND_W, HAND_H + HAND_LIFT + HAND_SHELL_EXTRA)
-		w.set_meta("hand_uid", int(card["uid"]))
-		var vdef: Dictionary = CARD.tcg_def_of(card["def"])
-		vdef["qi"] = battle.card_cost(card)   # 费用活查询（free 卡显示 0——选卡免一次费可见）
-		# 〔2026-11-08 状态制退役〕need 槽实/虚联动（own_stances）——式层数池已退役，注入删
-		vdef["crack_level"] = clampi(int(card.get("uses", 0)) - 2, 1, 3)   # 用 3 次=轻、4=中、（5=重）
-		vdef["combo_gold"] = battle.card_lv(card) > 0   # 动态升级：已升级的卡费用转金（2026-11-10 起，等级>0＝升过）
-		vdef["cracked"] = battle.is_cracked(card)   # 2026-11-06 碎牌：裂痕态卡面画裂纹
-		vdef["cur_form"] = String(vdef.get("stance", "")) if OS.has_environment("QI_MATCH_TEST") else String(battle.current_form)   # 型符号高亮用
-		var vis: Control = _make_tilt_view(vdef)
-		vis.position = _vis_rest(vis)
-		w.set_meta("vc_card", vis.get_meta("vc_card"))
-		w.add_child(vis)
-		# 〔影子不搬〕原版卡下有 112×112 艺术图软影（实测偏移 (10,35)，游玩几乎不可见——
-		# 2026-11-11 用户裁定撤：Godot 硬边近似比原版重、弊大于利；真值存 references 参数表〕
-		var the_uid := int(card["uid"])
-		var the_wrap := w
-		w.mouse_filter = Control.MOUSE_FILTER_STOP
-		w.gui_input.connect(func(ev: InputEvent) -> void:
-			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-				_play_clicked(the_uid))
-		w.mouse_entered.connect(func() -> void: _set_hand_focus(the_wrap))
-		# 焦点收起不走 mouse_exited（2026-11-03 修「放大后移上去缩回」）：弹起的卡上半截
-		# 探出壳矩形会误触离开事件——改 StS2 制每帧轮询＋迟滞（见 _hand_lerp_tick 焦点保持判据）
-		# 词条浮窗组件（2026-11-10 原版 KeywordTooltip 制）：挂卡 wrap 下、与卡同生共死
-		# （手牌重建＝wrap 销毁＝浮窗随销，孤儿结构上不存在）；组装/定位归组件
-		var kw_tip := KW_TIP.new()
-		kw_tip.setup(w, {
-			"tilt_fn": func() -> float: return w.rotation,
-			"anchor_fn": func() -> Rect2: return _card_visual_rect(w),
-			"corners_fn": func() -> PackedVector2Array: return _card_face_corners(w),
-			"avoid": _hud_avoid()})
-		w.set_meta("kw_tip", kw_tip)
-		add_child(w)
-		_hand_wraps.push_back(w)
-		if not old_uids.has(the_uid):
-			# 新抽卡：起点＝抽牌堆中心（卡面视觉位），飞入手位由帧 Lerp 接管；
-			# 2026-11-05 用户令「开局抽牌动画」：按序错峰 0.07s 一张张飞（从堆里抽一叠的节奏）；
-			# 2026-11-11 起编入卡动画命令队列（原版 CardAddedViewCommand 制）：
-			# 「先弃完再抽」（2026-11-06 用户令普适版）＋洗牌让路＝队列 added 全局屏障
-			# 天然覆盖；错峰 0.07＝命令 WaitFor 错峰。起点姿态先钉在抽堆（fly_in 大延迟
-			# 扣住帧 Lerp 不偷跑），命令起飞瞬间释放（launch 置 0）
-			w.position = _draw_center() - Vector2(HAND_W, HAND_H) * 0.5 - Vector2(0.0, HAND_LIFT)
-			w.scale = Vector2(0.35, 0.35)
-			w.rotation = randf_range(-0.22, 0.22)
-			w.modulate.a = 0.25
-			w.set_meta("fly_in", true)
-			w.set_meta("fly_in_delay", 9999.0)
-			_cardq.push("added", w, _start_added_cmd, 0.0,
-				int(w.get_meta("hand_uid", -1)), true)   # barrier＝先弃完再抽＋串行节拍（0.2/张流水）
-			new_i += 1
-		# 手牌重建＝旧 wrap 全销毁（2026-11-09 修孤儿浮窗；2026-11-10 组件挂卡下后
-		# 结构上已同死，此处显式关＝原版 OnRemovedFromHand 状态转移关窗的行为对齐）：
-		print("[VCDIAG][hand] rebuild-drop host_valid=%s" % [is_instance_valid(_kw_tip_host)])   # [VCDIAG] 临时埋点
-		_hide_kw_tips()
-		_hide_card_preview()
-		_hand_focus = null
-	# 终局隐藏单向化（2026-11-11 修「手牌隐藏后又闪现」）：终局后任何 changed 触发的
-	# 重建（选卡落点/经验到账等），新 wrap 一律保持收起——原版同语义＝离开玩家回合后
-	# 手牌交互失效，胜利时序 DiscardHand 弃走，不存在「重新出现」
-	if _finale:
-		for w in _hand_wraps:
-			if is_instance_valid(w):
-				w.visible = false
-	_layout_hand(false)
-	_refresh_playability()
+## ══ 手牌系统（2026-11-12 结构 1:1 迁移）══════════════════════════════
+## 旧「changed→全销毁重建」制整体退役——新制＝持久卡实体（HandPileView uid 终身视图）
+## ＋槽位每帧跟随（InteractableCard.Update 链）＋逐卡事件命令驱动（cards_drawn/
+## hand_card_removed 信号→原版 DrawCardsCommand/DiscardPileView.CardAddedViewCommand 对位）。
+## 屏只做接线：点击/悬停/预览/出招演出。
 
-## 消失卡飞出：飞向弃牌堆位缩小淡出（打出/冲弃同走——打出进弃牌堆语义同）
-## 消失卡飞弃：进卡动画命令队列（2026-11-12 原版制改造——原 tween 编排搬进启动器，
-## 完成回调交队列落定；墙钟登记退役）。手牌冲弃（_rebuild_hand）与已打出区回收
-## （_rebuild_played）两路共用本口。
-func _anim_card_fly(w: Control, delay: float) -> void:
-	_cardq.push("removed", w, _start_removed_cmd, delay,
-		int(w.get_meta("hand_uid", -1)))
-
-## removed 命令启动器：飞向弃牌堆缩小淡出（0.32s）。错峰归队列（at 时间戳消化，启动器
-## 不吃 delay——再 interval 会双计）。签名＝(payload, done)：payload＝卡 wrap
-func _start_removed_cmd(payload, done: Callable) -> void:
-	var w := payload as Control
-	if not is_instance_valid(w):
-		done.call()
+## DrawCardsCommand（PlayerView.DrawCardsCommand 对位——PlayerView 未单独建类，登记）：
+## 抽牌批→逐卡入队 CardAddedViewCommand（本批节拍 Log(N,1000)/N 塞卡字典——真值档 v0.2）
+func DrawCardsCommand(cards: Array) -> void:
+	var n := cards.size()
+	if n == 0:
 		return
-	_kill_card_tween(w)   # 互杀保护（2026-11-06）：打出即触发回收链时 play_out/落位 tween 先废
-	var tw := create_tween()
-	w.set_meta("card_tween", tw)
-	var half: Vector2 = w.size * w.scale * 0.5      # 已打出区的卡是缩小态，按实际尺寸居中
-	tw.tween_property(w, "position", _discard_center() - half
-		- Vector2(0.0, HAND_LIFT), 0.32)\
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	tw.parallel().tween_property(w, "scale", Vector2(0.3, 0.3), 0.32)
-	tw.parallel().tween_property(w, "rotation", 0.15, 0.32)
-	tw.parallel().tween_property(w, "modulate:a", 0.0, 0.3).set_delay(0.06)
-	tw.tween_callback(w.queue_free)
-	tw.tween_callback(done)   # 卡落弃堆（含销毁）＝命令落定（原版 TryAddCard 完成位）
+	var stagger := 0.0
+	if n > 1:
+		stagger = log(float(n)) / log(1000.0) / float(n)
+	for card in cards:
+		card["draw_stagger"] = stagger
+		_hand_pile_view.OnCardAdded(battle, card, true, false, 1.0)
 
-## fx 效果表现命令启动器（2026-11-12 原版制·SetValueCommand 同构占位）：数据已同步
-## 结算，此处表现——现在＝刷新（血球/气珠/牌堆计数即时跳）＋落定；将来 heal 飘字/
-## 护甲光效挂此（挂动画时 done 延到动画完）
-func _launch_fx_cmd(payload, done: Callable) -> void:
-	_refresh()
-	done.call()
+## 离手分流（原版 CardConfig.AddToOnPlayPile 三去向：连击堆(=已打出区)/弃堆/销毁堆）
+func _on_hand_card_removed(card: Dictionary, dest: String) -> void:
+	match dest:
+		"played":
+			_hand_pile_view.OnCardPlayedFull(battle, card, false)
+		"discard":
+			_discard_view.OnCardAdded(battle, card, true, false, 1.0)
+		"shatter", "exhaust":
+			_destroy_view.OnCardAdded(battle, card, true, false, 1.0)
 
-## added 命令启动器：释放帧 Lerp（fly_in 清零）＋淡入。原版 CardAddedViewCommand 节奏
-## （2026-11-12 ISIL 实证）：动画全部 fire-and-forget（旋转/缩放/mover/淡入启动即走），
-## 命令长度＝固定等 postDrawWait 0.2 → 下一张 0.2s 节拍接续＝连续流水（上一张刚落
-## 下一张起飞）——不等淡入完成（旧版段落感真凶：串行卡等 alpha 0.3s＋at 顺延加隔）
-func _start_added_cmd(payload, done: Callable) -> void:
-	var w := payload as Control
-	if not is_instance_valid(w):
-		done.call()
-		return
-	if w.has_meta("fly_in"):
-		w.set_meta("fly_in_delay", 0.0)   # 起飞：帧 Lerp 下一帧接管飞入手位
-	var twb := w.create_tween()
-	twb.tween_property(w, "modulate:a", 1.0, 0.3)   # 淡入与飞行并行（fire-and-forget）
-	var twa := w.create_tween()
-	twa.tween_interval(HAND_DRAW_STAGGER)
-	twa.tween_callback(done)
+## 非抽加牌（对位 CardPileModel.CardAdded addToView=true 路径）
+func _on_hand_card_added(card: Dictionary) -> void:
+	_hand_pile_view.OnCardAdded(battle, card, true, false, 1.0)
 
-func _play_clicked(card_uid: int) -> void:
+## 点击施放（2026-11-01 用户裁定 VC 线点击制；原版 OnCardClicked→CardSelected 链）：
+## 数据当帧出账，演出拍驱动串行化（连打制 2026-11-09）
+func _on_card_play_clicked(card: Dictionary) -> void:
 	if String(battle.phase) != "player" or result_pending():
 		return
-	var clicked_cid := ""
-	for c in battle.hand:
-		if int(c["uid"]) == card_uid:
-			if not battle.can_play(c):
-				# 原版点击不可付费＝摇头反馈（PlayableCard.TryPlayCard else PlayInvalidCardShake）
-				var w_bad := _hand_wrap_of(card_uid)
-				if w_bad != null and w_bad.get_child_count() > 0:
-					(w_bad.get_child(0) as Control).set_meta("shake_t", HAND_SHAKE_TIME)
-				return
-			clicked_cid = String(c.get("id", ""))
-			break
-	_set_hand_focus(null)
-	# 连打制（2026-11-09 对齐原版「输入不锁动画、命令排队」）：数据层当帧出账
-	# （扣气/连击/账单算定——原版 TryPlayCard 立即 Execute 同构）；演出簿记**不在此碰**——
-	# 拍驱动串行化，本张排队等上一张播完才起拍（原版 CommandRunner 单协程队列同构）。
-	battle.play_card(card_uid)   # changed → _refresh → _rebuild_hand（打出的卡走「出招」动画）
-	_queue_replay({"uid": card_uid, "cid": clicked_cid,
-		"from": _hand_card_center(card_uid), "gen": battle.play_gen(),
+	var uid := int(card["uid"])
+	if not battle.can_play(card):
+		var bad = _hand_pile_view._view_of(card)   # 摇头（PlayableCard.PlayInvalidCardShake 对位）
+		if bad != null:
+			bad.PlayInvalidCardShake()
+		return
+	var clicked_cid := String(card.get("id", ""))
+	battle.play_card(uid)   # changed/played_changed/逐卡信号全在此帧发（原版 TryPlayCard 立即 Execute 同构）
+	_queue_replay({"uid": uid, "cid": clicked_cid,
+		"from": _hand_card_center(uid), "gen": battle.play_gen(),
 		"total": battle.strike_total()})
+
+## 悬停进/出（原版 OnHoverStarted/Ended→屏侧挂预览；词条浮窗归 HandPileView/组件自管）
+func _on_card_hover_started(card: Dictionary) -> void:
+	_show_card_preview(card)
+
+func _on_card_hover_ended(_card: Dictionary) -> void:
+	_hide_card_preview()
+
+## 打出→已打出区（ComboPile 对位；出招演出＝play_out 上冲＋落堆位）
+func _on_card_to_played(card: Dictionary) -> void:
+	var view = _hand_pile_view._view_of(card)
+	if view == null:
+		return
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 场上牌不可点
+	_played_cards[int(card["uid"])] = view
+	_anim_card_play_out(view)
+
+## 碎牌 FX 挂口（DestroyPileView.CardAddedViewCommand→BurnCard 链；碎块视觉暂用现制，登记）
+func _on_card_destroy_fx(card: Dictionary) -> void:
+	var view = _hand_pile_view._view_of(card)
+	if view != null:
+		_anim_card_shatter(view)
+
+## fx 效果表现命令体（原版 PlayerStatView.SetValueCommand 同构占位）：数据已同步结算，
+## 此处表现——现在＝刷新（血球/气珠/牌堆计数即时跳）；将来 heal 飘字/护甲光效挂此
+## （挂动画时本函数改 async，命令自动延到动画完）。签名＝(payload)——旧 (payload, done)
+## 随队列重写退役。
+func _launch_fx_cmd(payload) -> void:
+	_refresh()
 
 ## 拍驱动串行化（2026-11-09 连打制）：同一时刻只有一个拍驱动在跑；连打时后张排队，
 ## 前张收尾（_end_replay＋按代落余账）后才轮到它起拍——簿记（_hit_events/_dying/
@@ -1521,96 +1405,8 @@ func _finish_replay(gen: int) -> void:
 func result_pending() -> bool:
 	return _overlay != null and is_instance_valid(_overlay)
 
-## 可打性（老屏同制）：法力不足＝整卡压灰＋费用徽描边转红，实时随 changed 连锁
-func _refresh_playability() -> void:
-	var i := 0
-	for w in _hand_wraps:
-		var card: Dictionary = battle.hand[i] if i < battle.hand.size() else {}
-		i += 1
-		if card.is_empty() or w.get_child_count() == 0:
-			continue
-		var ok: bool = battle.can_play(card)
-		var vis: Control = w.get_child(0)
-		vis.modulate = Color(1, 1, 1, 1.0) if ok else Color(0.52, 0.52, 0.52, 0.92)
-		var pip: Node = (w.get_meta("vc_card") as Node).find_child("CostPip", false, false)
-		if pip != null:
-			var icon: Node = pip.find_child("QiIcon", false, false)
-			if icon is TextureRect:
-				(icon as TextureRect).modulate = Color(1, 1, 1, 1) if ok else Color(1.0, 0.55, 0.5, 1.0)
-
-## 手牌布局（2026-11-11 原版 1:1 资产真值轮）：曲线扇形（弧 32/角 15°/≤2 张不扇）
-## ＋悬停翼内劈开（repel 曲线＋split 随 6→20 张过渡）；本函数只落目标位（meta tgt_*），
-## 位移动画统一走 _process 速度寻的（_hand_lerp_tick）；焦点卡保留扇角（原版悬起不拍平）。
-func _layout_hand(animate: bool) -> void:
-	var n := _hand_wraps.size()
-	if n == 0:
-		return
-	var mid := float(n - 1) / 2.0
-	var vp := get_viewport_rect().size
-	var fi := -1
-	if _hand_focus != null and is_instance_valid(_hand_focus):
-		fi = _hand_wraps.find(_hand_focus)
-	# 间距＝卡间步距（中心距）封顶 115×1.2（2026-11-12 用户实测体感裁定：步距非净距——
-	# 3 卡重叠紧凑扇；劈开推量 77 恰好把重叠邻牌推到完整露出，数字链自洽）；带内只压缩不拉伸
-	var step := minf(HAND_SPACING_MAX,
-		(HAND_BAND - HAND_W) / maxf(1.0, float(n - 1)))
-	# 悬停劈开（原版 GetSelectedCardOffset）：split 随牌数 6→20 过渡，repel 曲线按翼内距离取值
-	var repel_c := hand_repel_curve()
-	var split_t := clampf((float(n) - HAND_SPLIT_MIN_N) / (HAND_SPLIT_MAX_N - HAND_SPLIT_MIN_N), 0.0, 1.0)
-	var split_l := lerpf(HAND_SPLIT_L.x, HAND_SPLIT_L.y, split_t)
-	var split_r := lerpf(HAND_SPLIT_R.x, HAND_SPLIT_R.y, split_t)
-	for i in n:
-		var w: Control = _hand_wraps[i]
-		var shift := 0.0
-		if fi >= 0 and i != fi:
-			# 衰减输入归一化（2026-11-12 ISIL 实测定案，推翻旧推定）：左翼 t=(i+1)/sel、
-			# 右翼 t=(n-i)/(n-1-sel)——相邻卡 t=1（推满基量）、翼端 t=1/翼宽（略减）
-			if i < fi:
-				var d_l := clampf((float(i) + 1.0) / float(fi), 0.0, 1.0)
-				shift = -(split_l + repel_c.sample_baked(d_l) * HAND_REPEL_MAX + HAND_REPEL_BASE)
-			else:
-				var d_r := clampf((float(n) - float(i)) / float(n - 1 - fi), 0.0, 1.0)
-				shift = split_r + repel_c.sample_baked(d_r) * HAND_REPEL_MAX + HAND_REPEL_BASE
-		var x := vp.x * 0.5 + (i - mid) * step + shift - HAND_W * 0.5
-		# 〔弧＝平排〕2026-11-12 实机图＋汇编双证定案：原版 FanCardPosition（弧）是**死代码**
-		# ——AlignChildrenAlongAxis 对次轴（Y）直接弹栈返回，AlignOnSecondaryAxis 从未被调用，
-		# 槽位 Y 全由锚点决定＝齐平。两次 F6（不抬高/不下沉）皆用户对。弧常量与曲线已退役，
-		# 真值与六环证据链存 references 参数表 §一·六。
-		# 2026-11-04 用户令「手牌贴住屏幕底边」：行锚＝屏底；同日续令整体上提 5px
-		var y := vp.y - (HAND_H + HAND_LIFT + HAND_SHELL_EXTRA) - 5.0
-		# 扇角（原版 FanCardRotation）：n≥3 线性 −1..+1 ×15°、≤2 张无倾角
-		var t_r := ((float(i) / float(n - 1)) * 2.0 - 1.0) if n > 2 else 0.0
-		var rot := t_r * HAND_ROT_MAX
-		w.set_meta("fan_rot", rot)    # 浮窗梯度用：扇内角度（焦点卡回正不影响这里）
-		var vis: Control = w.get_child(0)
-		vis.pivot_offset = Vector2(vis.size.x * 0.5, (vis.size.y - HAND_H) * 0.5 + HAND_H * 0.5)
-		# 旋转/缩放轴心＝卡面中心（2026-11-12 实测原版卡 RectTransform pivot (0.5,0.5)；
-		# 旧壳底边轴心令 ±15° 顶端摆幅加倍——「倾斜太夸张」真凶）
-		w.pivot_offset = Vector2(HAND_W * 0.5, HAND_LIFT + HAND_SHELL_EXTRA + HAND_H * 0.5)
-		var is_focus := fi == i
-		if is_focus:
-			# 原版悬起不拍平（保留扇角）；弹起/放大动画归 _apply_hover_anim tween
-			w.scale = Vector2.ONE
-			w.z_index = 60
-			vis.z_index = 0
-		else:
-			w.z_index = 10 + i   # 右压左；基础 10 起步，保证压在受击红带(3)与剑(5)之上
-			vis.z_index = 0
-		if not animate and not w.has_meta("fly_in"):
-			w.position = Vector2(x, y)
-			w.rotation = rot
-			w.scale = Vector2.ONE
-			if not is_focus:
-				vis.rotation = 0.0
-				vis.position = _vis_rest(vis)
-		w.set_meta("tgt_pos", Vector2(x, y))
-		w.set_meta("tgt_rot", rot)
-
 func _process(delta: float) -> void:
-	_cardq.tick()   # 卡动画命令队列驱动（2026-11-12 原版制：到点无阻塞即启动）
-	if battle != null:
-		battle.tick_cmds()   # 敌方动作/效果表现命令驱动（原版 CommandRunner 同构）
-	_hand_lerp_tick(delta)
+	# 命令队列已自排空（2026-11-12 CommandRunner 1:1）；手牌每帧链归 vc/InteractableCard。
 	# 顿帧收尾：墙钟判，不能用补间（time_scale 会连补间一起缩放）
 	if _hit_stop_until > 0 and Time.get_ticks_msec() >= _hit_stop_until:
 		_hit_stop_until = 0
@@ -1623,311 +1419,35 @@ func _exit_tree() -> void:
 	if get_tree() != null and get_tree().paused:
 		QI_PAUSE.release_all()       # 冻结残留兜底（2026-11-08 世界暂停制；11-09 改引用计数全清）
 
-func _hand_lerp_tick(delta: float) -> void:
-	const K := 7.0
-	var snap_d := 0.75
-	for w in _hand_wraps:
-		var hw: Control = w
-		if not hw.has_meta("tgt_pos"):
+## 〔2026-11-12 结构 1:1 迁移〕帧驱动/焦点轮询/倾斜贴图工厂/悬停动画全家迁入
+## vc/CardView＋vc/InteractableCard（每卡自带 _process）——屏内旧制整体退役。
+
+## uid→视图（HandPileView uid 终身表查询口——屏侧演出/预览共用）
+func _view_of_uid(uid: int):
+	if _hand_pile_view == null:
+		return null
+	return _hand_pile_view._view_of({"uid": uid})
+
+## 撤全部悬停态（弹窗冻结前主动收——原版 OnDisable 冻结链的主动对位）
+func _end_all_hover() -> void:
+	_hide_card_preview()
+	if _hand_pile_view == null or not is_instance_valid(_hand_pile_view):
+		return
+	for view in _hand_pile_view.Cards():
+		if not is_instance_valid(view):
 			continue
-		# 抽牌错峰：delay 未到不飞（2026-11-05 开局抽牌动画）
-		var tp: Vector2 = hw.get_meta("tgt_pos")
-		var tr: float = hw.get_meta("tgt_rot")
-		if hw.has_meta("fly_in_delay"):
-			var dl: float = float(hw.get_meta("fly_in_delay"))
-			if dl > 0.0:
-				hw.set_meta("fly_in_delay", dl - delta)
-				continue
-			hw.remove_meta("fly_in_delay")
-			# 抽牌飞行＝定长 0.2s（2026-11-12 修：原版 drawCardConfig 实测——微移走 mover(750)、
-			# 长途飞行走 0.2s 补间制；初版把 750 套到 850px 飞行＝匀速爬 0.95s，慢三倍）
-			hw.set_meta("fly_speed", maxf(1.0, hw.position.distance_to(tp)) / HAND_DRAW_TIME)
-		var k: float = minf(delta * K, 1.0)
-		# 位移＝速度＋减速带寻的（2026-11-11 原版 TransformMover2D 同构——匀速接近、
-		# 进减速带按距离比例刹车、到达即停：替换指数 lerp 的「越近越慢」软感）
-		if hw.has_meta("fly_speed"):
-			_seek_2d(hw, tp, delta, float(hw.get_meta("fly_speed")))
-		else:
-			_seek_2d(hw, tp, delta)
-		hw.rotation = lerpf(hw.rotation, tr, k)
-		hw.scale = hw.scale.lerp(Vector2.ONE, k)
-		var vis: Control = hw.get_child(0)
-		var rest: Vector2 = _vis_rest(vis)
-		var shake := _shake_off(vis, delta)
-		if hw != _hand_focus:
-			# 收回：位置寻的回静止位（缩放收回走 _apply_hover_anim 的 tween）
-			vis.rotation = lerpf(vis.rotation, 0.0, k)
-			_seek_2d(vis, Vector2(rest.x + shake, rest.y), delta)
-		else:
-			# 焦点卡：抬起量按可付费分档（hover_lift 由 _apply_hover_anim 落）
-			var lift: float = float(vis.get_meta("hover_lift", HAND_LIFT))
-			vis.rotation = lerpf(vis.rotation, 0.0, k)
-			_seek_2d(vis, Vector2(rest.x + shake, rest.y - lift), delta)
-		if hw.position.distance_squared_to(tp) < snap_d and absf(hw.rotation - tr) < 0.001:
-			hw.position = tp
-			hw.rotation = tr
-			hw.scale = Vector2.ONE
-			if hw.has_meta("fly_speed"):
-				hw.remove_meta("fly_speed")
-	# —— 倾斜/光效驱动（2026-11-03）：鼠标指哪边哪边朝里倒＋近侧边框反光；离开回正 ——
-	_tilt_t += delta
-	var mouse: Vector2 = get_global_mouse_position()
-	# 焦点保持判据（StS2 制轮询＋迟滞）：命中区＝壳矩形 ∪ 弹起后卡面矩形——
-	# 鼠标在弹起的卡上半区（探出壳外）不丢焦点；两个矩形都离开才收起
-	# 悬停进入＝每帧轮询卡面矩形（从最右/最上层往下找），不依赖壳的 mouse_entered
-	# hover 进入门（2026-11-11 补终局门）：终局后手牌不可交互（原版＝离开玩家回合即失效
-	# ——PlayerTurnState 外手牌点击/hover 全关；我方打出已有 phase 门，这里补 hover 轮询）
-	if _hand_focus == null and not _finale and not _hand_wraps.is_empty() and not has_meta("shot_no_hover"):
-		for i in range(_hand_wraps.size() - 1, -1, -1):
-			var ww: Control = _hand_wraps[i]
-			if ww.get_child_count() == 0:
-				continue
-			if _card_hit(ww, mouse):
-				_set_hand_focus(ww)
-				break
-	if _hand_focus != null and is_instance_valid(_hand_focus) and _hand_focus.get_child_count() > 0:
-		# 焦点保持＝卡面命中（容差 2px）∪ 词条浮窗（2026-11-11 判定简化：悬停动画变轻后
-		# 拆掉「四边形∪外接框外扩 10px」双保险层——边界抖感的根源是重动画全挂在 hover 上）
-		var hold: bool = _card_hit(_hand_focus, mouse, 2.0)
-		if not hold:
-			hold = _kw_tip_over(mouse)   # 鼠标移到浮窗上仍保持"指着"（2026-11-10 组件 pointer_over）
-		if not hold and not has_meta("shot_no_hold"):
-			_set_hand_focus(null)
-	# 词条浮窗跟随卡位（原版 CheckTooltipScreenPos 每帧重摆同构）：随扇形布局/弹起动画走
-	if _kw_tip_host != null and is_instance_valid(_kw_tip_host):
-		var kwt = _kw_tip_host.get_meta("kw_tip", null)
-		if kwt != null:
-			kwt.check_screen_pos()
-	for w in _hand_wraps:
-		var hw2: Control = w
-		if hw2.get_child_count() == 0:
-			continue
-		var tv: Control = hw2.get_child(0)
-		var mat: ShaderMaterial = tv.material as ShaderMaterial
-		if mat == null:
-			continue
-		var r: Rect2 = tv.get_global_rect()
-		var ctr: Vector2 = r.position + r.size * 0.5
-		# 归一用「当前视觉卡面」半宽高（折掉外扩 margin；含弹起缩放）——
-		# 修「放到顶部没倾斜」：旧版按静止半高判 ±1，弹起后探出区全被误判不在卡内
-		var half: Vector2 = r.size / (2.0 * TILT_MARGIN)
-		var nv: Vector2 = Vector2((mouse.x - ctr.x) / maxf(1.0, half.x), (mouse.y - ctr.y) / maxf(1.0, half.y))
-		var inside: bool = absf(nv.x) < 1.0 and absf(nv.y) < 1.0
-		var tip_tgt := Vector2.ZERO
-		if inside:
-			tip_tgt = -Vector2(clampf(nv.x, -1.0, 1.0), clampf(nv.y, -1.0, 1.0)) * TILT_MAX
-		# 往复扫（2026-11-08 用户令）：原来 fmod 到顶就瞬间跳回起点，很突兀；改成 0→0.72→0 往返，
-		# 且覆盖 ±0.72 整段（0.72≈卡面对角线归一值），从最左上角扫到最右下角
-		var cyc: float = fmod(_tilt_t * 0.20, 2.0)
-		var sheen_tgt: float = (cyc if cyc <= 1.0 else 2.0 - cyc) * 0.72
-		if OS.has_environment("QI_FREEZE_SHEEN"):
-			sheen_tgt = 0.40
-		var kk: float = clampf(delta * TILT_SMOOTH, 0.0, 1.0)
-		var tip: Vector2 = (tv.get_meta("tip", Vector2.ZERO) as Vector2).lerp(tip_tgt, kk)
-		var sheen: float = lerpf(float(tv.get_meta("sheen", 0.2)), sheen_tgt, kk)
-		var hov: float = lerpf(float(tv.get_meta("hov", 0.0)), 1.0 if inside else 0.0, kk)
-		if OS.has_environment("QI_FORCE_TIP"):
-			tip = Vector2(0.5, 0.3)
-		# 金件光带流转（2026-11-08）：外框与分割线共用同一材质，band_pos 随时间扫过 → 一起亮
-		var vc0 = hw2.get_meta("vc_card", null)
-		if vc0 != null and is_instance_valid(vc0) and vc0.glint_mat != null:
-			var phase: float = float(tv.get_meta("sheen", 0.2))   # 与斜切扫光同一相位 → 光和框一起走
-			vc0.glint_mat.set_shader_parameter("band_pos", phase)
-			vc0.glint_mat.set_shader_parameter("tip_x", tip.x)   # 金属高光跟着倾斜走
-			vc0.glint_mat.set_shader_parameter("tip_y", tip.y)
-		tv.set_meta("tip", tip)
-		tv.set_meta("sheen", sheen)
-		tv.set_meta("hov", hov)
-		mat.set_shader_parameter("tip_x", tip.x)
-		mat.set_shader_parameter("tip_y", tip.y)
-		mat.set_shader_parameter("sheen_phase", sheen)
-		mat.set_shader_parameter("hover", hov)
-
-## 手牌倾斜视图（2026-11-03 用户令）：真卡渲进 SubViewport（2× 超采保清晰）→
-## 贴图＋单应透视/边缘反光着色器。内层＝纯贴图，事件全归外壳（手牌标准做法）。
-func _make_tilt_view(def: Dictionary) -> TextureRect:
-	var vp := SubViewport.new()
-	vp.size = Vector2i(roundi(HAND_W * TILT_SS), roundi(HAND_H * TILT_SS))
-	vp.transparent_bg = true
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	vp.disable_3d = true
-	vp.msaa_2d = Viewport.MSAA_4X   # 卡面框线抗锯齿（2026-11-08 用户指正外框锯齿）
-	var card: Control = CARD.make_tcg_card(def, "hand")
-	card.theme = QIFONTS.default_theme()   # SubViewport 不吃根窗主题
-	card.scale = Vector2(TILT_SS, TILT_SS)
-	vp.add_child(card)
-	var mat := ShaderMaterial.new()
-	mat.shader = TILT_SHADER
-	mat.set_shader_parameter("strength", 0.09)
-	mat.set_shader_parameter("uv_scale", TILT_MARGIN)
-	if OS.has_environment("QI_FORCE_TIP"):
-		mat.set_shader_parameter("tip_x", 0.5)
-		mat.set_shader_parameter("tip_y", 0.3)
-	mat.set_shader_parameter("glint_strength", 1.0)
-	var tex := TextureRect.new()
-	tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR   # 斜切采样抗锯齿
-	tex.name = "TiltView"
-	tex.add_child(vp)   # 视口随贴图层同生共死
-	tex.texture = vp.get_texture()
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.stretch_mode = TextureRect.STRETCH_SCALE
-	tex.size = Vector2(HAND_W, HAND_H) * TILT_MARGIN
-	tex.material = mat
-	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 内层纯贴图——事件全归外壳
-	tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	tex.set_meta("vc_card", card)
-	tex.set_meta("tip", Vector2.ZERO)
-	tex.set_meta("sheen", 0.2)
-	tex.set_meta("hov", 0.0)
-	return tex
-
-## 贴图层静止位：贴图比卡面外扩一圈 margin——把内区卡面对回壳的卡位
-func _vis_rest(vis: Control) -> Vector2:
-	return Vector2(-(vis.size.x - HAND_W) * 0.5, HAND_LIFT + HAND_SHELL_EXTRA - (vis.size.y - HAND_H) * 0.5)
-
-func _unhandled_input(event: InputEvent) -> void:
-	if not (event is InputEventMouseButton) or not event.pressed \
-			or event.button_index != MOUSE_BUTTON_LEFT:
-		return
-	if _hand_focus == null or not is_instance_valid(_hand_focus) or _hand_focus.get_child_count() == 0:
-		return
-	var vis: Control = _hand_focus.get_child(0)
-	var r: Rect2 = vis.get_global_rect()
-	var m: float = (TILT_MARGIN - 1.0) * HAND_W * 0.5
-	if r.grow(-m).has_point((event as InputEventMouseButton).position):
-		_play_clicked(int(_hand_focus.get_meta("hand_uid", -1)))
-		accept_event()
-
-func _set_hand_focus(w: Control) -> void:
-	if _hand_focus == w:
-		return
-	# 抽牌飞行中不接焦点（2026-11-12 用户令：飞行中不放大，落地后鼠标仍指着→下一帧轮询
-	# 自然接管。原版 dump 未见专门门（deal 命令无交互锁），但其 deal 0.2s 窗口极小；
-	# 我方轮询进焦点＋飞行缩放 0.35×悬停 1.5 相乘曾致飞行中明显放大）
-	if w != null and (w.has_meta("fly_in_delay") or w.has_meta("fly_speed")):
-		return
-	# 换焦＝旧卡词条条撤（2026-11-07 用户令分条制：每词条一条独立浮条、只放词条——
-	# 卡名/描述等卡面已有信息一律不重复；不带具体数值）
-	_hide_kw_tips()
-	var prev := _hand_focus
-	_hand_focus = w
-	if w != null and not get_meta("shot_no_tip", false):
-		_show_kw_tips(w)
-		_show_card_preview(w)
-	else:
-		_hide_card_preview()
-	_apply_hover_anim(prev, w)
-	_layout_hand(true)
-
-## —— 手牌运动/悬停四帮手（2026-11-11 原版 1:1 轮）——
-
-## 速度＋减速带寻的（原版 TransformMover2D 同构）：匀速接近→进减速带按距离比例刹车→到达即停
-func _seek_2d(c: Control, target: Vector2, delta: float, speed := HAND_MOVE_SPEED) -> void:
-	var d := target - c.position
-	var dist := d.length()
-	if dist <= 0.001:
-		c.position = target
-		return
-	var v := speed
-	if dist < HAND_DECEL:
-		v = speed * clampf(dist / HAND_DECEL, 0.02, 1.0)
-	var step := v * delta
-	if step >= dist:
-		c.position = target
-	else:
-		c.position += d / dist * step
-
-## 不可付费摇头（invalidShake 5/0.3s/vibrato 15）：正弦横摆、按剩余时长衰减；返回本帧 x 偏移
-func _shake_off(vis: Control, delta: float) -> float:
-	if not vis.has_meta("shake_t"):
-		return 0.0
-	var t: float = float(vis.get_meta("shake_t")) - delta
-	if t <= 0.0:
-		vis.remove_meta("shake_t")
-		return 0.0
-	vis.set_meta("shake_t", t)
-	return sin(t * TAU * 15.0) * HAND_SHAKE_AMP * (t / HAND_SHAKE_TIME)
-
-func _hand_card_of(w: Control) -> Dictionary:
-	if battle == null:
-		return {}
-	var uid := int(w.get_meta("hand_uid", -1))
-	for c in battle.hand:
-		if int(c["uid"]) == uid:
-			return c
-	return {}
-
-func _hand_wrap_of(uid: int) -> Control:
-	for w in _hand_wraps:
-		if int((w as Control).get_meta("hand_uid", -1)) == uid:
-			return w
-	return null
-
-## 悬停两级视觉（原版 DoCardHoveredAnim/DoCardUnhoveredAnim 同构）：
-## 可付费＝×1.5/抬 45.6；不可付费＝×1.05/抬 18。〔影子不搬——用户裁定〕
-## 缩放走 tween——ease 实测（游戏自带 DOTween.dll 反编译枚举）：
-## 上＝InOutCubic（scaleUpEase 10）、收＝OutBack（scaleDownEase 27）；时长 scaleDuration 0.05。
-## 抬起位移目标落 meta，由 _hand_lerp_tick 寻的。
-## 摇头不挂悬停（2026-11-12 修：原版 PlayableCard.TryPlayCard else PlayInvalidCardShake
-## ＝点击不可付费才摇头；初版误挂悬停进入）。
-func _apply_hover_anim(prev: Control, next: Control) -> void:
-	if prev != null and is_instance_valid(prev) and prev.get_child_count() > 0:
-		var pv: Control = prev.get_child(0)
-		_kill_hover_tween(pv)
-		pv.set_meta("hover_lift", 0.0)
-		var tw := pv.create_tween()
-		tw.tween_property(pv, "scale", Vector2.ONE, HAND_SCALE_DUR)\
-			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		pv.set_meta("hover_tween", tw)
-	if next != null and is_instance_valid(next) and next.get_child_count() > 0:
-		var card := _hand_card_of(next)
-		var ok: bool = card.is_empty() or battle.can_play(card)   # 取不到卡数据（异常）按可付费
-		var nv: Control = next.get_child(0)
-		_kill_hover_tween(nv)
-		nv.set_meta("hover_lift", HAND_LIFT if ok else HAND_LIFT_BAD)
-		var tw2 := nv.create_tween()
-		tw2.tween_property(nv, "scale", HAND_POP if ok else HAND_POP_BAD, HAND_SCALE_DUR)\
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-		nv.set_meta("hover_tween", tw2)
-
-func _kill_hover_tween(vis: Control) -> void:
-	if vis.has_meta("hover_tween"):
-		var t = vis.get_meta("hover_tween")
-		if t is Tween and t.is_valid():
-			t.kill()
-
-## 悬卡词条条（分条制，2026-11-07）：竖排于卡右侧，一条一词条（名亮＋说明暗），各条独立
-## 悬卡词条（2026-11-10 原版制改版）：组装与显示全归卡下组件（GetCardTooltips＋
-## SetActive 同构——无词条不显示，原版无「兜底全文」；卡面 desc 承载全文）
-func _show_kw_tips(w: Control) -> void:
-	var uid := int(w.get_meta("hand_uid", -1))
-	var def := {}
-	for c in battle.hand:
-		if int(c["uid"]) == uid:
-			def = c["def"]
-			break
-	if def.is_empty():
-		return
-	var tip = w.get_meta("kw_tip", null)
-	if tip == null:
-		return
-	_kw_tip_host = w
-	print("[VCDIAG][hand] kw-show uid=%s" % [uid])   # [VCDIAG] 临时埋点（2026-11-09 排查，完撤）
-	if tip.refresh(def):
-		tip.set_active(true)
+		view.ToggleTooltips(false)
+		for ch in view.get_children():
+			if ch.name == "InteractableCard" and ch.IsHovering():
+				ch.EndInteraction()
 
 #region 悬卡预览（2026-11-08 立，照用户口径：红字黑框／致命金框／后排小括号／气珠·血球旁 +N）
 ## 数据源＝battle.preview_play（只读干跑，与实战同源，绝不落账）
-func _show_card_preview(w: Control) -> void:
+## 2026-11-12 结构 1:1：入参改卡字典（悬停事件驱动——原版 OnHoverStarted 链）
+func _show_card_preview(card: Dictionary) -> void:
 	_hide_card_preview()
 	if battle == null or battle.phase != "player":
 		return
-	var uid := int(w.get_meta("hand_uid", -1))
-	var card := {}
-	for c in battle.hand:
-		if int(c["uid"]) == uid:
-			card = c
-			break
 	if card.is_empty() or not battle.can_play(card):
 		return
 	var dp: Dictionary = battle.preview_play(card)
@@ -1953,9 +1473,9 @@ func _show_card_preview(w: Control) -> void:
 	if qi > 0:
 		_mk_res_mark("QiText", "+%d" % qi, Color(0.96, 0.80, 0.32))
 	# ③ 护盾（血心在 (315,704) 110×108）
-		var ar := int(dp.get("armor", 0))
-		if ar > 0:
-			_mk_res_mark("HpText", "+%d" % ar, Color(0.62, 0.84, 1.0))
+	var ar := int(dp.get("armor", 0))
+	if ar > 0:
+		_mk_res_mark("HpText", "+%d" % ar, Color(0.62, 0.84, 1.0))
 
 func _hide_card_preview() -> void:
 	for n in _preview_nodes:
@@ -2071,107 +1591,9 @@ func _hud_avoid() -> Array:
 			out.push_back(c)
 	return out
 
-func _hide_kw_tips() -> void:
-	print("[VCDIAG][hand] kw-hide valid=%s" % [is_instance_valid(_kw_tip_host)])   # [VCDIAG] 临时埋点
-	if _kw_tip_host != null and is_instance_valid(_kw_tip_host):
-		var tip = _kw_tip_host.get_meta("kw_tip", null)
-		if tip != null:
-			tip.set_active(false)
-	_kw_tip_host = null
+## 〔2026-11-12 结构 1:1 迁移〕词条浮窗收放/命中四边形/卡面四角全家迁入
+## vc/CardView（_kw_tip 组件自管＋_face_corners）与 vc/InteractableCard（Control 原生事件命中）。
 
-## 鼠标是否在当前词条浮窗上（hold 判定——2026-11-10 组件制）
-func _kw_tip_over(mouse: Vector2) -> bool:
-	if _kw_tip_host == null or not is_instance_valid(_kw_tip_host):
-		return false
-	var tip = _kw_tip_host.get_meta("kw_tip", null)
-	return tip != null and tip.pointer_over(mouse)
-
-## 卡面真实外接矩形（焦点态卡面被放大上浮，外层壳尺寸对不上——浮窗锚这个而不是壳）
-func _card_visual_rect(w: Control) -> Rect2:
-	if not is_instance_valid(w):
-		return Rect2()
-	if w.get_child_count() == 0:
-		return w.get_global_rect()
-	var pts := _card_face_corners(w)
-	if pts.is_empty():
-		return w.get_global_rect()
-	var mn: Vector2 = pts[0]
-	var mx: Vector2 = pts[0]
-	for q in pts:
-		mn = Vector2(minf(mn.x, q.x), minf(mn.y, q.y))
-		mx = Vector2(maxf(mx.x, q.x), maxf(mx.y, q.y))
-	return Rect2(mn, mx - mn)
-
-## 鼠标是否指着这张卡：直接判「点在卡面四边形内」（不再用外接框+收边凑数）
-func _card_hit(w: Control, p: Vector2, pad := 0.0) -> bool:
-	var q := _card_face_corners(w)
-	if q.size() != 4:
-		return false
-	var sign0 := 0.0
-	for i in 4:
-		var a: Vector2 = q[i]
-		var b: Vector2 = q[(i + 1) % 4]
-		var e := b - a
-		var len := e.length()
-		if len < 0.001:
-			continue
-		var n := Vector2(-e.y, e.x) / len      # 边法线（朝外/朝内一致）
-		var d := n.dot(p - a) - pad
-		if absf(d) < 0.001:
-			continue
-		var sg := signf(d)
-		if sign0 == 0.0:
-			sign0 = sg
-		elif sg != sign0:
-			return false
-	return true
-
-## 卡面「左上/右上」顶角（浮窗按它对齐——外接框的极值点会偏出去一大截）
-func _card_corner(w: Control, right: bool) -> Vector2:
-	var pts := _card_face_corners(w)
-	if pts.size() != 4:
-		return Vector2(-1e9, -1e9)
-	var a: Vector2 = pts[0]
-	var b: Vector2 = pts[1]
-	if right:
-		a = pts[1]
-		b = pts[2]
-	return a if a.y <= b.y else b
-
-## 卡面四角（屏幕坐标）——浮窗按「靠近自己那一侧的顶角」对齐，斜卡才不会悬在上方
-func _card_face_corners(w: Control) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	if not is_instance_valid(w) or w.get_child_count() == 0:
-		return out
-	var vis: Control = w.get_child(0)
-	# 贴图层是 TILT_MARGIN（1.18）倍，真正看得见的卡面居中、只有 HAND_W×HAND_H
-	var face := Rect2((vis.size.x - HAND_W) * 0.5, (vis.size.y - HAND_H) * 0.5, HAND_W, HAND_H)
-	var xf := vis.get_global_transform_with_canvas()
-	# 卡面被 shader 斜切（tip 归一化 ±0.5）时，节点几何没变——把斜切量换算成像素补上，
-	# 浮窗/命中都用「看得见的那张歪卡」（2026-11-08 用户令：鼠标动浮窗也要动）
-	var q := [
-		xf * face.position,
-		xf * Vector2(face.end.x, face.position.y),
-		xf * face.end,
-		xf * Vector2(face.position.x, face.end.y)]
-	# —— 粘着：把 shader 造成的「边缘位移」算成像素补到四角上（2026-11-08 用户令）——
-	# shader：t = p/denom + 0.5，denom = 1 + tip_x*0.09*p.x*2 + tip_y*0.09*p.y*2
-	# 卡面可见边＝|p/denom| = 0.5 → p = 0.5/(1 - 0.09*tip_x)；再除 uv_scale 1.18 得 UV 位移
-	var tv3: Vector2 = vis.get_meta("tip", Vector2.ZERO)
-	var sc3: float = vis.scale.x
-	var dux := (0.5 / (1.0 - 0.09 * tv3.x) - 0.5) / 1.18
-	var duy := (0.5 / (1.0 - 0.09 * tv3.y) - 0.5) / 1.18
-	var dx := dux * HAND_W * sc3
-	var dy := duy * HAND_H * sc3
-	# 纵向语义（2026-11-08 用户指正）：指针往上＝上边框后退（远离观者）→ 顶边**往下收**；
-	# 指针往下＝上边框靠近观者 → 顶边**往上抬**。故纵向取反，横向不变。
-	q[1] += Vector2(dx, dy)    # TR
-	q[2] += Vector2(dx, -dy)   # BR
-	q[3] += Vector2(-dx, -dy)  # BL
-	q[0] += Vector2(-dx, dy)   # TL
-	for v in q:
-		out.push_back(v)
-	return out
 #endregion
 
 ## 战报事件（原版事件行已撤——此处留钩子，后面接飘字/日志）
@@ -2184,12 +1606,12 @@ func _on_event(text: String) -> void:
 ## 目标矩形在**旧节点**上快照（changed 之后敌阵会整批重建），特效因此不依赖卡片存活。
 const HIT_STOP_MS := 34
 
-## 手牌卡中心（全局）：笔锋起点
+## 手牌卡中心（全局）：笔锋起点（uid 终身视图表查——打出后视图仍在出招途中）
 func _hand_card_center(uid: int) -> Vector2:
-	for w in _hand_wraps:
-		if int(w.get_meta("hand_uid", -1)) == uid:
-			var r: Rect2 = (w as Control).get_global_rect()
-			return Vector2(r.position.x + r.size.x * 0.5, r.position.y + r.size.y * 0.4)
+	var view = _view_of_uid(uid)
+	if view != null and is_instance_valid(view):
+		var r: Rect2 = (view as Control).get_global_rect()
+		return Vector2(r.position.x + r.size.x * 0.5, r.position.y + r.size.y * 0.4)
 	return Vector2(960.0, 900.0)
 
 ## 命中收集（2026-11-08 落账延迟制后此槽退役为调试计数：演出事件改由 _run_thrust 从
@@ -2491,6 +1913,8 @@ func _beat_death(uid: int, idx: int) -> void:
 		# 2026-11-09 用户令：**立即发珠**（珠动画与燃烧动画同步起跑；推翻 11-08「烧完再发珠」）
 		_spawn_xp_orb(card.get_global_rect().get_center(), uid)
 		_enemy_death_fx(card)
+	else:
+		battle.xp_credit.erase(uid)       # 无卡可放珠：凭证清账跳显（同上）
 
 ## 回放结束：没等到自己那一拍的死卡（无击事件等）在这里统一收
 func _end_replay() -> void:
@@ -2503,6 +1927,8 @@ func _end_replay() -> void:
 		if is_instance_valid(card):
 			_spawn_xp_orb(card.get_global_rect().get_center(), int(uid))
 			_enemy_death_fx(card)
+		else:
+			battle.xp_credit.erase(int(uid))   # 无卡可放珠：凭证清账跳显（同上）
 	_dying.clear()
 	_last_beat.clear()
 	if battle != null:
@@ -2532,22 +1958,19 @@ func _hit_stop(ms: int) -> void:
 	_hit_stop_until = Time.get_ticks_msec() + ms
 	Engine.time_scale = 0.08
 
-## 打出的卡：先向上「出招」再入弃牌堆（原来直接飞弃牌堆＝读作丢牌）
+## 打出的卡：先向上「出招」再落已打出区（ComboPile 对位；出招后立刻飞右上角＝
+## 2026-11-06 用户裁定：特效与落位并行）。持久制：视图不销毁，落位后驻留已打出区。
 func _anim_card_play_out(w: Control) -> void:
 	_kill_card_tween(w)   # 互杀保护（2026-11-06）：同卡旧飞行动画先废再起
 	var start := w.position
-	var tw := create_tween()
+	var up := -92.0 / VCC.HAND_ROOT_SCALE   # 上冲 92px（屏幕量）→ 手牌根本地单位
+	var tw: Tween = create_tween()
 	w.set_meta("card_tween", tw)
-	tw.tween_property(w, "position", start + Vector2(0.0, -92.0), 0.07)\
+	tw.tween_property(w, "position", start + Vector2(0.0, up), 0.07)\
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(w, "scale", Vector2(1.05, 1.05), 0.07)
-	# 2026-11-06 用户裁定：出招后卡片立刻飞右上角，不悬停——特效与落位并行，
-	# 强力卡的多段效果可以在卡片落位之后继续结算（蓝本即如此）
-	# 2026-11-06 四区制（规格 v1）：出招后不进弃牌堆——落**已打出区**（停在场上，
-	# 不淡出不销毁；回合末/断连击由 _rebuild_played 走 _anim_card_fly 飞弃）；
-	# 碎牌（第 5 次打出）：不落区——原地碎裂消散（效果已照常结算）
 	if _shattered_uids().has(int(w.get_meta("hand_uid", -1))):
-		_shatter_tail(w, tw)
+		_shatter_tail(w, tw)   # 碎牌（第 5 次打出）：不落区——原地碎裂（DestroyPile 管线收尾）
 	else:
 		var n2: int = battle.played_pile.size()
 		var idx2: int = maxi(0, n2 - 1)
@@ -2580,17 +2003,18 @@ func _kill_card_tween(w: Control) -> void:
 		w.remove_meta("card_tween")
 
 func _shatter_tail(w: Control, tw: Tween) -> void:
-	var base: Vector2 = w.position
 	var sc: float = maxf(0.2, w.scale.x)
-	var card_size: Vector2 = Vector2(HAND_W, HAND_H) * sc
-	var c := base + card_size * 0.5
-	# 抖三下（前摇）→ 淡出
-	tw.tween_property(w, "position", base + Vector2(8.0, -4.0), 0.05)
-	tw.tween_property(w, "position", base - Vector2(7.0, 3.0), 0.05)
-	tw.tween_property(w, "position", base + Vector2(4.0, 0.0), 0.04)
+	# 卡面屏幕尺寸（手牌根 1.14 换算）；中心走全局矩形（视图现居手牌根下）
+	var card_size: Vector2 = VCC.CARD_SIZE * sc * VCC.HAND_ROOT_SCALE
+	var c: Vector2 = w.get_global_rect().get_center()
+	var base := w.position
+	var j := 8.0 / VCC.HAND_ROOT_SCALE   # 抖动步幅（屏幕量→本地）
+	# 抖三下（前摇）→ 淡出（持久制 2026-11-12：不 queue_free——DestroyPileView 溶解后隐藏回池）
+	tw.tween_property(w, "position", base + Vector2(j, -j * 0.5), 0.05)
+	tw.tween_property(w, "position", base - Vector2(j * 0.875, j * 0.375), 0.05)
+	tw.tween_property(w, "position", base + Vector2(j * 0.5, 0.0), 0.04)
 	tw.parallel().tween_property(w, "modulate:a", 0.0, 0.20).set_delay(0.02)
 	tw.parallel().tween_property(w, "scale", w.scale * Vector2(1.06, 0.93), 0.24)
-	tw.tween_callback(w.queue_free)
 	_shatter_flash(c, card_size)
 	_shatter_shards(c, sc)
 
@@ -2687,7 +2111,7 @@ const PLAYED_TOP := 20.0
 const PLAYED_BOTTOM := 560.0
 const PLAYED_SC := 1.0            # 已打出区＝手牌同尺寸（壳里已是手牌档，再乘 0.72 会二次缩小）
 const PLAYED_SC_NEW := 1.0        # 与旧牌同档
-const PLAYED_H := 304.0 * PLAYED_SC
+const PLAYED_H := 288.0 * PLAYED_SC    # 卡面上屏高（FACE_SIZE.y 253.2×1.14）
 
 func _rebuild_played() -> void:
 	if battle == null:
@@ -2696,40 +2120,51 @@ func _rebuild_played() -> void:
 	var live := {}
 	for card in battle.played_pile:
 		live[int(card["uid"])] = true
-	# 消失（回合末冲弃/断连击/洗回抽牌堆）→ 飞弃牌堆淡出
+	# 消失（回合末冲弃/洗回抽牌堆）→ 弃牌飞行（DiscardPileView＝discardCardConfig 管线）
 	for uid in _played_cards.keys():
 		if not live.has(uid):
 			var gone: Control = _played_cards[uid]
 			_played_cards.erase(uid)
 			if is_instance_valid(gone):
-				_anim_card_fly(gone, float(uid % 3) * 0.05)
-	# 新到：点击路径由 _anim_card_play_out 全程接管；其余路径（play_all/兜底）在此落位
+				var dcard: Dictionary = _find_discard_card(uid)
+				if not dcard.is_empty():
+					_discard_view.OnCardAdded(battle, dcard, true, false, 1.0)
+				else:
+					gone.visible = false   # 兜底（理论不到：消失卡必先入弃堆）
+	# 新到：点击路径由 _on_card_to_played（play_out）全程接管；其余路径（play_all/兜底）在此落位
 	var fresh := {}
 	for uid2 in live:
 		if _played_cards.has(uid2):
 			continue
-		var w := _take_wrap(uid2)
-		if w == null:
+		var w = _view_of_uid(uid2)
+		if w == null or not is_instance_valid(w):
 			continue
 		w.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 场上牌不可点
-		var vis: Control = w.get_child(0)
-		vis.scale = Vector2.ONE
-		vis.rotation = 0.0
-		vis.position = _vis_rest(vis)
+		w._tween_container.scale = Vector2.ONE
+		w._tween_container.rotation = 0.0
 		_played_cards[uid2] = w
 		fresh[uid2] = true
 		if uid2 != _played_uid:
-			var tw := create_tween()
+			var tw: Tween = create_tween()
 			tw.tween_interval(0.02)
 			tw.tween_callback(func() -> void: _apply_played_pose(w, _played_index(uid2), n, 0.25))
-	# 老居民重排（fresh 的落位已在跑，不抢）
+	# 老居民重排（fresh 的落位已在跑，不抢；出招中的卡归 play_out 管）
 	for card in battle.played_pile:
 		var uid3 := int(card["uid"])
-		if fresh.has(uid3):
+		if fresh.has(uid3) or uid3 == _played_uid:
 			continue
-		var w3: Control = _played_cards.get(uid3)
+		var w3 = _played_cards.get(uid3)
 		if w3 != null and is_instance_valid(w3):
 			_apply_played_pose(w3, _played_index(uid3), n, 0.25)
+
+## 弃堆按 uid 查卡字典（已打出区消失卡的字典去向）
+func _find_discard_card(uid: int) -> Dictionary:
+	if battle == null:
+		return {}
+	for c in battle.discard_pile:
+		if int(c["uid"]) == uid:
+			return c
+	return {}
 
 func _played_index(uid: int) -> int:
 	var i := 0
@@ -2744,7 +2179,7 @@ func _played_pose(idx: int, n: int) -> Dictionary:
 	var is_new := idx >= n - 1
 	var step := 0.0
 	if n > 1:
-		var avail: float = PLAYED_BOTTOM - PLAYED_TOP - 304.0 * PLAYED_SC_NEW
+		var avail: float = PLAYED_BOTTOM - PLAYED_TOP - VCC.CARD_SIZE.y * VCC.HAND_ROOT_SCALE * PLAYED_SC_NEW
 		step = minf(PLAYED_H * 0.60, avail / float(n - 1))
 	var jx := 5.0 * sin(float(idx) * 1.9 + 0.6)
 	var rot := deg_to_rad(1.5 if idx % 2 == 0 else -1.3)
@@ -2752,26 +2187,33 @@ func _played_pose(idx: int, n: int) -> Dictionary:
 		jx = 0.0
 		rot = deg_to_rad(-0.6)
 	return {
-		"pos": Vector2(PLAYED_X + jx, PLAYED_TOP + step * float(idx)),
+		# 堆位＝屏幕坐标 → 手牌根本地（视图挂 hpv 下、根缩放 1.14）
+		"pos": _to_hand_local(Vector2(PLAYED_X + jx, PLAYED_TOP + step * float(idx))),
 		"scale": Vector2.ONE * (PLAYED_SC_NEW if is_new else PLAYED_SC),
 		"rot": rot,
 		"alpha": 1.0 if is_new else 0.88,
 		"z": 40 + idx,
 	}
 
-## 把「卡面可视左上角」对齐到堆位：拿子卡当前的全局矩形反推偏移（自校正，
-## 不依赖 wrap 内部结构——wrap 比卡高，含悬停抬升的余量）
+## 屏幕坐标 → 手牌根本地（持久卡视图的父空间）
+func _to_hand_local(screen_pos: Vector2) -> Vector2:
+	if _hand_pile_view == null or not is_instance_valid(_hand_pile_view):
+		return screen_pos
+	return (_hand_pile_view as Control).get_global_transform_with_canvas().affine_inverse() * screen_pos
+
+## 把「卡面可视左上角」对齐到堆位：拿贴图层当前的全局矩形反推偏移（自校正，
+## 不依赖壳内部结构——壳比卡高，含悬停抬升的余量）
 func _played_target(w: Control, idx: int, n: int) -> Dictionary:
 	var pose := _played_pose(idx, n)
-	if w == null or not is_instance_valid(w) or w.get_child_count() == 0:
+	if w == null or not is_instance_valid(w):
 		return pose
-	var vis := w.get_child(0) as Control
+	var vis: Control = w.get("_tilt_view")
 	if vis == null:
 		return pose
 	var sc: float = (pose["scale"] as Vector2).x
 	var cur_off: Vector2 = vis.get_global_rect().position - w.global_position
 	var ratio := sc / maxf(0.001, w.scale.x)
-	pose["pos"] = (pose["pos"] as Vector2) - cur_off * ratio
+	pose["pos"] = (pose["pos"] as Vector2) - cur_off * ratio / VCC.HAND_ROOT_SCALE
 	return pose
 
 func _apply_played_pose(w: Control, idx: int, n: int, dur: float) -> void:
@@ -2792,15 +2234,9 @@ func _apply_played_pose(w: Control, idx: int, n: int, dur: float) -> void:
 	tw.parallel().tween_property(w, "rotation", pose["rot"], dur)
 	tw.parallel().tween_property(w, "modulate:a", pose["alpha"], dur)
 
-## 落位坐标（出招动画收尾用）
+## 落位坐标（出招动画收尾用；手牌根本地单位）
 func _played_slot(uid: int) -> Vector2:
 	return _played_pose(_played_index(uid), maxi(1, battle.played_pile.size()))["pos"]
-
-func _take_wrap(uid: int) -> Control:
-	for w in _hand_wraps:
-		if int(w.get_meta("hand_uid", -1)) == uid:
-			return w
-	return null
 
 ## ══ 经验线（2026-11-09 贴原版终裁：**死帧入账制**）══════════════════════════
 ## 击杀拍＝battle 侧当帧进账（数据先行，原版 AddGrowthXp 同构）；屏幕 _refresh 里判
@@ -2823,12 +2259,19 @@ func _refresh_top(dur: float) -> void:
 ## 最后一颗到位那刻顶满 → _check_level_modal 开窗——条满与开窗同一事件（原版
 ## 「条视图里 DoViewLevelUp」同构），结构性杜绝「弹窗开着条没满」。
 func _xp_shown_total() -> int:
-	return int(run.get("xp", 0)) + int(battle.xp_gained) - _xp_orbs_amt
+	# 逐珠制显示锁（2026-11-12 修时序漏洞）：显示值＝数据−在飞珠−**已入账未放珠的凭证**
+	# （死帧入账与放珠不同拍：回放期死卡留尸、珠要到击拍才放——旧版只锁「已放出」的珠，
+	# 数据进账到珠放出之间有条全满空窗＝「还没飞到就加上」真凶。把未放凭证也计入锁，
+	# 纯算术解＝对任意时序免疫：入账→锁等额+；放珠→凭证清/珠锁+（净零）；落地→解锁）
+	var unspawned := 0
+	for uid in battle.xp_credit:
+		unspawned += int(battle.xp_credit[uid])
+	return int(run.get("xp", 0)) + int(battle.xp_gained) - _xp_orbs_amt - unspawned
 
 func _spawn_xp_orb(from: Vector2, uid: int) -> void:
 	_xp_flights += 1
 	var amt := int(battle.xp_credit.get(uid, 0))
-	battle.xp_credit.erase(uid)               # 取走即清（+N 凭证一次性）
+	battle.xp_credit.erase(uid)               # 凭证→珠（未放凭证锁清零、珠锁等额接管——显示净零）
 	_xp_orbs_amt += amt                       # 显示锁：这颗的量在落地前不计入显示值
 	if _xp_fx == null:
 		_xp_orb_arrived(from, amt)
@@ -2881,11 +2324,10 @@ func _sync_level() -> void:
 func _open_reward() -> void:
 	if _reward_ui != null:
 		return
-	# 弹窗前断焦（2026-11-09 修词条浮窗残留）：换焦轮询跑在 _process 里，下面
+	# 弹窗前断焦（2026-11-09 修词条浮窗残留）：悬停链跑在卡内 _process 里，下面
 	# paused=true 会把它冻住——不主动撤，「击退」等词条浮窗与伤害预览会冻结在屏上
 	# 残留到关窗后（触发升级的那次打出必中：满级一击＝悬停刚打出的卡）
-	_set_hand_focus(null)   # 连锁撤词条浮窗＋伤害预览＋焦点（换焦路径同一条）
-	print("[VCDIAG][hand] reward-open-drop")   # [VCDIAG] 临时埋点
+	_end_all_hover()   # 连锁撤词条浮窗＋伤害预览＋悬停态（paused=true 会冻住悬停链——弹窗前主动收）
 	# 〔2026-11-10 天赐置空〕旧天赐「飞星术/撩月斩」随卡表砍除退役——三张基础卡经
 	# reward_offers 自然出题（NEW_ONLY_UNTIL_LEVEL 已闭防空池）；天赐制留内容轮再启
 	var gifts: Array = []
@@ -2896,9 +2338,8 @@ func _open_reward() -> void:
 	_reward_ui.done.connect(_on_reward_done)
 	add_child(_reward_ui)
 	# 手牌收起（2026-11-08 用户令：升级时不显示手牌；不是"盖住"，是真的收起来）
-	for w in _hand_wraps:
-		if is_instance_valid(w):
-			w.visible = false
+	if _hand_pile_view != null and is_instance_valid(_hand_pile_view):
+		(_hand_pile_view as Control).visible = false
 	# 2026-11-08 用户令「弹窗开＝全世界冻结」＋2026-11-09 贴原版 TimeManager 引用计数制：
 	# 升级三选一是模态旁路（原版 ChooseCardModal 同构）——剑冻在半空、珠冻在半空，
 	# 选完关窗恢复、余下的段接着飞（弹窗挂 WHEN_PAUSED 自身照跑；演出层全为节点
@@ -2910,9 +2351,8 @@ func _on_reward_done() -> void:
 	# 手牌回来（2026-11-11 修「先隐藏又闪现」：终局后不回——原版＝离开玩家回合即交互
 	# 失效，胜利时序 DiscardHand 弃走；我方 _predict_end_and_hide 已收起＝单向保持）
 	if not _finale:
-		for w in _hand_wraps:
-			if is_instance_valid(w):
-				w.visible = true    # 手牌回来
+		if _hand_pile_view != null and is_instance_valid(_hand_pile_view):
+			(_hand_pile_view as Control).visible = true    # 手牌回来
 	if _reward_ui != null and is_instance_valid(_reward_ui):
 		_reward_ui.queue_free()      # 关窗＝销毁（原来只置空，弹窗留在屏幕上不消失）
 	_reward_ui = null
@@ -2958,11 +2398,12 @@ func _try_finish_win() -> void:
 				_win_retry_armed = false
 				_try_finish_win())
 		return
-	if _cardq.is_busy():
+	if _cardq.IsProcessing():
 		# 终局弃牌命令还没落定（2026-11-12 原版制：WaitWhile(IsProcessing) 同构——
 		# 等最后一张手牌落进弃堆再收胜利）。落定后**重入**不落底：等待期间经验珠可能
 		# 已开升级弹窗（顶部 _reward_ui 复查＝双窗竞态守卫，await 直落底会丢——审计修）
-		await _cardq.all_done
+		while _cardq.IsProcessing():
+			await get_tree().process_frame
 		_try_finish_win()
 		return
 	_bank_xp()               # 保底入账（数据已在击杀拍进账——此处理顺写回；2026-11-09

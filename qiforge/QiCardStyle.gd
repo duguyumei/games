@@ -25,8 +25,11 @@ const GLINT_SHADER: Shader = preload("res://qiforge/assets/tcg_glint.gdshader")
 
 ## 唯一基准画布（一套布局只按此标定）
 const BASE_SIZE: Vector2 = Vector2(300, 422)
-## 场合系数表（宽度锚定旧制横宽：180/216/234/270/33，高度随基准比例）
-const SCALES: Dictionary = {"field": 0.60, "hand": 0.72, "prep": 0.78, "detail": 0.90, "mini": 0.11}
+## 场合系数表（宽度锚定旧制横宽：180/216/234/270/33，高度随基准比例）。
+## vc_hand（2026-11-12 结构 1:1）：手牌卡面宽 180＝原版 Card_Hand.prefab 180 画布单位 1:1
+##（SC_Game 手牌根 ×1.14 上屏≈205px）；高随我方 300×422 美术纵横比（原版 277＝0.65 更瘦长，
+## 原生重排列后续轮——差异登记）。
+const SCALES: Dictionary = {"field": 0.60, "hand": 0.72, "vc_hand": 0.60, "prep": 0.78, "detail": 0.90, "mini": 0.11}
 ## 效果文自适应字号下限
 const FIT_FLOOR: int = 10
 
