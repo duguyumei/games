@@ -1311,15 +1311,18 @@ func DrawCardsCommand(cards: Array) -> void:
 		card["draw_stagger"] = stagger
 		_hand_pile_view.OnCardAdded(battle, card, true, false, 1.0)
 
-## 离手分流（原版 CardConfig.AddToOnPlayPile 三去向：连击堆(=已打出区)/弃堆/销毁堆）
-func _on_hand_card_removed(card: Dictionary, dest: String) -> void:
+## 离手分流（原版 CardConfig.AddToOnPlayPile 三去向：连击堆(=已打出区)/弃堆/销毁堆）；
+## 弃/耗走加速钟 mult＝max(同批张数, 3)（MinimumCardPileSpeedMultiplier——
+## CardPileModel.OnCardAdded 汇编 039-042 直证：凡 addToView 命令恒 ≥3 倍速）
+func _on_hand_card_removed(card: Dictionary, dest: String, batch := 1) -> void:
+	var mult: float = maxf(float(batch), VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"])
 	match dest:
 		"played":
 			_hand_pile_view.OnCardPlayedFull(battle, card, false)
 		"discard":
-			_discard_view.OnCardAdded(battle, card, true, false, 1.0)
+			_discard_view.OnCardAdded(battle, card, true, false, mult)
 		"shatter", "exhaust":
-			_destroy_view.OnCardAdded(battle, card, true, false, 1.0)
+			_destroy_view.OnCardAdded(battle, card, true, false, mult)
 
 ## 非抽加牌（对位 CardPileModel.CardAdded addToView=true 路径）
 func _on_hand_card_added(card: Dictionary) -> void:
@@ -2111,7 +2114,7 @@ const PLAYED_TOP := 20.0
 const PLAYED_BOTTOM := 560.0
 const PLAYED_SC := 1.0            # 已打出区＝手牌同尺寸（壳里已是手牌档，再乘 0.72 会二次缩小）
 const PLAYED_SC_NEW := 1.0        # 与旧牌同档
-const PLAYED_H := 288.0 * PLAYED_SC    # 卡面上屏高（FACE_SIZE.y 253.2×1.14）
+const PLAYED_H := 316.0 * PLAYED_SC    # 卡面上屏高（FACE_SIZE.y 277×1.14）
 
 func _rebuild_played() -> void:
 	if battle == null:
@@ -2120,17 +2123,23 @@ func _rebuild_played() -> void:
 	var live := {}
 	for card in battle.played_pile:
 		live[int(card["uid"])] = true
-	# 消失（回合末冲弃/洗回抽牌堆）→ 弃牌飞行（DiscardPileView＝discardCardConfig 管线）
+	# 消失（回合末冲弃/洗回抽牌堆）→ 弃牌飞行（DiscardPileView＝discardCardConfig 管线；
+	# 加速钟＝max(同批消失数, 3)——与手牌冲弃同制，原版逐卡 addToView 路径恒 ≥3）
+	var vanished: Array = []
 	for uid in _played_cards.keys():
 		if not live.has(uid):
-			var gone: Control = _played_cards[uid]
-			_played_cards.erase(uid)
-			if is_instance_valid(gone):
-				var dcard: Dictionary = _find_discard_card(uid)
-				if not dcard.is_empty():
-					_discard_view.OnCardAdded(battle, dcard, true, false, 1.0)
-				else:
-					gone.visible = false   # 兜底（理论不到：消失卡必先入弃堆）
+			vanished.push_back(uid)
+	var v_mult: float = maxf(float(vanished.size()),
+		VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"])
+	for uid in vanished:
+		var gone: Control = _played_cards[uid]
+		_played_cards.erase(uid)
+		if is_instance_valid(gone):
+			var dcard: Dictionary = _find_discard_card(uid)
+			if not dcard.is_empty():
+				_discard_view.OnCardAdded(battle, dcard, true, false, v_mult)
+			else:
+				gone.visible = false   # 兜底（理论不到：消失卡必先入弃堆）
 	# 新到：点击路径由 _on_card_to_played（play_out）全程接管；其余路径（play_all/兜底）在此落位
 	var fresh := {}
 	for uid2 in live:

@@ -48,7 +48,8 @@ func setup(host: Control, opts := {}) -> void:
 	z_index = 96
 	z_as_relative = false   # 绝对 z 制：全局 96 盖过弹窗（95）；模态路径全断焦故无更高冲突
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	host.add_child(self)
+	if get_parent() != host:
+		host.add_child(self)   # 池化复用防重挂（2026-11-12 持久卡：setup 每次换面都会再跑）
 
 ## 组装（GetCardTooltips 同构）：kw × KEYWORDS 词条库；无词条＝false 不显示
 func refresh(def: Dictionary) -> bool:

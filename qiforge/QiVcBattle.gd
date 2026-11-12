@@ -25,7 +25,7 @@ signal enemy_action_started(e: Dictionary, act: Dictionary)   # 敌方动作起�
 # 抽牌批走 cards_drawn＝PlayerView.DrawCardsCommand 单命令对位，原版 TryAddCardToTop
 # addToView=false 时逐卡事件不发、视图命令整批走）——
 signal cards_drawn(cards: Array)              # 抽牌批（视图＝DrawCardsCommand 整批命令）
-signal hand_card_removed(card: Dictionary, dest: String)   # 离手（dest=played/discard/shatter/exhaust）
+signal hand_card_removed(card: Dictionary, dest: String, batch)   # 离手（dest=played/discard/shatter/exhaust；batch＝同批张数→视图加速钟 max(N,3)——CardPileModel.OnCardAdded 汇编 039-042 直证）
 signal hand_card_added(card: Dictionary)      # 非抽加牌（敌方塞卡等——对位 addToView=true 路径）
 
 const DATA := preload("res://qiforge/QiVcData.gd")
@@ -209,10 +209,11 @@ func _round_start() -> void:
 func end_turn() -> void:
 	if phase != "player":
 		return
+	var batch := hand.size()   # 同批张数→弃牌加速钟（原版 cardsBeingAddedAtOnce）
 	for card in hand:
 		_strip_lv(card)   # 离开手牌即复原（动态升级口径）
 		discard_pile.push_back(card)
-		hand_card_removed.emit(card, "discard")   # 视图＝弃牌飞行（discardCardConfig）
+		hand_card_removed.emit(card, "discard", batch)   # 视图＝弃牌飞行（discardCardConfig×max(N,3)）
 	hand = []
 	# 2026-11-06 用户令：回合结束瞬间气即回到上限（不等新回合开始——弃牌动画/敌方回合
 	# 期间显示的已是新值）；_round_start 里同款重置兜开局首拍（幂等）
@@ -238,10 +239,11 @@ func end_turn() -> void:
 func discard_hand_finale() -> void:
 	if hand.is_empty() and played_pile.is_empty():
 		return
+	var batch := hand.size()
 	for card in hand:
 		_strip_lv(card)
 		discard_pile.push_back(card)
-		hand_card_removed.emit(card, "discard")   # 终局弃手＝同一弃牌飞行管线
+		hand_card_removed.emit(card, "discard", batch)   # 终局弃手＝同一弃牌飞行管线
 	hand = []
 	discard_pile.append_array(played_pile)
 	played_pile = []
@@ -487,18 +489,18 @@ func play_card(card_uid: int) -> void:
 		# 卡从卡组永久移除。召唤弱化死神＝后续轮，此轮不做（用户令）。
 		shattered.push_back({"id": String(card["id"]), "uid": int(card["uid"])})
 		_deck_total -= 1
-		hand_card_removed.emit(card, "shatter")   # 视图＝DestroyPile 溶解（destroyableCardConfig）
+		hand_card_removed.emit(card, "shatter", 1)   # 视图＝DestroyPile 溶解（destroyableCardConfig）
 		card_shattered.emit(int(card["uid"]))
 		event.emit("「%s」承受不住，彻底碎裂——从卡组永久消失" % String(def.get("name", "")))
 	elif bool(card.get("exhaust", false)):
 		exhaust_pile.push_back(card)
-		hand_card_removed.emit(card, "exhaust")   # 视图＝DestroyPile（消耗堆）
+		hand_card_removed.emit(card, "exhaust", 1)   # 视图＝DestroyPile（消耗堆）
 	else:
 		# 2026-11-06 四区制（规格 v1）：打出→已打出区（回合末才整堆进弃牌堆——出牌历史的载体）。
 		# 〔2026-11-08 撤令〕「零连击交互卡直弃」旧分支已随连击制退役——打出的卡默认一律进
 		# 已打出区（右上角，玩家看得到刚打出的牌），回合末统一平移弃牌堆。
 		played_pile.push_back(card)
-		hand_card_removed.emit(card, "played")   # 视图＝OnCardPlayedFull（离手→已打出区）
+		hand_card_removed.emit(card, "played", 1)   # 视图＝OnCardPlayedFull（离手→已打出区）
 		played_changed.emit()
 	# —— ⓪ 效果执行（2026-11-07 逆向重构）：伤害走单链（与 preview 物理同源），
 	# 非伤害走 QiVcEffects 处理器注册表（对应原版 CardEffect.Execute 分发）；

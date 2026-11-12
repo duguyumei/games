@@ -36,7 +36,6 @@
 
 | 游戏 | 引擎/技术 | 身份 | 关键事实 |
 |---|---|---|---|
-| 杀戮尖塔 2（Mega Crit） | **Godot 4.5.1＋C#(Mono)**，疑定制引擎分支 | 头部商业作，2026-03 抢鲜体验 | 2023 Unity Runtime Fee 丑闻后弃 Unity 全重写（先做 Dancing Duelists 试验项目验货）；现为 Godot 白金赞助商；无卡牌框架；社区 ILSpy 解包 C# 程序集逆向出全套数据（spire-codex 数据库/sts2-modding-mcp） |
 | Worlds Upon The Wind（max99x） | **Godot 4.7（仓库 README 自述；awesome-godot 标 3，以仓库为准）**，GDScript＋疑 Rust gdext | **一人开发，Steam 99% 好评**，2026-07 发售，**全源码公有领域（CC0）** | 2026-02 首次下载 Godot，5 个月至发售 |
 | Sengodai | Godot | 独立卡组构筑 | Steam＋Google Play 双端 |
 
@@ -44,7 +43,6 @@
 
 **WUTW 仓库开膛**（github.com/max99x/wutw-public，制作流程活样本）：
 
-- 卡牌定义＝`res://cards/` 每卡一个 **Godot Resource**（非 JSON 非纯代码）；遗物/技能/角色/事件同样 Resource 子类；卡牌能力挂独立脚本——「数据资源＋效果脚本」，与杀戮尖塔本尊及本项目 StR 基底同构；
 - 卡牌系统完全自建（内部名 Glyphs），**未用任何现成卡牌框架**；
 - addons 全周边件：godotsteam（Steam 集成）／godot_resource_groups／godot-console；外加自写三编辑器插件（wutw_editor 内容量产／wutw_exporter 导出／wutw_i18n_export 本地化）＋`_dev_tools/` 造卡/事件/遭遇；
 - 美术管线：零美术师——全用公有领域浮世绘木版画，`art_src/` 独立目录；
@@ -76,7 +74,6 @@
 - chun92：github.com/chun92/card-framework ｜ asset-library #3616 ｜ zhihu.com/p/2069386955297645061
 - card-game-skeleton：github.com/pudgypoultry/card-game-skeleton ｜ asset-library #4802
 - Card3D：asset-library #3031 ｜ VFX：binbun3d.itch.io/godot-card-fx ｜ godotshaders.com/shader-tag/card
-- STS2：pcgamer.com（弃 Unity 报道）｜ godotengine.org/showcase/slay-the-spire-2 ｜ r/godot「can be decompiled」｜ github.com/jiegec/STS2FirstMod ｜ github.com/ptrlrd/spire-codex ｜ github.com/elliotttate/sts2-modding-mcp
 - WUTW：github.com/max99x/wutw-public ｜ r/godot 99% 好评帖 ｜ gamingonlinux.com（源码发布）｜ 80.lv（美术管线访谈）
 - Sengodai：facebook.com/groups/godotengine（发售帖）
 - 总目录：store.steampowered.com/curator/41324400（Is it made with Godot）

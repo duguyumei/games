@@ -37,6 +37,8 @@ static func scale_of(ctx: String) -> float:
 	return float(SCALES.get(ctx, SCALES["field"]))
 
 static func size_of(ctx: String) -> Vector2:
+	if ctx == "vc_hand":
+		return Vector2(180, 277)   # 原版 0.65 纵横比档（Card_Hand.prefab 180×277 直译——双系数 kw/kh）
 	return Vector2(round(BASE_SIZE.x * scale_of(ctx)), round(BASE_SIZE.y * scale_of(ctx)))
 
 ## HUD 贴图（运行时读 PNG；与 QiVcCabinet._art 同源）
@@ -537,6 +539,14 @@ class TcgCard extends Button:
 ## / type_line / rules / flavor / tone / art）
 static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	var k: float = scale_of(ctx)
+	# 〔2026-11-12 原生 0.65 重排〕vc_hand 双系数：横向量（x/宽/半径/字号）跟宽 kw、
+	# 纵向量（y/高）跟高 kh——300×422 设计在 180×277（Card_Hand.prefab 纵横比）原生落位；
+	# 字号一律跟 kw（卡窄字小、比例不破）。其余档 kw=kh=k。
+	var kw: float = k
+	var kh: float = k
+	if ctx == "vc_hand":
+		kw = 180.0 / 300.0
+		kh = 277.0 / 422.0
 	var tone: String = str(def.get("tone", "blue"))
 	var frame: Color = tcg_frame_color(tone)
 	var qi_v: Variant = def.get("qi", null)
@@ -548,7 +558,7 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	var need: Array = def.get("need", [])
 	var has_qi: bool = qi_v != null
 	var card: TcgCard = TcgCard.new()
-	card.custom_minimum_size = Vector2(round(BASE_SIZE.x * k), round(BASE_SIZE.y * k))
+	card.custom_minimum_size = Vector2(round(BASE_SIZE.x * kw), round(BASE_SIZE.y * kh))
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	var glint_mat: ShaderMaterial = ShaderMaterial.new()
@@ -561,7 +571,7 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	# 卡底＝深色（深底不会露出米白边）；圆角比金框**更大**，
 	# 让卡底的四角始终缩在金框笔画之内（不再需要额外描边来盖缝）——2026-11-08 用户指正
 	# 卡底：深色，圆角比金框大 → 四角缩在金框内（2026-11-08）
-	var normal: StyleBoxFlat = _vc_box(frame, TCG_GOLD, 0, roundi((12.0 + FRAME_W) * k))
+	var normal: StyleBoxFlat = _vc_box(frame, TCG_GOLD, 0, roundi((12.0 + FRAME_W) * kw))
 	var hover: StyleBoxFlat = normal.duplicate()
 	card.add_theme_stylebox_override("normal", normal)
 	card.add_theme_stylebox_override("hover", hover)
@@ -569,10 +579,10 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	# 顶部条带（气／名／得式）：浅一档羊皮纸＋底金线，与立绘区分隔
 	var hdr := Panel.new()
-	_place_abs(hdr, round((FRAME_INSET + FRAME_W) * k), round((FRAME_INSET + FRAME_W) * k),
-		round((300.0 - FRAME_INSET - FRAME_W) * k), round(BAND_BOTTOM * k))
+	_place_abs(hdr, round((FRAME_INSET + FRAME_W) * kw), round((FRAME_INSET + FRAME_W) * kw),
+		round((300.0 - FRAME_INSET - FRAME_W) * kw), round(BAND_BOTTOM * kh))
 	var hdr_box: StyleBoxFlat = _vc_box(TCG_HEADERS.get(tone, TCG_HEADERS["blue"]), TCG_GOLD, 0, 0)
-	var hdr_r: int = maxi(2, roundi(12.0 * k) - 2 * maxi(2, roundi(FRAME_W * k)))
+	var hdr_r: int = maxi(2, roundi(12.0 * kw) - 2 * maxi(2, roundi(FRAME_W * kw)))
 	hdr_box.corner_radius_top_left = hdr_r
 	hdr_box.corner_radius_top_right = hdr_r
 	hdr.add_theme_stylebox_override("panel", hdr_box)
@@ -580,8 +590,8 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	card.add_child(hdr)
 	# 立绘先落：整段中区（56~402）通铺，后面一切皆为浮层
 	var art := Panel.new()
-	_place_abs(art, round((FRAME_INSET + FRAME_W) * k), round(54.0 * k),
-		round((300.0 - FRAME_INSET - FRAME_W) * k), round((422.0 - FRAME_INSET - FRAME_W) * k))
+	_place_abs(art, round((FRAME_INSET + FRAME_W) * kw), round(54.0 * kh),
+		round((300.0 - FRAME_INSET - FRAME_W) * kw), round((422.0 - FRAME_INSET - FRAME_W) * kh))
 	art.add_theme_stylebox_override("panel", _vc_box(frame, TCG_GOLD_DARK, 0, 0))
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.clip_contents = true
@@ -597,17 +607,19 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 
 	# 金件：外框＋分割线（参数集中在 FRAME_* / DIVIDER_* / BAND_BOTTOM）
 	# 先画分割线、再画外框：外框永远压在上面，两侧接缝表现一致
-	_frame_divider(card, k, glint_mat)
+	_frame_divider(card, kw, kh, glint_mat)
 	if not OS.has_environment("QI_NO_RING"):
-		_frame_ring(card, k, glint_mat)
+		_frame_ring(card, kw, kh, glint_mat)
 	# —— 顶部带：左＝气费圆 · 中＝名字 · 右＝获得的式（空则不显）——
 	var name_x0: float = 60.0
 	var name_x1: float = 240.0 if gain_text != "" else 244.0
 	if has_qi:
 		var cost_c := Panel.new()
-		cost_c.name = "CostPip"   # 不可打红描边走同名查找（战斗屏 _refresh_playability）
-		_place_abs(cost_c, 12.0 * k, (FRAME_INSET + FRAME_W + BAND_BOTTOM - QI_R * 2.0) * 0.5 * k,
-			(12.0 + QI_R * 2.0) * k, (FRAME_INSET + FRAME_W + BAND_BOTTOM + QI_R * 2.0) * 0.5 * k)
+		cost_c.name = "CostPip"   # 不可打红描边走同名查找（战斗屏 UpdateCostText）
+		# 气珠＝圆：尺寸全跟宽 kw；纵向＝带心居中（BAND_BOTTOM*kh 高度内居中）
+		var pip_d: float = QI_R * 2.0 * kw
+		var pip_y: float = (FRAME_INSET + FRAME_W) * kw + (BAND_BOTTOM * kh - pip_d) * 0.5
+		_place_abs(cost_c, 12.0 * kw, pip_y, 12.0 * kw + pip_d, pip_y + pip_d)
 		cost_c.add_theme_stylebox_override("panel", _vc_box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 0))
 		cost_c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(cost_c)
@@ -619,8 +631,8 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 			qi_img.texture = qi_tex
 			qi_img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			qi_img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			qi_img.position = Vector2(-QI_R * 0.35 * k, -QI_R * 0.35 * k)
-			qi_img.size = Vector2(QI_R * 2.7 * k, QI_R * 2.7 * k)
+			qi_img.position = Vector2(-QI_R * 0.35 * kw, -QI_R * 0.35 * kw)
+			qi_img.size = Vector2(QI_R * 2.7 * kw, QI_R * 2.7 * kw)
 			qi_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			cost_c.add_child(qi_img)
 		# 2026-11-06 用户裁定（对齐原作）：可打＝墨蓝、不可打＝灰（战斗屏另描红边）、
@@ -628,31 +640,31 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 		var cost_col: Color = TCG_INK
 		if bool(def.get("combo_gold", false)):
 			cost_col = Color(0.80, 0.58, 0.14)
-		var q_lbl: Label = _vc_label(cost_c, str(qi_v), _fs(19, k), cost_col, 0)
+		var q_lbl: Label = _vc_label(cost_c, str(qi_v), _fs(19, kw), cost_col, 0)
 		q_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
 		q_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		q_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	else:
 		var plate := Panel.new()
-		_place_abs(plate, 13.0 * k, 12.0 * k, 218.0 * k, 50.0 * k)
+		_place_abs(plate, 13.0 * kw, 12.0 * kh, 218.0 * kw, 50.0 * kh)
 		plate.add_theme_stylebox_override("panel", _vc_box(TCG_PARCH_DARK, TCG_GOLD,
-			maxi(2, roundi(3.0 * k)), roundi(5.0 * k)))
+			maxi(2, roundi(3.0 * kw)), roundi(5.0 * kw)))
 		plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(plate)
 		var costs_v: Variant = def.get("cost", [])
 		var costs: Array = costs_v if costs_v is Array else [costs_v]
 		var n := costs.size()
 		for i in n:
-			var d: float = 23.0 * k
-			var gap: float = 3.0 * k
-			var x: float = 291.0 * k - d - float(n - 1 - i) * (d + gap)
+			var d: float = 23.0 * kw
+			var gap: float = 3.0 * kw
+			var x: float = 291.0 * kw - d - float(n - 1 - i) * (d + gap)
 			var pip := Panel.new()
-			_place_abs(pip, x, 14.0 * k, x + d, 14.0 * k + d)
+			_place_abs(pip, x, 14.0 * kh, x + d, 14.0 * kh + d)
 			pip.add_theme_stylebox_override("panel", _vc_box(TCG_PARCH, TCG_GOLD_DARK,
-				maxi(1, roundi(2.0 * k)), roundi(d * 0.5)))
+				maxi(1, roundi(2.0 * kw)), roundi(d * 0.5)))
 			pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			card.add_child(pip)
-			var pl: Label = _vc_label(pip, str(costs[i]), _fs(13, k), TCG_INK, 0)
+			var pl: Label = _vc_label(pip, str(costs[i]), _fs(13, kw), TCG_INK, 0)
 			pl.set_anchors_preset(Control.PRESET_FULL_RECT)
 			pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -660,47 +672,47 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 		name_x1 = 210.0
 	# 2026-11-05 用户令：标题 28＋2px 黑描边；区间改与顶带同区（4k~52k）真·带心垂直居中——
 	# 原 14~50 区间中心偏带心 4px，且 28 号行高会顶出旧区间致居中失效
-	var name_lbl: Label = _vc_label(card, str(def.get("name", "")), _fs(28, k), COLOR_CREAM, 2)
-	_place_abs(name_lbl, name_x0 * k, (FRAME_INSET + FRAME_W) * k, name_x1 * k, BAND_BOTTOM * k)
+	var name_lbl: Label = _vc_label(card, str(def.get("name", "")), _fs(28, kw), COLOR_CREAM, 2)
+	_place_abs(name_lbl, name_x0 * kw, (FRAME_INSET + FRAME_W) * kw, name_x1 * kw, BAND_BOTTOM * kh)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_wire_fit(name_lbl, _fs(28, k), true)
+	_wire_fit(name_lbl, _fs(28, kw), true)
 	if gain_text != "":
 		var gchip := Panel.new()
-		_place_abs(gchip, 244.0 * k, 16.0 * k, 289.0 * k, 48.0 * k)
+		_place_abs(gchip, 244.0 * kw, 16.0 * kh, 289.0 * kw, 48.0 * kh)
 		gchip.add_theme_stylebox_override("panel", _vc_box(TCG_PARCH_DARK, TCG_GOLD_DARK,
-			maxi(1, roundi(2.0 * k)), roundi(4.0 * k)))
+			maxi(1, roundi(2.0 * kw)), roundi(4.0 * kw)))
 		gchip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(gchip)
-		var gl: Label = _vc_label(gchip, gain_text, _fs(13, k), TCG_INK, 0)
+		var gl: Label = _vc_label(gchip, gain_text, _fs(13, kw), TCG_INK, 0)
 		gl.set_anchors_preset(Control.PRESET_FULL_RECT)
 		gl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		gl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_wire_fit(gl, _fs(13, k), true)
+		_wire_fit(gl, _fs(13, kw), true)
 	# —— 效果区：满宽蒙层，高度按文长自适应（不留空底）——
 	var rules_str: String = str(def.get("rules", ""))
-	var fs_rules: int = _fs(16, k)
-	var inner_w: float = (282.0 - 18.0 - 16.0) * k
+	var fs_rules: int = _fs(16, kw)
+	var inner_w: float = (282.0 - 18.0 - 16.0) * kw
 	var per_line: int = maxi(6, int(inner_w / (float(fs_rules) * 1.1)))
 	var text_lines: int = 0
 	for seg in rules_str.split("\n"):
 		text_lines += maxi(1, int(ceil(float(seg.length()) / float(per_line))))
-	var box_h: float = clampf(float(text_lines) * float(fs_rules) * 1.5 + 52.0 * k,
-		132.0 * k, 186.0 * k)
-	var box_top: float = 404.0 * k - box_h
+	var box_h: float = clampf(float(text_lines) * float(fs_rules) * 1.5 + 52.0 * kh,
+		132.0 * kh, 186.0 * kh)
+	var box_top: float = 404.0 * kh - box_h
 	var box := Panel.new()
-	_place_abs(box, round(18.0 * k), round(box_top), round(282.0 * k), round(404.0 * k))
+	_place_abs(box, round(18.0 * kw), round(box_top), round(282.0 * kw), round(404.0 * kh))
 	# 卡型＝当前型：效果区边框转亮金（与型符号方块同一种金）——2026-11-08 用户令
 	var st_now := String(def.get("stance", ""))
 	# 变招天生活合（不锁型）——2026-11-08 用户令：变招一律算匹配
 	var st_matched := st_now != "" and (st_now == "flex" or st_now == String(def.get("cur_form", "")))
 	var eff_box: StyleBoxFlat = _vc_box(Color(TCG_PARCH.r, TCG_PARCH.g, TCG_PARCH.b, 0.74),
 		(Color(1.0, 0.86, 0.46) if st_matched else TCG_GOLD_DARK),
-		maxi(1, roundi(1.0 * k)), roundi(4.0 * k))
+		maxi(1, roundi(1.0 * kw)), roundi(4.0 * kw))
 	eff_box.shadow_color = Color(0, 0, 0, 0.45)
 	# （2026-11-08 撤）box/badge 挂 glint 材质后悬停与浮窗异常，先去掉
 
-	eff_box.shadow_size = maxi(2, roundi(6.0 * k))
+	eff_box.shadow_size = maxi(2, roundi(6.0 * kw))
 	box.add_theme_stylebox_override("panel", eff_box)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.clip_contents = true
@@ -708,39 +720,39 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	var flavor_text: String = str(def.get("flavor", ""))
 	var rules: Label = _vc_label(box, rules_str, fs_rules, TCG_INK, 0)
 	rules.set_anchors_preset(Control.PRESET_FULL_RECT)
-	rules.offset_left = 9.0 * k
-	rules.offset_top = 6.0 * k
-	rules.offset_right = -9.0 * k
-	rules.offset_bottom = (-26.0 if flavor_text != "" else -24.0) * k
+	rules.offset_left = 9.0 * kw
+	rules.offset_top = 6.0 * kw
+	rules.offset_right = -9.0 * kw
+	rules.offset_bottom = (-26.0 if flavor_text != "" else -24.0) * kw
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rules.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_wire_fit(rules, fs_rules)
 	if flavor_text != "":
-		var fl: Label = _vc_label(box, flavor_text, _fs(11, k), TCG_INK_SOFT, 0)
+		var fl: Label = _vc_label(box, flavor_text, _fs(11, kw), TCG_INK_SOFT, 0)
 		fl.anchor_top = 1.0
 		fl.anchor_bottom = 1.0
 		fl.anchor_left = 0.0
 		fl.anchor_right = 1.0
-		fl.offset_left = 9.0 * k
-		fl.offset_top = -42.0 * k
-		fl.offset_right = -9.0 * k
-		fl.offset_bottom = -21.0 * k
+		fl.offset_left = 9.0 * kw
+		fl.offset_top = -42.0 * kw
+		fl.offset_right = -9.0 * kw
+		fl.offset_bottom = -21.0 * kw
 		fl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_wire_fit(fl, _fs(11, k))
+		_wire_fit(fl, _fs(11, kw))
 	# 种类小字：效果区底缘一行（淡色），不另占一条空带
-	var kind_foot: Label = _vc_label(box, str(def.get("type_line", "")), _fs(10, k),
+	var kind_foot: Label = _vc_label(box, str(def.get("type_line", "")), _fs(10, kw),
 		Color(TCG_INK_SOFT.r, TCG_INK_SOFT.g, TCG_INK_SOFT.b, 0.85), 0)
 	kind_foot.anchor_top = 1.0
 	kind_foot.anchor_bottom = 1.0
 	kind_foot.anchor_left = 0.0
 	kind_foot.anchor_right = 1.0
-	kind_foot.offset_left = 9.0 * k
-	kind_foot.offset_top = -22.0 * k
-	kind_foot.offset_right = -9.0 * k
-	kind_foot.offset_bottom = -2.0 * k
+	kind_foot.offset_left = 9.0 * kw
+	kind_foot.offset_top = -22.0 * kw
+	kind_foot.offset_right = -9.0 * kw
+	kind_foot.offset_bottom = -2.0 * kw
 	kind_foot.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	kind_foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_wire_fit(kind_foot, _fs(9, k), true)
+	_wire_fit(kind_foot, _fs(9, kw), true)
 	# —— 式列：效果区上方，自下而上（2026-11-04 用户令：槽＝图同尺寸 39）——
 	# 2026-11-05 用户令（终版）：槽＝卡固定的 need（无需要＝空轨，直刺类左轨一个不画）；
 	# 每枚样式动态——玩家持有够这一枚＝实心块，需要但没持有＝虚线框＋对角线
@@ -756,13 +768,13 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 		var tone_k := String(def.get("tone", "red"))
 		sbf.bg_color = TCG_HEADERS.get(tone_k, TCG_HEADERS["red"])   # 底始终＝标题带色，匹配也不变
 		sbf.border_color = TCG_GOLD_DARK if not matched else Color(1.0, 0.87, 0.55)   # 匹配时亮金
-		sbf.set_border_width_all(maxi(1, roundi(1.0 * k)))   # 与效果区同粗细
-		sbf.set_corner_radius_all(roundi(4.0 * k))            # 与效果区同圆角
+		sbf.set_border_width_all(maxi(1, roundi(1.0 * kw)))   # 与效果区同粗细
+		sbf.set_corner_radius_all(roundi(4.0 * kw))            # 与效果区同圆角
 		sbf.anti_aliasing = true   # 去锯齿
 		badge.add_theme_stylebox_override("panel", sbf)
 		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		badge.size = Vector2(39.0 * k, 39.0 * k)
-		badge.position = Vector2(18.0 * k, (box_top - 4.0 * k) - 39.0 * k)   # 与效果区左边框对齐
+		badge.size = Vector2(39.0 * kw, 39.0 * kw)
+		badge.position = Vector2(18.0 * kw, (box_top - 4.0 * kh) - 39.0 * kw)   # 与效果区左边框对齐
 		card.add_child(badge)
 		var pth := "res://qiforge/assets/ui/type_%s%s.png" % [st_kind, "_gold" if matched else "_light"]
 		var stex: Texture2D = ResourceLoader.load(pth)
@@ -775,16 +787,16 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 			sic.set_anchors_preset(Control.PRESET_FULL_RECT)
 			sic.stretch_mode = TextureRect.STRETCH_SCALE
 			sic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR   # 缩放采样用线性，去锯齿
-			sic.offset_left = 3.0 * k
-			sic.offset_top = 3.0 * k
-			sic.offset_right = -3.0 * k
-			sic.offset_bottom = -3.0 * k
+			sic.offset_left = 3.0 * kw
+			sic.offset_top = 3.0 * kw
+			sic.offset_right = -3.0 * kw
+			sic.offset_bottom = -3.0 * kw
 			badge.add_child(sic)
 	var rail_w: float = 39.0
-	var rail_bottom: float = box_top - 6.0 * k
-	var rail_px: float = rail_w * k
-	var y_cursor: float = box_top - 4.0 * k
-	var rail_top_min: float = (BAND_BOTTOM + 6.0) * k   # 不越过顶条/分割线
+	var rail_bottom: float = box_top - 6.0 * kh
+	var rail_px: float = rail_w * kw
+	var y_cursor: float = box_top - 4.0 * kh
+	var rail_top_min: float = (BAND_BOTTOM + 6.0) * kh   # 不越过顶条/分割线
 	var own: Dictionary = def.get("own_stances", {})
 	var seen: Dictionary = {}
 	for st in need:
@@ -793,18 +805,18 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 		var lit: bool = int(own.get(s, 0)) >= int(seen[s])
 		if y_cursor - rail_px < rail_top_min:
 			break
-		var b: Panel = _stance_badge(s, k, false, lit, 1)
+		var b: Panel = _stance_badge(s, kw, false, lit, 1)
 		b.size = Vector2(rail_px, rail_px)
-		b.position = Vector2(22.0 * k, y_cursor - rail_px)
+		b.position = Vector2(22.0 * kw, y_cursor - rail_px)
 		card.add_child(b)
-		y_cursor -= rail_px + 3.0 * k
+		y_cursor -= rail_px + 3.0 * kw
 	for i in gain_icons.size():
-		var gy: float = rail_bottom - (rail_w + 35.0 * float(i)) * k
-		if gy < (BAND_BOTTOM + 8.0) * k:
+		var gy: float = rail_bottom - (39.0 * kw + 35.0 * kh * float(i))
+		if gy < (BAND_BOTTOM + 8.0) * kh:
 			break
-		var b2: Panel = _stance_badge(str(gain_icons[i]), k, true, true, 1)
-		b2.size = Vector2(rail_w * k, rail_w * k)
-		b2.position = Vector2((284.0 - 6.0 - rail_w) * k, gy)
+		var b2: Panel = _stance_badge(str(gain_icons[i]), kw, true, true, 1)
+		b2.size = Vector2(rail_w * kw, rail_w * kw)
+		b2.position = Vector2((284.0 - 6.0 - rail_w) * kw, gy)
 		card.add_child(b2)
 	# 2026-11-06 碎牌：裂痕态——卡面叠程序裂纹（正式裂纹贴图归美术，此为留位）
 	if cracked:
@@ -833,12 +845,12 @@ static func _crack_texture(variant: int) -> Texture2D:
 	return t
 
 ## 金件①外框：四边等宽金环（后续加角标/攻防角也按 FRAME_* 这套参数排）
-static func _frame_ring(card: Control, k: float, glint: ShaderMaterial = null) -> void:
+static func _frame_ring(card: Control, kw: float, kh: float, glint: ShaderMaterial = null) -> void:
 	var goldband := Panel.new()
-	_place_abs(goldband, round(FRAME_INSET * k), round(FRAME_INSET * k),
-		round((300.0 - FRAME_INSET) * k), round((422.0 - FRAME_INSET) * k))
-	var ring_b: int = maxi(2, roundi(FRAME_W * k)) + 1   # +1px：内侧多压 1px，盖住卡底与金框之间的缝
-	var ring_r: int = maxi(2, roundi(12.0 * k))
+	_place_abs(goldband, round(FRAME_INSET * kw), round(FRAME_INSET * kh),
+		round((300.0 - FRAME_INSET) * kw), round((422.0 - FRAME_INSET) * kh))
+	var ring_b: int = maxi(2, roundi(FRAME_W * kw)) + 1   # +1px：内侧多压 1px，盖住卡底与金框之间的缝
+	var ring_r: int = maxi(2, roundi(12.0 * kw))
 	goldband.add_theme_stylebox_override("panel", _vc_box(Color(0, 0, 0, 0), TCG_GOLD,
 		ring_b, ring_r))
 	goldband.material = glint
@@ -846,12 +858,12 @@ static func _frame_ring(card: Control, k: float, glint: ShaderMaterial = null) -
 	card.add_child(goldband)
 
 ## 金件②分割线：直段＋两端圆角缺口（上收顶条下角／下收立绘上角），宽度贴外框内侧
-static func _frame_divider(card: Control, k: float, glint: ShaderMaterial = null) -> void:
+static func _frame_divider(card: Control, kw: float, kh: float, glint: ShaderMaterial = null) -> void:
 	# 2026-11-08 用户令：与外框**同一种画法**（都走 StyleBoxFlat 纯色填充），
 	# 这样颜色/抗锯齿/发光完全一致；两端做成胶囊圆头，接在外框内侧。
 	# 两端做方头（不做胶囊圆头）：圆头会在与外框相接处收成尖，看起来"细/有空隙"
-	var w_px: float = round((300.0 - 2.0 * (FRAME_INSET + FRAME_W)) * k) + 6.0
-	var bar_h: float = maxf(1.0, round(DIVIDER_H * k))
+	var w_px: float = round((300.0 - 2.0 * (FRAME_INSET + FRAME_W)) * kw) + 6.0
+	var bar_h: float = maxf(1.0, round(DIVIDER_H * kw))
 	var junc := Panel.new()
 	var jsb := StyleBoxFlat.new()
 	jsb.bg_color = TCG_GOLD
@@ -860,7 +872,7 @@ static func _frame_divider(card: Control, k: float, glint: ShaderMaterial = null
 	junc.add_theme_stylebox_override("panel", jsb)
 	# 左右各向金框内伸 1px，让接缝重叠，消灭抗锯齿造成的"缝"
 	# 两端各往金框里多伸 3px（画在金框上，同色不可见），确保接缝无空隙
-	junc.position = Vector2(round((FRAME_INSET + FRAME_W) * k) - 3.0, round(BAND_BOTTOM * k) - bar_h * 0.5)
+	junc.position = Vector2(round((FRAME_INSET + FRAME_W) * kw) - 3.0, round(BAND_BOTTOM * kh) - bar_h * 0.5)
 	junc.size = Vector2(w_px, bar_h)
 	junc.material = glint
 	junc.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -81,7 +81,8 @@ func UnlinkSlot() -> void:
 	_current_card_slot = null
 	if _card_view != null and is_instance_valid(_card_view):
 		_card_view.position = (_card_view as Control).position   # transform.position 对齐（:585-588）
-		_card_view._tween_container.position = Vector2.ZERO      # visualRoot 归零（:589-592）
+		_card_view._visual_root.position = Vector2.ZERO          # visualRoot 归零（:589-592＝拖尾层；
+		                                                           # 旧写 tween 层系错层，unlink 后残余不自清）
 
 ## EnableInteraction（:595）
 func EnableInteraction() -> void:
@@ -174,16 +175,17 @@ func _can_interact() -> bool:
 		return true
 	return String(pm.phase) == "player"
 
-## UpdateHandTilt（:908）——TweenContainer 旋钮向槽位旋钮贴合（Quaternion.Lerp 速率
-## slottedRotationMatchSpeed 0.2 → 2D 指数贴合）；槽位旋钮带 ±15°(MaxRotationOffset)
-## 布局值，可视幅度按真值档 v0.2＝±3.5° 等比映射（3.5/15——两管线分离实测结论）
+## UpdateHandTilt（:908）——VisualRoot 旋钮向**槽位旋钮全值**贴合（Quaternion.Lerp 速率
+## slottedRotationMatchSpeed 0.2）：槽位旋钮带布局层 ±15°（FanCardRotation）→ 静态扇角
+## 完整可见（2026-11-12 弧案翻案后归位：旧 ×(3.5/15) 缩幅系「速度层钳幅」误读——
+## ±3.5° 属 RotateToFollowVelocity 速度层，两者写不同节点、互不覆盖）
 func UpdateHandTilt(delta: float) -> void:
 	if _current_card_slot == null or _card_view == null:
 		return
 	var slot_rot: float = (_current_card_slot as Control).rotation
-	var target := slot_rot * (3.5 / 15.0)
 	var k: float = 1.0 - pow(1.0 - VC.INTERACTABLE["slottedRotationMatchSpeed"], delta * 60.0)
-	NBU.SetEulerAnglesIfDifferent(_card_view._tween_container, lerpf(_card_view._tween_container.rotation, target, k))
+	NBU.SetEulerAnglesIfDifferent(_card_view._visual_root,
+		lerpf(_card_view._visual_root.rotation, slot_rot, k))
 
 ## UpdatePosition（:944）——双层跟随：
 ## 层1 卡根：目标＝槽心−卡心在壳内偏移（非拖拽分支 :1151-1171）；速度上限
@@ -241,13 +243,14 @@ func RotateToFollowVelocity(delta: float) -> void:
 		-VC.INTERACTABLE["rotationDegrees"], VC.INTERACTABLE["rotationDegrees"])
 	NBU.SetEulerAnglesIfDifferent(_card_view._tween_container, deg_to_rad(deg))
 
-## DoCardHoveredAnim（:1796）——可付费分档放大＋抬升（hoverCardConfig 750/0.05/1.5/38）；
-## 第二档（不可付费）倍率原版坏点——我方 1.05/18 实感值（真值档 v0.2，登记待 ISIL）
+## DoCardHoveredAnim（:1796）——两档放大＋抬升（hoverCardConfig 全段实测：
+## 可付费 scaleTo 1.5/hoverHeightOffset 38；不可付费 invalidScaleTo 1.05/invalidHeightOffset 15
+## ——汇编 cmovne +2B4/+2D8 二选一机关，资产 :239/:247 直读，坏点已破）
 func DoCardHoveredAnim() -> void:
 	var pm = _card_view.get_meta("player_model", null)
 	var afford: bool = _card_view._can_afford(pm)
-	var scl := VC.HOVER_CARD["scaleTo"] if afford else Vector2(1.05, 1.05)
-	_hover_lift = (VC.HOVER_CARD["hoverHeightOffset"] if afford else 18.0)
+	var scl: Vector2 = VC.HOVER_CARD["scaleTo"] if afford else VC.HOVER_CARD["invalidScaleTo"]
+	_hover_lift = VC.HOVER_CARD["hoverHeightOffset"] if afford else VC.HOVER_CARD["invalidHeightOffset"]
 	_card_view.ScaleTo(scl, VC.HOVER_CARD["scaleDuration"], VC.EASE_IN_OUT_CUBIC, 0.0)
 
 ## DoCardUnhoveredAnim（:1928）——缩放回默认＋抬升归零（mover 回静止位——寻的在 _process）

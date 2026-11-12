@@ -24,19 +24,29 @@ var _uid_views := {}                        # uid → CardView（模型终身绑
 var _card_pool: Array = []                  # PlayerModel._cardPool 视图半边（:6026）
 var _hooks: Dictionary = {}                 # 屏注入（tip_avoid 等）
 var _current_damage_detail := 0             # _currentDamageDetail（:254）——伤害详情刷新位
+# [HAND] 多卡排列诊断（2026-11-12 用户令；诊断完删）：布局版本变化后等 0.25s 打一次落定快照
+var _debug_seen_rev := -1
+var _debug_settle := 0.0
 
 func _init() -> void:
 	# 子件在 _init 预建：宿主装配序＝setup() 先于 add_child（QiVcRoot:432-434 实测），
 	# _ready 尚未跑而 setup() 要摸 _card_group——预建后两序皆稳
 	_pile_root = self
+	# 锚位口径（2026-11-12 实机截图定标）：原版 HandPile 锚底中+37 系局部布局真值，但其上屏
+	# 链经 Player(世界)→Canvas(ScreenSpaceCamera)——纵向落点静态读不全，按用户 2026-11-07 原版
+	# 截图像素实测：**卡底距画面底 ≈ 18% 卡高**（比例与分辨率/窗口无关）。
+	# 几何语义：rect 偏移定义「未缩放矩形」＝画布单位（960×182），1.14 缩放绕底中轴心生效
+	# （底缘不动）；底缘离屏底＝57 屏幕px（轴心线偏移不被缩放）。
+	var gap := roundi(0.18 * VC.CARD_SIZE.y * VC.HAND_ROOT_SCALE)   # ≈57px：卡底离屏底
 	set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	offset_left = -VC.HAND_ROOT_SIZE.x * 0.5
 	offset_right = VC.HAND_ROOT_SIZE.x * 0.5
-	offset_top = -(VC.HAND_ROOT_ANCHORED_POS.y + VC.HAND_ROOT_SIZE.y)
-	offset_bottom = -VC.HAND_ROOT_ANCHORED_POS.y
+	offset_top = -(float(gap) + VC.HAND_ROOT_SIZE.y)
+	offset_bottom = -float(gap)
 	scale = Vector2.ONE * VC.HAND_ROOT_SCALE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# 槽容器（CardSlotHolder 挂件＝HorizontalCardLayoutGroup）＋池槽容器
+	# 槽容器（CardSlotHolder 挂件＝HorizontalCardLayoutGroup，960×182 居中＝原版 18559 同构）
+	# ＋池槽容器
 	_card_group = HAND_HOLDER.new()
 	_card_group.name = "CardGroup"
 	_card_group.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -47,10 +57,11 @@ func _init() -> void:
 	add_child(_pooled_slot_container)
 	_card_group._pooled_card_slot_container = _pooled_slot_container
 
-## 手牌根几何（SC_Game.unity:789268-789292 直译：锚底中 (0.5,0)、anchoredPosition (0,37)、
-## sizeDelta (960,182)、localScale 1.14；pivot (0.5,0)＝Godot 底中锚等价）
+## 手牌根几何：锚底中、960×182、scale 1.14（SC_Game.unity:789268-789292 直译；
+## pivot (0.5,0)＝底中——1.14 绕底中轴心缩放，底缘离屏底距离不被缩放）
 func _ready() -> void:
 	super()
+	pivot_offset = Vector2(size.x * 0.5, size.y)
 
 ## setup（引擎映射：场景序列化引用 → 注入；重绑守卫＝is_connected 防重开重复连接）
 func setup(player_model, runner, hooks := {}) -> void:
@@ -199,10 +210,13 @@ func CardRemovedViewUpdate(card: Dictionary) -> void:
 	if view != null:
 		TryRemoveCard(view)
 		# 解槽＋关交互（引擎映射：弃/耗接管后 InteractableCard 停止跟随——原版
-		# DisableInteractionAndUnlink 链）
-		var it = _interactable_of(card)
-		if it != null:
-			it.DisableInteractionAndUnlink()
+		# DisableInteractionAndUnlink 链）；打出时鼠标还指着＝先收悬停
+		#（2026-11-12 日志实锤：打出后无 hover-out → sel 悬挂 7、预览不撤——EndInteraction 补链）
+	var it = _interactable_of(card)
+	if it != null:
+		if it.IsHovering():
+			it.EndInteraction()
+		it.DisableInteractionAndUnlink()
 
 ## OnCardPlayed（:1110 三参重载——GDScript 无重载，基类单参虚法保留、本件三参版改名
 ## OnCardPlayedFull，引擎映射登记）：打出（去向＝已打出区）：离手＋刷新全手费用
@@ -311,6 +325,7 @@ func _on_interaction_started(interactable) -> void:
 	_card_group.FindAndSetCurrentSelected(interactable)
 	_card_group.TrySetLayoutGroupIndex(_card_group.CurrentSelectedCardIndex())
 	_card_group.OnCardInteracted(null)
+	_card_group.set_meta("hand_ev", "hover_in")
 	_card_group.ForceLayoutRefresh()
 	view.z_index = 60
 	view.GetCardTooltips(_player_model)
@@ -324,6 +339,7 @@ func _on_interaction_ended(interactable) -> void:
 	var view = interactable._card_view
 	var uid := int(view.get_meta("hand_uid", -1))
 	_card_group.TrySetLayoutGroupIndex(-1)
+	_card_group.set_meta("hand_ev", "hover_out")
 	_card_group.ForceLayoutRefresh()
 	view.z_index = 10
 	view.ToggleTooltips(false)
@@ -341,3 +357,102 @@ func _process(delta: float) -> void:
 		for ch in (view as Control).get_children():
 			if ch.name == "InteractableCard":
 				ch.HoverOffsetSeek(delta)
+	# [HAND] 多卡排列诊断（2026-11-12 用户令；诊断完删）：布局一变，等 0.25s 卡跟槽落定，
+	# 打一次「槽序 vs 视图场景序 + 卡面中心 vs 槽心 + 悬停缩放」。只查多卡，不刷屏。
+	if _card_group != null and int(_card_group.get("_debug_rev")) != _debug_seen_rev:
+		_debug_seen_rev = int(_card_group.get("_debug_rev"))
+		_debug_settle = 0.25
+	elif _debug_settle > 0.0:
+		_debug_settle -= delta
+		if _debug_settle <= 0.0:
+			_debug_dump_views()
+
+## 多卡视图快照：槽序（布局权威）vs 视图场景序（z 叠压权威），以及每张卡面中心与槽心误差。
+## 误差在 0.25s 后仍 >2px → 卡没跟上槽（锁位/飞行/目标算错）；场景序≠槽序 → 叠压错位。
+func _debug_dump_views() -> void:
+	if _card_group == null:
+		return
+	var n: int = _card_group.get_child_count()
+	if n == 0:
+		return
+	var inv: Transform2D = get_global_transform_with_canvas().affine_inverse()
+	var slot_uids: Array = []
+	var slot_index := {}
+	var slot_centers := {}
+	var i := 0
+	for slot in _card_group.get_children():
+		var uid := _debug_uid_of_slot(slot)
+		slot_uids.append(uid)
+		slot_index[uid] = i
+		var sc := slot as Control
+		# 槽心取未旋转矩形中心（与 UpdatePosition 目标同式 slot.position+size*0.5）——
+		# 槽自带扇形 rotation，走全局变换会把参考点转歪 ~18px，验收误报 FACE_OFF
+		slot_centers[uid] = inv * (_card_group.get_global_transform_with_canvas()
+				* (sc.position + sc.size * 0.5))
+		i += 1
+	var active: Array = []
+	for v in _card_views:
+		if is_instance_valid(v) and (v as Control).visible:
+			active.append(v)
+	active.sort_custom(func(a, b): return (a as Control).get_index() < (b as Control).get_index())
+	var view_uids: Array = []
+	for v in active:
+		view_uids.append(int((v as Control).get_meta("hand_uid", -1)))
+	var model_uids: Array = []
+	for card in _pile_cards():
+		model_uids.append(int(card.get("uid", -1)))
+	var active_uids: Array = []
+	var active_slots = _card_group.get("_active_card_slots")
+	if active_slots is Array:
+		for slot in active_slots:
+			active_uids.append(_debug_uid_of_slot(slot))
+	var order_ok := view_uids == slot_uids
+	var model_ok := model_uids == slot_uids
+	var active_ok := active_uids == slot_uids
+	var max_err := 0.0
+	var max_err_uid := -1
+	var rows: Array = []
+	for v in active:
+		var uid := int((v as Control).get_meta("hand_uid", -1))
+		var sidx := int(slot_index.get(uid, -1))
+		var face := Vector2.ZERO
+		var tilt = v._tilt_view
+		if tilt != null and is_instance_valid(tilt):
+			face = inv * (tilt.get_global_transform_with_canvas() * ((tilt as Control).size * 0.5))
+		var slotc: Vector2 = slot_centers.get(uid, Vector2.ZERO)
+		var err := (face - slotc).length() if sidx >= 0 else -1.0
+		var it = (v as Control).get_node_or_null("InteractableCard")
+		var hover: bool = it != null and it.IsHovering()
+		var fly: bool = (v as Control).has_meta("fly_speed")
+		if not fly and not hover and err > max_err:
+			max_err = err
+			max_err_uid = uid
+		var vr = v._visual_root
+		var rot: float = rad_to_deg(vr.rotation) if vr != null else 0.0
+		var tc = v._tween_container
+		var tween: float = tc.scale.x if tc != null else 0.0
+		rows.append("i=%d uid=%d slot=%d scene=%d z=%d face=(%.0f,%.0f) slotc=(%.0f,%.0f) err=%.1f rot=%.1f tween=%.2f hover=%s fly=%s" % [
+			sidx, uid, sidx, (v as Control).get_index(), (v as Control).z_index,
+			face.x, face.y, slotc.x, slotc.y, err, rot, tween,
+			"1" if hover else "0", "1" if fly else "0"])
+	if n < 6 and order_ok and model_ok and active_ok and max_err <= 2.0:
+		return
+	print("[HAND] views n=%d sel=%d order.model=%s order.slot=%s order.view=%s order.active=%s model_ok=%s order_ok=%s active_ok=%s max_err=%.1f@%d%s%s%s%s" % [
+		n, _card_group.GetSelectedIndex(), str(model_uids), str(slot_uids), str(view_uids),
+		str(active_uids), "1" if model_ok else "0", "1" if order_ok else "0",
+		"1" if active_ok else "0", max_err, max_err_uid,
+		"" if model_ok else " MODEL_MISMATCH", "" if order_ok else " ORDER_MISMATCH",
+		"" if active_ok else " ACTIVE_MISMATCH", "" if max_err <= 2.0 else " FACE_OFF"])
+	for r in rows:
+		print("[HAND] view %s" % r)
+
+func _debug_uid_of_slot(slot) -> int:
+	if slot == null:
+		return -1
+	var it = slot.SlottedInteractableCard()
+	if it == null:
+		return -1
+	var v = it._card_view
+	if v == null or not is_instance_valid(v):
+		return -1
+	return int(v.get_meta("hand_uid", -1))

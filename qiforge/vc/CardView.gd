@@ -66,6 +66,11 @@ func _ready() -> void:
 	_visual_root = Control.new()
 	_visual_root.name = "VisualRoot"
 	_visual_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 旋转轴心＝壳内卡面中心：原版 _visualRoot 绑 FollowParent（Card_Hand.prefab:1557），
+	# 拉伸铺满 180×277＋pivot (0.5,0.5)（:1909-1913）——Unity 绕枢轴旋转天然绕卡心；
+	# Godot Control.new() 默认 pivot (0,0)＝左上角，不补则扇角绕左上角把卡面甩向中心
+	# 最多 66px（2026-11-12 轴心案：误差∝|扇角| 实测签名，(I−R(θ))·(90,256.5) 对到 0.5px）
+	_visual_root.pivot_offset = VC.CARD_CENTER_IN_SHELL
 	add_child(_visual_root)
 	_tween_container = Control.new()
 	_tween_container.name = "TweenContainer"
@@ -165,8 +170,7 @@ func SetCardConfig(card_config: Dictionary, override_obj_name := true) -> void:
 	InitializeCardTypeVisuals()
 	var player_model = _player_model()
 	UpdateCostText(player_model)
-	var pm: Dictionary = player_model if player_model != null else {}
-	RefreshView(pm)
+	RefreshView(player_model)
 
 ## SetCardSprite（:3433）——原版换 sprite 图集；我方＝程序化卡面（视觉层差异登记，占位）
 func SetCardSprite(_sprite) -> void:

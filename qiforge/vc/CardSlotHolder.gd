@@ -52,6 +52,7 @@ func AddCardToBottom(card: Dictionary) -> void:
 	if interactable != null:
 		slot.LinkCard(interactable)
 		InitializeCardInteraction(card, slot)
+	set_meta("hand_ev", "add")
 	ForceLayoutRefresh()
 
 ## AddCardToTop（:288）——顶加（手牌右侧）
@@ -64,6 +65,7 @@ func AddCardToTop(card: Dictionary) -> void:
 	if interactable != null:
 		slot.LinkCard(interactable)
 		InitializeCardInteraction(card, slot)
+	set_meta("hand_ev", "add_top")
 	ForceLayoutRefresh()
 
 ## GetCardSlotForBottom（:320）——找空槽，无则取池槽
@@ -91,6 +93,7 @@ func TryRemoveCard(card: Dictionary) -> void:
 		DetachCardInteractionHandlers(interactable)
 	_active_card_slots.remove_at(idx)
 	PoolCardSlot(slot)
+	set_meta("hand_ev", "remove")
 	ForceLayoutRefresh()
 
 ## DetachCardInteractionHandlers（:921）——解绑三事件
@@ -188,6 +191,7 @@ func PoolCardSlot(to_pool) -> void:
 	to_pool.visible = false
 
 ## GetPooledCardSlot（:3766）——池空则建（Instantiate prefab）、否则出栈；挂容器＋显示
+##（引擎映射：Unity SetParent 直接换爹 → Godot 须 reparent，add_child 拒收有父节点）
 func GetPooledCardSlot():
 	var slot: Control = null
 	if _card_slot_pool.is_empty():
@@ -195,7 +199,10 @@ func GetPooledCardSlot():
 	else:
 		slot = _card_slot_pool.pop_back()
 	if slot.get_parent() != _card_slot_container:
-		_card_slot_container.add_child(slot)
+		if slot.get_parent() != null:
+			slot.reparent(_card_slot_container, false)
+		else:
+			_card_slot_container.add_child(slot)
 	slot.visible = true
 	return slot
 

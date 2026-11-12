@@ -18,9 +18,9 @@ const HAND_ROOT_PIVOT := Vector2(0.5, 0.0)           # m_Pivot（:789292）—�
 # 卡牌本体：Card_Hand.prefab 根 RectTransform sizeDelta 180×277（Card_Hand.prefab:1534）、
 # localScale {1,1,1}（:1524）→ 上屏真实尺寸 = 180×277×1.14 ≈ 205×316。
 const CARD_SIZE := Vector2(180.0, 277.0)             # Card_Hand.prefab:1534（画布单位）
-# 卡面渲染尺寸（vc_hand 档＝300×422×0.60）：宽 180 与原版 1:1；高随我方美术纵横比 253.2
-#（原版 277/纵横比 0.65 更瘦长——原生重排列后续轮，差异登记）。命中壳/槽位数学全用 CARD_SIZE。
-const FACE_SIZE := Vector2(180.0, 253.2)
+# 卡面渲染尺寸（工厂 vc_hand 双系数 kw 0.60/kh 0.6564 原生 0.65 重排，2026-11-12）：
+# 与命中壳同尺寸——卡面纵横比与原版 1:1（差异登记 #20 关账）。
+const FACE_SIZE := Vector2(180.0, 277.0)
 const SLOT_SIZE := Vector2(100.0, 100.0)             # CardSlot.prefab:61（槽 100×100；GhostVisual 180×277＝卡同寸 :122）
 # 我方自拟（登记）：卡壳加高盖住「原位＋弹起位」——命中区稳定（hover 抬升 38＋余量 80）；
 # 原版命中区＝卡根 RectTransform 180×277。壳顶留白＝抬升＋余量。
@@ -101,13 +101,26 @@ const DESTROYABLE_CARD := {
 	"maxCardDestroySpeed": 5.0,
 }
 
-# ── GlobalConfig.asset: hoverCardConfig（:235-247）────────────────────
+# ── GlobalConfig.asset: hoverCardConfig（:235-258 全段直读；两档 Vector＝DoCardHoveredAnim
+#    汇编 cmovne rax+2B4(可付费 scaleTo)/rax+2D8(不可付费 invalidScaleTo) 机关所取）──
 const HOVER_CARD := {
 	"moveSpeed": 750.0,
 	"scaleDuration": 0.05,
 	"decelerateDistance": 0.5,
-	"scaleTo": Vector2(1.5, 1.5),
-	"hoverHeightOffset": 38.0,
+	"scaleTo": Vector2(1.5, 1.5),               # :239 可付费放大
+	"scaleUpEase": 10,                          # :240 InOutCubic（悬起）
+	"scaleDownEase": 27,                        # :241 OutBack（回落）
+	"hoverHeightOffset": 38.0,                  # :242 可付费抬升
+	"tiltSpeed": 2.0,                           # :243 HoverTilt 倾斜速度（3D 倾斜轮接入）
+	"tiltAmount": 0.7,                          # :244
+	"autoTiltSpeed": 1.0,                       # :245
+	"autoTiltDegrees": 4.0,                     # :246 手柄自动倾斜
+	"invalidScaleTo": Vector2(1.05, 1.05),      # :247 不可付费放大（坏点已破）
+	"invalidHeightOffset": 15.0,                # :248 不可付费抬升（坏点已破——旧实感 18 系×1.2 误）
+	"invalidShakeAmplitude": 5.0,               # :249 摇头幅度
+	"invalidShakeTime": 0.3,                    # :250
+	"invalidShakeVibrato": 15,                  # :251 Hz
+	"hoveringPlayablePositionScaleMultiplier": 1.2,   # :252 拖拽越线放大（缓后#4）
 }
 
 # ── GlobalConfig.asset: handPileConfig（:335-337）─────────────────────
