@@ -59,12 +59,22 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 	var dist: float = (target_local - view.position).length()
 	var speed: float = VC.DISCARD_CARD["moveSpeed"] * maxf(1.0, view_speed_multiplier)
 	var fly_time: float = dist / maxf(1.0, speed)
-	tw.parallel().tween_property(view, "position", target_local, fly_time)\
-		.set_ease(Tween.EASE_IN)
+	# [VCANIM] 临时埋点（验收完删）：弃牌时间线——起点/终点/实飞时长预估/层级序＋到达时刻
+	var t0 := Time.get_ticks_msec()
+	view.set_meta("anim_t0", t0)
+	print("[VCANIM] disc-start uid=%d t=%d mult=%.1f from=(%.0f,%.0f) to=(%.0f,%.0f) dist=%.0f fly=%.2fs scene=%d" % [
+		int(card.get("uid", -1)), t0, view_speed_multiplier, view.position.x, view.position.y,
+		target_local.x, target_local.y, dist, fly_time, view.get_index()])
+	_hand_pile_view._stack_line("disc")
+	# 恒速飞行＝TransformMover2D 语义（moveSpeed×mult＋decelerateDistance，终段微减速由
+	# fly_time 距离均分近似）；旧 EASE_IN「先爬后窜」系误实装（2026-11-13 用户抓出）
+	tw.parallel().tween_property(view, "position", target_local, fly_time)
 	tw.parallel().tween_property(view, "modulate:a", 0.0,
 		maxf(0.05, fly_time - 0.06)).set_delay(0.06)
 	tw.chain().tween_callback(func() -> void:
 		if is_instance_valid(view):
+			print("[VCANIM] disc-done uid=%d +%dms" % [int(card.get("uid", -1)),
+				Time.get_ticks_msec() - t0])   # [VCANIM] 临时（验收完删）
 			view.visible = false          # OnCardReachedPile：SetActive(false)（:320-332）
 			view.modulate.a = 1.0
 			view._tween_container.scale = Vector2.ONE

@@ -765,10 +765,14 @@ func _enemy_death_fx(dead: Control) -> void:
 	var burn_time := 0.25 * fx_scale   # 2026-11-08 用户令：整体压到 0.25s
 	# 胜利横幅等到溶解播完再弹（这一行之前被误删了，补回）
 	_death_fx_until = maxi(_death_fx_until, Time.get_ticks_msec() + int(0.45 * fx_scale * 1000.0))
-	var twb := create_tween()
+	# 2026-11-13 lambda-capture 案改挂：tween 绑到被烧的卡（原挂屏）——敌阵容器被连根
+	# queue_free 时（清场路径 :587 整 holder 拔），卡没了 tween 随之死、回调不再触雷
+	var twb := dead.create_tween()
 	twb.tween_method(func(v: float) -> void: burn_mat.set_shader_parameter("threshold", v),
 		0.0, 1.0, burn_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	twb.tween_callback(func() -> void:
+		if not is_instance_valid(dead):
+			print("[VCL] burn-end dead freed")   # [VCL] 临时（lambda 案点名后删）
 		if is_instance_valid(dead):
 			dead.queue_free())
 	return
@@ -1048,7 +1052,10 @@ func _try_adopt(n: Control, ang: float) -> void:
 	if _qi_orbit.angle_busy(ang, 0.44):
 		var tw := create_tween()
 		tw.tween_interval(0.05)
-		tw.tween_callback(func() -> void: _try_adopt(n, ang))
+		tw.tween_callback(func() -> void:
+			if not is_instance_valid(n):
+				print("[VCL] adopt-retry mote freed")   # [VCL] 临时（lambda 案点名后删）
+			_try_adopt(n, ang))
 		return
 	_qi_orbit.adopt(n, ang)
 
@@ -1307,15 +1314,21 @@ func DrawCardsCommand(cards: Array) -> void:
 	var stagger := 0.0
 	if n > 1:
 		stagger = log(float(n)) / log(1000.0) / float(n)
+	# 抽牌加速钟＝max(N,3)（2026-11-13 lldb 二次探针翻案：正常战斗每卡 SetSpeed
+	# 两连调 500→1500＝500×max(N,3)——首次探针只看到 500 系新手关无加速路径；
+	# 另见 536/473＝卡牌效果减速。出生点＝手牌根枢轴，1500px/s 短距＝瞬现）
+	var mult := maxf(float(n), VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"])
+	print("[VCANIM] draw-batch n=%d stagger=%.3f mult=%.0f t=%d" % [n, stagger, mult, Time.get_ticks_msec()])   # [VCANIM] 临时（验收完删）
 	for card in cards:
 		card["draw_stagger"] = stagger
-		_hand_pile_view.OnCardAdded(battle, card, true, false, 1.0)
+		_hand_pile_view.OnCardAdded(battle, card, true, false, mult)
 
 ## 离手分流（原版 CardConfig.AddToOnPlayPile 三去向：连击堆(=已打出区)/弃堆/销毁堆）；
 ## 弃/耗走加速钟 mult＝max(同批张数, 3)（MinimumCardPileSpeedMultiplier——
 ## CardPileModel.OnCardAdded 汇编 039-042 直证：凡 addToView 命令恒 ≥3 倍速）
 func _on_hand_card_removed(card: Dictionary, dest: String, batch := 1) -> void:
 	var mult: float = maxf(float(batch), VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"])
+	print("[VCANIM] rm uid=%d dest=%s batch=%d mult=%.1f t=%d" % [int(card["uid"]), dest, batch, mult, Time.get_ticks_msec()])   # [VCANIM] 临时（验收完删）
 	match dest:
 		"played":
 			_hand_pile_view.OnCardPlayedFull(battle, card, false)

@@ -47,6 +47,7 @@ var _frozen_card_combo_value := 0       # _frozenCardComboValue（:2654）
 var _current_card_type_visuals = null   # _currentCardTypeVisuals（:2646；型视觉＝我方剑型徽章）
 # —— 我方卡面子件引用（SetCardConfig/UpdateCostText 消费）——
 var _tilt_view: TextureRect = null
+var _hit_rect: Control = null           # 命中矩形（缩放子树内——原版 PointerEvents 挂点对位）
 var _face_card: Control = null          # SubViewport 内 TcgCard
 var _cost_pip: Control = null           # 费用徽（名 "CostPip"）
 var _qi_icon: Control = null            # 费用徽内子件（名 "QiIcon"）
@@ -55,9 +56,11 @@ var shake_t := 0.0                      # 摇头剩余时长（PlayInvalidCardSh
 
 func _init() -> void:                   # Awake（:3071）
 	super()
-	# 卡根＝命中壳（我方自拟加高，登记）：宽 180（原版卡宽）＋高 277+壳顶留白 118（命中稳定）
+	# 卡根＝几何壳（180×395＝277＋壳顶留白 118）：布局/槽位跟随数学用。命中职能已移交
+	# 缩放子树内 HitRect（2026-11-12 挂点修正——原版卡根无命中：PointerEvents 挂
+	# PositionOffset〔prefab:1864〕，在 TweenContainer 缩放子树内）
 	size = Vector2(VC.CARD_SIZE.x, VC.CARD_SIZE.y + VC.HAND_TOP_PAD)
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ready() -> void:
 	super()                               # View.Start 同构
@@ -76,6 +79,17 @@ func _ready() -> void:
 	_tween_container.name = "TweenContainer"
 	_tween_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_visual_root.add_child(_tween_container)
+	# 命中层（2026-11-12 挂点修正）：原版 PointerEvents 挂 PositionOffset——在
+	# FollowParent→TweenContainer **缩放子树内**（Card_Hand.prefab:1864，PositionOffset
+	# 系 TweenContainer 子 ：1940-1962），uGUI 射线走世界空间 → 命中区随悬停 ×1.5/抬升
+	# 一起长，卡边永远指得住；我方旧制挂卡根壳（不缩放）→ 放大后卡面探出壳 45px 处失悬停
+	#（用户 F6 抓出）。修＝命中矩形进缩放子树、卡面同位（180×277@脸位）。
+	_hit_rect = Control.new()
+	_hit_rect.name = "HitRect"
+	_hit_rect.size = VC.CARD_SIZE
+	_hit_rect.position = Vector2(0.0, VC.HAND_TOP_PAD)
+	_hit_rect.mouse_filter = Control.MOUSE_FILTER_STOP
+	_tween_container.add_child(_hit_rect)
 	# 组件子节点（Unity 多组件同物体 → Godot 子节点制，登记）
 	var mover_script := preload("res://qiforge/vc/TransformMover2D.gd")
 	var mover := Node.new()
@@ -503,7 +517,8 @@ func _can_afford(player_model) -> bool:
 ## 原版等价物＝CardView 从 CardModel/CardConfig 字段现读（UpdateCostText/RefreshCardDescription 族）
 func _rebuild_face() -> void:
 	for ch in _tween_container.get_children():
-		ch.queue_free()
+		if ch.name != "HitRect":         # 命中矩形常驻（重画面不销毁）
+			ch.queue_free()
 	var pm = _player_model()
 	var vdef: Dictionary = CARD.tcg_def_of(_card_model.get("def", {}))
 	if pm != null:
@@ -546,7 +561,7 @@ func _rebuild_face() -> void:
 	tex.stretch_mode = TextureRect.STRETCH_SCALE
 	tex.size = VC.FACE_SIZE * TILT_MARGIN
 	tex.material = mat
-	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 内层纯贴图——事件全归卡根
+	tex.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 内层纯贴图——事件全归 HitRect
 	tex.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	tex.set_meta("tip", Vector2.ZERO)
 	tex.set_meta("sheen", 0.2)

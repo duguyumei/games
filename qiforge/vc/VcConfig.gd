@@ -10,7 +10,7 @@ extends RefCounted
 # ── Card_Hand 场景几何（SC_Game.unity / prefab 直读）────────────────────
 # 手牌堆根：SC_Game 场景 HandPile RectTransform（SC_Game.unity:789268-789292）
 const HAND_ROOT_SCALE := 1.14            # m_LocalScale {1.14,1.14,1.14}（:789279）——上屏倍率真凶
-const HAND_ROOT_ANCHORED_POS := Vector2(0.0, 37.0)   # m_AnchoredPosition（:789289）——底中锚＋37px（行锚 37 实证）
+const HAND_ROOT_ANCHORED_POS := Vector2(0.0, 47.0)   # m_AnchoredPosition（:789289）——原版 37；2026-11-13 用户令整体上移 10px（屏像素，父空间先于 1.14 缩放生效）＝登记偏差
 const HAND_ROOT_SIZE := Vector2(960.0, 182.0)        # m_SizeDelta（:789290）
 const HAND_ROOT_PIVOT := Vector2(0.5, 0.0)           # m_Pivot（:789292）——底中
 # 画布：CanvasScaler 参考分辨率 1920×1080（SC_Game.unity:854020-854024，UiScaleMode=1）
@@ -22,11 +22,20 @@ const CARD_SIZE := Vector2(180.0, 277.0)             # Card_Hand.prefab:1534（�
 # 与命中壳同尺寸——卡面纵横比与原版 1:1（差异登记 #20 关账）。
 const FACE_SIZE := Vector2(180.0, 277.0)
 const SLOT_SIZE := Vector2(100.0, 100.0)             # CardSlot.prefab:61（槽 100×100；GhostVisual 180×277＝卡同寸 :122）
-# 我方自拟（登记）：卡壳加高盖住「原位＋弹起位」——命中区稳定（hover 抬升 38＋余量 80）；
-# 原版命中区＝卡根 RectTransform 180×277。壳顶留白＝抬升＋余量。
-const HAND_TOP_PAD := 118.0                          # hoverHeightOffset 38＋壳加高 80
+# 我方自拟（登记）：壳顶留白——纯几何用途（卡心在壳内偏移＋抬升视觉余量）；命中职能已归
+# 缩放子树内 HitRect（2026-11-12 挂点修正，对位原版 PointerEvents 挂 PositionOffset）
+const HAND_TOP_PAD := 118.0                          # hoverHeightOffset 38＋余量 80
 # 卡心在壳内位置（槽位跟随锚＝卡心）：x＝卡宽/2，y＝壳顶留白＋卡高/2
 const CARD_CENTER_IN_SHELL := Vector2(90.0, 118.0 + 138.5)
+
+# ── 手牌布局真容器 UsedCardSlots（SC_Game 16603 直读，:771888-892——2026-11-12 链全通）──
+# 带内再嵌一层（非铺满带）：锚带顶左 (0,1)、中心＝带顶下方 67.15（anchoredPosition y=−67.15）、
+# 水平中心 449.59、906×224.3（上穿带顶 45、近贴带底）；布局组挂其上（:999883-903：
+# childAlignment 4＝MiddleCenter、padding 0、间距上限 115）→ 槽心＝容器垂直中心。
+# 间距/行宽按 906 算（n=8 间距 15.1）；旧「槽铺满 960×182 带＋18% 截图定标」模型作废
+#（整手高 ~47px 真凶——真值档 §九）。
+const USED_SLOTS_SIZE := Vector2(906.0, 224.3)              # :771891 m_SizeDelta
+const USED_SLOTS_CENTER_IN_BAND := Vector2(449.59, 67.15)   # :771890（449.59485,−67.15）→ Godot y-down 带顶下方
 
 # ── GlobalConfig.asset: cardMovementConfig（:33-49）────────────────────
 const CARD_MOVEMENT := {
@@ -126,7 +135,9 @@ const HOVER_CARD := {
 # ── GlobalConfig.asset: handPileConfig（:335-337）─────────────────────
 const HAND_PILE := {
 	"cardSpacing": 14.0,
-	"defaultCardReorderDelayTime": 0.5,     # AreCardPositionsLocked 交互后锁位时长（邻牌收拢延迟）
+	"defaultCardReorderDelayTime": 0.5,     # 锁位阈值：timer<0.5＝锁（timer 每帧递增）；清零源＝
+	                                        # 加牌/打出/回合始；悬停 OnCardInteracted 仅已锁时续锁
+	                                        # （ISIL HandCardSlotHolder.txt:9791——悬停不引锁）
 }
 
 # ── GlobalConfig.asset: runModeConfig（:845-851）──────────────────────

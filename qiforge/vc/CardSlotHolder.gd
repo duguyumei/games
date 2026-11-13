@@ -42,30 +42,44 @@ func AcquireSlotShiftsSelection() -> bool:
 func SortedSlotStartIndex() -> int:
 	return 0
 
-## AddCardToBottom（:242）——底加（手牌左侧）：取槽→入列表→LinkCard→挂交互
+## AddCardToBottom（:242-286，ISIL/csall 直读 2026-11-13）——底加＝**最左槽＋卡视图垫底**：
+## 池槽 SetAsFirstSibling（:328）＝槽插布局首位（左端→新卡从左进、旧卡右移）；
+## 卡视图 SetAsFirstSibling（:269-270）＝渲染/命中垫底（新卡从手牌底下滑入）；
+## 有选中卡 → SelectedIndex+1（:272-285，左插入把选中序右移）。
+##〔列表同步插首：原版 _activeCardSlots 是 append 序、消费走兄弟序；我方消费走列表序，
+## 保持列表＝树序免索引错位——登记〕
 func AddCardToBottom(card: Dictionary) -> void:
 	var slot = GetCardSlotForBottom(card)
 	if slot == null:
 		return
-	_active_card_slots.push_back(slot)
+	move_child(slot, 0)                       # 槽 SetAsFirstSibling（:328）＝最左
+	_active_card_slots.insert(0, slot)
 	var interactable = _interactable_of(card)
 	if interactable != null:
 		slot.LinkCard(interactable)
 		InitializeCardInteraction(card, slot)
-	set_meta("hand_ev", "add")
+		var cv = interactable._card_view
+		if cv != null and cv.get_parent() != null:
+			cv.get_parent().move_child(cv, 0)  # 卡视图 SetAsFirstSibling（:270）＝垫底
+	var sel := GetSelectedIndex()             # :277-284 选中序右移
+	if sel >= 0 and sel < _active_card_slots.size():
+		SetSelectedIndex(sel + 1)
 	ForceLayoutRefresh()
 
-## AddCardToTop（:288）——顶加（手牌右侧）
+## AddCardToTop（:288-318）——顶加＝**最右槽＋卡视图置顶**（:316/:343 SetAsLastSibling 对称）
 func AddCardToTop(card: Dictionary) -> void:
 	var slot = GetCardSlotForTop(card)
 	if slot == null:
 		return
+	move_child(slot, get_child_count() - 1)   # 槽 SetAsLastSibling（:343）＝最右
 	_active_card_slots.push_back(slot)
 	var interactable = _interactable_of(card)
 	if interactable != null:
 		slot.LinkCard(interactable)
 		InitializeCardInteraction(card, slot)
-	set_meta("hand_ev", "add_top")
+		var cv = interactable._card_view
+		if cv != null and cv.get_parent() != null:
+			cv.get_parent().move_child(cv, cv.get_parent().get_child_count() - 1)
 	ForceLayoutRefresh()
 
 ## GetCardSlotForBottom（:320）——找空槽，无则取池槽
@@ -93,7 +107,6 @@ func TryRemoveCard(card: Dictionary) -> void:
 		DetachCardInteractionHandlers(interactable)
 	_active_card_slots.remove_at(idx)
 	PoolCardSlot(slot)
-	set_meta("hand_ev", "remove")
 	ForceLayoutRefresh()
 
 ## DetachCardInteractionHandlers（:921）——解绑三事件

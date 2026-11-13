@@ -6,8 +6,13 @@
 ## FadeOutGhostsAfterDelay/ForceClearGhosts/RemoveCardWithGhostShift 幽灵段，#5）；
 ## 排序自动触发段（AwaitCommandRunnerAndSort/TrySelectPlayableCard/IsHandStillSorted/
 ## CompareByMana/CompareByColor，#2）。
-## AreCardPositionsLocked（:2549-2583）＝本轮新落地：交互后 0.5s 锁牌位（邻牌收拢延迟——
-## handPileConfig.defaultCardReorderDelayTime 0.5，GlobalConfig.asset:335-337）。
+## 锁位语义（2026-11-12 ISIL 定案，HandCardSlotHolder.txt get_AreCardPositionsLocked/OnCardInteracted
+## ＋csall Update:3728/OnCardAdded:4350/OnCardPlayed:6007）：timer 每帧**递增**（unscaledDeltaTime），
+## locked＝timer < 0.5；**无条件清零源＝加牌/打出/回合开始**；OnCardInteracted（悬停路径）只在
+## **已锁**时清零续锁——**悬停从不引入锁**，空手悬停＝劈开即时生效（我方旧版「悬停即清零」
+## ＝「指上去要过一小会儿邻牌才让位」真凶，2026-11-12 用户 F6 抓出已修）。
+## OnCardInteracted 订阅的原版事件名未从反编译噪声读出（OnEnable 委托构造为地址常量）——
+## 现按悬停路径挂，登记开放。
 extends "res://qiforge/vc/CardSlotHolder.gd"
 
 var _card_reorder_delay := 0.5                  # _cardReorderDelay（FloatAsset→GlobalConfig 真值）
@@ -44,16 +49,16 @@ func AcquireSlotShiftsSelection() -> bool:
 func SortedSlotStartIndex() -> int:
 	return 0
 
-## AddCardToBottom（:2630）——手牌底加（幽灵揭示段缓后）；原版尾段 OnCardAdded 自动排序
-## 段属排序子系统（#2 缓后）——仅记交互时刻
+## AddCardToBottom（:2630）——手牌底加（幽灵揭示段缓后）；原版尾段 OnCardAdded **无条件清零
+## 计时**（:4350）＝加牌引入 0.5s 锁（新牌落位期间邻牌不动）
 func AddCardToBottom(card: Dictionary) -> void:
 	super(card)
-	OnCardInteracted(null)
+	ResetInteractionTimer()
 
 ## AddCardToTop（:2673）
 func AddCardToTop(card: Dictionary) -> void:
 	super(card)
-	OnCardInteracted(null)
+	ResetInteractionTimer()
 
 ## GetCardSlotForBottom（:2680）——幽灵区段缓后＝基类行为
 ## GetCardViewSiblingIndex（:2713）——同上
@@ -92,10 +97,11 @@ func _process(delta: float) -> void:
 func OnCardAdded(_card: Dictionary, _added_card_index: int, _playable_cards_before_adding: int) -> void:
 	pass
 
-## OnCardInteracted（:5996）/ OnCardPlayed（:6007）/ ResetInteractionTimer（:6012）——
-## 交互计时清零（0.5s 锁位的驱动源）
+## OnCardInteracted（:5996，ISIL :9791-9846 直译）——**仅已锁时清零续锁**（`delay > timer`
+## 才写 0；未锁时无操作）：悬停从不引入锁，只能延长既有锁（旧版无条件清零＝悬停延迟真凶）
 func OnCardInteracted(_card) -> void:
-	_time_since_last_card_interaction = 0.0
+	if _time_since_last_card_interaction < _card_reorder_delay:
+		_time_since_last_card_interaction = 0.0
 
 func OnCardPlayed(_card) -> void:
 	_time_since_last_card_interaction = 0.0

@@ -201,6 +201,8 @@ func strike(spec: Dictionary, events: Array, from_g: Vector2, on_beat: Callable)
 		var tw := create_tween()
 		tw.tween_interval(launch0 + (float(FORM["launch_gap"]) * K) * float(i))
 		tw.tween_callback(func() -> void:
+			if not is_instance_valid(sw3):
+				print("[VCL] sword-launch sword freed")   # [VCL] 临时（lambda 案点名后删）
 			_launch(sw3, tgt, (float(FORM["travel"]) * K), ev, i, on_beat))
 		if i == n - 1:
 			var end_at: float = launch0 + (float(FORM["launch_gap"]) * K) * float(i) + 0.06

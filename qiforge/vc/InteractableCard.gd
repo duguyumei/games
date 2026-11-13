@@ -4,7 +4,10 @@
 ## 拖拽族（OnDragStarted/OnDragEnded/CheckForHoveringPlayablePos/DoCardHoveringPlayablePositionAnim）
 ## 不搬（原版代码存在、实际鼠标游玩未启用——用户实机口供＋差异登记#4）。
 ## 手柄选牌族（OnSelect/OnDeselect/HandleControllerInput…）缓后（差异登记#3）。
-## 引擎映射：UGUI PointerEvents → 宿主 Control（CardView 根）gui_input/mouse_entered/exited，
+## 引擎映射：UGUI PointerEvents → HitRect（缩放子树内 180×277 矩形）gui_input/
+## mouse_entered/exited——2026-11-12 挂点修正：对位原版 PointerEvents 挂 PositionOffset
+##（Card_Hand.prefab:1864，TweenContainer 子树内），uGUI 射线走世界空间＝命中随 ×1.5/抬升
+## 同长；旧挂卡根壳（不缩放）→ 放大后卡面探出壳 45px 处失悬停（用户 F6 抓出）。
 ## 本组件为卡根子节点、写卡根与 TweenContainer 变换（Unity 多组件同物体→子节点组件制，登记）。
 ## 悬停抬升层：原版 _hoverOffset Transform＋TransformMover2D；我方＝TweenContainer 位置寻的
 ## （速度/减速带＝hoverCardConfig 750/0.5 真值）——登记「抬升走偏移层」。
@@ -36,12 +39,13 @@ func _init() -> void:
 	IsHoverable = true
 	IsDraggable = false
 
-func _ready() -> void:                  # Awake（:678）——取卡根
+func _ready() -> void:                  # Awake（:678）——取卡根＋接命中层（HitRect）
 	_card_view = get_parent()
-	if _card_view is Control:
-		(_card_view as Control).mouse_entered.connect(_on_mouse_entered)
-		(_card_view as Control).mouse_exited.connect(_on_mouse_exited)
-		(_card_view as Control).gui_input.connect(_on_gui_input)
+	var hit: Control = _card_view._hit_rect
+	if hit != null:                      # 命中在缩放子树内（挂点修正 2026-11-12）
+		hit.mouse_entered.connect(_on_mouse_entered)
+		hit.mouse_exited.connect(_on_mouse_exited)
+		hit.gui_input.connect(_on_gui_input)
 
 func CurrentHoveredOverSlot():          # CurrentHoveredOverSlot 属性（:115）——拖拽专用，恒 null
 	return null
@@ -84,22 +88,23 @@ func UnlinkSlot() -> void:
 		_card_view._visual_root.position = Vector2.ZERO          # visualRoot 归零（:589-592＝拖尾层；
 		                                                           # 旧写 tween 层系错层，unlink 后残余不自清）
 
-## EnableInteraction（:595）
+## EnableInteraction（:595）——命中层开（HitRect）
 func EnableInteraction() -> void:
-	_card_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	if _card_view._hit_rect != null:
+		_card_view._hit_rect.mouse_filter = Control.MOUSE_FILTER_STOP
 
 ## DisableInteractionAndUnlink（:600）
 func DisableInteractionAndUnlink() -> void:
 	UnlinkSlot()
 	_is_selected = false
-	if _card_view is Control:
-		(_card_view as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _card_view._hit_rect != null:
+		_card_view._hit_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 ## DisableInteraction（:609）
 func DisableInteraction() -> void:
 	_is_selected = false
-	if _card_view is Control:
-		(_card_view as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _card_view._hit_rect != null:
+		_card_view._hit_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 ## SelectCard（:615）——广播 CardSelected
 func SelectCard() -> void:
@@ -206,20 +211,22 @@ func UpdatePosition(delta: float) -> void:
 	var target: Vector2 = slot.position + slot.size * 0.5 - VC.CARD_CENTER_IN_SHELL
 	var to := target - root.position
 	if to.length() > 0.00001:            # 方向死区 1E-05（:1101）
-		var speed: float = VC.INTERACTABLE["draggedPositionChangeSpeed"]   # 1000（:1135）
-		if root.has_meta("fly_speed"):
-			speed = float(root.get_meta("fly_speed"))   # 抽牌微滑 500（cardMovementConfig.moveSpeed）
+		# 2026-11-13 ISIL 定案：原版 UpdatePosition 直接写位置（NBUtil.SetPositionIfDifferent），
+		# 速度＝min(1000, dist/dt) 自然减速——不走 mover、无 500 覆盖、无减速带；
+		# mover（SetSpeed/SetTargetPosition）仅住 DoCardHoveredAnim 悬停层
+		var speed: float = VC.INTERACTABLE["draggedPositionChangeSpeed"]   # 1000（:1135, 0x502BBBC）
 		var step := to.length()
-		if root.has_meta("fly_decel"):
-			var decel: float = float(root.get_meta("fly_decel"))
-			if to.length() < decel:
-				speed = speed * clampf(to.length() / decel, 0.02, 1.0)   # 减速带刹车
 		step = minf(step, speed * delta)
 		NBU.SetPositionIfDifferent(root, root.position + to / to.length() * step)
 		if (target - root.position).length_squared() < 0.6:
+			if root.has_meta("anim_t0"):    # [VCANIM] 临时（验收完删）：微滑落地时刻＋残余误差
+				print("[VCANIM] draw-land uid=%s +%dms err=%.1f" % [
+					root.get_meta("hand_uid", -1),
+					Time.get_ticks_msec() - int(root.get_meta("anim_t0")),
+					(target - root.position).length()])
+				root.remove_meta("anim_t0")
 			root.position = target
-			root.remove_meta("fly_speed")   # 落地：微滑覆盖退役，交回常规上限
-			root.remove_meta("fly_decel")
+			root.remove_meta("fly_speed")   # 落地：飞行标记退役（锁豁免/悬停门恢复）
 	# 层2 视觉拖尾（visualRoot local → 0；速度值坏点——draggedFollowSpeed 30 候选，登记待 ISIL）
 	var vr: Control = _card_view._visual_root
 	var dead := 0.0001                   # :1216
