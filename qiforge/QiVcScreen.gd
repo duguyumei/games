@@ -24,6 +24,7 @@ const HAND_PILE_VIEW := preload("res://qiforge/vc/HandPileView.gd")   # 手牌�
 const DISCARD_PILE_VIEW := preload("res://qiforge/vc/DiscardPileView.gd")
 const DESTROY_PILE_VIEW := preload("res://qiforge/vc/DestroyPileView.gd")
 const VCC := preload("res://qiforge/vc/VcConfig.gd")   # 原版配置真值（VC 名已被卡表占用→VCC）
+const VC_CARD := preload("res://qiforge/vc/CardView.gd")   # AnyAnimationInterrupts 静态口（回合闸）
 const CMDQ := preload("res://qiforge/QiVcCmdRunner.gd")  # 统一命令队列（2026-11-12 原版 CommandRunner 同构）
 const FXA := preload("res://qiforge/QiFxAtlas.gd")           # 特效图集（死亡墨屑等）
 const QI_ORBIT := preload("res://qiforge/QiQiOrbit.gd")      # 气珠轨道（气值＝绕珠粒子数）
@@ -115,6 +116,7 @@ func setup(run_ref: Dictionary) -> void:
 	battle.setup(run)
 	battle._screen_attached = true   # 有屏标记（2026-11-12 命令队列制）：敌方动作/效果表现命令走 tick 串行
 	battle.fx_launcher = _launch_fx_cmd   # 效果表现启动器注入（现在＝刷新＋即时落定，动画将来挂）
+	battle.is_any_view_updating = _any_view_updating   # IsAnyViewUpdating 对位注入（回合闸双条件后半）
 	battle.pending_visual = true   # 落账延迟制（2026-11-08）：伤害账单等击中帧逐事件结算
 	_pool_hp_max = _pool_hp_total_max()
 	battle.changed.connect(_refresh)
@@ -149,7 +151,7 @@ func _setup_hand_views() -> void:
 		_hand_pile_view.ResetForNewBattle()
 		_played_cards.clear()
 	_hand_pile_view.setup(battle, _cardq, {"tip_avoid": _hud_avoid()})
-	_discard_view.setup(battle, _cardq, _hand_pile_view, Callable(self, "_discard_center"))
+	_discard_view.setup(battle, _cardq, _hand_pile_view, Callable(self, "_discard_flight_center"))
 	_destroy_view.setup(battle, _cardq, _hand_pile_view)
 	battle.cards_drawn.connect(DrawCardsCommand)
 	battle.hand_card_removed.connect(_on_hand_card_removed)
@@ -547,7 +549,11 @@ func _refresh() -> void:
 func _maybe_wait_discard() -> void:
 	if String(battle.phase) != "discarding":
 		return
-	while _cardq.IsProcessing():   # WaitWhile(IsProcessing) 同构（原版消费者轮询制）
+	print("[VCANIM] wait-discard t=%d queue=%d（等队列＋飞行全落再推进）" % [
+		Time.get_ticks_msec(), _cardq.Count()])   # [VCANIM] 临时（弃牌/抽牌交接验收完删）
+	# 原版 PostPlayerEndTurnState 双条件：!IsProcessing && !IsAnyViewUpdating——
+	# 后半 2026-11-13 补搬（日志实锤抽牌比弃牌落堆早 0.5s 插队；_any_view_updating＝对位）
+	while _cardq.IsProcessing() or _any_view_updating():
 		await get_tree().process_frame
 	if battle != null and String(battle.phase) == "discarding":
 		battle.discard_anim_done()
@@ -778,6 +784,15 @@ func _enemy_death_fx(dead: Control) -> void:
 	return
 	# 原卡立刻撤下（碎块已经接管画面）
 	dead.queue_free()
+
+## GameView.IsAnyViewUpdating 对位（2026-11-13 二次定案）：登记方全库检索＝
+## AnimatedWeapon/WeaponCollision/SantaSplash/ValkyrieTurner（武器攻击动画）、BreakableCard
+## （碎牌）、TreasureChest、AfterlifeEffect——**全是战斗特效；弃牌/抽牌飞行、经验珠、
+## 焚卡均不登记**（View 目录零调用）。故本闸只认「攻击演出在飞」（_replay_active）。
+## 〔早前把卡牌飞行三账塞进闸＝过度搬运，教程局实测把回合卡死 650ms——弃牌飞行按原版
+## 就是背景板，回合在队列排空即推进（录屏 0.2s 实证），飞行在敌方回合里自行飞完〕
+func _any_view_updating() -> bool:
+	return _replay_active
 
 func _spawn_qi_motes(n: int, origin: Vector2) -> void:
 	# 路线（2026-11-06 用户令）：从弃牌堆**左侧**起飞 → 绕到气珠**上方** → 从**右下偏中心**进入。
@@ -1299,6 +1314,14 @@ func _draw_center() -> Vector2:
 func _discard_center() -> Vector2:
 	return _pile_center("DiscardPile", DISCARD_PILE_CENTER)
 
+## 弃牌飞行落点＝原版 DiscardPile._pileRoot.position（MoveToCardPile C#:305 直读）——
+## 场景链 17084←16253(0,−32)←16566(650,−448)@中心锚←Cards 全拉伸（运行时画布全幅）：
+## 画布 **(1610, 60) y-up ＝ 右下角**（Godot y-down → (1610,1020)），即弃堆计数图标处。
+##〔2026-11-13 轴向勘误：早前把 y-up 60 误当「距顶 60」写成右上——Unity 画布 y 向上，
+## 60＝离底缘 60px；右下与弃堆 UI 同位互证〕
+func _discard_flight_center() -> Vector2:
+	return Vector2(1610.0, 1020.0)
+
 ## ══ 手牌系统（2026-11-12 结构 1:1 迁移）══════════════════════════════
 ## 旧「changed→全销毁重建」制整体退役——新制＝持久卡实体（HandPileView uid 终身视图）
 ## ＋槽位每帧跟随（InteractableCard.Update 链）＋逐卡事件命令驱动（cards_drawn/
@@ -1327,7 +1350,20 @@ func DrawCardsCommand(cards: Array) -> void:
 ## 弃/耗走加速钟 mult＝max(同批张数, 3)（MinimumCardPileSpeedMultiplier——
 ## CardPileModel.OnCardAdded 汇编 039-042 直证：凡 addToView 命令恒 ≥3 倍速）
 func _on_hand_card_removed(card: Dictionary, dest: String, batch := 1) -> void:
-	var mult: float = maxf(float(batch), VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"])
+	# 弃牌速度下限 3→5（2026-11-13 用户三连「还是很慢」裁定；原版真值 3＝MinimumCardPileSpeedMultiplier
+	# ——3 张批飞行 0.6-0.7s，对齐原版 5+ 张批典型观感 0.3-0.45s。单常量，回退改 3.0 即复原）
+	var floor_mult: float = VCC.DISCARD_SPEED_FLOOR if dest == "discard" \
+		else VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"]
+	var mult: float = maxf(float(batch), floor_mult)
+	# 终局瞬隐（2026-11-13 用户观察实证＝原版 teleportToPosition 路径）：敌全灭后的弃手牌
+	# 直接消失不走飞行——终局弃手≠回合末弃手，两形态
+	var finale := battle != null and (battle.encounter["active"] as Array).is_empty()
+	if dest == "discard" and finale:
+		print("[VCANIM] rm uid=%d dest=discard-finale 瞬隐 t=%d" % [int(card["uid"]), Time.get_ticks_msec()])   # [VCANIM] 临时（验收完删）
+		_discard_view.OnCardAdded(battle, card, false, true, 1.0)
+		return
+	if dest == "discard":
+		card["disc_stagger"] = log(float(maxi(1, batch))) / log(1000.0) / float(maxi(2, batch))
 	print("[VCANIM] rm uid=%d dest=%s batch=%d mult=%.1f t=%d" % [int(card["uid"]), dest, batch, mult, Time.get_ticks_msec()])   # [VCANIM] 临时（验收完删）
 	match dest:
 		"played":
@@ -1974,29 +2010,38 @@ func _hit_stop(ms: int) -> void:
 	_hit_stop_until = Time.get_ticks_msec() + ms
 	Engine.time_scale = 0.08
 
-## 打出的卡：先向上「出招」再落已打出区（ComboPile 对位；出招后立刻飞右上角＝
-## 2026-11-06 用户裁定：特效与落位并行）。持久制：视图不销毁，落位后驻留已打出区。
+## 打出的卡→已打出区（ComboPile 链 1:1，2026-11-13 bp9 实测定案）：
+## 位置层＝mover 寻的（~130ms 飞行）＋视觉层＝ScaleTo(2.0, 0.5s) 到达脉冲→ScaleTo(1.0, 0.1s) 收尾。
+## 旧「上冲→落位」系自创已退役。碎牌（第 5 次）仍走 _shatter_tail 不变。
 func _anim_card_play_out(w: Control) -> void:
-	_kill_card_tween(w)   # 互杀保护（2026-11-06）：同卡旧飞行动画先废再起
-	var start := w.position
-	var up := -92.0 / VCC.HAND_ROOT_SCALE   # 上冲 92px（屏幕量）→ 手牌根本地单位
+	_kill_card_tween(w)
+	var uid := int(w.get_meta("hand_uid", -1))
+	if _shattered_uids().has(uid):
+		var tw_s: Tween = create_tween()
+		w.set_meta("card_tween", tw_s)
+		_shatter_tail(w, tw_s)   # 碎牌：不落区——原地碎裂
+		return
+	# ComboPile 目标位（已打出区堆位）
+	var n2: int = battle.played_pile.size()
+	var idx2: int = maxi(0, n2 - 1)
+	var pose: Dictionary = _played_target(w, idx2, n2)
+	w.z_index = int(pose["z"])
+	# ── 视觉层：ScaleTo(2.0, 0.5s) 到达脉冲（与飞行并行启动，原版实测同帧）──
 	var tw: Tween = create_tween()
 	w.set_meta("card_tween", tw)
-	tw.tween_property(w, "position", start + Vector2(0.0, up), 0.07)\
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(w, "scale", Vector2(1.05, 1.05), 0.07)
-	if _shattered_uids().has(int(w.get_meta("hand_uid", -1))):
-		_shatter_tail(w, tw)   # 碎牌（第 5 次打出）：不落区——原地碎裂（DestroyPile 管线收尾）
-	else:
-		var n2: int = battle.played_pile.size()
-		var idx2: int = maxi(0, n2 - 1)
-		var pose: Dictionary = _played_target(w, idx2, n2)
-		w.z_index = int(pose["z"])
-		tw.tween_property(w, "position", pose["pos"], 0.22)\
-			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		tw.parallel().tween_property(w, "scale", pose["scale"], 0.22)
-		tw.parallel().tween_property(w, "rotation", pose["rot"], 0.22)
-		tw.parallel().tween_property(w, "modulate:a", 1.0, 0.22)
+	tw.tween_property(w._tween_container, "scale", Vector2(2.0, 2.0), 0.5)
+	# ── 位置层：mover 寻的（ComboPile 局部目标，实测 ~130ms 到达）──
+	var dist: float = (pose["pos"] - w.position).length()
+	w._transform_mover._useLocalPosition = true
+	w._transform_mover.SetSpeed(maxf(dist / 0.13, 50.0))   # 实测 175ms/190ms 全程
+	w._transform_mover.SetDecelerateDistance(10.0)
+	w.MoveTo(pose["pos"], func() -> void:
+		if is_instance_valid(w):
+			# 到达收尾：ScaleTo(1.0, 0.1s)（原版 OnCardReachedPile 后收尾）
+			var tw2: Tween = w.create_tween()
+			tw2.tween_property(w._tween_container, "scale", Vector2.ONE, 0.1)
+			w.rotation = pose["rot"]
+			w.scale = pose["scale"])
 
 func _shattered_uids() -> Dictionary:
 	var out2 := {}
@@ -2143,14 +2188,18 @@ func _rebuild_played() -> void:
 		if not live.has(uid):
 			vanished.push_back(uid)
 	var v_mult: float = maxf(float(vanished.size()),
-		VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"])
+		VCC.DISCARD_SPEED_FLOOR)   # 已打出区冲弃同管线（2026-11-13 同偏离裁定）
 	for uid in vanished:
 		var gone: Control = _played_cards[uid]
 		_played_cards.erase(uid)
 		if is_instance_valid(gone):
 			var dcard: Dictionary = _find_discard_card(uid)
 			if not dcard.is_empty():
-				_discard_view.OnCardAdded(battle, dcard, true, false, v_mult)
+				# 终局（敌全灭）同瞬隐路径（teleport）——2026-11-13
+				if (battle.encounter["active"] as Array).is_empty():
+					_discard_view.OnCardAdded(battle, dcard, false, true, 1.0)
+				else:
+					_discard_view.OnCardAdded(battle, dcard, true, false, v_mult)
 			else:
 				gone.visible = false   # 兜底（理论不到：消失卡必先入弃堆）
 	# 新到：点击路径由 _on_card_to_played（play_out）全程接管；其余路径（play_all/兜底）在此落位

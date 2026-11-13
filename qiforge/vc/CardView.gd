@@ -146,6 +146,10 @@ func OnSpawned() -> void:
 		_rotation_tweener.kill()
 	if _scale_tweener != null and _scale_tweener.is_valid():
 		_scale_tweener.kill()
+	if _transform_mover != null:
+		_transform_mover.ForceStopMove()   # 池腾换停 mover（防旧飞行寻的拉扯复用卡）
+	_s_interrupt_count -= _animation_interrupts.size()   # 飞行被池腾换强杀时到达回调不跑
+	_animation_interrupts.clear()                        # ——打断随池复位清空（防等待悬挂）
 	_tween_container.scale = Vector2.ZERO          # _tweenContainer.localScale = zero（:3231）
 	_tween_container.rotation = 0.0                # rotation = identity（:3233）
 	scale = _initial_scale                         # transform.localScale 重置（:3235）
@@ -370,13 +374,16 @@ func OnReturnToHandTriggered(_player_model) -> void:
 func SpawnFromTop() -> void:
 	pass
 
-## MoveTo（:9343）——TransformMover2D 寻的链（速度/减速带由调用方按 config 传）
+## MoveTo（:9343）——TransformMover2D 寻的链（速度/减速带由调用方按 config 传）。
+## 双层制底层统一入口（2026-11-13）：位置传输一律走 mover——到达事件由 mover 的
+## ReachedTargetPosition 信号驱动（原版同构）。清旧连接（池复用防幽灵回调）
 func MoveTo(target_position: Vector2, on_complete: Callable = Callable()):
+	for c in _transform_mover.ReachedTargetPosition.get_connections():
+		_transform_mover.ReachedTargetPosition.disconnect(c["callable"])
 	_transform_mover.SetTargetPosition(target_position)
 	_transform_mover.ResetOnComplete()
 	if on_complete.is_valid():
-		if not _transform_mover.ReachedTargetPosition.is_connected(on_complete):
-			_transform_mover.ReachedTargetPosition.connect(on_complete)
+		_transform_mover.ReachedTargetPosition.connect(on_complete)
 
 func StopTransformMover() -> void:     # :9408
 	_transform_mover.ForceStopMove()
@@ -439,12 +446,22 @@ func AttachVisualRoot() -> void:
 	_visual_root.scale = Vector2.ONE
 
 ## RegisterAnimationInterrupt（:9680）/ Deregister（:9686）——动画打断登记（加牌命令等待判据）
+## 静态计数＝GameView.IsAnyViewUpdating 对位（PostPlayerEndTurnState 回合闸双条件的后半：
+## !IsProcessing && !IsAnyViewUpdating——飞行中的卡算 view updating，回合推进要等它落定）
+static var _s_interrupt_count := 0
+
 func RegisterAnimationInterrupt(owner) -> void:
 	if not _animation_interrupts.has(owner):
 		_animation_interrupts.push_back(owner)
+		_s_interrupt_count += 1
 
 func DeregisterAnimationInterrupt(owner) -> void:
-	_animation_interrupts.erase(owner)
+	if _animation_interrupts.has(owner):
+		_animation_interrupts.erase(owner)
+		_s_interrupt_count -= 1
+
+static func AnyAnimationInterrupts() -> bool:
+	return _s_interrupt_count > 0
 
 ## HasAnimationInterrupts 属性（:2694）
 func HasAnimationInterrupts() -> bool:
@@ -532,8 +549,7 @@ func _rebuild_face() -> void:
 	vp.size = Vector2i(roundi(VC.FACE_SIZE.x * TILT_SS), roundi(VC.FACE_SIZE.y * TILT_SS))
 	vp.transparent_bg = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if visible else SubViewport.UPDATE_DISABLED
-	vp.disable_3d = true
-	vp.msaa_2d = Viewport.MSAA_4X   # 卡面框线抗锯齿（2026-11-08 用户指正外框锯齿）
+	vp.disable_3d = true   # 2026-11-13 删 msaa_2d（GLES3 不支持 2D MSAA 空转告警；抗锯齿靠 TILT_SS 超采样）
 	var card: Control = CARD.make_tcg_card(vdef, "vc_hand")   # 宽 180＝原版 1:1（工厂 vc_hand 档）
 	card.theme = QIFONTS.default_theme()   # SubViewport 不吃根窗主题
 	card.scale = Vector2(TILT_SS, TILT_SS)

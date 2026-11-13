@@ -24,9 +24,6 @@ var _uid_views := {}                        # uid → CardView（模型终身绑
 var _card_pool: Array = []                  # PlayerModel._cardPool 视图半边（:6026）
 var _hooks: Dictionary = {}                 # 屏注入（tip_avoid 等）
 var _current_damage_detail := 0             # _currentDamageDetail（:254）——伤害详情刷新位
-# [VCTRAJ] 临时轨迹追踪（验收完删）：uid → Array[Vector2]，每帧记录飞行中卡的位置
-var _traj := {}                              # uid → PackedVector2Array
-var _traj_clear_t := 0.0                     # 轨迹清空倒计时
 
 func _init() -> void:
 	# 子件在 _init 预建：宿主装配序＝setup() 先于 add_child（QiVcRoot:432-434 实测），
@@ -129,6 +126,18 @@ func ResetForNewBattle() -> void:
 ## 大批＝不可见流光整批落左侧（2026-11-13 用户实测三证词定案）。
 ## 命令长度＝本批节拍（draw_stagger＝Log(N,1000)/N——原版精确代数坏点，v0.2 实装值）。
 func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier := 1.0) -> void:
+	# 等 !HasAnimationInterrupts（基类 :1224 语义）——原版＝弃牌飞行 Register/Deregister 打断
+	# 驱动：上一回合还在飞的弃牌未到堆前，本卡抽牌命令不开跑（2026-11-13 用户抓出
+	# 「弃牌中抽牌动画插队」——覆写时丢循环＝空架子真凶）
+	var waiting = _view_of(card)
+	if waiting != null:
+		var wtree := Engine.get_main_loop() as SceneTree
+		var w0 := Time.get_ticks_msec()
+		while waiting.HasAnimationInterrupts() and wtree != null:
+			await wtree.process_frame
+		if Time.get_ticks_msec() - w0 > 0:
+			print("[VCANIM] draw-wait uid=%d +%dms 等弃牌飞行落定" % [int(card.get("uid", -1)),
+				Time.get_ticks_msec() - w0])   # [VCANIM] 临时（弃牌/抽牌交接验收完删）
 	var view = GetOrCreateCardView(card)
 	if view == null:
 		return
@@ -159,15 +168,6 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 	view.visible = true
 	TryInsertCard(view, 0)
 	view.OnCardAddedToHand(player_model)
-	# [VCANIM] 临时埋点（验收完删）：抽牌时间线——出生位/目标位/层级序（scene＝树序，
-	# Godot 命中走树序不走 z_index——重叠区谁吃事件由它决定）＋三件套完成时刻
-	var t0 := Time.get_ticks_msec()
-	view.set_meta("anim_t0", t0)
-	print("[VCANIM] draw-in uid=%d t=%d start=(%.0f,%.0f) tgt=(%.0f,%.0f) z=%d scene=%d/%d lock=%s" % [
-		int(card.get("uid", -1)), t0, born.x, born.y, tgt.x, tgt.y,
-		view.z_index, view.get_index(), view.get_parent().get_child_count(),
-		"1" if _card_group.AreCardPositionsLocked() else "0"])
-	_stack_line("draw")
 	# 出场三件套（fire-and-forget；淡入＋缩放 0→1＋旋入，时长÷mutl＝d__12 :167/:198-204；
 	# ease 10 InOutCubic 实测）
 	var dm := maxf(1.0, view_speed_multiplier)
@@ -178,10 +178,6 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 		VC.DRAW_CARD["scaleDuration"] / dm).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	tw.parallel().tween_property(view._tween_container, "rotation", 0.0,
 		VC.DRAW_CARD["rotateDuration"] / dm).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	tw.finished.connect(func() -> void:
-		if is_instance_valid(view):
-			print("[VCANIM] draw-3done uid=%d +%dms" % [int(card.get("uid", -1)),
-				Time.get_ticks_msec() - t0]))   # [VCANIM] 临时（验收完删）
 	# 命令长度＝本批节拍（连续流水：上一张刚起飞下一张接上）
 	var stagger := float(card.get("draw_stagger", 0.0))
 	if stagger > 0.0:
@@ -352,9 +348,6 @@ func _on_interaction_started(interactable) -> void:
 	if view.get_parent() != null:
 		view.get_parent().move_child(view, -1)   # SetAsLastSibling（ISIL CardSlotHolder:7667）——
 		# Godot 命中序走树序不走 z_index（引擎事实）：置尾＝渲染+命中同时置顶，重叠区全归悬停卡
-	print("[VCANIM] hover-in uid=%d scene=%d/%d z=%d t=%d" % [uid, view.get_index(),
-		view.get_parent().get_child_count(), view.z_index, Time.get_ticks_msec()])   # [VCANIM] 临时（层级序验证）
-	_stack_line("hover-in")
 	view.GetCardTooltips(_player_model)
 	view.ToggleTooltips(true)
 	for card in _pile_cards():
@@ -369,8 +362,6 @@ func _on_interaction_ended(interactable) -> void:
 	_card_group.ForceLayoutRefresh()
 	view.z_index = 10
 	_restore_view_order_to_slots()   # 悬停收尾层级复位（OnCardInteractionEnded :3723-3725 对位）
-	print("[VCANIM] hover-out uid=%d scene=%d z=%d t=%d" % [uid, view.get_index(),
-		view.z_index, Time.get_ticks_msec()])   # [VCANIM] 临时（验收完删）
 	view.ToggleTooltips(false)
 	for card in _pile_cards():
 		if int(card.get("uid", -1)) == uid:
@@ -386,56 +377,6 @@ func _process(delta: float) -> void:
 		for ch in (view as Control).get_children():
 			if ch.name == "InteractableCard":
 				ch.HoverOffsetSeek(delta)
-	# [VCTRAJ] 临时（验收完删）：飞行中卡每帧记录位置＋落地日志
-	var any_flying := false
-	for view in _card_views:
-		if not is_instance_valid(view) or not (view as Control).visible:
-			continue
-		var v := view as Control
-		if v.has_meta("fly_speed"):
-			any_flying = true
-			var uid := int(v.get_meta("hand_uid", -1))
-			if uid >= 0:
-				if not _traj.has(uid):
-					_traj[uid] = PackedVector2Array()
-				(_traj[uid] as PackedVector2Array).append(v.position)
-	if any_flying:
-		_traj_clear_t = 3.0
-		queue_redraw()
-	elif _traj_clear_t > 0.0:
-		_traj_clear_t -= delta
-		if _traj_clear_t <= 0.0:
-			# 落定快照：全部轨迹＋最终位置打一行
-			for uid in _traj:
-				var pts: PackedVector2Array = _traj[uid]
-				if pts.size() > 1:
-					var dist := (pts[pts.size()-1] - pts[0]).length()
-					var path_len := 0.0
-					for i in range(1, pts.size()):
-						path_len += (pts[i] - pts[i-1]).length()
-					print("[VCTRAJ] uid=%d pts=%d start=(%.0f,%.0f) end=(%.0f,%.0f) straight=%.0f path=%.0f detour=%.0f" % [
-						uid, pts.size(), pts[0].x, pts[0].y,
-						pts[pts.size()-1].x, pts[pts.size()-1].y,
-						dist, path_len, path_len - dist])
-			_traj.clear()
-			queue_redraw()
-
-## [VCTRAJ] 临时（验收完删）：轨迹叠加层——飞行路径画彩色线
-func _draw() -> void:
-	var colors := [Color.RED, Color.CYAN, Color.YELLOW, Color.MAGENTA,
-		Color.LIME, Color.ORANGE, Color.DEEP_PINK, Color.AQUA]
-	var i := 0
-	for uid in _traj:
-		var pts: PackedVector2Array = _traj[uid]
-		if pts.size() > 1:
-			var col: Color = colors[i % colors.size()]
-			col.a = 0.7
-			draw_polyline(pts, col, 3.0)
-			# 起点标记
-			draw_circle(pts[0], 5.0, col)
-			# 终点标记
-			draw_circle(pts[pts.size()-1], 3.0, Color(col.r, col.g, col.b, 1.0))
-		i += 1
 
 ## 悬停收尾视图层级复位（原版 OnCardInteractionEnded 尾段，CardSlotHolder.cs:3723-3738：
 ## view.SetSiblingIndex(槽序)＋SelectedIndex=-1）——悬停置顶只在悬停期间有效，松手回槽序；
@@ -449,14 +390,3 @@ func _restore_view_order_to_slots() -> void:
 		var v: Control = it._card_view
 		if v.visible and v.get_parent() == self:
 			move_child(v, get_child_count() - 1)
-
-## [VCANIM] 临时（动画/层级验收完删）：手牌叠压快照——按场景树序列卡 uid@树位（z≠10 才标）。
-## Godot 命中序＝树序（z_index 只管渲染）——谁在重叠区吃事件由本行直接可读。
-func _stack_line(ev: String) -> void:
-	var parts: Array = []
-	for ch in get_children():
-		if ch is Control and ch.has_meta("hand_uid") and (ch as Control).visible:
-			var zz: int = (ch as Control).z_index
-			parts.append("%d@%d%s" % [int((ch as Control).get_meta("hand_uid", -1)),
-				(ch as Control).get_index(), "" if zz == 10 else "(z%d)" % zz])
-	print("[VCANIM] stack[%s] %s" % [ev, " ".join(parts)])

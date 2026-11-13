@@ -219,12 +219,6 @@ func UpdatePosition(delta: float) -> void:
 		step = minf(step, speed * delta)
 		NBU.SetPositionIfDifferent(root, root.position + to / to.length() * step)
 		if (target - root.position).length_squared() < 0.6:
-			if root.has_meta("anim_t0"):    # [VCANIM] 临时（验收完删）：微滑落地时刻＋残余误差
-				print("[VCANIM] draw-land uid=%s +%dms err=%.1f" % [
-					root.get_meta("hand_uid", -1),
-					Time.get_ticks_msec() - int(root.get_meta("anim_t0")),
-					(target - root.position).length()])
-				root.remove_meta("anim_t0")
 			root.position = target
 			root.remove_meta("fly_speed")   # 落地：飞行标记退役（锁豁免/悬停门恢复）
 	# 层2 视觉拖尾（visualRoot local → 0；速度值坏点——draggedFollowSpeed 30 候选，登记待 ISIL）

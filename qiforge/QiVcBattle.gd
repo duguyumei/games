@@ -68,6 +68,9 @@ var _last_action := {}        # 敌 uid -> 上一拍动作 kind（防连出）
 var cmds := CMDQ.new()        # 统一命令队列（敌方动作/效果表现命令——2026-11-12 CommandRunner 1:1 自排空泵）
 var _screen_attached := false # 有屏标记：true＝表现命令入队（泵串行排空）；false（探针/无屏）＝直执行不入队
 var fx_launcher: Callable = Callable()   # 效果表现命令体（Screen 注入：(payload) async；未注入＝fx 不入队）
+var is_any_view_updating: Callable = Callable()   # GameView.IsAnyViewUpdating 对位（Screen 注入；
+                                                   # 回合闸双条件后半——EnemyTurnState.WaitForTurnEnd
+                                                   # ＝WaitWhile(IsProcessing‖IsAnyViewUpdating) 2026-11-13 补全）
 
 func setup(run: Dictionary) -> void:
 	rng.seed = int(run.get("seed", 20261031))
@@ -209,20 +212,21 @@ func _round_start() -> void:
 func end_turn() -> void:
 	if phase != "player":
 		return
+	print("[VCANIM] end-turn n=%d t=%d" % [hand.size(), Time.get_ticks_msec()])   # [VCANIM] 临时（弃牌轮验收完删）
+	# 回合末顺序（2026-11-13 原版录屏逐帧实证）：**已打出区先扫→手牌后弃**（played 区
+	# 6.45 清空、手牌 6.65 才动——旧版反序）；两段各 ~0.2s 清空、缩卡后微卡隐形飞行
 	var batch := hand.size()   # 同批张数→弃牌加速钟（原版 cardsBeingAddedAtOnce）
+	discard_pile.append_array(played_pile)
+	played_pile = []
+	played_changed.emit()   # 已打出区冲弃（屏 _relayout_played → 弃牌管线，v_mult 钟）
 	for card in hand:
 		_strip_lv(card)   # 离开手牌即复原（动态升级口径）
 		discard_pile.push_back(card)
-		hand_card_removed.emit(card, "discard", batch)   # 视图＝弃牌飞行（discardCardConfig×max(N,3)）
+		hand_card_removed.emit(card, "discard", batch)   # 视图＝弃牌飞行（discardCardConfig×max(N,3））
 	hand = []
 	# 2026-11-06 用户令：回合结束瞬间气即回到上限（不等新回合开始——弃牌动画/敌方回合
 	# 期间显示的已是新值）；_round_start 里同款重置兜开局首拍（幂等）
 	player["qi"] = int(player["qi_max"])
-	# 2026-11-06 四区制（规格 v1）：回合结束＝已打出区整堆平移弃牌堆（**不洗**——洗只在下次
-	# 抽牌需要时发生）；打出时已逐张复原（离开手牌即复原——见 play_card）
-	discard_pile.append_array(played_pile)
-	played_pile = []
-	played_changed.emit()
 	if not discard_pile.is_empty():
 		event.emit("回合结束：手牌与已打出牌冲弃")
 	check_piles()
@@ -240,14 +244,14 @@ func discard_hand_finale() -> void:
 	if hand.is_empty() and played_pile.is_empty():
 		return
 	var batch := hand.size()
+	discard_pile.append_array(played_pile)   # 终局同序：已打出区先扫（2026-11-13 录屏实证）
+	played_pile = []
+	played_changed.emit()
 	for card in hand:
 		_strip_lv(card)
 		discard_pile.push_back(card)
 		hand_card_removed.emit(card, "discard", batch)   # 终局弃手＝同一弃牌飞行管线
 	hand = []
-	discard_pile.append_array(played_pile)
-	played_pile = []
-	played_changed.emit()
 	check_piles()
 	changed.emit()
 
@@ -255,6 +259,7 @@ func discard_hand_finale() -> void:
 func discard_anim_done() -> void:
 	if phase != "discarding":
 		return
+	print("[VCANIM] discard-anim-done t=%d →敌方回合" % Time.get_ticks_msec())   # [VCANIM] 临时（弃牌轮验收完删）
 	phase = "enemy"
 	changed.emit()
 	enemy_round()   # 纯逻辑自动流转：UI 层只管按信号播表现，不手搓回合步进
@@ -310,7 +315,10 @@ func enemy_round() -> void:
 		cmds.EnqueueCommand(EnemyActCommand.bind(a[0], a[1]))
 	for b in burns:
 		cmds.EnqueueCommand(EnemyBurnCommand.bind(b[0], int(b[1])))
-	while cmds.IsProcessing():   # WaitForTurnEnd 同构（泵自排空，消费者轮询）
+	# WaitForTurnEnd 双条件全量（2026-11-13 补全：原版 EnemyTurnState＝WaitWhile(IsProcessing
+	# ‖IsAnyViewUpdating)——旧版只排空队列，灼烧焚卡/经验珠等 fire-and-forget 演出会被下回合
+	# 抽牌插队；IsAnyViewUpdating＝屏注入的全局动画在飞计数）
+	while cmds.IsProcessing() or (is_any_view_updating.is_valid() and is_any_view_updating.call()):
 		await (Engine.get_main_loop() as SceneTree).process_frame
 	enemy_round_end()
 

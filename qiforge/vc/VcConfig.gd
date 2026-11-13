@@ -56,6 +56,10 @@ const CARD_MOVEMENT := {
 	"cardDrawLogBase": 1000.0,             # 抽牌对数钟底
 	"cardDiscardLogBase": 1000.0,          # 弃牌对数钟底
 }
+## 弃牌速度钟下限＝5（2026-11-13 登记偏差：原版真值 3〔MinimumCardPileSpeedMultiplier〕，
+## 用户三连「还是很慢」裁定提速——3 张批飞行 0.6-0.7s → 对齐原版 5+ 张批典型 0.3-0.45s。
+## 仅作用于 dest=discard；回退＝改回 3.0）
+const DISCARD_SPEED_FLOOR := 5.0
 
 # ── GlobalConfig.asset: drawCardConfig（:50-56）───────────────────────
 const DRAW_CARD := {
