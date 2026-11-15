@@ -1192,10 +1192,6 @@ func _qi_mote_tex() -> Texture2D:
 ## 2026-11-15 用户口径：小卡**牌背**（原版就是牌背，非差异）；起点＝弃牌堆视觉中心，
 ## 与抽牌堆视觉中心同 y → 水平直线。
 func _on_piles_shuffled(src: String, cards: Array) -> void:
-	print("[洗牌视图] signal t=%d src=%s n=%d hand_visible=%s finale=%s reward=%s paused=%s" % [
-		Time.get_ticks_msec(), src, cards.size(),
-		str(_hand_pile_view != null and _hand_pile_view.visible), str(_finale),
-		str(_reward_ui != null), str(get_tree().paused)])
 	# 2026-11-15 用户令：按动画完成，不按固定时长模拟。命令在 _anim_shuffle_fly 真正
 	# await 到末卡 Tween finished 后才结束；胜利/抽牌等 _cardq 空，自然等真实动画。
 	_cardq.EnqueueCommand(_shuffle_cards_command.bind(cards, src))
@@ -1233,8 +1229,6 @@ func _on_piles_shuffled(src: String, cards: Array) -> void:
 			if src == "played":
 				origin = PLAYED_PILE_ROOT + PLAYED_PILE_LOCAL
 			_spawn_qi_motes(gained, origin)
-		if OS.has_environment("QI_DEBUG_CENTERS"):
-			print("[shuffle] gained=", gained, " src=", src)
 	# 洗牌命令本身（_shuffle_cards_command）占住 _cardq，直到末卡 Tween finished；
 	# 不再用固定时长模拟，也不再加 endWait 0.5（用户 2026-11-15 令）。
 
@@ -1266,21 +1260,12 @@ func _anim_shuffle_fly(cards: Array, src: String) -> void:
 		var discard_center := _discard_center()
 		start_center = _to_hand_local(Vector2(discard_center.x, draw_center.y)) 			- VCC.CARD_CENTER_IN_SHELL
 		start_valid = true
-	print("[洗牌] 整堆洗回 n=%d 小卡(牌背)直线0.3s →抽堆心(%.0f,%.0f)" % [
-		cards.size(), tgt.x, tgt.y])   # [洗牌] 临时取证（洗牌对齐案结案删）
-	print("[洗牌视图] startWait 前 hand_visible=%s finale=%s reward=%s paused=%s" % [
-		str(_hand_pile_view != null and _hand_pile_view.visible), str(_finale),
-		str(_reward_ui != null), str(tree.paused)])
 	await tree.create_timer(VCC.DECK_REFILL["startWait"], false).timeout
-	print("[洗牌视图] startWait 后 t=%d hand_visible=%s paused=%s" % [
-		Time.get_ticks_msec(),
-		str(_hand_pile_view != null and _hand_pile_view.visible), str(tree.paused)])
 	var flown := 0
 	var last_state := {"tw": null, "done": false}
 	for card in cards:
 		var view = _hand_pile_view._view_of(card)
 		if view == null or not is_instance_valid(view):
-			print("[洗牌] 跳过缺失视图 uid=%d" % int(card.get("uid", -1)))   # [洗牌] 临时取证
 			continue
 		flown += 1
 		view.KillPileTween()
@@ -1300,13 +1285,6 @@ func _anim_shuffle_fly(cards: Array, src: String) -> void:
 		view.visible = true
 		view.modulate.a = 1.0
 		view.z_index = 30
-		print("[洗牌视图] uid=%d view_visible=%s in_tree=%s parent_visible=%s hand_visible=%s z=%d" % [
-			int(card.get("uid", -1)), str(view.visible), str(view.is_visible_in_tree()),
-			str(view.get_parent() != null and view.get_parent().visible),
-			str(_hand_pile_view != null and _hand_pile_view.visible), view.z_index])
-		print("[洗牌] 飞 uid=%d (%.0f,%.0f)→(%.0f,%.0f) 小卡%.2f" % [
-			int(card.get("uid", -1)), view.position.x, view.position.y,
-			tgt.x, tgt.y, view._tween_container.scale.x])   # [洗牌] 临时取证
 		var tw: Tween = view.create_tween()
 		view.set_meta("pile_tween", tw)
 		tw.tween_property(view, "position", tgt, VCC.DECK_REFILL["discardToDeckDuration"])\
@@ -1321,12 +1299,8 @@ func _anim_shuffle_fly(cards: Array, src: String) -> void:
 				view.z_index = 10
 				view._tween_container.scale = Vector2.ONE
 				view._tween_container.rotation = 0.0
-				view.HideCardBack()
-				print("[洗牌] 落定 uid=%d visible=%s in_tree=%s hand_visible=%s" % [
-					int(card.get("uid", -1)), str(view.visible), str(view.is_visible_in_tree()),
-					str(_hand_pile_view != null and _hand_pile_view.visible)]))   # [洗牌] 临时取证
+				view.HideCardBack())
 		await tree.create_timer(0.05, false).timeout   # 逐卡节拍（一张接一张）
-	print("[洗牌] 起飞 %d/%d" % [flown, cards.size()])   # [洗牌] 临时取证
 	# 真·等待末卡 Tween 完成（不是固定时长）：即使把 discardToDeckDuration 改成 1 小时，
 	# 胜利/后续命令也会等满 1 小时。用 dict 持完成标志（lambda 捕获引用），避免 duration
 	# 极短时 tween 在 await 前已结束导致漏信号；tween 被 kill 时靠 is_valid 兜底退出。
@@ -1335,7 +1309,6 @@ func _anim_shuffle_fly(cards: Array, src: String) -> void:
 			if not (last_state["tw"] as Tween).is_valid():
 				break
 			await tree.process_frame
-		print("[洗牌] 末卡动画完成 t=%d" % Time.get_ticks_msec())   # [洗牌] 临时取证
 
 ## 洗牌换气：N 点气 = N 颗小气粒，从抽牌堆沿弧线飞进气珠（2026-11-06 用户令）
 ## 每颗带一条短拖尾；最后一颗到账时气珠跳数字＋飘 +N
@@ -1482,8 +1455,6 @@ func _on_hand_card_removed(card: Dictionary, dest: String, batch := 1) -> void:
 	# 直接消失不走飞行——终局弃手≠回合末弃手，两形态
 	var finale := battle != null and (battle.encounter["active"] as Array).is_empty()
 	if dest == "discard" and finale:
-		print("[终局] 手牌瞬隐 uid=%d（原版链：GameModel→DiscardHand(isGameOver:true)→teleport→TeleportCardToPileView）" % [
-			int(card["uid"])])   # [终局] 临时取证（瞬隐链案结案删）
 		_discard_view.OnCardAdded(battle, card, false, true, 1.0)
 		return
 	if dest == "discard":
@@ -2079,9 +2050,6 @@ func _check_finale() -> void:
 	if not (battle.encounter["active"] as Array).is_empty():
 		return
 	_finale = true
-	print("[终局时序] _check_finale t=%d reward=%s paused=%s queue=%s replay=%s play_pending=%d" % [
-		Time.get_ticks_msec(), str(_reward_ui != null), str(get_tree().paused),
-		str(_cardq.IsProcessing()), str(_any_view_updating()), _played_anim_pending])
 	# 〔2026-11-15 首关终局卡取证注释·未改〕终局判定在命中拍才跑到这里；此时 play_card 已在
 	# 上游发出 "played" 视图事件，卡已开始飞右上角。预测：若把 played 路由延迟到本判定之后，
 	# 首关击杀卡会走终局瞬隐而不是 ComboPile；非终局不受影响。
@@ -2115,14 +2083,11 @@ func _run_terminal_settlement(tree: SceneTree) -> void:
 		return
 	var any_discarded: bool = battle.discard_hand_finale()
 	if any_discarded and tree != null:
-		print("[终局账] anyDiscarded=true → 等 1000ms 再洗回 t=%d paused=%s" % [
-			Time.get_ticks_msec(), str(tree.paused)])
 		await tree.create_timer(1.0, false).timeout
 	if battle == null:
 		return
 	battle.add_discard_pile_to_deck()
 	_finale_cleanup_done = true
-	print("[终局账] 终局结算完成 _finale_cleanup_done=true t=%d" % Time.get_ticks_msec())
 	_try_finish_win()
 
 ## 击拍收尸：这一拍就是它的最后一击 → 此刻才放死亡特效＋经验珠
@@ -2199,7 +2164,6 @@ func _anim_card_play_out(w: Control) -> void:
 	# 延迟到伤害/终局判定后，本短路才会在首关生效；但数据入弃堆/胜利洗回仍需另定。
 	if battle != null and (battle.encounter["active"] as Array).is_empty():
 		w.visible = false
-		print("[终局] 打出即隐 uid=%d（遭遇已结束：不走已打出区管线）" % uid)   # [终局] 临时取证（瞬隐链案结案删）
 		return
 	if _shattered_uids().has(uid):
 		var tw_s: Tween = create_tween()
@@ -2227,32 +2191,8 @@ func _anim_card_play_out(w: Control) -> void:
 			w.ScaleTo(Vector2.ONE, 0.1)
 			w.rotation = pose["rot"]
 			w.scale = pose["scale"]
-			# [出牌] 临时取证（已打出区对齐案结案删）：落位叠堆点＋叠序
-			var pp: Vector2 = pose["pos"]
-			print("[出牌] 落位 uid=%d 叠堆点(%.0f,%.0f) 叠序=%d" % [uid, pp.x, pp.y, idx2])
-			_dbg_watch_played(w, uid)
 			_played_anim_pending = maxi(0, _played_anim_pending - 1))
 
-## [出牌] 临时取证（落位动一下案）：落位后 1.2s 逐帧盯梢——位置/旋转/缩放任何变化
-## 带时间戳点名（谁在落位后又动了卡，日志自己交代；不预设真凶）
-func _dbg_watch_played(w: Control, uid: int) -> void:
-	var last: Vector2 = w.position
-	var last_rot: float = w.rotation
-	var last_sc: float = w._tween_container.scale.x
-	var t0 := Time.get_ticks_msec()
-	for _i in 75:
-		await get_tree().process_frame
-		if not is_instance_valid(w):
-			return
-		if (w.position - last).length_squared() > 0.01 \
-				or absf(w.rotation - last_rot) > 0.002 \
-				or absf(w._tween_container.scale.x - last_sc) > 0.005:
-			print("[出牌] ⚠落位后变化 uid=%d +%dms 位(%.0f,%.0f) 旋=%.1f° 层缩放=%.2f" % [
-				uid, Time.get_ticks_msec() - t0, w.position.x, w.position.y,
-				rad_to_deg(w.rotation), w._tween_container.scale.x])
-			last = w.position
-			last_rot = w.rotation
-			last_sc = w._tween_container.scale.x
 
 func _shattered_uids() -> Dictionary:
 	var out2 := {}
@@ -2405,8 +2345,6 @@ func _rebuild_played() -> void:
 			if not dcard.is_empty():
 				# 终局（敌全灭）同瞬隐路径（teleport）——2026-11-13
 				if (battle.encounter["active"] as Array).is_empty():
-					print("[终局] 已打出区瞬隐 uid=%d（我方等效：原版无逐张路径、已打出区随换场整体消失——差异登记）" % [
-						uid])   # [终局] 临时取证（瞬隐链案结案删）
 					_discard_view.OnCardAdded(battle, dcard, false, true, 1.0)
 				else:
 					_discard_view.OnCardAdded(battle, dcard, true, false, v_mult)
@@ -2499,9 +2437,6 @@ func _apply_played_pose(w: Control, idx: int, n: int, dur: float) -> void:
 	if w == null or not is_instance_valid(w):
 		return
 	var pose := _played_target(w, idx, n)
-	print("[出牌] 重摆 uid=%d (%.0f,%.0f)→(%.0f,%.0f) dur=%.2f" % [
-		int(w.get_meta("hand_uid", -1)), w.position.x, w.position.y,
-		(pose["pos"] as Vector2).x, (pose["pos"] as Vector2).y, dur])   # [出牌] 临时取证（落位动一下案结案删）
 	w.z_index = int(pose["z"])
 	if dur <= 0.0:
 		w.position = pose["pos"]
@@ -2605,10 +2540,6 @@ func _sync_level() -> void:
 func _open_reward() -> void:
 	if _reward_ui != null:
 		return
-	print("[奖励时序] open t=%d level=%d xp=%d/%d win_pending=%s finale=%s hand_visible=%s" % [
-		Time.get_ticks_msec(), int(run.get("level", 1)), _xp_shown_total(),
-		VC.xp_to_next(int(run.get("level", 1))), str(_win_pending), str(_finale),
-		str(_hand_pile_view != null and _hand_pile_view.visible)])
 	# 弹窗前断焦（2026-11-09 修词条浮窗残留）：悬停链跑在卡内 _process 里，下面
 	# paused=true 会把它冻住——不主动撤，「击退」等词条浮窗与伤害预览会冻结在屏上
 	# 残留到关窗后（触发升级的那次打出必中：满级一击＝悬停刚打出的卡）
@@ -2632,10 +2563,6 @@ func _open_reward() -> void:
 	QI_PAUSE.request("reward")
 
 func _on_reward_done() -> void:
-	print("[奖励时序] done 进入 t=%d finale=%s win_pending=%s hand_visible=%s queue=%s paused=%s" % [
-		Time.get_ticks_msec(), str(_finale), str(_win_pending),
-		str(_hand_pile_view != null and _hand_pile_view.visible),
-		str(_cardq.IsProcessing()), str(get_tree().paused)])
 	QI_PAUSE.release("reward")   # 世界恢复：余下的攻击段/飞行珠接着飞
 	# 手牌回来（2026-11-11 修「先隐藏又闪现」：终局后不回——原版＝离开玩家回合即交互
 	# 失效，胜利时序 DiscardHand 弃走；我方 _predict_end_and_hide 已收起＝单向保持）
@@ -2650,9 +2577,6 @@ func _on_reward_done() -> void:
 	# 它落地再弹下一窗，全落地＝立即弹——原版 ContinueXpFillAfterLevelUp 同构）。
 	_sync_level()
 	_refresh()
-	print("[奖励时序] done 退出 t=%d finale=%s win_pending=%s hand_visible=%s reward=%s" % [
-		Time.get_ticks_msec(), str(_finale), str(_win_pending),
-		str(_hand_pile_view != null and _hand_pile_view.visible), str(_reward_ui != null)])
 	if _win_pending and _xp_shown_total() < VC.xp_to_next(int(run.get("level", 1))):
 		_try_finish_win()   # 显示值不满且胜利挂起 → 收胜（够级的话留给开窗链）
 
@@ -2679,17 +2603,11 @@ func _on_card_chosen(cid: String) -> void:
 ## （2026-11-09 贴原版零特效令：满级忙窗挂钟随升级动画链一并退役——弹窗由「条满」
 ## 事件驱动＋世界冻结天然互斥，胜利收尾不再需要对表）
 func _try_finish_win() -> void:
-	print("[胜利时序] try t=%d win_pending=%s xp_flights=%d reward=%s finale=%s queue=%s hand_visible=%s" % [
-		Time.get_ticks_msec(), str(_win_pending), _xp_flights, str(_reward_ui != null),
-		str(_finale), str(_cardq.IsProcessing()),
-		str(_hand_pile_view != null and _hand_pile_view.visible)])
 	if not _win_pending or _xp_flights > 0 or _reward_ui != null:
 		return
 	if not _finale_cleanup_done:
-		print("[胜利时序] 等终局弃手/洗回完成 t=%d" % Time.get_ticks_msec())
 		return
 	if _cardq.IsProcessing():
-		print("[胜利时序] 等 cardq 清空 t=%d" % Time.get_ticks_msec())
 		# 终局弃牌命令还没落定（2026-11-12 原版制：WaitWhile(IsProcessing) 同构——
 		# 等最后一张手牌落进弃堆再收胜利）。落定后**重入**不落底：等待期间经验珠可能
 		# 已开升级弹窗（顶部 _reward_ui 复查＝双窗竞态守卫，await 直落底会丢——审计修）
@@ -2706,11 +2624,9 @@ func _try_finish_win() -> void:
 	# 2026-11-09 用户令：0.8s 呼吸段删（当日早些时候），贴原版补回 100ms 微垫
 	# （原版 EncounterDefeatedState 转场前 UniTask.Delay(100, ignoreTimeScale:false)——
 	# 吃世界时钟、暂停敏感；浮层带「返回地图」确认键——点击才回地图）
-	print("[胜利时序] 100ms 呼吸开始 t=%d" % Time.get_ticks_msec())
 	await get_tree().create_timer(0.1, false).timeout
 	if not is_inside_tree():
 		return
-	print("[胜利时序] 100ms 结束 → 胜利浮层 t=%d" % Time.get_ticks_msec())
 	_show_end_overlay("win")
 
 func _stop_xp_flights() -> void:
@@ -2720,9 +2636,6 @@ func _stop_xp_flights() -> void:
 		_xp_fx.clear()
 
 func _on_ended(result: String) -> void:
-	print("[胜利时序] ended t=%d result=%s finale=%s reward=%s hand_visible=%s" % [
-		Time.get_ticks_msec(), result, str(_finale), str(_reward_ui != null),
-		str(_hand_pile_view != null and _hand_pile_view.visible)])
 	if result == "win":
 		_win_pending = true
 		_refresh()             # 先补刷：终局判定早于刷新时，阵亡敌的珠还没出生就被结算了
@@ -2732,9 +2645,6 @@ func _on_ended(result: String) -> void:
 	_show_end_overlay("lose")
 
 func _show_end_overlay(result: String) -> void:
-	print("[胜利时序] show_end_overlay t=%d result=%s finale=%s hand_visible=%s" % [
-		Time.get_ticks_msec(), result, str(_finale),
-		str(_hand_pile_view != null and _hand_pile_view.visible)])
 	_refresh()
 	_overlay = Control.new()
 	_overlay.z_index = 100   # 盖住手牌（手牌 z 序已抬到 0..60）

@@ -215,8 +215,6 @@ func end_turn() -> void:
 	# 回合末顺序（2026-11-13 原版录屏逐帧实证）：**已打出区先扫→手牌后弃**（played 区
 	# 6.45 清空、手牌 6.65 才动——旧版反序）；两段各 ~0.2s 清空、缩卡后微卡隐形飞行
 	var batch := hand.size()   # 同批张数→弃牌加速钟（原版 cardsBeingAddedAtOnce）
-	print("[牌堆] 回合末：已打出区%d张→弃堆、手牌%d张待弃" % [
-		played_pile.size(), hand.size()])   # [牌堆] 临时取证（洗牌触发案结案删）
 	discard_pile.append_array(played_pile)
 	played_pile = []
 	played_changed.emit()   # 已打出区冲弃（屏 _relayout_played → 弃牌管线，v_mult 钟）
@@ -249,15 +247,10 @@ func discard_hand_finale() -> bool:
 	# 本方法只做“弃手/已打出区→弃堆”并返回 anyDiscarded；洗回由 add_discard_pile_to_deck()
 	# 单独执行（对位 TryAddDiscardPileToDeck），屏侧按返回值决定是否先等 1000ms。
 	var any_discarded := not hand.is_empty() or not played_pile.is_empty()
-	print("[终局账] 进入 discard_hand_finale t=%d hand=%d played=%d discard=%d draw=%d anyDiscarded=%s" % [
-		Time.get_ticks_msec(), hand.size(), played_pile.size(), discard_pile.size(),
-		draw_pile.size(), str(any_discarded)])
 	# 原版 DiscardHand / DiscardComboPile 均无条件调用；这里即使两堆空也继续（洗回仍要做）。
 	discard_pile.append_array(played_pile)   # 终局同序：已打出区先扫（2026-11-13 录屏实证）
 	played_pile = []
 	played_changed.emit()
-	print("[终局账] played→discard 完成 t=%d discard=%d" % [
-		Time.get_ticks_msec(), discard_pile.size()])
 	var batch := hand.size()
 	for card in hand:
 		_strip_lv(card)
@@ -265,8 +258,6 @@ func discard_hand_finale() -> bool:
 		hand_card_removed.emit(card, "discard", batch)   # 终局弃手＝同一弃牌飞行管线
 	hand = []
 	check_piles()
-	print("[终局账] hand→discard 完成 t=%d discard=%d" % [
-		Time.get_ticks_msec(), discard_pile.size()])
 	changed.emit()
 	return any_discarded
 
@@ -281,9 +272,6 @@ func add_discard_pile_to_deck() -> void:
 	_shuffle(moved3)
 	draw_pile.append_array(moved3)
 	piles_shuffled.emit("discard", moved3)
-	print("[牌堆] 胜利收尾：弃堆%d张洗回抽堆（OnEncounterDefeated 对位）" % [moved3.size()])   # [牌堆] 临时取证
-	print("[终局账] 洗回 emit 完成 t=%d cards=%d draw=%d" % [
-		Time.get_ticks_msec(), moved3.size(), draw_pile.size()])
 	changed.emit()
 
 ## 弃牌表现完成回调（屏驱动；幂等——phase 已推进则忽略）
@@ -929,14 +917,11 @@ func draw_cards(n: int, keep_last_played := false) -> void:
 	if n <= 0:
 		return
 	if draw_pile.size() < n:
-		print("[牌堆] 抽牌不够：抽堆%d 需%d（弃堆%d 已打出区%d）" % [
-			draw_pile.size(), n, discard_pile.size(), played_pile.size()])   # [牌堆] 临时取证（洗牌触发案结案删）
 		if not discard_pile.is_empty():
 			var moved: Array = discard_pile
 			discard_pile = []
 			_shuffle(moved)
 			draw_pile.append_array(moved)
-			print("[牌堆] 洗回：弃堆%d张→抽堆（触发点＝抽牌不够）" % [moved.size()])   # [牌堆] 临时取证
 			piles_shuffled.emit("discard", moved)
 			event.emit("弃牌堆整堆洗回抽牌堆")
 		elif not played_pile.is_empty():
@@ -949,14 +934,11 @@ func draw_cards(n: int, keep_last_played := false) -> void:
 			discard_pile = []
 			_shuffle(moved2)
 			draw_pile.append_array(moved2)
-			print("[牌堆] 二级回收：已打出区%d张→弃堆→洗回抽堆（触发点＝抽牌不够且弃堆空）" % [
-				pool.size()])   # [牌堆] 临时取证
 			piles_shuffled.emit("played", moved2)
 			event.emit("已打出牌收拢，整堆洗回抽牌堆")
 	var drawn: Array = []
 	for _i in n:
 		if draw_pile.is_empty():
-			print("[牌堆] 两级全空：抽到为止（本批实抽%d）" % [drawn.size()])   # [牌堆] 临时取证
 			break   # 两级都空：抽到为止（规格§4）
 		var c: Dictionary = draw_pile.pop_front()
 		hand.push_back(c)

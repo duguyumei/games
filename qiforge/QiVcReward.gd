@@ -188,7 +188,6 @@ func _process(delta: float) -> void:
 			var hover_tip = _hover_vis.get_meta("kw_tip", null)
 			var over_card := _hover_vis.get_global_rect().grow(6.0).has_point(mouse)
 			if not over_card and not (hover_tip != null and hover_tip.pointer_over(mouse)):
-				print("[VCDIAG][reward] hover-fade cid=%s" % [_hover_cid])   # [VCDIAG] 临时埋点
 				_reset_hover_vis(_hover_vis)
 				_hover_vis = null
 			elif hover_tip != null:
@@ -216,7 +215,6 @@ func _card_clicked(cid: String) -> void:
 	if not _force_gifts.is_empty():
 		_force_gifts.pop_front()
 	# 2026-11-08 用户令：不要特效——点完直接结算、关窗（牌由宿主收进手牌/牌组）
-	print("[VCDIAG][reward] pick cid=%s hover_cid=%s hover_valid=%s" % [cid, _hover_cid, is_instance_valid(_hover_vis)])   # [VCDIAG] 临时埋点
 	# 点选即收词条浮窗（2026-11-10 原版「状态转移即开关」锚点制——其余路径＝卡随弹窗销毁同死）
 	if _hover_vis != null and is_instance_valid(_hover_vis):
 		var pick_tip = _hover_vis.get_meta("kw_tip", null)
@@ -237,7 +235,6 @@ func _play_tidi(cid: String) -> void:
 	if card_btn == null:
 		_after_anim()
 		return
-	print("TIDI start ", cid)
 	for c in _card_box.get_children():
 		if c != card_btn:
 			var tw_o := create_tween()
@@ -326,7 +323,6 @@ func _consume_pick() -> void:
 	if int(run.get("pending_picks", 0)) > 0:
 		_roll()
 	else:
-		print("[VCDIAG][reward] done hover_cid=%s hover_valid=%s" % [_hover_cid, is_instance_valid(_hover_vis)])   # [VCDIAG] 临时埋点
 		done.emit()
 
 func _on_skip() -> void:
@@ -444,7 +440,6 @@ func _offer_hover(vis: Control, cid: String, on: bool) -> void:
 		return
 	if not on:
 		return   # 离开卡不立刻收：交给 _process 判"是否移到浮窗上"（与手牌一致）
-	print("[VCDIAG][reward] hover cid=%s" % [cid])   # [VCDIAG] 临时埋点（2026-11-09 排查，完撤）
 	# 单宿主互斥（审计补——旧 show_stack 自带、组件制须显式）：滑到新卡＝旧卡浮窗即关，
 	# 且旧卡必须缩回——旧制只关浮窗、_hover_vis 随即改指新卡，旧卡永远没人复位＝
 	# 「移走不复原」真凶（2026-11-15 F6）。
