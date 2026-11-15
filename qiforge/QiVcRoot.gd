@@ -172,7 +172,7 @@ func _ready() -> void:
 					# 洗牌换气视觉验收（2026-11-06）：模拟 +3 气后触发洗牌表现
 					if OS.has_environment("QI_SHUF"):
 						b.player["qi"] = mini(30, int(b.player["qi"]) + (1 if OS.has_environment("QI_ONE") else (2 if OS.has_environment("QI_TWO") else 3)))
-						_screen._on_piles_shuffled("discard")
+						_screen._on_piles_shuffled("discard", [])
 						_screen._refresh()
 						if OS.has_environment("QI_WATCH"):
 							# 专测动态调速：等并入完成后，每 0.35s 打一次角度并截图

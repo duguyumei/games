@@ -144,6 +144,7 @@ func StartInteraction() -> void:
 ## EndInteraction（:790）——收悬停动画＋广播
 func EndInteraction() -> void:
 	_is_hovering = false
+	_card_view.set_meta("hover_active", false)   # tilt 门：离悬停即停驱（残余自行衰减归零）
 	DoCardUnhoveredAnim()
 	InteractionEnded.emit(self)
 	_card_view._tween_container.rotation = 0.0   # _hoverOffset.localRotation 归零（:807）
@@ -158,6 +159,7 @@ func OnHoverStarted(_event) -> void:
 	if _card_view.has_meta("fly_speed") or _card_view.modulate.a < 0.99:
 		return
 	_is_hovering = true
+	_card_view.set_meta("hover_active", true)   # tilt 门：悬停才驱动倾斜/光泽（原版 HoverTilt 语义，2026-11-15）
 	StartInteraction()
 
 ## OnHoverEnded（:1719）
@@ -199,13 +201,11 @@ func UpdateHandTilt(delta: float) -> void:
 func UpdatePosition(delta: float) -> void:
 	if _current_card_slot == null or _card_view == null or not is_instance_valid(_card_view):
 		return
-	# 锁位（AreCardPositionsLocked 真义＝卡位不追槽：交互后 0.5s 内邻牌不收拢；
-	# 飞行中的卡不受锁——出场微滑必须入格）
-	if not _card_view.has_meta("fly_speed"):
-		var holder = (_current_card_slot as Node).get_parent()
-		if holder != null and holder.has_method("AreCardPositionsLocked") \
-				and holder.AreCardPositionsLocked():
-			return
+	# 【2026-11-13 锁门撤销】原版锁（AreCardPositionsLocked）不消费于追槽——csall 全库
+	# 消费者仅两处：HandCardSlotHolder.GrowGhostSlotsAsync（:6371 幽灵槽等解锁，缓后#5）＋
+	# PlayerModel.PrepareForDrawAsync（:296 抽牌准备等待，待补搬）；InteractableCard.cs 零引用
+	# ＝原版卡从不冻结、手牌重排全程连续。旧「锁内卡不追槽」系悬停让位案推断误接
+	# （落地卡冻 0.5s→跳＝抽牌「动一下」真凶，[手牌] 日志实锤 uid=7 案），撤。
 	var root: Control = _card_view
 	var slot: Control = _current_card_slot
 	var target: Vector2 = slot.position + slot.size * 0.5 - VC.CARD_CENTER_IN_SHELL
@@ -220,7 +220,7 @@ func UpdatePosition(delta: float) -> void:
 		NBU.SetPositionIfDifferent(root, root.position + to / to.length() * step)
 		if (target - root.position).length_squared() < 0.6:
 			root.position = target
-			root.remove_meta("fly_speed")   # 落地：飞行标记退役（锁豁免/悬停门恢复）
+			root.remove_meta("fly_speed")   # 落地：飞行标记退役（悬停门恢复；锁不拦追槽）
 	# 层2 视觉拖尾（visualRoot local → 0；速度值坏点——draggedFollowSpeed 30 候选，登记待 ISIL）
 	var vr: Control = _card_view._visual_root
 	var dead := 0.0001                   # :1216

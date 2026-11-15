@@ -21,6 +21,7 @@ const CARD := preload("res://qiforge/QiCardStyle.gd")
 const QIFONTS := preload("res://qiforge/QiFontBank.gd")
 const KW_TIP := preload("res://qiforge/QiKeywordTooltip.gd")
 const TILT_SHADER := preload("res://qiforge/assets/card_tilt_glint.gdshader")
+const CARDBACK_TEX := preload("res://qiforge/assets/hud/cardback.png")
 
 # —— 我方自研件参数（非原版；倾斜贴图超采样/外扩/上限/平滑）——
 const TILT_SS := 3.0          # SubViewport 超采样倍率
@@ -47,6 +48,7 @@ var _frozen_card_combo_value := 0       # _frozenCardComboValue（:2654）
 var _current_card_type_visuals = null   # _currentCardTypeVisuals（:2646；型视觉＝我方剑型徽章）
 # —— 我方卡面子件引用（SetCardConfig/UpdateCostText 消费）——
 var _tilt_view: TextureRect = null
+var _back_view: TextureRect = null   # 牌背覆盖层（洗牌小卡用；与 TiltView 同脸位）
 var _hit_rect: Control = null           # 命中矩形（缩放子树内——原版 PointerEvents 挂点对位）
 var _face_card: Control = null          # SubViewport 内 TcgCard
 var _cost_pip: Control = null           # 费用徽（名 "CostPip"）
@@ -90,6 +92,18 @@ func _ready() -> void:
 	_hit_rect.position = Vector2(0.0, VC.HAND_TOP_PAD)
 	_hit_rect.mouse_filter = Control.MOUSE_FILTER_STOP
 	_tween_container.add_child(_hit_rect)
+	# 牌背覆盖层（原版牌背 sprite 的 2D 对位；洗牌小卡必须显示牌背，避免泄露抽堆顺序）。
+	# 挂 TweenContainer 内，随小卡缩放/旋转/位移；默认隐藏。
+	_back_view = TextureRect.new()
+	_back_view.name = "BackView"
+	_back_view.texture = CARDBACK_TEX
+	_back_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_back_view.stretch_mode = TextureRect.STRETCH_SCALE
+	_back_view.size = VC.FACE_SIZE
+	_back_view.position = Vector2(0.0, VC.HAND_TOP_PAD)
+	_back_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_back_view.visible = false
+	_tween_container.add_child(_back_view)
 	# 组件子节点（Unity 多组件同物体 → Godot 子节点制，登记）
 	var mover_script := preload("res://qiforge/vc/TransformMover2D.gd")
 	var mover := Node.new()
@@ -153,7 +167,21 @@ func OnSpawned() -> void:
 	_tween_container.scale = Vector2.ZERO          # _tweenContainer.localScale = zero（:3231）
 	_tween_container.rotation = 0.0                # rotation = identity（:3233）
 	scale = _initial_scale                         # transform.localScale 重置（:3235）
+	HideCardBack()
 	shake_t = 0.0
+
+## 牌背显示/隐藏（实现辅助；牌背＝原版行为，非差异。洗牌时不暴露抽堆顺序）
+func ShowCardBack() -> void:
+	if _back_view != null:
+		_back_view.visible = true
+	if _tilt_view != null:
+		_tilt_view.visible = false
+
+func HideCardBack() -> void:
+	if _back_view != null:
+		_back_view.visible = false
+	if _tilt_view != null:
+		_tilt_view.visible = true
 
 ## SubscribeToCardEvents（:3238）/ UnsubscribeFromCardEvents（:3247）——
 ## 原版订阅 CardModel 数据事件；我方 changed 驱动 RefreshCardsUI 对位，占位保留
@@ -533,8 +561,10 @@ func _can_afford(player_model) -> bool:
 ## vdef 合成＝tcg_def_of(卡定义)＋运行态（费用活查询/裂纹档/升金/碎裂/当前型）——
 ## 原版等价物＝CardView 从 CardModel/CardConfig 字段现读（UpdateCostText/RefreshCardDescription 族）
 func _rebuild_face() -> void:
+	if _back_view != null:
+		_back_view.visible = false   # 重画脸即撤牌背（新 TiltView 随后重建为可见）
 	for ch in _tween_container.get_children():
-		if ch.name != "HitRect":         # 命中矩形常驻（重画面不销毁）
+		if ch.name != "HitRect" and ch.name != "BackView":   # 命中/牌背常驻
 			ch.queue_free()
 	var pm = _player_model()
 	var vdef: Dictionary = CARD.tcg_def_of(_card_model.get("def", {}))
@@ -651,6 +681,10 @@ func _drive_tilt(delta: float) -> void:
 	var mat: ShaderMaterial = _tilt_view.material as ShaderMaterial
 	if mat == null:
 		return
+	# 2026-11-15 对齐原版 HoverTilt 语义：倾斜/光泽/亮度只在**命中层悬停**期间驱动——
+	# 静止卡永远端正（旧制按「鼠标在卡面矩形内」驱动：开局鼠标恰停在卡上时卡面像素
+	# 缓滑向鼠标方向＝开局「动一下」真凶，四轮节点/矩形日志全静默＝动的是像素层）
+	var hover_active: bool = bool(get_meta("hover_active", false))
 	var mouse: Vector2 = get_global_mouse_position()
 	var r: Rect2 = _tilt_view.get_global_rect()
 	var ctr: Vector2 = r.position + r.size * 0.5
@@ -659,16 +693,16 @@ func _drive_tilt(delta: float) -> void:
 		(mouse.y - ctr.y) / maxf(1.0, half.y))
 	var inside: bool = absf(nv.x) < 1.0 and absf(nv.y) < 1.0
 	var tip_tgt := Vector2.ZERO
-	if inside:
+	if hover_active and inside:
 		tip_tgt = -Vector2(clampf(nv.x, -1.0, 1.0), clampf(nv.y, -1.0, 1.0)) * TILT_MAX
 	var cyc: float = fmod(Time.get_ticks_msec() * 0.0002, 2.0)
-	var sheen_tgt: float = (cyc if cyc <= 1.0 else 2.0 - cyc) * 0.72
+	var sheen_tgt: float = ((cyc if cyc <= 1.0 else 2.0 - cyc) * 0.72) if hover_active else 0.0
 	if OS.has_environment("QI_FREEZE_SHEEN"):
 		sheen_tgt = 0.40
 	var kk: float = clampf(delta * TILT_SMOOTH, 0.0, 1.0)
 	var tip: Vector2 = (_tilt_view.get_meta("tip", Vector2.ZERO) as Vector2).lerp(tip_tgt, kk)
 	var sheen: float = lerpf(float(_tilt_view.get_meta("sheen", 0.2)), sheen_tgt, kk)
-	var hov: float = lerpf(float(_tilt_view.get_meta("hov", 0.0)), 1.0 if inside else 0.0, kk)
+	var hov: float = lerpf(float(_tilt_view.get_meta("hov", 0.0)), 1.0 if hover_active else 0.0, kk)
 	if OS.has_environment("QI_FORCE_TIP"):
 		tip = Vector2(0.5, 0.3)
 	if _face_card != null and is_instance_valid(_face_card) and _face_card.glint_mat != null:

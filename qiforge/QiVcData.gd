@@ -279,7 +279,7 @@ static func pick_enemies_by_difficulty(rng: RandomNumberGenerator, floor_spec: D
 #endregion
 
 #region 主角与开局（2026-11-03 用户裁定：初始 50 血；气＝上限重置制 2026-11-06 终裁）
-const PLAYER_BASE := {"hp": 50, "qi_base": 0, "draw_per_turn": 3}   # qi_base 已退役（气改上限重置制，2026-11-06）
+const PLAYER_BASE := {"hp": 50, "qi_base": 0, "draw_per_turn": 5}   # 每回合默认抽5（2026-11-15 用户口述；新手第一关牌组仅1张→实抽1；qi_base 已退役）
 const QI_BASE_MAX := 2        # 气上限·基础档（可成长：局外 run.qi_max／局内 qi_max 效果——2026-11-06 终裁）
 const QI_CAP := 6             # 气上限成长护栏（数值轮可调；回合重置/洗牌 +当前上限，上限成长两处同步放大）
 const CRIT_CHANCE := 0.25   # 暴击率初始 25%（2026-11-07 用户定；倍率 ×2）
@@ -290,14 +290,12 @@ const LV_POWER_STEP := 0.3   # 动态升级·等级倍率步进（暂定可调�
 static func level_mult(lv: int) -> float:
 	return 1.0 + LV_POWER_STEP * float(maxi(0, lv))
 
-## 开局卡组（2026-11-10 动态升级引擎轮：三张基础攻击卡每型 2 张共 6 张——暂定可调；
-## 孤张制〔原「连环刺」单张〕随连击退役）
-## 开局卡组（2026-11-10 动态升级引擎轮：三张基础攻击卡每型 2 张共 6 张——暂定可调；
-## 孤张制〔原「连环刺」单张〕随连击退役）
-## 〔2026-11-12 临时〕追加三张抽牌测试卡（抽牌动画验收——验完删）：
-## 12 张开局保证「回合抽 8」「打出抽 8」两种极限场景牌够抽（弃堆循环也兜得住）
-const START_DECK := ["hengpi", "hengpi", "zhici", "zhici", "shangliao", "shangliao",
-	"test_draw1", "test_draw3", "test_draw8"]
+## 开局卡组（2026-11-14 用户裁定对齐原版 TutorialDeck——TutorialDeck.asset cards 仅 1 条）：
+## 新手第一关＝**单张连环刺**（0 费顺发＝每回合可打的单卡循环，原版新手关同款形状）；
+## 后续层靠奖励/宝箱养大牌组（原版 TutorialConfig GetRewardCardsForLevel 同构）。
+## 旧制退役：2026-11-10「三基础攻击卡×2 共 6 张」＋2026-11-12 test_draw 三张抽牌验收卡
+## （抽牌动画已验收——test_ 前缀卡定义与 --qi-draw 钩子另批清退）。
+const START_DECK := ["zhici"]
 
 ## VC 制属性表（2026-11-04 裁定照原版属性表；**2026-11-07 属性轮四层接线**）：
 ## 原版三层合成 GetStartingX(playerConfig, runSettings, progressionData)＋本场增量层——

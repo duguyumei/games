@@ -11,6 +11,9 @@
 ## locked＝timer < 0.5；**无条件清零源＝加牌/打出/回合开始**；OnCardInteracted（悬停路径）只在
 ## **已锁**时清零续锁——**悬停从不引入锁**，空手悬停＝劈开即时生效（我方旧版「悬停即清零」
 ## ＝「指上去要过一小会儿邻牌才让位」真凶，2026-11-12 用户 F6 抓出已修）。
+## 2026-11-13 消费者考古：原版锁消费者＝GrowGhostSlotsAsync（:6371 幽灵槽等待）＋
+## PlayerModel.PrepareForDrawAsync（:296 抽牌准备等待）——**不拦追槽**（InteractableCard
+## 零引用）；我方 UpdatePosition 的追槽锁门＝误接已撤（抽牌「动一下」案）。
 ## OnCardInteracted 订阅的原版事件名未从反编译噪声读出（OnEnable 委托构造为地址常量）——
 ## 现按悬停路径挂，登记开放。
 extends "res://qiforge/vc/CardSlotHolder.gd"

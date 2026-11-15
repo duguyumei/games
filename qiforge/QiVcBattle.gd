@@ -18,7 +18,7 @@ signal event(text: String)
 signal ended(result: String)
 signal hit_landed(target: Dictionary, amount: int, kind: String, crit: bool)
 signal played_changed            # 已打出区变更（增/删/清空——视觉层对账用，2026-11-06 规格§6）
-signal piles_shuffled(src: String)   # 洗牌事件（src=discard/played；飘字/日志可选）
+signal piles_shuffled(src: String, cards: Array)   # 洗牌事件（src=discard/played；cards=搬移清单——洗牌飞行 d__20 用）
 signal card_shattered(uid: int)  # 卡碎裂（第 5 次打出——视觉层碎裂动画/探针用，2026-11-06 碎牌机制）
 signal enemy_action_started(e: Dictionary, act: Dictionary)   # 敌方动作起拍（2026-11-12 命令化：将来逐敌动画挂口——对位原版 PlayViewAnimation；无动画期当帧过）
 # —— 手牌逐卡事件（2026-11-12 结构 1:1：原版 CardPileModel.CardAdded/CardRemoved 逐卡事件制；
@@ -212,10 +212,11 @@ func _round_start() -> void:
 func end_turn() -> void:
 	if phase != "player":
 		return
-	print("[VCANIM] end-turn n=%d t=%d" % [hand.size(), Time.get_ticks_msec()])   # [VCANIM] 临时（弃牌轮验收完删）
 	# 回合末顺序（2026-11-13 原版录屏逐帧实证）：**已打出区先扫→手牌后弃**（played 区
 	# 6.45 清空、手牌 6.65 才动——旧版反序）；两段各 ~0.2s 清空、缩卡后微卡隐形飞行
 	var batch := hand.size()   # 同批张数→弃牌加速钟（原版 cardsBeingAddedAtOnce）
+	print("[牌堆] 回合末：已打出区%d张→弃堆、手牌%d张待弃" % [
+		played_pile.size(), hand.size()])   # [牌堆] 临时取证（洗牌触发案结案删）
 	discard_pile.append_array(played_pile)
 	played_pile = []
 	played_changed.emit()   # 已打出区冲弃（屏 _relayout_played → 弃牌管线，v_mult 钟）
@@ -244,6 +245,8 @@ func discard_hand_finale() -> void:
 	if hand.is_empty() and played_pile.is_empty():
 		return
 	var batch := hand.size()
+	print("[牌堆] 终局弃手：已打出区%d张→弃堆、手牌%d张待弃" % [
+		played_pile.size(), hand.size()])   # [牌堆] 临时取证（洗牌触发案结案删）
 	discard_pile.append_array(played_pile)   # 终局同序：已打出区先扫（2026-11-13 录屏实证）
 	played_pile = []
 	played_changed.emit()
@@ -253,13 +256,23 @@ func discard_hand_finale() -> void:
 		hand_card_removed.emit(card, "discard", batch)   # 终局弃手＝同一弃牌飞行管线
 	hand = []
 	check_piles()
+	# 胜利收尾洗回（2026-11-14 OnEncounterDefeated 对位）：原版胜利协程（PlayerModel
+	# :8678）的异步 lambda **直接调 TryAddDiscardPileToDeck**（lldb 双断点栈定谳）——
+	# 「出完牌就洗牌」挂在胜利上、不挂下回合抽牌；anyDiscarded＝手牌/fcc/已打出区
+	# 任一有牌（:2538-2560，fcc 堆我方无此系统）。弃堆整堆洗回抽堆（飞行＝屏管线）
+	var moved3: Array = discard_pile
+	if not moved3.is_empty():
+		discard_pile = []
+		_shuffle(moved3)
+		draw_pile.append_array(moved3)
+		piles_shuffled.emit("discard", moved3)
+		print("[牌堆] 胜利收尾：弃堆%d张洗回抽堆（OnEncounterDefeated 对位）" % [moved3.size()])   # [牌堆] 临时取证
 	changed.emit()
 
 ## 弃牌表现完成回调（屏驱动；幂等——phase 已推进则忽略）
 func discard_anim_done() -> void:
 	if phase != "discarding":
 		return
-	print("[VCANIM] discard-anim-done t=%d →敌方回合" % Time.get_ticks_msec())   # [VCANIM] 临时（弃牌轮验收完删）
 	phase = "enemy"
 	changed.emit()
 	enemy_round()   # 纯逻辑自动流转：UI 层只管按信号播表现，不手搓回合步进
@@ -873,16 +886,21 @@ func intent_name(e: Dictionary) -> String:
 ## 2026-11-07 用户再确认）；②洗的是整堆不是差数（弃牌堆有几张洗几张，接在现有抽牌堆后）；
 ## ③keep_last_played＝抽牌由打出触发时，已打出区末位（正在结算的那张）不参与回收；
 ## ④弃牌堆空→二级回收已打出区（整堆平移弃→整堆洗）；⑤两级都空＝抽到为止，不报错不阻塞。
+## 2026-11-15 还原：删除开局首抽的 initial_draw 瞬落分流（真值档 §18 勘正为误读）——
+## 开局首抽与战斗中补抽同走普通抽牌视图路径（三件套＋追槽）。
 func draw_cards(n: int, keep_last_played := false) -> void:
 	if n <= 0:
 		return
 	if draw_pile.size() < n:
+		print("[牌堆] 抽牌不够：抽堆%d 需%d（弃堆%d 已打出区%d）" % [
+			draw_pile.size(), n, discard_pile.size(), played_pile.size()])   # [牌堆] 临时取证（洗牌触发案结案删）
 		if not discard_pile.is_empty():
 			var moved: Array = discard_pile
 			discard_pile = []
 			_shuffle(moved)
 			draw_pile.append_array(moved)
-			piles_shuffled.emit("discard")
+			print("[牌堆] 洗回：弃堆%d张→抽堆（触发点＝抽牌不够）" % [moved.size()])   # [牌堆] 临时取证
+			piles_shuffled.emit("discard", moved)
 			event.emit("弃牌堆整堆洗回抽牌堆")
 		elif not played_pile.is_empty():
 			var keep_n := 1 if keep_last_played else 0
@@ -894,11 +912,14 @@ func draw_cards(n: int, keep_last_played := false) -> void:
 			discard_pile = []
 			_shuffle(moved2)
 			draw_pile.append_array(moved2)
-			piles_shuffled.emit("played")
+			print("[牌堆] 二级回收：已打出区%d张→弃堆→洗回抽堆（触发点＝抽牌不够且弃堆空）" % [
+				pool.size()])   # [牌堆] 临时取证
+			piles_shuffled.emit("played", moved2)
 			event.emit("已打出牌收拢，整堆洗回抽牌堆")
 	var drawn: Array = []
 	for _i in n:
 		if draw_pile.is_empty():
+			print("[牌堆] 两级全空：抽到为止（本批实抽%d）" % [drawn.size()])   # [牌堆] 临时取证
 			break   # 两级都空：抽到为止（规格§4）
 		var c: Dictionary = draw_pile.pop_front()
 		hand.push_back(c)

@@ -67,17 +67,12 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 		VC.DISCARD_CARD["scaleTo"], VC.DISCARD_CARD["scaleDuration"] / dm)
 	# ── 位置层（mover 寻的＋到达事件）──
 	var dist: float = (target_local - view.position).length()
-	var t0 := Time.get_ticks_msec()
-	print("[VCANIM] disc-start uid=%d t=%d mult=%.1f dist=%.0f fly=%.2fs" % [
-		int(card.get("uid", -1)), t0, view_speed_multiplier, dist, 0.08])
 	view._transform_mover._useLocalPosition = true
 	view._transform_mover.SetSpeed(maxf(dist / 0.08, 50.0))   # 实测 65-110ms 飞行
 	view._transform_mover.SetDecelerateDistance(
 		VC.DISCARD_CARD["decelerateDistance"] / dm)
 	view.MoveTo(target_local, func() -> void:
 		if is_instance_valid(view):
-			print("[VCANIM] disc-done uid=%d +%dms" % [int(card.get("uid", -1)),
-				Time.get_ticks_msec() - t0])
 			view.DeregisterAnimationInterrupt(self)
 			view.visible = false          # OnCardReachedPile：SetActive(false)（:320-332）
 			view._tween_container.scale = Vector2.ONE
@@ -87,8 +82,6 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 	if post > MIN_CARD_WAIT:
 		await tree.create_timer(post, false).timeout
 	TryAddCard(view)
-	print("[VCANIM] disc-cmd uid=%d +%dms 命令长（含 post=%.0fms）" % [int(card.get("uid", -1)),
-		Time.get_ticks_msec() - t0, post * 1000.0])   # [VCANIM] 临时（弃牌/抽牌交接验收完删）
 
 ## OnCardRemoved（回抽：弃堆卡洗回抽堆）——视图已隐藏，仅出表
 func CardRemovedViewUpdate(card: Dictionary) -> void:
@@ -102,6 +95,12 @@ func TeleportCardToPileView(player_model, card: Dictionary) -> void:
 	_hand_pile_view.CardRemovedViewUpdate(card)
 	var view = _view_of(card)
 	if view != null:
+		# 传送落点＝弃堆中心（原版 :265 AddCardToPile 挂堆根＋position＝堆位再隐藏——
+		# 2026-11-14 胜利收尾洗回案：瞬隐牌停在堆位，随后洗牌飞行从堆位起飞）
+		var root: Control = _hand_pile_view.PileRoot()
+		var inv := root.get_global_transform_with_canvas().affine_inverse()
+		var half_shell: Vector2 = Vector2(VC.CARD_SIZE.x, VC.CARD_SIZE.y + VC.HAND_TOP_PAD) * 0.5
+		view.position = inv * _get_discard_center.call() - half_shell
 		view.visible = false
 		view.DeregisterAnimationInterrupt(self)
 		TryAddCard(view)

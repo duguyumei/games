@@ -84,11 +84,14 @@ func GetOrCreateCardView(card: Dictionary):
 	if _card_pool.is_empty():
 		view = CARD_VIEW.new()
 		add_child(view)
+		view.visible = false   # 构建期不可见（2026-11-14 开局闪位案：原版 d__12 第①步
+		                       # alpha=0 门的等效——挂树/画脸期间不显形；旧制挂树即亮＝
+		                       # 以错位裸奔 ~9ms（画脸耗时）→赶帧渲染＝「闪滑跳位」真凶）
 	else:
 		view = _card_pool.pop_back()
 		if view.get_parent() != self:
 			add_child(view)
-		view.visible = true
+		# 出池同样保持不可见——显形权交给各落位调用方（瞬落/飞行/SyncView 就位后自开）
 	view.KillPileTween()                  # 池腾换：杀旧飞行 tween（弃/耗/出场未完即复用）
 	view.set_meta("player_model", _player_model)
 	view.set_meta("hand_uid", uid)
@@ -120,10 +123,12 @@ func ResetForNewBattle() -> void:
 
 ## CardAddedViewCommand（:370，d__12 ISIL 全文直读 2026-11-13）——抽牌可见动画＝
 ## **带底中心出生三件套＋短飞入槽**：alpha 0→DOFade **0.05s 平值**（0x502BC04 二进制
-## 直读，不÷mult）＋rotateFrom 旋入（0.2÷mult）＋scale 0→1（0.2÷mult，ease 10）同步起，
-## TransformMover2D 500×mult＋减速带 10÷mult 飞向槽位。出生点＝手牌根枢轴（GetOrCreateCard
-## :10913-10923 仅 SetZ 不改 x/y＋d__12 worldStays:TRUE 保位）——单张瞬现居中、
-## 大批＝不可见流光整批落左侧（2026-11-13 用户实测三证词定案）。
+## 直读，不÷mult）＋rotateFrom 旋入（0.2÷mult）＋scale 0→1（0.2÷mult，ease 10）同步起；
+## 飞向槽位＝UpdatePosition 直写追槽 min(1000,dist/dt)（§十一 ISIL 定案——d__12 的
+## mover SetSpeed(500×mult)＝悬停层配参非追槽；主程/尾段归属未验，F6 速差先查此）。
+## 出生点＝手牌根枢轴（GetOrCreateCard :10913-10923 仅 SetZ 不改 x/y＋d__12
+## worldStays:TRUE 保位）——单张瞬现居中、大批＝不可见流光整批落左侧（「瞬间」＝
+## 短飞被三件套罩住的感知；2026-11-13 晚用户裁定代码为准，撤当日早前槽位直落）。
 ## 命令长度＝本批节拍（draw_stagger＝Log(N,1000)/N——原版精确代数坏点，v0.2 实装值）。
 func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier := 1.0) -> void:
 	# 等 !HasAnimationInterrupts（基类 :1224 语义）——原版＝弃牌飞行 Register/Deregister 打断
@@ -132,26 +137,22 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 	var waiting = _view_of(card)
 	if waiting != null:
 		var wtree := Engine.get_main_loop() as SceneTree
-		var w0 := Time.get_ticks_msec()
 		while waiting.HasAnimationInterrupts() and wtree != null:
 			await wtree.process_frame
-		if Time.get_ticks_msec() - w0 > 0:
-			print("[VCANIM] draw-wait uid=%d +%dms 等弃牌飞行落定" % [int(card.get("uid", -1)),
-				Time.get_ticks_msec() - w0])   # [VCANIM] 临时（弃牌/抽牌交接验收完删）
 	var view = GetOrCreateCardView(card)
 	if view == null:
 		return
+	view.HideCardBack()
 	# 槽位链接＋布局（锁定门内）
 	_card_group.AddCardToBottom(card)
 	var it = _interactable_of(card)
-	var slot = it._current_card_slot if it != null else null
-	var tgt := Vector2.ZERO
-	if slot != null:
-		tgt = (slot as Control).position + (slot as Control).size * 0.5 - VC.CARD_CENTER_IN_SHELL
-	# 出生点＝直接落槽位（用户实测原版 2026-11-13：「手牌瞬间出现在左侧，没有看到
-	# 抽牌的过程」——无可见飞行，卡原地冒出来＋手牌重排。此前「从手牌根飞过去」系
-	# 我对 SetSpeed/mover 的过度解读——mover 管 UpdatePosition 槽位跟随，不管出场）
-	var born := tgt
+	# 出生点＝手牌根枢轴＝带底中心，卡心对齐（真值档 §十一 ISIL：GetOrCreateCard
+	# SetParent(false) 落父枢轴＋尾段仅 SetZ → 卡心停带底中心；d__12 worldStays:TRUE
+	# 保位）——飞行交 UpdatePosition 直写追槽（min(1000,dist/dt)＋fly_speed 锁豁免，
+	# 落地移除标记）。2026-11-13 晚用户裁定代码为准，撤当日早前「槽位直落」口供
+	# 裁定：「瞬间出现」＝短飞被 0.2s 三件套罩住的感知，非物理瞬移；直落把中间布局
+	# （错峰 0.1s < 飞行 0.4s，落地时批次已抽完）停驻成可见错位＝「先错后对一跳」真凶
+	var born := Vector2(VC.HAND_ROOT_SIZE.x * 0.5, VC.HAND_ROOT_SIZE.y) - VC.CARD_CENTER_IN_SHELL
 	# 再入场复位（弃/打出后抽回：交互恢复＋根姿态归零——出场态由 TweenContainer 承载）
 	if it != null:
 		it.EnableInteraction()
@@ -190,8 +191,8 @@ func TeleportCardToPileView(player_model, card: Dictionary) -> void:
 	var view = GetOrCreateCardView(card)
 	if view == null:
 		return
+	view.HideCardBack()
 	_card_group.AddCardToBottom(card)
-	view.visible = true
 	TryInsertCard(view, 0)
 	view.OnCardAddedToHand(player_model)
 	var it = _interactable_of(card)
@@ -206,6 +207,7 @@ func TeleportCardToPileView(player_model, card: Dictionary) -> void:
 	view._tween_container.scale = Vector2.ONE
 	view._tween_container.rotation = 0.0
 	view.modulate.a = 1.0
+	view.visible = true   # 就位才显形（2026-11-14 开局闪位案：显形后置＝构建全程隐形）
 
 ## OnCardAddedToHand(CardView)（:387）——激活＋插表
 func OnCardAddedToHand(card_view) -> void:
@@ -304,6 +306,7 @@ func SyncView() -> void:
 		var view = GetOrCreateCardView(card)
 		if view != null:
 			TryAddCard(view)
+			view.visible = true   # SyncView 落表即显形（无位移动画路径）
 
 func _pile_cards() -> Array:
 	if _player_model == null:
