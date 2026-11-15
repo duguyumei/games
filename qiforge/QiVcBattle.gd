@@ -241,32 +241,49 @@ func end_turn() -> void:
 ## 弃牌流程弃走，不再瞬隐）——hand＋已打出区整体冲弃（数据落账发 changed；表现层
 ## _rebuild_hand 对消失 uid 自动放飞弃堆动画、弃堆计数同步涨；check_piles 守恒）。
 ## 战斗快照本就随胜利作废，此转移只为表现层与弃堆计数与普通冲弃完全同构。
-func discard_hand_finale() -> void:
-	if hand.is_empty() and played_pile.is_empty():
-		return
-	var batch := hand.size()
-	print("[牌堆] 终局弃手：已打出区%d张→弃堆、手牌%d张待弃" % [
-		played_pile.size(), hand.size()])   # [牌堆] 临时取证（洗牌触发案结案删）
+func discard_hand_finale() -> bool:
+	# 原版 OnEncounterDefeated d__280（ISIL :251/:254/:415）：
+	#   DiscardHand(false,false) → DiscardComboPile() → if anyDiscarded: Delay(1000ms)
+	#   → TryAddDiscardPileToDeck()（无条件）
+	# anyDiscarded 只门那 1 秒延迟，不是洗回门；第一关 hand/played 全空也必须洗弃堆。
+	# 本方法只做“弃手/已打出区→弃堆”并返回 anyDiscarded；洗回由 add_discard_pile_to_deck()
+	# 单独执行（对位 TryAddDiscardPileToDeck），屏侧按返回值决定是否先等 1000ms。
+	var any_discarded := not hand.is_empty() or not played_pile.is_empty()
+	print("[终局账] 进入 discard_hand_finale t=%d hand=%d played=%d discard=%d draw=%d anyDiscarded=%s" % [
+		Time.get_ticks_msec(), hand.size(), played_pile.size(), discard_pile.size(),
+		draw_pile.size(), str(any_discarded)])
+	# 原版 DiscardHand / DiscardComboPile 均无条件调用；这里即使两堆空也继续（洗回仍要做）。
 	discard_pile.append_array(played_pile)   # 终局同序：已打出区先扫（2026-11-13 录屏实证）
 	played_pile = []
 	played_changed.emit()
+	print("[终局账] played→discard 完成 t=%d discard=%d" % [
+		Time.get_ticks_msec(), discard_pile.size()])
+	var batch := hand.size()
 	for card in hand:
 		_strip_lv(card)
 		discard_pile.push_back(card)
 		hand_card_removed.emit(card, "discard", batch)   # 终局弃手＝同一弃牌飞行管线
 	hand = []
 	check_piles()
-	# 胜利收尾洗回（2026-11-14 OnEncounterDefeated 对位）：原版胜利协程（PlayerModel
-	# :8678）的异步 lambda **直接调 TryAddDiscardPileToDeck**（lldb 双断点栈定谳）——
-	# 「出完牌就洗牌」挂在胜利上、不挂下回合抽牌；anyDiscarded＝手牌/fcc/已打出区
-	# 任一有牌（:2538-2560，fcc 堆我方无此系统）。弃堆整堆洗回抽堆（飞行＝屏管线）
+	print("[终局账] hand→discard 完成 t=%d discard=%d" % [
+		Time.get_ticks_msec(), discard_pile.size()])
+	changed.emit()
+	return any_discarded
+
+## 对位 PlayerModel.TryAddDiscardPileToDeck（:10433）：弃堆整堆洗回抽堆，无条件。
+## 原版在 d__280 :415 无条件调用；弃堆空时本体自然 false no-op。
+func add_discard_pile_to_deck() -> void:
 	var moved3: Array = discard_pile
-	if not moved3.is_empty():
-		discard_pile = []
-		_shuffle(moved3)
-		draw_pile.append_array(moved3)
-		piles_shuffled.emit("discard", moved3)
-		print("[牌堆] 胜利收尾：弃堆%d张洗回抽堆（OnEncounterDefeated 对位）" % [moved3.size()])   # [牌堆] 临时取证
+	if moved3.is_empty():
+		changed.emit()
+		return
+	discard_pile = []
+	_shuffle(moved3)
+	draw_pile.append_array(moved3)
+	piles_shuffled.emit("discard", moved3)
+	print("[牌堆] 胜利收尾：弃堆%d张洗回抽堆（OnEncounterDefeated 对位）" % [moved3.size()])   # [牌堆] 临时取证
+	print("[终局账] 洗回 emit 完成 t=%d cards=%d draw=%d" % [
+		Time.get_ticks_msec(), moved3.size(), draw_pile.size()])
 	changed.emit()
 
 ## 弃牌表现完成回调（屏驱动；幂等——phase 已推进则忽略）
@@ -434,6 +451,15 @@ func _strip_lv(card: Dictionary) -> void:
 ## —— 动态升级三公理（2026-11-10 集合制定稿）——
 ## 执行顺序＝①A2 判定 → ②A1 升级 → ③A3 万能 → ④记型（play_card 内）。
 ## 接/换谓词见 QiVcData.FORM_SETS：接/换是完美二分——A1 升级集与 A2 复原集天然互斥，无优先级。
+## 2026-11-15 #33：换招清旧链——旧 played 全部移入弃堆，视图由 played_changed 走弃牌飞行；
+## 当前新牌尚未加入，所以它随后入 played 时仍是新链起点。
+func _discard_played_for_switch() -> void:
+	if played_pile.is_empty():
+		return
+	discard_pile.append_array(played_pile)
+	played_pile = []
+	played_changed.emit()
+
 ## A2 切招：打出牌与上一张「换」（型集无交集）→ 手牌中与打出牌「换」者：等级与费用复原初始。
 func _dyn_switch_reset(p_form: String) -> void:
 	if current_form == "" or not DATA.forms_switch(p_form, current_form):
@@ -504,6 +530,10 @@ func play_card(card_uid: int) -> void:
 	card["free"] = false   # 免费标消耗（免一次——原版 SetCardFreeToPlay 同构）
 	card["uses"] = int(card.get("uses", 0)) + 1
 	_strip_lv(card)   # 离开手牌即复原（已打出区展示沿用打出前视图，不回读这两轨）
+	# 2026-11-15 换招清旧链（#33）：当前新牌尚未入 played；先把换招前旧链移入弃堆，
+	# 让 _rebuild_played 走弃牌飞行。当前牌随后入 played，作为新链起点。
+	if upgrade_enabled and current_form != "" and DATA.forms_switch(p_form, current_form):
+		_discard_played_for_switch()
 	if int(card["uses"]) >= 5:
 		# 2026-11-06 碎牌机制（原版损坏制，**一回合之内**口径：普通 3 次生裂痕、裂痕态再
 		# 1 次、第 5 次碎——防单回合少数牌无限循环）：第 5 次打出效果照常结算（ops 照跑），
@@ -516,10 +546,17 @@ func play_card(card_uid: int) -> void:
 	elif bool(card.get("exhaust", false)):
 		exhaust_pile.push_back(card)
 		hand_card_removed.emit(card, "exhaust", 1)   # 视图＝DestroyPile（消耗堆）
+	elif not upgrade_enabled:
+		# 2026-11-15 #33：无动态升级内功（新手第一/二场/关内功）＝没有 ComboPile/右上角。
+		# 数据直接进弃堆（弃牌计数照涨），视图静默收掉——不飞右上、不飞弃牌。
+		discard_pile.push_back(card)
+		hand_card_removed.emit(card, "discard_silent", 1)
 	else:
 		# 2026-11-06 四区制（规格 v1）：打出→已打出区（回合末才整堆进弃牌堆——出牌历史的载体）。
 		# 〔2026-11-08 撤令〕「零连击交互卡直弃」旧分支已随连击制退役——打出的卡默认一律进
 		# 已打出区（右上角，玩家看得到刚打出的牌），回合末统一平移弃牌堆。
+		# 2026-11-15 #33：有内功 → played/右上角；无内功已在上一分支直接弃堆。新手第一/二场
+		# 无内功，故不会走到这里；第三场（第二场后宝箱获 combo_stack）起才有右上角。
 		played_pile.push_back(card)
 		hand_card_removed.emit(card, "played", 1)   # 视图＝OnCardPlayedFull（离手→已打出区）
 		played_changed.emit()

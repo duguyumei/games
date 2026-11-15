@@ -45,8 +45,10 @@ func setup(host: Control, opts := {}) -> void:
 	_tilt_fn = opts.get("tilt_fn", Callable())
 	_avoid = opts.get("avoid", [])
 	top_level = true
-	z_index = 96
-	z_as_relative = false   # 绝对 z 制：全局 96 盖过弹窗（95）；模态路径全断焦故无更高冲突
+	# 绝对 z 制：默认 96 盖过战斗屏（弹窗 95）；奖励/升级模态自身 z=300，调用方须显式传
+	# z_index（如 400），否则组件会被 300 父层压到卡下面——「卡和词条不同图层」案。
+	z_index = int(opts.get("z_index", 96))
+	z_as_relative = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if get_parent() != host:
 		host.add_child(self)   # 池化复用防重挂（2026-11-12 持久卡：setup 每次换面都会再跑）

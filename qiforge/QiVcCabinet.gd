@@ -308,11 +308,18 @@ static func refresh_top(refs: Dictionary, level: int, xp: int, fidx: int, floors
 	var lvl := refs.get("lvl") as Label
 	if lvl != null:
 		lvl.text = "Lv %d" % level
+		# 填满整条后 Lv 字会压在蓝条上：米金字＋深色描边（两屏同刷新）。
+		lvl.add_theme_color_override("font_color", Color(0.96, 0.91, 0.78))
+		lvl.add_theme_color_override("font_outline_color", Color(0.06, 0.06, 0.08, 0.95))
+		lvl.add_theme_constant_override("outline_size", 4)
 	var track_w: float = float(refs.get("track_w", 800.0))
 	var fill := refs.get("xp_fill") as Panel
 	if fill != null:
 		var fill_h := fill.size.y
-		var target := (track_w - 114.0) * clampf(float(xp) / float(maxi(1, need)), 0.0, 1.0)
+		# 2026-11-15 用户令：填满整条轨道——旧式 -114 是给右侧 Lv 标签预留的空白，
+		# 导致满经验也差 114px 永远填不满。只留左右各 3px 内边距（fill 起点 x=3）。
+		var target := maxf(0.0, track_w - 6.0) \
+			* clampf(float(xp) / float(maxi(1, need)), 0.0, 1.0)
 		var tw_old: Tween = null
 		if fill.has_meta("xp_tw"):
 			tw_old = fill.get_meta("xp_tw") as Tween
@@ -414,6 +421,12 @@ static func wire_scene(cab: Control) -> void:
 
 static func collect_top(cab: Control) -> Dictionary:
 	var track := _uniq(cab, "XpTrack") as Control
+	# 2026-11-15 填满整条后，Lv 字会压在蓝条上：换成米金字＋深色描边，保证可读。
+	var lvl_lbl := _uniq(cab, "LvlLbl") as Label
+	if lvl_lbl != null:
+		lvl_lbl.add_theme_color_override("font_color", Color(0.96, 0.91, 0.78))
+		lvl_lbl.add_theme_color_override("font_outline_color", Color(0.06, 0.06, 0.08, 0.95))
+		lvl_lbl.add_theme_constant_override("outline_size", 4)
 	return {
 		"lvl": _uniq(cab, "LvlLbl"),
 		"xp_fill": _uniq(cab, "XpFill"),

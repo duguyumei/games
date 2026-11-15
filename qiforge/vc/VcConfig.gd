@@ -170,7 +170,7 @@ const DECK_REFILL := {                     # :316-322（弃堆洗回抽堆动画
 	"baseCardMoveDuration": 0.3,
 	"startWait": 0.05,
 	"discardToDeckDuration": 0.3,
-	"endWait": 0.5,
+	"endWait": 0.5,   # 原版命令收尾垫；2026-11-15 用户令洗牌收尾暂不使用（只等末卡落定）
 	"minJump": -50.0,
 	"maxJump": 200.0,
 }

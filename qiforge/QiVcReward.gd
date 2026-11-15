@@ -174,7 +174,8 @@ func _refresh_cards() -> void:
 			"anchor_fn": func() -> Rect2: return vis.get_global_rect(),
 			"corners_fn": func() -> PackedVector2Array:
 				var tv0 = vis.get_meta("tilt", null)
-				return TILTV.corners(tv0, cs.x, cs.y) if tv0 != null else PackedVector2Array()})
+				return TILTV.corners(tv0, cs.x, cs.y) if tv0 != null else PackedVector2Array(),
+			"z_index": 400})   # 奖励模态根 z=300；浮窗必须在其上，才能与卡同层可见
 		vis.set_meta("kw_tip", kw_tip)
 
 func _process(delta: float) -> void:
@@ -188,11 +189,7 @@ func _process(delta: float) -> void:
 			var over_card := _hover_vis.get_global_rect().grow(6.0).has_point(mouse)
 			if not over_card and not (hover_tip != null and hover_tip.pointer_over(mouse)):
 				print("[VCDIAG][reward] hover-fade cid=%s" % [_hover_cid])   # [VCDIAG] 临时埋点
-				var tw2 := create_tween()
-				tw2.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-				tw2.tween_property(_hover_vis, "scale", Vector2.ONE, 0.12)
-				if hover_tip != null:
-					hover_tip.set_active(false)
+				_reset_hover_vis(_hover_vis)
 				_hover_vis = null
 			elif hover_tip != null:
 				hover_tip.check_screen_pos()   # 跟随卡位（放大动画期间同步）
@@ -426,6 +423,21 @@ func _add_gold_frame(host: Control) -> void:
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		host.add_child(c)
 
+## 旧卡复位：杀旧缩放 tween、缩回 1.0、关浮窗。切换新卡/移开浮窗都走这里。
+func _reset_hover_vis(vis: Control) -> void:
+	if vis == null or not is_instance_valid(vis):
+		return
+	var old_tw = vis.get_meta("hover_tw", null)
+	if old_tw is Tween and old_tw.is_valid():
+		old_tw.kill()
+	var tw := create_tween()
+	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(vis, "scale", Vector2.ONE, 0.12)
+	vis.set_meta("hover_tw", tw)
+	var tip = vis.get_meta("kw_tip", null)
+	if tip != null:
+		tip.set_active(false)
+
 ## 悬停：放大 1.12 ＋ 弹词条浮窗（与手牌同一套浮窗工厂）
 func _offer_hover(vis: Control, cid: String, on: bool) -> void:
 	if not is_instance_valid(vis):
@@ -433,16 +445,20 @@ func _offer_hover(vis: Control, cid: String, on: bool) -> void:
 	if not on:
 		return   # 离开卡不立刻收：交给 _process 判"是否移到浮窗上"（与手牌一致）
 	print("[VCDIAG][reward] hover cid=%s" % [cid])   # [VCDIAG] 临时埋点（2026-11-09 排查，完撤）
-	# 单宿主互斥（审计补——旧 show_stack 自带、组件制须显式）：滑到新卡＝旧卡浮窗即关
+	# 单宿主互斥（审计补——旧 show_stack 自带、组件制须显式）：滑到新卡＝旧卡浮窗即关，
+	# 且旧卡必须缩回——旧制只关浮窗、_hover_vis 随即改指新卡，旧卡永远没人复位＝
+	# 「移走不复原」真凶（2026-11-15 F6）。
 	if _hover_vis != null and is_instance_valid(_hover_vis) and _hover_vis != vis:
-		var old_tip = _hover_vis.get_meta("kw_tip", null)
-		if old_tip != null:
-			old_tip.set_active(false)
+		_reset_hover_vis(_hover_vis)
 	_hover_vis = vis
 	_hover_cid = cid
+	var old_tw = vis.get_meta("hover_tw", null)
+	if old_tw is Tween and old_tw.is_valid():
+		old_tw.kill()
 	var tw := create_tween()
 	tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(vis, "scale", Vector2(1.12, 1.12), 0.12)
+	vis.set_meta("hover_tw", tw)
 	# 词条浮窗（2026-11-10 原版制）：组装与显示全归卡下组件——无词条不显示
 	# （原版无「兜底全文」分支，卡面 desc 承载全文——自创行为已删）
 	var tip = vis.get_meta("kw_tip", null)
