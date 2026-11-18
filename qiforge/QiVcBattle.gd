@@ -143,6 +143,19 @@ func apply_stats_to_player() -> void:
 func stat_val(axis: String) -> int:
 	return int(starting_stats.get(axis, 0)) + int(encounter_stats.get(axis, 0))
 
+## 卡组是否含拾取卡（对位 PlayerModel.HasScavengeCardInDeck——csall PlayerModel.cs:9852／
+## IsilDump PlayerModel.txt:16299：遍历卡组逐卡效果 Contains 判定；进遭遇时计算 csall :8168、
+## 获得新拾取卡时即时置位 :9813，视图消费者＝PlayerView.RefreshScavengeView（ISIL :3097
+## SetActive(_isInEncounter && _hasScavengeCard)）。我方卡表现无拾取 op（encounter_stats 零写入
+## 者）→恒 false；判定据 ops 目标轴，将来卡表加拾取卡自动生效）。
+func has_scavenge_card() -> bool:
+	for cid in _run.get("deck", []):
+		var c: Dictionary = DATA.CARDS.get(String(cid), {})
+		for op in c.get("ops", []):
+			if String(op.get("op", "")) == "stat" and String(op.get("axis", "")) == "scavenge":
+				return true
+	return false
+
 func stat_cn(axis: String) -> String:
 	for s in DATA.STATS:
 		if String(s["id"]) == axis:

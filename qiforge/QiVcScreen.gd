@@ -99,6 +99,8 @@ var _enemy_row: VBoxContainer = null
 var _stat_left: GridContainer = null
 var _stat_right: GridContainer = null
 var _stat_vals: Dictionary = {}
+var _hp_max_lbl: Label = null      # 血球区·上限常驻（对位 PlayerMaxHealth·场景 disable=0）
+var _armor_lbl: Label = null       # 血球区·甲（对位 PlayerArmorStat·disable=1 有甲才显）
 var _end_btn: Button = null
 var _coin_lbl: Label = null
 var _play_all_btn: Button = null
@@ -256,17 +258,48 @@ func _wire_scene() -> void:
 		coin.stretch_mode = TextureRect.STRETCH_SCALE
 		coin.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_fill_stat_chips()
+	_build_hp_extras()
 
-## VC 制属性列（2026-11-04 用户裁定）：左＝临时属性（原版 PlayerStatContainer (temporary)），
-## 右＝永久属性（permanent）；每行 4 个；数值先默认（百分比 100／计数 0），机制后补。
+## VC 制属性列（2026-11-04 用户裁定；2026-11-18 语义改口＋显隐对齐原版）：
+## 左＝PlayerStatContainer (temporary)·整场战斗轴（might/area/duration/amount/magnet/
+## recovery/deal_count/scavenge）、右＝(permanent)·整局副本轴（growth/curse/luck/greed/
+## reroll/banish/skip/revival/risk/charm）——成员清单＝原版 SC_Game.unity 场景实测，
+## 与 STATS.side 分配 1:1。max_hp/max_hp_pct 住血球区（对位 PlayerMaxHealth）不进列。
+## 显隐见 _refresh 属性段（PlayerStatView.UpdateActiveState._disableIfBaseValue——投影/
+## requireBaseValueViews 通道原版场景全空、属奖励弹窗域，我方未启用）。拾取轴例外：不吃
+## 值裁决（场景 disable=0），显隐＝持卡判定（PlayerView.RefreshScavengeView——战斗中且
+## 卡组含拾取卡才显示，2026-11-18 复核定谳）。
 func _fill_stat_chips() -> void:
 	if _stat_left == null or _stat_right == null:
 		return
 	_stat_vals = {}
 	for s in VC.STATS:
+		var sid := String(s["id"])
+		if sid == "max_hp" or sid == "max_hp_pct":
+			continue   # 血球区轴（对位 PlayerMaxHealth）不进属性列——原版不在两容器内
 		var def: Dictionary = s
 		var parent: Control = _stat_left if String(def["side"]) == "L" else _stat_right
-		_stat_vals[String(def["id"])] = _mk_stat_chip(parent, def)
+		_stat_vals[sid] = _mk_stat_chip(parent, def)
+
+## 血球区三件套补件（2026-11-18 对位 PlayerHealthContainer.healthAndArmour）：当前血已有
+## （HpText）；此补 PlayerMaxHealth（上限常驻·场景 disable=0）与 PlayerArmorStat（甲>0 才显
+## ·disable=1，回合重置清零即隐）。tscn 不动（美术件零动），运行时挂件。
+func _build_hp_extras() -> void:
+	var host: Control = QI_CAB._uniq(self, "HpWidget") as Control
+	if host == null:
+		return
+	_hp_max_lbl = _mk_label(host, "/50", QISTYLE.FS_SMALL, Color(0.96, 0.91, 0.78, 0.92))
+	_hp_max_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hp_max_lbl.position = Vector2(6.0, 84.0)
+	_hp_max_lbl.size = Vector2(98.0, 20.0)
+	_armor_lbl = _mk_label(host, "甲 0", QISTYLE.FS_SMALL, Color("8fc3e8"))
+	_armor_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_armor_lbl.position = Vector2(6.0, 104.0)
+	_armor_lbl.size = Vector2(98.0, 20.0)
+	_armor_lbl.visible = false
+	for l: Label in [_hp_max_lbl, _armor_lbl]:
+		l.add_theme_color_override("font_outline_color", Color(0.06, 0.06, 0.08, 0.95))
+		l.add_theme_constant_override("outline_size", 4)
 
 ## 场景底图＋柔光罩已入场景（2026-11-04 贴图改随 .import 走，编辑器可见可拖）；
 ## 此处只剩兜底：底图文件缺失时回退旧黑机柜
@@ -457,6 +490,10 @@ func _mk_stat_chip(parent: Control, def: Dictionary) -> Label:
 	var p := Panel.new()
 	p.custom_minimum_size = Vector2(56.0, 56.0)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 出生即隐藏（2026-11-18 闪现案修——对位原版「值裁决先于渲染」：原版 HUD 住 SC_Game
+	# 常驻场景不随战斗重建、显隐与数据同帧落地（PlayerModel 进遭遇同帧算持卡＋SetActive）；
+	# 我方每场重建 chip，若出生即可见则首刷前有一帧全列可见＝闪现。首刷由 _refresh 点亮非基线轴）
+	p.visible = false
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.04, 0.04, 0.05, 0.55)
 	sb.border_color = Color(color.r, color.g, color.b, 0.45)
@@ -507,6 +544,14 @@ func _refresh() -> void:
 	QI_CAB.refresh_wings(_wing_refs, int(p["hp"]), int(p["mhp"]),
 		battle.draw_pile.size(), battle.discard_pile.size(),
 		int(p["qi"]), int(p.get("qi_base", 0)))
+	# 血球区补件（2026-11-18 对位 PlayerHealthContainer.healthAndArmour）：上限常驻
+	# （PlayerMaxHealth·场景 disable=0）、甲有值才显（PlayerArmorStat·disable=1——回合重置清零即隐）
+	if _hp_max_lbl != null:
+		_hp_max_lbl.text = "/%d" % int(p["mhp"])
+	if _armor_lbl != null:
+		var ar := int(p.get("armor", 0))
+		_armor_lbl.text = "甲 %d" % ar
+		_armor_lbl.visible = ar > 0
 	_qi_prev = int(p["qi"])
 	var hp_now := int(p["hp"])
 	if _hp_prev >= 0 and hp_now < _hp_prev:
@@ -519,6 +564,9 @@ func _refresh() -> void:
 	_place_intent_bar()
 	# 属性列（2026-11-07 属性轮：显示真值——四层合成现值（starting＋encounter），
 	# 与 run.stats 占位脱钩；pct 轴按 100 基、计数轴直读）
+	# 显隐＝对位 PlayerStatView.UpdateActiveState（_disableIfBaseValue·2026-11-18 落码）：
+	# 值回基线（pct 100／计数 0）即隐藏、非基线显示；拾取轴例外走持卡判定（见循环内，
+	# 2026-11-18 复核修正——旧「常驻例外」系对 disable=0 的误读，已废）。
 	for s in VC.STATS:
 		var sid := String(s["id"])
 		var val_lbl: Label = _stat_vals.get(sid)
@@ -526,6 +574,17 @@ func _refresh() -> void:
 			continue
 		var val: int = battle.stat_val(sid)
 		val_lbl.text = ("%d%%" % val) if bool(s["pct"]) else str(val)
+		var base: int = 100 if bool(s["pct"]) else 0
+		var chip: Control = val_lbl.get_parent() as Control
+		if chip != null:
+			# 拾取轴显隐＝持卡判定（2026-11-18 复核定谳：对位 PlayerView.RefreshScavengeView
+			# ISIL :3097 SetActive(_isInEncounter && _hasScavengeCard)——原版拾取不吃通用值
+			# 裁决（场景 _disableIfBaseValue=0），显隐外包给专属刷新器＝战斗中且卡组含拾取卡
+			# 才显示；我方卡表现无拾取 op→恒隐藏（原版新手同款左侧全空）。
+			if sid == "scavenge":
+				chip.visible = battle.has_scavenge_card()
+			else:
+				chip.visible = val != base
 	_refresh_stance()
 	if _intent_bar != null:
 		_intent_bar.update_from(battle)

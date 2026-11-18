@@ -15,6 +15,7 @@
 >   浮窗专用探针：`"$GODOT" --path . --position 19000,19000 --script res://qiforge/tools/probe_tip_shot.gd`
 >   （探针里必须给屏幕挂 `shot_no_hold`，否则真鼠标轮询会把合成焦点清掉、截图里没有浮窗。）
 > - **判断口诀**：**浅色水墨底＋手牌扇形＋气珠＋血球＝真场景**；深色底＋蓝卡＋意图 chip＝旧线。
+> - **【双仓制·2026-11-18 属性列「没生效」案立】本项目有两个 git 工作目录**：主仓 `/Users/cc/Documents/qi-forge-2`（用户编辑器/F5F6/游戏/存档**唯一现场**）与 ZCode 会话工作树 `~/.zcode/worktrees/*`（仅 AI 会话 cwd，编辑器从不打开、无 `.godot`）。**玩家可见的代码/场景/资源/取证日志改动一律落主仓**——动手前 `ls -d .godot` 验仓；误落工作树的改动须 commit 后在主仓 merge 才进用户游戏；工作树 `--check-only` preload 全红＝缺导入缓存的环境噪音非语法错（真校验去主仓跑）。
 
 ## 工作约定
 
