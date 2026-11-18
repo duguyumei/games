@@ -321,7 +321,7 @@ func _trigger_cell(cell: Vector2i) -> void:
 		"chest":
 			var loot := String(ent.get("id", ""))
 			if loot != "" and VC.NEIGONG.has(loot):
-				# 2026-11-07 教程轮：宝箱内容物＝内功（如「连击堆叠」——连击靠宝物解锁）
+				# 2026-11-07 教程轮：宝箱内容物＝内功（如「动态升级」——id 沿用 combo_stack，宝箱解锁）
 				var ng: Array = run.get("neigong", [])
 				if not ng.has(loot):
 					ng.push_back(loot)

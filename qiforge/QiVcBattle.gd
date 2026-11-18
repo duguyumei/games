@@ -139,12 +139,6 @@ func apply_stats_to_player() -> void:
 		player["hp"] = int(player["hp"]) + (new_mhp - int(player["mhp"]))
 	player["mhp"] = new_mhp
 	player["draw_per_turn"] = int(DATA.PLAYER_BASE["draw_per_turn"]) + stat_val("deal_count")
-	# 抽牌动画测试口（2026-11-12 用户令·临时）：启动参数 --qi-draw=N 覆盖每回合抽牌数
-	# （测 1/5/8 场景——F6 从编辑器跑不传参时可用终端：
-	#   "$GODOT" --path . res://qiforge/QiVcRoot.tscn -- --qi-draw=5 ）
-	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--qi-draw="):
-			player["draw_per_turn"] = clampi(int(a.substr(10)), 1, 10)
 
 func stat_val(axis: String) -> int:
 	return int(starting_stats.get(axis, 0)) + int(encounter_stats.get(axis, 0))

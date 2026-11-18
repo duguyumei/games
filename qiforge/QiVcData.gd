@@ -98,20 +98,6 @@ const CARDS := {
 		"stance": "long", "targeting": "single",
 		"desc": "对最前敌人造成 10 点伤害。长剑型。",
 		"ops": [{"op": "dmg", "value": 10, "hits": 1}]},
-	# ——〔临时测试卡·抽牌动画验收用，2026-11-12 用户令；验收完删〕——
-	# 万能型 0 费：打出即抽 N 张（测中盘抽牌节奏）；test_ 前缀＝奖励出题池排除标记
-	"test_draw1": {"name": "试·抽一", "cost": 0, "color": "yellow", "kind": "effect",
-		"stance": "flex",
-		"desc": "抽 1 张牌。〔测试卡〕变招。",
-		"ops": [{"op": "draw", "count": 1}]},
-	"test_draw3": {"name": "试·抽三", "cost": 0, "color": "yellow", "kind": "effect",
-		"stance": "flex",
-		"desc": "抽 3 张牌。〔测试卡〕变招。",
-		"ops": [{"op": "draw", "count": 3}]},
-	"test_draw8": {"name": "试·抽八", "cost": 0, "color": "yellow", "kind": "effect",
-		"stance": "flex",
-		"desc": "抽 8 张牌。〔测试卡〕变招。",
-		"ops": [{"op": "draw", "count": 8}]},
 }
 #endregion
 
@@ -293,8 +279,8 @@ static func level_mult(lv: int) -> float:
 ## 开局卡组（2026-11-14 用户裁定对齐原版 TutorialDeck——TutorialDeck.asset cards 仅 1 条）：
 ## 新手第一关＝**单张连环刺**（0 费顺发＝每回合可打的单卡循环，原版新手关同款形状）；
 ## 后续层靠奖励/宝箱养大牌组（原版 TutorialConfig GetRewardCardsForLevel 同构）。
-## 旧制退役：2026-11-10「三基础攻击卡×2 共 6 张」＋2026-11-12 test_draw 三张抽牌验收卡
-## （抽牌动画已验收——test_ 前缀卡定义与 --qi-draw 钩子另批清退）。
+## 旧制退役：2026-11-10「三基础攻击卡×2 共 6 张」；2026-11-18 test_draw 验收卡三张
+## 连同 --qi-draw 钩子、奖励池 test_ 排除标记一并清退（抽牌动画验收毕）。
 const START_DECK := ["zhici"]
 
 ## VC 制属性表（2026-11-04 裁定照原版属性表；**2026-11-07 属性轮四层接线**）：
@@ -449,8 +435,6 @@ static func reward_band(level: int) -> Dictionary:
 static func _cards_of_cost(cost: int) -> Array:
 	var out: Array = []
 	for cid in CARDS:
-		if String(cid).begins_with("test_"):
-			continue   # 测试卡不进奖励出题池（2026-11-12 抽牌验收用，验完删）
 		if int(CARDS[cid].get("cost", 0)) == cost:
 			out.push_back(String(cid))
 	return out
