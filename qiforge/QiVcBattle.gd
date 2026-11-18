@@ -16,6 +16,7 @@ extends RefCounted
 signal changed
 signal event(text: String)
 signal ended(result: String)
+signal finale_cleanup_done        # 终局结算链完成（EncounterDefeatedState.ExecuteTask 尾发——屏 _try_finish_win 放行；2026-11-18 GoF 改造自屏 _run_terminal_settlement 迁出）
 signal hit_landed(target: Dictionary, amount: int, kind: String, crit: bool)
 signal played_changed            # 已打出区变更（增/删/清空——视觉层对账用，2026-11-06 规格§6）
 signal piles_shuffled(src: String, cards: Array)   # 洗牌事件（src=discard/played；cards=搬移清单——洗牌飞行 d__20 用）
@@ -33,6 +34,7 @@ const TARGETING := preload("res://qiforge/QiVcTargeting.gd")   # 索敌库＋模
 const EFFECTS := preload("res://qiforge/QiVcEffects.gd")       # 效果处理器注册表（同轮）
 const ACTIONS := preload("res://qiforge/QiVcEnemyActions.gd")  # 意图动作族（同轮）
 const CMDQ := preload("res://qiforge/QiVcCmdRunner.gd")        # 统一命令队列（2026-11-12 原版 CommandRunner 同构）
+const GSM := preload("res://qiforge/vc/state/GameStateMachine.gd")   # 状态机（2026-11-18 GoF 类制·用户令「和原版一样」：原版 Nosebleed.Pancake.GameStateMachine 战斗环 1:1——phase 字符串机退役）
 
 var rng := RandomNumberGenerator.new()
 var player: Dictionary = {}
@@ -42,8 +44,10 @@ var draw_pile: Array = []
 var discard_pile: Array = []
 var exhaust_pile: Array = []
 var round_no := 0
-var phase := "player"
+var gsm = null                                # GameStateMachine（2026-11-18 GoF 类制：流转住 vc/state/ 状态族）
+var phase: String : get = _phase_get          # 兼容读口：屏/旧查询面沿用字符串语义（〔差异登记 #37〕临时件）
 var result := ""
+var _discard_anim_done := false               # 弃牌动画完成旗（PlayerEndTurnState.delay_execute 等待位）
 
 var current_form := ""        # 上一张打出的剑型（型集判定用：short/long/great/flex；""＝无——回合开始归无）
 var upgrade_enabled := false  # 动态升级＝内功「动态升级」赋予（2026-11-07 教程轮沿袭：宝箱获得——开局不带）
@@ -123,8 +127,8 @@ func setup(run: Dictionary) -> void:
 				encounter["active"].push_back(_make_enemy(String(encounter["reserve"].pop_front())))
 
 func start() -> void:
-	round_no = 0
-	_round_start()
+	gsm = GSM.new()
+	gsm.set_state_encounter_start(self)   # EncounterStart→PrePlayerTurn→PlayerTurn（→OnStartTurn 首抽）同帧直通链
 	changed.emit()
 
 ## ── 属性四层（2026-11-07 属性轮）──
@@ -191,8 +195,29 @@ func _shuffle(pile: Array) -> void:
 		pile[i] = pile[j]
 		pile[j] = tmp
 
-#region 回合流
-func _round_start() -> void:
+#region 回合流（2026-11-18 GoF 类制：流转住 vc/state/ 状态族——本文件只留模型体与门面）
+
+## 兼容读口（〔差异登记 #37〕临时：屏 10 处字符串查询零改迁移；语义＝旧 phase 四值）。
+func _phase_get() -> String:
+	if result != "":
+		return "over"
+	if gsm == null:
+		return "player"
+	var s = gsm.current_state()
+	if s == gsm._player_end_turn_state or s == gsm._post_player_end_turn_state:
+		return "discarding"
+	if s == gsm._enemy_turn_state or s == gsm._encounter_defeated_state:
+		return "enemy"   # 终局态归 enemy：多波次换波窗口旧制 phase 恒 enemy（终局推态不改模型回合）
+	return "player"   # player_turn／encounter_start／pre_player_turn（后两者同帧瞬态直通）
+
+## 玩家回合态判定（旧 phase=="player" 守卫对位——can_play/play_card/settle 用）。
+func _in_player_turn() -> bool:
+	return gsm == null or gsm.current_state() == gsm._player_turn_state
+
+## OnStartTurn（对位 PlayerModel.OnStartTurn：PlayerTurnState.OnEnterState 存活段
+## `context._player.OnStartTurn(WasSaveDataLoaded)`（csall PlayerTurnState.cs:38-50）＋
+## lldb 栈（差异登记 #31）→ DrawCards(isInitialCardDraw)。旧 _round_start 更名迁入状态入口。
+func on_start_turn() -> void:
 	# 2026-11-06 碎牌口径（用户裁定）：使用计数＝**一回合之内**——回合开始全体清零；
 	# 没碎的卡下回合从头再计 3+1；碎掉的已移出各区，不受影响（碎＝永久，跨回合不复活）
 	for card in hand:
@@ -214,13 +239,18 @@ func _round_start() -> void:
 	might_pct = 0
 	current_form = ""      # 上一张剑型回合归无（动态升级：每回合首张不构成切招）
 	decide_intents()
-	phase = "player"
 
+## 结束回合门面（屏按钮入口）：推 PlayerEndTurnState（守卫＝仅玩家回合态放行——
+## 旧 phase!="player" 守卫对位；模型体迁 _end_turn_body 由状态调用）。
 func end_turn() -> void:
-	if phase != "player":
+	if gsm == null or gsm.current_state() != gsm._player_turn_state:
 		return
-	# 回合末顺序（2026-11-13 原版录屏逐帧实证）：**已打出区先扫→手牌后弃**（played 区
-	# 6.45 清空、手牌 6.65 才动——旧版反序）；两段各 ~0.2s 清空、缩卡后微卡隐形飞行
+	gsm.set_state(gsm._player_end_turn_state, self)
+
+## 回合末模型体（PlayerEndTurnState.delay_execute 调用）：
+# 回合末顺序（2026-11-13 原版录屏逐帧实证）：**已打出区先扫→手牌后弃**（played 区
+# 6.45 清空、手牌 6.65 才动——旧版反序）；两段各 ~0.2s 清空、缩卡后微卡隐形飞行
+func _end_turn_body() -> void:
 	var batch := hand.size()   # 同批张数→弃牌加速钟（原版 cardsBeingAddedAtOnce）
 	discard_pile.append_array(played_pile)
 	played_pile = []
@@ -239,7 +269,6 @@ func end_turn() -> void:
 	# 2026-11-06 用户令「先弃完再抽」终裁＝真同步：弃牌数据落账后战斗**停摆**，
 	# 等屏上弃牌动画播完回调 discard_anim_done()，才跑敌方回合＋新回合抽牌——
 	# 牌堆计数等一切数字跟动画严格同步。探针/无屏直跑：end_turn 后连调 discard_anim_done() 同步推进。
-	phase = "discarding"
 	changed.emit()
 
 ## 终局弃手牌（2026-11-11 对齐原版 OnEncounterDefeated→DiscardHand：胜利时序手牌走
@@ -281,27 +310,41 @@ func add_discard_pile_to_deck() -> void:
 	piles_shuffled.emit("discard", moved3)
 	changed.emit()
 
-## 弃牌表现完成回调（屏驱动；幂等——phase 已推进则忽略）
-func discard_anim_done() -> void:
-	if phase != "discarding":
-		return
-	phase = "enemy"
-	changed.emit()
-	enemy_round()   # 纯逻辑自动流转：UI 层只管按信号播表现，不手搓回合步进
+## OnEncounterDefeated（对位 PlayerModel.OnEncounterDefeated d__280 全序：:251 DiscardHand/
+## :254 DiscardComboPile → anyDiscarded? Delay(1000ms) → :415 TryAddDiscardPileToDeck 无条件；
+## 2026-11-18 GoF 改造自屏 _run_terminal_settlement 迁入 EncounterDefeatedState——
+## 序与等待完全不变；1s 垫拍＝anyDiscarded 只门延迟、不门洗回（bp12 实证）。
+func on_encounter_defeated() -> void:
+	var any_discarded: bool = discard_hand_finale()
+	if any_discarded:
+		await (Engine.get_main_loop() as SceneTree).create_timer(1.0, false).timeout
+	add_discard_pile_to_deck()
 
-## 敌方回合＝PerformIntents（2026-11-07 逆向对齐：**逐敌执行**动作——每敌独立结算、
-## 独立过玩家甲；推翻 10-31「合并一次总打击」裁定）＋回合末补位＋（未终局）进入下一回合
-## 敌方回合（2026-11-12 原版制改造·PerformIntents 同构）：入队阶段＋收口两段——
-## 原版＝逐敌〔EnemyAction.Execute 模型**同步**＋演出协程包成命令 EnqueueCommand〕
-## 三明治，EnemyTurnState.WaitForTurnEnd＝WaitWhile(IsProcessing‖IsAnyViewUpdating)。
-## 我方（2026-11-12 CommandRunner 1:1）：有屏＝每敌先 Wait(0.12) 呼吸位（原版 Wait(seconds)
-## 同构）再入队 EnemyActCommand；灼烧逐敌同构命令；回合收口＝轮询 IsProcessing 排空
-## （WaitForTurnEnd 同构）→ enemy_round_end。
-## 无屏/探针：_screen_attached=false＝无表现层，模型结算直执行不入队（原版不存在无屏态，
-## 探针专用路径——drain 旧自创件随队列重写退役）。
-func enemy_round() -> void:
-	if phase != "enemy":
+## 终局胜利推态门面（屏 _check_finale 死亡拍调→GameStateMachine.SetStateEncounterDefeated
+## →EncounterDefeatedState.ExecuteTask 起——推态时点＝死亡拍〔#37〕）。
+func push_encounter_defeated() -> void:
+	if gsm == null:
 		return
+	gsm.set_state_encounter_defeated(self)
+
+## 弃牌表现完成回调（屏驱动；幂等——非 PlayerEndTurnState 态直忽略）。
+## 2026-11-18 GoF 改造：真同步零帧差＝置旗＋直接推 PostPlayerEndTurn→EnemyTurn
+## （旧制同栈直调 enemy_round 等效；原版 UniTask 异步唤醒——〔#37〕引擎映射；
+## PlayerEndTurnState.delay_execute 轮询体自裁不重推）。
+func discard_anim_done() -> void:
+	if gsm == null or gsm.current_state() != gsm._player_end_turn_state:
+		return
+	_discard_anim_done = true
+	gsm.set_state(gsm._post_player_end_turn_state, self)
+
+## 敌方回合模型体（EnemyTurnState.execute_state_task 调用；旧 enemy_round 拆体——
+## 入队段在此、等待与收口住状态类）＝PerformIntents（2026-11-07 逆向对齐：**逐敌执行**
+## 动作——每敌独立结算、独立过玩家甲；推翻 10-31「合并一次总打击」裁定）。
+## 原版三明治：逐敌〔EnemyAction.Execute 模型**同步**＋演出协程包成命令 EnqueueCommand〕；
+## 有屏＝每敌先 Wait(0.12) 呼吸位（原版 Wait(seconds) 同构）再入队 EnemyActCommand；
+## 灼烧逐敌同构命令。无屏/探针：_screen_attached=false＝模型结算直执行不入队
+## （原版不存在无屏态，探针专用路径）。
+func _enemy_round_body() -> void:
 	settle_all_strikes()   # 落账延迟兜底：演出未落完的账单先全落（终局判定随之收口）
 	# ① 逐敌构建（对应 PerformIntents 逐敌循环）
 	var actions: Array = []
@@ -333,19 +376,16 @@ func enemy_round() -> void:
 			if int(player["hp"]) <= 0:
 				break
 			_exec_enemy_burn(b[0], int(b[1]))
-		enemy_round_end()
+		_enemy_round_end_body()
 		return
 	for a in actions:
 		cmds.Wait(0.12)   # 逐敌节奏呼吸位（原版 Wait(seconds) 同构；旧 push delay 随队列重写退役）
 		cmds.EnqueueCommand(EnemyActCommand.bind(a[0], a[1]))
 	for b in burns:
 		cmds.EnqueueCommand(EnemyBurnCommand.bind(b[0], int(b[1])))
-	# WaitForTurnEnd 双条件全量（2026-11-13 补全：原版 EnemyTurnState＝WaitWhile(IsProcessing
-	# ‖IsAnyViewUpdating)——旧版只排空队列，灼烧焚卡/经验珠等 fire-and-forget 演出会被下回合
-	# 抽牌插队；IsAnyViewUpdating＝屏注入的全局动画在飞计数）
-	while cmds.IsProcessing() or (is_any_view_updating.is_valid() and is_any_view_updating.call()):
-		await (Engine.get_main_loop() as SceneTree).process_frame
-	enemy_round_end()
+	# WaitForTurnEnd 双条件（2026-11-13 补全实证）迁住 EnemyTurnState.wait_for_turn_end
+	# ＝WaitWhile(IsProcessing‖IsAnyViewUpdating)——灼烧焚卡/经验珠等 fire-and-forget
+	# 演出不被下回合抽牌插队；收口＝_enemy_round_end_body（状态尾调）。
 
 ## enemy_act 命令体（原版三明治命令层）：执行→玩家倒下则弃队列余敌
 func EnemyActCommand(e: Dictionary, act: Dictionary) -> void:
@@ -383,9 +423,11 @@ func FxViewCommand(op: Dictionary) -> void:
 	if fx_launcher.is_valid():
 		await fx_launcher.call(op)
 
-## 敌方回合收口（原序保留：补位→终局→下一回合）
-func enemy_round_end() -> void:
-	if phase != "enemy":
+## 敌方回合收口（原序保留：补位→终局→下一回合；EnemyTurnState.execute_state_task 尾调
+## ＋无屏直跑分支调——守卫＝数据终局即止〔旧 phase!="enemy" 对位：旧 phase 仅由 check_end
+## 改 over；终局推态（多波次换波）不拦收口——换波场景敌方回合续走推下一波〕）
+func _enemy_round_end_body() -> void:
+	if result != "" or gsm == null:
 		return
 	# ② 回合末补位（轮换制）：候补排到**队尾**（最深排之后）——队列制下排尾本就不行动，
 	# 轮到顶上时才按原则②跳过一次（顶替通道统一在 _promote_rows）
@@ -406,19 +448,21 @@ func enemy_round_end() -> void:
 	if check_end():
 		return
 	round_no += 1
-	_round_start()
+	gsm.set_state(gsm._pre_player_turn_state, self)   # →PlayerTurn（on_start_turn）同帧直通（旧直调对位）
 	changed.emit()
 
 func check_end() -> bool:
+	# 已终局幂等（旧制＝phase="over" 后两调用点守卫自然挡；GoF 制推态有先有后，此处兜底）
+	if result != "":
+		return true
 	if player["hp"] <= 0:
-		phase = "over"
 		result = "lose"
+		gsm.set_state_player_died(self)   # PlayerDiedState（败北 UI 仍由 ended 信号驱动，时点不变）
 		ended.emit("lose")
 		return true
 	if _alive_active().is_empty() and encounter["reserve"].is_empty():
-		phase = "over"
 		result = "win"
-		ended.emit("win")
+		ended.emit("win")   # 胜利推态＝屏侧死亡拍 _check_finale→push_encounter_defeated（#37 时点登记——胜利空窗案挂起口径）
 		return true
 	return false
 #endregion
@@ -435,7 +479,7 @@ func card_cost(card: Dictionary) -> int:
 	return int(card["def"].get("cost", 0)) + int(card.get("cost_delta", 0))
 
 func can_play(card: Dictionary) -> bool:
-	return phase == "player" and int(player["qi"]) >= card_cost(card)
+	return _in_player_turn() and int(player["qi"]) >= card_cost(card)
 
 ## 离开手牌即复原（动态升级口径）：打出/弃置/碎牌/消耗均清等级与费增量——覆盖
 ## 「进弃牌堆/回合结束/抽到进场＝初始值」全部复原路径（A2 切招复原另行就地清）。
@@ -499,7 +543,7 @@ func _dyn_wild_cost_reset(p_form: String) -> void:
 ## 出牌全流程（动态升级制）：定格等级/型 → 扣气 → 离手复原 → ⓪效果（按本张等级倍率）
 ## → ①A2 切招复原 → ②A1 同型升级 → ③A3 万能费用复原 → ④记型（内功门控——未获＝三步全跳）。
 func play_card(card_uid: int) -> void:
-	if phase != "player":
+	if not _in_player_turn():
 		return
 	var card := {}
 	for c in hand:
@@ -622,7 +666,7 @@ func settle_all_strikes(gen := -1) -> void:
 	while not _pending_strikes.is_empty() \
 			and (gen < 0 or int((_pending_strikes[0] as Dictionary).get("gen", -1)) <= gen):
 		settle_next_strike()
-	if phase == "player":
+	if _in_player_turn():
 		check_end()
 
 ## 待落账事件快照（表现层演出驱动用——不动队列；gen≥0 只取该代——连打制：各拍驱动
@@ -965,7 +1009,7 @@ func check_piles() -> bool:
 
 ## 打出全部（原版 Play All，2026-11-04）：按手牌顺序把当前可打的牌依次打出，打不动为止。
 func play_all() -> void:
-	if String(phase) != "player":
+	if not _in_player_turn():
 		return
 	var guard := 0
 	while guard < 60:
@@ -982,7 +1026,7 @@ func play_all() -> void:
 ## 手牌排序（2026-11-04 用户裁定「和原版一样」）：法力＝按气费升序；颜色＝按卡色序（红/蓝/黄/紫）再按费。
 ## 只改手牌数组顺序（模型序＝显示序，同原版 CardPile 重排），随后 changed 让视图重排。
 func sort_hand(mode: String) -> void:
-	if String(phase) != "player" or hand.size() <= 1:
+	if not _in_player_turn() or hand.size() <= 1:
 		return
 	if mode == "mana":
 		hand.sort_custom(func(a, b):

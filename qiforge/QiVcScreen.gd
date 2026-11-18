@@ -126,6 +126,7 @@ func setup(run_ref: Dictionary) -> void:
 	battle.changed.connect(_refresh)
 	battle.event.connect(_on_event)
 	battle.ended.connect(_on_ended)
+	battle.finale_cleanup_done.connect(_on_finale_cleanup_done)   # 终局链完成（2026-11-18 GoF：EncounterDefeatedState 尾发）
 	battle.piles_shuffled.connect(_on_piles_shuffled)
 	battle.played_changed.connect(_rebuild_played)
 	battle.hit_landed.connect(_on_hit_landed)
@@ -2123,29 +2124,20 @@ func _check_finale() -> void:
 
 ## 2026-11-15 终局启动：原版 EncounterDefeatedState.ExecuteTask 的第一拍就是
 ## await player.OnEncounterDefeated()（弃手/清已打出/洗回），不是先等攻击视图。
-## 这里立即启动数据收尾；攻击回放/死亡 FX 继续并行，胜利浮层由 _on_ended＋_try_finish_win 兜底。
+## 2026-11-18 GoF 类制改造：终局链整体迁入 battle 侧状态族（EncounterDefeatedState
+## .execute_task → battle.on_encounter_defeated＝d__280 编排：弃手→anyDiscarded? 1s 垫拍
+## →洗回无条件）——屏只推态（push_encounter_defeated），完成回执走 finale_cleanup_done
+## 信号。攻击回放/死亡 FX 继续并行，胜利浮层由 _on_ended＋_try_finish_win 兜底。
 func _start_terminal_settlement() -> void:
 	if _terminal_settlement_started:
 		return
 	_terminal_settlement_started = true
-	var tree := get_tree()
-	if tree == null:
-		await _run_terminal_settlement(null)
-		return
-	await _run_terminal_settlement(tree)
+	if battle != null:
+		battle.push_encounter_defeated()
 
-## 终局结算（2026-11-15 原版 d__280 口径）：
-##   DiscardHand/DiscardComboPile（无条件）→ anyDiscarded? Delay(1000ms) → TryAddDiscardPileToDeck
-## anyDiscarded 只决定 1 秒垫拍，不是洗回门；弃堆空时 add 自然 no-op。
-func _run_terminal_settlement(tree: SceneTree) -> void:
-	if battle == null:
-		return
-	var any_discarded: bool = battle.discard_hand_finale()
-	if any_discarded and tree != null:
-		await tree.create_timer(1.0, false).timeout
-	if battle == null:
-		return
-	battle.add_discard_pile_to_deck()
+## 终局链完成回执（EncounterDefeatedState.execute_task 尾发；旧 _run_terminal_settlement
+## 收尾两行对位：旗置位＋放行胜利浮层）。
+func _on_finale_cleanup_done() -> void:
 	_finale_cleanup_done = true
 	_try_finish_win()
 
