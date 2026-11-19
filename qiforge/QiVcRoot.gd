@@ -12,16 +12,14 @@ const VC := preload("res://qiforge/QiVcData.gd")
 const MAPGEN := preload("res://qiforge/QiVcMapGen.gd")
 const VC_MAP := preload("res://qiforge/QiVcMapScreen.gd")
 const VC_SCREEN := preload("res://qiforge/QiVcBattle.tscn")   # 2026-11-04 场景化：战斗屏住场景（脚本挂根）
-const VC_REWARD := preload("res://qiforge/QiVcReward.gd")
 const VC_META := preload("res://qiforge/QiVcMeta.gd")   # 2026-11-07 属性轮：局外金币＋养成档
 
 var _run: Dictionary = {}
 var _map = null
 var _screen = null
-var _reward: Control = null
 var _meta = null   # VC_META 实例（局外持久——金币/养成）
 var _panel = null   # 局外养成面板（2026-11-07 属性轮）
-var _after_reward := "map"
+var _after_reward := "map"   # 战后去向（clear＝通关面板/map＝归图；2026-11-19 战后补弹屏退役后仅此用途）
 var _pending := {}   # {cell: Vector2i, boss: bool} 战斗归图定位
 
 func _ready() -> void:
@@ -453,13 +451,6 @@ func _on_battle_over(result: String) -> void:
 			for key in ["level", "xp", "deck", "pending_picks"]:
 				if snap.has(key):
 					_run[key] = snap[key]
-		elif int(out.get("xp_gained", 0)) > 0:
-			var lpb: Dictionary = VC.level_progress(int(_run.get("level", 1)),
-				int(_run.get("xp", 0)) + int(out.get("xp_gained", 0)))
-			_run["level"] = int(lpb["lvl"])
-			_run["xp"] = int(lpb["xp"])
-			if int(lpb["gained"]) > 0:
-				_run["pending_picks"] = int(_run.get("pending_picks", 0)) + int(lpb["gained"])
 		# 2026-11-06 碎牌：碎掉的卡从 run 卡组永久移除（按 cid 删一次出现——同名卡多张只碎一张）
 		for sm in out.get("shattered", []):
 			var deck_arr: Array = _run.get("deck", [])
@@ -478,25 +469,14 @@ func _on_battle_over(result: String) -> void:
 		else:
 			_remove_map_entity(_pending["cell"])
 			_after_reward = "map"
-		_show_rewards_or_next()
+		_on_reward_done()
 	else:
 		_run["hp"] = int(_run.get("mhp", VC.PLAYER_BASE["hp"]))   # 复刻阶段简化：败北满血重打
 		_show_map()
 
-## 升级三选一流：有突破次数先出奖励屏（连锁出题），完了归图/通关。
-## 〔2026-11-10 天赐置空〕教程层天赐（旧「飞星术/撩月斩」）随卡表砍除退役——
-## 三张基础卡经 reward_offers 自然出题；单卡天赐制留内容轮再启。
-func _show_rewards_or_next() -> void:
-	if int(_run.get("pending_picks", 0)) > 0:
-		var gifts: Array = []
-		_free_screens()
-		_reward = VC_REWARD.new()
-		_reward.setup(_run, gifts)
-		_reward.card_chosen.connect(func(cid: String): _run["deck"].push_back(cid))   # 地图侧落点＝牌组
-		_reward.done.connect(_on_reward_done)
-		add_child(_reward)
-	else:
-		_on_reward_done()
+## 〔2026-11-19 战后补弹退役〕原「pending_picks 余量战后补弹选卡屏」机制删除
+## （用户裁定：原版无此行为，战后弹升级＝bug）——升级选卡全部在战斗内消化
+## （条满即弹、关窗逐级），战后直接归图/通关。
 
 func _on_reward_done() -> void:
 	_free_screens()
@@ -612,9 +592,8 @@ func _show_clear_panel() -> void:
 	box.add_child(btn)
 
 func _free_screens() -> void:
-	for node in [_map, _screen, _reward]:
+	for node in [_map, _screen]:
 		if node != null and is_instance_valid(node):
 			node.queue_free()
 	_map = null
 	_screen = null
-	_reward = null

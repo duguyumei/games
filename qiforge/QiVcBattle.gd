@@ -35,6 +35,7 @@ const EFFECTS := preload("res://qiforge/QiVcEffects.gd")       # 效果处理器
 const ACTIONS := preload("res://qiforge/QiVcEnemyActions.gd")  # 意图动作族（同轮）
 const CMDQ := preload("res://qiforge/QiVcCmdRunner.gd")        # 统一命令队列（2026-11-12 原版 CommandRunner 同构）
 const GSM := preload("res://qiforge/vc/state/GameStateMachine.gd")   # 状态机（2026-11-18 GoF 类制·用户令「和原版一样」：原版 Nosebleed.Pancake.GameStateMachine 战斗环 1:1——phase 字符串机退役）
+const AT := preload("res://qiforge/QiAnimTrace.gd")  # 动画时间线账本（2026-11-19 观测件·span tracing 文字版）
 
 var rng := RandomNumberGenerator.new()
 var player: Dictionary = {}
@@ -315,16 +316,27 @@ func add_discard_pile_to_deck() -> void:
 ## 2026-11-18 GoF 改造自屏 _run_terminal_settlement 迁入 EncounterDefeatedState——
 ## 序与等待完全不变；1s 垫拍＝anyDiscarded 只门延迟、不门洗回（bp12 实证）。
 func on_encounter_defeated() -> void:
+	print("[胜利链] battle.on_encounter_defeated：进入（手牌%d张/已打出%d张）" % [hand.size(), played_pile.size()])   # 〔取证日志·胜利弹窗案〕
+	AT.mark("终局链·弃手开始")
 	var any_discarded: bool = discard_hand_finale()
+	print("[胜利链] battle.on_encounter_defeated：弃手完成，any_discarded=%s（true 才等1秒垫拍）" % str(any_discarded))   # 〔取证日志·胜利弹窗案〕
+	AT.mark("弃手完成·any_discarded=%s" % str(any_discarded))
 	if any_discarded:
+		var pad_id := AT.begin("垫拍1s·any_discarded")   # 观测：原版 d__280 Delay(1000ms) 同构垫拍
 		await (Engine.get_main_loop() as SceneTree).create_timer(1.0, false).timeout
+		AT.end(pad_id)
+		print("[胜利链] battle.on_encounter_defeated：1s 垫拍走完，准备洗回")   # 〔取证日志·胜利弹窗案〕
 	add_discard_pile_to_deck()
+	print("[胜利链] battle.on_encounter_defeated：洗回完成，函数返回（execute_task 将发 finale_cleanup_done）")   # 〔取证日志·胜利弹窗案〕
+	AT.mark("洗回完成")
 
 ## 终局胜利推态门面（屏 _check_finale 死亡拍调→GameStateMachine.SetStateEncounterDefeated
 ## →EncounterDefeatedState.ExecuteTask 起——推态时点＝死亡拍〔#37〕）。
 func push_encounter_defeated() -> void:
 	if gsm == null:
+		print("[胜利链] battle.push_encounter_defeated：gsm 为空，直接返回（异常路径）")   # 〔取证日志·胜利弹窗案〕
 		return
+	print("[胜利链] battle.push_encounter_defeated：转发机器（现态=%s）" % gsm.current_state().state_name())   # 〔取证日志·胜利弹窗案〕
 	gsm.set_state_encounter_defeated(self)
 
 ## 弃牌表现完成回调（屏驱动；幂等——非 PlayerEndTurnState 态直忽略）。
@@ -457,12 +469,15 @@ func check_end() -> bool:
 		return true
 	if player["hp"] <= 0:
 		result = "lose"
+		print("[胜利链] battle.check_end：败北判定→result=lose，推 PlayerDiedState，发 ended(lose)")   # 〔取证日志·胜利弹窗案〕
 		gsm.set_state_player_died(self)   # PlayerDiedState（败北 UI 仍由 ended 信号驱动，时点不变）
 		ended.emit("lose")
 		return true
 	if _alive_active().is_empty() and encounter["reserve"].is_empty():
 		result = "win"
-		ended.emit("win")   # 胜利推态＝屏侧死亡拍 _check_finale→push_encounter_defeated（#37 时点登记——胜利空窗案挂起口径）
+		print("[胜利链] battle.check_end：全灭判定（场上0/候补0）→result=win，发 ended(win)；推态不在此（屏死亡拍 push_encounter_defeated）")   # 〔取证日志·胜利弹窗案〕
+		AT.mark("ended(win) 发出")
+		ended.emit("win")   # 胜利推态＝屏侧死亡拍 _check_finale→push_encounter_defeated（#37 时点登记——胜利弹窗案挂起口径）
 		return true
 	return false
 #endregion
@@ -666,7 +681,10 @@ func settle_all_strikes(gen := -1) -> void:
 	while not _pending_strikes.is_empty() \
 			and (gen < 0 or int((_pending_strikes[0] as Dictionary).get("gen", -1)) <= gen):
 		settle_next_strike()
-	if _in_player_turn():
+	# 终局判定守卫（胜利弹窗案 2026-11-19 定谳）：旧制终局结算不改 phase，回放收尾时
+	# phase 恒 "player"、check_end 照跑；GoF 推态后现态在死亡拍已入 EncounterDefeatedState——
+	# 守卫必须跟上旧不变量「终局态＝玩家回合侧判定继续收口」。
+	if _in_player_turn() or (gsm != null and gsm.current_state() == gsm._encounter_defeated_state):
 		check_end()
 
 ## 待落账事件快照（表现层演出驱动用——不动队列；gen≥0 只取该代——连打制：各拍驱动

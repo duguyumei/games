@@ -47,7 +47,7 @@ func _do_transition(transition: StateTransition, context) -> void:
 func set_state(to_state, context) -> void:
 	if to_state == null or to_state == _current_state:
 		return
-	var from := _current_state
+	var from = _current_state   # （显式类型禁 := 推断——_current_state 无类型，推断会被解析器拒）
 	if from != null:
 		from.exit_state(to_state, context)
 	_current_state = to_state

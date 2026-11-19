@@ -284,12 +284,14 @@ func _gap_of(spec: Dictionary, n: int) -> float:
 	return clampf(float(spec.get("gap_budget", 0.42)) / float(maxi(1, n)),
 		float(spec.get("gap_min", 0.07)), float(spec.get("gap_max", 0.10)))
 
-## 本轮总时长（剑阵口径：凝剑＋绕圈＋停顿＋依次射出＋飞行）
+## 本轮总时长（剑阵口径：凝剑＋绕圈＋停顿＋依次射出＋飞行——恰至末柄命中即收，
+## 不加收尾垫：2026-11-19 用户令删旧 +0.30 自创余量——墨点淡出系纯视觉残迹，
+## 收口兜底落账由 _finish_replay 承担，胜利链不等装饰）
 func strike_timing(spec: Dictionary, n: int) -> float:
 	var K := slow_k()
 	return (float(FORM["spawn"]) * K) + (float(FORM["orbit_dur"]) * K) \
 		+ (float(FORM["hold"]) * K) + (float(FORM["launch_gap"]) * K) * float(maxi(0, n - 1)) \
-		+ (float(FORM["travel"]) * K) + 0.30
+		+ (float(FORM["travel"]) * K)
 
 ## 命中墨点（箭消失时留的一小团，0.3s 收）
 ## ── 剑鞘制（2026-11-08 用户令）──
@@ -343,8 +345,9 @@ func scabbard_timing(_spec: Dictionary, _n: int) -> float:
 	var speed0 := 1400.0 / K
 	var st: float = (float(SWORD_LEN.get("short", 100.0)) + 5.0) / speed0
 	var move_t: float = 1389.0 / speed0
+	# 同 2026-11-19 用户令：删旧 +0.35 自创收尾垫（恰至末柄汇合即收）
 	return (float(SCA["draw"]) + float(SCA["hold"]) + float(SCA["turn"])) * K \
-		+ st * float(maxi(0, _n - 1)) + move_t + 0.35
+		+ st * float(maxi(0, _n - 1)) + move_t
 
 func scabbard_strike(spec: Dictionary, events: Array, orb_g: Vector2, on_beat: Callable, alive_check := Callable()) -> void:
 	if OS.has_environment("QI_FX_LOG"):

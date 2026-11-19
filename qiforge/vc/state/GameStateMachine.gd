@@ -50,7 +50,9 @@ func set_state_encounter_start(context) -> void:
 ## 我方守卫＝已入 PlayerDied 则不覆盖〔差异登记 #37：守卫体 nuked，幂等防重入为我方语义〕）。
 func set_state_encounter_defeated(context) -> void:
 	if _current_state == _player_died_state:
+		print("[胜利链] 机器.set_state_encounter_defeated：现态已是 PlayerDied，守卫拦下不推（异常路径）")   # 〔取证日志·胜利弹窗案〕
 		return
+	print("[胜利链] 机器.set_state_encounter_defeated：现态=%s → 推 EncounterDefeatedState" % ("?" if _current_state == null else _current_state.state_name()))   # 〔取证日志·胜利弹窗案〕
 	set_state(_encounter_defeated_state, context)
 
 ## 败北推态（原版无独立助手——PlayerDied 推态走 GameModel 内部调用〔体 nuked〕；

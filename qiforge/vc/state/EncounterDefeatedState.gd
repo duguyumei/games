@@ -21,5 +21,8 @@ func on_enter_state(_from_state, _to_state, context) -> void:
 ## 〔差异登记 #37〕不做退出取消：多波次换波（场上清空但候补未尽→敌方回合续走推下一波）
 ## 会退出本态再入——结算链必达＝旧行为对位（旧屏协程无中断路径）；原版 ct＝转场打断，不复刻。
 func execute_task(context) -> void:
+	print("[胜利链] EncounterDefeatedState.execute_task：起跑（fire-and-forget 协程已入）")   # 〔取证日志·胜利弹窗案〕
 	await context.on_encounter_defeated()
+	print("[胜利链] EncounterDefeatedState.execute_task：on_encounter_defeated 返回，发 finale_cleanup_done")   # 〔取证日志·胜利弹窗案〕
 	context.finale_cleanup_done.emit()
+	print("[胜利链] EncounterDefeatedState.execute_task：finale_cleanup_done 已发完（链头到尾全通）")   # 〔取证日志·胜利弹窗案〕
