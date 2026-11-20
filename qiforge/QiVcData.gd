@@ -10,51 +10,30 @@
 extends RefCounted
 
 #region 内功（对应原作遗物系统；2026-10-31 用户裁定：先做战斗相关，场外升级后批）
-## 首件＝动态升级规则本体（2026-11-10 三公理定稿；id 沿用 combo_stack——地图宝箱硬编码联动，
+## 首件＝动态升级规则本体（2026-11-20 二规则制定稿；id 沿用 combo_stack——地图宝箱硬编码联动，
 ## 改名留后续统一）。
 const NEIGONG := {
 	"combo_stack": {
 		"name": "动态升级",
-		"desc": "装备后动态升级规则生效（宝箱获得——开局不带）：每打出一张牌，手牌中同剑型、"
-			+ "等级不高于它的牌等级 +1、费用 +1；打出与上一张不同剑型＝切招，其余剑型全部复原；"
-			+ "变招属于所有剑型。回合结束全部复原。",
+		"desc": "装备后动态升级规则生效（宝箱获得——开局不带）：牌的费用＝等级（初始 0，"
+			+ "威力随等级翻倍）。打出与上一张同剑型＝连招，手牌全部 +1 级；不同剑型＝切招，"
+			+ "手牌全部重置。变招牌打出不切招，且手上的牌全部免费。回合结束全部回初始。",
 	},
 }
 
-## 剑型四类（2026-11-08 状态制改版，用户裁；2026-11-11 用户令卡色按型区分）：卡表 stance 字段值域——
-## short 短剑（轻快·蓝）/ long 长剑（控场·绿）/ great 巨剑（重破·红）/
-## flex 变招（稀有·金：型集＝全集，即万能牌——2026-11-10 动态升级轮定义，现役零张、词条待内容轮）
+## 剑型三类（2026-11-08 状态制改版，用户裁；2026-11-11 用户令卡色按型区分；2026-11-20
+## 二规则制裁 flex 第四型退役——变招＝卡表 wild 标记而非剑型）：卡表 stance 字段值域——
+## short 短剑（轻快·蓝）/ long 长剑（控场·绿）/ great 巨剑（重破·红）
 ## color 键＝QiCardStyle TCG_HEADERS/TCG_FRAMES 卡色调键，tcg_def_of 按此上色（唯一源）。
 const FORMS := {
 	"short": {"cn": "短剑", "color": "blue"},
 	"long": {"cn": "长剑", "color": "green"},
 	"great": {"cn": "巨剑", "color": "red"},
-	"flex": {"cn": "变招", "color": "gold"},
 }
 
-## 型集（2026-11-10 动态升级三公理·集合制）：每张牌的 stance 对应一个型集——
-## 三真型各占单集，flex 变招＝全集（万能牌）。系统只有两个谓词，全部由型集交集算出：
-##   接（旧词「同型」）＝ 两型集有交集；换（旧词「切招」）＝ 两型集无交集。
-## 接/换是完美二分：一张牌对另一张必居其一——A1 升级集与 A2 复原集天然互斥，无优先级规则。
-const FORM_SETS := {
-	"short": ["short"],
-	"long": ["long"],
-	"great": ["great"],
-	"flex": ["short", "long", "great"],
-}
-
-static func forms_connect(a: String, b: String) -> bool:
-	## 接：型集有交集（"" 与任何型视为接——回合首张不构成换；无型牌用户裁定不存在）
-	if a == "" or b == "":
-		return true
-	for f in (FORM_SETS.get(a, [a]) as Array):
-		if (FORM_SETS.get(b, [b]) as Array).has(f):
-			return true
-	return false
-
-static func forms_switch(a: String, b: String) -> bool:
-	## 换：型集无交集（＝切招判定）
-	return not forms_connect(a, b)
+## 连招/切招判定（2026-11-20 二规则制）＝ stance 字符串比对（见 QiVcBattle._is_switch：
+## 与上一张不同＝切招、相同或回合首张＝连招）——旧型集接/换谓词（FORM_SETS/
+## forms_connect/forms_switch，2026-11-10 集合制）随 flex 退役整体删除。
 
 static func has_neigong(run: Dictionary, nid: String) -> bool:
 	return (run.get("neigong", []) as Array).has(nid)
@@ -64,18 +43,23 @@ static func has_neigong(run: Dictionary, nid: String) -> bool:
 ## 卡种口径＝attack(攻击)/effect(奇窍·耗气)/defense(护体·耗气)——后两类现零卡、口径保留待内容轮。
 ## —— 气（2026-11-06 终裁）——
 ## 气：上限＝基础 2，局外（run.qi_max）／局内（qi_max 效果）可成长（护栏 6）；
-##     回合开始重置到当前上限（重置在前、抽牌在后）；cost＝气费（动态升级的费增量叠加其上）。
-## —— 动态升级（2026-11-10 三公理·集合制，取代连击；全文见 design-docs/动态升级系统_v0.3.md）——
-## A1 升级：打出 p → 手牌中与 p 接、且等级 ≤ p 的牌：等级+1、费用+1（「费用锁定」词条牌不加费）；
-## A2 切招：p 与上一张换 → 手牌中与 p 换的牌：等级与费用复原初始；
-## A3 万能打出：p 为 flex → 手牌中与 p 接者（＝全体）费用复原初始（结算在 A1 后）。
-## 执行顺序＝①A2 判定 → ②A1 升级 → ③A3 万能 → ④记型；离开手牌即复原（打出/弃置/碎牌清等级与费增量）。
+##     回合开始重置到当前上限（重置在前、抽牌在后）；气费＝牌的当前等级（2026-11-20 费=级）。
+## —— 动态升级（2026-11-20 二规则制，取代三公理；全文见 design-docs/动态升级系统_v0.4.md）——
+## 费用＝等级：初始＝卡 base_lv（默认 0），威力 ×(1+lv)；打出/弃/碎/消耗回初始状态。
+## 规则一（打出 p 与上一张比类型）：不同 → 切招＝所有手牌重置（等级回初始＋免费清除）；
+##   相同（或回合首张）→ 连招＝手牌所有牌 lv+1。
+## 规则二（变招牌，卡表 wild: true——有普通 stance 与等级）：打出不触发切招（同型照常连招）；
+##   打出后手上的牌全部免费（快照——只免打出那一刻在手上的，打出时免单、威力照常）。
 ## 旧「式弹药库（gain/need/pip）」字段随砍表全删。ops 同引擎指令集（dmg 加 hits 多段）。
 const KEYWORDS := {
 	"crit": {"name": "暴击", "desc": "有概率造成多倍伤害。"},   # 2026-11-07 用户令：词条文案不带具体数值
 }
 
 const CARDS := {
+	# —— 卡表字段（2026-11-20 二规则制）——
+	# stance＝剑型（short/long/great——连招/切招判定用）；base_lv＝初始等级（默认 0，
+	# 费=级下即初始气费）；wild: true＝变招牌（打出不切招＋手上的牌全部免费——现役零张，
+	# 内容轮出卡；效果数值定小档＝工具牌身位，对齐原版 wild 卡全小效果的出卡约定）。
 	# —— 攻击卡 targeting 字段（2026-11-07 逆向重排，对应原版武器配 Targeting 组件）——
 	# right_left＝右→左逐列顺发（Knife）；front_row＋pierce_type 0＝前排每敌一击（Death Spiral/
 	# Axe 族）；single＝锁最右首列（单体）。pierce_type 0/1/2＝OncePerEnemy/MultiHit/MultiSwitch。

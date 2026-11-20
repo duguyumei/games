@@ -4,12 +4,12 @@
 ##   · 遭遇＝总池＋活跃位＋回合末补位轮换（都死了＝活跃清空且总池耗尽）；
 ##   · 敌方回合＝全场意图合并成一次总打击（只过一次玩家护甲）；护甲意图进遭遇护甲池；
 ##   · 玩家护甲＝每回合开始按护甲属性刷新（配合并结算制）；
-##   · 动态升级（2026-11-10 三公理·集合制，取代连击；全文见 design-docs/动态升级系统_v0.3.md）：
-##     每张卡带型集（三真型单集、flex＝全集），「接」＝型集有交集、「换」＝无交集——
-##     A1 升级（打出 p → 手牌中与 p 接且等级 ≤p 者：等级+1、费用+1〔费用锁定牌不加费〕）；
-##     A2 切招（p 与上一张换 → 手牌中与 p 换者：等级与费用复原初始）；
-##     A3 万能打出（p 为 flex → 手牌全体费用复原初始，结算在 A1 后）。
-##     执行顺序＝①A2 → ②A1 → ③A3 → ④记型；离开手牌即复原；未获内功＝三步全跳。
+##   · 动态升级（2026-11-20 二规则制，取代三公理；全文见 design-docs/动态升级系统_v0.4.md）：
+##     费用＝等级（初始 0，威力 ×(1+lv)），离手回初始态。打出 p 与上一张比类型：
+##     不同 → 切招：所有手牌重置（等级回初始、免费状态清除）；
+##     相同（或回合首张）→ 连招：手牌所有牌 lv+1；
+##     变招牌（wild 标记、有普通型与等级）：打出不触发切招（同型照常连招），
+##     打出后手上的牌全部免费（快照——只免打出那一刻在手上的）。未获内功＝全跳（记型照记）。
 ##     气＝回合开始重置到当前上限（基础 2 可成长，护栏 6；洗牌换气暂缓——2026-11-07 撤下）。
 extends RefCounted
 
@@ -50,7 +50,7 @@ var phase: String : get = _phase_get          # 兼容读口：屏/旧查询面�
 var result := ""
 var _discard_anim_done := false               # 弃牌动画完成旗（PlayerEndTurnState.delay_execute 等待位）
 
-var current_form := ""        # 上一张打出的剑型（型集判定用：short/long/great/flex；""＝无——回合开始归无）
+var current_form := ""        # 上一张打出的剑型（连招判定用：short/long/great；""＝无——回合开始归无）
 var upgrade_enabled := false  # 动态升级＝内功「动态升级」赋予（2026-11-07 教程轮沿袭：宝箱获得——开局不带）
 var might_pct := 0            # 本回合伤害增幅（与等级倍率相乘）
 var xp_gained := 0            # 本场击杀所得经验（战后写回 run——2026-11-01 经验轮）
@@ -176,7 +176,7 @@ func _make_card(cid: String) -> Dictionary:
 	var def: Dictionary = DATA.CARDS.get(cid, {})
 	return {"uid": _card_uid, "id": cid, "def": def,
 		"exhaust": bool(def.get("exhaust", false)),
-		"lv": 0, "cost_delta": 0,   # 2026-11-10 动态升级双轨：等级（效果强度）＋费增量（气费附加）——只在手牌内非零
+		"lv": int(def.get("base_lv", 0)),   # 2026-11-20 费=级：等级即气费（初始＝卡 base_lv，默认 0；威力 ×(1+lv)）
 		"uses": 0}   # 2026-11-06 碎牌：使用计数＝**一回合之内**（3 次裂痕＋1 次，第 5 次碎；回合开始清零）
 
 func _make_enemy(eid: String) -> Dictionary:
@@ -489,24 +489,24 @@ func card_lv(card: Dictionary) -> int:
 	return int(card.get("lv", 0))
 
 func card_cost(card: Dictionary) -> int:
-	# 气费＝卡面底价＋动态升级费增量（活查询：手牌显示/可打校验/扣费三处同源）；
-	# free＝升级选出的卡免一次费（2026-11-08 对齐原版 SetCardFreeToPlay——打出后消耗）
+	# 2026-11-20 费=级：气费＝当前等级（卡面 cost 底价退役——将来有价卡走 base_lv 初始等级）；
+	# free＝变招免费快照标（打出免单——打出即消耗）
 	if bool(card.get("free", false)):
 		return 0
-	return int(card["def"].get("cost", 0)) + int(card.get("cost_delta", 0))
+	return card_lv(card)
 
 func can_play(card: Dictionary) -> bool:
 	return _in_player_turn() and int(player["qi"]) >= card_cost(card)
 
-## 离开手牌即复原（动态升级口径）：打出/弃置/碎牌/消耗均清等级与费增量——覆盖
-## 「进弃牌堆/回合结束/抽到进场＝初始值」全部复原路径（A2 切招复原另行就地清）。
+## 回初始状态（2026-11-20 口径）：打出/弃置/碎牌/消耗均回初始等级＋清免费标——覆盖
+## 「进弃牌堆/回合结束/抽到进场＝初始态」全部复原路径（切招全体重置同走此函数）。
 func _strip_lv(card: Dictionary) -> void:
-	card["lv"] = 0
-	card["cost_delta"] = 0
+	card["lv"] = int(card["def"].get("base_lv", 0))
+	card["free"] = false
 
-## —— 动态升级三公理（2026-11-10 集合制定稿）——
-## 执行顺序＝①A2 判定 → ②A1 升级 → ③A3 万能 → ④记型（play_card 内）。
-## 接/换谓词见 QiVcData.FORM_SETS：接/换是完美二分——A1 升级集与 A2 复原集天然互斥，无优先级。
+## —— 动态升级（2026-11-20 二规则制）——
+## 判定＝打出牌类型与上一张比（字符串比对；""＝回合首张视作同）——旧型集接/换谓词
+## （QiVcData.FORM_SETS/forms_connect/forms_switch）随 flex 第四型退役整体作废。
 ## 2026-11-15 #33：换招清旧链——旧 played 全部移入弃堆，视图由 played_changed 走弃牌飞行；
 ## 当前新牌尚未加入，所以它随后入 played 时仍是新链起点。
 func _discard_played_for_switch() -> void:
@@ -516,66 +516,49 @@ func _discard_played_for_switch() -> void:
 	played_pile = []
 	played_changed.emit()
 
-## A2 切招：打出牌与上一张「换」（型集无交集）→ 手牌中与打出牌「换」者：等级与费用复原初始。
+## 切招判定：类型与上一张不同（""＝回合首张视作同——不构成切招）。
+func _is_switch(p_form: String) -> bool:
+	return current_form != "" and p_form != current_form
+
+## 切招：所有手牌重置（等级回初始、免费状态清除）。全体制＝等级是连招链的账本
+## （连招全体 +1、断链全体清账——涨洗对称，不按型筛名单）。
 func _dyn_switch_reset(p_form: String) -> void:
-	if current_form == "":
-		print("[动态升级] A2 判定：上张型=无（回合首张）→ 不切招、不复原")
-		return
-	if not DATA.forms_switch(p_form, current_form):
-		print("[动态升级] A2 判定：上张型=%s 本张型=%s → 接（不切招）" % [current_form, p_form])
-		return
-	# 名单只列真正掉级的牌（lv/费增量 >0）——没实际损失时不误导「复原」（2026-11-10 审计改）
+	# 名单只列真正有损失的牌（lv>初始 或 带免费标）——没实际损失时不误导「重置」（2026-11-10 审计改沿用）
 	var names := PackedStringArray()
 	for c in hand:
-		if DATA.forms_switch(String(c["def"].get("stance", "")), p_form) \
-				and (card_lv(c) > 0 or int(c.get("cost_delta", 0)) > 0):
+		if card_lv(c) > int(c["def"].get("base_lv", 0)) or bool(c.get("free", false)):
 			_strip_lv(c)
 			names.push_back(String(c["def"].get("name", "")))
-	print("[动态升级] A2 切招：上张型=%s → 本张型=%s；复原 %s" % [
-		current_form, p_form, "、".join(names) if not names.is_empty() else "（无实际掉级）"])
+	print("[动态升级] 切招：上张型=%s → 本张型=%s；重置 %s" % [
+		current_form, p_form, "、".join(names) if not names.is_empty() else "（无实际损失）"])
 	if names.is_empty():
 		event.emit("切招！")
 	else:
-		event.emit("切招！%s 复原" % "、".join(names))
+		event.emit("切招！%s 重置" % "、".join(names))
 
-## A1 升级：手牌中与打出牌「接」（型集有交集）且等级 ≤ 打出牌者：等级 +1、费用 +1
-## （「cost_lock」词条＝费用锁定不加费，万能牌专用）。打出牌自身已离手，不参与。
-func _dyn_upgrade(p_form: String, p_lv: int) -> void:
+## 连招：手牌所有牌 lv+1（全体制——不判型、不判 ≤，与切招全体重置对称；打出牌自身已离手）。
+func _dyn_upgrade() -> void:
 	var names := PackedStringArray()
-	var trace := PackedStringArray()   # 〔取证·动态升级〕逐张手牌的判定（升/跳过＋原因）
 	for c in hand:
-		var c_name := String(c["def"].get("name", ""))
-		var c_form := String(c["def"].get("stance", ""))
-		var c_lv := card_lv(c)
-		if not DATA.forms_connect(c_form, p_form):
-			trace.push_back("%s(型%s lv%d)=异型跳过" % [c_name, c_form, c_lv])
-			continue
-		if c_lv > p_lv:
-			trace.push_back("%s(型%s lv%d)=高于本张lv%d跳过" % [c_name, c_form, c_lv, p_lv])
-			continue
-		c["lv"] = c_lv + 1
-		if not bool(c["def"].get("cost_lock", false)):
-			c["cost_delta"] = int(c.get("cost_delta", 0)) + 1
-		names.push_back("%s Lv%d" % [c_name, card_lv(c)])
-		trace.push_back("%s(型%s lv%d→%d 费增%d)" % [
-			c_name, c_form, c_lv, card_lv(c), int(c.get("cost_delta", 0))])
-	print("[动态升级] A1 升级（本张型=%s lv=%d，手牌%d张）：%s" % [
-		p_form, p_lv, hand.size(), "｜".join(trace) if not trace.is_empty() else "（无手牌）"])
+		c["lv"] = card_lv(c) + 1
+		names.push_back("%s Lv%d" % [String(c["def"].get("name", "")), card_lv(c)])
+	print("[动态升级] 连招：手牌 %d 张全体 +1 级：%s" % [
+		hand.size(), "、".join(names) if not names.is_empty() else "（无手牌）"])
 	if not names.is_empty():
-		event.emit("升级：%s" % "、".join(names))
+		event.emit("连招：%s" % "、".join(names))
 
-## A3 万能打出：打出牌为 flex（型集＝全集）→ 手牌中与它「接」者（＝全体）费用复原初始。
-## 结算在 A1 后（「给等级、费用推回起点」），等级不清。现役零张 flex 卡，照公理写全待内容轮。
-func _dyn_wild_cost_reset(p_form: String) -> void:
-	if p_form != "flex":
-		return
+## 变招牌打出（wild 标记、有普通型与等级）：手上的牌全部免费（快照——只免打出那一刻
+## 在手上的，打出时免单、威力照常；之后抽到的不免）。变招牌自身照付自身等级的气
+## （照常被连招升——买断价随链涨）；打出不触发切招（豁免在 play_card 判定处）。
+func _dyn_wild_free() -> void:
 	for c in hand:
-		c["cost_delta"] = 0
-	print("[动态升级] A3 万能：手牌 %d 张费用复原（等级不动）" % hand.size())
-	event.emit("变招！手牌费用复原")
+		c["free"] = true
+	print("[动态升级] 变招：手上的牌 %d 张全部免费（快照）" % hand.size())
+	event.emit("变招！手上的牌全部免费")
 
-## 出牌全流程（动态升级制）：定格等级/型 → 扣气 → 离手复原 → ⓪效果（按本张等级倍率）
-## → ①A2 切招复原 → ②A1 同型升级 → ③A3 万能费用复原 → ④记型（内功门控——未获＝三步全跳）。
+## 出牌全流程（2026-11-20 二规则制）：定格等级/型/wild标 → 扣气 → 离手复原 → ⓪效果
+## （按本张等级倍率 ×(1+lv)）→ 判定（切招全体重置／连招全体+1／变招豁免）→ 变招免费
+## 快照 → ④记型（内功门控——未获＝全跳）。
 func play_card(card_uid: int) -> void:
 	if not _in_player_turn():
 		return
@@ -592,9 +575,10 @@ func play_card(card_uid: int) -> void:
 		event.emit("气不足")
 		return
 	player["qi"] = int(player["qi"]) - cost
-	# —— 定格（打出瞬间冻结本张等级与型——公理结算全以此为准，离手复原不影响）——
+	# —— 定格（打出瞬间冻结本张等级与型——规则结算全以此为准，离手复原不影响）——
 	var p_lv := card_lv(card)
 	var p_form := String(def.get("stance", ""))
+	var p_wild := bool(def.get("wild", false))   # 变招牌标记（2026-11-20：有普通型与等级＋打出豁免切招＋免费快照）
 	# 〔取证·动态升级〕每次出牌一行：这张凭什么等级/型结算（帧号+墙钟——对齐「快速两张」时序）
 	print("[动态升级] 出牌 uid=%d「%s」型=%s lv=%d 费=%d 气=%d→%d 门控=%s 帧=%d t=%d" % [
 		card_uid, String(def.get("name", "")), p_form, p_lv, cost,
@@ -610,7 +594,8 @@ func play_card(card_uid: int) -> void:
 	_strip_lv(card)   # 离开手牌即复原（已打出区展示沿用打出前视图，不回读这两轨）
 	# 2026-11-15 换招清旧链（#33）：当前新牌尚未入 played；先把换招前旧链移入弃堆，
 	# 让 _rebuild_played 走弃牌飞行。当前牌随后入 played，作为新链起点。
-	if upgrade_enabled and current_form != "" and DATA.forms_switch(p_form, current_form):
+	# 2026-11-20 二规则制：判定改类型比对；变招牌打出不触发切招＝不清链（链的延续）。
+	if upgrade_enabled and not p_wild and _is_switch(p_form):
 		_discard_played_for_switch()
 	if int(card["uses"]) >= 5:
 		# 2026-11-06 碎牌机制（原版损坏制，**一回合之内**口径：普通 3 次生裂痕、裂痕态再
@@ -640,7 +625,7 @@ func play_card(card_uid: int) -> void:
 		played_changed.emit()
 	# —— ⓪ 效果执行（2026-11-07 逆向重构）：伤害走单链（与 preview 物理同源），
 	# 非伤害走 QiVcEffects 处理器注册表（对应原版 CardEffect.Execute 分发）；
-	# 倍率＝本张打出时等级（动态升级占位公式：每级总输出 +30%——正式词条曲线待内容轮）
+	# 倍率＝本张打出时等级 ×(1+lv)（2026-11-19 线性翻倍裁定——正式词条曲线待内容轮）
 	_play_gen += 1   # 连打制（2026-11-09 对齐原版命令队列）：本张账单事件统一带新代标
 	var mult := DATA.level_mult(p_lv)
 	print("[动态升级] 本张结算倍率 ×%.2f（打出时 lv=%d，公式 1+lv；might=%d%% amount=%d）" % [
@@ -655,13 +640,16 @@ func play_card(card_uid: int) -> void:
 			if fx_launcher.is_valid():
 				cmds.EnqueueCommand(FxViewCommand.bind({"op": String(op.get("op", "")),
 					"value": int(op.get("value", op.get("count", 0)))}))
-	# —— 动态升级三公理（结算在效果之后＝doc 4.2「先效果后升级」——本张抽进手的新牌以
-	# 初始值参与 A1）；内功门控：未获内功＝三步全跳、等级与费用纹丝不动；
-	# ④记型不受门控（式槽显示沿用 2026-11-08 裁定）
+	# —— 动态升级二规则（2026-11-20；结算在效果之后——本张抽进手的新牌照常吃连招）；
+	# 内功门控：未获内功＝全跳、等级与免费纹丝不动；④记型不受门控（式槽显示沿用裁定）——
+	# 变招牌（p_wild）：不触发切招（异型＝不重置不升级），同型照常连招，随后免费快照。
 	if upgrade_enabled and p_form != "":
-		_dyn_switch_reset(p_form)
-		_dyn_upgrade(p_form, p_lv)
-		_dyn_wild_cost_reset(p_form)
+		if not p_wild and _is_switch(p_form):
+			_dyn_switch_reset(p_form)
+		elif not _is_switch(p_form):
+			_dyn_upgrade()
+		if p_wild:
+			_dyn_wild_free()
 	if p_form != "":
 		current_form = p_form
 	# 〔取证·动态升级〕结算后手牌快照——下一张打出时它该长什么样，一眼对账
@@ -793,7 +781,7 @@ func preview_play(card: Dictionary) -> Dictionary:
 		return out
 	out["ok"] = true
 	var def: Dictionary = card["def"]
-	# —— 等级/费用镜像（2026-11-10 动态升级：倍率＝本张当前等级占位公式；气费＝底价＋费增量）——
+	# —— 等级/费用镜像（2026-11-20 费=级：倍率＝本张当前等级 ×(1+lv)；气费＝当前等级）——
 	var mult := DATA.level_mult(card_lv(card))
 	var cost := card_cost(card)
 	out["qi"] = -cost
