@@ -580,6 +580,10 @@ func _rebuild_face() -> void:
 	vp.transparent_bg = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if visible else SubViewport.UPDATE_DISABLED
 	vp.disable_3d = true   # 2026-11-13 删 msaa_2d（GLES3 不支持 2D MSAA 空转告警；抗锯齿靠 TILT_SS 超采样）
+	# 2026-11-20：字体超采样——卡面在 540 视口里被 card.scale=3 放大，但字默认仍按 180 档
+	# 栅格化（28/15/22 会被放大 3× 再缩回，糊）。oversampling_override 让字按 3× 栅格化，
+	# 3× 超采样才真正作用于文字（Godot 4.7 Viewport.oversampling_override）。
+	vp.oversampling_override = TILT_SS
 	var card: Control = CARD.make_tcg_card(vdef, "vc_hand")   # 宽 180＝原版 1:1（工厂 vc_hand 档）
 	card.theme = QIFONTS.default_theme()   # SubViewport 不吃根窗主题
 	card.scale = Vector2(TILT_SS, TILT_SS)

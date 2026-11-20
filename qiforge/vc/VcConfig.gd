@@ -10,7 +10,7 @@ extends RefCounted
 # ── Card_Hand 场景几何（SC_Game.unity / prefab 直读）────────────────────
 # 手牌堆根：SC_Game 场景 HandPile RectTransform（SC_Game.unity:789268-789292）
 const HAND_ROOT_SCALE := 1.14            # m_LocalScale {1.14,1.14,1.14}（:789279）——上屏倍率真凶
-const HAND_ROOT_ANCHORED_POS := Vector2(0.0, 47.0)   # m_AnchoredPosition（:789289）——原版 37；2026-11-13 用户令整体上移 10px（屏像素，父空间先于 1.14 缩放生效）＝登记偏差
+const HAND_ROOT_ANCHORED_POS := Vector2(0.0, 47.0)   # 手牌框（FrameHand）底上方 47px——2026-11-20 用户指正：不是屏底上方；原版 37＋2026-11-13 上移 10
 const HAND_ROOT_SIZE := Vector2(960.0, 182.0)        # m_SizeDelta（:789290）
 const HAND_ROOT_PIVOT := Vector2(0.5, 0.0)           # m_Pivot（:789292）——底中
 # 画布：CanvasScaler 参考分辨率 1920×1080（SC_Game.unity:854020-854024，UiScaleMode=1）

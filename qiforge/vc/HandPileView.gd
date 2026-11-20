@@ -29,9 +29,9 @@ func _init() -> void:
 	# 子件在 _init 预建：宿主装配序＝setup() 先于 add_child（QiVcRoot:432-434 实测），
 	# _ready 尚未跑而 setup() 要摸 _card_group——预建后两序皆稳
 	_pile_root = self
-	# 锚位口径（2026-11-12 场景链全通定案，真值档 §九）：HandPile 锚底中＋37（:789287）、
-	# 父链全拉伸零偏移（:793852-855）→ **带底＝屏底上方 37px**；旧「18% 卡高≈57px」截图
-	# 定标作废（疑量到弧上中卡，真值≈46px）。1.14 绕底中轴心生效（底缘不动）。
+	# 锚位口径（2026-11-12 场景链定案＋2026-11-20 用户指正）：HandPile 锚底中＋47，
+	# 基准是**手牌框 FrameHand 的底**（不是屏底）；_ready 里按 FrameHand 重锚，本处先按屏底
+	# 放初值（探针无 FrameHand 时即此口径）。1.14 绕底中轴心生效（底缘不动）。
 	var gap := VC.HAND_ROOT_ANCHORED_POS.y
 	set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	offset_left = -VC.HAND_ROOT_SIZE.x * 0.5
@@ -58,6 +58,25 @@ func _init() -> void:
 func _ready() -> void:
 	super()
 	pivot_offset = Vector2(size.x * 0.5, size.y)
+	# 2026-11-20 用户指正：47px 是「手牌框（FrameHand）底」上方，不是屏底上方。
+	# FrameHand 底 1064 比屏底 1080 高 16px；按屏底算会让整手牌低 16px、卡底压屏。
+	_apply_hand_area_anchor()
+
+## 手牌根重锚：以 FrameHand 底为基准（探针/无 FrameHand 的场景退回屏底原口径）。
+## 帧内只改 offset，不改父链/缩放；1.14 仍绕底中轴心，底缘位置不被缩放。
+func _apply_hand_area_anchor() -> void:
+	var host := get_parent() as Control
+	if host == null:
+		return
+	var area := host.find_child("FrameHand", true, false) as Control
+	if area == null:
+		return
+	var host_top: float = host.get_global_rect().position.y
+	var area_bottom: float = area.get_global_rect().end.y - host_top
+	var screen_h: float = host.size.y
+	var gap: float = VC.HAND_ROOT_ANCHORED_POS.y + maxf(0.0, screen_h - area_bottom)
+	offset_top = -(gap + VC.HAND_ROOT_SIZE.y)
+	offset_bottom = -gap
 
 ## setup（引擎映射：场景序列化引用 → 注入；重绑守卫＝is_connected 防重开重复连接）
 func setup(player_model, runner, hooks := {}) -> void:

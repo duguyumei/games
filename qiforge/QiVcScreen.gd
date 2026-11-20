@@ -390,7 +390,7 @@ func _style_plaque(b: Button, mirror := false) -> void:
 	b.add_theme_stylebox_override("disabled", plate)
 	b.add_theme_color_override("font_disabled_color", Color(0.91, 0.86, 0.72))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	b.add_theme_font_size_override("font_size", 20)
+	b.add_theme_font_size_override("font_size", 22)
 	b.add_theme_color_override("font_color", Color(0.91, 0.86, 0.72))
 	b.add_theme_color_override("font_hover_color", Color(0.93, 0.79, 0.46))
 	b.add_theme_color_override("font_pressed_color", Color(0.10, 0.08, 0.05))

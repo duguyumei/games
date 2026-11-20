@@ -32,6 +32,12 @@ const BASE_SIZE: Vector2 = Vector2(300, 422)
 const SCALES: Dictionary = {"field": 0.60, "hand": 0.72, "vc_hand": 0.60, "prep": 0.78, "detail": 0.90, "mini": 0.11}
 ## 效果文自适应字号下限
 const FIT_FLOOR: int = 10
+## vc_hand 原生字号（2026-11-20 用户令：对齐 Card_Hand.prefab 的 TMP 真值——
+## 名字 28、规则 15.35（base 13.98/min 12）→ 整数 15、费用 22）。只在 vc_hand 分支使用；
+## 其余档仍走 300×422 基准 × 系数。
+const VC_HAND_NAME_FONT: int = 28
+const VC_HAND_COST_FONT: int = 22
+const VC_HAND_RULES_FONT: int = 15
 
 static func scale_of(ctx: String) -> float:
 	return float(SCALES.get(ctx, SCALES["field"]))
@@ -538,15 +544,14 @@ class TcgCard extends Button:
 ## 武侠卡（def：name / qi（气费）/ gain（获得的式，空不显）/ fragile（脆皮）/ need（耗式图标序列）
 ## / type_line / rules / flavor / tone / art）
 static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
+	# 2026-11-20：vc_hand 改 180 原生排版（字号/分区对齐 Card_Hand.prefab）；
+	# 其余档（detail/hand/prep/field）仍走 300×422 基准 × 系数，不受影响。
+	if ctx == "vc_hand":
+		return _make_tcg_card_vc_hand(def)
 	var k: float = scale_of(ctx)
-	# 〔2026-11-12 原生 0.65 重排〕vc_hand 双系数：横向量（x/宽/半径/字号）跟宽 kw、
-	# 纵向量（y/高）跟高 kh——300×422 设计在 180×277（Card_Hand.prefab 纵横比）原生落位；
-	# 字号一律跟 kw（卡窄字小、比例不破）。其余档 kw=kh=k。
+	# vc_hand 已由上方 180 原生分支接管；这里只剩 300×422 基准档（detail/hand/prep/field）。
 	var kw: float = k
 	var kh: float = k
-	if ctx == "vc_hand":
-		kw = 180.0 / 300.0
-		kh = 277.0 / 422.0
 	var tone: String = str(def.get("tone", "blue"))
 	var frame: Color = tcg_frame_color(tone)
 	var qi_v: Variant = def.get("qi", null)
@@ -821,6 +826,184 @@ static func make_tcg_card(def: Dictionary, ctx: String = "detail") -> Button:
 	# 2026-11-06 碎牌：裂痕态——卡面叠程序裂纹（正式裂纹贴图归美术，此为留位）
 	if cracked:
 		var cr := TextureRect.new()
+		cr.texture = _crack_texture(clampi(int(def.get("crack_level", 3)), 1, 3))
+		cr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		cr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		cr.stretch_mode = TextureRect.STRETCH_SCALE
+		cr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cr.z_index = 8
+		card.add_child(cr)
+	return card
+
+## vc_hand 原生 180×277 布局（2026-11-20 用户令：字号与分区对齐 Card_Hand.prefab）。
+## 证据（prefab RectTransform / TMP）：名字带 138×38 @(40,2.4)、文字 128×32、fontSize 28；
+## 描述块 172×104 @(4,170)（prefab 底锚 (0,3)）、文字内缩 7/5、fontSize 15.35→15、min 12；
+## 立绘 Mask 172×172 @(4,36.5)（prefab (0,16) 中心锚）；费用球 43×43 @(2.5,2.5)、fontSize 22。
+## 以前 vc_hand 是 300×422 设计稿 ×0.6，字会变成 17/10/11；本分支按 180 原生落位。
+static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
+	var tone: String = str(def.get("tone", "blue"))
+	var frame: Color = tcg_frame_color(tone)
+	var card: TcgCard = TcgCard.new()
+	card.custom_minimum_size = Vector2(180.0, 277.0)
+	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	var glint_mat: ShaderMaterial = ShaderMaterial.new()
+	glint_mat.shader = GLINT_SHADER
+	glint_mat.set_shader_parameter("band_pos", -0.35)
+	glint_mat.set_shader_parameter("strength", 0.0)
+	card.glint_mat = glint_mat
+	var normal: StyleBoxFlat = _vc_box(frame, TCG_GOLD, 0, 7.0)
+	var hover: StyleBoxFlat = normal.duplicate()
+	card.add_theme_stylebox_override("normal", normal)
+	card.add_theme_stylebox_override("hover", hover)
+	card.add_theme_stylebox_override("pressed", hover)
+	card.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+	# 立绘/卡面底图：铺满整卡背（y0..277）——A' 顶带半透遮罩要用它透出纹理；
+	# 描述块仍压底部，名字带/费用章/分割线全部叠在上面。无单独金边（外框金环负责）。
+	var art: Panel = Panel.new()
+	_place_abs(art, 4.0, 0.0, 176.0, 277.0)
+	art.add_theme_stylebox_override("panel", _vc_box(frame, frame, 0, 4.0))
+	art.clip_contents = true
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(art)
+	var art_tex: Variant = def.get("art", null)
+	var pic: TextureRect = TextureRect.new()
+	pic.texture = art_tex if art_tex is Texture2D else _tcg_art_texture(frame)
+	pic.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.add_child(pic)
+
+	# 名字带：138×38 @(40,2.4)（prefab pivot(0,1.05) 直译）
+	var name_block: Panel = Panel.new()
+	_place_abs(name_block, 40.0, 2.4, 178.0, 40.4)
+	# 2026-11-20 用户：名字区域不要金线边框；A'＝0.82 tone 遮罩透出整卡底图纹理
+	#（颜色仍由 header/tone 主导，底图只加质感；以后真实立绘也走同一遮罩，不必改图集配色）
+	var hdr_col: Color = TCG_HEADERS.get(tone, TCG_HEADERS["blue"])
+	var band_col: Color = Color(hdr_col.r, hdr_col.g, hdr_col.b, 0.82)
+	name_block.add_theme_stylebox_override("panel",
+		_vc_box(band_col, band_col, 0, 4.0))
+	name_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(name_block)
+	var name_lbl: Label = _vc_label(name_block, str(def.get("name", "")),
+		VC_HAND_NAME_FONT, COLOR_CREAM, 2)
+	_place_abs(name_lbl, 7.0, 0.0, 135.0, 38.0)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_wire_fit(name_lbl, VC_HAND_NAME_FONT, true)
+
+	# 描述块：172×104 @(4,170)（prefab 底锚 (0,3)）；规则文 15，下限 12
+	var desc: Panel = Panel.new()
+	_place_abs(desc, 4.0, 170.0, 176.0, 274.0)
+	var dsb: StyleBoxFlat = _vc_box(Color(TCG_PARCH.r, TCG_PARCH.g, TCG_PARCH.b, 0.88),
+		TCG_GOLD_DARK, 1, 4.0)
+	dsb.shadow_color = Color(0, 0, 0, 0.4)
+	dsb.shadow_size = 4
+	desc.add_theme_stylebox_override("panel", dsb)
+	desc.clip_contents = true
+	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(desc)
+	var rules: Label = _vc_label(desc, str(def.get("rules", "")),
+		VC_HAND_RULES_FONT, TCG_INK, 0)
+	_place_abs(rules, 3.5, 2.5, 168.5, 101.5)
+	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rules.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rules.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_wire_fit(rules, VC_HAND_RULES_FONT, false, 12)
+
+	# 金环：沿用现有 glint 外框
+	_frame_ring(card, 0.6, 277.0 / 422.0, glint_mat)
+	# 全宽分割线（2026-11-20 用户：位置要向下——顶带最低件是费用方章底 45.5；
+	# 线对齐 45.5，而不是名字带底 40.4／旧 300 档 34.1）
+	var divider: Panel = Panel.new()
+	_place_abs(divider, 2.4, 44.3, 177.6, 46.7)
+	divider.add_theme_stylebox_override("panel", _vc_box(TCG_GOLD, TCG_GOLD, 0, 0))
+	divider.material = glint_mat
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(divider)
+
+	# 费用方章：43×43 @(2.5,2.5)（prefab 位置直译）；2026-11-20 用户「不要圆形/不要金线」——
+	# 弃水墨气珠贴图与金边；扁平羊皮纸方块＋22px 墨字（与描述块同一纸色）。
+	var qi_v: Variant = def.get("qi", null)
+	if qi_v != null:
+		var cost_c: Panel = Panel.new()
+		cost_c.name = "CostPip"
+		_place_abs(cost_c, 2.5, 2.5, 45.5, 45.5)
+		var cost_sb: StyleBoxFlat = _vc_box(TCG_PARCH, TCG_PARCH, 0, 0.0)
+		cost_sb.shadow_color = Color(0, 0, 0, 0.35)
+		cost_sb.shadow_size = 2
+		cost_c.add_theme_stylebox_override("panel", cost_sb)
+		cost_c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(cost_c)
+		var cost_col: Color = TCG_INK
+		if bool(def.get("combo_gold", false)):
+			cost_col = Color(0.80, 0.58, 0.14)
+		var cost_lbl: Label = _vc_label(cost_c, str(qi_v), VC_HAND_COST_FONT, cost_col, 0)
+		cost_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+		cost_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cost_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+	# 式徽/需求轨：沿用玩法件，改挂描述块上沿（原版这里对应 GemSlots 左轨）
+	var st_kind: String = str(def.get("stance", ""))
+	if st_kind != "":
+		var cur_form: String = str(def.get("cur_form", ""))
+		var st_matched: bool = st_kind == "flex" or st_kind == cur_form
+		var badge: Panel = Panel.new()
+		var sbf: StyleBoxFlat = _vc_box(TCG_HEADERS.get(tone, TCG_HEADERS["red"]),
+			TCG_GOLD_DARK if not st_matched else Color(1.0, 0.87, 0.55), 1, 3.0)
+		badge.add_theme_stylebox_override("panel", sbf)
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.size = Vector2(23.4, 23.4)
+		badge.position = Vector2(8.0, 142.6)
+		card.add_child(badge)
+		var pth: String = "res://qiforge/assets/ui/type_%s%s.png" % [
+			st_kind, "_gold" if st_matched else "_light"]
+		var stex: Texture2D = ResourceLoader.load(pth)
+		if stex != null:
+			var sic: TextureRect = TextureRect.new()
+			sic.texture = stex
+			sic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			sic.stretch_mode = TextureRect.STRETCH_SCALE
+			sic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			sic.set_anchors_preset(Control.PRESET_FULL_RECT)
+			sic.offset_left = 1.8
+			sic.offset_top = 1.8
+			sic.offset_right = -1.8
+			sic.offset_bottom = -1.8
+			badge.add_child(sic)
+
+	var need: Array = def.get("need", [])
+	var own: Dictionary = def.get("own_stances", {})
+	var seen: Dictionary = {}
+	var rail_px: float = 23.4
+	var y_cursor: float = 139.6
+	for st in need:
+		var s: String = str(st)
+		seen[s] = int(seen.get(s, 0)) + 1
+		var lit: bool = int(own.get(s, 0)) >= int(seen[s])
+		if y_cursor - rail_px < 44.0:
+			break
+		var b: Panel = _stance_badge(s, 0.6, false, lit, 1)
+		b.size = Vector2(rail_px, rail_px)
+		b.position = Vector2(8.0, y_cursor - rail_px)
+		card.add_child(b)
+		y_cursor -= rail_px + 3.0
+	var gain_v: Variant = def.get("gain", "")
+	var gain_icons: Array = gain_v if gain_v is Array else (
+		[] if str(gain_v) == "" else [str(gain_v)])
+	for i in gain_icons.size():
+		var gy: float = 142.6 - (rail_px + 3.0) * float(i)
+		if gy - rail_px < 44.0:
+			break
+		var b2: Panel = _stance_badge(str(gain_icons[i]), 0.6, true, true, 1)
+		b2.size = Vector2(rail_px, rail_px)
+		b2.position = Vector2(148.6, gy - rail_px)
+		card.add_child(b2)
+
+	if bool(def.get("cracked", false)):
+		var cr: TextureRect = TextureRect.new()
 		cr.texture = _crack_texture(clampi(int(def.get("crack_level", 3)), 1, 3))
 		cr.set_anchors_preset(Control.PRESET_FULL_RECT)
 		cr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -1556,11 +1739,16 @@ static func _text(parent: Control, text: String, size: int, color: Color) -> Lab
 ## 区域保护·自适应字号（2026-10-25 用户裁定）：效果/详情/名字带文字挂此线——
 ## 字号 base→FIT_FLOOR 逐级缩小直到塞进标签实测区域；到底仍溢出由行尾省略号＋面板 clip 兜底。
 ## width_only=true 时按单行宽测（名字带）；否则按换行宽×高测（效果文）。
-static func _wire_fit(label: Label, base: int, width_only: bool = false) -> void:
+static func _wire_fit(label: Label, base: int, width_only: bool = false,
+		floor: int = FIT_FLOOR) -> void:
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.set_meta("fit_base", base)
 	label.set_meta("fit_width_only", width_only)
+	label.set_meta("fit_floor", floor)
 	label.item_rect_changed.connect(_refit_text.bind(label))
+	# 卡在 SubViewport 里构建时不在树内（is_inside_tree 门会把初次 fit 挡掉）；
+	# 入树后补跑一次，长名字/长描述才会真正按可用宽高缩号（2026-11-20）。
+	label.tree_entered.connect(_refit_text.bind(label))
 
 static func _refit_text(label: Label) -> void:
 	if not label.is_inside_tree() or label.text.is_empty():
@@ -1570,9 +1758,10 @@ static func _refit_text(label: Label) -> void:
 		return
 	var base: int = int(label.get_meta("fit_base", 12))
 	var width_only: bool = bool(label.get_meta("fit_width_only", false))
+	var floor: int = int(label.get_meta("fit_floor", FIT_FLOOR))
 	var avail_w: float = maxf(1.0, label.size.x - (6.0 if width_only else 0.0))
 	var avail_h: float = label.size.y
-	for size: int in range(base, FIT_FLOOR - 1, -1):
+	for size: int in range(base, floor - 1, -1):
 		var fits: bool = false
 		if width_only:
 			fits = font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT,
@@ -1583,7 +1772,7 @@ static func _refit_text(label: Label) -> void:
 		if fits:
 			label.add_theme_font_size_override("font_size", size)
 			return
-	label.add_theme_font_size_override("font_size", FIT_FLOOR)
+	label.add_theme_font_size_override("font_size", floor)
 
 static func _center_text(parent: Control, text: String, size: int, color: Color) -> void:
 	var label: Label = _text(parent, text, size, color)
