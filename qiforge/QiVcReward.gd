@@ -34,6 +34,7 @@ var _hover_cid := ""
 func setup(run_ref: Dictionary, force_cards: Array = []) -> void:
 	run = run_ref
 	_force_gifts = force_cards.duplicate()
+	print("[教程单卡] QiVcReward.setup：收到 force_cards=%s（空＝常规三选一）" % [force_cards])
 
 func _ready() -> void:
 	# 2026-11-08 用户令「弹窗开＝全世界冻结」：WHEN_PAUSED＝暂停与否都处理——
@@ -141,6 +142,7 @@ func _roll() -> void:
 		_offers = [String(_force_gifts[0])]
 	else:
 		_offers = VC.reward_offers(_rng, int(run.get("level", 1)), run.get("deck", []))
+	print("[教程单卡] _roll 出题：force队列=%s → 本次可选项=%s" % [_force_gifts, _offers])
 	_refresh_cards()
 	_refresh_btns()
 

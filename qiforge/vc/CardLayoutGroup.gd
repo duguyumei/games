@@ -146,12 +146,15 @@ func FanCardPosition(card_num: int) -> float:
 
 ## FanCardRotation（:894）——扇形旋钮：t=(i/(n−1)−0.5)×2（:958-959）× RotationOffsetCurve ×
 ## MaxRotationOffset＋DefaultCardRotation → 写槽 rotation（:949-950）
+## 〔2026-11-19 修：原版是「n ≤ s_minCardsToFan(2) → 旋钮取 0，**照样写槽**」，不是早退——
+## 旧移植写成 `n < 2 → return`：①2 张也被扇（原版 ≤2 平排）②撤掉一张后剩下的槽不再写
+## 旋转＝卡滑到新位但停在旧角度（用户报「位置变了、形状没变、还是斜的」）。〕
 func FanCardRotation(card_num: int) -> void:
 	var n := get_child_count()
-	if n < s_min_cards_to_fan:
-		return
 	var t := 0.5 if n <= 1 else float(card_num) / float(n - 1)
-	var lin := (t - 0.5) * 2.0
+	# 原版 ISIL 027-052：先比 childCount vs s_minCardsToFan，不满足就跳过除法、保持 0，
+	# 再落到 085-109 照常写 rotation——所以 ≤2 张时槽角归 0（不是保持旧值）
+	var lin := (t - 0.5) * 2.0 if n > s_min_cards_to_fan else 0.0
 	var deg: float = _fanning_config.RotationOffsetCurve.sample_baked(clampf(absf(lin), 0.0, 1.0)) \
 		* _fanning_config.MaxRotationOffset * signf(lin)
 	var slot: Control = get_child(card_num)

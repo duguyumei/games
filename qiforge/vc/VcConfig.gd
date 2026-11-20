@@ -60,6 +60,10 @@ const CARD_MOVEMENT := {
 ## 用户三连「还是很慢」裁定提速——3 张批飞行 0.6-0.7s → 对齐原版 5+ 张批典型 0.3-0.45s。
 ## 仅作用于 dest=discard；回退＝改回 3.0）
 const DISCARD_SPEED_FLOOR := 5.0
+## 弃牌飞行时长＝mover 寻的全程时间（速度＝距离÷该值）。原版实测 65-110ms（真值档 §六）。
+## 2026-11-19 用户令「右上角→弃堆 速度慢点，变成2倍」：仅已打出区冲弃路径 2×，手牌弃牌不动。
+const DISCARD_FLIGHT_DUR := 0.08
+const PLAYED_DISCARD_FLIGHT_DUR := 0.16
 
 # ── GlobalConfig.asset: drawCardConfig（:50-56）───────────────────────
 const DRAW_CARD := {

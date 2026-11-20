@@ -124,7 +124,7 @@ func setup(run_ref: Dictionary) -> void:
 	battle._screen_attached = true   # 有屏标记（2026-11-12 命令队列制）：敌方动作/效果表现命令走 tick 串行
 	battle.fx_launcher = _launch_fx_cmd   # 效果表现启动器注入（现在＝刷新＋即时落定，动画将来挂）
 	battle.is_any_view_updating = _any_view_updating   # IsAnyViewUpdating 对位注入（回合闸双条件后半）
-	battle.pending_visual = true   # 落账延迟制（2026-11-08）：伤害账单等击中帧逐事件结算
+	battle.pending_visual = true   # 有屏逐击回调（2026-11-19 改：伤害/判死已在出牌当帧落账，击中拍只驱表现）
 	_pool_hp_max = _pool_hp_total_max()
 	battle.changed.connect(_refresh)
 	battle.event.connect(_on_event)
@@ -1520,12 +1520,12 @@ func _on_hand_card_removed(card: Dictionary, dest: String, batch := 1) -> void:
 	var floor_mult: float = VCC.DISCARD_SPEED_FLOOR if dest == "discard" \
 		else VCC.CARD_MOVEMENT["MinimumCardPileSpeedMultiplier"]
 	var mult: float = maxf(float(batch), floor_mult)
-	# 终局瞬隐（2026-11-13 用户观察实证＝原版 teleportToPosition 路径）：敌全灭后的弃手牌
-	# 直接消失不走飞行——终局弃手≠回合末弃手，两形态
-	var finale := battle != null and (battle.encounter["active"] as Array).is_empty()
-	if dest == "discard" and finale:
-		_discard_view.OnCardAdded(battle, card, false, true, 1.0)
-		return
+	# 〔2026-11-19 勘误：终局不瞬隐〕原版胜利路 OnEncounterDefeated d__280（ISIL :251）传的是
+	# DiscardHand(false, false)＝isGameOver **false**；isGameOver=true 只在 GameModel.OnGameOver
+	# （战败 csall:1892）/TriggerManualAbort（:2142），且 DiscardHand 内仅门 TriggerOnDiscardEffects
+	# （IL :207），不碰 teleport 旗。手牌弃牌视图走 PlayerView.DiscardHandCommand(cards, isSwitching)
+	# （PlayerView IL:4149）——回合末与终局同一条命令。11-13「终局瞬隐」系新手前几关无连击堆
+	# （右上角未解锁）出牌即收的误判（#33 门控；差异登记 #29 关账）。
 	if dest == "discard":
 		card["disc_stagger"] = log(float(maxi(1, batch))) / log(1000.0) / float(maxi(2, batch))
 	match dest:
@@ -1854,7 +1854,8 @@ func _find_enemy_card(uid: int) -> Control:
 	return null
 
 func _run_thrust(gen: int, total_strikes: int) -> void:
-	# ── 落账延迟（2026-11-08 对齐原版：账单在打出瞬间算定，逐击中帧才结算跳数）──
+	# ── 数据当帧落账（2026-11-19 对齐原版 ApplyDamage 同步：伤害/判死在 play_card 内已落完；
+	#    本轮演出只消费「表现账单」——逐拍跳数字/闪白/收尸，不再改血）──
 	# ── 余段空放制（2026-11-08 同日续裁）：演出拍数＝卡总段数（strike_total），与账单
 	#    事件数解耦——怪死掉后余下的段刀照飞（空放：无闪白无数字），最后一把收招
 	#    才收口终局（对应原版武器飞完全程＋胜利 WaitWhile 等表现清空）。
@@ -1950,8 +1951,8 @@ func _run_thrust(gen: int, total_strikes: int) -> void:
 	_finish_replay(gen)
 
 func _on_thrust_hit(ev: Dictionary, idx := 0) -> void:
-	# 拍制落账（2026-11-08 余段空放制）：每拍落 settle 条账（1 hit＋紧随 deaths——
-	# 死亡无独立特效，出列/放珠由 refresh 对账驱动）；blank 空放拍不落账无反馈（刀照飞）
+	# 拍制消费（2026-11-19 改）：每拍消费 settle 条事件（1 hit＋紧随 deaths）——hit 只驱表现
+	# （账早已落），death 做出列＋放珠；blank 空放拍无反馈（刀照飞）
 	for k in int(ev.get("settle", 0)):
 		if battle != null:
 			battle.settle_next_strike()
@@ -2007,7 +2008,7 @@ func _recoil(uid: int, amount := 7.0) -> void:
 ## ── 语法轨每击回调（2026-11-07 直刺 v2）：剑到位的那一帧才做卡面反应与收尸 ──
 ## 卡面三件：白闪（打中了的主信号）／留洞（穿刺痕迹）／后缩；手感走档案口径（轻）。
 func _on_strike_beat(ev: Dictionary, idx: int) -> void:
-	# 拍制落账（2026-11-08 余段空放制）：每拍落 settle 条账（1 hit＋紧随 deaths）；
+	# 拍制消费（2026-11-19 改）：每拍消费 settle 条事件（hit 只驱表现、death 收尸出列）；
 	# blank 空放拍纯飞过——无闪白无顿帧无数字（对应原版死目标段跳过）
 	for k in int(ev.get("settle", 0)):
 		if battle != null:
@@ -2127,7 +2128,7 @@ func _check_finale() -> void:
 	AT.mark("死亡拍·终局开始")   # 观测：时间线基准（击杀最后一敌那一拍）
 	# 〔2026-11-15 首关终局卡取证注释·未改〕终局判定在命中拍才跑到这里；此时 play_card 已在
 	# 上游发出 "played" 视图事件，卡已开始飞右上角。预测：若把 played 路由延迟到本判定之后，
-	# 首关击杀卡会走终局瞬隐而不是 ComboPile；非终局不受影响。
+	# 首关击杀卡会走终局弃牌飞行而不是 ComboPile；非终局不受影响。
 	# 原版对位是状态/事件钩子：GameStateMachine.EncounterDefeatedState →
 	# PlayerModel.OnEncounterDefeated（IAsyncStateMachine，触发 m_EncounterEnding）→
 	# DiscardHand/DiscardComboPile；不是 play_card 里一行顺序 if。我方此处直接调用
@@ -2239,12 +2240,23 @@ func _anim_card_play_out(w: Control) -> void:
 		w.set_meta("card_tween", tw_s)
 		_shatter_tail(w, tw_s)   # 碎牌：不落区——原地碎裂
 		return
+	# 〔2026-11-20 修·落点跑偏根因之一〕打出离手＝手牌槽角驱动层必须归零：
+	# 手牌扇角写在 `_visual_root.rotation`（UpdateHandTilt 每帧朝槽角 lerp），UnlinkSlot
+	# 只归零 position、**不复位旋转**——打出后可视根还挂着 ±15° 槽角，而 `_played_target`
+	# 的反推用的是可视中心的 AABB（旋转后中心偏走），落点随之偏；静止后卡也是斜的。
+	var vr_play: Control = w.get("_visual_root")
+	if vr_play != null:
+		vr_play.rotation = 0.0
+	var tc_play: Control = w.get("_tween_container")
+	if tc_play != null:
+		tc_play.rotation = 0.0
 	_played_anim_pending += 1
 	# ComboPile 目标位（已打出区堆位）
 	var n2: int = battle.played_pile.size()
 	var idx2: int = maxi(0, n2 - 1)
 	var pose: Dictionary = _played_target(w, idx2, n2)
 	w.z_index = int(pose["z"])
+	_log_played_pose("起飞", w, uid)
 	# ── 视觉层：ScaleTo(2.0, 0.5s) 到达脉冲（与飞行并行启动，原版实测同帧）——
 	# 走 CardView.ScaleTo 单tweener替换制（原版 DOTween 语义：第二次调用顶掉第一次；
 	# 2026-11-13 打出放大案：旧两条裸 tween 并行→脉冲无人掐跑到 2.0 卡死＝落位两倍大真凶）──
@@ -2256,12 +2268,32 @@ func _anim_card_play_out(w: Control) -> void:
 	w._transform_mover.SetDecelerateDistance(10.0)
 	w.MoveTo(pose["pos"], func() -> void:
 		if is_instance_valid(w):
+			_log_played_pose("到达", w, uid)
 			# 到达收尾：ScaleTo(1.0, 0.1s)（原版 OnCardReachedPile 后收尾——替换脉冲）
 			w.ScaleTo(Vector2.ONE, 0.1)
 			w.rotation = pose["rot"]
 			w.scale = pose["scale"]
-			_played_anim_pending = maxi(0, _played_anim_pending - 1))
+			_played_anim_pending = maxi(0, _played_anim_pending - 1)
+			# 〔取证·落位〕0.13s 后（脉冲收完）再量一次——静止态中心才是玩家看到的落点
+			get_tree().create_timer(0.13, false).timeout.connect(
+				func() -> void: _log_played_pose("静止", w, uid)))
 
+
+## 〔取证·落位〕卡视图四层姿态快照：堆心 vs 壳根/可视中心 + 可视根旋/壳旋/视觉缩/壳缩
+## ——「位置不对」先分清是①壳根落点错 ②脉冲缩放把可视中心推走 ③手牌扇角残留（可视根旋≠0）
+func _log_played_pose(tag: String, w: Control, uid: int) -> void:
+	if w == null or not is_instance_valid(w):
+		return
+	var vis: Control = w.get("_tilt_view")
+	var vr: Control = w.get("_visual_root")
+	var tc: Control = w.get("_tween_container")
+	var vc: Vector2 = vis.get_global_rect().get_center() if vis != null else Vector2.ZERO
+	var target: Vector2 = PLAYED_PILE_ROOT + PLAYED_PILE_LOCAL
+	print("[已打出] %s uid=%d 堆心屏=%s 根屏=%s 可视中心=%s 偏差=%s 可视根旋=%.1f° 壳旋=%.1f° 视觉缩=%s 壳缩=%s" % [
+		tag, uid, str(target), str(w.global_position), str(vc), str(vc - target),
+		rad_to_deg((vr as Control).rotation) if vr != null else 0.0,
+		rad_to_deg(w.rotation),
+		str((tc as Control).scale) if tc != null else "—", str(w.scale)])
 
 func _shattered_uids() -> Dictionary:
 	var out2 := {}
@@ -2385,8 +2417,8 @@ static func _fx_art(name: String) -> Texture2D:
 	_fx_cache[name] = t
 	return t
 
-## ── 已打出区（2026-11-06 表现层接手）：右侧纵堆 —— 新牌在**下**且最大，
-## 旧牌往上收、压暗一档；逐张横向漂移 + 微旋出「错落」，张数多时自动压缩间距。
+## ── 已打出区（2026-11-06 表现层接手；2026-11-19 对齐原版 ComboPile）：
+## 同点叠堆——新牌叠顶（SetAsLastSibling 同构）、不另排槽位、不压暗/不收旧牌。
 const PLAYED_SC := 1.0            # 已打出区＝手牌同尺寸（ScaleTo(1.0,0.1s) 收尾＝落位原尺寸）
 const PLAYED_PILE_ROOT := Vector2(1440.0, 400.0)   # ComboPile 根（场景链 canvas→Godot，真值档 §四二）
 const PLAYED_PILE_LOCAL := Vector2(83.6, -15.0)    # bp9 实测 MoveTo 局部 (83.6,15)（Unity y-up→Godot y 取负）
@@ -2406,17 +2438,25 @@ func _rebuild_played() -> void:
 			vanished.push_back(uid)
 	var v_mult: float = maxf(float(vanished.size()),
 		VCC.DISCARD_SPEED_FLOOR)   # 已打出区冲弃同管线（2026-11-13 同偏离裁定）
+	if not vanished.is_empty():
+		AT.mark("已打出区冲弃×%d（弃牌飞行）" % vanished.size())   # 观测：冲弃进弃堆的飞行起点
 	for uid in vanished:
 		var gone: Control = _played_cards[uid]
 		_played_cards.erase(uid)
 		if is_instance_valid(gone):
 			var dcard: Dictionary = _find_discard_card(uid)
 			if not dcard.is_empty():
-				# 终局（敌全灭）同瞬隐路径（teleport）——2026-11-13
-				if (battle.encounter["active"] as Array).is_empty():
-					_discard_view.OnCardAdded(battle, dcard, false, true, 1.0)
-				else:
-					_discard_view.OnCardAdded(battle, dcard, true, false, v_mult)
+				# 终局与回合末同一路径＝弃牌飞行（2026-11-19 勘误）：原版胜利路 DiscardComboPile
+				# （d__280 ISIL :254）逐张 TryGrabTopCard→CardConfig.OnRemovedFromComboPile
+				# （csall:1811 尾行 :1843 TryAddCardToTop teleport:false）——无终局瞬隐分支。
+				# 2026-11-19 用户令「速度慢点，变成2倍」：已打出区→弃堆单独 2×（0.16s）；用副本
+				# 注入，不把标记写回弃堆卡（否则该卡下次手牌弃牌也会被拖慢）。
+				var fly_card: Dictionary = dcard.duplicate()
+				fly_card["disc_flight_dur"] = VCC.PLAYED_DISCARD_FLIGHT_DUR
+				# 观测：单卡飞行 span（走位到达回调收口——AT dump 直接读「右上→弃堆」毫秒数）
+				var fly_id := AT.begin("已打出区弃牌飞行#%d" % uid)
+				fly_card["flight_end"] = func() -> void: AT.end(fly_id)
+				_discard_view.OnCardAdded(battle, fly_card, true, false, v_mult)
 			else:
 				gone.visible = false   # 兜底（理论不到：消失卡必先入弃堆）
 	# 新到：点击路径由 _on_card_to_played（play_out）全程接管；其余路径（play_all/兜底）在此落位
@@ -2467,10 +2507,11 @@ func _played_index(uid: int) -> int:
 ## 槽位/行列布局；全部卡 MoveToCardPile 飞**同一局部点**（bp9 实测 (83.6,15)@堆根
 ## canvas (1440,400)，两次打出同值＝定点）＝用户口供「排列不整齐」的真身（叠堆）。
 ## 到达＝DOCardSlamAnimation（:2003——RequestScreenShake 震屏＋ScaleTo＋音效；
-## 震屏/音效缓后登记差异）。叠序＝到达序（z 顶序）。落位旋转原版数值未考古
-## （csall 噪声）——±1.5° 交替微斜＝登记偏差（乱堆风味替身）。
+## 震屏/音效缓后登记差异）。叠序＝到达序（z 顶序）。
+## 落位旋转：2026-11-19 用户令「展示的，直接改」——原版无旋转证据（卡根 pivot 中心；
+## 旧 ±1.5°/±1.3° 交替微斜是自拟替身、且写在左上枢轴根上），退役为 0。
 func _played_pose(idx: int, _n: int) -> Dictionary:
-	var rot := deg_to_rad(1.5 if idx % 2 == 0 else -1.3)
+	var rot := 0.0
 	return {
 		# 堆位＝屏幕坐标 → 手牌根本地（视图挂 hpv 下、根缩放 1.14）
 		"pos": _to_hand_local(PLAYED_PILE_ROOT + PLAYED_PILE_LOCAL),
@@ -2486,9 +2527,11 @@ func _to_hand_local(screen_pos: Vector2) -> Vector2:
 		return screen_pos
 	return (_hand_pile_view as Control).get_global_transform_with_canvas().affine_inverse() * screen_pos
 
-## 把「卡面可视左上角」对齐到堆位：拿贴图层当前的全局矩形反推偏移（自校正，
-## 不依赖壳内部结构——壳比卡高，含悬停抬升的余量）
-## 〔2026-11-14 曾被误删换「定值制」（用户令原样还原——「别把好的给修复掉了」）〕
+## 把「卡面可视中心」对齐到堆位：原版 Card_Hand 根 180×277 的 pivot 是
+## (0.5,0.5)——MoveToCardPile 的目标点是卡**中心**，不是左上角；
+## 我方壳比卡高（180×395，含壳顶留白），必须拿贴图层当前全局矩形的 center 反推偏移。
+## 〔2026-11-14 曾被误删换「定值制」（用户令原样还原——「别把好的给修复掉了」）；
+##  2026-11-19 用户令「展示的，直接改」：左上角→中心，修「打出牌偏低」〕
 func _played_target(w: Control, idx: int, n: int) -> Dictionary:
 	var pose := _played_pose(idx, n)
 	if w == null or not is_instance_valid(w):
@@ -2497,9 +2540,13 @@ func _played_target(w: Control, idx: int, n: int) -> Dictionary:
 	if vis == null:
 		return pose
 	var sc: float = (pose["scale"] as Vector2).x
-	var cur_off: Vector2 = vis.get_global_rect().position - w.global_position
+	var cur_off: Vector2 = vis.get_global_rect().get_center() - w.global_position
 	var ratio := sc / maxf(0.001, w.scale.x)
 	pose["pos"] = (pose["pos"] as Vector2) - cur_off * ratio / VCC.HAND_ROOT_SCALE
+	print("[已打出] 反推 uid=%d idx=%d/%d 堆心屏=%s 可视中心=%s 可视中心差=%s 比例=%.2f 根目标=%s" % [
+		int(w.get_meta("hand_uid", -1)), idx + 1, n,
+		str(PLAYED_PILE_ROOT + PLAYED_PILE_LOCAL), str(vis.get_global_rect().get_center()),
+		str(cur_off), ratio, str(pose["pos"])])
 	return pose
 
 func _apply_played_pose(w: Control, idx: int, n: int, dur: float) -> void:
@@ -2507,6 +2554,11 @@ func _apply_played_pose(w: Control, idx: int, n: int, dur: float) -> void:
 		return
 	var pose := _played_target(w, idx, n)
 	w.z_index = int(pose["z"])
+	var vis_a: Control = w.get("_tilt_view")
+	var vc_a: Vector2 = vis_a.get_global_rect().get_center() if vis_a != null else Vector2.ZERO
+	print("[已打出] 重排 uid=%d idx=%d/%d dur=%.2f 目标根=%s 当前根=%s 可视中心=%s" % [
+		int(w.get_meta("hand_uid", -1)), idx + 1, n, dur, str(pose["pos"]),
+		str(w.global_position), str(vc_a)])
 	if dur <= 0.0:
 		w.position = pose["pos"]
 		w.scale = pose["scale"]
@@ -2617,10 +2669,14 @@ func _open_reward() -> void:
 	# paused=true 会把它冻住——不主动撤，「击退」等词条浮窗与伤害预览会冻结在屏上
 	# 残留到关窗后（触发升级的那次打出必中：满级一击＝悬停刚打出的卡）
 	_end_all_hover()   # 连锁撤词条浮窗＋伤害预览＋悬停态（paused=true 会冻住悬停链——弹窗前主动收）
-	# 〔2026-11-19 教程天赐重启〕新手第二关（floor 1）升级＝单卡直发连环刺
-	# （用户令「升级后只有一个选项 连环刺」——走 _force_gifts 通道：只出一张、
-	# 跳过/重选/剔除全隐）；其余场合经 reward_offers 自然出题
-	var gifts: Array = [] if int(run.get("floor", 0)) != 1 else ["zhici"]
+	# 〔2026-11-19 教程单卡·对齐原版等级门控〕原版 TutorialConfig 按等级门控教程奖励
+	# （weaponsOnlyUntilLevel/newOnlyUntilLevel=2：等级 2 前的升级不弹三选一、直发一张）
+	# ——日志实证首升（level=1）发生在第一层 5 蝠场（用户口径「新手第二关」），挂楼层
+	# 会错位，故挂等级：首升＝单卡直发连环刺（走 _force_gifts 通道：只出一张、
+	# 跳过/重选/剔除全隐）；升到 2 级起恢复三选一
+	var gifts: Array = ["zhici"] if int(run.get("level", 1)) <= 1 else []
+	print("[教程单卡] _open_reward 判定：floor=%s level=%s → gifts=%s" \
+		% [run.get("floor", "<无floor键>"), run.get("level", "?"), gifts])
 	_reward_ui = VC_REWARD.new()
 	_reward_ui.z_index = 95          # 盖过手牌（0..60）与特效层（90），低于结算浮层（100）
 	_reward_ui.setup(run, gifts)

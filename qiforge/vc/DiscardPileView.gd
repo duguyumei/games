@@ -68,10 +68,17 @@ func CardAddedViewCommand(player_model, card: Dictionary, view_speed_multiplier 
 	# ── 位置层（mover 寻的＋到达事件）──
 	var dist: float = (target_local - view.position).length()
 	view._transform_mover._useLocalPosition = true
-	view._transform_mover.SetSpeed(maxf(dist / 0.08, 50.0))   # 实测 65-110ms 飞行
+	# 飞行时长默认 0.08s（原版实测 65-110ms）；已打出区冲弃由屏按卡注入 2×（0.16s，
+	# 2026-11-19 用户令「速度慢点，变成2倍」——右上→弃堆那段单独慢，手牌弃牌不动）
+	var fly_dur: float = float(card.get("disc_flight_dur", VC.DISCARD_FLIGHT_DUR))
+	view._transform_mover.SetSpeed(maxf(dist / maxf(0.001, fly_dur), 50.0))
 	view._transform_mover.SetDecelerateDistance(
 		VC.DISCARD_CARD["decelerateDistance"] / dm)
 	view.MoveTo(target_local, func() -> void:
+		# 观测：飞行区间收口（已打出区冲弃时由屏注入 flight_end；其他路径无此键＝no-op）
+		var end_cb: Callable = card.get("flight_end", Callable())
+		if end_cb.is_valid():
+			end_cb.call()
 		if is_instance_valid(view):
 			view.DeregisterAnimationInterrupt(self)
 			view.visible = false          # OnCardReachedPile：SetActive(false)（:320-332）
@@ -89,8 +96,10 @@ func CardRemovedViewUpdate(card: Dictionary) -> void:
 	if view != null:
 		TryRemoveCard(view)
 
-## TeleportCardToPileView 终局传送（玩家观察实证：敌全灭后手牌直接消失不走飞行＝
-## 原版 OnCardAdded(teleportToPosition:true) 的唯一活跃消费者）——离手＋瞬隐＋入表
+## TeleportCardToPileView（CardPileView.OnCardAdded 的 teleport 分支）——离手＋瞬隐＋入表。
+## 〔2026-11-19 勘误：原版 teleport:true 仅读档落牌（LoadSaveData csall:544）消费；终局手牌
+## 与已打出区都走弃牌飞行（d__280:251 isGameOver=false；DiscardComboPile→OnRemovedFromComboPile
+## csall:1843 teleport:false）。11-13「终局瞬隐」系新手前几关无连击堆出牌即收的误判。〕
 func TeleportCardToPileView(player_model, card: Dictionary) -> void:
 	_hand_pile_view.CardRemovedViewUpdate(card)
 	var view = _view_of(card)

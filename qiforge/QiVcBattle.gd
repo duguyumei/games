@@ -57,7 +57,7 @@ var xp_gained := 0            # 本场击杀所得经验（战后写回 run—�
 var _run: Dictionary = {}     # 2026-11-07 属性轮：run 引用（stat op dungeon 型回写 dungeon_stats）
 var starting_stats := {}      # 四层之一：三层基线（base＋progression＋dungeon——setup 时合成）
 var encounter_stats := {}    # 四层之二：本场增量（encounter 型黄卡——随实例销毁清零）
-var _pending_strikes: Array = []   # 2026-11-08 落账延迟：待击中帧结算的伤害事件队列（账单制）
+var _pending_strikes: Array = []   # 表现账单（2026-11-19 改：伤害已在出牌当帧落账，队列只驱演出拍＋收尸）
 var _play_gen := 0                 # 出牌代（2026-11-09 连打制：每张牌的账单事件带代标，演出逐代排队消费）
 var _strike_total := 0             # 2026-11-08 余段空放制：本次打出的飞行总段数（演出拍数权威）
 var pending_visual := false        # true＝有表现层逐击回调（屏 setup 置位）；false＝play_card 尾自动全落（探针）
@@ -275,6 +275,8 @@ func _end_turn_body() -> void:
 ## 终局弃手牌（2026-11-11 对齐原版 OnEncounterDefeated→DiscardHand：胜利时序手牌走
 ## 弃牌流程弃走，不再瞬隐）——hand＋已打出区整体冲弃（数据落账发 changed；表现层
 ## _rebuild_hand 对消失 uid 自动放飞弃堆动画、弃堆计数同步涨；check_piles 守恒）。
+## 〔2026-11-13 曾加「终局瞬隐」分流、2026-11-19 IL 勘误删除：原版胜利路 d__280:251 传
+## DiscardHand(false,false)，isGameOver=true 只在战败；终局与回合末同一条弃牌飞行。〕
 ## 战斗快照本就随胜利作废，此转移只为表现层与弃堆计数与普通冲弃完全同构。
 func discard_hand_finale() -> bool:
 	# 原版 OnEncounterDefeated d__280（ISIL :251/:254/:415）：
@@ -516,7 +518,11 @@ func _discard_played_for_switch() -> void:
 
 ## A2 切招：打出牌与上一张「换」（型集无交集）→ 手牌中与打出牌「换」者：等级与费用复原初始。
 func _dyn_switch_reset(p_form: String) -> void:
-	if current_form == "" or not DATA.forms_switch(p_form, current_form):
+	if current_form == "":
+		print("[动态升级] A2 判定：上张型=无（回合首张）→ 不切招、不复原")
+		return
+	if not DATA.forms_switch(p_form, current_form):
+		print("[动态升级] A2 判定：上张型=%s 本张型=%s → 接（不切招）" % [current_form, p_form])
 		return
 	# 名单只列真正掉级的牌（lv/费增量 >0）——没实际损失时不误导「复原」（2026-11-10 审计改）
 	var names := PackedStringArray()
@@ -525,6 +531,8 @@ func _dyn_switch_reset(p_form: String) -> void:
 				and (card_lv(c) > 0 or int(c.get("cost_delta", 0)) > 0):
 			_strip_lv(c)
 			names.push_back(String(c["def"].get("name", "")))
+	print("[动态升级] A2 切招：上张型=%s → 本张型=%s；复原 %s" % [
+		current_form, p_form, "、".join(names) if not names.is_empty() else "（无实际掉级）"])
 	if names.is_empty():
 		event.emit("切招！")
 	else:
@@ -534,15 +542,25 @@ func _dyn_switch_reset(p_form: String) -> void:
 ## （「cost_lock」词条＝费用锁定不加费，万能牌专用）。打出牌自身已离手，不参与。
 func _dyn_upgrade(p_form: String, p_lv: int) -> void:
 	var names := PackedStringArray()
+	var trace := PackedStringArray()   # 〔取证·动态升级〕逐张手牌的判定（升/跳过＋原因）
 	for c in hand:
-		if not DATA.forms_connect(String(c["def"].get("stance", "")), p_form):
+		var c_name := String(c["def"].get("name", ""))
+		var c_form := String(c["def"].get("stance", ""))
+		var c_lv := card_lv(c)
+		if not DATA.forms_connect(c_form, p_form):
+			trace.push_back("%s(型%s lv%d)=异型跳过" % [c_name, c_form, c_lv])
 			continue
-		if card_lv(c) > p_lv:
+		if c_lv > p_lv:
+			trace.push_back("%s(型%s lv%d)=高于本张lv%d跳过" % [c_name, c_form, c_lv, p_lv])
 			continue
-		c["lv"] = card_lv(c) + 1
+		c["lv"] = c_lv + 1
 		if not bool(c["def"].get("cost_lock", false)):
 			c["cost_delta"] = int(c.get("cost_delta", 0)) + 1
-		names.push_back("%s Lv%d" % [String(c["def"].get("name", "")), card_lv(c)])
+		names.push_back("%s Lv%d" % [c_name, card_lv(c)])
+		trace.push_back("%s(型%s lv%d→%d 费增%d)" % [
+			c_name, c_form, c_lv, card_lv(c), int(c.get("cost_delta", 0))])
+	print("[动态升级] A1 升级（本张型=%s lv=%d，手牌%d张）：%s" % [
+		p_form, p_lv, hand.size(), "｜".join(trace) if not trace.is_empty() else "（无手牌）"])
 	if not names.is_empty():
 		event.emit("升级：%s" % "、".join(names))
 
@@ -553,6 +571,7 @@ func _dyn_wild_cost_reset(p_form: String) -> void:
 		return
 	for c in hand:
 		c["cost_delta"] = 0
+	print("[动态升级] A3 万能：手牌 %d 张费用复原（等级不动）" % hand.size())
 	event.emit("变招！手牌费用复原")
 
 ## 出牌全流程（动态升级制）：定格等级/型 → 扣气 → 离手复原 → ⓪效果（按本张等级倍率）
@@ -576,6 +595,11 @@ func play_card(card_uid: int) -> void:
 	# —— 定格（打出瞬间冻结本张等级与型——公理结算全以此为准，离手复原不影响）——
 	var p_lv := card_lv(card)
 	var p_form := String(def.get("stance", ""))
+	# 〔取证·动态升级〕每次出牌一行：这张凭什么等级/型结算（帧号+墙钟——对齐「快速两张」时序）
+	print("[动态升级] 出牌 uid=%d「%s」型=%s lv=%d 费=%d 气=%d→%d 门控=%s 帧=%d t=%d" % [
+		card_uid, String(def.get("name", "")), p_form, p_lv, cost,
+		int(player["qi"]) + cost, int(player["qi"]),
+		"开" if upgrade_enabled else "关", Engine.get_frames_drawn(), Time.get_ticks_msec()])
 	if p_form == "":
 		# 无型牌不存在（2026-11-10 用户裁）——打出即卡表数据违例，直接报错；
 		# 三公理照跳（防「空型＝半个万能牌」的放大失败模式）
@@ -619,6 +643,8 @@ func play_card(card_uid: int) -> void:
 	# 倍率＝本张打出时等级（动态升级占位公式：每级总输出 +30%——正式词条曲线待内容轮）
 	_play_gen += 1   # 连打制（2026-11-09 对齐原版命令队列）：本张账单事件统一带新代标
 	var mult := DATA.level_mult(p_lv)
+	print("[动态升级] 本张结算倍率 ×%.2f（打出时 lv=%d，公式 1+lv；might=%d%% amount=%d）" % [
+		mult, p_lv, int(might_pct), stat_val("amount")])
 	for op in card["def"].get("ops", []):
 		if String(op.get("op", "")) == "dmg":
 			_run_damage_op(op, def, mult)
@@ -638,37 +664,56 @@ func play_card(card_uid: int) -> void:
 		_dyn_wild_cost_reset(p_form)
 	if p_form != "":
 		current_form = p_form
+	# 〔取证·动态升级〕结算后手牌快照——下一张打出时它该长什么样，一眼对账
+	var snap := PackedStringArray()
+	for c in hand:
+		snap.push_back("%s lv%d" % [String(c["def"].get("name", "")), card_lv(c)])
+	print("[动态升级] 结算完成：上张型=%s｜手牌%d张：%s" % [
+		current_form, hand.size(), "｜".join(snap) if not snap.is_empty() else "（空）"])
 	check_piles()
 	if pending_visual and not _pending_strikes.is_empty():
-		## 落账延迟：伤害账单等表现层击中帧逐事件结算，终局判定延后到 settle 内
+		## 表现账单：击中拍逐事件消费（账已落），终局判定延后到 settle 内
 		changed.emit()
 		return
 	settle_all_strikes()   # 无屏/无账单：立即全落＋终局判定（同步路径）
 	changed.emit()
 
-## 伤害单链入口（2026-11-08 落账延迟制，对应原版「账单算定→WeaponCollision 击中落账」：
-## calculate 模拟产出事件流账单 → **入待落账队列，击中帧逐事件结算**（血量/死亡/数字同步动）。
-## 无表现层（探针/无屏直跑 pending_visual=false）→ play_card 尾自动全落＝同步行为不变。
+## 伤害单链入口（2026-11-19 对齐原版：ExecuteDamageEffect→ApplyDamage→ResolveDamage 同方法同步）：
+## calculate 模拟产出事件流 → **出牌当帧立即改血/判死**（alive=false），事件流只留给演出拍
+## 逐拍跳数字/收尸（奇偶：death 仍在收尸拍出列放珠）。
+## 无表现层（探针/无屏直跑 pending_visual=false）→ play_card 尾吞完账单＝行为一致。
 func _run_damage_op(op: Dictionary, def: Dictionary, mult: float) -> void:
 	var params: Dictionary = EFFECTS.generate_damage_params(op, def, mult, self)
 	var res: Dictionary = TARGETING.calculate({"enemies": encounter["active"],
 		"params": params, "rng": rng})
+	# 〔2026-11-19 对齐原版·数据当帧落账〕原版 ExecuteDamageEffect 同一方法内
+	# `ApplyDamage`（ISIL DamageEffect.txt:5397）→ `EnemyModel.ResolveDamage`（:8985）——
+	# 伤害/判死在**出牌当帧**同步落账，武器飞行只是表现（FireWeapons 另一条协程）。
+	# 我方旧制把落账推迟到击中拍：连打时后张按旧血量推演，推不出死亡 → 0 血不死、
+	# 要打两轮（2026-11-19 实测）。现在：击中拍只放表现，不再改账。
 	for ev in (res["events"] as Array):
 		(ev as Dictionary)["gen"] = _play_gen   # 连打制：事件带代标（settle 按代收口，不吞下家）
+		if String((ev as Dictionary).get("type", "")) == "hit":
+			_real_hit((ev as Dictionary).get("e", {}), int((ev as Dictionary).get("amount", 0)),
+				bool((ev as Dictionary).get("is_crit", false)))
 		_pending_strikes.push_back(ev)
+	# 〔取证·动态升级〕倍率是否真的落到伤害段（单段＝基础×倍率×might）
+	print("[动态升级] 伤害 op 落地：倍率×%.2f 单段=%d 段数=%d 事件=%d（伤害已当帧落账）" % [
+		mult, int(params["damage_per_hit"]), int(params["hits"]),
+		(res["events"] as Array).size()])
 	_strike_total = int(res.get("total_strikes", 0))
 
 ## 当前出牌代（屏幕拍驱动串行化用）
 func play_gen() -> int:
 	return _play_gen
 
-## 逐事件落账（表现层击中帧回调；hit→真扣血+hit_landed 信号跳数，death→出列/经验/顶替）
+## 逐事件消费（表现层击中帧回调；**账已在出牌当帧落完**，这里 hit＝纯表现拍、death＝收尸出列）
 func settle_next_strike() -> bool:
 	if _pending_strikes.is_empty():
 		return false
 	var ev: Dictionary = _pending_strikes.pop_front()
 	if String(ev.get("type", "")) == "hit":
-		_real_hit(ev.get("e", {}), int(ev.get("amount", 0)), bool(ev.get("is_crit", false)))
+		pass   # 伤害/判死已在 play_card 当帧落账（对齐原版 ApplyDamage 同步）；击中拍不改账
 	else:
 		_real_death(ev.get("e", {}))
 	changed.emit()
@@ -702,7 +747,9 @@ func strike_snapshot(gen := -1) -> Array:
 func strike_total() -> int:
 	return _strike_total
 
-## hooks.hit：真值侧同步落账（账本已推演同序列——甲吸收→血扣除；暴击标注传表现层）
+## hooks.hit：真值侧同步落账（账本已推演同序列——甲吸收→血扣除；暴击标注传表现层）。
+## 2026-11-19：调用点前移到出牌当帧（原版 ApplyDamage 同步）；血见底即判死 alive=false，
+## 后续出牌的目标账不再把它算活人——出列/顶替/经验珠仍由收尸拍 `_real_death` 做（视图留尸）。
 func _real_hit(e: Dictionary, dmg: int, is_crit: bool) -> void:
 	var left := dmg
 	if int(e.get("armor", 0)) > 0:
@@ -711,6 +758,8 @@ func _real_hit(e: Dictionary, dmg: int, is_crit: bool) -> void:
 		left -= absorb
 	if left > 0:
 		e["hp"] = maxi(0, int(e["hp"]) - left)
+		if int(e["hp"]) <= 0:
+			e["alive"] = false   # ResolveDamage→Died 当帧判死（不是收尸拍才判）
 		event.emit("「%s」受到 %d 点伤害%s" % [String(e["name"]), dmg, "（暴击）" if is_crit else ""])
 	hit_landed.emit(e, dmg, "攻击", is_crit)
 

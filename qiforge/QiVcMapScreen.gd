@@ -39,6 +39,7 @@ var player_cell := Vector2i.ZERO
 var _cell := 24                 # 地格边长（按图幅自适应）
 var _player_token: Panel = null
 var _moving := false
+var _relic_modal_open := false    # 内功获得弹窗开着＝地图输入全停（QiDialog 模态的键盘侧门）
 var _tokens := {}               # Vector2i -> Control（实体墨字）
 var _top_refs := {}             # 机柜顶带（等级/经验/层数）
 var _wing_refs := {}            # 机柜舷位（血/抽/弃）
@@ -237,6 +238,8 @@ func _refresh_stats() -> void:
 		(run.get("deck", []) as Array).size(), 0)
 
 func _on_screen_input(event: InputEvent) -> void:
+	if _relic_modal_open:
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if _moving:
 			return
@@ -249,6 +252,8 @@ func _on_screen_input(event: InputEvent) -> void:
 		_walk_to(cell)
 
 func _walk_to(cell: Vector2i) -> void:
+	if _relic_modal_open:
+		return
 	var p: Variant = MAPGEN.path(map_data, player_cell, cell)
 	if p == null:
 		return
@@ -273,6 +278,8 @@ const STEP_INTERVAL := 0.13
 var _step_cd := 0.0
 
 func _process(delta: float) -> void:
+	if _relic_modal_open:
+		return
 	var d := Vector2i.ZERO
 	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
 		d = Vector2i(0, -1)
@@ -290,7 +297,7 @@ func _process(delta: float) -> void:
 		_step_move(d)
 
 func _step_move(d: Vector2i) -> void:
-	if _moving:
+	if _moving or _relic_modal_open:
 		return
 	var nxt := player_cell + d
 	if nxt.x < 0 or nxt.y < 0 or nxt.x >= int(map_data["w"]) or nxt.y >= int(map_data["h"]):
@@ -309,6 +316,8 @@ func _entity_at(cell: Vector2i) -> Variant:
 	return null
 
 func _trigger_cell(cell: Vector2i) -> void:
+	if _relic_modal_open:
+		return
 	var e: Variant = _entity_at(cell)
 	if e == null:
 		return
@@ -321,23 +330,20 @@ func _trigger_cell(cell: Vector2i) -> void:
 		"chest":
 			var loot := String(ent.get("id", ""))
 			if loot != "" and VC.NEIGONG.has(loot):
-				# 2026-11-07 教程轮：宝箱内容物＝内功（如「动态升级」——id 沿用 combo_stack，宝箱解锁）
-				var ng: Array = run.get("neigong", [])
-				if not ng.has(loot):
-					ng.push_back(loot)
-				run["neigong"] = ng
-				_grant_toast("获得内功：%s" % String(VC.NEIGONG[loot].get("name", loot)), cell)
+				# 2026-11-19 用户令：内功宝箱→获得弹窗（原版 ReceiveRelicModal 制）；
+				# 点「获取」才入账/移除宝箱（对齐原版 Button_GetRelic→EquipRelic→Close）
+				_open_neigong_modal(loot, cell)
 			else:
 				run["copper"] = int(run.get("copper", 0)) + 20
 				_grant_toast("获得 20 铜币", cell)
-			_remove_entity(cell)
+				_remove_entity(cell)
 		"shovel":
 			_ask_dig()
 		"exit":
 			_remove_entity(cell)
 			dig_requested.emit()   # 教程出口：走上去直接下层（不弹问话）
 
-## 拾取提示（2026-11-07 宝箱内功轮）：在实体格上方弹出短提示、1.6s 淡出
+## 拾取提示（短提示、1.6s 淡出）：铜币等非内功宝箱用；内功已改走获得弹窗
 func _grant_toast(text: String, cell: Vector2i) -> void:
 	var lbl := _make_glyph(text, QISTYLE.AMBER_BRIGHT, 16)
 	lbl.size = Vector2(_cell * 4.0, _cell)
@@ -349,6 +355,153 @@ func _grant_toast(text: String, cell: Vector2i) -> void:
 	tw.tween_interval(1.1)
 	tw.tween_property(lbl, "modulate:a", 0.0, 0.5)
 	tw.tween_callback(lbl.queue_free)
+
+#region 内功获得弹窗（2026-11-19 用户令；原版 ReceiveRelicModal 制）
+## 原版证据：Nosebleed.Pancake.Modal/ReceiveRelicModal.cs:27＋游戏预制体
+## GameObject/ReceiveRelicModal.prefab（1000×500 面板／图标＋名＋描述＋New!＋GET；
+## 描述 0.02s/字打字机；Button_GetRelic→EquipRelic→Close；点窗外不关、无取消）。
+## 我方落点：走项目唯一弹窗件 QiDialog（固定 1000×560）——标题/图标/名/描述在 content，
+## 底部 OK 钮复用作「获取」；描述打完直接浮出（2026-11-19 用户口述，去掉原版 2s 等待）。
+## 原版 HelperImage 列表在 prefab 为空，故无 helper 图分支；本地化以中文内联。
+func _open_neigong_modal(loot: String, cell: Vector2i) -> void:
+	var relic: Dictionary = VC.NEIGONG[loot]
+	var sz := Vector2(1000.0, 560.0)
+	_relic_modal_open = true
+	var arr: Array = QIDIALOG.create(self, "", sz, "获取", "", false)
+	var box = arr[1]   # 动态取（QiDialogBox 无 class_name）：title_l/ok_btn/content 均运行期成员
+	if box == null:
+		# 单弹窗互斥兜底：不吞奖励——直接入账＋原飘字（正常宝箱路径碰不到）
+		_relic_modal_open = false
+		_grant_neigong(loot)
+		_remove_entity(cell)
+		_grant_toast("获得内功：%s" % String(relic.get("name", loot)), cell)
+		return
+	box.tree_exiting.connect(func() -> void: _relic_modal_open = false)
+	box.z_index = 95                       # 盖过地图飘字层（90）
+	box.title_l.visible = false            # 原版无独立标题条——大标题并入内容区
+	box.popup_centered(Vector2i(int(sz.x), int(sz.y)))
+	# popup_centered 的 _recenter 是 deferred；先钉一次，避免首帧从左上角闪出
+	box.size = sz
+	box.position = (get_viewport_rect().size - sz) * 0.5
+
+	var content: VBoxContainer = box.content()
+	content.add_theme_constant_override("separation", 12)
+
+	var title := Label.new()
+	title.text = "获得内功！"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	QISTYLE.font(title, 40, true)
+	QISTYLE.text_color(title, QISTYLE.AMBER_BRIGHT)
+	content.add_child(title)
+
+	# 信息区（原版 RelicInfoContainer 950×290 的等价）：左侧图标底 100×100＋名字/新!／描述
+	var info := PanelContainer.new()
+	info.add_theme_stylebox_override("panel", QISTYLE.panel(0.30))
+	info.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(info)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 22)
+	margin.add_theme_constant_override("margin_right", 22)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	info.add_child(margin)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 14)
+	margin.add_child(col)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 22)
+	col.add_child(row)
+	var icon_frame := Panel.new()
+	icon_frame.custom_minimum_size = Vector2(100.0, 100.0)
+	var isb := StyleBoxFlat.new()
+	isb.bg_color = Color(0.16, 0.12, 0.07, 0.92)
+	isb.border_color = QISTYLE.AMBER
+	isb.set_border_width_all(2)
+	isb.set_corner_radius_all(10)
+	icon_frame.add_theme_stylebox_override("panel", isb)
+	icon_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon_frame)
+	var glyph := Label.new()
+	glyph.text = "功"
+	glyph.set_anchors_preset(Control.PRESET_FULL_RECT)
+	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	QISTYLE.font(glyph, 52, true)
+	QISTYLE.text_color(glyph, QISTYLE.AMBER_BRIGHT)
+	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_frame.add_child(glyph)
+
+	var name_col := VBoxContainer.new()
+	name_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_col.add_theme_constant_override("separation", 4)
+	row.add_child(name_col)
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 12)
+	name_col.add_child(name_row)
+	var name_l := Label.new()
+	name_l.text = String(relic.get("name", loot))
+	QISTYLE.font(name_l, 32, true)
+	QISTYLE.text_color(name_l, QISTYLE.CREAM)
+	name_row.add_child(name_l)
+	var new_l := Label.new()
+	new_l.text = "新！"
+	QISTYLE.font(new_l, 20, true)
+	QISTYLE.text_color(new_l, Color("ffe15a"))
+	new_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	name_row.add_child(new_l)
+	var sub_l := Label.new()
+	sub_l.text = "内功 · 宝箱所得"
+	QISTYLE.font(sub_l, 16)
+	QISTYLE.text_color(sub_l, QISTYLE.TEXT_SUB)
+	name_col.add_child(sub_l)
+
+	var desc := Label.new()
+	desc.text = String(relic.get("desc", ""))
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.clip_text = true
+	desc.custom_minimum_size = Vector2(0.0, 150.0)
+	desc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	QISTYLE.font(desc, 24)
+	QISTYLE.text_color(desc, Color(0.92, 0.88, 0.78))
+	desc.visible_characters = 0
+	col.add_child(desc)
+
+	# 原版 GET：打字完才出；2026-11-19 用户令「打完字直接出」——去掉原版 2s 等待
+	var ok: Button = box.ok_btn
+	ok.text = "获取"
+	ok.custom_minimum_size = Vector2(240.0, 60.0)
+	QISTYLE.font(ok, 24, true)
+	ok.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	ok.disabled = true
+	var n: int = desc.get_total_character_count()
+	var tw := desc.create_tween()
+	tw.tween_interval(0.25)   # 让背板淡入先走一拍
+	tw.tween_property(desc, "visible_characters", n, maxf(0.2, float(n) * 0.02))
+	tw.tween_callback(func() -> void:
+		ok.disabled = false
+		ok.pivot_offset = ok.size * 0.5
+		ok.scale = Vector2(0.9, 0.9)
+		var rt := ok.create_tween()
+		rt.tween_property(ok, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.18)
+		rt.parallel().tween_property(ok, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		ok.grab_focus())
+
+	box.confirmed.connect(func() -> void:
+		_grant_neigong(loot)
+		_remove_entity(cell))
+
+func _grant_neigong(loot: String) -> void:
+	var ng: Array = run.get("neigong", [])
+	if not ng.has(loot):
+		ng.push_back(loot)
+	run["neigong"] = ng
+	_refresh_stats()
+	var def: Dictionary = VC.NEIGONG.get(loot, {})
+	print("[内功] 宝箱获得：%s（id=%s）→ 当前内功=%s" % [
+		String(def.get("name", loot)), loot, str(ng)])
+#endregion
 
 func _remove_entity(cell: Vector2i) -> void:
 	for i in range(map_data["entities"].size() - 1, -1, -1):
