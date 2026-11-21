@@ -589,6 +589,22 @@ func _rebuild_face() -> void:
 	card.scale = Vector2(TILT_SS, TILT_SS)
 	vp.add_child(card)
 	_face_card = card
+	# 2026-11-20 临时取证日志（用户令，定位字垂直居中后清退）：Label 盒/顶带/字体行高
+	var dbg_name := _find_by_name(card, "NameLabel") as Label
+	var dbg_band := _find_by_name(card, "NameBand") as Control
+	if dbg_name != null:
+		var dbg_font: Font = dbg_name.get_theme_font("font")
+		var dbg_fs: int = dbg_name.get_theme_font_size("font_size")
+		print("[字v] text=", dbg_name.text, " rect=", dbg_name.get_rect(),
+			" off=(", dbg_name.offset_left, ",", dbg_name.offset_top, ",",
+			dbg_name.offset_right, ",", dbg_name.offset_bottom, ")",
+			" band=", dbg_band.get_rect() if dbg_band != null else Rect2(),
+			" card=", card.size, " fs=", dbg_fs,
+			" font=", dbg_font.resource_path if dbg_font != null else "null",
+			" height=", dbg_font.get_height(dbg_fs) if dbg_font != null else -1,
+			" asc=", dbg_font.get_ascent(dbg_fs) if dbg_font != null else -1,
+			" desc=", dbg_font.get_descent(dbg_fs) if dbg_font != null else -1,
+			" va=", dbg_name.vertical_alignment, " ha=", dbg_name.horizontal_alignment)
 	# 费用徽引用（UpdateCostText 消费；工厂件名 "CostPip"/"QiIcon"）
 	_cost_pip = _find_by_name(card, "CostPip")
 	_qi_icon = _find_by_name(_cost_pip, "QiIcon") if _cost_pip != null else null

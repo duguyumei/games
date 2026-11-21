@@ -845,6 +845,9 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 	var frame: Color = tcg_frame_color(tone)
 	var card: TcgCard = TcgCard.new()
 	card.custom_minimum_size = Vector2(180.0, 277.0)
+	# A（2026-11-20 用户令）：SubViewport 不是 Container，只设 min 不会把 size 撑开；
+	# 显式给实际尺寸，卡底/圆角/绘制层才有正常 180×277 画布。
+	card.size = Vector2(180.0, 277.0)
 	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	var glint_mat: ShaderMaterial = ShaderMaterial.new()
@@ -862,6 +865,7 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 	# 立绘/卡面底图：铺满整卡背（y0..277）——A' 顶带半透遮罩要用它透出纹理；
 	# 描述块仍压底部，名字带/费用章/分割线全部叠在上面。无单独金边（外框金环负责）。
 	var art: Panel = Panel.new()
+	art.name = "Art"
 	_place_abs(art, 4.0, 0.0, 176.0, 277.0)
 	art.add_theme_stylebox_override("panel", _vc_box(frame, frame, 0, 4.0))
 	art.clip_contents = true
@@ -876,9 +880,11 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.add_child(pic)
 
-	# 名字带：138×38 @(40,2.4)（prefab pivot(0,1.05) 直译）
+	# 顶部蒙层整幅：2.5..178（整卡宽），费用方章只是叠在上面的 40×40 层；
+	# 名字文字从费用层右侧 49.5 起（2026-11-20 用户：蒙层应整幅，费用方章图层更高）。
 	var name_block: Panel = Panel.new()
-	_place_abs(name_block, 40.0, 2.4, 178.0, 40.4)
+	name_block.name = "NameBand"
+	_place_abs(name_block, 2.5, 2.5, 178.0, 42.5)
 	# 2026-11-20 用户：名字区域不要金线边框；A'＝0.82 tone 遮罩透出整卡底图纹理
 	#（颜色仍由 header/tone 主导，底图只加质感；以后真实立绘也走同一遮罩，不必改图集配色）
 	var hdr_col: Color = TCG_HEADERS.get(tone, TCG_HEADERS["blue"])
@@ -887,15 +893,28 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 		_vc_box(band_col, band_col, 0, 4.0))
 	name_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(name_block)
+	# A' 质感层：同 tone 遮罩下再叠 22% 纸纹，顶带不再死平（颜色仍由 tone 主导）
+	var band_tex: Texture2D = _hud_tex("scene_paper")
+	if band_tex != null:
+		var grain: TextureRect = TextureRect.new()
+		grain.texture = band_tex
+		grain.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		grain.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		grain.modulate = Color(1.0, 1.0, 1.0, 0.22)
+		grain.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		grain.set_anchors_preset(Control.PRESET_FULL_RECT)
+		name_block.add_child(grain)
 	var name_lbl: Label = _vc_label(name_block, str(def.get("name", "")),
 		VC_HAND_NAME_FONT, COLOR_CREAM, 2)
-	_place_abs(name_lbl, 7.0, 0.0, 135.0, 38.0)
+	name_lbl.name = "NameLabel"
+	_place_abs(name_lbl, 47.0, 1.0, 175.0, 39.0)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_wire_fit(name_lbl, VC_HAND_NAME_FONT, true)
 
 	# 描述块：172×104 @(4,170)（prefab 底锚 (0,3)）；规则文 15，下限 12
 	var desc: Panel = Panel.new()
+	desc.name = "Desc"
 	_place_abs(desc, 4.0, 170.0, 176.0, 274.0)
 	var dsb: StyleBoxFlat = _vc_box(Color(TCG_PARCH.r, TCG_PARCH.g, TCG_PARCH.b, 0.88),
 		TCG_GOLD_DARK, 1, 4.0)
@@ -913,30 +932,22 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 	rules.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_wire_fit(rules, VC_HAND_RULES_FONT, false, 12)
 
-	# 金环：沿用现有 glint 外框
-	_frame_ring(card, 0.6, 277.0 / 422.0, glint_mat)
-	# 全宽分割线（2026-11-20 用户：位置要向下——顶带最低件是费用方章底 45.5；
-	# 线对齐 45.5，而不是名字带底 40.4／旧 300 档 34.1）
-	var divider: Panel = Panel.new()
-	_place_abs(divider, 2.4, 44.3, 177.6, 46.7)
-	divider.add_theme_stylebox_override("panel", _vc_box(TCG_GOLD, TCG_GOLD, 0, 0))
-	divider.material = glint_mat
-	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(divider)
-
-	# 费用方章：43×43 @(2.5,2.5)（prefab 位置直译）；2026-11-20 用户「不要圆形/不要金线」——
-	# 弃水墨气珠贴图与金边；扁平羊皮纸方块＋22px 墨字（与描述块同一纸色）。
+	# 费用方章：40×40 @(2.5,2.5)，底 42.5＝分割线顶；叠在整幅蒙层上的高一层。
+	# 2026-11-20 用户：去掉边框/圆角——羊皮纸 0.88 平铺＋shadow2（保留“更高一层”），墨/金数字。
+	var dbg_cost_rect: Rect2 = Rect2()
 	var qi_v: Variant = def.get("qi", null)
 	if qi_v != null:
 		var cost_c: Panel = Panel.new()
 		cost_c.name = "CostPip"
-		_place_abs(cost_c, 2.5, 2.5, 45.5, 45.5)
-		var cost_sb: StyleBoxFlat = _vc_box(TCG_PARCH, TCG_PARCH, 0, 0.0)
+		_place_abs(cost_c, 2.5, 2.5, 42.5, 42.5)
+		var cost_bg: Color = Color(TCG_PARCH.r, TCG_PARCH.g, TCG_PARCH.b, 0.88)
+		var cost_sb: StyleBoxFlat = _vc_box(cost_bg, cost_bg, 0, 0.0)
 		cost_sb.shadow_color = Color(0, 0, 0, 0.35)
 		cost_sb.shadow_size = 2
 		cost_c.add_theme_stylebox_override("panel", cost_sb)
 		cost_c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(cost_c)
+		dbg_cost_rect = cost_c.get_rect()
 		var cost_col: Color = TCG_INK
 		if bool(def.get("combo_gold", false)):
 			cost_col = Color(0.80, 0.58, 0.14)
@@ -944,6 +955,19 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 		cost_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
 		cost_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cost_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+	# 金环：沿用现有 glint 外框
+	_frame_ring(card, 0.6, 277.0 / 422.0, glint_mat)
+	# 全宽分割线：顶 42.5＝费用方章底，线 42.5–44.9（中心 43.7）；方章背景不越过线，
+	# 线在方章下面；金环/分割线画在方章之后，卡框与线不被挡、无重叠。
+	var divider: Panel = Panel.new()
+	divider.name = "Divider"
+	_place_abs(divider, 2.4, 42.5, 177.6, 44.9)
+	divider.add_theme_stylebox_override("panel", _vc_box(TCG_GOLD, TCG_GOLD, 0, 0))
+	divider.material = glint_mat
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(divider)
+
 
 	# 式徽/需求轨：沿用玩法件，改挂描述块上沿（原版这里对应 GemSlots 左轨）
 	var st_kind: String = str(def.get("stance", ""))
@@ -1011,6 +1035,13 @@ static func _make_tcg_card_vc_hand(def: Dictionary) -> Button:
 		cr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cr.z_index = 8
 		card.add_child(cr)
+	# 2026-11-20 临时取证日志（用户令，定位后清退）：确认实际运行版/矩形/子节点绘制顺序
+	var dbg_order: Array = []
+	for ch in card.get_children():
+		dbg_order.append(String(ch.name))
+	print("[卡面v] build=2026-11-20G card_size=", card.size,
+		" min=", card.custom_minimum_size, " cost=", dbg_cost_rect,
+		" divider=", divider.get_rect(), " order=", dbg_order)
 	return card
 
 ## 裂纹贴图（2026-11-06 表现层接手：真贴图两档，按卡名哈希取——1=轻 2=重）
@@ -1030,6 +1061,7 @@ static func _crack_texture(variant: int) -> Texture2D:
 ## 金件①外框：四边等宽金环（后续加角标/攻防角也按 FRAME_* 这套参数排）
 static func _frame_ring(card: Control, kw: float, kh: float, glint: ShaderMaterial = null) -> void:
 	var goldband := Panel.new()
+	goldband.name = "FrameRing"
 	_place_abs(goldband, round(FRAME_INSET * kw), round(FRAME_INSET * kh),
 		round((300.0 - FRAME_INSET) * kw), round((422.0 - FRAME_INSET) * kh))
 	var ring_b: int = maxi(2, roundi(FRAME_W * kw)) + 1   # +1px：内侧多压 1px，盖住卡底与金框之间的缝

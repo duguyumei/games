@@ -59,15 +59,21 @@ func _ready() -> void:
 			# 跑图专用：清掉系统光标造成的误悬停，拍干净扇形
 			if _screen != null:
 				_screen.set_meta("shot_no_hover", true)
-				_screen._set_hand_focus(null)
+				# 2026-11-20 截图工具兼容：手牌 1:1 重构删了旧屏级 _set_hand_focus；
+				# 有则调，无则跳过（这里只修截图工具，不动游戏/手牌）
+				if _screen.has_method("_set_hand_focus"):
+					_screen._set_hand_focus(null)
 				await get_tree().create_timer(0.5).timeout
 			await _shot("/Users/cc/Documents/qi-forge-2/.qi_vc_battle.png")
-			# 第二张：聚焦中间一张，验相让＋弹起
-			if _screen != null and _screen._hand_wraps.size() >= 4:
-				_screen.set_meta("shot_no_hold", true)
-				_screen._set_hand_focus(_screen._hand_wraps[3])
-				await get_tree().create_timer(0.6).timeout
-				await _shot("/Users/cc/Documents/qi-forge-2/.qi_vc_battle_focus.png")
+			# 第二张：聚焦中间一张，验相让＋弹起（旧屏级钩子不存在则跳过，不拖累战斗图）
+			var wraps: Variant = _screen.get("_hand_wraps") if _screen != null else null
+			if _screen != null and _screen.has_method("_set_hand_focus") and wraps is Array:
+				var wraps_arr: Array = wraps
+				if wraps_arr.size() >= 4:
+					_screen.set_meta("shot_no_hold", true)
+					_screen._set_hand_focus(wraps_arr[3])
+					await get_tree().create_timer(0.6).timeout
+					await _shot("/Users/cc/Documents/qi-forge-2/.qi_vc_battle_focus.png")
 			# 经验特效验收（--qi-xp）：注 5 点经验、敌位放 5 珠连飞→满级三选一，逐段抓图
 			# （2026-11-09 死帧入账制：经验直接进账＋xp_credit 记 +N，珠纯演出）
 			if "--qi-xp" in OS.get_cmdline_user_args() and _screen != null:
